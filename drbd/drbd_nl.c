@@ -896,7 +896,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		idr_for_each_entry(&resource->devices, device, minor) {
 			set_disk_ro(device->vdisk, false);
 			if (get_ldev(device)) {
-				_drbd_uuid_new_current(device, forced);
+				drbd_uuid_new_current(device, forced);
 				put_ldev(device);
 			} else {
 				struct drbd_peer_device *peer_device;
@@ -3486,7 +3486,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	device = adm_ctx.device;
 	resource = device->resource;
 	if (test_bit(NEW_CUR_UUID, &device->flags)) {
-		drbd_uuid_new_current(device);
+		drbd_uuid_new_current(device, false);
 		clear_bit(NEW_CUR_UUID, &device->flags);
 	}
 	drbd_suspend_io(device);
@@ -4170,7 +4170,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 
 	for_each_peer_device(peer_device, device)
 		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
-	drbd_uuid_new_current(device); /* New current, previous to UI_BITMAP */
+	drbd_uuid_new_current(device, false); /* New current, previous to UI_BITMAP */
 
 	if (args.clear_bm) {
 		unsigned long irq_flags;

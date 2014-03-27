@@ -5406,7 +5406,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_clear(connection);
-		drbd_uuid_new_current(device);
+		drbd_uuid_new_current(device, false);
 		clear_bit(NEW_CUR_UUID, &device->flags);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);

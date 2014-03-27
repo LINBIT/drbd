@@ -2488,7 +2488,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				if (drbd_suspended(device))
 					set_bit(NEW_CUR_UUID, &device->flags);
 				else
-					drbd_uuid_new_current(device);
+					drbd_uuid_new_current(device, false);
 				put_ldev(device);
 			} else {
 				struct drbd_peer_device *peer_device;
@@ -2543,7 +2543,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					struct drbd_device *device = peer_device->device;
 					if (test_bit(NEW_CUR_UUID, &device->flags)) {
 						if (get_ldev(device)) {
-							drbd_uuid_new_current(device);
+							drbd_uuid_new_current(device, false);
 							put_ldev(device);
 						}
 						clear_bit(NEW_CUR_UUID, &device->flags);

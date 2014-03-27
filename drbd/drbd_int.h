@@ -1334,7 +1334,7 @@ extern void drbd_uuid_received_new_current(struct drbd_device *, u64 , u64) __mu
 extern void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
-extern void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
+extern void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
@@ -1371,11 +1371,6 @@ extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_ldev_destroy(struct drbd_device *device);
-
-static inline void drbd_uuid_new_current(struct drbd_device *device) __must_hold(local)
-{
-	_drbd_uuid_new_current(device, false);
-}
 
 /* Meta data layout
  *

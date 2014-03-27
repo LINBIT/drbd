@@ -4071,7 +4071,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 force_mask
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
  */
-void _drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
+void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
 	u64 node_mask, val;
