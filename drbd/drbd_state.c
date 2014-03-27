@@ -2844,21 +2844,6 @@ static int twopc_initiator_work(struct drbd_work *work, int cancel)
 	return 0;
 }
 
-u64 directly_connected_nodes(struct drbd_resource *resource)
-{
-	u64 directly_connected = 0;
-	struct drbd_connection *connection;
-
-	for_each_connection(connection, resource) {
-		if (connection->cstate[NOW] < C_CONNECTED)
-			continue;
-		directly_connected |=
-			NODE_MASK(connection->net_conf->peer_node_id);
-	}
-	return directly_connected;
-}
-
-
 /* Think: Can this be replaced by a call to __is_valid_soft_transition() */
 static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 {

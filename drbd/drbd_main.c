@@ -4664,6 +4664,20 @@ long twopc_timeout(struct drbd_resource *resource)
 	return resource->res_opts.twopc_timeout * HZ/10;
 }
 
+u64 directly_connected_nodes(struct drbd_resource *resource)
+{
+	u64 directly_connected = 0;
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			continue;
+		directly_connected |=
+			NODE_MASK(connection->net_conf->peer_node_id);
+	}
+	return directly_connected;
+}
+
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 /* Fault insertion support including random number generator shamelessly
  * stolen from kernel/rcutorture.c */
