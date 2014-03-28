@@ -136,6 +136,7 @@ after			{ DP; CP; return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;	}
 resync-after		{ DP; CP; return TK_DISK_OPTION;	}
 verify-alg              { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
 csums-alg               { DP; CP; return TK_SYNCER_OLD_OPT | TK_NET_OPTION;      }
+csums-after-crash-only  { DP; CP; return TK_NET_FLAG; }
 al-extents		{ DP; CP; RC(AL_EXTENTS); return TK_SYNCER_OLD_OPT | TK_DISK_OPTION;}
 al-updates		{ DP; CP; return TK_DISK_FLAG; 	}
 cpu-mask		{ DP; CP; return TK_SYNCER_OLD_OPT | TK_RES_OPTION;	}
