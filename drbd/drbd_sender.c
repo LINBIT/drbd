@@ -1003,6 +1003,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 						drbd_history_uuid(device, i);
 			}
 		}
+		if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S)
+			drbd_propagate_uuids(device, ~NODE_MASK(peer_device->node_id));
 	}
 
 out_unlock:

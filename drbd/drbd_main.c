@@ -4117,7 +4117,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 	drbd_md_mark_dirty(device);
 }
 
-static void propagate_uuids(struct drbd_device *device, u64 nodes)
+void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 {
 	struct drbd_peer_device *peer_device;
 
@@ -4155,7 +4155,7 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 wea
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	propagate_uuids(device, got_new_bitmap_uuid);
+	drbd_propagate_uuids(device, got_new_bitmap_uuid);
 }
 
 void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
@@ -4169,7 +4169,89 @@ void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
-	propagate_uuids(device, got_new_bitmap_uuid);
+	drbd_propagate_uuids(device, got_new_bitmap_uuid);
+}
+
+static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
+{
+	int bitmap_index = device->ldev->id_to_bit[node_id];
+
+	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (slot %d)\n",
+		  _drbd_bm_total_weight(device, bitmap_index), node_id, bitmap_index);
+	drbd_suspend_io(device);
+	drbd_bm_lock(device, "forget_bitmap()", BM_LOCK_TEST | BM_LOCK_SET);
+	_drbd_bm_clear_many_bits(device, bitmap_index, 0, -1UL);
+	drbd_bm_unlock(device);
+	drbd_resume_io(device);
+	drbd_md_mark_dirty(device);
+}
+
+static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
+{
+	int from_index = device->ldev->id_to_bit[from_id];
+	int to_index = device->ldev->id_to_bit[to_id];
+
+	drbd_info(device, "Node %d synced up to node %d. copying bitmap slot %d to %d.\n",
+		  to_id, from_id, from_index, to_index);
+	drbd_suspend_io(device);
+	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
+	drbd_bm_copy_slot(device, from_index, to_index);
+	drbd_bm_unlock(device);
+	drbd_resume_io(device);
+	drbd_md_mark_dirty(device);
+}
+
+void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+	bool cleared = false;
+	bool filled = false;
+
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+		int bitmap_index = device->ldev->id_to_bit[node_id];
+		struct drbd_peer_device *other_peer;
+
+		if (bitmap_index == -1)
+			continue;
+		other_peer = peer_device_by_bitmap_index(device, bitmap_index);
+		if (other_peer && other_peer->repl_state[NOW] >= L_ESTABLISHED)
+			continue;
+		if (peer_device->bitmap_uuids[node_id] == 0 && peer_md[bitmap_index].bitmap_uuid != 0) {
+			u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
+
+			if (peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
+				_drbd_uuid_push_history(peer_device, peer_md[bitmap_index].bitmap_uuid);
+				peer_md[bitmap_index].bitmap_uuid = 0;
+				spin_unlock_irq(&device->ldev->md.uuid_lock);
+				forget_bitmap(device, node_id);
+				spin_lock_irq(&device->ldev->md.uuid_lock);
+				cleared = true;
+			}
+			if (peer_current_uuid == (drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY) &&
+			    peer_current_uuid != (peer_md[bitmap_index].bitmap_uuid & ~UUID_PRIMARY)) {
+				_drbd_uuid_push_history(peer_device, peer_md[bitmap_index].bitmap_uuid);
+				peer_md[bitmap_index].bitmap_uuid = peer_device->current_uuid;
+				spin_unlock_irq(&device->ldev->md.uuid_lock);
+				copy_bitmap(device, peer_device->node_id, node_id);
+				spin_lock_irq(&device->ldev->md.uuid_lock);
+				filled = true;
+			}
+		}
+	}
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	if (cleared || filled) {
+		u64 to_nodes = filled ? -1 : ~NODE_MASK(peer_device->node_id);
+		drbd_propagate_uuids(device, to_nodes);
+		drbd_suspend_io(device);
+		drbd_bm_lock(device, "detect_finished_resyncs()", BM_LOCK_BULK);
+		drbd_bm_write(device, NULL);
+		drbd_bm_unlock(device);
+		drbd_resume_io(device);
+	}
 }
 
 int drbd_bmio_set_all_n_write(struct drbd_device *device,

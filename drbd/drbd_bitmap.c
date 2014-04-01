@@ -1466,6 +1466,12 @@ void drbd_bm_clear_many_bits(struct drbd_peer_device *peer_device, unsigned long
 	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_CLEAR);
 }
 
+void
+_drbd_bm_clear_many_bits(struct drbd_device *device, int bitmap_index, unsigned long start, unsigned long end)
+{
+	__bm_many_bits_op(device, bitmap_index, start, end, BM_OP_CLEAR);
+}
+
 /* set all bits in the bitmap */
 void drbd_bm_set_all(struct drbd_device *device)
 {

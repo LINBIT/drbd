@@ -4625,7 +4625,6 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 			__change_disk_state(device, D_UP_TO_DATE);
 			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 			end_state_change(device->resource, &irq_flags);
-			drbd_md_sync(device);
 			updated_uuids = 1;
 		}
 
@@ -4649,6 +4648,9 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 			}
 		}
 
+		drbd_uuid_detect_finished_resyncs(peer_device);
+
+		drbd_md_sync(device);
 		put_ldev(device);
 	} else if (device->disk_state[NOW] < D_INCONSISTENT) {
 		struct drbd_resource *resource = device->resource;
@@ -5960,21 +5962,14 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	device = peer_device->device;
 
 	current_uuid = be64_to_cpu(p->uuid);
-	if (current_uuid == drbd_current_uuid(peer_device->device))
+	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 	peer_device->current_uuid = current_uuid;
 
-	drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 	if (get_ldev(device)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
+			drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
 			drbd_uuid_received_new_current(device, current_uuid, 0);
-		} else {
-#if 0
-			const int node_id = resource->res_opts.node_id;
-			/* FIXME: What does this code do? */
-			if (peer_device->bitmap_uuids[node_id] == 0 && resource->weak[NOW])
-				peer_device->bitmap_uuids[node_id] = peer_device->current_uuid;
-#endif
 		}
 		put_ldev(device);
 	} else if (resource->role[NOW] == R_PRIMARY) {

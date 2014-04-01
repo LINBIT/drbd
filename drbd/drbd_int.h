@@ -1336,6 +1336,7 @@ extern void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 va
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
+extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);
@@ -1367,6 +1368,7 @@ extern int drbd_bmio_clear_n_write(struct drbd_device *device, struct drbd_peer_
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_ldev_destroy(struct drbd_device *device);
+extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
 
 /* Meta data layout
  *
@@ -1537,6 +1539,7 @@ extern int drbd_bm_count_bits(struct drbd_device *, unsigned int, unsigned long,
  * may process the whole bitmap in one go */
 extern void drbd_bm_set_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
 extern void drbd_bm_clear_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
+extern void _drbd_bm_clear_many_bits(struct drbd_device *, int, unsigned long, unsigned long);
 extern int drbd_bm_test_bit(struct drbd_peer_device *, unsigned long);
 extern int drbd_bm_write_range(struct drbd_peer_device *, unsigned long, unsigned long) __must_hold(local);
 extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
