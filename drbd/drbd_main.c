@@ -4021,6 +4021,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 {
 	struct drbd_peer_device *peer_device;
 	u64 got_new_bitmap_uuid, weak_nodes, val;
+	const int my_node_id = device->ldev->md.node_id;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device, forced ? ~0ULL : 0);
@@ -4038,7 +4039,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
 
-	weak_nodes = ~directly_connected_nodes(device->resource);
+	weak_nodes = ~(directly_connected_nodes(device->resource) | NODE_MASK(my_node_id));
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
