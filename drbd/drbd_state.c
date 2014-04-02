@@ -2295,17 +2295,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					resume_next_sg(device);
 			}
 
-			if ((peer_disk_state[OLD] < D_UP_TO_DATE || disk_state[OLD] < D_UP_TO_DATE) &&
-			    peer_disk_state[NEW] == D_UP_TO_DATE && disk_state[NEW] == D_UP_TO_DATE &&
-			    drbd_bitmap_uuid(peer_device) != 0) {
-				drbd_uuid_set_bm(peer_device, 0);
-				drbd_bitmap_io_from_worker(device,
-							   &drbd_bmio_clear_n_write,
-							   "clearing bitmap; after state change",
-							   BM_LOCK_CLEAR | BM_LOCK_BULK,
-							   peer_device);
-				drbd_print_uuids(peer_device, "Clear bitmap; UUIDs");
-			}
 
 			if (!device_stable[OLD] && device_stable[NEW] &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&

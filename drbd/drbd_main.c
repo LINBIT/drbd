@@ -4264,7 +4264,7 @@ int drbd_bmio_set_all_n_write(struct drbd_device *device,
  * drbd_bmio_set_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
  * @device:	DRBD device.
  *
- * Sets all bits in a bitmap slot and writes the whole bitmap to stable storage.
+ * Sets all bits in the bitmap and writes the whole bitmap to stable storage.
  */
 int drbd_bmio_set_n_write(struct drbd_device *device,
 			  struct drbd_peer_device *peer_device) __must_hold(local)
@@ -4283,19 +4283,6 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 	}
 
 	return rv;
-}
-
-/**
- * drbd_bmio_clear_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
- * @device:	DRBD device.
- *
- * Clears all bits in a bitmap slot and writes the whole bitmap to stable storage.
- */
-int drbd_bmio_clear_n_write(struct drbd_device *device,
-			  struct drbd_peer_device *peer_device) __must_hold(local)
-{
-	drbd_bm_clear_many_bits(peer_device, 0, -1UL);
-	return drbd_bm_write(device, NULL);
 }
 
 /**
