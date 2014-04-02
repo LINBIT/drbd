@@ -3908,9 +3908,8 @@ void drbd_md_mark_dirty(struct drbd_device *device)
 }
 #endif
 
-void _drbd_uuid_push_history(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
+void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local)
 {
-	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
 	int i;
 
@@ -3991,7 +3990,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	previous_uuid = drbd_bitmap_uuid(peer_device);
 	if (previous_uuid)
-		_drbd_uuid_push_history(peer_device, previous_uuid);
+		_drbd_uuid_push_history(device, previous_uuid);
 	__drbd_uuid_set_bitmap(peer_device, uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
@@ -4103,7 +4102,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	if (val == 0) {
-		_drbd_uuid_push_history(peer_device, peer_md->bitmap_uuid);
+		_drbd_uuid_push_history(device, peer_md->bitmap_uuid);
 		peer_md->bitmap_uuid = 0;
 	} else {
 		unsigned long long bm_uuid = peer_md->bitmap_uuid;
@@ -4223,7 +4222,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 
 			if (peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
-				_drbd_uuid_push_history(peer_device, peer_md[bitmap_index].bitmap_uuid);
+				_drbd_uuid_push_history(device, peer_md[bitmap_index].bitmap_uuid);
 				peer_md[bitmap_index].bitmap_uuid = 0;
 				spin_unlock_irq(&device->ldev->md.uuid_lock);
 				forget_bitmap(device, node_id);
@@ -4232,7 +4231,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			}
 			if (peer_current_uuid == (drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY) &&
 			    peer_current_uuid != (peer_md[bitmap_index].bitmap_uuid & ~UUID_PRIMARY)) {
-				_drbd_uuid_push_history(peer_device, peer_md[bitmap_index].bitmap_uuid);
+				_drbd_uuid_push_history(device, peer_md[bitmap_index].bitmap_uuid);
 				peer_md[bitmap_index].bitmap_uuid = peer_device->current_uuid;
 				spin_unlock_irq(&device->ldev->md.uuid_lock);
 				copy_bitmap(device, peer_device->node_id, node_id);
