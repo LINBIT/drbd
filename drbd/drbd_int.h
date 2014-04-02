@@ -1335,7 +1335,7 @@ extern void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __mu
 extern void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local);
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
-extern void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
+extern u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);

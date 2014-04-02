@@ -861,6 +861,34 @@ void drbd_ping_peer(struct drbd_connection *connection)
 		   connection->cstate[NOW] < C_CONNECTED);
 }
 
+static struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device, int node_id)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->node_id == node_id)
+			return peer_device;
+	}
+
+	return NULL;
+}
+
+static void __downgrade_peer_disk_state_by_maks(struct drbd_device *device,
+					     u64 nodes,
+					     enum drbd_disk_state disk_state)
+{
+	struct drbd_peer_device *peer_device;
+	int node_id;
+
+	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+		if (!(nodes & NODE_MASK(node_id)))
+			continue;
+		peer_device = peer_device_by_node_id(device, node_id);
+		if (peer_device && peer_device->disk_state[NEW] > disk_state)
+			__change_peer_disk_state(peer_device, disk_state);
+	}
+}
+
 int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
@@ -973,7 +1001,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (!test_bit(UNSTABLE_RESYNC, &device->flags) &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
-				drbd_uuid_resync_finished(peer_device);
+				u64 newer = drbd_uuid_resync_finished(peer_device);
+				__downgrade_peer_disk_state_by_maks(device, newer, D_OUTDATED);
 			} else {
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");

@@ -4157,18 +4157,64 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 wea
 	drbd_propagate_uuids(device, got_new_bitmap_uuid);
 }
 
-void drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
+static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	u64 modified = 0;
+	int node_id;
+
+	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+		int bitmap_index;
+
+		if (!(do_nodes & NODE_MASK(node_id)))
+			continue;
+		bitmap_index = device->ldev->id_to_bit[node_id];
+		if (bitmap_index == -1)
+			continue;
+
+		if (peer_md[bitmap_index].bitmap_uuid != bitmap_uuid) {
+			_drbd_uuid_push_history(device, peer_md[bitmap_index].bitmap_uuid);
+			/* drbd_info(device, "bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
+			peer_md[bitmap_index].bitmap_uuid = bitmap_uuid;
+			drbd_md_mark_dirty(device);
+			modified |= NODE_MASK(node_id);
+		}
+	}
+
+	return modified;
+}
+
+static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	u64 set_bitmap_slots = 0;
+	int node_id;
+
+	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+		if (peer_device->bitmap_uuids[node_id])
+			set_bitmap_slots |= NODE_MASK(node_id);
+	}
+
+	return set_bitmap_slots;
+}
+
+
+u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 got_new_bitmap_uuid;
+	u64 set_bitmap_slots, newer, equal;
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	got_new_bitmap_uuid = _rotate_current_into_bitmap(device, NODE_MASK(peer_device->node_id));
+	set_bitmap_slots = __test_bitmap_slots_of_peer(peer_device);
+	newer = __set_bitmap_slots(device, drbd_current_uuid(device), set_bitmap_slots);
+	equal = __set_bitmap_slots(device, 0, ~set_bitmap_slots);
+	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
-	drbd_propagate_uuids(device, got_new_bitmap_uuid);
+	drbd_propagate_uuids(device, newer | equal);
+
+	return newer;
 }
 
 static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
