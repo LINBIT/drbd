@@ -1,6 +1,16 @@
 #ifndef __DRBD_PROTOCOL_H
 #define __DRBD_PROTOCOL_H
 
+#ifdef __KERNEL__
+#include <linux/types.h>
+#else
+#include <stdint.h>
+#endif
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
+
 enum drbd_packet {
 	/* receiver (data socket) */
 	P_DATA		      = 0x00,
@@ -102,24 +112,24 @@ enum drbd_packet {
  * regardless of 32 or 64 bit arch!
  */
 struct p_header80 {
-	u32	  magic;
-	u16	  command;
-	u16	  length;	/* bytes of data after this header */
+	uint32_t magic;
+	uint16_t command;
+	uint16_t length;	/* bytes of data after this header */
 } __packed;
 
 /* Header for big packets, Used for data packets exceeding 64kB */
 struct p_header95 {
-	u16	  magic;	/* use DRBD_MAGIC_BIG here */
-	u16	  command;
-	u32	  length;
+	uint16_t magic;	/* use DRBD_MAGIC_BIG here */
+	uint16_t command;
+	uint32_t length;
 } __packed;
 
 struct p_header100 {
-	u32	  magic;
-	u16	  volume;
-	u16	  command;
-	u32	  length;
-	u32	  pad;
+	uint32_t magic;
+	uint16_t volume;
+	uint16_t command;
+	uint32_t length;
+	uint32_t pad;
 } __packed;
 
 /* these defines must not be changed without changing the protocol version */
@@ -134,15 +144,15 @@ struct p_header100 {
 #define DP_SEND_WRITE_ACK   256 /* This is a proto C write request */
 
 struct p_data {
-	u64	    sector;    /* 64 bits sector number */
-	u64	    block_id;  /* to identify the request in protocol B&C */
-	u32	    seq_num;
-	u32	    dp_flags;
+	uint64_t sector;    /* 64 bits sector number */
+	uint64_t block_id;  /* to identify the request in protocol B&C */
+	uint32_t seq_num;
+	uint32_t dp_flags;
 } __packed;
 
 struct p_trim {
 	struct p_data p_data;
-	u32	    size;	/* == bio->bi_size */
+	uint32_t size;	/* == bio->bi_size */
 } __packed;
 
 /*
@@ -154,17 +164,17 @@ struct p_trim {
  *   P_DATA_REQUEST, P_RS_DATA_REQUEST
  */
 struct p_block_ack {
-	u64	    sector;
-	u64	    block_id;
-	u32	    blksize;
-	u32	    seq_num;
+	uint64_t sector;
+	uint64_t block_id;
+	uint32_t blksize;
+	uint32_t seq_num;
 } __packed;
 
 struct p_block_req {
-	u64 sector;
-	u64 block_id;
-	u32 blksize;
-	u32 pad;	/* to multiple of 8 Byte */
+	uint64_t sector;
+	uint64_t block_id;
+	uint32_t blksize;
+	uint32_t pad;	/* to multiple of 8 Byte */
 } __packed;
 
 /*
@@ -179,52 +189,52 @@ struct p_block_req {
 #define FF_TRIM      1
 
 struct p_connection_features {
-	u32 protocol_min;
-	u32 feature_flags;
-	u32 protocol_max;
-	u32 sender_node_id;
-	u32 receiver_node_id;
+	uint32_t protocol_min;
+	uint32_t feature_flags;
+	uint32_t protocol_max;
+	uint32_t sender_node_id;
+	uint32_t receiver_node_id;
 
 	/* should be more than enough for future enhancements
 	 * for now, feature_flags and the reserved array shall be zero.
 	 */
 
-	u32 _pad;
-	u64 reserved[6];
+	uint32_t _pad;
+	uint64_t reserved[6];
 } __packed;
 
 struct p_barrier {
-	u32 barrier;	/* barrier number _handle_ only */
-	u32 pad;	/* to multiple of 8 Byte */
+	uint32_t barrier;	/* barrier number _handle_ only */
+	uint32_t pad;	/* to multiple of 8 Byte */
 } __packed;
 
 struct p_barrier_ack {
-	u32 barrier;
-	u32 set_size;
+	uint32_t barrier;
+	uint32_t set_size;
 } __packed;
 
 struct p_rs_param {
-	u32 resync_rate;
+	uint32_t resync_rate;
 
 	      /* Since protocol version 88 and higher. */
 	char verify_alg[0];
 } __packed;
 
 struct p_rs_param_89 {
-	u32 resync_rate;
+	uint32_t resync_rate;
         /* protocol version 89: */
 	char verify_alg[SHARED_SECRET_MAX];
 	char csums_alg[SHARED_SECRET_MAX];
 } __packed;
 
 struct p_rs_param_95 {
-	u32 resync_rate;
+	uint32_t resync_rate;
 	char verify_alg[SHARED_SECRET_MAX];
 	char csums_alg[SHARED_SECRET_MAX];
-	u32 c_plan_ahead;
-	u32 c_delay_target;
-	u32 c_fill_target;
-	u32 c_max_rate;
+	uint32_t c_plan_ahead;
+	uint32_t c_delay_target;
+	uint32_t c_fill_target;
+	uint32_t c_max_rate;
 } __packed;
 
 enum drbd_conn_flags {
@@ -233,12 +243,12 @@ enum drbd_conn_flags {
 };
 
 struct p_protocol {
-	u32 protocol;
-	u32 after_sb_0p;
-	u32 after_sb_1p;
-	u32 after_sb_2p;
-	u32 conn_flags;
-	u32 two_primaries;
+	uint32_t protocol;
+	uint32_t after_sb_0p;
+	uint32_t after_sb_1p;
+	uint32_t after_sb_2p;
+	uint32_t conn_flags;
+	uint32_t two_primaries;
 
               /* Since protocol version 87 and higher. */
 	char integrity_alg[0];
@@ -253,83 +263,83 @@ struct p_protocol {
 #define UUID_FLAG_STABLE 32
 
 struct p_uuids {
-	u64 current_uuid;
-	u64 bitmap_uuid;
-	u64 history_uuids[HISTORY_UUIDS_V08];
-	u64 dirty_bits;
-	u64 uuid_flags;
+	uint64_t current_uuid;
+	uint64_t bitmap_uuid;
+	uint64_t history_uuids[HISTORY_UUIDS_V08];
+	uint64_t dirty_bits;
+	uint64_t uuid_flags;
 } __packed;
 
 struct p_uuids110 {
-	u64 current_uuid;
-	u64 dirty_bits;
-	u64 uuid_flags;
-	u64 offline_mask;
-	u64 bitmap_uuids_mask; /* non zero bitmap UUIDS for these nodes */
-	u64 other_uuids[0]; /* the first hweight(bitmap_uuids_mask) slots carry bitmap uuids.
-			       The node with the lowest node_id first.
-			       The remaining slots carry history uuids */
+	uint64_t current_uuid;
+	uint64_t dirty_bits;
+	uint64_t uuid_flags;
+	uint64_t offline_mask;
+	uint64_t bitmap_uuids_mask; /* non zero bitmap UUIDS for these nodes */
+	uint64_t other_uuids[0]; /* the first hweight(bitmap_uuids_mask) slots carry bitmap uuids.
+				    The node with the lowest node_id first.
+				    The remaining slots carry history uuids */
 } __packed;
 
 struct p_uuid {
-	u64	    uuid;
+	uint64_t	    uuid;
 } __packed;
 
 struct p_sizes {
-	u64	    d_size;  /* size of disk */
-	u64	    u_size;  /* user requested size */
-	u64	    c_size;  /* current exported size */
-	u32	    max_bio_size;  /* Maximal size of a BIO */
-	u16	    queue_order_type;  /* not yet implemented in DRBD*/
-	u16	    dds_flags; /* use enum dds_flags here. */
+	uint64_t d_size;  /* size of disk */
+	uint64_t u_size;  /* user requested size */
+	uint64_t c_size;  /* current exported size */
+	uint32_t max_bio_size;  /* Maximal size of a BIO */
+	uint16_t queue_order_type;  /* not yet implemented in DRBD*/
+	uint16_t dds_flags; /* use enum dds_flags here. */
 } __packed;
 
 struct p_state {
-	u32	    state;
+	uint32_t state;
 } __packed;
 
 struct p_req_state {
-	u32	    mask;
-	u32	    val;
+	uint32_t mask;
+	uint32_t val;
 } __packed;
 
 struct p_req_state_reply {
-	u32	    retcode;
+	uint32_t retcode;
 } __packed;
 
 struct p_twopc_request {
-	u32 tid;  /* transaction identifier */
-	u32 initiator_node_id;  /* initiator of the transaction */
-	u32 target_node_id;  /* target of the transaction (or -1) */
-	u64 nodes_to_reach;
-	u64 primary_nodes;
-	u64 weak_nodes;
-	u32 mask;
-	u32 val;
+	uint32_t tid;  /* transaction identifier */
+	uint32_t initiator_node_id;  /* initiator of the transaction */
+	uint32_t target_node_id;  /* target of the transaction (or -1) */
+	uint64_t nodes_to_reach;
+	uint64_t primary_nodes;
+	uint64_t weak_nodes;
+	uint32_t mask;
+	uint32_t val;
 } __packed;
 
 struct p_twopc_reply {
-	u32 tid;  /* transaction identifier */
-	u32 initiator_node_id;  /* initiator of the transaction */
-	u64 reachable_nodes;
-	u64 primary_nodes;
-	u64 weak_nodes;
+	uint32_t tid;  /* transaction identifier */
+	uint32_t initiator_node_id;  /* initiator of the transaction */
+	uint64_t reachable_nodes;
+	uint64_t primary_nodes;
+	uint64_t weak_nodes;
 } __packed;
 
 struct p_drbd06_param {
-	u64	  size;
-	u32	  state;
-	u32	  blksize;
-	u32	  protocol;
-	u32	  version;
-	u32	  gen_cnt[5];
-	u32	  bit_map_gen[5];
+	uint64_t size;
+	uint32_t state;
+	uint32_t blksize;
+	uint32_t protocol;
+	uint32_t version;
+	uint32_t gen_cnt[5];
+	uint32_t bit_map_gen[5];
 } __packed;
 
 struct p_block_desc {
-	u64 sector;
-	u32 blksize;
-	u32 pad;	/* to multiple of 8 Byte */
+	uint64_t sector;
+	uint32_t blksize;
+	uint32_t pad;	/* to multiple of 8 Byte */
 } __packed;
 
 /* Valid values for the encoding field.
@@ -347,39 +357,39 @@ struct p_compressed_bm {
 	 * ((encoding >> 4) & 0x07): pad_bits, number of trailing zero bits
 	 * used to pad up to head.length bytes
 	 */
-	u8 encoding;
+	uint8_t encoding;
 
-	u8 code[0];
+	uint8_t code[0];
 } __packed;
 
 struct p_delay_probe93 {
-	u32     seq_num; /* sequence number to match the two probe packets */
-	u32     offset;  /* usecs the probe got sent after the reference time point */
+	uint32_t seq_num; /* sequence number to match the two probe packets */
+	uint32_t offset;  /* usecs the probe got sent after the reference time point */
 } __packed;
 
 struct p_dagtag {
-	u64 dagtag;
+	uint64_t dagtag;
 } __packed;
 
 struct p_peer_ack {
-	u64 mask;
-	u64 dagtag;
+	uint64_t mask;
+	uint64_t dagtag;
 } __packed;
 
 struct p_peer_block_desc {
-	u64 sector;
-	u64 mask;
-	u32 size;
-	u32 pad;	/* to multiple of 8 Byte */
+	uint64_t sector;
+	uint64_t mask;
+	uint32_t size;
+	uint32_t pad;	/* to multiple of 8 Byte */
 } __packed;
 
 struct p_peer_dagtag {
-	u64 dagtag;
-	u32 node_id;
+	uint64_t dagtag;
+	uint32_t node_id;
 } __packed;
 
 struct p_pri_reachable {
-	u64 primary_mask;
+	uint64_t primary_mask;
 } __packed;
 
 /*
