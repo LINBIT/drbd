@@ -25,6 +25,7 @@
 
 #include <linux/drbd.h>
 #include "drbd_strings.h"
+#include "drbd_protocol.h"
 
 static const char *__conn_state_names[] = {
 	[C_STANDALONE]       = "StandAlone",
@@ -127,6 +128,75 @@ struct state_names drbd_error_messages = {
 	.size = sizeof __error_messages / sizeof __error_messages[0],
 };
 
+static const char *__packet_names[] = {
+	[P_DATA]	        = "Data",
+	[P_DATA_REPLY]	        = "DataReply",
+	[P_RS_DATA_REPLY]	= "RSDataReply",
+	[P_BARRIER]	        = "Barrier",
+	[P_BITMAP]	        = "ReportBitMap",
+	[P_BECOME_SYNC_TARGET]  = "BecomeSyncTarget",
+	[P_BECOME_SYNC_SOURCE]  = "BecomeSyncSource",
+	[P_UNPLUG_REMOTE]	= "UnplugRemote",
+	[P_DATA_REQUEST]	= "DataRequest",
+	[P_RS_DATA_REQUEST]     = "RSDataRequest",
+	[P_SYNC_PARAM]	        = "SyncParam",
+	[P_SYNC_PARAM89]	= "SyncParam89",
+	[P_PROTOCOL]            = "ReportProtocol",
+	[P_UUIDS]	        = "ReportUUIDs",
+	[P_SIZES]	        = "ReportSizes",
+	[P_STATE]	        = "ReportState",
+	[P_SYNC_UUID]           = "ReportSyncUUID",
+	[P_AUTH_CHALLENGE]      = "AuthChallenge",
+	[P_AUTH_RESPONSE]	= "AuthResponse",
+	[P_PING]		= "Ping",
+	[P_PING_ACK]	        = "PingAck",
+	[P_RECV_ACK]	        = "RecvAck",
+	[P_WRITE_ACK]	        = "WriteAck",
+	[P_RS_WRITE_ACK]	= "RSWriteAck",
+	[P_SUPERSEDED]		= "DiscardWrite",
+	[P_NEG_ACK]	        = "NegAck",
+	[P_NEG_DREPLY]	        = "NegDReply",
+	[P_NEG_RS_DREPLY]	= "NegRSDReply",
+	[P_BARRIER_ACK]	        = "BarrierAck",
+	[P_STATE_CHG_REQ]       = "StateChgRequest",
+	[P_STATE_CHG_REPLY]     = "StateChgReply",
+	[P_OV_REQUEST]          = "OVRequest",
+	[P_OV_REPLY]            = "OVReply",
+	[P_OV_RESULT]           = "OVResult",
+	[P_CSUM_RS_REQUEST]     = "CsumRSRequest",
+	[P_RS_IS_IN_SYNC]	= "CsumRSIsInSync",
+	[P_COMPRESSED_BITMAP]   = "CBitmap",
+	[P_DELAY_PROBE]         = "DelayProbe",
+	[P_OUT_OF_SYNC]		= "OutOfSync",
+	[P_RETRY_WRITE]		= "RetryWrite",
+	[P_RS_CANCEL]		= "RSCancel",
+	[P_CONN_ST_CHG_REQ]	= "conn_st_chg_req",
+	[P_CONN_ST_CHG_REPLY]	= "conn_st_chg_reply",
+	[P_RETRY_WRITE]		= "retry_write",
+	[P_PROTOCOL_UPDATE]	= "protocol_update",
+	[P_TWOPC_PREPARE]	= "twopc_prepare",
+	[P_TWOPC_ABORT]		= "twopc_abort",
+	[P_DAGTAG]		= "dagtag",
+	[P_PEER_ACK]		= "peer_ack",
+	[P_PEERS_IN_SYNC]       = "peers_in_sync",
+	[P_UUIDS110]            = "uuids_110",
+	[P_PEER_DAGTAG]         = "peer_dagtag",
+	[P_CURRENT_UUID]        = "current_uuid",
+	[P_TWOPC_COMMIT]	= "twopc_commit",
+	[P_TWOPC_YES]		= "twopc_yes",
+	[P_TWOPC_NO]		= "twopc_no",
+	[P_TWOPC_RETRY]		= "twopc_retry",
+	/* enum drbd_packet, but not commands - obsoleted flags:
+	 *	P_MAY_IGNORE
+	 *	P_MAX_OPT_CMD
+	 */
+};
+
+struct state_names drbd_packet_names = {
+        .names = __packet_names,
+        .size = sizeof __packet_names / sizeof __packet_names[0],
+};
+
 const char *drbd_repl_str(enum drbd_repl_state s)
 {
 	return (s < 0 || s >= drbd_repl_state_names.size ||
@@ -160,4 +230,18 @@ const char *drbd_set_st_err_str(enum drbd_state_rv err)
 	return (-err < 0 || -err >= drbd_error_messages.size ||
 	        !drbd_error_messages.names[-err]) ?
 	       "?" : drbd_error_messages.names[-err];
+}
+
+const char *drbd_packet_name(enum drbd_packet cmd)
+{
+	/* too big for the array: 0xfffX */
+	if (cmd == P_INITIAL_META)
+		return "InitialMeta";
+	if (cmd == P_INITIAL_DATA)
+		return "InitialData";
+	if (cmd == P_CONNECTION_FEATURES)
+		return "ConnectionFeatures";
+	return (cmd < 0 || cmd >= ARRAY_SIZE(__packet_names) ||
+		!__packet_names[cmd]) ?
+	       "?" : __packet_names[cmd];
 }
