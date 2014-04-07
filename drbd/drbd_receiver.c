@@ -1373,7 +1373,6 @@ randomize:
 
 	connection->data.socket->sk->sk_sndtimeo = timeout;
 	connection->data.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
-	connection->primary_mask_sent = -1; /* make sure to send it out soon */
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -5006,18 +5005,6 @@ void twopc_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
-static void update_reachability(struct drbd_connection *connection, u64 mask)
-{
-	struct drbd_resource *resource = connection->resource;
-
-	spin_lock_irq(&resource->req_lock);
-	if (connection->cstate[NOW] >= C_CONNECTED) {
-		mask &= ~NODE_MASK(resource->res_opts.node_id);
-		connection->primary_mask = mask;
-	}
-	spin_unlock_irq(&resource->req_lock);
-}
-
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -5074,7 +5061,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_debug(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
 				   reply.tid);
-			update_reachability(connection, reply.primary_nodes);
 			return 0;
 		}
 		resource->remote_state_change = true;
@@ -5203,8 +5189,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			if (affected_connection &&
 			    mask.conn == conn_MASK && val.conn == C_CONNECTED)
 				conn_connect2(connection);
-
-			update_reachability(connection, reply.primary_nodes);
 
 			idr_for_each_entry(&resource->devices, device, vnr) {
 				u64 nedu = device->next_exposed_data_uuid;
@@ -5952,24 +5936,6 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
-static int receive_reachability(struct drbd_connection *connection, struct packet_info *pi)
-{
-	struct drbd_resource *resource = connection->resource;
-	const int my_node_id = resource->res_opts.node_id;
-	const int peer_node_id = connection->net_conf->peer_node_id;
-	struct p_pri_reachable *p = pi->data;
-	unsigned long irq_flags;
-
-	begin_state_change(resource, &irq_flags, CS_VERBOSE);
-	connection->primary_mask = be64_to_cpu(p->primary_mask) & ~(1ULL << my_node_id);
-	if (!(connection->primary_mask & NODE_MASK(peer_node_id)) &&
-	    connection->peer_role[NOW] != R_SECONDARY)
-		__change_peer_role(connection, R_SECONDARY);
-	end_state_change(resource, &irq_flags);
-
-	return 0;
-}
-
 struct data_cmd {
 	int expect_payload;
 	size_t pkt_size;
@@ -6008,7 +5974,6 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
 	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
 	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_twopc_request), receive_twopc },
-	[P_PRI_REACHABLE]   = { 0, sizeof(struct p_pri_reachable), receive_reachability },
 	[P_TRIM]	    = { 0, sizeof(struct p_trim), receive_Data },
 };
 

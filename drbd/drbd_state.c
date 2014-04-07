@@ -1700,8 +1700,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 				clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 			}
-			if (cstate[OLD] >= C_CONNECTED)
-				connection->primary_mask = 0;
 		}
 
 		/* remember last connect time so request_timer_fn() won't
@@ -2488,17 +2486,12 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		}
 	}
 
-	/* reachability changes must go out after notify_peer_lost_primary() */
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
-		struct drbd_connection *connection = connection_state_change->connection;
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
 
 		if (cstate[NEW] == C_CONNECTED || cstate[NEW] == C_CONNECTING)
 			still_connected = true;
-
-		if (cstate[NEW] == C_CONNECTED)
-			drbd_propagate_reachability(connection);
 	}
 
 	if (!still_connected)

@@ -1200,10 +1200,6 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	if (!p)
 		return -EIO;
 	memcpy(p, request, sizeof(*request));
-	if (cmd == P_TWOPC_COMMIT) {
-		connection->primary_mask_sent =
-			be64_to_cpu(request->primary_nodes) & ~NODE_MASK(connection->net_conf->peer_node_id);
-	}
 	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
 	mutex_unlock(&sock->mutex);
 	return err;
@@ -1287,52 +1283,6 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
 	p->node_id = cpu_to_be32(lost_node_id);
 	return send_command(connection, -1, sock, P_PEER_DAGTAG, sizeof(*p), NULL, 0);
-}
-
-static int drbd_send_reachability(struct drbd_connection *connection)
-{
-	struct drbd_socket *sock = &connection->data;
-	struct p_pri_reachable *p;
-
-	p = conn_prepare_command(connection, sock);
-	if (!p)
-		return -EIO;
-
-	p->primary_mask = cpu_to_be64(connection->primary_mask_sent);
-
-	return send_command(connection, -1, sock, P_PRI_REACHABLE, sizeof(*p), NULL, 0);
-}
-
-static u64 calc_reachability(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	const int my_node_id = resource->res_opts.node_id;
-	u64 primary_mask = resource->role[NOW] == R_PRIMARY ? NODE_MASK(my_node_id) : 0;
-	struct drbd_connection *c;
-
-	spin_lock_irq(&resource->req_lock);
-	for_each_connection(c, resource) {
-		if (c == connection)
-			continue;
-		primary_mask |= c->primary_mask;
-	}
-	primary_mask &= ~NODE_MASK(connection->net_conf->peer_node_id);
-	spin_unlock_irq(&resource->req_lock);
-
-	return primary_mask;
-}
-
-int drbd_propagate_reachability(struct drbd_connection *connection)
-{
-	u64 primary_mask = calc_reachability(connection);
-	int rv = 0;
-
-	if (primary_mask != connection->primary_mask_sent) {
-		connection->primary_mask_sent = primary_mask;
-		rv = drbd_send_reachability(connection);
-	}
-
-	return rv;
 }
 
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
