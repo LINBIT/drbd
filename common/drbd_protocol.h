@@ -274,7 +274,7 @@ struct p_uuids110 {
 	uint64_t current_uuid;
 	uint64_t dirty_bits;
 	uint64_t uuid_flags;
-	uint64_t offline_mask;
+	uint64_t weak_nodes;
 	uint64_t bitmap_uuids_mask; /* non zero bitmap UUIDS for these nodes */
 	uint64_t other_uuids[0]; /* the first hweight(bitmap_uuids_mask) slots carry bitmap uuids.
 				    The node with the lowest node_id first.
