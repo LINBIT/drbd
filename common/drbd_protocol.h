@@ -259,6 +259,8 @@ struct p_protocol {
 #define UUID_FLAG_SKIP_INITIAL_SYNC 8
 #define UUID_FLAG_NEW_DATAGEN 16
 #define UUID_FLAG_STABLE 32
+#define UUID_FLAG_GOT_STABLE 64 /* send UUIDs */
+#define UUID_FLAG_RESYNC 128    /* compare UUIDs and eventually start resync */
 
 struct p_uuids {
 	uint64_t current_uuid;
