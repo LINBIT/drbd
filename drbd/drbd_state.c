@@ -1977,12 +1977,7 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 /* This function is supposed to have the same semantics as drbd_device_stable() in drbd_main.c */
 static u64 calc_device_stable(struct drbd_state_change *state_change, int n_device, enum which_state which)
 {
-	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
-	enum drbd_role *role = resource_state_change->role;
 	int n_connection;
-
-	if (role[which] == R_PRIMARY)
-		return false;
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -2298,7 +2293,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (!device_stable[OLD] && device_stable[NEW] &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
-			    !(role[OLD] == R_PRIMARY) &&
 			    !(peer_role[OLD] == R_PRIMARY) &&
 			    get_ldev(device)) {
 				/* Offer all peers a resync, with the exception of ...

@@ -618,8 +618,7 @@ static bool drbd_device_stable(struct drbd_device *device)
 	struct drbd_connection *connection;
 	struct drbd_peer_device *peer_device;
 
-	if (resource->role[NOW] == R_PRIMARY ||
-	    !drbd_all_neighbor_secondary(resource))
+	if (!drbd_all_neighbor_secondary(resource))
 		return false;
 
 	rcu_read_lock();
