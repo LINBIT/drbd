@@ -1422,9 +1422,6 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 			wake = 1;
 		if (err)
 			continue;
-		req->rq_state |= RQ_IN_ACT_LOG;
-		req->in_actlog_jif = jiffies;
-		atomic_dec(&device->ap_actlog_cnt);
 		list_move_tail(&req->tl_requests, pending);
 	}
 	spin_unlock_irq(&device->al_lock);
@@ -1486,6 +1483,9 @@ skip_fast_path:
 		drbd_al_begin_io_commit(device);
 
 		list_for_each_entry_safe(req, tmp, &pending, tl_requests) {
+			req->rq_state |= RQ_IN_ACT_LOG;
+			req->in_actlog_jif = jiffies;
+			atomic_dec(&device->ap_actlog_cnt);
 			list_del_init(&req->tl_requests);
 			drbd_send_and_submit(device, req);
 		}
@@ -1498,10 +1498,10 @@ skip_fast_path:
 			bool was_cold;
 			list_del_init(&req->tl_requests);
 			was_cold = drbd_al_begin_io_prepare(device, &req->i);
-			req->rq_state |= RQ_IN_ACT_LOG;
-			req->in_actlog_jif = jiffies;
-			atomic_dec(&device->ap_actlog_cnt);
 			if (!was_cold) {
+				req->rq_state |= RQ_IN_ACT_LOG;
+				req->in_actlog_jif = jiffies;
+				atomic_dec(&device->ap_actlog_cnt);
 				/* Corresponding extent was hot after all? */
 				drbd_send_and_submit(device, req);
 			} else {
