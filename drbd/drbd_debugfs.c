@@ -239,6 +239,11 @@ static void seq_print_device_peer_requests(struct seq_file *m,
 	seq_print_peer_request(m, device, &device->read_ee, now);
 	seq_print_peer_request(m, device, &device->sync_ee, now);
 	spin_unlock_irq(&device->resource->req_lock);
+	if (test_bit(FLUSH_PENDING, &device->flags)) {
+		seq_printf(m, "%u\t%u\t-\t-\tF\t%u\tflush\n",
+			device->minor, device->vnr,
+			jiffies_to_msecs(now - device->flush_jif));
+	}
 }
 
 static void seq_print_resource_pending_peer_requests(struct seq_file *m,

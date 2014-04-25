@@ -621,6 +621,9 @@ enum {
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	READ_BALANCE_RR,
 
+	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
+				 * from drbd_flush_after_epoch() */
+
 	/* cleared only after backing device related structures have been destroyed. */
 	GOING_DISKLESS,		/* Disk is being detached, because of io-error, or admin request. */
 
@@ -893,6 +896,8 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
+
+	unsigned long flush_jif;
 
 	struct dentry *debugfs_vol;
 	struct dentry *debugfs_minor;
