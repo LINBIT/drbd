@@ -3752,7 +3752,7 @@ static int drbd_handshake(struct drbd_peer_device *peer_device,
 }
 
 
-static enum drbd_repl_state goodness_to_disk_state(struct drbd_peer_device *peer_device, int hg)
+static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer_device, int hg)
 {
 	struct drbd_device *device = peer_device->device;
 	enum drbd_repl_state rv = -1;
@@ -3786,7 +3786,7 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 	if (hg <= -2 || hg >= 2)
 		return -1;
 
-	return goodness_to_disk_state(peer_device, hg);
+	return goodness_to_repl_state(peer_device, hg);
 }
 
 /* drbd_sync_handshake() returns the new replication state on success, and -1
@@ -3937,7 +3937,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			return -1;
 	}
 
-	return goodness_to_disk_state(peer_device, hg);
+	return goodness_to_repl_state(peer_device, hg);
 }
 
 static enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
