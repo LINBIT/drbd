@@ -2070,13 +2070,9 @@ static void drbd_unplug_fn(struct request_queue *q)
 	if (device->state.pdsk >= D_INCONSISTENT && device->state.conn >= C_CONNECTED) {
 		D_ASSERT(device, device->state.role == R_PRIMARY);
 		if (test_and_clear_bit(UNPLUG_REMOTE, &device->flags)) {
-			/* add to the sender_work queue,
-			 * unless already queued.
-			 * XXX this might be a good addition to drbd_queue_work
-			 * anyways, to detect "double queuing" ... */
-			if (list_empty(&device->unplug_work.list))
-				drbd_queue_work(&first_peer_device(device)->connection->sender_work,
-						&device->unplug_work);
+			drbd_queue_work_if_unqueued(
+				&first_peer_device(device)->connection->sender_work,
+				&device->unplug_work);
 		}
 	}
 	spin_unlock_irq(&device->resource->req_lock);
