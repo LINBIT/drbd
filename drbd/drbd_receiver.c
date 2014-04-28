@@ -3628,29 +3628,23 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		return 2;
 
 	if (self == peer) {
-		int rct, dc; /* roles at crash time */
-
 		if (connection->agreed_pro_version < 110) {
 			int rv = uuid_fixup_resync_end(peer_device, rule_nr);
 			if (rv > -2000)
 				return rv;
 		}
 
-		/* Common power [off|failure] */
-		rct = (test_bit(CRASHED_PRIMARY, &device->flags) ? 1 : 0) +
-			(peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY);
-		/* lowest bit is set when we were primary,
-		 * next bit (weight 2) is set when peer was primary */
+		/* Common power [off|failure]? */
 		*rule_nr = 40;
-
-		switch (rct) {
-		case 0: /* !self_pri && !peer_pri */ return 0;
-		case 1: /*  self_pri && !peer_pri */ return 1;
-		case 2: /* !self_pri &&  peer_pri */ return -1;
-		case 3: /*  self_pri &&  peer_pri */
-			dc = test_bit(RESOLVE_CONFLICTS, &connection->flags);
-			return dc ? -1 : 1;
-		}
+		if (test_bit(CRASHED_PRIMARY, &device->flags)) {
+			if ((peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) &&
+			    test_bit(RESOLVE_CONFLICTS, &connection->flags))
+				return -1;
+			return 1;
+		} else if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
+				return -1;
+		else
+			return 0;
 	}
 
 	*rule_nr = 50;
