@@ -3613,18 +3613,23 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
 
+	/* Before DRBD 8.0.2 (from 2007), the uuid on sync targets was set to
+	 * zero during resyncs for no good reason. */
+	if (self == 0)
+		self = UUID_JUST_CREATED;
+	if (peer == 0)
+		peer = UUID_JUST_CREATED;
+
 	*rule_nr = 10;
 	if (self == UUID_JUST_CREATED && peer == UUID_JUST_CREATED)
 		return 0;
 
 	*rule_nr = 20;
-	if ((self == UUID_JUST_CREATED || self == (u64)0) &&
-	     peer != UUID_JUST_CREATED)
+	if (self == UUID_JUST_CREATED)
 		return -2;
 
 	*rule_nr = 30;
-	if (self != UUID_JUST_CREATED &&
-	    (peer == UUID_JUST_CREATED || peer == (u64)0))
+	if (peer == UUID_JUST_CREATED)
 		return 2;
 
 	if (self == peer) {
