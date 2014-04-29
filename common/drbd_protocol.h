@@ -73,17 +73,17 @@ enum drbd_packet {
 	 * which is why I chose TRIM here, to disambiguate. */
 	P_TRIM                = 0x31,
 
-	P_PEER_ACK            = 0x32, /* meta sock: tell which nodes have acked a request */
-	P_PEERS_IN_SYNC       = 0x33, /* data sock: Mark area as in sync */
+	P_PEER_ACK            = 0x40, /* meta sock: tell which nodes have acked a request */
+	P_PEERS_IN_SYNC       = 0x41, /* data sock: Mark area as in sync */
 
-	P_UUIDS110	      = 0x34, /* data socket */
-	P_PEER_DAGTAG         = 0x35, /* data socket, used to trigger reconciliation resync */
-	P_CURRENT_UUID	      = 0x36, /* data socket */
+	P_UUIDS110	      = 0x42, /* data socket */
+	P_PEER_DAGTAG         = 0x43, /* data socket, used to trigger reconciliation resync */
+	P_CURRENT_UUID	      = 0x44, /* data socket */
 
-	P_TWOPC_YES           = 0x37, /* meta sock: allow two-phase commit */
-	P_TWOPC_NO            = 0x38, /* meta sock: reject two-phase commit */
-	P_TWOPC_COMMIT        = 0x39, /* data sock: commit state change */
-	P_TWOPC_RETRY         = 0x40, /* meta sock: retry two-phase commit */
+	P_TWOPC_YES           = 0x45, /* meta sock: allow two-phase commit */
+	P_TWOPC_NO            = 0x46, /* meta sock: reject two-phase commit */
+	P_TWOPC_COMMIT        = 0x47, /* data sock: commit state change */
+	P_TWOPC_RETRY         = 0x48, /* meta sock: retry two-phase commit */
 
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 
