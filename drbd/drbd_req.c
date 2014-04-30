@@ -122,8 +122,8 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	req->epoch       = 0;
 
 	drbd_clear_interval(&req->i);
-	req->i.sector     = bio_src->bi_sector;
-	req->i.size      = bio_src->bi_size;
+	req->i.sector = DRBD_BIO_BI_SECTOR(bio_src);
+	req->i.size = DRBD_BIO_BI_SIZE(bio_src);
 	req->i.local = true;
 	req->i.waiting = false;
 
@@ -1534,7 +1534,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	/*
 	 * what we "blindly" assume:
 	 */
-	D_ASSERT(device, IS_ALIGNED(bio->bi_size, 512));
+	D_ASSERT(device, IS_ALIGNED(DRBD_BIO_BI_SIZE(bio), 512));
 
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_jif);

@@ -1337,4 +1337,27 @@ static inline void blk_set_stacking_limits(LIMIT_TYPE *lim)
 }
 #endif
 
+#ifdef COMPAT_HAVE_STRUCT_BVEC_ITER
+/* since Linux 3.14 we have a new way to iterate a bio
+   Mainline commits:
+   7988613b0 block: Convert bio_for_each_segment() to bvec_iter
+   4f024f379 block: Abstract out bvec iterator
+ */
+#define DRBD_BIO_VEC_TYPE struct bio_vec
+#define DRBD_ITER_TYPE struct bvec_iter
+#define BVD .
+#define DRBD_BIO_BI_SECTOR(BIO) ((BIO)->bi_iter.bi_sector)
+#define DRBD_BIO_BI_SIZE(BIO) ((BIO)->bi_iter.bi_size)
+#else
+#define DRBD_BIO_VEC_TYPE struct bio_vec *
+#define DRBD_ITER_TYPE int
+#define BVD ->
+#define DRBD_BIO_BI_SECTOR(BIO) ((BIO)->bi_sector)
+#define DRBD_BIO_BI_SIZE(BIO) ((BIO)->bi_size)
+
+/* Attention: The backward comp version of this macro accesses bio from
+   calling namespace */
+#define bio_iter_last(BVEC, ITER) ((ITER) == bio->bi_vcnt - 1)
+#endif
+
 #endif

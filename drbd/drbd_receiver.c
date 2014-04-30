@@ -1521,7 +1521,7 @@ next_bio:
 		goto fail;
 	}
 	/* > peer_req->i.sector, unless this is the first bio */
-	bio->bi_sector = sector;
+	DRBD_BIO_BI_SECTOR(bio) = sector;
 	bio->bi_bdev = device->ldev->backing_bdev;
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_UNPLUG, REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
@@ -1534,7 +1534,7 @@ next_bio:
 	++n_bios;
 
 	if (rw & DRBD_REQ_DISCARD) {
-		bio->bi_size = ds;
+		DRBD_BIO_BI_SIZE(bio) = ds;
 		goto submit;
 	}
 
@@ -1548,7 +1548,7 @@ next_bio:
 				drbd_err(device,
 					"bio_add_page failed for len=%u, "
 					"bi_vcnt=0 (bi_sector=%llu)\n",
-					len, (unsigned long long)bio->bi_sector);
+					len, (uint64_t)DRBD_BIO_BI_SECTOR(bio));
 				err = -ENOSPC;
 				goto fail;
 			}
@@ -1927,9 +1927,10 @@ static int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
 static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_request *req,
 			   sector_t sector, int data_size)
 {
-	struct bio_vec *bvec;
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
 	struct bio *bio;
-	int dgs, err, i, expect;
+	int dgs, err, expect;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 
@@ -1947,13 +1948,13 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	peer_device->device->recv_cnt += data_size>>9;
 
 	bio = req->master_bio;
-	D_ASSERT(peer_device->device, sector == bio->bi_sector);
+	D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
 
-	bio_for_each_segment(bvec, bio, i) {
-		void *mapped = kmap(bvec->bv_page) + bvec->bv_offset;
-		expect = min_t(int, data_size, bvec->bv_len);
+	bio_for_each_segment(bvec, bio, iter) {
+		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
+		expect = min_t(int, data_size, bvec BVD bv_len);
 		err = drbd_recv_all_warn(peer_device->connection, mapped, expect);
-		kunmap(bvec->bv_page);
+		kunmap(bvec BVD bv_page);
 		if (err)
 			return err;
 		data_size -= expect;
