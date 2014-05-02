@@ -59,6 +59,7 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 #include "drbd_vli.h"
+#include "drbd_debugfs.h"
 
 #ifdef COMPAT_HAVE_LINUX_BYTEORDER_SWABB_H
 #include <linux/byteorder/swabb.h>
@@ -2500,8 +2501,10 @@ void drbd_free_resource(struct drbd_resource *resource)
 
 	for_each_connection_safe(connection, tmp, resource) {
 		list_del(&connection->connections);
+		drbd_debugfs_connection_cleanup(connection);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
+	drbd_debugfs_resource_cleanup(resource);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2526,6 +2529,7 @@ static void drbd_cleanup(void)
 		destroy_workqueue(retry.wq);
 
 	drbd_genl_unregister();
+	drbd_debugfs_cleanup();
 
 	idr_for_each_entry(&drbd_devices, device, i)
 		drbd_delete_device(device);
@@ -2775,6 +2779,7 @@ struct drbd_resource *drbd_create_resource(const char *name)
 	mutex_init(&resource->conf_update);
 	mutex_init(&resource->adm_mutex);
 	spin_lock_init(&resource->req_lock);
+	drbd_debugfs_resource_add(resource);
 	return resource;
 
 fail_free_name:
@@ -2785,7 +2790,7 @@ fail:
 	return NULL;
 }
 
-/* caller must be under genl_lock() */
+/* caller must be under adm_mutex */
 struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 {
 	struct drbd_resource *resource;
@@ -2843,6 +2848,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 
 	kref_get(&resource->kref);
 	list_add_tail_rcu(&connection->connections, &resource->connections);
+	drbd_debugfs_connection_add(connection);
 	return connection;
 
 fail_resource:
@@ -3037,7 +3043,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		for_each_peer_device(peer_device, device)
 			drbd_connected(peer_device);
 	}
-
+	/* move to create_peer_device() */
+	for_each_peer_device(peer_device, device)
+		drbd_debugfs_peer_device_add(peer_device);
+	drbd_debugfs_device_add(device);
 	return NO_ERROR;
 
 out_del_disk:
@@ -3079,7 +3088,12 @@ void drbd_delete_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
 
+	/* move to free_peer_device() */
+	for_each_peer_device(peer_device, device)
+		drbd_debugfs_peer_device_cleanup(peer_device);
+	drbd_debugfs_device_cleanup(device);
 	for_each_connection(connection, resource) {
 		idr_remove(&connection->peer_devices, device->vnr);
 		kobject_put(&device->kobj);
@@ -3155,6 +3169,9 @@ static int __init drbd_init(void)
 #endif
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
+
+	if (drbd_debugfs_init())
+		pr_notice("failed to initialize debugfs -- will not be available\n");
 
 	pr_info("initialized. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",

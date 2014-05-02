@@ -756,6 +756,11 @@ enum {
 
 struct drbd_resource {
 	char *name;
+
+	struct dentry *debugfs_res;
+	struct dentry *debugfs_res_volumes;
+	struct dentry *debugfs_res_connections;
+
 	struct kref kref;
 	struct idr devices;		/* volume number to device mapping */
 	struct list_head connections;
@@ -781,6 +786,7 @@ struct drbd_resource {
 struct drbd_connection {
 	struct list_head connections;
 	struct drbd_resource *resource;
+	struct dentry *debugfs_conn;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conns cstate;		/* Only C_STANDALONE to C_WF_REPORT_PARAMS */
@@ -862,6 +868,8 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+
+	struct dentry *debugfs_peer_dev;
 };
 
 struct drbd_device {
@@ -870,7 +878,12 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
-	int vnr;			/* volume number within the connection */
+
+	struct dentry *debugfs_vol;
+	struct dentry *debugfs_minor;
+	unsigned int vnr;	/* volume number within the connection */
+	unsigned int minor;	/* device minor number */
+
 	struct kobject kobj;
 
 	/* things that are stored as / read from meta data on disk */
@@ -995,7 +1008,6 @@ struct drbd_device {
 	atomic_t packet_seq;
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
-	unsigned int minor;
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	struct bm_io_work bm_io_work;
 	u64 ed_uuid; /* UUID of the exposed data */
