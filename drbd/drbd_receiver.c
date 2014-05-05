@@ -429,11 +429,16 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
 		       int is_net)
 {
+	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	drbd_free_pages(device, peer_req->pages, is_net);
 	D_ASSERT(device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(device, drbd_interval_empty(&peer_req->i));
+	if (!expect(!(peer_req->flags & EE_CALL_AL_COMPLETE_IO))) {
+		peer_req->flags &= ~EE_CALL_AL_COMPLETE_IO;
+		drbd_al_complete_io(device, &peer_req->i);
+	}
 	mempool_free(peer_req, drbd_ee_mempool);
 }
 
@@ -1661,8 +1666,10 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		list_del(&peer_req->w.list);
 		drbd_remove_epoch_entry_interval(device, peer_req);
 		spin_unlock_irq(&device->resource->req_lock);
-		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
+		if (peer_req->flags & EE_CALL_AL_COMPLETE_IO) {
+			peer_req->flags &= ~EE_CALL_AL_COMPLETE_IO;
 			drbd_al_complete_io(device, &peer_req->i);
+		}
 		drbd_may_finish_epoch(first_peer_device(device)->connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 		drbd_free_peer_req(device, peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
@@ -2458,7 +2465,6 @@ static int handle_write_conflicts(struct drbd_device *device,
 					  (unsigned long long)sector, size,
 					  superseded ? "local" : "remote");
 
-			inc_unacked(device);
 			peer_req->w.cb = superseded ? e_send_superseded :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
@@ -2517,6 +2523,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
+	struct net_conf *nc;
 	sector_t sector;
 	struct drbd_peer_request *peer_req;
 	struct p_data *p = pi->data;
@@ -2616,9 +2623,36 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	spin_unlock(&connection->epoch_lock);
 
 	rcu_read_lock();
-	tp = rcu_dereference(peer_device->connection->net_conf)->two_primaries;
+	nc = rcu_dereference(peer_device->connection->net_conf);
+	tp = nc->two_primaries;
+	if (peer_device->connection->agreed_pro_version < 100) {
+		switch (nc->wire_protocol) {
+		case DRBD_PROT_C:
+			dp_flags |= DP_SEND_WRITE_ACK;
+			break;
+		case DRBD_PROT_B:
+			dp_flags |= DP_SEND_RECEIVE_ACK;
+			break;
+		}
+	}
 	rcu_read_unlock();
+
+	if (dp_flags & DP_SEND_WRITE_ACK) {
+		peer_req->flags |= EE_SEND_WRITE_ACK;
+		inc_unacked(device);
+		/* corresponding dec_unacked() in e_end_block()
+		 * respective _drbd_clear_done_ee */
+	}
+
+	if (dp_flags & DP_SEND_RECEIVE_ACK) {
+		/* I really don't like it that the receiver thread
+		 * sends on the msock, but anyways */
+		drbd_send_ack(first_peer_device(device), P_RECV_ACK, peer_req);
+	}
+
 	if (tp) {
+		/* two primaries implies protocol C */
+		D_ASSERT(device, dp_flags & DP_SEND_WRITE_ACK);
 		peer_req->flags |= EE_IN_INTERVAL_TREE;
 		err = wait_for_and_update_peer_seq(peer_device, peer_seq);
 		if (err)
@@ -2648,38 +2682,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (device->state.conn == C_SYNC_TARGET)
 		wait_event(device->ee_wait, !overlapping_resync_write(device, peer_req));
 
-	if (peer_device->connection->agreed_pro_version < 100) {
-		rcu_read_lock();
-		switch (rcu_dereference(peer_device->connection->net_conf)->wire_protocol) {
-		case DRBD_PROT_C:
-			dp_flags |= DP_SEND_WRITE_ACK;
-			break;
-		case DRBD_PROT_B:
-			dp_flags |= DP_SEND_RECEIVE_ACK;
-			break;
-		}
-		rcu_read_unlock();
-	}
-
-	if (dp_flags & DP_SEND_WRITE_ACK) {
-		peer_req->flags |= EE_SEND_WRITE_ACK;
-		inc_unacked(device);
-		/* corresponding dec_unacked() in e_end_block()
-		 * respective _drbd_clear_done_ee */
-	}
-
-	if (dp_flags & DP_SEND_RECEIVE_ACK) {
-		/* I really don't like it that the receiver thread
-		 * sends on the msock, but anyways */
-		drbd_send_ack(first_peer_device(device), P_RECV_ACK, peer_req);
-	}
-
 	if (device->state.pdsk < D_INCONSISTENT) {
 		/* In case we have the only disk of the cluster, */
 		drbd_set_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
-		peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
 		peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
 		drbd_al_begin_io(device, &peer_req->i);
+		peer_req->flags |= EE_CALL_AL_COMPLETE_IO;
 	}
 
 	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
@@ -2692,8 +2700,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_del(&peer_req->w.list);
 	drbd_remove_epoch_entry_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
-	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO)
+	if (peer_req->flags & EE_CALL_AL_COMPLETE_IO) {
+		peer_req->flags &= ~EE_CALL_AL_COMPLETE_IO;
 		drbd_al_complete_io(device, &peer_req->i);
+	}
 
 out_interrupted:
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
