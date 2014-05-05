@@ -181,6 +181,44 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 	rcu_read_unlock();
 }
 
+static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *device, unsigned long now)
+{
+	struct drbd_bm_aio_ctx *ctx;
+	unsigned long start_jif;
+	unsigned int in_flight;
+	unsigned int flags;
+	spin_lock_irq(&device->resource->req_lock);
+	ctx = list_first_entry_or_null(&device->pending_bitmap_io, struct drbd_bm_aio_ctx, list);
+	if (ctx && ctx->done)
+		ctx = NULL;
+	if (ctx) {
+		start_jif = ctx->start_jif;
+		in_flight = atomic_read(&ctx->in_flight);
+		flags = ctx->flags;
+	}
+	spin_unlock_irq(&device->resource->req_lock);
+	if (ctx) {
+		seq_printf(m, "%u\t%u\t%c\t%u\t%u\n",
+			device->minor, device->vnr,
+			(flags & BM_AIO_READ) ? 'R' : 'W',
+			jiffies_to_msecs(now - start_jif),
+			in_flight);
+	}
+}
+
+static void seq_print_resource_pending_bitmap_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
+{
+	struct drbd_device *device;
+	unsigned int i;
+
+	seq_puts(m, "minor\tvnr\trw\tage\t#in-flight\n");
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, i) {
+		seq_print_device_bitmap_io(m, device, now);
+	}
+	rcu_read_unlock();
+}
+
 /* pretty print enum peer_req->flags */
 static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_request *peer_req)
 {
@@ -330,6 +368,10 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	 * But be robust and prepare for future code changes. */
 	if (!connection || !kref_get_unless_zero(&connection->kref))
 		return -ESTALE;
+
+	seq_puts(m, "oldest bitmap IO\n");
+	seq_print_resource_pending_bitmap_io(m, resource, jif);
+	seq_putc(m, '\n');
 
 	seq_puts(m, "meta data IO\n");
 	seq_print_resource_pending_meta_io(m, resource, jif);
