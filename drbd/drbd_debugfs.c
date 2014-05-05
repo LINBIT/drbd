@@ -23,14 +23,24 @@ static void seq_print_age_or_dash(struct seq_file *m, bool valid, unsigned long 
 		seq_printf(m, "\t-");
 }
 
-static void seq_print_rq_state_bit(struct seq_file *m,
-	bool is_set, char *sep, const char *name)
+static void __seq_print_rq_state_bit(struct seq_file *m,
+	bool is_set, char *sep, const char *set_name, const char *unset_name)
 {
-	if (!is_set)
-		return;
-	seq_putc(m, *sep);
-	seq_puts(m, name);
-	*sep = '|';
+	if (is_set && set_name) {
+		seq_putc(m, *sep);
+		seq_puts(m, set_name);
+		*sep = '|';
+	} else if (!is_set && unset_name) {
+		seq_putc(m, *sep);
+		seq_puts(m, unset_name);
+		*sep = '|';
+	}
+}
+
+static void seq_print_rq_state_bit(struct seq_file *m,
+	bool is_set, char *sep, const char *set_name)
+{
+	__seq_print_rq_state_bit(m, is_set, sep, set_name, NULL);
 }
 
 /* pretty print enum drbd_req_state_bits req->rq_state */
@@ -171,6 +181,79 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 	rcu_read_unlock();
 }
 
+/* pretty print enum peer_req->flags */
+static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_request *peer_req)
+{
+	unsigned long f = peer_req->flags;
+	char sep = ' ';
+
+	__seq_print_rq_state_bit(m, f & EE_SUBMITTED, &sep, "submitted", "preparing");
+	__seq_print_rq_state_bit(m, f & EE_APPLICATION, &sep, "application", "internal");
+	seq_print_rq_state_bit(m, f & EE_CALL_AL_COMPLETE_IO, &sep, "in-AL");
+	seq_print_rq_state_bit(m, f & EE_IS_BARRIER, &sep, "barr");
+	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
+	seq_print_rq_state_bit(m, f & EE_MAY_SET_IN_SYNC, &sep, "set-in-sync");
+
+	if (f & EE_IS_TRIM) {
+		seq_putc(m, sep);
+		sep = '|';
+		if (f & EE_IS_TRIM_USE_ZEROOUT)
+			seq_puts(m, "zero-out");
+		else
+			seq_puts(m, "trim");
+	}
+	seq_putc(m, '\n');
+}
+
+static void seq_print_peer_request(struct seq_file *m,
+	struct drbd_device *device, struct list_head *lh,
+	unsigned long now)
+{
+	bool reported_preparing = false;
+	struct drbd_peer_request *peer_req;
+	list_for_each_entry(peer_req, lh, w.list) {
+		if (reported_preparing && !(peer_req->flags & EE_SUBMITTED))
+			continue;
+
+		if (device)
+			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
+
+		seq_printf(m, "%llu\t%u\t%c\t%u\t",
+			(unsigned long long)peer_req->i.sector, peer_req->i.size >> 9,
+			(peer_req->flags & EE_WRITE) ? 'W' : 'R',
+			jiffies_to_msecs(now - peer_req->submit_jif));
+		seq_print_peer_request_flags(m, peer_req);
+		if (peer_req->flags & EE_SUBMITTED)
+			break;
+		else
+			reported_preparing = true;
+	}
+}
+
+static void seq_print_device_peer_requests(struct seq_file *m,
+	struct drbd_device *device, unsigned long now)
+{
+	seq_puts(m, "minor\tvnr\tsector\tsize\trw\tage\tflags\n");
+	spin_lock_irq(&device->resource->req_lock);
+	seq_print_peer_request(m, device, &device->active_ee, now);
+	seq_print_peer_request(m, device, &device->read_ee, now);
+	seq_print_peer_request(m, device, &device->sync_ee, now);
+	spin_unlock_irq(&device->resource->req_lock);
+}
+
+static void seq_print_resource_pending_peer_requests(struct seq_file *m,
+	struct drbd_resource *resource, unsigned long now)
+{
+	struct drbd_device *device;
+	unsigned int i;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, i) {
+		seq_print_device_peer_requests(m, device, now);
+	}
+	rcu_read_unlock();
+}
+
 static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	struct drbd_resource *resource,
 	struct drbd_connection *connection,
@@ -245,6 +328,10 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 
 	seq_puts(m, "meta data IO\n");
 	seq_print_resource_pending_meta_io(m, resource, jif);
+	seq_putc(m, '\n');
+
+	seq_puts(m, "oldest peer requests\n");
+	seq_print_resource_pending_peer_requests(m, resource, jif);
 	seq_putc(m, '\n');
 
 	seq_puts(m, "application requests waiting for activity log\n");
