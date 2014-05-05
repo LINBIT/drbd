@@ -1,8 +1,8 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: @PACKAGE_VERSION@
-Release: 7%{?dist}
-Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
+Version: 8.4.5rc1
+Release: 1%{?dist}
+Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
@@ -97,6 +97,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Tue May  6 2014 Philipp Reisner <phil@linbit.com> - 8.4.5rc1-1
+- New upstream release.
+
 * Thu Feb 27 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-7
 - fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
 

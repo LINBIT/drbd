@@ -4,12 +4,9 @@
 /configure
 /drbd-*.tar.gz
 /drbd.spec
-/drbd-kernel.spec
-/drbd-km.spec
 /ID
 /TODO
 /tags
-/Makefile
 
 user/Makefile
 scripts/Makefile
