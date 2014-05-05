@@ -896,6 +896,7 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
+	struct list_head pending_bitmap_io;
 
 	unsigned long flush_jif;
 
@@ -1049,6 +1050,21 @@ struct drbd_device {
 	/* any requests that would block in drbd_make_request()
 	 * are deferred to this single-threaded work queue */
 	struct submit_worker submit;
+};
+
+struct drbd_bm_aio_ctx {
+	struct drbd_device *device;
+	struct list_head list; /* on device->pending_bitmap_io */;
+	unsigned long start_jif;
+	atomic_t in_flight;
+	unsigned int done;
+	unsigned flags;
+#define BM_AIO_COPY_PAGES	1
+#define BM_AIO_WRITE_HINTED	2
+#define BM_AIO_WRITE_ALL_PAGES	4
+#define BM_AIO_READ		8
+	int error;
+	struct kref kref;
 };
 
 struct drbd_config_context {
