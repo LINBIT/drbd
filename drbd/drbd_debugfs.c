@@ -11,6 +11,11 @@
 #include "drbd_req.h"
 #include "drbd_debugfs.h"
 
+
+/**********************************************************************
+ * Whenever you change the file format, remember to bump the version. *
+ **********************************************************************/
+
 static struct dentry *drbd_debugfs_root;
 static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
@@ -369,6 +374,9 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	if (!connection || !kref_get_unless_zero(&connection->kref))
 		return -ESTALE;
 
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
 	seq_puts(m, "oldest bitmap IO\n");
 	seq_print_resource_pending_bitmap_io(m, resource, jif);
 	seq_putc(m, '\n');
@@ -559,6 +567,9 @@ static int callback_history_show(struct seq_file *m, void *ignored)
 	struct drbd_connection *connection = m->private;
 	unsigned long jif = jiffies;
 
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
 	seq_puts(m, "n\tage\tcallsite\tfn\n");
 	seq_print_timing_details(m, "worker", connection->w_cb_nr, connection->w_timing_details, jif);
 	seq_print_timing_details(m, "receiver", connection->r_cb_nr, connection->r_timing_details, jif);
@@ -633,6 +644,10 @@ static void resync_dump_detail(struct seq_file *m, struct lc_element *e)
 static int device_resync_extents_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
 	if (get_ldev_if_state(device, D_FAILED)) {
 		lc_seq_printf_stats(m, device->resync);
 		lc_seq_dump_details(m, device->resync, "rs_left flags", resync_dump_detail);
@@ -644,6 +659,10 @@ static int device_resync_extents_show(struct seq_file *m, void *ignored)
 static int device_act_log_extents_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
 	if (get_ldev_if_state(device, D_FAILED)) {
 		lc_seq_printf_stats(m, device->act_log);
 		lc_seq_dump_details(m, device->act_log, "", NULL);
@@ -659,6 +678,9 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	unsigned long now = jiffies;
 	struct drbd_request *r1, *r2;
 	int i;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
 
 	seq_puts(m, RQ_HDR);
 	spin_lock_irq(&resource->req_lock);
