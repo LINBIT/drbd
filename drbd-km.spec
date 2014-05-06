@@ -92,26 +92,8 @@ uname -r | grep BOOT ||
 
 
 %changelog
-* Tue May  6 2014 Philipp Reisner <phil@linbit.com> - 8.4.5rc1-1
+* Tue May 20 2014 Lars Ellenberg <lars@linbit.com> - 8.4.5rc1-1
 - New upstream release.
-
-* Thu Feb 27 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-7
-- fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
-
-* Tue Feb 11 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-6
-- fix spurious detach/disconnect: don't announce WRITE_SAME
-- fix NULL pointer deref in blk_add_request_payload
-  (DISCARD/TRIM handling in sd)
-- fix resync-finished detection
-- fix drbd_ldev_destroy to run exactly once and in worker context
-- Regression fixes
-  - fix regression: potential NULL pointer dereference
-  - fix regression: potential list corruption
-
-* Thu Nov 14 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-4
-- Regression fixes
-  - fix for potential deadlock in adm functions (drbdsetup)
-  - fix for init script and /sbin vs /usr/sbin
 
 * Fri Oct 11 2013 Philipp Reisner <phil@linbit.com> - 8.4.4-1
 - New upstream release.
@@ -121,9 +103,6 @@ uname -r | grep BOOT ||
 
 * Thu Sep  6 2012 Philipp Reisner <phil@linbit.com> - 8.4.2-1
 - New upstream release.
-
-* Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
-- Build fix for RHEL 6 and ubuntu lucid
 
 * Tue Dec 20 2011 Philipp Reisner <phil@linbit.com> - 8.4.1-1
 - New upstream release.
@@ -135,77 +114,5 @@ uname -r | grep BOOT ||
 - New upstream release.
 
 * Fri Oct 22 2010 Philipp Reisner <phil@linbit.com> - 8.3.9-1
-- New upstream release.
-
-* Wed Jun  2 2010 Philipp Reisner <phil@linbit.com> - 8.3.8-1
-- New upstream release.
-
-* Wed Jan 13 2010 Philipp Reisner <phil@linbit.com> - 8.3.7-1
-- New upstream release.
-
-* Sun Nov  8 2009 Philipp Reisner <phil@linbit.com> - 8.3.6-1
-- New upstream release.
-
-* Tue Oct 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.5-1
-- New upstream release.
-
-* Wed Oct 21 2009 Florian Haas <florian@linbit.com> - 8.3.4-12
-- Packaging makeover.
-
-* Tue Oct  6 2009 Philipp Reisner <phil@linbit.com> - 8.3.4-1
-- New upstream release.
-
-* Mon Oct  5 2009 Philipp Reisner <phil@linbit.com> - 8.3.3-1
-- New upstream release.
-
-* Fri Jul  3 2009 Philipp Reisner <phil@linbit.com> - 8.3.2-1
-- New upstream release.
-
-* Fri Mar 27 2009 Philipp Reisner <phil@linbit.com> - 8.3.1-1
-- New upstream release.
-
-* Thu Dec 18 2008 Philipp Reisner <phil@linbit.com> - 8.3.0-1
-- New upstream release.
-
-* Wed Nov 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.7-1
-- New upstream release.
-
-* Fri May 30 2008 Philipp Reisner <phil@linbit.com> - 8.2.6-1
-- New upstream release.
-
-* Tue Feb 12 2008 Philipp Reisner <phil@linbit.com> - 8.2.5-1
-- New upstream release.
-
-* Fri Jan 11 2008 Philipp Reisner <phil@linbit.com> - 8.2.4-1
-- New upstream release.
-
-* Wed Jan  9 2008 Philipp Reisner <phil@linbit.com> - 8.2.3-1
-- New upstream release.
-
-* Fri Nov  2 2007 Philipp Reisner <phil@linbit.com> - 8.2.1-1
-- New upstream release.
-
-* Fri Sep 28 2007 Philipp Reisner <phil@linbit.com> - 8.2.0-1
-- New upstream release.
-
-* Mon Sep  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.6-1
-- New upstream release.
-
-* Fri Aug  3 2007 Philipp Reisner <phil@linbit.com> - 8.0.5-1
-- New upstream release.
-
-* Wed Jun 27 2007 Philipp Reisner <phil@linbit.com> - 8.0.4-1
-- New upstream release.
-
-* Mon May 7 2007 Philipp Reisner <phil@linbit.com> - 8.0.3-1
-- New upstream release.
-
-* Fri Apr 6 2007 Philipp Reisner <phil@linbit.com> - 8.0.2-1
-- New upstream release.
-
-* Mon Mar  5 2007 Philipp Reisner <phil@linbit.com> - 8.0.1-1
-- New upstream release.
-
-* Wed Jan 24 2007 Philipp Reisner <phil@linbit.com>  - 8.0.0-1
 - New upstream release.
 

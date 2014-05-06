@@ -2,12 +2,9 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-8.4.4-7 (api:genl1/proto:86-101)
+8.4.5rc1 (api:genl1/proto:86-101)
 -------
  * fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
-
-8.4.4-6 (api:genl1/proto:86-101)
--------
  * fix cornercase of resync finished detection
  * fix drbd_ldev_destroy to run exactly once and in worker context
  * fix spurious detach/disconnect: don't announce WRITE_SAME
@@ -18,14 +15,15 @@ Latest:
  * fix regression: potential deadlock in adm functions (drbdsetup)
  * fix regression: /sbin vs /usr/sbin in scripts
  * fix race stopping the worker thread
- * linux 3.13 compatibility
+ * new debugfs presence expose oldest requests and other details
+ * userspace moved to own repository
+ * linux 3.13 and 3.14 compatibility
  * improve adaptive resync controler
  * reduce bitmap IO during resync
  * allow write-ordering policy to be bumped up again
  * trigger tcp_flush_pending_frames() for PING/PING_ACK
- * new sysfs oldest_requests attribute (may be moved to debugfs)
  * fix potential segfault in drbdadm adjust
- * drbdsetup improvements: fix socket buffers; detect modprobe failure
+ * drbdsetup improvements: fix netlink socket buffers; detect modprobe failure
 
 8.4.4 (api:genl1/proto:86-101)
 --------

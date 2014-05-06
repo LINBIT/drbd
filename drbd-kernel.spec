@@ -97,26 +97,8 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
-* Tue May  6 2014 Philipp Reisner <phil@linbit.com> - 8.4.5rc1-1
+* Tue May 20 2014 Lars Ellenberg <lars@linbit.com> - 8.4.5rc1-1
 - New upstream release.
-
-* Thu Feb 27 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-7
-- fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
-
-* Tue Feb 11 2014 Lars Ellenberg <lars@linbit.com> - 8.4.4-6
-- fix spurious detach/disconnect: don't announce WRITE_SAME
-- fix NULL pointer deref in blk_add_request_payload
-  (DISCARD/TRIM handling in sd)
-- fix resync-finished detection
-- fix drbd_ldev_destroy to run exactly once and in worker context
-- Regression fixes
-  - fix regression: potential NULL pointer dereference
-  - fix regression: potential list corruption
-
-* Thu Nov 14 2013 Lars Ellenberg <lars@linbit.com> - 8.4.4-4
-- Regression fixes
-  - fix for potential deadlock in adm functions (drbdsetup)
-  - fix for init script and /sbin vs /usr/sbin
 
 * Fri Oct 11 2013 Philipp Reisner <phil@linbit.com> - 8.4.4-1
 - New upstream release.
@@ -126,9 +108,6 @@ rm -rf %{buildroot}
 
 * Thu Sep  6 2012 Philipp Reisner <phil@linbit.com> - 8.4.2-1
 - New upstream release.
-
-* Tue Feb 21 2012 Lars Ellenberg <lars@linbit.com> - 8.4.1-2
-- Build fix for RHEL 6 and ubuntu lucid
 
 * Tue Dec 20 2011 Philipp Reisner <phil@linbit.com> - 8.4.1-1
 - New upstream release.
