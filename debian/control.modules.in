@@ -1,14 +1,14 @@
-Source: drbd8
+Source: drbd
 Section: misc
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
 Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
-Build-Depends: debhelper (>= 4), drbd8-source
+Build-Depends: debhelper (>= 4), drbd-source
 Standards-Version: 3.6.1
 
-Package: drbd8-module-_KVERS_
+Package: drbd-module-_KVERS_
 Architecture: any
-Depends: drbd8-utils
+Depends: drbd-utils
 Conflicts: drbd-module-_KVERS_
 Provides: drbd-module-_KVERS_
 Replaces: drbd-module-_KVERS_

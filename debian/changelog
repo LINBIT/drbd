@@ -1,3 +1,9 @@
+drbd (2:8.4.5rc1-1) unstable; urgency=low
+
+  * Userspace parts split off.
+
+ -- Philipp Marek <philipp.marek@linbit.com>  Tue, 06 May 2014 08:51:44 +0200
+
 drbd8 (2:8.4.4-7) unstable; urgency=low
 
   * fix potential BUG_ON in mempool_alloc for older kernels (<2.6.23)
