@@ -208,7 +208,7 @@ static ssize_t oldest_requests_show(struct drbd_device *device, char *buf)
 
 	/* oldest WRITE, waiting for local disk (may be the same as above) */
 	r = list_first_entry_or_null(&device->pending_completion[1],
-		struct drbd_request, req_pending_master_completion);
+		struct drbd_request, req_pending_local);
 	if (r) {
 		age1 = jiffies_to_msecs(now - r->start_jif);
 		if (r->pre_submit_jif)
