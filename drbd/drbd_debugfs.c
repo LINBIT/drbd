@@ -421,7 +421,7 @@ static inline int debugfs_positive(struct dentry *dentry)
 
 /* make sure at *open* time that the respective object won't go away. */
 static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, void *),
-		                void *data, struct kref *kref)
+		                void *data, struct kref *kref, struct kobject *kobj)
 {
 	struct dentry *parent;
 	int ret = -ESTALE;
@@ -437,8 +437,14 @@ static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, vo
 	if (!debugfs_positive(file->f_dentry))
 		goto out_unlock;
 	/* Make sure the object is still alive */
-	if (kref_get_unless_zero(kref))
-		ret = 0;
+	if (kref) {
+		if (kref_get_unless_zero(kref))
+			ret = 0;
+	} else if (kobj) {
+		if (kobject_get_unless_zero(kobj))
+			ret = 0;
+	}
+
 out_unlock:
 	mutex_unlock(&parent->d_inode->i_mutex);
 	if (!ret)
@@ -450,7 +456,7 @@ out:
 static int in_flight_summary_open(struct inode *inode, struct file *file)
 {
 	struct drbd_resource *resource = inode->i_private;
-	return drbd_single_open(file, in_flight_summary_show, resource, &resource->kref);
+	return drbd_single_open(file, in_flight_summary_show, resource, &resource->kref, NULL);
 }
 
 static int in_flight_summary_release(struct inode *inode, struct file *file)
@@ -562,7 +568,7 @@ static int callback_history_show(struct seq_file *m, void *ignored)
 static int callback_history_open(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
-	return drbd_single_open(file, callback_history_show, connection, &connection->kref);
+	return drbd_single_open(file, callback_history_show, connection, &connection->kref, NULL);
 }
 
 static int callback_history_release(struct inode *inode, struct file *file)
@@ -613,6 +619,52 @@ void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 	connection->debugfs_conn = NULL;
 }
 
+static int device_oldest_requests_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	struct drbd_resource *resource = device->resource;
+	unsigned long now = jiffies;
+	struct drbd_request *r1, *r2;
+	int i;
+
+	seq_puts(m, RQ_HDR);
+	spin_lock_irq(&resource->req_lock);
+	/* WRITE, then READ */
+	for (i = 1; i >= 0; --i) {
+		r1 = list_first_entry_or_null(&device->pending_master_completion[i],
+			struct drbd_request, req_pending_master_completion);
+		r2 = list_first_entry_or_null(&device->pending_completion[i],
+			struct drbd_request, req_pending_local);
+		if (r1)
+			seq_print_one_request(m, r1, now);
+		if (r2 && r2 != r1)
+			seq_print_one_request(m, r2, now);
+	}
+	spin_unlock_irq(&resource->req_lock);
+	return 0;
+}
+
+static int device_oldest_requests_open(struct inode *inode, struct file *file)
+{
+	struct drbd_device *device = inode->i_private;
+	return drbd_single_open(file, device_oldest_requests_show, device, NULL, &device->kobj);
+}
+
+static int device_oldest_requests_release(struct inode *inode, struct file *file)
+{
+	struct drbd_device *device = inode->i_private;
+	kobject_put(&device->kobj);
+	return single_release(inode, file);
+}
+
+static const struct file_operations device_oldest_requests_fops = {
+	.owner		= THIS_MODULE,
+	.open		= device_oldest_requests_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= device_oldest_requests_release,
+};
+
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
 	struct dentry *vols_dir = device->resource->debugfs_res_volumes;
@@ -636,14 +688,20 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	if (!slink_name)
 		goto fail;
 	dentry = debugfs_create_symlink(minor_buf, drbd_debugfs_minors, slink_name);
+	kfree(slink_name);
+	slink_name = NULL;
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	device->debugfs_minor = dentry;
-	kfree(slink_name);
+
+	dentry = debugfs_create_file("oldest_requests", S_IRUSR|S_IRGRP,
+			device->debugfs_vol, device,
+			&device_oldest_requests_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
 	return;
 
 fail:
-	kfree(slink_name);
 	drbd_debugfs_device_cleanup(device);
 	drbd_err(device, "failed to create debugfs entries\n");
 }
