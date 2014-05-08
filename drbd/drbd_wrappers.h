@@ -1166,6 +1166,15 @@ static inline int __must_check kref_get_unless_zero(struct kref *kref)
 }
 #endif
 
+#ifndef COMPAT_HAVE_KOBJECT_GET_UNLESS_ZERO
+static inline struct kobject * __must_check kobject_get_unless_zero(struct kobject *kobj)
+{
+	if (!kref_get_unless_zero(&kobj->kref))
+		kobj = NULL;
+	return kobj;
+}
+#endif
+
 #ifndef KOBJECT_CREATE_AND_ADD_EXPORTED
 struct kobject *kobject_create_and_add(const char *name, struct kobject *parent);
 int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
