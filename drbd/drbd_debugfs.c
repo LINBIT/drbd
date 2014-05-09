@@ -619,6 +619,39 @@ void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 	connection->debugfs_conn = NULL;
 }
 
+static void resync_dump_detail(struct seq_file *m, struct lc_element *e)
+{
+       struct bm_extent *bme = lc_entry(e, struct bm_extent, lce);
+
+       seq_printf(m, "%5d %s %s %s\n", bme->rs_left,
+		  test_bit(BME_NO_WRITES, &bme->flags) ? "NO_WRITES" : "---------",
+		  test_bit(BME_LOCKED, &bme->flags) ? "LOCKED" : "------",
+		  test_bit(BME_PRIORITY, &bme->flags) ? "PRIORITY" : "--------"
+		  );
+}
+
+static int device_resync_extents_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	if (get_ldev_if_state(device, D_FAILED)) {
+		lc_seq_printf_stats(m, device->resync);
+		lc_seq_dump_details(m, device->resync, "rs_left flags", resync_dump_detail);
+		put_ldev(device);
+	}
+	return 0;
+}
+
+static int device_act_log_extents_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	if (get_ldev_if_state(device, D_FAILED)) {
+		lc_seq_printf_stats(m, device->act_log);
+		lc_seq_dump_details(m, device->act_log, "", NULL);
+		put_ldev(device);
+	}
+	return 0;
+}
+
 static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -644,26 +677,30 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
-static int device_oldest_requests_open(struct inode *inode, struct file *file)
-{
-	struct drbd_device *device = inode->i_private;
-	return drbd_single_open(file, device_oldest_requests_show, device, NULL, &device->kobj);
-}
-
-static int device_oldest_requests_release(struct inode *inode, struct file *file)
-{
-	struct drbd_device *device = inode->i_private;
-	kobject_put(&device->kobj);
-	return single_release(inode, file);
-}
-
-static const struct file_operations device_oldest_requests_fops = {
-	.owner		= THIS_MODULE,
-	.open		= device_oldest_requests_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= device_oldest_requests_release,
+#define drbd_debugfs_device_attr(name)						\
+static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
+{										\
+	struct drbd_device *device = inode->i_private;				\
+	return drbd_single_open(file, device_ ## name ## _show, device,		\
+					NULL, &device->kobj);			\
+}										\
+static int device_ ## name ## _release(struct inode *inode, struct file *file)	\
+{										\
+	struct drbd_device *device = inode->i_private;				\
+	kobject_put(&device->kobj);						\
+	return single_release(inode, file);					\
+}										\
+static const struct file_operations device_ ## name ## _fops = {		\
+	.owner		= THIS_MODULE,						\
+	.open		= device_ ## name ## _open,				\
+	.read		= seq_read,						\
+	.llseek		= seq_lseek,						\
+	.release	= device_ ## name ## _release,				\
 };
+
+drbd_debugfs_device_attr(oldest_requests)
+drbd_debugfs_device_attr(act_log_extents)
+drbd_debugfs_device_attr(resync_extents)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -694,11 +731,17 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 		goto fail;
 	device->debugfs_minor = dentry;
 
-	dentry = debugfs_create_file("oldest_requests", S_IRUSR|S_IRGRP,
-			device->debugfs_vol, device,
-			&device_oldest_requests_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
+#define DCF(name)	do {					\
+	dentry = debugfs_create_file(#name, S_IRUSR|S_IRGRP,	\
+			device->debugfs_vol, device,		\
+			&device_ ## name ## _fops);		\
+	if (IS_ERR_OR_NULL(dentry))				\
+		goto fail;					\
+	} while (0)
+
+	DCF(oldest_requests);
+	DCF(act_log_extents);
+	DCF(resync_extents);
 	return;
 
 fail:
