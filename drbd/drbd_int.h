@@ -2544,7 +2544,7 @@ static inline void drbd_md_flush(struct drbd_device *device)
 }
 
 /* resync bitmap */
-/* 16MB sized 'bitmap extent' to track syncer usage */
+/* 128MB sized 'bitmap extent' to track syncer usage */
 struct bm_extent {
 	int rs_left; /* number of bits set (out of sync) in this extent. */
 	int rs_failed; /* number of failed resync requests in this extent. */

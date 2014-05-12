@@ -905,7 +905,7 @@ static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
 }
 
 /* ATTENTION. The AL's extents are 4MB each, while the extents in the
- * resync LRU-cache are 16MB each.
+ * resync LRU-cache are 128MB each.
  * The caller of this function has to hold an get_ldev() reference.
  *
  * TODO will be obsoleted once we have a caching lru of the on disk bitmap
