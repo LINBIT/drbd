@@ -82,7 +82,6 @@ static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file);
 #endif
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
-static void drbd_destroy_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -161,119 +160,6 @@ static const struct block_device_operations drbd_ops = {
 	.open =    drbd_open,
 	.release = drbd_release,
 };
-
-struct drbd_attribute {
-	struct attribute attr;
-	ssize_t (*show)(struct drbd_device *device, char *buf);
-	/* ssize_t (*store)(struct drbd_backing_dev *bdev, const char *buf, size_t count); */
-};
-
-static ssize_t oldest_requests_show(struct drbd_device *device, char *buf)
-{
-	struct drbd_peer_device *peer_device = first_peer_device(device);
-	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
-	unsigned long now = jiffies;
-	struct drbd_request *r;
-	size_t count = 0;
-	int age1, age2;
-
-	spin_lock_irq(&connection->resource->req_lock);
-
-	/* oldest READ, waiting for master completion */
-	r = list_first_entry_or_null(&device->pending_master_completion[0],
-		struct drbd_request, req_pending_master_completion);
-	if (r) {
-		age1 = jiffies_to_msecs(now - r->start_jif);
-		if (r->pre_submit_jif)
-			age2 = jiffies_to_msecs(now - r->pre_submit_jif);
-		else if (r->pre_send_jif)
-			age2 = jiffies_to_msecs(now - r->pre_send_jif);
-		else
-			age2 = -1;
-	} else
-		age1 = age2 = -1;
-	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
-
-	/* oldest WRITE, waiting for master completion */
-	r = list_first_entry_or_null(&device->pending_master_completion[1],
-		struct drbd_request, req_pending_master_completion);
-	if (r) {
-		age1 = jiffies_to_msecs(now - r->start_jif);
-		if (r->in_actlog_jif)
-			age2 = jiffies_to_msecs(now - r->in_actlog_jif);
-		else
-			age2 = -1;
-	} else
-		age1 = age2 = -1;
-	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
-
-	/* oldest WRITE, waiting for local disk (may be the same as above) */
-	r = list_first_entry_or_null(&device->pending_completion[1],
-		struct drbd_request, req_pending_local);
-	if (r) {
-		age1 = jiffies_to_msecs(now - r->start_jif);
-		if (r->pre_submit_jif)
-			age2 = jiffies_to_msecs(now - r->pre_submit_jif);
-		else
-			age2 = -1;
-	} else
-		age1 = age2 = -1;
-	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
-
-	/* oldest request, waiting for peer ack */
-	r = connection->req_ack_pending;
-	if (r) {
-		age1 = jiffies_to_msecs(now - r->start_jif);
-		if (r->pre_send_jif)
-			age2 = jiffies_to_msecs(now - r->pre_send_jif);
-		else
-			age2 = -1;
-	} else
-		age1 = age2 = -1;
-	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
-
-	/* oldest request, waiting for barrier */
-	r = connection->req_not_net_done;
-	if (r) {
-		age1 = jiffies_to_msecs(now - r->start_jif);
-		if (r->acked_jif)
-			age2 = jiffies_to_msecs(now - r->acked_jif);
-		else
-			age2 = -1;
-	} else
-		age1 = age2 = -1;
-	count += sprintf(buf + count, "%d\t%d\n", age1, age2);
-
-	spin_unlock_irq(&connection->resource->req_lock);
-	return count;
-}
-
-static ssize_t drbd_attr_show(struct kobject *, struct attribute *, char *);
-#define DRBD_ATTR(_name) struct drbd_attribute drbd_attr_##_name = __ATTR_RO(_name)
-static DRBD_ATTR(oldest_requests);
-
-static struct attribute *drbd_device_attrs[] = {
-	&drbd_attr_oldest_requests.attr,
-	NULL
-};
-
-static struct kobj_type drbd_device_kobj_type = {
-	.release = drbd_destroy_device,
-	.sysfs_ops = &(struct sysfs_ops) {
-		.show = drbd_attr_show,
-		.store = NULL,
-	},
-	.default_attrs = drbd_device_attrs,
-};
-
-static ssize_t drbd_attr_show(struct kobject *kobj, struct attribute *attr, char *buffer)
-{
-	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
-	struct drbd_attribute *drbd_attr = container_of(attr, struct drbd_attribute, attr);
-
-	return drbd_attr->show(device, buffer);
-}
-
 
 #ifdef COMPAT_HAVE_BIO_BI_DESTRUCTOR
 static void bio_destructor_drbd(struct bio *bio)
@@ -2361,9 +2247,9 @@ static void drbd_release_all_peer_reqs(struct drbd_device *device)
 }
 
 /* caution. no locking. */
-static void drbd_destroy_device(struct kobject *kobj)
+void drbd_destroy_device(struct kref *kref)
 {
-	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
+	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
 
@@ -2912,13 +2798,12 @@ static int init_submitter(struct drbd_device *device)
 enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor)
 {
 	struct drbd_resource *resource = adm_ctx->resource;
-	struct kobject *parent;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
 	struct gendisk *disk;
 	struct request_queue *q;
-	int id, refs = 2;
+	int id;
 	int vnr = adm_ctx->volume;
 	enum drbd_ret_code err = ERR_NOMEM;
 
@@ -2930,6 +2815,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
 	if (!device)
 		return ERR_NOMEM;
+	kref_init(&device->kref);
 
 	kref_get(&resource->kref);
 	device->resource = resource;
@@ -2997,6 +2883,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		}
 		goto out_no_minor_idr;
 	}
+	kref_get(&device->kref);
 
 	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_KERNEL);
 	if (id < 0) {
@@ -3006,6 +2893,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		}
 		goto out_idr_remove_minor;
 	}
+	kref_get(&device->kref);
 
 	INIT_LIST_HEAD(&device->peer_devices);
 	INIT_LIST_HEAD(&device->pending_bitmap_io);
@@ -3017,7 +2905,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		peer_device->device = device;
 
 		list_add(&peer_device->peer_devices, &device->peer_devices);
-		refs++;
+		kref_get(&device->kref);
 
 		id = idr_alloc(&connection->peer_devices, peer_device, vnr, vnr + 1, GFP_KERNEL);
 		if (id < 0) {
@@ -3037,13 +2925,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	}
 
 	add_disk(disk);
-	parent = drbd_kobj_of_disk(disk);
-
-	/* one ref for both idrs and the the add_disk */
-	if (kobject_init_and_add(&device->kobj, &drbd_device_kobj_type, parent, "drbd"))
-		goto out_del_disk;
-	while (refs--)
-		kobject_get(&device->kobj);
 
 	/* inherit the connection state */
 	device->state.conn = first_connection(resource)->cstate;
@@ -3057,9 +2938,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	drbd_debugfs_device_add(device);
 	return NO_ERROR;
 
-out_del_disk:
-	destroy_workqueue(device->submit.wq);
-	del_gendisk(device->vdisk);
 out_idr_remove_vol:
 	idr_remove(&connection->peer_devices, vnr);
 out_idr_remove_from_resource:
@@ -3104,17 +2982,16 @@ void drbd_delete_device(struct drbd_device *device)
 	drbd_debugfs_device_cleanup(device);
 	for_each_connection(connection, resource) {
 		idr_remove(&connection->peer_devices, device->vnr);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 	}
 	idr_remove(&resource->devices, device->vnr);
-	kobject_put(&device->kobj);
+	kref_put(&device->kref, drbd_destroy_device);
 	idr_remove(&drbd_devices, device_to_minor(device));
-	kobject_put(&device->kobj);
+	kref_put(&device->kref, drbd_destroy_device);
 	destroy_workqueue(device->submit.wq);
 	del_gendisk(device->vdisk);
-	kobject_del(&device->kobj);
 	synchronize_rcu();
-	kobject_put(&device->kobj);
+	kref_put(&device->kref, drbd_destroy_device);
 }
 
 static int __init drbd_init(void)
@@ -3205,8 +3082,8 @@ void drbd_free_ldev(struct drbd_backing_dev *ldev)
 	blkdev_put(ldev->backing_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 	blkdev_put(ldev->md_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 
-	kobject_del(&ldev->kobject);
-	kobject_put(&ldev->kobject);
+	kfree(ldev->disk_conf);
+	kfree(ldev);
 }
 
 
@@ -3244,10 +3121,10 @@ void conn_md_sync(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_md_sync(device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();

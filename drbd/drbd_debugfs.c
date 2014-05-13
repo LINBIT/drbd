@@ -775,12 +775,12 @@ static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 {										\
 	struct drbd_device *device = inode->i_private;				\
 	return drbd_single_open(file, device_ ## name ## _show, device,		\
-					NULL, &device->kobj);			\
+				&device->kref, NULL);				\
 }										\
 static int device_ ## name ## _release(struct inode *inode, struct file *file)	\
 {										\
 	struct drbd_device *device = inode->i_private;				\
-	kobject_put(&device->kobj);						\
+	kref_put(&device->kref, drbd_destroy_device);						\
 	return single_release(inode, file);					\
 }										\
 static const struct file_operations device_ ## name ## _fops = {		\

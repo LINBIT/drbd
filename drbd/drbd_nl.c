@@ -235,7 +235,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	 * But we may explicitly drop it/retake it in drbd_adm_set_role(),
 	 * so make sure this object stays around. */
 	if (adm_ctx->device)
-		kobject_get(&adm_ctx->device->kobj);
+		kref_get(&adm_ctx->device->kref);
 
 	if (adm_ctx->resource_name) {
 		adm_ctx->resource = drbd_find_resource(adm_ctx->resource_name);
@@ -312,7 +312,7 @@ static int drbd_adm_finish(struct drbd_config_context *adm_ctx,
 	struct genl_info *info, int retcode)
 {
 	if (adm_ctx->device) {
-		kobject_put(&adm_ctx->device->kobj);
+		kref_put(&adm_ctx->device->kref, drbd_destroy_device);
 		adm_ctx->device = NULL;
 	}
 	if (adm_ctx->connection) {
@@ -1742,11 +1742,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_warn(device, "refusing to truncate a consistent device\n");
 		retcode = ERR_DISK_TOO_SMALL;
 		goto force_diskless_dec;
-	}
-
-	if (kobject_init_and_add(&nbc->kobject, &drbd_bdev_kobj_type, &device->kobj, "meta_data")) {
-		retcode = ERR_NOMEM;
-		goto remove_kobject;
 	}
 
 	/* Reset the "barriers don't work" bits here, then force meta data to

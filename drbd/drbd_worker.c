@@ -2012,10 +2012,10 @@ static void do_unqueued_work(struct drbd_connection *connection)
 		if (!todo)
 			continue;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		do_device_work(device, todo);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -2189,10 +2189,10 @@ int drbd_worker(struct drbd_thread *thi)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		D_ASSERT(device, device->state.disk == D_DISKLESS && device->state.conn == C_STANDALONE);
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_device_cleanup(device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();

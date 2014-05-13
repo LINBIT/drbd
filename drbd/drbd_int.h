@@ -707,7 +707,6 @@ struct drbd_md {
 };
 
 struct drbd_backing_dev {
-	struct kobject kobject;
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;
@@ -931,7 +930,7 @@ struct drbd_device {
 	unsigned int vnr;	/* volume number within the connection */
 	unsigned int minor;	/* device minor number */
 
-	struct kobject kobj;
+	struct kref kref;
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
@@ -1531,7 +1530,8 @@ extern rwlock_t global_state_lock;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
 extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor);
-extern void drbd_delete_device(struct drbd_device *mdev);
+extern void drbd_delete_device(struct drbd_device *device);
+extern void drbd_destroy_device(struct kref *kref);
 
 extern struct drbd_resource *drbd_create_resource(const char *name);
 extern void drbd_free_resource(struct drbd_resource *resource);
@@ -1792,9 +1792,6 @@ extern int __drbd_change_sync(struct drbd_device *device, sector_t sector, int s
 	__drbd_change_sync(device, sector, size, RECORD_RS_FAILED, __FILE__, __LINE__)
 extern void drbd_al_shrink(struct drbd_device *device);
 extern int drbd_initialize_al(struct drbd_device *, void *);
-
-/* drbd_sysfs.c */
-extern struct kobj_type drbd_bdev_kobj_type;
 
 /* drbd_nl.c */
 /* state info broadcast */

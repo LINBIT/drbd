@@ -1128,8 +1128,7 @@ randomize:
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 
 		if (discard_my_data)
@@ -1138,7 +1137,7 @@ randomize:
 			clear_bit(DISCARD_MY_DATA, &device->flags);
 
 		drbd_connected(peer_device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1235,7 +1234,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 
 			if (!get_ldev(device))
 				continue;
-			kobject_get(&device->kobj);
+			kref_get(&device->kref);
 			rcu_read_unlock();
 
 			/* Right now, we have only this one synchronous code path
@@ -1256,7 +1255,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 				drbd_bump_write_ordering(connection->resource, NULL, WO_drain_io);
 			}
 			put_ldev(device);
-			kobject_put(&device->kobj);
+			kref_put(&device->kref, drbd_destroy_device);
 
 			rcu_read_lock();
 			if (rv)
@@ -1691,10 +1690,10 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->active_ee);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1709,10 +1708,10 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->done_ee);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1728,10 +1727,10 @@ static void drbd_unplug_all_devices(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_kick_lo(device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -4965,10 +4964,10 @@ static void conn_disconnect(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_disconnected(peer_device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -5739,13 +5738,13 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
 
-			kobject_get(&device->kobj);
+			kref_get(&device->kref);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(device)) {
-				kobject_put(&device->kobj);
+				kref_put(&device->kref, drbd_destroy_device);
 				return 1;
 			}
-			kobject_put(&device->kobj);
+			kref_put(&device->kref, drbd_destroy_device);
 			rcu_read_lock();
 		}
 		set_bit(SIGNAL_ASENDER, &connection->flags);
