@@ -806,6 +806,29 @@ void drbd_debugfs_peer_device_cleanup(struct drbd_peer_device *peer_device)
 	peer_device->debugfs_peer_dev = NULL;
 }
 
+static int drbd_version_show(struct seq_file *m, void *ignored)
+{
+	seq_printf(m, "# %s\n", drbd_buildtag());
+	seq_printf(m, "VERSION=%s\n", REL_VERSION);
+	seq_printf(m, "API_VERSION=%u\n", API_VERSION);
+	seq_printf(m, "PRO_VERSION_MIN=%u\n", PRO_VERSION_MIN);
+	seq_printf(m, "PRO_VERSION_MAX=%u\n", PRO_VERSION_MAX);
+	return 0;
+}
+
+static int drbd_version_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, drbd_version_show, NULL);
+}
+
+static struct file_operations drbd_version_fops = {
+	.owner = THIS_MODULE,
+	.open = drbd_version_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = single_release,
+};
+
 int __init drbd_debugfs_init(void)
 {
 	struct dentry *dir;
@@ -814,6 +837,7 @@ int __init drbd_debugfs_init(void)
 	if (IS_ERR_OR_NULL(dir))
 		goto fail;
 	drbd_debugfs_root = dir;
+	debugfs_create_file("version", 0444, drbd_debugfs_root, NULL, &drbd_version_fops);
 
 	dir = debugfs_create_dir("resources", drbd_debugfs_root);
 	if (IS_ERR_OR_NULL(dir))
