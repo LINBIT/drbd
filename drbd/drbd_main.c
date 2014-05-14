@@ -2365,7 +2365,7 @@ static void drbd_destroy_device(struct kobject *kobj)
 {
 	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
 	struct drbd_resource *resource = device->resource;
-	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device, *tmp_peer_device;
 
 	del_timer_sync(&device->request_timer);
 
@@ -2396,12 +2396,16 @@ static void drbd_destroy_device(struct kobject *kobj)
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
 	kfree(device->rs_plan_s);
-	kfree(first_peer_device(device));
+
+	/* not for_each_connection(connection, resource):
+	 * those may have been cleaned up and disassociated already.
+	 */
+	for_each_peer_device_safe(peer_device, tmp_peer_device, device) {
+		kref_put(&peer_device->connection->kref, drbd_destroy_connection);
+		kfree(peer_device);
+	}
 	memset(device, 0xfd, sizeof(*device));
 	kfree(device);
-
-	for_each_connection(connection, resource)
-		kref_put(&connection->kref, drbd_destroy_connection);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
