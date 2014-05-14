@@ -429,7 +429,7 @@ static inline int debugfs_positive(struct dentry *dentry)
 
 /* make sure at *open* time that the respective object won't go away. */
 static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, void *),
-		                void *data, struct kref *kref, struct kobject *kobj)
+		                void *data, struct kref *kref)
 {
 	struct dentry *parent;
 	int ret = -ESTALE;
@@ -442,18 +442,10 @@ static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, vo
 		goto out;
 	/* serialize with d_delete() */
 	mutex_lock(&parent->d_inode->i_mutex);
-	if (!debugfs_positive(file->f_dentry))
-		goto out_unlock;
 	/* Make sure the object is still alive */
-	if (kref) {
-		if (kref_get_unless_zero(kref))
-			ret = 0;
-	} else if (kobj) {
-		if (kobject_get_unless_zero(kobj))
-			ret = 0;
-	}
-
-out_unlock:
+	if (debugfs_positive(file->f_dentry)
+	&& kref_get_unless_zero(kref))
+		ret = 0;
 	mutex_unlock(&parent->d_inode->i_mutex);
 	if (!ret)
 		ret = single_open(file, show, data);
@@ -464,7 +456,7 @@ out:
 static int in_flight_summary_open(struct inode *inode, struct file *file)
 {
 	struct drbd_resource *resource = inode->i_private;
-	return drbd_single_open(file, in_flight_summary_show, resource, &resource->kref, NULL);
+	return drbd_single_open(file, in_flight_summary_show, resource, &resource->kref);
 }
 
 static int in_flight_summary_release(struct inode *inode, struct file *file)
@@ -579,7 +571,7 @@ static int callback_history_show(struct seq_file *m, void *ignored)
 static int callback_history_open(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
-	return drbd_single_open(file, callback_history_show, connection, &connection->kref, NULL);
+	return drbd_single_open(file, callback_history_show, connection, &connection->kref);
 }
 
 static int callback_history_release(struct inode *inode, struct file *file)
@@ -625,7 +617,7 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 static int connection_oldest_requests_open(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
-	return drbd_single_open(file, connection_oldest_requests_show, connection, &connection->kref, NULL);
+	return drbd_single_open(file, connection_oldest_requests_show, connection, &connection->kref);
 }
 
 static int connection_oldest_requests_release(struct inode *inode, struct file *file)
@@ -775,12 +767,12 @@ static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 {										\
 	struct drbd_device *device = inode->i_private;				\
 	return drbd_single_open(file, device_ ## name ## _show, device,		\
-				&device->kref, NULL);				\
+				&device->kref);					\
 }										\
 static int device_ ## name ## _release(struct inode *inode, struct file *file)	\
 {										\
 	struct drbd_device *device = inode->i_private;				\
-	kref_put(&device->kref, drbd_destroy_device);						\
+	kref_put(&device->kref, drbd_destroy_device);				\
 	return single_release(inode, file);					\
 }										\
 static const struct file_operations device_ ## name ## _fops = {		\
