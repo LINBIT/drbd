@@ -17,6 +17,7 @@
  **********************************************************************/
 
 static struct dentry *drbd_debugfs_root;
+static struct dentry *drbd_debugfs_version;
 static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
 
@@ -436,7 +437,7 @@ static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, vo
 	int ret = -ESTALE;
 
 	/* Are we still linked,
-	 * or has debugfs_remove_recursive() already been called? */
+	 * or has debugfs_remove() already been called? */
 	parent = file->f_dentry->d_parent;
 	/* not sure if this can happen: */
 	if (!parent || !parent->d_inode)
@@ -505,6 +506,7 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 			&in_flight_summary_fops);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
+	resource->debugfs_res_in_flight_summary = dentry;
 	return;
 
 fail:
@@ -512,13 +514,26 @@ fail:
 	drbd_err(resource, "failed to create debugfs dentry\n");
 }
 
+static void drbd_debugfs_remove(struct dentry **dp)
+{
+	debugfs_remove(*dp);
+	*dp = NULL;
+}
+
 void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 {
+	/* Older kernels have a broken implementation of
+	 * debugfs_remove_recursive (prior to upstream commit 776164c1f)
+	 * That unfortunately includes a number of "enterprise" kernels.
+	 * Even older kernels do not even have the _recursive() helper at all.
+	 * For now, remember all debugfs nodes we created,
+	 * and call debugfs_remove on all of them separately.
+	 */
 	/* it is ok to call debugfs_remove(NULL) */
-	debugfs_remove_recursive(resource->debugfs_res);
-	resource->debugfs_res = NULL;
-	resource->debugfs_res_volumes = NULL;
-	resource->debugfs_res_connections = NULL;
+	drbd_debugfs_remove(&resource->debugfs_res_in_flight_summary);
+	drbd_debugfs_remove(&resource->debugfs_res_connections);
+	drbd_debugfs_remove(&resource->debugfs_res_volumes);
+	drbd_debugfs_remove(&resource->debugfs_res);
 }
 
 static void seq_print_one_timing_detail(struct seq_file *m,
@@ -662,12 +677,14 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 			&connection_callback_history_fops);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
+	connection->debugfs_conn_callback_history = dentry;
 
 	dentry = debugfs_create_file("oldest_requests", S_IRUSR|S_IRGRP,
 			connection->debugfs_conn, connection,
 			&connection_oldest_requests_fops);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
+	connection->debugfs_conn_oldest_requests = dentry;
 	return;
 
 fail:
@@ -677,8 +694,9 @@ fail:
 
 void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 {
-	debugfs_remove_recursive(connection->debugfs_conn);
-	connection->debugfs_conn = NULL;
+	drbd_debugfs_remove(&connection->debugfs_conn_callback_history);
+	drbd_debugfs_remove(&connection->debugfs_conn_oldest_requests);
+	drbd_debugfs_remove(&connection->debugfs_conn);
 }
 
 static void resync_dump_detail(struct seq_file *m, struct lc_element *e)
@@ -830,6 +848,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 			&device_ ## name ## _fops);		\
 	if (IS_ERR_OR_NULL(dentry))				\
 		goto fail;					\
+	device->debugfs_vol_ ## name = dentry;			\
 	} while (0)
 
 	DCF(oldest_requests);
@@ -846,10 +865,12 @@ fail:
 
 void drbd_debugfs_device_cleanup(struct drbd_device *device)
 {
-	debugfs_remove(device->debugfs_minor);
-	debugfs_remove_recursive(device->debugfs_vol);
-	device->debugfs_vol = NULL;
-	device->debugfs_minor = NULL;
+	drbd_debugfs_remove(&device->debugfs_minor);
+	drbd_debugfs_remove(&device->debugfs_vol_oldest_requests);
+	drbd_debugfs_remove(&device->debugfs_vol_act_log_extents);
+	drbd_debugfs_remove(&device->debugfs_vol_resync_extents);
+	drbd_debugfs_remove(&device->debugfs_vol_data_gen_id);
+	drbd_debugfs_remove(&device->debugfs_vol);
 }
 
 void drbd_debugfs_peer_device_add(struct drbd_peer_device *peer_device)
@@ -875,8 +896,7 @@ fail:
 
 void drbd_debugfs_peer_device_cleanup(struct drbd_peer_device *peer_device)
 {
-	debugfs_remove_recursive(peer_device->debugfs_peer_dev);
-	peer_device->debugfs_peer_dev = NULL;
+	drbd_debugfs_remove(&peer_device->debugfs_peer_dev);
 }
 
 static int drbd_version_show(struct seq_file *m, void *ignored)
@@ -902,45 +922,45 @@ static struct file_operations drbd_version_fops = {
 	.release = single_release,
 };
 
-int __init drbd_debugfs_init(void)
-{
-	struct dentry *dir;
-
-	dir = debugfs_create_dir("drbd", NULL);
-	if (IS_ERR_OR_NULL(dir))
-		goto fail;
-	drbd_debugfs_root = dir;
-	debugfs_create_file("version", 0444, drbd_debugfs_root, NULL, &drbd_version_fops);
-
-	dir = debugfs_create_dir("resources", drbd_debugfs_root);
-	if (IS_ERR_OR_NULL(dir))
-		goto fail;
-	drbd_debugfs_resources = dir;
-	dir = debugfs_create_dir("minors", drbd_debugfs_root);
-	if (IS_ERR_OR_NULL(dir))
-		goto fail;
-	drbd_debugfs_minors = dir;
-	return 0;
-
-fail:
-	if (!IS_ERR_OR_NULL(drbd_debugfs_root)) {
-		debugfs_remove_recursive(drbd_debugfs_root);
-		drbd_debugfs_root = NULL;
-		drbd_debugfs_resources = NULL;
-		drbd_debugfs_minors = NULL;
-	}
-	if (dir)
-		return PTR_ERR(dir);
-	else
-		return -EINVAL;
-}
-
 /* not __exit, may be indirectly called
  * from the module-load-failure path as well. */
 void drbd_debugfs_cleanup(void)
 {
-	debugfs_remove_recursive(drbd_debugfs_root);
-	drbd_debugfs_root = NULL;
-	drbd_debugfs_resources = NULL;
-	drbd_debugfs_minors = NULL;
+	drbd_debugfs_remove(&drbd_debugfs_resources);
+	drbd_debugfs_remove(&drbd_debugfs_minors);
+	drbd_debugfs_remove(&drbd_debugfs_version);
+	drbd_debugfs_remove(&drbd_debugfs_root);
+}
+
+int __init drbd_debugfs_init(void)
+{
+	struct dentry *dentry;
+
+	dentry = debugfs_create_dir("drbd", NULL);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	drbd_debugfs_root = dentry;
+
+	dentry = debugfs_create_file("version", 0444, drbd_debugfs_root, NULL, &drbd_version_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	drbd_debugfs_version = dentry;
+
+	dentry = debugfs_create_dir("resources", drbd_debugfs_root);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	drbd_debugfs_resources = dentry;
+
+	dentry = debugfs_create_dir("minors", drbd_debugfs_root);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	drbd_debugfs_minors = dentry;
+	return 0;
+
+fail:
+	drbd_debugfs_cleanup();
+	if (dentry)
+		return PTR_ERR(dentry);
+	else
+		return -EINVAL;
 }

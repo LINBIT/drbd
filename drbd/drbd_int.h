@@ -777,6 +777,7 @@ struct drbd_resource {
 	struct dentry *debugfs_res;
 	struct dentry *debugfs_res_volumes;
 	struct dentry *debugfs_res_connections;
+	struct dentry *debugfs_res_in_flight_summary;
 
 	struct kref kref;
 	struct idr devices;		/* volume number to device mapping */
@@ -813,6 +814,8 @@ struct drbd_connection {
 	struct list_head connections;
 	struct drbd_resource *resource;
 	struct dentry *debugfs_conn;
+	struct dentry *debugfs_conn_callback_history;
+	struct dentry *debugfs_conn_oldest_requests;
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conns cstate;		/* Only C_STANDALONE to C_WF_REPORT_PARAMS */
@@ -925,8 +928,13 @@ struct drbd_device {
 
 	unsigned long flush_jif;
 
-	struct dentry *debugfs_vol;
 	struct dentry *debugfs_minor;
+	struct dentry *debugfs_vol;
+	struct dentry *debugfs_vol_oldest_requests;
+	struct dentry *debugfs_vol_act_log_extents;
+	struct dentry *debugfs_vol_resync_extents;
+	struct dentry *debugfs_vol_data_gen_id;
+
 	unsigned int vnr;	/* volume number within the connection */
 	unsigned int minor;	/* device minor number */
 
