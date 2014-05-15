@@ -1,5 +1,5 @@
 # always require a suitable userland
-Requires: drbd-utils = %{version}
+Requires: drbd-utils = 8.4.5
 
 %if %{defined suse_kernel_module_package}
 %if 0%{?sles_version} == 10
