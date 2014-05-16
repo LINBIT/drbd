@@ -773,12 +773,12 @@ enum {
 
 struct drbd_resource {
 	char *name;
-
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_res;
 	struct dentry *debugfs_res_volumes;
 	struct dentry *debugfs_res_connections;
 	struct dentry *debugfs_res_in_flight_summary;
-
+#endif
 	struct kref kref;
 	struct idr devices;		/* volume number to device mapping */
 	struct list_head connections;
@@ -813,9 +813,11 @@ struct drbd_thread_timing_details
 struct drbd_connection {
 	struct list_head connections;
 	struct drbd_resource *resource;
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_conn;
 	struct dentry *debugfs_conn_callback_history;
 	struct dentry *debugfs_conn_oldest_requests;
+#endif
 	struct kref kref;
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conns cstate;		/* Only C_STANDALONE to C_WF_REPORT_PARAMS */
@@ -914,8 +916,9 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
-
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_peer_dev;
+#endif
 };
 
 struct drbd_device {
@@ -927,13 +930,14 @@ struct drbd_device {
 	struct list_head pending_bitmap_io;
 
 	unsigned long flush_jif;
-
+#ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_minor;
 	struct dentry *debugfs_vol;
 	struct dentry *debugfs_vol_oldest_requests;
 	struct dentry *debugfs_vol_act_log_extents;
 	struct dentry *debugfs_vol_resync_extents;
 	struct dentry *debugfs_vol_data_gen_id;
+#endif
 
 	unsigned int vnr;	/* volume number within the connection */
 	unsigned int minor;	/* device minor number */
