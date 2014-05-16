@@ -188,14 +188,6 @@ all module tools doc .filelist: drbd/drbd_buildtag.c
 
 ifdef RPMBUILD
 
-.PHONY: rpm
-rpm: tgz drbd.spec
-	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
-	$(RPMBUILD) -bb \
-	    $(RPMOPT) \
-	    drbd.spec
-	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
-
 .PHONY: km-rpm
 km-rpm: check-kdir tgz drbd-km.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
