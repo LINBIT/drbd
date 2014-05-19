@@ -14,7 +14,7 @@ include /usr/share/dpatch/dpatch.make
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
 
-PACKAGE=drbd-module
+PACKAGE=drbd8-module
 MA_DIR ?= /usr/share/modass
 -include $(MA_DIR)/include/generic.make
 -include $(MA_DIR)/include/common-rules.make
@@ -64,7 +64,6 @@ build-arch-stamp:
 	dh_testdir
 #	build this first, so user/drbd_buildtag.c does not use the stale thing from the tgz
 	$(MAKE) drbd/drbd_buildtag.c
-	$(MAKE) -C scripts
 	touch build-arch-stamp
 
 build-indep: build-indep-stamp
@@ -76,10 +75,9 @@ clean: unpatch
 	dh_testroot
 	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
 #	remove these files from upstream tgz
-	rm -f debian/drbd.*
-	rm -f debian/drbd-source.dirs
+	rm -f debian/drbd8.*
+	rm -f debian/drbd8-source.dirs
 	rm -f debian/kernel-patch-wup.kpatches debian/kernel-patch-wup.README.Debian debian/kernel-export-wup.patch
-	-$(MAKE) -C scripts clean
 	-$(MAKE) -C drbd clean
 	dh_clean
 
@@ -98,9 +96,9 @@ install-indep:
 	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
 
 #	 tar the stuff
-	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd.tar.gz modules ; rm -rf modules
+	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd8.tar.gz modules ; rm -rf modules
 
-	install -m 755 $(CURDIR)/debian/modass.drbd-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd-module-source
+	install -m 755 $(CURDIR)/debian/modass.drbd8-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd8-module-source
 	dh_install -i
 
 binary-common:

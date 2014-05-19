@@ -1,12 +1,12 @@
-Source: drbd
+Source: drbd8
 Section: admin
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
 Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
-Build-Depends: debhelper (>= 4), debconf-utils, docbook-xml, docbook-xsl, dpatch, flex, xsltproc
+Build-Depends: debhelper (>= 5), debconf-utils, docbook-xml, docbook-xsl, dpatch, flex, xsltproc
 Standards-Version: 3.6.2.1
 
-Package: drbd-module-source
+Package: drbd8-module-source
 Architecture: all
 Section: admin
 Depends: module-assistant, debhelper (>= 4), dpatch

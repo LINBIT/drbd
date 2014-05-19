@@ -1,4 +1,4 @@
-drbd (2:8.4.5rc1-1) unstable; urgency=low
+drbd8 (2:8.4.5rc1-1) unstable; urgency=low
 
   * Userspace parts split off.
 
