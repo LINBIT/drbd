@@ -816,9 +816,11 @@ drbd_debugfs_device_attr(data_gen_id)
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
 	struct dentry *vols_dir = device->resource->debugfs_res_volumes;
-	char minor_buf[8]; /* MINORMASK, MINORBITS == 20; */
 	char vnr_buf[8];   /* volume number vnr is even 16 bit only; */
+#ifdef COMPAT_HAVE_DEBUGFS_CREATE_SYMLINK
+	char minor_buf[8]; /* MINORMASK, MINORBITS == 20; */
 	char *slink_name = NULL;
+#endif
 
 	struct dentry *dentry;
 	if (!vols_dir || !drbd_debugfs_minors)
@@ -830,6 +832,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 		goto fail;
 	device->debugfs_vol = dentry;
 
+#ifdef COMPAT_HAVE_DEBUGFS_CREATE_SYMLINK
 	snprintf(minor_buf, sizeof(minor_buf), "%u", device->minor);
 	slink_name = kasprintf(GFP_KERNEL, "../resources/%s/volumes/%u",
 			device->resource->name, device->vnr);
@@ -841,6 +844,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	device->debugfs_minor = dentry;
+#endif
 
 #define DCF(name)	do {					\
 	dentry = debugfs_create_file(#name, S_IRUSR|S_IRGRP,	\
