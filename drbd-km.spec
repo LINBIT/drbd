@@ -17,7 +17,9 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: gcc, @RPM_BUILDREQ_KM@
+BuildRequires: gcc
+%(test -e /etc/redhat-release && echo BuildRequires: kernel-devel)
+%(test -e /etc/SuSE-release && echo BuildRequires: kernel-syms)
 
 %description
 DRBD mirrors a block device over the network to another machine.
@@ -29,7 +31,6 @@ setting up high availability (HA) clusters.
 %package %{krelver}
 Summary: Kernel driver for DRBD.
 Group: System Environment/Kernel
-Conflicts: @RPM_CONFLICTS_KM@
 # always require a suitable userland and depmod.
 Requires: drbd-utils = %{version}, /sbin/depmod
 # to be able to override from build scripts which flavor of kernel we are building against.
@@ -55,15 +56,6 @@ test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 
 %build
-%configure \
-    --without-utils \
-    --with-km \
-    --without-udev \
-    --without-xen \
-    --without-pacemaker \
-    --without-heartbeat \
-    --without-rgmanager \
-    --without-bashcompletion
 echo kernelversion=%{kernelversion}
 echo kversion=%{kversion}
 echo krelver=%{krelver}
