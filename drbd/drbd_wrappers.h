@@ -474,6 +474,17 @@ static inline void cpumask_setall(cpumask_t *dstp)
 	bitmap_fill(cpumask_bits(dstp), nr_cpumask_bits);
 }
 
+static inline int cpumask_and(cpumask_t *dstp,
+			       const cpumask_t *src1p,
+			       const cpumask_t *src2p)
+{
+	bitmap_and(cpumask_bits(dstp), cpumask_bits(src1p),
+				       cpumask_bits(src2p), nr_cpumask_bits);
+	/* some older kernels have void bitmap_and().
+	 * we don't care for the return value anyways. */
+	return 1;
+}
+
 static inline void free_cpumask_var(cpumask_var_t mask)
 {
 }
