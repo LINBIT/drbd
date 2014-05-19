@@ -927,6 +927,16 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 extern void *idr_get_next(struct idr *idp, int *nextidp);
 #endif
 
+#ifndef RCU_INITIALIZER
+#define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)
+#endif
+#ifndef RCU_INIT_POINTER
+#define RCU_INIT_POINTER(p, v) \
+	do { \
+		p = RCU_INITIALIZER(v); \
+	} while (0)
+#endif
+
 /* #ifndef COMPAT_HAVE_LIST_ENTRY_RCU */
 #ifndef list_entry_rcu
 #ifndef rcu_dereference_raw
