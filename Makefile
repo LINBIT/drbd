@@ -67,6 +67,12 @@ endif
 
 all: tools module
 
+.PHONY: all tools module
+tools:
+	@cat README.drbd-utils
+doc:
+	@echo "Man page sources moved to http://git.linbit.com/drbd-utils.git"
+
 .PHONY: check-kdir
 check-kdir:
 	@if ! test -e $(KDIR)/Makefile ; then \
@@ -184,7 +190,7 @@ prepare_release:
 tarball: check_all_committed distclean .filelist
 	$(MAKE) tgz
 
-all module tools doc .filelist: drbd/drbd_buildtag.c
+module .filelist: drbd/drbd_buildtag.c
 
 ifdef RPMBUILD
 
@@ -214,13 +220,13 @@ kmp-rpm: tgz drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
 
 .PHONY: srpm
-srpm: tgz drbd.spec drbd-km.spec
+srpm: tgz
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
 	$(RPMBUILD) -bs \
 	    --define "kernelversion $(KVER)" \
 	    --define "kernel_version $(KVER)" \
 	    --define "kdir $(KDIR)" \
 		$(RPMOPT) \
-		drbd.spec drbd-km.spec drbd-kernel.spec
+		drbd-km.spec drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
 endif
