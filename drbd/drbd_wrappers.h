@@ -726,10 +726,12 @@ enum {
 	FUA	-> FUA
 	FLUSH	-> FLUSH
 	DISCARD	-> DISCARD
-
-NOTE: DISCARDs likely need some work still.  We should actually never see
-DISCARD requests, as our queue does not announce QUEUE_FLAG_DISCARD yet.
 */
+
+#ifndef REQ_NOIDLE
+/* introduced in aeb6faf (2.6.30), relevant for CFQ */
+#define REQ_NOIDLE 0
+#endif
 
 #ifndef CONFIG_DYNAMIC_DEBUG
 /* At least in 2.6.34 the function macro dynamic_dev_dbg() is broken when compiling
