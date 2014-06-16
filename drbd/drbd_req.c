@@ -223,12 +223,14 @@ tail_recursion:
 		return;
 	}
 
-	/* remove it from the transfer log.
-	 * well, only if it had been there in the first
-	 * place... if it had not (local only or conflicting
-	 * and never sent), it should still be "empty" as
-	 * initialized in drbd_req_new(), so we can list_del() it
-	 * here unconditionally */
+	/* If called from mod_rq_state (expected normal case) or
+	 * drbd_send_and_submit (the less likely normal path), this holds the
+	 * req_lock, and req->tl_requests will typicaly be on ->transfer_log,
+	 * though it may be still empty (never added to the transfer log).
+	 *
+	 * If called from do_retry(), we do NOT hold the req_lock, but we are
+	 * still allowed to unconditionally list_del(&req->tl_requests),
+	 * because it will be on a local on-stack list only. */
 	list_del_init(&req->tl_requests);
 
 	if (s & RQ_WRITE) {
@@ -490,10 +492,16 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		m->error = ok ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
-		list_del_init(&req->req_pending_master_completion);
 	}
+
+	/* Either we are about to complete to upper layers,
+	 * or we will restart this request.
+	 * In either case, the request object will be destroyed soon,
+	 * so better remove it from all lists. */
+	list_del_init(&req->req_pending_master_completion);
 }
 
+/* still holds resource->req_lock */
 static int drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_error *m, int put)
 {
 	D_ASSERT(req->device, m || (req->rq_state[0] & RQ_POSTPONED));

@@ -2621,6 +2621,8 @@ static void do_retry(struct work_struct *ws)
 	}
 }
 
+/* called via drbd_req_put_completion_ref(),
+ * holds resource->req_lock */
 void drbd_restart_request(struct drbd_request *req)
 {
 	unsigned long flags;
