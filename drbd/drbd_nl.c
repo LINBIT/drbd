@@ -874,7 +874,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 	if (role == R_SECONDARY) {
 		idr_for_each_entry(&resource->devices, device, minor) {
-			set_disk_ro(device->vdisk, true);
 			if (get_ldev(device)) {
 				device->ldev->md.current_uuid &= ~UUID_PRIMARY;
 				put_ldev(device);
@@ -895,7 +894,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		mutex_unlock(&resource->conf_update);
 
 		idr_for_each_entry(&resource->devices, device, minor) {
-			set_disk_ro(device->vdisk, false);
 			if (get_ldev(device)) {
 				drbd_uuid_new_current(device, forced);
 				put_ldev(device);
@@ -932,6 +930,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 	idr_for_each_entry(&resource->devices, device, minor) {
 		drbd_md_sync(device);
+		set_disk_ro(device->vdisk, role == R_SECONDARY);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
 			drbd_kobject_uevent(device);
 	}
