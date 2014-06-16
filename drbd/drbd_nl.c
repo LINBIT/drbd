@@ -883,8 +883,8 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	} else {
 		struct drbd_connection *connection;
 
-		/* Called from drbd_adm_set_role only.
-		 *  We are still holding the conf_update mutex. */
+
+		mutex_lock(&resource->conf_update);
 		for_each_connection(connection, resource) {
 			struct net_conf *nc;
 
@@ -892,6 +892,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 			if (nc)
 				nc->discard_my_data = 0; /* without copy; single bit op is atomic */
 		}
+		mutex_unlock(&resource->conf_update);
 
 		idr_for_each_entry(&resource->devices, device, minor) {
 			set_disk_ro(device->vdisk, false);
