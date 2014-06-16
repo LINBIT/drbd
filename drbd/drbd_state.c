@@ -350,6 +350,10 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 	finish_state_change(resource, done);
 
+	/* changes to local_cnt and device flags should be visible before
+	 * changes to state, which again should be visible before anything else
+	 * depending on that change happens. */
+	smp_wmb();
 	resource->role[NOW] = resource->role[NEW];
 	resource->susp[NOW] = resource->susp[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
@@ -378,6 +382,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_other_c[NEW];
 		}
 	}
+	smp_wmb();
 out:
 	rcu_read_unlock();
 
