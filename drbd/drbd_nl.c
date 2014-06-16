@@ -1484,6 +1484,9 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
 
 		blk_set_stacking_limits(&q->limits);
+#ifdef REQ_WRITE_SAME
+		blk_queue_max_write_same_sectors(q, 0);
+#endif
 	}
 
 	blk_queue_logical_block_size(q, 512);
