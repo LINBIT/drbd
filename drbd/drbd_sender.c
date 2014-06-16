@@ -1736,8 +1736,17 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	if (repl_state < L_ESTABLISHED)
 		r = SS_UNKNOWN_ERROR;
 
-	if (r == SS_SUCCESS)
+	if (r == SS_SUCCESS) {
 		drbd_pause_after(device);
+		/* Forget potentially stale cached per resync extent bit-counts.
+		 * Open coded drbd_rs_cancel_all(device), we already have IRQs
+		 * disabled, and know the disk state is ok. */
+		spin_lock(&device->al_lock);
+		lc_reset(peer_device->resync_lru);
+		peer_device->resync_locked = 0;
+		peer_device->resync_wenr = LC_FREE;
+		spin_unlock(&device->al_lock);
+	}
 
 	unlock_all_resources();
 
@@ -1800,6 +1809,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 static void update_on_disk_bitmap(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	bool resync_done = test_and_clear_bit(RS_DONE, &peer_device->flags);
 	peer_device->rs_last_writeout = jiffies;
 
 	if (!get_ldev(device))
@@ -1807,27 +1817,12 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device)
 
 	drbd_bm_write_lazy(device, 0);
 
-	if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
+	if (resync_done && is_sync_state(peer_device, NOW))
 		drbd_resync_finished(peer_device, D_MASK);
+
 	/* update timestamp, in case it took a while to write out stuff */
 	peer_device->rs_last_writeout = jiffies;
 	put_ldev(device);
-}
-
-bool wants_lazy_bitmap_update(struct drbd_peer_device *peer_device)
-{
-	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
-	return
-	/* only do a lazy writeout, if device is in some resync state */
-	   (repl_state == L_SYNC_SOURCE
-	||  repl_state == L_SYNC_TARGET
-	||  repl_state == L_PAUSED_SYNC_S
-	||  repl_state == L_PAUSED_SYNC_T) &&
-	/* AND
-	 * either we just finished, or the last lazy update
-	 * was some time ago already. */
-	   (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed
-	||  time_after(jiffies, peer_device->rs_last_writeout + 2*HZ));
 }
 
 static void try_update_all_on_disk_bitmaps(struct drbd_connection *connection)
@@ -1838,8 +1833,9 @@ static void try_update_all_on_disk_bitmaps(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		if (!wants_lazy_bitmap_update(peer_device))
+		if (!test_and_clear_bit(RS_PROGRESS, &peer_device->flags))
 			continue;
+
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
 		update_on_disk_bitmap(peer_device);
@@ -2039,15 +2035,15 @@ void wait_for_sender_todo(struct drbd_connection *connection)
 		if (send_barrier)
 			maybe_send_barrier(connection,
 					connection->send.current_epoch_nr + 1);
+
 		/* drbd_send() may have called flush_signals() */
 		if (get_t_state(&connection->sender) != RUNNING)
 			break;
+
 		schedule();
 		/* may be woken up for other things but new work, too,
 		 * e.g. if the current epoch got closed.
 		 * In which case we send the barrier above. */
-
-		try_update_all_on_disk_bitmaps(connection);
 	}
 	finish_wait(&connection->sender_work.q_wait, &wait);
 
@@ -2265,6 +2261,14 @@ int drbd_sender(struct drbd_thread *thi)
 	return 0;
 }
 
+static void update_bitmaps(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource)
+		try_update_all_on_disk_bitmaps(connection);
+}
+
 int drbd_worker(struct drbd_thread *thi)
 {
 	LIST_HEAD(work_list);
@@ -2275,8 +2279,15 @@ int drbd_worker(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&work_list)) {
+			bool a, b;
+
 			wait_event_interruptible(resource->work.q_wait,
-				dequeue_work_batch(&resource->work, &work_list));
+				(a = dequeue_work_batch(&resource->work, &work_list),
+				 b = test_and_clear_bit(RESOURCE_RS_PROGRESS, &resource->flags),
+				 a || b));
+
+			if (b)
+				update_bitmaps(resource);
 		}
 
 		if (signal_pending(current)) {

@@ -1471,6 +1471,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (did != should)
 				start_new_epoch = true;
+
+			if (!is_sync_state(peer_device, NOW) &&
+			    is_sync_state(peer_device, NEW))
+				clear_bit(RS_DONE, &peer_device->flags);
 		}
 	}
 	if (start_new_epoch)

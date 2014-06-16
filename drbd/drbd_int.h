@@ -619,6 +619,8 @@ enum {
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
 				 * the peer, if it changed there as well. */
+	RS_PROGRESS,		/* tell worker that resync made significant progress */
+	RS_DONE,		/* tell worker that resync is done */
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
@@ -785,6 +787,7 @@ enum {
 				 * and potentially deadlock on, this drbd worker.
 				 */
 	NEGOTIATION_RESULT_TOCHED,
+	RESOURCE_RS_PROGRESS,	/* tell worker that resync made significant progress */
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
@@ -1456,16 +1459,20 @@ extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
 /* in which _bitmap_ extent (resp. sector) the bit for a certain
  * _storage_ sector is located in */
 #define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SHIFT-9))
+#define BM_BIT_TO_EXT(x)    ((x) >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT))
 
-/* how much _storage_ sectors we have per bitmap sector */
+/* first storage sector a bitmap extent corresponds to */
 #define BM_EXT_TO_SECT(x)   ((sector_t)(x) << (BM_EXT_SHIFT-9))
+/* how much _storage_ sectors we have per bitmap extent */
 #define BM_SECT_PER_EXT     BM_EXT_TO_SECT(1)
+/* how many bits are covered by one bitmap extent (resync extent) */
+#define BM_BITS_PER_EXT     (1UL << (BM_EXT_SHIFT - BM_BLOCK_SHIFT))
+
+#define BM_BLOCKS_PER_BM_EXT_MASK  (BM_BITS_PER_EXT - 1)
+
 
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SHIFT - AL_EXTENT_SHIFT))
-
-#define BM_BLOCKS_PER_BM_EXT_B (BM_EXT_SHIFT - BM_BLOCK_SHIFT)
-#define BM_BLOCKS_PER_BM_EXT_MASK  ((1<<BM_BLOCKS_PER_BM_EXT_B) - 1)
 
 /* the extent in "PER_EXTENT" below is an activity log extent
  * we need that many (long words/bytes) to store the bitmap
@@ -1560,7 +1567,6 @@ extern unsigned long _drbd_bm_find_next(struct drbd_peer_device *, unsigned long
 extern unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *, unsigned long);
 extern unsigned long _drbd_bm_total_weight(struct drbd_device *, int);
 extern unsigned long drbd_bm_total_weight(struct drbd_peer_device *);
-extern int drbd_bm_rs_done(struct drbd_device *device);
 /* for receive_bitmap */
 extern void drbd_bm_merge_lel(struct drbd_peer_device *peer_device, size_t offset,
 		size_t number, unsigned long *buffer);
@@ -1876,10 +1882,19 @@ extern void drbd_rs_cancel_all(struct drbd_peer_device *);
 extern int drbd_rs_del_all(struct drbd_peer_device *);
 extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
-extern void drbd_set_in_sync(struct drbd_peer_device *, sector_t, int);
-extern bool drbd_set_out_of_sync(struct drbd_peer_device *, sector_t, int);
 extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
+enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
+extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, int size,
+		enum update_sync_bits_mode mode,
+		const char *file, const unsigned int line);
+#define drbd_set_in_sync(peer_device, sector, size) \
+	__drbd_change_sync(peer_device, sector, size, SET_IN_SYNC, __FILE__, __LINE__)
+#define drbd_set_out_of_sync(peer_device, sector, size) \
+	__drbd_change_sync(peer_device, sector, size, SET_OUT_OF_SYNC, __FILE__, __LINE__)
+#define drbd_rs_failed_io(peer_device, sector, size) \
+	__drbd_change_sync(peer_device, sector, size, RECORD_RS_FAILED, __FILE__, __LINE__)
+
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_initialize_al(struct drbd_device *, void *);
@@ -2261,6 +2276,17 @@ static inline int __dec_unacked(struct drbd_peer_device *peer_device)
 static inline int __sub_unacked(struct drbd_peer_device *peer_device, int n)
 {
 	return atomic_sub_return(n, &peer_device->unacked_cnt);
+}
+
+static inline bool is_sync_state(struct drbd_peer_device *peer_device,
+				 enum which_state which)
+{
+	enum drbd_repl_state repl_state = peer_device->repl_state[which];
+
+	return repl_state == L_SYNC_SOURCE
+		|| repl_state == L_SYNC_TARGET
+		|| repl_state == L_PAUSED_SYNC_S
+		|| repl_state  == L_PAUSED_SYNC_T;
 }
 
 /**
