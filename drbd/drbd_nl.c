@@ -2539,8 +2539,8 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_flush_workqueue(&connection->sender_work);
 
-	mutex_lock(&connection->data.mutex);
 	mutex_lock(&connection->resource->conf_update);
+	mutex_lock(&connection->data.mutex);
 	old_net_conf = connection->net_conf;
 
 	if (!old_net_conf) {
@@ -2605,8 +2605,8 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	crypto_free_hash(connection->cram_hmac_tfm);
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
 
-	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->resource->conf_update);
 	synchronize_rcu();
 	kfree(old_net_conf);
 
@@ -2621,8 +2621,8 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	goto out;
 
  fail:
-	mutex_unlock(&connection->resource->conf_update);
 	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->resource->conf_update);
 	free_crypto(&crypto);
 	kfree(new_net_conf);
  out:
