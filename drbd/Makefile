@@ -93,34 +93,7 @@ else
 		false;\
 	fi
 
-.PHONY: drbd_buildtag.c
-
-  drbd_buildtag.c:
-	@set -e; exec > $@.new;							\
-	echo -e "/* automatically generated. DO NOT EDIT. */";			\
-	echo -e "#include <linux/drbd.h>";					\
-	echo -e "#include <linux/drbd_config.h>";				\
-	echo -e "const char *drbd_buildtag(void)\n{";				\
-	if test -e ../.git && GITHEAD=$$(git rev-parse HEAD); then		\
-		GITDIFF=$$(cd .. && git diff --name-only HEAD |			\
-			tr -s '\t\n' '  ' |					\
-			sed -e 's/^/ /;s/ *$$//');				\
-		echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";		\
-	elif ! test -e $@ ; then						\
-		echo >&2 "$@ not found.";					\
-		test -e ../.git &&						\
-		>&2 printf "%s\n"						\
-			"git did not work, but this looks like a git checkout?"	\
-			"Install git and try again." ||				\
-		echo >&2 "Your DRBD source tree is broken. Unpack again.";	\
-		exit 1;								\
-	else									\
-		grep return $@ ;						\
-	fi ;									\
-	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-	mv --force $@.new $@
-
-  kbuild: drbd_buildtag.c
+  kbuild:
 	@rm -f .drbd_kernelrelease*
     # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
