@@ -105,6 +105,10 @@ filechk_compat.h = \
 	    fi; \
 	done
 
+# for some reason some of the commands below only work correctly in bash,
+# and not in e.g. dash. I'm too lazy to fix it to be compatible.
+SHELL=/bin/bash
+
 .PHONY: $(obj)/drbd_buildtag.c
 
 $(obj)/drbd_buildtag.c:
