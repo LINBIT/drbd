@@ -599,16 +599,19 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	bool all_secondary = true;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
 		if (connection->cstate[NOW] >= C_CONNECTED &&
-		    connection->peer_role[NOW] == R_PRIMARY)
-			return false;
+		    connection->peer_role[NOW] == R_PRIMARY) {
+			all_secondary = false;
+			break;
+		}
 	}
 	rcu_read_unlock();
 
-	return true;
+	return all_secondary;
 }
 
 /* This function is supposed to have the same semantics as calc_device_stable() in drbd_state.c */
@@ -617,6 +620,7 @@ static bool drbd_device_stable(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	struct drbd_peer_device *peer_device;
+	bool device_stable = true;
 
 	if (!drbd_all_neighbor_secondary(resource))
 		return false;
@@ -628,14 +632,16 @@ static bool drbd_device_stable(struct drbd_device *device)
 		case L_WF_BITMAP_T:
 		case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_T:
-			return false;
+			device_stable = false;
+			goto out;
 		default:
 			continue;
 		}
 	}
-	rcu_read_unlock();
 
-	return true;
+out:
+	rcu_read_unlock();
+	return device_stable;
 }
 
 /**
