@@ -152,7 +152,6 @@ drbd/drbd_buildtag.c:
 .filelist:
 	@$(GIT) ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
-	echo drbd-$(DIST_VERSION)/drbd_config.h        >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/.filelist            >> .filelist ; \
 	echo "./.filelist updated."
@@ -164,7 +163,6 @@ drbd/drbd_buildtag.c:
 # which will regenerate .filelist
 tgz:
 	test -e .filelist
-	$(LN_S) -f drbd/linux/drbd_config.h drbd_config.h
 	rm -f drbd-$(FDIST_VERSION)
 	$(LN_S) . drbd-$(FDIST_VERSION)
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
