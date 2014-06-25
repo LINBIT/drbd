@@ -3,7 +3,6 @@
 /tags
 
 /.filelist
-/drbd_config.h
 
 *.gcda
 *.gcno
@@ -24,4 +23,3 @@ drbd/compat.h
 drbd/drbd.mod.c
 drbd/drbd_buildtag.c
 drbd/modules.order
-drbd/linux/drbd_config.h.orig
