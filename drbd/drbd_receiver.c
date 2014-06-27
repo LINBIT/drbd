@@ -5260,7 +5260,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_repl_state *repl_state;
 	struct drbd_device *device = NULL;
 	struct p_state *p = pi->data;
-	union drbd_state os, peer_state;
+	union drbd_state old_per_state, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
 	int rv;
@@ -5288,23 +5288,23 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	spin_lock_irq(&resource->req_lock);
-	os = drbd_get_peer_device_state(peer_device, NOW);
+	old_per_state = drbd_get_peer_device_state(peer_device, NOW);
 	spin_unlock_irq(&resource->req_lock);
  retry:
-	new_repl_state = max_t(enum drbd_repl_state, os.conn, L_OFF);
+	new_repl_state = max_t(enum drbd_repl_state, old_per_state.conn, L_OFF);
 
 	/* If some other part of the code (asender thread, timeout)
 	 * already decided to close the connection again,
 	 * we must not "re-establish" it here. */
-	if (os.conn <= C_TEAR_DOWN)
+	if (old_per_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * was D_INCONSISTENT or D_CONSISTENT. (Since the peer might be
 	 * weak we do not know anything about its new disk state)
 	 */
-	if ((os.pdsk == D_INCONSISTENT || os.pdsk == D_CONSISTENT) &&
-	    os.conn > L_ESTABLISHED && os.disk == D_UP_TO_DATE) {
+	if ((old_per_state.pdsk == D_INCONSISTENT || old_per_state.pdsk == D_CONSISTENT) &&
+	    old_per_state.conn > L_ESTABLISHED && old_per_state.disk == D_UP_TO_DATE) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
 		 * will change to inconsistent once the peer reaches active
@@ -5318,7 +5318,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* if peer_state changes to connected at the same time,
 		 * it explicitly notifies us that it finished resync.
 		 * Maybe we should finish it up, too? */
-		else if (os.conn >= L_SYNC_SOURCE &&
+		else if (old_per_state.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_ESTABLISHED) {
 			if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
 				drbd_resync_finished(peer_device, peer_state.disk);
@@ -5327,7 +5327,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	/* explicit verify finished notification, stop sector reached. */
-	if (os.conn == L_VERIFY_T && os.disk == D_UP_TO_DATE &&
+	if (old_per_state.conn == L_VERIFY_T && old_per_state.disk == D_UP_TO_DATE &&
 	    peer_state.conn == C_CONNECTED && peer_disk_state == D_UP_TO_DATE) {
 		ov_out_of_sync_print(peer_device);
 		drbd_resync_finished(peer_device, D_MASK);
@@ -5339,8 +5339,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	 * but we think we are already done with the sync.
 	 * We ignore this to avoid flapping pdsk.
 	 * This should not happen, if the peer is a recent version of drbd. */
-	if (os.pdsk == D_UP_TO_DATE && peer_disk_state == D_INCONSISTENT &&
-	    os.conn == L_ESTABLISHED && peer_state.conn > L_SYNC_SOURCE)
+	if (old_per_state.pdsk == D_UP_TO_DATE && peer_disk_state == D_INCONSISTENT &&
+	    old_per_state.conn == L_ESTABLISHED && peer_state.conn > L_SYNC_SOURCE)
 		peer_disk_state = D_UP_TO_DATE;
 
 	if (new_repl_state == L_OFF)
@@ -5350,7 +5350,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		new_repl_state = L_BEHIND;
 
 	if (peer_state.conn == L_PAUSED_SYNC_T && peer_state.disk == D_OUTDATED &&
-	    os.conn == L_ESTABLISHED) {
+	    old_per_state.conn == L_ESTABLISHED) {
 		/* Looks like the peer was invalidated with drbdadm */
 		drbd_info(peer_device, "Setting bits\n");
 		drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from receive_state",
@@ -5364,20 +5364,21 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		bool consider_resync;
 
 		/* if we established a new connection */
-		consider_resync = (os.conn < L_ESTABLISHED);
+		consider_resync = (old_per_state.conn < L_ESTABLISHED);
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --force */
 		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
 		/* if we had been plain connected, and the admin requested to
 		 * start a sync by "invalidate" or "invalidate-remote" */
-		consider_resync |= (os.conn == L_ESTABLISHED &&
+		consider_resync |= (old_per_state.conn == L_ESTABLISHED &&
 				    (peer_state.conn == L_STARTING_SYNC_S ||
 				     peer_state.conn == L_STARTING_SYNC_T));
 
 		if (consider_resync) {
 			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
-		} else if (os.conn == L_ESTABLISHED &&
-			   (peer_state.disk == D_NEGOTIATING || os.disk == D_NEGOTIATING)) {
+		} else if (old_per_state.conn == L_ESTABLISHED &&
+			   (peer_state.disk == D_NEGOTIATING ||
+			    old_per_state.disk == D_NEGOTIATING)) {
 			new_repl_state = drbd_attach_handshake(peer_device);
 		}
 
@@ -5398,7 +5399,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
-				D_ASSERT(device, os.conn == L_OFF);
+				D_ASSERT(device, old_per_state.conn == L_OFF);
 				change_cstate(connection, C_DISCONNECTING, CS_HARD);
 				return -EIO;
 			}
@@ -5412,8 +5413,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	spin_lock_irq(&resource->req_lock);
 	begin_state_change_locked(resource, CS_VERBOSE);
-	if (os.i != drbd_get_peer_device_state(peer_device, NOW).i) {
-		os = drbd_get_peer_device_state(peer_device, NOW);
+	if (old_per_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
+		old_per_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
 		spin_unlock_irq(&resource->req_lock);
 		goto retry;
@@ -5459,7 +5460,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 
-	if (os.conn > L_OFF) {
+	if (old_per_state.conn > L_OFF) {
 		if (new_repl_state > L_ESTABLISHED && peer_state.conn <= L_ESTABLISHED &&
 		    peer_state.disk != D_NEGOTIATING ) {
 			/* we want resync, peer has not yet decided to sync... */
