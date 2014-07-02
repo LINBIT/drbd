@@ -1,5 +1,5 @@
+#include <linux/stddef.h>
 #include <linux/bitops.h>
-#include <asm-generic/bitops/le.h>
 
 unsigned long func(void)
 {
