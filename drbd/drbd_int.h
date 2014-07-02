@@ -603,7 +603,6 @@ enum {
 				 * goes into L_ESTABLISHED state. */
 	MD_NO_BARRIER,		/* meta data device does not support barriers,
 				   so don't even try */
-	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
 	WAS_READ_ERROR,		/* Local disk READ failed, returned IO error */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
@@ -611,6 +610,13 @@ enum {
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	UNREGISTERED,
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
+
+        /* cleared only after backing device related structures have been destroyed. */
+        GOING_DISKLESS,         /* Disk is being detached, because of io-error, or admin request. */
+
+        /* to be used in drbd_device_post_work() */
+        GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
+        DESTROY_DISK,           /* tell worker to close backing devices and destroy related structures. */
 };
 
 /* flag bits per peer device */
@@ -787,7 +793,8 @@ enum {
 				 * and potentially deadlock on, this drbd worker.
 				 */
 	NEGOTIATION_RESULT_TOCHED,
-	RESOURCE_RS_PROGRESS,	/* tell worker that resync made significant progress */
+	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
+	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
@@ -1105,7 +1112,6 @@ struct drbd_device {
 	struct gendisk	    *vdisk;
 
 	unsigned long last_reattach_jif;
-	struct drbd_work go_diskless;
 	struct drbd_work md_sync_work;
 
 	struct timer_list md_sync_timer;
@@ -1370,7 +1376,6 @@ extern int drbd_bitmap_io_from_worker(struct drbd_device *,
 extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
-extern void drbd_ldev_destroy(struct drbd_device *device);
 extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
 
 /* Meta data layout
@@ -2151,6 +2156,29 @@ static inline sector_t drbd_md_ss(struct drbd_backing_dev *bdev)
 }
 
 void drbd_queue_work(struct drbd_work_queue *, struct drbd_work *);
+
+static inline void
+drbd_device_post_work(struct drbd_device *device, int work_bit)
+{
+	if (!test_and_set_bit(work_bit, &device->flags)) {
+		struct drbd_resource *resource = device->resource;
+		struct drbd_work_queue *q = &resource->work;
+		if (!test_and_set_bit(DEVICE_WORK_PENDING, &resource->flags))
+			wake_up(&q->q_wait);
+	}
+}
+
+static inline void
+drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
+{
+	if (!test_and_set_bit(work_bit, &peer_device->flags)) {
+		struct drbd_resource *resource = peer_device->device->resource;
+		struct drbd_work_queue *q = &resource->work;
+		if (!test_and_set_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
+			wake_up(&q->q_wait);
+	}
+}
+
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
 static inline void wake_asender(struct drbd_connection *connection)
@@ -2315,11 +2343,11 @@ static inline void put_ldev(struct drbd_device *device)
 	if (i == 0) {
 		if (ds == D_DISKLESS)
 			/* even internal references gone, safe to destroy */
-			drbd_ldev_destroy(device);
+			drbd_device_post_work(device, DESTROY_DISK);
 		if (ds == D_FAILED || ds == D_DETACHING)
 			/* all application IO references gone. */
-			if (!test_and_set_bit(GO_DISKLESS, &device->flags))
-				drbd_queue_work(&device->resource->work, &device->go_diskless);
+			if (!test_and_set_bit(GOING_DISKLESS, &device->flags))
+				drbd_device_post_work(device, GO_DISKLESS);
 		wake_up(&device->misc_wait);
 	}
 }

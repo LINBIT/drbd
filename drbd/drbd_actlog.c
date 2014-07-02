@@ -1021,21 +1021,13 @@ static bool lazy_bitmap_update_due(struct drbd_peer_device *peer_device)
 static void maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
 						 bool rs_done)
 {
-	struct drbd_resource *resource;
-
 	if (rs_done)
 		set_bit(RS_DONE, &peer_device->flags);
 		/* and also set RS_PROGRESS below */
 	else if (!lazy_bitmap_update_due(peer_device))
 		return;
 
-	/* compare with test_and_clear_bit() calls in and above
-	 * try_update_all_on_disk_bitmaps() from the drbd_worker(). */
-	if (test_and_set_bit(RS_PROGRESS, &peer_device->flags))
-		return;
-	resource = peer_device->connection->resource;
-	if (!test_and_set_bit(RESOURCE_RS_PROGRESS, &resource->flags))
-		wake_up(&resource->work.q_wait);
+	drbd_peer_device_post_work(peer_device, RS_PROGRESS);
 }
 
 

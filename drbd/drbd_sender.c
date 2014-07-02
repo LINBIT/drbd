@@ -1806,10 +1806,9 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	up(&device->resource->state_sem);
 }
 
-static void update_on_disk_bitmap(struct drbd_peer_device *peer_device)
+static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool resync_done)
 {
 	struct drbd_device *device = peer_device->device;
-	bool resync_done = test_and_clear_bit(RS_DONE, &peer_device->flags);
 	peer_device->rs_last_writeout = jiffies;
 
 	if (!get_ldev(device))
@@ -1825,7 +1824,104 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device)
 	put_ldev(device);
 }
 
-static void try_update_all_on_disk_bitmaps(struct drbd_connection *connection)
+static void drbd_ldev_destroy(struct drbd_device *device)
+{
+        struct drbd_peer_device *peer_device;
+
+        rcu_read_lock();
+        for_each_peer_device(peer_device, device) {
+                lc_destroy(peer_device->resync_lru);
+                peer_device->resync_lru = NULL;
+        }
+        rcu_read_unlock();
+        lc_destroy(device->act_log);
+        device->act_log = NULL;
+        __no_warn(local,
+                drbd_free_ldev(device->ldev);
+                device->ldev = NULL;);
+
+        clear_bit(GO_DISKLESS, &device->flags);
+	wake_up(&device->misc_wait);
+}
+
+static void go_diskless(struct drbd_device *device)
+{
+        D_ASSERT(device, device->disk_state[NOW] == D_FAILED ||
+                         device->disk_state[NOW] == D_DETACHING);
+        /* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
+         * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
+         * the protected members anymore, though, so once put_ldev reaches zero
+         * again, it will be safe to free them. */
+
+        /* Try to write changed bitmap pages, read errors may have just
+         * set some bits outside the area covered by the activity log.
+         *
+         * If we have an IO error during the bitmap writeout,
+         * we will want a full sync next time, just in case.
+         * (Do we want a specific meta data flag for this?)
+         *
+         * If that does not make it to stable storage either,
+         * we cannot do anything about that anymore.
+         *
+         * We still need to check if both bitmap and ldev are present, we may
+         * end up here after a failed attach, before ldev was even assigned.
+         */
+        if (device->bitmap && device->ldev) {
+                if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
+                                               "detach",
+                                               BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+                                               NULL)) {
+                        if (test_bit(CRASHED_PRIMARY, &device->flags)) {
+                                struct drbd_peer_device *peer_device;
+
+                                for_each_peer_device(peer_device, device)
+                                        drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+
+                                drbd_md_sync(device);
+                        }
+                }
+        }
+
+        change_disk_state(device, D_DISKLESS, CS_HARD);
+}
+
+#define WORK_PENDING(work_bit, todo)	(todo & (1UL << work_bit))
+static void do_device_work(struct drbd_device *device, const unsigned long todo)
+{
+	if (WORK_PENDING(GO_DISKLESS, todo))
+		go_diskless(device);
+	if (WORK_PENDING(DESTROY_DISK, todo))
+		drbd_ldev_destroy(device);
+}
+
+static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
+{
+	if (WORK_PENDING(RS_DONE, todo) ||
+	    WORK_PENDING(RS_PROGRESS, todo))
+		update_on_disk_bitmap(peer_device, WORK_PENDING(RS_DONE, todo));
+}
+
+#define DRBD_DEVICE_WORK_MASK	\
+	((1UL << GO_DISKLESS)	\
+	|(1UL << DESTROY_DISK)	\
+	)
+
+#define DRBD_PEER_DEVICE_WORK_MASK	\
+	((1UL << RS_PROGRESS)		\
+	|(1UL << RS_DONE)		\
+	)
+
+static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags)
+{
+	unsigned long old, new;
+	do {
+		old = *flags;
+		new = old & ~mask;
+	} while (cmpxchg(flags, old, new) != old);
+	return old & mask;
+}
+
+static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
@@ -1833,17 +1929,47 @@ static void try_update_all_on_disk_bitmaps(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		if (!test_and_clear_bit(RS_PROGRESS, &peer_device->flags))
+		unsigned long todo = get_work_bits(DRBD_PEER_DEVICE_WORK_MASK, &peer_device->flags);
+		if (!todo)
 			continue;
 
 		kobject_get(&device->kobj);
 		rcu_read_unlock();
-		update_on_disk_bitmap(peer_device);
+		do_peer_device_work(peer_device, todo);
 		kobject_put(&device->kobj);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
 }
+
+static void do_unqueued_peer_device_work(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource)
+		__do_unqueued_peer_device_work(connection);
+}
+
+static void do_unqueued_device_work(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		unsigned long todo = get_work_bits(DRBD_DEVICE_WORK_MASK, &device->flags);
+		if (!todo)
+			continue;
+
+		kobject_get(&device->kobj);
+		rcu_read_unlock();
+		do_device_work(device, todo);
+		kobject_put(&device->kobj);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+
 
 bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
@@ -2261,14 +2387,6 @@ int drbd_sender(struct drbd_thread *thi)
 	return 0;
 }
 
-static void update_bitmaps(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection;
-
-	for_each_connection(connection, resource)
-		try_update_all_on_disk_bitmaps(connection);
-}
-
 int drbd_worker(struct drbd_thread *thi)
 {
 	LIST_HEAD(work_list);
@@ -2279,15 +2397,19 @@ int drbd_worker(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&work_list)) {
-			bool a, b;
+			bool w, d, p;
 
 			wait_event_interruptible(resource->work.q_wait,
-				(a = dequeue_work_batch(&resource->work, &work_list),
-				 b = test_and_clear_bit(RESOURCE_RS_PROGRESS, &resource->flags),
-				 a || b));
+				(w = dequeue_work_batch(&resource->work, &work_list),
+				 d = test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags),
+				 p = test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags),
+				 w || d || p));
 
-			if (b)
-				update_bitmaps(resource);
+			if (p)
+				do_unqueued_peer_device_work(resource);
+
+			if (d)
+				do_unqueued_device_work(resource);
 		}
 
 		if (signal_pending(current)) {
@@ -2311,13 +2433,19 @@ int drbd_worker(struct drbd_thread *thi)
 	}
 
 	do {
+		if (test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags))
+			do_unqueued_device_work(resource);
+		if (test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
+			do_unqueued_peer_device_work(resource);
 		while (!list_empty(&work_list)) {
 			w = list_first_entry(&work_list, struct drbd_work, list);
 			list_del_init(&w->list);
 			w->cb(w, 1);
 		}
 		dequeue_work_batch(&resource->work, &work_list);
-	} while (!list_empty(&work_list));
+	} while (!list_empty(&work_list) ||
+		 test_bit(DEVICE_WORK_PENDING, &resource->flags) ||
+		 test_bit(PEER_DEVICE_WORK_PENDING, &resource->flags));
 
 	return 0;
 }
