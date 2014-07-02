@@ -22,6 +22,8 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
+
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h>

@@ -16,7 +16,7 @@
 #include <linux/blkdev.h>
 
 #ifndef pr_fmt
-#define pr_fmt(fmt) "drbd: " fmt
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 #endif
 
 /* {{{ pr_* macros */
