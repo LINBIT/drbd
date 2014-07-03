@@ -102,14 +102,6 @@ struct update_peers_work {
        unsigned int enr;
 };
 
-struct update_al_work {
-	struct drbd_work w;
-	struct drbd_device *device;
-	struct completion event;
-	int err;
-};
-
-
 void *drbd_md_get_buffer(struct drbd_device *device)
 {
 	int r;
@@ -351,15 +343,12 @@ bool drbd_al_begin_io_prepare(struct drbd_device *device, struct drbd_interval *
 	return need_transaction;
 }
 
-static int al_write_transaction(struct drbd_device *device, bool delegate);
+static int al_write_transaction(struct drbd_device *device);
 static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
 
-void drbd_al_begin_io_commit(struct drbd_device *device, bool delegate)
+void drbd_al_begin_io_commit(struct drbd_device *device)
 {
 	bool locked = false;
-
-	if (delegate)
-		BUG_ON(current == device->resource->worker.task);
 
 	/* Serialize multiple transactions.
 	 * This uses test_and_set_bit, memory barrier is implicit.
@@ -379,8 +368,7 @@ void drbd_al_begin_io_commit(struct drbd_device *device, bool delegate)
 			rcu_read_unlock();
 
 			if (write_al_updates)
-				al_write_transaction(device, delegate);
-
+				al_write_transaction(device);
 			spin_lock_irq(&device->al_lock);
 			/* FIXME
 			if (err)
@@ -397,13 +385,10 @@ void drbd_al_begin_io_commit(struct drbd_device *device, bool delegate)
 /*
  * @delegate:	delegate activity log I/O to the worker thread
  */
-void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i, bool delegate)
+void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i)
 {
-	if (delegate)
-		BUG_ON(current == device->resource->worker.task);
-
 	if (drbd_al_begin_io_prepare(device, i))
-		drbd_al_begin_io_commit(device, delegate);
+		drbd_al_begin_io_commit(device);
 }
 
 static
@@ -459,7 +444,7 @@ void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd
 	}
 
 	if (need_transaction)
-		drbd_al_begin_io_commit(peer_device->device, false);
+		drbd_al_begin_io_commit(peer_device->device);
 }
 
 int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i)
@@ -570,8 +555,7 @@ static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
 	return device->ldev->md.md_offset + device->ldev->md.al_offset + t;
 }
 
-static int
-_al_write_transaction(struct drbd_device *device)
+int al_write_transaction(struct drbd_device *device)
 {
 	struct al_transaction_on_disk *buffer;
 	struct lc_element *e;
@@ -683,37 +667,6 @@ _al_write_transaction(struct drbd_device *device)
 	put_ldev(device);
 
 	return err;
-}
-
-
-static int w_al_write_transaction(struct drbd_work *w, int unused)
-{
-	struct update_al_work *aw = container_of(w, struct update_al_work, w);
-	struct drbd_device *device = aw->device;
-	int err;
-
-	err = _al_write_transaction(device);
-	aw->err = err;
-	complete(&aw->event);
-
-	return err != -EIO ? err : 0;
-}
-
-/*
- * @delegate:	delegate activity log I/O to the worker thread
- */
-static int al_write_transaction(struct drbd_device *device, bool delegate)
-{
-	if (delegate) {
-		struct update_al_work al_work;
-		init_completion(&al_work.event);
-		al_work.w.cb = w_al_write_transaction;
-		al_work.device = device;
-		drbd_queue_work(&device->resource->work, &al_work.w);
-		wait_for_completion(&al_work.event);
-		return al_work.err;
-	} else
-		return _al_write_transaction(device);
 }
 
 static int _try_lc_del(struct drbd_device *device, struct lc_element *al_ext)
