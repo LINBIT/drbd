@@ -13,6 +13,10 @@ void drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 }
 
+#ifndef __same_type
+# define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+#endif
+
 void foo(void)
 {
 	struct request_queue *q = NULL;
