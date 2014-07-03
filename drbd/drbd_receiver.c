@@ -6936,7 +6936,7 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
 		    atomic_read(&connection->ap_in_flight) == 0 &&
 		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
-			peer_device->start_resync_work.side = L_SYNC_SOURCE;
+			peer_device->start_resync_side = L_SYNC_SOURCE;
 			peer_device->start_resync_timer.expires = jiffies + HZ;
 			add_timer(&peer_device->start_resync_timer);
 		}

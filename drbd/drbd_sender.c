@@ -1621,31 +1621,23 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 void start_resync_timer_fn(unsigned long data)
 {
 	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
-	struct drbd_resource *resource = peer_device->device->resource;
-
-	drbd_queue_work(&resource->work, &peer_device->start_resync_work.work);
+	drbd_peer_device_post_work(peer_device, RS_START);
 }
 
-int w_start_resync(struct drbd_work *w, int cancel)
+static void do_start_resync(struct drbd_peer_device *peer_device)
 {
-	struct drbd_peer_device *peer_device =
-		container_of(w, struct drbd_peer_device, start_resync_work.work);
 	struct drbd_device *device = peer_device->device;
-
-	if (cancel)
-		return 0;
 
 	if (atomic_read(&peer_device->unacked_cnt) ||
 	    atomic_read(&peer_device->rs_pending_cnt)) {
-		drbd_warn(peer_device, "w_start_resync later...\n");
+		drbd_warn(peer_device, "postponing start_resync ...\n");
 		peer_device->start_resync_timer.expires = jiffies + HZ/10;
 		add_timer(&peer_device->start_resync_timer);
-		return 0;
+		return;
 	}
 
-	drbd_start_resync(peer_device, peer_device->start_resync_work.side);
+	drbd_start_resync(peer_device, peer_device->start_resync_side);
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
-	return 0;
 }
 
 /**
@@ -1708,7 +1700,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		/* Retry later and let the worker make progress in the
 		 * meantime; two-phase commits depend on that.  */
 		set_bit(B_RS_H_DONE, &peer_device->flags);
-		peer_device->start_resync_work.side = side;
+		peer_device->start_resync_side = side;
 		peer_device->start_resync_timer.expires = jiffies + HZ/5;
 		add_timer(&peer_device->start_resync_timer);
 		return;
@@ -1912,6 +1904,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	if (WORK_PENDING(RS_DONE, todo) ||
 	    WORK_PENDING(RS_PROGRESS, todo))
 		update_on_disk_bitmap(peer_device, WORK_PENDING(RS_DONE, todo));
+	if (WORK_PENDING(RS_START, todo))
+		do_start_resync(peer_device);
 }
 
 #define DRBD_DEVICE_WORK_MASK	\
@@ -1921,7 +1915,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	)
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\
-	((1UL << RS_PROGRESS)		\
+	((1UL << RS_START)		\
+	|(1UL << RS_PROGRESS)		\
 	|(1UL << RS_DONE)		\
 	)
 

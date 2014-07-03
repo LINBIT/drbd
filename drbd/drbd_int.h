@@ -366,11 +366,6 @@ struct drbd_peer_device_work {
 	struct drbd_peer_device *peer_device;
 };
 
-struct start_resync_work {
-	struct drbd_work work;
-	enum drbd_repl_state side;
-};
-
 #include "drbd_interval.h"
 
 extern int drbd_wait_misc(struct drbd_device *, struct drbd_peer_device *, struct drbd_interval *);
@@ -626,6 +621,7 @@ enum {
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
 				 * the peer, if it changed there as well. */
+	RS_START,		/* tell worker to start resync/OV */
 	RS_PROGRESS,		/* tell worker that resync made significant progress */
 	RS_DONE,		/* tell worker that resync is done */
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
@@ -1019,7 +1015,7 @@ struct drbd_peer_device {
 
 	unsigned long flags;
 
-	struct start_resync_work start_resync_work;
+	enum drbd_repl_state start_resync_side;
 	struct timer_list start_resync_timer;
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
@@ -1113,7 +1109,6 @@ struct drbd_device {
 	struct gendisk	    *vdisk;
 
 	unsigned long last_reattach_jif;
-
 	struct timer_list md_sync_timer;
 	struct timer_list request_timer;
 #ifdef DRBD_DEBUG_MD_SYNC
