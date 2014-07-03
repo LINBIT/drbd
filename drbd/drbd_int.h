@@ -617,6 +617,7 @@ enum {
         /* to be used in drbd_device_post_work() */
         GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
         DESTROY_DISK,           /* tell worker to close backing devices and destroy related structures. */
+	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 };
 
 /* flag bits per peer device */
@@ -1112,7 +1113,6 @@ struct drbd_device {
 	struct gendisk	    *vdisk;
 
 	unsigned long last_reattach_jif;
-	struct drbd_work md_sync_work;
 
 	struct timer_list md_sync_timer;
 	struct timer_list request_timer;

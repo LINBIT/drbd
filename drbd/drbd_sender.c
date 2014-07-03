@@ -1885,9 +1885,22 @@ static void go_diskless(struct drbd_device *device)
         change_disk_state(device, D_DISKLESS, CS_HARD);
 }
 
+static int do_md_sync(struct drbd_device *device)
+{
+	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
+#ifdef DRBD_DEBUG_MD_SYNC
+	drbd_warn(device, "last md_mark_dirty: %s:%u\n",
+		device->last_md_mark_dirty.func, device->last_md_mark_dirty.line);
+#endif
+	drbd_md_sync(device);
+	return 0;
+}
+
 #define WORK_PENDING(work_bit, todo)	(todo & (1UL << work_bit))
 static void do_device_work(struct drbd_device *device, const unsigned long todo)
 {
+	if (WORK_PENDING(MD_SYNC, todo))
+		do_md_sync(device);
 	if (WORK_PENDING(GO_DISKLESS, todo))
 		go_diskless(device);
 	if (WORK_PENDING(DESTROY_DISK, todo))
@@ -1904,6 +1917,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 #define DRBD_DEVICE_WORK_MASK	\
 	((1UL << GO_DISKLESS)	\
 	|(1UL << DESTROY_DISK)	\
+	|(1UL << MD_SYNC)	\
 	)
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\

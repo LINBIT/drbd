@@ -72,7 +72,6 @@
 
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
-static int w_md_sync(struct drbd_work *w, int unused);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static void drbd_destroy_device(struct kobject *kobj);
@@ -3167,14 +3166,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
 	INIT_LIST_HEAD(&device->net_ee);
-	INIT_LIST_HEAD(&device->md_sync_work.list);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);
 	INIT_LIST_HEAD(&device->pending_completion[0]);
 	INIT_LIST_HEAD(&device->pending_completion[1]);
-
-	device->md_sync_work.cb = w_md_sync;
 
 	init_timer(&device->md_sync_timer);
 	init_timer(&device->request_timer);
@@ -4561,24 +4557,7 @@ bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_
 static void md_sync_timer_fn(unsigned long data)
 {
 	struct drbd_device *device = (struct drbd_device *) data;
-
-	/* must not double-queue! */
-	if (list_empty(&device->md_sync_work.list))
-		drbd_queue_work(&device->resource->work, &device->md_sync_work);
-}
-
-static int w_md_sync(struct drbd_work *w, int unused)
-{
-	struct drbd_device *device =
-		container_of(w, struct drbd_device, md_sync_work);
-
-	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
-#ifdef DRBD_DEBUG_MD_SYNC
-	drbd_warn(device, "last md_mark_dirty: %s:%u\n",
-		device->last_md_mark_dirty.func, device->last_md_mark_dirty.line);
-#endif
-	drbd_md_sync(device);
-	return 0;
+	drbd_device_post_work(device, MD_SYNC);
 }
 
 /**
