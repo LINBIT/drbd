@@ -726,8 +726,8 @@ next_sector:
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
-		if (peer_device->connection->agreed_pro_version >= 89 &&
-		    peer_device->connection->csums_tfm) {
+
+		if (peer_device->use_csums) {
 			switch (read_for_csum(peer_device, sector, size)) {
 			case -EIO: /* Disk failure */
 				put_ldev(device);
@@ -968,7 +968,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
 
-		if (connection->csums_tfm && peer_device->rs_total) {
+		if (peer_device->use_csums && peer_device->rs_total) {
 			const unsigned long s = peer_device->rs_same_csum;
 			const unsigned long t = peer_device->rs_total;
 			const int ratio =
@@ -1640,6 +1640,18 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
 }
 
+static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
+{
+	bool csums_after_crash_only;
+	rcu_read_lock();
+	csums_after_crash_only = rcu_dereference(connection->net_conf)->csums_after_crash_only;
+	rcu_read_unlock();
+	return connection->agreed_pro_version >= 89 &&		/* supported? */
+		connection->csums_tfm &&			/* configured? */
+		(csums_after_crash_only == 0			/* use for each resync? */
+		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
+}
+
 /**
  * drbd_start_resync() - Start the resync process
  * @side:	Either L_SYNC_SOURCE or L_SYNC_TARGET
@@ -1747,8 +1759,12 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		     drbd_repl_str(repl_state),
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
-		if (side == L_SYNC_TARGET)
+		if (side == L_SYNC_TARGET) {
 			device->bm_resync_fo = 0;
+			peer_device->use_csums = use_checksum_based_resync(connection, device);
+		} else {
+			peer_device->use_csums = 0;
+		}
 
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
 		 * with w_send_oos, or the sync target will get confused as to

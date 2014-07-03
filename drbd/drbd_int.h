@@ -1032,6 +1032,8 @@ struct drbd_peer_device {
 	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 
+	/* use checksums for *this* resync */
+	bool use_csums;
 	/* blocks to resync in this run [unit BM_BLOCK_SIZE] */
 	unsigned long rs_total;
 	/* number of resync blocks that failed in this run */
