@@ -4429,7 +4429,18 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	/* just store the peer's disk size for now.
 	 * we still need to figure out whether we accept that. */
-	peer_device->max_size = be64_to_cpu(p->d_size);
+	/* In case I am diskless, need to accept the peer's *current* size.
+	 *
+	 * At this point, the peer knows more about my disk, or at
+	 * least about what we last agreed upon, than myself.
+	 * So if his c_size is less than his d_size, the most likely
+	 * reason is that *my* d_size was smaller last time we checked.
+	 *
+	 * However, if he sends a zero current size,
+	 * take his (user-capped or) backing disk size anyways.
+	 */
+	peer_device->max_size =
+		be64_to_cpu(p->c_size) ?: be64_to_cpu(p->u_size) ?: be64_to_cpu(p->d_size);
 
 	if (get_ldev(device)) {
 		sector_t p_usize = be64_to_cpu(p->u_size), my_usize;
