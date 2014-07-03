@@ -339,22 +339,22 @@ void tl_clear(struct drbd_connection *connection)
 
 /**
  * tl_abort_disk_io() - Abort disk I/O for all requests for a certain device in the TL
- * @device:	DRBD device.
+ * @device:     DRBD device.
  */
 void tl_abort_disk_io(struct drbd_device *device)
 {
-	struct drbd_resource *resource = device->resource;
-	struct drbd_request *req, *r;
+        struct drbd_resource *resource = device->resource;
+        struct drbd_request *req, *r;
 
-	spin_lock_irq(&resource->req_lock);
-	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
-		if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
-			continue;
-		if (req->device != device)
-			continue;
-		_req_mod(req, ABORT_DISK_IO, NULL);
-	}
-	spin_unlock_irq(&resource->req_lock);
+        spin_lock_irq(&resource->req_lock);
+        list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
+                if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
+                        continue;
+                if (req->device != device)
+                        continue;
+                _req_mod(req, ABORT_DISK_IO, NULL);
+        }
+        spin_unlock_irq(&resource->req_lock);
 }
 
 static int drbd_thread_setup(void *arg)
@@ -3089,7 +3089,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	return peer_device;
 }
 
-int init_submitter(struct drbd_device *device)
+static int init_submitter(struct drbd_device *device)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 	/* opencoded create_singlethread_workqueue(),
@@ -3418,7 +3418,7 @@ void drbd_put_connection(struct drbd_connection *connection)
 	kref_sub(&connection->kref, refs, drbd_destroy_connection);
 }
 
-int __init drbd_init(void)
+static int __init drbd_init(void)
 {
 	int err;
 
@@ -3944,7 +3944,7 @@ u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(lo
 	return first_history_uuid;
 }
 
-void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
+static void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
 	if (device->resource->role[NOW] == R_PRIMARY)
 		val |= UUID_PRIMARY;

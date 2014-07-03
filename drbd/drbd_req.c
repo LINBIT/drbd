@@ -1443,7 +1443,7 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
  * request on the submitter thread.
  * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
  */
-struct drbd_request *
+static struct drbd_request *
 drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long start_jif)
 {
 	const int rw = bio_data_dir(bio);

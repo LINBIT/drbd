@@ -1270,7 +1270,7 @@ static int bm_rw_range(struct drbd_device *device, int rw,
 	return err;
 }
 
-int bm_rw(struct drbd_device *device, int rw, unsigned flags)
+static int bm_rw(struct drbd_device *device, int rw, unsigned flags)
 {
 	return bm_rw_range(device, rw, 0, -1U, flags);
 }

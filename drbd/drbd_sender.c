@@ -96,7 +96,7 @@ BIO_ENDIO_TYPE drbd_md_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -1366,7 +1366,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
  * and to be able to wait for them.
  * See also comment in drbd_adm_attach before drbd_suspend_io.
  */
-int drbd_send_barrier(struct drbd_connection *connection)
+static int drbd_send_barrier(struct drbd_connection *connection)
 {
 	struct p_barrier *p;
 	struct drbd_socket *sock;
@@ -1391,7 +1391,7 @@ static bool need_unplug(struct drbd_connection *connection)
 			connection->todo.unplug_dagtag_sector[i]);
 }
 
-void maybe_send_write_hint(struct drbd_connection *connection)
+static void maybe_send_write_hint(struct drbd_connection *connection)
 {
 	struct drbd_socket *sock;
 
@@ -1980,7 +1980,7 @@ static void do_unqueued_device_work(struct drbd_resource *resource)
 }
 
 
-bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
+static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
 	spin_lock_irq(&queue->q_lock);
 	list_splice_tail_init(&queue->q, work_list);
@@ -2100,7 +2100,7 @@ static struct drbd_request *tl_next_request_for_connection(struct drbd_connectio
  * It also moves all currently queued connection->sender_work
  * to connection->todo.work_list.
  */
-bool check_sender_todo(struct drbd_connection *connection)
+static bool check_sender_todo(struct drbd_connection *connection)
 {
 	tl_next_request_for_connection(connection);
 
@@ -2115,7 +2115,7 @@ bool check_sender_todo(struct drbd_connection *connection)
 		|| !list_empty(&connection->todo.work_list);
 }
 
-void wait_for_sender_todo(struct drbd_connection *connection)
+static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
@@ -2220,7 +2220,7 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 	}
 }
 
-int process_one_request(struct drbd_connection *connection)
+static int process_one_request(struct drbd_connection *connection)
 {
 	struct bio_and_error m;
 	struct drbd_request *req = connection->todo.req;
@@ -2282,7 +2282,7 @@ int process_one_request(struct drbd_connection *connection)
 	return err;
 }
 
-int process_sender_todo(struct drbd_connection *connection)
+static int process_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_work *w = NULL;
 
