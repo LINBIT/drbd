@@ -621,7 +621,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
 	int max_bio_size;
 	int number, rollback_i, size;
-	int align, queued, sndbuf;
+	int align, requeue = 0;
 	int i = 0;
 
 	if (unlikely(cancel))
@@ -651,14 +651,18 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&peer_device->connection->data.mutex);
 		if (peer_device->connection->data.socket) {
-			queued = peer_device->connection->data.socket->sk->sk_wmem_queued;
-			sndbuf = peer_device->connection->data.socket->sk->sk_sndbuf;
-		} else {
-			queued = 1;
-			sndbuf = 0;
-		}
+			struct sock *sk = peer_device->connection->data.socket->sk;
+			int queued = sk->sk_wmem_queued;
+			int sndbuf = sk->sk_sndbuf;
+			if (queued > sndbuf / 2) {
+				requeue = 1;
+				if (sk->sk_socket)
+					set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+			}
+		} else
+			requeue = 1;
 		mutex_unlock(&peer_device->connection->data.mutex);
-		if (queued > sndbuf / 2)
+		if (requeue)
 			goto requeue;
 
 next_sector:
