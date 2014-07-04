@@ -1235,6 +1235,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	struct net_conf *nc;
 	bool congested = false;
 	enum drbd_on_congestion on_congestion;
+	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -1243,6 +1244,9 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (on_congestion == OC_BLOCK ||
 	    connection->agreed_pro_version < 96)
 		return;
+
+	if (on_congestion == OC_PULL_AHEAD && peer_device->repl_state[NOW] == L_AHEAD)
+		return; /* nothing to do ... */
 
 	/* If I don't even have good local storage, we can not reasonably try
 	 * to pull ahead of the peer. We also need the local reference to make
@@ -1263,7 +1267,6 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	}
 
 	if (congested) {
-		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 		/* start a new epoch for non-mirrored writes */
 		start_new_tl_epoch(device->resource);
 
