@@ -1920,7 +1920,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	if (peer_device->connection->agreed_pro_version >= 100) {
 		if (s & RQ_EXP_RECEIVE_ACK)
 			dp_flags |= DP_SEND_RECEIVE_ACK;
-		if (s & RQ_EXP_WRITE_ACK)
+		if (s & RQ_EXP_WRITE_ACK || dp_flags & DP_MAY_SET_IN_SYNC)
 			dp_flags |= DP_SEND_WRITE_ACK;
 	}
 	p->dp_flags = cpu_to_be32(dp_flags);

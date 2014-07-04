@@ -186,6 +186,19 @@ static bool peer_ack_window_full(struct drbd_request *req)
 	return dagtag_newer_eq(req->dagtag_sector, last_dagtag);
 }
 
+static void drbd_remove_request_interval(struct rb_root *root,
+					 struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+	struct drbd_interval *i = &req->i;
+
+	drbd_remove_interval(root, i);
+
+	/* Wake up any processes waiting for this request to complete.  */
+	if (i->waiting)
+		wake_up(&device->misc_wait);
+}
+
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
@@ -232,6 +245,20 @@ tail_recursion:
 	 * still allowed to unconditionally list_del(&req->tl_requests),
 	 * because it will be on a local on-stack list only. */
 	list_del_init(&req->tl_requests);
+
+	/* finally remove the request from the conflict detection
+	 * respective block_id verification interval tree. */
+	if (!drbd_interval_empty(&req->i)) {
+		struct rb_root *root;
+
+		if (s & RQ_WRITE)
+			root = &device->write_requests;
+		else
+			root = &device->read_requests;
+		drbd_remove_request_interval(root, req);
+	} else if (s & (RQ_NET_MASK & ~RQ_NET_DONE) && req->i.size != 0)
+		drbd_err(device, "drbd_req_destroy: Logic BUG: interval empty, but: rq_state=0x%x, sect=%llu, size=%u\n",
+			s, (unsigned long long)req->i.sector, req->i.size);
 
 	if (s & RQ_WRITE) {
 		/* There is a special case:
@@ -354,19 +381,6 @@ void complete_master_bio(struct drbd_device *device,
 }
 
 
-static void drbd_remove_request_interval(struct rb_root *root,
-					 struct drbd_request *req)
-{
-	struct drbd_device *device = req->device;
-	struct drbd_interval *i = &req->i;
-
-	drbd_remove_interval(root, i);
-
-	/* Wake up any processes waiting for this request to complete.  */
-	if (i->waiting)
-		wake_up(&device->misc_wait);
-}
-
 /* Helper for __req_mod().
  * Set m->bio to the master bio, if it is fit to be completed,
  * or leave it alone (it is initialized to NULL in __req_mod),
@@ -445,18 +459,6 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 
 	rw = bio_rw(req->master_bio);
 
-	/* remove the request from the conflict detection
-	 * respective block_id verification hash */
-	if (!drbd_interval_empty(&req->i)) {
-		struct rb_root *root;
-
-		if (rw == WRITE)
-			root = &device->write_requests;
-		else
-			root = &device->read_requests;
-		drbd_remove_request_interval(root, req);
-	}
-
 	/* Before we can signal completion to the upper layers,
 	 * we may need to close the current transfer log epoch.
 	 * We are within the request lock, so we can simply compare
@@ -492,7 +494,15 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		m->error = ok ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
+		/* We leave it in the tree, to be able to verify later
+		 * write-acks in protocol != C during resync.
+		 * But we mark it as "complete", so it won't be counted as
+		 * conflict in a multi-primary setup. */
+		req->i.completed = true;
 	}
+
+	if (req->i.waiting)
+		wake_up(&device->misc_wait);
 
 	/* Either we are about to complete to upper layers,
 	 * or we will restart this request.
@@ -985,12 +995,13 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case WRITE_ACKED_BY_PEER_AND_SIS:
 		req->rq_state[idx] |= RQ_NET_SIS;
 	case WRITE_ACKED_BY_PEER:
-		D_ASSERT(device, req->rq_state[idx] & RQ_EXP_WRITE_ACK);
-		/* protocol C; successfully written on peer.
+		/* Normal operation protocol C: successfully written on peer.
+		 * During resync, even in protocol != C,
+		 * we requested an explicit write ack anyways.
+		 * Which means we cannot even assert anything here.
 		 * Nothing more to do here.
 		 * We want to keep the tl in place for all protocols, to cater
 		 * for volatile write-back caches on lower level devices. */
-
 		goto ack_common;
 	case RECV_ACKED_BY_PEER:
 		D_ASSERT(device, req->rq_state[idx] & RQ_EXP_RECEIVE_ACK);
@@ -998,7 +1009,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * see also notes above in HANDED_OVER_TO_NETWORK about
 		 * protocol != C */
 	ack_common:
-		D_ASSERT(device, req->rq_state[idx] & RQ_NET_PENDING);
 		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
 		break;
 
