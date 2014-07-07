@@ -2526,7 +2526,7 @@ static void drbd_destroy_device(struct kobject *kobj)
 		drbd_bm_free(device->bitmap);
 		device->bitmap = NULL;
 	}
-	__free_page(device->md_io_page);
+	__free_page(device->md_io.page);
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
@@ -3159,7 +3159,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
 	atomic_set(&device->rs_sect_ev, 0);
-	atomic_set(&device->md_io_in_use, 0);
+	atomic_set(&device->md_io.in_use, 0);
 
 	spin_lock_init(&device->al_lock);
 
@@ -3225,8 +3225,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	q->unplug_fn = drbd_unplug_fn;
 #endif
 
-	device->md_io_page = alloc_page(GFP_KERNEL);
-	if (!device->md_io_page)
+	device->md_io.page = alloc_page(GFP_KERNEL);
+	if (!device->md_io.page)
 		goto out_no_io_page;
 
 	device->bitmap = drbd_bm_alloc();
@@ -3339,7 +3339,7 @@ out_no_peer_device:
 
 	drbd_bm_free(device->bitmap);
 out_no_bitmap:
-	__free_page(device->md_io_page);
+	__free_page(device->md_io.page);
 out_no_io_page:
 	put_disk(disk);
 out_no_disk:
@@ -3638,7 +3638,7 @@ void drbd_md_sync(struct drbd_device *device)
 	if (!get_ldev_if_state(device, D_DETACHING))
 		return;
 
-	buffer = drbd_md_get_buffer(device);
+	buffer = drbd_md_get_buffer(device, __func__);
 	if (!buffer)
 		goto out;
 
@@ -3808,7 +3808,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	if (device->disk_state[NOW] != D_DISKLESS)
 		return ERR_DISK_CONFIGURED;
 
-	buffer = drbd_md_get_buffer(device);
+	buffer = drbd_md_get_buffer(device, __func__);
 	if (!buffer)
 		return ERR_NOMEM;
 

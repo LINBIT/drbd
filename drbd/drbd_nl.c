@@ -1190,7 +1190,7 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	 * still lock the act_log to not trigger ASSERTs there.
 	 */
 	drbd_suspend_io(device);
-	buffer = drbd_md_get_buffer(device); /* Lock meta-data IO */
+	buffer = drbd_md_get_buffer(device, __func__); /* Lock meta-data IO */
 	if (!buffer) {
 		drbd_resume_io(device);
 		return DS_ERROR;
