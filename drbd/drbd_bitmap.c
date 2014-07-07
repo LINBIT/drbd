@@ -1115,7 +1115,7 @@ static void bm_page_io_async(struct bm_aio_ctx *ctx, int page_nr, int rw) __must
 	} else
 		page = b->bm_pages[page_nr];
 	bio->bi_bdev = device->ldev->md_bdev;
-	bio->bi_sector = on_disk_sector;
+	DRBD_BIO_BI_SECTOR(bio) = on_disk_sector;
 	/* bio_add_page of a single page to an empty bio will always succeed,
 	 * according to api.  Do we want to assert that? */
 	bio_add_page(bio, page, len, 0);
