@@ -1372,28 +1372,6 @@ int drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local)
 	return bm_rw(device, WRITE, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES);
 }
 
-/**
- * drbd_bm_write_range() - Writes a range of bitmap pages
- * @device:	DRBD device.
- * @start:
- * @end:	inclusive range of bit numbers
- *
- * Maps the bit numbers to bitmap page indices, and call bm_rw_range().
- */
-int drbd_bm_write_range(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end) __must_hold(local)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_bitmap *bitmap = device->bitmap;
-	unsigned int page_nr, end_page;
-
-	if (end >= bitmap->bm_bits)
-		end = bitmap->bm_bits - 1;
-
-	page_nr = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, start);
-	end_page = bit_to_page_interleaved(bitmap, peer_device->bitmap_index, end);
-	return bm_rw_range(device, WRITE, page_nr, end_page, BM_AIO_COPY_PAGES);
-}
-
 unsigned long drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	return bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
