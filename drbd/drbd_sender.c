@@ -479,9 +479,9 @@ void resync_timer_fn(unsigned long data)
 {
 	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
 
-	if (list_empty(&peer_device->resync_work.list))
-		drbd_queue_work(&peer_device->connection->sender_work,
-				&peer_device->resync_work);
+	drbd_queue_work_if_unqueued(
+		&peer_device->connection->sender_work,
+		&peer_device->resync_work);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
