@@ -2590,25 +2590,6 @@ static inline void drbd_kick_lo(struct drbd_device *device)
 }
 #endif
 
-static inline void drbd_md_flush(struct drbd_device *device)
-{
-	int r;
-
-	if (device->ldev == NULL) {
-		drbd_warn(device, "device->ldev == NULL in drbd_md_flush\n");
-		return;
-	}
-
-	if (test_bit(MD_NO_BARRIER, &device->flags))
-		return;
-
-	r = blkdev_issue_flush(device->ldev->md_bdev, GFP_NOIO, NULL);
-	if (r) {
-		set_bit(MD_NO_BARRIER, &device->flags);
-		drbd_err(device, "meta data flush failed with status %d, disabling md-flushes\n", r);
-	}
-}
-
 /* resync bitmap */
 /* 128MB sized 'bitmap extent' to track syncer usage */
 struct bm_extent {

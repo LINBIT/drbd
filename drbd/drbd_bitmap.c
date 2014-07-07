@@ -1258,9 +1258,7 @@ static int bm_rw_range(struct drbd_device *device, int rw,
 	if (atomic_read(&ctx->in_flight))
 		err = -EIO; /* Disk timeout/force-detach during IO... */
 
-	if (rw == WRITE) {
-		drbd_md_flush(device);
-	} else /* rw == READ */ {
+	if (rw == READ) {
 		now = jiffies;
 		bm_count_bits(device);
 		drbd_info(device, "recounting of set bits took additional %ums\n",
