@@ -1125,7 +1125,7 @@ bool drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int s
 bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		   unsigned long bits, unsigned long mask)
 {
-	unsigned long set_start, set_end, clear_start, clear_end;
+	long set_start, set_end, clear_start, clear_end;
 	sector_t esector, nr_sectors;
 	bool set = false;
 	struct drbd_peer_device *peer_device;
@@ -1149,16 +1149,19 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	if (!expect(device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
-	/* we set it out of sync,
-	 * we do not need to round anything here */
+	/* For marking sectors as out of sync, we need to round up. */
 	set_start = BM_SECT_TO_BIT(sector);
 	set_end = BM_SECT_TO_BIT(esector);
 
+	/* For marking sectors as in sync, we need to round down except when we
+	 * reach the end of the device: The last bit in the bitmap does not
+	 * account for sectors past the end of the device.
+	 * CLEAR_END can become negative here. */
 	clear_start = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT - 1);
 	if (esector == nr_sectors - 1)
-		clear_end = BM_SECT_TO_BIT(nr_sectors - 1);
+		clear_end = BM_SECT_TO_BIT(esector);
 	else
-		clear_end = BM_SECT_TO_BIT(esector - BM_SECT_PER_BIT + 1);
+		clear_end = BM_SECT_TO_BIT(esector + 1) - 1;
 
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
