@@ -15,6 +15,61 @@
 #include <linux/proc_fs.h>
 #include <linux/blkdev.h>
 
+#ifndef pr_fmt
+#define pr_fmt(fmt) "drbd: " fmt
+#endif
+
+/* {{{ pr_* macros */
+/* some very old kernels don't have them, or at least not all of them */
+#ifndef pr_emerg
+#define pr_emerg(fmt, ...) \
+		printk(KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_alert
+#define pr_alert(fmt, ...) \
+		printk(KERN_ALERT pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_crit
+#define pr_crit(fmt, ...) \
+		printk(KERN_CRIT pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_err
+#define pr_err(fmt, ...) \
+		printk(KERN_ERR pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_warning
+#define pr_warning(fmt, ...) \
+		printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_warn
+#define pr_warn pr_warning
+#endif
+#ifndef pr_notice
+#define pr_notice(fmt, ...) \
+		printk(KERN_NOTICE pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_info
+#define pr_info(fmt, ...) \
+		printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#ifndef pr_cont
+#define pr_cont(fmt, ...) \
+		printk(KERN_CONT fmt, ##__VA_ARGS__)
+#endif
+
+/* pr_devel() should produce zero code unless DEBUG is defined */
+#ifndef pr_devel
+#ifdef DEBUG
+#define pr_devel(fmt, ...) \
+		printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__)
+#else
+#define pr_devel(fmt, ...) \
+		no_printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__)
+#endif
+#endif
+/* }}} pr_* macros */
+
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
 # error "At least kernel version 2.6.18 (with patches) required"
 #endif
@@ -248,7 +303,7 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 {
 	int ret = unregister_blkdev(major, name);
 	if (ret)
-		printk(KERN_ERR "drbd: unregister of device failed\n");
+		pr_err("unregister of device failed\n");
 }
 #else
 #define drbd_unregister_blkdev unregister_blkdev
@@ -1074,17 +1129,6 @@ static inline void genl_unregister_mc_group(struct genl_family *family,
 {
 }
 
-#endif
-
-/* pr_warning was introduced with 2.6.37 (commit 968ab183)
- */
-#ifndef pr_fmt
-#define pr_fmt(fmt) fmt
-#endif
-
-#ifndef pr_warning
-#define pr_warning(fmt, ...) \
-        printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
 #endif
 
 /*

@@ -23,6 +23,8 @@
 
  */
 
+#define pr_fmt(fmt)	"drbd: " fmt
+
 #include <linux/module.h>
 #include <linux/drbd.h>
 #include <linux/in.h>
@@ -123,7 +125,7 @@ static void drbd_adm_send_reply(struct sk_buff *skb, struct genl_info *info)
 {
 	genlmsg_end(skb, genlmsg_data(nlmsg_data(nlmsg_hdr(skb))));
 	if (genlmsg_reply(skb, info))
-		printk(KERN_ERR "drbd: error sending genl reply\n");
+		pr_err("error sending genl reply\n");
 }
 
 /* Used on a fresh "drbd_adm_prepare"d reply_skb, this cannot fail: The only
@@ -4270,7 +4272,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	if (!try_module_get(THIS_MODULE)) {
-		printk(KERN_ERR "drbd: Could not get a module reference\n");
+		pr_err("drbd: Could not get a module reference\n");
 		retcode = ERR_INVALID_REQUEST;
 		goto out;
 	}
@@ -4815,7 +4817,7 @@ static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
 
 nla_put_failure:
 	nlmsg_free(skb);
-	printk(KERN_ERR "Error %d sending event. Event seq:%u\n", err, seq);
+	pr_err("Error %d sending event. Event seq:%u\n", err, seq);
 }
 
 static void free_state_changes(struct list_head *list)

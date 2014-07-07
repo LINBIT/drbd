@@ -1,6 +1,10 @@
+
+#define pr_fmt(fmt)    "drbd: " fmt
+
 #include <linux/spinlock.h>
 #include <linux/seq_file.h>
 #include <linux/kref.h>
+#include "drbd_wrappers.h"
 #include "kref_debug.h"
 
 struct list_head kref_debug_objects;
@@ -50,15 +54,15 @@ void kref_debug_destroy(struct kref_debug_info *debug_info)
 
 	spin_lock_irqsave(&kref_debug_lock, irq_flags);
 	if (has_refs(debug_info)) {
-		printk(KERN_ERR "ASSERT FAILED\n");
-		printk(KERN_ERR "object of class: %s\n", debug_info->class->name);
+		pr_err("ASSERT FAILED\n");
+		pr_err("object of class: %s\n", debug_info->class->name);
 		for (i = 0; i < KREF_DEBUG_HOLDER_MAX; i++) {
 			if (debug_info->holders[i] == 0)
 				continue;
-			printk(KERN_ERR "  [%d] = %d (%s)\n", i, debug_info->holders[i],
+			pr_err("  [%d] = %d (%s)\n", i, debug_info->holders[i],
 			       debug_info->class->holder_name[i] ?: "");
 		}
-		printk(KERN_ERR "\n");
+		pr_err("\n");
 	}
 
 	list_del(&debug_info->objects);
@@ -70,7 +74,7 @@ void kref_debug_get(struct kref_debug_info *debug_info, int holder_nr)
 	unsigned long irq_flags;
 
 	if (holder_nr >= KREF_DEBUG_HOLDER_MAX) {
-		printk(KERN_ERR "Increase KREF_DEBUG_HOLDER_MAX\n");
+		pr_err("Increase KREF_DEBUG_HOLDER_MAX\n");
 		return;
 	}
 
@@ -84,7 +88,7 @@ void kref_debug_sub(struct kref_debug_info *debug_info, int refs, int holder_nr)
 	unsigned long irq_flags;
 
 	if (holder_nr >= KREF_DEBUG_HOLDER_MAX) {
-		printk(KERN_ERR "Increase KREF_DEBUG_HOLDER_MAX\n");
+		pr_err("Increase KREF_DEBUG_HOLDER_MAX\n");
 		return;
 	}
 

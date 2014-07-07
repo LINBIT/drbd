@@ -22,6 +22,8 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#define pr_fmt(fmt)    "drbd: " fmt
+
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h>
@@ -305,9 +307,8 @@ static void bm_free_pages(struct page **pages, unsigned long number)
 
 	for (i = 0; i < number; i++) {
 		if (!pages[i]) {
-			printk(KERN_ALERT "drbd: bm_free_pages tried to free "
-					  "a NULL pointer; i=%lu n=%lu\n",
-					  i, number);
+			pr_alert("bm_free_pages tried to free a NULL pointer; i=%lu n=%lu\n",
+				 i, number);
 			continue;
 		}
 		__free_page(pages[i]);
