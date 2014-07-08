@@ -59,6 +59,7 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 #include "drbd_vli.h"
+#include "drbd_debugfs.h"
 
 #ifdef COMPAT_HAVE_LINUX_BYTEORDER_SWABB_H
 #include <linux/byteorder/swabb.h>
@@ -2490,6 +2491,7 @@ static void drbd_release_all_peer_reqs(struct drbd_device *device)
 
 static void free_peer_device(struct drbd_peer_device *peer_device)
 {
+	drbd_debugfs_peer_device_cleanup(peer_device);
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
 	kfree(peer_device);
@@ -2556,6 +2558,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 	drbd_thread_stop(&resource->worker);
 	for_each_connection_safe(connection, tmp, resource) {
 		list_del(&connection->connections);
+		drbd_debugfs_connection_cleanup(connection);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 	if (resource->twopc_parent) {
@@ -2567,6 +2570,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
 	kref_debug_put(&resource->kref_debug, 8);
+	drbd_debugfs_resource_cleanup(resource);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -2668,6 +2672,7 @@ static void drbd_cleanup(void)
 		destroy_workqueue(retry.wq);
 
 	drbd_genl_unregister();
+	drbd_debugfs_cleanup();
 
 	drbd_destroy_mempools();
 	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
@@ -2946,6 +2951,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
+	drbd_debugfs_resource_add(resource);
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
@@ -2959,7 +2965,7 @@ fail:
 	return NULL;
 }
 
-/* caller must be under genl_lock() */
+/* caller must be under adm_mutex */
 struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
@@ -3016,6 +3022,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
 	connection->resource = resource;
+	drbd_debugfs_connection_add(connection);
 
 	return connection;
 
@@ -3090,6 +3097,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
+	drbd_debugfs_peer_device_add(peer_device);
 	return peer_device;
 }
 
@@ -3308,6 +3316,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			drbd_connected(peer_device);
 	}
 
+	drbd_debugfs_device_add(device);
 	*p_device = device;
 	return NO_ERROR;
 
@@ -3480,6 +3489,9 @@ static int __init drbd_init(void)
 	INIT_WORK(&retry.worker, do_retry);
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
+
+	if (drbd_debugfs_init())
+		pr_notice("failed to initialize debugfs -- will not be available\n");
 
 	pr_info("initialized. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",

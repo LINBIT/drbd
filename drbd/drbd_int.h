@@ -815,6 +815,11 @@ struct twopc_reply {
 
 struct drbd_resource {
 	char *name;
+
+	struct dentry *debugfs_res;
+	struct dentry *debugfs_res_volumes;
+	struct dentry *debugfs_res_connections;
+
 	struct kref kref;
 	struct kref_debug_info kref_debug;
 	struct idr devices;		/* volume number to device mapping */
@@ -875,6 +880,7 @@ struct drbd_resource {
 struct drbd_connection {			/* is a resource from the config file */
 	struct list_head connections;
 	struct drbd_resource *resource;
+	struct dentry *debugfs_conn;
 	struct kref kref;
 	struct kref_debug_info kref_debug;
 	struct idr peer_devices;	/* volume number to peer device mapping */
@@ -1085,6 +1091,8 @@ struct drbd_peer_device {
 	bool uuids_received;
 
 	unsigned long comm_bm_set; /* communicated number of set bits. */
+
+	struct dentry *debugfs_peer_dev;
 };
 
 struct submit_worker {
@@ -1101,7 +1109,12 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
-	int vnr;			/* volume number within the connection */
+
+	struct dentry *debugfs_vol;
+	struct dentry *debugfs_minor;
+	unsigned int vnr;	/* volume number within the connection */
+	unsigned int minor;	/* device minor number */
+
 	struct kobject kobj;
 	struct kref_debug_info kref_debug;
 
@@ -1169,7 +1182,6 @@ struct drbd_device {
 	unsigned int al_tr_number;
 	int al_tr_cycle;
 	wait_queue_head_t seq_wait;
-	unsigned int minor;
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
