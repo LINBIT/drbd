@@ -1115,7 +1115,7 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(lo
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
 
-	disk_conf = rcu_dereference(device->ldev->disk_conf);
+	disk_conf = device->ldev->disk_conf;
 
 	resync_plan = fifo_alloc((disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
 	if (!resync_plan)
