@@ -952,6 +952,12 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	})
 #endif
 
+#ifndef list_next_entry
+/* introduced in 008208c (v3.13-rc1) */
+#define list_next_entry(pos, member) \
+        list_entry((pos)->member.next, typeof(*(pos)), member)
+#endif
+
 /*
  * Introduced in 930631ed (v2.6.19-rc1).
  */
