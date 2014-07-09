@@ -1175,6 +1175,13 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 #define SK_CAN_REUSE   1
 #endif
 
+#ifndef COMPAT_HAVE_KREF_GET_UNLESS_ZERO
+static inline int __must_check kref_get_unless_zero(struct kref *kref)
+{
+	return atomic_add_unless(&kref->refcount, 1, 0);
+}
+#endif
+
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
 /* see 980c19e3
  * highmem: mark k[un]map_atomic() with two arguments as deprecated */
