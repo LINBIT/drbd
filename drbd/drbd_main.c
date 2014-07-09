@@ -3022,7 +3022,6 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
 	connection->resource = resource;
-	drbd_debugfs_connection_add(connection);
 
 	return connection;
 

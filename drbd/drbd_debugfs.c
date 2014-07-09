@@ -53,14 +53,16 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
 	struct dentry *conns_dir = connection->resource->debugfs_res_connections;
+	char conn_name[SHARED_SECRET_MAX];
 	struct dentry *dentry;
 	if (!conns_dir)
 		return;
 
-	/* Once we enable mutliple peers,
-	 * these connections will have descriptive names.
-	 * For now, it is just the one connection to the (only) "peer". */
-	dentry = debugfs_create_dir("peer", conns_dir);
+	rcu_read_lock();
+	strcpy(conn_name, rcu_dereference((connection)->net_conf)->name);
+	rcu_read_unlock();
+
+	dentry = debugfs_create_dir(conn_name, conns_dir);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	connection->debugfs_conn = dentry;

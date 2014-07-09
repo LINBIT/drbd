@@ -37,6 +37,7 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 #include "drbd_state_change.h"
+#include "drbd_debugfs.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
@@ -2888,6 +2889,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
 
+	drbd_debugfs_connection_add(connection); /* after ->net_conf was assigned */
 	drbd_thread_start(&connection->sender);
 	goto out;
 
