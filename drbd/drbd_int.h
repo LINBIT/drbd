@@ -588,7 +588,6 @@ enum {
 	 * (not some resync or verify or other DRBD internal request) */
 	__EE_APPLICATION,
 };
-#define EE_CALL_AL_COMPLETE_IO (1<<__EE_CALL_AL_COMPLETE_IO)
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_IS_BARRIER          (1<<__EE_IS_BARRIER)
 #define EE_IS_TRIM             (1<<__EE_IS_TRIM)

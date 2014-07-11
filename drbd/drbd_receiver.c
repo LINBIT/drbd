@@ -443,6 +443,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
 		       int is_net)
 {
+	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	drbd_free_pages(device, peer_req->pages, is_net);
@@ -2769,7 +2770,6 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 					  (unsigned long long)sector, size,
 					  discard ? "local" : "remote");
 
-			inc_unacked(peer_device);
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
@@ -2829,6 +2829,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
+	struct net_conf *nc;
 	sector_t sector;
 	struct drbd_peer_request *peer_req;
 	struct p_data *p = pi->data;
@@ -2931,9 +2932,36 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	spin_unlock(&connection->epoch_lock);
 
 	rcu_read_lock();
-	tp = rcu_dereference(connection->net_conf)->two_primaries;
+	nc = rcu_dereference(connection->net_conf);
+	tp = nc->two_primaries;
+	if (connection->agreed_pro_version < 100) {
+		switch (nc->wire_protocol) {
+		case DRBD_PROT_C:
+			dp_flags |= DP_SEND_WRITE_ACK;
+			break;
+		case DRBD_PROT_B:
+			dp_flags |= DP_SEND_RECEIVE_ACK;
+			break;
+		}
+	}
 	rcu_read_unlock();
+
+	if (dp_flags & DP_SEND_WRITE_ACK) {
+		peer_req->flags |= EE_SEND_WRITE_ACK;
+		inc_unacked(peer_device);
+		/* corresponding dec_unacked() in e_end_block()
+		 * respective _drbd_clear_done_ee */
+	}
+
+	if (dp_flags & DP_SEND_RECEIVE_ACK) {
+		/* I really don't like it that the receiver thread
+		 * sends on the msock, but anyways */
+		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
+	}
+
 	if (tp) {
+		/* two primaries implies protocol C */
+		D_ASSERT(device, dp_flags & DP_SEND_WRITE_ACK);
 		peer_req->flags |= EE_IN_INTERVAL_TREE;
 		err = wait_for_and_update_peer_seq(peer_device, peer_seq);
 		if (err)
@@ -2964,32 +2992,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET)
 		wait_event(device->ee_wait, !overlapping_resync_write(device, peer_req));
-
-	if (connection->agreed_pro_version < 100) {
-		rcu_read_lock();
-		switch (rcu_dereference(connection->net_conf)->wire_protocol) {
-		case DRBD_PROT_C:
-			dp_flags |= DP_SEND_WRITE_ACK;
-			break;
-		case DRBD_PROT_B:
-			dp_flags |= DP_SEND_RECEIVE_ACK;
-			break;
-		}
-		rcu_read_unlock();
-	}
-
-	if (dp_flags & DP_SEND_WRITE_ACK) {
-		peer_req->flags |= EE_SEND_WRITE_ACK;
-		inc_unacked(peer_device);
-		/* corresponding dec_unacked() in e_end_block()
-		 * respective _drbd_clear_done_ee */
-	}
-
-	if (dp_flags & DP_SEND_RECEIVE_ACK) {
-		/* I really don't like it that the receiver thread
-		 * sends on the msock, but anyways */
-		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
-	}
 
 	drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
 
