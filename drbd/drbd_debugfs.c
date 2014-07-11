@@ -161,6 +161,41 @@ static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_r
 	rcu_read_unlock();
 }
 
+static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
+{
+	struct drbd_device *device;
+	unsigned int i;
+
+	seq_puts(m, "minor\tvnr\tage\t#waiting\n");
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, i) {
+		unsigned long jif;
+		struct drbd_request *req;
+		int n = atomic_read(&device->ap_actlog_cnt);
+		if (n) {
+			spin_lock_irq(&device->resource->req_lock);
+			req = list_first_entry_or_null(&device->pending_master_completion[1],
+				struct drbd_request, req_pending_master_completion);
+			/* if the oldest request does not wait for the activity log
+			 * it is not interesting for us here */
+			if (req && !(req->rq_state[0] & RQ_IN_ACT_LOG))
+				jif = req->start_jif;
+			else
+				req = NULL;
+			spin_unlock_irq(&device->resource->req_lock);
+		}
+		if (n) {
+			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
+			if (req)
+				seq_printf(m, "%u\t", jiffies_to_msecs(now - jif));
+			else
+				seq_puts(m, "-\t");
+			seq_printf(m, "%u\n", n);
+		}
+	}
+	rcu_read_unlock();
+}
+
 static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	struct drbd_resource *resource,
 	struct drbd_connection *connection,
@@ -241,6 +276,10 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 
 	seq_puts(m, "meta data IO\n");
 	seq_print_resource_pending_meta_io(m, resource, jif);
+	seq_putc(m, '\n');
+
+	seq_puts(m, "application requests waiting for activity log\n");
+	seq_print_waiting_for_AL(m, resource, jif);
 	seq_putc(m, '\n');
 
 	seq_puts(m, "oldest application requests\n");
