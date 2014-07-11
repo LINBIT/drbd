@@ -133,6 +133,34 @@ static void seq_print_minor_vnr_req(struct seq_file *m, struct drbd_request *req
 	seq_print_one_request(m, req, now);
 }
 
+static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
+{
+	struct drbd_device *device;
+	unsigned int i;
+
+	seq_puts(m, "minor\tvnr\tstart\tsubmit\tintent\n");
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, i) {
+		struct drbd_md_io tmp;
+		/* In theory this is racy,
+		 * in the sense that there could have been a
+		 * drbd_md_put_buffer(); drbd_md_get_buffer();
+		 * between accessing these members here.  */
+		tmp = device->md_io;
+		if (atomic_read(&tmp.in_use)) {
+			seq_printf(m, "%u\t%u\t%d\t",
+				device->minor, device->vnr,
+				jiffies_to_msecs(now - tmp.start_jif));
+			if (time_before(tmp.submit_jif, tmp.start_jif))
+				seq_puts(m, "-\t");
+			else
+				seq_printf(m, "%d\t", jiffies_to_msecs(now - tmp.submit_jif));
+			seq_printf(m, "%s\n", tmp.current_use);
+		}
+	}
+	rcu_read_unlock();
+}
+
 static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	struct drbd_resource *resource,
 	struct drbd_connection *connection,
@@ -210,6 +238,10 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	 * But be robust and prepare for future code changes. */
 	if (!connection || !kref_get_unless_zero(&connection->kref))
 		return -ESTALE;
+
+	seq_puts(m, "meta data IO\n");
+	seq_print_resource_pending_meta_io(m, resource, jif);
+	seq_putc(m, '\n');
 
 	seq_puts(m, "oldest application requests\n");
 	seq_print_resource_transfer_log_summary(m, resource, connection, jif);
