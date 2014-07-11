@@ -1803,6 +1803,8 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		conn_wait_active_ee_empty(peer_req->peer_device->connection);
 		/* add it to the active list now,
 		 * so we can find it to present it in debugfs */
+		peer_req->submit_jif = jiffies;
+		peer_req->flags |= EE_SUBMITTED;
 		spin_lock_irq(&device->resource->req_lock);
 		list_add_tail(&peer_req->w.list, &device->active_ee);
 		spin_unlock_irq(&device->resource->req_lock);
@@ -1876,6 +1878,9 @@ submit:
 	D_ASSERT(device, page == NULL);
 
 	atomic_set(&peer_req->pending_bios, n_bios);
+	/* for debugfs: update timestamp, mark as submitted */
+	peer_req->submit_jif = jiffies;
+	peer_req->flags |= EE_SUBMITTED;
 	do {
 		bio = bios;
 		bios = bios->bi_next;
@@ -2167,6 +2172,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	if (!peer_req)
 		return NULL;
 
+	peer_req->flags |= EE_WRITE;
 	if (trim)
 		return peer_req;
 
@@ -2323,6 +2329,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	 * respective _drbd_clear_done_ee */
 
 	peer_req->w.cb = e_end_resync_block;
+	peer_req->submit_jif = jiffies;
 
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&peer_req->w.list, &device->sync_ee);
@@ -2864,6 +2871,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	connection->last_dagtag_sector = peer_req->dagtag_sector;
 
 	peer_req->w.cb = e_end_block;
+	peer_req->submit_jif = jiffies;
+	peer_req->flags |= EE_APPLICATION;
 
 	dp_flags = be32_to_cpu(p->dp_flags);
 	rw |= wire_flags_to_bio(connection, dp_flags);
@@ -3147,6 +3156,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		peer_req->w.cb = w_e_end_data_req;
 		fault_type = DRBD_FAULT_DT_RD;
 		/* application IO, don't drbd_rs_begin_io */
+		peer_req->flags |= EE_APPLICATION;
 		goto submit;
 
 	case P_RS_DATA_REQUEST:
