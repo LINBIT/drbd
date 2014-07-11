@@ -142,22 +142,31 @@ struct drbd_connection;
 #define __drbd_printk_device(level, device, fmt, args...) \
 	dev_printk(level, disk_to_dev((device)->vdisk), fmt, ## args)
 #define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
-	dev_printk(level, disk_to_dev((peer_device)->device->vdisk), "%s: " fmt, \
-		   rcu_dereference((peer_device)->connection->net_conf)->name, ## args)
+	({	rcu_read_lock(); \
+		dev_printk(level, disk_to_dev((peer_device)->device->vdisk), "%s: " fmt, \
+			   rcu_dereference((peer_device)->connection->net_conf)->name, ## args); \
+		rcu_read_unlock(); \
+	})
 #else
 #define __drbd_printk_device(level, device, fmt, args...) \
 	printk(level "block drbd%u: " fmt, (device)->minor, ## args)
 #define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
-	printk(level "block drbd%u %s: " fmt, (peer_device)->device->minor, \
-	       rcu_dereference((peer_device)->connection->net_conf)->name, ## args)
+	({	rcu_read_lock(); \
+		printk(level "block drbd%u %s: " fmt, (peer_device)->device->minor, \
+		       rcu_dereference((peer_device)->connection->net_conf)->name, ## args); \
+		rcu_read_unlock(); \
+	})
 #endif
 
 #define __drbd_printk_resource(level, resource, fmt, args...) \
 	printk(level "drbd %s: " fmt, (resource)->name, ## args)
 
 #define __drbd_printk_connection(level, connection, fmt, args...) \
-	printk(level "drbd %s %s: " fmt, (connection)->resource->name,  \
-	       rcu_dereference((connection)->net_conf)->name, ## args)
+	({	rcu_read_lock(); \
+		printk(level "drbd %s %s: " fmt, (connection)->resource->name,  \
+		       rcu_dereference((connection)->net_conf)->name, ## args); \
+		rcu_read_unlock(); \
+	})
 
 void drbd_printk_with_wrong_object_type(void);
 
