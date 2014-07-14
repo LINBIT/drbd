@@ -3135,6 +3135,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	struct gendisk *disk;
 	struct request_queue *q;
 	LIST_HEAD(peer_devices);
+	LIST_HEAD(tmp);
 	int id;
 	int vnr = adm_ctx->volume;
 	enum drbd_ret_code err = ERR_NOMEM;
@@ -3245,6 +3246,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
 
+	BUG_ON(!mutex_is_locked(&resource->conf_update));
 	for_each_connection(connection, resource) {
 		peer_device = create_peer_device(device, connection);
 		if (!peer_device)
@@ -3280,18 +3282,15 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	INIT_LIST_HEAD(&device->peer_devices);
 	list_for_each_entry_safe(peer_device, tmp_peer_device, &peer_devices, peer_devices) {
-		list_del(&peer_device->peer_devices);
 		connection = peer_device->connection;
-		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		id = idr_alloc(&connection->peer_devices, peer_device,
 			       device->vnr, device->vnr + 1, GFP_NOWAIT);
 		if (id < 0)
 			goto out_remove_peer_device;
-	}
-
-	for_each_peer_device(peer_device, device) {
-		kref_get(&peer_device->connection->kref);
-		kref_debug_get(&peer_device->connection->kref_debug, 3);
+		list_del(&peer_device->peer_devices);
+		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
+		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 3);
 		kobject_get(&device->kobj);
 		kref_debug_get(&device->kref_debug, 1);
 	}
@@ -3327,9 +3326,14 @@ out_del_disk:
 	del_gendisk(device->vdisk);
 
 out_remove_peer_device:
-	for_each_peer_device_safe(peer_device, tmp_peer_device, device) {
+	list_add_rcu(&tmp, &device->peer_devices);
+	list_del_init(&device->peer_devices);
+	synchronize_rcu();
+	list_for_each_entry_safe(peer_device, tmp_peer_device, &tmp, peer_devices) {
 		struct drbd_connection *connection = peer_device->connection;
 
+		kref_debug_put(&connection->kref_debug, 3);
+		kref_put(&connection->kref, drbd_destroy_connection);
 		idr_remove(&connection->peer_devices, device->vnr);
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
