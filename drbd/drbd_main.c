@@ -397,13 +397,13 @@ restart:
 	thi->t_state = NONE;
 	smp_mb();
 
-	complete(&thi->stop);
-	spin_unlock_irqrestore(&thi->t_lock, flags);
-
 	if (connection)
 		drbd_info(connection, "Terminating %s thread\n", thi->name);
 	else
 		drbd_info(resource, "Terminating %s thread\n", thi->name);
+
+	complete(&thi->stop);
+	spin_unlock_irqrestore(&thi->t_lock, flags);
 
 	return retval;
 }
