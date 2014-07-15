@@ -2915,6 +2915,7 @@ out:
 
 static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection, bool force)
 {
+	struct drbd_resource *resource = connection->resource;
 	enum drbd_state_rv rv;
 
     repeat:
@@ -2922,9 +2923,9 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	if (rv == SS_CW_FAILED_BY_PEER) {
 		enum drbd_conn_state cstate;
 
-		spin_lock_irq(&connection->resource->req_lock);
+		spin_lock_irq(&resource->req_lock);
 		cstate = connection->cstate[NOW];
-		spin_unlock_irq(&connection->resource->req_lock);
+		spin_unlock_irq(&resource->req_lock);
 		if (cstate < C_CONNECTED)
 			goto repeat;
 	}
@@ -2943,6 +2944,8 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	if (rv >= SS_SUCCESS) {
 		enum drbd_state_rv rv2;
 		long irq_flags;
+		struct drbd_peer_device *peer_device;
+		int vnr;
 
 		/* No one else can reconfigure the network while I am here.
 		 * The state handling only uses drbd_thread_stop_nowait(),
@@ -2965,9 +2968,18 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 		 * handling only does drbd_thread_stop_nowait().
 		 */
 		drbd_thread_stop(&connection->sender);
-		state_change_lock(connection->resource, &irq_flags, 0);
+
+		state_change_lock(resource, &irq_flags, 0);
 		drbd_unregister_connection(connection);
-		state_change_unlock(connection->resource, &irq_flags);
+		state_change_unlock(resource, &irq_flags);
+
+		mutex_lock(&notification_mutex);
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+			notify_peer_device_state(NULL, 0, peer_device, NULL,
+						 NOTIFY_DESTROY | NOTIFY_CONTINUES);
+		notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
+		mutex_unlock(&notification_mutex);
+
 		synchronize_rcu();
 		drbd_put_connection(connection);
 	}
@@ -4442,7 +4454,6 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 
 static int adm_del_resource(struct drbd_resource *resource)
 {
-	struct drbd_connection *connection;
 	int err;
 
 	mutex_lock(&global_state_mutex);
@@ -4455,9 +4466,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 	err = NO_ERROR;
 
 	mutex_lock(&notification_mutex);
-	for_each_connection(connection, resource)
-		notify_connection_state(NULL, 0, connection, NULL,
-					NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 
