@@ -2973,13 +2973,19 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 		drbd_unregister_connection(connection);
 		state_change_unlock(resource, &irq_flags);
 
+		/*
+		 * Flush the resource work queue to make sure that no more
+		 * events like state change notifications for this connection
+		 * are queued: we want the "destroy" event to come last.
+		 */
+		drbd_flush_workqueue(&resource->work);
+
 		mutex_lock(&notification_mutex);
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 			notify_peer_device_state(NULL, 0, peer_device, NULL,
 						 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 		notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
 		mutex_unlock(&notification_mutex);
-
 		synchronize_rcu();
 		drbd_put_connection(connection);
 	}
@@ -4416,6 +4422,13 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		stable_change_repl_state(peer_device, L_OFF,
 					 CS_VERBOSE | CS_WAIT_COMPLETE);
 
+	/*
+	 * Flush the resource work queue to make sure that no more events like
+	 * state change notifications for this device are queued: we want the
+	 * "destroy" event to come last.
+	 */
+	drbd_flush_workqueue(&resource->work);
+
 	spin_lock_irq(&resource->req_lock);
 	drbd_unregister_device(device);
 	spin_unlock_irq(&resource->req_lock);
@@ -4455,6 +4468,13 @@ int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 static int adm_del_resource(struct drbd_resource *resource)
 {
 	int err;
+
+	/*
+	 * Flush the resource work queue to make sure that no more events like
+	 * state change notifications are queued: we want the "destroy" event
+	 * to come last.
+	 */
+	drbd_flush_workqueue(&resource->work);
 
 	mutex_lock(&global_state_mutex);
 	err = ERR_NET_CONFIGURED;
