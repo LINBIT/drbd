@@ -640,6 +640,8 @@ enum {
         GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
         DESTROY_DISK,           /* tell worker to close backing devices and destroy related structures. */
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
+
+	HAVE_LDEV,
 };
 
 /* flag bits per peer device */

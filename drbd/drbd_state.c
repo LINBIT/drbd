@@ -69,8 +69,10 @@ static struct drbd_state_change *alloc_state_change(struct drbd_resource *resour
 	state_change->connections = (void *)&state_change->devices[n_devices];
 	state_change->peer_devices = (void *)&state_change->connections[n_connections];
 	state_change->resource->resource = NULL;
-	for (n = 0; n < n_devices; n++)
+	for (n = 0; n < n_devices; n++) {
 		state_change->devices[n].device = NULL;
+		state_change->devices[n].have_ldev = false;
+	}
 	for (n = 0; n < n_connections; n++)
 		state_change->connections[n].connection = NULL;
 	return state_change;
@@ -130,6 +132,8 @@ retry:
 		device_state_change->device = device;
 		memcpy(device_state_change->disk_state,
 		       device->disk_state, sizeof(device->disk_state));
+		if (test_and_clear_bit(HAVE_LDEV, &device->flags))
+			device_state_change->have_ldev = true;
 
 		/* The peer_devices for each device have to be enumerated in
 		   the order of the connections. We may not use for_each_peer_device() here. */
@@ -1506,8 +1510,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		 * w_after_state_change works run, where we put_ldev again. */
 		if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
 		    (disk_state[OLD] != D_DETACHING && disk_state[NEW] == D_DETACHING) ||
-		    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS))
+		    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS)) {
 			atomic_inc(&device->local_cnt);
+			BUG_ON(test_and_set_bit(HAVE_LDEV, &device->flags));
+		}
 
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
 			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.current_uuid);
@@ -2342,14 +2348,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			enum drbd_io_error_p eh = EP_PASS_ON;
 			int was_io_error = 0;
 
-			/*
-			 * finish_state_change() has grabbed a reference on
-			 * ldev in this case.
-			 *
-			 * our cleanup here with the transition to D_DISKLESS.
-			 * But is is still not save to dreference ldev here, since
+			/* Our cleanup here with the transition to D_DISKLESS.
+			 * It is still not safe to dereference ldev here, since
 			 * we might come from an failed Attach before ldev was set. */
-			if (device->ldev) {
+			if (expect(device, device_state_change->have_ldev) && device->ldev) {
 				rcu_read_lock();
 				eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
 				rcu_read_unlock();
@@ -2390,7 +2392,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * Following put_ldev may transition to D_DISKLESS. */
 				drbd_md_sync(device);
 			}
-			put_ldev(device);
 		}
 
 		/* second half of local IO error, failure to attach,
@@ -2404,13 +2405,12 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					"ASSERT FAILED: disk is %s while going diskless\n",
 					drbd_disk_str(device->disk_state[NOW]));
 
-			send_new_state_to_all_peer_devices(state_change, n_device);
-			/*
-			 * finish_state_change() has grabbed a reference on
-			 * ldev in this case.
-			 */
-			put_ldev(device);
+			if (expect(device, device_state_change->have_ldev))
+				send_new_state_to_all_peer_devices(state_change, n_device);
 		}
+
+		if (device_state_change->have_ldev)
+			put_ldev(device);
 
 		/* Notify peers that I had a local IO error and did not detach. */
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
