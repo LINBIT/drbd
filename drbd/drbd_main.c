@@ -77,7 +77,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
-static void drbd_destroy_device(struct kobject *kobj);
+static void drbd_free_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -161,7 +161,7 @@ static const struct block_device_operations drbd_ops = {
 };
 
 static struct kobj_type drbd_device_kobj_type = {
-	.release = drbd_destroy_device,
+	.release = drbd_free_device,
 };
 
 #ifdef COMPAT_HAVE_BIO_FREE
@@ -2232,7 +2232,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	}
 
 	if (!rv) {
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 3);
 		if (mode & FMODE_WRITE)
 			device->open_rw_cnt++;
@@ -2284,7 +2284,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 		}
 	}
 	kref_debug_put(&device->kref_debug, 3);
-	kobject_put(&device->kobj); /* might destroy the resource as well */
+	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
 #ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
 #endif
@@ -2497,10 +2497,18 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 	kfree(peer_device);
 }
 
-/* caution. no locking. */
-static void drbd_destroy_device(struct kobject *kobj)
+static void drbd_free_device(struct kobject *kobj)
 {
 	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
+
+	memset(device, 0xfd, sizeof(*device)); /* poison */
+	kfree(device);
+}
+
+/* caution. no locking. */
+void drbd_destroy_device(struct kref *kref)
+{
+	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device, *tmp;
 
@@ -2532,8 +2540,7 @@ static void drbd_destroy_device(struct kobject *kobj)
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
-	memset(device, 0xfd, sizeof(*device)); /* poison */
-	kfree(device);
+	kobject_put(&device->kobj);
 
 	kref_debug_put(&resource->kref_debug, 4);
 	kref_put(&resource->kref, drbd_destroy_resource);
@@ -3048,7 +3055,7 @@ void drbd_destroy_connection(struct kref *kref)
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		kref_debug_put(&peer_device->device->kref_debug, 1);
-		kobject_put(&peer_device->device->kobj);
+		kref_put(&peer_device->device->kref, drbd_destroy_device);
 		free_peer_device(peer_device);
 	}
 	idr_destroy(&connection->peer_devices);
@@ -3148,8 +3155,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
 	if (!device)
 		return ERR_NOMEM;
+	kref_init(&device->kref);
 	kobject_init(&device->kobj, &drbd_device_kobj_type);
-	kref_debug_init(&device->kref_debug, &device->kobj.kref, &kref_class_device);
+	kref_debug_init(&device->kref_debug, &device->kref, &kref_class_device);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 4);
@@ -3267,7 +3275,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_no_minor_idr;
 	}
-	kobject_get(&device->kobj);
+	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 1);
 
 	id = idr_alloc(&resource->devices, device, vnr, vnr + 1, GFP_NOWAIT);
@@ -3276,7 +3284,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
 		goto out_idr_remove_minor;
 	}
-	kobject_get(&device->kobj);
+	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 1);
 
 	INIT_LIST_HEAD(&device->peer_devices);
@@ -3290,7 +3298,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 3);
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 	}
 	spin_unlock_irq(&resource->req_lock);
@@ -3395,7 +3403,7 @@ void drbd_put_device(struct drbd_device *device)
 
 	for (i = 0; i < refs; i++) {
 		kref_debug_put(&device->kref_debug, 1);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 	}
 }
 

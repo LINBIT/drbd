@@ -1963,10 +1963,10 @@ static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 		if (!todo)
 			continue;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		do_peer_device_work(peer_device, todo);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -1991,10 +1991,10 @@ static void do_unqueued_device_work(struct drbd_resource *resource)
 		if (!todo)
 			continue;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		do_device_work(device, todo);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();

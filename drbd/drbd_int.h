@@ -1144,8 +1144,9 @@ struct drbd_device {
 	unsigned int vnr;	/* volume number within the connection */
 	unsigned int minor;	/* device minor number */
 
-	struct kobject kobj;
+	struct kref kref;
 	struct kref_debug_info kref_debug;
+	struct kobject kobj;
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
@@ -1679,6 +1680,8 @@ void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_free_resource(struct drbd_resource *resource);
+
+extern void drbd_destroy_device(struct kref *kref);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
 extern struct drbd_connection *drbd_create_connection(struct drbd_resource *);

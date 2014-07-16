@@ -127,7 +127,7 @@ retry:
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 2);
 		device_state_change->device = device;
 		memcpy(device_state_change->disk_state,
@@ -194,7 +194,7 @@ void forget_state_change(struct drbd_state_change *state_change)
 
 		if (device) {
 			kref_debug_put(&device->kref_debug, 2);
-			kobject_put(&device->kobj);
+			kref_put(&device->kref, drbd_destroy_device);
 		}
 	}
 	for (n = 0; n < state_change->n_connections; n++) {

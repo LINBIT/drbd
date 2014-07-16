@@ -259,7 +259,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	 * But we may explicitly drop it/retake it in drbd_adm_set_role(),
 	 * so make sure this object stays around. */
 	if (adm_ctx->device) {
-		kobject_get(&adm_ctx->device->kobj);
+		kref_get(&adm_ctx->device->kref);
 		kref_debug_get(&adm_ctx->device->kref_debug, 4);
 	}
 
@@ -363,7 +363,7 @@ static int drbd_adm_finish(struct drbd_config_context *adm_ctx, struct genl_info
 {
 	if (adm_ctx->device) {
 		kref_debug_put(&adm_ctx->device->kref_debug, 4);
-		kobject_put(&adm_ctx->device->kobj);
+		kref_put(&adm_ctx->device->kref, drbd_destroy_device);
 		adm_ctx->device = NULL;
 	}
 	if (adm_ctx->connection) {
@@ -394,10 +394,10 @@ static void conn_md_sync(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_md_sync(device);
-		kobject_put(&device->kobj);
+		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
@@ -2770,7 +2770,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 3);
-		kobject_get(&device->kobj);
+		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 		peer_devices++;
 	}
