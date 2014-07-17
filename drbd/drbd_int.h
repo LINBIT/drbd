@@ -62,8 +62,6 @@
 # define __must_hold(x)
 #endif
 
-#define __no_warn(lock, stmt) do { __acquire(lock); stmt; __release(lock); } while (0)
-
 /* Compatibility for older kernels */
 #undef __cond_lock
 #ifdef __CHECKER__
