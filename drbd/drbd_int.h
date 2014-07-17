@@ -234,15 +234,19 @@ static inline int drbd_ratelimit(void)
 	return __ratelimit(&drbd_ratelimit_state);
 }
 
-# define D_ASSERT(device, exp)	if (!(exp)) \
-	 drbd_err(device, "ASSERT( " #exp " ) in %s:%d\n", __FILE__, __LINE__)
+#define D_ASSERT(x, exp)							\
+	do {									\
+		if (!(exp))							\
+			drbd_err(x, "ASSERTION %s FAILED in %s\n", 		\
+				 #exp, __func__);				\
+	} while (0)
 
 /**
  * expect  -  Make an assertion
  *
  * Unlike the assert macro, this macro returns a boolean result.
  */
-#define expect(x, exp) ({								\
+#define expect(x, exp) ({							\
 		bool _bool = (exp);						\
 		if (!_bool)							\
 			drbd_err(x, "ASSERTION %s FAILED in %s\n",		\
