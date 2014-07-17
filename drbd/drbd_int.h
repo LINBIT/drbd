@@ -63,23 +63,18 @@
 #endif
 
 /* Compatibility for older kernels */
-#undef __cond_lock
-#ifdef __CHECKER__
-# ifndef __acquires
+#ifndef __acquires
+# ifdef __CHECKER__
 #  define __acquires(x)	__attribute__((context(x,0,1)))
 #  define __releases(x)	__attribute__((context(x,1,0)))
 #  define __acquire(x)	__context__(x,1)
 #  define __release(x)	__context__(x,-1)
-# endif
-# define __cond_lock(x,c)	((c) ? ({ __acquire(x); 1; }) : 0)
-#else
-# ifndef __acquires
+# else
 #  define __acquires(x)
 #  define __releases(x)
 #  define __acquire(x)	(void)0
 #  define __release(x)	(void)0
 # endif
-# define __cond_lock(x,c) (c)
 #endif
 
 #ifdef NEED_BOOL_TYPE
@@ -2224,12 +2219,15 @@ static inline bool is_sync_state(enum drbd_conns connection_state)
 
 /**
  * get_ldev() - Increase the ref count on device->ldev. Returns 0 if there is no ldev
- * @M:		DRBD device.
+ * @_device:		DRBD device.
+ * @_min_state:		Minimum device state required for success.
  *
  * You have to call put_ldev() when finished working with device->ldev.
  */
-#define get_ldev(M) __cond_lock(local, _get_ldev_if_state(M,D_INCONSISTENT))
-#define get_ldev_if_state(M,MINS) __cond_lock(local, _get_ldev_if_state(M,MINS))
+#define get_ldev_if_state(_device, _min_state)				\
+	(_get_ldev_if_state((_device), (_min_state)) ?			\
+	 ({ __acquire(x); true; }) : false)
+#define get_ldev(_device) get_ldev_if_state(_device, D_INCONSISTENT)
 
 static inline void put_ldev(struct drbd_device *device)
 {
