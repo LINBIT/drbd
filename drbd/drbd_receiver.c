@@ -1783,6 +1783,9 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection);
  *  single page to an empty bio (which should never happen and likely indicates
  *  that the lower level IO stack is in some way broken). This has been observed
  *  on certain Xen deployments.
+ *
+ *  When this function returns 0, it "consumes" an ldev reference; the
+ *  reference is released when the request completes.
  */
 /* TODO allocate from our own bio_set. */
 int drbd_submit_peer_request(struct drbd_device *device,
@@ -2321,7 +2324,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 
 	peer_req = read_in_block(peer_device, ID_SYNCER, sector, pi);
 	if (!peer_req)
-		goto fail;
+		return -EIO;
 
 	dec_rs_pending(peer_device);
 
@@ -2353,8 +2356,6 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(device, peer_req);
-fail:
-	put_ldev(device);
 	return -EIO;
 }
 
@@ -2427,10 +2428,9 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	D_ASSERT(device, p->block_id == ID_SYNCER);
 
 	if (get_ldev(device)) {
-		/* data is submitted to disk within recv_resync_read.
-		 * corresponding put_ldev done below on error,
-		 * or in drbd_peer_request_endio. */
 		err = recv_resync_read(peer_device, sector, pi);
+		if (err)
+			put_ldev(device);
 	} else {
 		if (drbd_ratelimit())
 			drbd_err(device, "Can not write resync data to local disk.\n");
