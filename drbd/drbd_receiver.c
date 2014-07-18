@@ -4532,6 +4532,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			err = mutex_lock_interruptible(&connection->resource->conf_update);
 			if (err) {
 				drbd_err(connection, "Interrupted while waiting for conf_update\n");
+				put_ldev(device);
 				return err;
 			}
 			old_disk_conf = device->ldev->disk_conf;
@@ -4592,7 +4593,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			 "Please reduce max_bio_size in the configuration.\n",
 			 peer_device->max_bio_size);
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		put_ldev(device);
 		return -EIO;
 	}
 
