@@ -4468,6 +4468,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	int ldsc = 0; /* local disk size changed */
 	enum dds_flags ddsf;
 	unsigned int protocol_max_bio_size;
+	bool have_ldev = false;
+	int err;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -4492,6 +4494,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	if (get_ldev(device)) {
 		sector_t p_usize = be64_to_cpu(p->u_size), my_usize;
 
+		have_ldev = true;
+
 		rcu_read_lock();
 		my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
@@ -4514,26 +4518,24 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		    peer_device->repl_state[NOW] < L_ESTABLISHED) {
 			drbd_err(device, "The peer's disk size is too small!\n");
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-			put_ldev(device);
-			return -EIO;
+			err = -EIO;
+			goto out;
 		}
 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
-			int err;
 
 			new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 			if (!new_disk_conf) {
 				drbd_err(device, "Allocation of new disk_conf failed\n");
-				put_ldev(device);
-				return -ENOMEM;
+				err = -ENOMEM;
+				goto out;
 			}
 
 			err = mutex_lock_interruptible(&connection->resource->conf_update);
 			if (err) {
 				drbd_err(connection, "Interrupted while waiting for conf_update\n");
-				put_ldev(device);
-				return err;
+				goto out;
 			}
 			old_disk_conf = device->ldev->disk_conf;
 			*new_disk_conf = *old_disk_conf;
@@ -4547,8 +4549,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			drbd_info(device, "Peer sets u_size to %lu sectors\n",
 				 (unsigned long)my_usize);
 		}
-
-		put_ldev(device);
 	}
 
 	/* The protocol version limits how big requests can be.  In addition,
@@ -4563,12 +4563,13 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_max_bio_size(), we can be sure that after
 	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
-	if (get_ldev(device)) {
+	if (have_ldev) {
 		drbd_reconsider_max_bio_size(device, device->ldev);
 		dd = drbd_determine_dev_size(device, ddsf, NULL);
-		put_ldev(device);
-		if (dd == DS_ERROR)
-			return -EIO;
+		if (dd == DS_ERROR) {
+			err = -EIO;
+			goto out;
+		}
 		drbd_md_sync(device);
 	} else {
 		struct drbd_peer_device *peer_device;
@@ -4593,17 +4594,17 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			 "Please reduce max_bio_size in the configuration.\n",
 			 peer_device->max_bio_size);
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		return -EIO;
+		err = -EIO;
+		goto out;
 	}
 
-	if (get_ldev(device)) {
+	if (have_ldev) {
 		if (device->ldev->known_size != drbd_get_capacity(device->ldev->backing_bdev)) {
 			device->ldev->known_size = drbd_get_capacity(device->ldev->backing_bdev);
 			ldsc = 1;
 		}
 
 		drbd_setup_order_type(device, be16_to_cpu(p->queue_order_type));
-		put_ldev(device);
 	}
 
 	if (peer_device->repl_state[NOW] > L_OFF) {
@@ -4625,8 +4626,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 		}
 	}
+	err = 0;
 
-	return 0;
+out:
+	if (have_ldev)
+		put_ldev(device);
+	return err;
 }
 
 void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local)
