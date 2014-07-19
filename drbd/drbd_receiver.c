@@ -4281,6 +4281,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			drbd_err(device, "Allocation of new disk_conf failed\n");
 			return -ENOMEM;
 		}
+		/* With a non-zero new_disk_conf, we will call put_ldev() below.  */
 
 		old_disk_conf = device->ldev->disk_conf;
 		*new_disk_conf = *old_disk_conf;

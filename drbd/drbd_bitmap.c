@@ -1185,13 +1185,15 @@ static int bm_rw_range(struct drbd_device *device, int rw,
 		.kref = { ATOMIC_INIT(2) },
 	};
 
-	if (!get_ldev_if_state(device, D_ATTACHING)) {  /* put is in bm_aio_ctx_destroy() */
-		drbd_err(device, "ASSERT FAILED: get_ldev_if_state() == 1 in bm_rw_range()\n");
+	if (!expect(device, get_ldev_if_state(device, D_ATTACHING))) {
 		kfree(ctx);
 		return -ENODEV;
 	}
-	/* Here D_ATTACHING is sufficient since drbd_bm_read() is called only from
-	   drbd_adm_attach(), after device->ldev was assigned. */
+	/* Here, D_ATTACHING is sufficient because drbd_bm_read() is only
+	 * called from drbd_adm_attach(), after device->ldev has been assigned.
+	 *
+	 * The corresponding put_ldev() happens in bm_aio_ctx_destroy().
+	 */
 
 	if (!ctx->flags)
 		WARN_ON(!(b->bm_flags & BM_LOCK_ALL));

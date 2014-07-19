@@ -1308,7 +1308,7 @@ static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 }
 
 /* If this returns NULL, and req->private_bio is still set,
- * this should be submitted locally.
+ * the request should be submitted locally.
  *
  * If it returns NULL, but req->private_bio is not set,
  * we do not have access to good data :(
@@ -1349,11 +1349,12 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		if (req->private_bio == NULL ||
 		    remote_due_to_read_balancing(device, peer_device,
 						 req->i.sector, rbm)) {
-			break;
+			goto found;
 		}
 	}
-	if (peer_device && &peer_device->peer_devices == &device->peer_devices)
-		peer_device = NULL;
+	peer_device = NULL;
+
+    found:
 	if (peer_device && req->private_bio) {
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
