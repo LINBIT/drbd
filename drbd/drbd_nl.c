@@ -1770,6 +1770,14 @@ success:
 	return 0;
 }
 
+static void mutex_unlock_cond(struct mutex *mutex, bool *have_mutex)
+{
+	if (*have_mutex) {
+		mutex_unlock(mutex);
+		*have_mutex = false;
+	}
+}
+
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -1786,6 +1794,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
 	unsigned int bitmap_index, slots_needed = 0;
+	bool have_conf_update = false;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1871,6 +1880,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	mutex_lock(&resource->conf_update);
+	have_conf_update = true;
 
 	/* if you want to reconfigure, please tear down first */
 	if (device->disk_state[NOW] > D_DISKLESS) {
@@ -2249,6 +2259,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 
  remove_kobject:
+	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_free_ldev(nbc);
 	nbc = NULL;
  force_diskless_dec:
@@ -2257,6 +2268,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	change_disk_state(device, D_DISKLESS, CS_HARD);
 	drbd_md_sync(device);
  fail:
+	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	if (nbc) {
 		if (nbc->backing_bdev)
 			blkdev_put(nbc->backing_bdev,
@@ -2268,7 +2280,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	kfree(new_disk_conf);
 
-	mutex_unlock(&resource->conf_update);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
