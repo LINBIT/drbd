@@ -3288,6 +3288,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	kref_debug_get(&device->kref_debug, 1);
 
 	INIT_LIST_HEAD(&device->peer_devices);
+	INIT_LIST_HEAD(&device->pending_bitmap_io);
 	list_for_each_entry_safe(peer_device, tmp_peer_device, &peer_devices, peer_devices) {
 		connection = peer_device->connection;
 		id = idr_alloc(&connection->peer_devices, peer_device,
