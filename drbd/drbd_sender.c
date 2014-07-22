@@ -1909,6 +1909,29 @@ static int do_md_sync(struct drbd_device *device)
 	return 0;
 }
 
+/* only called from drbd_worker thread, no locking */
+void __update_timing_details(
+		struct drbd_thread_timing_details *tdp,
+		unsigned int *cb_nr,
+		void *cb,
+		const char *fn, const unsigned int line)
+{
+	unsigned int i = *cb_nr % DRBD_THREAD_DETAILS_HIST;
+	struct drbd_thread_timing_details *td = tdp + i;
+
+	td->start_jif = jiffies;
+	td->cb_addr = cb;
+	td->caller_fn = fn;
+	td->line = line;
+	td->cb_nr = *cb_nr;
+
+	i = (i+1) % DRBD_THREAD_DETAILS_HIST;
+	td = tdp + i;
+	memset(td, 0, sizeof(*td));
+
+	++(*cb_nr);
+}
+
 #define WORK_PENDING(work_bit, todo)	(todo & (1UL << work_bit))
 static void do_device_work(struct drbd_device *device, const unsigned long todo)
 {
@@ -2316,17 +2339,22 @@ static int process_sender_todo(struct drbd_connection *connection)
 	 * Stop processing as soon as an error is encountered.
 	 */
 
-	if (!connection->todo.req)
+	if (!connection->todo.req) {
+		update_sender_timing_details(connection, maybe_send_write_hint);
 		maybe_send_write_hint(connection);
+	}
 
-	else if (list_empty(&connection->todo.work_list))
+	else if (list_empty(&connection->todo.work_list)) {
+		update_sender_timing_details(connection, process_one_request);
 		return process_one_request(connection);
+	}
 
 	while (!list_empty(&connection->todo.work_list)) {
 		int err;
 
 		w = list_first_entry(&connection->todo.work_list, struct drbd_work, list);
 		list_del_init(&w->list);
+		update_sender_timing_details(connection, w->cb);
 		err = w->cb(w, connection->cstate[NOW] < C_CONNECTED);
 		if (err)
 			return err;
@@ -2335,8 +2363,10 @@ static int process_sender_todo(struct drbd_connection *connection)
 		 * add a dagtag member to struct drbd_work, and serialize based on that.
 		 * && !dagtag_newer(connection->todo.req->dagtag_sector, w->dagtag_sector))
 		 * to the following condition. */
-		if (connection->todo.req)
+		if (connection->todo.req) {
+			update_sender_timing_details(connection, process_one_request);
 			err = process_one_request(connection);
+		}
 		if (err)
 			return err;
 	}
@@ -2364,8 +2394,10 @@ int drbd_sender(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&connection->todo.work_list) &&
-		    connection->todo.req == NULL)
+		    connection->todo.req == NULL) {
+			update_sender_timing_details(connection, wait_for_sender_todo);
 			wait_for_sender_todo(connection);
+		}
 
 		if (signal_pending(current)) {
 			flush_signals(current);
@@ -2429,17 +2461,22 @@ int drbd_worker(struct drbd_thread *thi)
 		if (list_empty(&work_list)) {
 			bool w, d, p;
 
+			update_worker_timing_details(resource, dequeue_work_batch);
 			wait_event_interruptible(resource->work.q_wait,
 				(w = dequeue_work_batch(&resource->work, &work_list),
 				 d = test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags),
 				 p = test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags),
 				 w || d || p));
 
-			if (p)
+			if (p) {
+				update_worker_timing_details(resource, do_unqueued_peer_device_work);
 				do_unqueued_peer_device_work(resource);
+			}
 
-			if (d)
+			if (d) {
+				update_worker_timing_details(resource, do_unqueued_device_work);
 				do_unqueued_device_work(resource);
+			}
 		}
 
 		if (signal_pending(current)) {
@@ -2458,18 +2495,24 @@ int drbd_worker(struct drbd_thread *thi)
 		while (!list_empty(&work_list)) {
 			w = list_first_entry(&work_list, struct drbd_work, list);
 			list_del_init(&w->list);
+			update_worker_timing_details(resource, w->cb);
 			w->cb(w, 0);
 		}
 	}
 
 	do {
-		if (test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags))
+		if (test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags)) {
+			update_worker_timing_details(resource, do_unqueued_device_work);
 			do_unqueued_device_work(resource);
-		if (test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
+		}
+		if (test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags)) {
+			update_worker_timing_details(resource, do_unqueued_peer_device_work);
 			do_unqueued_peer_device_work(resource);
+		}
 		while (!list_empty(&work_list)) {
 			w = list_first_entry(&work_list, struct drbd_work, list);
 			list_del_init(&w->list);
+			update_worker_timing_details(resource, w->cb);
 			w->cb(w, 1);
 		}
 		dequeue_work_batch(&resource->work, &work_list);

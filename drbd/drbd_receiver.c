@@ -3261,9 +3261,11 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	list_add_tail(&peer_req->w.list, &device->read_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
+	update_receiver_timing_details(connection, drbd_rs_should_slow_down);
 	if (connection->peer_role[NOW] != R_PRIMARY &&
 	    drbd_rs_should_slow_down(peer_device, sector, false))
 		schedule_timeout_uninterruptible(HZ/10);
+	update_receiver_timing_details(connection, drbd_rs_begin_io);
 	if (drbd_rs_begin_io(peer_device, sector))
 		goto out_free_e;
 
@@ -3271,6 +3273,7 @@ submit_for_resync:
 	atomic_add(size >> 9, &device->rs_sect_ev);
 
 submit:
+	update_receiver_timing_details(connection, drbd_submit_peer_request);
 	inc_unacked(peer_device);
 	if (drbd_submit_peer_request(device, peer_req, READ, fault_type) == 0)
 		return 0;
@@ -6102,9 +6105,9 @@ static void drbdd(struct drbd_connection *connection)
 
 	while (get_t_state(&connection->receiver) == RUNNING) {
 		struct data_cmd *cmd;
-		long start;
 
 		drbd_thread_current_set_cpu(&connection->receiver);
+		update_receiver_timing_details(connection, drbd_recv_header);
 		if (drbd_recv_header(connection, &pi))
 			goto err_out;
 
@@ -6123,22 +6126,19 @@ static void drbdd(struct drbd_connection *connection)
 		}
 
 		if (shs) {
+			update_receiver_timing_details(connection, drbd_recv_all_warn);
 			err = drbd_recv_all_warn(connection, pi.data, shs);
 			if (err)
 				goto err_out;
 			pi.size -= shs;
 		}
 
-		start = jiffies;
+		update_receiver_timing_details(connection, cmd->fn);
 		err = cmd->fn(connection, &pi);
 		if (err) {
 			drbd_err(connection, "error receiving %s, e: %d l: %d!\n",
 				 drbd_packet_name(pi.cmd), err, pi.size);
 			goto err_out;
-		}
-		if (jiffies - start > HZ) {
-			drbd_debug(connection, "Request %s took %ums\n",
-				   drbd_packet_name(pi.cmd), jiffies_to_msecs(jiffies - start));
 		}
 	}
 	return;

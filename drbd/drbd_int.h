@@ -844,6 +844,16 @@ struct twopc_reply {
 	bool is_disconnect;
 };
 
+struct drbd_thread_timing_details
+{
+	unsigned long start_jif;
+	void *cb_addr;
+	const char *caller_fn;
+	unsigned int line;
+	unsigned int cb_nr;
+};
+#define DRBD_THREAD_DETAILS_HIST	16
+
 struct drbd_resource {
 	char *name;
 
@@ -906,9 +916,12 @@ struct drbd_resource {
 	spinlock_t listeners_lock;
 
 	struct timer_list peer_ack_timer; /* send a P_PEER_ACK after last completion */
+
+	unsigned int w_cb_nr; /* keeps counting up */
+	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
 };
 
-struct drbd_connection {			/* is a resource from the config file */
+struct drbd_connection {
 	struct list_head connections;
 	struct drbd_resource *resource;
 	struct dentry *debugfs_conn;
@@ -1015,6 +1028,11 @@ struct drbd_connection {			/* is a resource from the config file */
 	 * protected by resource->req_lock */
 	struct drbd_request *req_ack_pending;
 	struct drbd_request *req_not_net_done;
+
+	unsigned int s_cb_nr; /* keeps counting up */
+	unsigned int r_cb_nr; /* keeps counting up */
+	struct drbd_thread_timing_details s_timing_details[DRBD_THREAD_DETAILS_HIST];
+	struct drbd_thread_timing_details r_timing_details[DRBD_THREAD_DETAILS_HIST];
 
 	struct {
 		/* whether this sender thread
@@ -1805,6 +1823,19 @@ extern void resync_timer_fn(unsigned long data);
 extern void start_resync_timer_fn(unsigned long data);
 
 extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
+
+void __update_timing_details(
+		struct drbd_thread_timing_details *tdp,
+		unsigned int *cb_nr,
+		void *cb,
+		const char *fn, const unsigned int line);
+
+#define update_sender_timing_details(c, cb) \
+	__update_timing_details(c->s_timing_details, &c->s_cb_nr, cb, __func__ , __LINE__ )
+#define update_receiver_timing_details(c, cb) \
+	__update_timing_details(c->r_timing_details, &c->r_cb_nr, cb, __func__ , __LINE__ )
+#define update_worker_timing_details(r, cb) \
+	__update_timing_details(r->w_timing_details, &r->w_cb_nr, cb, __func__ , __LINE__ )
 
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
