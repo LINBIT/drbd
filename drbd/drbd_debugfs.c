@@ -365,6 +365,21 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	seq_print_resource_pending_meta_io(m, resource, jif);
 	seq_putc(m, '\n');
 
+	seq_puts(m, "socket buffer stats\n");
+	/* for each connection ... once we have more than one */
+	rcu_read_lock();
+	if (connection->data.socket) {
+		/* open coded SIOCINQ, the "relevant" part */
+		struct tcp_sock *tp = tcp_sk(connection->data.socket->sk);
+		int answ = tp->rcv_nxt - tp->copied_seq;
+		seq_printf(m, "unread receive buffer: %u Byte\n", answ);
+		/* open coded SIOCOUTQ, the "relevant" part */
+		answ = tp->write_seq - tp->snd_una;
+		seq_printf(m, "unacked send buffer: %u Byte\n", answ);
+	}
+	rcu_read_unlock();
+	seq_putc(m, '\n');
+
 	seq_puts(m, "oldest peer requests\n");
 	seq_print_resource_pending_peer_requests(m, resource, jif);
 	seq_putc(m, '\n');
