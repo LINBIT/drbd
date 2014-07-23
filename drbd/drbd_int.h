@@ -2698,6 +2698,10 @@ struct bm_extent {
 	struct lc_element lce;
 };
 
+#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
+#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
+#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
+
 /* should be moved to idr.h */
 /**
  * idr_for_each_entry - iterate over an idr's elements of a given type

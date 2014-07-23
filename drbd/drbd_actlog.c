@@ -31,10 +31,6 @@
 #include "drbd_int.h"
 #include "drbd_wrappers.h"
 
-#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
-#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
-#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
-
 enum al_transaction_types {
 	AL_TR_UPDATE = 0,
 	AL_TR_INITIALIZED = 0xffff
