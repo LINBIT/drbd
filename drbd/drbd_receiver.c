@@ -4364,7 +4364,8 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			new_disk_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
 
 			fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
-			old_plan = rcu_dereference(peer_device->rs_plan_s);
+			old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
+				lockdep_is_held(&resource->conf_update));
 			if (!old_plan || fifo_size != old_plan->size) {
 				new_plan = fifo_alloc(fifo_size);
 				if (!new_plan) {

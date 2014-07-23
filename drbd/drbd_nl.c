@@ -1632,6 +1632,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
 	struct drbd_device *device;
+	struct drbd_resource *resource;
 	struct disk_conf *new_disk_conf, *old_disk_conf;
 	int err, fifo_size;
 	struct drbd_peer_device *peer_device;
@@ -1642,6 +1643,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	device = adm_ctx.device;
+	resource = device->resource;
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	/* we also need a disk
@@ -1657,7 +1659,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	mutex_lock(&device->resource->conf_update);
+	mutex_lock(&resource->conf_update);
 	old_disk_conf = device->ldev->disk_conf;
 	*new_disk_conf = *old_disk_conf;
 	if (should_set_defaults(info))
@@ -1684,7 +1686,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 	for_each_peer_device(peer_device, device) {
 		struct fifo_buffer *old_plan, *new_plan;
-		old_plan = rcu_dereference(peer_device->rs_plan_s);
+		old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
+			lockdep_is_held(&resource->conf_update));
 		if (!old_plan || fifo_size != old_plan->size) {
 			new_plan = fifo_alloc(fifo_size);
 			if (!new_plan) {
@@ -1724,7 +1727,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail_unlock;
 
-	mutex_unlock(&device->resource->conf_update);
+	mutex_unlock(&resource->conf_update);
 
 	if (new_disk_conf->al_updates)
 		device->ldev->md.flags &= ~MDF_AL_DISABLED;
@@ -1752,7 +1755,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	goto success;
 
 fail_unlock:
-	mutex_unlock(&device->resource->conf_update);
+	mutex_unlock(&resource->conf_update);
  fail:
 	kfree(new_disk_conf);
 success:
