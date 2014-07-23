@@ -629,6 +629,52 @@ static const struct file_operations connection_callback_history_fops = {
 	.release	= callback_history_release,
 };
 
+static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_connection *connection = m->private;
+	unsigned long now = jiffies;
+	struct drbd_request *r1, *r2;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
+	spin_lock_irq(&connection->resource->req_lock);
+	r1 = connection->todo.req_next;
+	if (r1)
+		seq_print_minor_vnr_req(m, r1, now);
+	r2 = connection->req_ack_pending;
+	if (r2 && r2 != r1) {
+		r1 = r2;
+		seq_print_minor_vnr_req(m, r1, now);
+	}
+	r2 = connection->req_not_net_done;
+	if (r2 && r2 != r1)
+		seq_print_minor_vnr_req(m, r2, now);
+	spin_unlock_irq(&connection->resource->req_lock);
+	return 0;
+}
+
+static int connection_oldest_requests_open(struct inode *inode, struct file *file)
+{
+	struct drbd_connection *connection = inode->i_private;
+	return drbd_single_open(file, connection_oldest_requests_show, connection, &connection->kref, NULL);
+}
+
+static int connection_oldest_requests_release(struct inode *inode, struct file *file)
+{
+	struct drbd_connection *connection = inode->i_private;
+	kref_put(&connection->kref, drbd_destroy_connection);
+	return single_release(inode, file);
+}
+
+static const struct file_operations connection_oldest_requests_fops = {
+	.owner		= THIS_MODULE,
+	.open		= connection_oldest_requests_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= connection_oldest_requests_release,
+};
+
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
 	struct dentry *conns_dir = connection->resource->debugfs_res_connections;
@@ -649,6 +695,12 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 	dentry = debugfs_create_file("callback_history", S_IRUSR|S_IRGRP,
 			connection->debugfs_conn, connection,
 			&connection_callback_history_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+
+	dentry = debugfs_create_file("oldest_requests", S_IRUSR|S_IRGRP,
+			connection->debugfs_conn, connection,
+			&connection_oldest_requests_fops);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	return;
