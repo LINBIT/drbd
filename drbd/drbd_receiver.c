@@ -1800,9 +1800,9 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	struct bio *bio;
 	struct page *page = peer_req->pages;
 	sector_t sector = peer_req->i.sector;
-	unsigned ds = peer_req->i.size;
+	unsigned data_size = peer_req->i.size;
 	unsigned n_bios = 0;
-	unsigned nr_pages = DIV_ROUND_UP(ds, PAGE_SIZE);
+	unsigned nr_pages = DIV_ROUND_UP(data_size, PAGE_SIZE);
 	int err = -ENOMEM;
 
 	if (peer_req->flags & EE_IS_TRIM_USE_ZEROOUT) {
@@ -1817,7 +1817,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		list_add_tail(&peer_req->w.list, &device->active_ee);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (blkdev_issue_zeroout(device->ldev->backing_bdev,
-			sector, ds >> 9, GFP_NOIO))
+			sector, data_size >> 9, GFP_NOIO))
 			peer_req->flags |= EE_WAS_ERROR;
 		drbd_endio_write_sec_final(peer_req);
 		return 0;
@@ -1857,12 +1857,12 @@ next_bio:
 	++n_bios;
 
 	if (rw & DRBD_REQ_DISCARD) {
-		DRBD_BIO_BI_SIZE(bio) = ds;
+		DRBD_BIO_BI_SIZE(bio) = data_size;
 		goto submit;
 	}
 
 	page_chain_for_each(page) {
-		unsigned len = min_t(unsigned, ds, PAGE_SIZE);
+		unsigned len = min_t(unsigned, data_size, PAGE_SIZE);
 		if (!bio_add_page(bio, page, len, 0)) {
 			/* A single page must always be possible!
 			 * But in case it fails anyways,
@@ -1877,11 +1877,11 @@ next_bio:
 			}
 			goto next_bio;
 		}
-		ds -= len;
+		data_size -= len;
 		sector += len >> 9;
 		--nr_pages;
 	}
-	D_ASSERT(device, ds == 0);
+	D_ASSERT(device, data_size == 0);
 submit:
 	D_ASSERT(device, page == NULL);
 
@@ -2134,24 +2134,24 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
 	struct drbd_peer_request *peer_req;
 	struct page *page;
-	int dgs, ds, err;
-	unsigned int data_size = pi->size;
+	int digest_size, err;
+	unsigned int data_size = pi->size, ds;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	unsigned long *data;
 	struct p_trim *trim = (pi->cmd == P_TRIM) ? pi->data : NULL;
 
-	dgs = 0;
+	digest_size = 0;
 	if (!trim && peer_device->connection->peer_integrity_tfm) {
-		dgs = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
+		digest_size = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
 		/*
 		 * FIXME: Receive the incoming digest into the receive buffer
 		 *	  here, together with its struct p_data?
 		 */
-		err = drbd_recv_all_warn(peer_device->connection, dig_in, dgs);
+		err = drbd_recv_all_warn(peer_device->connection, dig_in, digest_size);
 		if (err)
 			return NULL;
-		data_size -= dgs;
+		data_size -= digest_size;
 	}
 
 	if (trim) {
@@ -2204,9 +2204,9 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		ds -= len;
 	}
 
-	if (dgs) {
+	if (digest_size) {
 		drbd_csum_ee(peer_device->connection->peer_integrity_tfm, peer_req, dig_vv);
-		if (memcmp(dig_in, dig_vv, dgs)) {
+		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				(unsigned long long)sector, data_size);
 			drbd_free_peer_req(device, peer_req);
@@ -2251,17 +2251,17 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 	struct bio *bio;
-	int dgs, err, expect;
+	int digest_size, err, expect;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 
-	dgs = 0;
+	digest_size = 0;
 	if (peer_device->connection->peer_integrity_tfm) {
-		dgs = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
-		err = drbd_recv_all_warn(peer_device->connection, dig_in, dgs);
+		digest_size = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
+		err = drbd_recv_all_warn(peer_device->connection, dig_in, digest_size);
 		if (err)
 			return err;
-		data_size -= dgs;
+		data_size -= digest_size;
 	}
 
 	/* optimistically update recv_cnt.  if receiving fails below,
@@ -2281,9 +2281,9 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 		data_size -= expect;
 	}
 
-	if (dgs) {
+	if (digest_size) {
 		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
-		if (memcmp(dig_in, dig_vv, dgs)) {
+		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
 			return -EINVAL;
 		}

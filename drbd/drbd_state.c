@@ -587,48 +587,48 @@ static inline bool is_susp(union drbd_state s)
 
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 {
-	enum drbd_disk_state ds = D_DISKLESS;
+	enum drbd_disk_state disk_state = D_DISKLESS;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = max_t(enum drbd_disk_state, ds, device->disk_state[NOW]);
+		disk_state = max_t(enum drbd_disk_state, disk_state, device->disk_state[NOW]);
 	}
 	rcu_read_unlock();
 
-	return ds;
+	return disk_state;
 }
 
 enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection)
 {
-	enum drbd_disk_state ds = D_MASK;
+	enum drbd_disk_state disk_state = D_MASK;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
-		ds = min_t(enum drbd_disk_state, ds, device->disk_state[NOW]);
+		disk_state = min_t(enum drbd_disk_state, disk_state, device->disk_state[NOW]);
 	}
 	rcu_read_unlock();
 
-	return ds;
+	return disk_state;
 }
 
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 {
-	enum drbd_disk_state ds = D_DISKLESS;
+	enum drbd_disk_state disk_state = D_DISKLESS;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		ds = max_t(enum drbd_disk_state, ds, peer_device->disk_state[NOW]);
+		disk_state = max_t(enum drbd_disk_state, disk_state, peer_device->disk_state[NOW]);
 	rcu_read_unlock();
 
-	return ds;
+	return disk_state;
 }
 
 static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *connection)
