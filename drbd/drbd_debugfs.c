@@ -1,4 +1,4 @@
-#define pr_fmt(fmt) "drbd debugfs: " fmt
+#define pr_fmt(fmt)	KBUILD_MODNAME " debugfs: " fmt
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/debugfs.h>

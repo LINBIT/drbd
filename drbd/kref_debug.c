@@ -1,5 +1,5 @@
 
-#define pr_fmt(fmt)    "drbd: " fmt
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <linux/spinlock.h>
 #include <linux/seq_file.h>
