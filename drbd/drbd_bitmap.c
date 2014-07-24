@@ -1024,7 +1024,7 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 }
 
 /* bv_page may be a copy, or may be the original */
-static BIO_ENDIO_TYPE bm_async_io_complete BIO_ENDIO_ARGS(struct bio *bio, int error)
+static BIO_ENDIO_TYPE drbd_bm_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
@@ -1113,7 +1113,7 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
 	 * according to api.  Do we want to assert that? */
 	bio_add_page(bio, page, len, 0);
 	bio->bi_private = ctx;
-	bio->bi_end_io = bm_async_io_complete;
+	bio->bi_end_io = drbd_bm_endio;
 
 	if (drbd_insert_fault(device, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD)) {
 		bio->bi_rw |= rw;
@@ -1230,7 +1230,7 @@ static int bm_rw_range(struct drbd_device *device,
 	}
 
 	/*
-	 * We initialize ctx->in_flight to one to make sure bm_async_io_complete
+	 * We initialize ctx->in_flight to one to make sure drbd_bm_endio
 	 * will not set ctx->done early, and decrement / test it here.  If there
 	 * are still some bios in flight, we need to wait for them here.
 	 * If all IO is done already (or nothing had been submitted), there is
