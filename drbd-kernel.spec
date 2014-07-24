@@ -2,7 +2,7 @@ Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: 9.0.0pre9
 Release: 1%{?dist}
-Source: http://oss.linbit.com/%{name}/8.3/drbd-%{version}.tar.gz
+Source: http://oss.linbit.com/drbd/drbd-%{version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
