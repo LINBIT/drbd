@@ -2152,12 +2152,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
-	if (kobject_init_and_add(&device->ldev->kobject, &drbd_bdev_kobj_type,
-				 &device->kobj, "meta_data")) {
-		retcode = ERR_NOMEM;
-		goto remove_kobject;
-	}
-
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 	else
@@ -2199,7 +2193,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	dd = drbd_determine_dev_size(device, 0, NULL);
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
-		goto remove_kobject;
+		goto force_diskless_dec;
 	} else if (dd == DS_GREW) {
 		for_each_peer_device(peer_device, device)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
@@ -2209,7 +2203,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		"read from attaching", BM_LOCK_ALL,
 		NULL)) {
 		retcode = ERR_IO_MD_DISK;
-		goto remove_kobject;
+		goto force_diskless_dec;
 	}
 
 	for_each_peer_device(peer_device, device) {
@@ -2222,7 +2216,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				"set_n_write from attaching", BM_LOCK_ALL,
 				peer_device)) {
 				retcode = ERR_IO_MD_DISK;
-				goto remove_kobject;
+				goto force_diskless_dec;
 			}
 		}
 	}
@@ -2242,7 +2236,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		change_disk_state(device, D_NEGOTIATING, CS_VERBOSE | CS_SERIALIZE));
 
 	if (rv < SS_SUCCESS)
-		goto remove_kobject;
+		goto force_diskless_dec;
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
@@ -2261,10 +2255,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 
- remove_kobject:
-	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
-	drbd_free_ldev(nbc);
-	nbc = NULL;
  force_diskless_dec:
 	put_ldev(device);
  force_diskless:
@@ -2272,15 +2262,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_md_sync(device);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
-	if (nbc) {
-		if (nbc->backing_bdev)
-			blkdev_put(nbc->backing_bdev,
-				   FMODE_READ | FMODE_WRITE | FMODE_EXCL);
-		if (nbc->md_bdev)
-			blkdev_put(nbc->md_bdev,
-				   FMODE_READ | FMODE_WRITE | FMODE_EXCL);
-		kfree(nbc);
-	}
+	drbd_free_ldev(nbc);
 	kfree(new_disk_conf);
 
 	mutex_unlock(&resource->adm_mutex);
@@ -4453,7 +4435,6 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	kobject_del(&device->kobj);
 	synchronize_rcu();
 	drbd_put_device(device);
 

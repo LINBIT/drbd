@@ -1995,6 +1995,7 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
+
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->active_ee);
@@ -2012,6 +2013,7 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
+
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_wait_ee_list_empty(device, &device->done_ee);
@@ -6175,6 +6177,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
+
 		kref_get(&device->kref);
 		rcu_read_unlock();
 		drbd_disconnected(peer_device);
@@ -7212,6 +7215,7 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
+
 			kref_get(&device->kref);
 			rcu_read_unlock();
 			if (drbd_finish_peer_reqs(device)) {

@@ -759,7 +759,6 @@ struct drbd_md {
 };
 
 struct drbd_backing_dev {
-	struct kobject kobject;
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;
@@ -1169,7 +1168,6 @@ struct drbd_device {
 
 	struct kref kref;
 	struct kref_debug_info kref_debug;
-	struct kobject kobj;
 
 	/* things that are stored as / read from meta data on disk */
 	unsigned long flags;
@@ -1996,9 +1994,6 @@ extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sec
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_initialize_al(struct drbd_device *, void *);
-
-/* drbd_sysfs.c */
-extern struct kobj_type drbd_bdev_kobj_type;
 
 /* drbd_nl.c */
 

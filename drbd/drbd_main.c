@@ -77,7 +77,6 @@ static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
-static void drbd_free_device(struct kobject *kobj);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -158,10 +157,6 @@ static const struct block_device_operations drbd_ops = {
 	.owner =   THIS_MODULE,
 	.open =    drbd_open,
 	.release = drbd_release,
-};
-
-static struct kobj_type drbd_device_kobj_type = {
-	.release = drbd_free_device,
 };
 
 #ifdef COMPAT_HAVE_BIO_FREE
@@ -2498,14 +2493,6 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 	kfree(peer_device);
 }
 
-static void drbd_free_device(struct kobject *kobj)
-{
-	struct drbd_device *device = container_of(kobj, struct drbd_device, kobj);
-
-	memset(device, 0xfd, sizeof(*device)); /* poison */
-	kfree(device);
-}
-
 /* caution. no locking. */
 void drbd_destroy_device(struct kref *kref)
 {
@@ -2541,7 +2528,9 @@ void drbd_destroy_device(struct kref *kref)
 	put_disk(device->vdisk);
 	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
-	kobject_put(&device->kobj);
+
+	memset(device, 0xfd, sizeof(*device)); /* poison */
+	kfree(device);
 
 	kref_debug_put(&resource->kref_debug, 4);
 	kref_put(&resource->kref, drbd_destroy_resource);
@@ -3135,7 +3124,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
 	struct drbd_resource *resource = adm_ctx->resource;
-	struct kobject *parent;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
@@ -3157,7 +3145,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device)
 		return ERR_NOMEM;
 	kref_init(&device->kref);
-	kobject_init(&device->kobj, &drbd_device_kobj_type);
 	kref_debug_init(&device->kref_debug, &device->kref, &kref_class_device);
 
 	kref_get(&resource->kref);
@@ -3313,10 +3300,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	}
 
 	add_disk(disk);
-	parent = &disk_to_dev(disk)->kobj;
-
-	if (kobject_add(&device->kobj, parent, "drbd"))
-		goto out_del_disk;
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
@@ -3329,10 +3312,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	drbd_debugfs_device_add(device);
 	*p_device = device;
 	return NO_ERROR;
-
-out_del_disk:
-	destroy_workqueue(device->submit.wq);
-	del_gendisk(device->vdisk);
 
 out_remove_peer_device:
 	list_add_rcu(&tmp, &device->peer_devices);
@@ -3529,14 +3508,16 @@ void drbd_free_ldev(struct drbd_backing_dev *ldev)
 	if (ldev == NULL)
 		return;
 
-	blkdev_put(ldev->backing_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
-	blkdev_put(ldev->md_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+	if (ldev->backing_bdev)
+		blkdev_put(ldev->backing_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+
+	if (ldev->md_bdev)
+		blkdev_put(ldev->md_bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 
 	kfree(ldev->md.peers);
-	kobject_del(&ldev->kobject);
-	kobject_put(&ldev->kobject);
+	kfree(ldev->disk_conf);
+	kfree(ldev);
 }
-
 
 static void drbd_free_one_sock(struct drbd_socket *ds)
 {

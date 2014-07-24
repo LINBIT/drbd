@@ -249,7 +249,7 @@ enum drbd_disk_state {
 	D_ATTACHING,      /* In the process of reading the meta-data */
 	D_DETACHING,      /* Added in protocol version 110 */
 	D_FAILED,         /* Becomes D_DISKLESS as soon as we told it the peer */
-			  /* when >= D_FAILED it is legal to access mdev->ldev */
+			  /* when >= D_FAILED it is legal to access device->ldev */
 	D_NEGOTIATING,    /* Late attaching state, we need to talk to the peer */
 	D_INCONSISTENT,
 	D_OUTDATED,
