@@ -1,5 +1,6 @@
-/drbd-kernel.spec
-/drbd-km.spec
+/drbd-*.tar.gz
+/ID
+/TODO
 /tags
 
 /.filelist
@@ -23,3 +24,4 @@ drbd/compat.h
 drbd/drbd.mod.c
 drbd/drbd_buildtag.c
 drbd/modules.order
+drbd/linux/drbd_config.h
