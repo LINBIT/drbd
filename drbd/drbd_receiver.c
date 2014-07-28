@@ -615,16 +615,24 @@ static void drbd_setbufsize(struct socket *sock, unsigned int snd,
 	}
 }
 
-static struct socket *drbd_try_connect(struct drbd_connection *connection)
+static struct socket *drbd_try_connect(struct drbd_connection *connection, int use_addr2)
 {
 	const char *what;
 	struct socket *sock;
 	struct sockaddr_in6 src_in6;
 	struct sockaddr_in6 peer_in6;
 	struct net_conf *nc;
-	int err, peer_addr_len, my_addr_len;
+	int err, peer_addr_len = 0, my_addr_len = 0;
 	int sndbuf_size, rcvbuf_size, connect_int;
 	int disconnect_on_error = 1;
+
+	if (!use_addr2) {
+		my_addr_len = min_t(int, connection->my_addr_len, sizeof(src_in6));
+		memcpy(&src_in6, &connection->my_addr, my_addr_len);
+
+		peer_addr_len = min_t(int, connection->peer_addr_len, sizeof(src_in6));
+		memcpy(&peer_in6, &connection->peer_addr, peer_addr_len);
+	}
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -632,23 +640,25 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection)
 		rcu_read_unlock();
 		return NULL;
 	}
+
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
 	connect_int = nc->connect_int;
-	rcu_read_unlock();
+	if (use_addr2) {
+		my_addr_len = min_t(int, nc->my_addr2_len, sizeof(src_in6));
+		memcpy(&src_in6, &nc->my_addr2, my_addr_len);
 
-	my_addr_len = min_t(int, connection->my_addr_len, sizeof(src_in6));
-	memcpy(&src_in6, &connection->my_addr, my_addr_len);
+		peer_addr_len = min_t(int, nc->peer_addr2_len, sizeof(src_in6));
+		memcpy(&peer_in6, &nc->peer_addr2, peer_addr_len);
+	}
+	rcu_read_unlock();
 
 	if (((struct sockaddr *)&connection->my_addr)->sa_family == AF_INET6)
 		src_in6.sin6_port = 0;
 	else
 		((struct sockaddr_in *)&src_in6)->sin_port = 0; /* AF_INET & AF_SCI */
 
-	peer_addr_len = min_t(int, connection->peer_addr_len, sizeof(src_in6));
-	memcpy(&peer_in6, &connection->peer_addr, peer_addr_len);
-
-	what = "sock_create_kern";
+	what = "sock_create_kern_in_try_connect";
 	err = sock_create_kern(((struct sockaddr *)&src_in6)->sa_family,
 			       SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err < 0) {
@@ -706,9 +716,10 @@ out:
 struct accept_wait_data {
 	struct drbd_connection *connection;
 	struct socket *s_listen;
+	struct socket *s_listen2;
+	int using_addr; /* 0 = undecided. 1 = addr, 2 = addr 2*/
 	struct completion door_bell;
 	void (*original_sk_state_change)(struct sock *sk);
-
 };
 
 static void drbd_incoming_connection(struct sock *sk)
@@ -722,10 +733,11 @@ static void drbd_incoming_connection(struct sock *sk)
 	state_change(sk);
 }
 
-static int prepare_listen_socket(struct drbd_connection *connection, struct accept_wait_data *ad)
+static struct socket *create_listen_socket(struct drbd_connection *connection,
+					   struct sockaddr *addr,
+					   int addr_len)
 {
-	int err, sndbuf_size, rcvbuf_size, my_addr_len;
-	struct sockaddr_in6 my_addr;
+	int err, sndbuf_size, rcvbuf_size;
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what;
@@ -734,18 +746,14 @@ static int prepare_listen_socket(struct drbd_connection *connection, struct acce
 	nc = rcu_dereference(connection->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return -EIO;
+		return NULL;
 	}
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
 	rcu_read_unlock();
 
-	my_addr_len = min_t(int, connection->my_addr_len, sizeof(struct sockaddr_in6));
-	memcpy(&my_addr, &connection->my_addr, my_addr_len);
-
 	what = "sock_create_kern";
-	err = sock_create_kern(((struct sockaddr *)&my_addr)->sa_family,
-			       SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(addr->sa_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;
@@ -755,26 +763,79 @@ static int prepare_listen_socket(struct drbd_connection *connection, struct acce
 	drbd_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, my_addr_len);
+	err = s_listen->ops->bind(s_listen, addr, addr_len);
 	if (err < 0)
 		goto out;
 
-	ad->s_listen = s_listen;
-	write_lock_bh(&s_listen->sk->sk_callback_lock);
-	ad->original_sk_state_change = s_listen->sk->sk_state_change;
-	s_listen->sk->sk_state_change = drbd_incoming_connection;
-	s_listen->sk->sk_user_data = ad;
-	write_unlock_bh(&s_listen->sk->sk_callback_lock);
+	return s_listen;
+out:
+	if (s_listen)
+		sock_release(s_listen);
+
+	drbd_err(connection, "%s failed, err = %d\n", what, err);
+
+	return NULL;
+}
+
+static int prepare_listen_socket(struct drbd_connection *connection, struct accept_wait_data *ad)
+{
+	int err = -EIO, my_addr_len;
+	struct sockaddr_in6 my_addr;
+	struct net_conf *nc;
+	const char *what;
+
+	my_addr_len = min_t(int, connection->my_addr_len, sizeof(struct sockaddr_in6));
+	memcpy(&my_addr, &connection->my_addr, my_addr_len);
+
+	what = "create_listen_socket";
+	ad->s_listen = create_listen_socket(connection, (struct sockaddr *)&my_addr, my_addr_len);
+	if (!ad->s_listen)
+		goto out;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	if (!nc) {
+		rcu_read_unlock();
+		goto out;
+	}
+	my_addr_len = nc->my_addr2_len;
+	memcpy(&my_addr, nc->my_addr2, my_addr_len);
+	rcu_read_unlock();
+
+	if (my_addr_len) {
+		what = "create_listen_socket2";
+		ad->s_listen2 = create_listen_socket(connection, (struct sockaddr *)&my_addr, my_addr_len);
+		if (!ad->s_listen2)
+			goto out;
+
+		write_lock_bh(&ad->s_listen2->sk->sk_callback_lock);
+		ad->s_listen2->sk->sk_state_change = drbd_incoming_connection;
+		ad->s_listen2->sk->sk_user_data = ad;
+		write_unlock_bh(&ad->s_listen2->sk->sk_callback_lock);
+
+		what = "listen2";
+		err = ad->s_listen2->ops->listen(ad->s_listen2, 5);
+		if (err < 0)
+			goto out;
+	}
+
+	write_lock_bh(&ad->s_listen->sk->sk_callback_lock);
+	ad->original_sk_state_change = ad->s_listen->sk->sk_state_change;
+	ad->s_listen->sk->sk_state_change = drbd_incoming_connection;
+	ad->s_listen->sk->sk_user_data = ad;
+	write_unlock_bh(&ad->s_listen->sk->sk_callback_lock);
 
 	what = "listen";
-	err = s_listen->ops->listen(s_listen, 5);
+	err = ad->s_listen->ops->listen(ad->s_listen, 5);
 	if (err < 0)
 		goto out;
 
 	return 0;
 out:
-	if (s_listen)
-		sock_release(s_listen);
+	if (ad->s_listen)
+		sock_release(ad->s_listen);
+	if (ad->s_listen2)
+		sock_release(ad->s_listen2);
 	if (err < 0) {
 		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
 			drbd_err(connection, "%s failed, err = %d\n", what, err);
@@ -815,16 +876,30 @@ static struct socket *drbd_wait_for_connect(struct drbd_connection *connection, 
 	if (err <= 0)
 		return NULL;
 
-	err = kernel_accept(ad->s_listen, &s_estab, 0);
-	if (err < 0) {
-		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-			drbd_err(connection, "accept failed, err = %d\n", err);
-			conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
-		}
+	err = kernel_accept(ad->s_listen, &s_estab, O_NONBLOCK);
+	if (err < 0 && err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+		drbd_err(connection, "accept failed, err = %d\n", err);
+		conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
+		return NULL;
+	}
+	if (!err) {
+		ad->using_addr = 1;
+		unregister_state_change(s_estab->sk, ad);
+		return s_estab;
+	}
+	else if (!ad->s_listen2)
+		return NULL;
+
+	err = kernel_accept(ad->s_listen2, &s_estab, O_NONBLOCK);
+	if (err < 0 && err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
+		drbd_err(connection, "accept failed, err = %d\n", err);
+		conn_request_state(connection, NS(conn, C_DISCONNECTING), CS_HARD);
 	}
 
-	if (s_estab)
+	if (s_estab) {
+		ad->using_addr = 2;
 		unregister_state_change(s_estab->sk, ad);
+	}
 
 	return s_estab;
 }
@@ -957,9 +1032,11 @@ static int conn_connect(struct drbd_connection *connection)
 	int vnr, timeout, h;
 	bool discard_my_data, ok;
 	enum drbd_state_rv rv;
+	bool addr2_enabled;
 	struct accept_wait_data ad = {
 		.connection = connection,
 		.door_bell = COMPLETION_INITIALIZER_ONSTACK(ad.door_bell),
+		.using_addr = 0,
 	};
 
 	clear_bit(DISCONNECT_SENT, &connection->flags);
@@ -978,13 +1055,31 @@ static int conn_connect(struct drbd_connection *connection)
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	connection->agreed_pro_version = 80;
 
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	addr2_enabled = nc->my_addr2_len > 0;
+	rcu_read_unlock();
+
 	if (prepare_listen_socket(connection, &ad))
 		return 0;
 
 	do {
-		struct socket *s;
+		struct socket *s = NULL;
 
-		s = drbd_try_connect(connection);
+		switch (ad.using_addr) {
+		case 0:
+			s = drbd_try_connect(connection, false);
+			if (!s && addr2_enabled)
+				s = drbd_try_connect(connection, true);
+			break;
+		case 1:
+			s = drbd_try_connect(connection, false);
+			break;
+		case 2:
+			s = drbd_try_connect(connection, true);
+			break;
+		}
+
 		if (s) {
 			if (!sock.socket) {
 				sock.socket = s;
@@ -1051,6 +1146,8 @@ randomize:
 
 	if (ad.s_listen)
 		sock_release(ad.s_listen);
+	if (ad.s_listen2)
+		sock_release(ad.s_listen2);
 
 	sock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	msock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
@@ -1163,6 +1260,8 @@ randomize:
 out_release_sockets:
 	if (ad.s_listen)
 		sock_release(ad.s_listen);
+	if (ad.s_listen2)
+		sock_release(ad.s_listen2);
 	if (sock.socket)
 		sock_release(sock.socket);
 	if (msock.socket)

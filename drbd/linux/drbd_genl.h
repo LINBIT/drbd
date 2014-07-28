@@ -175,6 +175,8 @@ GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
 	/* 9: __u32_field(32,         DRBD_F_REQUIRED | DRBD_F_INVARIANT,     peer_node_id) */
 	__flg_field_def(33, 0 /* OPTIONAL */,	csums_after_crash_only, DRBD_CSUMS_AFTER_CRASH_ONLY_DEF)
 	__u32_field_def(34, 0 /* OPTIONAL */, sock_check_timeo, DRBD_SOCKET_CHECK_TIMEO_DEF)
+	__bin_field(35, 0 /* OPTIONAL */, my_addr2, 128)
+	__bin_field(36, 0 /* OPTIONAL */, peer_addr2, 128)
 )
 
 GENL_struct(DRBD_NLA_SET_ROLE_PARMS, 6, set_role_parms,
