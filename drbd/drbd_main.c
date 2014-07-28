@@ -4083,6 +4083,19 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	return _rotate_current_into_bitmap(device, weak_nodes);
 }
 
+static u64 initial_resync_nodes(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 nodes = 0;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->disk_state[NOW] == D_INCONSISTENT &&
+		    peer_device->repl_state[NOW] == L_ESTABLISHED)
+			nodes |= NODE_MASK(peer_device->node_id);
+	}
+
+	return nodes;
+}
 
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
@@ -4098,7 +4111,8 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	const int my_node_id = device->ldev->md.node_id;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	got_new_bitmap_uuid = rotate_current_into_bitmap(device, forced ? ~0ULL : 0);
+	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
+					forced ? initial_resync_nodes(device) : 0);
 
 	if (!got_new_bitmap_uuid) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
