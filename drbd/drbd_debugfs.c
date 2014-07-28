@@ -780,7 +780,7 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
 	struct drbd_md *md;
-	int bitmap_index, max_peers, i;
+	int bitmap_index, max_peers, i = 0;
 
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
@@ -795,12 +795,13 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 		int node_id = md->peers[bitmap_index].node_id;
 		if (node_id == -1)
 			continue;
-		seq_printf(m, " [%d]0x%016llX", node_id, md->peers[bitmap_index].bitmap_uuid);
+		seq_printf(m, "%s[%d]0x%016llX", i++ ? " " : "", node_id,
+			   md->peers[bitmap_index].bitmap_uuid);
 	}
 	seq_printf(m, "\n");
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
-		seq_printf(m, "0x%016llX\n\n", drbd_history_uuid(device, i));
+		seq_printf(m, "0x%016llX\n", drbd_history_uuid(device, i));
 	spin_unlock_irq(&md->uuid_lock);
 	put_ldev(device);
 	return 0;
