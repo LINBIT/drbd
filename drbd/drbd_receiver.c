@@ -3838,7 +3838,28 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 	return rv;
 }
 
-static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device) __must_hold(local)
+static void disk_states_to_goodness(struct drbd_device *device,
+				    enum drbd_disk_state peer_disk_state,
+				    int *hg)
+{
+	enum drbd_disk_state disk_state = device->disk_state[NOW];
+
+	if (*hg != 0)
+		return;
+
+	if (disk_state == D_NEGOTIATING)
+		disk_state = disk_state_from_md(device);
+
+	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
+	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
+		*hg = disk_state > D_INCONSISTENT ? 1 : -1;
+		drbd_info(device, "Becoming sync %s due to disk states.\n",
+			  *hg > 0 ? "source" : "target");
+	}
+}
+
+static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device,
+						  enum drbd_disk_state peer_disk_state) __must_hold(local)
 {
 	int hg, rule_nr, peer_node_id;
 
@@ -3846,6 +3867,8 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 
 	if (hg <= -2 || hg >= 2)
 		return -1;
+
+	disk_states_to_goodness(peer_device->device, peer_disk_state, &hg);
 
 	return goodness_to_repl_state(peer_device, hg);
 }
@@ -3878,15 +3901,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
-	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
-		int f = (hg == -100) || abs(hg) == 2;
-		hg = disk_state > D_INCONSISTENT ? 1 : -1;
-		if (f)
-			hg = hg*2;
-		drbd_info(device, "Becoming sync %s due to disk states.\n",
-		     hg > 0 ? "source" : "target");
-	}
+	disk_states_to_goodness(device, peer_disk_state, &hg);
 
 	if (abs(hg) == 100)
 		drbd_khelper(device, connection, "initial-split-brain");
@@ -4655,7 +4670,7 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 {
 	enum drbd_repl_state new_repl_state;
 
-	new_repl_state = drbd_attach_handshake(peer_device);
+	new_repl_state = drbd_attach_handshake(peer_device, peer_device->disk_state[NOW]);
 	if (new_repl_state == L_ESTABLISHED) {
 		return;
 	} else if (new_repl_state == -1) {
@@ -5459,7 +5474,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		} else if (old_per_state.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_per_state.disk == D_NEGOTIATING)) {
-			new_repl_state = drbd_attach_handshake(peer_device);
+			new_repl_state = drbd_attach_handshake(peer_device, peer_disk_state);
 		}
 
 		put_ldev(device);
