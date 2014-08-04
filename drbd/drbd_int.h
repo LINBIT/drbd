@@ -760,6 +760,8 @@ enum {
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 };
 
+enum which_state { NOW, OLD = NOW, NEW };
+
 struct drbd_resource {
 	char *name;
 #ifdef CONFIG_DEBUG_FS
@@ -881,6 +883,17 @@ struct drbd_connection {
 		unsigned current_epoch_writes;
 	} send;
 };
+
+static inline bool has_net_conf(struct drbd_connection *connection)
+{
+	bool has_net_conf;
+
+	rcu_read_lock();
+	has_net_conf = rcu_dereference(connection->net_conf);
+	rcu_read_unlock();
+
+	return has_net_conf;
+}
 
 void __update_timing_details(
 		struct drbd_thread_timing_details *tdp,
@@ -1565,6 +1578,9 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
 /* drbd_nl.c */
+
+extern struct mutex notification_mutex;
+
 extern void drbd_suspend_io(struct drbd_device *device);
 extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
@@ -1810,6 +1826,28 @@ struct sib_info {
 };
 void drbd_bcast_event(struct drbd_device *device, const struct sib_info *sib);
 
+extern void notify_resource_state(struct sk_buff *,
+				  unsigned int,
+				  struct drbd_resource *,
+				  struct resource_info *,
+				  enum drbd_notification_type);
+extern void notify_device_state(struct sk_buff *,
+				unsigned int,
+				struct drbd_device *,
+				struct device_info *,
+				enum drbd_notification_type);
+extern void notify_connection_state(struct sk_buff *,
+				    unsigned int,
+				    struct drbd_connection *,
+				    struct connection_info *,
+				    enum drbd_notification_type);
+extern void notify_peer_device_state(struct sk_buff *,
+				     unsigned int,
+				     struct drbd_peer_device *,
+				     struct peer_device_info *,
+				     enum drbd_notification_type);
+extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
+			  struct drbd_connection *, const char *, int);
 
 /*
  * inline helper functions
