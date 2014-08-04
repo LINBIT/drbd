@@ -1841,12 +1841,6 @@ static void drbd_unplug_all_devices(struct drbd_connection *connection)
 }
 #endif
 
-static struct drbd_peer_device *
-conn_peer_device(struct drbd_connection *connection, int volume_number)
-{
-	return idr_find(&connection->peer_devices, volume_number);
-}
-
 static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
 	int rv, issue_flush;
