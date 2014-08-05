@@ -1192,15 +1192,6 @@ static inline int __must_check kref_get_unless_zero(struct kref *kref)
 }
 #endif
 
-#ifndef COMPAT_HAVE_KOBJECT_GET_UNLESS_ZERO
-static inline struct kobject * __must_check kobject_get_unless_zero(struct kobject *kobj)
-{
-	if (!kref_get_unless_zero(&kobj->kref))
-		kobj = NULL;
-	return kobj;
-}
-#endif
-
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
 /* see 980c19e3
  * highmem: mark k[un]map_atomic() with two arguments as deprecated */
