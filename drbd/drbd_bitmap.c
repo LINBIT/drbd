@@ -32,8 +32,6 @@
 #include <linux/dynamic_debug.h>
 #include <asm/kmap_types.h>
 
-#include <asm-generic/bitops/le.h>
-
 #include "drbd_int.h"
 
 /* See the ifdefs and comments inside that header file.
