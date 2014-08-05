@@ -1849,9 +1849,10 @@ static void drbd_ldev_destroy(struct drbd_device *device)
         rcu_read_unlock();
         lc_destroy(device->act_log);
         device->act_log = NULL;
-        __no_warn(local,
-                drbd_free_ldev(device->ldev);
-                device->ldev = NULL;);
+	__acquire(local);
+	drbd_free_ldev(device->ldev);
+	device->ldev = NULL;
+	__release(local);
 
         clear_bit(GO_DISKLESS, &device->flags);
 	wake_up(&device->misc_wait);
