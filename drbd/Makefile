@@ -31,8 +31,14 @@
 # packaging scripts.
 DESTDIR ?= /
 
+# Do not:
+# o  use make's built-in rules and variables
+#    (this increases performance and avoids hard-to-debug behaviour);
+# o  print "Entering directory ...";
+MAKEFLAGS += -rR --no-print-directory
+
 # since 2.6.16, KERNELRELEASE may be empty,
-# e.g. when building agains some (broken?) linux-header package.
+# e.g. when building against some (broken?) linux-header package.
 # Lets test on PATCHLEVEL, that won't change too soon...
 
 ifneq ($(PATCHLEVEL),)
