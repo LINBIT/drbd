@@ -44,6 +44,8 @@ SHELL=/bin/bash
 SUBDIRS     = drbd
 
 REL_VERSION := $(shell $(SED) -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
+override GITHEAD := $(shell test -e .git && $(GIT) rev-parse HEAD)
+
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
@@ -52,11 +54,11 @@ ifdef FORCE
 # in the tgz name:
 #   make distclean tgz FORCE=1
 #
-REL_VERSION := $(REL_VERSION)-$(shell $(GIT) rev-parse HEAD)
+REL_VERSION := $(REL_VERSION)-$(GITHEAD)
 endif
 
 DIST_VERSION := $(REL_VERSION)
-FDIST_VERSION := $(shell test -e .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
+FDIST_VERSION := $(shell test -s .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
 ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
 endif
@@ -91,14 +93,10 @@ install:
 clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
 	rm -f *~
-	rm -rf dist
 
 distclean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
-	rm -rf dist
-	rm -f config.log
-	rm -f config.status
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
@@ -130,27 +128,31 @@ check_changelogs_up2date:
 	then \
 	   echo -e "\n\tChangeLog needs update"; \
 	   up2date=false; fi ; \
-	if ! grep "^drbd8 (2:$$dver_re-" >/dev/null 2>&1 debian/changelog; \
+	if ! grep "^drbd9 (2:$$dver_re-" >/dev/null 2>&1 debian/changelog; \
 	then \
 	   echo -e "\n\tdebian/changelog needs update [ignored]\n"; \
 	   : do not fail the build because of outdated debian/changelog ; fi ; \
 	$$up2date
 
-# XXX this is newly created whenever the toplevel makefile does something.
-# however it is NOT updated when you just do a make in user/ or drbd/ ...
-#
-# update of drbd_buildtag.c is forced:
-.PHONY: drbd/drbd_buildtag.c
-drbd/drbd_buildtag.c:
-	$(MAKE) -C drbd drbd_buildtag.c
+.PHONY: drbd/.drbd_git_revision
+ifdef GITHEAD
+override GITDIFF := $(shell $(GIT) diff --name-only HEAD 2>/dev/null |	\
+			tr -s '\t\n' '  ' |		\
+			sed -e 's/^/ /;s/ *$$//')
+drbd/.drbd_git_revision:
+	@echo GIT-hash: $(GITHEAD)$(GITDIFF) > $@
+else
+drbd/.drbd_git_revision:
+	@echo >&2 "Need a git checkout to regenerate $@"; test -s $@
+endif
 
 # update of .filelist is forced:
 .PHONY: .filelist
 .filelist:
 	@$(GIT) ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
-	echo drbd-$(DIST_VERSION)/drbd/drbd_buildtag.c >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/.filelist            >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
+	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
@@ -159,7 +161,7 @@ drbd/drbd_buildtag.c:
 # to generate a distribution tarball, use make tarball,
 # which will regenerate .filelist
 tgz:
-	test -e .filelist
+	test -s .filelist
 	rm -f drbd-$(FDIST_VERSION)
 	$(LN_S) . drbd-$(FDIST_VERSION)
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
@@ -182,11 +184,12 @@ prepare_release:
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
-tarball: check_all_committed distclean .filelist
+tarball: check_all_committed distclean drbd/.drbd_git_revision .filelist
 	$(MAKE) tgz
 
-module .filelist: drbd/drbd_buildtag.c
+module .filelist: drbd/.drbd_git_revision
 
+ifdef RPMBUILD
 
 .PHONY: km-rpm
 km-rpm: check-kdir tgz drbd-km.spec
