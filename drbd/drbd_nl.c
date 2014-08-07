@@ -2098,7 +2098,7 @@ check_net_options(struct drbd_connection *connection, struct net_conf *new_net_c
 	rv = _check_net_options(connection, rcu_dereference(connection->net_conf), new_net_conf);
 	rcu_read_unlock();
 
-	/* connection->volumes protected by genl_lock() here */
+	/* connection->peer_devices protected by genl_lock() here */
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 		if (!device->bitmap) {
