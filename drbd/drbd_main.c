@@ -3309,7 +3309,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
-		drbd_msg_put_info(adm_ctx->reply_skb, "unable to create submit workqueue");
 		goto out_remove_peer_device;
 	}
 
