@@ -146,7 +146,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &peer_req->w);
+		drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
 		return;
 	}
 
