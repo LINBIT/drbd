@@ -1195,13 +1195,8 @@ extern int drbd_send_uuids(struct drbd_peer_device *);
 extern int drbd_send_uuids_skip_initial_sync(struct drbd_peer_device *);
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enum dds_flags flags);
-#define drbd_send_state(m, s) drbd_send_state_(m, s, __func__ , __LINE__ )
-#define drbd_send_current_state(m) drbd_send_current_state_(m, __func__ , __LINE__ )
-extern int drbd_send_state_(struct drbd_peer_device *peer_device,
-               union drbd_state s,
-               const char *func, unsigned int line);
-extern int drbd_send_current_state_(struct drbd_peer_device *peer_device,
-               const char *func, unsigned int line);
+extern int drbd_send_state(struct drbd_peer_device *, union drbd_state);
+extern int drbd_send_current_state(struct drbd_peer_device *);
 extern int drbd_send_sync_param(struct drbd_peer_device *peer_device);
 extern void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr,
 			    u32 set_size);

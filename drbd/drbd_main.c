@@ -1000,7 +1000,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
  * drbd_send_current_state() - Sends the drbd state to the peer
  * @peer_device:	DRBD peer device.
  */
-int drbd_send_current_state_(struct drbd_peer_device *peer_device, const char *func, unsigned int line)
+int drbd_send_current_state(struct drbd_peer_device *peer_device)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
@@ -1023,7 +1023,7 @@ int drbd_send_current_state_(struct drbd_peer_device *peer_device, const char *f
  * between queuing and processing of the after_state_ch work, we still
  * want to send each intermediary state in the order it occurred.
  */
-int drbd_send_state_(struct drbd_peer_device *peer_device, union drbd_state state, const char *func, unsigned int line)
+int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
