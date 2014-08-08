@@ -1739,7 +1739,6 @@ extern void conn_free_crypto(struct drbd_connection *connection);
 extern void do_submit(struct work_struct *ws);
 extern void __drbd_make_request(struct drbd_device *, struct bio *, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
-extern int drbd_read_remote(struct drbd_device *device, struct drbd_request *req);
 extern int drbd_merge_bvec(struct request_queue *q,
 #ifdef HAVE_bvec_merge_data
 		struct bvec_merge_data *bvm,
