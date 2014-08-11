@@ -1600,7 +1600,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	if (peer_req->flags & EE_IS_TRIM_USE_ZEROOUT) {
 		/* wait for all pending IO completions, before we start
 		 * zeroing things out. */
-		conn_wait_active_ee_empty(first_peer_device(device)->connection);
+		conn_wait_active_ee_empty(peer_req->peer_device->connection);
 		/* add it to the active list now,
 		 * so we can find it to present it in debugfs */
 		peer_req->submit_jif = jiffies;
@@ -1731,7 +1731,8 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
-	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
 	   (and DE_BARRIER_IN_NEXT_EPOCH_ISSUED in the previous Epoch)
@@ -1743,7 +1744,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	   that will never trigger. If it is reported late, we will just
 	   print that warning and continue correctly for all future requests
 	   with WO_bdev_flush */
-	if (previous_epoch(first_peer_device(device)->connection, peer_req->epoch))
+	if (previous_epoch(peer_device->connection, peer_req->epoch))
 		drbd_warn(device, "Write ordering was not enforced (one time event)\n");
 
 	/* we still have a local reference,
@@ -1754,7 +1755,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
-		drbd_queue_work(&first_peer_device(device)->connection->sender_work, &peer_req->w);
+		drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
 		/* retry later; fall through */
 	case 0:
 		/* keep worker happy and connection up */
@@ -1773,7 +1774,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 			peer_req->flags &= ~EE_CALL_AL_COMPLETE_IO;
 			drbd_al_complete_io(device, &peer_req->i);
 		}
-		drbd_may_finish_epoch(first_peer_device(device)->connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
+		drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 		drbd_free_peer_req(device, peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
 		return err;
@@ -2281,9 +2282,9 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	int err = 0, pcmd;
 
 	if (peer_req->flags & EE_IS_BARRIER) {
-		epoch = previous_epoch(first_peer_device(device)->connection, peer_req->epoch);
+		epoch = previous_epoch(peer_device->connection, peer_req->epoch);
 		if (epoch)
-			drbd_may_finish_epoch(first_peer_device(device)->connection, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
+			drbd_may_finish_epoch(peer_device->connection, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
 	}
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
@@ -2315,7 +2316,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
 
-	drbd_may_finish_epoch(first_peer_device(device)->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
+	drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
 	return err;
 }
@@ -2447,7 +2448,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 		}
 
 		rcu_read_lock();
-		tp = rcu_dereference(first_peer_device(device)->connection->net_conf)->two_primaries;
+		tp = rcu_dereference(peer_device->connection->net_conf)->two_primaries;
 		rcu_read_unlock();
 
 		if (!tp)
@@ -2750,7 +2751,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (dp_flags & DP_SEND_RECEIVE_ACK) {
 		/* I really don't like it that the receiver thread
 		 * sends on the msock, but anyways */
-		drbd_send_ack(first_peer_device(device), P_RECV_ACK, peer_req);
+		drbd_send_ack(peer_device, P_RECV_ACK, peer_req);
 	}
 
 	if (tp) {
