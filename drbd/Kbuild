@@ -108,8 +108,8 @@ filechk_compat.h = \
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash
 
-.PHONY: $(obj)/drbd_buildtag.c
-$(obj)/drbd_buildtag.c:
+$(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
+	@$(kecho) '  GEN     $@ $(echo-why)'
 	@set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
 	echo -e "#include <linux/drbd.h>";					\
