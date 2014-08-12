@@ -2632,22 +2632,20 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 }
 
 static void connection_to_info(struct connection_info *info,
-			       struct drbd_connection *connection,
-			       enum which_state which)
+			       struct drbd_connection *connection)
 {
-	info->conn_connection_state = connection->cstate[which];
-	info->conn_role = connection->peer_role[which];
+	info->conn_connection_state = connection->cstate[NOW];
+	info->conn_role = connection->peer_role[NOW];
 }
 
 static void peer_device_to_info(struct peer_device_info *info,
-				struct drbd_peer_device *peer_device,
-				enum which_state which)
+				struct drbd_peer_device *peer_device)
 {
-	info->peer_repl_state = peer_device->repl_state[which];
-	info->peer_disk_state = peer_device->disk_state[which];
-	info->peer_resync_susp_user = peer_device->resync_susp_user[which];
-	info->peer_resync_susp_peer = peer_device->resync_susp_peer[which];
-	info->peer_resync_susp_dependency = peer_device->resync_susp_dependency[which];
+	info->peer_repl_state = peer_device->repl_state[NOW];
+	info->peer_disk_state = peer_device->disk_state[NOW];
+	info->peer_resync_susp_user = peer_device->resync_susp_user[NOW];
+	info->peer_resync_susp_peer = peer_device->resync_susp_peer[NOW];
+	info->peer_resync_susp_dependency = peer_device->resync_susp_dependency[NOW];
 }
 
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
@@ -2862,14 +2860,14 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	connection_to_info(&connection_info, connection, NOW);
+	connection_to_info(&connection_info, connection);
 	flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 	mutex_lock(&notification_mutex);
 	notify_connection_state(NULL, 0, connection, &connection_info, NOTIFY_CREATE | flags);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct peer_device_info peer_device_info;
 
-		peer_device_to_info(&peer_device_info, peer_device, NOW);
+		peer_device_to_info(&peer_device_info, peer_device);
 		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags);
 	}
@@ -3925,7 +3923,7 @@ put_result:
 			if (err)
 				goto out;
 		}
-		connection_to_info(&connection_info, connection, NOW);
+		connection_to_info(&connection_info, connection);
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -4257,13 +4255,12 @@ drbd_check_resource_name(struct drbd_config_context *adm_ctx)
 }
 
 static void resource_to_info(struct resource_info *info,
-			     struct drbd_resource *resource,
-			     enum which_state which)
+			     struct drbd_resource *resource)
 {
-	info->res_role = resource->role[which];
-	info->res_susp = resource->susp[which];
-	info->res_susp_nod = resource->susp_nod[which];
-	info->res_susp_fen = resource->susp_fen[which];
+	info->res_role = resource->role[NOW];
+	info->res_susp = resource->susp[NOW];
+	info->res_susp_nod = resource->susp_nod[NOW];
+	info->res_susp_fen = resource->susp_fen[NOW];
 }
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
@@ -4307,7 +4304,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		struct resource_info resource_info;
 
 		mutex_lock(&notification_mutex);
-		resource_to_info(&resource_info, resource, NOW);
+		resource_to_info(&resource_info, resource);
 		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE);
 		mutex_unlock(&notification_mutex);
 	} else {
@@ -4321,10 +4318,9 @@ out:
 }
 
 static void device_to_info(struct device_info *info,
-			   struct drbd_device *device,
-			   enum which_state which)
+			   struct drbd_device *device)
 {
-	info->dev_disk_state = device->disk_state[which];
+	info->dev_disk_state = device->disk_state[NOW];
 }
 
 int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
@@ -4381,14 +4377,14 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 		for_each_peer_device(peer_device, device)
 			peer_devices++;
 
-		device_to_info(&info, device, NOW);
+		device_to_info(&info, device);
 		mutex_lock(&notification_mutex);
 		flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 		notify_device_state(NULL, 0, device, &info, NOTIFY_CREATE | flags);
 		for_each_peer_device(peer_device, device) {
 			struct peer_device_info peer_device_info;
 
-			peer_device_to_info(&peer_device_info, peer_device, NOW);
+			peer_device_to_info(&peer_device_info, peer_device);
 			flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 			notify_peer_device_state(NULL, 0, peer_device, &peer_device_info,
 						 NOTIFY_CREATE | flags);
