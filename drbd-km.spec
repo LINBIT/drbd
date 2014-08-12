@@ -123,7 +123,7 @@ uname -r | grep BOOT ||
 * Fri May 31 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre4-1
 - New upstream release.
 
-* Mon Apr 30 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre3-1
+* Tue Apr 30 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre3-1
 - New upstream release.
 
 * Mon Apr 15 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre2-1
