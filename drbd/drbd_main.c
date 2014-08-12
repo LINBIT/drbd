@@ -4653,7 +4653,7 @@ bool idr_is_empty(struct idr *idr)
 void lock_all_resources(void)
 {
 	struct drbd_resource *resource;
-	int i = 0;
+	int __maybe_unused i = 0;
 
 	mutex_lock(&global_state_mutex);
 	local_irq_disable();
