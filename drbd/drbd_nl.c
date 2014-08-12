@@ -4887,25 +4887,25 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		flags |= NOTIFY_CONTINUES;
 	if (n < 1) {
 		notify_resource_state_change(skb, seq, state_change->resource,
-					     OLD, NOTIFY_EXISTS | flags);
+					     NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n--;
 	if (n < state_change->n_connections) {
 		notify_connection_state_change(skb, seq, &state_change->connections[n],
-					       OLD, NOTIFY_EXISTS | flags);
+					       NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n -= state_change->n_connections;
 	if (n < state_change->n_devices) {
 		notify_device_state_change(skb, seq, &state_change->devices[n],
-					   OLD, NOTIFY_EXISTS | flags);
+					   NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n -= state_change->n_devices;
 	if (n < state_change->n_devices * state_change->n_connections) {
 		notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
-						OLD, NOTIFY_EXISTS | flags);
+						NOTIFY_EXISTS | flags);
 		goto next;
 	}
 
@@ -4953,6 +4953,7 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 			mutex_unlock(&global_state_mutex);
 			return -ENOMEM;
 		}
+		copy_old_to_new_state_change(state_change);
 		list_add_tail(&state_change->list, &head);
 		cb->args[5] += notifications_for_state_change(state_change);
 	}
