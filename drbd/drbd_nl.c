@@ -2897,9 +2897,7 @@ unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
 	if (!list_empty(&connection->connections)) {
-		spin_lock_irq(&adm_ctx.resource->req_lock);
 		drbd_unregister_connection(connection);
-		spin_unlock_irq(&adm_ctx.resource->req_lock);
 		synchronize_rcu();
 	}
 	drbd_put_connection(connection);
@@ -2943,7 +2941,6 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 
 	if (rv >= SS_SUCCESS) {
 		enum drbd_state_rv rv2;
-		long irq_flags;
 		struct drbd_peer_device *peer_device;
 		int vnr;
 
@@ -2969,9 +2966,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 		 */
 		drbd_thread_stop(&connection->sender);
 
-		state_change_lock(resource, &irq_flags, 0);
 		drbd_unregister_connection(connection);
-		state_change_unlock(resource, &irq_flags);
 
 		/*
 		 * Flush the resource work queue to make sure that no more
@@ -4427,9 +4422,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	 */
 	drbd_flush_workqueue(&resource->work);
 
-	spin_lock_irq(&resource->req_lock);
 	drbd_unregister_device(device);
-	spin_unlock_irq(&resource->req_lock);
 
 	mutex_lock(&notification_mutex);
 	for_each_peer_device(peer_device, device)
@@ -4487,6 +4480,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	mutex_unlock(&notification_mutex);
 
 	list_del_rcu(&resource->resources);
+	drbd_debugfs_resource_cleanup(resource);
 	synchronize_rcu();
 	drbd_free_resource(resource);
 out:

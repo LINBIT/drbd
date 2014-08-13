@@ -2487,7 +2487,6 @@ static void drbd_release_all_peer_reqs(struct drbd_device *device)
 
 static void free_peer_device(struct drbd_peer_device *peer_device)
 {
-	drbd_debugfs_peer_device_cleanup(peer_device);
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
 	kfree(peer_device);
@@ -2551,14 +2550,7 @@ void drbd_destroy_resource(struct kref *kref)
 
 void drbd_free_resource(struct drbd_resource *resource)
 {
-	struct drbd_connection *connection, *tmp;
-
 	drbd_thread_stop(&resource->worker);
-	for_each_connection_safe(connection, tmp, resource) {
-		list_del(&connection->connections);
-		drbd_debugfs_connection_cleanup(connection);
-		kref_put(&connection->kref, drbd_destroy_connection);
-	}
 	if (resource->twopc_parent) {
 		kref_debug_put(&resource->twopc_parent->kref_debug, 9);
 		kref_put(&resource->twopc_parent->kref,
@@ -2568,7 +2560,6 @@ void drbd_free_resource(struct drbd_resource *resource)
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
 	kref_debug_put(&resource->kref_debug, 8);
-	drbd_debugfs_resource_cleanup(resource);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -3378,10 +3369,15 @@ void drbd_unregister_device(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 
-	for_each_connection(connection, resource)
+	spin_lock_irq(&resource->req_lock);
+	for_each_connection(connection, resource) {
+		drbd_debugfs_peer_device_cleanup(conn_peer_device(connection, device->vnr));
 		idr_remove(&connection->peer_devices, device->vnr);
+	}
 	idr_remove(&resource->devices, device->vnr);
 	idr_remove(&drbd_devices, device_to_minor(device));
+	spin_unlock_irq(&resource->req_lock);
+	drbd_debugfs_device_cleanup(device);
 }
 
 void drbd_put_device(struct drbd_device *device)
@@ -3409,12 +3405,18 @@ void drbd_put_device(struct drbd_device *device)
  */
 void drbd_unregister_connection(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+	spin_lock_irq(&resource->req_lock);
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		drbd_debugfs_peer_device_cleanup(peer_device);
 		list_del_rcu(&peer_device->peer_devices);
+	}
 	list_del_rcu(&connection->connections);
+	spin_unlock_irq(&resource->req_lock);
+	drbd_debugfs_connection_cleanup(connection);
 }
 
 void del_connect_timer(struct drbd_connection *connection)
