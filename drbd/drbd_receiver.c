@@ -7188,6 +7188,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 			      mask, mask);
 
 		list_del(&peer_req->recv_order);
+		drbd_al_complete_io(device, &peer_req->i);
 		drbd_free_peer_req(device, peer_req);
 	}
 }
