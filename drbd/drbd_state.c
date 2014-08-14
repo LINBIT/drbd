@@ -3572,7 +3572,7 @@ enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	unsigned long irq_flags;
 
-	begin_state_change(resource, &irq_flags, flags | CS_SERIALIZE | CS_LOCAL_ONLY);
+	begin_state_change(resource, &irq_flags, flags | CS_LOCAL_ONLY);
 	if (!local_state_change(flags) && repl_state[NOW] != new_repl_state &&
 	    ((repl_state[NOW] >= L_ESTABLISHED &&
 	      (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
