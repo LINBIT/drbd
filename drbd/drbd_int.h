@@ -289,7 +289,8 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)) : 0))
 
 extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
-extern struct list_head drbd_resources; /* RCU, updates: global_state_mutex */
+extern struct list_head drbd_resources; /* RCU, updates: resources_mutex */
+extern struct mutex resources_mutex;
 
 /* for sending/receiving the bitmap,
  * possibly in some encoding scheme */
@@ -1708,8 +1709,6 @@ extern mempool_t *drbd_md_io_page_pool;
 extern struct bio_set *drbd_md_io_bio_set;
 /* to allocate from that set */
 extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
-
-extern struct mutex global_state_mutex;
 
 extern int conn_lowest_minor(struct drbd_connection *connection);
 extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);

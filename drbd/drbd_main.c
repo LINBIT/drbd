@@ -3470,7 +3470,7 @@ static int __init drbd_init(void)
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
 
-	mutex_init(&global_state_mutex);
+	mutex_init(&resources_mutex);
 	INIT_LIST_HEAD(&drbd_resources);
 
 	err = drbd_genl_register();
@@ -4658,7 +4658,7 @@ void lock_all_resources(void)
 	struct drbd_resource *resource;
 	int __maybe_unused i = 0;
 
-	mutex_lock(&global_state_mutex);
+	mutex_lock(&resources_mutex);
 	local_irq_disable();
 	for_each_resource(resource, &drbd_resources)
 		spin_lock_nested(&resource->req_lock, i++);
@@ -4671,7 +4671,7 @@ void unlock_all_resources(void)
 	for_each_resource(resource, &drbd_resources)
 		spin_unlock(&resource->req_lock);
 	local_irq_enable();
-	mutex_unlock(&global_state_mutex);
+	mutex_unlock(&resources_mutex);
 }
 
 /**

@@ -55,7 +55,7 @@ static void maybe_send_barrier(struct drbd_connection *, unsigned int);
  *
  */
 
-struct mutex global_state_mutex;
+struct mutex resources_mutex;
 
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
@@ -1549,7 +1549,7 @@ void suspend_other_sg(struct drbd_device *device)
 	unlock_all_resources();
 }
 
-/* caller must hold global_state_mutex */
+/* caller must hold resources_mutex */
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resync_after)
 {
 	struct drbd_device *other_device;
@@ -1597,7 +1597,7 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 	return rv;
 }
 
-/* caller must hold global_state_mutex */
+/* caller must hold resources_mutex */
 void drbd_resync_after_changed(struct drbd_device *device)
 {
 	while (drbd_pause_after(device) || drbd_resume_next(device))

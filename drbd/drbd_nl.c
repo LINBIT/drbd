@@ -4291,9 +4291,9 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	mutex_lock(&global_state_mutex);
+	mutex_lock(&resources_mutex);
 	resource = drbd_create_resource(adm_ctx.resource_name, &res_opts);
-	mutex_unlock(&global_state_mutex);
+	mutex_unlock(&resources_mutex);
 
 	if (resource) {
 		struct resource_info resource_info;
@@ -4466,7 +4466,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	 */
 	drbd_flush_workqueue(&resource->work);
 
-	mutex_lock(&global_state_mutex);
+	mutex_lock(&resources_mutex);
 	err = ERR_NET_CONFIGURED;
 	if (!list_empty(&resource->connections))
 		goto out;
@@ -4484,7 +4484,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	synchronize_rcu();
 	drbd_free_resource(resource);
 out:
-	mutex_unlock(&global_state_mutex);
+	mutex_unlock(&resources_mutex);
 	return err;
 }
 
@@ -4936,7 +4936,7 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 
 	cb->args[5] = 2;  /* number of iterations */
-	mutex_lock(&global_state_mutex);
+	mutex_lock(&resources_mutex);
 	for_each_resource(resource, &drbd_resources) {
 		struct drbd_state_change *state_change;
 
@@ -4944,14 +4944,14 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		if (!state_change) {
 			if (!list_empty(&head))
 				free_state_changes(&head);
-			mutex_unlock(&global_state_mutex);
+			mutex_unlock(&resources_mutex);
 			return -ENOMEM;
 		}
 		copy_old_to_new_state_change(state_change);
 		list_add_tail(&state_change->list, &head);
 		cb->args[5] += notifications_for_state_change(state_change);
 	}
-	mutex_unlock(&global_state_mutex);
+	mutex_unlock(&resources_mutex);
 
 	if (!list_empty(&head)) {
 		struct drbd_state_change *state_change =
