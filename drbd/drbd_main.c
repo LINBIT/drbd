@@ -134,6 +134,7 @@ module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0
  */
 struct idr drbd_devices;
 struct list_head drbd_resources;
+struct mutex resources_mutex;
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
@@ -3025,6 +3026,7 @@ static int __init drbd_init(void)
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
 
+	mutex_init(&resources_mutex);
 	rwlock_init(&global_state_lock);
 	INIT_LIST_HEAD(&drbd_resources);
 

@@ -3493,8 +3493,10 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	/* not yet safe for genl_family.parallel_ops */
+	mutex_lock(&resources_mutex);
 	if (!conn_create(adm_ctx.resource_name, &res_opts))
 		retcode = ERR_NOMEM;
+	mutex_unlock(&resources_mutex);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
@@ -3579,7 +3581,9 @@ static int adm_del_resource(struct drbd_resource *resource)
 	if (!idr_is_empty(&resource->devices))
 		return ERR_RES_IN_USE;
 
+	mutex_lock(&resources_mutex);
 	list_del_rcu(&resource->resources);
+	mutex_unlock(&resources_mutex);
 	/* Make sure all threads have actually stopped: state handling only
 	 * does drbd_thread_stop_nowait(). */
 	list_for_each_entry(connection, &resource->connections, connections)
