@@ -4256,6 +4256,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	struct disk_conf *old_disk_conf = NULL, *new_disk_conf = NULL;
 	const int apv = connection->agreed_pro_version;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
+	struct drbd_resource *resource = connection->resource;
 	int fifo_size = 0;
 	int err;
 
@@ -4297,7 +4298,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	if (err)
 		return err;
 
-	err = mutex_lock_interruptible(&connection->resource->conf_update);
+	err = mutex_lock_interruptible(&resource->conf_update);
 	if (err) {
 		drbd_err(connection, "Interrupted while waiting for conf_update\n");
 		return err;
@@ -4307,7 +4308,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
 			put_ldev(device);
-			mutex_unlock(&connection->resource->conf_update);
+			mutex_unlock(&resource->conf_update);
 			drbd_err(device, "Allocation of new disk_conf failed\n");
 			return -ENOMEM;
 		}
@@ -4427,7 +4428,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	if (new_plan)
 		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 
-	mutex_unlock(&connection->resource->conf_update);
+	mutex_unlock(&resource->conf_update);
 	synchronize_rcu();
 	if (new_net_conf)
 		kfree(old_net_conf);
@@ -4442,7 +4443,7 @@ reconnect:
 		put_ldev(device);
 		kfree(new_disk_conf);
 	}
-	mutex_unlock(&connection->resource->conf_update);
+	mutex_unlock(&resource->conf_update);
 	return -EIO;
 
 disconnect:
@@ -4451,7 +4452,7 @@ disconnect:
 		put_ldev(device);
 		kfree(new_disk_conf);
 	}
-	mutex_unlock(&connection->resource->conf_update);
+	mutex_unlock(&resource->conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
 	crypto_free_hash(csums_tfm);
