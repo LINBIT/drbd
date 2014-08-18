@@ -1337,4 +1337,8 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 #define bio_iter_last(BVEC, ITER) ((ITER) == bio->bi_vcnt - 1)
 #endif
 
+#ifndef COMPAT_HAVE_RCU_DEREFERENCE_PROTECTED
+#define rcu_dereference_protected(p, c) (p)
+#endif
+
 #endif
