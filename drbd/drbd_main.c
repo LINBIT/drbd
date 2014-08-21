@@ -3027,7 +3027,6 @@ static int __init drbd_init(void)
 	idr_init(&drbd_devices);
 
 	mutex_init(&resources_mutex);
-	rwlock_init(&global_state_lock);
 	INIT_LIST_HEAD(&drbd_resources);
 
 	err = drbd_genl_register();
@@ -3877,6 +3876,27 @@ bool idr_is_empty(struct idr *idr)
 	return true;
 }
 #endif
+
+void lock_all_resources(void)
+{
+	struct drbd_resource *resource;
+	int __maybe_unused i = 0;
+
+	mutex_lock(&resources_mutex);
+	local_irq_disable();
+	for_each_resource(resource, &drbd_resources)
+		spin_lock_nested(&resource->req_lock, i++);
+}
+
+void unlock_all_resources(void)
+{
+	struct drbd_resource *resource;
+
+	for_each_resource(resource, &drbd_resources)
+		spin_unlock(&resource->req_lock);
+	local_irq_enable();
+	mutex_unlock(&resources_mutex);
+}
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 /* Fault insertion support including random number generator shamelessly
