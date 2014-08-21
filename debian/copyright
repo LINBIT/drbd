@@ -1,21 +1,51 @@
-David Krovich <dkrovich@csee.wvu.edu> adopted the packages from Jan
-Niehusman <jan@debian.org> and updated them to sync back up with
-upstream.
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: drbd-9.0
+Source: http://git.linbit.com/drbd-9.0.git/
 
-Debianization of this package was started by Ard van Breemen <ard@telegraafnet.nl>.
-Later, Jan Niehusmann <jan@debian.org> finished the packaging and made the
-initial upload.
+Files: *
+Copyright: Copyright (C) 2001-2014, LINBIT Information Technologies GmbH
+           Copyright (C) 2008-2014, LINBIT HA-Solutions GmbH
+           Copyright (C) 1999-2014, Philipp Reisner <philipp.reisner@linbit.com>
+           Copyright (C) 2001-2014, Lars Ellenberg <lars.ellenberg@linbit.com>
+License: GPL-2+
+ This program is free software; you can redistribute it
+ and/or modify it under the terms of the GNU General Public
+ License as published by the Free Software Foundation; either
+ version 2 of the License, or (at your option) any later
+ version.
+ .
+ This program is distributed in the hope that it will be
+ useful, but WITHOUT ANY WARRANTY; without even the implied
+ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ PURPOSE.  See the GNU General Public License for more
+ details.
+ .
+ You should have received a copy of the GNU General Public
+ License along with this package; if not, write to the Free
+ Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ Boston, MA  02110-1301 USA
+ .
+ On Debian systems, the full text of the GNU General Public
+ License version 2 can be found in the file
+ `/usr/share/common-licenses/GPL-2'.
 
-It was downloaded from http://oss.linbit.com/drbd/
-More information can be found at http://www.drbd.org/
-
-DRBD was written by Philipp Reisner and Lars Ellenberg
-for LINBIT Information Technologies, http://www.linbit.com
-
-Drbd is free software; you can redistribute them and/or modify them under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 2 of the License, or (at your option) any later
-version.
-
-On Debian systems, the complete text of the GNU General Public
-License can be found in /usr/share/common-licenses/GPL file.
+Files: debian/*
+Copyright: Copyright 2001 Ard van Breemen <ard@telegraafnet.nl>
+           Copyright 2002 Jan Niehusmann <jan@debian.org>
+           Copyright 2004 David Krovich <dkrovich@csee.wvu.edu>
+           Copyright 2004 Bernd Schubert <bernd-schubert@web.de>
+           Copyright 2004-2014 Lars Ellenberg <lars.ellenberg@linbit.com>
+           Copyright 2004-2014 Philipp Reisner <phil@linbit.com>
+           Copyright 2004-2006 Cyril Bouthors <cyril@bouthors.org>
+           Copyright 2007 Frederik Schüler <fs@debian.org>
+           Copyright 2009 Iustin Pop <iusty@k1024.org>
+           Copyright 2010 Alexander Reichle-Schmehl <tolimar@debian.org>
+           Copyright 2008-2010 Norbert Tretkowski <norbert@tretkowski.de>
+           Copyright 2004-2012 Philipp Hug <debian@hug.cx>
+           Copyright 2013-2014 Apollon Oikonomopoulos <apoikos@debian.org>
+           Copyright 2014 Roland Kammerer <roland.kammerer@linbit.com>
+License:
+ Copying and distribution of this package, with or without
+ modification, are permitted in any medium without royalty
+ provided the copyright notice and this notice are
+ preserved.

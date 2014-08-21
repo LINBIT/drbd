@@ -1,45 +1,53 @@
 #!/usr/bin/make -f
-# -*- makefile -*-
-# Sample debian/rules that uses debhelper.
-# GNU copyright 1997 to 1999 by Joey Hess.
-#
-# Modified to make a template file for a multi-binary package with separated
-# build-arch and build-indep targets  by Bill Allombert 2001
 
 # Uncomment this to turn on verbose mode.
 # export DH_VERBOSE=1
 
-include /usr/share/dpatch/dpatch.make
+VERSION := $(shell dpkg-parsechangelog | sed -rne 's/^Version: ([0-9]+:)?//p')
+PACKAGE=drbd-module
+DKMSDIR=drbd-dkms
+MODSRCDIR=drbd-module-source
 
-# This has to be exported to make some magic below work.
-export DH_OPTIONS
-
-PACKAGE=drbd8-module
+# modifieable for experiments or debugging m-a
 MA_DIR ?= /usr/share/modass
+# load generic variable handling
 -include $(MA_DIR)/include/generic.make
+# load default rules, including kdist, kdist_image, ...
 -include $(MA_DIR)/include/common-rules.make
 
-CFLAGS = -Wall -g
+%:
+	dh $@ --with dkms
 
-ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
-	CFLAGS += -O0
-else
-	CFLAGS += -O2
-endif
-ifeq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
-	INSTALL_PROGRAM += -s
-endif
+override_dh_auto_clean: ;
+override_dh_auto_configure: ;
+override_dh_auto_build: ;
+override_dh_auto_test: ;
+override_dh_auto_install: ;
 
-kdist_clean: unpatch
+override_dh_install:
+	# dkms
+	dh_install drbd ../$(DKMSDIR)/usr/src/drbd-$(VERSION)/src
+	dh_install common ../$(DKMSDIR)/usr/src/drbd-$(VERSION)/src
+
+	# m-a
+	dh_install drbd ../$(MODSRCDIR)/usr/src/modules/drbd/
+	dh_install common ../$(MODSRCDIR)/usr/src/modules/drbd/
+	dh_install debian/changelog ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	dh_install debian/control ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	dh_install debian/compat ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	dh_install debian/copyright ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	dh_install debian/*modules.in ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	dh_install debian/rules ../$(MODSRCDIR)/usr/src/modules/drbd/debian
+	cd debian/$(MODSRCDIR)/usr/src ; tar pzfvc drbd.tar.gz modules ; rm -rf modules
+	install -m 755 debian/modass.drbd-module-source ./debian/$(MODSRCDIR)/usr/share/modass/overrides/$(MODSRCDIR)
+
+override_dh_dkms:
+	dh_dkms -V $(VERSION)
+
+# some nasty clue code for m-a
+kdist_clean:
 	dh_clean
 	-$(MAKE) -C drbd clean
-
-# prep-deb-files rewrites the debian/ files as needed. See RATIONALE for
-# details
-kdist_config: prep-deb-files
-# ... additional kernel specific things to configure...
-
-kdist_configure: kdist_config
 
 binary-modules: prep-deb-files
 	dh_testdir
@@ -56,97 +64,3 @@ binary-modules: prep-deb-files
 	dh_md5sums
 	dh_builddeb --destdir=$(DEB_DESTDIR)
 
-#Architecture
-build: patch build-arch build-indep
-
-build-arch: build-arch-stamp
-build-arch-stamp:
-	dh_testdir
-#	build this first, so user/drbd_buildtag.c does not use the stale thing from the tgz
-	[ -f configure ] || ( autoheader && autoconf )
-	./configure --prefix=/usr --localstatedir=/var --sysconfdir=/etc
-	$(MAKE) drbd/drbd_buildtag.c
-	$(MAKE) -C user
-	$(MAKE) -C scripts
-	$(MAKE) -C documentation doc
-	touch build-arch-stamp
-
-build-indep: build-indep-stamp
-build-indep-stamp:
-	touch build-indep-stamp
-
-clean: unpatch
-	dh_testdir
-	dh_testroot
-	rm -f build-arch-stamp build-indep-stamp #CONFIGURE-STAMP#
-#	remove these files from upstream tgz
-	rm -f debian/drbd8.*
-	rm -f debian/drbd8-source.dirs
-	rm -f debian/kernel-patch-wup.kpatches debian/kernel-patch-wup.README.Debian debian/kernel-export-wup.patch
-	-$(MAKE) -C user clean
-	-$(MAKE) -C scripts clean
-	-$(MAKE) -C documentation clean
-	-$(MAKE) -C drbd clean
-	dh_clean
-
-install: install-arch install-indep
-install-indep:
-	dh_testdir
-	dh_testroot
-	dh_clean -k -i
-	dh_installdirs -i
-	cp -a drbd/* debian/$(PACKAGE)-source/usr/src/modules/drbd/drbd
-	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
-	cp drbd/linux/drbd_config.h debian/$(PACKAGE)-source/usr/src/modules/drbd
-	mkdir debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
-
-#	 install debian/ files
-	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
-
-#	 tar the stuff
-	cd debian/$(PACKAGE)-source/usr/src/ ; tar pzfvc drbd8.tar.gz modules ; rm -rf modules
-
-	install -m 755 $(CURDIR)/debian/modass.drbd8-module-source $(CURDIR)/debian/$(PACKAGE)-source/usr/share/modass/overrides/drbd8-module-source
-	dh_install -i
-
-install-arch:
-	dh_testdir
-	dh_testroot
-	dh_clean -k -s
-	dh_installdirs -s
-	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C user install
-	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C scripts install
-	$(MAKE) DESTDIR=$(CURDIR)/debian/drbd8-utils/ -C documentation install
-
-	dh_install -s
-# Must not depend on anything. This is to be called by
-# binary-arch/binary-indep
-# in another 'make' thread.
-binary-common:
-	dh_testdir
-	dh_testroot
-	dh_installchangelogs ChangeLog
-	dh_installdocs
-	dh_installexamples
-#	dh_installinit
-	dh_installman
-	dh_link
-	dh_strip
-	dh_compress
-	dh_fixperms
-	dh_makeshlibs
-	dh_installdeb
-	dh_shlibdeps
-	dh_gencontrol
-	dh_md5sums
-	dh_builddeb
-# Build architecture independant packages using the common target.
-binary-indep: build-indep install-indep
-	$(MAKE) -f debian/rules DH_OPTIONS=-i binary-common
-
-# Build architecture dependant packages using the common target.
-binary-arch: build-arch install-arch
-	$(MAKE) -f debian/rules DH_OPTIONS=-a binary-common
-
-binary: binary-arch binary-indep
-.PHONY: build clean binary-indep binary-arch binary install install-indep install-arch patch unpatch

@@ -1,0 +1,8 @@
+PACKAGE_VERSION="#MODULE_VERSION#"
+PACKAGE_NAME="drbd"
+MAKE="make -C src/drbd"
+CLEAN="make -C src/drbd clean"
+BUILT_MODULE_NAME[0]="drbd"
+BUILT_MODULE_LOCATION[0]="./src/drbd/"
+DEST_MODULE_LOCATION[0]="/kernel/drivers/block/drbd"
+AUTOINSTALL="yes"

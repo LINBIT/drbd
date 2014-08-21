@@ -1,21 +1,24 @@
-Source: drbd8
+Source: drbd
 Section: misc
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
-Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
-Build-Depends: debhelper (>= 4), drbd8-source
+Uploaders:
+ Philipp Reisner <phil@linbit.com>,
+ Lars Ellenberg <lars@linbit.com>,
+ Roland Kammerer <roland.kammerer@linbit.com>
+Build-Depends: debhelper (>= 7), drbd-module-source
 Standards-Version: 3.6.1
 
-Package: drbd8-module-_KVERS_
+Package: drbd-module-_KVERS_
 Architecture: any
-Depends: drbd8-utils
+Depends: drbd-utils
 Conflicts: drbd-module-_KVERS_
 Provides: drbd-module-_KVERS_
 Replaces: drbd-module-_KVERS_
 Section: misc
 Recommends: kernel-image-_KVERS_
-Description: RAID 1 over tcp/ip for Linux kernel module
- Drbd is a block device which is designed to build high availability
+Description: RAID 1 over TCP/IP for Linux kernel module
+ DRBD is a block device which is designed to build high availability
  clusters by providing a virtual shared device which keeps disks in nodes
  synchronised using TCP/IP. This simulates RAID 1 but avoiding the
  use of uncommon hardware (shared SCSI buses or Fibre Channel).
@@ -23,9 +26,4 @@ Description: RAID 1 over tcp/ip for Linux kernel module
  .
  This package contains the DRBD kernel module for the kernel version
  _KVERS_
- .
- If you want to build DRBD against your another kernel, install the
- drbd-source package and use module-assistant to create a new
- module package.
- .
- Homepage: http://www.drbd.org
+Homepage: http://www.drbd.org
