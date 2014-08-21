@@ -4043,8 +4043,7 @@ static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 weak_node
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
 	int max_peers, bitmap_index, node_id;
-	unsigned long long bm_uuid;
-	u64 got_new_bitmap_uuid = 0;
+	u64 bm_uuid, got_new_bitmap_uuid = 0;
 	bool do_it;
 
 	max_peers = device->bitmap->bm_max_peers;
@@ -4067,7 +4066,9 @@ static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 weak_node
 			}
 		}
 		if (do_it) {
-			peer_md[bitmap_index].bitmap_uuid = device->ldev->md.current_uuid;
+			peer_md[bitmap_index].bitmap_uuid =
+				device->ldev->md.current_uuid != UUID_JUST_CREATED ?
+				device->ldev->md.current_uuid : 0;
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
@@ -4149,7 +4150,7 @@ void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold
 		_drbd_uuid_push_history(device, peer_md->bitmap_uuid);
 		peer_md->bitmap_uuid = 0;
 	} else {
-		unsigned long long bm_uuid = peer_md->bitmap_uuid;
+		u64 bm_uuid = peer_md->bitmap_uuid;
 		if (bm_uuid)
 			drbd_warn(device, "bm UUID was already set: %llX\n", bm_uuid);
 
