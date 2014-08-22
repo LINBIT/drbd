@@ -41,20 +41,27 @@ struct after_state_change_work {
 	struct completion *done;
 };
 
-static struct drbd_state_change *alloc_state_change(struct drbd_resource *resource, gfp_t flags)
+static void count_objects(struct drbd_resource *resource,
+			  unsigned int *n_devices,
+			  unsigned int *n_connections)
 {
-	struct drbd_state_change *state_change;
-	unsigned int n_devices = 0, n_connections = 0, size, n;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
 
-	rcu_read_lock();
+	*n_devices = 0;
+	*n_connections = 0;
+
 	idr_for_each_entry(&resource->devices, device, vnr)
-		n_devices++;
+		(*n_devices)++;
 	for_each_connection(connection, resource)
-		n_connections++;
-	rcu_read_unlock();
+		(*n_connections)++;
+}
+
+static struct drbd_state_change *alloc_state_change(unsigned int n_devices, unsigned int n_connections, gfp_t flags)
+{
+	struct drbd_state_change *state_change;
+	unsigned int size, n;
 
 	size = sizeof(struct drbd_state_change) +
 	       n_devices * sizeof(struct drbd_device_state_change) +
@@ -92,17 +99,14 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	struct drbd_connection_state_change *connection_state_change;
 
 retry:
-	state_change = alloc_state_change(resource, gfp);
+	rcu_read_lock();
+	count_objects(resource, &n_devices, &n_connections);
+	rcu_read_unlock();
+	state_change = alloc_state_change(n_devices, n_connections, gfp);
 	if (!state_change)
 		return NULL;
-
 	rcu_read_lock();
-	n_devices = 0;
-	idr_for_each_entry(&resource->devices, device, vnr)
-		n_devices++;
-	n_connections = 0;
-	for_each_connection(connection, resource)
-		n_connections++;
+	count_objects(resource, &n_devices, &n_connections);
 	if (n_devices != state_change->n_devices ||
 	    n_connections != state_change->n_connections) {
 		kfree(state_change);
