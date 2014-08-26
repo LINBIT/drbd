@@ -755,7 +755,7 @@ enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 {
 	struct drbd_device *device;
-	int minor;
+	int vnr;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	int try = 0;
@@ -876,13 +876,13 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	if (forced)
 		drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
 
-	idr_for_each_entry(&resource->devices, device, minor)
+	idr_for_each_entry(&resource->devices, device, vnr)
 		wait_event(device->misc_wait, no_more_ap_pending(device));
 
 	/* FIXME also wait for all pending P_BARRIER_ACK? */
 
 	if (role == R_SECONDARY) {
-		idr_for_each_entry(&resource->devices, device, minor) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (get_ldev(device)) {
 				device->ldev->md.current_uuid &= ~UUID_PRIMARY;
 				put_ldev(device);
@@ -902,7 +902,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		}
 		mutex_unlock(&resource->conf_update);
 
-		idr_for_each_entry(&resource->devices, device, minor) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (get_ldev(device)) {
 				drbd_uuid_new_current(device, forced);
 				put_ldev(device);
@@ -919,7 +919,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		}
 	}
 
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		 struct drbd_peer_device *peer_device;
 
 		for_each_peer_device(peer_device, device) {
@@ -937,7 +937,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		}
 	}
 
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		drbd_md_sync(device);
 		set_disk_ro(device->vdisk, role == R_SECONDARY);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
@@ -4972,7 +4972,7 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct forget_peer_parms parms = { };
 	enum drbd_state_rv retcode;
-	int minor, peer_node_id, err;
+	int vnr, peer_node_id, err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
@@ -4999,7 +4999,7 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	mutex_lock(&resource->adm_mutex);
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_md *peer_md;
 		int bitmap_index;
 

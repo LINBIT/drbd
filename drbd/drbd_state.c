@@ -270,7 +270,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	int minor;
+	int vnr;
 
 	if (test_and_clear_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags))
 		return true;
@@ -287,7 +287,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 			return true;
 	}
 
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 
 		if (device->disk_state[OLD] != device->disk_state[NEW])
@@ -314,7 +314,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	int minor;
+	int vnr;
 
 	resource->role[NEW] = resource->role[NOW];
 	resource->susp[NEW] = resource->susp[NOW];
@@ -326,7 +326,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 		connection->peer_role[NEW] = connection->peer_role[NOW];
 	}
 
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NEW] = device->disk_state[NOW];
@@ -384,7 +384,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	int minor;
+	int vnr;
 
 	if (flags & CS_ABORT)
 		goto out;
@@ -416,7 +416,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		connection->peer_role[NOW] = connection->peer_role[NEW];
 	}
 
-	idr_for_each_entry(&resource->devices, device, minor) {
+	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NOW] = device->disk_state[NEW];
