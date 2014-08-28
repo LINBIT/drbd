@@ -3609,6 +3609,8 @@ static struct nlattr *find_cfg_context_attr(const struct nlmsghdr *nlh, int attr
 	return drbd_nla_find_nested(maxtype, nla, __nla_type(attr));
 }
 
+static void resource_to_info(struct resource_info *, struct drbd_resource *);
+
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_genlmsghdr *dh;
@@ -3650,10 +3652,7 @@ put_result:
 	err = res_opts_to_skb(skb, &resource->res_opts, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;
-	resource_info.res_role = resource->role[NOW];
-	resource_info.res_susp = resource->susp[NOW];
-	resource_info.res_susp_nod = resource->susp_nod[NOW];
-	resource_info.res_susp_fen = resource->susp_fen[NOW];
+	resource_to_info(&resource_info, resource);
 	err = resource_info_to_skb(skb, &resource_info, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto out;
@@ -3726,6 +3725,8 @@ int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
 	return put_resource_in_arg0(cb, 7);
 }
 
+static void device_to_info(struct device_info *, struct drbd_device *);
+
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -3791,7 +3792,7 @@ put_result:
 		err = device_conf_to_skb(skb, &device->device_conf, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		device_info.dev_disk_state = device->disk_state[NOW];
+		device_to_info(&device_info, device);
 		err = device_info_to_skb(skb, &device_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -4040,14 +4041,7 @@ put_result:
 		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
 		if (err)
 			goto out;
-		peer_device_info.peer_disk_state = peer_device->disk_state[NOW];
-		peer_device_info.peer_repl_state = peer_device->repl_state[NOW];
-		peer_device_info.peer_resync_susp_user =
-			peer_device->resync_susp_user[NOW];
-		peer_device_info.peer_resync_susp_peer =
-			peer_device->resync_susp_peer[NOW];
-		peer_device_info.peer_resync_susp_dependency =
-			peer_device->resync_susp_dependency[NOW];
+		peer_device_to_info(&peer_device_info, peer_device);
 		err = peer_device_info_to_skb(skb, &peer_device_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
