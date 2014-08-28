@@ -1925,7 +1925,7 @@ void notify_peer_device_state_change(struct sk_buff *skb,
 	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type);
 }
 
-static void broadcast_state_change(struct drbd_state_change *state_change)
+static void notify_state_change(struct drbd_state_change *state_change)
 {
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	bool resource_state_has_changed;
@@ -2079,7 +2079,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	int n_device, n_connection;
 	bool still_connected = false;
 
-	broadcast_state_change(state_change);
+	notify_state_change(state_change);
 
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
