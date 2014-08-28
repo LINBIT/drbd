@@ -1280,6 +1280,13 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
        for (id = 0; ((entry) = idr_get_next(idp, &(id))) != NULL; ++id)
 #endif
 
+#ifndef idr_for_each_entry_continue
+#define idr_for_each_entry_continue(idp, entry, id)                     \
+	for (entry = (typeof(entry))idr_get_next((idp), &(id));         \
+	     entry;                                                     \
+	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+#endif
+
 #ifndef COMPAT_HAVE_PRANDOM_U32
 static inline u32 prandom_u32(void)
 {
