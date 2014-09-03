@@ -3388,23 +3388,24 @@ static bool do_change_disk_state(struct change_context *context, bool prepare)
 {
 	struct drbd_device *device =
 		container_of(context, struct change_disk_state_context, context)->device;
-	bool negotiation_cluster_wide = false;
+	bool cluster_wide_state_change = false;
 
 	if (device->disk_state[NOW] == D_ATTACHING &&
 	    context->val.disk == D_NEGOTIATING) {
-		bool do_negotiation = device_has_peer_devices_with_disk(device);
-		if (do_negotiation) {
-			negotiation_cluster_wide =
-				first_connection(device->resource)->agreed_pro_version >= 110;
-		} else {
+		if (device_has_peer_devices_with_disk(device)) {
+			struct drbd_connection *connection =
+				first_connection(device->resource);
+			cluster_wide_state_change =
+				connection && connection->agreed_pro_version >= 110;
+		} else
 			context->val.disk = disk_state_from_md(device);
-		}
+	} else if (device->disk_state[NOW] != D_DETACHING &&
+		   context->val.disk == D_DETACHING &&
+		   device_has_connected_peer_devices(device)) {
+		cluster_wide_state_change = true;
 	}
 	__change_disk_state(device, context->val.disk);
-	return !prepare || negotiation_cluster_wide ||
-	       (device->disk_state[NOW] != D_DETACHING &&
-		context->val.disk == D_DETACHING &&
-		device_has_connected_peer_devices(device));
+	return !prepare || cluster_wide_state_change;
 }
 
 enum drbd_state_rv change_disk_state(struct drbd_device *device,
