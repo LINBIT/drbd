@@ -1401,4 +1401,30 @@ static inline void blk_set_stacking_limits(LIMIT_TYPE *lim)
 #define bio_iter_last(BVEC, ITER) ((ITER) == bio->bi_vcnt - 1)
 #endif
 
+#ifndef wait_event_cmd
+/* wait_event_cmd() is available since 3.12 */
+
+#define __wait_event_cmd(wq, condition, cmd1, cmd2)			\
+do  {									\
+	DEFINE_WAIT(__wait);						\
+									\
+	for (;;) {							\
+		prepare_to_wait(&wq, &__wait, TASK_UNINTERRUPTIBLE);	\
+		if (condition)						\
+			break;						\
+		cmd1;							\
+		schedule();						\
+		cmd2;							\
+	}								\
+	finish_wait(&wq, &__wait);					\
+} while (0)
+
+#define wait_event_cmd(wq, condition, cmd1, cmd2)		\
+do {								\
+	if (condition)						\
+		break;						\
+	__wait_event_cmd(wq, condition, cmd1, cmd2);		\
+} while (0)
+#endif
+
 #endif
