@@ -3072,11 +3072,11 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				if (context->val.conn == C_DISCONNECTING)
 					directly_reachable &= ~NODE_MASK(context->target_node_id);
 			}
-			reply->weak_nodes |= ~directly_reachable;
 			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
 			    (context->mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
 				reply->primary_nodes |=
 					NODE_MASK(resource->res_opts.node_id);
+				reply->weak_nodes |= ~directly_reachable;
 			}
 			drbd_info(resource, "State change %u: primary_nodes=%lX, weak_nodes=%lX\n",
 				  reply->tid, (unsigned long)reply->primary_nodes,
@@ -3113,10 +3113,15 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			}
 		}
 	}
-	drbd_info(resource, "%s cluster-wide state change %u (%ums)\n",
-		  rv >= SS_SUCCESS ? "Committing" : "Aborting",
-		  be32_to_cpu(request.tid),
-		  jiffies_to_msecs(jiffies - start_time));
+	if (rv >= SS_SUCCESS)
+		drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
+			  be32_to_cpu(request.tid),
+			  jiffies_to_msecs(jiffies - start_time));
+	else
+		drbd_info(resource, "Aborting cluster-wide state change %u (%ums) rv = %d\n",
+			  be32_to_cpu(request.tid),
+			  jiffies_to_msecs(jiffies - start_time),
+			  rv);
 
 	if (have_peers && context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
