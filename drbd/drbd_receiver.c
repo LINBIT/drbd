@@ -4909,7 +4909,7 @@ static union drbd_state convert_state(union drbd_state peer_state)
 	return state;
 }
 
-static union drbd_state
+static enum drbd_state_rv
 __change_connection_state(struct drbd_connection *connection,
 			  union drbd_state mask, union drbd_state val,
 			  enum chg_state_flags flags)
@@ -4931,25 +4931,41 @@ __change_connection_state(struct drbd_connection *connection,
 		mask.susp_fen ^= -1;
 		__change_io_susp_fencing(resource, val.susp_fen);
 	}
-
+	if (mask.disk) {
+		/* Handled in __change_peer_device_state(). */
+		mask.disk ^= -1;
+	}
 	if (mask.conn) {
 		mask.conn ^= -1;
 		__change_cstate(connection,
 				min_t(enum drbd_conn_state, val.conn, C_CONNECTED));
 	}
+	if (mask.pdsk) {
+		/* Handled in __change_peer_device_state(). */
+		mask.pdsk ^= -1;
+	}
 	if (mask.peer) {
 		mask.peer ^= -1;
 		__change_peer_role(connection, val.peer);
 	}
-	return mask;
+	if (mask.i) {
+		drbd_info(connection, "Remote state change: request %u/%u not "
+		"understood\n", mask.i, val.i & mask.i);
+		return SS_NOT_SUPPORTED;
+	}
+	return SS_SUCCESS;
 }
 
-static union drbd_state
+static enum drbd_state_rv
 __change_peer_device_state(struct drbd_peer_device *peer_device,
 			   union drbd_state mask, union drbd_state val)
 {
 	struct drbd_device *device = peer_device->device;
 
+	if (mask.peer) {
+		/* Handled in __change_connection_state(). */
+		mask.peer ^= -1;
+	}
 	if (mask.disk) {
 		mask.disk ^= -1;
 		__change_disk_state(device, val.disk);
@@ -4976,7 +4992,12 @@ __change_peer_device_state(struct drbd_peer_device *peer_device,
 		mask.aftr_isp ^= -1;
 		__change_resync_susp_dependency(peer_device, val.aftr_isp);
 	}
-	return mask;
+	if (mask.i) {
+		drbd_info(peer_device, "Remote state change: request %u/%u not "
+		"understood\n", mask.i, val.i & mask.i);
+		return SS_NOT_SUPPORTED;
+	}
+	return SS_SUCCESS;
 }
 
 /**
@@ -4992,22 +5013,29 @@ change_connection_state(struct drbd_connection *connection,
 			enum chg_state_flags flags)
 {
 	struct drbd_peer_device *peer_device;
-	union drbd_state mask_unused = mask;
 	unsigned long irq_flags;
+	enum drbd_state_rv rv;
 	int vnr;
 
 	mask = convert_state(mask);
 	val = convert_state(val);
 
 	begin_state_change(connection->resource, &irq_flags, flags);
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
-	mask_unused.i &= __change_connection_state(connection, mask, val, flags).i;
-	if (mask_unused.i) {
-		abort_state_change(connection->resource, &irq_flags);
-		return SS_NOT_SUPPORTED;
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		rv = __change_peer_device_state(peer_device, mask, val);
+		if (rv < SS_SUCCESS)
+			goto fail;
 	}
-	return end_state_change(connection->resource, &irq_flags);
+	rv = __change_connection_state(connection, mask, val, flags);
+	if (rv < SS_SUCCESS)
+		goto fail;
+	rv = end_state_change(connection->resource, &irq_flags);
+out:
+	drbd_info(connection, "%s: end_state_change: rv=%d\n", __func__, rv);
+	return rv;
+fail:
+	abort_state_change(connection->resource, &irq_flags);
+	goto out;
 }
 
 /**
@@ -5023,20 +5051,26 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 			 enum chg_state_flags flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
-	union drbd_state mask_unused = mask;
 	unsigned long irq_flags;
+	enum drbd_state_rv rv;
 
 	mask = convert_state(mask);
 	val = convert_state(val);
 
 	begin_state_change(connection->resource, &irq_flags, flags);
-	mask_unused.i &= __change_peer_device_state(peer_device, mask, val).i;
-	mask_unused.i &= __change_connection_state(connection, mask, val, flags).i;
-	if (mask_unused.i) {
-		abort_state_change(connection->resource, &irq_flags);
-		return SS_NOT_SUPPORTED;
-	}
-	return end_state_change(connection->resource, &irq_flags);
+	rv = __change_peer_device_state(peer_device, mask, val);
+	if (rv < SS_SUCCESS)
+		goto fail;
+	rv = __change_connection_state(connection, mask, val, flags);
+	if (rv < SS_SUCCESS)
+		goto fail;
+	rv = end_state_change(connection->resource, &irq_flags);
+out:
+	drbd_info(peer_device, "%s: end_state_change: rv=%d\n", __func__, rv);
+	return rv;
+fail:
+	abort_state_change(connection->resource, &irq_flags);
+	goto out;
 }
 
 static int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
