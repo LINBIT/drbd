@@ -5310,7 +5310,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
 		drbd_info(connection, "Preparing remote state change %u "
-			  "(primary_nodes=%lX, weak_nodes=%lX\n",
+			  "(primary_nodes=%lX, weak_nodes=%lX)\n",
 			  reply.tid,
 			  (unsigned long)reply.primary_nodes,
 			  (unsigned long)reply.weak_nodes);
