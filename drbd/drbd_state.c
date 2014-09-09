@@ -1390,6 +1390,14 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (peer_disk_state[OLD] == D_DISKLESS &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_DETACHING))
 				peer_disk_state[NEW] = D_DISKLESS;
+
+			/* In case we connect to a D_UP_TO_DATE peer without resync that is
+			   also stable become D_UP_TO_DATE as well. */
+			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED &&
+			    disk_state[NEW] == D_OUTDATED && peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    peer_device->uuids_received &&
+			    peer_device->uuid_flags & UUID_FLAG_STABLE)
+				disk_state[NEW] = D_UP_TO_DATE;
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
