@@ -957,7 +957,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
-		bool one_peer_disk_up_to_date[2];
+		bool any_disk_up_to_date[2];
 		enum which_state which;
 		int nr_negotiating = 0;
 
@@ -983,18 +983,26 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		allow:
 
 		for (which = OLD; which <= NEW; which++) {
-			one_peer_disk_up_to_date[which] = false;
+			any_disk_up_to_date[which] = disk_state[which] == D_UP_TO_DATE;
+			if (any_disk_up_to_date[which])
+				continue;
 			for_each_peer_device(peer_device, device) {
 				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 
 				if (peer_disk_state[which] == D_UP_TO_DATE) {
-					one_peer_disk_up_to_date[which] = true;
+					any_disk_up_to_date[which] = true;
 					break;
 				}
 			}
 		}
-		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
-		    (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]))
+		/* Prevent becoming primary while there is not data accessible
+		   and prevent detach or disconnect while primary */
+		if (!(role[OLD] == R_PRIMARY && !any_disk_up_to_date[OLD]) &&
+		     (role[NEW] == R_PRIMARY && !any_disk_up_to_date[NEW]))
+			return SS_NO_UP_TO_DATE_DISK;
+
+		/* Prevent detach or disconnect while held open read only */
+		if (device->open_ro_cnt && any_disk_up_to_date[OLD] && !any_disk_up_to_date[NEW])
 			return SS_NO_UP_TO_DATE_DISK;
 
 		if (disk_state[NEW] == D_NEGOTIATING)
