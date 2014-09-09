@@ -1854,7 +1854,7 @@ static void drbd_ldev_destroy(struct drbd_device *device)
 	device->ldev = NULL;
 	__release(local);
 
-        clear_bit(GO_DISKLESS, &device->flags);
+        clear_bit(GOING_DISKLESS, &device->flags);
 	wake_up(&device->misc_wait);
 }
 
