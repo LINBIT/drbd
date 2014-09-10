@@ -2042,10 +2042,16 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 	}
 }
 
-/* This function is supposed to have the same semantics as drbd_device_stable() in drbd_main.c */
-static u64 calc_device_stable(struct drbd_state_change *state_change, int n_device, enum which_state which)
+/* This function is supposed to have the same semantics as drbd_device_stable() in drbd_main.c
+   A primary is stable since it is authoritative.
+   Unstable are neighbors of a primary and resync target nodes.
+   Nodes further away from a primary are stable! Do no confuse with "weak".*/
+static bool calc_device_stable(struct drbd_state_change *state_change, int n_device, enum which_state which)
 {
 	int n_connection;
+
+	if (state_change->resource->role[which] == R_PRIMARY)
+		return true;
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =

@@ -610,13 +610,19 @@ bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
 	return all_secondary;
 }
 
-/* This function is supposed to have the same semantics as calc_device_stable() in drbd_state.c */
+/* This function is supposed to have the same semantics as calc_device_stable() in drbd_state.c
+   A primary is stable since it is authoritative.
+   Unstable are neighbors of a primary and resync target nodes.
+   Nodes further away from a primary are stable! */
 static bool drbd_device_stable(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	struct drbd_peer_device *peer_device;
 	bool device_stable = true;
+
+	if (resource->role[NOW] == R_PRIMARY)
+		return true;
 
 	if (!drbd_all_neighbor_secondary(resource))
 		return false;
