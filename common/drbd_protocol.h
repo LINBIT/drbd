@@ -312,8 +312,6 @@ struct p_twopc_request {
 	uint32_t initiator_node_id;  /* initiator of the transaction */
 	uint32_t target_node_id;  /* target of the transaction (or -1) */
 	uint64_t nodes_to_reach;
-	uint64_t primary_nodes;
-	uint64_t weak_nodes;
 	uint32_t mask;
 	uint32_t val;
 } __packed;
