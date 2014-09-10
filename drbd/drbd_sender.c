@@ -1018,12 +1018,13 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		} else if ((repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) &&
 			   new_peer_disk_state != D_MASK) {
 			__change_peer_disk_state(peer_device, new_peer_disk_state);
+			if (new_peer_disk_state == D_UP_TO_DATE)
+				drbd_uuid_set_bm(peer_device, 0UL);
 		}
 
 		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
 			/* for verify runs, we don't update uuids here,
 			 * so there would be nothing to report. */
-			drbd_uuid_set_bm(peer_device, 0UL);
 			drbd_print_uuids(peer_device, "updated UUIDs");
 			if (peer_device->uuids_received) {
 				/* Now the two UUID sets are equal, update what we
