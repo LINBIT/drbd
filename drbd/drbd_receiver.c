@@ -5188,6 +5188,26 @@ void twopc_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
+					  struct twopc_reply *reply,
+					  enum chg_state_flags flags)
+{
+	if (reply->primary_nodes & ~reply->reachable_nodes) {
+		struct drbd_device *device;
+		unsigned long irq_flags;
+		int vnr;
+
+		begin_state_change(resource, &irq_flags, flags);
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (device->disk_state[NOW] > D_OUTDATED)
+				__change_disk_state(device, D_OUTDATED);
+		}
+		return end_state_change(resource, &irq_flags);
+	}
+
+	return SS_NOTHING_TO_DO;
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -5205,7 +5225,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.reachable_nodes = directly_connected_nodes(resource) |
 				NODE_MASK(resource->res_opts.node_id);
-	reply.primary_nodes = 0;
+	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
 	reply.weak_nodes = 0;
 	reply.is_disconnect = 0;
 
@@ -5333,7 +5353,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		rv = change_connection_state(affected_connection,
 					     mask, val, flags | CS_IGN_OUTD_FAIL);
 	else
-		rv = SS_NOTHING_TO_DO;
+		rv = outdate_if_weak(resource, &reply, flags);
 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {
