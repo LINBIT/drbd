@@ -3027,6 +3027,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	request.target_node_id = cpu_to_be32(context->target_node_id);
 	request.nodes_to_reach = cpu_to_be64(
 		~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
+	request.primary_nodes = 0;  /* Computed in phase 1. */
 	request.mask = cpu_to_be32(context->mask.i);
 	request.val = cpu_to_be32(context->val.i);
 
@@ -3117,6 +3118,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 					}
 				}
 			}
+			request.primary_nodes = cpu_to_be64(reply->primary_nodes);
 		}
 	}
 	if (rv >= SS_SUCCESS)
