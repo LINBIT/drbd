@@ -1771,6 +1771,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 			peer_device->use_csums = 0;
 		}
 
+		if ((side == L_SYNC_TARGET || side == L_PAUSED_SYNC_T) &&
+		    !(peer_device->uuid_flags & UUID_FLAG_STABLE))
+			set_bit(UNSTABLE_RESYNC, &device->flags);
+
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
 		 * with w_send_oos, or the sync target will get confused as to
 		 * how much bits to resync.  We cannot do that always, because for an
