@@ -846,13 +846,20 @@ int w_ov_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+struct resync_finished_work {
+	struct drbd_peer_device_work pdw;
+	enum drbd_disk_state new_peer_disk_state;
+};
+
 static int w_resync_finished(struct drbd_work *w, int cancel)
 {
-	struct drbd_peer_device_work *dw =
-		container_of(w, struct drbd_peer_device_work, w);
-	struct drbd_peer_device *peer_device = dw->peer_device;
-	kfree(dw);
-	drbd_resync_finished(peer_device, D_MASK);
+	struct resync_finished_work *rfw = container_of(
+		container_of(w, struct drbd_peer_device_work, w),
+		struct resync_finished_work, pdw);
+
+	struct drbd_peer_device *peer_device = rfw->pdw.peer_device;
+	kfree(rfw);
+	drbd_resync_finished(peer_device, rfw->new_peer_disk_state);
 
 	return 0;
 }
@@ -920,7 +927,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
 	if (drbd_rs_del_all(peer_device)) {
-		struct drbd_peer_device_work *dw;
+		struct resync_finished_work *rfw;
 
 		/* In case this is not possible now, most probably because
 		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
@@ -930,11 +937,12 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		drbd_kick_lo(device);
 		schedule_timeout_interruptible(HZ / 10);
 	queue_on_sender_workq:
-		dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
-		if (dw) {
-			dw->w.cb = w_resync_finished;
-			dw->peer_device = peer_device;
-			drbd_queue_work(&connection->sender_work, &dw->w);
+		rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
+		if (rfw) {
+			rfw->pdw.w.cb = w_resync_finished;
+			rfw->pdw.peer_device = peer_device;
+			rfw->new_peer_disk_state = new_peer_disk_state;
+			drbd_queue_work(&connection->sender_work, &rfw->pdw.w);
 			return 1;
 		}
 		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
