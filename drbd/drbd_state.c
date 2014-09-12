@@ -862,10 +862,6 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 {
 	struct drbd_peer_device *peer_device;
 
-	/* FIXME: Does this make sense? */
-	if (test_bit(UNSTABLE_RESYNC, &device->flags))
-		return true;
-
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[which];
 

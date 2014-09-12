@@ -625,7 +625,6 @@ enum {
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	UNREGISTERED,
-	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
 				 * from drbd_flush_after_epoch() */
 
@@ -656,6 +655,7 @@ enum {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
+	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock

@@ -1019,10 +1019,10 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		}
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
-			if (!test_bit(UNSTABLE_RESYNC, &device->flags))
+			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 				__change_disk_state(device, D_UP_TO_DATE);
 
-			if (!test_bit(UNSTABLE_RESYNC, &device->flags) &&
+			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags) &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
 				u64 newer = drbd_uuid_resync_finished(peer_device);
@@ -1031,7 +1031,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
 
-				if (test_bit(UNSTABLE_RESYNC, &device->flags))
+				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
 		} else if ((repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) &&
@@ -1755,7 +1755,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET) {
 		__change_disk_state(device, D_INCONSISTENT);
-		clear_bit(UNSTABLE_RESYNC, &device->flags);
+		clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
 	}
 	else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
@@ -1793,7 +1793,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 
 		if ((side == L_SYNC_TARGET || side == L_PAUSED_SYNC_T) &&
 		    !(peer_device->uuid_flags & UUID_FLAG_STABLE))
-			set_bit(UNSTABLE_RESYNC, &device->flags);
+			set_bit(UNSTABLE_RESYNC, &peer_device->flags);
 
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
 		 * with w_send_oos, or the sync target will get confused as to
