@@ -906,6 +906,16 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	int verify_done = 0;
 	unsigned long irq_flags;
 
+
+	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
+		/* Make sure all queued w_update_peers()/consider_sending_peers_in_sync()
+		   executed before killing the resync_lru with drbd_rs_del_all() */
+		if (current == device->resource->worker.task)
+			goto queue_on_sender_workq;
+		else
+			drbd_flush_workqueue(&device->resource->work);
+	}
+
 	/* Remove all elements from the resync LRU. Since future actions
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
@@ -919,6 +929,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 		drbd_kick_lo(device);
 		schedule_timeout_interruptible(HZ / 10);
+	queue_on_sender_workq:
 		dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
 		if (dw) {
 			dw->w.cb = w_resync_finished;
@@ -926,7 +937,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			drbd_queue_work(&connection->sender_work, &dw->w);
 			return 1;
 		}
-		drbd_err(peer_device, "Warn failed to drbd_rs_del_all() and to kmalloc(dw).\n");
+		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
 	}
 
 	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;
