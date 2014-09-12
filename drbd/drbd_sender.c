@@ -1020,7 +1020,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags))
-				__change_disk_state(device, D_UP_TO_DATE);
+				__change_disk_state(device, peer_device->disk_state[NOW]);
 
 			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags) &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
