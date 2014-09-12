@@ -878,7 +878,7 @@ static struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *devic
 	return NULL;
 }
 
-static void __downgrade_peer_disk_state_by_maks(struct drbd_device *device,
+static void __downgrade_peer_disk_state_by_mask(struct drbd_device *device,
 					     u64 nodes,
 					     enum drbd_disk_state disk_state)
 {
@@ -1018,7 +1018,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
 				u64 newer = drbd_uuid_resync_finished(peer_device);
-				__downgrade_peer_disk_state_by_maks(device, newer, D_OUTDATED);
+				__downgrade_peer_disk_state_by_mask(device, newer, D_OUTDATED);
 			} else {
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
