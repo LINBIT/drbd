@@ -1034,11 +1034,13 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
-		} else if ((repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) &&
-			   new_peer_disk_state != D_MASK) {
-			__change_peer_disk_state(peer_device, new_peer_disk_state);
-			if (new_peer_disk_state == D_UP_TO_DATE)
+		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
+			if (new_peer_disk_state != D_MASK)
+				__change_peer_disk_state(peer_device, new_peer_disk_state);
+			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags)) {
 				drbd_uuid_set_bm(peer_device, 0UL);
+				drbd_propagate_uuids(device, ~NODE_MASK(peer_device->node_id));
+			}
 		}
 
 		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
@@ -1057,8 +1059,6 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 						drbd_history_uuid(device, i);
 			}
 		}
-		if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S)
-			drbd_propagate_uuids(device, ~NODE_MASK(peer_device->node_id));
 	}
 
 out_unlock:
@@ -1753,10 +1753,9 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
 	__change_repl_state(peer_device, side);
-	if (side == L_SYNC_TARGET) {
+	clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
+	if (side == L_SYNC_TARGET)
 		__change_disk_state(device, D_INCONSISTENT);
-		clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
-	}
 	else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	r = end_state_change_locked(device->resource);
