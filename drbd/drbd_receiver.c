@@ -3101,6 +3101,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	int size, verb;
 	unsigned int fault_type;
 	struct p_block_req *p =	pi->data;
+	enum drbd_disk_state min_d_state;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -3122,7 +3123,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		return -EINVAL;
 	}
 
-	if (!get_ldev_if_state(device, D_UP_TO_DATE)) {
+	min_d_state = pi->cmd == P_DATA_REQUEST ? D_UP_TO_DATE : D_OUTDATED;
+	if (!get_ldev_if_state(device, min_d_state)) {
 		verb = 1;
 		switch (pi->cmd) {
 		case P_DATA_REQUEST:

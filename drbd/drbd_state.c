@@ -862,16 +862,25 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 {
 	struct drbd_peer_device *peer_device;
 
+	if (device->resource->role[which] == R_PRIMARY)
+		return false;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->peer_role[which] == R_PRIMARY)
+			goto have_primary_neighbor;
+	}
+
+	return true;	/* No neighbor primary, I might be outdated*/
+
+have_primary_neighbor:
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[which];
-
 		switch(repl_state) {
 		case L_WF_BITMAP_S:
 		case L_STARTING_SYNC_S:
 		case L_SYNC_SOURCE:
 		case L_PAUSED_SYNC_S:
 		case L_AHEAD:
-			return false;
 		case L_ESTABLISHED:
 		case L_VERIFY_S:
 		case L_VERIFY_T:
@@ -887,7 +896,7 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 		}
 	}
 
-	return true;
+	return false;
 }
 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
@@ -1027,8 +1036,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] > L_ESTABLISHED && peer_disk_state[NEW] < D_INCONSISTENT))
 				return SS_NO_REMOTE_DISK;
 
-			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_UP_TO_DATE && peer_disk_state[OLD] < D_UP_TO_DATE) &&
-			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_UP_TO_DATE && peer_disk_state[NEW] < D_UP_TO_DATE))
+			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_OUTDATED && peer_disk_state[OLD] < D_OUTDATED) &&
+			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_OUTDATED && peer_disk_state[NEW] < D_OUTDATED))
 				return SS_NO_UP_TO_DATE_DISK;
 
 			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(device, OLD)) &&
@@ -1298,7 +1307,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			case L_BEHIND:
 				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_OUTDATED;
-				min_peer_disk_state = D_UP_TO_DATE;
+				min_peer_disk_state = D_OUTDATED;
 				max_peer_disk_state = D_UP_TO_DATE;
 				break;
 			case L_VERIFY_S:
@@ -1318,7 +1327,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			case L_PAUSED_SYNC_S:
 			case L_STARTING_SYNC_S:
 			case L_AHEAD:
-				min_disk_state = D_UP_TO_DATE;
+				min_disk_state = D_OUTDATED;
 				max_disk_state = D_UP_TO_DATE;
 				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
@@ -1326,11 +1335,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			case L_SYNC_TARGET:
 				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_INCONSISTENT;
-				min_peer_disk_state = D_UP_TO_DATE;
+				min_peer_disk_state = D_OUTDATED;
 				max_peer_disk_state = D_UP_TO_DATE;
 				break;
 			case L_SYNC_SOURCE:
-				min_disk_state = D_UP_TO_DATE;
+				min_disk_state = D_OUTDATED;
 				max_disk_state = D_UP_TO_DATE;
 				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_INCONSISTENT;
