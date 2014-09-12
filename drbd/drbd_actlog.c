@@ -1512,27 +1512,27 @@ int drbd_rs_del_all(struct drbd_peer_device *peer_device)
 			if (bm_ext->lce.lc_number == LC_FREE)
 				continue;
 			if (bm_ext->lce.lc_number == peer_device->resync_wenr) {
-				drbd_info(device, "dropping %u in drbd_rs_del_all, apparently"
+				drbd_info(peer_device, "dropping %u in drbd_rs_del_all, apparently"
 				     " got 'synced' by application io\n",
 				     peer_device->resync_wenr);
-				D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
-				D_ASSERT(device, test_bit(BME_NO_WRITES, &bm_ext->flags));
+				D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
+				D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 				clear_bit(BME_NO_WRITES, &bm_ext->flags);
 				peer_device->resync_wenr = LC_FREE;
 				lc_put(peer_device->resync_lru, &bm_ext->lce);
 			}
 			if (bm_ext->lce.refcnt != 0) {
-				drbd_info(device, "Retrying drbd_rs_del_all() later. "
+				drbd_info(peer_device, "Retrying drbd_rs_del_all() later. "
 				     "refcnt=%d\n", bm_ext->lce.refcnt);
 				put_ldev(device);
 				spin_unlock_irq(&device->al_lock);
 				return -EAGAIN;
 			}
-			D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
-			D_ASSERT(device, !test_bit(BME_NO_WRITES, &bm_ext->flags));
+			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
+			D_ASSERT(peer_device, !test_bit(BME_NO_WRITES, &bm_ext->flags));
 			lc_del(peer_device->resync_lru, &bm_ext->lce);
 		}
-		D_ASSERT(device, peer_device->resync_lru->used == 0);
+		D_ASSERT(peer_device, peer_device->resync_lru->used == 0);
 		put_ldev(device);
 	}
 	spin_unlock_irq(&device->al_lock);
