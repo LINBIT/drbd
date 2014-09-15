@@ -394,6 +394,11 @@ extern u64 directly_connected_nodes(struct drbd_resource *);
 	 typecheck(u64, b) && \
 	((s64)(a) - (s64)(b) >= 0))
 
+#define dagtag_newer(a,b)      \
+	(typecheck(u64, a) && \
+	 typecheck(u64, b) && \
+	((s64)(a) - (s64)(b) > 0))
+
 struct drbd_request {
 	struct drbd_device *device;
 

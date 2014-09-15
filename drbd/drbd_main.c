@@ -4307,7 +4307,9 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 				cleared = true;
 			}
 			if (peer_current_uuid == (drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY) &&
-			    peer_current_uuid != (peer_md[bitmap_index].bitmap_uuid & ~UUID_PRIMARY)) {
+			    peer_current_uuid != (peer_md[bitmap_index].bitmap_uuid & ~UUID_PRIMARY) &&
+			    dagtag_newer(peer_md[peer_device->bitmap_index].bitmap_dagtag,
+					 peer_md[bitmap_index].bitmap_dagtag)) {
 				_drbd_uuid_push_history(device, peer_md[bitmap_index].bitmap_uuid);
 				peer_md[bitmap_index].bitmap_uuid = peer_device->current_uuid;
 				spin_unlock_irq(&device->ldev->md.uuid_lock);
