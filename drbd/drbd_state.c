@@ -715,8 +715,10 @@ static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool v
 		if (p == peer_device)
 			continue;
 		p->resync_susp_other_c[NEW] = val;
-		if (!val && p->repl_state[NEW] == L_PAUSED_SYNC_T && !resync_suspended(p, NEW))
+		if (!val && p->repl_state[NEW] == L_PAUSED_SYNC_T && !resync_suspended(p, NEW)) {
 			p->repl_state[NEW] = L_SYNC_TARGET;
+			return;
+		}
 		if (val && start &&
 		    p->disk_state[NEW] == D_UP_TO_DATE && p->repl_state[NEW] == L_ESTABLISHED)
 			p->repl_state[NEW] = L_PAUSED_SYNC_T;
