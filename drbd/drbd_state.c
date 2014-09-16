@@ -2743,7 +2743,11 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
-		u64 mask = NODE_MASK(connection->net_conf->peer_node_id);
+		u64 mask;
+
+		if (connection->agreed_pro_version < 110)
+			continue;
+		mask = NODE_MASK(connection->net_conf->peer_node_id);
 		if (reach_immediately & mask)
 			set_bit(TWOPC_PREPARED, &connection->flags);
 		else
