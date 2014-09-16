@@ -722,6 +722,7 @@ struct drbd_socket {
 
 struct drbd_peer_md {
 	u64 bitmap_uuid;
+	u64 bitmap_dagtag;
 	u32 flags;
 	s32 node_id;
 };

@@ -3567,9 +3567,10 @@ void drbd_free_sock(struct drbd_connection *connection)
 
 struct peer_dev_md_on_disk {
 	u64 bitmap_uuid;
+	u64 bitmap_dagtag;
 	u32 flags;
 	s32 node_id;
-	u32 reserved_u32[4];
+	u32 reserved_u32[2];
 } __packed;
 
 /* aligned 4kByte */
@@ -3629,6 +3630,7 @@ void drbd_md_write(struct drbd_device *device, void *b)
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[i];
 
 		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
+		buffer->peers[i].bitmap_dagtag = cpu_to_be64(peer_md->bitmap_dagtag);
 		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
 		buffer->peers[i].node_id = cpu_to_be32(peer_md->node_id);
 	}
@@ -3905,6 +3907,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
 
 		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
+		peer_md->bitmap_dagtag = be64_to_cpu(buffer->peers[i].bitmap_dagtag);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 		peer_md->node_id = be32_to_cpu(buffer->peers[i].node_id);
 	}
@@ -3996,6 +3999,7 @@ void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 
 	drbd_md_mark_dirty(device);
 	peer_md->bitmap_uuid = val;
+	peer_md->bitmap_dagtag = val ? device->resource->dagtag_sector : 0;
 }
 
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local)
@@ -4078,6 +4082,8 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			peer_md[bitmap_index].bitmap_uuid =
 				device->ldev->md.current_uuid != UUID_JUST_CREATED ?
 				device->ldev->md.current_uuid : 0;
+			if (peer_md[bitmap_index].bitmap_uuid)
+				peer_md[bitmap_index].bitmap_dagtag = device->resource->dagtag_sector;
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
@@ -4197,6 +4203,8 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 			_drbd_uuid_push_history(device, peer_md[bitmap_index].bitmap_uuid);
 			/* drbd_info(device, "bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
 			peer_md[bitmap_index].bitmap_uuid = bitmap_uuid;
+			peer_md[bitmap_index].bitmap_dagtag =
+				bitmap_uuid ? device->resource->dagtag_sector : 0;
 			drbd_md_mark_dirty(device);
 			modified |= NODE_MASK(node_id);
 		}

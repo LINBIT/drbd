@@ -1786,6 +1786,20 @@ static void mutex_unlock_cond(struct mutex *mutex, bool *have_mutex)
 	}
 }
 
+static void update_resource_dagtag(struct drbd_resource *resource, struct drbd_backing_dev *bdev, int nr_peers)
+{
+	u64 dagtag = 0;
+	int i;
+
+	for (i = 0; i < nr_peers; i++) {
+		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
+		if (peer_md->bitmap_uuid)
+			dagtag = max(peer_md->bitmap_dagtag, dagtag);
+	}
+	if (dagtag > resource->dagtag_sector)
+		resource->dagtag_sector = dagtag;
+}
+
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -1995,6 +2009,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	rv = stable_state_change(resource,
 		change_disk_state(device, D_ATTACHING, CS_VERBOSE | CS_SERIALIZE));
 	retcode = rv;  /* FIXME: Type mismatch. */
+	if (rv >= SS_SUCCESS)
+		update_resource_dagtag(resource, nbc, device->bitmap->bm_max_peers);
 	drbd_resume_io(device);
 	if (rv < SS_SUCCESS)
 		goto fail;
