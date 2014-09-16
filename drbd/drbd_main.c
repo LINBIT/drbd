@@ -4142,31 +4142,6 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	}
 }
 
-void drbd_uuid_set_bm(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
-	unsigned long flags;
-
-	if (peer_md->bitmap_uuid == 0 && val == 0)
-		return;
-
-	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	if (val == 0) {
-		_drbd_uuid_push_history(device, peer_md->bitmap_uuid);
-		peer_md->bitmap_uuid = 0;
-	} else {
-		u64 bm_uuid = peer_md->bitmap_uuid;
-		if (bm_uuid)
-			drbd_warn(device, "bm UUID was already set: %llX\n", bm_uuid);
-
-		peer_md->bitmap_uuid = val & ~UUID_PRIMARY;
-	}
-	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
-
-	drbd_md_mark_dirty(device);
-}
-
 void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 {
 	struct drbd_peer_device *peer_device;

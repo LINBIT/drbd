@@ -1038,7 +1038,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (new_peer_disk_state != D_MASK)
 				__change_peer_disk_state(peer_device, new_peer_disk_state);
 			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags)) {
-				drbd_uuid_set_bm(peer_device, 0UL);
+				drbd_uuid_set_bitmap(peer_device, 0UL);
 				drbd_propagate_uuids(device, ~NODE_MASK(peer_device->node_id));
 			}
 		}
