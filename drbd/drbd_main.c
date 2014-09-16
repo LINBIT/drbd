@@ -4277,6 +4277,61 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	drbd_md_mark_dirty(device);
 }
 
+static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int bitmap_index1, bitmap_index2, to_bm_idx;
+	int node_id1, node_id2, from_id, to_id;
+	u64 peer_bm_uuid;
+
+	for (node_id1 = 0; node_id1 < MAX_PEERS; node_id1++) {
+		bitmap_index1 = device->ldev->id_to_bit[node_id1];
+		if (bitmap_index1 == -1)
+			continue;
+
+		peer_bm_uuid = peer_device->bitmap_uuids[node_id1] & ~UUID_PRIMARY;
+		if (!peer_bm_uuid)
+			continue;
+
+		for (node_id2 = node_id1 + 1; node_id2 < MAX_PEERS; node_id2++) {
+			bitmap_index2 = device->ldev->id_to_bit[node_id2];
+			if (bitmap_index2 == -1)
+				continue;
+
+			if (peer_bm_uuid == (peer_device->bitmap_uuids[node_id2] & ~UUID_PRIMARY))
+				goto found;
+		}
+	}
+	return;
+
+found:
+	if ((peer_md[bitmap_index1].bitmap_uuid & ~UUID_PRIMARY) == peer_bm_uuid &&
+	    (peer_md[bitmap_index2].bitmap_uuid & ~UUID_PRIMARY) != peer_bm_uuid) {
+		from_id = node_id1;
+		to_id = node_id2;
+	} else if ((peer_md[bitmap_index1].bitmap_uuid & ~UUID_PRIMARY) != peer_bm_uuid &&
+		   (peer_md[bitmap_index2].bitmap_uuid & ~UUID_PRIMARY) == peer_bm_uuid) {
+		from_id = node_id2;
+		to_id = node_id1;
+	} else {
+		drbd_err(peer_device, "unexpected\n");
+		drbd_err(peer_device, "In UUIDs from node %d found equal UUID (%llX) for nodes %d %d\n",
+			 peer_device->node_id, peer_bm_uuid, node_id1, node_id2);
+		drbd_err(peer_device, "I have %llX for node_id=%d bitmap_index=%d\n",
+			 peer_md[bitmap_index1].bitmap_uuid, node_id1, bitmap_index1);
+		drbd_err(peer_device, "I have %llX for node_id=%d bitmap_index=%d\n",
+			 peer_md[bitmap_index2].bitmap_uuid, node_id2, bitmap_index2);
+		return;
+	}
+
+	to_bm_idx = device->ldev->id_to_bit[to_id];
+	peer_md[to_bm_idx].bitmap_uuid = peer_bm_uuid;
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	copy_bitmap(device, from_id, to_id);
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+}
+
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
@@ -4319,6 +4374,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			}
 		}
 	}
+
+	detect_copy_ops_on_peer(peer_device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	if (cleared || filled) {
