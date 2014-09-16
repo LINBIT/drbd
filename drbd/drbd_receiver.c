@@ -5034,7 +5034,6 @@ change_connection_state(struct drbd_connection *connection,
 		goto fail;
 	rv = end_state_change(connection->resource, &irq_flags);
 out:
-	drbd_info(connection, "%s: end_state_change: rv=%d\n", __func__, rv);
 	return rv;
 fail:
 	abort_state_change(connection->resource, &irq_flags);
@@ -5069,7 +5068,6 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 		goto fail;
 	rv = end_state_change(connection->resource, &irq_flags);
 out:
-	drbd_info(peer_device, "%s: end_state_change: rv=%d\n", __func__, rv);
 	return rv;
 fail:
 	abort_state_change(connection->resource, &irq_flags);
