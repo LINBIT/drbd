@@ -4672,8 +4672,11 @@ out:
 void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	enum drbd_repl_state new_repl_state;
+	int hg, unused;
 
-	new_repl_state = drbd_attach_handshake(peer_device, peer_device->disk_state[NOW]);
+	hg = drbd_handshake(peer_device, &unused, &unused);
+	new_repl_state = hg <= -2 || hg >= 2 ? -1 : goodness_to_repl_state(peer_device, hg);
+
 	if (new_repl_state == L_ESTABLISHED) {
 		return;
 	} else if (new_repl_state == -1) {
@@ -5500,15 +5503,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
-
-	if (peer_state.conn == L_PAUSED_SYNC_T && peer_state.disk == D_OUTDATED &&
-	    old_per_state.conn == L_ESTABLISHED) {
-		/* Looks like the peer was invalidated with drbdadm */
-		drbd_info(peer_device, "Setting bits\n");
-		drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from receive_state",
-			       BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
-		new_repl_state = L_PAUSED_SYNC_S;
-	}
 
 	if (peer_device->uuids_received &&
 	    peer_state.disk >= D_NEGOTIATING &&
