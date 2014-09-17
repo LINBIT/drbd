@@ -2046,6 +2046,7 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 {
 	unsigned int n_connection;
 
+	BUG_ON(state_change->n_devices <= n_device);
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_peer_device_state_change *peer_device_state_change =
 			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
