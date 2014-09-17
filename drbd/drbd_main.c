@@ -4044,13 +4044,16 @@ peer_device_by_bitmap_index(struct drbd_device *device, int bitmap_index)
 	return NULL;
 }
 
-static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
 	int max_peers, bitmap_index, node_id;
 	u64 bm_uuid, got_new_bitmap_uuid = 0;
 	bool do_it;
+
+	if (device->disk_state[NOW] < D_UP_TO_DATE)
+		return 0;
 
 	max_peers = device->bitmap->bm_max_peers;
 	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
@@ -4081,14 +4084,6 @@ static u64 _rotate_current_into_bitmap(struct drbd_device *device, u64 weak_node
 	}
 
 	return got_new_bitmap_uuid;
-}
-
-static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
-{
-	if (device->disk_state[NOW] < D_UP_TO_DATE)
-		return 0;
-
-	return _rotate_current_into_bitmap(device, weak_nodes);
 }
 
 static u64 initial_resync_nodes(struct drbd_device *device)
