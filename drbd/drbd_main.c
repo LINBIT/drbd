@@ -4048,7 +4048,7 @@ peer_device_by_bitmap_index(struct drbd_device *device, int bitmap_index)
 	return NULL;
 }
 
-static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes, u64 dagtag) __must_hold(local)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
@@ -4083,7 +4083,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 				device->ldev->md.current_uuid != UUID_JUST_CREATED ?
 				device->ldev->md.current_uuid : 0;
 			if (peer_md[bitmap_index].bitmap_uuid)
-				peer_md[bitmap_index].bitmap_dagtag = device->resource->dagtag_sector;
+				peer_md[bitmap_index].bitmap_dagtag = dagtag;
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
@@ -4121,7 +4121,8 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
-					forced ? initial_resync_nodes(device) : 0);
+					forced ? initial_resync_nodes(device) : 0,
+					device->resource->dagtag_sector);
 
 	if (!got_new_bitmap_uuid) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
@@ -4159,11 +4160,12 @@ void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 	}
 }
 
-void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 weak_nodes) __must_hold(local)
+void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 val, u64 weak_nodes) __must_hold(local)
 {
-	bool set_current = true;
-	struct drbd_peer_device *peer_device;
+	struct drbd_device *device = peer_device->device;
+	u64 dagtag = peer_device->connection->last_dagtag_sector;
 	u64 got_new_bitmap_uuid = 0;
+	bool set_current = true;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
@@ -4176,7 +4178,7 @@ void drbd_uuid_received_new_current(struct drbd_device *device, u64 val, u64 wea
 	}
 
 	if (set_current) {
-		got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes);
+		got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes, dagtag);
 		__drbd_uuid_set_current(device, val);
 	}
 
