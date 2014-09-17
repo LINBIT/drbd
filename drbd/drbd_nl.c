@@ -2283,8 +2283,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_md_sync(device);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
-	drbd_free_ldev(nbc);
-	kfree(new_disk_conf);
+	drbd_free_ldev(nbc); /* frees also new_disk_conf */
 
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
