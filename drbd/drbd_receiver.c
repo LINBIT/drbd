@@ -5416,10 +5416,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_repl_state new_repl_state;
 	int rv;
 
-	peer_device = conn_peer_device(connection, pi->vnr);
-	if (!peer_device)
-		return config_unknown_volume(connection, pi);
-	device = peer_device->device;
+	if (pi->vnr != -1) {
+		peer_device = conn_peer_device(connection, pi->vnr);
+		if (!peer_device)
+			return config_unknown_volume(connection, pi);
+		device = peer_device->device;
+	}
 
 	peer_state.i = be32_to_cpu(p->state);
 
@@ -5430,6 +5432,19 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (peer_state.pdsk >= D_DETACHING)
 			peer_state.pdsk++;
 	}
+
+	if (pi->vnr == -1) {
+		if (peer_state.role == R_SECONDARY) {
+			unsigned long irq_flags;
+
+			begin_state_change(resource, &irq_flags, CS_HARD | CS_VERBOSE);
+			__change_peer_role(connection, R_SECONDARY);
+			rv = end_state_change(resource, &irq_flags);
+			if (rv < SS_SUCCESS)
+				goto fail;
+		}
+		return 0;
+        }
 
 	peer_disk_state = peer_state.disk;
 	if (peer_state.disk == D_NEGOTIATING) {
@@ -5542,8 +5557,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
 				D_ASSERT(device, old_per_state.conn == L_OFF);
-				change_cstate(connection, C_DISCONNECTING, CS_HARD);
-				return -EIO;
+				goto fail;
 			}
 		}
 
@@ -5597,10 +5611,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	spin_unlock_irq(&resource->req_lock);
 
-	if (rv < SS_SUCCESS) {
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		return -EIO;
-	}
+	if (rv < SS_SUCCESS)
+		goto fail;
 
 	if (old_per_state.conn > L_OFF) {
 		if (new_repl_state > L_ESTABLISHED && peer_state.conn <= L_ESTABLISHED &&
@@ -5618,6 +5630,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
 	return 0;
+fail:
+	change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	return -EIO;
 }
 
 static int receive_sync_uuid(struct drbd_connection *connection, struct packet_info *pi)

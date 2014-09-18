@@ -2042,7 +2042,37 @@ static void notify_state_change(struct drbd_state_change *state_change)
 #undef REMEMBER_STATE_CHANGE
 }
 
-static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_change, unsigned int n_device)
+static void send_role_to_all_peers(struct drbd_state_change *state_change)
+{
+	unsigned int n_connection;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_connection *connection =
+			state_change->connections[n_connection].connection;
+		if (connection->agreed_pro_version < 110) {
+			unsigned int n_device;
+
+			/* Before DRBD 9, the role is a device attribute
+			 * instead of a resource attribute. */
+			for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+				struct drbd_peer_device *peer_device =
+					state_change->peer_devices[n_connection].peer_device;
+				union drbd_state state =
+					state_change_word(state_change, n_device, n_connection, NEW);
+
+				drbd_send_state(peer_device, state);
+			}
+		} else {
+			union drbd_state state = { {
+				.role = state_change->resource[0].role[NEW],
+			} };
+
+			conn_send_state(connection, state);
+		}
+	}
+}
+
+static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_change, int n_device)
 {
 	unsigned int n_connection;
 
@@ -2543,7 +2573,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
-		send_new_state_to_all_peer_devices(state_change, 0);
+		send_role_to_all_peers(state_change);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];

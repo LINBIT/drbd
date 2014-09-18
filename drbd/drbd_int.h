@@ -1386,6 +1386,7 @@ extern int drbd_send_uuids(struct drbd_peer_device *, u64 uuid_flags, u64 weak_n
 extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_attach_peer_device(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, int trigger_reply, enum dds_flags flags);
+extern int conn_send_state(struct drbd_connection *, union drbd_state);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state);
 extern int drbd_send_current_state(struct drbd_peer_device *);
 extern int drbd_send_sync_param(struct drbd_peer_device *);

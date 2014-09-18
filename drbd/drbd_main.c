@@ -1190,22 +1190,17 @@ int drbd_send_current_state(struct drbd_peer_device *peer_device)
 	return drbd_send_state(peer_device, drbd_get_peer_device_state(peer_device, NOW));
 }
 
-/**
- * drbd_send_state() - Sends the drbd state to the peer
- * @device:	DRBD device.
- * @state:	state to send
- */
-int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
+static int send_state(struct drbd_connection *connection, int vnr, union drbd_state state)
 {
 	struct drbd_socket *sock;
 	struct p_state *p;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	sock = &connection->data;
+	p = conn_prepare_command(connection, sock);
 	if (!p)
 		return -EIO;
 
-	if (peer_device->connection->agreed_pro_version < 110) {
+	if (connection->agreed_pro_version < 110) {
 		/* D_DETACHING was introduced with drbd-9.0 */
 		if (state.disk > D_DETACHING)
 			state.disk--;
@@ -1214,7 +1209,23 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	}
 
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
-	return drbd_send_command(peer_device, sock, P_STATE, sizeof(*p), NULL, 0);
+	return send_command(connection, vnr, sock, P_STATE, sizeof(*p), NULL, 0);
+}
+
+int conn_send_state(struct drbd_connection *connection, union drbd_state state)
+{
+	BUG_ON(connection->agreed_pro_version < 100);
+	return send_state(connection, -1, state);
+}
+
+/**
+ * drbd_send_state() - Sends the drbd state to the peer
+ * @device:	DRBD device.
+ * @state:	state to send
+ */
+int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
+{
+	return send_state(peer_device->connection, peer_device->device->vnr, state);
 }
 
 int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
