@@ -1649,6 +1649,25 @@ void start_resync_timer_fn(unsigned long data)
 	drbd_peer_device_post_work(peer_device, RS_START);
 }
 
+bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device, enum which_state which)
+{
+	struct drbd_device *device = except_peer_device->device;
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		enum drbd_repl_state repl_state;
+		if (peer_device == except_peer_device)
+			continue;
+
+		repl_state = peer_device->repl_state[which];
+		if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+		    peer_device->uuid_flags & UUID_FLAG_STABLE)
+			return true;
+	}
+
+	return false;
+}
+
 static void do_start_resync(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1791,7 +1810,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		}
 
 		if ((side == L_SYNC_TARGET || side == L_PAUSED_SYNC_T) &&
-		    !(peer_device->uuid_flags & UUID_FLAG_STABLE))
+		    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
+		    !drbd_stable_sync_source_present(peer_device, NOW))
 			set_bit(UNSTABLE_RESYNC, &peer_device->flags);
 
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid

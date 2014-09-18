@@ -4776,11 +4776,9 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 	}
 
 	if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
-	    !(peer_device->uuid_flags & UUID_FLAG_STABLE)) {
-		/* The sync source is receiving data from somewhere else, so
-		 * the resync will not put us into consistent state.  */
+	    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
+	    !drbd_stable_sync_source_present(peer_device, NOW))
 		set_bit(UNSTABLE_RESYNC, &peer_device->flags);
-	}
 
 	return err;
 }

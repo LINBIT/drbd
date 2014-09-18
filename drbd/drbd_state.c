@@ -1536,6 +1536,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	struct drbd_connection *connection;
 	bool starting_resync = false;
 	bool start_new_epoch = false;
+	bool lost_a_primary_peer = false;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -1785,6 +1786,25 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (starting_resync && peer_role[NEW] == R_PRIMARY)
 			apply_unacked_peer_requests(connection);
+
+		if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_UNKNOWN)
+			lost_a_primary_peer = true;
+	}
+
+	if (lost_a_primary_peer) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			struct drbd_peer_device *peer_device;
+
+			for_each_peer_device(peer_device, device) {
+				enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
+
+				if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags) &&
+				    (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+				    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
+				    !drbd_stable_sync_source_present(peer_device, NEW))
+					set_bit(UNSTABLE_RESYNC, &peer_device->flags);
+			}
+		}
 	}
 
 	queue_after_state_change_work(resource, done);
