@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.0.0pre9
+Version: 9.0.0pre10
 Release: 1%{?dist}
 Source: http://oss.linbit.com/drbd/drbd-%{version}.tar.gz
 License: GPLv2+
@@ -97,6 +97,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Fri Sep 19 2014 Philipp Reisner <phil@linbit.com> - 9.0.0pre10-1
+- New upstream release.
+
 * Fri Mar  7 2014 Philipp Reisner <phil@linbit.com> - 9.0.0pre9-1
 - New upstream release.
 

@@ -2,6 +2,27 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0pre10 (api:genl1/proto:86-110)
+--------
+ * completed the merge from the 8.4 branch (including debugfs)
+ * final fixes on the reference counts
+ * many fixes to the state engine to express the drbd9 semantics
+ * nodes not directly connected to a newly promoted primary
+   now outdate themselves in the two-phase commit operation
+ * fix disallowing of detach in case the device is opened
+   read only
+ * fixed resync: When a node is SyncSource to multiple targets
+   make sure that all targets get informed about blocks set
+   in sync on the other nodes (Last of those packets was
+   not sent previously)
+ * fixed resync: Sometimes froze due to a forgotten act
+   log entry on secondary nodes
+ * fixes and improvements to the UUID modifications for resync
+   decissions
+ * fixed resync: No longer wake more than one paused resync
+   operations
+ * fixed role changes on resources without volumes
+
 9.0.0pre9 (api:genl1/proto:86-110)
 --------
  * fixed the "list corruption bug"
