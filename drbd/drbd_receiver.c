@@ -5486,8 +5486,13 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		 * Maybe we should finish it up, too? */
 		else if (old_per_state.conn >= L_SYNC_SOURCE &&
 			 peer_state.conn == L_ESTABLISHED) {
+
+			/* TODO: Since DRBD9 we experience that SyncSource still has
+			   bits set... NEED TO UNDERSTAND AND FIX! */
 			if (drbd_bm_total_weight(peer_device) <= peer_device->rs_failed)
-				drbd_resync_finished(peer_device, peer_state.disk);
+				drbd_warn(peer_device, "SyncSource still sees bits set!! FIXME\n");
+
+			drbd_resync_finished(peer_device, peer_state.disk);
 			return 0;
 		}
 	}
