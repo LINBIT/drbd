@@ -1060,8 +1060,7 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
  *
  */
 int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, int size,
-		enum update_sync_bits_mode mode,
-		const char *file, const unsigned int line)
+		enum update_sync_bits_mode mode)
 {
 	/* Is called from worker and receiver context _only_ */
 	struct drbd_device *device = peer_device->device;

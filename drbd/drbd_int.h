@@ -1992,15 +1992,13 @@ extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
 extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, int size,
-		enum update_sync_bits_mode mode,
-		const char *file, const unsigned int line);
+		enum update_sync_bits_mode mode);
 #define drbd_set_in_sync(peer_device, sector, size) \
-	__drbd_change_sync(peer_device, sector, size, SET_IN_SYNC, __FILE__, __LINE__)
+	__drbd_change_sync(peer_device, sector, size, SET_IN_SYNC)
 #define drbd_set_out_of_sync(peer_device, sector, size) \
-	__drbd_change_sync(peer_device, sector, size, SET_OUT_OF_SYNC, __FILE__, __LINE__)
+	__drbd_change_sync(peer_device, sector, size, SET_OUT_OF_SYNC)
 #define drbd_rs_failed_io(peer_device, sector, size) \
-	__drbd_change_sync(peer_device, sector, size, RECORD_RS_FAILED, __FILE__, __LINE__)
-
+	__drbd_change_sync(peer_device, sector, size, RECORD_RS_FAILED)
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_initialize_al(struct drbd_device *, void *);
