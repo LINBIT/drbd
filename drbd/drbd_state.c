@@ -1496,7 +1496,6 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
 	peer_device->rs_same_csum = 0;
-	peer_device->rs_last_events = 0;
 	peer_device->rs_last_sect_ev = 0;
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
@@ -1657,7 +1656,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 				set_ov_position(peer_device, repl_state[NEW]);
 				peer_device->rs_start = now;
-				peer_device->rs_last_events = 0;
 				peer_device->rs_last_sect_ev = 0;
 				peer_device->ov_last_oos_size = 0;
 				peer_device->ov_last_oos_start = 0;
