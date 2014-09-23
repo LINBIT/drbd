@@ -2449,15 +2449,16 @@ static enum drbd_ret_code
 check_net_options(struct drbd_connection *connection, struct net_conf *new_net_conf)
 {
 	static enum drbd_ret_code rv;
-	struct drbd_device *device;
+	struct drbd_peer_device *peer_device;
 	int i;
 
 	rcu_read_lock();
 	rv = _check_net_options(connection, rcu_dereference(connection->net_conf), new_net_conf);
 	rcu_read_unlock();
 
-	/* connection->volumes protected by genl_lock() here */
-	idr_for_each_entry(&connection->resource->devices, device, i) {
+	/* connection->peer_devices protected by genl_lock() here */
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		struct drbd_device *device = peer_device->device;
 		if (!device->bitmap) {
 			device->bitmap = drbd_bm_alloc();
 			if (!device->bitmap)
