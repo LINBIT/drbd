@@ -892,7 +892,7 @@ static void __downgrade_peer_disk_state_by_mask(struct drbd_device *device,
 	struct drbd_peer_device *peer_device;
 	int node_id;
 
-	for (node_id = 0; node_id < DRBD_PEERS_MAX; node_id++) {
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (!(nodes & NODE_MASK(node_id)))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);

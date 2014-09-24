@@ -496,7 +496,7 @@ struct drbd_request {
 
 	/* rq_state[0] is for local disk,
 	 * rest is indexed by peer_device->bitmap_index + 1 */
-	unsigned rq_state[1 + DRBD_PEERS_MAX];
+	unsigned rq_state[1 + DRBD_NODE_ID_MAX];
 };
 
 struct drbd_epoch {
@@ -764,7 +764,7 @@ struct drbd_backing_dev {
 	struct drbd_md md;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
-	char id_to_bit[DRBD_PEERS_MAX];
+	char id_to_bit[DRBD_NODE_ID_MAX];
 };
 
 struct drbd_md_io {
@@ -1312,8 +1312,8 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 		struct drbd_peer_device *peer_device)
 {
 	int idx = peer_device->node_id;
-	if (idx < 0 || idx >= DRBD_PEERS_MAX) {
-		drbd_warn(peer_device, "FIXME: bitmap_index: %d\n", idx);
+	if (idx < 0 || idx >= DRBD_NODE_ID_MAX) {
+		drbd_warn(peer_device, "FIXME: node_id: %d\n", idx);
 		/* WARN(1, "bitmap_index: %d", idx); */
 		return 0;
 	}

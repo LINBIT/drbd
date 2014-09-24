@@ -5002,7 +5002,7 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (peer_node_id < 0 || peer_node_id >= DRBD_PEERS_MAX) {
+	if (peer_node_id < 0 || peer_node_id >= DRBD_NODE_ID_MAX) {
 		retcode = ERR_INVALID_PEER_NODE_ID;
 		goto out;
 	}
