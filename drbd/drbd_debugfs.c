@@ -780,23 +780,21 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
 	struct drbd_md *md;
-	int bitmap_index, max_peers, i = 0;
+	int node_id, i = 0;
 
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
 
-	max_peers = device->bitmap->bm_max_peers;
 	md = &device->ldev->md;
 
 	spin_lock_irq(&md->uuid_lock);
 	seq_printf(m, "0x%016llX\n", drbd_current_uuid(device));
 
-	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
-		int node_id = md->peers[bitmap_index].node_id;
-		if (node_id == -1)
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (md->peers[node_id].bitmap_index == -1)
 			continue;
 		seq_printf(m, "%s[%d]0x%016llX", i++ ? " " : "", node_id,
-			   md->peers[bitmap_index].bitmap_uuid);
+			   md->peers[node_id].bitmap_uuid);
 	}
 	seq_printf(m, "\n");
 

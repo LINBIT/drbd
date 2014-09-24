@@ -3526,7 +3526,7 @@ static int uuid_fixup_resync_end(struct drbd_peer_device *peer_device, int *rule
 		    (peer_device->history_uuids[0] & ~UUID_PRIMARY) &&
 		    (drbd_history_uuid(device, 0) & ~UUID_PRIMARY) ==
 		    (peer_device->history_uuids[0] & ~UUID_PRIMARY)) {
-			struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
 
 			drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
 			_drbd_uuid_push_history(device, peer_md->bitmap_uuid);
@@ -3668,7 +3668,6 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
-	const int max_peers = device->bitmap->bm_max_peers;
 	u64 self, peer;
 	int i, j;
 
@@ -3749,12 +3748,14 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		return 1;
 
 	*rule_nr = 72;
-	for (i = 0; i < max_peers; i++) {
-		if (i == peer_device->bitmap_index)
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		if (i == peer_device->node_id)
+			continue;
+		if (i == device->ldev->md.node_id)
 			continue;
 		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
 		if (self == peer) {
-			*peer_node_id = device->ldev->md.peers[i].node_id;
+			*peer_node_id = i;
 			return 3;
 		}
 	}

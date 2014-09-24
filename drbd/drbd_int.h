@@ -729,7 +729,7 @@ struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u64 bitmap_dagtag;
 	u32 flags;
-	s32 node_id;
+	s32 bitmap_index;
 };
 
 struct drbd_md {
@@ -746,7 +746,7 @@ struct drbd_md {
 	s32 al_offset;	/* signed relative sector offset to activity log */
 	s32 bm_offset;	/* signed relative sector offset to bitmap */
 
-	struct drbd_peer_md *peers;
+	struct drbd_peer_md peers[DRBD_NODE_ID_MAX];
 	u64 history_uuids[HISTORY_UUIDS];
 
 	/* cached value of bdev->disk_conf->meta_dev_idx */
@@ -2651,7 +2651,7 @@ static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
 	if (!device->ldev)
 		return 0;
 
-	peer_md = &device->ldev->md.peers[peer_device->bitmap_index];
+	peer_md = &device->ldev->md.peers[peer_device->node_id];
 	return peer_md->bitmap_uuid;
 }
 

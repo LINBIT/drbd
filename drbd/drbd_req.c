@@ -1130,7 +1130,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
 {
 	struct drbd_md *md = &device->ldev->md;
-	unsigned int bitmap_index;
+	unsigned int node_id;
 
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
@@ -1147,14 +1147,14 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	sbnr = BM_SECT_TO_BIT(sector);
 	ebnr = BM_SECT_TO_BIT(esector);
 
-	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-		struct drbd_peer_md *peer_md = &md->peers[bitmap_index];
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_md *peer_md = &md->peers[node_id];
 
 		/* Skip bitmap indexes which are not assigned to a peer. */
-		if (peer_md->node_id == -1)
+		if (peer_md->bitmap_index == -1)
 			continue;
 
-		if (drbd_bm_count_bits(device, bitmap_index, sbnr, ebnr))
+		if (drbd_bm_count_bits(device, peer_md->bitmap_index, sbnr, ebnr))
 			return false;
 	}
 	return true;
