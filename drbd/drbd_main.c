@@ -4222,7 +4222,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	drbd_md_mark_dirty(device);
 }
 
-static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4245,7 +4245,7 @@ static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 				goto found;
 		}
 	}
-	return;
+	return false;
 
 found:
 	if ((peer_md[node_id1].bitmap_uuid & ~UUID_PRIMARY) == peer_bm_uuid &&
@@ -4264,13 +4264,16 @@ found:
 			 peer_md[node_id1].bitmap_uuid, node_id1);
 		drbd_err(peer_device, "I have %llX for node_id=%d\n",
 			 peer_md[node_id2].bitmap_uuid, node_id2);
-		return;
+		return false;
 	}
 
 	peer_md[to_id].bitmap_uuid = peer_bm_uuid;
+	drbd_md_mark_dirty(device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	copy_bitmap(device, from_id, to_id);
 	spin_lock_irq(&device->ldev->md.uuid_lock);
+
+	return true;
 }
 
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
@@ -4278,7 +4281,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	int node_id;
-	bool cleared = false;
+	bool write_bm = false;
 	bool filled = false;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
@@ -4309,7 +4312,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 					drbd_info(device, "Clearing bitmap UUID for node %d\n",
 						  node_id);
 				}
-				cleared = true;
+				drbd_md_mark_dirty(device);
+				write_bm = true;
 			}
 			if (peer_current_uuid == (drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY) &&
 			    peer_current_uuid != (peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) &&
@@ -4325,15 +4329,16 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 					drbd_info(device, "Node %d synced up to node %d.\n",
 						  node_id, peer_device->node_id);
 				}
+				drbd_md_mark_dirty(device);
 				filled = true;
 			}
 		}
 	}
 
-	detect_copy_ops_on_peer(peer_device);
+	write_bm |= detect_copy_ops_on_peer(peer_device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
-	if (cleared || filled) {
+	if (write_bm || filled) {
 		u64 to_nodes = filled ? -1 : ~NODE_MASK(peer_device->node_id);
 		drbd_propagate_uuids(device, to_nodes);
 		drbd_suspend_io(device);
