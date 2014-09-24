@@ -269,7 +269,7 @@ tail_recursion:
 		 */
 		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED &&
 		    req->i.size && get_ldev_if_state(device, D_DETACHING)) {
-			char *id_to_bit = device->ldev->id_to_bit;
+			struct drbd_peer_md *peer_md = device->ldev->md.peers;
 			unsigned long bits = -1, mask = -1;
 			int node_id, max_node_id = device->resource->max_node_id;
 
@@ -278,7 +278,7 @@ tail_recursion:
 
 				rq_state = req->rq_state[1 + node_id];
 				if (rq_state & RQ_NET_OK) {
-					int bitmap_index = id_to_bit[node_id];
+					int bitmap_index = peer_md[node_id].bitmap_index;
 
 					if (rq_state & RQ_NET_SIS)
 						clear_bit(bitmap_index, &bits);

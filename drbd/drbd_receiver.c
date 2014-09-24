@@ -3995,7 +3995,8 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		drbd_info(device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
 		drbd_suspend_io(device);
 		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
-		drbd_bm_copy_slot(device, device->ldev->id_to_bit[peer_node_id], peer_device->bitmap_index);
+		drbd_bm_copy_slot(device, device->ldev->md.peers[peer_node_id].bitmap_index,
+				  peer_device->bitmap_index);
 		drbd_bm_write(device, NULL);
 		drbd_bm_slot_unlock(peer_device);
 		drbd_resume_io(device);
@@ -7163,13 +7164,13 @@ static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_hold(local)
 {
-	char *id_to_bit = device->ldev->id_to_bit;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 bitmap_bits = 0;
 	int node_id;
 
 	for_each_set_bit(node_id, (unsigned long *)&node_ids,
 			 sizeof(node_ids) * BITS_PER_BYTE) {
-		int bitmap_bit = id_to_bit[node_id];
+		int bitmap_bit = peer_md[node_id].bitmap_index;
 		if (bitmap_bit >= 0)
 			bitmap_bits |= NODE_MASK(bitmap_bit);
 	}

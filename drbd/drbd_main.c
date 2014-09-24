@@ -4195,7 +4195,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 
 static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
 {
-	int bitmap_index = device->ldev->id_to_bit[node_id];
+	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 
 	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (slot %d)\n",
 		  _drbd_bm_total_weight(device, bitmap_index), node_id, bitmap_index);
@@ -4209,8 +4209,8 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 
 static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
 {
-	int from_index = device->ldev->id_to_bit[from_id];
-	int to_index = device->ldev->id_to_bit[to_id];
+	int from_index = device->ldev->md.peers[from_id].bitmap_index;
+	int to_index = device->ldev->md.peers[from_id].bitmap_index;
 
 	drbd_info(device, "Node %d synced up to node %d. copying bitmap slot %d to %d.\n",
 		  to_id, from_id, from_index, to_index);
@@ -4230,7 +4230,7 @@ static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 	u64 peer_bm_uuid;
 
 	for (node_id1 = 0; node_id1 < DRBD_NODE_ID_MAX; node_id1++) {
-		if (device->ldev->id_to_bit[node_id1] == -1)
+		if (device->ldev->md.peers[node_id1].bitmap_index == -1)
 			continue;
 
 		peer_bm_uuid = peer_device->bitmap_uuids[node_id1] & ~UUID_PRIMARY;
@@ -4238,7 +4238,7 @@ static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 			continue;
 
 		for (node_id2 = node_id1 + 1; node_id2 < DRBD_NODE_ID_MAX; node_id2++) {
-			if (device->ldev->id_to_bit[node_id2] == -1)
+			if (device->ldev->md.peers[node_id2].bitmap_index == -1)
 				continue;
 
 			if (peer_bm_uuid == (peer_device->bitmap_uuids[node_id2] & ~UUID_PRIMARY))
@@ -4283,7 +4283,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		int bitmap_index = device->ldev->id_to_bit[node_id];
+		int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 		struct drbd_peer_device *other_peer;
 
 		if (bitmap_index == -1)

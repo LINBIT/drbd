@@ -1834,7 +1834,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	struct drbd_device *device;
 	struct drbd_resource *resource;
-	int n, err;
+	int err;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
 	sector_t max_possible_sectors;
@@ -1844,7 +1844,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct block_device *bdev;
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
-	unsigned int node_id, slots_needed = 0;
+	unsigned int slots_needed = 0;
 	bool have_conf_update = false;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
@@ -1861,8 +1861,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 	spin_lock_init(&nbc->md.uuid_lock);
-	for (n = 0; n < ARRAY_SIZE(nbc->id_to_bit); n++)
-		nbc->id_to_bit[n] = -1;
 
 	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 	if (!new_disk_conf) {
@@ -2067,12 +2065,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_INVALID_REQUEST;
 		goto force_diskless_dec;
 	}
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		struct drbd_peer_md *peer_md = &nbc->md.peers[node_id];
-
-		if (peer_md->bitmap_index != -1)
-			nbc->id_to_bit[node_id] = peer_md->bitmap_index;
-	}
 
 	/* Make sure we have a bitmap slot for each peer id */
 	for_each_peer_device(peer_device, device) {
@@ -2110,7 +2102,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 					peer_md->bitmap_index = bitmap_index;
 					peer_device->bitmap_index = bitmap_index;
-					nbc->id_to_bit[node_id] = bitmap_index;
 					goto next_device;
 				}
 			}
@@ -2878,7 +2869,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 					peer_md->bitmap_index = bitmap_index;
 					drbd_md_mark_dirty(device);
 					peer_device->bitmap_index = bitmap_index;
-					device->ldev->id_to_bit[node_id] = bitmap_index;
 					goto next_device_2;
 				}
 			}
@@ -5041,7 +5031,6 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 		peer_md->bitmap_uuid = 0;
 		peer_md->flags = 0;
 		peer_md->bitmap_index = -1;
-		device->ldev->id_to_bit[peer_node_id] = -1;
 
 		drbd_md_sync(device);
 		put_ldev(device);
