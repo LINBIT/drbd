@@ -1797,6 +1797,7 @@ extern void wait_until_done_or_force_detached(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, unsigned int *done);
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 extern void drbd_ping_peer(struct drbd_connection *connection);
+extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {

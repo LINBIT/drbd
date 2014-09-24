@@ -873,7 +873,7 @@ void drbd_ping_peer(struct drbd_connection *connection)
 		   connection->cstate[NOW] < C_CONNECTED);
 }
 
-static struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device, int node_id)
+struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device, int node_id)
 {
 	struct drbd_peer_device *peer_device;
 
