@@ -4283,11 +4283,11 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 		struct drbd_peer_device *other_peer;
 
-		if (bitmap_index == -1)
+		if (node_id == device->ldev->md.node_id)
 			continue;
+
 		other_peer = peer_device_by_node_id(device, node_id);
 		if (other_peer && other_peer->repl_state[NOW] >= L_ESTABLISHED)
 			continue;
@@ -4301,9 +4301,14 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			if (peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
 				peer_md[node_id].bitmap_uuid = 0;
-				spin_unlock_irq(&device->ldev->md.uuid_lock);
-				forget_bitmap(device, node_id);
-				spin_lock_irq(&device->ldev->md.uuid_lock);
+				if (peer_md[node_id].bitmap_index != -1) {
+					spin_unlock_irq(&device->ldev->md.uuid_lock);
+					forget_bitmap(device, node_id);
+					spin_lock_irq(&device->ldev->md.uuid_lock);
+				} else {
+					drbd_info(device, "Clearing bitmap UUID for node %d\n",
+						  node_id);
+				}
 				cleared = true;
 			}
 			if (peer_current_uuid == (drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY) &&
@@ -4312,9 +4317,14 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 					 peer_md[node_id].bitmap_dagtag)) {
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
 				peer_md[node_id].bitmap_uuid = peer_device->current_uuid;
-				spin_unlock_irq(&device->ldev->md.uuid_lock);
-				copy_bitmap(device, peer_device->node_id, node_id);
-				spin_lock_irq(&device->ldev->md.uuid_lock);
+				if (peer_md[node_id].bitmap_index != -1) {
+					spin_unlock_irq(&device->ldev->md.uuid_lock);
+					copy_bitmap(device, peer_device->node_id, node_id);
+					spin_lock_irq(&device->ldev->md.uuid_lock);
+				} else {
+					drbd_info(device, "Node %d synced up to node %d.\n",
+						  node_id, peer_device->node_id);
+				}
 				filled = true;
 			}
 		}
