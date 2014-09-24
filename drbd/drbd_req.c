@@ -624,7 +624,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	const int idx = peer_device ? 1 + peer_device->node_id : 0;
 
 	/* FIXME n_connections, when this request was created/scheduled. */
-	BUG_ON(idx > MAX_PEERS);
+	BUG_ON(idx > DRBD_PEERS_MAX);
 	BUG_ON(idx < 0);
 
 	old_net = req->rq_state[idx];

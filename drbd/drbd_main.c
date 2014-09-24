@@ -3608,7 +3608,7 @@ struct meta_data_on_disk {
 
 	u32 reserved_u32[2];
 
-	struct peer_dev_md_on_disk peers[MAX_PEERS];
+	struct peer_dev_md_on_disk peers[DRBD_PEERS_MAX];
 	u64 history_uuids[HISTORY_UUIDS];
 
 	char reserved_u8[4096 - (7*8 + 14*4 + 32*(8+6*4) + 32*8)];
@@ -3671,7 +3671,7 @@ void drbd_md_sync(struct drbd_device *device)
 	struct meta_data_on_disk *buffer;
 
 	/* Don't accidentally change the DRBD meta data layout. */
-	BUILD_BUG_ON(MAX_PEERS != 32);
+	BUILD_BUG_ON(DRBD_PEERS_MAX != 32);
 	BUILD_BUG_ON(HISTORY_UUIDS != 32);
 	BUILD_BUG_ON(sizeof(struct meta_data_on_disk) != 4096);
 
@@ -3751,7 +3751,7 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 	s32 on_disk_al_sect;
 	s32 on_disk_bm_sect;
 
-	if (max_peers > MAX_PEERS) {
+	if (max_peers > DRBD_PEERS_MAX) {
 		drbd_err(device, "bm_max_peers too high\n");
 		goto err;
 	}
@@ -4085,8 +4085,8 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			do_it = true;
 			node_id = peer_md[bitmap_index].node_id;
 			if (node_id == -1) {
-				node_id = 63; /* Works as long as MAX_PEERS < 63 */
-				BUILD_BUG_ON(MAX_PEERS >= 63);
+				node_id = 63; /* Works as long as DRBD_PEERS_MAX < 63 */
+				BUILD_BUG_ON(DRBD_PEERS_MAX >= 63);
 			}
 		}
 		if (do_it) {
@@ -4203,7 +4203,7 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 	u64 modified = 0;
 	int node_id;
 
-	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+	for (node_id = 0; node_id < DRBD_PEERS_MAX; node_id++) {
 		int bitmap_index;
 
 		if (!(do_nodes & NODE_MASK(node_id)))
@@ -4231,7 +4231,7 @@ static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __m
 	u64 set_bitmap_slots = 0;
 	int node_id;
 
-	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+	for (node_id = 0; node_id < DRBD_PEERS_MAX; node_id++) {
 		if (peer_device->bitmap_uuids[node_id])
 			set_bitmap_slots |= NODE_MASK(node_id);
 	}
@@ -4296,7 +4296,7 @@ static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 	int node_id1, node_id2, from_id, to_id;
 	u64 peer_bm_uuid;
 
-	for (node_id1 = 0; node_id1 < MAX_PEERS; node_id1++) {
+	for (node_id1 = 0; node_id1 < DRBD_PEERS_MAX; node_id1++) {
 		bitmap_index1 = device->ldev->id_to_bit[node_id1];
 		if (bitmap_index1 == -1)
 			continue;
@@ -4305,7 +4305,7 @@ static void detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 		if (!peer_bm_uuid)
 			continue;
 
-		for (node_id2 = node_id1 + 1; node_id2 < MAX_PEERS; node_id2++) {
+		for (node_id2 = node_id1 + 1; node_id2 < DRBD_PEERS_MAX; node_id2++) {
 			bitmap_index2 = device->ldev->id_to_bit[node_id2];
 			if (bitmap_index2 == -1)
 				continue;
@@ -4352,7 +4352,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	bool filled = false;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	for (node_id = 0; node_id < MAX_PEERS; node_id++) {
+	for (node_id = 0; node_id < DRBD_PEERS_MAX; node_id++) {
 		int bitmap_index = device->ldev->id_to_bit[node_id];
 		struct drbd_peer_device *other_peer;
 

@@ -453,9 +453,9 @@ struct drbd_request {
 	unsigned long pre_submit_jif;
 
 	/* per connection */
-	unsigned long pre_send_jif[MAX_PEERS];
-	unsigned long acked_jif[MAX_PEERS];
-	unsigned long net_done_jif[MAX_PEERS];
+	unsigned long pre_send_jif[DRBD_PEERS_MAX];
+	unsigned long acked_jif[DRBD_PEERS_MAX];
+	unsigned long net_done_jif[DRBD_PEERS_MAX];
 
 	/* Possibly even more detail to track each phase:
 	 *  master_completion_jif
@@ -496,7 +496,7 @@ struct drbd_request {
 
 	/* rq_state[0] is for local disk,
 	 * rest is indexed by peer_device->bitmap_index + 1 */
-	unsigned rq_state[1 + MAX_PEERS];
+	unsigned rq_state[1 + DRBD_PEERS_MAX];
 };
 
 struct drbd_epoch {
@@ -692,7 +692,7 @@ struct drbd_bitmap {
 	struct page **bm_pages;
 	spinlock_t bm_lock;
 
-	unsigned long bm_set[MAX_PEERS]; /* number of bits set */
+	unsigned long bm_set[DRBD_PEERS_MAX]; /* number of bits set */
 	unsigned long bm_bits;  /* bits per peer */
 	size_t   bm_words;
 	size_t   bm_number_of_pages;
@@ -764,7 +764,7 @@ struct drbd_backing_dev {
 	struct drbd_md md;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
-	char id_to_bit[MAX_PEERS];
+	char id_to_bit[DRBD_PEERS_MAX];
 };
 
 struct drbd_md_io {
@@ -1137,7 +1137,7 @@ struct drbd_peer_device {
 	unsigned long ov_left; /* in bits */
 
 	u64 current_uuid;
-	u64 bitmap_uuids[MAX_PEERS];
+	u64 bitmap_uuids[DRBD_PEERS_MAX];
 	u64 history_uuids[HISTORY_UUIDS];
 	u64 dirty_bits;
 	u64 uuid_flags;
@@ -1312,7 +1312,7 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 		struct drbd_peer_device *peer_device)
 {
 	int idx = peer_device->node_id;
-	if (idx < 0 || idx >= MAX_PEERS) {
+	if (idx < 0 || idx >= DRBD_PEERS_MAX) {
 		drbd_warn(peer_device, "FIXME: bitmap_index: %d\n", idx);
 		/* WARN(1, "bitmap_index: %d", idx); */
 		return 0;

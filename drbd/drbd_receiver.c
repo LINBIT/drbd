@@ -3720,7 +3720,7 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		return -1;
 
 	*rule_nr = 52;
-	for (i = 0; i < MAX_PEERS; i++) {
+	for (i = 0; i < DRBD_PEERS_MAX; i++) {
 		peer = peer_device->bitmap_uuids[i] & ~UUID_PRIMARY;
 		if (self == peer) {
 			*peer_node_id = i;
@@ -4823,7 +4823,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	bitmap_uuids_mask = be64_to_cpu(p->bitmap_uuids_mask);
-	if (bitmap_uuids_mask & ~(NODE_MASK(MAX_PEERS) - 1))
+	if (bitmap_uuids_mask & ~(NODE_MASK(DRBD_PEERS_MAX) - 1))
 		return -EIO;
 	bitmap_uuids = hweight64(bitmap_uuids_mask);
 
