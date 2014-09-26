@@ -352,7 +352,7 @@ enum mdf_peer_flag {
 	MDF_PEER_FULL_SYNC =	1 << 3,
 };
 
-#define MAX_PEERS 32
+#define DRBD_PEERS_MAX 32
 
 enum drbd_uuid_index {
 	UI_CURRENT,
@@ -365,7 +365,7 @@ enum drbd_uuid_index {
 };
 
 #define HISTORY_UUIDS_V08 (UI_HISTORY_END - UI_HISTORY_START + 1)
-#define HISTORY_UUIDS MAX_PEERS
+#define HISTORY_UUIDS DRBD_PEERS_MAX
 
 enum drbd_timeout_flag {
 	UT_DEFAULT      = 0,
