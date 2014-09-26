@@ -4816,10 +4816,15 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	struct p_uuids110 *p = pi->data;
 	int bitmap_uuids, history_uuids, rest, i, pos, err;
 	u64 bitmap_uuids_mask;
+	struct drbd_peer_md *peer_md = NULL;
+	struct drbd_device *device;
+
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return config_unknown_volume(connection, pi);
+
+	device = peer_device->device;
 
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
@@ -4843,13 +4848,21 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	if (rest && !drbd_drain_block(peer_device, rest))
 		return -EIO;
 
+	if (get_ldev(device))
+		peer_md = device->ldev->md.peers;
 	pos = 0;
 	for (i = 0; i < ARRAY_SIZE(peer_device->bitmap_uuids); i++) {
-		if (bitmap_uuids_mask & NODE_MASK(i))
+		if (bitmap_uuids_mask & NODE_MASK(i)) {
 			peer_device->bitmap_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
-		else
+			if (peer_md && peer_md[i].bitmap_index == -1)
+				peer_md[i].flags |= MDF_NODE_EXISTS;
+		} else {
 			peer_device->bitmap_uuids[i] = 0;
+		}
 	}
+	if (peer_md)
+		put_ldev(device);
+
 	for (i = 0; i < history_uuids; i++)
 		peer_device->history_uuids[i++] = be64_to_cpu(p->other_uuids[pos++]);
 	while (i < ARRAY_SIZE(peer_device->history_uuids))
@@ -4869,8 +4882,6 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	}
 
 	if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
-		struct drbd_device *device = peer_device->device;
-
 		if (get_ldev(device)) {
 			drbd_resync_after_unstable(peer_device);
 			put_ldev(device);

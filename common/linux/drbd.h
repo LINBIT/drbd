@@ -350,6 +350,7 @@ enum mdf_peer_flag {
 	MDF_PEER_OUTDATED =	1 << 1,
 	MDF_PEER_FENCING =	1 << 2,
 	MDF_PEER_FULL_SYNC =	1 << 3,
+	MDF_NODE_EXISTS =       1 << 16, /* */
 };
 
 #define DRBD_PEERS_MAX 32

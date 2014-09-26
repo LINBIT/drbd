@@ -2102,6 +2102,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 					peer_md->bitmap_index = bitmap_index;
 					peer_device->bitmap_index = bitmap_index;
+					peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
 					goto next_device;
 				}
 			}
@@ -2869,6 +2870,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 					peer_md->bitmap_index = bitmap_index;
 					drbd_md_mark_dirty(device);
 					peer_device->bitmap_index = bitmap_index;
+					peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
 					goto next_device_2;
 				}
 			}

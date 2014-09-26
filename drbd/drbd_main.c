@@ -1004,7 +1004,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
-		if (peer_md[i].bitmap_index != -1 && peer_md[i].bitmap_uuid)
+		if (peer_md[i].bitmap_index != -1 || peer_md[i].flags & MDF_NODE_EXISTS)
 			bitmap_uuids_mask |= NODE_MASK(i);
 	}
 
@@ -4291,6 +4291,10 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 		other_peer = peer_device_by_node_id(device, node_id);
 		if (other_peer && other_peer->repl_state[NOW] >= L_ESTABLISHED)
 			continue;
+
+		if (peer_md[node_id].bitmap_index == -1 && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
+			continue;
+
 		if (peer_device->bitmap_uuids[node_id] == 0 && peer_md[node_id].bitmap_uuid != 0) {
 			u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 
