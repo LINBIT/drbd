@@ -224,7 +224,9 @@
 
 #define DRBD_NODE_ID_DEF		0
 #define DRBD_NODE_ID_MIN		0
+#ifndef DRBD_NODE_ID_MAX /* Is also defined in drbd.h */
 #define DRBD_NODE_ID_MAX		DRBD_PEERS_MAX
+#endif
 #define DRBD_NODE_ID_SCALE		'1'
 
 #define DRBD_PEER_ACK_WINDOW_DEF	4096   /* 2 MiByte */
