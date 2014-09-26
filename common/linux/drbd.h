@@ -353,6 +353,7 @@ enum mdf_peer_flag {
 };
 
 #define DRBD_PEERS_MAX 32
+#define DRBD_NODE_ID_MAX DRBD_PEERS_MAX
 
 enum drbd_uuid_index {
 	UI_CURRENT,
