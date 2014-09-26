@@ -60,6 +60,7 @@
 #include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
+#include "drbd_meta_data.h"
 
 #ifdef COMPAT_HAVE_LINUX_BYTEORDER_SWABB_H
 #include <linux/byteorder/swabb.h>
@@ -3576,47 +3577,9 @@ void drbd_free_sock(struct drbd_connection *connection)
 
 /* meta data management */
 
-struct peer_dev_md_on_disk {
-	u64 bitmap_uuid;
-	u64 bitmap_dagtag;
-	u32 flags;
-	s32 node_id;
-	u32 reserved_u32[2];
-} __packed;
-
-/* aligned 4kByte */
-struct meta_data_on_disk {
-	u64 effective_size;    /* last agreed size (sectors) */
-	u64 current_uuid;
-	u64 reserved_u64[4];   /* to have the magic at the same position as in v07, and v08 */
-	u64 device_uuid;
-	u32 flags;             /* MDF */
-	u32 magic;
-	u32 md_size_sect;
-	u32 al_offset;         /* offset to this block */
-	u32 al_nr_extents;     /* important for restoring the AL (userspace) */
-	      /* `-- act_log->nr_elements <-- ldev->dc.al_extents */
-	u32 bm_offset;         /* offset to the bitmap, from here */
-	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
-	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
-	u32 bm_max_peers;
-	s32 node_id;
-
-	/* see al_tr_number_to_on_disk_sector() */
-	u32 al_stripes;
-	u32 al_stripe_size_4k;
-
-	u32 reserved_u32[2];
-
-	struct peer_dev_md_on_disk peers[DRBD_PEERS_MAX];
-	u64 history_uuids[HISTORY_UUIDS];
-
-	char reserved_u8[4096 - (7*8 + 14*4 + 32*(8+6*4) + 32*8)];
-} __packed;
-
 void drbd_md_write(struct drbd_device *device, void *b)
 {
-	struct meta_data_on_disk *buffer = b;
+	struct meta_data_on_disk_9 *buffer = b;
 	sector_t sector;
 	int i;
 
@@ -3668,12 +3631,12 @@ void drbd_md_write(struct drbd_device *device, void *b)
  */
 void drbd_md_sync(struct drbd_device *device)
 {
-	struct meta_data_on_disk *buffer;
+	struct meta_data_on_disk_9 *buffer;
 
 	/* Don't accidentally change the DRBD meta data layout. */
 	BUILD_BUG_ON(DRBD_PEERS_MAX != 32);
 	BUILD_BUG_ON(HISTORY_UUIDS != 32);
-	BUILD_BUG_ON(sizeof(struct meta_data_on_disk) != 4096);
+	BUILD_BUG_ON(sizeof(struct meta_data_on_disk_9) != 4096);
 
 	del_timer(&device->md_sync_timer);
 	/* timer may be rearmed by drbd_md_mark_dirty() now. */
@@ -3697,7 +3660,7 @@ out:
 }
 
 static int check_activity_log_stripe_size(struct drbd_device *device,
-		struct meta_data_on_disk *on_disk,
+		struct meta_data_on_disk_9 *on_disk,
 		struct drbd_md *in_core)
 {
 	u32 al_stripes = be32_to_cpu(on_disk->al_stripes);
@@ -3742,7 +3705,7 @@ err:
 }
 
 static int check_offsets_and_sizes(struct drbd_device *device,
-		struct meta_data_on_disk *on_disk,
+		struct meta_data_on_disk_9 *on_disk,
 		struct drbd_backing_dev *bdev)
 {
 	sector_t capacity = drbd_get_capacity(bdev->md_bdev);
@@ -3848,7 +3811,7 @@ err:
  */
 int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
-	struct meta_data_on_disk *buffer;
+	struct meta_data_on_disk_9 *buffer;
 	u32 magic, flags;
 	int i, rv = NO_ERROR;
 
