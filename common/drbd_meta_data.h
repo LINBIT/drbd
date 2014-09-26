@@ -17,7 +17,7 @@ struct peer_dev_md_on_disk_9 {
 	be_u64 bitmap_uuid;
 	be_u64 bitmap_dagtag;
 	be_u32 flags;
-	be_s32 node_id;
+	be_s32 bitmap_index;
 	be_u32 reserved_u32[2];
 } __packed;
 
