@@ -949,6 +949,13 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	})
 #endif
 
+#ifndef list_for_each_entry_continue_rcu
+#define list_for_each_entry_continue_rcu(pos, head, member) 		\
+	for (pos = list_entry_rcu(pos->member.next, typeof(*pos), member); \
+	     prefetch(pos->member.next), &pos->member != (head);	\
+	     pos = list_entry_rcu(pos->member.next, typeof(*pos), member))
+#endif
+
 #ifndef list_next_entry
 /* introduced in 008208c (v3.13-rc1) */
 #define list_next_entry(pos, member) \
