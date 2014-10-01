@@ -4675,13 +4675,20 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 	int hg, unused;
 
 	hg = drbd_handshake(peer_device, &unused, &unused);
-	new_repl_state = hg <= -2 || hg >= 2 ? -1 : goodness_to_repl_state(peer_device, hg);
+	new_repl_state = hg < -2 || hg > 2 ? -1 : goodness_to_repl_state(peer_device, hg);
 
 	if (new_repl_state == L_ESTABLISHED) {
 		return;
 	} else if (new_repl_state == -1) {
 		drbd_info(peer_device, "Unexpected result of handshake() %d!\n", new_repl_state);
 		return;
+	}
+
+	if (hg == -2 || hg == 2) {
+		drbd_info(peer_device, "Writing the whole bitmap, full sync required.\n");
+		drbd_bitmap_io(peer_device->device, &drbd_bmio_set_n_write,
+			       "set_n_write from resync_after_unstable",
+			       BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
 	}
 
 	drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
