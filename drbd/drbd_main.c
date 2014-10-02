@@ -4085,7 +4085,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
 
-	weak_nodes = ~(directly_connected_nodes(device->resource) | NODE_MASK(my_node_id));
+	weak_nodes = ~(directly_connected_nodes(device->resource, NOW) | NODE_MASK(my_node_id));
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
@@ -4740,13 +4740,13 @@ long twopc_timeout(struct drbd_resource *resource)
 	return resource->res_opts.twopc_timeout * HZ/10;
 }
 
-u64 directly_connected_nodes(struct drbd_resource *resource)
+u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state which)
 {
 	u64 directly_connected = 0;
 	struct drbd_connection *connection;
 
 	for_each_connection(connection, resource) {
-		if (connection->cstate[NOW] < C_CONNECTED)
+		if (connection->cstate[which] < C_CONNECTED)
 			continue;
 		directly_connected |=
 			NODE_MASK(connection->net_conf->peer_node_id);

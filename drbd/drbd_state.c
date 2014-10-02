@@ -3064,7 +3064,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	complete_remote_state_change(resource, &irq_flags);
 	start_time = jiffies;
 
-	reach_immediately = directly_connected_nodes(resource);
+	reach_immediately = directly_connected_nodes(resource, NOW);
 	if (context->target_node_id != -1) {
 		struct drbd_connection *connection;
 
@@ -3115,7 +3115,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	reply->primary_nodes = 0;
 	reply->weak_nodes = 0;
 
-	reply->reachable_nodes = directly_connected_nodes(resource) |
+	reply->reachable_nodes = directly_connected_nodes(resource, NOW) |
 				       NODE_MASK(resource->res_opts.node_id);
 	if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED) {
 		reply->reachable_nodes |= NODE_MASK(context->target_node_id);
@@ -3142,7 +3142,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 
 		if (rv == SS_CW_SUCCESS) {
 			u64 directly_reachable =
-				directly_connected_nodes(resource) |
+				directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
 
 			if (context->mask.conn == conn_MASK) {
@@ -3306,7 +3306,7 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 
 	spin_lock_irq(&resource->req_lock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
-	reach_immediately = directly_connected_nodes(resource) & nodes_to_reach;
+	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
 	resource->twopc_work.cb = nested_twopc_work;

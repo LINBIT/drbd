@@ -5242,7 +5242,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.tid = be32_to_cpu(p->tid);
 	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
-	reply.reachable_nodes = directly_connected_nodes(resource) |
+	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
 	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
 	reply.weak_nodes = 0;
