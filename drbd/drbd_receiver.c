@@ -6870,8 +6870,12 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
-			if (list_empty(&resource->twopc_work.list))
-				drbd_queue_work(&resource->work, &resource->twopc_work);
+			if (list_empty(&resource->twopc_work.list)) {
+				if (resource->twopc_work.cb == NULL)
+					wake_up(&resource->state_wait);
+				else
+					drbd_queue_work(&resource->work, &resource->twopc_work);
+			}
 		}
 	} else {
 		drbd_debug(connection, "Ignoring %s reply for state change %u\n",

@@ -2881,15 +2881,6 @@ static struct drbd_connection *get_first_connection(struct drbd_resource *resour
 	return connection;
 }
 
-static int twopc_initiator_work(struct drbd_work *work, int cancel)
-{
-	struct drbd_resource *resource =
-		container_of(work, struct drbd_resource, twopc_work);
-
-	wake_up(&resource->state_wait);
-	return 0;
-}
-
 /* Think: Can this be replaced by a call to __is_valid_soft_transition() */
 static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 {
@@ -3127,7 +3118,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
 
-	resource->twopc_work.cb = twopc_initiator_work;
+	resource->twopc_work.cb = NULL;
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_PREPARE,
 				    &request, reach_immediately);
