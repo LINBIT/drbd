@@ -101,6 +101,7 @@ extern enum drbd_state_rv stable_change_repl_state(struct drbd_peer_device *, en
 
 extern void __change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state);
 extern void __change_peer_disk_states(struct drbd_connection *, enum drbd_disk_state);
+extern void __outdate_myself(struct drbd_resource *resource);
 extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state, enum chg_state_flags);
 
 extern void __change_resync_susp_user(struct drbd_peer_device *, bool);

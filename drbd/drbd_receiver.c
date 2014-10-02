@@ -5031,8 +5031,10 @@ static enum drbd_state_rv
 change_connection_state(struct drbd_connection *connection,
 			union drbd_state mask,
 			union drbd_state val,
+			struct twopc_reply *reply,
 			enum chg_state_flags flags)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
@@ -5041,7 +5043,7 @@ change_connection_state(struct drbd_connection *connection,
 	mask = convert_state(mask);
 	val = convert_state(val);
 
-	begin_state_change(connection->resource, &irq_flags, flags);
+	begin_state_change(resource, &irq_flags, flags);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		rv = __change_peer_device_state(peer_device, mask, val);
 		if (rv < SS_SUCCESS)
@@ -5050,11 +5052,20 @@ change_connection_state(struct drbd_connection *connection,
 	rv = __change_connection_state(connection, mask, val, flags);
 	if (rv < SS_SUCCESS)
 		goto fail;
-	rv = end_state_change(connection->resource, &irq_flags);
+
+	if (reply) {
+		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
+			NODE_MASK(resource->res_opts.node_id);
+
+		if (reply->primary_nodes & ~directly_reachable)
+			__outdate_myself(resource);
+	}
+
+	rv = end_state_change(resource, &irq_flags);
 out:
 	return rv;
 fail:
-	abort_state_change(connection->resource, &irq_flags);
+	abort_state_change(resource, &irq_flags);
 	goto out;
 }
 
@@ -5153,9 +5164,9 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 			drbd_md_sync(peer_device->device);
 	} else {
 		flags |= CS_IGN_OUTD_FAIL;
-		rv = change_connection_state(connection, mask, val, flags | CS_PREPARE);
+		rv = change_connection_state(connection, mask, val, NULL, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
-		change_connection_state(connection, mask, val, flags | CS_PREPARED);
+		change_connection_state(connection, mask, val, NULL, flags | CS_PREPARED);
 	}
 
 	spin_lock_irq(&resource->req_lock);
@@ -5212,15 +5223,10 @@ static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
 					  enum chg_state_flags flags)
 {
 	if (reply->primary_nodes & ~reply->reachable_nodes) {
-		struct drbd_device *device;
 		unsigned long irq_flags;
-		int vnr;
 
 		begin_state_change(resource, &irq_flags, flags);
-		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (device->disk_state[NOW] > D_OUTDATED)
-				__change_disk_state(device, D_OUTDATED);
-		}
+		__outdate_myself(resource);
 		return end_state_change(resource, &irq_flags);
 	}
 
@@ -5370,7 +5376,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		rv = change_peer_device_state(peer_device, mask, val, flags);
 	else if (affected_connection)
 		rv = change_connection_state(affected_connection,
-					     mask, val, flags | CS_IGN_OUTD_FAIL);
+					     mask, val, &reply, flags | CS_IGN_OUTD_FAIL);
 	else
 		rv = outdate_if_weak(resource, &reply, flags);
 

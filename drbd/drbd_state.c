@@ -3429,6 +3429,17 @@ void __change_disk_states(struct drbd_resource *resource, enum drbd_disk_state d
 	rcu_read_unlock();
 }
 
+void __outdate_myself(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (device->disk_state[NOW] > D_OUTDATED)
+			__change_disk_state(device, D_OUTDATED);
+	}
+}
+
 static bool device_has_connected_peer_devices(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
@@ -3603,6 +3614,17 @@ static bool do_change_cstate(struct change_context *context, bool prepare)
 	__change_cstate_and_outdate(cstate_context->connection,
 				    context->val.conn,
 				    cstate_context->outdate_what);
+
+	if (!prepare && context->val.conn == C_DISCONNECTING) {
+		struct drbd_resource *resource = context->resource;
+		struct twopc_reply *reply = &resource->twopc_reply;
+		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
+			NODE_MASK(resource->res_opts.node_id);
+
+		if (reply->primary_nodes & ~directly_reachable)
+			__outdate_myself(resource);
+	}
+
 	return !prepare ||
 	       context->val.conn == C_CONNECTED ||
 	       (context->val.conn == C_DISCONNECTING &&
