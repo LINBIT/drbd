@@ -2452,7 +2452,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (!device_stable[OLD] && device_stable[NEW] &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
-			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] == D_UP_TO_DATE &&
+			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] >= D_OUTDATED &&
 			    get_ldev(device)) {
 				/* Offer all peers a resync, with the exception of ...
 				   ... the node that made me up-to-date (with a resync)
