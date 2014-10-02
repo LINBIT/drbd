@@ -868,7 +868,8 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 		return false;
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->peer_role[which] == R_PRIMARY)
+		if (peer_device->connection->peer_role[which] == R_PRIMARY &&
+		    peer_device->repl_state[which] > L_OFF)
 			goto have_primary_neighbor;
 	}
 
