@@ -1955,6 +1955,13 @@ static int do_md_sync(struct drbd_device *device)
 	return 0;
 }
 
+static int try_become_up_to_date(struct drbd_resource *resource)
+{
+	change_from_consistent(resource, CS_VERBOSE | CS_SERIALIZE);
+
+	return 0;
+}
+
 /* only called from drbd_worker thread, no locking */
 void __update_timing_details(
 		struct drbd_thread_timing_details *tdp,
@@ -1996,6 +2003,9 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	if (test_bit(RS_START, &todo))
 		do_start_resync(peer_device);
 }
+
+#define DRBD_RESOURCE_WORK_MASK	\
+	(1UL << TRY_BECOME_UP_TO_DATE)
 
 #define DRBD_DEVICE_WORK_MASK	\
 	((1UL << GO_DISKLESS)	\
@@ -2068,6 +2078,13 @@ static void do_unqueued_device_work(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 
+static void do_unqueued_resource_work(struct drbd_resource *resource)
+{
+	unsigned long todo = get_work_bits(DRBD_RESOURCE_WORK_MASK, &resource->flags);
+
+	if (test_bit(TRY_BECOME_UP_TO_DATE, &todo))
+		try_become_up_to_date(resource);
+}
 
 static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
 {
@@ -2504,14 +2521,15 @@ int drbd_worker(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&work_list)) {
-			bool w, d, p;
+			bool w, r, d, p;
 
 			update_worker_timing_details(resource, dequeue_work_batch);
 			wait_event_interruptible(resource->work.q_wait,
 				(w = dequeue_work_batch(&resource->work, &work_list),
+				 r = test_and_clear_bit(RESOURCE_WORK_PENDING, &resource->flags),
 				 d = test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags),
 				 p = test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags),
-				 w || d || p));
+				 w || r || d || p));
 
 			if (p) {
 				update_worker_timing_details(resource, do_unqueued_peer_device_work);
@@ -2521,6 +2539,10 @@ int drbd_worker(struct drbd_thread *thi)
 			if (d) {
 				update_worker_timing_details(resource, do_unqueued_device_work);
 				do_unqueued_device_work(resource);
+			}
+			if (r) {
+				update_worker_timing_details(resource, do_unqueued_resource_work);
+				do_unqueued_resource_work(resource);
 			}
 		}
 
@@ -2546,6 +2568,10 @@ int drbd_worker(struct drbd_thread *thi)
 	}
 
 	do {
+		if (test_and_clear_bit(RESOURCE_WORK_PENDING, &resource->flags)) {
+			update_worker_timing_details(resource, do_unqueued_resource_work);
+			do_unqueued_resource_work(resource);
+		}
 		if (test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags)) {
 			update_worker_timing_details(resource, do_unqueued_device_work);
 			do_unqueued_device_work(resource);

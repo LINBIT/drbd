@@ -104,6 +104,8 @@ extern void __change_peer_disk_states(struct drbd_connection *, enum drbd_disk_s
 extern void __outdate_myself(struct drbd_resource *resource);
 extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state, enum chg_state_flags);
 
+enum drbd_state_rv change_from_consistent(struct drbd_resource *, enum chg_state_flags);
+
 extern void __change_resync_susp_user(struct drbd_peer_device *, bool);
 extern enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *, bool, enum chg_state_flags);
 extern void __change_resync_susp_peer(struct drbd_peer_device *, bool);

@@ -826,6 +826,10 @@ enum {
 	NEGOTIATION_RESULT_TOCHED,
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
+	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
+
+        /* to be used in drbd_post_work() */
+	TRY_BECOME_UP_TO_DATE,  /* try to become D_UP_TO_DATE */
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
@@ -2282,6 +2286,16 @@ drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
 		struct drbd_resource *resource = peer_device->device->resource;
 		struct drbd_work_queue *q = &resource->work;
 		if (!test_and_set_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
+			wake_up(&q->q_wait);
+	}
+}
+
+static inline void
+drbd_post_work(struct drbd_resource *resource, int work_bit)
+{
+	if (!test_and_set_bit(work_bit, &resource->flags)) {
+		struct drbd_work_queue *q = &resource->work;
+		if (!test_and_set_bit(RESOURCE_WORK_PENDING, &resource->flags))
 			wake_up(&q->q_wait);
 	}
 }

@@ -1184,6 +1184,8 @@ static void sanitize_state(struct drbd_resource *resource)
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	bool maybe_crashed_primary = false;
+	int connected_primaries = 0;
 	int vnr;
 
 	rcu_read_lock();
@@ -1192,6 +1194,14 @@ static void sanitize_state(struct drbd_resource *resource)
 
 		if (cstate[NEW] < C_CONNECTED)
 			connection->peer_role[NEW] = R_UNKNOWN;
+
+		if (connection->peer_role[OLD] == R_PRIMARY && cstate[OLD] == C_CONNECTED &&
+		    cstate[NEW] >= C_TIMEOUT && cstate[NEW] <= C_PROTOCOL_ERROR)
+			/* implies also C_BROKEN_PIPE and C_NETWORK_FAILURE */
+			maybe_crashed_primary = true;
+
+		if (connection->peer_role[NEW] == R_PRIMARY)
+			connected_primaries++;
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1286,8 +1296,9 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[NEW] <= D_FAILED))
 				repl_state[NEW] = L_ESTABLISHED;
 
-			/* D_CONSISTENT vanish when we get connected */
-			if (repl_state[NEW] >= L_ESTABLISHED && repl_state[NEW] < L_AHEAD) {
+			/* D_CONSISTENT vanish when we get connected (pre 9.0) */
+			if (connection->agreed_pro_version < 110 &&
+			    repl_state[NEW] >= L_ESTABLISHED && repl_state[NEW] < L_AHEAD) {
 				if (disk_state[NEW] == D_CONSISTENT)
 					disk_state[NEW] = D_UP_TO_DATE;
 				if (peer_disk_state[NEW] == D_CONSISTENT)
@@ -1429,6 +1440,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			resource->susp_nod[NEW] = true;
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
 			disk_state[NEW] = disk_state_from_md(device);
+
+		if (maybe_crashed_primary && !connected_primaries &&
+		    disk_state[NEW] == D_UP_TO_DATE && role[NOW] == R_SECONDARY)
+			disk_state[NEW] = D_CONSISTENT;
 	}
 	rcu_read_unlock();
 }
@@ -2157,6 +2172,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	bool *susp_fen = resource_state_change->susp_fen;
 	int n_device, n_connection;
 	bool still_connected = false;
+	bool try_become_up_to_date = false;
 
 	notify_state_change(state_change);
 
@@ -2568,6 +2584,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			}
 		}
 
+		if (disk_state[OLD] != D_CONSISTENT && disk_state[NEW] == D_CONSISTENT)
+			try_become_up_to_date = true;
+
 		drbd_md_sync(device);
 	}
 
@@ -2657,6 +2676,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (cstate[NEW] == C_CONNECTED || cstate[NEW] == C_CONNECTING)
 			still_connected = true;
 	}
+
+	if (try_become_up_to_date)
+		drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
 
 	if (!still_connected)
 		mod_timer_pending(&resource->twopc_timer, jiffies);
@@ -3459,6 +3481,47 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 	}
 
 	return rv;
+}
+
+static bool do_change_from_consistent(struct change_context *context, bool prepare)
+{
+	struct drbd_resource *resource = context->resource;
+	struct twopc_reply *reply = &resource->twopc_reply;
+	u64 directly_reachable = directly_connected_nodes(resource, NEW) |
+		NODE_MASK(resource->res_opts.node_id);
+
+	if (reply->primary_nodes & ~directly_reachable) {
+		__outdate_myself(resource);
+	} else {
+		struct drbd_device *device;
+		int vnr;
+
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (device->disk_state[NOW] == D_CONSISTENT)
+				__change_disk_state(device, D_UP_TO_DATE);
+		}
+	}
+
+	return !prepare || reply->reachable_nodes != NODE_MASK(resource->res_opts.node_id);
+}
+
+enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
+					  enum chg_state_flags flags)
+{
+	struct change_context context = {
+		.resource = resource,
+		.vnr = -1,
+		.mask = { },
+		.val = { },
+		.target_node_id = -1,
+		.flags = flags,
+		.change_local_state_last = false,
+	};
+
+	/* The other nodes get the request for an empty state change. I.e. they
+	   will agree to this change request. At commit time we know where to
+	   go from the D_CONSISTENT, since we got the primary mask. */
+	return change_cluster_wide_state(do_change_from_consistent, &context);
 }
 
 struct change_disk_state_context {
