@@ -1624,7 +1624,10 @@ int drbd_merge_bvec(struct request_queue *q,
 		struct request_queue * const b =
 			device->ldev->backing_bdev->bd_disk->queue;
 		if (b->merge_bvec_fn) {
+			struct block_device *bi_bdev = bvm->bi_bdev;
+			bvm->bi_bdev = device->ldev->backing_bdev;
 			backing_limit = b->merge_bvec_fn(b, bvm, bvec);
+			bvm->bi_bdev = bi_bdev; /* restore! */
 			limit = min(limit, backing_limit);
 		}
 		put_ldev(device);
