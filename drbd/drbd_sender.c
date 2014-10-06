@@ -1034,18 +1034,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
-		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
-			if (new_peer_disk_state != D_MASK)
-				__change_peer_disk_state(peer_device, new_peer_disk_state);
-			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags)) {
-				drbd_uuid_set_bitmap(peer_device, 0UL);
-				drbd_propagate_uuids(device, ~NODE_MASK(peer_device->node_id));
-			}
-		}
 
-		if (!(repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)) {
-			/* for verify runs, we don't update uuids here,
-			 * so there would be nothing to report. */
 			drbd_print_uuids(peer_device, "updated UUIDs");
 			if (peer_device->uuids_received) {
 				/* Now the two UUID sets are equal, update what we
@@ -1057,6 +1046,13 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 					peer_device->history_uuids[i] =
 						drbd_history_uuid(device, i);
+			}
+		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
+			if (new_peer_disk_state != D_MASK)
+				__change_peer_disk_state(peer_device, new_peer_disk_state);
+			if (peer_device->connection->agreed_pro_version < 110) {
+				drbd_uuid_set_bitmap(peer_device, 0UL);
+				drbd_print_uuids(peer_device, "updated UUIDs");
 			}
 		}
 	}
@@ -1774,10 +1770,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
 	__change_repl_state(peer_device, side);
-	clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
-	if (side == L_SYNC_TARGET)
+	if (side == L_SYNC_TARGET) {
 		__change_disk_state(device, D_INCONSISTENT);
-	else /* side == L_SYNC_SOURCE */
+		clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
+	} else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	r = end_state_change_locked(device->resource);
 	repl_state = peer_device->repl_state[NOW];

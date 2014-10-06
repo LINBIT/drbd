@@ -2446,10 +2446,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					resume_next_sg(device);
 			}
 
-			if (device_stable[OLD] && !device_stable[NEW] &&
-			    (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_PAUSED_SYNC_S))
-				set_bit(UNSTABLE_RESYNC, &peer_device->flags);
-
 			if (!device_stable[OLD] && device_stable[NEW] &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] >= D_OUTDATED &&

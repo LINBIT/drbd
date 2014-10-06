@@ -4188,7 +4188,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
-	drbd_propagate_uuids(device, newer | equal);
+	drbd_propagate_uuids(device, newer | equal | NODE_MASK(peer_device->node_id));
 
 	return newer;
 }
@@ -4286,13 +4286,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		struct drbd_peer_device *other_peer;
-
 		if (node_id == device->ldev->md.node_id)
-			continue;
-
-		other_peer = peer_device_by_node_id(device, node_id);
-		if (other_peer && other_peer->repl_state[NOW] >= L_ESTABLISHED)
 			continue;
 
 		if (peer_md[node_id].bitmap_index == -1 && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
@@ -4304,7 +4298,9 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			if (peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
 				peer_md[node_id].bitmap_uuid = 0;
-				if (peer_md[node_id].bitmap_index != -1) {
+				if (node_id == peer_device->node_id) {
+					drbd_print_uuids(peer_device, "updated UUIDs");
+				} else if (peer_md[node_id].bitmap_index != -1) {
 					spin_unlock_irq(&device->ldev->md.uuid_lock);
 					forget_bitmap(device, node_id);
 					spin_lock_irq(&device->ldev->md.uuid_lock);
