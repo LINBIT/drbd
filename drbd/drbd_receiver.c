@@ -3813,6 +3813,36 @@ static int drbd_handshake(struct drbd_peer_device *peer_device,
 	return hg;
 }
 
+static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int hg, int peer_node_id)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (hg == 3) {
+		drbd_info(peer_device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
+		drbd_suspend_io(device);
+		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
+		drbd_bm_copy_slot(device, device->ldev->md.peers[peer_node_id].bitmap_index,
+				  peer_device->bitmap_index);
+		drbd_bm_write(device, NULL);
+		drbd_bm_slot_unlock(peer_device);
+		drbd_resume_io(device);
+	} else if (hg == -3) {
+		drbd_info(peer_device, "synced up with node %d in the mean time\n", peer_node_id);
+		drbd_suspend_io(device);
+		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits from sync_handshake", BM_LOCK_BULK);
+		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+		drbd_bm_write(device, NULL);
+		drbd_bm_slot_unlock(peer_device);
+		drbd_resume_io(device);
+	} else if (abs(hg) >= 2) {
+		drbd_info(peer_device,
+			  "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
+		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
+					BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
+			return -1;
+	}
+	return 0;
+}
 
 static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer_device, int hg)
 {
@@ -3885,7 +3915,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
-	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0;
+	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0, r;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
 
@@ -3991,29 +4021,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if (hg == 3) {
-		drbd_info(device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
-		drbd_suspend_io(device);
-		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
-		drbd_bm_copy_slot(device, device->ldev->md.peers[peer_node_id].bitmap_index,
-				  peer_device->bitmap_index);
-		drbd_bm_write(device, NULL);
-		drbd_bm_slot_unlock(peer_device);
-		drbd_resume_io(device);
-	} else if (hg == -3) {
-		drbd_info(device, "synced up with node %d in the mean time\n", peer_node_id);
-		drbd_suspend_io(device);
-		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits from sync_handshake", BM_LOCK_BULK);
-		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
-		drbd_bm_write(device, NULL);
-		drbd_bm_slot_unlock(peer_device);
-		drbd_resume_io(device);
-	} else if (abs(hg) >= 2) {
-		drbd_info(device, "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
-		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
-					BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
-			return -1;
-	}
+	r = bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
+	if (r)
+		return r;
 
 	return goodness_to_repl_state(peer_device, hg);
 }
@@ -4672,10 +4682,10 @@ out:
 void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	enum drbd_repl_state new_repl_state;
-	int hg, unused;
+	int hg, rule_nr, peer_node_id;
 
-	hg = drbd_handshake(peer_device, &unused, &unused);
-	new_repl_state = hg < -2 || hg > 2 ? -1 : goodness_to_repl_state(peer_device, hg);
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+	new_repl_state = hg < -3 || hg > 3 ? -1 : goodness_to_repl_state(peer_device, hg);
 
 	if (new_repl_state == L_ESTABLISHED) {
 		return;
@@ -4684,12 +4694,7 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 		return;
 	}
 
-	if (hg == -2 || hg == 2) {
-		drbd_info(peer_device, "Writing the whole bitmap, full sync required.\n");
-		drbd_bitmap_io(peer_device->device, &drbd_bmio_set_n_write,
-			       "set_n_write from resync_after_unstable",
-			       BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
-	}
+	bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
 
 	drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
 	change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
