@@ -70,12 +70,6 @@ ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.timest
 COMPAT_FORCE := FORCE
 endif
 
-ifneq ($(KBUILD_STAGE),modpost)
-$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
-	$(call filechk,compat.h)
-	$(Q)touch $@
-	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
-else
 # remember KERNELRELEASE for install target
 # .kernelversion can be included in Makefile as well as
 # sourced from shell
@@ -89,6 +83,12 @@ $(shell printf "%s\n"				\
 	"KERNELVERSION=$(KERNELVERSION)"	\
 	> $(src)/.drbd_kernelrelease.new	\
 )
+
+ifneq ($(KBUILD_STAGE),modpost)
+$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
+	$(call filechk,compat.h)
+	$(Q)touch $@
+	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
 endif
 
 filechk_compat.h = \
@@ -109,6 +109,13 @@ filechk_compat.h = \
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash
+
+ifndef kecho
+       kecho ?= :
+ quiet_kecho ?= echo
+silent_kecho ?= :
+kecho ?= $($(quiet)kecho)
+endif
 
 $(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
 	@$(kecho) '  GEN     $@ $(echo-why)'

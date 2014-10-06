@@ -102,11 +102,8 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status_all(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_devices_done(struct netlink_callback *cb);
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_connections_done(struct netlink_callback *cb);
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb);
 int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
@@ -3148,10 +3145,6 @@ static int put_resource_in_arg0(struct netlink_callback *cb, int holder_nr)
 	return 0;
 }
 
-int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
-	return put_resource_in_arg0(cb, 7);
-}
-
 static void device_to_info(struct device_info *, struct drbd_device *);
 
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
@@ -3231,14 +3224,11 @@ put_result:
 
 out:
 	rcu_read_unlock();
+	if (err != 0 || skb->len == 0)
+		put_resource_in_arg0(cb, 7);
 	if (err)
 		return err;
 	return skb->len;
-}
-
-int drbd_adm_dump_connections_done(struct netlink_callback *cb)
-{
-	return put_resource_in_arg0(cb, 6);
 }
 
 enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
@@ -3356,6 +3346,8 @@ out:
 	rcu_read_unlock();
 	if (resource)
 		mutex_unlock(&resource->conf_update);
+	if (err != 0 || skb->len == 0)
+		put_resource_in_arg0(cb, 6);
 	if (err)
 		return err;
 	return skb->len;
@@ -3398,11 +3390,6 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 				MDF_PEER_FULL_SYNC : 0);
 		put_ldev(device);
 	}
-}
-
-int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
-{
-	return put_resource_in_arg0(cb, 9);
 }
 
 int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
@@ -3493,6 +3480,8 @@ put_result:
 
 out:
 	rcu_read_unlock();
+	if (err != 0 || skb->len == 0)
+		put_resource_in_arg0(cb, 7);
 	if (err)
 		return err;
 	return skb->len;

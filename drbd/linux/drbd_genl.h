@@ -71,6 +71,8 @@
  *
  *	flags and handler:
  *		GENL_op_init( .doit = x, .dumpit = y, .flags = something)
+ *			Sorry, no .done possible,
+ *			we want backward compatibility with even RHEL 5.
  *		GENL_doit(x) => .dumpit = NULL, .flags = GENL_ADMIN_PERM
  *	tla list: the list of expected top level attributes,
  *	for documentation and sanity checking.
@@ -466,7 +468,6 @@ GENL_op(DRBD_ADM_GET_RESOURCES, 30,
 GENL_op(DRBD_ADM_GET_DEVICES, 31,
 	 GENL_op_init(
 		 .dumpit = drbd_adm_dump_devices,
-		 .done = drbd_adm_dump_devices_done,
 	 ),
 	 GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	 GENL_tla_expected(DRBD_NLA_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
@@ -475,7 +476,6 @@ GENL_op(DRBD_ADM_GET_DEVICES, 31,
 GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 	 GENL_op_init(
 		 .dumpit = drbd_adm_dump_connections,
-		 .done = drbd_adm_dump_connections_done,
 	 ),
 	 GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	 GENL_tla_expected(DRBD_NLA_CONNECTION_INFO, DRBD_GENLA_F_MANDATORY)
@@ -484,7 +484,6 @@ GENL_op(DRBD_ADM_GET_CONNECTIONS, 32,
 GENL_op(DRBD_ADM_GET_PEER_DEVICES, 33,
 	 GENL_op_init(
 		 .dumpit = drbd_adm_dump_peer_devices,
-		 .done = drbd_adm_dump_peer_devices_done,
 	 ),
 	 GENL_tla_expected(DRBD_NLA_CFG_CONTEXT, DRBD_GENLA_F_MANDATORY)
 	 GENL_tla_expected(DRBD_NLA_PEER_DEVICE_INFO, DRBD_GENLA_F_MANDATORY)
