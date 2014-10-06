@@ -615,7 +615,7 @@ bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
    A primary is stable since it is authoritative.
    Unstable are neighbors of a primary and resync target nodes.
    Nodes further away from a primary are stable! */
-static bool drbd_device_stable(struct drbd_device *device)
+bool drbd_device_stable(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;

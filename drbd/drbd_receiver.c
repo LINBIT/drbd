@@ -4886,7 +4886,8 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
 		struct drbd_device *device = peer_device->device;
 
-		if (peer_device->repl_state[NOW] == L_ESTABLISHED && get_ldev(device)) {
+		if (peer_device->repl_state[NOW] == L_ESTABLISHED &&
+		    drbd_device_stable(device) && get_ldev(device)) {
 			drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
 			drbd_resync_after_unstable(peer_device);
 			put_ldev(device);
