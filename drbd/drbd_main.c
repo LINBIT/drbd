@@ -4268,6 +4268,7 @@ found:
 	}
 
 	peer_md[to_id].bitmap_uuid = peer_bm_uuid;
+	peer_md[to_id].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 	drbd_md_mark_dirty(device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	copy_bitmap(device, from_id, to_id);
@@ -4331,7 +4332,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			    dagtag_newer(peer_md[from_node_id].bitmap_dagtag,
 					 peer_md[node_id].bitmap_dagtag)) {
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
-				peer_md[node_id].bitmap_uuid = peer_current_uuid;
+				peer_md[node_id].bitmap_uuid = peer_md[from_node_id].bitmap_uuid;
+				peer_md[node_id].bitmap_dagtag = peer_md[from_node_id].bitmap_dagtag;
 				if (peer_md[node_id].bitmap_index != -1 &&
 				    peer_md[from_node_id].bitmap_index != -1) {
 					spin_unlock_irq(&device->ldev->md.uuid_lock);
