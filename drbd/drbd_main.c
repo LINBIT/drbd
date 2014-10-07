@@ -4210,7 +4210,7 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
 {
 	int from_index = device->ldev->md.peers[from_id].bitmap_index;
-	int to_index = device->ldev->md.peers[from_id].bitmap_index;
+	int to_index = device->ldev->md.peers[to_id].bitmap_index;
 
 	drbd_info(device, "Node %d synced up to node %d. copying bitmap slot %d to %d.\n",
 		  to_id, from_id, from_index, to_index);
