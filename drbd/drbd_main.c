@@ -4054,14 +4054,7 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 	return nodes;
 }
 
-/**
- * drbd_uuid_new_current() - Creates a new current UUID
- * @device:	DRBD device.
- *
- * Creates a new current UUID, and rotates the old current UUID into
- * the bitmap slot. Causes an incremental resync upon next connect.
- */
-void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
+static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
 	u64 got_new_bitmap_uuid, weak_nodes, val;
@@ -4089,6 +4082,30 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
+	}
+}
+
+/**
+ * drbd_uuid_new_current() - Creates a new current UUID
+ * @device:	DRBD device.
+ *
+ * Creates a new current UUID, and rotates the old current UUID into
+ * the bitmap slot. Causes an incremental resync upon next connect.
+ */
+void drbd_uuid_new_current(struct drbd_device *device, bool forced)
+{
+	if (get_ldev(device)) {
+		__drbd_uuid_new_current(device, forced);
+		put_ldev(device);
+	} else {
+		struct drbd_peer_device *peer_device;
+		/* The peers will store the new current UUID... */
+		u64 current_uuid;
+		get_random_bytes(&current_uuid, sizeof(u64));
+		drbd_set_exposed_data_uuid(device, current_uuid);
+
+		for_each_peer_device(peer_device, device)
+			drbd_send_current_uuid(peer_device, current_uuid);
 	}
 }
 
@@ -4222,6 +4239,19 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	drbd_md_mark_dirty(device);
 }
 
+static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) __must_hold(local)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == (bm_uuid & ~UUID_PRIMARY))
+			return node_id;
+	}
+
+	return -1;
+}
+
 static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
@@ -4275,19 +4305,6 @@ found:
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
 	return true;
-}
-
-static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) __must_hold(local)
-{
-	struct drbd_peer_md *peer_md = device->ldev->md.peers;
-	int node_id;
-
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == (bm_uuid & ~UUID_PRIMARY))
-			return node_id;
-	}
-
-	return -1;
 }
 
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)

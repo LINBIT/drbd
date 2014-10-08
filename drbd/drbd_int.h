@@ -626,7 +626,7 @@ enum {
 				   so don't even try */
 	WAS_READ_ERROR,		/* Local disk READ failed, returned IO error */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
-	NEW_CUR_UUID,		/* Create new current UUID when thawing IO */
+	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	UNREGISTERED,
@@ -1436,7 +1436,7 @@ extern void drbd_uuid_received_new_current(struct drbd_peer_device *, u64 , u64)
 extern void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
-extern void drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local);
+extern void drbd_uuid_new_current(struct drbd_device *device, bool forced);
 extern void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local);
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);

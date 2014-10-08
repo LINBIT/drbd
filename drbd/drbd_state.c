@@ -2561,24 +2561,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
 			create_new_uuid = true;
 
-		if (create_new_uuid) {
-			if (get_ldev(device)) {
-				if (drbd_suspended(device))
-					set_bit(NEW_CUR_UUID, &device->flags);
-				else
-					drbd_uuid_new_current(device, false);
-				put_ldev(device);
-			} else {
-				struct drbd_peer_device *peer_device;
-				u64 current_uuid;
-
-				get_random_bytes(&current_uuid, sizeof(u64));
-				drbd_set_exposed_data_uuid(device, current_uuid);
-
-				for_each_peer_device(peer_device, device)
-					drbd_send_current_uuid(peer_device, current_uuid);
-			}
-		}
+		if (create_new_uuid)
+			set_bit(NEW_CUR_UUID, &device->flags);
 
 		if (disk_state[OLD] != D_CONSISTENT && disk_state[NEW] == D_CONSISTENT)
 			try_become_up_to_date = true;
@@ -2625,13 +2609,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				rcu_read_lock();
 				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 					struct drbd_device *device = peer_device->device;
-					if (test_bit(NEW_CUR_UUID, &device->flags)) {
-						if (get_ldev(device)) {
-							drbd_uuid_new_current(device, false);
-							put_ldev(device);
-						}
-						clear_bit(NEW_CUR_UUID, &device->flags);
-					}
+					if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+						drbd_uuid_new_current(device, false);
 				}
 				rcu_read_unlock();
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);

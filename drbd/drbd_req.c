@@ -1485,15 +1485,21 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	/* Update disk stats */
 	_drbd_start_io_acct(device, req);
 
-	if (rw == WRITE && req->private_bio && req->i.size &&
-	    !test_bit(AL_SUSPENDED, &device->flags)) {
-		if (!drbd_al_begin_io_fastpath(device, &req->i)) {
-			atomic_inc(&device->ap_actlog_cnt);
+	if (rw == WRITE && req->i.size) {
+		if (test_bit(NEW_CUR_UUID, &device->flags)) {
 			drbd_queue_write(device, req);
 			return NULL;
 		}
-		req->rq_state[0] |= RQ_IN_ACT_LOG;
-		req->in_actlog_jif = jiffies;
+
+		if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
+			if (!drbd_al_begin_io_fastpath(device, &req->i)) {
+				atomic_inc(&device->ap_actlog_cnt);
+				drbd_queue_write(device, req);
+				return NULL;
+			}
+			req->rq_state[0] |= RQ_IN_ACT_LOG;
+			req->in_actlog_jif = jiffies;
+		}
 	}
 
 	return req;
@@ -1708,6 +1714,9 @@ void do_submit(struct work_struct *ws)
 	for (;;) {
 		DEFINE_WAIT(wait);
 
+		if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			drbd_uuid_new_current(device, false);
+
 		/* move used-to-be-busy back to front of incoming */
 		list_splice_init(&busy, &incoming);
 		submit_fast_path(device, &incoming);
@@ -1789,6 +1798,10 @@ void do_submit(struct work_struct *ws)
 		}
 
 		drbd_al_begin_io_commit(device);
+
+		if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			drbd_uuid_new_current(device, false);
+
 		send_and_submit_pending(device, &pending);
 	}
 }

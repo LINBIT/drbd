@@ -5623,7 +5623,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
 	    drbd_suspended(device) &&
 	    repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED &&
-	    test_bit(NEW_CUR_UUID, &device->flags)) {
+	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
 		unsigned long irq_flags;
 
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
@@ -5634,7 +5634,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_clear(connection);
 		drbd_uuid_new_current(device, false);
-		clear_bit(NEW_CUR_UUID, &device->flags);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);

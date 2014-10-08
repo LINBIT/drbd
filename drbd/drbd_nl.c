@@ -902,19 +902,10 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 		mutex_unlock(&resource->conf_update);
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (get_ldev(device)) {
-				drbd_uuid_new_current(device, forced);
-				put_ldev(device);
-			} else {
-				struct drbd_peer_device *peer_device;
-				/* The peers will store the new current UUID... */
-				u64 current_uuid;
-				get_random_bytes(&current_uuid, sizeof(u64));
-				drbd_set_exposed_data_uuid(device, current_uuid);
-
-				for_each_peer_device(peer_device, device)
-					drbd_send_current_uuid(peer_device, current_uuid);
-			}
+			if (forced)
+				drbd_uuid_new_current(device, true);
+			else
+				set_bit(NEW_CUR_UUID, &device->flags);
 		}
 	}
 
@@ -3533,10 +3524,8 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 	device = adm_ctx.device;
 	resource = device->resource;
-	if (test_bit(NEW_CUR_UUID, &device->flags)) {
+	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 		drbd_uuid_new_current(device, false);
-		clear_bit(NEW_CUR_UUID, &device->flags);
-	}
 	drbd_suspend_io(device);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);
