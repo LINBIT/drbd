@@ -1242,7 +1242,7 @@ static int bm_rw_range(struct drbd_device *device,
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);
 
 	/* summary for global bitmap IO */
-	if (flags == 0)
+	if (flags == 0 && count)
 		drbd_info(device, "bitmap %s of %u pages took %ums\n",
 			 (flags & BM_AIO_READ) ? "READ" : "WRITE",
 			 count, jiffies_to_msecs(jiffies - now));
