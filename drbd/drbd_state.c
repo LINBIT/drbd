@@ -3372,7 +3372,25 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 		},
 		.force = force,
 	};
-	return change_cluster_wide_state(do_change_role, &role_context.context);
+	enum drbd_state_rv rv;
+	bool got_state_sem = false;
+
+	if (role == R_SECONDARY) {
+		struct drbd_device *device;
+		int vnr;
+
+		if (!(flags & CS_ALREADY_SERIALIZED)) {
+			down(&resource->state_sem);
+			got_state_sem = true;
+			role_context.context.flags |= CS_ALREADY_SERIALIZED;
+		}
+		idr_for_each_entry(&resource->devices, device, vnr)
+			wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt));
+	}
+	rv = change_cluster_wide_state(do_change_role, &role_context.context);
+	if (got_state_sem)
+		up(&resource->state_sem);
+	return rv;
 }
 
 void __change_io_susp_user(struct drbd_resource *resource, bool value)

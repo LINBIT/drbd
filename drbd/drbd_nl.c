@@ -740,16 +740,6 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 	}
 }
 
-static bool no_more_ap_pending(struct drbd_device *device)
-{
-	struct drbd_peer_device *peer_device;
-
-	for_each_peer_device(peer_device, device)
-		if (atomic_read(&peer_device->ap_pending_cnt) != 0)
-			return false;
-	return true;
-}
-
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 {
@@ -874,9 +864,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 	if (forced)
 		drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
-
-	idr_for_each_entry(&resource->devices, device, vnr)
-		wait_event(device->misc_wait, no_more_ap_pending(device));
 
 	/* FIXME also wait for all pending P_BARRIER_ACK? */
 
