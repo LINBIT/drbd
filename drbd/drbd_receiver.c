@@ -4687,16 +4687,14 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
 	new_repl_state = hg < -3 || hg > 3 ? -1 : goodness_to_repl_state(peer_device, hg);
 
-	if (new_repl_state == L_ESTABLISHED) {
-		return;
-	} else if (new_repl_state == -1) {
+	if (new_repl_state == -1) {
 		drbd_info(peer_device, "Unexpected result of handshake() %d!\n", new_repl_state);
 		return;
+	} else if (new_repl_state != L_ESTABLISHED) {
+		bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
+		drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
 	}
 
-	bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
-
-	drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
 	change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
 }
 

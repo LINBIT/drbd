@@ -303,7 +303,8 @@ static bool state_has_changed(struct drbd_resource *resource)
 			    peer_device->resync_susp_dependency[OLD] !=
 				peer_device->resync_susp_dependency[NEW] ||
 			    peer_device->resync_susp_other_c[OLD] !=
-				peer_device->resync_susp_other_c[NEW])
+				peer_device->resync_susp_other_c[NEW] ||
+			    peer_device->uuid_flags & UUID_FLAG_GOT_STABLE)
 				return true;
 		}
 	}
@@ -1418,13 +1419,19 @@ static void sanitize_state(struct drbd_resource *resource)
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_DETACHING))
 				peer_disk_state[NEW] = D_DISKLESS;
 
-			/* In case we connect to a D_UP_TO_DATE peer without resync that is
-			   also stable become D_UP_TO_DATE as well. */
-			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED &&
-			    disk_state[NEW] == D_OUTDATED && peer_disk_state[NEW] == D_UP_TO_DATE &&
-			    peer_device->uuids_received &&
-			    peer_device->uuid_flags & UUID_FLAG_STABLE)
+			/* Upgrade myself from D_OUTDATED to D_UP_TO_DATE if..
+			   1) We connect to stable D_UP_TO_DATE peer without resnyc
+			   2) The peer just became stable
+			   3) the peer was stable and just became D_UP_TO_DATE */
+			if (repl_state[NEW] == L_ESTABLISHED && disk_state[NEW] == D_OUTDATED &&
+			    peer_disk_state[NEW] == D_UP_TO_DATE && peer_device->uuids_received &&
+			    peer_device->uuid_flags & UUID_FLAG_STABLE &&
+			    (repl_state[OLD] < L_ESTABLISHED ||
+			     peer_device->uuid_flags & UUID_FLAG_GOT_STABLE ||
+			     peer_disk_state[OLD] == D_OUTDATED))
 				disk_state[NEW] = D_UP_TO_DATE;
+
+			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
 		}
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
@@ -2413,9 +2420,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_ESTABLISHED)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
-			/* Outdated myself because became weak, tell peers */
-			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
-			    repl_state[NEW] >= L_ESTABLISHED)
+			/* Outdated myself, or became D_UP_TO_DATE tell peers */
+			if (disk_state[OLD] >= D_OUTDATED && disk_state[NEW] >= D_OUTDATED &&
+			    disk_state[NEW] != disk_state[OLD] && repl_state[NEW] >= L_ESTABLISHED)
 				send_state = true;
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
@@ -2446,6 +2453,18 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					resume_next_sg(device);
 			}
 
+			if (device_stable[OLD] && !device_stable[NEW] &&
+			    repl_state[NEW] >= L_ESTABLISHED && get_ldev(device)) {
+				/* Inform peers about being unstable...
+				   Maybe it would be a better idea to have the stable bit as
+				   part of the state (and being sent with the state) */
+				drbd_send_uuids(peer_device, 0, 0);
+				put_ldev(device);
+			}
+
+			if (send_state)
+				drbd_send_state(peer_device, new_state);
+
 			if (!device_stable[OLD] && device_stable[NEW] &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] >= D_OUTDATED &&
@@ -2458,9 +2477,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_send_uuids(peer_device, UUID_FLAG_GOT_STABLE, 0);
 				put_ldev(device);
 			}
-
-			if (send_state)
-				drbd_send_state(peer_device, new_state);
 		}
 
 
