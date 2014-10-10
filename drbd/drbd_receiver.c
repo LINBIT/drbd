@@ -4739,7 +4739,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 		}
 
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
-			drbd_warn(peer_device, "received new current UUID: %llX\n", peer_device->current_uuid);
+			drbd_warn(peer_device, "received new current UUID: %016llX\n", peer_device->current_uuid);
 			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, weak_nodes);
 		}
 
@@ -6157,7 +6157,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	if (get_ldev(device)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
-			drbd_warn(peer_device, "received new current UUID: %llX\n", current_uuid);
+			drbd_warn(peer_device, "received new current UUID: %016llX\n", current_uuid);
 			drbd_uuid_received_new_current(peer_device, current_uuid, 0);
 		}
 		put_ldev(device);
