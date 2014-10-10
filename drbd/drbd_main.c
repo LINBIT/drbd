@@ -4256,7 +4256,7 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
-	int node_id1, node_id2, from_id, to_id;
+	int node_id1, node_id2, from_id;
 	u64 peer_bm_uuid;
 
 	for (node_id1 = 0; node_id1 < DRBD_NODE_ID_MAX; node_id1++) {
@@ -4278,15 +4278,8 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 	return false;
 
 found:
-	if ((peer_md[node_id1].bitmap_uuid & ~UUID_PRIMARY) == peer_bm_uuid &&
-	    (peer_md[node_id2].bitmap_uuid & ~UUID_PRIMARY) != peer_bm_uuid) {
-		from_id = node_id1;
-		to_id = node_id2;
-	} else if ((peer_md[node_id1].bitmap_uuid & ~UUID_PRIMARY) != peer_bm_uuid &&
-		   (peer_md[node_id2].bitmap_uuid & ~UUID_PRIMARY) == peer_bm_uuid) {
-		from_id = node_id2;
-		to_id = node_id1;
-	} else {
+	from_id = find_node_id_by_bitmap_uuid(device, peer_bm_uuid);
+	if (from_id == -1) {
 		drbd_err(peer_device, "unexpected\n");
 		drbd_err(peer_device, "In UUIDs from node %d found equal UUID (%llX) for nodes %d %d\n",
 			 peer_device->node_id, peer_bm_uuid, node_id1, node_id2);
@@ -4296,14 +4289,21 @@ found:
 			 peer_md[node_id2].bitmap_uuid, node_id2);
 		return false;
 	}
-
-	peer_md[to_id].bitmap_uuid = peer_bm_uuid;
-	peer_md[to_id].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
-	drbd_md_mark_dirty(device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	copy_bitmap(device, from_id, to_id);
+	if (from_id != node_id1) {
+		peer_md[node_id1].bitmap_uuid = peer_bm_uuid;
+		peer_md[node_id1].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
+		copy_bitmap(device, from_id, node_id1);
+
+	}
+	if (from_id != node_id2) {
+		peer_md[node_id2].bitmap_uuid = peer_bm_uuid;
+		peer_md[node_id2].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
+		copy_bitmap(device, from_id, node_id2);
+	}
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
+	drbd_md_mark_dirty(device);
 	return true;
 }
 
