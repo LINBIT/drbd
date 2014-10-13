@@ -1816,12 +1816,12 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 	return used;
 }
 
-static bool bitmap_index_vacant(struct drbd_device *device, int bitmap_index)
+static bool bitmap_index_vacant(struct drbd_backing_dev *bdev, int bitmap_index)
 {
 	int node_id;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+		struct drbd_peer_md *peer_md = &bdev->md.peers[node_id];
 
 		if (peer_md->bitmap_index == bitmap_index)
 			return false;
@@ -2096,7 +2096,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				continue;
 
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				if (bitmap_index_vacant(device, bitmap_index)) {
+				if (bitmap_index_vacant(nbc, bitmap_index)) {
 					const int node_id = connection->net_conf->peer_node_id;
 					struct drbd_peer_md *peer_md = &nbc->md.peers[node_id];
 
@@ -2863,7 +2863,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			if (peer_device->bitmap_index != -1)
 				goto next_device_2;
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				if (bitmap_index_vacant(device, bitmap_index)) {
+				if (bitmap_index_vacant(device->ldev, bitmap_index)) {
 					const int node_id = new_net_conf->peer_node_id;
 					struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
