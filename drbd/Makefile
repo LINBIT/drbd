@@ -133,7 +133,7 @@ else
 	else \
 		rm -f linux/drbd_config.h.tmp ; \
 	fi
-	rm -f drbd_buildtag.c
+	rm -f drbd_buildtag.c compat.h
 
   tags:
 	ctags -R -I__initdata,__exitdata,__acquires,__releases \
