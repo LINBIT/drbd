@@ -2651,6 +2651,22 @@ static void peer_device_to_info(struct peer_device_info *info,
 	info->peer_resync_susp_dependency = peer_device->resync_susp_dependency[NOW];
 }
 
+static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_device *p;
+
+	for_each_peer_device(p, device) {
+		if (p == peer_device)
+			continue;
+
+		if (p->repl_state[NEW] == L_SYNC_TARGET)
+			return true;
+	}
+
+	return false;
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -2769,6 +2785,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 
+		peer_device->resync_susp_other_c[NOW] =
+			is_resync_target_in_other_connection(peer_device);
 		list_add_rcu(&peer_device->peer_devices, &device->peer_devices);
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 3);
