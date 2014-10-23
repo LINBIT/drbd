@@ -1505,8 +1505,9 @@ int drbd_bm_count_bits(struct drbd_device *device, unsigned int bitmap_index, un
 void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsigned int to_index)
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
-	unsigned long word_nr, *addr, data_word, from_word_nr, to_word_nr;
+	unsigned long word_nr, from_word_nr, to_word_nr;
 	unsigned int from_page_nr, to_page_nr, current_page_nr;
+	u32 data_word, *addr;
 
 	spin_lock_irq(&bitmap->bm_lock);
 
