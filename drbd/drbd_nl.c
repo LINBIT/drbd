@@ -2779,8 +2779,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	spin_lock_irq(&adm_ctx.resource->req_lock);
-	kref_get(&adm_ctx.resource->kref);
-	kref_debug_get(&adm_ctx.resource->kref_debug, 3);
 	list_add_tail_rcu(&connection->connections, &adm_ctx.resource->connections);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
