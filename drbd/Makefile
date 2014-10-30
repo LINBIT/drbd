@@ -143,7 +143,7 @@ else
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .drbd_kernelrelease
-    MODOBJ := drbd.ko
+    MODOBJS := drbd.ko drbd_transport_tcp.ko
     MODSUBDIR := updates
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
 
@@ -152,13 +152,14 @@ else
 	  echo "No $(MODOBJ): nothing to install??"; false ; \
 	fi
 	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-	install -m 644 $(MODOBJ) $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
+	set -e ; for ko in $(MODOBJS); do \
+		install -m 644 $$ko $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR); \
+	done
     ifeq ($(DESTDIR),/)
       ifeq ($(shell uname -r),$(KERNELRELEASE))
-	/sbin/depmod -a || /sbin/depmod -e $(MODOBJ) 2>&1 >/dev/null || true
+		/sbin/depmod -a || :
       else
-	[ -e $(LINUX)/System.map ] && \
-	   /sbin/depmod -F $(LINUX)/System.map -e ./$(MODOBJ) 2>&1 >/dev/null || true
+		@echo "Don't forget to depmod."
       endif
     endif
   else
@@ -166,10 +167,6 @@ else
 	@echo "No .drbd_kernelrelease found. Do you need to 'make' the module first?"
 	@false
   endif
-
-  depmod:
-	[ -e $(KDIR)/System.map ] && [ -e ./$(MODOBJ) ] && \
-	   /sbin/depmod -F $(KDIR)/System.map -n -e ./$(MODOBJ) # 2>&1 >/dev/null
 endif
 
 uninstall:
