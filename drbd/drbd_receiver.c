@@ -69,27 +69,8 @@ enum finish_epoch {
 	FE_RECYCLED,
 };
 
-struct listener {
-	struct kref kref;
-	struct drbd_resource *resource;
-	struct socket *s_listen;
-	struct sockaddr_storage listen_addr;
-	void (*original_sk_state_change)(struct sock *sk);
-	struct list_head list; /* link for resource->listeners */
-	struct list_head waiters; /* list head for waiter structs*/
-	int pending_accepts;
-};
-
-struct waiter {
-	struct drbd_connection *connection;
-	wait_queue_head_t wait;
-	struct list_head list;
-	struct listener *listener;
-	struct socket *socket;
-};
-
-static int drbd_do_features(struct drbd_connection *connection);
-static int drbd_do_auth(struct drbd_connection *connection);
+int drbd_do_features(struct drbd_connection *connection);
+int drbd_do_auth(struct drbd_connection *connection);
 static int drbd_disconnected(struct drbd_peer_device *);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
@@ -532,33 +513,12 @@ static void drbd_wait_ee_list_empty(struct drbd_device *device,
 	spin_unlock_irq(&device->resource->req_lock);
 }
 
-static int drbd_recv_short(struct socket *sock, void *buf, size_t size, int flags)
-{
-	mm_segment_t oldfs;
-	struct kvec iov = {
-		.iov_base = buf,
-		.iov_len = size,
-	};
-	struct msghdr msg = {
-		.msg_iovlen = 1,
-		.msg_iov = (struct iovec *)&iov,
-		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
-	};
-	int rv;
-
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
-	set_fs(oldfs);
-
-	return rv;
-}
-
 static int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
 {
 	int rv;
 
-	rv = drbd_recv_short(connection->data.socket, buf, size, 0);
+	rv = connection->transport->ops->recv(connection->transport, DATA_STREAM,
+					      buf, size, 0);
 
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
@@ -592,6 +552,7 @@ static int drbd_recv_all(struct drbd_connection *connection, void *buf, size_t s
 	int err;
 
 	err = drbd_recv(connection, buf, size);
+
 	if (err != size) {
 		if (err >= 0)
 			err = -EIO;
@@ -610,553 +571,7 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void *buf, siz
 	return err;
 }
 
-/* quoting tcp(7):
- *   On individual connections, the socket buffer size must be set prior to the
- *   listen(2) or connect(2) calls in order to have it take effect.
- * This is our wrapper to do so.
- */
-static void drbd_setbufsize(struct socket *sock, unsigned int snd,
-		unsigned int rcv)
-{
-	/* open coded SO_SNDBUF, SO_RCVBUF */
-	if (snd) {
-		sock->sk->sk_sndbuf = snd;
-		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
-	}
-	if (rcv) {
-		sock->sk->sk_rcvbuf = rcv;
-		sock->sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
-	}
-}
-
-static struct socket *drbd_try_connect(struct drbd_connection *connection)
-{
-	const char *what;
-	struct socket *sock;
-	struct sockaddr_storage my_addr, peer_addr;
-	struct net_conf *nc;
-	int err;
-	int sndbuf_size, rcvbuf_size, connect_int;
-	int disconnect_on_error = 1;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	if (!nc) {
-		rcu_read_unlock();
-		return NULL;
-	}
-	sndbuf_size = nc->sndbuf_size;
-	rcvbuf_size = nc->rcvbuf_size;
-	connect_int = nc->connect_int;
-	rcu_read_unlock();
-
-	my_addr = connection->my_addr;
-	if (my_addr.ss_family == AF_INET6)
-		((struct sockaddr_in6 *)&my_addr)->sin6_port = 0;
-	else
-		((struct sockaddr_in *)&my_addr)->sin_port = 0; /* AF_INET & AF_SCI */
-
-	/* In some cases, the network stack can end up overwriting
-	   peer_addr.ss_family, so use a copy here. */
-	peer_addr = connection->peer_addr;
-
-	what = "sock_create_kern";
-	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &sock);
-	if (err < 0) {
-		sock = NULL;
-		goto out;
-	}
-
-	sock->sk->sk_rcvtimeo =
-	sock->sk->sk_sndtimeo = connect_int * HZ;
-	drbd_setbufsize(sock, sndbuf_size, rcvbuf_size);
-
-       /* explicitly bind to the configured IP as source IP
-	*  for the outgoing connections.
-	*  This is needed for multihomed hosts and to be
-	*  able to use lo: interfaces for drbd.
-	* Make sure to use 0 as port number, so linux selects
-	*  a free one dynamically.
-	*/
-	what = "bind before connect";
-	err = sock->ops->bind(sock, (struct sockaddr *) &my_addr, connection->my_addr_len);
-	if (err < 0)
-		goto out;
-
-	/* connect may fail, peer not yet available.
-	 * stay C_CONNECTING, don't go Disconnecting! */
-	disconnect_on_error = 0;
-	what = "connect";
-	err = sock->ops->connect(sock, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
-
-out:
-	if (err < 0) {
-		if (sock) {
-			sock_release(sock);
-			sock = NULL;
-		}
-		switch (-err) {
-			/* timeout, busy, signal pending */
-		case ETIMEDOUT: case EAGAIN: case EINPROGRESS:
-		case EINTR: case ERESTARTSYS:
-			/* peer not (yet) available, network problem */
-		case ECONNREFUSED: case ENETUNREACH:
-		case EHOSTDOWN:    case EHOSTUNREACH:
-			disconnect_on_error = 0;
-			break;
-		default:
-			drbd_err(connection, "%s failed, err = %d\n", what, err);
-		}
-		if (disconnect_on_error)
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-	}
-
-	return sock;
-}
-
-static void drbd_incoming_connection(struct sock *sk)
-{
-	struct listener *listener = sk->sk_user_data;
-	void (*state_change)(struct sock *sk);
-
-	state_change = listener->original_sk_state_change;
-	if (sk->sk_state == TCP_ESTABLISHED) {
-		struct waiter *waiter;
-
-		spin_lock(&listener->resource->listeners_lock);
-		listener->pending_accepts++;
-		waiter = list_entry(listener->waiters.next, struct waiter, list);
-		wake_up(&waiter->wait);
-		spin_unlock(&listener->resource->listeners_lock);
-	}
-	state_change(sk);
-}
-
-static int prepare_listener(struct drbd_connection *connection, struct listener *listener)
-{
-	int err, sndbuf_size, rcvbuf_size;
-	struct sockaddr_storage my_addr;
-	struct socket *s_listen;
-	struct net_conf *nc;
-	const char *what;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	if (!nc) {
-		rcu_read_unlock();
-		return -EIO;
-	}
-	sndbuf_size = nc->sndbuf_size;
-	rcvbuf_size = nc->rcvbuf_size;
-	rcu_read_unlock();
-
-	my_addr = connection->my_addr;
-
-	what = "sock_create_kern";
-	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
-	if (err) {
-		s_listen = NULL;
-		goto out;
-	}
-
-	s_listen->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	drbd_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
-
-	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, connection->my_addr_len);
-	if (err < 0)
-		goto out;
-
-	listener->s_listen = s_listen;
-	write_lock_bh(&s_listen->sk->sk_callback_lock);
-	listener->original_sk_state_change = s_listen->sk->sk_state_change;
-	s_listen->sk->sk_state_change = drbd_incoming_connection;
-	s_listen->sk->sk_user_data = listener;
-	write_unlock_bh(&s_listen->sk->sk_callback_lock);
-
-	what = "listen";
-	err = s_listen->ops->listen(s_listen, 5);
-	if (err < 0)
-		goto out;
-
-	listener->listen_addr = my_addr;
-
-	return 0;
-out:
-	if (s_listen)
-		sock_release(s_listen);
-	if (err < 0) {
-		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS &&
-		    err != -EADDRINUSE) {
-			drbd_err(connection, "%s failed, err = %d\n", what, err);
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		}
-	}
-
-	return err;
-}
-
-static struct listener* find_listener(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct listener *listener;
-
-	list_for_each_entry(listener, &resource->listeners, list) {
-		if (!memcmp(&listener->listen_addr, &connection->my_addr, connection->my_addr_len)) {
-			kref_get(&listener->kref);
-			return listener;
-		}
-	}
-	return NULL;
-}
-
-static int get_listener(struct drbd_connection *connection, struct waiter *waiter)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct listener *listener, *new_listener = NULL;
-	int err;
-
-	waiter->connection = connection;
-	waiter->socket = NULL;
-	init_waitqueue_head(&waiter->wait);
-
-	while (1) {
-		spin_lock_bh(&resource->listeners_lock);
-		listener = find_listener(connection);
-		if (!listener && new_listener) {
-			list_add(&new_listener->list, &resource->listeners);
-			listener = new_listener;
-			new_listener = NULL;
-		}
-		if (listener) {
-			list_add(&waiter->list, &listener->waiters);
-			waiter->listener = listener;
-		}
-		spin_unlock_bh(&resource->listeners_lock);
-
-		if (new_listener) {
-			sock_release(new_listener->s_listen);
-			kfree(new_listener);
-		}
-
-		if (listener)
-			return 0;
-
-		new_listener = kmalloc(sizeof(*new_listener), GFP_KERNEL);
-		if (!new_listener)
-			return -ENOMEM;
-
-		err = prepare_listener(connection, new_listener);
-		if (err < 0) {
-			kfree(new_listener);
-			new_listener = NULL;
-			if (err != -EADDRINUSE)
-				return err;
-			schedule_timeout_interruptible(HZ / 10);
-		} else {
-			kref_init(&new_listener->kref);
-			INIT_LIST_HEAD(&new_listener->waiters);
-			new_listener->resource = resource;
-			new_listener->pending_accepts = 0;
-		}
-	}
-}
-
-static void unregister_state_change(struct sock *sk, struct listener *listener)
-{
-	write_lock_bh(&sk->sk_callback_lock);
-	sk->sk_state_change = listener->original_sk_state_change;
-	sk->sk_user_data = NULL;
-	write_unlock_bh(&sk->sk_callback_lock);
-}
-
-static void drbd_listener_destroy(struct kref *kref)
-{
-	struct listener *listener = container_of(kref, struct listener, kref);
-	struct drbd_resource *resource = listener->resource;
-
-	spin_lock_bh(&resource->listeners_lock);
-	list_del(&listener->list);
-	spin_unlock_bh(&resource->listeners_lock);
-
-	unregister_state_change(listener->s_listen->sk, listener);
-	sock_release(listener->s_listen);
-
-	kfree(listener);
-}
-
-static void put_listener(struct waiter *waiter)
-{
-	struct drbd_resource *resource;
-
-	if (!waiter->listener)
-		return;
-
-	resource = waiter->listener->resource;
-	spin_lock_bh(&resource->listeners_lock);
-	list_del(&waiter->list);
-	if (!list_empty(&waiter->listener->waiters) && waiter->listener->pending_accepts) {
-		/* This receiver no longer does accept calls. In case we got woken up to do
-		   one, and there are more receivers, wake one of the other guys to do it */
-		struct waiter *ad2;
-		ad2 = list_entry(waiter->listener->waiters.next, struct waiter, list);
-		wake_up(&ad2->wait);
-	}
-	spin_unlock_bh(&resource->listeners_lock);
-	kref_put(&waiter->listener->kref, drbd_listener_destroy);
-	waiter->listener = NULL;
-	if (waiter->socket) {
-		sock_release(waiter->socket);
-		waiter->socket = NULL;
-	}
-}
-
-static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
-{
-	if (addr1->ss_family != addr2->ss_family)
-		return false;
-
-	if (addr1->ss_family == AF_INET6) {
-		const struct sockaddr_in6 *v6a1 = (const struct sockaddr_in6 *)addr1;
-		const struct sockaddr_in6 *v6a2 = (const struct sockaddr_in6 *)addr2;
-
-		if (!ipv6_addr_equal(&v6a1->sin6_addr, &v6a2->sin6_addr))
-			return false;
-		else if (ipv6_addr_type(&v6a1->sin6_addr) & IPV6_ADDR_LINKLOCAL)
-			return v6a1->sin6_scope_id == v6a2->sin6_scope_id;
-		return true;
-	} else /* AF_INET, AF_SSOCKS, AF_SDP */ {
-		const struct sockaddr_in *v4a1 = (const struct sockaddr_in *)addr1;
-		const struct sockaddr_in *v4a2 = (const struct sockaddr_in *)addr2;
-		return v4a1->sin_addr.s_addr == v4a2->sin_addr.s_addr;
-	}
-}
-
-static struct waiter *
-	find_waiter_by_addr(struct listener *listener, struct sockaddr_storage *addr)
-{
-	struct waiter *waiter;
-
-	list_for_each_entry(waiter, &listener->waiters, list) {
-		if (addr_equal(&waiter->connection->peer_addr, addr))
-			return waiter;
-	}
-
-	return NULL;
-}
-
-static bool _wait_connect_cond(struct waiter *waiter)
-{
-	struct drbd_connection *connection = waiter->connection;
-	struct drbd_resource *resource = connection->resource;
-	bool rv;
-
-	spin_lock_bh(&resource->listeners_lock);
-	rv = waiter->listener->pending_accepts > 0 || waiter->socket != NULL;
-	spin_unlock_bh(&resource->listeners_lock);
-
-	return rv;
-}
-
-static struct socket *drbd_wait_for_connect(struct waiter *waiter)
-{
-	struct drbd_connection *connection = waiter->connection;
-	struct drbd_resource *resource = connection->resource;
-	struct sockaddr_storage peer_addr;
-	int timeo, connect_int, peer_addr_len, err = 0;
-	struct socket *s_estab;
-	struct net_conf *nc;
-	struct waiter *waiter2;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	if (!nc) {
-		rcu_read_unlock();
-		return NULL;
-	}
-	connect_int = nc->connect_int;
-	rcu_read_unlock();
-
-	timeo = connect_int * HZ;
-	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
-
-retry:
-	timeo = wait_event_interruptible_timeout(waiter->wait, _wait_connect_cond(waiter), timeo);
-	if (timeo <= 0)
-		return NULL;
-
-	spin_lock_bh(&resource->listeners_lock);
-	if (waiter->socket) {
-		s_estab = waiter->socket;
-		waiter->socket = NULL;
-	} else if (waiter->listener->pending_accepts > 0) {
-		waiter->listener->pending_accepts--;
-		spin_unlock_bh(&resource->listeners_lock);
-
-		s_estab = NULL;
-		err = kernel_accept(waiter->listener->s_listen, &s_estab, 0);
-		if (err < 0) {
-			if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-				drbd_err(connection, "accept failed, err = %d\n", err);
-				change_cstate(connection, C_DISCONNECTING, CS_HARD);
-			}
-		}
-
-		if (!s_estab)
-			return NULL;
-
-		/* The established socket inherits the sk_state_change callback
-		   from the listening socket. */
-		unregister_state_change(s_estab->sk, waiter->listener);
-
-		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
-
-		spin_lock_bh(&resource->listeners_lock);
-		waiter2 = find_waiter_by_addr(waiter->listener, &peer_addr);
-		if (!waiter2) {
-			struct sockaddr_in6 *from_sin6, *to_sin6;
-			struct sockaddr_in *from_sin, *to_sin;
-			struct drbd_connection *connection2;
-
-			connection2 = conn_get_by_addrs(
-				&connection->my_addr, connection->my_addr_len,
-				&peer_addr, peer_addr_len);
-			if (connection2) {
-				/* conn_get_by_addrs() does a get, put follows here... no debug */
-				drbd_info(connection2,
-					  "Receiver busy; rejecting incoming connection\n");
-				kref_put(&connection2->kref, drbd_destroy_connection);
-				goto retry_locked;
-			}
-
-			switch(peer_addr.ss_family) {
-			case AF_INET6:
-				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				to_sin6 = (struct sockaddr_in6 *)&connection->my_addr;
-				drbd_err(resource, "Closing unexpected connection from "
-					 "%pI6 to port %u\n",
-					 &from_sin6->sin6_addr,
-					 be16_to_cpu(to_sin6->sin6_port));
-				break;
-			default:
-				from_sin = (struct sockaddr_in *)&peer_addr;
-				to_sin = (struct sockaddr_in *)&connection->my_addr;
-				drbd_err(resource, "Closing unexpected connection from "
-					 "%pI4 to port %u\n",
-					 &from_sin->sin_addr,
-					 be16_to_cpu(to_sin->sin_port));
-				break;
-			}
-
-			goto retry_locked;
-		}
-		if (waiter2 != waiter) {
-			if (waiter2->socket) {
-				drbd_err(waiter2->connection,
-					 "Receiver busy; rejecting incoming connection\n");
-				goto retry_locked;
-			}
-			waiter2->socket = s_estab;
-			s_estab = NULL;
-			wake_up(&waiter2->wait);
-			goto retry_locked;
-		}
-	}
-	spin_unlock_bh(&resource->listeners_lock);
-	return s_estab;
-
-retry_locked:
-	spin_unlock_bh(&resource->listeners_lock);
-	if (s_estab) {
-		sock_release(s_estab);
-		s_estab = NULL;
-	}
-	goto retry;
-}
-
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
-
-static int send_first_packet(struct drbd_connection *connection, struct drbd_socket *sock,
-			     enum drbd_packet cmd)
-{
-	if (!conn_prepare_command(connection, sock))
-		return -EIO;
-	return send_command(connection, -1, sock, cmd, 0, NULL, 0);
-}
-
-static int receive_first_packet(struct drbd_connection *connection, struct socket *sock)
-{
-	unsigned int header_size = drbd_header_size(connection);
-	struct packet_info pi;
-	struct net_conf *nc;
-	int err;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	if (!nc) {
-		rcu_read_unlock();
-		return -EIO;
-	}
-	sock->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
-	rcu_read_unlock();
-
-	err = drbd_recv_short(sock, connection->data.rbuf, header_size, 0);
-	if (err != header_size) {
-		if (err >= 0)
-			err = -EIO;
-		return err;
-	}
-	err = decode_header(connection, connection->data.rbuf, &pi);
-	if (err)
-		return err;
-	return pi.cmd;
-}
-
-/**
- * drbd_socket_okay() - Free the socket if its connection is not okay
- * @sock:	pointer to the pointer to the socket.
- */
-static bool drbd_socket_okay(struct socket **sock)
-{
-	int rr;
-	char tb[4];
-
-	if (!*sock)
-		return false;
-
-	rr = drbd_recv_short(*sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
-
-	if (rr > 0 || rr == -EAGAIN) {
-		return true;
-	} else {
-		sock_release(*sock);
-		*sock = NULL;
-		return false;
-	}
-}
-
-static bool connection_established(struct drbd_connection *connection,
-				   struct socket **sock1,
-				   struct socket **sock2)
-{
-	struct net_conf *nc;
-	int timeout;
-	bool ok;
-
-	if (!*sock1 || !*sock2)
-		return false;
-
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	timeout = (nc->sock_check_timeo ?: nc->ping_timeo) * HZ / 10;
-	rcu_read_unlock();
-	schedule_timeout_interruptible(timeout);
-
-	ok = drbd_socket_okay(sock1);
-	ok = drbd_socket_okay(sock2) && ok;
-
-	return ok;
-}
 
 /* Gets called if a connection is established, or if a new minor gets created
    in a connection */
@@ -1197,7 +612,7 @@ void connect_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
-static void conn_connect2(struct drbd_connection *connection)
+void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
@@ -1217,9 +632,9 @@ static void conn_connect2(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-static void conn_disconnect(struct drbd_connection *connection);
+void conn_disconnect(struct drbd_connection *connection);
 
-static int connect_work(struct drbd_work *work, int cancel)
+int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
@@ -1239,13 +654,12 @@ static int connect_work(struct drbd_work *work, int cancel)
  */
 static bool conn_connect(struct drbd_connection *connection)
 {
+	struct drbd_transport *transport = connection->transport;
 	struct drbd_resource *resource = connection->resource;
+	int ping_timeo, ping_int, h, err, vnr, timeout;
 	struct drbd_peer_device *peer_device;
-	struct drbd_socket sock, msock;
-	bool discard_my_data, ok;
+	bool discard_my_data;
 	struct net_conf *nc;
-	int timeout, h, vnr;
-	struct waiter waiter;
 
 start:
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
@@ -1254,158 +668,47 @@ start:
 		return false;
 	}
 
-	mutex_init(&sock.mutex);
-	sock.sbuf = connection->data.sbuf;
-	sock.rbuf = connection->data.rbuf;
-	sock.socket = NULL;
-	mutex_init(&msock.mutex);
-	msock.sbuf = connection->meta.sbuf;
-	msock.rbuf = connection->meta.rbuf;
-	msock.socket = NULL;
+	err = transport->ops->connect(transport);
+	if (err == -EIO)
+		return false;
+	else if (err == -EAGAIN)
+		goto retry;
 
-	/* Assume that the peer only understands protocol 80 until we know better.  */
-	connection->agreed_pro_version = 80;
+	connection->last_received = jiffies;
 
-	if (get_listener(connection, &waiter)) {
-		h = 0;  /* retry */
-		goto out;
-	}
-
-	do {
-		struct socket *s;
-
-		s = drbd_try_connect(connection);
-		if (s) {
-			if (!sock.socket) {
-				sock.socket = s;
-				send_first_packet(connection, &sock, P_INITIAL_DATA);
-			} else if (!msock.socket) {
-				clear_bit(RESOLVE_CONFLICTS, &connection->flags);
-				msock.socket = s;
-				send_first_packet(connection, &msock, P_INITIAL_META);
-			} else {
-				drbd_err(connection, "Logic error in conn_connect()\n");
-				goto out_release_sockets;
-			}
-		}
-
-		if (connection_established(connection, &sock.socket, &msock.socket))
-			break;
-
-retry:
-		s = drbd_wait_for_connect(&waiter);
-		if (s) {
-			int fp = receive_first_packet(connection, s);
-			drbd_socket_okay(&sock.socket);
-			drbd_socket_okay(&msock.socket);
-			switch (fp) {
-			case P_INITIAL_DATA:
-				if (sock.socket) {
-					drbd_warn(connection, "initial packet S crossed\n");
-					sock_release(sock.socket);
-					sock.socket = s;
-					goto randomize;
-				}
-				sock.socket = s;
-				break;
-			case P_INITIAL_META:
-				set_bit(RESOLVE_CONFLICTS, &connection->flags);
-				if (msock.socket) {
-					drbd_warn(connection, "initial packet M crossed\n");
-					sock_release(msock.socket);
-					msock.socket = s;
-					goto randomize;
-				}
-				msock.socket = s;
-				break;
-			default:
-				drbd_warn(connection, "Error receiving initial packet\n");
-				sock_release(s);
-randomize:
-				if (prandom_u32() & 1)
-					goto retry;
-			}
-		}
-
-		if (connection->cstate[NOW] <= C_DISCONNECTING)
-			goto out_release_sockets;
-		if (signal_pending(current)) {
-			flush_signals(current);
-			smp_rmb();
-			if (get_t_state(&connection->receiver) == EXITING)
-				goto out_release_sockets;
-		}
-
-		ok = connection_established(connection, &sock.socket, &msock.socket);
-	} while (!ok);
-
-	put_listener(&waiter);
-
-	sock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	msock.socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-
-	sock.socket->sk->sk_allocation = GFP_NOIO;
-	msock.socket->sk->sk_allocation = GFP_NOIO;
-
-	sock.socket->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
-	msock.socket->sk->sk_priority = TC_PRIO_INTERACTIVE;
-
-	/* NOT YET ...
-	 * sock.socket->sk->sk_sndtimeo = connection->net_conf->timeout*HZ/10;
-	 * sock.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
-	 * first set it to the P_CONNECTION_FEATURES timeout,
-	 * which we set to 4x the configured ping_timeout. */
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
-
-	sock.socket->sk->sk_sndtimeo =
-	sock.socket->sk->sk_rcvtimeo = nc->ping_timeo*4*HZ/10;
-
-	msock.socket->sk->sk_rcvtimeo = nc->ping_int*HZ;
-	timeout = nc->timeout * HZ / 10;
+	ping_timeo = nc->ping_timeo;
+	ping_int = nc->ping_int;
 	rcu_read_unlock();
 
-	msock.socket->sk->sk_sndtimeo = timeout;
-
-	/* we don't want delays.
-	 * we use TCP_CORK where appropriate, though */
-	drbd_tcp_nodelay(sock.socket);
-	drbd_tcp_nodelay(msock.socket);
-
-	connection->data.socket = sock.socket;
-	connection->meta.socket = msock.socket;
-	connection->last_received = jiffies;
+	transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
+	transport->ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
 	h = drbd_do_features(connection);
 	if (h <= 0)
-		goto out;
+		goto abort;
 
 	if (connection->cram_hmac_tfm) {
 		switch (drbd_do_auth(connection)) {
 		case -1:
 			drbd_err(connection, "Authentication of peer failed\n");
-			h = -1;  /* give up; go standalone */
-			goto out;
+			goto abort;
 		case 0:
 			drbd_err(connection, "Authentication of peer failed, trying again.\n");
-			h = 0;  /* retry */
-			goto out;
+			goto retry;
 		}
 	}
 
-	connection->data.socket->sk->sk_sndtimeo = timeout;
-	connection->data.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
+	transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
 	discard_my_data = nc->discard_my_data;
 	rcu_read_unlock();
 
-	if (drbd_send_protocol(connection) == -EOPNOTSUPP) {
-		/* give up; go standalone */
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		return false;
-	}
+	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
+		goto abort;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -1448,34 +751,23 @@ randomize:
 		enum drbd_state_rv rv;
 		rv = change_cstate(connection, C_CONNECTED,
 				   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
-		if (rv < SS_SUCCESS || connection->cstate[NOW] != C_CONNECTED) {
-			h = 0;
-			goto out;
-		}
+		if (rv < SS_SUCCESS || connection->cstate[NOW] != C_CONNECTED)
+			goto retry;
 		conn_connect2(connection);
 	}
 	return true;
 
-out_release_sockets:
-	put_listener(&waiter);
-	if (sock.socket)
-		sock_release(sock.socket);
-	if (msock.socket)
-		sock_release(msock.socket);
-	h = -1;  /* give up; go standalone */
+retry:
+	conn_disconnect(connection);
+	schedule_timeout_interruptible(HZ);
+	goto start;
 
-out:
-	if (h == 0) {
-		conn_disconnect(connection);
-		schedule_timeout_interruptible(HZ);
-		goto start;
-	}
-	if (h == -1)
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-	return h > 0;
+abort:
+	change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	return false;
 }
 
-static int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
+int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
 {
 	unsigned int header_size = drbd_header_size(connection);
 
@@ -1513,7 +805,7 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
 {
-	void *buffer = connection->data.rbuf;
+	void *buffer = connection->rbuf[DATA_STREAM];
 	int err;
 
 	err = drbd_recv_all_warn(connection, buffer, drbd_header_size(connection));
@@ -2024,7 +1316,7 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 }
 
 #ifdef blk_queue_plugged
-static void drbd_unplug_all_devices(struct drbd_resource *resource)
+void drbd_unplug_all_devices(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	int vnr;
@@ -2040,7 +1332,7 @@ static void drbd_unplug_all_devices(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 #else
-static void drbd_unplug_all_devices(struct drbd_resource *resource)
+void drbd_unplug_all_devices(struct drbd_resource *resource)
 {
 }
 #endif
@@ -2573,7 +1865,7 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
 {
 	unsigned int newest_peer_seq;
 
-	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)) {
+	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)) {
 		spin_lock(&peer_device->peer_seq_lock);
 		newest_peer_seq = seq_max(peer_device->peer_seq, peer_seq);
 		peer_device->peer_seq = newest_peer_seq;
@@ -2636,7 +1928,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	long timeout;
 	int ret = 0, tp;
 
-	if (!test_bit(RESOLVE_CONFLICTS, &connection->flags))
+	if (!test_bit(RESOLVE_CONFLICTS, &connection->transport->flags))
 		return 0;
 
 	spin_lock(&peer_device->peer_seq_lock);
@@ -2725,7 +2017,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->flags);
+	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->transport->flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
 	struct drbd_interval *i;
@@ -3346,7 +2638,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			  "Using discard-least-changes instead\n");
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
-			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)
 				? -1 : 1;
 			break;
 		} else {
@@ -3362,7 +2654,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			rv =  1;
 		else /* ( ch_self == ch_peer ) */
 		     /* Well, then use something else. */
-			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)
 				? -1 : 1;
 		break;
 	case ASB_DISCARD_LOCAL:
@@ -3704,7 +2996,7 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		*rule_nr = 40;
 		if (test_bit(CRASHED_PRIMARY, &device->flags)) {
 			if ((peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) &&
-			    test_bit(RESOLVE_CONFLICTS, &connection->flags))
+			    test_bit(RESOLVE_CONFLICTS, &connection->transport->flags))
 				return -1;
 			return 1;
 		} else if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
@@ -4157,7 +3449,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 		goto disconnect;
 	}
 
-	mutex_lock(&connection->data.mutex);
+	mutex_lock(&connection->mutex[DATA_STREAM]);
 	old_net_conf = connection->net_conf;
 	*new_net_conf = *old_net_conf;
 
@@ -4168,7 +3460,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	new_net_conf->two_primaries = p_two_primaries;
 
 	rcu_assign_pointer(connection->net_conf, new_net_conf);
-	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	mutex_unlock(&connection->resource->conf_update);
 
 	crypto_free_hash(connection->peer_integrity_tfm);
@@ -4220,7 +3512,7 @@ static struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_devic
 
 static int ignore_remaining_packet(struct drbd_connection *connection, struct packet_info *pi)
 {
-	void *buffer = connection->data.rbuf;
+	void *buffer = connection->rbuf[DATA_STREAM];
 	int size = pi->size;
 
 	while (size) {
@@ -6012,12 +5304,14 @@ static int receive_skip(struct drbd_connection *connection, struct packet_info *
 
 static int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
+	struct drbd_transport *transport = connection->transport;
+
 	/* just unplug all devices always, regardless which volume number */
 	drbd_unplug_all_devices(connection->resource);
 
-	/* Make sure we've acked all the TCP data associated
+	/* Make sure we've acked all the data associated
 	 * with the data requests being unplugged */
-	drbd_tcp_quickack(connection->data.socket);
+	transport->ops->hint(transport, DATA_STREAM, QUICKACK);
 
 	return 0;
 }
@@ -6260,7 +5554,7 @@ static void drbdd(struct drbd_connection *connection)
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
-static void conn_disconnect(struct drbd_connection *connection)
+void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
@@ -6282,7 +5576,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&connection->asender);
-	drbd_free_sock(connection);
+	drbd_free_tr_conn(connection, false);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -6426,11 +5720,9 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
  */
 static int drbd_send_features(struct drbd_connection *connection, int peer_node_id)
 {
-	struct drbd_socket *sock;
 	struct p_connection_features *p;
 
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	memset(p, 0, sizeof(*p));
@@ -6439,7 +5731,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(peer_node_id);
 	p->feature_flags = cpu_to_be32(PRO_FEATURES);
-	return send_command(connection, -1, sock, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 /*
@@ -6449,7 +5741,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
  *  -1 peer talks different language,
  *     no point in trying again, please go standalone.
  */
-static int drbd_do_features(struct drbd_connection *connection)
+int drbd_do_features(struct drbd_connection *connection)
 {
 	/* ASSERT current == connection->receiver ... */
 	struct drbd_resource *resource = connection->resource;
@@ -6543,7 +5835,7 @@ static int drbd_do_features(struct drbd_connection *connection)
 }
 
 #if !defined(CONFIG_CRYPTO_HMAC) && !defined(CONFIG_CRYPTO_HMAC_MODULE)
-static int drbd_do_auth(struct drbd_connection *connection)
+int drbd_do_auth(struct drbd_connection *connection)
 {
 	drbd_err(connection, "This kernel was build without CONFIG_CRYPTO_HMAC.\n");
 	drbd_err(connection, "You need to disable 'cram-hmac-alg' in drbd.conf.\n");
@@ -6558,9 +5850,8 @@ static int drbd_do_auth(struct drbd_connection *connection)
 	-1 - auth failed, don't try again.
 */
 
-static int drbd_do_auth(struct drbd_connection *connection)
+int drbd_do_auth(struct drbd_connection *connection)
 {
-	struct drbd_socket *sock;
 	u32 my_challenge[CHALLENGE_LEN / sizeof(u32) + 1];  /* 68 Bytes... */
 	struct scatterlist sg;
 	char *response = NULL;
@@ -6596,13 +5887,13 @@ static int drbd_do_auth(struct drbd_connection *connection)
 
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
-	sock = &connection->data;
-	if (!conn_prepare_command(connection, sock)) {
+	if (!conn_prepare_command(connection, DATA_STREAM)) {
 		rv = 0;
 		goto fail;
 	}
-	rv = !send_command(connection, -1, sock, P_AUTH_CHALLENGE, 0,
-			   my_challenge, CHALLENGE_LEN);
+
+	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, 0,
+			   my_challenge, CHALLENGE_LEN, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -6671,12 +5962,13 @@ static int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	if (!conn_prepare_command(connection, sock)) {
+	if (!conn_prepare_command(connection, DATA_STREAM)) {
 		rv = 0;
 		goto fail;
 	}
-	rv = !send_command(connection, -1, sock, P_AUTH_RESPONSE, 0,
-			   response, resp_size);
+
+	rv = !send_command(connection, -1, P_AUTH_RESPONSE, 0,
+			   response, resp_size, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -6746,6 +6038,7 @@ int drbd_receiver(struct drbd_thread *thi)
 
 	if (conn_connect(connection))
 		drbdd(connection);
+
 	conn_disconnect(connection);
 	return 0;
 }
@@ -7392,7 +6685,7 @@ int drbd_asender(struct drbd_thread *thi)
 	struct asender_cmd *cmd = NULL;
 	struct packet_info pi;
 	int rv;
-	void *buf    = connection->meta.rbuf;
+	void *buf    = connection->rbuf[CONTROL_STREAM];
 	int received = 0;
 	unsigned int header_size = drbd_header_size(connection);
 	int expect   = header_size;
@@ -7420,14 +6713,15 @@ int drbd_asender(struct drbd_thread *thi)
 				drbd_err(connection, "drbd_send_ping has failed\n");
 				goto reconnect;
 			}
-			connection->meta.socket->sk->sk_rcvtimeo = ping_timeo * HZ / 10;
+			connection->transport->ops->set_rcvtimeo(connection->transport,
+							CONTROL_STREAM, ping_timeo * HZ / 10);
 			ping_timeout_active = true;
 		}
 
 		/* TODO: conditionally cork; it may hurt latency if we cork without
 		   much to send */
 		if (tcp_cork)
-			drbd_tcp_cork(connection->meta.socket);
+			connection->transport->ops->hint(connection->transport, CONTROL_STREAM, CORK);
 		if (connection_finish_peer_reqs(connection)) {
 			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
 			goto reconnect;
@@ -7437,13 +6731,14 @@ int drbd_asender(struct drbd_thread *thi)
 
 		/* but unconditionally uncork unless disabled */
 		if (tcp_cork)
-			drbd_tcp_uncork(connection->meta.socket);
+			connection->transport->ops->hint(connection->transport, CONTROL_STREAM, UNCORK);
 
 		/* short circuit, recv_msg would return EINTR anyways. */
 		if (signal_pending(current))
 			continue;
 
-		rv = drbd_recv_short(connection->meta.socket, buf, expect-received, 0);
+		rv = connection->transport->ops->recv(connection->transport, CONTROL_STREAM,
+						      buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &connection->flags);
 
 		flush_signals(current);
@@ -7480,9 +6775,11 @@ received_more:
 		} else if (rv == -EAGAIN) {
 			/* If the data socket received something meanwhile,
 			 * that is good enough: peer is still alive. */
+
 			if (time_after(connection->last_received,
-				jiffies - connection->meta.socket->sk->sk_rcvtimeo))
+				jiffies - connection->transport->ops->get_rcvtimeo(connection->transport, CONTROL_STREAM)))
 				continue;
+
 			if (ping_timeout_active) {
 				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
@@ -7497,8 +6794,11 @@ received_more:
 		}
 
 		if (received == expect && cmd == NULL) {
-			if (decode_header(connection, connection->meta.rbuf, &pi))
+			if (decode_header(connection,
+						connection->rbuf[CONTROL_STREAM],
+						&pi))
 				goto reconnect;
+
 			cmd = &asender_tbl[pi.cmd];
 			if (pi.cmd >= ARRAY_SIZE(asender_tbl) || !cmd->fn) {
 				drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
@@ -7525,18 +6825,22 @@ received_more:
 
 			if (cmd == &asender_tbl[P_PING_ACK]) {
 				/* restore idle timeout */
-				connection->meta.socket->sk->sk_rcvtimeo = ping_int * HZ;
+				connection->transport->ops->set_rcvtimeo(connection->transport, CONTROL_STREAM, ping_int * HZ);
+
 				ping_timeout_active = false;
 			}
 
-			buf	 = connection->meta.rbuf;
+			buf	 = connection->rbuf[CONTROL_STREAM];
+
 			received = 0;
 			expect	 = header_size;
 			cmd	 = NULL;
 		}
 		if (test_bit(SEND_PING, &connection->flags))
 			continue;
-		rv = drbd_recv_short(connection->meta.socket, buf, expect-received, MSG_DONTWAIT);
+
+		rv = connection->transport->ops->recv(connection->transport, CONTROL_STREAM, buf, expect-received, MSG_DONTWAIT);
+
 		if (rv > 0)
 			goto received_more;
 	}

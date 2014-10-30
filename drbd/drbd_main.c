@@ -1,5 +1,5 @@
 /*
-   drbd.c
+   drbd_main.c
 
    This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
 
@@ -694,7 +694,7 @@ static unsigned int prepare_header100(struct p_header100 *h, enum drbd_packet cm
 	return sizeof(struct p_header100);
 }
 
-static unsigned int prepare_header(struct drbd_connection *connection, int vnr,
+unsigned int prepare_header(struct drbd_connection *connection, int vnr,
 				   void *buffer, enum drbd_packet cmd, int size)
 {
 	if (connection->agreed_pro_version >= 100)
@@ -707,37 +707,39 @@ static unsigned int prepare_header(struct drbd_connection *connection, int vnr,
 }
 
 static void *__conn_prepare_command(struct drbd_connection *connection,
-				    struct drbd_socket *sock)
+				    enum drbd_stream drbd_stream)
 {
-	if (!sock->socket)
+	struct drbd_transport *transport = connection->transport;
+
+	if (!transport->ops->stream_ok(transport, drbd_stream))
 		return NULL;
-	return sock->sbuf + drbd_header_size(connection);
+	return connection->sbuf[drbd_stream] + drbd_header_size(connection);
 }
 
-void *conn_prepare_command(struct drbd_connection *connection, struct drbd_socket *sock)
+void *conn_prepare_command(struct drbd_connection *connection, enum drbd_stream drbd_stream)
 {
 	void *p;
 
-	mutex_lock(&sock->mutex);
-	p = __conn_prepare_command(connection, sock);
+	mutex_lock(&connection->mutex[drbd_stream]);
+	p = __conn_prepare_command(connection, drbd_stream);
 	if (!p)
-		mutex_unlock(&sock->mutex);
+		mutex_unlock(&connection->mutex[drbd_stream]);
 
 	return p;
 }
 
-void *drbd_prepare_command(struct drbd_peer_device *peer_device, struct drbd_socket *sock)
+void *drbd_prepare_command(struct drbd_peer_device *peer_device, enum drbd_stream drbd_stream)
 {
-	return conn_prepare_command(peer_device->connection, sock);
+	return conn_prepare_command(peer_device->connection, drbd_stream);
 }
 
 static int __send_command(struct drbd_connection *connection, int vnr,
-			  struct drbd_socket *sock, enum drbd_packet cmd,
-			  unsigned int header_size, void *data,
-			  unsigned int size)
+			  enum drbd_packet cmd, unsigned int header_size, void *data,
+			  unsigned int size, enum drbd_stream drbd_stream)
 {
 	int msg_flags;
 	int err;
+	void *sbuf;
 
 	/*
 	 * Called with @data == NULL and the size of the data blocks in @size
@@ -748,64 +750,60 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	 */
 	msg_flags = data ? MSG_MORE : 0;
 
-	header_size += prepare_header(connection, vnr, sock->sbuf, cmd,
+	sbuf = connection->sbuf[drbd_stream];
+	header_size += prepare_header(connection, vnr, sbuf, cmd,
 				      header_size + size);
-	err = drbd_send_all(connection, sock->socket, sock->sbuf, header_size,
-			    msg_flags);
+
+	err = drbd_send_all(connection, sbuf, header_size,
+			    msg_flags, drbd_stream);
+
 	if (data && !err)
-		err = drbd_send_all(connection, sock->socket, data, size, 0);
+		err = drbd_send_all(connection, data, size, 0, drbd_stream);
 	/* DRBD protocol "pings" are latency critical.
 	 * This is supposed to trigger tcp_push_pending_frames() */
 	if (!err && (cmd == P_PING || cmd == P_PING_ACK))
-		drbd_tcp_nodelay(sock->socket);
+		connection->transport->ops->hint(connection->transport, drbd_stream, NODELAY);
 
 	return err;
 }
 
-int send_command(struct drbd_connection *connection, int vnr, struct drbd_socket *sock,
+int send_command(struct drbd_connection *connection, int vnr,
 		 enum drbd_packet cmd, unsigned int header_size,
-		 void *data, unsigned int size)
+		 void *data, unsigned int size, enum drbd_stream drbd_stream)
 {
 	int err;
 
-	err = __send_command(connection, vnr, sock, cmd, header_size, data, size);
-	mutex_unlock(&sock->mutex);
+	err = __send_command(connection, vnr, cmd, header_size, data, size, drbd_stream);
+	mutex_unlock(&connection->mutex[drbd_stream]);
 	return err;
 }
 
-int drbd_send_command(struct drbd_peer_device *peer_device, struct drbd_socket *sock,
+int drbd_send_command(struct drbd_peer_device *peer_device,
 		      enum drbd_packet cmd, unsigned int header_size,
-		      void *data, unsigned int size)
+		      void *data, unsigned int size, enum drbd_stream drbd_stream)
 {
 	return send_command(peer_device->connection, peer_device->device->vnr,
-			    sock, cmd, header_size, data, size);
+			    cmd, header_size, data, size, drbd_stream);
 }
 
 int drbd_send_ping(struct drbd_connection *connection)
 {
-	struct drbd_socket *sock;
-
-	sock = &connection->meta;
-	if (!conn_prepare_command(connection, sock))
+	if (!conn_prepare_command(connection, CONTROL_STREAM))
 		return -EIO;
-	return send_command(connection, -1, sock, P_PING, 0, NULL, 0);
+	return send_command(connection, -1, P_PING, 0, NULL, 0, CONTROL_STREAM);
 }
 
 int drbd_send_ping_ack(struct drbd_connection *connection)
 {
-	struct drbd_socket *sock;
-
-	sock = &connection->meta;
-	if (!conn_prepare_command(connection, sock))
+	if (!conn_prepare_command(connection, CONTROL_STREAM))
 		return -EIO;
-	return send_command(connection, -1, sock, P_PING_ACK, 0, NULL, 0);
+	return send_command(connection, -1, P_PING_ACK, 0, NULL, 0, CONTROL_STREAM);
 }
 
 extern int drbd_send_peer_ack(struct drbd_connection *connection,
 			      struct drbd_request *req)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_socket *sock;
 	struct p_peer_ack *p;
 	u64 mask = 0;
 
@@ -820,18 +818,17 @@ extern int drbd_send_peer_ack(struct drbd_connection *connection,
 	}
 	rcu_read_unlock();
 
-	sock = &connection->meta;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, CONTROL_STREAM);
 	if (!p)
 		return -EIO;
 	p->mask = cpu_to_be64(mask);
 	p->dagtag = cpu_to_be64(req->dagtag_sector);
-	return send_command(connection, -1, sock, P_PEER_ACK, sizeof(*p), NULL, 0);
+
+	return send_command(connection, -1, P_PEER_ACK, sizeof(*p), NULL, 0, CONTROL_STREAM);
 }
 
 int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
-	struct drbd_socket *sock;
 	struct p_rs_param_95 *p;
 	int size;
 	const int apv = peer_device->connection->agreed_pro_version;
@@ -839,8 +836,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	struct net_conf *nc;
 	struct disk_conf *dc;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -880,18 +876,16 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 		strcpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
-	return drbd_send_command(peer_device, sock, cmd, size, NULL, 0);
+	return drbd_send_command(peer_device, cmd, size, NULL, 0, DATA_STREAM);
 }
 
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)
 {
-	struct drbd_socket *sock;
 	struct p_protocol *p;
 	struct net_conf *nc;
 	int size, cf;
 
-	sock = &connection->data;
-	p = __conn_prepare_command(connection, sock);
+	p = __conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -900,7 +894,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 
 	if (nc->tentative && connection->agreed_pro_version < 92) {
 		rcu_read_unlock();
-		mutex_unlock(&sock->mutex);
+		mutex_unlock(&connection->mutex[DATA_STREAM]);
 		drbd_err(connection, "--dry-run is not supported by peer");
 		return -EOPNOTSUPP;
 	}
@@ -925,16 +919,16 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 		strcpy(p->integrity_alg, nc->integrity_alg);
 	rcu_read_unlock();
 
-	return __send_command(connection, -1, sock, cmd, size, NULL, 0);
+	return __send_command(connection, -1, cmd, size, NULL, 0, DATA_STREAM);
 }
 
 int drbd_send_protocol(struct drbd_connection *connection)
 {
 	int err;
 
-	mutex_lock(&connection->data.mutex);
+	mutex_lock(&connection->mutex[DATA_STREAM]);
 	err = __drbd_send_protocol(connection, P_PROTOCOL);
-	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 
 	return err;
 }
@@ -942,15 +936,13 @@ int drbd_send_protocol(struct drbd_connection *connection)
 static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_socket *sock;
 	struct p_uuids *p;
 	int i;
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p) {
 		put_ldev(device);
 		return -EIO;
@@ -976,14 +968,14 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	p->uuid_flags = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
-	return drbd_send_command(peer_device, sock, P_UUIDS, sizeof(*p), NULL, 0);
+
+	return drbd_send_command(peer_device, P_UUIDS, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md;
-	struct drbd_socket *sock;
 	struct p_uuids110 *p;
 	int i, pos = 0;
 	u64 bitmap_uuids_mask = 0;
@@ -993,8 +985,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	peer_md = device->ldev->md.peers;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p) {
 		put_ldev(device);
 		return -EIO;
@@ -1034,10 +1025,11 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	p->weak_nodes = cpu_to_be64(weak_nodes);
 
 	put_ldev(device);
-	return drbd_send_command(peer_device, sock, P_UUIDS110,
+
+	return drbd_send_command(peer_device, P_UUIDS110,
 				 sizeof(*p) +
 				 (hweight64(bitmap_uuids_mask) + HISTORY_UUIDS) * sizeof(p->other_uuids[0]),
-				 NULL, 0);
+				 NULL, 0, DATA_STREAM);
 }
 
 int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
@@ -1069,21 +1061,18 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 
 void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid)
 {
-	struct drbd_socket *sock;
 	struct p_uuid *p;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (p) {
 		p->uuid = cpu_to_be64(current_uuid);
-		drbd_send_command(peer_device, sock, P_CURRENT_UUID, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, P_CURRENT_UUID, sizeof(*p), NULL, 0, DATA_STREAM);
 	}
 }
 
 void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_socket *sock;
 	struct p_uuid *p;
 	u64 uuid;
 
@@ -1098,11 +1087,10 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	drbd_print_uuids(peer_device, "updated sync UUID");
 	drbd_md_sync(device);
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (p) {
 		p->uuid = cpu_to_be64(uuid);
-		drbd_send_command(peer_device, sock, P_SYNC_UUID, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, P_SYNC_UUID, sizeof(*p), NULL, 0, DATA_STREAM);
 	}
 }
 
@@ -1141,7 +1129,6 @@ out:
 int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enum dds_flags flags)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_socket *sock;
 	struct p_sizes *p;
 	sector_t d_size, u_size;
 	int q_order_type;
@@ -1164,8 +1151,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 		max_bio_size = DRBD_MAX_BIO_SIZE; /* ... multiple BIOs per peer_request */
 	}
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -1180,7 +1166,8 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device, int trigger_reply, enu
 	p->max_bio_size = cpu_to_be32(max_bio_size);
 	p->queue_order_type = cpu_to_be16(q_order_type);
 	p->dds_flags = cpu_to_be16(flags);
-	return drbd_send_command(peer_device, sock, P_SIZES, sizeof(*p), NULL, 0);
+
+	return drbd_send_command(peer_device, P_SIZES, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 int drbd_send_current_state(struct drbd_peer_device *peer_device)
@@ -1190,11 +1177,9 @@ int drbd_send_current_state(struct drbd_peer_device *peer_device)
 
 static int send_state(struct drbd_connection *connection, int vnr, union drbd_state state)
 {
-	struct drbd_socket *sock;
 	struct p_state *p;
 
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -1207,7 +1192,7 @@ static int send_state(struct drbd_connection *connection, int vnr, union drbd_st
 	}
 
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
-	return send_command(connection, vnr, sock, P_STATE, sizeof(*p), NULL, 0);
+	return send_command(connection, vnr, P_STATE, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 int conn_send_state(struct drbd_connection *connection, union drbd_state state)
@@ -1229,71 +1214,59 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
 			union drbd_state mask, union drbd_state val)
 {
-	struct drbd_socket *sock;
 	struct p_req_state *p;
-	int err;
 
 	/* Protocols before version 100 only support one volume and connection.
 	 * All state change requests are via P_STATE_CHG_REQ. */
 	if (connection->agreed_pro_version < 100)
 		cmd = P_STATE_CHG_REQ;
 
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->mask = cpu_to_be32(mask.i);
 	p->val = cpu_to_be32(val.i);
-	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
-	mutex_unlock(&sock->mutex);
-	return err;
+
+	return send_command(connection, vnr, cmd, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
 			    struct p_twopc_request *request)
 {
-	struct drbd_socket *sock;
 	struct p_twopc_request *p;
-	int err;
 
 	drbd_debug(connection, "Sending %s request for state change %u\n",
 		   drbd_packet_name(cmd),
 		   be32_to_cpu(request->tid));
 
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	memcpy(p, request, sizeof(*request));
-	err = __send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
-	mutex_unlock(&sock->mutex);
-	return err;
+
+	return send_command(connection, vnr, cmd, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)
 {
-	struct drbd_socket *sock;
 	struct p_req_state_reply *p;
 
-	sock = &connection->meta;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, CONTROL_STREAM);
 	if (p) {
 		enum drbd_packet cmd =
 			connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
 
 		p->retcode = cpu_to_be32(retcode);
-		send_command(connection, vnr, sock, cmd, sizeof(*p), NULL, 0);
+		send_command(connection, vnr, cmd, sizeof(*p), NULL, 0, CONTROL_STREAM);
 	}
 }
 
 void drbd_send_twopc_reply(struct drbd_connection *connection,
 			   enum drbd_packet cmd, struct twopc_reply *reply)
 {
-	struct drbd_socket *sock;
 	struct p_twopc_reply *p;
 
-	sock = &connection->meta;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, CONTROL_STREAM);
 	if (p) {
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
@@ -1308,32 +1281,30 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 			   (unsigned long)reply->reachable_nodes,
 			   (unsigned long)reply->primary_nodes,
 			   (unsigned long)reply->weak_nodes);
-		send_command(connection, reply->vnr, sock, cmd, sizeof(*p), NULL, 0);
+		send_command(connection, reply->vnr, cmd, sizeof(*p), NULL, 0, CONTROL_STREAM);
 	}
 }
 
 void drbd_send_peers_in_sync(struct drbd_peer_device *peer_device, u64 mask, sector_t sector, int size)
 {
-	struct drbd_socket *sock = &peer_device->connection->meta;
 	struct p_peer_block_desc *p;
 
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, CONTROL_STREAM);
 	if (p) {
 		p->sector = cpu_to_be64(sector);
 		p->mask = cpu_to_be64(mask);
 		p->size = cpu_to_be32(size);
-		drbd_send_command(peer_device, sock, P_PEERS_IN_SYNC, sizeof(*p), NULL, 0);
+		drbd_send_command(peer_device, P_PEERS_IN_SYNC, sizeof(*p), NULL, 0, CONTROL_STREAM);
 	}
 }
 
 int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer)
 {
-	struct drbd_socket *sock = &connection->data;
 	struct p_peer_dagtag *p;
 	struct net_conf *nc;
 	int lost_node_id;
 
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -1347,7 +1318,8 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 
 	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
 	p->node_id = cpu_to_be32(lost_node_id);
-	return send_command(connection, -1, sock, P_PEER_DAGTAG, sizeof(*p), NULL, 0);
+
+	return send_command(connection, -1, P_PEER_DAGTAG, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
@@ -1474,9 +1446,10 @@ static int
 send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ctx *c)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_socket *sock = &peer_device->connection->data;
 	unsigned int header_size = drbd_header_size(peer_device->connection);
-	struct p_compressed_bm *p = sock->sbuf + header_size;
+	struct p_compressed_bm *p =
+		peer_device->connection->sbuf[DATA_STREAM] + header_size;
+
 	int len, err;
 
 	len = fill_bitmap_rle_bits(peer_device, p,
@@ -1486,9 +1459,9 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 
 	if (len) {
 		dcbp_set_code(p, RLE_VLI_Bits);
-		err = __send_command(peer_device->connection, device->vnr, sock,
+		err = __send_command(peer_device->connection, device->vnr,
 				     P_COMPRESSED_BITMAP, sizeof(*p) + len,
-				     NULL, 0);
+				     NULL, 0, DATA_STREAM);
 		c->packets[0]++;
 		c->bytes[0] += header_size + sizeof(*p) + len;
 
@@ -1499,7 +1472,7 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		 * send a buffer full of plain text bits instead. */
 		unsigned int data_size;
 		unsigned long num_words;
-		unsigned long *p = sock->sbuf + header_size;
+		unsigned long *p = peer_device->connection->sbuf[DATA_STREAM] + header_size;
 
 		data_size = DRBD_SOCKET_BUFFER_SIZE - header_size;
 		num_words = min_t(size_t, data_size / sizeof(*p),
@@ -1507,7 +1480,9 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		len = num_words * sizeof(*p);
 		if (len)
 			drbd_bm_get_lel(peer_device, c->word_offset, num_words, p);
-		err = __send_command(peer_device->connection, device->vnr, sock, P_BITMAP, len, NULL, 0);
+
+		err = __send_command(peer_device->connection, device->vnr, P_BITMAP, len, NULL, 0, DATA_STREAM);
+
 		c->word_offset += num_words;
 		c->bit_offset = c->word_offset * BITS_PER_LONG;
 
@@ -1568,31 +1543,30 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 
 int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_device)
 {
-	struct drbd_socket *sock = &peer_device->connection->data;
+	struct drbd_transport *peer_transport = peer_device->connection->transport;
 	int err = -1;
 
-	mutex_lock(&sock->mutex);
-	if (sock->socket)
+	mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
+	if (peer_transport->ops->stream_ok(peer_transport, DATA_STREAM))
 		err = !_drbd_send_bitmap(device, peer_device);
-	mutex_unlock(&sock->mutex);
+	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
+
 	return err;
 }
 
 void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size)
 {
-	struct drbd_socket *sock;
 	struct p_barrier_ack *p;
 
 	if (connection->cstate[NOW] < C_CONNECTED)
 		return;
 
-	sock = &connection->meta;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, CONTROL_STREAM);
 	if (!p)
 		return;
 	p->barrier = barrier_nr;
 	p->set_size = cpu_to_be32(set_size);
-	send_command(connection, -1, sock, P_BARRIER_ACK, sizeof(*p), NULL, 0);
+	send_command(connection, -1, P_BARRIER_ACK, sizeof(*p), NULL, 0, CONTROL_STREAM);
 }
 
 /**
@@ -1606,21 +1580,19 @@ void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set
 static int _drbd_send_ack(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 			  u64 sector, u32 blksize, u64 block_id)
 {
-	struct drbd_socket *sock;
 	struct p_block_ack *p;
 
 	if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 		return -EIO;
 
-	sock = &peer_device->connection->meta;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, CONTROL_STREAM);
 	if (!p)
 		return -EIO;
 	p->sector = sector;
 	p->block_id = block_id;
 	p->blksize = blksize;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
-	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, cmd, sizeof(*p), NULL, 0, CONTROL_STREAM);
 }
 
 /* dp->sector and dp->block_id already/still in network byte order,
@@ -1670,83 +1642,45 @@ int drbd_send_ack_ex(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 		       sector_t sector, int size, u64 block_id)
 {
-	struct drbd_socket *sock;
 	struct p_block_req *p;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = block_id;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, cmd, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 int drbd_send_drequest_csum(struct drbd_peer_device *peer_device, sector_t sector, int size,
 			    void *digest, int digest_size, enum drbd_packet cmd)
 {
-	struct drbd_socket *sock;
 	struct p_block_req *p;
 
 	/* FIXME: Put the digest into the preallocated socket buffer.  */
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(peer_device, sock, cmd, sizeof(*p), digest, digest_size);
+
+	return drbd_send_command(peer_device, cmd, sizeof(*p), digest, digest_size, DATA_STREAM);
 }
 
 int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
-	struct drbd_socket *sock;
 	struct p_block_req *p;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = ID_SYNCER /* unused */;
 	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(peer_device, sock, P_OV_REQUEST, sizeof(*p), NULL, 0);
-}
-
-/* called on sndtimeo
- * returns false if we should retry,
- * true if we think connection is dead
- */
-static int we_should_drop_the_connection(struct drbd_connection *connection, struct socket *sock)
-{
-	int drop_it;
-
-	drop_it =   connection->meta.socket == sock
-		|| !connection->asender.task
-		|| get_t_state(&connection->asender) != RUNNING
-		|| connection->cstate[NOW] < C_CONNECTED;
-
-	if (drop_it)
-		return true;
-
-	drop_it = !--connection->ko_count;
-	if (!drop_it) {
-		drbd_err(connection, "[%s/%d] sock_sendmsg time expired, ko = %u\n",
-			 current->comm, current->pid, connection->ko_count);
-		request_ping(connection);
-	}
-
-	return drop_it; /* && (device->state == R_PRIMARY) */;
-}
-
-static void drbd_update_congested(struct drbd_connection *connection)
-{
-	struct sock *sk = connection->data.socket->sk;
-	if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5)
-		set_bit(NET_CONGESTED, &connection->flags);
+	return drbd_send_command(peer_device, P_OV_REQUEST, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 /* The idea of sendpage seems to be to put some kind of reference
@@ -1770,16 +1704,14 @@ static void drbd_update_congested(struct drbd_connection *connection)
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
+int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
-	struct socket *socket;
 	void *addr;
 	int err;
 
-	socket = peer_device->connection->data.socket;
 	addr = kmap(page) + offset;
-	err = drbd_send_all(peer_device->connection, socket, addr, size, msg_flags);
+	err = drbd_send_all(peer_device->connection, addr, size, msg_flags, DATA_STREAM);
 	kunmap(page);
 	if (!err)
 		peer_device->send_cnt += size >> 9;
@@ -1787,12 +1719,9 @@ static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 }
 
 static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
-		    int offset, size_t size, unsigned msg_flags)
+			   int offset, size_t size, unsigned msg_flags)
 {
-	struct socket *socket = peer_device->connection->data.socket;
-	mm_segment_t oldfs = get_fs();
-	int len = size;
-	int err = -EIO;
+	struct drbd_transport *transport = peer_device->connection->transport;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
@@ -1803,36 +1732,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
-	msg_flags |= MSG_NOSIGNAL;
-	drbd_update_congested(peer_device->connection);
-	set_fs(KERNEL_DS);
-	do {
-		int sent;
-
-		sent = socket->ops->sendpage(socket, page, offset, len, msg_flags);
-		if (sent <= 0) {
-			if (sent == -EAGAIN) {
-				if (we_should_drop_the_connection(peer_device->connection, socket))
-					break;
-				continue;
-			}
-			drbd_warn(peer_device->device, "%s: size=%d len=%d sent=%d\n",
-			     __func__, (int)size, len, sent);
-			if (sent < 0)
-				err = sent;
-			break;
-		}
-		len    -= sent;
-		offset += sent;
-	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_ESTABLISHED */);
-	set_fs(oldfs);
-	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
-
-	if (len == 0) {
-		err = 0;
-		peer_device->send_cnt += size >> 9;
-	}
-	return err;
+	return transport->ops->send_page(transport, peer_device, page, offset, size, msg_flags);
 }
 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
@@ -1913,15 +1813,13 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long b
 int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_socket *sock;
 	struct p_data *p;
 	unsigned int dp_flags = 0;
 	int digest_size;
 	int err;
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	digest_size = peer_device->connection->integrity_tfm ?
 		      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
 
@@ -1944,7 +1842,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	if (dp_flags & DP_DISCARD) {
 		struct p_trim *t = (struct p_trim*)p;
 		t->size = cpu_to_be32(req->i.size);
-		err = __send_command(peer_device->connection, device->vnr, sock, P_TRIM, sizeof(*t), NULL, 0);
+		err = __send_command(peer_device->connection, device->vnr, P_TRIM, sizeof(*t), NULL, 0, DATA_STREAM);
 		goto out;
 	}
 
@@ -1952,7 +1850,8 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	 * TRIM does not carry any payload. */
 	if (digest_size)
 		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, p + 1);
-	err = __send_command(peer_device->connection, device->vnr, sock, P_DATA, sizeof(*p) + digest_size, NULL, req->i.size);
+	err = __send_command(peer_device->connection, device->vnr, P_DATA,
+			sizeof(*p) + digest_size, NULL, req->i.size, DATA_STREAM);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
 		 * socket buffers, as we may complete right away
@@ -1986,7 +1885,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		} */
 	}
 out:
-	mutex_unlock(&sock->mutex);  /* locked by drbd_prepare_command() */
+	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
 
 	return err;
 }
@@ -1998,13 +1897,11 @@ out:
 int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		    struct drbd_peer_request *peer_req)
 {
-	struct drbd_socket *sock;
 	struct p_data *p;
 	int err;
 	int digest_size;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 
 	digest_size = peer_device->connection->integrity_tfm ?
 		      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
@@ -2017,127 +1914,36 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	p->dp_flags = 0;
 	if (digest_size)
 		drbd_csum_ee(peer_device->connection->integrity_tfm, peer_req, p + 1);
-	err = __send_command(peer_device->connection, peer_device->device->vnr, sock, cmd,
-			     sizeof(*p) + digest_size, NULL, peer_req->i.size);
+	err = __send_command(peer_device->connection, peer_device->device->vnr, cmd,
+			     sizeof(*p) + digest_size, NULL, peer_req->i.size, DATA_STREAM);
 	if (!err)
 		err = _drbd_send_zc_ee(peer_device, peer_req);
-	mutex_unlock(&sock->mutex);  /* locked by drbd_prepare_command() */
+	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
 
 	return err;
 }
 
 int drbd_send_out_of_sync(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
-	struct drbd_socket *sock;
 	struct p_block_desc *p;
 
-	sock = &peer_device->connection->data;
-	p = drbd_prepare_command(peer_device, sock);
+	p = drbd_prepare_command(peer_device, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->blksize = cpu_to_be32(req->i.size);
-	return drbd_send_command(peer_device, sock, P_OUT_OF_SYNC, sizeof(*p), NULL, 0);
+	return drbd_send_command(peer_device, P_OUT_OF_SYNC, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 {
-	struct drbd_socket *sock;
 	struct p_dagtag *p;
 
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 	p->dagtag = cpu_to_be64(dagtag);
-	return send_command(connection, -1, sock, P_DAGTAG, sizeof(*p), NULL, 0);
-}
-
-/*
-  drbd_send distinguishes two cases:
-
-  Packets sent via the data socket "sock"
-  and packets sent via the meta data socket "msock"
-
-		    sock                      msock
-  -----------------+-------------------------+------------------------------
-  timeout           conf.timeout / 2          conf.timeout / 2
-  timeout action    send a ping via msock     Abort communication
-					      and close all sockets
-*/
-
-/*
- * you must have down()ed the appropriate [m]sock_mutex elsewhere!
- */
-int drbd_send(struct drbd_connection *connection, struct socket *sock,
-	      void *buf, size_t size, unsigned msg_flags)
-{
-	struct kvec iov;
-	struct msghdr msg;
-	int rv, sent = 0;
-
-	if (!sock)
-		return -EBADR;
-
-	/* THINK  if (signal_pending) return ... ? */
-
-	iov.iov_base = buf;
-	iov.iov_len  = size;
-
-	msg.msg_name       = NULL;
-	msg.msg_namelen    = 0;
-	msg.msg_control    = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
-
-	if (sock == connection->data.socket) {
-		rcu_read_lock();
-		connection->ko_count = rcu_dereference(connection->net_conf)->ko_count;
-		rcu_read_unlock();
-		drbd_update_congested(connection);
-	}
-	do {
-		/* STRANGE
-		 * tcp_sendmsg does _not_ use its size parameter at all ?
-		 *
-		 * -EAGAIN on timeout, -EINTR on signal.
-		 */
-/* THINK
- * do we need to block DRBD_SIG if sock == &meta.socket ??
- * otherwise wake_asender() might interrupt some send_*Ack !
- */
-		rv = kernel_sendmsg(sock, &msg, &iov, 1, size);
-		if (rv == -EAGAIN) {
-			if (we_should_drop_the_connection(connection, sock))
-				break;
-			else
-				continue;
-		}
-		if (rv == -EINTR) {
-			flush_signals(current);
-			rv = 0;
-		}
-		if (rv < 0)
-			break;
-		sent += rv;
-		iov.iov_base += rv;
-		iov.iov_len  -= rv;
-	} while (sent < size);
-
-	if (sock == connection->data.socket)
-		clear_bit(NET_CONGESTED, &connection->flags);
-
-	if (rv <= 0) {
-		if (rv != -EAGAIN) {
-			drbd_err(connection, "%s_sendmsg returned %d\n",
-				 sock == connection->meta.socket ? "msock" : "sock",
-				 rv);
-			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
-		} else
-			change_cstate(connection, C_TIMEOUT, CS_HARD);
-	}
-
-	return sent;
+	return send_command(connection, -1, P_DAGTAG, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 /**
@@ -2145,12 +1951,13 @@ int drbd_send(struct drbd_connection *connection, struct socket *sock,
  *
  * Returns 0 upon success and a negative error value otherwise.
  */
-int drbd_send_all(struct drbd_connection *connection, struct socket *sock, void *buffer,
-		  size_t size, unsigned msg_flags)
+int drbd_send_all(struct drbd_connection *connection, void *buffer,
+		  size_t size, unsigned msg_flags, enum drbd_stream drbd_stream)
 {
+	struct drbd_transport *transport = connection->transport;
 	int err;
 
-	err = drbd_send(connection, sock, buffer, size, msg_flags);
+	err = transport->ops->send(transport, drbd_stream, buffer, size, msg_flags);
 	if (err < 0)
 		return err;
 	if (err != size)
@@ -2731,7 +2538,7 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 
 		rcu_read_lock();
 		for_each_peer_device(peer_device, device) {
-			if (test_bit(NET_CONGESTED, &peer_device->connection->flags)) {
+			if (test_bit(NET_CONGESTED, &peer_device->connection->transport->flags)) {
 				r |= (1 << BDI_async_congested);
 				break;
 			}
@@ -2828,21 +2635,29 @@ found:
 	return connection;
 }
 
-static int drbd_alloc_socket(struct drbd_socket *socket)
+static int drbd_alloc_connection_buffers(struct drbd_connection *connection)
 {
-	socket->rbuf = (void *) __get_free_page(GFP_KERNEL);
-	if (!socket->rbuf)
-		return -ENOMEM;
-	socket->sbuf = (void *) __get_free_page(GFP_KERNEL);
-	if (!socket->sbuf)
-		return -ENOMEM;
+	unsigned int i;
+
+	for (i = 0; i < 2; ++i) {
+		connection->rbuf[i] = (void *) __get_free_page(GFP_KERNEL);
+		connection->sbuf[i] = (void *) __get_free_page(GFP_KERNEL);
+
+		if (!connection->rbuf[i] || !connection->sbuf[i])
+			return -ENOMEM;
+	}
+
 	return 0;
 }
 
-static void drbd_free_socket(struct drbd_socket *socket)
+static void drbd_free_connection_buffers(struct drbd_connection *connection)
 {
-	free_page((unsigned long) socket->sbuf);
-	free_page((unsigned long) socket->rbuf);
+	unsigned int i;
+
+	for (i = 0; i < 2; ++i) {
+		free_page((unsigned long) connection->sbuf[i]);
+		free_page((unsigned long) connection->rbuf[i]);
+	}
 }
 
 static void peer_ack_timer_fn(unsigned long data)
@@ -2860,8 +2675,6 @@ static void peer_ack_timer_fn(unsigned long data)
 
 void conn_free_crypto(struct drbd_connection *connection)
 {
-	drbd_free_sock(connection);
-
 	crypto_free_hash(connection->csums_tfm);
 	crypto_free_hash(connection->verify_tfm);
 	crypto_free_hash(connection->cram_hmac_tfm);
@@ -2992,9 +2805,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	if (!connection)
 		return NULL;
 
-	if (drbd_alloc_socket(&connection->data))
-		goto fail;
-	if (drbd_alloc_socket(&connection->meta))
+	if (drbd_alloc_connection_buffers(connection))
 		goto fail;
 
 	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
@@ -3020,8 +2831,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	idr_init(&connection->peer_devices);
 
 	drbd_init_workqueue(&connection->sender_work);
-	mutex_init(&connection->data.mutex);
-	mutex_init(&connection->meta.mutex);
+	mutex_init(&connection->mutex[DATA_STREAM]);
+	mutex_init(&connection->mutex[CONTROL_STREAM]);
 
 	INIT_LIST_HEAD(&connection->connect_timer_work.list);
 	setup_timer(&connection->connect_timer,
@@ -3047,11 +2858,24 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 
 fail:
 	kfree(connection->current_epoch);
-	drbd_free_socket(&connection->meta);
-	drbd_free_socket(&connection->data);
+	drbd_free_connection_buffers(connection);
 	kfree(connection);
 
 	return NULL;
+}
+
+/* free the transport specific members (e.g., sockets) of a connection */
+void drbd_free_tr_conn(struct drbd_connection *connection, bool put_transport)
+{
+	if (connection->transport) {
+		mutex_lock(&connection->mutex[DATA_STREAM]);
+		mutex_lock(&connection->mutex[CONTROL_STREAM]);
+
+		connection->transport->ops->free(connection->transport, put_transport);
+
+		mutex_unlock(&connection->mutex[CONTROL_STREAM]);
+		mutex_unlock(&connection->mutex[DATA_STREAM]);
+	}
 }
 
 void drbd_destroy_connection(struct kref *kref)
@@ -3072,8 +2896,8 @@ void drbd_destroy_connection(struct kref *kref)
 	}
 	idr_destroy(&connection->peer_devices);
 
-	drbd_free_socket(&connection->meta);
-	drbd_free_socket(&connection->data);
+	drbd_free_connection_buffers(connection);
+	drbd_free_tr_conn(connection, true);
 	kfree(connection->net_conf);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
@@ -3548,29 +3372,6 @@ void drbd_free_ldev(struct drbd_backing_dev *ldev)
 
 	kfree(ldev->disk_conf);
 	kfree(ldev);
-}
-
-static void drbd_free_one_sock(struct drbd_socket *ds)
-{
-	struct socket *s;
-	mutex_lock(&ds->mutex);
-	s = ds->socket;
-	ds->socket = NULL;
-	mutex_unlock(&ds->mutex);
-	if (s) {
-		/* so debugfs does not need to mutex_lock() */
-		synchronize_rcu();
-		kernel_sock_shutdown(s, SHUT_RDWR);
-		sock_release(s);
-	}
-}
-
-void drbd_free_sock(struct drbd_connection *connection)
-{
-	if (connection->data.socket)
-		drbd_free_one_sock(&connection->data);
-	if (connection->meta.socket)
-		drbd_free_one_sock(&connection->meta);
 }
 
 /* meta data management */
@@ -4865,3 +4666,7 @@ EXPORT_SYMBOL(drbd_conn_str);
 EXPORT_SYMBOL(drbd_role_str);
 EXPORT_SYMBOL(drbd_disk_str);
 EXPORT_SYMBOL(drbd_set_st_err_str);
+
+/* For transport layer */
+EXPORT_SYMBOL(drbd_destroy_connection);
+EXPORT_SYMBOL(conn_get_by_addrs);

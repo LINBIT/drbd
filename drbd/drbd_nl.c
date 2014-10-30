@@ -2543,7 +2543,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	drbd_flush_workqueue(&connection->sender_work);
 
 	mutex_lock(&connection->resource->conf_update);
-	mutex_lock(&connection->data.mutex);
+	mutex_lock(&connection->mutex[DATA_STREAM]);
 	old_net_conf = connection->net_conf;
 
 	if (!old_net_conf) {
@@ -2608,7 +2608,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	crypto_free_hash(connection->cram_hmac_tfm);
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
 
-	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	mutex_unlock(&connection->resource->conf_update);
 	synchronize_rcu();
 	kfree(old_net_conf);
@@ -2624,7 +2624,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	goto out;
 
  fail:
-	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	mutex_unlock(&connection->resource->conf_update);
 	free_crypto(&crypto);
 	kfree(new_net_conf);
@@ -2753,6 +2753,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 	INIT_LIST_HEAD(&connection->connections);
+
+	/* for now it is always a tcp transport */
+	connection->transport = drbd_create_transport("tcp", connection);
+	if (!connection->transport) {
+		retcode = ERR_NOMEM;
+		goto fail_free_connection;
+	}
 
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
@@ -2914,6 +2921,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
+	drbd_free_tr_conn(connection, true);
+
 	if (!list_empty(&connection->connections)) {
 		drbd_unregister_connection(connection);
 		synchronize_rcu();
@@ -3054,7 +3063,7 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 		sync_source = (device->resource->role[NOW] == R_PRIMARY);
 	else
 		sync_source = test_bit(RESOLVE_CONFLICTS,
-				       &peer_device->connection->flags);
+				       &peer_device->connection->transport->flags);
 
 	if (!sync_source && connection->agreed_pro_version < 110) {
 		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
@@ -3939,7 +3948,7 @@ put_result:
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->flags);
+		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport->flags);
 		err = connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -4714,7 +4723,7 @@ void notify_connection_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
-	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->flags);
+	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport->flags);
 	connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {

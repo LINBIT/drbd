@@ -617,6 +617,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_transport *peer_transport = peer_device->connection->transport;
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
@@ -650,19 +651,21 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	for (i = 0; i < number; i++) {
 		/* Stop generating RS requests, when half of the send buffer is filled */
-		mutex_lock(&peer_device->connection->data.mutex);
-		if (peer_device->connection->data.socket) {
-			struct sock *sk = peer_device->connection->data.socket->sk;
-			int queued = sk->sk_wmem_queued;
-			int sndbuf = sk->sk_sndbuf;
+		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
+		if (peer_transport->ops->stream_ok(peer_transport, DATA_STREAM)) {
+			struct drbd_transport_stats transport_stats;
+			int queued, sndbuf;
+
+			peer_transport->ops->stats(peer_transport, &transport_stats);
+			queued = transport_stats.send_buffer_used;
+			sndbuf = transport_stats.send_buffer_size;
 			if (queued > sndbuf / 2) {
 				requeue = 1;
-				if (sk->sk_socket)
-					set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+				peer_transport->ops->hint(peer_transport, DATA_STREAM, NOSPACE);
 			}
 		} else
 			requeue = 1;
-		mutex_unlock(&peer_device->connection->data.mutex);
+		mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
 		if (requeue)
 			goto requeue;
 
@@ -1390,10 +1393,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 static int drbd_send_barrier(struct drbd_connection *connection)
 {
 	struct p_barrier *p;
-	struct drbd_socket *sock;
-
-	sock = &connection->data;
-	p = conn_prepare_command(connection, sock);
+	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -1401,7 +1401,7 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	p->pad = 0;
 	connection->send.current_epoch_writes = 0;
 
-	return send_command(connection, -1, sock, P_BARRIER, sizeof(*p), NULL, 0);
+	return send_command(connection, -1, P_BARRIER, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
 #ifdef blk_queue_plugged
@@ -1414,8 +1414,6 @@ static bool need_unplug(struct drbd_connection *connection)
 
 static void maybe_send_write_hint(struct drbd_connection *connection)
 {
-	struct drbd_socket *sock;
-
 	if (!need_unplug(connection))
 		return;
 
@@ -1433,11 +1431,10 @@ static void maybe_send_write_hint(struct drbd_connection *connection)
 	if (connection->cstate[NOW] < C_CONNECTED)
 		return;
 
-	sock = &connection->data;
-	if (!conn_prepare_command(connection, sock))
+	if (!conn_prepare_command(connection, DATA_STREAM))
 		return;
 
-	send_command(connection, -1, sock, P_UNPLUG_REMOTE, 0, NULL, 0);
+	send_command(connection, -1, P_UNPLUG_REMOTE, 0, NULL, 0, DATA_STREAM);
 }
 #else
 static bool need_unplug(struct drbd_connection *connection)
@@ -2234,6 +2231,7 @@ static bool check_sender_todo(struct drbd_connection *connection)
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
+	struct drbd_transport *transport = connection->transport;
 	struct net_conf *nc;
 	int uncork, cork;
 	bool got_something = 0;
@@ -2255,10 +2253,10 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	uncork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
 	if (uncork) {
-		mutex_lock(&connection->data.mutex);
-		if (connection->data.socket)
-			drbd_tcp_uncork(connection->data.socket);
-		mutex_unlock(&connection->data.mutex);
+		mutex_lock(&connection->mutex[DATA_STREAM]);
+		if (transport->ops->stream_ok(transport, DATA_STREAM))
+			transport->ops->hint(transport, DATA_STREAM, UNCORK);
+		mutex_unlock(&connection->mutex[DATA_STREAM]);
 	}
 
 	for (;;) {
@@ -2303,14 +2301,15 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	nc = rcu_dereference(connection->net_conf);
 	cork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
-	mutex_lock(&connection->data.mutex);
-	if (connection->data.socket) {
+
+	mutex_lock(&connection->mutex[DATA_STREAM]);
+	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
 		if (cork)
-			drbd_tcp_cork(connection->data.socket);
+			transport->ops->hint(transport, DATA_STREAM, CORK);
 		else if (!uncork)
-			drbd_tcp_uncork(connection->data.socket);
+			transport->ops->hint(transport, DATA_STREAM, UNCORK);
 	}
-	mutex_unlock(&connection->data.mutex);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 }
 
 static void re_init_if_first_write(struct drbd_connection *connection, unsigned int epoch)

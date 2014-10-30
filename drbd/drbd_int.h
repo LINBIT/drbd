@@ -52,6 +52,7 @@
 #include "drbd_state.h"
 #include "drbd_protocol.h"
 #include "drbd_kref_debug.h"
+#include "drbd_transport.h"
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
@@ -372,6 +373,8 @@ struct drbd_peer_device_work {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
 };
+
+enum drbd_stream;
 
 #include "drbd_interval.h"
 
@@ -716,15 +719,6 @@ struct drbd_work_queue {
 	wait_queue_head_t q_wait;
 };
 
-struct drbd_socket {
-	struct mutex mutex;
-	struct socket    *socket;
-	/* this way we get our
-	 * send/receive buffers off the stack */
-	void *sbuf;
-	void *rbuf;
-};
-
 struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u64 bitmap_dagtag;
@@ -800,8 +794,6 @@ extern struct fifo_buffer *fifo_alloc(int fifo_size);
 
 /* flag bits per connection */
 enum {
-	NET_CONGESTED,		/* The data socket is congested */
-	RESOLVE_CONFLICTS,	/* Set on one node, cleared on the peer! */
 	SEND_PING,		/* whether asender should send a ping asap */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
@@ -948,19 +940,19 @@ struct drbd_connection {
 	struct sockaddr_storage peer_addr;
 	int peer_addr_len;
 
-	struct drbd_socket data;	/* data/barrier/cstate/parameter packets */
-	struct drbd_socket meta;	/* ping/ack (metadata) packets */
+	struct drbd_transport *transport;
+	void *sbuf[2], *rbuf[2];
+	struct mutex mutex[2];
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */
-	unsigned int ko_count;
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 
 	struct drbd_work connect_timer_work;
 	struct timer_list connect_timer;
 
 	struct crypto_hash *cram_hmac_tfm;
-	struct crypto_hash *integrity_tfm;  /* checksums we compute, updates protected by connection->data->mutex */
+	struct crypto_hash *integrity_tfm;  /* checksums we compute, updates protected by connection->mutex[DATA_STREAM] */
 	struct crypto_hash *peer_integrity_tfm;  /* checksums we verify, only accessed from receiver thread  */
 	struct crypto_hash *csums_tfm;
 	struct crypto_hash *verify_tfm;
@@ -1378,10 +1370,8 @@ extern void tl_release(struct drbd_connection *, unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct drbd_connection *);
 extern void drbd_free_sock(struct drbd_connection *connection);
-extern int drbd_send(struct drbd_connection *connection, struct socket *sock,
-		     void *buf, size_t size, unsigned msg_flags);
-extern int drbd_send_all(struct drbd_connection *, struct socket *, void *, size_t,
-			 unsigned);
+extern int drbd_send_all(struct drbd_connection *, void *, size_t,
+			 unsigned, enum drbd_stream);
 
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);
 extern int drbd_send_protocol(struct drbd_connection *connection);
@@ -1737,6 +1727,7 @@ extern void drbd_destroy_device(struct kref *kref);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
 extern struct drbd_connection *drbd_create_connection(struct drbd_resource *);
+extern void drbd_free_tr_conn(struct drbd_connection *connection, bool put_transport);
 extern void drbd_destroy_connection(struct kref *kref);
 extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
 						 void *peer_addr, int peer_addr_len);
@@ -1875,55 +1866,6 @@ extern int drbd_connected(struct drbd_peer_device *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local);
-
-/* Yes, there is kernel_setsockopt, but only since 2.6.18.
- * So we have our own copy of it here. */
-static inline int drbd_setsockopt(struct socket *sock, int level, int optname,
-				  char *optval, int optlen)
-{
-	mm_segment_t oldfs = get_fs();
-	char __user *uoptval;
-	int err;
-
-	uoptval = (char __user __force *)optval;
-
-	set_fs(KERNEL_DS);
-	if (level == SOL_SOCKET)
-		err = sock_setsockopt(sock, level, optname, uoptval, optlen);
-	else
-		err = sock->ops->setsockopt(sock, level, optname, uoptval,
-					    optlen);
-	set_fs(oldfs);
-	return err;
-}
-
-static inline void drbd_tcp_cork(struct socket *sock)
-{
-	int val = 1;
-	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
-			(char*)&val, sizeof(val));
-}
-
-static inline void drbd_tcp_uncork(struct socket *sock)
-{
-	int val = 0;
-	(void) drbd_setsockopt(sock, SOL_TCP, TCP_CORK,
-			(char*)&val, sizeof(val));
-}
-
-static inline void drbd_tcp_nodelay(struct socket *sock)
-{
-	int val = 1;
-	(void) drbd_setsockopt(sock, SOL_TCP, TCP_NODELAY,
-			(char*)&val, sizeof(val));
-}
-
-static inline void drbd_tcp_quickack(struct socket *sock)
-{
-	int val = 2;
-	(void) drbd_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
-			(char*)&val, sizeof(val));
-}
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
@@ -2315,13 +2257,13 @@ static inline void request_ping(struct drbd_connection *connection)
 	wake_asender(connection);
 }
 
-extern void *conn_prepare_command(struct drbd_connection *, struct drbd_socket *);
-extern void *drbd_prepare_command(struct drbd_peer_device *, struct drbd_socket *);
-extern int send_command(struct drbd_connection *, int, struct drbd_socket *,
-			enum drbd_packet, unsigned int, void *, unsigned int);
-extern int drbd_send_command(struct drbd_peer_device *, struct drbd_socket *,
+extern void *conn_prepare_command(struct drbd_connection *, enum drbd_stream);
+extern void *drbd_prepare_command(struct drbd_peer_device *, enum drbd_stream);
+extern int send_command(struct drbd_connection *, int, enum drbd_packet,
+		unsigned int, void *, unsigned int, enum drbd_stream);
+extern int drbd_send_command(struct drbd_peer_device *,
 			     enum drbd_packet, unsigned int, void *,
-			     unsigned int);
+			     unsigned int, enum drbd_stream);
 
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);

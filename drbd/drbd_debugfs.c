@@ -10,6 +10,7 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 #include "drbd_debugfs.h"
+#include "drbd_transport.h"
 
 
 /**********************************************************************
@@ -397,9 +398,12 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
 	struct drbd_connection *connection;
+	struct drbd_transport *transport;
+	struct drbd_transport_stats transport_stats;
 	unsigned long jif = jiffies;
 
 	connection = first_connection(resource);
+	transport = connection->transport;
 	/* This does not happen, actually.
 	 * But be robust and prepare for future code changes. */
 	if (!connection || !kref_get_unless_zero(&connection->kref))
@@ -416,17 +420,15 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	seq_print_resource_pending_meta_io(m, resource, jif);
 	seq_putc(m, '\n');
 
-	seq_puts(m, "socket buffer stats\n");
+	seq_puts(m, "transport buffer stats\n");
 	/* for each connection ... once we have more than one */
 	rcu_read_lock();
-	if (connection->data.socket) {
-		/* open coded SIOCINQ, the "relevant" part */
-		struct tcp_sock *tp = tcp_sk(connection->data.socket->sk);
-		int answ = tp->rcv_nxt - tp->copied_seq;
-		seq_printf(m, "unread receive buffer: %u Byte\n", answ);
-		/* open coded SIOCOUTQ, the "relevant" part */
-		answ = tp->write_seq - tp->snd_una;
-		seq_printf(m, "unacked send buffer: %u Byte\n", answ);
+	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
+		transport->ops->stats(transport, &transport_stats);
+		seq_printf(m, "unread receive buffer: %u Byte\n",
+				transport_stats.unread_received);
+		seq_printf(m, "unacked send buffer: %u Byte\n",
+				transport_stats.unacked_send);
 	}
 	rcu_read_unlock();
 	seq_putc(m, '\n');
