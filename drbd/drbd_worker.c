@@ -1724,13 +1724,16 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 	if (current == connection->worker.task) {
 		/* The worker should not sleep waiting for state_mutex,
 		   that can take long */
-		set_bit(B_RS_H_DONE, &device->flags);
-		device->start_resync_timer.expires = jiffies + HZ/5;
-		add_timer(&device->start_resync_timer);
-		return;
+		if (!mutex_trylock(device->state_mutex)) {
+			set_bit(B_RS_H_DONE, &device->flags);
+			device->start_resync_timer.expires = jiffies + HZ/5;
+			add_timer(&device->start_resync_timer);
+			return;
+		}
+	} else {
+		mutex_lock(device->state_mutex);
 	}
 
-	mutex_lock(device->state_mutex);
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &device->flags);
 	/* Did some connection breakage or IO error race with us? */
