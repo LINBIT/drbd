@@ -960,6 +960,7 @@ unsigned long drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 	return s;
 }
 
+/* Returns the number of unsigned long words per peer */
 size_t drbd_bm_words(struct drbd_device *device)
 {
 	struct drbd_bitmap *b = device->bitmap;
@@ -968,7 +969,7 @@ size_t drbd_bm_words(struct drbd_device *device)
 	if (!expect(device, b->bm_pages))
 		return 0;
 
-	return b->bm_words;
+	return b->bm_words / b->bm_max_peers;
 }
 
 unsigned long drbd_bm_bits(struct drbd_device *device)
