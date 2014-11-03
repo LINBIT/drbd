@@ -750,7 +750,7 @@ start:
 	} else {
 		enum drbd_state_rv rv;
 		rv = change_cstate(connection, C_CONNECTED,
-				   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+				   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE | CS_LOCAL_ONLY);
 		if (rv < SS_SUCCESS || connection->cstate[NOW] != C_CONNECTED)
 			goto retry;
 		conn_connect2(connection);

@@ -3046,6 +3046,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			kref_debug_put(&connection->kref_debug, 6);
 			kref_put(&connection->kref, drbd_destroy_connection);
 		}
+		if (rv >= SS_SUCCESS)
+			change(context, false);
 		goto out;
 	}
 
