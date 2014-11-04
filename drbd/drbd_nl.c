@@ -2754,9 +2754,12 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 	INIT_LIST_HEAD(&connection->connections);
 
-	connection->transport = drbd_create_transport(new_net_conf->transport_name ?: "tcp", connection);
+	connection->transport =
+		drbd_create_transport(new_net_conf->transport_name[0] ?
+				      new_net_conf->transport_name : "tcp",
+				      connection);
 	if (!connection->transport) {
-		retcode = ERR_NOMEM;
+		retcode = ERR_CREATE_TRANSPORT;
 		goto fail_free_connection;
 	}
 
