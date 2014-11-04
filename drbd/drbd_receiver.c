@@ -4410,7 +4410,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	enum drbd_state_rv rv;
 	int vnr = -1;
 
-	if (!expect(connection, connection->agreed_pro_version >= 110)) {
+	if (!expect(connection, connection->agreed_pro_version < 110)) {
 		drbd_err(connection, "Packet %s not allowed in protocol version %d\n",
 			 drbd_packet_name(pi->cmd),
 			 connection->agreed_pro_version);
