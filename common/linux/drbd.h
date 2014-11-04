@@ -176,6 +176,7 @@ enum drbd_ret_code {
 	ERR_MD_LAYOUT_NO_FIT    = 169,
 	ERR_IMPLICIT_SHRINK     = 170,
 	ERR_INVALID_PEER_NODE_ID = 171,
+	ERR_CREATE_TRANSPORT    = 172,
 
 	/* insert new ones above this line */
 	AFTER_LAST_ERR_CODE
