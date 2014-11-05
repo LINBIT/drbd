@@ -3811,9 +3811,6 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	u64 bm_uuid, got_new_bitmap_uuid = 0;
 	bool do_it;
 
-	if (device->disk_state[NOW] < D_UP_TO_DATE)
-		return 0;
-
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == device->ldev->md.node_id)
 			continue;
@@ -3946,7 +3943,8 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 va
 	}
 
 	if (set_current) {
-		got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes, dagtag);
+		if (device->disk_state[NOW] == D_UP_TO_DATE)
+			got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes, dagtag);
 		__drbd_uuid_set_current(device, val);
 	}
 
