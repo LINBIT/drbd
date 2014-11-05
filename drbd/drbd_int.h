@@ -645,6 +645,7 @@ enum {
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 
 	HAVE_LDEV,
+	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
 };
 
 /* flag bits per peer device */

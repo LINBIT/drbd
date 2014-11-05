@@ -904,6 +904,44 @@ static void __downgrade_peer_disk_state_by_mask(struct drbd_device *device,
 	}
 }
 
+/* An annoying corner case is if we are resync target towards a bunch
+   of nodes. One of the resyncs finished as STABLE_RESYNC, the others
+   as UNSTABLE_RESYNC. */
+static bool was_resync_stable(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (test_bit(UNSTABLE_RESYNC, &peer_device->flags) &&
+	    !test_bit(STABLE_RESYNC, &device->flags))
+		return false;
+
+	set_bit(STABLE_RESYNC, &device->flags);
+	/* that STABLE_RESYNC bit gets reset if in any other ongoing resync
+	   we receive something from a resync source that is marked with
+	   UNSTABLE RESYNC. */
+
+	return true;
+}
+
+static void init_resync_stable_bits(struct drbd_peer_device *first_target_pd)
+{
+	struct drbd_device *device = first_target_pd->device;
+	struct drbd_peer_device *peer_device;
+
+	clear_bit(UNSTABLE_RESYNC, &first_target_pd->flags);
+
+	/* Clear the device wide STABLE_RESYNC flag when becoming
+	   resync target on the first peer_device. */
+	for_each_peer_device(peer_device, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if (peer_device == first_target_pd)
+			continue;
+		if (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T)
+			return;
+	}
+	clear_bit(STABLE_RESYNC, &device->flags);
+}
+
 int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
@@ -1022,10 +1060,11 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		}
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
-			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags))
+			bool stable_resync = was_resync_stable(peer_device);
+			if (stable_resync)
 				__change_disk_state(device, peer_device->disk_state[NOW]);
 
-			if (!test_bit(UNSTABLE_RESYNC, &peer_device->flags) &&
+			if (stable_resync &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
 			    peer_device->uuids_received) {
 				u64 newer = drbd_uuid_resync_finished(peer_device);
@@ -1783,7 +1822,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	__change_repl_state(peer_device, side);
 	if (side == L_SYNC_TARGET) {
 		__change_disk_state(device, D_INCONSISTENT);
-		clear_bit(UNSTABLE_RESYNC, &peer_device->flags);
+		init_resync_stable_bits(peer_device);
 	} else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	r = end_state_change_locked(device->resource);

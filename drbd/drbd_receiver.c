@@ -1624,6 +1624,9 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	if (!peer_req)
 		return -EIO;
 
+	if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
+		clear_bit(STABLE_RESYNC, &device->flags);
+
 	dec_rs_pending(peer_device);
 
 	inc_unacked(peer_device);
