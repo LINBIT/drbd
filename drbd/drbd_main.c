@@ -4047,8 +4047,16 @@ static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) 
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	int node_id;
 
+	bm_uuid &= ~UUID_PRIMARY;
+
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == (bm_uuid & ~UUID_PRIMARY))
+		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == bm_uuid &&
+		    peer_md[node_id].bitmap_index != -1)
+			return node_id;
+	}
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == bm_uuid)
 			return node_id;
 	}
 
@@ -4093,6 +4101,9 @@ found:
 		return false;
 	}
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	if (peer_md[from_id].bitmap_index == -1)
+		return false;
+
 	if (from_id != node_id1) {
 		peer_md[node_id1].bitmap_uuid = peer_bm_uuid;
 		peer_md[node_id1].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
