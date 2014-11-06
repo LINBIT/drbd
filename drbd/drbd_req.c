@@ -322,13 +322,13 @@ tail_recursion:
 			    peer_ack_window_full(req)) {
 				drbd_queue_peer_ack(peer_ack_req);
 				peer_ack_req = NULL;
-			} else {
+			} else
 				mempool_free(peer_ack_req, drbd_request_mempool);
-				mod_timer(&resource->peer_ack_timer,
-					  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
-			}
 		}
 		resource->peer_ack_req = req;
+		mod_timer(&resource->peer_ack_timer,
+			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
+
 		if (!peer_ack_req)
 			resource->last_peer_acked_dagtag = req->dagtag_sector;
 	} else
