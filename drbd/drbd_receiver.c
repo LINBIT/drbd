@@ -3114,7 +3114,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int 
 
 	if (hg == 3) {
 		drbd_info(peer_device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
-		drbd_suspend_io(device);
+		drbd_suspend_io(device, WRITE_ONLY);
 		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
 		drbd_bm_copy_slot(device, device->ldev->md.peers[peer_node_id].bitmap_index,
 				  peer_device->bitmap_index);
@@ -3123,7 +3123,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int 
 		drbd_resume_io(device);
 	} else if (hg == -3) {
 		drbd_info(peer_device, "synced up with node %d in the mean time\n", peer_node_id);
-		drbd_suspend_io(device);
+		drbd_suspend_io(device, WRITE_ONLY);
 		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits from sync_handshake", BM_LOCK_BULK);
 		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 		drbd_bm_write(device, NULL);

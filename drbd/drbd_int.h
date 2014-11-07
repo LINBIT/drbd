@@ -1751,7 +1751,11 @@ extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
 /* drbd_nl.c */
-extern void drbd_suspend_io(struct drbd_device *device);
+enum suspend_scope {
+	READ_AND_WRITE,
+	WRITE_ONLY
+};
+extern void drbd_suspend_io(struct drbd_device *device, enum suspend_scope);
 extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
 extern sector_t drbd_new_dev_size(struct drbd_device *, sector_t, int) __must_hold(local);

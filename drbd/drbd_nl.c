@@ -1079,18 +1079,11 @@ char *ppsize(char *buf, unsigned long long size)
 	return buf;
 }
 
-/* there is still a theoretical deadlock when called from receiver
- * on an D_INCONSISTENT R_PRIMARY:
- *  remote READ does inc_ap_bio, receiver would need to receive answer
- *  packet from remote to dec_ap_bio again.
- *  receiver receive_sizes(), comes here,
- *  waits for ap_bio_cnt == 0. -> deadlock.
- * but this cannot happen, actually, because:
- *  R_PRIMARY D_INCONSISTENT, and peer's disk is unreachable
- *  (not connected, or bad/no disk on peer):
- *  see drbd_fail_request_early, ap_bio_cnt is zero.
- *  R_PRIMARY D_INCONSISTENT, and L_SYNC_TARGET:
- *  peer may not initiate a resize.
+/* The receiver may call drbd_suspend_io(device, WRITE_ONLY).
+ * It should not call drbd_suspend_io(device, READ_AND_WRITE) since
+ * if the node is an D_INCONSISTENT R_PRIMARY (L_SYNC_TARGET) it
+ * may need to issue remote READs. Those is turn need the receiver
+ * to complete. -> calling drbd_suspend_io(device, READ_AND_WRITE) deadlocks.
  */
 /* Note these are not to be confused with
  * drbd_adm_suspend_io/drbd_adm_resume_io,
@@ -1100,12 +1093,14 @@ char *ppsize(char *buf, unsigned long long size)
  * and should be short-lived. */
 /* It needs to be a counter, since multiple threads might
    independently suspend and resume IO. */
-void drbd_suspend_io(struct drbd_device *device)
+void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
 {
 	atomic_inc(&device->suspend_cnt);
 	if (drbd_suspended(device))
 		return;
-	wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
+	wait_event(device->misc_wait,
+		   (atomic_read(&device->ap_bio_cnt[WRITE]) +
+		    ss == READ_AND_WRITE ? atomic_read(&device->ap_bio_cnt[READ]) : 0) == 0);
 }
 
 void drbd_resume_io(struct drbd_device *device)
@@ -1173,7 +1168,7 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	 * Suspend IO right here.
 	 * still lock the act_log to not trigger ASSERTs there.
 	 */
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	buffer = drbd_md_get_buffer(device, __func__); /* Lock meta-data IO */
 	if (!buffer) {
 		drbd_resume_io(device);
@@ -1682,7 +1677,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->al_wait, lc_try_lock(device->act_log));
 	drbd_al_shrink(device);
 	err = drbd_check_al_size(device, new_disk_conf);
@@ -1996,7 +1991,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				      "meta data may help <<==\n");
 	}
 
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	/* also wait for the last barrier ack. */
 	/* FIXME see also https://daiquiri.linbit/cgi-bin/bugzilla/show_bug.cgi?id=171
 	 * We need a way to either ignore barrier acks for barriers sent before a device
@@ -2301,7 +2296,7 @@ static int adm_detach(struct drbd_device *device, int force)
 		goto out;
 	}
 
-	drbd_suspend_io(device); /* so no-one is stuck in drbd_al_begin_io */
+	drbd_suspend_io(device, READ_AND_WRITE); /* so no-one is stuck in drbd_al_begin_io */
 	retcode = stable_state_change(device->resource,
 		change_disk_state(device, D_DETACHING,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
@@ -3349,7 +3344,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync.
 	 * Also wait for its after_state_ch(). */
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
 	do {
@@ -3416,7 +3411,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&resource->adm_mutex);
 
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
@@ -3540,7 +3535,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	resource = device->resource;
 	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 		drbd_uuid_new_current(device, false);
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);
 	__change_io_susp_no_data(resource, false);
@@ -4153,7 +4148,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	retcode = stable_change_repl_state(peer_device,
 		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);

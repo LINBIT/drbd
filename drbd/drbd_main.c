@@ -4018,7 +4018,7 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 
 	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (slot %d)\n",
 		  _drbd_bm_total_weight(device, bitmap_index), node_id, bitmap_index);
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "forget_bitmap()", BM_LOCK_TEST | BM_LOCK_SET);
 	_drbd_bm_clear_many_bits(device, bitmap_index, 0, -1UL);
 	drbd_bm_unlock(device);
@@ -4033,7 +4033,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 
 	drbd_info(device, "Node %d synced up to node %d. copying bitmap slot %d to %d.\n",
 		  to_id, from_id, from_index, to_index);
-	drbd_suspend_io(device);
+	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
 	drbd_bm_copy_slot(device, from_index, to_index);
 	drbd_bm_unlock(device);
@@ -4185,7 +4185,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	if (write_bm || filled) {
 		u64 to_nodes = filled ? -1 : ~NODE_MASK(peer_device->node_id);
 		drbd_propagate_uuids(device, to_nodes);
-		drbd_suspend_io(device);
+		drbd_suspend_io(device, WRITE_ONLY);
 		drbd_bm_lock(device, "detect_finished_resyncs()", BM_LOCK_BULK);
 		drbd_bm_write(device, NULL);
 		drbd_bm_unlock(device);
@@ -4369,7 +4369,7 @@ int drbd_bitmap_io(struct drbd_device *device,
 	D_ASSERT(device, current != device->resource->worker.task);
 
 	if (!(flags & BM_LOCK_CLEAR))
-		drbd_suspend_io(device);
+		drbd_suspend_io(device, WRITE_ONLY);
 
 	if (flags & BM_LOCK_SINGLE_SLOT)
 		drbd_bm_slot_lock(peer_device, why, flags);
