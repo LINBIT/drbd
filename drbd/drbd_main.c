@@ -2443,7 +2443,7 @@ static void do_retry(struct work_struct *ws)
 
 		/* We are not just doing generic_make_request(),
 		 * as we want to keep the start_time information. */
-		inc_ap_bio(device);
+		inc_ap_bio(device, bio_data_dir(req->master_bio));
 		__drbd_make_request(device, bio, start_jif);
 	}
 }
@@ -2460,7 +2460,7 @@ void drbd_restart_request(struct drbd_request *req)
 	/* Drop the extra reference that would otherwise
 	 * have been dropped by complete_master_bio.
 	 * do_retry() needs to grab a new one. */
-	dec_ap_bio(req->device);
+	dec_ap_bio(req->device, bio_data_dir(req->master_bio));
 
 	queue_work(retry.wq, &retry.worker);
 }
@@ -3006,7 +3006,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	drbd_set_defaults(device);
 
-	atomic_set(&device->ap_bio_cnt, 0);
+	atomic_set(&device->ap_bio_cnt[READ], 0);
+	atomic_set(&device->ap_bio_cnt[WRITE], 0);
 	atomic_set(&device->ap_actlog_cnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->pp_in_use_by_net, 0);
@@ -4345,8 +4346,8 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work);
 	spin_unlock_irq(&device->resource->req_lock);
-	atomic_inc(&device->ap_bio_cnt);
-	dec_ap_bio(device);
+	atomic_inc(&device->ap_bio_cnt[WRITE]);
+	dec_ap_bio(device, WRITE);
 }
 
 /**

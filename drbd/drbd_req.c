@@ -376,8 +376,9 @@ void start_new_tl_epoch(struct drbd_resource *resource)
 void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
+	int rw = bio_data_dir(m->bio);
 	bio_endio(m->bio, m->error);
-	dec_ap_bio(device);
+	dec_ap_bio(device, rw);
 }
 
 
@@ -1468,7 +1469,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
 	if (!req) {
-		dec_ap_bio(device);
+		dec_ap_bio(device, rw);
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
@@ -1827,7 +1828,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	 */
 	D_ASSERT(device, IS_ALIGNED(DRBD_BIO_BI_SIZE(bio), 512));
 
-	inc_ap_bio(device);
+	inc_ap_bio(device, bio_data_dir(bio));
 	__drbd_make_request(device, bio, start_jif);
 
 	MAKE_REQUEST_RETURN;

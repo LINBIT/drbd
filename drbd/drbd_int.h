@@ -1204,7 +1204,7 @@ struct drbd_device {
 	unsigned int writ_cnt;
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
-	atomic_t ap_bio_cnt;	 /* Requests we need to complete */
+	atomic_t ap_bio_cnt[2];	 /* Requests we need to complete. [READ] and [WRITE] */
 	atomic_t ap_actlog_cnt;  /* Requests waiting for activity log */
 	atomic_t local_cnt;	 /* Waiting for local completion */
 	atomic_t suspend_cnt;
@@ -2507,9 +2507,9 @@ static inline bool drbd_state_is_stable(struct drbd_device *device)
 
 extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
 
-static inline void dec_ap_bio(struct drbd_device *device)
+static inline void dec_ap_bio(struct drbd_device *device, int rw)
 {
-	int ap_bio = atomic_dec_return(&device->ap_bio_cnt);
+	int ap_bio = atomic_dec_return(&device->ap_bio_cnt[rw]);
 
 	D_ASSERT(device, ap_bio >= 0);
 
@@ -2547,27 +2547,28 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 
 	/* since some older kernels don't have atomic_add_unless,
 	 * and we are within the spinlock anyways, we have this workaround.  */
-	if (atomic_read(&device->ap_bio_cnt) > device->device_conf.max_buffers)
+	if (atomic_read(&device->ap_bio_cnt[READ]) + atomic_read(&device->ap_bio_cnt[WRITE])
+	    > device->device_conf.max_buffers)
 		return false;
 	if (!list_empty(&device->pending_bitmap_work))
 		return false;
 	return true;
 }
 
-static inline bool inc_ap_bio_cond(struct drbd_device *device)
+static inline bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 {
 	bool rv = false;
 
 	spin_lock_irq(&device->resource->req_lock);
 	rv = may_inc_ap_bio(device);
 	if (rv)
-		atomic_inc(&device->ap_bio_cnt);
+		atomic_inc(&device->ap_bio_cnt[rw]);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	return rv;
 }
 
-static inline void inc_ap_bio(struct drbd_device *device)
+static inline void inc_ap_bio(struct drbd_device *device, int rw)
 {
 	/* we wait here
 	 *    as long as the device is suspended
@@ -2577,7 +2578,7 @@ static inline void inc_ap_bio(struct drbd_device *device)
 	 * to avoid races with the reconnect code,
 	 * we need to atomic_inc within the spinlock. */
 
-	wait_event(device->misc_wait, inc_ap_bio_cond(device));
+	wait_event(device->misc_wait, inc_ap_bio_cond(device, rw));
 }
 
 static inline int drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)

@@ -1105,7 +1105,7 @@ void drbd_suspend_io(struct drbd_device *device)
 	atomic_inc(&device->suspend_cnt);
 	if (drbd_suspended(device))
 		return;
-	wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt));
+	wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
 }
 
 void drbd_resume_io(struct drbd_device *device)
@@ -3731,7 +3731,8 @@ static void device_to_statistics(struct device_statistics *s,
 	s->dev_write = device->writ_cnt;
 	s->dev_al_writes = device->al_writ_cnt;
 	s->dev_bm_writes = device->bm_writ_cnt;
-	s->dev_upper_pending = atomic_read(&device->ap_bio_cnt);
+	s->dev_upper_pending = atomic_read(&device->ap_bio_cnt[READ]) +
+		atomic_read(&device->ap_bio_cnt[WRITE]);
 	s->dev_lower_pending = atomic_read(&device->local_cnt);
 	s->dev_al_suspended = test_bit(AL_SUSPENDED, &device->flags);
 	s->dev_exposed_data_uuid = device->exposed_data_uuid;

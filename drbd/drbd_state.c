@@ -3403,7 +3403,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 			role_context.context.flags |= CS_ALREADY_SERIALIZED;
 		}
 		idr_for_each_entry(&resource->devices, device, vnr)
-			wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt));
+			wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
 	}
 	rv = change_cluster_wide_state(do_change_role, &role_context.context);
 	if (got_state_sem)
