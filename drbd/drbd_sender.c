@@ -1432,6 +1432,8 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 static int drbd_send_barrier(struct drbd_connection *connection)
 {
 	struct p_barrier *p;
+	int err;
+
 	p = conn_prepare_command(connection, DATA_STREAM);
 	if (!p)
 		return -EIO;
@@ -1440,7 +1442,11 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	p->pad = 0;
 	connection->send.current_epoch_writes = 0;
 
-	return send_command(connection, -1, P_BARRIER, sizeof(*p), NULL, 0, DATA_STREAM);
+	err = send_command(connection, -1, P_BARRIER, sizeof(*p), NULL, 0, DATA_STREAM);
+	if (err == 0)
+		set_bit(BARRIER_ACK_PENDING, &connection->flags);
+
+	return err;
 }
 
 #ifdef blk_queue_plugged

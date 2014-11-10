@@ -805,6 +805,7 @@ enum {
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	DISCONNECT_EXPECTED,
+	BARRIER_ACK_PENDING,
 };
 
 /* flag bits per resource */
@@ -915,6 +916,7 @@ struct drbd_resource {
 
 	unsigned int w_cb_nr; /* keeps counting up */
 	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
+	wait_queue_head_t barrier_wait;  /* upon each state change. */
 };
 
 struct drbd_connection {

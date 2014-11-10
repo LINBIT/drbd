@@ -740,6 +740,18 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 	}
 }
 
+static bool barrier_pending(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (test_bit(BARRIER_ACK_PENDING, &connection->flags))
+			return true;
+	}
+
+	return false;
+}
+
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 {
@@ -760,6 +772,14 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 		for_each_connection(connection, resource)
 			request_ping(connection);
+	} else /* (role == R_SECONDARY) */ {
+		if (start_new_tl_epoch(resource)) {
+			struct drbd_connection *connection;
+
+			for_each_connection(connection, resource)
+				drbd_flush_workqueue(&connection->sender_work);
+		}
+		wait_event(resource->barrier_wait, !barrier_pending(resource));
 	}
 
 	while (try++ < max_tries) {
@@ -864,8 +884,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 
 	if (forced)
 		drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
-
-	/* FIXME also wait for all pending P_BARRIER_ACK? */
 
 	if (role == R_SECONDARY) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1992,13 +2010,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	drbd_suspend_io(device, READ_AND_WRITE);
-	/* also wait for the last barrier ack. */
-	/* FIXME see also https://daiquiri.linbit/cgi-bin/bugzilla/show_bug.cgi?id=171
-	 * We need a way to either ignore barrier acks for barriers sent before a device
-	 * was attached, or a way to wait for all pending barrier acks to come in.
-	 * As barriers are counted per resource,
-	 * we'd need to suspend io on all devices of a resource.
-	 */
+	wait_event(resource->barrier_wait, !barrier_pending(resource));
 	for_each_peer_device(peer_device, device)
 		wait_event(device->misc_wait,
 			   (!atomic_read(&peer_device->ap_pending_cnt) ||

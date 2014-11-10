@@ -286,6 +286,11 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	}
 	spin_unlock_irq(&connection->resource->req_lock);
 
+	if (barrier_nr + 1 == atomic_read(&resource->current_tle_nr)) {
+		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+		wake_up(&resource->barrier_wait);
+	}
+
 	return;
 
 bail:
@@ -2777,6 +2782,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
 	init_waitqueue_head(&resource->twopc_wait);
+	init_waitqueue_head(&resource->barrier_wait);
 	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
 	drbd_init_workqueue(&resource->work);

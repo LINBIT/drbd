@@ -1810,6 +1810,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_UNKNOWN)
 			lost_a_primary_peer = true;
+
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
+			clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+			wake_up(&resource->barrier_wait);
+		}
 	}
 
 	if (lost_a_primary_peer) {
