@@ -362,15 +362,16 @@ static void wake_all_senders(struct drbd_resource *resource) {
 }
 
 /* must hold resource->req_lock */
-void start_new_tl_epoch(struct drbd_resource *resource)
+bool start_new_tl_epoch(struct drbd_resource *resource)
 {
 	/* no point closing an epoch, if it is empty, anyways. */
 	if (resource->current_tle_writes == 0)
-		return;
+		return false;
 
 	resource->current_tle_writes = 0;
 	atomic_inc(&resource->current_tle_nr);
 	wake_all_senders(resource);
+	return true;
 }
 
 void complete_master_bio(struct drbd_device *device,
