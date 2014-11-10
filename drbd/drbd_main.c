@@ -2037,6 +2037,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		return -EMEDIUMTYPE;
 
 
+	down(&resource->state_sem);
+	/* drbd_set_role() should be able to rely on nobody increasing rw_cnt */
+
 	spin_lock_irqsave(&resource->req_lock, flags);
 	/* to have a stable role and no race with updating open_cnt */
 
@@ -2063,6 +2066,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 			device->open_ro_cnt++;
 	}
 	spin_unlock_irqrestore(&resource->req_lock, flags);
+	up(&resource->state_sem);
 
 	return rv;
 }
@@ -2665,10 +2669,8 @@ static void drbd_free_connection_buffers(struct drbd_connection *connection)
 	}
 }
 
-static void peer_ack_timer_fn(unsigned long data)
+void drbd_flush_peer_acks(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource = (struct drbd_resource *) data;
-
 	spin_lock_irq(&resource->req_lock);
 	if (resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
@@ -2676,6 +2678,13 @@ static void peer_ack_timer_fn(unsigned long data)
 		resource->peer_ack_req = NULL;
 	}
 	spin_unlock_irq(&resource->req_lock);
+}
+
+static void peer_ack_timer_fn(unsigned long data)
+{
+	struct drbd_resource *resource = (struct drbd_resource *) data;
+
+	drbd_flush_peer_acks(resource);
 }
 
 void conn_free_crypto(struct drbd_connection *connection)

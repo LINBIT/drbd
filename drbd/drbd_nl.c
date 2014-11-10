@@ -780,6 +780,16 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 				drbd_flush_workqueue(&connection->sender_work);
 		}
 		wait_event(resource->barrier_wait, !barrier_pending(resource));
+		/* In case switching from R_PRIMARY to R_SECONDARY works
+		   out, there is no rw opener at this point. Thus, no new
+		   writes can come in. -> Flushing queued peer acks is
+		   necessary and sufficient.
+		   The cluster wide role change required packets to be
+		   received by the aserder. -> We can be sure that the
+		   peer_acks queued on asender's TODO list go out before
+		   we send the two phase commit packet.
+		*/
+		drbd_flush_peer_acks(resource);
 	}
 
 	while (try++ < max_tries) {

@@ -1466,6 +1466,7 @@ extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_p
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
 extern bool drbd_device_stable(struct drbd_device *device);
+extern void drbd_flush_peer_acks(struct drbd_resource *resource);
 
 /* Meta data layout
  *
