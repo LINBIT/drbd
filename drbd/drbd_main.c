@@ -3910,7 +3910,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __m
  */
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
-	if (get_ldev(device)) {
+	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		__drbd_uuid_new_current(device, forced);
 		put_ldev(device);
 	} else {
@@ -3918,10 +3918,14 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		/* The peers will store the new current UUID... */
 		u64 current_uuid;
 		get_random_bytes(&current_uuid, sizeof(u64));
+		current_uuid &= ~UUID_PRIMARY;
 		drbd_set_exposed_data_uuid(device, current_uuid);
+		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
 
-		for_each_peer_device(peer_device, device)
+		for_each_peer_device(peer_device, device) {
 			drbd_send_current_uuid(peer_device, current_uuid);
+			peer_device->current_uuid = current_uuid; /* In case resync finishes soon */
+		}
 	}
 }
 
