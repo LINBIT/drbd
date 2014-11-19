@@ -711,18 +711,49 @@ static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool v
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_device *p;
+	enum drbd_repl_state r;
 
-	for_each_peer_device(p, device) {
-		if (p == peer_device)
-			continue;
-		p->resync_susp_other_c[NEW] = val;
-		if (!val && p->repl_state[NEW] == L_PAUSED_SYNC_T && !resync_suspended(p, NEW)) {
-			p->repl_state[NEW] = L_SYNC_TARGET;
-			return;
+	/* When the resync_susp_other_connection flag gets cleared, make sure it gets
+	   cleared first on all connections where we are L_PAUSED_SYNC_T. Clear it on
+	   one L_PAUSED_SYNC_T at a time. Only if we have no connection that is
+	   L_PAUSED_SYNC_T clear it on all L_PAUSED_SYNC_S connections at once. */
+
+	if (val) {
+		for_each_peer_device(p, device) {
+			if (p == peer_device)
+				continue;
+
+			r = p->repl_state[NEW];
+			p->resync_susp_other_c[NEW] = true;
+
+			if (start && p->disk_state[NEW] >= D_INCONSISTENT && r == L_ESTABLISHED)
+				p->repl_state[NEW] = L_PAUSED_SYNC_T;
 		}
-		if (val && start &&
-		    p->disk_state[NEW] == D_UP_TO_DATE && p->repl_state[NEW] == L_ESTABLISHED)
-			p->repl_state[NEW] = L_PAUSED_SYNC_T;
+	} else {
+		for_each_peer_device(p, device) {
+			if (p == peer_device)
+				continue;
+
+			r = p->repl_state[NEW];
+			if (r == L_PAUSED_SYNC_S)
+				continue;
+
+			p->resync_susp_other_c[NEW] = false;
+			if (r == L_PAUSED_SYNC_T && !resync_suspended(p, NEW)) {
+				p->repl_state[NEW] = L_SYNC_TARGET;
+				return;
+			}
+		}
+
+		for_each_peer_device(p, device) {
+			if (p == peer_device)
+				continue;
+
+			p->resync_susp_other_c[NEW] = false;
+
+			if (p->repl_state[NEW] == L_PAUSED_SYNC_S && !resync_suspended(p, NEW))
+				p->repl_state[NEW] = L_SYNC_SOURCE;
+		}
 	}
 }
 
@@ -1180,6 +1211,25 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 	return SS_SUCCESS;
 }
 
+static bool is_sync_target_other_c(struct drbd_peer_device *ign_peer_device)
+{
+	struct drbd_device *device = ign_peer_device->device;
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		enum drbd_repl_state r;
+
+		if (peer_device == ign_peer_device)
+			continue;
+
+		r = peer_device->repl_state[NEW];
+		if (r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T)
+			return true;
+	}
+
+	return false;
+}
+
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -1354,7 +1404,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				max_peer_disk_state = D_UP_TO_DATE;
 				break;
 			case L_SYNC_SOURCE:
-				min_disk_state = D_OUTDATED;
+				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_UP_TO_DATE;
 				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_INCONSISTENT;
@@ -1388,6 +1438,11 @@ static void sanitize_state(struct drbd_resource *resource)
 				++good_data_count[OLD];
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				++good_data_count[NEW];
+
+			/* Pause a SyncSource until it finishes resync as target on other connecitons */
+			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
+			    is_sync_target_other_c(peer_device))
+				peer_device->resync_susp_other_c[NEW] = true;
 
 			if (resync_suspended(peer_device, NEW)) {
 				if (repl_state[NEW] == L_SYNC_SOURCE)

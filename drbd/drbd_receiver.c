@@ -3286,11 +3286,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	if (hg > 0 && disk_state <= D_INCONSISTENT) {
-		drbd_err(device, "I shall become SyncSource, but I am inconsistent!\n");
-		return -1;
-	}
-
 	if (hg < 0 && /* by intention we do not use disk_state here. */
 	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT) {
 		switch (rr_conflict) {
