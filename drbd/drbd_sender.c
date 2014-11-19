@@ -1806,15 +1806,24 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		}
 	}
 
-	if (down_trylock(&device->resource->state_sem)) {
-		/* Retry later and let the worker make progress in the
-		 * meantime; two-phase commits depend on that.  */
-		set_bit(B_RS_H_DONE, &peer_device->flags);
-		peer_device->start_resync_side = side;
-		peer_device->start_resync_timer.expires = jiffies + HZ/5;
-		add_timer(&peer_device->start_resync_timer);
-		return;
+	if (current == connection->sender.task) {
+		if (down_trylock(&device->resource->state_sem)) {
+			/* Retry later and let the worker make progress in the
+			 * meantime; two-phase commits depend on that.  */
+			set_bit(B_RS_H_DONE, &peer_device->flags);
+			peer_device->start_resync_side = side;
+			peer_device->start_resync_timer.expires = jiffies + HZ/5;
+			add_timer(&peer_device->start_resync_timer);
+			return;
+
+		}
+	} else {
+		/* If this is called by the receiver (as resync source) we need
+		   to wait here. Otherwise we might process the packet that ends
+		   the resync before we started it. */
+		down(&device->resource->state_sem);
 	}
+
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &peer_device->flags);
 	if (connection->cstate[NOW] < C_CONNECTED ||
