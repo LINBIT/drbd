@@ -467,6 +467,10 @@ int w_send_uuids(struct drbd_work *w, int cancel)
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, propagate_uuids_work);
 
+	if (peer_device->repl_state[NOW] < L_ESTABLISHED ||
+	    !test_bit(INITIAL_STATE_SENT, &peer_device->flags))
+		return 0;
+
 	drbd_send_uuids(peer_device, 0, 0);
 
 	return 0;

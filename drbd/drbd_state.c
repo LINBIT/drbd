@@ -2128,8 +2128,14 @@ static void send_role_to_all_peers(struct drbd_state_change *state_change)
 	unsigned int n_connection;
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
-		struct drbd_connection *connection =
-			state_change->connections[n_connection].connection;
+		struct drbd_connection_state_change *connection_state_change =
+			&state_change->connections[n_connection];
+		struct drbd_connection *connection = connection_state_change->connection;
+		enum drbd_conn_state new_cstate = connection_state_change->cstate[NEW];
+
+		if (new_cstate < C_CONNECTED)
+			continue;
+
 		if (connection->agreed_pro_version < 110) {
 			unsigned int n_device;
 
