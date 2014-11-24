@@ -4087,6 +4087,7 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	int node_id1, node_id2, from_id;
 	u64 peer_bm_uuid;
+	bool modified = false;
 
 	for (node_id1 = 0; node_id1 < DRBD_NODE_ID_MAX; node_id1++) {
 		if (device->ldev->md.peers[node_id1].bitmap_index == -1)
@@ -4122,21 +4123,26 @@ found:
 	if (peer_md[from_id].bitmap_index == -1)
 		return false;
 
-	if (from_id != node_id1) {
+	if (from_id != node_id1 &&
+	    peer_md[node_id1].bitmap_uuid != peer_bm_uuid) {
 		peer_md[node_id1].bitmap_uuid = peer_bm_uuid;
 		peer_md[node_id1].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 		copy_bitmap(device, from_id, node_id1);
+		modified = true;
 
 	}
-	if (from_id != node_id2) {
+	if (from_id != node_id2 &&
+	    peer_md[node_id2].bitmap_uuid != peer_bm_uuid) {
 		peer_md[node_id2].bitmap_uuid = peer_bm_uuid;
 		peer_md[node_id2].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 		copy_bitmap(device, from_id, node_id2);
+		modified = true;
 	}
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
-	drbd_md_mark_dirty(device);
-	return true;
+	if (modified)
+		drbd_md_mark_dirty(device);
+	return modified;
 }
 
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
