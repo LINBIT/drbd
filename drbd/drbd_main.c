@@ -4031,16 +4031,27 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	return newer;
 }
 
+static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
+{
+	struct drbd_connection *connection = drbd_connection_by_node_id(resource, node_id);
+
+	return connection ? rcu_dereference(connection->net_conf)->name : "";
+}
+
 static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
 {
 	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
+	const char* name;
 
 	if (_drbd_bm_total_weight(device, bitmap_index) == 0)
 		return;
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (slot %d)\n",
-		  _drbd_bm_total_weight(device, bitmap_index), node_id, bitmap_index);
+	rcu_read_lock();
+	name = name_of_node_id(device->resource, node_id);
+	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (%s)(slot %d)\n",
+		  _drbd_bm_total_weight(device, bitmap_index), node_id, name, bitmap_index);
+	rcu_read_unlock();
 	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "forget_bitmap()", BM_LOCK_TEST | BM_LOCK_SET);
 	_drbd_bm_clear_many_bits(device, bitmap_index, 0, -1UL);
@@ -4054,10 +4065,15 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 {
 	int from_index = device->ldev->md.peers[from_id].bitmap_index;
 	int to_index = device->ldev->md.peers[to_id].bitmap_index;
+	const char *from_name, *to_name;
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	drbd_info(device, "Node %d synced up to node %d. copying bitmap slot %d to %d.\n",
-		  to_id, from_id, from_index, to_index);
+	rcu_read_lock();
+	from_name = name_of_node_id(device->resource, from_id);
+	to_name = name_of_node_id(device->resource, to_id);
+	drbd_info(device, "Node %d (%s) synced up to node %d (%s). copying bitmap slot %d to %d.\n",
+		  to_id, to_name, from_id, from_name, from_index, to_index);
+	rcu_read_unlock();
 	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
 	drbd_bm_copy_slot(device, from_index, to_index);
