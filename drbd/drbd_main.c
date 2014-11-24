@@ -4035,6 +4035,9 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 {
 	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 
+	if (_drbd_bm_total_weight(device, bitmap_index) == 0)
+		return;
+
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (slot %d)\n",
 		  _drbd_bm_total_weight(device, bitmap_index), node_id, bitmap_index);
