@@ -4104,10 +4104,19 @@ static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) 
 	return -1;
 }
 
+static bool node_connected(struct drbd_resource *resource, int node_id)
+{
+	struct drbd_connection *connection;
+
+	connection = drbd_connection_by_node_id(resource, node_id);
+	return connection ? connection->cstate[NOW] == C_CONNECTED : false;
+}
+
 static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	struct drbd_resource *resource = device->resource;
 	int node_id1, node_id2, from_id;
 	u64 peer_bm_uuid;
 	bool modified = false;
@@ -4116,12 +4125,18 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 		if (device->ldev->md.peers[node_id1].bitmap_index == -1)
 			continue;
 
+		if (node_connected(resource, node_id1))
+			continue;
+
 		peer_bm_uuid = peer_device->bitmap_uuids[node_id1] & ~UUID_PRIMARY;
 		if (!peer_bm_uuid)
 			continue;
 
 		for (node_id2 = node_id1 + 1; node_id2 < DRBD_NODE_ID_MAX; node_id2++) {
 			if (device->ldev->md.peers[node_id2].bitmap_index == -1)
+				continue;
+
+			if (node_connected(resource, node_id2))
 				continue;
 
 			if (peer_bm_uuid == (peer_device->bitmap_uuids[node_id2] & ~UUID_PRIMARY))
