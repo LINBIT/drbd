@@ -1695,6 +1695,7 @@ void start_resync_timer_fn(unsigned long data)
 
 bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device, enum which_state which)
 {
+	u64 authoritative_nodes = except_peer_device->uuid_authoritative_nodes;
 	struct drbd_device *device = except_peer_device->device;
 	struct drbd_peer_device *peer_device;
 	bool rv = false;
@@ -1707,18 +1708,26 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 		if (peer_device == except_peer_device)
 			continue;
 
-		nc = rcu_dereference(peer_device->connection->net_conf);
-		/* Restricting the clause the two_primaries not allowed, otherwise
-		   we need to ensure here that we are neighbor of all primaries,
-		   and that is a lot more challenging. */
 		repl_state = peer_device->repl_state[which];
-		if ((!nc->two_primaries &&
-		     peer_device->connection->peer_role[which] == R_PRIMARY &&
-		     repl_state >= L_ESTABLISHED && repl_state < L_AHEAD) ||
-		    ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
-		     peer_device->uuid_flags & UUID_FLAG_STABLE)) {
-			rv = true;
-			break;
+
+		if (repl_state >= L_ESTABLISHED && repl_state < L_AHEAD) {
+			if (authoritative_nodes & NODE_MASK(peer_device->node_id)) {
+				rv = true;
+				break;
+			}
+
+			nc = rcu_dereference(peer_device->connection->net_conf);
+			/* Restricting the clause the two_primaries not allowed, otherwise
+			   we need to ensure here that we are neighbor of all primaries,
+			   and that is a lot more challenging. */
+
+			if ((!nc->two_primaries &&
+			     peer_device->connection->peer_role[which] == R_PRIMARY) ||
+			    ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+			     peer_device->uuid_flags & UUID_FLAG_STABLE)) {
+				rv = true;
+				break;
+			}
 		}
 	}
 	rcu_read_unlock();

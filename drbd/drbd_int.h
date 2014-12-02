@@ -1139,6 +1139,9 @@ struct drbd_peer_device {
 	u64 history_uuids[HISTORY_UUIDS];
 	u64 dirty_bits;
 	u64 uuid_flags;
+	u64 uuid_authoritative_nodes; /* when then UUID_FLAG_STABLE is cleared the peer thinks it is
+					 not stable. It does that because it thinks these nodes
+					 are authoritative */
 	bool uuids_received;
 
 	unsigned long comm_bm_set; /* communicated number of set bits. */

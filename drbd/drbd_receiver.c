@@ -4066,6 +4066,9 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
+	peer_device->uuid_authoritative_nodes =
+		peer_device->uuid_flags & UUID_FLAG_STABLE ? 0 : node_mask;
+
 	if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
 	    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
 	    device->resource->role[NOW] != R_PRIMARY &&
