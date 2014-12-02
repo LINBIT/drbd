@@ -3986,7 +3986,7 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 	change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
 }
 
-static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
+static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	struct drbd_device *device = peer_device->device;
@@ -4028,7 +4028,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 weak_nodes)
 
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
 			drbd_warn(peer_device, "received new current UUID: %016llX\n", peer_device->current_uuid);
-			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, weak_nodes);
+			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, node_mask);
 		}
 
 		if (device->disk_state[NOW] > D_OUTDATED) {
@@ -4161,7 +4161,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
 
-	err = __receive_uuids(peer_device, be64_to_cpu(p->weak_nodes));
+	err = __receive_uuids(peer_device, be64_to_cpu(p->node_mask));
 
 	if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
 		struct drbd_device *device = peer_device->device;

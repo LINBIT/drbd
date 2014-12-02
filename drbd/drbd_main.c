@@ -977,7 +977,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	return drbd_send_command(peer_device, P_UUIDS, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
-static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
+static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md;
@@ -1027,7 +1027,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		uuid_flags |= UUID_FLAG_STABLE;
 
 	p->uuid_flags = cpu_to_be64(uuid_flags);
-	p->weak_nodes = cpu_to_be64(weak_nodes);
+	p->node_mask = cpu_to_be64(node_mask);
 
 	put_ldev(device);
 
@@ -1037,10 +1037,10 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 				 NULL, 0, DATA_STREAM);
 }
 
-int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 weak_nodes)
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	if (peer_device->connection->agreed_pro_version >= 110)
-		return _drbd_send_uuids110(peer_device, uuid_flags, weak_nodes);
+		return _drbd_send_uuids110(peer_device, uuid_flags, node_mask);
 	else
 		return _drbd_send_uuids(peer_device, uuid_flags);
 }
