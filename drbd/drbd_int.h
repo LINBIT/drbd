@@ -1361,7 +1361,6 @@ enum dds_flags {
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
 };
 
-extern bool drbd_all_neighbor_secondary(struct drbd_resource *resource);
 extern int  drbd_thread_start(struct drbd_thread *thi);
 extern void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
 #ifdef CONFIG_SMP
@@ -1465,7 +1464,7 @@ extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_de
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
-extern bool drbd_device_stable(struct drbd_device *device);
+extern bool drbd_device_stable(struct drbd_device *device, u64 *authoritative);
 extern void drbd_flush_peer_acks(struct drbd_resource *resource);
 
 /* Meta data layout

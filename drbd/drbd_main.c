@@ -598,7 +598,7 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 #define drbd_calc_cpu_mask(A) ({})
 #endif
 
-bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
+static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *authoritative)
 {
 	struct drbd_connection *connection;
 	bool all_secondary = true;
@@ -608,7 +608,10 @@ bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
 		if (connection->cstate[NOW] >= C_CONNECTED &&
 		    connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
-			break;
+			if (authoritative)
+				*authoritative |= NODE_MASK(connection->net_conf->peer_node_id);
+			else
+				break;
 		}
 	}
 	rcu_read_unlock();
@@ -620,7 +623,7 @@ bool drbd_all_neighbor_secondary(struct drbd_resource *resource)
    A primary is stable since it is authoritative.
    Unstable are neighbors of a primary and resync target nodes.
    Nodes further away from a primary are stable! */
-bool drbd_device_stable(struct drbd_device *device)
+bool drbd_device_stable(struct drbd_device *device, u64 *authoritative)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
@@ -630,7 +633,7 @@ bool drbd_device_stable(struct drbd_device *device)
 	if (resource->role[NOW] == R_PRIMARY)
 		return true;
 
-	if (!drbd_all_neighbor_secondary(resource))
+	if (!drbd_all_neighbor_secondary(resource, authoritative))
 		return false;
 
 	rcu_read_lock();
@@ -641,6 +644,8 @@ bool drbd_device_stable(struct drbd_device *device)
 		case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_T:
 			device_stable = false;
+			if (authoritative)
+				*authoritative |= NODE_MASK(peer_device->node_id);
 			goto out;
 		default:
 			continue;
@@ -984,6 +989,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	struct p_uuids110 *p;
 	int i, pos = 0;
 	u64 bitmap_uuids_mask = 0;
+	u64 authoritative_mask;
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
@@ -1023,11 +1029,15 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
-	if (drbd_device_stable(device))
+	if (drbd_device_stable(device, &authoritative_mask)) {
 		uuid_flags |= UUID_FLAG_STABLE;
+		p->node_mask = cpu_to_be64(node_mask);
+	} else {
+		D_ASSERT(peer_device, node_mask == 0);
+		p->node_mask = cpu_to_be64(authoritative_mask);
+	}
 
 	p->uuid_flags = cpu_to_be64(uuid_flags);
-	p->node_mask = cpu_to_be64(node_mask);
 
 	put_ldev(device);
 
