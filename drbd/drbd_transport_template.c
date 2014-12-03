@@ -13,14 +13,24 @@ struct drbd_xxx_transport {
 	/* xxx */
 };
 
+struct xxx_listener {
+	struct drbd_listener listener;
+	/* xxx */
+};
+
+struct xxx_waiter {
+	struct drbd_waiter waiter;
+	/* xxx */
+};
+
 static struct drbd_transport *xxx_create(struct drbd_connection* connection);
 static void xxx_free(struct drbd_transport *transport, bool put_transport);
-static bool xxx_connect(struct drbd_transport *transport);
+static int xxx_connect(struct drbd_transport *transport);
 static int xxx_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags);
 static int xxx_recv(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, int flags);
 static void xxx_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats);
-static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, unsigned timeout);
-static unsigned xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
+static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
+static long xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int xxx_send_page(struct drbd_transport *transport, struct drbd_peer_device *peer_device, struct page *page,
 		    int offset, size_t size, unsigned msg_flags);
 static bool xxx_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
@@ -97,7 +107,7 @@ static void xxx_stats(struct drbd_transport* transport, struct drbd_transport_st
 {
 }
 
-static bool xxx_connect(struct drbd_transport *transport)
+static int xxx_connect(struct drbd_transport *transport)
 {
 	struct drbd_xxx_transport *xxx_transport =
 		container_of(transport, struct drbd_xxx_transport, transport);
@@ -105,11 +115,11 @@ static bool xxx_connect(struct drbd_transport *transport)
 	return true;
 }
 
-static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, unsigned timeout)
+static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)
 {
 }
 
-static unsigned xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream)
+static long xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream)
 {
 	return 0;
 }
@@ -128,6 +138,10 @@ static int xxx_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 static bool xxx_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		enum drbd_tr_hints hint)
 {
+	switch (hint) {
+	default: /* not implemented, but should not trigger error handling */
+		return true;
+	}
 	return true;
 }
 
@@ -136,7 +150,7 @@ static int __init xxx_init(void)
 	return drbd_register_transport_class(&xxx_transport_class);
 }
 
-static void xxx_cleanup(void)
+static void __exit xxx_cleanup(void)
 {
 	drbd_unregister_transport_class(&xxx_transport_class);
 }
