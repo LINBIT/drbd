@@ -1473,7 +1473,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		unsigned long *data;
 		drbd_err(device, "Fault injection: Corrupting data on receive\n");
 		data = kmap(peer_req->pages);
-		data[0] = data[0] ^ (unsigned long)-1;
+		data[0] = ~data[0];
 		kunmap(peer_req->pages);
 	}
 
