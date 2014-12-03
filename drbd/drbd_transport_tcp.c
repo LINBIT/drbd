@@ -1062,7 +1062,7 @@ static int __init dtt_init(void)
 					     DRBD_TRANSPORT_API_VERSION);
 }
 
-static void dtt_cleanup(void)
+static void __exit dtt_cleanup(void)
 {
 	drbd_unregister_transport_class(&tcp_transport_class);
 }
