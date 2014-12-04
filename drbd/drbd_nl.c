@@ -763,6 +763,8 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	int forced = 0;
 	bool with_force = false;
 
+
+retry:
 	down(&resource->state_sem);
 
 	if (role == R_PRIMARY) {
@@ -798,6 +800,18 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 				    CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
 				    with_force));
 
+		if (rv == SS_CONCURRENT_ST_CHG)
+			continue;
+
+		if (rv == SS_TIMEOUT) {
+			long timeout = twopc_retry_timeout(resource, try);
+			/* It might be that the receiver tries to start resync, and
+			   sleeps on state_sem. Give it up, and retry in a short
+			   while */
+			up(&resource->state_sem);
+			schedule_timeout_interruptible(timeout);
+			goto retry;
+		}
 		/* in case we first succeeded to outdate,
 		 * but now suddenly could establish a connection */
 		if (rv == SS_CW_FAILED_BY_PEER) {
