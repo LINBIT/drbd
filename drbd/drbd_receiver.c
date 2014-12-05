@@ -2393,6 +2393,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	unsigned int fault_type;
 	struct p_block_req *p =	pi->data;
 	enum drbd_disk_state min_d_state;
+	int err;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -2463,8 +2464,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	case P_RS_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_rsdata_req;
 		fault_type = DRBD_FAULT_RS_RD;
-		/* used in the sector offset progress display */
-		device->bm_resync_fo = BM_SECT_TO_BIT(sector);
 		break;
 
 	case P_OV_REPLY:
@@ -2486,8 +2485,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		if (pi->cmd == P_CSUM_RS_REQUEST) {
 			D_ASSERT(device, connection->agreed_pro_version >= 89);
 			peer_req->w.cb = w_e_end_csum_rs_req;
-			/* used in the sector offset progress display */
-			device->bm_resync_fo = BM_SECT_TO_BIT(sector);
 			/* remember to report stats in drbd_resync_finished */
 			peer_device->use_csums = true;
 		} else if (pi->cmd == P_OV_REPLY) {
@@ -2560,9 +2557,21 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (connection->peer_role[NOW] != R_PRIMARY &&
 	    drbd_rs_should_slow_down(peer_device, sector, false))
 		schedule_timeout_uninterruptible(HZ/10);
-	update_receiver_timing_details(connection, drbd_rs_begin_io);
-	if (drbd_rs_begin_io(peer_device, sector))
-		goto out_free_e;
+
+	if (connection->agreed_pro_version >= 110) {
+		/* In DRBD9 we may not sleep here in order to avoid deadlocks.
+		   Instruct the SyncSource to retry */
+		err = drbd_try_rs_begin_io(peer_device, sector, false);
+		if (err) {
+			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+			/* If err is set, we will drop the connection... */
+			goto out_free;
+		}
+	} else {
+		update_receiver_timing_details(connection, drbd_rs_begin_io);
+		if (drbd_rs_begin_io(peer_device, sector))
+			goto out_free_e;
+	}
 
 submit_for_resync:
 	atomic_add(size >> 9, &device->rs_sect_ev);
@@ -2577,6 +2586,8 @@ submit:
 	drbd_err(device, "submit failed, triggering re-connect\n");
 
 out_free_e:
+	err = -EIO;
+out_free:
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -2584,7 +2595,7 @@ out_free_e:
 
 	put_ldev(device);
 	drbd_free_peer_req(device, peer_req);
-	return -EIO;
+	return err;
 }
 
 /**
@@ -6370,6 +6381,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	sector_t sector;
 	int size;
 	struct p_block_ack *p = pi->data;
+	unsigned long bit;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -6388,7 +6400,15 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 		switch (pi->cmd) {
 		case P_NEG_RS_DREPLY:
 			drbd_rs_failed_io(peer_device, sector, size);
+			break;
 		case P_RS_CANCEL:
+			bit = BM_SECT_TO_BIT(sector);
+			mutex_lock(&device->bm_resync_fo_mutex);
+			device->bm_resync_fo = min(device->bm_resync_fo, bit);
+			mutex_unlock(&device->bm_resync_fo_mutex);
+
+			atomic_add(size >> 9, &peer_device->rs_sect_in);
+			mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
 			break;
 		default:
 			BUG();

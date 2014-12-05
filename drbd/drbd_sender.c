@@ -447,7 +447,9 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, resync_work);
+	struct drbd_device *device = peer_device->device;
 
+	mutex_lock(&device->bm_resync_fo_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
 		make_ov_request(peer_device, cancel);
@@ -458,6 +460,7 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	default:
 		break;
 	}
+	mutex_unlock(&device->bm_resync_fo_mutex);
 
 	return 0;
 }

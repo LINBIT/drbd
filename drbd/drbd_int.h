@@ -1225,6 +1225,7 @@ struct drbd_device {
 
 	struct drbd_bitmap *bitmap;
 	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
+	struct mutex bm_resync_fo_mutex;
 
 	int open_rw_cnt, open_ro_cnt;
 	/* FIXME clean comments, restructure so it is more obvious which

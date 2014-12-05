@@ -3039,6 +3039,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	atomic_set(&device->md_io.in_use, 0);
 
 	spin_lock_init(&device->al_lock);
+	mutex_init(&device->bm_resync_fo_mutex);
 
 	INIT_LIST_HEAD(&device->active_ee);
 	INIT_LIST_HEAD(&device->sync_ee);
