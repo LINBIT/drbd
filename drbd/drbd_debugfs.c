@@ -694,8 +694,11 @@ static const struct file_operations connection_oldest_requests_fops = {
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
 	struct dentry *conns_dir = connection->resource->debugfs_res_connections;
+	struct drbd_peer_device *peer_device;
 	char conn_name[SHARED_SECRET_MAX];
 	struct dentry *dentry;
+	int vnr;
+
 	if (!conns_dir)
 		return;
 
@@ -721,6 +724,12 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	connection->debugfs_conn_oldest_requests = dentry;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (!peer_device->debugfs_peer_dev)
+			drbd_debugfs_peer_device_add(peer_device);
+	}
+
 	return;
 
 fail:
@@ -835,6 +844,7 @@ drbd_debugfs_device_attr(data_gen_id)
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
 	struct dentry *vols_dir = device->resource->debugfs_res_volumes;
+	struct drbd_peer_device *peer_device;
 	char minor_buf[8]; /* MINORMASK, MINORBITS == 20; */
 	char vnr_buf[8];   /* volume number vnr is even 16 bit only; */
 	char *slink_name = NULL;
@@ -874,6 +884,12 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	DCF(act_log_extents);
 	DCF(data_gen_id);
 #undef DCF
+
+	for_each_peer_device(peer_device, device) {
+		if (!peer_device->debugfs_peer_dev)
+			drbd_debugfs_peer_device_add(peer_device);
+	}
+
 	return;
 
 fail:

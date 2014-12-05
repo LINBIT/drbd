@@ -2966,7 +2966,6 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
-	drbd_debugfs_peer_device_add(peer_device);
 	return peer_device;
 }
 
