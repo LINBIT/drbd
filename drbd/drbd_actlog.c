@@ -731,7 +731,7 @@ static bool extent_in_sync(struct drbd_peer_device *peer_device, unsigned int rs
 	} else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE) {
 		bool rv = false;
 
-		if (!drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr))) {
+		if (!drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr), false)) {
 			struct bm_extent *bm_ext;
 			struct lc_element *e;
 
@@ -1311,7 +1311,7 @@ retry:
  * tries to set it to BME_LOCKED. Returns 0 upon success, and -EAGAIN
  * if there is still application IO going on in this area.
  */
-int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
+int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector, bool throttle)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned int enr = BM_SECT_TO_EXT(sector);
@@ -1319,7 +1319,9 @@ int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector)
 	struct lc_element *e;
 	struct bm_extent *bm_ext;
 	int i;
-	bool throttle = drbd_rs_should_slow_down(peer_device, sector, true);
+
+	if (throttle)
+		throttle = drbd_rs_should_slow_down(peer_device, sector, true);
 
 	/* If we need to throttle, a half-locked (only marked BME_NO_WRITES,
 	 * not yet BME_LOCKED) extent needs to be kicked out explicitly if we

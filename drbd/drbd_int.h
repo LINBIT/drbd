@@ -1940,7 +1940,7 @@ extern void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, stru
 extern void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_rs_complete_io(struct drbd_peer_device *, sector_t);
 extern int drbd_rs_begin_io(struct drbd_peer_device *, sector_t);
-extern int drbd_try_rs_begin_io(struct drbd_peer_device *, sector_t);
+extern int drbd_try_rs_begin_io(struct drbd_peer_device *, sector_t, bool);
 extern void drbd_rs_cancel_all(struct drbd_peer_device *);
 extern int drbd_rs_del_all(struct drbd_peer_device *);
 extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
