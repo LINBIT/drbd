@@ -1175,6 +1175,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_oldest_requests;
 	struct dentry *debugfs_vol_act_log_extents;
 	struct dentry *debugfs_vol_data_gen_id;
+	struct dentry *debugfs_vol_io_frozen;
 #endif
 
 	unsigned int vnr;	/* volume number within the connection */

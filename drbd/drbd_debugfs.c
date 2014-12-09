@@ -816,6 +816,29 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_io_frozen_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+
+	if (!get_ldev_if_state(device, D_FAILED))
+		return -ENODEV;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
+	seq_printf(m, "drbd_suspended(): %d\n", drbd_suspended(device));
+	seq_printf(m, "suspend_cnt: %d\n", atomic_read(&device->suspend_cnt));
+	seq_printf(m, "!drbd_state_is_stable(): %d\n", !drbd_state_is_stable(device));
+	seq_printf(m, "ap_bio_cnt[READ]: %d\n", atomic_read(&device->ap_bio_cnt[READ]));
+	seq_printf(m, "ap_bio_cnt[WRITE]: %d\n", atomic_read(&device->ap_bio_cnt[WRITE]));
+	seq_printf(m, "!list_empty(&device->pending_bitmap_work): %d\n",
+		   !list_empty(&device->pending_bitmap_work));
+	seq_printf(m, "may_inc_ap_bio(): %d\n", may_inc_ap_bio(device));
+	put_ldev(device);
+
+	return 0;
+}
+
 #define drbd_debugfs_device_attr(name)						\
 static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 {										\
@@ -840,6 +863,7 @@ static const struct file_operations device_ ## name ## _fops = {		\
 drbd_debugfs_device_attr(oldest_requests)
 drbd_debugfs_device_attr(act_log_extents)
 drbd_debugfs_device_attr(data_gen_id)
+drbd_debugfs_device_attr(io_frozen)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -883,6 +907,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	DCF(oldest_requests);
 	DCF(act_log_extents);
 	DCF(data_gen_id);
+	DCF(io_frozen);
 #undef DCF
 
 	for_each_peer_device(peer_device, device) {
