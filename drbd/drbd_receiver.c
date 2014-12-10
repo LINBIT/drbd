@@ -4510,7 +4510,7 @@ void twopc_timer_fn(unsigned long data)
 
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
 	if (list_empty(&resource->twopc_work.list)) {
-		drbd_err(resource, "Two-phase commit %d timeout\n",
+		drbd_err(resource, "Two-phase commit %u timeout\n",
 			   resource->twopc_reply.tid);
 		resource->twopc_work.cb = abort_nested_twopc_work;
 		drbd_queue_work(&resource->work, &resource->twopc_work);
