@@ -1420,7 +1420,8 @@ proceed:
 
 try_again:
 	if (bm_ext) {
-		if (throttle) {
+		if (throttle ||
+		    (test_bit(BME_PRIORITY, &bm_ext->flags) && bm_ext->lce.refcnt == 1)) {
 			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 			clear_bit(BME_NO_WRITES, &bm_ext->flags);
