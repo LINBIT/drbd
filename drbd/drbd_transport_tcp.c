@@ -190,7 +190,6 @@ static int dtt_we_should_drop_the_connection(struct drbd_tcp_transport *tcp_tran
 static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 		      void *buf, size_t size, unsigned msg_flags)
 {
-	struct drbd_connection *connection = tcp_transport->transport.connection;
 	struct kvec iov;
 	struct msghdr msg;
 	int rv, sent = 0;
@@ -234,15 +233,8 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 		iov.iov_len  -= rv;
 	} while (sent < size);
 
-	if (rv <= 0) {
-		if (rv != -EAGAIN) {
-			drbd_err(connection, "%s_sendmsg returned %d\n",
-				 tcp_transport->stream[CONTROL_STREAM] == socket ? "csock" : "dsock",
-				 rv);
-			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
-		} else
-			change_cstate(connection, C_TIMEOUT, CS_HARD);
-	}
+	if (rv <= 0)
+		return rv;
 
 	return sent;
 }

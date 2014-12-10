@@ -1973,11 +1973,20 @@ int drbd_send_all(struct drbd_connection *connection, void *buffer,
 	int err;
 
 	err = transport->ops->send(transport, drbd_stream, buffer, size, msg_flags);
-	if (err < 0)
+
+	if (err < 0) {
+		if (err == -EAGAIN) {
+			change_cstate(connection, C_TIMEOUT, CS_HARD);
+		} else {
+			drbd_err(connection, "send() on %s returned %d\n",
+				 drbd_stream == CONTROL_STREAM ? "msock" : "sock",
+				 err);
+			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
+		}
 		return err;
-	if (err != size)
-		return -EIO;
-	return 0;
+	}
+
+	return err == size ? 0 : -EIO;
 }
 
 /* primary_peer_present_and_not_two_primaries_allowed() */
