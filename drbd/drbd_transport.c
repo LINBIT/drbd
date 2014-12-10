@@ -180,8 +180,8 @@ struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, str
 }
 
 /* Network transport abstractions */
-EXPORT_SYMBOL(drbd_register_transport_class);
-EXPORT_SYMBOL(drbd_unregister_transport_class);
-EXPORT_SYMBOL(drbd_get_listener);
-EXPORT_SYMBOL(drbd_put_listener);
-EXPORT_SYMBOL(drbd_find_waiter_by_addr);
+EXPORT_SYMBOL_GPL(drbd_register_transport_class);
+EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
+EXPORT_SYMBOL_GPL(drbd_get_listener);
+EXPORT_SYMBOL_GPL(drbd_put_listener);
+EXPORT_SYMBOL_GPL(drbd_find_waiter_by_addr);
