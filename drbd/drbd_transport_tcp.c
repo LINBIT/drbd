@@ -344,7 +344,7 @@ static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 	}
 }
 
-static struct socket *dtt_try_connect(struct drbd_connection *connection)
+static int dtt_try_connect(struct drbd_connection *connection, struct socket **ret_socket)
 {
 	const char *what;
 	struct socket *socket;
@@ -352,13 +352,12 @@ static struct socket *dtt_try_connect(struct drbd_connection *connection)
 	struct net_conf *nc;
 	int err;
 	int sndbuf_size, rcvbuf_size, connect_int;
-	int disconnect_on_error = 1;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return NULL;
+		return -EIO;
 	}
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
@@ -400,33 +399,33 @@ static struct socket *dtt_try_connect(struct drbd_connection *connection)
 
 	/* connect may fail, peer not yet available.
 	 * stay C_CONNECTING, don't go Disconnecting! */
-	disconnect_on_error = 0;
 	what = "connect";
 	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
+	if (err < 0) {
+		switch (err) {
+		case -ETIMEDOUT:
+		case -EINPROGRESS:
+		case -EINTR:
+		case -ERESTARTSYS:
+		case -ECONNREFUSED:
+		case -ENETUNREACH:
+		case -EHOSTDOWN:
+		case -EHOSTUNREACH:
+			err = -EAGAIN;
+		}
+	}
 
 out:
 	if (err < 0) {
-		if (socket) {
+		if (socket)
 			sock_release(socket);
-			socket = NULL;
-		}
-		switch (-err) {
-			/* timeout, busy, signal pending */
-		case ETIMEDOUT: case EAGAIN: case EINPROGRESS:
-		case EINTR: case ERESTARTSYS:
-			/* peer not (yet) available, network problem */
-		case ECONNREFUSED: case ENETUNREACH:
-		case EHOSTDOWN:    case EHOSTUNREACH:
-			disconnect_on_error = 0;
-			break;
-		default:
+		if (err != -EAGAIN)
 			drbd_err(connection, "%s failed, err = %d\n", what, err);
-		}
-		if (disconnect_on_error)
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	} else {
+		*ret_socket = socket;
 	}
 
-	return socket;
+	return err;
 }
 
 static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket, void *buf,
@@ -782,7 +781,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
 	void *dsocket_sbuf, *csocket_sbuf;
-	int timeout;
+	int timeout, err;
 	bool ok;
 
 	dsocket_sbuf = connection->sbuf[DATA_STREAM];
@@ -799,9 +798,12 @@ static int dtt_connect(struct drbd_transport *transport)
 		return -EAGAIN;
 
 	do {
-		struct socket *s;
+		struct socket *s = NULL;
 
-		s = dtt_try_connect(connection);
+		err = dtt_try_connect(connection, &s);
+		if (err < 0 && err != -EAGAIN)
+			goto out;
+
 		if (s) {
 			if (!dsocket) {
 				dsocket = s;
@@ -812,7 +814,7 @@ static int dtt_connect(struct drbd_transport *transport)
 				dtt_send_first_packet(tcp_transport, csocket, csocket_sbuf, P_INITIAL_META, CONTROL_STREAM);
 			} else {
 				drbd_err(connection, "Logic error in conn_connect()\n");
-				goto out_release_sockets;
+				goto out_eagain;
 			}
 		}
 
@@ -856,12 +858,12 @@ randomize:
 		}
 
 		if (connection->cstate[NOW] <= C_DISCONNECTING)
-			goto out_release_sockets;
+			goto out_eagain;
 		if (signal_pending(current)) {
 			flush_signals(current);
 			smp_rmb();
 			if (get_t_state(&connection->receiver) == EXITING)
-				goto out_release_sockets;
+				goto out_eagain;
 		}
 
 		ok = dtt_connection_established(connection, &dsocket, &csocket);
@@ -903,14 +905,16 @@ randomize:
 
 	return 0;
 
-out_release_sockets:
+out_eagain:
+	err = -EAGAIN;
+out:
 	dtt_put_listener(&waiter);
 	if (dsocket)
 		sock_release(dsocket);
 	if (csocket)
 		sock_release(csocket);
 
-	return -EIO;
+	return err;
 }
 
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)

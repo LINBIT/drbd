@@ -667,10 +667,10 @@ start:
 	}
 
 	err = transport->ops->connect(transport);
-	if (err == -EIO)
-		return false;
-	else if (err == -EAGAIN)
+	if (err == -EAGAIN)
 		goto retry;
+	else if (err < 0)
+		goto abort;
 
 	connection->last_received = jiffies;
 
