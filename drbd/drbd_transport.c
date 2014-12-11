@@ -7,8 +7,11 @@
 static LIST_HEAD(transport_classes);
 static spinlock_t transport_classes_lock = __SPIN_LOCK_UNLOCKED(&transport_classes_lock);
 
-int drbd_register_transport_class(struct drbd_transport_class *transport_class)
+int drbd_register_transport_class(struct drbd_transport_class *transport_class, int version)
 {
+	if (version != DRBD_TRANSPORT_API_VERSION)
+		return -EINVAL;
+
 	spin_lock(&transport_classes_lock);
 	list_add_tail(&transport_class->list, &transport_classes);
 	spin_unlock(&transport_classes_lock);

@@ -6,6 +6,13 @@
 #include <linux/wait.h>
 #include <linux/socket.h>
 
+/* Whenever touch this file in a non-trivial way, increase the
+   DRBD_TRANSPORT_API_VERSION
+   So that transport compiled against an older version of this
+   header will no longer load in a module that assumes a newer
+   version.
+*/
+#define DRBD_TRANSPORT_API_VERSION 1
 
 struct drbd_resource;
 struct drbd_connection;
@@ -93,7 +100,7 @@ struct drbd_waiter {
 	struct drbd_listener *listener;
 };
 
-extern int drbd_register_transport_class(struct drbd_transport_class *transport_class);
+extern int drbd_register_transport_class(struct drbd_transport_class *transport_class, int api_version);
 extern void drbd_unregister_transport_class(struct drbd_transport_class *transport_class);
 extern struct drbd_transport *drbd_create_transport(const char *name, struct drbd_connection *);
 

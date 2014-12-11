@@ -1036,7 +1036,8 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 
 static int __init dtt_init(void)
 {
-	return drbd_register_transport_class(&tcp_transport_class);
+	return drbd_register_transport_class(&tcp_transport_class,
+					     DRBD_TRANSPORT_API_VERSION);
 }
 
 static void dtt_cleanup(void)
