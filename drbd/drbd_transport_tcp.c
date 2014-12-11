@@ -510,7 +510,7 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 	write_unlock_bh(&sock->sk_callback_lock);
 }
 
-static struct socket *dtt_wait_for_connect(struct dtt_waiter *waiter)
+static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socket)
 {
 	struct drbd_connection *connection = waiter->waiter.connection;
 	struct drbd_resource *resource = connection->resource;
@@ -526,7 +526,7 @@ static struct socket *dtt_wait_for_connect(struct dtt_waiter *waiter)
 	nc = rcu_dereference(connection->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return NULL;
+		return -EINVAL;
 	}
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
@@ -537,7 +537,7 @@ static struct socket *dtt_wait_for_connect(struct dtt_waiter *waiter)
 retry:
 	timeo = wait_event_interruptible_timeout(waiter->waiter.wait, dtt_wait_connect_cond(waiter), timeo);
 	if (timeo <= 0)
-		return NULL;
+		return -EAGAIN;
 
 	spin_lock_bh(&resource->listeners_lock);
 	if (waiter->socket) {
@@ -549,15 +549,8 @@ retry:
 
 		s_estab = NULL;
 		err = kernel_accept(listener->s_listen, &s_estab, 0);
-		if (err < 0) {
-			if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS) {
-				drbd_err(connection, "accept failed, err = %d\n", err);
-				change_cstate(connection, C_DISCONNECTING, CS_HARD);
-			}
-		}
-
-		if (!s_estab)
-			return NULL;
+		if (err < 0)
+			return err;
 
 		/* The established socket inherits the sk_state_change callback
 		   from the listening socket. */
@@ -620,7 +613,8 @@ retry:
 		}
 	}
 	spin_unlock_bh(&resource->listeners_lock);
-	return s_estab;
+	*socket = s_estab;
+	return 0;
 
 retry_locked:
 	spin_unlock_bh(&resource->listeners_lock);
@@ -822,7 +816,10 @@ static int dtt_connect(struct drbd_transport *transport)
 			break;
 
 retry:
-		s = dtt_wait_for_connect(&waiter);
+		err = dtt_wait_for_connect(&waiter, &s);
+		if (err < 0 && err != -EAGAIN)
+			goto out;
+
 		if (s) {
 			int fp = dtt_receive_first_packet(connection, s);
 
