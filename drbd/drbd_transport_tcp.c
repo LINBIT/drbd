@@ -60,6 +60,7 @@ static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 		int offset, size_t size, unsigned msg_flags);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
+static void dtt_update_congested(struct drbd_transport *transport);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
@@ -80,31 +81,11 @@ static struct drbd_transport_ops dtt_ops = {
 	.hint = dtt_hint,
 };
 
-static void dtt_update_congested(struct drbd_transport *transport);
-
-
-static void dtt_cork(struct socket *socket)
-{
-	int val = 1;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
-}
-
-static void dtt_uncork(struct socket *socket)
-{
-	int val = 0;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
-}
 
 static void dtt_nodelay(struct socket *socket)
 {
 	int val = 1;
 	(void) kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
-}
-
-static void dtt_quickack(struct socket *socket)
-{
-	int val = 2;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_QUICKACK, (char *)&val, sizeof(val));
 }
 
 static struct drbd_transport *dtt_create(struct drbd_connection *connection)
@@ -997,6 +978,24 @@ static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 		peer_device->send_cnt += size >> 9;
 	}
 	return err;
+}
+
+static void dtt_cork(struct socket *socket)
+{
+	int val = 1;
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
+}
+
+static void dtt_uncork(struct socket *socket)
+{
+	int val = 0;
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
+}
+
+static void dtt_quickack(struct socket *socket)
+{
+	int val = 2;
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_QUICKACK, (char *)&val, sizeof(val));
 }
 
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
