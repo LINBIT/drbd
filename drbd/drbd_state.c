@@ -3918,6 +3918,3 @@ void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
 {
 	peer_device->resync_susp_dependency[NEW] = value;
 }
-
-EXPORT_SYMBOL(twopc_retry_timeout);
-EXPORT_SYMBOL(change_cstate);

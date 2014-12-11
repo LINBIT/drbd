@@ -98,7 +98,7 @@ extern void drbd_unregister_transport_class(struct drbd_transport_class *transpo
 extern struct drbd_transport *drbd_create_transport(const char *name, struct drbd_connection *);
 
 extern int drbd_get_listener(struct drbd_waiter *waiter,
-			     struct drbd_listener * (*create_fn)(struct drbd_connection *));
+			     int (*create_fn)(struct drbd_connection *, struct drbd_listener **));
 extern void drbd_put_listener(struct drbd_waiter *waiter);
 extern struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *, struct sockaddr_storage *);
 

@@ -93,11 +93,12 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection)
 }
 
 int drbd_get_listener(struct drbd_waiter *waiter,
-		      struct drbd_listener * (*create_fn)(struct drbd_connection *))
+		      int (*create_listener)(struct drbd_connection *, struct drbd_listener **))
 {
 	struct drbd_connection *connection = waiter->connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener, *new_listener = NULL;
+	int err;
 
 	init_waitqueue_head(&waiter->wait);
 
@@ -121,9 +122,9 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		if (listener)
 			return 0;
 
-		new_listener = create_fn(waiter->connection);
-		if (!new_listener)
-			return -ENOMEM;
+		err = create_listener(waiter->connection, &new_listener);
+		if (err)
+			return err;
 
 		kref_init(&new_listener->kref);
 		INIT_LIST_HEAD(&new_listener->waiters);

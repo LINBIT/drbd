@@ -683,7 +683,7 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static struct drbd_listener *dtt_create_listener(struct drbd_connection *connection)
+static int dtt_create_listener(struct drbd_connection *connection, struct drbd_listener **ret_listener)
 {
 	int err, sndbuf_size, rcvbuf_size;
 	struct sockaddr_storage my_addr;
@@ -696,7 +696,7 @@ static struct drbd_listener *dtt_create_listener(struct drbd_connection *connect
 	nc = rcu_dereference(connection->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return NULL;
+		return -EINVAL;
 	}
 	sndbuf_size = nc->sndbuf_size;
 	rcvbuf_size = nc->rcvbuf_size;
@@ -721,8 +721,10 @@ static struct drbd_listener *dtt_create_listener(struct drbd_connection *connect
 
 	what = "kmalloc";
 	listener = kmalloc(sizeof(*listener), GFP_KERNEL);
-	if (!listener)
+	if (!listener) {
+		err = -ENOMEM;
 		goto out;
+	}
 
 	listener->s_listen = s_listen;
 	write_lock_bh(&s_listen->sk->sk_callback_lock);
@@ -739,21 +741,19 @@ static struct drbd_listener *dtt_create_listener(struct drbd_connection *connect
 	listener->listener.listen_addr = my_addr;
 	listener->listener.destroy = dtt_destroy_listener;
 
-	return &listener->listener;
+	*ret_listener = &listener->listener;
+	return 0;
 out:
 	if (s_listen)
 		sock_release(s_listen);
-	if (err < 0) {
-		if (err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS &&
-		    err != -EADDRINUSE) {
-			drbd_err(connection, "%s failed, err = %d\n", what, err);
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		}
-	}
+
+	if (err < 0 &&
+	    err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS && err != -EADDRINUSE)
+		drbd_err(connection, "%s failed, err = %d\n", what, err);
 
 	kfree(listener);
 
-	return NULL;
+	return err;
 }
 
 static void dtt_put_listener(struct dtt_waiter *waiter)
@@ -788,8 +788,9 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	waiter.waiter.connection = connection;
 	waiter.socket = NULL;
-	if (drbd_get_listener(&waiter.waiter, dtt_create_listener))
-		return -EAGAIN;
+	err = drbd_get_listener(&waiter.waiter, dtt_create_listener);
+	if (err)
+		return err;
 
 	do {
 		struct socket *s = NULL;
