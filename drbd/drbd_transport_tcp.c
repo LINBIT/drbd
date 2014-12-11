@@ -34,8 +34,7 @@ MODULE_LICENSE("GPL");
 
 struct drbd_tcp_transport {
 	struct drbd_transport transport;
-	struct socket *data_socket;
-	struct socket *control_socket;
+	struct socket *stream[2];
 };
 
 struct dtt_listener {
@@ -84,28 +83,28 @@ static struct drbd_transport_ops dtt_ops = {
 static void dtt_update_congested(struct drbd_transport *transport);
 
 
-static void dtt_cork(struct socket *sock)
+static void dtt_cork(struct socket *socket)
 {
 	int val = 1;
-	(void) kernel_setsockopt(sock, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
 }
 
-static void dtt_uncork(struct socket *sock)
+static void dtt_uncork(struct socket *socket)
 {
 	int val = 0;
-	(void) kernel_setsockopt(sock, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
 }
 
-static void dtt_nodelay(struct socket *sock)
+static void dtt_nodelay(struct socket *socket)
 {
 	int val = 1;
-	(void) kernel_setsockopt(sock, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 }
 
-static void dtt_quickack(struct socket *sock)
+static void dtt_quickack(struct socket *socket)
 {
 	int val = 2;
-	(void) kernel_setsockopt(sock, SOL_TCP, TCP_QUICKACK, (char *)&val, sizeof(val));
+	(void) kernel_setsockopt(socket, SOL_TCP, TCP_QUICKACK, (char *)&val, sizeof(val));
 }
 
 static struct drbd_transport *dtt_create(struct drbd_connection *connection)
@@ -143,14 +142,15 @@ static void dtt_free(struct drbd_transport *transport, bool put_transport)
 
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
-	if (tcp_transport->data_socket) {
-		dtt_free_one_sock(tcp_transport->data_socket);
-		tcp_transport->data_socket = NULL;
+
+	if (tcp_transport->stream[DATA_STREAM]) {
+		dtt_free_one_sock(tcp_transport->stream[DATA_STREAM]);
+		tcp_transport->stream[DATA_STREAM] = NULL;
 	}
 
-	if (tcp_transport->control_socket) {
-		dtt_free_one_sock(tcp_transport->control_socket);
-		tcp_transport->control_socket = NULL;
+	if (tcp_transport->stream[CONTROL_STREAM]) {
+		dtt_free_one_sock(tcp_transport->stream[CONTROL_STREAM]);
+		tcp_transport->stream[CONTROL_STREAM] = NULL;
 	}
 
 	if (put_transport) {
@@ -163,12 +163,12 @@ static void dtt_free(struct drbd_transport *transport, bool put_transport)
  * returns false if we should retry,
  * true if we think connection is dead
  */
-static int dtt_we_should_drop_the_connection(struct drbd_tcp_transport *tcp_transport, struct socket *sock)
+static int dtt_we_should_drop_the_connection(struct drbd_tcp_transport *tcp_transport, struct socket *socket)
 {
 	int drop_it;
 	struct drbd_connection *connection = tcp_transport->transport.connection;
 
-	drop_it =   tcp_transport->control_socket == sock
+	drop_it = (tcp_transport->stream[CONTROL_STREAM] == socket)
 		|| !connection->asender.task
 		|| get_t_state(&connection->asender) != RUNNING
 		|| connection->cstate[NOW] < C_CONNECTED;
@@ -187,7 +187,7 @@ static int dtt_we_should_drop_the_connection(struct drbd_tcp_transport *tcp_tran
 }
 
 
-static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *sock,
+static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 		      void *buf, size_t size, unsigned msg_flags)
 {
 	struct drbd_connection *connection = tcp_transport->transport.connection;
@@ -216,9 +216,9 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
  * do we need to block DRBD_SIG if sock == &meta.socket ??
  * otherwise wake_asender() might interrupt some send_*Ack !
  */
-		rv = kernel_sendmsg(sock, &msg, &iov, 1, size);
+		rv = kernel_sendmsg(socket, &msg, &iov, 1, size);
 		if (rv == -EAGAIN) {
-			if (dtt_we_should_drop_the_connection(tcp_transport, sock))
+			if (dtt_we_should_drop_the_connection(tcp_transport, socket))
 				break;
 			else
 				continue;
@@ -237,7 +237,7 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 	if (rv <= 0) {
 		if (rv != -EAGAIN) {
 			drbd_err(connection, "%s_sendmsg returned %d\n",
-				 tcp_transport->control_socket == sock ? "msock" : "sock",
+				 tcp_transport->stream[CONTROL_STREAM] == socket ? "csock" : "dsock",
 				 rv);
 			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 		} else
@@ -250,17 +250,17 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 /*
   drbd_send distinguishes two cases:
 
-  Packets sent via the data socket "sock"
-  and packets sent via the meta data socket "msock"
+  Packets sent via the data socket "dsock"
+  and packets sent via the control data socket "csock"
 
-		    sock                      msock
+		    dsock                      msock
   -----------------+-------------------------+------------------------------
   timeout           conf.timeout / 2          conf.timeout / 2
-  timeout action    send a ping via msock     Abort communication
+  timeout action    send a ping via csock     Abort communication
 					      and close all sockets
 */
 /*
- * you must have down()ed the appropriate [m]sock_mutex elsewhere!
+ * you must have down()ed the appropriate mutex elsewhere!
  */
 static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags)
 {
@@ -268,15 +268,10 @@ static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, v
 		container_of(transport, struct drbd_tcp_transport, transport);
 
 	struct drbd_connection *connection = transport->connection;
-	struct socket *sock = NULL;
+	struct socket *socket = tcp_transport->stream[stream];
 	int err;
 
-	if (stream == DATA_STREAM)
-		sock = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		sock = tcp_transport->control_socket;
-
-	if (!sock)
+	if (!socket)
 		return -EBADR;
 
 	if (stream == DATA_STREAM) {
@@ -286,7 +281,7 @@ static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, v
 		dtt_update_congested(transport);
 	}
 
-	err = _dtt_send(tcp_transport, sock, buf, size, msg_flags);
+	err = _dtt_send(tcp_transport, socket, buf, size, msg_flags);
 
 	if (stream == DATA_STREAM)
 		clear_bit(NET_CONGESTED, &transport->flags);
@@ -295,7 +290,7 @@ static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, v
 }
 
 
-static int dtt_recv_short(struct socket *sock, void *buf, size_t size, int flags)
+static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int flags)
 {
 	mm_segment_t oldfs;
 	struct kvec iov = {
@@ -311,7 +306,7 @@ static int dtt_recv_short(struct socket *sock, void *buf, size_t size, int flags
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
-	rv = sock_recvmsg(sock, &msg, size, msg.msg_flags);
+	rv = sock_recvmsg(socket, &msg, size, msg.msg_flags);
 	set_fs(oldfs);
 
 	return rv;
@@ -322,14 +317,7 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct socket *socket = NULL;
-
-	if (stream == DATA_STREAM)
-		socket = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		socket = tcp_transport->control_socket;
-
-	return dtt_recv_short(socket, buf, size, flags);
+	return dtt_recv_short(tcp_transport->stream[stream], buf, size, flags);
 }
 
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
@@ -337,7 +325,7 @@ static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_st
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct socket *socket = tcp_transport->data_socket;
+	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 
 	if (socket) {
 		struct sock *sk = socket->sk;
@@ -350,24 +338,24 @@ static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_st
 	}
 }
 
-static void dtt_setbufsize(struct socket *sock, unsigned int snd,
+static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 			   unsigned int rcv)
 {
 	/* open coded SO_SNDBUF, SO_RCVBUF */
 	if (snd) {
-		sock->sk->sk_sndbuf = snd;
-		sock->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
+		socket->sk->sk_sndbuf = snd;
+		socket->sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
 	}
 	if (rcv) {
-		sock->sk->sk_rcvbuf = rcv;
-		sock->sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
+		socket->sk->sk_rcvbuf = rcv;
+		socket->sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
 	}
 }
 
 static struct socket *dtt_try_connect(struct drbd_connection *connection)
 {
 	const char *what;
-	struct socket *sock;
+	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
 	struct net_conf *nc;
 	int err;
@@ -396,15 +384,15 @@ static struct socket *dtt_try_connect(struct drbd_connection *connection)
 	peer_addr = connection->peer_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &sock);
+	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
 	if (err < 0) {
-		sock = NULL;
+		socket = NULL;
 		goto out;
 	}
 
-	sock->sk->sk_rcvtimeo =
-	sock->sk->sk_sndtimeo = connect_int * HZ;
-	dtt_setbufsize(sock, sndbuf_size, rcvbuf_size);
+	socket->sk->sk_rcvtimeo =
+	socket->sk->sk_sndtimeo = connect_int * HZ;
+	dtt_setbufsize(socket, sndbuf_size, rcvbuf_size);
 
 	/* explicitly bind to the configured IP as source IP
 	*  for the outgoing connections.
@@ -414,7 +402,7 @@ static struct socket *dtt_try_connect(struct drbd_connection *connection)
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = sock->ops->bind(sock, (struct sockaddr *) &my_addr, connection->my_addr_len);
+	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, connection->my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -422,13 +410,13 @@ static struct socket *dtt_try_connect(struct drbd_connection *connection)
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	disconnect_on_error = 0;
 	what = "connect";
-	err = sock->ops->connect(sock, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
+	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
 
 out:
 	if (err < 0) {
-		if (sock) {
-			sock_release(sock);
-			sock = NULL;
+		if (socket) {
+			sock_release(socket);
+			socket = NULL;
 		}
 		switch (-err) {
 			/* timeout, busy, signal pending */
@@ -446,24 +434,24 @@ out:
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	}
 
-	return sock;
+	return socket;
 }
 
-static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *sock, void *buf,
+static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket, void *buf,
 			     enum drbd_packet cmd, enum drbd_stream stream)
 {
 	struct p_header80 *h = buf;
 	int msg_flags = 0;
 	int err;
 
-	if (!sock)
+	if (!socket)
 		return -EIO;
 
 	h->magic = cpu_to_be32(DRBD_MAGIC);
 	h->command = cpu_to_be16(cmd);
 	h->length = 0;
 
-	err = _dtt_send(tcp_transport, sock, buf, sizeof(*h), msg_flags);
+	err = _dtt_send(tcp_transport, socket, buf, sizeof(*h), msg_flags);
 
 	return err;
 }
@@ -472,33 +460,33 @@ static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struc
  * dtt_socket_ok_or_free() - Free the socket if its connection is not okay
  * @sock:	pointer to the pointer to the socket.
  */
-static bool dtt_socket_ok_or_free(struct socket **sock)
+static bool dtt_socket_ok_or_free(struct socket **socket)
 {
 	int rr;
 	char tb[4];
 
-	if (!*sock)
+	if (!*socket)
 		return false;
 
-	rr = dtt_recv_short(*sock, tb, 4, MSG_DONTWAIT | MSG_PEEK);
+	rr = dtt_recv_short(*socket, tb, 4, MSG_DONTWAIT | MSG_PEEK);
 
 	if (rr > 0 || rr == -EAGAIN) {
 		return true;
 	} else {
-		sock_release(*sock);
-		*sock = NULL;
+		sock_release(*socket);
+		*socket = NULL;
 		return false;
 	}
 }
 
 static bool dtt_connection_established(struct drbd_connection *connection,
-				   struct socket **sock1,
-				   struct socket **sock2)
+				   struct socket **socket1,
+				   struct socket **socket2)
 {
 	struct net_conf *nc;
 	int timeout;
 
-	if (!*sock1 || !*sock2)
+	if (!*socket1 || !*socket2)
 		return false;
 
 	rcu_read_lock();
@@ -507,7 +495,7 @@ static bool dtt_connection_established(struct drbd_connection *connection,
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
 
-	return (dtt_socket_ok_or_free(sock1) && dtt_socket_ok_or_free(sock2));
+	return (dtt_socket_ok_or_free(socket1) && dtt_socket_ok_or_free(socket2));
 }
 
 static bool dtt_wait_connect_cond(struct dtt_waiter *waiter)
@@ -523,12 +511,12 @@ static bool dtt_wait_connect_cond(struct dtt_waiter *waiter)
 	return rv;
 }
 
-static void unregister_state_change(struct sock *sk, struct dtt_listener *listener)
+static void unregister_state_change(struct sock *sock, struct dtt_listener *listener)
 {
-	write_lock_bh(&sk->sk_callback_lock);
-	sk->sk_state_change = listener->original_sk_state_change;
-	sk->sk_user_data = NULL;
-	write_unlock_bh(&sk->sk_callback_lock);
+	write_lock_bh(&sock->sk_callback_lock);
+	sock->sk_state_change = listener->original_sk_state_change;
+	sock->sk_user_data = NULL;
+	write_unlock_bh(&sock->sk_callback_lock);
 }
 
 static struct socket *dtt_wait_for_connect(struct dtt_waiter *waiter)
@@ -652,7 +640,7 @@ retry_locked:
 	goto retry;
 }
 
-static int dtt_receive_first_packet(struct drbd_connection *connection, struct socket *sock)
+static int dtt_receive_first_packet(struct drbd_connection *connection, struct socket *socket)
 {
 	struct p_header80 *h = connection->rbuf[DATA_STREAM];
 	const unsigned int header_size = sizeof(*h);
@@ -665,10 +653,10 @@ static int dtt_receive_first_packet(struct drbd_connection *connection, struct s
 		rcu_read_unlock();
 		return -EIO;
 	}
-	sock->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
+	socket->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
 	rcu_read_unlock();
 
-	err = dtt_recv_short(sock, connection->rbuf[DATA_STREAM], header_size, 0);
+	err = dtt_recv_short(socket, connection->rbuf[DATA_STREAM], header_size, 0);
 	if (err != header_size) {
 		if (err >= 0)
 			err = -EIO;
@@ -682,13 +670,13 @@ static int dtt_receive_first_packet(struct drbd_connection *connection, struct s
 	return be16_to_cpu(h->command);
 }
 
-static void dtt_incoming_connection(struct sock *sk)
+static void dtt_incoming_connection(struct sock *sock)
 {
-	struct dtt_listener *listener = sk->sk_user_data;
-	void (*state_change)(struct sock *sk);
+	struct dtt_listener *listener = sock->sk_user_data;
+	void (*state_change)(struct sock *sock);
 
 	state_change = listener->original_sk_state_change;
-	if (sk->sk_state == TCP_ESTABLISHED) {
+	if (sock->sk_state == TCP_ESTABLISHED) {
 		struct drbd_waiter *waiter;
 
 		spin_lock(&listener->listener.resource->listeners_lock);
@@ -697,7 +685,7 @@ static void dtt_incoming_connection(struct sock *sk)
 		wake_up(&waiter->wait);
 		spin_unlock(&listener->listener.resource->listeners_lock);
 	}
-	state_change(sk);
+	state_change(sock);
 }
 
 static void dtt_destroy_listener(struct drbd_listener *generic_listener)
@@ -798,17 +786,17 @@ static int dtt_connect(struct drbd_transport *transport)
 		container_of(transport, struct drbd_tcp_transport, transport);
 
 	struct drbd_connection *connection = transport->connection;
-	struct socket *sock, *csock;
+	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
-	void *sock_sbuf, *csock_sbuf;
+	void *dsocket_sbuf, *csocket_sbuf;
 	int timeout;
 	bool ok;
 
-	sock_sbuf = connection->sbuf[DATA_STREAM];
-	sock = NULL;
-	csock_sbuf = connection->sbuf[CONTROL_STREAM];
-	csock = NULL;
+	dsocket_sbuf = connection->sbuf[DATA_STREAM];
+	dsocket = NULL;
+	csocket_sbuf = connection->sbuf[CONTROL_STREAM];
+	csocket = NULL;
 
 	/* Assume that the peer only understands protocol 80 until we know better.  */
 	connection->agreed_pro_version = 80;
@@ -823,20 +811,20 @@ static int dtt_connect(struct drbd_transport *transport)
 
 		s = dtt_try_connect(connection);
 		if (s) {
-			if (!sock) {
-				sock = s;
-				dtt_send_first_packet(tcp_transport, sock, sock_sbuf, P_INITIAL_DATA, DATA_STREAM);
-			} else if (!csock) {
+			if (!dsocket) {
+				dsocket = s;
+				dtt_send_first_packet(tcp_transport, dsocket, dsocket_sbuf, P_INITIAL_DATA, DATA_STREAM);
+			} else if (!csocket) {
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
-				csock = s;
-				dtt_send_first_packet(tcp_transport, csock, csock_sbuf, P_INITIAL_META, CONTROL_STREAM);
+				csocket = s;
+				dtt_send_first_packet(tcp_transport, csocket, csocket_sbuf, P_INITIAL_META, CONTROL_STREAM);
 			} else {
 				drbd_err(connection, "Logic error in conn_connect()\n");
 				goto out_release_sockets;
 			}
 		}
 
-		if (dtt_connection_established(connection, &sock, &csock))
+		if (dtt_connection_established(connection, &dsocket, &csocket))
 			break;
 
 retry:
@@ -844,27 +832,27 @@ retry:
 		if (s) {
 			int fp = dtt_receive_first_packet(connection, s);
 
-			dtt_socket_ok_or_free(&sock);
-			dtt_socket_ok_or_free(&csock);
+			dtt_socket_ok_or_free(&dsocket);
+			dtt_socket_ok_or_free(&csocket);
 			switch (fp) {
 			case P_INITIAL_DATA:
-				if (sock) {
+				if (dsocket) {
 					drbd_warn(connection, "initial packet S crossed\n");
-					sock_release(sock);
-					sock = s;
+					sock_release(dsocket);
+					dsocket = s;
 					goto randomize;
 				}
-				sock = s;
+				dsocket = s;
 				break;
 			case P_INITIAL_META:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
-				if (csock) {
+				if (csocket) {
 					drbd_warn(connection, "initial packet M crossed\n");
-					sock_release(csock);
-					csock = s;
+					sock_release(csocket);
+					csocket = s;
 					goto randomize;
 				}
-				csock = s;
+				csocket = s;
 				break;
 			default:
 				drbd_warn(connection, "Error receiving initial packet\n");
@@ -884,19 +872,19 @@ randomize:
 				goto out_release_sockets;
 		}
 
-		ok = dtt_connection_established(connection, &sock, &csock);
+		ok = dtt_connection_established(connection, &dsocket, &csocket);
 	} while (!ok);
 
 	dtt_put_listener(&waiter);
 
-	sock->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	csock->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
+	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
+	csocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 
-	sock->sk->sk_allocation = GFP_NOIO;
-	csock->sk->sk_allocation = GFP_NOIO;
+	dsocket->sk->sk_allocation = GFP_NOIO;
+	csocket->sk->sk_allocation = GFP_NOIO;
 
-	sock->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
-	csock->sk->sk_priority = TC_PRIO_INTERACTIVE;
+	dsocket->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
+	csocket->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
 	/* NOT YET ...
 	 * sock.socket->sk->sk_sndtimeo = connection->net_conf->timeout*HZ/10;
@@ -906,11 +894,11 @@ randomize:
 
 	/* we don't want delays.
 	 * we use TCP_CORK where appropriate, though */
-	dtt_nodelay(sock);
-	dtt_nodelay(csock);
+	dtt_nodelay(dsocket);
+	dtt_nodelay(csocket);
 
-	tcp_transport->data_socket = sock;
-	tcp_transport->control_socket = csock;
+	tcp_transport->stream[DATA_STREAM] = dsocket;
+	tcp_transport->stream[CONTROL_STREAM] = csocket;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -918,17 +906,17 @@ randomize:
 	timeout = nc->timeout * HZ / 10;
 	rcu_read_unlock();
 
-	sock->sk->sk_sndtimeo = timeout;
-	csock->sk->sk_sndtimeo = timeout;
+	dsocket->sk->sk_sndtimeo = timeout;
+	csocket->sk->sk_sndtimeo = timeout;
 
 	return 0;
 
 out_release_sockets:
 	dtt_put_listener(&waiter);
-	if (sock)
-		sock_release(sock);
-	if (csock)
-		sock_release(csock);
+	if (dsocket)
+		sock_release(dsocket);
+	if (csocket)
+		sock_release(csocket);
 
 	return -EIO;
 }
@@ -938,12 +926,7 @@ static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct socket *socket = NULL;
-
-	if (stream == DATA_STREAM)
-		socket = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		socket = tcp_transport->control_socket;
+	struct socket *socket = tcp_transport->stream[stream];
 
 	socket->sk->sk_rcvtimeo = timeout;
 }
@@ -953,12 +936,7 @@ static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct socket *socket = NULL;
-
-	if (stream == DATA_STREAM)
-		socket = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		socket = tcp_transport->control_socket;
+	struct socket *socket = tcp_transport->stream[stream];
 
 	return socket->sk->sk_rcvtimeo;
 }
@@ -968,14 +946,7 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct socket *socket = NULL;
-
-	if (stream == DATA_STREAM)
-		socket = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		socket = tcp_transport->control_socket;
-	else
-		return false;
+	struct socket *socket = tcp_transport->stream[stream];
 
 	return socket && socket->sk;
 }
@@ -985,9 +956,9 @@ static void dtt_update_congested(struct drbd_transport *transport)
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct sock *sk = tcp_transport->data_socket->sk;
+	struct sock *sock = tcp_transport->stream[DATA_STREAM]->sk;
 
-	if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5)
+	if (sock->sk_wmem_queued > sock->sk_sndbuf * 4 / 5)
 		set_bit(NET_CONGESTED, &transport->flags);
 }
 
@@ -996,7 +967,7 @@ static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-	struct socket *socket = tcp_transport->data_socket;
+	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 
 	mm_segment_t oldfs = get_fs();
 	int len = size;
@@ -1040,14 +1011,7 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	bool rv = true;
-	struct socket *socket = NULL;
-
-	if (stream == DATA_STREAM)
-		socket = tcp_transport->data_socket;
-	else if (stream == CONTROL_STREAM)
-		socket = tcp_transport->control_socket;
-	else
-		return false;
+	struct socket *socket = tcp_transport->stream[stream];
 
 	if (!socket)
 		return false;
