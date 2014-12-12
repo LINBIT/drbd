@@ -6705,6 +6705,8 @@ int drbd_asender(struct drbd_thread *thi)
 	struct net_conf *nc;
 	int ping_timeo, tcp_cork, ping_int;
 	struct sched_param param = { .sched_priority = 2 };
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	rv = sched_setscheduler(current, SCHED_RR, &param);
 	if (rv < 0)
@@ -6725,15 +6727,14 @@ int drbd_asender(struct drbd_thread *thi)
 				drbd_err(connection, "drbd_send_ping has failed\n");
 				goto reconnect;
 			}
-			connection->transport->ops->set_rcvtimeo(connection->transport,
-							CONTROL_STREAM, ping_timeo * HZ / 10);
+			tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_timeo * HZ / 10);
 			ping_timeout_active = true;
 		}
 
 		/* TODO: conditionally cork; it may hurt latency if we cork without
 		   much to send */
 		if (tcp_cork)
-			connection->transport->ops->hint(connection->transport, CONTROL_STREAM, CORK);
+			tr_ops->hint(transport, CONTROL_STREAM, CORK);
 		if (connection_finish_peer_reqs(connection)) {
 			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
 			goto reconnect;
@@ -6743,14 +6744,13 @@ int drbd_asender(struct drbd_thread *thi)
 
 		/* but unconditionally uncork unless disabled */
 		if (tcp_cork)
-			connection->transport->ops->hint(connection->transport, CONTROL_STREAM, UNCORK);
+			tr_ops->hint(transport, CONTROL_STREAM, UNCORK);
 
 		/* short circuit, recv_msg would return EINTR anyways. */
 		if (signal_pending(current))
 			continue;
 
-		rv = connection->transport->ops->recv(connection->transport, CONTROL_STREAM,
-						      buf, expect-received, 0);
+		rv = tr_ops->recv(transport, CONTROL_STREAM, buf, expect-received, 0);
 		clear_bit(SIGNAL_ASENDER, &connection->flags);
 
 		flush_signals(current);
@@ -6789,7 +6789,7 @@ received_more:
 			 * that is good enough: peer is still alive. */
 
 			if (time_after(connection->last_received,
-				jiffies - connection->transport->ops->get_rcvtimeo(connection->transport, CONTROL_STREAM)))
+				       jiffies - tr_ops->get_rcvtimeo(transport, CONTROL_STREAM)))
 				continue;
 
 			if (ping_timeout_active) {
@@ -6837,7 +6837,7 @@ received_more:
 
 			if (cmd == &asender_tbl[P_PING_ACK]) {
 				/* restore idle timeout */
-				connection->transport->ops->set_rcvtimeo(connection->transport, CONTROL_STREAM, ping_int * HZ);
+				tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
 				ping_timeout_active = false;
 			}
@@ -6851,7 +6851,7 @@ received_more:
 		if (test_bit(SEND_PING, &connection->flags))
 			continue;
 
-		rv = connection->transport->ops->recv(connection->transport, CONTROL_STREAM, buf, expect-received, MSG_DONTWAIT);
+		rv = tr_ops->recv(transport, CONTROL_STREAM, buf, expect-received, MSG_DONTWAIT);
 
 		if (rv > 0)
 			goto received_more;
