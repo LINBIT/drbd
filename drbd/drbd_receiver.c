@@ -1507,32 +1507,20 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	return peer_req;
 }
 
-/* drbd_drain_block() just takes a data block
- * out of the socket input buffer, and discards it.
- */
-static int drbd_drain_block(struct drbd_peer_device *peer_device, int data_size)
+static int ignore_remaining_packet(struct drbd_connection *connection, int size)
 {
-	struct page *page;
-	int err = 0;
-	void *data;
+	void *buffer = connection->rbuf[DATA_STREAM];
 
-	if (!data_size)
-		return 0;
+	while (size) {
+		int s = min_t(int, size, DRBD_SOCKET_BUFFER_SIZE);
+		int rv = drbd_recv_all_warn(connection, buffer, s);
+		if (rv)
+			return rv;
 
-	page = drbd_alloc_pages(peer_device, 1, 1);
-
-	data = kmap(page);
-	while (data_size) {
-		unsigned int len = min_t(int, data_size, PAGE_SIZE);
-
-		err = drbd_recv_all_warn(peer_device->connection, data, len);
-		if (err)
-			break;
-		data_size -= len;
+		size -= rv;
 	}
-	kunmap(page);
-	drbd_free_pages(peer_device->device, page, 0);
-	return err;
+
+	return 0;
 }
 
 static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_request *req,
@@ -1734,7 +1722,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		if (drbd_ratelimit())
 			drbd_err(device, "Can not write resync data to local disk.\n");
 
-		err = drbd_drain_block(peer_device, pi->size);
+		err = ignore_remaining_packet(connection, pi->size);
 
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 	}
@@ -2148,7 +2136,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		err = wait_for_and_update_peer_seq(peer_device, peer_seq);
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, p, pi->size);
 		atomic_inc(&connection->current_epoch->epoch_size);
-		err2 = drbd_drain_block(peer_device, pi->size);
+		err2 = ignore_remaining_packet(connection, pi->size);
 		if (!err)
 			err = err2;
 		return err;
@@ -2440,7 +2428,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			    "no local data.\n");
 
 		/* drain possibly payload */
-		return drbd_drain_block(peer_device, pi->size);
+		return ignore_remaining_packet(connection, pi->size);
 	}
 
 	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
@@ -3517,26 +3505,6 @@ static struct crypto_hash *drbd_crypto_alloc_digest_safe(const struct drbd_devic
 	return tfm;
 }
 
-static int ignore_remaining_packet(struct drbd_connection *connection, struct packet_info *pi)
-{
-	void *buffer = connection->rbuf[DATA_STREAM];
-	int size = pi->size;
-
-	while (size) {
-		int s = min_t(int, size, DRBD_SOCKET_BUFFER_SIZE);
-		s = drbd_recv(connection, buffer, s);
-		if (s <= 0) {
-			if (s < 0)
-				return s;
-			break;
-		}
-		size -= s;
-	}
-	if (size)
-		return -EIO;
-	return 0;
-}
-
 /*
  * config_unknown_volume  -  device configuration command for unknown volume
  *
@@ -3552,7 +3520,7 @@ static int config_unknown_volume(struct drbd_connection *connection, struct pack
 {
 	drbd_warn(connection, "%s packet received for volume %d, which is not configured locally\n",
 		  drbd_packet_name(pi->cmd), pi->vnr);
-	return ignore_remaining_packet(connection, pi);
+	return ignore_remaining_packet(connection, pi->size);
 }
 
 static int receive_SyncParam(struct drbd_connection *connection, struct packet_info *pi)
@@ -4151,7 +4119,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			       sizeof(p->other_uuids[0])))
 		return -EIO;
 	rest = pi->size - (bitmap_uuids + history_uuids) * sizeof(p->other_uuids[0]);
-	if (rest && !drbd_drain_block(peer_device, rest))
+	if (rest && !ignore_remaining_packet(connection, rest))
 		return -EIO;
 
 	if (get_ldev(device))
@@ -5302,7 +5270,7 @@ static int receive_skip(struct drbd_connection *connection, struct packet_info *
 	drbd_warn(connection, "skipping unknown optional packet type %d, l: %d!\n",
 		 pi->cmd, pi->size);
 
-	return ignore_remaining_packet(connection, pi);
+	return ignore_remaining_packet(connection, pi->size);
 }
 
 static int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
