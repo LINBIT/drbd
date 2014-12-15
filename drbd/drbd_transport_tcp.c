@@ -32,9 +32,15 @@ MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
 MODULE_DESCRIPTION("TCP (SDP, SSOCKS) transport layer for DRBD");
 MODULE_LICENSE("GPL");
 
+struct buffer {
+	void *base;
+	void *pos;
+};
+
 struct drbd_tcp_transport {
 	struct drbd_transport transport;
 	struct socket *stream[2];
+	struct buffer rbuf[2];
 };
 
 struct dtt_listener {
@@ -52,15 +58,16 @@ static struct drbd_transport *dtt_create(struct drbd_connection *connection);
 static void dtt_free(struct drbd_transport *transport, bool put_transport);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags);
-static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, int flags);
+static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
+static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
-static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_device *peer_device, struct page *page,
+static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
-static void dtt_update_congested(struct drbd_transport *transport);
+static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
@@ -73,6 +80,7 @@ static struct drbd_transport_ops dtt_ops = {
 	.connect = dtt_connect,
 	.send = dtt_send,
 	.recv = dtt_recv,
+	.recv_pages = dtt_recv_pages,
 	.stats = dtt_stats,
 	.set_rcvtimeo = dtt_set_rcvtimeo,
 	.get_rcvtimeo = dtt_get_rcvtimeo,
@@ -91,6 +99,7 @@ static void dtt_nodelay(struct socket *socket)
 static struct drbd_transport *dtt_create(struct drbd_connection *connection)
 {
 	struct drbd_tcp_transport *tcp_transport;
+	enum drbd_stream i;
 
 	if (!try_module_get(THIS_MODULE))
 		return NULL;
@@ -103,8 +112,18 @@ static struct drbd_transport *dtt_create(struct drbd_connection *connection)
 
 	tcp_transport->transport.ops = &dtt_ops;
 	tcp_transport->transport.connection = connection;
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		void *buffer = (void *)__get_free_page(GFP_KERNEL);
+		if (!buffer)
+			goto fail;
+		tcp_transport->rbuf[i].base = buffer;
+		tcp_transport->rbuf[i].pos = buffer;
+	}
 
 	return &tcp_transport->transport;
+fail:
+	free_page((unsigned long)tcp_transport->rbuf[0].base);
+	return NULL;
 }
 
 static void dtt_free_one_sock(struct socket *socket)
@@ -120,21 +139,21 @@ static void dtt_free(struct drbd_transport *transport, bool put_transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
+	enum drbd_stream i;
 
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
 
-	if (tcp_transport->stream[DATA_STREAM]) {
-		dtt_free_one_sock(tcp_transport->stream[DATA_STREAM]);
-		tcp_transport->stream[DATA_STREAM] = NULL;
-	}
-
-	if (tcp_transport->stream[CONTROL_STREAM]) {
-		dtt_free_one_sock(tcp_transport->stream[CONTROL_STREAM]);
-		tcp_transport->stream[CONTROL_STREAM] = NULL;
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		if (tcp_transport->stream[i]) {
+			dtt_free_one_sock(tcp_transport->stream[i]);
+			tcp_transport->stream[i] = NULL;
+		}
 	}
 
 	if (put_transport) {
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
+			free_page((unsigned long)tcp_transport->rbuf[i].base);
 		kfree(tcp_transport);
 		module_put(THIS_MODULE);
 	}
@@ -251,7 +270,7 @@ static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, v
 		rcu_read_lock();
 		tcp_transport->transport.ko_count = rcu_dereference(connection->net_conf)->ko_count;
 		rcu_read_unlock();
-		dtt_update_congested(transport);
+		dtt_update_congested(tcp_transport);
 	}
 
 	err = _dtt_send(tcp_transport, socket, buf, size, msg_flags);
@@ -285,12 +304,65 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 	return rv;
 }
 
-static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, int flags)
+static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
+	struct socket *socket = tcp_transport->stream[stream];
+	void *buffer;
+	int rv;
 
-	return dtt_recv_short(tcp_transport->stream[stream], buf, size, flags);
+	if (flags & CALLER_BUFFER) {
+		buffer = *buf;
+		rv = dtt_recv_short(socket, buffer, size, flags & ~CALLER_BUFFER);
+	} else if (flags & GROW_BUFFER) {
+		D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base);
+		buffer = tcp_transport->rbuf[stream].pos;
+		D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE);
+
+		rv = dtt_recv_short(socket, buffer, size, flags & ~GROW_BUFFER);
+	} else {
+		buffer = tcp_transport->rbuf[stream].base;
+
+		rv = dtt_recv_short(socket, buffer, size, flags);
+		if (rv > 0)
+			*buf = buffer;
+	}
+
+	if (rv > 0)
+		tcp_transport->rbuf[stream].pos = buffer + rv;
+
+	return rv;
+}
+
+static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
+{
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(peer_device->connection->transport, struct drbd_tcp_transport, transport);
+	struct socket *socket = tcp_transport->stream[DATA_STREAM];
+	struct page *all_pages, *page;
+	int err;
+
+	all_pages = drbd_alloc_pages(peer_device, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	if (!all_pages)
+		return -ENOMEM;
+
+	page = all_pages;
+	page_chain_for_each(page) {
+		size_t len = min_t(int, size, PAGE_SIZE);
+		void *data = kmap(page);
+		err = dtt_recv_short(socket, data, len, 0);
+		kunmap(page);
+		if (err < 0)
+			goto fail;
+		size -= len;
+	}
+
+	*pages = all_pages;
+	return 0;
+fail:
+	drbd_free_pages(peer_device->device, all_pages, 0);
+	return err;
 }
 
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
@@ -608,7 +680,9 @@ retry_locked:
 
 static int dtt_receive_first_packet(struct drbd_connection *connection, struct socket *socket)
 {
-	struct p_header80 *h = connection->rbuf[DATA_STREAM];
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(connection->transport, struct drbd_tcp_transport, transport);
+	struct p_header80 *h = tcp_transport->rbuf[DATA_STREAM].base;
 	const unsigned int header_size = sizeof(*h);
 	struct net_conf *nc;
 	int err;
@@ -622,7 +696,7 @@ static int dtt_receive_first_packet(struct drbd_connection *connection, struct s
 	socket->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
 	rcu_read_unlock();
 
-	err = dtt_recv_short(socket, connection->rbuf[DATA_STREAM], header_size, 0);
+	err = dtt_recv_short(socket, h, header_size, 0);
 	if (err != header_size) {
 		if (err >= 0)
 			err = -EIO;
@@ -926,22 +1000,19 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 	return socket && socket->sk;
 }
 
-static void dtt_update_congested(struct drbd_transport *transport)
+static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport)
 {
-	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
-
 	struct sock *sock = tcp_transport->stream[DATA_STREAM]->sk;
 
 	if (sock->sk_wmem_queued > sock->sk_sndbuf * 4 / 5)
-		set_bit(NET_CONGESTED, &transport->flags);
+		set_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 }
 
-static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_device *peer_device, struct page *page,
-		    int offset, size_t size, unsigned msg_flags)
+static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page,
+			 int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
+		container_of(peer_device->connection->transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 
 	mm_segment_t oldfs = get_fs();
@@ -949,7 +1020,7 @@ static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 	int err = -EIO;
 
 	msg_flags |= MSG_NOSIGNAL;
-	dtt_update_congested(transport);
+	dtt_update_congested(tcp_transport);
 	set_fs(KERNEL_DS);
 	do {
 		int sent;
@@ -971,7 +1042,7 @@ static int dtt_send_page(struct drbd_transport *transport, struct drbd_peer_devi
 		offset += sent;
 	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_ESTABLISHED */);
 	set_fs(oldfs);
-	clear_bit(NET_CONGESTED, &transport->flags);
+	clear_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 
 	if (len == 0) {
 		err = 0;

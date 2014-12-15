@@ -1736,7 +1736,7 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			   int offset, size_t size, unsigned msg_flags)
 {
-	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_transport_ops *tr_ops = peer_device->connection->transport->ops;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
@@ -1747,7 +1747,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
-	return transport->ops->send_page(transport, peer_device, page, offset, size, msg_flags);
+	return tr_ops->send_page(peer_device, page, offset, size, msg_flags);
 }
 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
@@ -2668,10 +2668,9 @@ static int drbd_alloc_connection_buffers(struct drbd_connection *connection)
 	unsigned int i;
 
 	for (i = 0; i < 2; ++i) {
-		connection->rbuf[i] = (void *) __get_free_page(GFP_KERNEL);
 		connection->sbuf[i] = (void *) __get_free_page(GFP_KERNEL);
 
-		if (!connection->rbuf[i] || !connection->sbuf[i])
+		if (!connection->sbuf[i])
 			return -ENOMEM;
 	}
 
@@ -2682,10 +2681,8 @@ static void drbd_free_connection_buffers(struct drbd_connection *connection)
 {
 	unsigned int i;
 
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < 2; ++i)
 		free_page((unsigned long) connection->sbuf[i]);
-		free_page((unsigned long) connection->rbuf[i]);
-	}
 }
 
 void drbd_flush_peer_acks(struct drbd_resource *resource)

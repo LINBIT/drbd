@@ -10,9 +10,14 @@
    DRBD_TRANSPORT_API_VERSION
    So that transport compiled against an older version of this
    header will no longer load in a module that assumes a newer
-   version.
-*/
-#define DRBD_TRANSPORT_API_VERSION 1
+   version. */
+#define DRBD_TRANSPORT_API_VERSION 2
+
+/* MSG_MSG_DONTROUTE and MSG_PROBE are not used by DRBD. I.e.
+   we can reuse these flags for our purposes */
+#define CALLER_BUFFER  MSG_DONTROUTE
+#define GROW_BUFFER    MSG_PROBE
+
 
 struct drbd_resource;
 struct drbd_connection;
@@ -60,12 +65,59 @@ struct drbd_transport_ops {
 	void (*free)(struct drbd_transport *, bool put_transport);
 	int (*connect)(struct drbd_transport *);
 	int (*send)(struct drbd_transport *, enum drbd_stream, void *buf, size_t size, unsigned msg_flags);
-	int (*recv)(struct drbd_transport *, enum drbd_stream, void *buf, size_t size, int flags);
+
+/**
+ * recv() - Receive data via the transport
+ * @transport:	The transport to use
+ * @stream:	The stream within the transport to use. Ether DATA_STREAM or CONTROL_STREAM
+ * @buf:	The function will place here the pointer to the data area
+ * @size:	Number of byte to receive
+ * @msg_flags:	Bitmask of CALLER_BUFFER, GROW_BUFFER and MSG_DONTWAIT
+ *
+ * recv() returns the requests data in a buffer (owned by the transport).
+ * You may pass MSG_DONTWAIT as flags.  Usually with the next call to recv()
+ * or recv_pages() on the same stream, the buffer may no longer be accessed
+ * by the caller. I.e. it is reclaimed by the transport.
+ *
+ * If the transport was not capable of fulfilling the complete "wish" of the
+ * caller (that means it returned a smaller size that size), the caller may
+ * call recv() again with the flag GROW_BUFFER, and *buf as returned by the
+ * previous call.
+ * Note1: This can happen if MSG_DONTWAIT was used, or if a receive timeout
+ *	was we with set_rcvtimeo().
+ * Note2: recv() is free to re-locate the buffer in such a call. I.e. to
+ *	modify *buf. Then it copies the content received so far to the new
+ *	memory location.
+ *
+ * Last not least the caller may also pass an arbitrary pointer in *buf with
+ * the CALLER_BUFFER flag. This is expected to be used for small amounts
+ * of data only
+ *
+ * Upon success the function returns the bytes read. Upon error the return
+ * code is negative. A 0 indicates that the socket was closed by the remote
+ * side.
+ */
+	int (*recv)(struct drbd_transport *, enum drbd_stream, void **buf, size_t size, int flags);
+
+/**
+ * recv_pages() - Receive bulk data via the transport's DATA_STREAM
+ * @peer_device: Identify the transport and the device
+ * @page:	Here recv_pages() will place the pointer to the first page
+ * @size:	Number of bytes to receive
+ *
+ * recv_pages() will return the requested amount of data from DATA_STREAM,
+ * and place it into pages allocated with drbd_alloc_pages().
+ *
+ * Upon success the function returns 0. Upon error the function returns a
+ * negative value
+ */
+	int (*recv_pages)(struct drbd_peer_device *, struct page **page, size_t size);
+
 	void (*stats)(struct drbd_transport *, struct drbd_transport_stats *stats);
 	void (*set_rcvtimeo)(struct drbd_transport *, enum drbd_stream, long timeout);
 	long (*get_rcvtimeo)(struct drbd_transport *, enum drbd_stream);
-	int (*send_page)(struct drbd_transport *, struct drbd_peer_device *peer_device, struct page *page,
-			int offset, size_t size, unsigned msg_flags);
+	int (*send_page)(struct drbd_peer_device *peer_device, struct page *page,
+			 int offset, size_t size, unsigned msg_flags);
 	bool (*stream_ok)(struct drbd_transport *, enum drbd_stream);
 	bool (*hint)(struct drbd_transport *, enum drbd_stream, enum drbd_tr_hints hint);
 };

@@ -953,7 +953,7 @@ struct drbd_connection {
 	int peer_addr_len;
 
 	struct drbd_transport *transport;
-	void *sbuf[2], *rbuf[2];
+	void *sbuf[2];
 	struct mutex mutex[2];
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
@@ -1878,6 +1878,7 @@ extern void __drbd_free_peer_req(struct drbd_device *, struct drbd_peer_request 
 #define drbd_free_peer_req(m,e) __drbd_free_peer_req(m, e, 0)
 #define drbd_free_net_peer_req(m,e) __drbd_free_peer_req(m, e, 1)
 extern struct page *drbd_alloc_pages(struct drbd_peer_device *, unsigned int, gfp_t);
+extern void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net);
 extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);

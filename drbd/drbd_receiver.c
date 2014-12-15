@@ -328,7 +328,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
  * Is also used from inside an other spin_lock_irq(&resource->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
-static void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
+void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
 {
 	atomic_t *a = is_net ? &device->pp_in_use_by_net : &device->pp_in_use;
 	int i;
@@ -489,12 +489,12 @@ static void drbd_wait_ee_list_empty(struct drbd_device *device,
 	spin_unlock_irq(&device->resource->req_lock);
 }
 
-static int drbd_recv(struct drbd_connection *connection, void *buf, size_t size)
+static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size, int flags)
 {
+	struct drbd_transport_ops *tr_ops = connection->transport->ops;
 	int rv;
 
-	rv = connection->transport->ops->recv(connection->transport, DATA_STREAM,
-					      buf, size, 0);
+	rv = tr_ops->recv(connection->transport, DATA_STREAM, buf, size, flags);
 
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
@@ -523,11 +523,11 @@ out:
 	return rv;
 }
 
-static int drbd_recv_all(struct drbd_connection *connection, void *buf, size_t size)
+static int drbd_recv_into(struct drbd_connection *connection, void *buf, size_t size)
 {
 	int err;
 
-	err = drbd_recv(connection, buf, size);
+	err = drbd_recv(connection, &buf, size, CALLER_BUFFER);
 
 	if (err != size) {
 		if (err >= 0)
@@ -537,7 +537,21 @@ static int drbd_recv_all(struct drbd_connection *connection, void *buf, size_t s
 	return err;
 }
 
-static int drbd_recv_all_warn(struct drbd_connection *connection, void *buf, size_t size)
+static int drbd_recv_all(struct drbd_connection *connection, void **buf, size_t size)
+{
+	int err;
+
+	err = drbd_recv(connection, buf, size, 0);
+
+	if (err != size) {
+		if (err >= 0)
+			err = -EIO;
+	} else
+		err = 0;
+	return err;
+}
+
+static int drbd_recv_all_warn(struct drbd_connection *connection, void **buf, size_t size)
 {
 	int err;
 
@@ -779,10 +793,10 @@ int decode_header(struct drbd_connection *connection, void *header, struct packe
 
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
 {
-	void *buffer = connection->rbuf[DATA_STREAM];
+	void *buffer;
 	int err;
 
-	err = drbd_recv_all_warn(connection, buffer, drbd_header_size(connection));
+	err = drbd_recv_all_warn(connection, &buffer, drbd_header_size(connection));
 	if (err)
 		return err;
 
@@ -1399,13 +1413,12 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
 	struct drbd_peer_request *peer_req;
-	struct page *page;
 	int digest_size, err;
-	unsigned int data_size = pi->size, ds;
+	unsigned int data_size = pi->size;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
-	unsigned long *data;
 	struct p_trim *trim = (pi->cmd == P_TRIM) ? pi->data : NULL;
+	struct drbd_transport_ops *tr_ops = peer_device->connection->transport->ops;
 
 	digest_size = 0;
 	if (!trim && peer_device->connection->peer_integrity_tfm) {
@@ -1414,7 +1427,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		 * FIXME: Receive the incoming digest into the receive buffer
 		 *	  here, together with its struct p_data?
 		 */
-		err = drbd_recv_all_warn(peer_device->connection, dig_in, digest_size);
+		err = drbd_recv_into(peer_device->connection, dig_in, digest_size);
 		if (err)
 			return NULL;
 		data_size -= digest_size;
@@ -1444,12 +1457,6 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
 	if (!peer_req)
 		return NULL;
-	if (trim == NULL && data_size) {
-		peer_req->pages = drbd_alloc_pages(peer_device,
-			DIV_ROUND_UP(data_size, PAGE_SIZE), GFP_TRY);
-		if (!peer_req->pages)
-			goto fail;
-	}
 	peer_req->i.size = data_size;
 	peer_req->i.sector = sector;
 	peer_req->block_id = id;
@@ -1458,20 +1465,16 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	if (trim)
 		return peer_req;
 
-	ds = data_size;
-	page = peer_req->pages;
-	page_chain_for_each(page) {
-		unsigned len = min_t(int, ds, PAGE_SIZE);
-		data = kmap(page);
-		err = drbd_recv_all_warn(peer_device->connection, data, len);
-		if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
-			drbd_err(device, "Fault injection: Corrupting data on receive\n");
-			data[0] = data[0] ^ (unsigned long)-1;
-		}
-		kunmap(page);
-		if (err)
-			goto fail;
-		ds -= len;
+	err = tr_ops->recv_pages(peer_device, &peer_req->pages, data_size);
+	if (err)
+		goto fail;
+
+	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
+		unsigned long *data;
+		drbd_err(device, "Fault injection: Corrupting data on receive\n");
+		data = kmap(peer_req->pages);
+		data[0] = data[0] ^ (unsigned long)-1;
+		kunmap(peer_req->pages);
 	}
 
 	if (digest_size) {
@@ -1492,11 +1495,11 @@ fail:
 
 static int ignore_remaining_packet(struct drbd_connection *connection, int size)
 {
-	void *buffer = connection->rbuf[DATA_STREAM];
+	void *data_to_ignore;
 
 	while (size) {
 		int s = min_t(int, size, DRBD_SOCKET_BUFFER_SIZE);
-		int rv = drbd_recv_all_warn(connection, buffer, s);
+		int rv = drbd_recv_all_warn(connection, &data_to_ignore, s);
 		if (rv)
 			return rv;
 
@@ -1519,7 +1522,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	digest_size = 0;
 	if (peer_device->connection->peer_integrity_tfm) {
 		digest_size = crypto_hash_digestsize(peer_device->connection->peer_integrity_tfm);
-		err = drbd_recv_all_warn(peer_device->connection, dig_in, digest_size);
+		err = drbd_recv_into(peer_device->connection, dig_in, digest_size);
 		if (err)
 			return err;
 		data_size -= digest_size;
@@ -1535,7 +1538,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	bio_for_each_segment(bvec, bio, iter) {
 		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
 		expect = min_t(int, data_size, bvec BVD bv_len);
-		err = drbd_recv_all_warn(peer_device->connection, mapped, expect);
+		err = drbd_recv_into(peer_device->connection, mapped, expect);
 		kunmap(bvec BVD bv_page);
 		if (err)
 			return err;
@@ -2455,7 +2458,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		peer_req->digest = di;
 		peer_req->flags |= EE_HAS_DIGEST;
 
-		err = drbd_recv_all(connection, di->digest, pi->size);
+		err = drbd_recv_into(connection, di->digest, pi->size);
 		if (err)
 			goto fail2;
 
@@ -3343,7 +3346,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 
 		if (pi->size > sizeof(integrity_alg))
 			return -EIO;
-		err = drbd_recv_all(connection, integrity_alg, pi->size);
+		err = drbd_recv_into(connection, integrity_alg, pi->size);
 		if (err)
 			return err;
 		integrity_alg[SHARED_SECRET_MAX - 1] = 0;
@@ -3560,11 +3563,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		D_ASSERT(device, data_size == 0);
 	}
 
-	/* initialize verify_alg and csums_alg */
-	p = pi->data;
-	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
-
-	err = drbd_recv_all(connection, p, header_size);
+	err = drbd_recv_all(connection, (void **)&p, header_size + data_size);
 	if (err)
 		return err;
 
@@ -3599,14 +3598,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 				err = -EIO;
 				goto reconnect;
 			}
-
-			err = drbd_recv_all(connection, p->verify_alg, data_size);
-			if (err)
-				goto reconnect;
-			/* we expect NUL terminated string */
-			/* but just in case someone tries to be evil */
-			D_ASSERT(device, p->verify_alg[data_size-1] == 0);
-			p->verify_alg[data_size-1] = 0;
+			p->verify_alg[data_size] = 0;
 
 		} else /* apv >= 89 */ {
 			/* we still expect NUL terminated strings */
@@ -4105,10 +4097,12 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	if (history_uuids > ARRAY_SIZE(peer_device->history_uuids))
 		history_uuids = ARRAY_SIZE(peer_device->history_uuids);
 
-	if (drbd_recv_all_warn(connection, p->other_uuids,
-			       (bitmap_uuids + history_uuids) *
-			       sizeof(p->other_uuids[0])))
-		return -EIO;
+	err = drbd_recv_into(connection, p->other_uuids,
+			     (bitmap_uuids + history_uuids) *
+			     sizeof(p->other_uuids[0]));
+	if (err)
+		return err;
+
 	rest = pi->size - (bitmap_uuids + history_uuids) * sizeof(p->other_uuids[0]);
 	if (rest && !ignore_remaining_packet(connection, rest))
 		return -EIO;
@@ -4965,8 +4959,9 @@ static int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
  */
 static int
 receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
-		     unsigned long *p, struct bm_xfer_ctx *c)
+		     struct bm_xfer_ctx *c)
 {
+	unsigned long *p;
 	unsigned int data_size = DRBD_SOCKET_BUFFER_SIZE -
 				 drbd_header_size(peer_device->connection);
 	unsigned int num_words = min_t(size_t, data_size / sizeof(*p),
@@ -4980,7 +4975,7 @@ receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
 	}
 	if (want == 0)
 		return 0;
-	err = drbd_recv_all(peer_device->connection, p, want);
+	err = drbd_recv_all(peer_device->connection, (void **)&p, want);
 	if (err)
 		return err;
 
@@ -5185,11 +5180,11 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 	for(;;) {
 		if (pi->cmd == P_BITMAP)
-			err = receive_bitmap_plain(peer_device, pi->size, pi->data, &c);
+			err = receive_bitmap_plain(peer_device, pi->size, &c);
 		else if (pi->cmd == P_COMPRESSED_BITMAP) {
 			/* MAYBE: sanity check that we speak proto >= 90,
 			 * and the feature is enabled! */
-			struct p_compressed_bm *p = pi->data;
+			struct p_compressed_bm *p;
 
 			if (pi->size > DRBD_SOCKET_BUFFER_SIZE - drbd_header_size(connection)) {
 				drbd_err(device, "ReportCBitmap packet too large\n");
@@ -5201,7 +5196,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 				err = -EIO;
 				goto out;
 			}
-			err = drbd_recv_all(connection, p, pi->size);
+			err = drbd_recv_all(connection, (void **)&p, pi->size);
 			if (err)
 			       goto out;
 			err = decode_bitmap_c(peer_device, p, &c, pi->size);
@@ -5496,7 +5491,7 @@ static void drbdd(struct drbd_connection *connection)
 
 		if (shs) {
 			update_receiver_timing_details(connection, drbd_recv_all_warn);
-			err = drbd_recv_all_warn(connection, pi.data, shs);
+			err = drbd_recv_all_warn(connection, &pi.data, shs);
 			if (err)
 				goto err_out;
 			pi.size -= shs;
@@ -5739,8 +5734,7 @@ int drbd_do_features(struct drbd_connection *connection)
 		return -1;
 	}
 
-	p = pi.data;
-	err = drbd_recv_all_warn(connection, p, expect);
+	err = drbd_recv_all_warn(connection, (void **)&p, expect);
 	if (err)
 		return 0;
 
@@ -5891,7 +5885,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	err = drbd_recv_all_warn(connection, peers_ch, pi.size);
+	err = drbd_recv_into(connection, peers_ch, pi.size);
 	if (err) {
 		rv = 0;
 		goto fail;
@@ -5953,7 +5947,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	err = drbd_recv_all_warn(connection, response , resp_size);
+	err = drbd_recv_into(connection, response , resp_size);
 	if (err) {
 		rv = 0;
 		goto fail;
@@ -6656,8 +6650,8 @@ int drbd_asender(struct drbd_thread *thi)
 	struct asender_cmd *cmd = NULL;
 	struct packet_info pi;
 	int rv;
-	void *buf    = connection->rbuf[CONTROL_STREAM];
-	int received = 0;
+	void *buffer;
+	int received = 0, rflags = 0;
 	unsigned int header_size = drbd_header_size(connection);
 	int expect   = header_size;
 	bool ping_timeout_active = false;
@@ -6709,7 +6703,7 @@ int drbd_asender(struct drbd_thread *thi)
 		if (signal_pending(current))
 			continue;
 
-		rv = tr_ops->recv(transport, CONTROL_STREAM, buf, expect-received, 0);
+		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received, rflags);
 		clear_bit(SIGNAL_ASENDER, &connection->flags);
 
 		flush_signals(current);
@@ -6727,7 +6721,10 @@ int drbd_asender(struct drbd_thread *thi)
 received_more:
 		if (likely(rv > 0)) {
 			received += rv;
-			buf	 += rv;
+
+			if (received < expect)
+				rflags = GROW_BUFFER;
+
 		} else if (rv == 0) {
 			if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
 				long t;
@@ -6765,9 +6762,7 @@ received_more:
 		}
 
 		if (received == expect && cmd == NULL) {
-			if (decode_header(connection,
-						connection->rbuf[CONTROL_STREAM],
-						&pi))
+			if (decode_header(connection, buffer, &pi))
 				goto reconnect;
 
 			cmd = &asender_tbl[pi.cmd];
@@ -6782,10 +6777,12 @@ received_more:
 					pi.cmd, pi.size);
 				goto reconnect;
 			}
+			rflags = 0;
 		}
 		if (received == expect) {
 			bool err;
 
+			pi.data = buffer;
 			err = cmd->fn(connection, &pi);
 			if (err) {
 				drbd_err(connection, "%pf failed\n", cmd->fn);
@@ -6801,16 +6798,16 @@ received_more:
 				ping_timeout_active = false;
 			}
 
-			buf	 = connection->rbuf[CONTROL_STREAM];
-
 			received = 0;
-			expect	 = header_size;
-			cmd	 = NULL;
+			expect = header_size;
+			cmd = NULL;
+			rflags = 0;
 		}
 		if (test_bit(SEND_PING, &connection->flags))
 			continue;
 
-		rv = tr_ops->recv(transport, CONTROL_STREAM, buf, expect-received, MSG_DONTWAIT);
+		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received,
+				  MSG_DONTWAIT | rflags);
 
 		if (rv > 0)
 			goto received_more;
@@ -6830,3 +6827,6 @@ disconnect:
 
 	return 0;
 }
+
+EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
+EXPORT_SYMBOL(drbd_free_pages);
