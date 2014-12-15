@@ -90,8 +90,6 @@ static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, str
 	return prev;
 }
 
-#define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
-
 /*
  * some helper functions to deal with single linked page lists,
  * page->private being our "next" pointer.
@@ -172,7 +170,8 @@ static void page_chain_add(struct page **head,
 }
 
 static struct page *__drbd_alloc_pages(struct drbd_device *device,
-				       unsigned int number)
+				       unsigned int number,
+				       gfp_t gfp_mask)
 {
 	struct page *page = NULL;
 	struct page *tmp = NULL;
@@ -190,11 +189,8 @@ static struct page *__drbd_alloc_pages(struct drbd_device *device,
 			return page;
 	}
 
-	/* GFP_TRY, because we must not cause arbitrary write-out: in a DRBD
-	 * "criss-cross" setup, that might cause write-out on some other DRBD,
-	 * which in turn might block on the other node at this very place.  */
 	for (i = 0; i < number; i++) {
-		tmp = alloc_page(GFP_TRY);
+		tmp = alloc_page(gfp_mask);
 		if (!tmp)
 			break;
 		set_page_private(tmp, (unsigned long)page);
@@ -270,7 +266,7 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
  * drbd_alloc_pages() - Returns @number pages, retries forever (or until signalled)
  * @device:	DRBD device.
  * @number:	number of pages requested
- * @retry:	whether to retry, if not enough pages are available right now
+ * @gfp_mask:	how to allocate and whether to loop until we succeed
  *
  * Tries to allocate number pages, first from our own page pool, then from
  * the kernel.
@@ -287,7 +283,7 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
  * Returns a page chain linked via page->private.
  */
 struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int number,
-			      bool retry)
+			      gfp_t gfp_mask)
 {
 	struct drbd_device *device = peer_device->device;
 	struct page *page = NULL;
@@ -297,20 +293,20 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 	mxb = device->device_conf.max_buffers;
 
 	if (atomic_read(&device->pp_in_use) < mxb)
-		page = __drbd_alloc_pages(device, number);
+		page = __drbd_alloc_pages(device, number, gfp_mask & ~__GFP_WAIT);
 
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
 		drbd_kick_lo_and_reclaim_net(device);
 
-		if (atomic_read(&device->pp_in_use) < device->device_conf.max_buffers) {
-			page = __drbd_alloc_pages(device, number);
+		if (atomic_read(&device->pp_in_use) < mxb) {
+			page = __drbd_alloc_pages(device, number, gfp_mask);
 			if (page)
 				break;
 		}
 
-		if (!retry)
+		if (!(gfp_mask & __GFP_WAIT))
 			break;
 
 		if (signal_pending(current)) {
@@ -391,7 +387,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 	}
 
 	if (has_payload && data_size) {
-		page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_WAIT));
+		page = drbd_alloc_pages(peer_device, nr_pages, gfp_mask);
 		if (!page)
 			goto fail;
 	}
@@ -1465,10 +1461,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		return NULL;
 	}
 
-	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
-	 * "criss-cross" setup, that might cause write-out on some other DRBD,
-	 * which in turn might block on the other node at this very place.  */
-	peer_req = drbd_alloc_peer_req(peer_device, id, sector, data_size, trim == NULL, GFP_NOIO);
+	peer_req = drbd_alloc_peer_req(peer_device, id, sector, data_size, trim == NULL, GFP_TRY);
 	if (!peer_req)
 		return NULL;
 
@@ -2431,11 +2424,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		return ignore_remaining_packet(connection, pi->size);
 	}
 
-	/* GFP_NOIO, because we must not cause arbitrary write-out: in a DRBD
-	 * "criss-cross" setup, that might cause write-out on some other DRBD,
-	 * which in turn might block on the other node at this very place.  */
 	peer_req = drbd_alloc_peer_req(peer_device, p->block_id, sector, size,
-			true /* has real payload */, GFP_NOIO);
+			true /* has real payload */, GFP_TRY);
 	if (!peer_req) {
 		put_ldev(device);
 		return -ENOMEM;

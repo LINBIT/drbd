@@ -403,8 +403,6 @@ out:
 	return err;
 }
 
-#define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN)
-
 static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, int size)
 {
 	struct drbd_device *device = peer_device->device;
@@ -413,10 +411,10 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!get_ldev(device))
 		return -EIO;
 
-	/* GFP_TRY, because if there is no memory available right now, this may
-	 * be rescheduled for later. It is "only" background resync, after all. */
+	/* Do not wait if no memory is immediately available.  */
 	peer_req = drbd_alloc_peer_req(peer_device, ID_SYNCER /* unused */, sector,
-				       size, true /* has real payload */, GFP_TRY);
+				       size, true /* has real payload */,
+				       GFP_TRY & ~__GFP_WAIT);
 	if (!peer_req)
 		goto defer;
 
