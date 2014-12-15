@@ -1872,10 +1872,7 @@ extern int drbd_submit_peer_request(struct drbd_device *,
 				    struct drbd_peer_request *, const unsigned,
 				    const int);
 extern int drbd_free_peer_reqs(struct drbd_device *, struct list_head *);
-extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, u64,
-						     sector_t, unsigned int,
-						     bool,
-						     gfp_t) __must_hold(local);
+extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_device *, struct drbd_peer_request *,
 				 int);
 #define drbd_free_peer_req(m,e) __drbd_free_peer_req(m, e, 0)

@@ -368,13 +368,10 @@ You must not have the req_lock:
 */
 
 struct drbd_peer_request *
-drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
-		    unsigned int data_size, bool has_payload, gfp_t gfp_mask) __must_hold(local)
+drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
-	struct page *page = NULL;
-	unsigned nr_pages = DIV_ROUND_UP(data_size, PAGE_SIZE);
 
 	if (drbd_insert_fault(device, DRBD_FAULT_AL_EE))
 		return NULL;
@@ -386,32 +383,15 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 		return NULL;
 	}
 
-	if (has_payload && data_size) {
-		page = drbd_alloc_pages(peer_device, nr_pages, gfp_mask);
-		if (!page)
-			goto fail;
-	}
-
 	memset(peer_req, 0, sizeof(*peer_req));
 	INIT_LIST_HEAD(&peer_req->w.list);
 	drbd_clear_interval(&peer_req->i);
-	peer_req->i.size = data_size;
-	peer_req->i.sector = sector;
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
-	peer_req->pages = page;
-	/*
-	 * The block_id is opaque to the receiver.  It is not endianness
-	 * converted, and sent back to the sender unchanged.
-	 */
-	peer_req->block_id = id;
+	peer_req->pages = NULL;
 
 	return peer_req;
-
- fail:
-	mempool_free(peer_req, drbd_ee_mempool);
-	return NULL;
 }
 
 void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
@@ -1461,9 +1441,18 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		return NULL;
 	}
 
-	peer_req = drbd_alloc_peer_req(peer_device, id, sector, data_size, trim == NULL, GFP_TRY);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
 	if (!peer_req)
 		return NULL;
+	if (trim == NULL && data_size) {
+		peer_req->pages = drbd_alloc_pages(peer_device,
+			DIV_ROUND_UP(data_size, PAGE_SIZE), GFP_TRY);
+		if (!peer_req->pages)
+			goto fail;
+	}
+	peer_req->i.size = data_size;
+	peer_req->i.sector = sector;
+	peer_req->block_id = id;
 
 	peer_req->flags |= EE_WRITE;
 	if (trim)
@@ -1480,10 +1469,8 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 			data[0] = data[0] ^ (unsigned long)-1;
 		}
 		kunmap(page);
-		if (err) {
-			drbd_free_peer_req(device, peer_req);
-			return NULL;
-		}
+		if (err)
+			goto fail;
 		ds -= len;
 	}
 
@@ -1492,12 +1479,15 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				(unsigned long long)sector, data_size);
-			drbd_free_peer_req(device, peer_req);
-			return NULL;
+			goto fail;
 		}
 	}
 	peer_device->recv_cnt += data_size >> 9;
 	return peer_req;
+
+fail:
+	drbd_free_peer_req(device, peer_req);
+	return NULL;
 }
 
 static int ignore_remaining_packet(struct drbd_connection *connection, int size)
@@ -2424,12 +2414,19 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		return ignore_remaining_packet(connection, pi->size);
 	}
 
-	peer_req = drbd_alloc_peer_req(peer_device, p->block_id, sector, size,
-			true /* has real payload */, GFP_TRY);
-	if (!peer_req) {
-		put_ldev(device);
-		return -ENOMEM;
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
+	err = -ENOMEM;
+	if (!peer_req)
+		goto fail;
+	if (size) {
+		peer_req->pages = drbd_alloc_pages(peer_device,
+			DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+		if (!peer_req->pages)
+			goto fail2;
 	}
+	peer_req->i.size = size;
+	peer_req->i.sector = sector;
+	peer_req->block_id = p->block_id;
 
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:
@@ -2448,8 +2445,9 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	case P_CSUM_RS_REQUEST:
 		fault_type = DRBD_FAULT_RS_RD;
 		di = kmalloc(sizeof(*di) + pi->size, GFP_NOIO);
+		err = -ENOMEM;
 		if (!di)
-			goto out_free_e;
+			goto fail2;
 
 		di->digest_size = pi->size;
 		di->digest = (((char *)di)+sizeof(struct digest_info));
@@ -2457,8 +2455,9 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		peer_req->digest = di;
 		peer_req->flags |= EE_HAS_DIGEST;
 
-		if (drbd_recv_all(connection, di->digest, pi->size))
-			goto out_free_e;
+		err = drbd_recv_all(connection, di->digest, pi->size);
+		if (err)
+			goto fail2;
 
 		if (pi->cmd == P_CSUM_RS_REQUEST) {
 			D_ASSERT(device, connection->agreed_pro_version >= 89);
@@ -2543,12 +2542,14 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		if (err) {
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 			/* If err is set, we will drop the connection... */
-			goto out_free;
+			goto fail3;
 		}
 	} else {
 		update_receiver_timing_details(connection, drbd_rs_begin_io);
-		if (drbd_rs_begin_io(peer_device, sector))
-			goto out_free_e;
+		if (drbd_rs_begin_io(peer_device, sector)) {
+			err = -EIO;
+			goto fail3;
+		}
 	}
 
 submit_for_resync:
@@ -2562,17 +2563,17 @@ submit:
 
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
-
-out_free_e:
 	err = -EIO;
-out_free:
+
+fail3:
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&device->resource->req_lock);
 	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
-
-	put_ldev(device);
+fail2:
 	drbd_free_peer_req(device, peer_req);
+fail:
+	put_ldev(device);
 	return err;
 }
 

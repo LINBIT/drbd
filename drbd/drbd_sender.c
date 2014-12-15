@@ -412,11 +412,19 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 		return -EIO;
 
 	/* Do not wait if no memory is immediately available.  */
-	peer_req = drbd_alloc_peer_req(peer_device, ID_SYNCER /* unused */, sector,
-				       size, true /* has real payload */,
-				       GFP_TRY & ~__GFP_WAIT);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_WAIT);
 	if (!peer_req)
 		goto defer;
+	if (size) {
+		peer_req->pages = drbd_alloc_pages(peer_device,
+						   DIV_ROUND_UP(size, PAGE_SIZE),
+						   GFP_TRY & ~__GFP_WAIT);
+		if (!peer_req->pages)
+			goto defer2;
+	}
+	peer_req->i.size = size;
+	peer_req->i.sector = sector;
+	peer_req->block_id = ID_SYNCER; /* unused */
 
 	peer_req->w.cb = w_e_send_csum;
 	spin_lock_irq(&device->resource->req_lock);
@@ -435,6 +443,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&device->resource->req_lock);
 
+defer2:
 	drbd_free_peer_req(device, peer_req);
 defer:
 	put_ldev(device);
