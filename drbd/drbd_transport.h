@@ -41,6 +41,11 @@ enum { /* bits in the flags word */
 	RESOLVE_CONFLICTS,	/* Set on one node, cleared on the peer! */
 };
 
+enum drbd_tr_free_op {
+	CLOSE_CONNECTION,
+	DESTROY_TRANSPORT
+};
+
 /* Each transport implementation should embed a struct drbd_transport
    into it's instance data structure.
    The transport implementation should only access the connection
@@ -62,7 +67,7 @@ struct drbd_transport_stats {
 };
 
 struct drbd_transport_ops {
-	void (*free)(struct drbd_transport *, bool put_transport);
+	void (*free)(struct drbd_transport *, enum drbd_tr_free_op free_op);
 	int (*connect)(struct drbd_transport *);
 	int (*send)(struct drbd_transport *, enum drbd_stream, void *buf, size_t size, unsigned msg_flags);
 

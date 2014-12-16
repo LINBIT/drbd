@@ -2896,13 +2896,13 @@ fail:
 }
 
 /* free the transport specific members (e.g., sockets) of a connection */
-void drbd_free_tr_conn(struct drbd_connection *connection, bool put_transport)
+void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op)
 {
 	if (connection->transport) {
 		mutex_lock(&connection->mutex[DATA_STREAM]);
 		mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
-		connection->transport->ops->free(connection->transport, put_transport);
+		connection->transport->ops->free(connection->transport, op);
 
 		mutex_unlock(&connection->mutex[CONTROL_STREAM]);
 		mutex_unlock(&connection->mutex[DATA_STREAM]);
@@ -2928,7 +2928,7 @@ void drbd_destroy_connection(struct kref *kref)
 	idr_destroy(&connection->peer_devices);
 
 	drbd_free_connection_buffers(connection);
-	drbd_free_tr_conn(connection, true);
+	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 	kfree(connection->net_conf);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);

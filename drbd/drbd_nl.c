@@ -2954,7 +2954,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx.resource->conf_update);
 fail_free_connection:
-	drbd_free_tr_conn(connection, true);
+	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 
 	if (!list_empty(&connection->connections)) {
 		drbd_unregister_connection(connection);

@@ -55,7 +55,7 @@ struct dtt_waiter {
 };
 
 static struct drbd_transport *dtt_create(struct drbd_connection *connection);
-static void dtt_free(struct drbd_transport *transport, bool put_transport);
+static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
@@ -135,7 +135,7 @@ static void dtt_free_one_sock(struct socket *socket)
 	}
 }
 
-static void dtt_free(struct drbd_transport *transport, bool put_transport)
+static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -151,7 +151,7 @@ static void dtt_free(struct drbd_transport *transport, bool put_transport)
 		}
 	}
 
-	if (put_transport) {
+	if (free_op == DESTROY_TRANSPORT) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 		kfree(tcp_transport);
