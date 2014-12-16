@@ -2041,7 +2041,12 @@ static int do_md_sync(struct drbd_device *device)
 
 static int try_become_up_to_date(struct drbd_resource *resource)
 {
-	change_from_consistent(resource, CS_VERBOSE | CS_SERIALIZE);
+	/* Doing a two_phase_commit from worker context is only possible
+	   if twopc_work is not queued! Let it get executed first! */
+	if (list_empty(&resource->twopc_work.list))
+		change_from_consistent(resource, CS_VERBOSE | CS_SERIALIZE);
+	else
+		drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
 
 	return 0;
 }

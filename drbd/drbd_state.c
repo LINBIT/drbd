@@ -3199,6 +3199,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
 
+	D_ASSERT(resource, list_empty(&resource->twopc_work.list));
 	resource->twopc_work.cb = NULL;
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_PREPARE,
