@@ -3182,9 +3182,10 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
 
-	if (hg <= -2 || hg >= 2)
+	if (hg < -3 || hg > 3)
 		return -1;
 
+	bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
 	disk_states_to_goodness(peer_device->device, peer_disk_state, &hg);
 
 	return goodness_to_repl_state(peer_device, hg);
