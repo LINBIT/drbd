@@ -1499,8 +1499,8 @@ static int ignore_remaining_packet(struct drbd_connection *connection, int size)
 
 	while (size) {
 		int s = min_t(int, size, DRBD_SOCKET_BUFFER_SIZE);
-		int rv = drbd_recv_all_warn(connection, &data_to_ignore, s);
-		if (rv)
+		int rv = drbd_recv(connection, &data_to_ignore, s, 0);
+		if (rv < 0)
 			return rv;
 
 		size -= rv;
