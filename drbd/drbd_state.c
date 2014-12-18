@@ -1271,9 +1271,9 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			for_each_peer_device(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
+				enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
 
-				if (peer_device->connection->cstate[NEW] < C_CONNECTED ||
-				    peer_device->disk_state[NEW] < D_NEGOTIATING)
+				if (pdsk == D_UNKNOWN || pdsk < D_NEGOTIATING)
 					continue;
 
 				all++;
