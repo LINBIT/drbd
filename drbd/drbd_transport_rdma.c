@@ -47,6 +47,7 @@ module_param(rdma_server, bool, 0644);
  *   are set _pre_ compiletime. urgs
  * - we have to make sure we poste new rx_descs (guess that one got removed
  *   from my dummy-test example, re-add it!
+ * - move the static var from recv() to transport
  * - I DO NOT FREE the mallocs AT ALL, currently the overall runtime will be very limited ;-)
  */
 
@@ -1143,7 +1144,7 @@ static int dtr_connect(struct drbd_transport *transport)
 		} else {
 			memset(buf, 0x56, RDMA_PAGE_SIZE);
 			dtr_send(transport, DATA_STREAM, buf, 2, 0);
-			err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 2, CALLER_BUFFER);
+			err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
 			 if (buf[0] == 0x55)
 				 printk("RDMA startup (client), HANDSHAKE OK\n");
 			 err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
