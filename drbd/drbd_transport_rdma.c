@@ -42,13 +42,13 @@ module_param(rdma_server, bool, 0644);
  *   devices, maybe we should stick - at least for the moment - with the easier
  *   to implement send/receive paradigm.
  *
- * IMPLEMENTATION QUIRKS
- * - Connection logic: implement waiter/listener logic. Currently client/server
+ * IMPLEMENTATION QUIRKS:
+ * - Connection logic: implement waiter/listener logic. Currently client/server and streams on different ports
  *   are set _pre_ compiletime. urgs
- * - we have to make sure we poste new rx_descs (guess that one got removed
+ * - we have to make sure we post new rx_descs (guess that one got removed
  *   from my dummy-test example, re-add it!
- * - move the static var from recv() to transport
- * - I DO NOT FREE the mallocs AT ALL, currently the overall runtime will be very limited ;-)
+ * - move the static var[] from recv() to transport
+ * - I DO NOT FREE the mallocs AT ALL, currently the overall runtime will be very limited ;-). but for rx_descs the logic is implemented
  */
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -79,13 +79,22 @@ struct drbd_rdma_rx_desc {
 	void *pos;
 	u64 dma_addr;
 	struct ib_sge sge;
-	unsigned long xfer_len;
+	size_t bytes_left;
 } __attribute__((packed));
 
 
 struct drbd_rdma_tx_desc {
 	void *data;
 	struct ib_sge sge;
+
+	/* RCK: in the future, there is only send_page(), but no send(). The idea
+	 * for this list is:
+	 * - when sending a page and allocating the tx_desc, add it to the list
+	 *   (part of the drbd_rdma_stream). free the tx_desc and unmap the page in
+	 *   "tx success callback".
+	 */
+
+	struct list_head tx_entry;
 };
 
 struct drbd_rdma_stream {
@@ -100,25 +109,26 @@ struct drbd_rdma_stream {
 	struct ib_mr *dma_mr;
 
 	enum drbd_rdma_state state;
-	wait_queue_head_t sem_state;
-	wait_queue_head_t sem_recv;
+	wait_queue_head_t rdma_state_wq;
+	wait_queue_head_t recv_wq;
 
 	atomic_t post_send_count;
 	int post_recv_count;
 
+	struct drbd_rdma_rx_desc *old_rx_desc;
+
 	unsigned long recv_timeout;
+
+	/* list of to be freed and unmaped tx_descs, basically a FIFO, and its spin
+	 * lock */
+	struct list_head tx_descs;
+	spinlock_t tx_list_lock;
+
 };
+
 
 struct drbd_rdma_transport {
 	struct drbd_transport transport;
-
-	/* RCK: in contrast to the transport_tcp I do not split them into two
-	 * individual structs (one for data, one for control). I guess it is nicer
-	 * to use something like:
-	 * tr->stream[DATA_STREAM]
-	 *
-	 * Actually it is nice, maybe do the same for transport_tcp */
-
 	struct drbd_rdma_stream *stream[2];
 };
 
@@ -240,33 +250,26 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 
-	/* make it member of transport */
+	/* make it member of transport, this works only in a very limited scope */
 	static struct drbd_rdma_rx_desc *old_rx[2] = {NULL, NULL};
 
 	struct drbd_rdma_rx_desc *rx_desc[2] = {NULL, NULL};
-	int completed_tx = 0;
 	void *buffer;
  	int (*dtr_drain_rx_cq)(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 
 	dtr_drain_rx_cq = NULL;
 	if (stream == CONTROL_STREAM) {
-		printk("recv with CONTROL_STREAM, size:%d\n", size);
+		printk("recv with CONTROL_STREAM, size:%zu\n", size);
 		dtr_drain_rx_cq = dtr_drain_rx_control_cq;
 	}
 	else if (stream == DATA_STREAM) {
-		printk("recv with DATA_STREAM, size:%d\n", size);
+		printk("recv with DATA_STREAM, size:%zu\n", size);
 		dtr_drain_rx_cq = dtr_drain_rx_data_cq;
 	} else {
 		printk("recv with unknown STREAM\n");
 	}
 
-	if (!(flags & GROW_BUFFER)) {
-		/* free/recycle the old_rx[stream] */
-		/* currently this should include: */
-		;
-	}
-
-	if (flags & GROW_BUFFER) {
+	if (flags & GROW_BUFFER) { /* grow is untested, do not trust this code */
 		printk("RDMA: recv GROW_BUFFER\n");
 		/* D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base); */
 		buffer = old_rx[stream]->pos;
@@ -274,18 +277,19 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 		/* D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE); */
 		*buf = buffer;
 		/* old_rx[stream] = NULL; */
-	} else {
-		if ( (old_rx[stream] == NULL) || (old_rx[stream]->xfer_len == 0) ) { /* get a completely new entry */
+	} else if ( (old_rx[stream] == NULL) || (old_rx[stream]->bytes_left == 0) ) { /* get a completely new entry, old now unused, free it */
 			int t;
 			printk("RDMA: recv completely new on %s\n", stream == CONTROL_STREAM ? "control": "data");
-retry_new:
-			printk("wating for %lld\n", rdma_stream->recv_timeout);
-			/* t = wait_event_interruptible_timeout(rdma_stream->sem_recv, */
-			/* 			dtr_drain_rx_cq(rdma_stream, &rx_desc[stream], 1), */
-			/* 			rdma_stream->recv_timeout); */
-			t = wait_event_interruptible_timeout(rdma_stream->sem_recv,
+			printk("wating for %lu\n", rdma_stream->recv_timeout);
+#if 0 /* RCK: for now I do not want any timeouts at all */
+			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
+						dtr_drain_rx_cq(rdma_stream, &rx_desc[stream], 1),
+						rdma_stream->recv_timeout);
+#else
+			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 					dtr_drain_rx_cq(rdma_stream, &rx_desc[stream], 1),
 					10000*HZ);
+#endif
 
 			if (t <= 0)
 			{
@@ -298,10 +302,10 @@ retry_new:
 
 			buffer = rx_desc[stream]->data;
 			rx_desc[stream]->pos = buffer + size;
-			printk("got a new page with size: %d\n", rx_desc[stream]->xfer_len);
-			if (rx_desc[stream]->xfer_len < size)
-				printk("new, requesting more (%d) than left (%d)\n", size, rx_desc[stream]->xfer_len);
-			rx_desc[stream]->xfer_len -= size;
+			printk("got a new page with size: %zu\n", rx_desc[stream]->bytes_left);
+			if (rx_desc[stream]->bytes_left < size)
+				printk("new, requesting more (%zu) than left (%zu)\n", size, rx_desc[stream]->bytes_left);
+			rx_desc[stream]->bytes_left -= size;
 			old_rx[stream] = rx_desc[stream];
 
 			if (flags & CALLER_BUFFER) {
@@ -318,13 +322,13 @@ retry_new:
 			buffer = old_rx[stream]->pos;
 			old_rx[stream]->pos += size;
 
-			if (old_rx[stream]->xfer_len <= size) { /* < could be a problem, right? or does that happen? */
-				old_rx[stream]->xfer_len = 0; /* 0 left == get new entry */
+			if (old_rx[stream]->bytes_left <= size) { /* < could be a problem, right? or does that happen? */
+				old_rx[stream]->bytes_left = 0; /* 0 left == get new entry */
 				printk("marking page as consumed\n");
 			}
 			else {
-				old_rx[stream]->xfer_len -= size;
-				printk("old_rx left: %d\n", old_rx[stream]->xfer_len);
+				old_rx[stream]->bytes_left -= size;
+				printk("old_rx left: %zu\n", old_rx[stream]->bytes_left);
 			}
 
 			if (flags & CALLER_BUFFER) {
@@ -337,7 +341,6 @@ retry_new:
 			printk("RDMA: recv next part fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
 			return size;
 		}
-	}
 
 	/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
 	dtr_create_and_post_rx_desc(rdma_stream);
@@ -372,7 +375,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		err = rdma_resolve_route(cm_id, 2000);
 		if (err) {
 			printk("RDMA: rdma_resolve_route error %d\n", err);
-			wake_up_interruptible(&rdma_stream->sem_state);
+			wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		}
 		else {
 			printk("RDMA: rdma_resolve_route OK\n");
@@ -382,7 +385,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
 		printk("RDMA(cma event): route resolved\n");
 		rdma_stream->state = ROUTE_RESOLVED;
-		wake_up_interruptible(&rdma_stream->sem_state);
+		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
@@ -396,13 +399,13 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		rdma_stream->child_cm_id = cm_id;
 		printk("RDMA: child cma %p\n", rdma_stream->child_cm_id);
 #endif
-		wake_up_interruptible(&rdma_stream->sem_state);
+		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
 		printk("RDMA(cma event): established\n");
 		rdma_stream->state = CONNECTED;
-		wake_up_interruptible(&rdma_stream->sem_state);
+		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -418,7 +421,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		printk("RDMA(cma event: bad thingy, fall-through, only first valid) %d, error %d\n", event->event,
 			event->status);
 		rdma_stream->state = ERROR;
-		wake_up_interruptible(&rdma_stream->sem_state);
+		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
@@ -426,7 +429,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		rdma_stream->state = DISCONNECTED;
 		if ((rdma_stream->post_recv_count == 0) &&
 		    (atomic_read(&rdma_stream->post_send_count) == 0))
-			wake_up_interruptible(&rdma_stream->sem_state);
+			wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
@@ -435,7 +438,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 	default:
 		printk("RDMA(cma event): oof bad type!\n");
-		wake_up_interruptible(&rdma_stream->sem_state);
+		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 	}
 	return 0;
@@ -445,8 +448,8 @@ static int dtr_create_cm_id(struct drbd_rdma_stream *rdma_stream)
 {
 
 	rdma_stream->state = IDLE;
-	init_waitqueue_head(&rdma_stream->sem_state);
-	init_waitqueue_head(&rdma_stream->sem_recv);
+	init_waitqueue_head(&rdma_stream->rdma_state_wq);
+	init_waitqueue_head(&rdma_stream->recv_wq);
 
 	/* create CM id */
 	rdma_stream->cm_id = rdma_create_id(
@@ -487,7 +490,7 @@ static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *rdma_stream, struct 
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
 	int completed_tx = 0;
-	unsigned long xfer_len;
+	size_t bytes_left;
 
 	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
@@ -499,13 +502,12 @@ static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *rdma_stream, struct 
 				printk("RDMA: IB_WC_SEND\n");
 			if (wc.opcode == IB_WC_RECV) {
 				printk("RDMA: IB_WC_RECV\n");
-				xfer_len = (unsigned long)wc.byte_len;
-				printk("RDMA: xfer_len: %lu\n", xfer_len);
-				/* dtr_rx_completion(rdma_stream, desc, xfer_len); */
+				bytes_left = wc.byte_len;
+				printk("RDMA: bytes_left: %lu\n", bytes_left);
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
 				rdma_stream->post_recv_count--;
-				(*rx_desc)->xfer_len = xfer_len;
+				(*rx_desc)->bytes_left = bytes_left;
 				printk("in drain (control): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
 			}
 			else if (wc.opcode == IB_WC_RDMA_WRITE)
@@ -521,11 +523,8 @@ static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *rdma_stream, struct 
 			printk("RDMA: IB_WC NOT SUCCESS\n");
 	}
 
-out:
-	printk("rx completed: %d\n", completed_tx);
 	/* ib_req_notify_cq(cq, IB_CQ_NEXT_COMP); */
 
-	printk("returning from drain\n");
 	return completed_tx;
 }
 
@@ -534,7 +533,7 @@ static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drb
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
 	int completed_tx = 0;
-	unsigned long xfer_len;
+	size_t bytes_left;
 
 	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
@@ -546,13 +545,13 @@ static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drb
 				printk("RDMA: IB_WC_SEND\n");
 			if (wc.opcode == IB_WC_RECV) {
 				printk("RDMA: IB_WC_RECV\n");
-				xfer_len = (unsigned long)wc.byte_len;
-				printk("RDMA: xfer_len: %lu\n", xfer_len);
-				/* dtr_rx_completion(rdma_stream, desc, xfer_len); */
+				bytes_left = wc.byte_len;
+				printk("RDMA: bytes_left: %zu\n", bytes_left);
+				/* dtr_rx_completion(rdma_stream, desc, bytes_left); */
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
 				rdma_stream->post_recv_count--;
-				(*rx_desc)->xfer_len = xfer_len;
+				(*rx_desc)->bytes_left = bytes_left;
 				printk("in drain (data): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
 			}
 			else if (wc.opcode == IB_WC_RDMA_WRITE)
@@ -568,11 +567,8 @@ static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drb
 			printk("RDMA: IB_WC NOT SUCCESS\n");
 	}
 
-out:
-	printk("rx completed: %d\n", completed_tx);
 	/* ib_req_notify_cq(cq, IB_CQ_NEXT_COMP); */
 
-	printk("returning from drain\n");
 	return completed_tx;
 }
 
@@ -585,7 +581,7 @@ static void dtr_rx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 	/* dtr_drain_rx_cq(rdma_stream, 1); */
 
-	wake_up_interruptible(&rdma_stream->sem_recv);
+	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
 		printk("ib_req_notify_cq failed\n");
@@ -602,7 +598,7 @@ static void dtr_rx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 	/* dtr_drain_rx_cq(rdma_stream, 1); */
 
-	wake_up_interruptible(&rdma_stream->sem_recv);
+	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
 		printk("ib_req_notify_cq failed\n");
@@ -628,8 +624,23 @@ static void dtr_tx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	int ret;
+	struct drbd_rdma_tx_desc *tx_desc;
+	unsigned long flags;
 
 	printk("RDMA (data): got tx cq event. state %d\n", rdma_stream->state);
+
+	/* RCK: iterate unmaped pages list and kunmap */
+
+	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
+	tx_desc = list_first_entry_or_null(&rdma_stream->tx_descs, struct drbd_rdma_tx_desc, tx_entry);
+	if (tx_desc) {
+		printk("I should free it\n");
+		list_del(&tx_desc->tx_entry);
+	}
+	else {
+		printk("RDMA: Something went terribly wrong, got tx completion event, but cannot find entry\n");
+	}
+	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
@@ -670,10 +681,10 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	struct ib_recv_wr recv_wr, *recv_wr_failed;
 	int err;
 
-	recv_wr.next       = NULL;
-	recv_wr.wr_id      = (unsigned long)rx_desc;
-	recv_wr.sg_list    = &rx_desc->sge;
-	recv_wr.num_sge    = 1;
+	recv_wr.next = NULL;
+	recv_wr.wr_id = (unsigned long)rx_desc;
+	recv_wr.sg_list = &rx_desc->sge;
+	recv_wr.num_sge = 1;
 
 	ib_dma_sync_single_for_device(rdma_stream->cm_id->device,
 			rx_desc->dma_addr, RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
@@ -721,13 +732,15 @@ static int dtr_create_and_post_rx_desc(struct drbd_rdma_stream *rdma_stream)
  * control stream: rdma send
  * data stream: rdma write
  * data should be/has to be an rdma write
- * CURRENTLY only SEND */
+ * CURRENTLY only SEND, and and the write is up to discussion, see list at the
+ * beginning of file */
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 		struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream)
 {
 	struct ib_device *device = rdma_stream->cm_id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	int err;
+	unsigned long flags;
 	printk("in dtr_post_tx_desc\n");
 
 	send_wr.next = NULL;
@@ -740,10 +753,21 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 	ib_dma_sync_single_for_device(device, tx_desc->sge.addr,
 			tx_desc->sge.length, DMA_TO_DEVICE);
 	atomic_inc(&rdma_stream->post_send_count);
+
+	INIT_LIST_HEAD(&tx_desc->tx_entry);
+	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
+	list_add_tail(&tx_desc->tx_entry, &rdma_stream->tx_descs);
+	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
+
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
 		printk("RDMA: ib_post_send failed\n");
 		atomic_dec(&rdma_stream->post_send_count);
+
+		spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
+		list_del(&tx_desc->tx_entry);
+		spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
+
 		return err;
 	}
 	else {
@@ -791,6 +815,19 @@ static int dtr_create_and_post_tx_desc(struct drbd_rdma_stream *rdma_stream, enu
 	return dtr_post_tx_desc(rdma_stream, tx_desc, stream);
 }
 
+/* allocate general resources for the stream (spin locks, lists, ...) */
+static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enum drbd_stream stream)
+{
+	/* at least for now we keep the unused enum drbd_stream, in the future there
+	 * might be a difference in the setup, dunno */
+
+	rdma_stream->recv_timeout = 1000 * HZ; /* RCK TODO: this should be the netconf value */
+
+	INIT_LIST_HEAD(&rdma_stream->tx_descs);
+	spin_lock_init(&rdma_stream->tx_list_lock);
+}
+
+/* allocate rdma specific resources for the stream */
 static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, enum drbd_stream stream)
 {
 	int i;
@@ -964,7 +1001,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 		return err;
 	}
 
-	wait_event_interruptible(rdma_stream->sem_state,
+	wait_event_interruptible(rdma_stream->rdma_state_wq,
 			rdma_stream->state >= ROUTE_RESOLVED);
 
 	if (rdma_stream->state != ROUTE_RESOLVED) {
@@ -993,7 +1030,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 		return err;
 	}
 
-	wait_event_interruptible(rdma_stream->sem_state,
+	wait_event_interruptible(rdma_stream->rdma_state_wq,
 			rdma_stream->state >= CONNECTED);
 	if (rdma_stream->state == ERROR) {
 		printk("RDMA: failed connecting. state %d\n",
@@ -1039,7 +1076,7 @@ static int dtr_bla_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_
 	}
 	printk("RDMA: listen success\n");
 
-	wait_event_interruptible(rdma_stream->sem_state,
+	wait_event_interruptible(rdma_stream->rdma_state_wq,
 				 rdma_stream->state >= CONNECT_REQUEST);
 
 	if (rdma_stream->state != CONNECT_REQUEST) {
@@ -1102,10 +1139,9 @@ static int dtr_connect(struct drbd_transport *transport)
 	peer_addr = (struct sockaddr_in *)&connection->peer_addr;
 	my_addr = (struct sockaddr_in *)&connection->my_addr;
 
-	/* RCK: maybe make that one a loop */
 	rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
 	rdma_transport->stream[CONTROL_STREAM] = rdma_stream;
-	rdma_stream->recv_timeout = 10000*HZ;
+	dtr_alloc_stream_resources(rdma_stream, CONTROL_STREAM);
 
 	/* RCK: that is of course crazy, but just a hackaround for testing until I
 	 * rewrite the connection logic, rdma_server is a module param: */
@@ -1118,11 +1154,10 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
 	rdma_transport->stream[DATA_STREAM] = rdma_stream;
-	/* rdma_stream->recv_timeout = ULONG_MAX; */
-	rdma_stream->recv_timeout = 10000*HZ;
+	dtr_alloc_stream_resources(rdma_stream, DATA_STREAM);
 
 	if (rdma_server) {
-		my_addr->sin_port += 1; /* +1 in network order, "works for me" */
+		my_addr->sin_port += 1; /* +1 in network order, "works for me on rum/kugel" */
 		err |= dtr_bla_stream(rdma_stream, my_addr, DATA_STREAM);
 	}
 	else {
@@ -1132,8 +1167,8 @@ static int dtr_connect(struct drbd_transport *transport)
 	}
 
 	if (!err) {
-		printk("RDMA: both %s streams established\n", rdma_server ? "server" : "client");
 		char *buf = kzalloc(sizeof(*buf) * RDMA_PAGE_SIZE, GFP_KERNEL);
+		printk("RDMA: both %s streams established\n", rdma_server ? "server" : "client");
 		if (rdma_server) {
 			memset(buf, 0x55, RDMA_PAGE_SIZE);
 			dtr_send(transport, DATA_STREAM, buf, 2, 0);
@@ -1149,6 +1184,7 @@ static int dtr_connect(struct drbd_transport *transport)
 				 printk("RDMA startup (client), HANDSHAKE OK\n");
 			 err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
 		}
+		kfree(buf);
 		printk("connect returns 0\n");
 		return 0;
 	}
@@ -1160,7 +1196,6 @@ static int dtr_connect(struct drbd_transport *transport)
 
 #if 0 /* RCK: just copied from tcp_transport, guess we will need that */
 	/* Assume that the peer only understands protocol 80 until we know better.  */
-	connection->agreed_pro_version = 80;
 
 	waiter.waiter.connection = connection;
 	waiter.socket = NULL;
