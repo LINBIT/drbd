@@ -283,8 +283,7 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 			int t;
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
 			kfree(rdma_stream->cur_rx_desc);
-			printk("RDMA: free %p and recv completely new on %s\n",
-					rdma_stream->cur_rx_desc, stream == CONTROL_STREAM ? "control": "data");
+			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->cur_rx_desc, stream == CONTROL_STREAM ? "control": "data");
 			printk("wating for %lu\n", rdma_stream->recv_timeout);
 #if 0 /* RCK: for now I do not want any timeouts at all */
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
@@ -422,8 +421,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		printk("RDMA(cma event, err): ADDR_UNREACHABLE\n");
 	case RDMA_CM_EVENT_REJECTED:
 		printk("RDMA(cma event, err): ADDR_REJECTED\n");
-		printk("RDMA(cma event: bad thingy, fall-through, only first valid) %d, error %d\n", event->event,
-			event->status);
+		printk("RDMA(cma event: bad thingy, fall-through, only first valid) %d, error %d\n", event->event, event->status);
 		rdma_stream->state = ERROR;
 		wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
@@ -729,8 +727,7 @@ static int dtr_create_and_post_rx_desc(struct drbd_rdma_stream *rdma_stream)
 	rx_desc->sge.length = RDMA_PAGE_SIZE;
 
 #if 0
-	printk("RDMA: Created rx_desc: lkey=%x, addr=%llx, length=%d\n",
-		 rx_desc->sge.lkey, rx_desc->sge.addr, rx_desc->sge.length);
+	printk("RDMA: Created rx_desc: lkey=%x, addr=%llx, length=%d\n", rx_desc->sge.lkey, rx_desc->sge.addr, rx_desc->sge.length);
 #endif
 
 	return dtr_post_rx_desc(rdma_stream, rx_desc);
@@ -780,9 +777,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 	}
 	else {
 		/* printk("RDMA: ib_post_send successfull!\n"); */
-		printk("Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d, data[0]:%x\n",
-				tx_desc->data, tx_desc,
-				tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length, ((char *)tx_desc->data)[0]);
+		printk("Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d, data[0]:%x\n", tx_desc->data, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length, ((char *)tx_desc->data)[0]);
 	}
 
 	return 0;
@@ -1000,8 +995,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 	/* RCK: fix up this sockaddr cast mess/ipv6 hocus pocus */
 	peer_addr_in = (struct sockaddr_in *)peer_addr;
 	printk("RDMA: entering connect for %s\n", (stream == DATA_STREAM ? "DATA_STREAM" : "CONTROL_STREAM"));
-	printk("RDMA: connecting %pI4 port %d\n",
-			&peer_addr_in->sin_addr, ntohs(peer_addr_in->sin_port));
+	printk("RDMA: connecting %pI4 port %d\n", &peer_addr_in->sin_addr, ntohs(peer_addr_in->sin_port));
 
 	err = dtr_create_cm_id(rdma_stream);
 	if (err) {
@@ -1022,8 +1016,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 			rdma_stream->state >= ROUTE_RESOLVED);
 
 	if (rdma_stream->state != ROUTE_RESOLVED) {
-		printk("RDMA addr/route resolution error. state %d\n",
-				rdma_stream->state);
+		printk("RDMA addr/route resolution error. state %d\n", rdma_stream->state);
 		return err;
 	}
 	printk("route resolve OK\n");
@@ -1050,8 +1043,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 	wait_event_interruptible(rdma_stream->rdma_state_wq,
 			rdma_stream->state >= CONNECTED);
 	if (rdma_stream->state == ERROR) {
-		printk("RDMA: failed connecting. state %d\n",
-				rdma_stream->state);
+		printk("RDMA: failed connecting. state %d\n", rdma_stream->state);
 		return err;
 	}
 	printk("RDMA: rdma_connect successful\n");
@@ -1068,8 +1060,7 @@ static int dtr_bla_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_
 	struct rdma_conn_param conn_param;
 
 	printk("RDMA: entering BLA for %s\n", (stream == DATA_STREAM ? "DATA_STREAM" : "CONTROL_STREAM"));
-	printk("RDMA: BLA %pI4 port %d\n",
-			&my_addr->sin_addr, ntohs(my_addr->sin_port));
+	printk("RDMA: BLA %pI4 port %d\n", &my_addr->sin_addr, ntohs(my_addr->sin_port));
 
 	err = dtr_create_cm_id(rdma_stream);
 	if (err) {
@@ -1097,8 +1088,7 @@ static int dtr_bla_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_
 				 rdma_stream->state >= CONNECT_REQUEST);
 
 	if (rdma_stream->state != CONNECT_REQUEST) {
-		printk("RDMA: connect request error. state %d\n",
-			 rdma_stream->state);
+		printk("RDMA: connect request error. state %d\n", rdma_stream->state);
 		return err;
 	}
 	printk("RDMA: connect request success\n");
