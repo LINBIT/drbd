@@ -44,7 +44,14 @@ module_param(rdma_server, bool, 0644);
  *
  * IMPLEMENTATION QUIRKS:
  * - Connection logic: implement waiter/listener logic. Currently client/server and streams on different ports
- *   are set _pre_ compiletime. urgs
+ * - Something is wrong with the post_[rx|tx]_descriptor logic. it always hangs
+ *   after the initial descs are used even though that the repost logic looks
+ *   OK. CQ has a init_attr.cap.max_send_wr = RDMA_MAX_TX; (same for write).
+ *   e.g set the RDMA_MAX/PREALLOC defines to 1024, then it executes relatively
+ *   long (until the 1024 are used) Maybe it has something to do with that and
+ *   that the descs are still in use for RDMA. too less time to debug and there
+ *   will be changes for send/send_page anyways.
+ * - module unload currently does not work
  */
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -54,8 +61,13 @@ MODULE_LICENSE("GPL");
 
 /* #define RDMA_MAX_RX 1024 */
 /* #define RDMA_MAX_TX 1024 */
+/* #define RDMA_PREALLOC_RX 1024 */
+/* #define RDMA_PREALLOC_TX 1024 */
 #define RDMA_MAX_RX 20
 #define RDMA_MAX_TX 20
+#define RDMA_PREALLOC_RX 20
+#define RDMA_PREALLOC_TX 20
+
 #define RDMA_PAGE_SIZE 4096
 
 enum drbd_rdma_state {
@@ -108,6 +120,7 @@ struct drbd_rdma_stream {
 	wait_queue_head_t rdma_state_wq;
 	wait_queue_head_t recv_wq;
 
+	/* number of currently available descs */
 	atomic_t post_send_count;
 	int post_recv_count;
 
@@ -240,15 +253,48 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 
-static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size)
+static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed);
+static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
 {
-	printk("not implemented yet\n");
+	/* struct drbd_rdma_transport *rdma_transport = */
+	/* 	container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport); */
+
+	/* struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM]; */
+	struct page *all_pages, *page;
+	int err = 0; /* RCK: for now fixed at 0 */
+	int i = 0;
+	/* struct drbd_rdma_rx_desc *rx_desc; */
+
+	printk("RDMA: in recv_pages, size: %zu\n", size);
+	all_pages = drbd_alloc_pages(peer_device, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	if (!all_pages)
+		return -ENOMEM;
+	page = all_pages;
+	page_chain_for_each(page) {
+		size_t len = min_t(int, size, PAGE_SIZE);
+		void *data = kmap(page);
+		/* while(dtr_drain_rx_data_cq(rdma_stream, &rx_desc, 1) == 0); */
+		/* memcpy(data, rx_desc->data, len); */
+		_dtr_recv(peer_device->connection->transport, DATA_STREAM, &data, len, CALLER_BUFFER, true);
+		++i;
+		kunmap(page);
+		if (err < 0)
+			goto fail;
+		size -= len;
+	}
+
+	printk("rcvd %d pages\n", i);
+
+	*pages = all_pages;
 	return 0;
+fail:
+	drbd_free_pages(peer_device->device, all_pages, 0);
+	return err;
 }
 
 static int dtr_create_and_post_rx_desc(struct drbd_rdma_stream *rdma_stream);
 
-static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
+static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
@@ -282,14 +328,15 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	} else if (rdma_stream->cur_rx_desc->bytes_left == 0) { /* get a completely new entry, old now unused, free it */
 			int t;
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
-			kfree(rdma_stream->cur_rx_desc);
 			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->cur_rx_desc, stream == CONTROL_STREAM ? "control": "data");
-			printk("wating for %lu\n", rdma_stream->recv_timeout);
+			kfree(rdma_stream->cur_rx_desc);
 #if 0 /* RCK: for now I do not want any timeouts at all */
+			printk("waiting for %lu\n", rdma_stream->recv_timeout);
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 						rdma_stream->recv_timeout);
 #else
+			printk("waiting for very long\n");
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 					dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 					10000*HZ);
@@ -298,9 +345,9 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 			if (t <= 0)
 			{
 				if (t==0)
-					printk("RDMA: recv() timed out, ret: EAGAIN\n");
+					printk("RDMA: recv() on %s timed out, ret: EAGAIN\n", stream == CONTROL_STREAM ? "control": "data");
 				else
-					printk("RDMA: recv() timed out, ret: EINTR\n");
+					printk("RDMA: recv() on %s timed out, ret: EINTR\n", stream == CONTROL_STREAM ? "control": "data");
 				return t == 0 ? -EAGAIN : -EINTR;
 			}
 
@@ -322,6 +369,9 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 			printk("RDMA: recv completely new fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
 			/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
 			dtr_create_and_post_rx_desc(rdma_stream);
+			printk("rx_count(%s): %d\n", stream == CONTROL_STREAM ? "control" : "data", rdma_stream->post_recv_count);
+			if (markconsumed)
+				rdma_stream->cur_rx_desc->bytes_left = 0;
 			return size;
 		} else { /* return next part */
 			printk("RDMA: recv next part on %s\n", stream == CONTROL_STREAM ? "control": "data");
@@ -350,6 +400,12 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 
 	return 0;
 }
+
+static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
+{
+	return _dtr_recv(transport, stream, buf, size, flags, false);
+}
+
 
 static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats)
 {
@@ -508,7 +564,6 @@ static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *rdma_stream, struct 
 				printk("RDMA: bytes_left: %lu\n", bytes_left);
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-				rdma_stream->post_recv_count--;
 				(*rx_desc)->bytes_left = bytes_left;
 				printk("in drain (control): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
 			}
@@ -552,7 +607,6 @@ static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drb
 				/* dtr_rx_completion(rdma_stream, desc, bytes_left); */
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-				rdma_stream->post_recv_count--;
 				(*rx_desc)->bytes_left = bytes_left;
 				printk("in drain (data): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
 			}
@@ -580,8 +634,9 @@ static void dtr_rx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	printk("RDMA (control): got rx cq event. state %d\n", rdma_stream->state);
+	rdma_stream->post_recv_count--;
 
-	/* dtr_drain_rx_cq(rdma_stream, 1); */
+	/* dtr_create_and_post_rx_desc(rdma_stream); */
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
@@ -597,8 +652,9 @@ static void dtr_rx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	printk("RDMA (data): got rx cq event. state %d\n", rdma_stream->state);
+	rdma_stream->post_recv_count--;
 
-	/* dtr_drain_rx_cq(rdma_stream, 1); */
+	/* dtr_create_and_post_rx_desc(rdma_stream); */
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
@@ -614,6 +670,8 @@ static void dtr_tx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	printk("RDMA (control): got tx cq event. state %d\n", rdma_stream->state);
+
+	atomic_dec(&rdma_stream->post_send_count);
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
@@ -631,6 +689,8 @@ static void dtr_tx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 	unsigned long flags;
 
 	printk("RDMA (data): got tx cq event. state %d\n", rdma_stream->state);
+
+	atomic_dec(&rdma_stream->post_send_count);
 
 	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 	tx_desc = list_first_entry_or_null(&rdma_stream->tx_descs, struct drbd_rdma_tx_desc, tx_entry);
@@ -772,6 +832,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 		spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 		list_del(&tx_desc->tx_entry);
 		spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
+		/* RCK TODO: here we should also free the tx_desc */
 
 		return err;
 	}
@@ -789,8 +850,9 @@ static int dtr_create_and_post_tx_desc(struct drbd_rdma_stream *rdma_stream, enu
 	struct ib_device *device;
 
 	/* printk("before setting device\n"); */
-	if (rdma_stream->cm_id)
-		printk("cm_id: %p\n", rdma_stream->cm_id);
+	/* if (rdma_stream->cm_id) */
+	/* 	printk("cm_id: %p\n", rdma_stream->cm_id); */
+	printk("tx_count(%s): %d\n", stream == CONTROL_STREAM ? "control" : "data", atomic_read(&rdma_stream->post_send_count));
 
 	/* printk("before setting device\n"); */
 	device = rdma_stream->cm_id->device;
@@ -918,7 +980,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, enum d
 	}
 
 	/* fill rx desc */
-	for (i = 0; i < RDMA_MAX_RX; i++) {
+	/* for (i = 0; i < RDMA_MAX_RX; i++) { */
+	for (i = 0; i < RDMA_PREALLOC_RX; ++i) {
 		err = dtr_create_and_post_rx_desc(rdma_stream);
 		if (err) {
 			printk("RDMA: failed posting rx desc\n");
@@ -1247,20 +1310,19 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream,
 			 struct page *page, int offset, size_t size, unsigned msg_flags)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport);
+	/* struct drbd_rdma_transport *rdma_transport = */
+	/* 	container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport); */
 
-	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+	/* struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM]; */
+	printk("RDMA: in send_page, size: %zu\n", size);
 
 	/* mm_segment_t oldfs = get_fs(); */
 	/* set_fs(KERNEL_DS); */
 
-	dtr_create_and_post_tx_desc(rdma_stream, DATA_STREAM, page, size, msg_flags);
+	/* dtr_create_and_post_tx_desc(rdma_stream, DATA_STREAM, page, size, msg_flags, true); */
+	dtr_send(transport, stream, page, size, msg_flags);
 
 	/* set_fs(oldfs); */
-
-
-	peer_device->send_cnt += size >> 9;
 
 	return 0;
 }
