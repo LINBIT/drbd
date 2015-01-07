@@ -859,6 +859,14 @@ struct drbd_thread_timing_details
 };
 #define DRBD_THREAD_DETAILS_HIST	16
 
+struct drbd_send_buffer {
+	struct page *page;  /* current buffer page for sending data */
+	void *pos; /* position within that page */
+	int allocated_size; /* currently allocated space */
+	int additional_size;  /* additional space to be added to next packet's size */
+};
+
+
 struct drbd_resource {
 	char *name;
 #ifdef CONFIG_DEBUG_FS
@@ -953,12 +961,8 @@ struct drbd_connection {
 	int peer_addr_len;
 
 	struct drbd_transport *transport;
-	struct {
-		void *base;
-		int allocated;
-		int additional_size;
-	} sbuf[2];
-	struct mutex mutex[2];
+	struct drbd_send_buffer send_buffer[2];
+	struct mutex mutex[2]; /* Protect assembling of new packet until sending it (in send_buffer) */
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */

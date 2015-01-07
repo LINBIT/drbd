@@ -481,21 +481,21 @@ out:
 	return err;
 }
 
-static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket, void *buf,
+static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 			     enum drbd_packet cmd, enum drbd_stream stream)
 {
-	struct p_header80 *h = buf;
+	struct p_header80 h;
 	int msg_flags = 0;
 	int err;
 
 	if (!socket)
 		return -EIO;
 
-	h->magic = cpu_to_be32(DRBD_MAGIC);
-	h->command = cpu_to_be16(cmd);
-	h->length = 0;
+	h.magic = cpu_to_be32(DRBD_MAGIC);
+	h.command = cpu_to_be16(cmd);
+	h.length = 0;
 
-	err = _dtt_send(tcp_transport, socket, buf, sizeof(*h), msg_flags);
+	err = _dtt_send(tcp_transport, socket, &h, sizeof(h), msg_flags);
 
 	return err;
 }
@@ -829,13 +829,10 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
-	void *dsocket_sbuf, *csocket_sbuf;
 	int timeout, err;
 	bool ok;
 
-	dsocket_sbuf = connection->sbuf[DATA_STREAM].base;
 	dsocket = NULL;
-	csocket_sbuf = connection->sbuf[CONTROL_STREAM].base;
 	csocket = NULL;
 
 	/* Assume that the peer only understands protocol 80 until we know better.  */
@@ -857,11 +854,11 @@ static int dtt_connect(struct drbd_transport *transport)
 		if (s) {
 			if (!dsocket) {
 				dsocket = s;
-				dtt_send_first_packet(tcp_transport, dsocket, dsocket_sbuf, P_INITIAL_DATA, DATA_STREAM);
+				dtt_send_first_packet(tcp_transport, dsocket, P_INITIAL_DATA, DATA_STREAM);
 			} else if (!csocket) {
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
 				csocket = s;
-				dtt_send_first_packet(tcp_transport, csocket, csocket_sbuf, P_INITIAL_META, CONTROL_STREAM);
+				dtt_send_first_packet(tcp_transport, csocket, P_INITIAL_META, CONTROL_STREAM);
 			} else {
 				drbd_err(connection, "Logic error in conn_connect()\n");
 				goto out_eagain;

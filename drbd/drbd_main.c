@@ -713,19 +713,49 @@ static void prepare_header(struct drbd_connection *connection, int vnr,
 		prepare_header80(buffer, cmd, size);
 }
 
+static void new_or_recycle_send_buffer_page(struct drbd_send_buffer *sbuf)
+{
+	while (1) {
+		struct page *page;
+		int count = page_count(sbuf->page);
+
+		BUG_ON(count == 0);
+		if (count == 1)
+			goto have_page;
+
+		page = alloc_page(GFP_KERNEL);
+		if (page) {
+			put_page(sbuf->page);
+			sbuf->page = page;
+			goto have_page;
+		}
+
+		schedule_timeout(HZ / 10);
+	}
+have_page:
+	sbuf->pos = page_address(sbuf->page);
+}
+
 static void *alloc_send_buffer(struct drbd_connection *connection, int size,
 			      enum drbd_stream drbd_stream)
 {
-	connection->sbuf[drbd_stream].allocated = size;
-	connection->sbuf[drbd_stream].additional_size = 0;
-	return connection->sbuf[drbd_stream].base;
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
+	void *page_start = page_address(sbuf->page);
+
+	if (sbuf->pos - page_start + size > PAGE_SIZE)
+		new_or_recycle_send_buffer_page(sbuf);
+
+	sbuf->allocated_size = size;
+	sbuf->additional_size = 0;
+
+	return sbuf->pos;
 }
 
 static void resize_prepared_command(struct drbd_connection *connection,
 				    enum drbd_stream drbd_stream,
 				    int size)
 {
-	connection->sbuf[drbd_stream].allocated =
+	connection->send_buffer[drbd_stream].allocated_size =
 		size + drbd_header_size(connection);
 }
 
@@ -733,7 +763,7 @@ static void additional_size_command(struct drbd_connection *connection,
 				    enum drbd_stream drbd_stream,
 				    int additional_size)
 {
-	connection->sbuf[drbd_stream].additional_size = additional_size;
+	connection->send_buffer[drbd_stream].additional_size = additional_size;
 }
 
 static void *__conn_prepare_command(struct drbd_connection *connection, int size,
@@ -792,24 +822,28 @@ void *drbd_prepare_command(struct drbd_peer_device *peer_device, int size, enum 
 static int __send_command(struct drbd_connection *connection, int vnr,
 			  enum drbd_packet cmd, enum drbd_stream drbd_stream)
 {
-	int msg_flags, size, additional_size;
-	int err;
-	void *sbuf;
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+	int msg_flags, err, offset;
 
-	msg_flags = connection->sbuf[drbd_stream].additional_size ? MSG_MORE : 0;
+	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
 
-	sbuf = connection->sbuf[drbd_stream].base;
-	size = connection->sbuf[drbd_stream].allocated;
-	additional_size = connection->sbuf[drbd_stream].additional_size;
+	prepare_header(connection, vnr, sbuf->pos, cmd,
+		       sbuf->allocated_size + sbuf->additional_size);
+	offset = sbuf->pos - page_address(sbuf->page);
+	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset,
+				sbuf->allocated_size, msg_flags);
 
-	prepare_header(connection, vnr, sbuf, cmd, size + additional_size);
+	if (!err)
+		sbuf->pos += sbuf->allocated_size;	/* send buffer submitted! */
 
-	err = drbd_send_all(connection, sbuf, size, msg_flags, drbd_stream);
+	sbuf->allocated_size = 0;
 
 	/* DRBD protocol "pings" are latency critical.
 	 * This is supposed to trigger tcp_push_pending_frames() */
 	if (!err && (cmd == P_PING || cmd == P_PING_ACK))
-		connection->transport->ops->hint(connection->transport, drbd_stream, NODELAY);
+		tr_ops->hint(transport, drbd_stream, NODELAY);
 
 	return err;
 }
@@ -2719,26 +2753,35 @@ found:
 	return connection;
 }
 
-static int drbd_alloc_connection_buffers(struct drbd_connection *connection)
+static void drbd_put_send_buffers(struct drbd_connection *connection)
 {
 	unsigned int i;
 
-	for (i = 0; i < 2; ++i) {
-		connection->sbuf[i].base = (void *) __get_free_page(GFP_KERNEL);
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		if (connection->send_buffer[i].page) {
+			put_page(connection->send_buffer[i].page);
+			connection->send_buffer[i].page = NULL;
+		}
+	}
+}
 
-		if (!connection->sbuf[i].base)
+static int drbd_alloc_send_buffers(struct drbd_connection *connection)
+{
+	unsigned int i;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct page *page;
+
+		page = alloc_page(GFP_KERNEL);
+		if (!page) {
+			drbd_put_send_buffers(connection);
 			return -ENOMEM;
+		}
+		connection->send_buffer[i].page = page;
+		connection->send_buffer[i].pos = page_address(page);
 	}
 
 	return 0;
-}
-
-static void drbd_free_connection_buffers(struct drbd_connection *connection)
-{
-	unsigned int i;
-
-	for (i = 0; i < 2; ++i)
-		free_page((unsigned long) connection->sbuf[i].base);
 }
 
 void drbd_flush_peer_acks(struct drbd_resource *resource)
@@ -2892,7 +2935,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	if (!connection)
 		return NULL;
 
-	if (drbd_alloc_connection_buffers(connection))
+	if (drbd_alloc_send_buffers(connection))
 		goto fail;
 
 	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
@@ -2944,8 +2987,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	return connection;
 
 fail:
+	drbd_put_send_buffers(connection);
 	kfree(connection->current_epoch);
-	drbd_free_connection_buffers(connection);
 	kfree(connection);
 
 	return NULL;
@@ -2983,8 +3026,8 @@ void drbd_destroy_connection(struct kref *kref)
 	}
 	idr_destroy(&connection->peer_devices);
 
-	drbd_free_connection_buffers(connection);
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
+	drbd_put_send_buffers(connection);
 	kfree(connection->net_conf);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
