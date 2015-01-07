@@ -1874,6 +1874,16 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	int err;
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 
+	if (req->master_bio->bi_rw & DRBD_REQ_DISCARD) {
+		struct p_trim *t;
+		t = drbd_prepare_command(peer_device, sizeof(*t), DATA_STREAM);
+		if (!t)
+			return -EIO;
+		t->size = cpu_to_be32(req->i.size);
+		err = __send_command(peer_device->connection, device->vnr, P_TRIM, sizeof(*t), NULL, 0, DATA_STREAM);
+		goto out;
+	}
+
 	digest_size = peer_device->connection->integrity_tfm ?
 		      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
 	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
@@ -1893,13 +1903,6 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 			dp_flags |= DP_SEND_WRITE_ACK;
 	}
 	p->dp_flags = cpu_to_be32(dp_flags);
-
-	if (dp_flags & DP_DISCARD) {
-		struct p_trim *t = (struct p_trim*)p;
-		t->size = cpu_to_be32(req->i.size);
-		err = __send_command(peer_device->connection, device->vnr, P_TRIM, sizeof(*t), NULL, 0, DATA_STREAM);
-		goto out;
-	}
 
 	/* our digest is still only over the payload.
 	 * TRIM does not carry any payload. */
