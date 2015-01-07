@@ -1503,23 +1503,23 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned int header_size = drbd_header_size(peer_device->connection);
-	struct p_compressed_bm *p =
-		peer_device->connection->sbuf[DATA_STREAM] + header_size;
-
+	struct p_compressed_bm *pc;
 	int len, err;
 
-	len = fill_bitmap_rle_bits(peer_device, p,
-			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*p), c);
+	pc = alloc_send_buffer(peer_device->connection, DRBD_SOCKET_BUFFER_SIZE, DATA_STREAM) + header_size;
+
+	len = fill_bitmap_rle_bits(peer_device, pc,
+			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*pc), c);
 	if (len < 0)
 		return -EIO;
 
 	if (len) {
-		dcbp_set_code(p, RLE_VLI_Bits);
+		dcbp_set_code(pc, RLE_VLI_Bits);
 		err = __send_command(peer_device->connection, device->vnr,
-				     P_COMPRESSED_BITMAP, sizeof(*p) + len,
+				     P_COMPRESSED_BITMAP, sizeof(*pc) + len,
 				     NULL, 0, DATA_STREAM);
 		c->packets[0]++;
-		c->bytes[0] += header_size + sizeof(*p) + len;
+		c->bytes[0] += header_size + sizeof(*pc) + len;
 
 		if (c->bit_offset >= c->bm_bits)
 			len = 0; /* DONE */
@@ -1528,14 +1528,14 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		 * send a buffer full of plain text bits instead. */
 		unsigned int data_size;
 		unsigned long num_words;
-		unsigned long *p = peer_device->connection->sbuf[DATA_STREAM] + header_size;
+		unsigned long *pu = (unsigned long *)pc;
 
 		data_size = DRBD_SOCKET_BUFFER_SIZE - header_size;
-		num_words = min_t(size_t, data_size / sizeof(*p),
+		num_words = min_t(size_t, data_size / sizeof(*pu),
 				  c->bm_words - c->word_offset);
-		len = num_words * sizeof(*p);
+		len = num_words * sizeof(*pu);
 		if (len)
-			drbd_bm_get_lel(peer_device, c->word_offset, num_words, p);
+			drbd_bm_get_lel(peer_device, c->word_offset, num_words, pu);
 
 		err = __send_command(peer_device->connection, device->vnr, P_BITMAP, len, NULL, 0, DATA_STREAM);
 
