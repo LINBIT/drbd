@@ -5684,7 +5684,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
 {
 	struct p_connection_features *p;
 
-	p = conn_prepare_command(connection, DATA_STREAM);
+	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
 	memset(p, 0, sizeof(*p));
@@ -5848,7 +5848,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
-	if (!conn_prepare_command(connection, DATA_STREAM)) {
+	if (!conn_prepare_command(connection, 0, DATA_STREAM)) {
 		rv = 0;
 		goto fail;
 	}
@@ -5923,7 +5923,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	if (!conn_prepare_command(connection, DATA_STREAM)) {
+	if (!conn_prepare_command(connection, 0, DATA_STREAM)) {
 		rv = 0;
 		goto fail;
 	}

@@ -954,6 +954,7 @@ struct drbd_connection {
 
 	struct drbd_transport *transport;
 	void *sbuf[2];
+	int sbuf_allocated[2];
 	struct mutex mutex[2];
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
@@ -2270,8 +2271,8 @@ static inline void request_ping(struct drbd_connection *connection)
 	wake_asender(connection);
 }
 
-extern void *conn_prepare_command(struct drbd_connection *, enum drbd_stream);
-extern void *drbd_prepare_command(struct drbd_peer_device *, enum drbd_stream);
+extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
+extern void *drbd_prepare_command(struct drbd_peer_device *, int, enum drbd_stream);
 extern int send_command(struct drbd_connection *, int, enum drbd_packet,
 		unsigned int, void *, unsigned int, enum drbd_stream);
 extern int drbd_send_command(struct drbd_peer_device *,

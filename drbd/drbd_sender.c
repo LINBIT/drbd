@@ -1448,7 +1448,7 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	struct p_barrier *p;
 	int err;
 
-	p = conn_prepare_command(connection, DATA_STREAM);
+	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
 
@@ -1490,7 +1490,7 @@ static void maybe_send_write_hint(struct drbd_connection *connection)
 	if (connection->cstate[NOW] < C_CONNECTED)
 		return;
 
-	if (!conn_prepare_command(connection, DATA_STREAM))
+	if (!conn_prepare_command(connection, 0, DATA_STREAM))
 		return;
 
 	send_command(connection, -1, P_UNPLUG_REMOTE, 0, NULL, 0, DATA_STREAM);
