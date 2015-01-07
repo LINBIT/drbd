@@ -5815,7 +5815,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 {
 	u32 my_challenge[CHALLENGE_LEN / sizeof(u32) + 1];  /* 68 Bytes... */
 	struct scatterlist sg;
-	char *response = NULL;
+	void *response;
 	char *right_response = NULL;
 	u32 *peers_ch = NULL;
 	unsigned int key_len;
@@ -5826,8 +5826,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	struct net_conf *nc;
 	int err, rv, peer_node_id;
 	bool peer_is_drbd_9 = connection->agreed_pro_version >= 110;
-
-	/* FIXME: Put the challenge/response into the preallocated socket buffer.  */
+	void *packet_body;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -5848,13 +5847,14 @@ int drbd_do_auth(struct drbd_connection *connection)
 
 	get_random_bytes(my_challenge, CHALLENGE_LEN);
 
-	if (!conn_prepare_command(connection, 0, DATA_STREAM)) {
+	packet_body = conn_prepare_command(connection, CHALLENGE_LEN, DATA_STREAM);
+	if (!packet_body) {
 		rv = 0;
 		goto fail;
 	}
+	memcpy(packet_body, my_challenge, CHALLENGE_LEN);
 
-	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, 0,
-			   my_challenge, CHALLENGE_LEN, DATA_STREAM);
+	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, CHALLENGE_LEN, NULL, 0, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -5903,10 +5903,9 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	resp_size = crypto_hash_digestsize(connection->cram_hmac_tfm);
-	response = kmalloc(resp_size, GFP_NOIO);
-	if (response == NULL) {
-		drbd_err(connection, "kmalloc of response failed\n");
-		rv = -1;
+	response = conn_prepare_command(connection, resp_size, DATA_STREAM);
+	if (!response) {
+		rv = 0;
 		goto fail;
 	}
 
@@ -5923,13 +5922,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	if (!conn_prepare_command(connection, 0, DATA_STREAM)) {
-		rv = 0;
-		goto fail;
-	}
-
-	rv = !send_command(connection, -1, P_AUTH_RESPONSE, 0,
-			   response, resp_size, DATA_STREAM);
+	rv = !send_command(connection, -1, P_AUTH_RESPONSE, resp_size, NULL, 0, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -5952,7 +5945,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	err = drbd_recv_into(connection, response , resp_size);
+	err = drbd_recv_all(connection, &response, resp_size);
 	if (err) {
 		rv = 0;
 		goto fail;
@@ -5986,7 +5979,6 @@ int drbd_do_auth(struct drbd_connection *connection)
 
  fail:
 	kfree(peers_ch);
-	kfree(response);
 	kfree(right_response);
 
 	return rv;
