@@ -1709,21 +1709,20 @@ int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 	return drbd_send_command(peer_device, cmd, sizeof(*p), NULL, 0, DATA_STREAM);
 }
 
-int drbd_send_drequest_csum(struct drbd_peer_device *peer_device, sector_t sector, int size,
-			    void *digest, int digest_size, enum drbd_packet cmd)
+void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, int digest_size)
 {
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct p_block_req *p;
 
-	/* FIXME: Put the digest into the preallocated socket buffer.  */
-
-	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
 	if (!p)
-		return -EIO;
-	p->sector = cpu_to_be64(sector);
-	p->block_id = ID_SYNCER /* unused */;
-	p->blksize = cpu_to_be32(size);
+		return NULL;
 
-	return drbd_send_command(peer_device, cmd, sizeof(*p), digest, digest_size, DATA_STREAM);
+	p->sector = cpu_to_be64(peer_req->i.sector);
+	p->block_id = ID_SYNCER /* unused */;
+	p->blksize = cpu_to_be32(peer_req->i.size);
+
+	return p + 1; /* digest should be placed behind the struct */
 }
 
 int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, int size)

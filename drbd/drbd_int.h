@@ -1415,9 +1415,7 @@ extern int drbd_send_block(struct drbd_peer_device *, enum drbd_packet,
 extern int drbd_send_dblock(struct drbd_peer_device *, struct drbd_request *req);
 extern int drbd_send_drequest(struct drbd_peer_device *, int cmd,
 			      sector_t sector, int size, u64 block_id);
-extern int drbd_send_drequest_csum(struct drbd_peer_device *, sector_t sector,
-				   int size, void *digest, int digest_size,
-				   enum drbd_packet cmd);
+extern void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, int digest_size);
 extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int size);
 
 extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);

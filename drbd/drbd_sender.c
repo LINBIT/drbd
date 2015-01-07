@@ -372,10 +372,8 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 		goto out;
 
 	digest_size = crypto_hash_digestsize(peer_device->connection->csums_tfm);
-	digest = kmalloc(digest_size, GFP_NOIO);
+	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (digest) {
-		sector_t sector = peer_req->i.sector;
-		unsigned int size = peer_req->i.size;
 		drbd_csum_ee(peer_device->connection->csums_tfm, peer_req, digest);
 		/* Free peer_req and pages before send.
 		 * In case we block on congestion, we could otherwise run into
@@ -385,10 +383,9 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 		drbd_free_peer_req(device, peer_req);
 		peer_req = NULL;
 		inc_rs_pending(peer_device);
-		err = drbd_send_drequest_csum(peer_device, sector, size,
-					      digest, digest_size,
-					      P_CSUM_RS_REQUEST);
-		kfree(digest);
+		err = drbd_send_command(peer_device, P_CSUM_RS_REQUEST,
+					sizeof(struct p_block_req) + digest_size,
+					NULL, 0, DATA_STREAM);
 	} else {
 		drbd_err(device, "kmalloc() of digest failed.\n");
 		err = -ENOMEM;
@@ -1311,8 +1308,6 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	sector_t sector = peer_req->i.sector;
-	unsigned int size = peer_req->i.size;
 	int digest_size;
 	void *digest;
 	int err = 0;
@@ -1322,7 +1317,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 
 	digest_size = crypto_hash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
-	digest = kmalloc(digest_size, GFP_NOIO);
+	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (!digest) {
 		err = -ENOMEM;
 		goto out;
@@ -1342,7 +1337,9 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	peer_req = NULL;
 
 	inc_rs_pending(peer_device);
-	err = drbd_send_drequest_csum(peer_device, sector, size, digest, digest_size, P_OV_REPLY);
+	err = drbd_send_command(peer_device, P_OV_REPLY,
+				sizeof(struct p_block_req) + digest_size,
+				NULL, 0, DATA_STREAM);
 	if (err)
 		dec_rs_pending(peer_device);
 	kfree(digest);
