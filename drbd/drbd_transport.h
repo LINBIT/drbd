@@ -11,7 +11,7 @@
    So that transport compiled against an older version of this
    header will no longer load in a module that assumes a newer
    version. */
-#define DRBD_TRANSPORT_API_VERSION 2
+#define DRBD_TRANSPORT_API_VERSION 3
 
 /* MSG_MSG_DONTROUTE and MSG_PROBE are not used by DRBD. I.e.
    we can reuse these flags for our purposes */
@@ -121,7 +121,7 @@ struct drbd_transport_ops {
 	void (*stats)(struct drbd_transport *, struct drbd_transport_stats *stats);
 	void (*set_rcvtimeo)(struct drbd_transport *, enum drbd_stream, long timeout);
 	long (*get_rcvtimeo)(struct drbd_transport *, enum drbd_stream);
-	int (*send_page)(struct drbd_peer_device *peer_device, struct page *page,
+	int (*send_page)(struct drbd_transport *, struct page *,
 			 int offset, size_t size, unsigned msg_flags);
 	bool (*stream_ok)(struct drbd_transport *, enum drbd_stream);
 	bool (*hint)(struct drbd_transport *, enum drbd_stream, enum drbd_tr_hints hint);

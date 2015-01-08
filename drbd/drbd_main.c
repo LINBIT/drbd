@@ -1781,7 +1781,9 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			   int offset, size_t size, unsigned msg_flags)
 {
-	struct drbd_transport_ops *tr_ops = peer_device->connection->transport->ops;
+	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+	int err;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
@@ -1792,7 +1794,11 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
-	return tr_ops->send_page(peer_device, page, offset, size, msg_flags);
+	err = tr_ops->send_page(transport, page, offset, size, msg_flags);
+	if (!err)
+		peer_device->send_cnt += size >> 9;
+
+	return err;
 }
 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)

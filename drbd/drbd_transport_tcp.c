@@ -63,7 +63,7 @@ static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
-static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int dtt_send_page(struct drbd_transport *transport, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
@@ -1009,11 +1009,11 @@ static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport)
 		set_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 }
 
-static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int dtt_send_page(struct drbd_transport *transport, struct page *page,
 			 int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_tcp_transport *tcp_transport =
-		container_of(peer_device->connection->transport, struct drbd_tcp_transport, transport);
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 
 	mm_segment_t oldfs = get_fs();
@@ -1033,7 +1033,7 @@ static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page
 					break;
 				continue;
 			}
-			drbd_warn(peer_device->device, "%s: size=%d len=%d sent=%d\n",
+			drbd_warn(transport->connection, "%s: size=%d len=%d sent=%d\n",
 			     __func__, (int)size, len, sent);
 			if (sent < 0)
 				err = sent;
@@ -1045,10 +1045,9 @@ static int dtt_send_page(struct drbd_peer_device *peer_device, struct page *page
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 
-	if (len == 0) {
+	if (len == 0)
 		err = 0;
-		peer_device->send_cnt += size >> 9;
-	}
+
 	return err;
 }
 
