@@ -833,9 +833,9 @@ static int dtt_connect(struct drbd_transport *transport)
 	int timeout, err;
 	bool ok;
 
-	dsocket_sbuf = connection->sbuf[DATA_STREAM];
+	dsocket_sbuf = connection->sbuf[DATA_STREAM].base;
 	dsocket = NULL;
-	csocket_sbuf = connection->sbuf[CONTROL_STREAM];
+	csocket_sbuf = connection->sbuf[CONTROL_STREAM].base;
 	csocket = NULL;
 
 	/* Assume that the peer only understands protocol 80 until we know better.  */

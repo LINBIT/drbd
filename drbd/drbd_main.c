@@ -719,8 +719,24 @@ unsigned int prepare_header(struct drbd_connection *connection, int vnr,
 static void *alloc_send_buffer(struct drbd_connection *connection, int size,
 			      enum drbd_stream drbd_stream)
 {
-	connection->sbuf_allocated[drbd_stream] = size;
-	return connection->sbuf[drbd_stream];
+	connection->sbuf[drbd_stream].allocated = size;
+	connection->sbuf[drbd_stream].additional_size = 0;
+	return connection->sbuf[drbd_stream].base;
+}
+
+static void resize_prepared_command(struct drbd_connection *connection,
+				    enum drbd_stream drbd_stream,
+				    int size)
+{
+	connection->sbuf[drbd_stream].allocated =
+		size + drbd_header_size(connection);
+}
+
+static void additional_size_command(struct drbd_connection *connection,
+				    enum drbd_stream drbd_stream,
+				    int additional_size)
+{
+	connection->sbuf[drbd_stream].additional_size = additional_size;
 }
 
 static void *__conn_prepare_command(struct drbd_connection *connection, int size,
@@ -793,7 +809,7 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	 */
 	msg_flags = data ? MSG_MORE : 0;
 
-	sbuf = connection->sbuf[drbd_stream];
+	sbuf = connection->sbuf[drbd_stream].base;
 	header_size += prepare_header(connection, vnr, sbuf, cmd,
 				      header_size + size);
 
@@ -1031,13 +1047,15 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	int i, pos = 0;
 	u64 bitmap_uuids_mask = 0;
 	u64 authoritative_mask;
+	int p_size = sizeof(*p);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
 		return 0;
 
 	peer_md = device->ldev->md.peers;
 
-	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	p_size += (DRBD_PEERS_MAX + HISTORY_UUIDS) * sizeof(p->other_uuids[0]);
+	p = drbd_prepare_command(peer_device, p_size, DATA_STREAM);
 	if (!p) {
 		put_ldev(device);
 		return -EIO;
@@ -1082,6 +1100,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	put_ldev(device);
 
+	p_size = sizeof(*p) +
+		(hweight64(bitmap_uuids_mask) + HISTORY_UUIDS) * sizeof(p->other_uuids[0]);
+	resize_prepared_command(peer_device->connection, DATA_STREAM, p_size);
 	return drbd_send_command(peer_device, P_UUIDS110,
 				 sizeof(*p) +
 				 (hweight64(bitmap_uuids_mask) + HISTORY_UUIDS) * sizeof(p->other_uuids[0]),
@@ -1515,6 +1536,7 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 
 	if (len) {
 		dcbp_set_code(pc, RLE_VLI_Bits);
+		resize_prepared_command(peer_device->connection, DATA_STREAM, sizeof(*pc) + len);
 		err = __send_command(peer_device->connection, device->vnr,
 				     P_COMPRESSED_BITMAP, sizeof(*pc) + len,
 				     NULL, 0, DATA_STREAM);
@@ -1537,6 +1559,7 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		if (len)
 			drbd_bm_get_lel(peer_device, c->word_offset, num_words, pu);
 
+		resize_prepared_command(peer_device->connection, DATA_STREAM, len);
 		err = __send_command(peer_device->connection, device->vnr, P_BITMAP, len, NULL, 0, DATA_STREAM);
 
 		c->word_offset += num_words;
@@ -1908,8 +1931,10 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	 * TRIM does not carry any payload. */
 	if (digest_size)
 		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, p + 1);
+
+	additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
 	err = __send_command(peer_device->connection, device->vnr, P_DATA,
-			sizeof(*p) + digest_size, NULL, req->i.size, DATA_STREAM);
+			sizeof(*p) + digest_size, NULL, 0, DATA_STREAM);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
 		 * socket buffers, as we may complete right away
@@ -1972,8 +1997,9 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	p->dp_flags = 0;
 	if (digest_size)
 		drbd_csum_ee(peer_device->connection->integrity_tfm, peer_req, p + 1);
+	additional_size_command(peer_device->connection, DATA_STREAM, peer_req->i.size);
 	err = __send_command(peer_device->connection, peer_device->device->vnr, cmd,
-			     sizeof(*p) + digest_size, NULL, peer_req->i.size, DATA_STREAM);
+			     sizeof(*p) + digest_size, NULL, 0, DATA_STREAM);
 	if (!err)
 		err = _drbd_send_zc_ee(peer_device, peer_req);
 	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
@@ -2711,9 +2737,9 @@ static int drbd_alloc_connection_buffers(struct drbd_connection *connection)
 	unsigned int i;
 
 	for (i = 0; i < 2; ++i) {
-		connection->sbuf[i] = (void *) __get_free_page(GFP_KERNEL);
+		connection->sbuf[i].base = (void *) __get_free_page(GFP_KERNEL);
 
-		if (!connection->sbuf[i])
+		if (!connection->sbuf[i].base)
 			return -ENOMEM;
 	}
 
@@ -2725,7 +2751,7 @@ static void drbd_free_connection_buffers(struct drbd_connection *connection)
 	unsigned int i;
 
 	for (i = 0; i < 2; ++i)
-		free_page((unsigned long) connection->sbuf[i]);
+		free_page((unsigned long) connection->sbuf[i].base);
 }
 
 void drbd_flush_peer_acks(struct drbd_resource *resource)

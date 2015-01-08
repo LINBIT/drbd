@@ -953,8 +953,11 @@ struct drbd_connection {
 	int peer_addr_len;
 
 	struct drbd_transport *transport;
-	void *sbuf[2];
-	int sbuf_allocated[2];
+	struct {
+		void *base;
+		int allocated;
+		int additional_size;
+	} sbuf[2];
 	struct mutex mutex[2];
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
