@@ -677,43 +677,40 @@ unsigned int drbd_header_size(struct drbd_connection *connection)
 	}
 }
 
-static unsigned int prepare_header80(struct p_header80 *h, enum drbd_packet cmd, int size)
+static void prepare_header80(struct p_header80 *h, enum drbd_packet cmd, int size)
 {
 	h->magic   = cpu_to_be32(DRBD_MAGIC);
 	h->command = cpu_to_be16(cmd);
-	h->length  = cpu_to_be16(size);
-	return sizeof(struct p_header80);
+	h->length  = cpu_to_be16(size - sizeof(struct p_header80));
 }
 
-static unsigned int prepare_header95(struct p_header95 *h, enum drbd_packet cmd, int size)
+static void prepare_header95(struct p_header95 *h, enum drbd_packet cmd, int size)
 {
 	h->magic   = cpu_to_be16(DRBD_MAGIC_BIG);
 	h->command = cpu_to_be16(cmd);
-	h->length = cpu_to_be32(size);
-	return sizeof(struct p_header95);
+	h->length = cpu_to_be32(size - sizeof(struct p_header95));
 }
 
-static unsigned int prepare_header100(struct p_header100 *h, enum drbd_packet cmd,
+static void prepare_header100(struct p_header100 *h, enum drbd_packet cmd,
 				      int size, int vnr)
 {
 	h->magic = cpu_to_be32(DRBD_MAGIC_100);
 	h->volume = cpu_to_be16(vnr);
 	h->command = cpu_to_be16(cmd);
-	h->length = cpu_to_be32(size);
+	h->length = cpu_to_be32(size - sizeof(struct p_header100));
 	h->pad = 0;
-	return sizeof(struct p_header100);
 }
 
-unsigned int prepare_header(struct drbd_connection *connection, int vnr,
-				   void *buffer, enum drbd_packet cmd, int size)
+static void prepare_header(struct drbd_connection *connection, int vnr,
+			   void *buffer, enum drbd_packet cmd, int size)
 {
 	if (connection->agreed_pro_version >= 100)
-		return prepare_header100(buffer, cmd, size, vnr);
+		prepare_header100(buffer, cmd, size, vnr);
 	else if (connection->agreed_pro_version >= 95 &&
 		 size > DRBD_MAX_SIZE_H80_PACKET)
-		return prepare_header95(buffer, cmd, size);
+		prepare_header95(buffer, cmd, size);
 	else
-		return prepare_header80(buffer, cmd, size);
+		prepare_header80(buffer, cmd, size);
 }
 
 static void *alloc_send_buffer(struct drbd_connection *connection, int size,
@@ -793,31 +790,23 @@ void *drbd_prepare_command(struct drbd_peer_device *peer_device, int size, enum 
 }
 
 static int __send_command(struct drbd_connection *connection, int vnr,
-			  enum drbd_packet cmd, unsigned int header_size, void *data,
-			  unsigned int size, enum drbd_stream drbd_stream)
+			  enum drbd_packet cmd, unsigned int ign_header_size, void *ign_data,
+			  unsigned int ign_size, enum drbd_stream drbd_stream)
 {
-	int msg_flags;
+	int msg_flags, size, additional_size;
 	int err;
 	void *sbuf;
 
-	/*
-	 * Called with @data == NULL and the size of the data blocks in @size
-	 * for commands that send data blocks.  For those commands, omit the
-	 * MSG_MORE flag: this will increase the likelihood that data blocks
-	 * which are page aligned on the sender will end up page aligned on the
-	 * receiver.
-	 */
-	msg_flags = data ? MSG_MORE : 0;
+	msg_flags = connection->sbuf[drbd_stream].additional_size ? MSG_MORE : 0;
 
 	sbuf = connection->sbuf[drbd_stream].base;
-	header_size += prepare_header(connection, vnr, sbuf, cmd,
-				      header_size + size);
+	size = connection->sbuf[drbd_stream].allocated;
+	additional_size = connection->sbuf[drbd_stream].additional_size;
 
-	err = drbd_send_all(connection, sbuf, header_size,
-			    msg_flags, drbd_stream);
+	prepare_header(connection, vnr, sbuf, cmd, size + additional_size);
 
-	if (data && !err)
-		err = drbd_send_all(connection, data, size, 0, drbd_stream);
+	err = drbd_send_all(connection, sbuf, size, msg_flags, drbd_stream);
+
 	/* DRBD protocol "pings" are latency critical.
 	 * This is supposed to trigger tcp_push_pending_frames() */
 	if (!err && (cmd == P_PING || cmd == P_PING_ACK))
