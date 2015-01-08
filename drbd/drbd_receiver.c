@@ -5693,7 +5693,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(peer_node_id);
 	p->feature_flags = cpu_to_be32(PRO_FEATURES);
-	return send_command(connection, -1, P_CONNECTION_FEATURES, sizeof(*p), NULL, 0, DATA_STREAM);
+	return send_command(connection, -1, P_CONNECTION_FEATURES, DATA_STREAM);
 }
 
 /*
@@ -5854,7 +5854,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 	memcpy(packet_body, my_challenge, CHALLENGE_LEN);
 
-	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, CHALLENGE_LEN, NULL, 0, DATA_STREAM);
+	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -5922,7 +5922,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	rv = !send_command(connection, -1, P_AUTH_RESPONSE, resp_size, NULL, 0, DATA_STREAM);
+	rv = !send_command(connection, -1, P_AUTH_RESPONSE, DATA_STREAM);
 	if (!rv)
 		goto fail;
 

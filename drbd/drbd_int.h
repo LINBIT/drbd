@@ -2274,11 +2274,8 @@ static inline void request_ping(struct drbd_connection *connection)
 
 extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
 extern void *drbd_prepare_command(struct drbd_peer_device *, int, enum drbd_stream);
-extern int send_command(struct drbd_connection *, int, enum drbd_packet,
-		unsigned int, void *, unsigned int, enum drbd_stream);
-extern int drbd_send_command(struct drbd_peer_device *,
-			     enum drbd_packet, unsigned int, void *,
-			     unsigned int, enum drbd_stream);
+extern int send_command(struct drbd_connection *, int, enum drbd_packet, enum drbd_stream);
+extern int drbd_send_command(struct drbd_peer_device *, enum drbd_packet, enum drbd_stream);
 
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);

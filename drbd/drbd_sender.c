@@ -383,9 +383,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 		drbd_free_peer_req(device, peer_req);
 		peer_req = NULL;
 		inc_rs_pending(peer_device);
-		err = drbd_send_command(peer_device, P_CSUM_RS_REQUEST,
-					sizeof(struct p_block_req) + digest_size,
-					NULL, 0, DATA_STREAM);
+		err = drbd_send_command(peer_device, P_CSUM_RS_REQUEST, DATA_STREAM);
 	} else {
 		drbd_err(device, "kmalloc() of digest failed.\n");
 		err = -ENOMEM;
@@ -1337,9 +1335,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	peer_req = NULL;
 
 	inc_rs_pending(peer_device);
-	err = drbd_send_command(peer_device, P_OV_REPLY,
-				sizeof(struct p_block_req) + digest_size,
-				NULL, 0, DATA_STREAM);
+	err = drbd_send_command(peer_device, P_OV_REPLY, DATA_STREAM);
 	if (err)
 		dec_rs_pending(peer_device);
 	kfree(digest);
@@ -1453,7 +1449,7 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	p->pad = 0;
 	connection->send.current_epoch_writes = 0;
 
-	err = send_command(connection, -1, P_BARRIER, sizeof(*p), NULL, 0, DATA_STREAM);
+	err = send_command(connection, -1, P_BARRIER, DATA_STREAM);
 	if (err == 0)
 		set_bit(BARRIER_ACK_PENDING, &connection->flags);
 
@@ -1490,7 +1486,7 @@ static void maybe_send_write_hint(struct drbd_connection *connection)
 	if (!conn_prepare_command(connection, 0, DATA_STREAM))
 		return;
 
-	send_command(connection, -1, P_UNPLUG_REMOTE, 0, NULL, 0, DATA_STREAM);
+	send_command(connection, -1, P_UNPLUG_REMOTE, DATA_STREAM);
 }
 #else
 static bool need_unplug(struct drbd_connection *connection)
