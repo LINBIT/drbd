@@ -1794,7 +1794,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
-	err = tr_ops->send_page(transport, page, offset, size, msg_flags);
+	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
 	if (!err)
 		peer_device->send_cnt += size >> 9;
 

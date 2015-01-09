@@ -63,7 +63,7 @@ static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
-static int dtt_send_page(struct drbd_transport *transport, struct page *page,
+static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
@@ -1009,12 +1009,12 @@ static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport)
 		set_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 }
 
-static int dtt_send_page(struct drbd_transport *transport, struct page *page,
-			 int offset, size_t size, unsigned msg_flags)
+static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stream,
+			 struct page *page, int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-	struct socket *socket = tcp_transport->stream[DATA_STREAM];
+	struct socket *socket = tcp_transport->stream[stream];
 
 	mm_segment_t oldfs = get_fs();
 	int len = size;
