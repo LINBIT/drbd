@@ -1394,8 +1394,6 @@ extern void tl_release(struct drbd_connection *, unsigned int barrier_nr,
 		       unsigned int set_size);
 extern void tl_clear(struct drbd_connection *);
 extern void drbd_free_sock(struct drbd_connection *connection);
-extern int drbd_send_all(struct drbd_connection *, void *, size_t,
-			 unsigned, enum drbd_stream);
 
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);
 extern int drbd_send_protocol(struct drbd_connection *connection);

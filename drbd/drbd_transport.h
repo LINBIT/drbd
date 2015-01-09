@@ -11,7 +11,7 @@
    So that transport compiled against an older version of this
    header will no longer load in a module that assumes a newer
    version. */
-#define DRBD_TRANSPORT_API_VERSION 3
+#define DRBD_TRANSPORT_API_VERSION 4
 
 /* MSG_MSG_DONTROUTE and MSG_PROBE are not used by DRBD. I.e.
    we can reuse these flags for our purposes */
@@ -69,7 +69,6 @@ struct drbd_transport_stats {
 struct drbd_transport_ops {
 	void (*free)(struct drbd_transport *, enum drbd_tr_free_op free_op);
 	int (*connect)(struct drbd_transport *);
-	int (*send)(struct drbd_transport *, enum drbd_stream, void *buf, size_t size, unsigned msg_flags);
 
 /**
  * recv() - Receive data via the transport

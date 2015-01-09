@@ -1798,27 +1798,47 @@ int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, 
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
+static int __drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
+			    int offset, size_t size, unsigned msg_flags)
+{
+	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+	int err;
+
+	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
+	if (!err)
+		peer_device->send_cnt += size >> 9;
+
+	return err;
+}
+
 int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
-	void *addr;
-	int err;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
+	void *from_base;
+	void *buffer2;
+	struct page *page2;
+	int offset2, err;
 
-	addr = kmap(page) + offset;
-	err = drbd_send_all(peer_device->connection, addr, size, msg_flags, DATA_STREAM);
-	kunmap(page);
+	buffer2 = alloc_send_buffer(connection, size, DATA_STREAM);
+	page2 = sbuf->page;
+	offset2 = buffer2 - page_address(page2);
+	from_base = drbd_kmap_atomic(page, KM_USER0);
+	memcpy(buffer2, from_base + offset, size);
+	drbd_kunmap_atomic(from_base, KM_USER0);
+	err = __drbd_send_page(peer_device, page2, offset2, size, msg_flags);
+
 	if (!err)
-		peer_device->send_cnt += size >> 9;
+		sbuf->pos += size;
+
 	return err;
 }
 
 static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			   int offset, size_t size, unsigned msg_flags)
 {
-	struct drbd_transport *transport = peer_device->connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
-	int err;
-
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
 	 * we cannot use send_page for those, as that does get_page();
@@ -1828,11 +1848,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
 		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
 
-	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
-	if (!err)
-		peer_device->send_cnt += size >> 9;
-
-	return err;
+	return __drbd_send_page(peer_device, page, offset, size, msg_flags);
 }
 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
@@ -2049,34 +2065,6 @@ int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 		return -EIO;
 	p->dagtag = cpu_to_be64(dagtag);
 	return send_command(connection, -1, P_DAGTAG, DATA_STREAM);
-}
-
-/**
- * drbd_send_all  -  Send an entire buffer
- *
- * Returns 0 upon success and a negative error value otherwise.
- */
-int drbd_send_all(struct drbd_connection *connection, void *buffer,
-		  size_t size, unsigned msg_flags, enum drbd_stream drbd_stream)
-{
-	struct drbd_transport *transport = connection->transport;
-	int err;
-
-	err = transport->ops->send(transport, drbd_stream, buffer, size, msg_flags);
-
-	if (err < 0) {
-		if (err == -EAGAIN) {
-			change_cstate(connection, C_TIMEOUT, CS_HARD);
-		} else {
-			drbd_err(connection, "send() on %s returned %d\n",
-				 drbd_stream == CONTROL_STREAM ? "msock" : "sock",
-				 err);
-			change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
-		}
-		return err;
-	}
-
-	return err == size ? 0 : -EIO;
 }
 
 /* primary_peer_present_and_not_two_primaries_allowed() */

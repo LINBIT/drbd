@@ -57,7 +57,6 @@ struct dtt_waiter {
 static struct drbd_transport *dtt_create(struct drbd_connection *connection);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
-static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
@@ -78,7 +77,6 @@ static struct drbd_transport_class tcp_transport_class = {
 static struct drbd_transport_ops dtt_ops = {
 	.free = dtt_free,
 	.connect = dtt_connect,
-	.send = dtt_send,
 	.recv = dtt_recv,
 	.recv_pages = dtt_recv_pages,
 	.stats = dtt_stats,
@@ -238,49 +236,6 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 
 	return sent;
 }
-
-/*
-  drbd_send distinguishes two cases:
-
-  Packets sent via the data socket "dsock"
-  and packets sent via the control data socket "csock"
-
-		    dsock                      msock
-  -----------------+-------------------------+------------------------------
-  timeout           conf.timeout / 2          conf.timeout / 2
-  timeout action    send a ping via csock     Abort communication
-					      and close all sockets
-*/
-/*
- * you must have down()ed the appropriate mutex elsewhere!
- */
-static int dtt_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags)
-{
-	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
-
-	struct drbd_connection *connection = transport->connection;
-	struct socket *socket = tcp_transport->stream[stream];
-	int err;
-
-	if (!socket)
-		return -EBADR;
-
-	if (stream == DATA_STREAM) {
-		rcu_read_lock();
-		tcp_transport->transport.ko_count = rcu_dereference(connection->net_conf)->ko_count;
-		rcu_read_unlock();
-		dtt_update_congested(tcp_transport);
-	}
-
-	err = _dtt_send(tcp_transport, socket, buf, size, msg_flags);
-
-	if (stream == DATA_STREAM)
-		clear_bit(NET_CONGESTED, &transport->flags);
-
-	return err;
-}
-
 
 static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int flags)
 {
