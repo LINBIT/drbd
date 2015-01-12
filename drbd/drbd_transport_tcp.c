@@ -872,6 +872,7 @@ static int dtt_connect(struct drbd_transport *transport)
 			break;
 
 retry:
+		s = NULL;
 		err = dtt_wait_for_connect(&waiter, &s);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
