@@ -3079,22 +3079,32 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	return -1000;
 }
 
+static void log_handshake(struct drbd_peer_device *peer_device)
+{
+	drbd_info(peer_device, "drbd_sync_handshake:\n");
+	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
+	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
+}
+
 static int drbd_handshake(struct drbd_peer_device *peer_device,
 			  int *rule_nr,
-			  int *peer_node_id) __must_hold(local)
+			  int *peer_node_id,
+			  bool always_verbose) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	int hg;
 
-	drbd_info(device, "drbd_sync_handshake:\n");
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
-	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
+	if (always_verbose)
+		log_handshake(peer_device);
 
 	hg = drbd_uuid_compare(peer_device, rule_nr, peer_node_id);
+	if (hg && !always_verbose)
+		log_handshake(peer_device);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
-	drbd_info(device, "uuid_compare()=%d by rule %d\n", hg, *rule_nr);
+	if (hg || always_verbose)
+		drbd_info(peer_device, "uuid_compare()=%d by rule %d\n", hg, *rule_nr);
 
 	return hg;
 }
@@ -3184,7 +3194,7 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 {
 	int hg, rule_nr, peer_node_id;
 
-	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, true);
 
 	if (hg < -3 || hg > 3)
 		return -1;
@@ -3208,7 +3218,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0, r;
 
-	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, true);
 
 	disk_state = device->disk_state[NOW];
 	if (disk_state == D_NEGOTIATING)
@@ -3939,7 +3949,7 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 	enum drbd_repl_state new_repl_state;
 	int hg, rule_nr, peer_node_id;
 
-	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id);
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, false);
 	new_repl_state = hg < -3 || hg > 3 ? -1 : goodness_to_repl_state(peer_device, hg);
 
 	if (new_repl_state == -1) {
