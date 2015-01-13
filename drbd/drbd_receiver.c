@@ -5811,20 +5811,24 @@ int drbd_do_auth(struct drbd_connection *connection)
 	-1 - auth failed, don't try again.
 */
 
+struct auth_challenge {
+	char d[CHALLENGE_LEN];
+	u32 i;
+} __attribute__((packed));
+
 int drbd_do_auth(struct drbd_connection *connection)
 {
-	u32 my_challenge[CHALLENGE_LEN / sizeof(u32) + 1];  /* 68 Bytes... */
+	struct auth_challenge my_challenge, *peers_ch = NULL;
 	struct scatterlist sg;
 	void *response;
 	char *right_response = NULL;
-	u32 *peers_ch = NULL;
 	unsigned int key_len;
 	char secret[SHARED_SECRET_MAX]; /* 64 byte */
 	unsigned int resp_size;
 	struct hash_desc desc;
 	struct packet_info pi;
 	struct net_conf *nc;
-	int err, rv, peer_node_id;
+	int err, rv, peer_node_id, dig_size;
 	bool peer_is_drbd_9 = connection->agreed_pro_version >= 110;
 	void *packet_body;
 
@@ -5845,14 +5849,14 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	get_random_bytes(my_challenge, CHALLENGE_LEN);
+	get_random_bytes(my_challenge.d, sizeof(my_challenge.d));
 
-	packet_body = conn_prepare_command(connection, CHALLENGE_LEN, DATA_STREAM);
+	packet_body = conn_prepare_command(connection, sizeof(my_challenge.d), DATA_STREAM);
 	if (!packet_body) {
 		rv = 0;
 		goto fail;
 	}
-	memcpy(packet_body, my_challenge, CHALLENGE_LEN);
+	memcpy(packet_body, my_challenge.d, sizeof(my_challenge.d));
 
 	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, DATA_STREAM);
 	if (!rv)
@@ -5871,32 +5875,26 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	if (pi.size > CHALLENGE_LEN * 2) {
-		drbd_err(connection, "expected AuthChallenge payload too big.\n");
+	if (pi.size != sizeof(peers_ch->d)) {
+		drbd_err(connection, "unexpected AuthChallenge payload.\n");
 		rv = -1;
 		goto fail;
 	}
 
-	if (pi.size < CHALLENGE_LEN) {
-		drbd_err(connection, "AuthChallenge payload too small.\n");
-		rv = -1;
-		goto fail;
-	}
-
-	peers_ch = kmalloc(pi.size + sizeof(u32), GFP_NOIO);
+	peers_ch = kmalloc(sizeof(*peers_ch), GFP_NOIO);
 	if (peers_ch == NULL) {
 		drbd_err(connection, "kmalloc of peers_ch failed\n");
 		rv = -1;
 		goto fail;
 	}
 
-	err = drbd_recv_into(connection, peers_ch, pi.size);
+	err = drbd_recv_into(connection, peers_ch->d, sizeof(peers_ch->d));
 	if (err) {
 		rv = 0;
 		goto fail;
 	}
 
-	if (!memcmp(my_challenge, peers_ch, CHALLENGE_LEN)) {
+	if (!memcmp(my_challenge.d, peers_ch->d, sizeof(my_challenge.d))) {
 		drbd_err(connection, "Peer presented the same challenge!\n");
 		rv = -1;
 		goto fail;
@@ -5910,10 +5908,12 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	sg_init_table(&sg, 1);
-	if (peer_is_drbd_9)
-		peers_ch[pi.size / sizeof(u32)] =
-			cpu_to_be32(connection->resource->res_opts.node_id);
-	sg_set_buf(&sg, peers_ch, pi.size + (peer_is_drbd_9 ? sizeof(u32) : 0));
+	dig_size = pi.size;
+	if (peer_is_drbd_9) {
+		peers_ch->i = cpu_to_be32(connection->resource->res_opts.node_id);
+		dig_size += sizeof(peers_ch->i);
+	}
+	sg_set_buf(&sg, peers_ch, dig_size);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, response);
 	if (rv) {
@@ -5958,9 +5958,12 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	if (peer_is_drbd_9)
-		my_challenge[CHALLENGE_LEN / sizeof(u32)] = cpu_to_be32(peer_node_id);
-	sg_set_buf(&sg, my_challenge, CHALLENGE_LEN + (peer_is_drbd_9 ? sizeof(u32) : 0));
+	dig_size = sizeof(my_challenge.d);
+	if (peer_is_drbd_9) {
+		my_challenge.i = cpu_to_be32(peer_node_id);
+		dig_size += sizeof(my_challenge.i);
+	}
+	sg_set_buf(&sg, &my_challenge, dig_size);
 
 	rv = crypto_hash_digest(&desc, &sg, sg.length, right_response);
 	if (rv) {
