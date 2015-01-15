@@ -1421,6 +1421,9 @@ __bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigne
 	while (bit <= end) {
 		unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
+		if (end < last_bit)
+			last_bit = end;
+
 		__bm_op(device, bitmap_index, bit, last_bit, op, NULL);
 		bit = last_bit + 1;
 		if (need_resched()) {
