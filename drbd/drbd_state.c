@@ -1773,7 +1773,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				}
 
 				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
-				if (disk_state[OLD] == D_INCONSISTENT && peer_disk_state[OLD] == D_INCONSISTENT &&
+				if (disk_state[OLD] == D_INCONSISTENT &&
+				    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE &&
 				    peer_role[OLD] == R_SECONDARY && peer_role[NEW] == R_PRIMARY)
 					set_bit(CONSIDER_RESYNC, &peer_device->flags);
 
