@@ -3407,9 +3407,17 @@ static bool has_up_to_date_peer_disks(struct drbd_device *device)
 	return false;
 }
 
-void __change_role(struct drbd_resource *resource, enum drbd_role role,
-		   bool force)
+struct change_role_context {
+	struct change_context context;
+	bool force;
+};
+
+static void __change_role(struct change_role_context *role_context)
 {
+	struct drbd_resource *resource = role_context->context.resource;
+	enum drbd_role role = role_context->context.val.role;
+	bool force = role_context->force;
+
 	resource->role[NEW] = role;
 
 	if (role == R_PRIMARY && force) {
@@ -3420,24 +3428,23 @@ void __change_role(struct drbd_resource *resource, enum drbd_role role,
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (device->disk_state[NEW] < D_UP_TO_DATE &&
 			    device->disk_state[NEW] >= D_INCONSISTENT &&
-			    !has_up_to_date_peer_disks(device))
+			    !has_up_to_date_peer_disks(device)) {
 				device->disk_state[NEW] = D_UP_TO_DATE;
+				/* adding it to the context so that it gets sent to the peers */
+				role_context->context.mask.disk |= disk_MASK;
+				role_context->context.val.disk |= D_UP_TO_DATE;
+			}
 		}
 		rcu_read_unlock();
 	}
 }
-
-struct change_role_context {
-	struct change_context context;
-	bool force;
-};
 
 static bool do_change_role(struct change_context *context, bool prepare)
 {
 	struct change_role_context *role_context =
 		container_of(context, struct change_role_context, context);
 
-	__change_role(context->resource, context->val.role, role_context->force);
+	__change_role(role_context);
 	return !prepare ||
 	       (context->resource->role[NOW] != R_PRIMARY &&
 		context->val.role == R_PRIMARY);

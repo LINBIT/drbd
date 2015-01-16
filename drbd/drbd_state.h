@@ -78,7 +78,6 @@ extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum
 extern enum drbd_state_rv nested_twopc_request(struct drbd_resource *, int, enum drbd_packet, struct p_twopc_request *);
 extern bool cluster_wide_reply_ready(struct drbd_resource *);
 
-extern void __change_role(struct drbd_resource *, enum drbd_role, bool);
 extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags, bool);
 
 extern void __change_io_susp_user(struct drbd_resource *, bool);
