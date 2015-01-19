@@ -3291,16 +3291,19 @@ fail:
 
 static enum drbd_state_rv invalidate_resync(struct drbd_peer_device *peer_device)
 {
+	struct drbd_resource *resource = peer_device->connection->resource;
 	enum drbd_state_rv rv;
 
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
-	rv = change_repl_state(peer_device, L_STARTING_SYNC_T,
-			       CS_WAIT_COMPLETE | CS_SERIALIZE);
+	rv = change_repl_state(peer_device, L_STARTING_SYNC_T, CS_SERIALIZE);
 
 	if (rv < SS_SUCCESS && rv != SS_NEED_CONNECTION)
 		rv = stable_change_repl_state(peer_device, L_STARTING_SYNC_T,
-			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+			CS_VERBOSE | CS_SERIALIZE);
+
+	wait_event_interruptible(resource->state_wait,
+				 peer_device->repl_state[NOW] != L_STARTING_SYNC_T);
 
 	return rv;
 }
@@ -3449,8 +3452,8 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
-	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
-					   CS_WAIT_COMPLETE | CS_SERIALIZE);
+	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S, CS_SERIALIZE);
+
 	if (retcode < SS_SUCCESS) {
 		if (retcode == SS_NEED_CONNECTION && resource->role[NOW] == R_PRIMARY) {
 			/* The peer will get a resync upon connect anyways.
@@ -3465,7 +3468,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 			}
 		} else
 			retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
-							   CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+							   CS_VERBOSE | CS_SERIALIZE);
 	}
 	drbd_resume_io(device);
 

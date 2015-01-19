@@ -3826,40 +3826,45 @@ void __change_repl_state(struct drbd_peer_device *peer_device, enum drbd_repl_st
 		peer_device->connection->cstate[NEW] = C_CONNECTED;
 }
 
+struct change_repl_context {
+	struct change_context context;
+	struct drbd_peer_device *peer_device;
+};
+
+static bool do_change_repl_state(struct change_context *context, bool prepare)
+{
+	struct change_repl_context *repl_context =
+		container_of(context, struct change_repl_context, context);
+	struct drbd_peer_device *peer_device = repl_context->peer_device;
+	enum drbd_repl_state *repl_state = peer_device->repl_state;
+	enum drbd_repl_state new_repl_state = context->val.conn;
+
+	__change_repl_state(peer_device, new_repl_state);
+
+	return !prepare ||
+		((repl_state[NOW] >= L_ESTABLISHED &&
+		  (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
+		 (repl_state[NOW] == L_ESTABLISHED &&
+		  (new_repl_state == L_VERIFY_S || new_repl_state == L_OFF)));
+}
+
 enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 				     enum drbd_repl_state new_repl_state,
 				     enum chg_state_flags flags)
 {
-	struct drbd_resource *resource = peer_device->device->resource;
-	enum drbd_repl_state *repl_state = peer_device->repl_state;
-	unsigned long irq_flags;
+	struct change_repl_context repl_context = {
+		.context = {
+			.resource = peer_device->device->resource,
+			.vnr = peer_device->device->vnr,
+			.mask = { { .conn = conn_MASK } },
+			.val = { { .conn = new_repl_state } },
+			.target_node_id = peer_device->node_id,
+			.flags = flags
+		},
+		.peer_device = peer_device
+	};
 
-	begin_state_change(resource, &irq_flags, flags | CS_LOCAL_ONLY);
-	if (!local_state_change(flags) && repl_state[NOW] != new_repl_state &&
-	    ((repl_state[NOW] >= L_ESTABLISHED &&
-	      (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
-	     (repl_state[NOW] == L_ESTABLISHED &&
-	      (new_repl_state == L_VERIFY_S || new_repl_state == L_OFF)))) {
-		enum drbd_state_rv rv;
-
-		__change_repl_state(peer_device, new_repl_state);
-		rv = try_state_change(resource);
-		if (rv == SS_SUCCESS) {
-			union drbd_state mask = {}, val = {};
-
-			mask.conn = conn_MASK;
-			val.conn = new_repl_state;
-
-			rv = change_peer_state(peer_device->connection, peer_device->device->vnr,
-					       mask, val, &irq_flags);
-		}
-		if (rv < SS_SUCCESS) {
-			abort_state_change(resource, &irq_flags);
-			return rv;
-		}
-	}
-	__change_repl_state(peer_device, new_repl_state);
-	return end_state_change(resource, &irq_flags);
+	return change_cluster_wide_state(do_change_repl_state, &repl_context.context);
 }
 
 enum drbd_state_rv stable_change_repl_state(struct drbd_peer_device *peer_device,
