@@ -52,10 +52,6 @@ drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
 drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
 drbd-y += drbd_nla.o
 
-ifndef CONFIG_CONNECTOR
-	drbd-y += connector.o cn_queue.o
-endif
-
 $(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
