@@ -92,16 +92,15 @@ struct drbd_rdma_rx_desc {
 
 
 struct drbd_rdma_tx_desc {
-	void *data;
+	enum {
+		SEND_PAGE,
+		SEND_MSG,
+	} type;
+	union {
+		struct page *page;
+		struct completion *completion;
+	};
 	struct ib_sge sge;
-
-	/* RCK: in the future, there is only send_page(), but no send(). The idea
-	 * for this list is:
-	 * - when sending a page and allocating the tx_desc, add it to the list
-	 *   (part of the drbd_rdma_stream). free the tx_desc and unmap the page in
-	 *   "tx success callback".
-	 */
-
 	struct list_head tx_entry;
 };
 
@@ -136,10 +135,6 @@ struct drbd_rdma_stream {
 	struct list_head tx_descs;
 	spinlock_t tx_list_lock;
 
-	/* completion object for send(). we will see if we still need it after we
-	 * remove send() from the API, but for now we need it to be correct */
-	struct completion send_compl;
-
 	unsigned long recv_timeout;
 };
 
@@ -170,6 +165,9 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
+
+static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
+			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream);
 
 
 static struct drbd_transport_class rdma_transport_class = {
@@ -225,14 +223,15 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 }
 
 
-static int dtr_create_and_post_tx_desc(struct drbd_rdma_stream *, enum drbd_stream, void *, size_t, unsigned);
-
 static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
+	struct ib_device *device;
+	struct drbd_rdma_tx_desc tx_desc;
+	struct completion completion;
 
 	if (stream == CONTROL_STREAM) {
 		printk("send with CONTROL_STREAM\n");
@@ -243,9 +242,17 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 		printk("send with unknown STREAM!!!\n");
 	}
 	printk("send with data[0]:%x\n", ((char*)buf)[0]);
-	reinit_completion(&rdma_stream->send_compl);
-	dtr_create_and_post_tx_desc(rdma_stream, stream, buf, size, msg_flags);
-	wait_for_completion(&rdma_stream->send_compl);
+
+	device = rdma_stream->cm_id->device;
+	tx_desc.type = SEND_MSG;
+	tx_desc.completion = &completion;
+	tx_desc.sge.addr = ib_dma_map_single(device, buf, size, DMA_TO_DEVICE);
+	tx_desc.sge.lkey = rdma_stream->dma_mr->lkey;
+	tx_desc.sge.length = size;
+
+	init_completion(&completion);
+	dtr_post_tx_desc(rdma_stream, &tx_desc, stream);
+	wait_for_completion(&completion);
 
 	return size;
 }
@@ -664,54 +671,42 @@ static void dtr_rx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 		printk("ib_req_notify_cq success\n");
 }
 
-static void dtr_tx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct drbd_rdma_stream *rdma_stream = ctx;
-	int ret;
-
-	printk("RDMA (control): got tx cq event. state %d\n", rdma_stream->state);
-
-	atomic_dec(&rdma_stream->post_send_count);
-
-	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		printk("ib_req_notify_cq failed\n");
-	else
-		printk("ib_req_notify_cq success\n");
-	complete(&rdma_stream->send_compl);
-}
-
-static void dtr_tx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
+static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	int ret;
 	struct drbd_rdma_tx_desc *tx_desc;
 	unsigned long flags;
 
-	printk("RDMA (data): got tx cq event. state %d\n", rdma_stream->state);
+	printk("RDMA: got tx cq event. state %d\n", rdma_stream->state);
 
 	atomic_dec(&rdma_stream->post_send_count);
 
 	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 	tx_desc = list_first_entry_or_null(&rdma_stream->tx_descs, struct drbd_rdma_tx_desc, tx_entry);
-	if (tx_desc) {
-		printk("RDMA: free tx_data %p, %p\n", tx_desc->data, tx_desc);
-		kfree(tx_desc->data);
-		kfree(tx_desc);
+	if (tx_desc)
 		list_del(&tx_desc->tx_entry);
-	}
-	else {
+	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
+
+	if (tx_desc) {
+		switch (tx_desc->type) {
+		case SEND_PAGE:
+			put_page(tx_desc->page);
+			kfree(tx_desc);
+			break;
+		case SEND_MSG:
+			complete(tx_desc->completion);
+			break;
+		}
+	} else {
 		printk("RDMA: Something went terribly wrong, got tx completion event, but cannot find entry\n");
 	}
-	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
 		printk("ib_req_notify_cq failed\n");
 	else
 		printk("ib_req_notify_cq success\n");
-
-	complete(&rdma_stream->send_compl);
 }
 
 static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
@@ -800,7 +795,7 @@ static int dtr_create_and_post_rx_desc(struct drbd_rdma_stream *rdma_stream)
  * CURRENTLY only SEND, and and the write is up to discussion, see list at the
  * beginning of file */
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
-		struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream)
+			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream)
 {
 	struct ib_device *device = rdma_stream->cm_id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
@@ -832,53 +827,13 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 		spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 		list_del(&tx_desc->tx_entry);
 		spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
-		/* RCK TODO: here we should also free the tx_desc */
-
 		return err;
-	}
-	else {
+	} else {
 		/* printk("RDMA: ib_post_send successfull!\n"); */
-		printk("Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d, data[0]:%x\n", tx_desc->data, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length, ((char *)tx_desc->data)[0]);
+		printk("Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
 	}
 
 	return 0;
-}
-
-static int dtr_create_and_post_tx_desc(struct drbd_rdma_stream *rdma_stream, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags)
-{
-	struct drbd_rdma_tx_desc *tx_desc;
-	struct ib_device *device;
-
-	/* printk("before setting device\n"); */
-	/* if (rdma_stream->cm_id) */
-	/* 	printk("cm_id: %p\n", rdma_stream->cm_id); */
-	printk("tx_count(%s): %d\n", stream == CONTROL_STREAM ? "control" : "data", atomic_read(&rdma_stream->post_send_count));
-
-	/* printk("before setting device\n"); */
-	device = rdma_stream->cm_id->device;
-	/* printk("after setting device\n"); */
-
-	tx_desc = kzalloc(sizeof(*tx_desc), GFP_KERNEL);
-	tx_desc->data = kzalloc(RDMA_PAGE_SIZE, GFP_KERNEL);
-	/* printk("before memset\n"); */
-	/* memset(tx_desc->data, 0x55, RDMA_PAGE_SIZE); */
-	/* ((char *)(tx_desc->data))[RDMA_PAGE_SIZE -1] = 0xAA; */
-#if 0
-	memcpy(tx_desc->data, buf, RDMA_PAGE_SIZE);
-#else
-	memcpy(tx_desc->data, buf, size);
-#endif
-
-	tx_desc->sge.addr = ib_dma_map_single(device, tx_desc->data,
-			RDMA_PAGE_SIZE, DMA_TO_DEVICE);
-	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
-#if 0
-	tx_desc->sge.length = RDMA_PAGE_SIZE;
-#else
-	tx_desc->sge.length = size;
-#endif
-
-	return dtr_post_tx_desc(rdma_stream, tx_desc, stream);
 }
 
 /* allocate general resources for the stream (spin locks, lists, ...) */
@@ -897,8 +852,6 @@ static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enu
 
 	INIT_LIST_HEAD(&rdma_stream->tx_descs);
 	spin_lock_init(&rdma_stream->tx_list_lock);
-
-	init_completion(&rdma_stream->send_compl);
 }
 
 /* allocate rdma specific resources for the stream */
@@ -909,12 +862,12 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, enum d
 
 	void (*rx_event_handler)(struct ib_cq *, void *);
 	void (*tx_event_handler)(struct ib_cq *, void *);
+
+	tx_event_handler = dtr_tx_cq_event_handler;
 	if (stream == DATA_STREAM) {
 		rx_event_handler = dtr_rx_data_cq_event_handler;
-		tx_event_handler = dtr_tx_data_cq_event_handler;
 	} else {
 		rx_event_handler = dtr_rx_control_cq_event_handler;
-		tx_event_handler = dtr_tx_control_cq_event_handler;
 	}
 
 	printk("RDMA: here with cm_id: %p\n", rdma_stream->cm_id);
@@ -1310,21 +1263,32 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream,
 			 struct page *page, int offset, size_t size, unsigned msg_flags)
 {
-	/* struct drbd_rdma_transport *rdma_transport = */
-	/* 	container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport); */
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
+	struct drbd_rdma_tx_desc *tx_desc;
+	struct ib_device *device;
+	int err;
 
-	/* struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM]; */
 	printk("RDMA: in send_page, size: %zu\n", size);
 
-	/* mm_segment_t oldfs = get_fs(); */
-	/* set_fs(KERNEL_DS); */
+	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
+	if(!tx_desc)
+		return -ENOMEM;
 
-	/* dtr_create_and_post_tx_desc(rdma_stream, DATA_STREAM, page, size, msg_flags, true); */
-	dtr_send(transport, stream, page, size, msg_flags);
+	get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
+	device = rdma_stream->cm_id->device;
+	tx_desc->type = SEND_PAGE;
+	tx_desc->page = page;
+	tx_desc->sge.addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
+	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
+	tx_desc->sge.length = size;
 
-	/* set_fs(oldfs); */
+	err = dtr_post_tx_desc(rdma_stream, tx_desc, stream);
+	if (err)
+		put_page(page);
 
-	return 0;
+	return err;
 }
 
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
