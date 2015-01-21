@@ -136,6 +136,7 @@ struct drbd_rdma_stream {
 	spinlock_t tx_list_lock;
 
 	unsigned long recv_timeout;
+	char name[8]; /* "control" or "data" */
 };
 
 struct drbd_rdma_transport {
@@ -168,7 +169,7 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, 
 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream);
-
+static int dtr_drain_rx_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -257,8 +258,6 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 	return size;
 }
 
-static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
-static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 
 static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed);
 static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
@@ -310,19 +309,6 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 
 	struct drbd_rdma_rx_desc *rx_desc = NULL;
 	void *buffer;
- 	int (*dtr_drain_rx_cq)(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
-
-	dtr_drain_rx_cq = NULL;
-	if (stream == CONTROL_STREAM) {
-		printk("recv with CONTROL_STREAM, size:%zu\n", size);
-		dtr_drain_rx_cq = dtr_drain_rx_control_cq;
-	}
-	else if (stream == DATA_STREAM) {
-		printk("recv with DATA_STREAM, size:%zu\n", size);
-		dtr_drain_rx_cq = dtr_drain_rx_data_cq;
-	} else {
-		printk("recv with unknown STREAM\n");
-	}
 
 	if (flags & GROW_BUFFER) { /* grow is untested, do not trust this code */
 		printk("RDMA: recv GROW_BUFFER\n");
@@ -550,49 +536,7 @@ static void dtr_rx_completion(struct drbd_rdma_stream *rdma_stream,
  * if -1: receive all
  * >= 0 : nr_elements
  * number of elements in cq is too small to underflow nr_elements */
-static int dtr_drain_rx_control_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc, int nr_elements)
-{
-	struct ib_cq *cq = rdma_stream->recv_cq;
-	struct ib_wc wc;
-	int completed_tx = 0;
-	size_t bytes_left;
-
-	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
-		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
-		WARN_ON(rx_desc == NULL);
-
-		if(wc.status == IB_WC_SUCCESS) {
-			printk("RDMA: IB_WC_SUCCESS\n");
-			if (wc.opcode == IB_WC_SEND)
-				printk("RDMA: IB_WC_SEND\n");
-			if (wc.opcode == IB_WC_RECV) {
-				printk("RDMA: IB_WC_RECV\n");
-				bytes_left = wc.byte_len;
-				printk("RDMA: bytes_left: %lu\n", bytes_left);
-				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
-						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-				(*rx_desc)->bytes_left = bytes_left;
-				printk("in drain (control): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
-			}
-			else if (wc.opcode == IB_WC_RDMA_WRITE)
-				printk("RDMA: IB_WC_RDMA_WRITE\n");
-			else if (wc.opcode == IB_WC_RDMA_READ)
-				printk("RDMA: IB_WC_RDMA_READ\n");
-			else
-				printk("RDMA: WC SUCCESS, but strange opcode...\n");
-
-			completed_tx++;
-		}
-		else
-			printk("RDMA: IB_WC NOT SUCCESS\n");
-	}
-
-	/* ib_req_notify_cq(cq, IB_CQ_NEXT_COMP); */
-
-	return completed_tx;
-}
-
-static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc, int nr_elements)
+static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc, int nr_elements)
 {
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
@@ -611,11 +555,10 @@ static int dtr_drain_rx_data_cq(struct drbd_rdma_stream *rdma_stream, struct drb
 				printk("RDMA: IB_WC_RECV\n");
 				bytes_left = wc.byte_len;
 				printk("RDMA: bytes_left: %zu\n", bytes_left);
-				/* dtr_rx_completion(rdma_stream, desc, bytes_left); */
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
 				(*rx_desc)->bytes_left = bytes_left;
-				printk("in drain (data): %p, data[0]:%x\n", rx_desc, (*rx_desc)->data[0]);
+				printk("in drain (%s): %p, data[0]:%x\n", rdma_stream->name, rx_desc, (*rx_desc)->data[0]);
 			}
 			else if (wc.opcode == IB_WC_RDMA_WRITE)
 				printk("RDMA: IB_WC_RDMA_WRITE\n");
@@ -678,7 +621,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct drbd_rdma_tx_desc *tx_desc;
 	unsigned long flags;
 
-	printk("RDMA: got tx cq event. state %d\n", rdma_stream->state);
+	printk("RDMA (%s): got tx cq event. state %d\n", rdma_stream->name, rdma_stream->state);
 
 	atomic_dec(&rdma_stream->post_send_count);
 
@@ -854,6 +797,7 @@ static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enu
 
 	INIT_LIST_HEAD(&rdma_stream->tx_descs);
 	spin_lock_init(&rdma_stream->tx_list_lock);
+	strcpy(rdma_stream->name, stream == DATA_STREAM ? "data" : "control");
 }
 
 /* allocate rdma specific resources for the stream */
