@@ -691,10 +691,12 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	if (tx_desc) {
 		switch (tx_desc->type) {
 		case SEND_PAGE:
+			printk("put_page(%p), kfree(%p)\n", tx_desc->page, tx_desc);
 			put_page(tx_desc->page);
 			kfree(tx_desc);
 			break;
 		case SEND_MSG:
+			printk("complete(%p)\n", tx_desc->completion);
 			complete(tx_desc->completion);
 			break;
 		}
