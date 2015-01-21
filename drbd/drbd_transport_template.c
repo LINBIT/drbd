@@ -24,14 +24,13 @@ struct xxx_waiter {
 };
 
 static struct drbd_transport *xxx_create(struct drbd_connection* connection);
-static void xxx_free(struct drbd_transport *transport, bool put_transport);
+static void xxx_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int xxx_connect(struct drbd_transport *transport);
-static int xxx_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags);
 static int xxx_recv(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, int flags);
 static void xxx_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats);
 static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
-static int xxx_send_page(struct drbd_transport *transport, struct drbd_peer_device *peer_device, struct page *page,
+static int xxx_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		    int offset, size_t size, unsigned msg_flags);
 static bool xxx_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool xxx_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
@@ -46,7 +45,6 @@ static struct drbd_transport_class xxx_transport_class = {
 static struct drbd_transport_ops xxx_ops = {
 	.free = xxx_free,
 	.connect = xxx_connect,
-	.send = xxx_send,
 	.recv = xxx_recv,
 	.stats = xxx_stats,
 	.set_rcvtimeo = xxx_set_rcvtimeo,
@@ -76,12 +74,14 @@ static struct drbd_transport *xxx_create(struct drbd_connection* connection)
 	return &xxx_transport->transport;
 }
 
-static void xxx_free(struct drbd_transport *transport, bool put_transport)
+static void xxx_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
 {
 	struct drbd_xxx_transport *xxx_transport =
 		container_of(transport, struct drbd_xxx_transport, transport);
 
-	if (put_transport) {
+	/* disconnect here */
+
+	if (free_op == DESTROY_TRANSPORT) {
 		kfree(xxx_transport);
 		module_put(THIS_MODULE);
 	}
@@ -129,7 +129,7 @@ static bool xxx_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 	return true;
 }
 
-static int xxx_send_page(struct drbd_transport *transport, struct drbd_peer_device *peer_device, struct page *page,
+static int xxx_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		    int offset, size_t size, unsigned msg_flags)
 {
 	return 0;
