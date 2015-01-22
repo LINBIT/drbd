@@ -180,6 +180,8 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 			       struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
+static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc);
+
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -244,15 +246,7 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 	struct drbd_rdma_tx_desc tx_desc;
 	struct completion completion;
 
-	if (stream == CONTROL_STREAM) {
-		printk("send with CONTROL_STREAM\n");
-	}
-	else if (stream == DATA_STREAM){
-		printk("send with DATA_STREAM\n");
-	} else {
-		printk("send with unknown STREAM!!!\n");
-	}
-	printk("send with data[0]:%x\n", ((char*)buf)[0]);
+	printk("send in %s stream with data[0]:%x\n", rdma_stream->name, ((char*)buf)[0]);
 
 	device = rdma_stream->cm_id->device;
 	tx_desc.type = SEND_MSG;
@@ -272,40 +266,53 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed);
 static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
 {
-	/* struct drbd_rdma_transport *rdma_transport = */
-	/* 	container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport); */
+	/* TODO: Here we pass back pages that we allocated using alloc_page(GFP_KERNEL) while
+	   DRBD thinks they came from drbd_alloc_pages(). Needs to be fixed by making
+	   drbd_alloc_pages usable for transports. */
 
-	/* struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM]; */
-	struct page *all_pages, *page;
-	int err = 0; /* RCK: for now fixed at 0 */
-	int i = 0;
-	/* struct drbd_rdma_rx_desc *rx_desc; */
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport);
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+	struct page *page, *all_pages = NULL;
+	int t, i = 0;
 
 	printk("RDMA: in recv_pages, size: %zu\n", size);
-	all_pages = drbd_alloc_pages(peer_device, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-	if (!all_pages)
-		return -ENOMEM;
-	page = all_pages;
-	page_chain_for_each(page) {
-		size_t len = min_t(int, size, PAGE_SIZE);
-		void *data = kmap(page);
-		/* while(dtr_drain_rx_data_cq(rdma_stream, &rx_desc, 1) == 0); */
-		/* memcpy(data, rx_desc->data, len); */
-		_dtr_recv(peer_device->connection->transport, DATA_STREAM, &data, len, CALLER_BUFFER, true);
-		++i;
-		kunmap(page);
-		if (err < 0)
-			goto fail;
-		size -= len;
+	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
+	dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
+
+	while (size) {
+		struct drbd_rdma_rx_desc *rx_desc = NULL;
+
+		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
+					dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
+					rdma_stream->recv_timeout);
+
+		if (t <= 0) {
+			if (t == 0)
+				printk("RDMA: recv() on data timed out, ret: EAGAIN\n");
+			else
+				printk("RDMA: recv() on data timed out, ret: EINTR\n");
+
+			atomic_add(i, &peer_device->device->pp_in_use);
+			drbd_free_pages(peer_device->device, all_pages, 0);
+			return t == 0 ? -EAGAIN : -EINTR;
+		}
+
+		page = rx_desc->page;
+		rx_desc->page = NULL;
+		size -= rx_desc->size;
+		dtr_free_rx_desc(rdma_stream, rx_desc);
+
+		set_page_private(page, (unsigned long)all_pages);
+		all_pages = page;
+		i++;
 	}
 
+	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	printk("rcvd %d pages\n", i);
-
+	atomic_add(i, &peer_device->device->pp_in_use);
 	*pages = all_pages;
 	return 0;
-fail:
-	drbd_free_pages(peer_device->device, all_pages, 0);
-	return err;
 }
 
 static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed)
@@ -331,17 +338,10 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
 			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, stream == CONTROL_STREAM ? "control": "data");
 			dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
-#if 0 /* RCK: for now I do not want any timeouts at all */
 			printk("waiting for %lu\n", rdma_stream->recv_timeout);
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 						rdma_stream->recv_timeout);
-#else
-			printk("waiting for very long\n");
-			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-					dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
-					10000*HZ);
-#endif
 
 			if (t <= 0)
 			{
@@ -718,7 +718,8 @@ static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 		return; /* Allow call with NULL */
 
 	rdma_stream->rx_descs_allocated--;
-	put_page(rx_desc->page);
+	if (rx_desc->page)
+		put_page(rx_desc->page);
 	kfree(rx_desc);
 }
 
