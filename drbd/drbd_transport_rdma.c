@@ -84,10 +84,9 @@ enum drbd_rdma_state {
  * rx_descs for contol data */
 struct drbd_rdma_rx_desc {
 	char data[RDMA_PAGE_SIZE];
-	void *pos;
 	u64 dma_addr;
+	int size; /* The amount of data actually received (<= allocated size) */
 	struct ib_sge sge;
-	size_t bytes_left;
 } __attribute__((packed));
 
 
@@ -128,7 +127,11 @@ struct drbd_rdma_stream {
 	 *   is consumed, and get a new rx_desc from the completion queue, and set
 	 *   current rx_desc accodingly.
 	 */
-	struct drbd_rdma_rx_desc *cur_rx_desc;
+	struct {
+		struct drbd_rdma_rx_desc *desc;
+		void *pos;
+		int bytes_left;
+	} current_rx;
 
 	/* list of to be freed and unmaped tx_descs, basically a FIFO, and its spin
 	 * lock */
@@ -313,16 +316,16 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 	if (flags & GROW_BUFFER) { /* grow is untested, do not trust this code */
 		printk("RDMA: recv GROW_BUFFER\n");
 		/* D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base); */
-		buffer = rdma_stream->cur_rx_desc->pos;
-		rdma_stream->cur_rx_desc->pos += size;
+		buffer = rdma_stream->current_rx.pos;
+		rdma_stream->current_rx.pos += size;
 		/* D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE); */
 		*buf = buffer;
 		/* old_rx[stream] = NULL; */
-	} else if (rdma_stream->cur_rx_desc->bytes_left == 0) { /* get a completely new entry, old now unused, free it */
+	} else if (rdma_stream->current_rx.bytes_left == 0) { /* get a completely new entry, old now unused, free it */
 			int t;
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
-			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->cur_rx_desc, stream == CONTROL_STREAM ? "control": "data");
-			kfree(rdma_stream->cur_rx_desc);
+			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, stream == CONTROL_STREAM ? "control": "data");
+			kfree(rdma_stream->current_rx.desc);
 #if 0 /* RCK: for now I do not want any timeouts at all */
 			printk("waiting for %lu\n", rdma_stream->recv_timeout);
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
@@ -344,50 +347,47 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 				return t == 0 ? -EAGAIN : -EINTR;
 			}
 
+			printk("got a new page with size: %d\n", rx_desc->size);
 			buffer = rx_desc->data;
-			rx_desc->pos = buffer + size;
-			printk("got a new page with size: %zu\n", rx_desc->bytes_left);
-			if (rx_desc->bytes_left < size)
-				printk("new, requesting more (%zu) than left (%zu)\n", size, rx_desc->bytes_left);
-			rx_desc->bytes_left -= size;
-			rdma_stream->cur_rx_desc = rx_desc;
+			rdma_stream->current_rx.desc = rx_desc;
+			rdma_stream->current_rx.pos = buffer + size;
+			rdma_stream->current_rx.bytes_left = rx_desc->size - size;
+			if (rdma_stream->current_rx.bytes_left < 0)
+				printk("new, requesting more (%zu) than available (%d)\n", size, rx_desc->size);
 
 			if (flags & CALLER_BUFFER) {
 				printk("doing a memcpy on first\n");
 				memcpy(*buf, buffer, size);
-			}
-			else
+			} else
 				*buf = buffer;
 
 			printk("RDMA: recv completely new fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
 			/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
 			dtr_create_and_post_rx_desc(rdma_stream);
-			printk("rx_count(%s): %d\n", stream == CONTROL_STREAM ? "control" : "data", rdma_stream->post_recv_count);
+			printk("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->post_recv_count);
 			if (markconsumed)
-				rdma_stream->cur_rx_desc->bytes_left = 0;
+				rdma_stream->current_rx.bytes_left = 0;
 			return size;
 		} else { /* return next part */
-			printk("RDMA: recv next part on %s\n", stream == CONTROL_STREAM ? "control": "data");
-			buffer = rdma_stream->cur_rx_desc->pos;
-			rdma_stream->cur_rx_desc->pos += size;
+			printk("RDMA: recv next part on %s\n", rdma_stream->name);
+			buffer = rdma_stream->current_rx.pos;
+			rdma_stream->current_rx.pos += size;
 
-			if (rdma_stream->cur_rx_desc->bytes_left <= size) { /* < could be a problem, right? or does that happen? */
-				rdma_stream->cur_rx_desc->bytes_left = 0; /* 0 left == get new entry */
+			if (rdma_stream->current_rx.bytes_left <= size) { /* < could be a problem, right? or does that happen? */
+				rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
 				printk("marking page as consumed\n");
-			}
-			else {
-				rdma_stream->cur_rx_desc->bytes_left -= size;
-				printk("old_rx left: %zu\n", rdma_stream->cur_rx_desc->bytes_left);
+			} else {
+				rdma_stream->current_rx.bytes_left -= size;
+				printk("old_rx left: %d\n", rdma_stream->current_rx.bytes_left);
 			}
 
 			if (flags & CALLER_BUFFER) {
 				printk("doing a memcpy on next\n");
 				memcpy(*buf, buffer, size);
-			}
-			else
+			} else
 				*buf = buffer;
 
-			printk("RDMA: recv next part fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
+			printk("RDMA: recv next part fine, returning size on %s\n", rdma_stream->name);
 			return size;
 		}
 
@@ -541,7 +541,7 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
 	int completed_tx = 0;
-	size_t bytes_left;
+	int size;
 
 	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
@@ -553,11 +553,11 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 				printk("RDMA: IB_WC_SEND\n");
 			if (wc.opcode == IB_WC_RECV) {
 				printk("RDMA: IB_WC_RECV\n");
-				bytes_left = wc.byte_len;
-				printk("RDMA: bytes_left: %zu\n", bytes_left);
+				size = wc.byte_len;
+				printk("RDMA: size: %d\n", size);
 				ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-				(*rx_desc)->bytes_left = bytes_left;
+				(*rx_desc)->size = size;
 				printk("in drain (%s): %p, data[0]:%x\n", rdma_stream->name, rx_desc, (*rx_desc)->data[0]);
 			}
 			else if (wc.opcode == IB_WC_RDMA_WRITE)
@@ -787,11 +787,9 @@ static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enu
 	/* at least for now we keep the unused enum drbd_stream, in the future there
 	 * might be a difference in the setup, dunno */
 
-	/* kickstart the recv() logic, the dummy will be freed on the first real
-	 * receive. overhead here, but this saves a NULL check in every recv() */
-	struct drbd_rdma_rx_desc *dummy = kzalloc(sizeof(*dummy), GFP_KERNEL);
-	dummy->bytes_left = 0;
-	rdma_stream->cur_rx_desc = dummy;
+	rdma_stream->current_rx.desc = NULL;
+	rdma_stream->current_rx.size = 0;
+	rdma_stream->current_rx.bytes_left = 0;
 
 	rdma_stream->recv_timeout = 1000 * HZ; /* RCK TODO: this should be the netconf value */
 
