@@ -262,7 +262,6 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 }
 
 
-static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed);
 static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
 {
 	/* TODO: Here we pass back pages that we allocated using alloc_page(GFP_KERNEL) while
@@ -314,13 +313,8 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	return 0;
 }
 
-static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags, bool markconsumed)
+static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t size, int flags)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-
-	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
-
 	struct drbd_rdma_rx_desc *rx_desc = NULL;
 	void *buffer;
 
@@ -335,7 +329,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 	} else if (rdma_stream->current_rx.bytes_left == 0) { /* get a completely new entry, old now unused, free it */
 			int t;
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
-			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, stream == CONTROL_STREAM ? "control": "data");
+			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, rdma_stream->name);
 			dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
 			printk("waiting for %lu\n", rdma_stream->recv_timeout);
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
@@ -345,9 +339,9 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 			if (t <= 0)
 			{
 				if (t==0)
-					printk("RDMA: recv() on %s timed out, ret: EAGAIN\n", stream == CONTROL_STREAM ? "control": "data");
+					printk("RDMA: recv() on %s timed out, ret: EAGAIN\n", rdma_stream->name);
 				else
-					printk("RDMA: recv() on %s timed out, ret: EINTR\n", stream == CONTROL_STREAM ? "control": "data");
+					printk("RDMA: recv() on %s timed out, ret: EINTR\n", rdma_stream->name);
 				return t == 0 ? -EAGAIN : -EINTR;
 			}
 
@@ -365,13 +359,10 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 			} else
 				*buf = buffer;
 
-			printk("RDMA: recv completely new fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
+			printk("RDMA: recv completely new fine, returning size on %s\n", rdma_stream->name);
 			/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
 			printk("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
-			if (markconsumed)
-				rdma_stream->current_rx.bytes_left = 0;
 
-			dtr_refill_rx_desc(rdma_transport, stream);
 			return size;
 		} else { /* return next part */
 			printk("RDMA: recv next part on %s\n", rdma_stream->name);
@@ -393,7 +384,6 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 				*buf = buffer;
 
 			printk("RDMA: recv next part fine, returning size on %s\n", rdma_stream->name);
-			dtr_refill_rx_desc(rdma_transport, stream);
 			return size;
 		}
 
@@ -402,9 +392,17 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
 {
-	return _dtr_recv(transport, stream, buf, size, flags, false);
-}
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
 
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
+	int err;
+
+	err = _dtr_recv(rdma_stream, buf, size, flags);
+
+	dtr_refill_rx_desc(rdma_transport, stream);
+	return err;
+}
 
 static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats)
 {
