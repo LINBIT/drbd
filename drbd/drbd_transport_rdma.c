@@ -136,11 +136,6 @@ struct drbd_rdma_stream {
 	} current_rx;
 	int rx_allocation_size;
 
-	/* list of to be freed and unmaped tx_descs, basically a FIFO, and its spin
-	 * lock */
-	struct list_head tx_descs;
-	spinlock_t tx_list_lock;
-
 	unsigned long recv_timeout;
 	char name[8]; /* "control" or "data" */
 };
@@ -605,41 +600,57 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
-	int ret;
+	struct ib_device *device = rdma_stream->cm_id->device;
 	struct drbd_rdma_tx_desc *tx_desc;
-	unsigned long flags;
+	struct ib_wc wc;
+	int ret;
 
 	printk("RDMA (%s): got tx cq event. state %d\n", rdma_stream->name, rdma_stream->state);
-
-	atomic_dec(&rdma_stream->tx_descs_posted);
-
-	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
-	tx_desc = list_first_entry_or_null(&rdma_stream->tx_descs, struct drbd_rdma_tx_desc, tx_entry);
-	if (tx_desc)
-		list_del(&tx_desc->tx_entry);
-	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
-
-	if (tx_desc) {
-		switch (tx_desc->type) {
-		case SEND_PAGE:
-			printk("put_page(%p), kfree(%p)\n", tx_desc->page, tx_desc);
-			put_page(tx_desc->page);
-			kfree(tx_desc);
-			break;
-		case SEND_MSG:
-			printk("complete(%p)\n", tx_desc->completion);
-			complete(tx_desc->completion);
-			break;
-		}
-	} else {
-		printk("RDMA: Something went terribly wrong, got tx completion event, but cannot find entry\n");
-	}
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
 		printk("ib_req_notify_cq failed\n");
 	else
 		printk("ib_req_notify_cq success\n");
+
+	/* Alternatively put them onto a list here, and do the processing (freeing)
+	   at a later point in time. Probably resource freeing is cheap enough to do
+	   it directly here. */
+	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
+		atomic_dec(&rdma_stream->tx_descs_posted);
+
+		if (wc.status != IB_WC_SUCCESS) {
+			printk("wc.status != IB_WC_SUCCESS %d\n", wc.status);
+			goto disconnect;
+		}
+
+		if (wc.opcode != IB_WC_SEND) {
+			printk("wc.opcode != IB_WC_SEND %d\n", wc.opcode);
+			goto disconnect;
+		}
+
+		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
+
+		switch (tx_desc->type) {
+		case SEND_PAGE:
+			printk("put_page(%p), kfree(%p)\n", tx_desc->page, tx_desc);
+			ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+			put_page(tx_desc->page);
+			kfree(tx_desc);
+			break;
+		case SEND_MSG:
+			printk("complete(%p)\n", tx_desc->completion);
+			ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+			complete(tx_desc->completion);
+			break;
+		}
+	}
+
+	if (ret != -1)
+		printk("ib_poll_cq() returned %d\n", ret);
+
+disconnect:
+	/* TODO */;
 }
 
 static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
@@ -838,7 +849,6 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 	struct ib_device *device = rdma_stream->cm_id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	int err;
-	unsigned long flags;
 	printk("in dtr_post_tx_desc\n");
 
 	send_wr.next = NULL;
@@ -852,19 +862,11 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 			tx_desc->sge.length, DMA_TO_DEVICE);
 	atomic_inc(&rdma_stream->tx_descs_posted);
 
-	INIT_LIST_HEAD(&tx_desc->tx_entry);
-	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
-	list_add_tail(&tx_desc->tx_entry, &rdma_stream->tx_descs);
-	spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
-
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
 		printk("RDMA: ib_post_send failed\n");
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
-		spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
-		list_del(&tx_desc->tx_entry);
-		spin_unlock_irqrestore(&rdma_stream->tx_list_lock, flags);
 		return err;
 	} else {
 		/* printk("RDMA: ib_post_send successfull!\n"); */
@@ -886,8 +888,6 @@ static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enu
 
 	rdma_stream->recv_timeout = 1000 * HZ; /* RCK TODO: this should be the netconf value */
 
-	INIT_LIST_HEAD(&rdma_stream->tx_descs);
-	spin_lock_init(&rdma_stream->tx_list_lock);
 	if (stream == DATA_STREAM) {
 		strcpy(rdma_stream->name, "data");
 		rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
