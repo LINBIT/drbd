@@ -172,8 +172,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 
-static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
-			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream);
+static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc);
 static int dtr_drain_rx_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 			       struct drbd_rdma_rx_desc *rx_desc);
@@ -235,12 +234,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 }
 
 
-static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, unsigned msg_flags)
+static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-
-	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc tx_desc;
 	struct completion completion;
@@ -255,7 +250,7 @@ static int dtr_send(struct drbd_transport *transport, enum drbd_stream stream, v
 	tx_desc.sge.length = size;
 
 	init_completion(&completion);
-	dtr_post_tx_desc(rdma_stream, &tx_desc, stream);
+	dtr_post_tx_desc(rdma_stream, &tx_desc);
 	wait_for_completion(&completion);
 
 	return size;
@@ -845,8 +840,7 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
  * data should be/has to be an rdma write
  * CURRENTLY only SEND, and and the write is up to discussion, see list at the
  * beginning of file */
-static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
-			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream)
+static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
@@ -1225,14 +1219,14 @@ static int dtr_connect(struct drbd_transport *transport)
 		printk("RDMA: both %s streams established\n", rdma_server ? "server" : "client");
 		if (rdma_server) {
 			memset(buf, 0x55, RDMA_PAGE_SIZE);
-			dtr_send(transport, DATA_STREAM, buf, 2, 0);
+			dtr_send(rdma_transport->stream[DATA_STREAM], buf, 2);
 			err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
 			if (buf[0] == 0x56)
 				printk("RDMA startup (server), HANDSHAKE OK\n");
 			err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
 		} else {
 			memset(buf, 0x56, RDMA_PAGE_SIZE);
-			dtr_send(transport, DATA_STREAM, buf, 2, 0);
+			dtr_send(rdma_transport->stream[DATA_STREAM], buf, 2);
 			err = dtr_recv(transport, DATA_STREAM, (void **)&buf, 1, CALLER_BUFFER);
 			 if (buf[0] == 0x55)
 				 printk("RDMA startup (client), HANDSHAKE OK\n");
@@ -1315,7 +1309,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
 	tx_desc->sge.length = size;
 
-	err = dtr_post_tx_desc(rdma_stream, tx_desc, stream);
+	err = dtr_post_tx_desc(rdma_stream, tx_desc);
 	if (err)
 		put_page(page);
 
