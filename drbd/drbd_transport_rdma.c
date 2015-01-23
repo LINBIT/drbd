@@ -59,14 +59,13 @@ MODULE_AUTHOR("Foo Bar <foo.bar@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 
-/* #define RDMA_MAX_RX 1024 */
-/* #define RDMA_MAX_TX 1024 */
+#define RDMA_MAX_RX 1024
+#define RDMA_MAX_TX 1024
 /* #define RDMA_PREALLOC_RX 1024 */
 /* #define RDMA_PREALLOC_TX 1024 */
-#define RDMA_MAX_RX 20
-#define RDMA_MAX_TX 20
-#define RDMA_PREALLOC_RX 20
-#define RDMA_PREALLOC_TX 20
+
+/* If no recvbuf_size is configured use 512KiB for the DATA_STREAM */
+#define RDMA_DEF_RECV_SIZE (1 << 19)
 
 #define RDMA_PAGE_SIZE 4096
 
@@ -120,8 +119,10 @@ struct drbd_rdma_stream {
 	wait_queue_head_t recv_wq;
 
 	/* number of currently available descs */
-	atomic_t post_send_count;
-	int post_recv_count;
+	atomic_t tx_descs_posted;
+	int rx_descs_posted;
+	int rx_descs_allocated;
+	int rx_descs_want_posted;
 
 	/* for recv() to keep track of the current rx_desc:
 	 * - whenever the bytes_left of the current rx_desc == 0, we know that all data
@@ -175,9 +176,10 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 			    struct drbd_rdma_tx_desc *tx_desc, enum drbd_stream stream);
 static int dtr_drain_rx_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
-static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
+static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 			       struct drbd_rdma_rx_desc *rx_desc);
-static void dtr_refill_rx_desc(struct drbd_rdma_stream *rdma_stream);
+static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
+			       enum drbd_stream stream);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -328,7 +330,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 			int t;
 			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
 			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, stream == CONTROL_STREAM ? "control": "data");
-			dtr_repost_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
+			dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
 #if 0 /* RCK: for now I do not want any timeouts at all */
 			printk("waiting for %lu\n", rdma_stream->recv_timeout);
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
@@ -366,11 +368,11 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 
 			printk("RDMA: recv completely new fine, returning size on %s\n", stream == CONTROL_STREAM ? "control": "data");
 			/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
-			printk("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->post_recv_count);
+			printk("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
 			if (markconsumed)
 				rdma_stream->current_rx.bytes_left = 0;
 
-			dtr_refill_rx_desc(rdma_stream);
+			dtr_refill_rx_desc(rdma_transport, stream);
 			return size;
 		} else { /* return next part */
 			printk("RDMA: recv next part on %s\n", rdma_stream->name);
@@ -392,7 +394,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, 
 				*buf = buffer;
 
 			printk("RDMA: recv next part fine, returning size on %s\n", rdma_stream->name);
-			dtr_refill_rx_desc(rdma_stream);
+			dtr_refill_rx_desc(rdma_transport, stream);
 			return size;
 		}
 
@@ -416,7 +418,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 	/* RCK: these are used by the sender, guess we should them get right */
 	stats->send_buffer_size = RDMA_MAX_TX;
-	stats->send_buffer_used = atomic_read(&(rdma_transport->stream[DATA_STREAM]->post_send_count));
+	stats->send_buffer_used = atomic_read(&(rdma_transport->stream[DATA_STREAM]->tx_descs_posted));
 }
 
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
@@ -483,8 +485,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		printk("RDMA(cma event) disconnect event\n");
 		rdma_stream->state = DISCONNECTED;
-		if ((rdma_stream->post_recv_count == 0) &&
-		    (atomic_read(&rdma_stream->post_send_count) == 0))
+		if ((rdma_stream->rx_descs_posted == 0) &&
+		    (atomic_read(&rdma_stream->tx_descs_posted) == 0))
 			wake_up_interruptible(&rdma_stream->rdma_state_wq);
 		break;
 
@@ -531,7 +533,7 @@ static void dtr_rx_completion(struct drbd_rdma_stream *rdma_stream,
 {
 	ib_dma_sync_single_for_cpu(rdma_stream->cm_id->device, desc->dma_addr,
 			RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-	rdma_stream->post_recv_count--;
+	rdma_stream->rx_descs_posted--;
 
 	printk("got buffer[0]: %x\n", desc->data[0]);
 }
@@ -589,7 +591,7 @@ static void dtr_rx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	printk("RDMA (control): got rx cq event. state %d\n", rdma_stream->state);
-	rdma_stream->post_recv_count--;
+	rdma_stream->rx_descs_posted--;
 
 	/* dtr_create_and_post_rx_desc(rdma_stream); */
 
@@ -607,7 +609,7 @@ static void dtr_rx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	printk("RDMA (data): got rx cq event. state %d\n", rdma_stream->state);
-	rdma_stream->post_recv_count--;
+	rdma_stream->rx_descs_posted--;
 
 	/* dtr_create_and_post_rx_desc(rdma_stream); */
 
@@ -628,7 +630,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 	printk("RDMA (%s): got tx cq event. state %d\n", rdma_stream->name, rdma_stream->state);
 
-	atomic_dec(&rdma_stream->post_send_count);
+	atomic_dec(&rdma_stream->tx_descs_posted);
 
 	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 	tx_desc = list_first_entry_or_null(&rdma_stream->tx_descs, struct drbd_rdma_tx_desc, tx_entry);
@@ -699,22 +701,23 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	ib_dma_sync_single_for_device(rdma_stream->cm_id->device,
 			rx_desc->dma_addr, RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
 
-	rdma_stream->post_recv_count++;
+	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
 	if (err) {
 		printk("RDMA: ib_post_recv error %d\n", err);
-		rdma_stream->post_recv_count--;
+		rdma_stream->rx_descs_posted--;
 		return err;
 	}
 
 	return 0;
 }
 
-static void dtr_free_rx_desc(struct drbd_rdma_rx_desc *rx_desc)
+static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc)
 {
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
+	rdma_stream->rx_descs_allocated--;
 	put_page(rx_desc->page);
 	kfree(rx_desc);
 }
@@ -748,6 +751,7 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 			put_page(page);
 			return -ENOMEM;
 		}
+		rdma_stream->rx_descs_allocated++;
 
 		printk("alloced rx_desc %p\n", rx_desc);
 
@@ -766,7 +770,7 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 
 		err = dtr_post_rx_desc(rdma_stream, rx_desc);
 		if (err) {
-			dtr_free_rx_desc(rx_desc);
+			dtr_free_rx_desc(rdma_stream, rx_desc);
 			break;
 		}
 	}
@@ -776,9 +780,34 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 	return err;
 }
 
-static void dtr_refill_rx_desc(struct drbd_rdma_stream *rdma_stream)
+static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
+			       enum drbd_stream stream)
 {
-	while (rdma_stream->post_recv_count < RDMA_MAX_RX)
+	struct drbd_connection *connection = rdma_transport->transport.connection;
+	int rcvbuf_size = RDMA_DEF_RECV_SIZE; /* Hardcoded default of 512 KiByte */
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
+	int descs_posted, descs_max;
+	struct net_conf *nc;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	if (nc) {
+		if (nc->rcvbuf_size)
+			rcvbuf_size = nc->rcvbuf_size;
+	}
+	rcu_read_unlock();
+
+	descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+	/* The above statement is obvious for the DATA_STREAM. We use the same
+	   number of descriptors for the CONTROL_STREAM as well, though that
+	   covers only a 64th fraction of the size in bytes available. I.e.
+	   by default two pages. */
+
+	descs_posted = descs_max / 2;
+	rdma_stream->rx_descs_want_posted = descs_posted;
+
+	while (rdma_stream->rx_descs_posted < descs_posted &&
+	       rdma_stream->rx_descs_allocated < descs_max)
 		dtr_create_some_rx_desc(rdma_stream);
 }
 
@@ -787,9 +816,6 @@ static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
 {
 	struct ib_device *device = rdma_stream->cm_id->device;
 	int err;
-
-	if (!rx_desc)
-		return;
 
 	rx_desc->size = rdma_stream->rx_allocation_size;
 	rx_desc->dma_addr = ib_dma_map_single(device, rx_desc->data,
@@ -801,7 +827,21 @@ static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
 
 	err = dtr_post_rx_desc(rdma_stream, rx_desc);
 	if (err)
-		dtr_free_rx_desc(rx_desc);
+		dtr_free_rx_desc(rdma_stream, rx_desc);
+}
+
+static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
+			       struct drbd_rdma_rx_desc *rx_desc)
+{
+	int want_posted = rdma_stream->rx_descs_want_posted + 8; /*hysteresis*/
+
+	if (!rx_desc)
+		return;
+
+	if (rdma_stream->rx_descs_posted > want_posted)
+		dtr_free_rx_desc(rdma_stream, rx_desc);
+	else
+		dtr_repost_rx_desc(rdma_stream, rx_desc);
 }
 
 /* RCK: we use stream to differentiate between rdma send and write:
@@ -828,7 +868,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 
 	ib_dma_sync_single_for_device(device, tx_desc->sge.addr,
 			tx_desc->sge.length, DMA_TO_DEVICE);
-	atomic_inc(&rdma_stream->post_send_count);
+	atomic_inc(&rdma_stream->tx_descs_posted);
 
 	INIT_LIST_HEAD(&tx_desc->tx_entry);
 	spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
@@ -838,7 +878,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
 		printk("RDMA: ib_post_send failed\n");
-		atomic_dec(&rdma_stream->post_send_count);
+		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		spin_lock_irqsave(&rdma_stream->tx_list_lock, flags);
 		list_del(&tx_desc->tx_entry);
@@ -869,19 +909,18 @@ static void dtr_alloc_stream_resources(struct drbd_rdma_stream *rdma_stream, enu
 	if (stream == DATA_STREAM) {
 		strcpy(rdma_stream->name, "data");
 		rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
-		/* The biggest chunks on the data socket are 4096 bytes */
 	} else {
 		strcpy(rdma_stream->name, "control");
-		/* Currently the biggest packet on the control stream has 48 byte. */
-		rdma_stream->rx_allocation_size = 64;
+		rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
 	}
 	/* TODO: rx_allocation_size should be hintend from DRBD to the transport! */
 
 }
 
 /* allocate rdma specific resources for the stream */
-static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, enum drbd_stream stream)
+static int dtr_alloc_rdma_resources(struct drbd_rdma_transport *rdma_transport, enum drbd_stream stream)
 {
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	int err;
 
 	void (*rx_event_handler)(struct ib_cq *, void *);
@@ -956,7 +995,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, enum d
 		goto dma_failed;
 	}
 
-	dtr_refill_rx_desc(rdma_stream);
+	dtr_refill_rx_desc(rdma_transport, stream);
 
 	return 0;
 
@@ -1018,8 +1057,9 @@ static int dtr_free_resources(struct drbd_rdma_transport *rdma_transport)
 	return 0;
 }
 
-static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_in *peer_addr, enum drbd_stream stream)
+static int dtr_connect_stream(struct drbd_rdma_transport *rdma_transport, struct sockaddr_in *peer_addr, enum drbd_stream stream)
 {
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	struct rdma_conn_param conn_param;
 	struct sockaddr_in *peer_addr_in;
 	int err;
@@ -1053,7 +1093,7 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 	}
 	printk("route resolve OK\n");
 
-	err = dtr_alloc_rdma_resources(rdma_stream, stream);
+	err = dtr_alloc_rdma_resources(rdma_transport, stream);
 	if (err) {
 		printk("RDMA: failed allocating resources %d\n", err);
 		return err;
@@ -1086,8 +1126,9 @@ static int dtr_connect_stream(struct drbd_rdma_stream *rdma_stream, struct socka
 }
 
 /* bla == Bind Listen Accept */
-static int dtr_bla_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_in *my_addr, enum drbd_stream stream)
+static int dtr_bla_stream(struct drbd_rdma_transport *rdma_transport, struct sockaddr_in *my_addr, enum drbd_stream stream)
 {
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	int err;
 	struct rdma_conn_param conn_param;
 
@@ -1136,7 +1177,7 @@ static int dtr_bla_stream(struct drbd_rdma_stream *rdma_stream, struct sockaddr_
 	rdma_stream->child_cm_id = NULL;
 #endif
 
-	err = dtr_alloc_rdma_resources(rdma_stream, stream);
+	err = dtr_alloc_rdma_resources(rdma_transport, stream);
 	if (err) {
 		printk("RDMA failed allocating resources %d\n", err);
 		return err;
@@ -1186,9 +1227,9 @@ static int dtr_connect(struct drbd_transport *transport)
 	 * rewrite the connection logic, rdma_server is a module param: */
 
 	if (rdma_server)
-		err = dtr_bla_stream(rdma_stream, my_addr, CONTROL_STREAM);
+		err = dtr_bla_stream(rdma_transport, my_addr, CONTROL_STREAM);
 	else
-		err = dtr_connect_stream(rdma_stream, peer_addr, CONTROL_STREAM);
+		err = dtr_connect_stream(rdma_transport, peer_addr, CONTROL_STREAM);
 
 
 	rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
@@ -1197,12 +1238,12 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	if (rdma_server) {
 		my_addr->sin_port += 1; /* +1 in network order, "works for me on rum/kugel" */
-		err |= dtr_bla_stream(rdma_stream, my_addr, DATA_STREAM);
+		err |= dtr_bla_stream(rdma_transport, my_addr, DATA_STREAM);
 	}
 	else {
 		peer_addr->sin_port += 1;
 		schedule_timeout_uninterruptible(HZ);
-		err |= dtr_connect_stream(rdma_stream, peer_addr, DATA_STREAM);
+		err |= dtr_connect_stream(rdma_transport, peer_addr, DATA_STREAM);
 	}
 
 	if (!err) {
