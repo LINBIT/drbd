@@ -585,15 +585,13 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 	return completed_tx;
 }
 
-static void dtr_rx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
+static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	int ret;
 
-	printk("RDMA (control): got rx cq event. state %d\n", rdma_stream->state);
+	printk("RDMA (%s): got rx cq event. state %d\n", rdma_stream->name, rdma_stream->state);
 	rdma_stream->rx_descs_posted--;
-
-	/* dtr_create_and_post_rx_desc(rdma_stream); */
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
@@ -601,24 +599,7 @@ static void dtr_rx_control_cq_event_handler(struct ib_cq *cq, void *ctx)
 		printk("ib_req_notify_cq failed\n");
 	else
 		printk("ib_req_notify_cq success\n");
-}
 
-static void dtr_rx_data_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct drbd_rdma_stream *rdma_stream = ctx;
-	int ret;
-
-	printk("RDMA (data): got rx cq event. state %d\n", rdma_stream->state);
-	rdma_stream->rx_descs_posted--;
-
-	/* dtr_create_and_post_rx_desc(rdma_stream); */
-
-	wake_up_interruptible(&rdma_stream->recv_wq);
-	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		printk("ib_req_notify_cq failed\n");
-	else
-		printk("ib_req_notify_cq success\n");
 }
 
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
@@ -924,16 +905,6 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_transport *rdma_transport, 
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	int err;
 
-	void (*rx_event_handler)(struct ib_cq *, void *);
-	void (*tx_event_handler)(struct ib_cq *, void *);
-
-	tx_event_handler = dtr_tx_cq_event_handler;
-	if (stream == DATA_STREAM) {
-		rx_event_handler = dtr_rx_data_cq_event_handler;
-	} else {
-		rx_event_handler = dtr_rx_control_cq_event_handler;
-	}
-
 	printk("RDMA: here with cm_id: %p\n", rdma_stream->cm_id);
 
 	/* alloc protection domain (PD) */
@@ -947,7 +918,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_transport *rdma_transport, 
 
 	/* create recv completion queue (CQ) */
 	rdma_stream->recv_cq = ib_create_cq(rdma_stream->cm_id->device,
-		rx_event_handler, NULL, rdma_stream, RDMA_MAX_RX, 0);
+		dtr_rx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_RX, 0);
 	if (IS_ERR(rdma_stream->recv_cq)) {
 		printk("RDMA: ib_create_cq recv failed\n");
 		err = PTR_ERR(rdma_stream->recv_cq);
@@ -957,7 +928,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_transport *rdma_transport, 
 
 	/* create send completion queue (CQ) */
 	rdma_stream->send_cq = ib_create_cq(rdma_stream->cm_id->device,
-		tx_event_handler, NULL, rdma_stream, RDMA_MAX_TX, 0);
+		dtr_tx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_TX, 0);
 	if (IS_ERR(rdma_stream->send_cq)) {
 		printk("RDMA: ib_create_cq send failed\n");
 		err = PTR_ERR(rdma_stream->send_cq);
