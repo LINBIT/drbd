@@ -20,7 +20,8 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
+#undef pr_fmt
+#define pr_fmt(fmt)	"drbd_rdma: " fmt
 
 #include <linux/module.h>
 #include <drbd_transport.h>
@@ -955,6 +956,10 @@ static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
 	if (rdma_stream->cm.id)
 		rdma_destroy_id(rdma_stream->cm.id);
 
+	pr_info("%s dtr_free_stream() %p\n", rdma_stream->name, rdma_stream);
+	rdma_stream->name[0] = 'X';
+	rdma_stream->name[1] = 'X';
+
 	kfree(rdma_stream);
 }
 
@@ -1023,13 +1028,13 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		drbd_err(connection, "rdma_create_id() failed %d\n", err);
 		goto out;
 	}
+	strcpy(rdma_stream->cm.name, "new");
 
 	err = rdma_resolve_addr(rdma_stream->cm.id, NULL, (struct sockaddr *)&connection->peer_addr, 2000);
 	if (err) {
 		drbd_err(connection, "rdma_resolve_addr error %d\n", err);
 		goto out;
 	}
-	strcpy(rdma_stream->cm.name, rdma_stream->name);
 
 	wait_event_interruptible(rdma_stream->cm.state_wq,
 				 rdma_stream->cm.state >= ROUTE_RESOLVED);
@@ -1044,6 +1049,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		drbd_err(connection, "failed allocating resources %d\n", err);
 		goto out;
 	}
+	strcpy(rdma_stream->cm.name, rdma_stream->name);
 
 	/* Connect peer */
 	memset(&conn_param, 0, sizeof conn_param);
