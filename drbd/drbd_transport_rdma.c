@@ -1020,13 +1020,13 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 
 	err = dtr_create_cm_id(&rdma_stream->cm);
 	if (err) {
-		printk("rdma_create_id() failed\n");
+		drbd_err(connection, "rdma_create_id() failed %d\n", err);
 		goto out;
 	}
 
 	err = rdma_resolve_addr(rdma_stream->cm.id, NULL, (struct sockaddr *)&connection->peer_addr, 2000);
 	if (err) {
-		printk("RDMA: rdma_resolve_addr error %d\n", err);
+		drbd_err(connection, "rdma_resolve_addr error %d\n", err);
 		goto out;
 	}
 	strcpy(rdma_stream->cm.name, rdma_stream->name);
@@ -1035,13 +1035,13 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 				 rdma_stream->cm.state >= ROUTE_RESOLVED);
 
 	if (rdma_stream->cm.state != ROUTE_RESOLVED) {
-		printk("RDMA addr/route resolution error. state %d\n", rdma_stream->cm.state);
+		drbd_err(connection, "addr/route resolution error. state %d\n", rdma_stream->cm.state);
 		goto out;
 	}
 
 	err = dtr_alloc_rdma_resources(rdma_stream);
 	if (err) {
-		printk("RDMA: failed allocating resources %d\n", err);
+		drbd_err(connection, "failed allocating resources %d\n", err);
 		goto out;
 	}
 
@@ -1053,7 +1053,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 
 	err = rdma_connect(rdma_stream->cm.id, &conn_param);
 	if (err) {
-		printk("RDMA: rdma_connect error %d\n", err);
+		drbd_err(connection, "rdma_connect error %d\n", err);
 		goto out;
 	}
 
@@ -1068,7 +1068,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 	if (rdma_stream->cm.state == ERROR)
 		goto out;
 
-	printk("RDMA: rdma_connect successful\n");
+	pr_info("%s rdma_connect successful\n", rdma_stream->name);
 	*ret_rdma_stream = rdma_stream;
 	return 0;
 
