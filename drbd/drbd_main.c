@@ -3367,15 +3367,19 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
+	LIST_HEAD(work_list);
 	int vnr;
 
 	spin_lock_irq(&resource->req_lock);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		drbd_debugfs_peer_device_cleanup(peer_device);
 		list_del_rcu(&peer_device->peer_devices);
+		list_add(&peer_device->peer_devices, &work_list);
 	}
 	list_del_rcu(&connection->connections);
 	spin_unlock_irq(&resource->req_lock);
+
+	list_for_each_entry(peer_device, &work_list, peer_devices)
+		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_connection_cleanup(connection);
 }
 
