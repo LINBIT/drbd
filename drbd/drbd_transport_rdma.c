@@ -20,6 +20,8 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <drbd_transport.h>
 #include <rdma/ib_verbs.h>
@@ -102,6 +104,7 @@ struct dtr_cm {
 	struct rdma_cm_id *id;
 	enum drbd_rdma_state state;
 	wait_queue_head_t state_wq;
+	char name[8]; /* debugging purpose */
 };
 
 struct drbd_rdma_stream {
@@ -437,26 +440,22 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 	switch (event->event) {
 	case RDMA_CM_EVENT_ADDR_RESOLVED:
-		printk("RDMA(cma event): addr resolved\n");
+		pr_info("%s RDMA_CM_EVENT_ADDR_RESOLVED\n", cm_context->name);
 		cm_context->state = ADDR_RESOLVED;
 		err = rdma_resolve_route(cm_id, 2000);
-		if (err) {
-			printk("RDMA: rdma_resolve_route error %d\n", err);
-			wake_up_interruptible(&cm_context->state_wq);
-		}
-		else {
-			printk("RDMA: rdma_resolve_route OK\n");
-		}
+		if (err)
+			pr_err("RDMA: rdma_resolve_route error %d\n", err);
+		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
-		printk("RDMA(cma event): route resolved\n");
+		pr_info("%s RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm_context->name);
 		cm_context->state = ROUTE_RESOLVED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
-		printk("RDMA(cma event): connect request\n");
+		pr_info("%s RDMA_CM_EVENT_CONNECT_REQUEST\n", cm_context->name);
 		/* for listener */
 		cm_context->state = CONNECT_REQUEST;
 
@@ -470,42 +469,42 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		wake_up(&waiter->wait);
 		spin_unlock(&listener->listener.resource->listeners_lock);
 
-		printk("RDMA: child cma %p\n", cm_id);
+		pr_info("RDMA: child cma %p\n", cm_id);
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
-		printk("RDMA(cma event): established\n");
+		pr_info("%s RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
 		cm_context->state = CONNECTED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
-		printk("RDMA(cma event, err): ADDR_ERROR\n");
+		pr_info("%s RDMA_CM_EVENT_ADDR_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_ROUTE_ERROR:
-		printk("RDMA(cma event, err): ADDR_ROUTE_ERROR\n");
+		pr_info("%s RDMA_CM_EVENT_ROUTE_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_CONNECT_ERROR:
-		printk("RDMA(cma event, err): ADDR_CONNECT_ERROR\n");
+		pr_info("%s RDMA_CM_EVENT_CONNECT_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_UNREACHABLE:
-		printk("RDMA(cma event, err): ADDR_UNREACHABLE\n");
+		pr_info("%s RDMA_CM_EVENT_UNREACHABLE\n", cm_context->name);
 	case RDMA_CM_EVENT_REJECTED:
-		printk("RDMA(cma event, err): ADDR_REJECTED\n");
-		printk("RDMA(cma event: bad thingy, fall-through, only first valid) %d, error %d\n", event->event, event->status);
+		pr_info("%s RDMA_CM_EVENT_REJECTED\n", cm_context->name);
+		pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm_context->state = ERROR;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
-		printk("RDMA(cma event) disconnect event\n");
+		pr_info("%s RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
 		cm_context->state = DISCONNECTED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
-		printk("RDMA(cma event): detected device removal!\n");
+		pr_info("%s RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm_context->name);
 		break;
 
 	default:
-		printk("RDMA(cma event): oof bad type!\n");
+		pr_warn("RDMA(cma event): oof bad type!\n");
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 	}
@@ -1059,6 +1058,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		printk("RDMA: rdma_resolve_addr error %d\n", err);
 		goto out;
 	}
+	strcpy(rdma_stream->cm.name, rdma_stream->name);
 
 	wait_event_interruptible(rdma_stream->cm.state_wq,
 				 rdma_stream->cm.state >= ROUTE_RESOLVED);
@@ -1129,6 +1129,7 @@ static int dtr_create_listener(struct drbd_connection *connection, struct drbd_l
 		printk("rdma_create_id() failed\n");
 		goto out;
 	}
+	strcpy(listener->cm.name, "listen");
 
 	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &connection->my_addr);
 	if (err) {
@@ -1217,6 +1218,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 			printk("RDMA failed allocating resources %d\n", err);
 			goto err;
 		}
+		strcpy(rdma_stream->cm.name, rdma_stream->name);
 
 		memset(&conn_param, 0, sizeof conn_param);
 		conn_param.responder_resources = 1;
