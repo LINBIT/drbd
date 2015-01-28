@@ -1408,15 +1408,15 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 
 	err = rdma_disconnect(rdma_stream->cm.id);
 	if (err) {
-		printk("rdma_disconnect() returned %d\n", err);
+		pr_err("%s rdma_disconnect() returned %d\n", rdma_stream->name, err);
 	}
 
 	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
 					 rdma_stream->cm.state >= DISCONNECTED,
-					 HZ/2);
+					 HZ);
 
 	if (rdma_stream->cm.state < DISCONNECTED)
-		printk("WARN: not properly disconnected\n");
+		pr_warn("%s WARN: not properly disconnected\n", rdma_stream->name);
 }
 
 static bool dtr_connection_established(struct drbd_connection *connection,
@@ -1448,7 +1448,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct ib_device *device;
 	int err;
 
-	printk("RDMA: in send_page, size: %zu\n", size);
+	pr_info("%s in send_page, size: %zu\n", rdma_stream->name, size);
 
 	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
 	if (!tx_desc)
