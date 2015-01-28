@@ -249,7 +249,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
 
-	printk("send in %s stream with data[0]:%x\n", rdma_stream->name, ((char*)buf)[0]);
+	pr_info("%s dtr_send() size = %d data[0]:%x\n", rdma_stream->name, (int)size, ((char*)buf)[0]);
 
 	tx_desc = kzalloc(sizeof(*tx_desc), GFP_NOIO);
 	if (!tx_desc)
@@ -287,7 +287,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	struct page *page, *all_pages = NULL;
 	int t, i = 0;
 
-	printk("RDMA: in recv_pages, size: %zu\n", size);
+	drbd_info(peer_device, "%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
 	dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
 
@@ -300,9 +300,9 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 
 		if (t <= 0) {
 			if (t == 0)
-				printk("RDMA: recv() on data timed out, ret: EAGAIN\n");
+				pr_warn("%s recv() on data timed out, ret: EAGAIN\n", rdma_stream->name);
 			else
-				printk("RDMA: recv() on data timed out, ret: EINTR\n");
+				pr_warn("%s recv() on data timed out, ret: EINTR\n", rdma_stream->name);
 
 			atomic_add(i, &peer_device->device->pp_in_use);
 			drbd_free_pages(peer_device->device, all_pages, 0);
@@ -320,7 +320,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	}
 
 	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
-	printk("rcvd %d pages\n", i);
+	pr_info("%s rcvd %d pages\n", rdma_stream->name, i);
 	atomic_add(i, &peer_device->device->pp_in_use);
 	*pages = all_pages;
 	return 0;
@@ -350,7 +350,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 			if (t == 0)
 				pr_err("%s recv() timed out, ret: EAGAIN\n", rdma_stream->name);
 			else
-				printk("%s recv() timed out, ret: EINTR\n", rdma_stream->name);
+				pr_err("%s recv() timed out, ret: EINTR\n", rdma_stream->name);
 			return t == 0 ? -EAGAIN : -EINTR;
 		}
 
