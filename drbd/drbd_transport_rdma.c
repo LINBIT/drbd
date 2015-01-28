@@ -1091,6 +1091,17 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		goto out;
 	}
 
+	/* Make sure that we see an eventuall RDMA_CM_EVENT_REJECTED here (cm.state
+	   is ERROR in that case). We can not wait for RDMA_CM_EVENT_ESTABLISHED since
+	   that requires the peer to call accept.
+	   -> would lead to distributed deadlock. */
+	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
+					 rdma_stream->cm.state != ROUTE_RESOLVED,
+					 HZ/20);
+
+	if (rdma_stream->cm.state == ERROR)
+		goto out;
+
 	printk("RDMA: rdma_connect successful\n");
 	*ret_rdma_stream = rdma_stream;
 	return 0;
