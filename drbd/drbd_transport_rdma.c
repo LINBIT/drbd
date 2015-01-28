@@ -1444,8 +1444,12 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 		printk("rdma_disconnect() returned %d\n", err);
 	}
 
-	wait_event_interruptible(rdma_stream->cm.state_wq,
-				 rdma_stream->cm.state >= DISCONNECTED);
+	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
+					 rdma_stream->cm.state >= DISCONNECTED,
+					 HZ/2);
+
+	if (rdma_stream->cm.state < DISCONNECTED)
+		printk("WARN: not properly disconnected\n");
 }
 
 static bool dtr_connection_established(struct drbd_connection *connection,
