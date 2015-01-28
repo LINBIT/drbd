@@ -558,15 +558,13 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	int ret;
 
-	printk("RDMA (%s): got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	pr_info("%s got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 	rdma_stream->rx_descs_posted--;
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
-		printk("ib_req_notify_cq failed\n");
-	else
-		printk("ib_req_notify_cq success\n");
+		pr_err("%s ib_req_notify_cq failed\n", rdma_stream->name);
 
 }
 
@@ -578,13 +576,11 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct ib_wc wc;
 	int ret;
 
-	printk("RDMA (%s): got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	pr_info("%s got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
-		printk("ib_req_notify_cq failed\n");
-	else
-		printk("ib_req_notify_cq success\n");
+		pr_err("ib_req_notify_cq failed\n");
 
 	/* Alternatively put them onto a list here, and do the processing (freeing)
 	   at a later point in time. Probably resource freeing is cheap enough to do
@@ -593,12 +589,12 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		if (wc.status != IB_WC_SUCCESS) {
-			printk("wc.status != IB_WC_SUCCESS %d\n", wc.status);
+			pr_err("%s wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
 			goto disconnect;
 		}
 
 		if (wc.opcode != IB_WC_SEND) {
-			printk("wc.opcode != IB_WC_SEND %d\n", wc.opcode);
+			pr_err("%s wc.opcode != IB_WC_SEND %d\n", rdma_stream->name, wc.opcode);
 			goto disconnect;
 		}
 
@@ -606,12 +602,10 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 		switch (tx_desc->type) {
 		case SEND_PAGE:
-			printk("put_page(%p), kfree(%p)\n", tx_desc->page, tx_desc);
 			ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
 			put_page(tx_desc->page);
 			break;
 		case SEND_MSG:
-			printk("kfree(%p, kfree(%p)\n", tx_desc->data, tx_desc);
 			ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
 			kfree(tx_desc->data);
 			break;
@@ -619,8 +613,8 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		kfree(tx_desc);
 	}
 
-	if (ret != -1)
-		printk("ib_poll_cq() returned %d\n", ret);
+	if (ret != 0)
+		pr_warn("%s ib_poll_cq() returned %d\n", rdma_stream->name, ret);
 
 disconnect:
 	/* TODO */;
