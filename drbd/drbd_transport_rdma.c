@@ -535,32 +535,20 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 		WARN_ON(rx_desc == NULL);
 
 		if(wc.status == IB_WC_SUCCESS) {
-			printk("RDMA: IB_WC_SUCCESS\n");
-			if (wc.opcode == IB_WC_SEND)
-				printk("RDMA: IB_WC_SEND\n");
 			if (wc.opcode == IB_WC_RECV) {
-				printk("RDMA: IB_WC_RECV\n");
 				size = wc.byte_len;
-				printk("RDMA: size: %d\n", size);
 				ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, (*rx_desc)->dma_addr,
 						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
 				(*rx_desc)->size = size;
-				printk("in drain (%s): %p, data[0]:%x\n", rdma_stream->name, rx_desc, (*rx_desc)->data[0]);
-			}
-			else if (wc.opcode == IB_WC_RDMA_WRITE)
-				printk("RDMA: IB_WC_RDMA_WRITE\n");
-			else if (wc.opcode == IB_WC_RDMA_READ)
-				printk("RDMA: IB_WC_RDMA_READ\n");
-			else
-				printk("RDMA: WC SUCCESS, but strange opcode...\n");
+				pr_info("%s in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
+			} else
+				pr_warn("%s WC SUCCESS, but strange opcode... %d\n", rdma_stream->name, wc.opcode);
 
 			completed_tx++;
+		} else {
+			pr_err("%s wc.state != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.opcode);
 		}
-		else
-			printk("RDMA: IB_WC NOT SUCCESS\n");
 	}
-
-	/* ib_req_notify_cq(cq, IB_CQ_NEXT_COMP); */
 
 	return completed_tx;
 }
