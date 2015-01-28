@@ -1182,6 +1182,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	struct dtr_listener *listener =
 		container_of(waiter->waiter.listener, struct dtr_listener, listener);
 	struct rdma_conn_param conn_param;
+	bool got_one = false;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -1202,8 +1203,11 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	spin_lock_bh(&resource->listeners_lock);
 	if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
-		spin_unlock_bh(&resource->listeners_lock);
+		got_one = true;
+	}
+	spin_unlock_bh(&resource->listeners_lock);
 
+	if (got_one) {
 		rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
 		if (!rdma_stream)
 			return -ENOMEM;
@@ -1239,10 +1243,10 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 		drbd_find_waiter_by_addr(waiter->waiter.listener, &peer_addr);
 
 		... */
+
+		*ret_rdma_stream = rdma_stream;
+		return 0;
 	}
-	spin_unlock_bh(&resource->listeners_lock);
-	*ret_rdma_stream = rdma_stream;
-	return 0;
 
 err:
 	dtr_free_stream(rdma_stream);
