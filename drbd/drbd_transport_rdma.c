@@ -26,11 +26,6 @@
 #include <rdma/rdma_cm.h>
 #include "drbd_int.h"
 
-/* RCK: hack, remove it after connection logic is implemented */
-#include <linux/moduleparam.h>
-bool rdma_server;
-module_param(rdma_server, bool, 0644);
-
 /* RCK:XXX/TODOs:
  * HIGH-LEVEL DESIGN:
  * - discuss what semantics we want to support. There is an interesting read:
