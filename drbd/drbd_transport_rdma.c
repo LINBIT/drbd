@@ -331,74 +331,68 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 	struct drbd_rdma_rx_desc *rx_desc = NULL;
 	void *buffer;
 
-	if (flags & GROW_BUFFER) { /* grow is untested, do not trust this code */
-		printk("RDMA: recv GROW_BUFFER\n");
+	if (flags & GROW_BUFFER) {
+		pr_info("%s recv GROW_BUFFER\n", rdma_stream->name);
 		/* D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base); */
 		buffer = rdma_stream->current_rx.pos;
 		rdma_stream->current_rx.pos += size;
 		/* D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE); */
 		*buf = buffer;
 		/* old_rx[stream] = NULL; */
-	} else if (rdma_stream->current_rx.bytes_left == 0) { /* get a completely new entry, old now unused, free it */
-			int t;
-			/* RCK: later we will have a better strategy to decide how/if we recycle rx_desc, for now free the old one... */
-			printk("RDMA: free %p and recv completely new on %s\n", rdma_stream->current_rx.desc, rdma_stream->name);
-			dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
-			printk("waiting for %lu\n", rdma_stream->recv_timeout);
-			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
+	} else if (rdma_stream->current_rx.bytes_left == 0) {
+		int t;
+		dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
+		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 						rdma_stream->recv_timeout);
 
-			if (t <= 0)
-			{
-				if (t==0)
-					printk("RDMA: recv() on %s timed out, ret: EAGAIN\n", rdma_stream->name);
-				else
-					printk("RDMA: recv() on %s timed out, ret: EINTR\n", rdma_stream->name);
-				return t == 0 ? -EAGAIN : -EINTR;
-			}
-
-			printk("got a new page with size: %d\n", rx_desc->size);
-			buffer = rx_desc->data;
-			rdma_stream->current_rx.desc = rx_desc;
-			rdma_stream->current_rx.pos = buffer + size;
-			rdma_stream->current_rx.bytes_left = rx_desc->size - size;
-			if (rdma_stream->current_rx.bytes_left < 0)
-				printk("new, requesting more (%zu) than available (%d)\n", size, rx_desc->size);
-
-			if (flags & CALLER_BUFFER) {
-				printk("doing a memcpy on first\n");
-				memcpy(*buf, buffer, size);
-			} else
-				*buf = buffer;
-
-			printk("RDMA: recv completely new fine, returning size on %s\n", rdma_stream->name);
-			/* RCK: of course we need a better strategy, but for now, just add a new rx_desc if we consumed one... */
-			printk("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
-
-			return size;
-		} else { /* return next part */
-			printk("RDMA: recv next part on %s\n", rdma_stream->name);
-			buffer = rdma_stream->current_rx.pos;
-			rdma_stream->current_rx.pos += size;
-
-			if (rdma_stream->current_rx.bytes_left <= size) { /* < could be a problem, right? or does that happen? */
-				rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
-				printk("marking page as consumed\n");
-			} else {
-				rdma_stream->current_rx.bytes_left -= size;
-				printk("old_rx left: %d\n", rdma_stream->current_rx.bytes_left);
-			}
-
-			if (flags & CALLER_BUFFER) {
-				printk("doing a memcpy on next\n");
-				memcpy(*buf, buffer, size);
-			} else
-				*buf = buffer;
-
-			printk("RDMA: recv next part fine, returning size on %s\n", rdma_stream->name);
-			return size;
+		if (t <= 0) {
+			if (t == 0)
+				pr_err("%s recv() timed out, ret: EAGAIN\n", rdma_stream->name);
+			else
+				printk("%s recv() timed out, ret: EINTR\n", rdma_stream->name);
+			return t == 0 ? -EAGAIN : -EINTR;
 		}
+
+		pr_info("%s got a new page with size: %d\n", rdma_stream->name, rx_desc->size);
+		buffer = rx_desc->data;
+		rdma_stream->current_rx.desc = rx_desc;
+		rdma_stream->current_rx.pos = buffer + size;
+		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
+		if (rdma_stream->current_rx.bytes_left < 0)
+			pr_warn("%s new, requesting more (%zu) than available (%d)\n",
+				rdma_stream->name, size, rx_desc->size);
+
+		if (flags & CALLER_BUFFER)
+			memcpy(*buf, buffer, size);
+		else
+			*buf = buffer;
+
+		pr_info("%s recv completely new fine, returning size on\n", rdma_stream->name);
+		pr_info("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
+
+		return size;
+	} else { /* return next part */
+		pr_info("recv next part on %s\n", rdma_stream->name);
+		buffer = rdma_stream->current_rx.pos;
+		rdma_stream->current_rx.pos += size;
+
+		if (rdma_stream->current_rx.bytes_left <= size) { /* < could be a problem, right? or does that happen? */
+			rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
+			pr_warn("%s marking page as consumed\n", rdma_stream->name);
+		} else {
+			rdma_stream->current_rx.bytes_left -= size;
+			pr_info("%s old_rx left: %d\n", rdma_stream->name, rdma_stream->current_rx.bytes_left);
+		}
+
+		if (flags & CALLER_BUFFER)
+			memcpy(*buf, buffer, size);
+		else
+			*buf = buffer;
+
+		pr_info("%s recv next part fine, returning size\n", rdma_stream->name);
+		return size;
+	}
 
 	return 0;
 }
