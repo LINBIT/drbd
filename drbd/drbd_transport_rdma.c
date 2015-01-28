@@ -622,27 +622,25 @@ disconnect:
 
 static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
 {
-	struct ib_qp_init_attr init_attr;
 	int err;
-
-	memset(&init_attr, 0, sizeof(init_attr));
-	init_attr.cap.max_send_wr = RDMA_MAX_TX;
-	init_attr.cap.max_recv_wr = RDMA_MAX_RX;
-	init_attr.cap.max_recv_sge = 1;
-	init_attr.cap.max_send_sge = 1;
-	init_attr.qp_type = IB_QPT_RC;
-	init_attr.send_cq = rdma_stream->send_cq;
-	init_attr.recv_cq = rdma_stream->recv_cq;
-	init_attr.sq_sig_type = IB_SIGNAL_REQ_WR;
+	struct ib_qp_init_attr init_attr = {
+		.cap.max_send_wr = RDMA_MAX_TX,
+		.cap.max_recv_wr = RDMA_MAX_RX,
+		.cap.max_recv_sge = 1,
+		.cap.max_send_sge = 1,
+		.qp_type = IB_QPT_RC,
+		.send_cq = rdma_stream->send_cq,
+		.recv_cq = rdma_stream->recv_cq,
+		.sq_sig_type = IB_SIGNAL_REQ_WR
+	};
 
 	err = rdma_create_qp(rdma_stream->cm.id, rdma_stream->pd, &init_attr);
 	if (err) {
-		printk("RDMA: rdma_create_qp failed: %d\n", err);
+		pr_err("%s rdma_create_qp failed: %d\n", rdma_stream->name, err);
 		return err;
 	}
 
 	rdma_stream->qp = rdma_stream->cm.id->qp;
-	printk("RDMA: created qp %p\n", rdma_stream->qp);
 	return 0;
 }
 
