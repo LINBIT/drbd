@@ -1082,17 +1082,10 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		goto out;
 	}
 
-	wait_event_interruptible(rdma_stream->cm.state_wq,
-			rdma_stream->cm.state >= CONNECTED);
-	if (rdma_stream->cm.state == ERROR) {
-		printk("RDMA: failed connecting. state %d\n", rdma_stream->cm.state);
-		goto out;
-	}
 	printk("RDMA: rdma_connect successful\n");
-
-
 	*ret_rdma_stream = rdma_stream;
 	return 0;
+
 out:
 	dtr_free_stream(rdma_stream);
 	return err;
