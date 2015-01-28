@@ -158,6 +158,8 @@ struct dtr_waiter {
 	struct rdma_cm_id *child_id;
 };
 
+static int stream_nr = 0; /* debugging */
+
 static struct drbd_transport *dtr_create(struct drbd_connection *connection);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
@@ -875,59 +877,56 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
 
 	rdma_stream->recv_timeout = 1000 * HZ; /* RCK TODO: this should be the netconf value */
 
-	strcpy(rdma_stream->name, "new");
+	sprintf(rdma_stream->name, "st_%03d", stream_nr++);
 	rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
 
 	init_waitqueue_head(&rdma_stream->recv_wq);
 
-	printk("RDMA: here with cm_id: %p\n", rdma_stream->cm.id);
+	pr_info("creating stream: %s\n", rdma_stream->name);
 
 	/* alloc protection domain (PD) */
 	rdma_stream->pd = ib_alloc_pd(rdma_stream->cm.id->device);
 	if (IS_ERR(rdma_stream->pd)) {
-		printk("RDMA: ib_alloc_pd failed\n");
+		pr_err("ib_alloc_pd failed\n");
 		err = PTR_ERR(rdma_stream->pd);
 		goto pd_failed;
 	}
-	printk("RDMA: created pd %p\n", rdma_stream->pd);
 
 	/* create recv completion queue (CQ) */
 	rdma_stream->recv_cq = ib_create_cq(rdma_stream->cm.id->device,
 		dtr_rx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_RX, 0);
 	if (IS_ERR(rdma_stream->recv_cq)) {
-		printk("RDMA: ib_create_cq recv failed\n");
+		pr_err("ib_create_cq recv failed\n");
 		err = PTR_ERR(rdma_stream->recv_cq);
 		goto recv_cq_failed;
 	}
-	printk("RDMA: created recv cq %p\n", rdma_stream->recv_cq);
 
 	/* create send completion queue (CQ) */
 	rdma_stream->send_cq = ib_create_cq(rdma_stream->cm.id->device,
 		dtr_tx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_TX, 0);
 	if (IS_ERR(rdma_stream->send_cq)) {
-		printk("RDMA: ib_create_cq send failed\n");
+		pr_err("ib_create_cq send failed\n");
 		err = PTR_ERR(rdma_stream->send_cq);
 		goto send_cq_failed;
 	}
-	printk("RDMA: created send cq %p\n", rdma_stream->send_cq);
 
 	/* arm CQs */
 	err = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		printk("RDMA: ib_req_notify_cq recv failed\n");
+		pr_err("ib_req_notify_cq recv failed\n");
 		goto notify_failed;
 	}
 
 	err = ib_req_notify_cq(rdma_stream->send_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		printk("RDMA: ib_req_notify_cq send failed\n");
+		pr_err(" ib_req_notify_cq send failed\n");
 		goto notify_failed;
 	}
 
 	/* create a queue pair (QP) */
 	err = dtr_create_qp(rdma_stream);
 	if (err) {
-		printk("RDMA: create_qp error %d\n", err);
+		pr_err(" create_qp error %d\n", err);
 		goto createqp_failed;
 	}
 
@@ -937,7 +936,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
 			IB_ACCESS_REMOTE_READ |
 			IB_ACCESS_REMOTE_WRITE);
 	if (IS_ERR(rdma_stream->dma_mr)) {
-		printk("RDMA: ib_get_dma_mr failed\n");
+		pr_err(" ib_get_dma_mr failed\n");
 		err = PTR_ERR(rdma_stream->dma_mr);
 		goto dma_failed;
 	}
