@@ -1125,20 +1125,20 @@ static int dtr_create_listener(struct drbd_connection *connection, struct drbd_l
 
 	err = dtr_create_cm_id(&listener->cm);
 	if (err) {
-		printk("rdma_create_id() failed\n");
+		drbd_err(connection, "rdma_create_id() failed\n");
 		goto out;
 	}
 	strcpy(listener->cm.name, "listen");
 
 	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &connection->my_addr);
 	if (err) {
-		printk("RDMA: rdma_bind_addr error %d\n", err);
+		drbd_err(connection, "rdma_bind_addr error %d\n", err);
 		goto out;
 	}
 
 	err = rdma_listen(listener->cm.id, 3);
 	if (err) {
-		printk("RDMA: rdma_listen error %d\n", err);
+		drbd_err(connection, "rdma_listen error %d\n", err);
 		goto out;
 	}
 
@@ -1211,10 +1211,9 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 		init_waitqueue_head(&rdma_stream->cm.state_wq);
 		rdma_stream->cm.id = waiter->child_id;
 
-		printk("before calling dtr_alloc_rdma_resources()\n");
 		err = dtr_alloc_rdma_resources(rdma_stream);
 		if (err) {
-			printk("RDMA failed allocating resources %d\n", err);
+			drbd_err(connection, "failed allocating stream resources %d\n", err);
 			goto err;
 		}
 		strcpy(rdma_stream->cm.name, rdma_stream->name);
@@ -1225,11 +1224,11 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 
 		err = rdma_accept(rdma_stream->cm.id, &conn_param);
 		if (err) {
-			printk("RDMA: rdma_accept error %d\n", err);
+			drbd_err(connection, "rdma_accept error %d\n", err);
 			goto err;
 		}
 
-		printk("RMDA: connection accepted\n");
+		drbd_info(connection, "connection accepted\n");
 
 		/*
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
