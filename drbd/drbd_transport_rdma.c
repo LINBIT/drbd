@@ -97,7 +97,7 @@ struct drbd_rdma_tx_desc {
 	} type;
 	union {
 		struct page *page;
-		struct completion *completion;
+		void *data;
 	};
 	struct ib_sge sge;
 	struct list_head tx_entry;
@@ -246,21 +246,30 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size)
 {
 	struct ib_device *device;
-	struct drbd_rdma_tx_desc tx_desc;
-	struct completion completion;
+	struct drbd_rdma_tx_desc *tx_desc;
+	void *send_buffer;
 
 	printk("send in %s stream with data[0]:%x\n", rdma_stream->name, ((char*)buf)[0]);
 
-	device = rdma_stream->cm.id->device;
-	tx_desc.type = SEND_MSG;
-	tx_desc.completion = &completion;
-	tx_desc.sge.addr = ib_dma_map_single(device, buf, size, DMA_TO_DEVICE);
-	tx_desc.sge.lkey = rdma_stream->dma_mr->lkey;
-	tx_desc.sge.length = size;
+	tx_desc = kzalloc(sizeof(*tx_desc), GFP_NOIO);
+	if (!tx_desc)
+		return -ENOMEM;
 
-	init_completion(&completion);
-	dtr_post_tx_desc(rdma_stream, &tx_desc);
-	wait_for_completion(&completion);
+	send_buffer = kmalloc(size, GFP_NOIO);
+	if (!send_buffer) {
+		kfree(tx_desc);
+		return -ENOMEM;
+	}
+	memcpy(send_buffer, buf, size);
+
+	device = rdma_stream->cm.id->device;
+	tx_desc->type = SEND_MSG;
+	tx_desc->data = send_buffer;
+	tx_desc->sge.addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
+	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
+	tx_desc->sge.length = size;
+
+	dtr_post_tx_desc(rdma_stream, tx_desc);
 
 	return size;
 }
@@ -622,14 +631,14 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			printk("put_page(%p), kfree(%p)\n", tx_desc->page, tx_desc);
 			ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
 			put_page(tx_desc->page);
-			kfree(tx_desc);
 			break;
 		case SEND_MSG:
-			printk("complete(%p)\n", tx_desc->completion);
+			printk("kfree(%p, kfree(%p)\n", tx_desc->data, tx_desc);
 			ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
-			complete(tx_desc->completion);
+			kfree(tx_desc->data);
 			break;
 		}
+		kfree(tx_desc);
 	}
 
 	if (ret != -1)
