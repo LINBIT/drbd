@@ -1456,7 +1456,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	printk("RDMA: in send_page, size: %zu\n", size);
 
 	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
-	if(!tx_desc)
+	if (!tx_desc)
 		return -ENOMEM;
 
 	get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
