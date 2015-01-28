@@ -661,7 +661,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
 	if (err) {
-		printk("RDMA: ib_post_recv error %d\n", err);
+		pr_err("%s ib_post_recv error %d\n", rdma_stream->name, err);
 		rdma_stream->rx_descs_posted--;
 		return err;
 	}
@@ -711,7 +711,7 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 		}
 		rdma_stream->rx_descs_allocated++;
 
-		printk("alloced rx_desc %p\n", rx_desc);
+		pr_info("%s alloced rx_desc %p\n", rdma_stream->name, rx_desc);
 
 		get_page(page);
 		rx_desc->page = page;
@@ -813,7 +813,6 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	int err;
-	printk("in dtr_post_tx_desc\n");
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
@@ -828,14 +827,13 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
-		printk("RDMA: ib_post_send failed\n");
+		pr_err("%s ib_post_send failed\n", rdma_stream->name);
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		return err;
-	} else {
-		/* printk("RDMA: ib_post_send successfull!\n"); */
-		printk("Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
 	}
+
+	pr_info("%s Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
 
 	return 0;
 }
