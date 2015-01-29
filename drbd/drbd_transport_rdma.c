@@ -65,8 +65,6 @@ MODULE_LICENSE("GPL");
 /* If no recvbuf_size is configured use 512KiB for the DATA_STREAM */
 #define RDMA_DEF_RECV_SIZE (1 << 19)
 
-#define RDMA_PAGE_SIZE 4096
-
 enum drbd_rdma_state {
 	IDLE = 1,
 	CONNECT_REQUEST,
@@ -551,7 +549,7 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 			if (wc.opcode == IB_WC_RECV) {
 				size = wc.byte_len;
 				ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, (*rx_desc)->dma_addr,
-						RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
+						(*rx_desc)->size, DMA_FROM_DEVICE);
 				(*rx_desc)->size = size;
 				pr_info("%s in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
 			} else
@@ -669,7 +667,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	recv_wr.num_sge = 1;
 
 	ib_dma_sync_single_for_device(rdma_stream->cm.id->device,
-			rx_desc->dma_addr, RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
+			rx_desc->dma_addr, rx_desc->size, DMA_FROM_DEVICE);
 
 	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
