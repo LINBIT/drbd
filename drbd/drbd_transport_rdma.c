@@ -136,7 +136,7 @@ struct drbd_rdma_stream {
 	} current_rx;
 	int rx_allocation_size;
 
-	unsigned long recv_timeout;
+	long recv_timeout;
 	char name[8]; /* "control" or "data" */
 };
 
@@ -284,7 +284,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 		container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport);
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
 	struct page *page, *all_pages = NULL;
-	int t, i = 0;
+	int i = 0;
 
 	drbd_info(peer_device, "%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
@@ -292,6 +292,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 
 	while (size) {
 		struct drbd_rdma_rx_desc *rx_desc = NULL;
+		long t;
 
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 					dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
@@ -339,7 +340,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		*buf = buffer;
 		/* old_rx[stream] = NULL; */
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
-		int t;
+		long t;
 		dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
@@ -1160,12 +1161,13 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	struct drbd_connection *connection = waiter->waiter.connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_rdma_stream *rdma_stream = NULL;
-	int timeo, connect_int, err = 0;
 	struct net_conf *nc;
 	struct dtr_listener *listener =
 		container_of(waiter->waiter.listener, struct dtr_listener, listener);
 	struct rdma_conn_param conn_param;
 	struct rdma_cm_id *cm_id = NULL;
+	long timeo;
+	int connect_int, err = 0;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
