@@ -462,11 +462,24 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		listener->listener.pending_accepts++;
 		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
 		dtr_waiter = container_of(waiter, struct dtr_waiter, waiter);
-		dtr_waiter->child_id = cm_id;
-		wake_up(&waiter->wait);
+
+		/* I found this a bit confusing. When a new connection comes in, the callback
+		   gets called with a new rdma_cm_id. The new rdma_cm_id inherits its context
+		   pointer from the listening rdma_cm_id. We will create a new context later */
+		if (dtr_waiter->child_id == NULL) {
+			/* TODO look at all waiters... */
+			cm_id->context = NULL; /* will get a new context from the waiter, later */
+			dtr_waiter->child_id = cm_id;
+			cm_id = NULL;
+			wake_up(&waiter->wait);
+		}
 		spin_unlock(&listener->listener.resource->listeners_lock);
 
-		pr_info("RDMA: child cma %p\n", cm_id);
+		if (cm_id) {
+			pr_info("Loosing a connect try! waiter not ready!\n");
+			return 1;
+		}
+		cm_id = cm_context->id;
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
@@ -512,7 +525,6 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 {
 	cm_context->state = IDLE;
 	init_waitqueue_head(&cm_context->state_wq);
-	cm_context->id = NULL;
 
 	cm_context->id = rdma_create_id(dtr_cma_event_handler,
 					cm_context, RDMA_PS_TCP, IB_QPT_RC);
@@ -1155,7 +1167,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	struct dtr_listener *listener =
 		container_of(waiter->waiter.listener, struct dtr_listener, listener);
 	struct rdma_conn_param conn_param;
-	bool got_one = false;
+	struct rdma_cm_id *cm_id = NULL;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
@@ -1176,18 +1188,20 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	spin_lock_bh(&resource->listeners_lock);
 	if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
-		got_one = true;
+		cm_id = waiter->child_id;
+		waiter->child_id = NULL;
 	}
 	spin_unlock_bh(&resource->listeners_lock);
 
-	if (got_one) {
+	if (cm_id) {
 		rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
 		if (!rdma_stream)
 			return -ENOMEM;
 
 		rdma_stream->cm.state = IDLE;
 		init_waitqueue_head(&rdma_stream->cm.state_wq);
-		rdma_stream->cm.id = waiter->child_id;
+		cm_id->context = &rdma_stream->cm;
+		rdma_stream->cm.id = cm_id;
 
 		err = dtr_alloc_rdma_resources(rdma_stream);
 		if (err) {
