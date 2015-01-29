@@ -523,7 +523,8 @@ static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socke
 	struct drbd_connection *connection = waiter->waiter.connection;
 	struct drbd_resource *resource = connection->resource;
 	struct sockaddr_storage peer_addr;
-	int timeo, connect_int, peer_addr_len, err = 0;
+	int connect_int, peer_addr_len, err = 0;
+	long timeo;
 	struct socket *s_estab;
 	struct net_conf *nc;
 	struct drbd_waiter *waiter2_gen;
