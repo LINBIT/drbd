@@ -165,7 +165,7 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc);
-static int dtr_drain_rx_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
+static bool dtr_receive_rx_desc(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
@@ -290,7 +290,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 		long t;
 
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-					dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
+					dtr_receive_rx_desc(rdma_stream, &rx_desc),
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
@@ -330,7 +330,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		long t;
 		dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
+						dtr_receive_rx_desc(rdma_stream, &rx_desc),
 						rdma_stream->recv_timeout);
 
 		if (t <= 0)
@@ -518,14 +518,13 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
  * if -1: receive all
  * >= 0 : nr_elements
  * number of elements in cq is too small to underflow nr_elements */
-static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc, int nr_elements)
+static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
 {
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
-	int completed_tx = 0;
 	int size;
 
-	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
+	if (ib_poll_cq(cq, 1, &wc) == 1) {
 		rdma_stream->rx_descs_posted--;
 		atomic_dec(&rdma_stream->rx_descs_unread);
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
@@ -541,13 +540,13 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 			} else
 				pr_warn("%s: WC SUCCESS, but strange opcode... %d\n", rdma_stream->name, wc.opcode);
 
-			completed_tx++;
+			return true;
 		} else {
 			pr_err("%s: rx_drain: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
 		}
 	}
 
-	return completed_tx;
+	return false;
 }
 
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
