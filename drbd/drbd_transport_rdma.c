@@ -155,7 +155,7 @@ struct dtr_listener {
 struct dtr_waiter {
 	struct drbd_waiter waiter;
 
-
+	struct drbd_rdma_stream *rdma_stream; /* to pass streams between waiters... */
 };
 
 static int stream_nr = 0; /* debugging */
@@ -1145,7 +1145,7 @@ static bool dtr_wait_connect_cond(struct dtr_waiter *waiter)
 	bool rv;
 
 	spin_lock_bh(&resource->listeners_lock);
-	rv = waiter->waiter.listener->pending_accepts > 0;
+	rv = waiter->waiter.listener->pending_accepts > 0 || waiter->rdma_stream != NULL;
 	spin_unlock_bh(&resource->listeners_lock);
 
 	return rv;
@@ -1156,11 +1156,13 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	struct drbd_connection *connection = waiter->waiter.connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_rdma_stream *rdma_stream = NULL;
+	struct sockaddr_storage *peer_addr;
 	struct net_conf *nc;
 	struct dtr_listener *listener =
 		container_of(waiter->waiter.listener, struct dtr_listener, listener);
 	struct rdma_conn_param conn_param;
 	struct rdma_cm_id *cm_id = NULL;
+	struct drbd_waiter *waiter2_gen;
 	long timeo;
 	int connect_int, err = 0;
 
@@ -1176,12 +1178,19 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	timeo = connect_int * HZ;
 	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
+retry:
+	dtr_free_stream(rdma_stream);
+	rdma_stream = NULL;
+
 	timeo = wait_event_interruptible_timeout(waiter->waiter.wait, dtr_wait_connect_cond(waiter), timeo);
 	if (timeo <= 0)
 		return -EAGAIN;
 
 	spin_lock_bh(&resource->listeners_lock);
-	if (listener->listener.pending_accepts > 0) {
+	if (waiter->rdma_stream) {
+		rdma_stream = waiter->rdma_stream;
+		waiter->rdma_stream = NULL;
+	} else if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
 
 		cm_id = listener->child_cms; /* Get head from single linked list */
@@ -1217,24 +1226,55 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 			goto err;
 		}
 
-		drbd_info(connection, "connection accepted\n");
+		peer_addr = &cm_id->route.addr.dst_addr;
 
-		/*
-		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
-		TODO: Handle the case that we might have multiple connections!!!
-		i.e. passing on the rdma_stream to an other waiter...
+		spin_lock_bh(&resource->listeners_lock);
+		waiter2_gen = drbd_find_waiter_by_addr(waiter->waiter.listener, peer_addr);
 
-		drbd_find_waiter_by_addr(waiter->waiter.listener, &peer_addr);
+		if (waiter2_gen && waiter2_gen != &waiter->waiter) {
+			struct dtr_waiter *waiter2 =
+				container_of(waiter2_gen, struct dtr_waiter, waiter);
 
-		... */
+			if (waiter2->rdma_stream) {
+				drbd_err(waiter2->waiter.connection,
+					 "Receiver busy; rejecting incoming connection\n");
+				goto retry_locked;
+			}
+			/* pass it to the right waiter... */
+			waiter2->rdma_stream = rdma_stream;
+			rdma_stream = NULL;
+			wake_up(&waiter2->waiter.wait);
+			goto retry_locked;
+		}
+		spin_unlock_bh(&resource->listeners_lock);
 
-		*ret_rdma_stream = rdma_stream;
-		return 0;
+		if (!waiter2_gen) {
+			struct sockaddr_in *from_sin, *to_sin;
+
+			from_sin = (struct sockaddr_in *)&peer_addr;
+			to_sin = (struct sockaddr_in *)&connection->my_addr;
+			drbd_err(resource, "Closing unexpected connection from "
+				 "%pI4 to port %u\n",
+				 &from_sin->sin_addr,
+				 be16_to_cpu(to_sin->sin_port));
+
+			goto retry;
+		}
+
+		/* if waiter2_gen is not null and rdma_stream is also not null,
+		   we know the connection is for us... return it with RC = success */
 	}
+
+	*ret_rdma_stream = rdma_stream;
+	return 0;
 
 err:
 	dtr_free_stream(rdma_stream);
 	return err;
+
+retry_locked:
+	spin_unlock_bh(&resource->listeners_lock);
+	goto retry;
 }
 
 
@@ -1258,6 +1298,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	connection->agreed_pro_version = 80;
 
 	waiter.waiter.connection = connection;
+	waiter.rdma_stream = NULL;
 
 	err = drbd_get_listener(&waiter.waiter, dtr_create_listener);
 	if (err)
