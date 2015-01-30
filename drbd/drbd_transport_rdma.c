@@ -113,11 +113,12 @@ struct drbd_rdma_stream {
 
 	struct ib_mr *dma_mr;
 
-	wait_queue_head_t recv_wq;
-
+	wait_queue_head_t send_wq;
 	atomic_t tx_descs_posted;
 	int tx_descs_max; /* derived from net_conf->sndbuf_size. Do not change after alloc. */
+	long send_timeout;
 
+	wait_queue_head_t recv_wq;
 	int rx_descs_posted;
 	int rx_descs_max;  /* derived from net_conf->rcvbuf_size. Do not change after alloc. */
 
@@ -626,6 +627,8 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	if (ret != 0)
 		pr_warn("%s ib_poll_cq() returned %d\n", rdma_stream->name, ret);
 
+	wake_up_interruptible(&rdma_stream->send_wq);
+
 disconnect:
 	/* TODO */;
 }
@@ -804,7 +807,15 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 {
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
+	long t;
 	int err;
+
+	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
+			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max,
+			rdma_stream->send_timeout);
+
+	if (t <= 0)
+		return t == 0 ? -EAGAIN : -EINTR;
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
@@ -858,11 +869,13 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 	rdma_stream->current_rx.bytes_left = 0;
 
 	rdma_stream->recv_timeout = MAX_SCHEDULE_TIMEOUT;
+	rdma_stream->send_timeout = MAX_SCHEDULE_TIMEOUT;
 
 	sprintf(rdma_stream->name, "st_%03d", stream_nr++);
 	rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
 
 	init_waitqueue_head(&rdma_stream->recv_wq);
+	init_waitqueue_head(&rdma_stream->send_wq);
 
 	pr_info("creating stream: %s\n", rdma_stream->name);
 
@@ -1402,8 +1415,8 @@ randomize:
 	timeout = nc->timeout * HZ / 10;
 	rcu_read_unlock();
 
-	data_stream->recv_timeout = timeout;
-	/* control_stream->send_timeout = timeout; */
+	data_stream->send_timeout = timeout;
+	control_stream->send_timeout = timeout;
 
 	return 0;
 
