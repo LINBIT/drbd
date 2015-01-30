@@ -854,7 +854,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
 	rdma_stream->current_rx.pos = NULL;
 	rdma_stream->current_rx.bytes_left = 0;
 
-	rdma_stream->recv_timeout = 1000 * HZ; /* RCK TODO: this should be the netconf value */
+	rdma_stream->recv_timeout = MAX_SCHEDULE_TIMEOUT;
 
 	sprintf(rdma_stream->name, "st_%03d", stream_nr++);
 	rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
