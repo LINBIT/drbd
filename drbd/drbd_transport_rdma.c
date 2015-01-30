@@ -328,10 +328,15 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		return -EINVAL;
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
 		long t;
+
 		dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
-		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
+		if (flags & MSG_DONTWAIT) {
+			t = dtr_receive_rx_desc(rdma_stream, &rx_desc);
+		} else {
+			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_receive_rx_desc(rdma_stream, &rx_desc),
 						rdma_stream->recv_timeout);
+		}
 
 		if (t <= 0)
 			return t == 0 ? -EAGAIN : -EINTR;
