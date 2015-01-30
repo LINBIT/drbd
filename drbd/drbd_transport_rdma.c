@@ -537,7 +537,7 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 
 			completed_tx++;
 		} else {
-			pr_err("%s: wc.state != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.opcode);
+			pr_err("%s: rx_drain: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
 		}
 	}
 
@@ -580,7 +580,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		if (wc.status != IB_WC_SUCCESS) {
-			pr_err("%s: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
+			pr_err("%s: tx_event: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
 			goto disconnect;
 		}
 
