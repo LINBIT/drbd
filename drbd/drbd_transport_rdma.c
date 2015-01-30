@@ -319,13 +319,10 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 	void *buffer;
 
 	if (flags & GROW_BUFFER) {
-		// pr_info("%s: recv GROW_BUFFER\n", rdma_stream->name);
-		/* D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base); */
-		buffer = rdma_stream->current_rx.pos;
-		rdma_stream->current_rx.pos += size;
-		/* D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE); */
-		*buf = buffer;
-		/* old_rx[stream] = NULL; */
+		/* Since transport_rdma always returns the full, requested amount
+		   of data, DRBD should never call with GROW_BUFFER! */
+		pr_err("Called with GROW_BUFFER\n");
+		return -EINVAL;
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
 		long t;
 		dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
@@ -359,9 +356,10 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		buffer = rdma_stream->current_rx.pos;
 		rdma_stream->current_rx.pos += size;
 
-		if (rdma_stream->current_rx.bytes_left <= size) { /* < could be a problem, right? or does that happen? */
+		if (rdma_stream->current_rx.bytes_left < size) {
+			pr_err("%s: requested more than left! bytes_left = %d, size = %zu\n",
+			       rdma_stream->name, rdma_stream->current_rx.bytes_left, size);
 			rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
-			// pr_info("%s: marking page as consumed\n", rdma_stream->name);
 		} else {
 			rdma_stream->current_rx.bytes_left -= size;
 			// pr_info("%s: old_rx left: %d\n", rdma_stream->name, rdma_stream->current_rx.bytes_left);
