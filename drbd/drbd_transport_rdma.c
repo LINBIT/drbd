@@ -1458,6 +1458,14 @@ static bool dtr_stream_ok_or_free(struct drbd_rdma_stream **rdma_stream)
 	return true;
 }
 
+static void dtr_drain_cq(struct ib_cq *cq)
+{
+	struct ib_wc wc;
+
+	while(ib_poll_cq(cq, 1, &wc) == 1)
+		;
+}
+
 static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 {
 	if (!rdma_stream || !rdma_stream->cm.id)
@@ -1465,6 +1473,12 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 
 	rdma_disconnect(rdma_stream->cm.id);
 	/* We are ignoring errors here on purpose */
+
+	if (rdma_stream->send_cq)
+		dtr_drain_cq(rdma_stream->send_cq);
+
+	if (rdma_stream->recv_cq)
+		dtr_drain_cq(rdma_stream->recv_cq);
 
 	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
 					 rdma_stream->cm.state >= DISCONNECTED,
