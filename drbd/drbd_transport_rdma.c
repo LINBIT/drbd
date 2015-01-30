@@ -124,6 +124,7 @@ struct drbd_rdma_stream {
 
 	int rx_descs_allocated;
 	int rx_descs_want_posted;
+	atomic_t rx_descs_unread;
 
 	/* for recv() to keep track of the current rx_desc:
 	 * - whenever the bytes_left of the current rx_desc == 0, we know that all data
@@ -420,12 +421,12 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
 	atomic_t *tx_descs_posted = &rdma_stream->tx_descs_posted;
 
-	/* RCK: these are used by the sender, guess we should them get right */
+	/* these are used by the sender, guess we should them get right */
 	stats->send_buffer_size = rdma_stream->tx_descs_max * DRBD_SOCKET_BUFFER_SIZE;
 	stats->send_buffer_used = atomic_read(tx_descs_posted) * DRBD_SOCKET_BUFFER_SIZE;
 
-	/* RCK: these two for debugfs */
-	stats->unread_received = 0;
+	/* these two for debugfs */
+	stats->unread_received = atomic_read(&rdma_stream->rx_descs_unread) * DRBD_SOCKET_BUFFER_SIZE;
 	stats->unacked_send = stats->send_buffer_used;
 
 }
@@ -542,6 +543,8 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 	int size;
 
 	while (nr_elements-- && (ib_poll_cq(cq, 1, &wc) == 1)) {
+		rdma_stream->rx_descs_posted--;
+		atomic_dec(&rdma_stream->rx_descs_unread);
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 		WARN_ON(rx_desc == NULL);
 
@@ -570,7 +573,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	pr_info("%s got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
-	rdma_stream->rx_descs_posted--;
+	atomic_inc(&rdma_stream->rx_descs_unread);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
@@ -1459,8 +1462,6 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 
-	/* RCK: Not sure if it is a valid assumption that the stream is OK as long
-	 * as the CM knows about it, but for now my best guess */
 	return __dtr_stream_ok(rdma_stream);
 }
 
