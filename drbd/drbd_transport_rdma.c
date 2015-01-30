@@ -29,31 +29,22 @@
 #include <rdma/rdma_cm.h>
 #include "drbd_int.h"
 
-/* RCK:XXX/TODOs:
- * HIGH-LEVEL DESIGN:
- * - discuss what semantics we want to support. There is an interesting read:
- *   http://www.google.at/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=0CCEQFjAA&url=http%3A%2F%2Fwww.mellanox.com%2Fpdf%2Fwhitepapers%2FWP_Why_Compromise_10_26_06.pdf&ei=VwmHVPXjNsOwPJqcgdgG&usg=AFQjCNFpc5OYdd-h8ylNRUhJjhsILCsZhw&sig2=8MbEQtzOPLpgmL36q6t48Q&bvm=bv.81449611,d.ZWU&cad=rja
- *   google: "rdma infiniband difference send write"
- *   page 5, data transfer semantics. Surprisingly, this favours send/receive.
- *   My limited experience: send/receive is easier, eg. no need to exchange the
- *   rkey. If they are equally fast and rdma write/read is not supported on all
- *   devices, maybe we should stick - at least for the moment - with the easier
- *   to implement send/receive paradigm.
- *
- * IMPLEMENTATION QUIRKS:
- * - Connection logic: implement waiter/listener logic. Currently client/server and streams on different ports
- * - Something is wrong with the post_[rx|tx]_descriptor logic. it always hangs
- *   after the initial descs are used even though that the repost logic looks
- *   OK. CQ has a init_attr.cap.max_send_wr = RDMA_MAX_TX; (same for write).
- *   e.g set the RDMA_MAX/PREALLOC defines to 1024, then it executes relatively
- *   long (until the 1024 are used) Maybe it has something to do with that and
- *   that the descs are still in use for RDMA. too less time to debug and there
- *   will be changes for send/send_page anyways.
- * - module unload currently does not work
- */
+/* Nearly all data transfer uses the send/receive semantics. No need to
+   actually use RDMA WRITE / READ.
+
+   Only for DRBD's remote read (P_DATA_REQUEST and P_DATA_REPLY) a
+   RDMA WRITE would make a lot of sense:
+     Right now the recv_dless_read() function in DRBD is one of the few
+     remaining callers of recv(,,CALLER_BUFFER). This in turn needs a
+     memcpy().
+
+   The block_id field (64 bit) could be re-labelled to be the RKEY for
+   an RDMA WRITE. The P_DATA_REPLY packet will then only deliver the
+   news that the RDMA WRITE was executed...
+*/
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
-MODULE_AUTHOR("Foo Bar <foo.bar@linbit.com>");
+MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 
@@ -72,8 +63,6 @@ enum drbd_rdma_state {
 	ERROR
 };
 
-/* RCK: in a next step we should think about the sizes, eg post smaller
- * rx_descs for contol data */
 struct drbd_rdma_rx_desc {
 	struct page *page;
 	char *data;
@@ -696,8 +685,6 @@ static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 	kfree(rx_desc);
 }
 
-/* RCK: for the first hack it is ok, but if we change the size of data in rx_desc, we
- * have to include "enum drbd_stream" as param */
 static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 {
 	struct drbd_rdma_rx_desc *rx_desc;
