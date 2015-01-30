@@ -149,12 +149,13 @@ struct dtr_listener {
 	struct drbd_listener listener;
 
 	struct dtr_cm cm;
+	struct rdma_cm_id *child_cms; /* Single linked list on the context member */
 };
 
 struct dtr_waiter {
 	struct drbd_waiter waiter;
 
-	struct rdma_cm_id *child_id;
+
 };
 
 static int stream_nr = 0; /* debugging */
@@ -432,7 +433,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	struct dtr_cm *cm_context = cm_id->context;
 	struct dtr_listener *listener;
 	struct drbd_waiter *waiter;
-	struct dtr_waiter *dtr_waiter;
 
 	switch (event->event) {
 	case RDMA_CM_EVENT_ADDR_RESOLVED:
@@ -460,25 +460,20 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		spin_lock(&listener->listener.resource->listeners_lock);
 		listener->listener.pending_accepts++;
 		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
-		dtr_waiter = container_of(waiter, struct dtr_waiter, waiter);
 
 		/* I found this a bit confusing. When a new connection comes in, the callback
 		   gets called with a new rdma_cm_id. The new rdma_cm_id inherits its context
 		   pointer from the listening rdma_cm_id. We will create a new context later */
-		if (dtr_waiter->child_id == NULL) {
-			/* TODO look at all waiters... */
-			cm_id->context = NULL; /* will get a new context from the waiter, later */
-			dtr_waiter->child_id = cm_id;
-			cm_id = NULL;
-			wake_up(&waiter->wait);
-		}
-		spin_unlock(&listener->listener.resource->listeners_lock);
 
-		if (cm_id) {
-			pr_info("Loosing a connect try! waiter not ready!\n");
-			return 1;
-		}
+		/* Insert the fresh cm_id it at the head of the list child_cms */
+		cm_id->context = listener->child_cms;
+		listener->child_cms = cm_id;
+
+		/* set cm_id to the listener */
 		cm_id = cm_context->id;
+
+		wake_up(&waiter->wait); /* wake an arbitrary waiter */
+		spin_unlock(&listener->listener.resource->listeners_lock);
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
@@ -1150,7 +1145,7 @@ static bool dtr_wait_connect_cond(struct dtr_waiter *waiter)
 	bool rv;
 
 	spin_lock_bh(&resource->listeners_lock);
-	rv = waiter->waiter.listener->pending_accepts > 0 || waiter->child_id != NULL;
+	rv = waiter->waiter.listener->pending_accepts > 0;
 	spin_unlock_bh(&resource->listeners_lock);
 
 	return rv;
@@ -1188,8 +1183,10 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	spin_lock_bh(&resource->listeners_lock);
 	if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
-		cm_id = waiter->child_id;
-		waiter->child_id = NULL;
+
+		cm_id = listener->child_cms; /* Get head from single linked list */
+		listener->child_cms = cm_id->context;
+		cm_id->context = NULL;
 	}
 	spin_unlock_bh(&resource->listeners_lock);
 
@@ -1261,7 +1258,6 @@ static int dtr_connect(struct drbd_transport *transport)
 	connection->agreed_pro_version = 80;
 
 	waiter.waiter.connection = connection;
-	waiter.child_id = NULL;
 
 	err = drbd_get_listener(&waiter.waiter, dtr_create_listener);
 	if (err)
