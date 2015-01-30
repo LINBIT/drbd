@@ -278,6 +278,9 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	struct page *page, *all_pages = NULL;
 	int i = 0;
 
+	if (rdma_stream->cm.state > CONNECTED)
+		return -ECONNRESET;
+
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
 	dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
@@ -384,6 +387,9 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	int err;
+
+	if (rdma_stream->cm.state > CONNECTED)
+		return -ECONNRESET;
 
 	err = _dtr_recv(rdma_stream, buf, size, flags);
 
@@ -607,10 +613,12 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	if (ret != 0)
 		pr_warn("%s: ib_poll_cq() returned %d\n", rdma_stream->name, ret);
 
-	wake_up_interruptible(&rdma_stream->send_wq);
-
+	if (0) {
 disconnect:
-	/* TODO */;
+		rdma_stream->cm.state = ERROR;
+	}
+
+	wake_up_interruptible(&rdma_stream->send_wq);
 }
 
 static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
@@ -1496,6 +1504,9 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	int err;
 
 	// pr_info("%s: in send_page, size: %zu\n", rdma_stream->name, size);
+
+	if (rdma_stream->cm.state > CONNECTED)
+		return -ECONNRESET;
 
 	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
 	if (!tx_desc)
