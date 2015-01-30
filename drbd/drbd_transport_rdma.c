@@ -240,7 +240,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
 
-	pr_info("%s dtr_send() size = %d data[0]:%x\n", rdma_stream->name, (int)size, ((char*)buf)[0]);
+	// pr_info("%s: dtr_send() size = %d data[0]:%x\n", rdma_stream->name, (int)size, ((char*)buf)[0]);
 
 	tx_desc = kzalloc(sizeof(*tx_desc), GFP_NOIO);
 	if (!tx_desc)
@@ -278,7 +278,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	struct page *page, *all_pages = NULL;
 	int i = 0;
 
-	drbd_info(peer_device, "%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
+	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
 	dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
 
@@ -291,11 +291,6 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
-			if (t == 0)
-				pr_warn("%s recv() on data timed out, ret: EAGAIN\n", rdma_stream->name);
-			else
-				pr_warn("%s recv() on data timed out, ret: EINTR\n", rdma_stream->name);
-
 			atomic_add(i, &peer_device->device->pp_in_use);
 			drbd_free_pages(peer_device->device, all_pages, 0);
 			return t == 0 ? -EAGAIN : -EINTR;
@@ -312,7 +307,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	}
 
 	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
-	pr_info("%s rcvd %d pages\n", rdma_stream->name, i);
+	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
 	atomic_add(i, &peer_device->device->pp_in_use);
 	*pages = all_pages;
 	return 0;
@@ -324,7 +319,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 	void *buffer;
 
 	if (flags & GROW_BUFFER) {
-		pr_info("%s recv GROW_BUFFER\n", rdma_stream->name);
+		// pr_info("%s: recv GROW_BUFFER\n", rdma_stream->name);
 		/* D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base); */
 		buffer = rdma_stream->current_rx.pos;
 		rdma_stream->current_rx.pos += size;
@@ -338,21 +333,16 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 						rdma_stream->recv_timeout);
 
-		if (t <= 0) {
-			if (t == 0)
-				pr_err("%s recv() timed out, ret: EAGAIN\n", rdma_stream->name);
-			else
-				pr_err("%s recv() timed out, ret: EINTR\n", rdma_stream->name);
+		if (t <= 0)
 			return t == 0 ? -EAGAIN : -EINTR;
-		}
 
-		pr_info("%s got a new page with size: %d\n", rdma_stream->name, rx_desc->size);
+		// pr_info("%s: got a new page with size: %d\n", rdma_stream->name, rx_desc->size);
 		buffer = rx_desc->data;
 		rdma_stream->current_rx.desc = rx_desc;
 		rdma_stream->current_rx.pos = buffer + size;
 		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
 		if (rdma_stream->current_rx.bytes_left < 0)
-			pr_warn("%s new, requesting more (%zu) than available (%d)\n",
+			pr_warn("%s: new, requesting more (%zu) than available (%d)\n",
 				rdma_stream->name, size, rx_desc->size);
 
 		if (flags & CALLER_BUFFER)
@@ -360,21 +350,21 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		else
 			*buf = buffer;
 
-		pr_info("%s recv completely new fine, returning size on\n", rdma_stream->name);
-		pr_info("rx_count(%s): %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
+		// pr_info("%s: recv completely new fine, returning size on\n", rdma_stream->name);
+		// pr_info("%s: rx_count: %d\n", rdma_stream->name, rdma_stream->rx_descs_posted);
 
 		return size;
 	} else { /* return next part */
-		pr_info("recv next part on %s\n", rdma_stream->name);
+		// pr_info("recv next part on %s\n", rdma_stream->name);
 		buffer = rdma_stream->current_rx.pos;
 		rdma_stream->current_rx.pos += size;
 
 		if (rdma_stream->current_rx.bytes_left <= size) { /* < could be a problem, right? or does that happen? */
 			rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
-			pr_warn("%s marking page as consumed\n", rdma_stream->name);
+			// pr_info("%s: marking page as consumed\n", rdma_stream->name);
 		} else {
 			rdma_stream->current_rx.bytes_left -= size;
-			pr_info("%s old_rx left: %d\n", rdma_stream->name, rdma_stream->current_rx.bytes_left);
+			// pr_info("%s: old_rx left: %d\n", rdma_stream->name, rdma_stream->current_rx.bytes_left);
 		}
 
 		if (flags & CALLER_BUFFER)
@@ -382,7 +372,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		else
 			*buf = buffer;
 
-		pr_info("%s recv next part fine, returning size\n", rdma_stream->name);
+		// pr_info("%s: recv next part fine, returning size\n", rdma_stream->name);
 		return size;
 	}
 
@@ -430,7 +420,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 	switch (event->event) {
 	case RDMA_CM_EVENT_ADDR_RESOLVED:
-		pr_info("%s RDMA_CM_EVENT_ADDR_RESOLVED\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ADDR_RESOLVED\n", cm_context->name);
 		cm_context->state = ADDR_RESOLVED;
 		err = rdma_resolve_route(cm_id, 2000);
 		if (err)
@@ -439,13 +429,13 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		break;
 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
-		pr_info("%s RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm_context->name);
 		cm_context->state = ROUTE_RESOLVED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
-		pr_info("%s RDMA_CM_EVENT_CONNECT_REQUEST\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_REQUEST\n", cm_context->name);
 		/* for listener */
 		cm_context->state = CONNECT_REQUEST;
 
@@ -471,34 +461,34 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
-		pr_info("%s RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
 		cm_context->state = CONNECTED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
-		pr_info("%s RDMA_CM_EVENT_ADDR_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ADDR_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_ROUTE_ERROR:
-		pr_info("%s RDMA_CM_EVENT_ROUTE_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ROUTE_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_CONNECT_ERROR:
-		pr_info("%s RDMA_CM_EVENT_CONNECT_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_ERROR\n", cm_context->name);
 	case RDMA_CM_EVENT_UNREACHABLE:
-		pr_info("%s RDMA_CM_EVENT_UNREACHABLE\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_UNREACHABLE\n", cm_context->name);
 	case RDMA_CM_EVENT_REJECTED:
-		pr_info("%s RDMA_CM_EVENT_REJECTED\n", cm_context->name);
-		pr_info("event = %d, status = %d\n", event->event, event->status);
+		// pr_info("%s: RDMA_CM_EVENT_REJECTED\n", cm_context->name);
+		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm_context->state = ERROR;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
-		pr_info("%s RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
 		cm_context->state = DISCONNECTED;
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
-		pr_info("%s RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm_context->name);
 		break;
 
 	default:
@@ -543,13 +533,13 @@ static int dtr_drain_rx_cq(struct drbd_rdma_stream *rdma_stream, struct drbd_rdm
 				ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, (*rx_desc)->dma_addr,
 						(*rx_desc)->size, DMA_FROM_DEVICE);
 				(*rx_desc)->size = size;
-				pr_info("%s in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
+				// pr_info("%s: in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
 			} else
-				pr_warn("%s WC SUCCESS, but strange opcode... %d\n", rdma_stream->name, wc.opcode);
+				pr_warn("%s: WC SUCCESS, but strange opcode... %d\n", rdma_stream->name, wc.opcode);
 
 			completed_tx++;
 		} else {
-			pr_err("%s wc.state != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.opcode);
+			pr_err("%s: wc.state != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.opcode);
 		}
 	}
 
@@ -561,13 +551,13 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	int ret;
 
-	pr_info("%s got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 	atomic_inc(&rdma_stream->rx_descs_unread);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
-		pr_err("%s ib_req_notify_cq failed\n", rdma_stream->name);
+		pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
 
 }
 
@@ -579,7 +569,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct ib_wc wc;
 	int ret;
 
-	pr_info("%s got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	// pr_info("%s: got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
@@ -592,12 +582,12 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		if (wc.status != IB_WC_SUCCESS) {
-			pr_err("%s wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
+			pr_err("%s: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
 			goto disconnect;
 		}
 
 		if (wc.opcode != IB_WC_SEND) {
-			pr_err("%s wc.opcode != IB_WC_SEND %d\n", rdma_stream->name, wc.opcode);
+			pr_err("%s: wc.opcode != IB_WC_SEND %d\n", rdma_stream->name, wc.opcode);
 			goto disconnect;
 		}
 
@@ -617,7 +607,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	}
 
 	if (ret != 0)
-		pr_warn("%s ib_poll_cq() returned %d\n", rdma_stream->name, ret);
+		pr_warn("%s: ib_poll_cq() returned %d\n", rdma_stream->name, ret);
 
 	wake_up_interruptible(&rdma_stream->send_wq);
 
@@ -641,7 +631,7 @@ static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
 
 	err = rdma_create_qp(rdma_stream->cm.id, rdma_stream->pd, &init_attr);
 	if (err) {
-		pr_err("%s rdma_create_qp failed: %d\n", rdma_stream->name, err);
+		pr_err("%s: rdma_create_qp failed: %d\n", rdma_stream->name, err);
 		return err;
 	}
 
@@ -666,7 +656,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
 	if (err) {
-		pr_err("%s ib_post_recv error %d\n", rdma_stream->name, err);
+		pr_err("%s: ib_post_recv error %d\n", rdma_stream->name, err);
 		rdma_stream->rx_descs_posted--;
 		return err;
 	}
@@ -713,8 +703,6 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 			return -ENOMEM;
 		}
 		rdma_stream->rx_descs_allocated++;
-
-		pr_info("%s alloced rx_desc %p\n", rdma_stream->name, rx_desc);
 
 		get_page(page);
 		rx_desc->page = page;
@@ -820,13 +808,13 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
-		pr_err("%s ib_post_send failed\n", rdma_stream->name);
+		pr_err("%s: ib_post_send failed\n", rdma_stream->name);
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		return err;
 	}
 
-	pr_info("%s Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
+	// pr_info("%s: Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
 
 	return 0;
 }
@@ -861,13 +849,13 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 	rdma_stream->recv_timeout = MAX_SCHEDULE_TIMEOUT;
 	rdma_stream->send_timeout = MAX_SCHEDULE_TIMEOUT;
 
-	sprintf(rdma_stream->name, "st_%03d", stream_nr++);
+	sprintf(rdma_stream->name, "s%06d", stream_nr++);
 	rdma_stream->rx_allocation_size = DRBD_SOCKET_BUFFER_SIZE; /* 4096 usually PAGE_SIZE */
 
 	init_waitqueue_head(&rdma_stream->recv_wq);
 	init_waitqueue_head(&rdma_stream->send_wq);
 
-	pr_info("creating stream: %s\n", rdma_stream->name);
+	// pr_info("creating stream: %s\n", rdma_stream->name);
 
 	/* alloc protection domain (PD) */
 	rdma_stream->pd = ib_alloc_pd(rdma_stream->cm.id->device);
@@ -970,7 +958,7 @@ static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
 	if (rdma_stream->cm.id)
 		rdma_destroy_id(rdma_stream->cm.id);
 
-	pr_info("%s dtr_free_stream() %p\n", rdma_stream->name, rdma_stream);
+	// pr_info("%s: dtr_free_stream() %p\n", rdma_stream->name, rdma_stream);
 	rdma_stream->name[0] = 'X';
 	rdma_stream->name[1] = 'X';
 
@@ -1053,10 +1041,8 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 	wait_event_interruptible(rdma_stream->cm.state_wq,
 				 rdma_stream->cm.state >= ROUTE_RESOLVED);
 
-	if (rdma_stream->cm.state != ROUTE_RESOLVED) {
-		drbd_err(connection, "addr/route resolution error. state %d\n", rdma_stream->cm.state);
-		goto out;
-	}
+	if (rdma_stream->cm.state != ROUTE_RESOLVED)
+		goto out; /* Happens if peer not reachable */
 
 	err = dtr_alloc_rdma_resources(rdma_stream, connection);
 	if (err) {
@@ -1088,7 +1074,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 	if (rdma_stream->cm.state == ERROR)
 		goto out;
 
-	pr_info("%s rdma_connect successful\n", rdma_stream->name);
+	// pr_info("%s: rdma_connect successful\n", rdma_stream->name);
 	*ret_rdma_stream = rdma_stream;
 	return 0;
 
@@ -1464,22 +1450,18 @@ static bool dtr_stream_ok_or_free(struct drbd_rdma_stream **rdma_stream)
 
 static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 {
-	int err;
-
 	if (!rdma_stream || !rdma_stream->cm.id)
 		return;
 
-	err = rdma_disconnect(rdma_stream->cm.id);
-	if (err) {
-		pr_err("%s rdma_disconnect() returned %d\n", rdma_stream->name, err);
-	}
+	rdma_disconnect(rdma_stream->cm.id);
+	/* We are ignoring errors here on purpose */
 
 	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
 					 rdma_stream->cm.state >= DISCONNECTED,
 					 HZ);
 
 	if (rdma_stream->cm.state < DISCONNECTED)
-		pr_warn("%s WARN: not properly disconnected\n", rdma_stream->name);
+		pr_warn("%s: WARN: not properly disconnected\n", rdma_stream->name);
 }
 
 static bool dtr_connection_established(struct drbd_connection *connection,
@@ -1511,7 +1493,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct ib_device *device;
 	int err;
 
-	pr_info("%s in send_page, size: %zu\n", rdma_stream->name, size);
+	// pr_info("%s: in send_page, size: %zu\n", rdma_stream->name, size);
 
 	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
 	if (!tx_desc)
