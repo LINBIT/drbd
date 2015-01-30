@@ -57,13 +57,10 @@ MODULE_AUTHOR("Foo Bar <foo.bar@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 
-#define RDMA_MAX_RX 1024
-#define RDMA_MAX_TX 1024
-/* #define RDMA_PREALLOC_RX 1024 */
-/* #define RDMA_PREALLOC_TX 1024 */
-
-/* If no recvbuf_size is configured use 512KiB for the DATA_STREAM */
-#define RDMA_DEF_RECV_SIZE (1 << 19)
+/* If no recvbuf_size or sendbuf_size is configured use 512KiB for the DATA_STREAM */
+/* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
+   very comparable to the socket sendbuf and recvbuf sizes */
+#define RDMA_DEF_BUFFER_SIZE (1 << 19)
 
 enum drbd_rdma_state {
 	IDLE = 1,
@@ -118,9 +115,12 @@ struct drbd_rdma_stream {
 
 	wait_queue_head_t recv_wq;
 
-	/* number of currently available descs */
 	atomic_t tx_descs_posted;
+	int tx_descs_max; /* derived from net_conf->sndbuf_size. Do not change after alloc. */
+
 	int rx_descs_posted;
+	int rx_descs_max;  /* derived from net_conf->rcvbuf_size. Do not change after alloc. */
+
 	int rx_descs_allocated;
 	int rx_descs_want_posted;
 
@@ -416,14 +416,17 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-
-	/* RCK: first two for debugfs, for now do not care */
-	stats->unread_received = 0;
-	stats->unacked_send = 0;
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+	atomic_t *tx_descs_posted = &rdma_stream->tx_descs_posted;
 
 	/* RCK: these are used by the sender, guess we should them get right */
-	stats->send_buffer_size = RDMA_MAX_TX;
-	stats->send_buffer_used = atomic_read(&(rdma_transport->stream[DATA_STREAM]->tx_descs_posted));
+	stats->send_buffer_size = rdma_stream->tx_descs_max * DRBD_SOCKET_BUFFER_SIZE;
+	stats->send_buffer_used = atomic_read(tx_descs_posted) * DRBD_SOCKET_BUFFER_SIZE;
+
+	/* RCK: these two for debugfs */
+	stats->unread_received = 0;
+	stats->unacked_send = stats->send_buffer_used;
+
 }
 
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
@@ -631,8 +634,8 @@ static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
 {
 	int err;
 	struct ib_qp_init_attr init_attr = {
-		.cap.max_send_wr = RDMA_MAX_TX,
-		.cap.max_recv_wr = RDMA_MAX_RX,
+		.cap.max_send_wr = rdma_stream->tx_descs_max,
+		.cap.max_recv_wr = rdma_stream->rx_descs_max,
 		.cap.max_recv_sge = 1,
 		.cap.max_send_sge = 1,
 		.qp_type = IB_QPT_RC,
@@ -748,30 +751,18 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream)
 {
-	struct drbd_connection *connection = rdma_transport->transport.connection;
-	int rcvbuf_size = RDMA_DEF_RECV_SIZE; /* Hardcoded default of 512 KiByte */
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
-	int descs_posted, descs_max;
-	struct net_conf *nc;
+	int descs_want_posted, descs_max;
 
-	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
-	if (nc) {
-		if (nc->rcvbuf_size)
-			rcvbuf_size = nc->rcvbuf_size;
-	}
-	rcu_read_unlock();
-
-	descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+	descs_max = rdma_stream->rx_descs_max;
 	/* The above statement is obvious for the DATA_STREAM. We use the same
 	   number of descriptors for the CONTROL_STREAM as well, though that
 	   covers only a 64th fraction of the size in bytes available. I.e.
 	   by default two pages. */
 
-	descs_posted = descs_max / 2;
-	rdma_stream->rx_descs_want_posted = descs_posted;
+	descs_want_posted = rdma_stream->rx_descs_want_posted;
 
-	while (rdma_stream->rx_descs_posted < descs_posted &&
+	while (rdma_stream->rx_descs_posted < descs_want_posted &&
 	       rdma_stream->rx_descs_allocated < descs_max)
 		dtr_create_some_rx_desc(rdma_stream);
 }
@@ -798,23 +789,17 @@ static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 			       struct drbd_rdma_rx_desc *rx_desc)
 {
-	int want_posted = rdma_stream->rx_descs_want_posted + 8; /*hysteresis*/
+	int max_posted = rdma_stream->rx_descs_max;
 
 	if (!rx_desc)
 		return;
 
-	if (rdma_stream->rx_descs_posted > want_posted)
+	if (rdma_stream->rx_descs_posted >= max_posted)
 		dtr_free_rx_desc(rdma_stream, rx_desc);
 	else
 		dtr_repost_rx_desc(rdma_stream, rx_desc);
 }
 
-/* RCK: we use stream to differentiate between rdma send and write:
- * control stream: rdma send
- * data stream: rdma write
- * data should be/has to be an rdma write
- * CURRENTLY only SEND, and and the write is up to discussion, see list at the
- * beginning of file */
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct ib_device *device = rdma_stream->cm.id->device;
@@ -846,9 +831,27 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 }
 
 /* allocate rdma specific resources for the stream */
-static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
+static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct drbd_connection *connection)
 {
+	struct net_conf *nc;
 	int err;
+	int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
+	int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	if (nc) {
+		if (nc->rcvbuf_size)
+			rcvbuf_size = nc->rcvbuf_size;
+		if (nc->sndbuf_size)
+			sndbuf_size = nc->sndbuf_size;
+	}
+	rcu_read_unlock();
+
+	rdma_stream->tx_descs_max = sndbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+	rdma_stream->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+
+	rdma_stream->rx_descs_want_posted = rdma_stream->rx_descs_max / 2;
 
 	rdma_stream->current_rx.desc = NULL;
 	rdma_stream->current_rx.pos = NULL;
@@ -873,7 +876,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
 
 	/* create recv completion queue (CQ) */
 	rdma_stream->recv_cq = ib_create_cq(rdma_stream->cm.id->device,
-		dtr_rx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_RX, 0);
+			dtr_rx_cq_event_handler, NULL, rdma_stream,
+			rdma_stream->rx_descs_max, 0);
 	if (IS_ERR(rdma_stream->recv_cq)) {
 		pr_err("ib_create_cq recv failed\n");
 		err = PTR_ERR(rdma_stream->recv_cq);
@@ -882,7 +886,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream)
 
 	/* create send completion queue (CQ) */
 	rdma_stream->send_cq = ib_create_cq(rdma_stream->cm.id->device,
-		dtr_tx_cq_event_handler, NULL, rdma_stream, RDMA_MAX_TX, 0);
+			dtr_tx_cq_event_handler, NULL, rdma_stream,
+			rdma_stream->rx_descs_max, 0);
 	if (IS_ERR(rdma_stream->send_cq)) {
 		pr_err("ib_create_cq send failed\n");
 		err = PTR_ERR(rdma_stream->send_cq);
@@ -1050,7 +1055,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 		goto out;
 	}
 
-	err = dtr_alloc_rdma_resources(rdma_stream);
+	err = dtr_alloc_rdma_resources(rdma_stream, connection);
 	if (err) {
 		drbd_err(connection, "failed allocating resources %d\n", err);
 		goto out;
@@ -1209,7 +1214,7 @@ retry:
 		cm_id->context = &rdma_stream->cm;
 		rdma_stream->cm.id = cm_id;
 
-		err = dtr_alloc_rdma_resources(rdma_stream);
+		err = dtr_alloc_rdma_resources(rdma_stream, connection);
 		if (err) {
 			drbd_err(connection, "failed allocating stream resources %d\n", err);
 			goto err;
