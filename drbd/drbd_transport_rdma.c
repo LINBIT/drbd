@@ -167,7 +167,7 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc);
 static int dtr_drain_rx_cq(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **, int);
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
-			       struct drbd_rdma_rx_desc *rx_desc);
+				struct drbd_rdma_rx_desc **pp_rx_desc);
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
 static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc);
@@ -280,7 +280,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
-	dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
+	dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
 
 	while (size) {
 		struct drbd_rdma_rx_desc *rx_desc = NULL;
@@ -328,7 +328,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		/* old_rx[stream] = NULL; */
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
 		long t;
-		dtr_recycle_rx_desc(rdma_stream, rdma_stream->current_rx.desc);
+		dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
 						dtr_drain_rx_cq(rdma_stream, &rx_desc, 1),
 						rdma_stream->recv_timeout);
@@ -719,6 +719,7 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 
 		err = dtr_post_rx_desc(rdma_stream, rx_desc);
 		if (err) {
+			pr_err("%s: dtr_post_rx_desc() returned %d\n", rdma_stream->name, err);
 			dtr_free_rx_desc(rdma_stream, rx_desc);
 			break;
 		}
@@ -768,9 +769,10 @@ static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
 }
 
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
-			       struct drbd_rdma_rx_desc *rx_desc)
+				struct drbd_rdma_rx_desc **pp_rx_desc)
 {
 	int max_posted = rdma_stream->rx_descs_max;
+	struct drbd_rdma_rx_desc *rx_desc = *pp_rx_desc;
 
 	if (!rx_desc)
 		return;
@@ -779,6 +781,8 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 		dtr_free_rx_desc(rdma_stream, rx_desc);
 	else
 		dtr_repost_rx_desc(rdma_stream, rx_desc);
+
+	*pp_rx_desc = NULL;
 }
 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
