@@ -5549,6 +5549,7 @@ void conn_disconnect(struct drbd_connection *connection)
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&connection->asender);
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+	drbd_drop_unsent(connection);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {

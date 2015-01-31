@@ -78,6 +78,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
+static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -733,6 +734,7 @@ static void new_or_recycle_send_buffer_page(struct drbd_send_buffer *sbuf)
 		schedule_timeout(HZ / 10);
 	}
 have_page:
+	sbuf->unsent =
 	sbuf->pos = page_address(sbuf->page);
 }
 
@@ -740,10 +742,13 @@ static void *alloc_send_buffer(struct drbd_connection *connection, int size,
 			      enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
-	void *page_start = page_address(sbuf->page);
+	char *page_start = page_address(sbuf->page);
 
-	if (sbuf->pos - page_start + size > PAGE_SIZE)
+	if (sbuf->pos - page_start + size > PAGE_SIZE) {
+		if (sbuf->unsent != sbuf->pos)
+			flush_send_buffer(connection, drbd_stream);
 		new_or_recycle_send_buffer_page(sbuf);
+	}
 
 	sbuf->allocated_size = size;
 	sbuf->additional_size = 0;
@@ -751,6 +756,7 @@ static void *alloc_send_buffer(struct drbd_connection *connection, int size,
 	return sbuf->pos;
 }
 
+/* Only used the shrink the previously allocated size. */
 static void resize_prepared_command(struct drbd_connection *connection,
 				    enum drbd_stream drbd_stream,
 				    int size)
@@ -819,33 +825,79 @@ void *drbd_prepare_command(struct drbd_peer_device *peer_device, int size, enum 
 	return conn_prepare_command(peer_device->connection, size, drbd_stream);
 }
 
+static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream)
+{
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+	int msg_flags, err, offset, size;
+
+	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
+
+	offset = sbuf->unsent - (char *)page_address(sbuf->page);
+	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
+	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, msg_flags);
+	if (!err) {
+		sbuf->unsent =
+		sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
+	}
+
+	sbuf->allocated_size = 0;
+
+	return err;
+}
+
 static int __send_command(struct drbd_connection *connection, int vnr,
 			  enum drbd_packet cmd, enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
-	int msg_flags, err, offset;
+	bool corked = test_bit(CORKED + drbd_stream, &connection->flags);
+	bool flush = (cmd == P_PING || cmd == P_PING_ACK || cmd == P_TWOPC_PREPARE);
+	int err;
 
-	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
+	/* send P_PING and P_PING_ACK immediately, they need to be delivered as
+	   fast as possible.
+	   P_TWOPC_PREPARE might be used from the worker context while corked.
+	   The work item (connect_work) calls change_cluster_wide_state() which
+	   in turn waits for reply packets. -> Need to send it regardless of
+	   corking.  */
 
 	prepare_header(connection, vnr, sbuf->pos, cmd,
 		       sbuf->allocated_size + sbuf->additional_size);
-	offset = sbuf->pos - page_address(sbuf->page);
-	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset,
-				sbuf->allocated_size, msg_flags);
 
-	if (!err)
-		sbuf->pos += sbuf->allocated_size;	/* send buffer submitted! */
+	if (corked && !flush) {
+		sbuf->pos += sbuf->allocated_size;
+		sbuf->allocated_size = 0;
+		err = 0;
+	} else {
+		err = flush_send_buffer(connection, drbd_stream);
 
-	sbuf->allocated_size = 0;
+		/* DRBD protocol "pings" are latency critical.
+		 * This is supposed to trigger tcp_push_pending_frames() */
+		if (!err && flush)
+			tr_ops->hint(transport, drbd_stream, NODELAY);
 
-	/* DRBD protocol "pings" are latency critical.
-	 * This is supposed to trigger tcp_push_pending_frames() */
-	if (!err && (cmd == P_PING || cmd == P_PING_ACK))
-		tr_ops->hint(transport, drbd_stream, NODELAY);
+	}
 
 	return err;
+}
+
+void drbd_drop_unsent(struct drbd_connection* connection)
+{
+	int i;
+
+	clear_bit(DATA_CORKED, &connection->flags);
+	clear_bit(CONTROL_CORKED, &connection->flags);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct drbd_send_buffer *sbuf = &connection->send_buffer[i];
+		sbuf->unsent =
+		sbuf->pos = page_address(sbuf->page);
+		sbuf->allocated_size = 0;
+		sbuf->additional_size = 0;
+	}
 }
 
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
@@ -859,8 +911,12 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 
 void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 {
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[stream];
 	struct drbd_transport *transport = connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
+
+	if (sbuf->unsent != sbuf->pos)
+		flush_send_buffer(connection, stream);
 
 	clear_bit(CORKED + stream, &connection->flags);
 	tr_ops->hint(transport, stream, UNCORK);
@@ -1819,9 +1875,14 @@ int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, 
 static int __drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			    int offset, size_t size, unsigned msg_flags)
 {
-	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
+	struct drbd_transport *transport = connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	int err;
+
+	if (sbuf->unsent != sbuf->pos)
+		flush_send_buffer(connection, DATA_STREAM);
 
 	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
 	if (!err)
@@ -1840,6 +1901,9 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 	struct page *page2;
 	int offset2, err;
 
+	if (sbuf->unsent != sbuf->pos)
+		flush_send_buffer(connection, DATA_STREAM);
+
 	buffer2 = alloc_send_buffer(connection, size, DATA_STREAM);
 	page2 = sbuf->page;
 	offset2 = buffer2 - page_address(page2);
@@ -1848,8 +1912,10 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 	drbd_kunmap_atomic(from_base, KM_USER0);
 	err = __drbd_send_page(peer_device, page2, offset2, size, msg_flags);
 
-	if (!err)
+	if (!err) {
+		sbuf->unsent =
 		sbuf->pos += size;
+	}
 
 	return err;
 }
@@ -2784,6 +2850,7 @@ static int drbd_alloc_send_buffers(struct drbd_connection *connection)
 			return -ENOMEM;
 		}
 		connection->send_buffer[i].page = page;
+		connection->send_buffer[i].unsent =
 		connection->send_buffer[i].pos = page_address(page);
 	}
 

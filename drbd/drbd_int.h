@@ -864,7 +864,8 @@ struct drbd_thread_timing_details
 
 struct drbd_send_buffer {
 	struct page *page;  /* current buffer page for sending data */
-	void *pos; /* position within that page */
+	char *unsent;  /* start of unsent area != pos if corked... */
+	char *pos; /* position within that page */
 	int allocated_size; /* currently allocated space */
 	int additional_size;  /* additional space to be added to next packet's size */
 };
@@ -1487,6 +1488,7 @@ extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_pee
 extern void drbd_propagate_uuids(struct drbd_device *device, u64 nodes);
 extern bool drbd_device_stable(struct drbd_device *device, u64 *authoritative);
 extern void drbd_flush_peer_acks(struct drbd_resource *resource);
+extern void drbd_drop_unsent(struct drbd_connection* connection);
 extern void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
 extern void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream);
 
