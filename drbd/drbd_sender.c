@@ -2330,7 +2330,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	if (uncork) {
 		mutex_lock(&connection->mutex[DATA_STREAM]);
 		if (transport->ops->stream_ok(transport, DATA_STREAM))
-			transport->ops->hint(transport, DATA_STREAM, UNCORK);
+			drbd_uncork(connection, DATA_STREAM);
 		mutex_unlock(&connection->mutex[DATA_STREAM]);
 	}
 
@@ -2380,9 +2380,9 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
 		if (cork)
-			transport->ops->hint(transport, DATA_STREAM, CORK);
+			drbd_cork(connection, DATA_STREAM);
 		else if (!uncork)
-			transport->ops->hint(transport, DATA_STREAM, UNCORK);
+			drbd_uncork(connection, DATA_STREAM);
 	}
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 }

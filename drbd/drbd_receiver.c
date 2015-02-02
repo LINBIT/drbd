@@ -6697,7 +6697,7 @@ int drbd_asender(struct drbd_thread *thi)
 		/* TODO: conditionally cork; it may hurt latency if we cork without
 		   much to send */
 		if (tcp_cork)
-			tr_ops->hint(transport, CONTROL_STREAM, CORK);
+			drbd_cork(connection, CONTROL_STREAM);
 		if (connection_finish_peer_reqs(connection)) {
 			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
 			goto reconnect;
@@ -6707,7 +6707,7 @@ int drbd_asender(struct drbd_thread *thi)
 
 		/* but unconditionally uncork unless disabled */
 		if (tcp_cork)
-			tr_ops->hint(transport, CONTROL_STREAM, UNCORK);
+			drbd_uncork(connection, CONTROL_STREAM);
 
 		/* short circuit, recv_msg would return EINTR anyways. */
 		if (signal_pending(current))

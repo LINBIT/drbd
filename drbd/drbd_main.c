@@ -848,6 +848,24 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	return err;
 }
 
+void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
+{
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+
+	set_bit(CORKED + stream, &connection->flags);
+	tr_ops->hint(transport, stream, CORK);
+}
+
+void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
+{
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+
+	clear_bit(CORKED + stream, &connection->flags);
+	tr_ops->hint(transport, stream, UNCORK);
+}
+
 int send_command(struct drbd_connection *connection, int vnr,
 		 enum drbd_packet cmd, enum drbd_stream drbd_stream)
 {
