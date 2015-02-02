@@ -222,12 +222,12 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		container_of(transport, struct drbd_rdma_transport, transport);
 	enum drbd_stream i;
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
-		dtr_disconnect_stream(rdma_transport->stream[i]);
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		dtr_free_stream(rdma_transport->stream[i]);
+		rdma_transport->stream[i] = NULL;
+	}
 
 	if (free_op == DESTROY_TRANSPORT) {
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
-			dtr_free_stream(rdma_transport->stream[i]);
 		kfree(rdma_transport);
 		module_put(THIS_MODULE);
 	}
@@ -951,6 +951,35 @@ pd_failed:
 	return err;
 }
 
+static void dtr_drain_cq(struct ib_cq *cq)
+{
+	struct ib_wc wc;
+
+	while(ib_poll_cq(cq, 1, &wc) == 1)
+		;
+}
+
+static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
+{
+	if (!rdma_stream || !rdma_stream->cm.id)
+		return;
+
+	rdma_disconnect(rdma_stream->cm.id);
+	/* We are ignoring errors here on purpose */
+
+	if (rdma_stream->send_cq)
+		dtr_drain_cq(rdma_stream->send_cq);
+
+	if (rdma_stream->recv_cq)
+		dtr_drain_cq(rdma_stream->recv_cq);
+
+	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
+					 rdma_stream->cm.state >= DISCONNECTED,
+					 HZ);
+
+	if (rdma_stream->cm.state < DISCONNECTED)
+		pr_warn("%s: WARN: not properly disconnected\n", rdma_stream->name);
+}
 
 static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
 {
@@ -1460,36 +1489,6 @@ static bool dtr_stream_ok_or_free(struct drbd_rdma_stream **rdma_stream)
 		return false;
 	}
 	return true;
-}
-
-static void dtr_drain_cq(struct ib_cq *cq)
-{
-	struct ib_wc wc;
-
-	while(ib_poll_cq(cq, 1, &wc) == 1)
-		;
-}
-
-static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
-{
-	if (!rdma_stream || !rdma_stream->cm.id)
-		return;
-
-	rdma_disconnect(rdma_stream->cm.id);
-	/* We are ignoring errors here on purpose */
-
-	if (rdma_stream->send_cq)
-		dtr_drain_cq(rdma_stream->send_cq);
-
-	if (rdma_stream->recv_cq)
-		dtr_drain_cq(rdma_stream->recv_cq);
-
-	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
-					 rdma_stream->cm.state >= DISCONNECTED,
-					 HZ);
-
-	if (rdma_stream->cm.state < DISCONNECTED)
-		pr_warn("%s: WARN: not properly disconnected\n", rdma_stream->name);
 }
 
 static bool dtr_connection_established(struct drbd_connection *connection,
