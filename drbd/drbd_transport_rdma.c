@@ -65,6 +65,9 @@ MODULE_LICENSE("GPL");
    very comparable to the socket sendbuf and recvbuf sizes */
 #define RDMA_DEF_BUFFER_SIZE (1 << 19)
 
+/* one for the handshake's first packet, one for the first flow_control msg. */
+#define INITIAL_RX_DESCS 2
+
 #define DTR_MAGIC ((u32)0x5257494E)
 
 struct dtr_flow_control {
@@ -134,6 +137,7 @@ struct drbd_rdma_stream {
 	int rx_descs_allocated;
 	int rx_descs_want_posted;
 	atomic_t rx_descs_unread;
+	atomic_t rx_descs_known_to_peer;
 
 	/* for recv() to keep track of the current rx_desc:
 	 * - whenever the bytes_left of the current rx_desc == 0, we know that all data
@@ -571,6 +575,37 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 	return false;
 }
 
+static void dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport)
+{
+	struct drbd_rdma_stream *rdma_stream;
+	struct dtr_flow_control msg;
+	int i;
+
+	msg.magic = cpu_to_be32(DTR_MAGIC);
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		int n;
+
+		rdma_stream = rdma_transport->stream[i];
+		n = rdma_stream->rx_descs_posted - atomic_read(&rdma_stream->rx_descs_known_to_peer);
+
+		atomic_add(n, &rdma_stream->rx_descs_known_to_peer);
+		msg.new_rx_descs[i] = cpu_to_be32(n);
+	}
+
+	/* rdma_stream is the control stream here */
+	dtr_send(rdma_stream, &msg, sizeof(msg));
+}
+
+static void dtr_flow_control(struct drbd_rdma_stream *rdma_stream)
+{
+	int n, known_to_peer = atomic_read(&rdma_stream->rx_descs_known_to_peer);
+	int tx_descs_max = rdma_stream->tx_descs_max;
+
+	n = rdma_stream->rx_descs_posted - known_to_peer;
+	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
+		dtr_send_flow_control_msg(rdma_stream->rdma_transport);
+}
+
 static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
 				     struct dtr_flow_control *msg)
 {
@@ -613,6 +648,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 	atomic_inc(&rdma_stream->rx_descs_unread);
+	atomic_dec(&rdma_stream->rx_descs_known_to_peer);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
@@ -792,8 +828,8 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 	return err;
 }
 
-static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
-			       enum drbd_stream stream)
+static void __dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
+				 enum drbd_stream stream)
 {
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[stream];
 	int descs_want_posted, descs_max;
@@ -809,6 +845,14 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	while (rdma_stream->rx_descs_posted < descs_want_posted &&
 	       rdma_stream->rx_descs_allocated < descs_max)
 		dtr_create_some_rx_desc(rdma_stream);
+
+}
+
+static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
+			       enum drbd_stream stream)
+{
+	__dtr_refill_rx_desc(rdma_transport, stream);
+	dtr_flow_control(rdma_transport->stream[stream]);
 }
 
 static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
@@ -839,10 +883,12 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	if (!rx_desc)
 		return;
 
-	if (rdma_stream->rx_descs_posted >= max_posted)
+	if (rdma_stream->rx_descs_posted >= max_posted) {
 		dtr_free_rx_desc(rdma_stream, rx_desc);
-	else
+	} else {
 		dtr_repost_rx_desc(rdma_stream, rx_desc);
+		dtr_flow_control(rdma_stream);
+	}
 
 	*pp_rx_desc = NULL;
 }
@@ -889,7 +935,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct drbd_connection *connection)
 {
 	struct net_conf *nc;
-	int err;
+	int i, err;
 	int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
 	int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
 
@@ -905,6 +951,9 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 
 	rdma_stream->tx_descs_max = sndbuf_size / DRBD_SOCKET_BUFFER_SIZE;
 	rdma_stream->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+
+	atomic_set(&rdma_stream->peer_rx_descs, INITIAL_RX_DESCS);
+	atomic_set(&rdma_stream->rx_descs_known_to_peer, INITIAL_RX_DESCS);
 
 	rdma_stream->rx_descs_want_posted = rdma_stream->rx_descs_max / 2;
 
@@ -984,7 +1033,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 		goto dma_failed;
 	}
 
-	dtr_create_some_rx_desc(rdma_stream);
+	for (i = 0; i < INITIAL_RX_DESCS; i++)
+		dtr_create_some_rx_desc(rdma_stream);
 
 	return 0;
 
@@ -1490,6 +1540,9 @@ randomize:
 
 	data_stream->send_timeout = timeout;
 	control_stream->send_timeout = timeout;
+
+	__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
+	dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
 
 	return 0;
 
