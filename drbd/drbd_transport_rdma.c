@@ -617,6 +617,7 @@ static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
 		rdma_stream = rdma_transport->stream[i];
 
 		atomic_add(new_rx_descs, &rdma_stream->peer_rx_descs);
+		wake_up_interruptible(&rdma_stream->send_wq);
 	}
 }
 
@@ -901,7 +902,8 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 	int err;
 
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max,
+			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max &&
+			atomic_read(&rdma_stream->peer_rx_descs),
 			rdma_stream->send_timeout);
 
 	if (t <= 0)
@@ -916,15 +918,16 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 
 	ib_dma_sync_single_for_device(device, tx_desc->sge.addr,
 			tx_desc->sge.length, DMA_TO_DEVICE);
-	atomic_inc(&rdma_stream->tx_descs_posted);
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
 		pr_err("%s: ib_post_send failed\n", rdma_stream->name);
-		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		return err;
 	}
+
+	atomic_inc(&rdma_stream->tx_descs_posted);
+	atomic_dec(&rdma_stream->peer_rx_descs);
 
 	// pr_info("%s: Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
 
