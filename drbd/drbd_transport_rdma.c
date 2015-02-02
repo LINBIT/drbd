@@ -129,6 +129,7 @@ struct drbd_rdma_stream {
 
 	long recv_timeout;
 	char name[8]; /* "control" or "data" */
+	struct drbd_rdma_transport *rdma_transport;
 };
 
 struct drbd_rdma_transport {
@@ -868,6 +869,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 
 	init_waitqueue_head(&rdma_stream->recv_wq);
 	init_waitqueue_head(&rdma_stream->send_wq);
+	rdma_stream->rdma_transport =
+		container_of(connection->transport, struct drbd_rdma_transport, transport);
 
 	// pr_info("creating stream: %s\n", rdma_stream->name);
 
