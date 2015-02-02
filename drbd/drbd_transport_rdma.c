@@ -41,6 +41,18 @@
    The block_id field (64 bit) could be re-labelled to be the RKEY for
    an RDMA WRITE. The P_DATA_REPLY packet will then only deliver the
    news that the RDMA WRITE was executed...
+
+
+   Flow Control
+   ============
+
+   If the receiving machine can not keep up with the data rate it needs to
+   slow down the sending machine. In order to do so we keep track of the
+   number of rx_descs the peer has posted (peer_rx_descs).
+
+   If one player posts new rx_descs it tells the peer about it with a
+   dtr_flow_control packet. Those packet get never delivered to the
+   DRBD above us.
 */
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -52,6 +64,13 @@ MODULE_LICENSE("GPL");
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
    very comparable to the socket sendbuf and recvbuf sizes */
 #define RDMA_DEF_BUFFER_SIZE (1 << 19)
+
+#define DTR_MAGIC ((u32)0x5257494E)
+
+struct dtr_flow_control {
+	uint32_t magic;
+	uint32_t new_rx_descs[2];
+} __packed;
 
 enum drbd_rdma_state {
 	IDLE = 1,
@@ -65,7 +84,7 @@ enum drbd_rdma_state {
 
 struct drbd_rdma_rx_desc {
 	struct page *page;
-	char *data;
+	void *data;
 	u64 dma_addr;
 	int size; /* At allocation time the allocated size, after something
 		     was received, the actual size of the received data. */
@@ -106,6 +125,7 @@ struct drbd_rdma_stream {
 	atomic_t tx_descs_posted;
 	int tx_descs_max; /* derived from net_conf->sndbuf_size. Do not change after alloc. */
 	long send_timeout;
+	atomic_t peer_rx_descs; /* peer's receive window in number of rx descs */
 
 	wait_queue_head_t recv_wq;
 	int rx_descs_posted;
@@ -520,11 +540,7 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	return cm_context->id ? 0 : -ENOMEM;
 }
 
-/* receive max nr_elements (currently should always be used with "1"
- * if -1: receive all
- * >= 0 : nr_elements
- * number of elements in cq is too small to underflow nr_elements */
-static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
+static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
 {
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
@@ -553,6 +569,41 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drb
 	}
 
 	return false;
+}
+
+static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
+				     struct dtr_flow_control *msg)
+{
+	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
+	int i;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		uint32_t new_rx_descs = be32_to_cpu(msg->new_rx_descs[i]);
+		rdma_stream = rdma_transport->stream[i];
+
+		atomic_add(new_rx_descs, &rdma_stream->peer_rx_descs);
+	}
+}
+
+static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
+				struct drbd_rdma_rx_desc **pp_rx_desc)
+{
+	struct drbd_rdma_rx_desc *rx_desc;
+	bool r;
+
+	while (1) {
+		r = __dtr_receive_rx_desc(rdma_stream, &rx_desc);
+		if (!r)
+			return false;
+
+		if (*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
+			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
+			dtr_recycle_rx_desc(rdma_stream, &rx_desc);
+			continue;
+		}
+		*pp_rx_desc = rx_desc;
+		return true;
+	}
 }
 
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
