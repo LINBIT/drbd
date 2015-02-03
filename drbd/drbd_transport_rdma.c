@@ -911,13 +911,24 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 	long t;
 	int err;
 
+retry:
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
 			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max &&
 			atomic_read(&rdma_stream->peer_rx_descs),
 			rdma_stream->send_timeout);
 
-	if (t <= 0)
-		return t == 0 ? -EAGAIN : -EINTR;
+	if (t == 0) {
+		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
+		struct drbd_connection *connection = rdma_transport->transport.connection;
+		enum drbd_stream stream =
+			rdma_transport->stream[DATA_STREAM] == rdma_stream ?
+				DATA_STREAM : CONTROL_STREAM;
+
+		if (drbd_stream_send_timed_out(connection, stream))
+			return -EAGAIN;
+		goto retry;
+	} else if (t < 0)
+		return -EINTR;
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
