@@ -183,9 +183,42 @@ struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, str
 	return NULL;
 }
 
+/**
+ * drbd_stream_send_timed_out() - Tells transport if the connection should stay alive
+ * @connection:	DRBD connection to operate on.
+ * @stream:     DATA_STREAM or CONTROL_STREAM
+ *
+ * When it returns true, the transport should return -EAGAIN to its caller of the
+ * send function. When it returns false the transport should keep on trying to
+ * get the packet through.
+ */
+bool drbd_stream_send_timed_out(struct drbd_connection *connection, enum drbd_stream stream)
+{
+	bool drop_it;
+
+	drop_it = stream == CONTROL_STREAM
+		|| !connection->asender.task
+		|| get_t_state(&connection->asender) != RUNNING
+		|| connection->cstate[NOW] < C_CONNECTED;
+
+	if (drop_it)
+		return true;
+
+	drop_it = !--connection->transport->ko_count;
+	if (!drop_it) {
+		drbd_err(connection, "[%s/%d] sending time expired, ko = %u\n",
+			 current->comm, current->pid, connection->transport->ko_count);
+		request_ping(connection);
+	}
+
+	return drop_it;
+
+}
+
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);
 EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
 EXPORT_SYMBOL_GPL(drbd_get_listener);
 EXPORT_SYMBOL_GPL(drbd_put_listener);
 EXPORT_SYMBOL_GPL(drbd_find_waiter_by_addr);
+EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);

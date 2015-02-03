@@ -157,34 +157,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	}
 }
 
-/* called on sndtimeo
- * returns false if we should retry,
- * true if we think connection is dead
- */
-static int dtt_we_should_drop_the_connection(struct drbd_tcp_transport *tcp_transport, struct socket *socket)
-{
-	int drop_it;
-	struct drbd_connection *connection = tcp_transport->transport.connection;
-
-	drop_it = (tcp_transport->stream[CONTROL_STREAM] == socket)
-		|| !connection->asender.task
-		|| get_t_state(&connection->asender) != RUNNING
-		|| connection->cstate[NOW] < C_CONNECTED;
-
-	if (drop_it)
-		return true;
-
-	drop_it = !--tcp_transport->transport.ko_count;
-	if (!drop_it) {
-		drbd_err(connection, "[%s/%d] sock_sendmsg time expired, ko = %u\n",
-			 current->comm, current->pid, tcp_transport->transport.ko_count);
-		request_ping(connection);
-	}
-
-	return drop_it; /* && (device->state == R_PRIMARY) */;
-}
-
-
 static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 		      void *buf, size_t size, unsigned msg_flags)
 {
@@ -215,7 +187,12 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
  */
 		rv = kernel_sendmsg(socket, &msg, &iov, 1, size);
 		if (rv == -EAGAIN) {
-			if (dtt_we_should_drop_the_connection(tcp_transport, socket))
+			struct drbd_connection *connection = tcp_transport->transport.connection;
+			enum drbd_stream stream =
+				tcp_transport->stream[DATA_STREAM] == socket ?
+					DATA_STREAM : CONTROL_STREAM;
+
+			if (drbd_stream_send_timed_out(connection, stream))
 				break;
 			else
 				continue;
@@ -982,7 +959,7 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		sent = socket->ops->sendpage(socket, page, offset, len, msg_flags);
 		if (sent <= 0) {
 			if (sent == -EAGAIN) {
-				if (dtt_we_should_drop_the_connection(tcp_transport, socket))
+				if (drbd_stream_send_timed_out(transport->connection, stream))
 					break;
 				continue;
 			}
