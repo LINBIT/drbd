@@ -68,6 +68,9 @@ MODULE_LICENSE("GPL");
 /* one for the handshake's first packet, one for the first flow_control msg. */
 #define INITIAL_RX_DESCS 2
 
+/* If we can send less than 8 packets, we consider the transport as congested. */
+#define DESCS_LOW_LEVEL 8
+
 #define DTR_MAGIC ((u32)0x5257494E)
 
 struct dtr_flow_control {
@@ -610,14 +613,21 @@ static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
 				     struct dtr_flow_control *msg)
 {
 	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-	int i;
+	int i, n;
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+	for (i = CONTROL_STREAM; i >= DATA_STREAM; i--) {
 		uint32_t new_rx_descs = be32_to_cpu(msg->new_rx_descs[i]);
 		rdma_stream = rdma_transport->stream[i];
 
-		atomic_add(new_rx_descs, &rdma_stream->peer_rx_descs);
+		n = atomic_add_return(new_rx_descs, &rdma_stream->peer_rx_descs);
 		wake_up_interruptible(&rdma_stream->send_wq);
+	}
+
+	/* rdma_stream is the data_stream here... */
+	if (n >= DESCS_LOW_LEVEL) {
+		int tx_descs_posted = atomic_read(&rdma_stream->tx_descs_posted);
+		if (rdma_stream->tx_descs_max - tx_descs_posted >= DESCS_LOW_LEVEL)
+			clear_bit(NET_CONGESTED, &rdma_stream->rdma_transport->transport.flags);
 	}
 }
 
@@ -1650,6 +1660,17 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	err = dtr_post_tx_desc(rdma_stream, tx_desc);
 	if (err)
 		put_page(page);
+
+	if (stream == DATA_STREAM) {
+		int tx_descs_posted;
+		bool congested = false;
+
+		tx_descs_posted = atomic_read(&rdma_stream->tx_descs_posted);
+		congested |= rdma_stream->tx_descs_max - tx_descs_posted < DESCS_LOW_LEVEL;
+		congested |= atomic_read(&rdma_stream->peer_rx_descs) < DESCS_LOW_LEVEL;
+		if (congested)
+			set_bit(NET_CONGESTED, &rdma_stream->rdma_transport->transport.flags);
+	}
 
 	return err;
 }
