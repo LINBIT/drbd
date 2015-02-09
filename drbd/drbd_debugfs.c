@@ -606,7 +606,7 @@ static void seq_print_timing_details(struct seq_file *m,
 		seq_print_one_timing_detail(m, tdp+i, now);
 }
 
-static int callback_history_show(struct seq_file *m, void *ignored)
+static int connection_callback_history_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_connection *connection = m->private;
 	struct drbd_resource *resource = connection->resource;
@@ -621,28 +621,6 @@ static int callback_history_show(struct seq_file *m, void *ignored)
 	seq_print_timing_details(m, "worker", resource->w_cb_nr, resource->w_timing_details, jif);
 	return 0;
 }
-
-static int callback_history_open(struct inode *inode, struct file *file)
-{
-	struct drbd_connection *connection = inode->i_private;
-	return drbd_single_open(file, callback_history_show, connection,
-				&connection->kref, drbd_destroy_connection);
-}
-
-static int callback_history_release(struct inode *inode, struct file *file)
-{
-	struct drbd_connection *connection = inode->i_private;
-	kref_put(&connection->kref, drbd_destroy_connection);
-	return single_release(inode, file);
-}
-
-static const struct file_operations connection_callback_history_fops = {
-	.owner		= THIS_MODULE,
-	.open		= callback_history_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= callback_history_release,
-};
 
 static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 {
@@ -669,27 +647,31 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
-static int connection_oldest_requests_open(struct inode *inode, struct file *file)
-{
-	struct drbd_connection *connection = inode->i_private;
-	return drbd_single_open(file, connection_oldest_requests_show, connection,
-				&connection->kref, drbd_destroy_connection);
-}
-
-static int connection_oldest_requests_release(struct inode *inode, struct file *file)
+static int connection_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return single_release(inode, file);
 }
 
-static const struct file_operations connection_oldest_requests_fops = {
-	.owner		= THIS_MODULE,
-	.open		= connection_oldest_requests_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= connection_oldest_requests_release,
+#define drbd_debugfs_connection_attr(name)				\
+static int connection_ ## name ## _open(struct inode *inode, struct file *file) \
+{									\
+	struct drbd_connection *connection = inode->i_private;		\
+	return drbd_single_open(file, connection_ ## name ## _show,	\
+				connection, &connection->kref,		\
+				drbd_destroy_connection);		\
+}									\
+static const struct file_operations connection_ ## name ## _fops = {	\
+	.owner		= THIS_MODULE,				      	\
+	.open		= connection_ ## name ##_open,			\
+	.read		= seq_read,					\
+	.llseek		= seq_lseek,					\
+	.release	= connection_attr_release,			\
 };
+
+drbd_debugfs_connection_attr(oldest_requests)
+drbd_debugfs_connection_attr(callback_history)
 
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
