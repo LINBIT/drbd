@@ -11,7 +11,7 @@
    So that transport compiled against an older version of this
    header will no longer load in a module that assumes a newer
    version. */
-#define DRBD_TRANSPORT_API_VERSION 4
+#define DRBD_TRANSPORT_API_VERSION 5
 
 /* MSG_MSG_DONTROUTE and MSG_PROBE are not used by DRBD. I.e.
    we can reuse these flags for our purposes */
@@ -53,6 +53,7 @@ enum drbd_tr_free_op {
 struct drbd_transport {
 	struct drbd_transport_ops *ops;
 	struct drbd_connection *connection;
+	struct drbd_transport_class *class;
 
 	/* These members are intended to be updated by the transport: */
 	unsigned int ko_count;
@@ -124,6 +125,7 @@ struct drbd_transport_ops {
 			 int offset, size_t size, unsigned msg_flags);
 	bool (*stream_ok)(struct drbd_transport *, enum drbd_stream);
 	bool (*hint)(struct drbd_transport *, enum drbd_stream, enum drbd_tr_hints hint);
+	void (*debugfs_show)(struct drbd_transport *, struct seq_file *m);
 };
 
 struct drbd_transport_class {

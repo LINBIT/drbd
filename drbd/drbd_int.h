@@ -947,6 +947,7 @@ struct drbd_connection {
 	struct dentry *debugfs_conn;
 	struct dentry *debugfs_conn_callback_history;
 	struct dentry *debugfs_conn_oldest_requests;
+	struct dentry *debugfs_conn_transport;
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;

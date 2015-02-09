@@ -647,6 +647,19 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int connection_transport_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_connection *connection = m->private;
+	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+
+	seq_printf(m, "transport_type: %s\n\n", transport->class->name);
+
+	tr_ops->debugfs_show(transport, m);
+
+	return 0;
+}
+
 static int connection_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
@@ -672,6 +685,7 @@ static const struct file_operations connection_ ## name ## _fops = {	\
 
 drbd_debugfs_connection_attr(oldest_requests)
 drbd_debugfs_connection_attr(callback_history)
+drbd_debugfs_connection_attr(transport)
 
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
@@ -707,6 +721,13 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 		goto fail;
 	connection->debugfs_conn_oldest_requests = dentry;
 
+	dentry = debugfs_create_file("transport", S_IRUSR|S_IRGRP,
+			connection->debugfs_conn, connection,
+			&connection_transport_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	connection->debugfs_conn_transport = dentry;
+
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (!peer_device->debugfs_peer_dev)
 			drbd_debugfs_peer_device_add(peer_device);
@@ -721,6 +742,7 @@ fail:
 
 void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 {
+	drbd_debugfs_remove(&connection->debugfs_conn_transport);
 	drbd_debugfs_remove(&connection->debugfs_conn_callback_history);
 	drbd_debugfs_remove(&connection->debugfs_conn_oldest_requests);
 	drbd_debugfs_remove(&connection->debugfs_conn);

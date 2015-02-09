@@ -66,6 +66,7 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream, str
 		int offset, size_t size, unsigned msg_flags);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
+static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *m);
 static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
 
 static struct drbd_transport_class tcp_transport_class = {
@@ -85,6 +86,7 @@ static struct drbd_transport_ops dtt_ops = {
 	.send_page = dtt_send_page,
 	.stream_ok = dtt_stream_ok,
 	.hint = dtt_hint,
+	.debugfs_show = dtt_debugfs_show,
 };
 
 
@@ -110,6 +112,7 @@ static struct drbd_transport *dtt_create(struct drbd_connection *connection)
 
 	tcp_transport->transport.ops = &dtt_ops;
 	tcp_transport->transport.connection = connection;
+	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 		void *buffer = (void *)__get_free_page(GFP_KERNEL);
 		if (!buffer)
@@ -1032,6 +1035,39 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 	}
 
 	return rv;
+}
+
+static void dtt_debugfs_show_stream(struct seq_file *m, struct socket *socket)
+{
+	struct sock *sk = socket->sk;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	seq_printf(m, "unread receive buffer: %u Byte\n",
+		   tp->rcv_nxt - tp->copied_seq);
+	seq_printf(m, "unacked send buffer: %u Byte\n",
+		   tp->write_seq - tp->snd_una);
+	seq_printf(m, "send buffer size: %u Byte\n", sk->sk_sndbuf);
+	seq_printf(m, "send buffer used: %u Byte\n", sk->sk_wmem_queued);
+}
+
+static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
+{
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+	enum drbd_stream i;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct socket *socket = tcp_transport->stream[i];
+
+		if (socket) {
+			seq_printf(m, "%s stream\n", i == DATA_STREAM ? "data" : "control");
+			dtt_debugfs_show_stream(m, socket);
+		}
+	}
+
 }
 
 static int __init dtt_init(void)
