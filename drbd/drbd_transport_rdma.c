@@ -557,6 +557,7 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 
 	if (ib_poll_cq(cq, 1, &wc) == 1) {
 		rdma_stream->rx_descs_posted--;
+		atomic_dec(&rdma_stream->rx_descs_known_to_peer);
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 		WARN_ON(rx_desc == NULL);
 
@@ -659,7 +660,6 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
-	atomic_dec(&rdma_stream->rx_descs_known_to_peer);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
