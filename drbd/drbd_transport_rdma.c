@@ -641,8 +641,13 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 
 	while (1) {
 		r = __dtr_receive_rx_desc(rdma_stream, &rx_desc);
-		if (!r)
+		if (!r) {
+			int ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
+			if (ret)
+				pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
+
 			return false;
+		}
 
 		if (*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
 			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
@@ -657,15 +662,10 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
-	int ret;
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
-	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
-
 }
 
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
