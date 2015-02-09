@@ -839,6 +839,13 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_attr_release(struct inode *inode, struct file *file)
+{
+	struct drbd_device *device = inode->i_private;
+	kref_put(&device->kref, drbd_destroy_device);
+	return single_release(inode, file);
+}
+
 #define drbd_debugfs_device_attr(name)						\
 static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 {										\
@@ -846,18 +853,12 @@ static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 	return drbd_single_open(file, device_ ## name ## _show, device,		\
 				&device->kref, drbd_destroy_device);		\
 }										\
-static int device_ ## name ## _release(struct inode *inode, struct file *file)	\
-{										\
-	struct drbd_device *device = inode->i_private;				\
-	kref_put(&device->kref, drbd_destroy_device);				\
-	return single_release(inode, file);					\
-}										\
 static const struct file_operations device_ ## name ## _fops = {		\
 	.owner		= THIS_MODULE,						\
 	.open		= device_ ## name ## _open,				\
 	.read		= seq_read,						\
 	.llseek		= seq_lseek,						\
-	.release	= device_ ## name ## _release,				\
+	.release	= device_attr_release,					\
 };
 
 drbd_debugfs_device_attr(oldest_requests)
