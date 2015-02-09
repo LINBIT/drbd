@@ -139,7 +139,6 @@ struct drbd_rdma_stream {
 
 	int rx_descs_allocated;
 	int rx_descs_want_posted;
-	atomic_t rx_descs_unread;
 	atomic_t rx_descs_known_to_peer;
 
 	/* for recv() to keep track of the current rx_desc:
@@ -445,7 +444,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 	stats->send_buffer_used = atomic_read(tx_descs_posted) * DRBD_SOCKET_BUFFER_SIZE;
 
 	/* these two for debugfs */
-	stats->unread_received = atomic_read(&rdma_stream->rx_descs_unread) * DRBD_SOCKET_BUFFER_SIZE;
+	stats->unread_received = 0; /* No way to find that out! */
 	stats->unacked_send = stats->send_buffer_used;
 
 }
@@ -558,7 +557,6 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 
 	if (ib_poll_cq(cq, 1, &wc) == 1) {
 		rdma_stream->rx_descs_posted--;
-		atomic_dec(&rdma_stream->rx_descs_unread);
 		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 		WARN_ON(rx_desc == NULL);
 
@@ -661,7 +659,6 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int ret;
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
-	atomic_inc(&rdma_stream->rx_descs_unread);
 	atomic_dec(&rdma_stream->rx_descs_known_to_peer);
 
 	wake_up_interruptible(&rdma_stream->recv_wq);
@@ -1709,7 +1706,6 @@ static void dtr_debugfs_show_stream(struct seq_file *m, struct drbd_rdma_stream 
 		   stream->rx_descs_max);
 	seq_printf(m, "rx_descs_allocated(want_posted): %d\t(%d)\n", stream->rx_descs_allocated,
 		   stream->rx_descs_want_posted);
-	seq_printf(m, "rx_descs_unread: %d\n", atomic_read(&stream->rx_descs_unread));
 	seq_printf(m, "rx_descs_known_to_peer: %d\n",
 		   atomic_read(&stream->rx_descs_known_to_peer));
 	/* seq_printf(m, "rx_allocation_size: %d\n", stream->rx_allocation_size); */
