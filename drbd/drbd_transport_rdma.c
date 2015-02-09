@@ -191,6 +191,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
+static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc);
 static bool dtr_receive_rx_desc(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **);
@@ -222,6 +223,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.recv_pages = dtr_recv_pages,
 	.stream_ok = dtr_stream_ok,
 	.hint = dtr_hint,
+	.debugfs_show = dtr_debugfs_show,
 };
 
 
@@ -240,6 +242,7 @@ static struct drbd_transport *dtr_create(struct drbd_connection *connection)
 
 	rdma_transport->transport.ops = &dtr_ops;
 	rdma_transport->transport.connection = connection;
+	rdma_transport->transport.class = &rdma_transport_class;
 
 	return &rdma_transport->transport;
 }
@@ -1694,6 +1697,43 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		return true;
 	}
 	return true;
+}
+
+static void dtr_debugfs_show_stream(struct seq_file *m, struct drbd_rdma_stream *stream)
+{
+	seq_printf(m, "tx_descs_posted(max): %d\t(%d)\n", atomic_read(&stream->tx_descs_posted),
+		   stream->tx_descs_max);
+	seq_printf(m, "peer_rx_descs: %d\n", atomic_read(&stream->peer_rx_descs));
+
+	seq_printf(m, "rx_descs_posted(max): %d\t(%d)\n", stream->rx_descs_posted,
+		   stream->rx_descs_max);
+	seq_printf(m, "rx_descs_allocated(want_posted): %d\t(%d)\n", stream->rx_descs_allocated,
+		   stream->rx_descs_want_posted);
+	seq_printf(m, "rx_descs_unread: %d\n", atomic_read(&stream->rx_descs_unread));
+	seq_printf(m, "rx_descs_known_to_peer: %d\n",
+		   atomic_read(&stream->rx_descs_known_to_peer));
+	/* seq_printf(m, "rx_allocation_size: %d\n", stream->rx_allocation_size); */
+}
+
+static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
+{
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+	enum drbd_stream i;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct drbd_rdma_stream *stream = rdma_transport->stream[i];
+
+		if (stream) {
+			seq_printf(m, "%s stream\n", stream->name);
+			dtr_debugfs_show_stream(m, stream);
+		}
+	}
+
+
 }
 
 static int __init dtr_init(void)
