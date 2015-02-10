@@ -668,10 +668,26 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	wake_up_interruptible(&rdma_stream->recv_wq);
 }
 
+static void dtr_free_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
+{
+	struct ib_device *device = rdma_stream->cm.id->device;
+
+	switch (tx_desc->type) {
+	case SEND_PAGE:
+		ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+		put_page(tx_desc->page);
+		break;
+	case SEND_MSG:
+		ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+		kfree(tx_desc->data);
+		break;
+	}
+	kfree(tx_desc);
+}
+
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
-	struct ib_device *device = rdma_stream->cm.id->device;
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_wc wc;
 	int ret;
@@ -699,18 +715,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		}
 
 		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
-
-		switch (tx_desc->type) {
-		case SEND_PAGE:
-			ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
-			put_page(tx_desc->page);
-			break;
-		case SEND_MSG:
-			ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
-			kfree(tx_desc->data);
-			break;
-		}
-		kfree(tx_desc);
+		dtr_free_tx_desc(rdma_stream, tx_desc);
 	}
 
 	if (ret != 0)
