@@ -337,9 +337,9 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 		set_page_private(page, (unsigned long)all_pages);
 		all_pages = page;
 		i++;
+		dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	}
 
-	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
 	atomic_add(i, &peer_device->device->pp_in_use);
 	*pages = all_pages;
