@@ -1698,17 +1698,11 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
 
 static void dtr_debugfs_show_stream(struct seq_file *m, struct drbd_rdma_stream *stream)
 {
-	seq_printf(m, "tx_descs_posted(max): %d\t(%d)\n", atomic_read(&stream->tx_descs_posted),
-		   stream->tx_descs_max);
-	seq_printf(m, "peer_rx_descs: %d\n", atomic_read(&stream->peer_rx_descs));
-
-	seq_printf(m, "rx_descs_posted(max): %d\t(%d)\n", stream->rx_descs_posted,
-		   stream->rx_descs_max);
-	seq_printf(m, "rx_descs_allocated(want_posted): %d\t(%d)\n", stream->rx_descs_allocated,
-		   stream->rx_descs_want_posted);
-	seq_printf(m, "rx_descs_known_to_peer: %d\n",
-		   atomic_read(&stream->rx_descs_known_to_peer));
-	/* seq_printf(m, "rx_allocation_size: %d\n", stream->rx_allocation_size); */
+	seq_printf(m,    "%-7s  field:  posted\t alloc\tdesrire\t  max\n", stream->name);
+	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&stream->tx_descs_posted), stream->tx_descs_max);
+	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&stream->peer_rx_descs));
+	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", stream->rx_descs_posted, stream->rx_descs_allocated, stream->rx_descs_want_posted, stream->rx_descs_max);
+	seq_printf(m, " rx_peer_knows: %5d (what the peer knows about my recive window)\n\n", atomic_read(&stream->rx_descs_known_to_peer));
 }
 
 static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
@@ -1723,10 +1717,8 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 		struct drbd_rdma_stream *stream = rdma_transport->stream[i];
 
-		if (stream) {
-			seq_printf(m, "%s stream\n", stream->name);
+		if (stream)
 			dtr_debugfs_show_stream(m, stream);
-		}
 	}
 
 
