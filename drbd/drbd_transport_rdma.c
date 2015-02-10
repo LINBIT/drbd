@@ -775,8 +775,13 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 
 static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc)
 {
+	struct ib_device *device = rdma_stream->cm.id->device;
+	int alloc_size = rdma_stream->rx_allocation_size;
+
 	if (!rx_desc)
 		return; /* Allow call with NULL */
+
+	ib_dma_unmap_single(device, rx_desc->dma_addr, alloc_size, DMA_FROM_DEVICE);
 
 	rdma_stream->rx_descs_allocated--;
 	if (rx_desc->page)
@@ -869,13 +874,9 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 static void dtr_repost_rx_desc(struct drbd_rdma_stream *rdma_stream,
 			       struct drbd_rdma_rx_desc *rx_desc)
 {
-	struct ib_device *device = rdma_stream->cm.id->device;
 	int err;
 
 	rx_desc->size = rdma_stream->rx_allocation_size;
-	rx_desc->dma_addr = ib_dma_map_single(device, rx_desc->data,
-					      rx_desc->size,
-					      DMA_FROM_DEVICE);
 	rx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
 	rx_desc->sge.addr = rx_desc->dma_addr;
 	rx_desc->sge.length = rx_desc->size;
