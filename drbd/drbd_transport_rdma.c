@@ -1085,12 +1085,16 @@ pd_failed:
 	return err;
 }
 
-static void dtr_drain_cq(struct ib_cq *cq)
+static void dtr_drain_cq(struct drbd_rdma_stream *rdma_stream, struct ib_cq *cq,
+			 void (*free_desc)(struct drbd_rdma_stream *, void *))
 {
 	struct ib_wc wc;
+	void *desc;
 
-	while(ib_poll_cq(cq, 1, &wc) == 1)
-		;
+	while (ib_poll_cq(cq, 1, &wc) == 1) {
+		desc = (void *) (unsigned long) wc.wr_id;
+		free_desc(rdma_stream, desc);
+	}
 }
 
 static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
@@ -1102,10 +1106,12 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 	/* We are ignoring errors here on purpose */
 
 	if (rdma_stream->send_cq)
-		dtr_drain_cq(rdma_stream->send_cq);
+		dtr_drain_cq(rdma_stream, rdma_stream->send_cq,
+			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_tx_desc);
 
 	if (rdma_stream->recv_cq)
-		dtr_drain_cq(rdma_stream->recv_cq);
+		dtr_drain_cq(rdma_stream, rdma_stream->recv_cq,
+			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_rx_desc);
 
 	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
 					 rdma_stream->cm.state >= DISCONNECTED,
