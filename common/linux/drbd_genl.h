@@ -215,8 +215,8 @@ GENL_struct(DRBD_NLA_DETACH_PARMS, 13, detach_parms,
 )
 
 GENL_struct(DRBD_NLA_DEVICE_CONF, 14, device_conf,
-	__u32_field_def(1, DRBD_F_REQUIRED | DRBD_F_INVARIANT,	max_bio_size, DRBD_MAX_BIO_SIZE_DEF)
-	__u32_field_def(2, DRBD_F_REQUIRED | DRBD_F_INVARIANT,	max_buffers, DRBD_MAX_BUFFERS_DEF)
+	__u32_field_def(1, DRBD_F_INVARIANT,	max_bio_size, DRBD_MAX_BIO_SIZE_DEF)
+	__u32_field_def(2, 0,	max_buffers, DRBD_MAX_BUFFERS_DEF)
 )
 
 GENL_struct(DRBD_NLA_RESOURCE_INFO, 15, resource_info,
