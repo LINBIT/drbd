@@ -1105,6 +1105,11 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 	rdma_disconnect(rdma_stream->cm.id);
 	/* We are ignoring errors here on purpose */
 
+	/* There might be a signal pending here. Not incorruptible! */
+	wait_event_timeout(rdma_stream->cm.state_wq,
+			   rdma_stream->cm.state >= DISCONNECTED,
+			   HZ);
+
 	if (rdma_stream->send_cq)
 		dtr_drain_cq(rdma_stream, rdma_stream->send_cq,
 			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_tx_desc);
@@ -1112,10 +1117,6 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 	if (rdma_stream->recv_cq)
 		dtr_drain_cq(rdma_stream, rdma_stream->recv_cq,
 			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_rx_desc);
-
-	wait_event_interruptible_timeout(rdma_stream->cm.state_wq,
-					 rdma_stream->cm.state >= DISCONNECTED,
-					 HZ);
 
 	if (rdma_stream->cm.state < DISCONNECTED)
 		pr_warn("%s: WARN: not properly disconnected\n", rdma_stream->name);
