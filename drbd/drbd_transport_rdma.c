@@ -65,8 +65,10 @@ MODULE_LICENSE("GPL");
    very comparable to the socket sendbuf and recvbuf sizes */
 #define RDMA_DEF_BUFFER_SIZE (1 << 19)
 
-/* one for the handshake's first packet, one for the first flow_control msg. */
-#define INITIAL_RX_DESCS 2
+/* one for the handshake's first packet, one for the first flow_control msg.
+   The third for the feature packet. Only after that drbd starts to receive,
+   and with that will receive the first flow_control_msg. */
+#define INITIAL_RX_DESCS 3
 
 /* If we can send less than 8 packets, we consider the transport as congested. */
 #define DESCS_LOW_LEVEL 8
@@ -553,7 +555,7 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 {
 	struct ib_cq *cq = rdma_stream->recv_cq;
 	struct ib_wc wc;
-	int size;
+	int size, ret;
 
 	if (ib_poll_cq(cq, 1, &wc) == 1) {
 		rdma_stream->rx_descs_posted--;
@@ -577,14 +579,18 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 		}
 	}
 
+	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
+	if (ret)
+		pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
+
 	return false;
 }
 
-static void dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport)
+static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum drbd_stream stream)
 {
 	struct drbd_rdma_stream *rdma_stream;
 	struct dtr_flow_control msg;
-	int i;
+	enum drbd_stream i;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
@@ -597,8 +603,8 @@ static void dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport
 		msg.new_rx_descs[i] = cpu_to_be32(n);
 	}
 
-	/* rdma_stream is the control stream here */
-	dtr_send(rdma_stream, &msg, sizeof(msg));
+	rdma_stream = rdma_transport->stream[stream];
+	return dtr_send(rdma_stream, &msg, sizeof(msg));
 }
 
 static void dtr_flow_control(struct drbd_rdma_stream *rdma_stream)
@@ -608,7 +614,7 @@ static void dtr_flow_control(struct drbd_rdma_stream *rdma_stream)
 
 	n = rdma_stream->rx_descs_posted - known_to_peer;
 	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
-		dtr_send_flow_control_msg(rdma_stream->rdma_transport);
+		dtr_send_flow_control_msg(rdma_stream->rdma_transport, CONTROL_STREAM);
 }
 
 static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
@@ -641,13 +647,8 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 
 	while (1) {
 		r = __dtr_receive_rx_desc(rdma_stream, &rx_desc);
-		if (!r) {
-			int ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
-			if (ret)
-				pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
-
+		if (!r)
 			return false;
-		}
 
 		if (*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
 			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
@@ -1578,11 +1579,26 @@ randomize:
 	data_stream->send_timeout = timeout;
 	control_stream->send_timeout = timeout;
 
+	/* The first flow_control message is sent on the data
+	   stream, since drbd starts the asender not immediately.
+
+	   All later flow_control messages are sent on the control
+	   stream. During normal operation DRBD is much likely to receive
+	   the flow_control message quickly if it comes in on the
+	   CONTROL_STREAM. (Because of the asender thread) */
 	__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
-	dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
+	__dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
+	err = dtr_send_flow_control_msg(rdma_transport, DATA_STREAM);
+	if (err < 0) {
+		pr_err("sending first flow_control_msg() failed\n");
+		goto out_late_eagain;
+	}
 
 	return 0;
 
+out_late_eagain:
+	rdma_transport->stream[DATA_STREAM] = NULL;
+	rdma_transport->stream[CONTROL_STREAM] = NULL;
 out_eagain:
 	err = -EAGAIN;
 out:
