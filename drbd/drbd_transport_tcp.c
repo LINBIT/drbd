@@ -219,24 +219,15 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 
 static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int flags)
 {
-	mm_segment_t oldfs;
 	struct kvec iov = {
 		.iov_base = buf,
 		.iov_len = size,
 	};
 	struct msghdr msg = {
-		.msg_iovlen = 1,
-		.msg_iov = (struct iovec *)&iov,
 		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
 	};
-	int rv;
 
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-	rv = sock_recvmsg(socket, &msg, size, msg.msg_flags);
-	set_fs(oldfs);
-
-	return rv;
+	return kernel_recvmsg(socket, &msg, &iov, 1, size, msg.msg_flags);
 }
 
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
