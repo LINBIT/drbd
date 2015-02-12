@@ -6161,7 +6161,8 @@ void twopc_connection_down(struct drbd_connection *connection)
 		set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			del_timer(&resource->twopc_timer);
-			if (list_empty(&resource->twopc_work.list))
+			if (list_empty(&resource->twopc_work.list) &&
+			    resource->twopc_work.cb)
 				drbd_queue_work(&resource->work, &resource->twopc_work);
 		}
 	}
