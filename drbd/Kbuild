@@ -50,10 +50,6 @@ ifdef ENABLE_KREF_DEBUGGING_HERE
       drbd-y += kref_debug.o drbd_kref_debug.o
 endif
 
-ifndef CONFIG_CONNECTOR
-	drbd-y += connector.o cn_queue.o
-endif
-
 $(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h
 $(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h
 
