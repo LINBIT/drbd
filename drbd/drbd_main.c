@@ -3159,11 +3159,7 @@ static int init_submitter(struct drbd_device *device)
 #endif
 	if (!device->submit.wq)
 		return -ENOMEM;
-#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
-	INIT_WORK(&device->submit.worker, do_submit, &device->submit.worker);
-#else
 	INIT_WORK(&device->submit.worker, do_submit);
-#endif
 	INIT_LIST_HEAD(&device->submit.writes);
 	return 0;
 }
