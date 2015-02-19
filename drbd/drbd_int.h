@@ -1080,6 +1080,7 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+	struct peer_device_conf *conf; /* RCU, for updates: resource->conf_update */
 	enum drbd_disk_state disk_state[2];
 	enum drbd_repl_state repl_state[2];
 	bool resync_susp_user[2];
@@ -1799,6 +1800,7 @@ extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, 
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_khelper(struct drbd_device *, struct drbd_connection *, char *);
+extern int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);

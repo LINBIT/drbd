@@ -987,7 +987,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
 	struct net_conf *nc;
-	struct disk_conf *dc;
+	struct peer_device_conf *pdc;
 
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->net_conf);
@@ -1012,12 +1012,12 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	nc = rcu_dereference(peer_device->connection->net_conf);
 
 	if (get_ldev(peer_device->device)) {
-		dc = rcu_dereference(peer_device->device->ldev->disk_conf);
-		p->resync_rate = cpu_to_be32(dc->resync_rate);
-		p->c_plan_ahead = cpu_to_be32(dc->c_plan_ahead);
-		p->c_delay_target = cpu_to_be32(dc->c_delay_target);
-		p->c_fill_target = cpu_to_be32(dc->c_fill_target);
-		p->c_max_rate = cpu_to_be32(dc->c_max_rate);
+		pdc = rcu_dereference(peer_device->conf);
+		p->resync_rate = cpu_to_be32(pdc->resync_rate);
+		p->c_plan_ahead = cpu_to_be32(pdc->c_plan_ahead);
+		p->c_delay_target = cpu_to_be32(pdc->c_delay_target);
+		p->c_fill_target = cpu_to_be32(pdc->c_fill_target);
+		p->c_max_rate = cpu_to_be32(pdc->c_max_rate);
 		put_ldev(peer_device->device);
 	} else {
 		p->resync_rate = cpu_to_be32(DRBD_RESYNC_RATE_DEF);
@@ -1265,16 +1265,16 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 /* All callers hold resource->conf_update */
 int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	struct drbd_device *device = peer_device->device;
-	int err = -ENOMEM;
-	struct disk_conf *disk_conf;
+	struct drbd_resource *resource = peer_device->device->resource;
+	struct peer_device_conf *pdc;
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
+	int err = -ENOMEM;
 
-	disk_conf = rcu_dereference_protected(device->ldev->disk_conf,
-		lockdep_is_held(&device->resource->conf_update));
+	pdc = rcu_dereference_protected(peer_device->conf,
+		lockdep_is_held(&resource->conf_update));
 
-	resync_plan = fifo_alloc((disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+	resync_plan = fifo_alloc((pdc->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
 	if (!resync_plan)
 		goto out;
 	resync_lru = lc_create("resync", drbd_bm_ext_cache,
@@ -2501,6 +2501,7 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 {
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
+	kfree(peer_device->conf);
 	kfree(peer_device);
 }
 
@@ -3113,10 +3114,17 @@ void drbd_destroy_connection(struct kref *kref)
 struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
+	int err;
 
 	peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
 	if (!peer_device)
 		return NULL;
+
+	err = drbd_create_peer_device_default_config(peer_device);
+	if (err) {
+		kfree(peer_device);
+		return NULL;
+	}
 
 	peer_device->connection = connection;
 	peer_device->device = device;

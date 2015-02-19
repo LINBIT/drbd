@@ -85,6 +85,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info);
@@ -1649,9 +1650,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct drbd_resource *resource;
 	struct disk_conf *new_disk_conf, *old_disk_conf;
-	int err, fifo_size;
 	struct drbd_peer_device *peer_device;
-	struct fifo_buffer *fifo_to_be_freed = NULL;
+	int err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -1687,36 +1687,10 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail_unlock;
 	}
 
-	if (!expect(device, new_disk_conf->resync_rate >= 1))
-		new_disk_conf->resync_rate = 1;
-
 	if (new_disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
 		new_disk_conf->al_extents = DRBD_AL_EXTENTS_MIN;
 	if (new_disk_conf->al_extents > drbd_al_extents_max(device->ldev))
 		new_disk_conf->al_extents = drbd_al_extents_max(device->ldev);
-
-	if (new_disk_conf->c_plan_ahead > DRBD_C_PLAN_AHEAD_MAX)
-		new_disk_conf->c_plan_ahead = DRBD_C_PLAN_AHEAD_MAX;
-
-	fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
-	for_each_peer_device(peer_device, device) {
-		struct fifo_buffer *old_plan, *new_plan;
-		old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
-			lockdep_is_held(&resource->conf_update));
-		if (!old_plan || fifo_size != old_plan->size) {
-			new_plan = fifo_alloc(fifo_size);
-			if (!new_plan) {
-				drbd_err(peer_device, "kmalloc of fifo_buffer failed");
-				retcode = ERR_NOMEM;
-				goto fail_unlock;
-			}
-			rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
-			if (old_plan) {
-				old_plan->next = fifo_to_be_freed;
-				fifo_to_be_freed = old_plan;
-			}
-		}
-	}
 
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->al_wait, lc_try_lock(device->act_log));
@@ -1776,11 +1750,6 @@ fail_unlock:
 success:
 	if (retcode != NO_ERROR)
 		synchronize_rcu();
-	while (fifo_to_be_freed) {
-		struct fifo_buffer *next = fifo_to_be_freed->next;
-		kfree(fifo_to_be_freed);
-		fifo_to_be_freed = next;
-	}
 	put_ldev(device);
  out:
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
@@ -1890,9 +1859,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 		goto fail;
 	}
-
-	if (new_disk_conf->c_plan_ahead > DRBD_C_PLAN_AHEAD_MAX)
-		new_disk_conf->c_plan_ahead = DRBD_C_PLAN_AHEAD_MAX;
 
 	if (new_disk_conf->meta_dev_idx < DRBD_MD_INDEX_FLEX_INT) {
 		retcode = ERR_MD_IDX_INVALID;
@@ -2661,6 +2627,111 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
  out:
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
+}
+
+static int adjust_resync_fifo(struct drbd_peer_device *peer_device,
+			      struct peer_device_conf *conf,
+			      struct fifo_buffer **pp_old_plan)
+{
+	struct fifo_buffer *old_plan, *new_plan = NULL;
+	int fifo_size;
+
+	fifo_size = (conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
+
+	old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
+					     lockdep_is_held(&resource->conf_update));
+	if (!old_plan || fifo_size != old_plan->size) {
+		new_plan = fifo_alloc(fifo_size);
+		if (!new_plan) {
+			drbd_err(peer_device, "kmalloc of fifo_buffer failed");
+			return -ENOMEM;
+		}
+		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
+		if (pp_old_plan)
+			*pp_old_plan = old_plan;
+	}
+
+	return 0;
+}
+
+int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	enum drbd_ret_code retcode;
+	struct drbd_peer_device *peer_device;
+	struct peer_device_conf *old_peer_device_conf, *new_peer_device_conf = NULL;
+	struct fifo_buffer *old_plan = NULL;
+	int err;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_DEVICE);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	peer_device = adm_ctx.peer_device;
+
+	mutex_lock(&adm_ctx.resource->adm_mutex);
+
+	new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
+	if (!new_peer_device_conf)
+		goto fail;
+
+	old_peer_device_conf = peer_device->conf;
+	*new_peer_device_conf = *old_peer_device_conf;
+	if (should_set_defaults(info))
+		set_peer_device_conf_defaults(new_peer_device_conf);
+
+	err = peer_device_conf_from_attrs_for_change(new_peer_device_conf, info);
+	if (err && err != -ENOMSG) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+		goto fail;
+	}
+
+	if (!expect(peer_device, new_peer_device_conf->resync_rate >= 1))
+		new_peer_device_conf->resync_rate = 1;
+
+	if (new_peer_device_conf->c_plan_ahead > DRBD_C_PLAN_AHEAD_MAX)
+		new_peer_device_conf->c_plan_ahead = DRBD_C_PLAN_AHEAD_MAX;
+
+	err = adjust_resync_fifo(peer_device, new_peer_device_conf, &old_plan);
+	if (err)
+		goto fail;
+
+	rcu_assign_pointer(peer_device->conf, new_peer_device_conf);
+
+	synchronize_rcu();
+	kfree(old_peer_device_conf);
+	kfree(old_plan);
+
+	if (0) {
+fail:
+		retcode = ERR_NOMEM;
+		kfree(new_peer_device_conf);
+	}
+
+	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
+
+}
+
+int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device)
+{
+	struct peer_device_conf *conf;
+	int err;
+
+	conf = kzalloc(sizeof(*conf), GFP_KERNEL);
+	if (!conf)
+		return -ENOMEM;
+
+	set_peer_device_conf_defaults(conf);
+	err = adjust_resync_fifo(peer_device, conf, NULL);
+	if (err)
+		return err;
+
+	peer_device->conf = conf;
+
 	return 0;
 }
 

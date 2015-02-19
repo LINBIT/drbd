@@ -2318,7 +2318,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 	int curr_events;
 
 	rcu_read_lock();
-	c_min_rate = rcu_dereference(device->ldev->disk_conf)->c_min_rate;
+	c_min_rate = rcu_dereference(peer_device->conf)->c_min_rate;
 	rcu_read_unlock();
 
 	/* feature disabled? */
@@ -3541,7 +3541,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	struct crypto_hash *verify_tfm = NULL;
 	struct crypto_hash *csums_tfm = NULL;
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
-	struct disk_conf *old_disk_conf = NULL, *new_disk_conf = NULL;
+	struct peer_device_conf *old_peer_device_conf = NULL, *new_peer_device_conf = NULL;
 	const int apv = connection->agreed_pro_version;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	struct drbd_resource *resource = connection->resource;
@@ -3589,19 +3589,19 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	}
 	old_net_conf = connection->net_conf;
 	if (get_ldev(device)) {
-		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
-		if (!new_disk_conf) {
+		new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
+		if (!new_peer_device_conf) {
 			put_ldev(device);
 			mutex_unlock(&resource->conf_update);
-			drbd_err(device, "Allocation of new disk_conf failed\n");
+			drbd_err(device, "Allocation of new peer_device_conf failed\n");
 			return -ENOMEM;
 		}
-		/* With a non-zero new_disk_conf, we will call put_ldev() below.  */
+		/* With a non-zero new_peer_device_conf, we will call put_ldev() below.  */
 
-		old_disk_conf = device->ldev->disk_conf;
-		*new_disk_conf = *old_disk_conf;
+		old_peer_device_conf = peer_device->conf;
+		*new_peer_device_conf = *old_peer_device_conf;
 
-		new_disk_conf->resync_rate = be32_to_cpu(p->resync_rate);
+		new_peer_device_conf->resync_rate = be32_to_cpu(p->resync_rate);
 	}
 
 	if (apv >= 88) {
@@ -3652,13 +3652,13 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			}
 		}
 
-		if (apv > 94 && new_disk_conf) {
-			new_disk_conf->c_plan_ahead = be32_to_cpu(p->c_plan_ahead);
-			new_disk_conf->c_delay_target = be32_to_cpu(p->c_delay_target);
-			new_disk_conf->c_fill_target = be32_to_cpu(p->c_fill_target);
-			new_disk_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
+		if (apv > 94 && new_peer_device_conf) {
+			new_peer_device_conf->c_plan_ahead = be32_to_cpu(p->c_plan_ahead);
+			new_peer_device_conf->c_delay_target = be32_to_cpu(p->c_delay_target);
+			new_peer_device_conf->c_fill_target = be32_to_cpu(p->c_fill_target);
+			new_peer_device_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
 
-			fifo_size = (new_disk_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
+			fifo_size = (new_peer_device_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 			old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
 				lockdep_is_held(&resource->conf_update));
 			if (!old_plan || fifo_size != old_plan->size) {
@@ -3697,8 +3697,8 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 	}
 
-	if (new_disk_conf) {
-		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
+	if (new_peer_device_conf) {
+		rcu_assign_pointer(peer_device->conf, new_peer_device_conf);
 		put_ldev(device);
 	}
 
@@ -3709,25 +3709,25 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	synchronize_rcu();
 	if (new_net_conf)
 		kfree(old_net_conf);
-	kfree(old_disk_conf);
+	kfree(old_peer_device_conf);
 	if (new_plan)
 		kfree(old_plan);
 
 	return 0;
 
 reconnect:
-	if (new_disk_conf) {
+	if (new_peer_device_conf) {
 		put_ldev(device);
-		kfree(new_disk_conf);
+		kfree(new_peer_device_conf);
 	}
 	mutex_unlock(&resource->conf_update);
 	return -EIO;
 
 disconnect:
 	kfree(new_plan);
-	if (new_disk_conf) {
+	if (new_peer_device_conf) {
 		put_ldev(device);
-		kfree(new_disk_conf);
+		kfree(new_peer_device_conf);
 	}
 	mutex_unlock(&resource->conf_update);
 	/* just for completeness: actually not needed,

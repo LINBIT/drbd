@@ -536,8 +536,7 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 
 static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int sect_in)
 {
-	struct drbd_device *device = peer_device->device;
-	struct disk_conf *dc;
+	struct peer_device_conf *pdc;
 	unsigned int want;     /* The number of sectors we want in-flight */
 	int req_sect; /* Number of sectors to request in this turn */
 	int correction; /* Number of sectors more we need in-flight */
@@ -547,16 +546,16 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	int max_sect;
 	struct fifo_buffer *plan;
 
-	dc = rcu_dereference(device->ldev->disk_conf);
+	pdc = rcu_dereference(peer_device->conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
 
-	steps = plan->size; /* (dc->c_plan_ahead * 10 * SLEEP_TIME) / HZ; */
+	steps = plan->size; /* (pdc->c_plan_ahead * 10 * SLEEP_TIME) / HZ; */
 
 	if (peer_device->rs_in_flight + sect_in == 0) { /* At start of resync */
-		want = ((dc->resync_rate * 2 * SLEEP_TIME) / HZ) * steps;
+		want = ((pdc->resync_rate * 2 * SLEEP_TIME) / HZ) * steps;
 	} else { /* normal path */
-		want = dc->c_fill_target ? dc->c_fill_target :
-			sect_in * dc->c_delay_target * HZ / (SLEEP_TIME * 10);
+		want = pdc->c_fill_target ? pdc->c_fill_target :
+			sect_in * pdc->c_delay_target * HZ / (SLEEP_TIME * 10);
 	}
 
 	correction = want - peer_device->rs_in_flight - plan->total;
@@ -574,7 +573,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	if (req_sect < 0)
 		req_sect = 0;
 
-	max_sect = (dc->c_max_rate * 2 * SLEEP_TIME) / HZ;
+	max_sect = (pdc->c_max_rate * 2 * SLEEP_TIME) / HZ;
 	if (req_sect > max_sect)
 		req_sect = max_sect;
 
@@ -603,7 +602,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 		number = drbd_rs_controller(peer_device, sect_in) >> (BM_BLOCK_SHIFT - 9);
 		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;
 	} else {
-		peer_device->c_sync_rate = rcu_dereference(device->ldev->disk_conf)->resync_rate;
+		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
 		number = SLEEP_TIME * peer_device->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	}
 	rcu_read_unlock();
