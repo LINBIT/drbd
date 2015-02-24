@@ -4169,6 +4169,7 @@ put_result:
 	if (retcode == NO_ERROR) {
 		struct peer_device_info peer_device_info;
 		struct peer_device_statistics peer_device_statistics;
+		struct peer_device_conf *peer_device_conf;
 
 		dh->minor = minor;
 		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
@@ -4182,6 +4183,13 @@ put_result:
 		err = peer_device_statistics_to_skb(skb, &peer_device_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
+		peer_device_conf = rcu_dereference(peer_device->conf);
+		if (peer_device_conf) {
+			err = peer_device_conf_to_skb(skb, peer_device_conf, !capable(CAP_SYS_ADMIN));
+			if (err)
+				goto out;
+		}
+
 		cb->args[1] = minor;
 		cb->args[2] = (long)peer_device;
 	}
