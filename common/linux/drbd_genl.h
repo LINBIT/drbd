@@ -172,7 +172,8 @@ GENL_struct(DRBD_NLA_NET_CONF, 5, net_conf,
 	__u32_field(32,		DRBD_F_REQUIRED | DRBD_F_INVARIANT,	peer_node_id)
 	__flg_field_def(33, 0 /* OPTIONAL */,	csums_after_crash_only, DRBD_CSUMS_AFTER_CRASH_ONLY_DEF)
 	__u32_field_def(34, 0 /* OPTIONAL */, sock_check_timeo, DRBD_SOCKET_CHECK_TIMEO_DEF)
-	__str_field_def(35, 0 /* OPTIONAL */, transport_name, SHARED_SECRET_MAX)
+	__str_field_def(35, DRBD_F_INVARIANT, transport_name, SHARED_SECRET_MAX)
+	__u32_field_def(36, 0 /* OPTIONAL */, max_buffers, DRBD_MAX_BUFFERS_DEF)
 )
 
 GENL_struct(DRBD_NLA_SET_ROLE_PARMS, 6, set_role_parms,
@@ -210,7 +211,6 @@ GENL_struct(DRBD_NLA_DETACH_PARMS, 13, detach_parms,
 
 GENL_struct(DRBD_NLA_DEVICE_CONF, 14, device_conf,
 	__u32_field_def(1, DRBD_F_INVARIANT,	max_bio_size, DRBD_MAX_BIO_SIZE_DEF)
-	__u32_field_def(2, 0,	max_buffers, DRBD_MAX_BUFFERS_DEF)
 )
 
 GENL_struct(DRBD_NLA_RESOURCE_INFO, 15, resource_info,
