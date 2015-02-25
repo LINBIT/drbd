@@ -4573,14 +4573,12 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
-	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	resource = adm_ctx.device->resource;
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 	retcode = adm_del_minor(adm_ctx.device);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);

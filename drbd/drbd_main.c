@@ -1265,14 +1265,13 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 /* All callers hold resource->conf_update */
 int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(local)
 {
-	struct drbd_resource *resource = peer_device->device->resource;
 	struct peer_device_conf *pdc;
 	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
 	int err = -ENOMEM;
 
 	pdc = rcu_dereference_protected(peer_device->conf,
-		lockdep_is_held(&resource->conf_update));
+		lockdep_is_held(&peer_device->device->resource->conf_update));
 
 	resync_plan = fifo_alloc((pdc->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
 	if (!resync_plan)
