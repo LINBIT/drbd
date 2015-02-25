@@ -588,16 +588,16 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 
 static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
+	struct net_conf *nc;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
 
 	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
 	peer_device->rs_in_flight -= sect_in;
 
-	mxb = device->device_conf.max_buffers;
-
 	rcu_read_lock();
+	nc = rcu_dereference(peer_device->connection->net_conf);
+	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in) >> (BM_BLOCK_SHIFT - 9);
 		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;

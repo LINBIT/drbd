@@ -290,7 +290,9 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 	DEFINE_WAIT(wait);
 	unsigned int mxb;
 
-	mxb = device->device_conf.max_buffers;
+	rcu_read_lock();
+	mxb = rcu_dereference(peer_device->connection->net_conf)->max_buffers;
+	rcu_read_unlock();
 
 	if (atomic_read(&device->pp_in_use) < mxb)
 		page = __drbd_alloc_pages(device, number, gfp_mask & ~__GFP_WAIT);
