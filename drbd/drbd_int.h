@@ -2540,10 +2540,7 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 	if (ap_bio == 0 && !list_empty(&device->pending_bitmap_work))
 		drbd_queue_pending_bitmap_work(device);
 
-	/* this currently does wake_up for every dec_ap_bio!
-	 * maybe rather introduce some type of hysteresis?
-	 * e.g. (ap_bio == max_buffers/2 || ap_bio == 0) ? */
-	if (ap_bio < device->device_conf.max_buffers)
+	if (ap_bio == 0)
 		wake_up(&device->misc_wait);
 }
 
@@ -2569,11 +2566,6 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	if (!drbd_state_is_stable(device))
 		return false;
 
-	/* since some older kernels don't have atomic_add_unless,
-	 * and we are within the spinlock anyways, we have this workaround.  */
-	if (atomic_read(&device->ap_bio_cnt[READ]) + atomic_read(&device->ap_bio_cnt[WRITE])
-	    > device->device_conf.max_buffers)
-		return false;
 	if (!list_empty(&device->pending_bitmap_work))
 		return false;
 	return true;
