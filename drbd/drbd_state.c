@@ -947,7 +947,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		for_each_connection(connection, resource) {
 			struct net_conf *nc;
 
-			nc = rcu_dereference(connection->net_conf);
+			nc = rcu_dereference(connection->transport.net_conf);
 			if (!nc || nc->two_primaries)
 				continue;
 			if (connection->peer_role[NEW] == R_PRIMARY)
@@ -984,7 +984,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			}
 		}
 
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
 		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY && !two_primaries) {
 			idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1081,7 +1081,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
 			     (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
-				struct net_conf *nc = rcu_dereference(peer_device->connection->net_conf);
+				struct net_conf *nc = rcu_dereference(peer_device->connection->transport.net_conf);
 
 				if (!nc || nc->verify_alg[0] == 0)
 					return SS_NO_VERIFY_ALG;
@@ -2858,7 +2858,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 		if (connection->agreed_pro_version < 110)
 			continue;
-		mask = NODE_MASK(connection->net_conf->peer_node_id);
+		mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
 		if (reach_immediately & mask)
 			set_bit(TWOPC_PREPARED, &connection->flags);
 		else
@@ -2973,9 +2973,9 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 		u64 mask;
 
 		/* If this peer is primary as well, the config must allow it. */
-		mask = NODE_MASK(connection->net_conf->peer_node_id);
+		mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
 		if ((resource->twopc_reply.primary_nodes & mask) &&
-		    !(connection->net_conf->two_primaries)) {
+		    !(connection->transport.net_conf->two_primaries)) {
 			rv = SS_TWO_PRIMARIES;
 			break;
 		}
@@ -3257,7 +3257,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				reply->target_reachable_nodes = m;
 			} else {
 				for_each_connection(connection, resource) {
-					int node_id = connection->net_conf->peer_node_id;
+					int node_id = connection->transport.net_conf->peer_node_id;
 
 					if (node_id == context->target_node_id) {
 						drbd_info(connection, "Cluster is now split\n");
@@ -3790,7 +3790,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 			.vnr = -1,
 			.mask = { { .conn = conn_MASK } },
 			.val = { { .conn = cstate } },
-			.target_node_id = connection->net_conf->peer_node_id,
+			.target_node_id = connection->transport.net_conf->peer_node_id,
 			.flags = flags,
 			.change_local_state_last = true,
 		},

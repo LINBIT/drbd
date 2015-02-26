@@ -699,7 +699,7 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 		return;
 
 	rcu_read_lock();
-	strcpy(conn_name, rcu_dereference((connection)->net_conf)->name);
+	strcpy(conn_name, rcu_dereference(connection->transport.net_conf)->name);
 	rcu_read_unlock();
 
 	dentry = debugfs_create_dir(conn_name, conns_dir);

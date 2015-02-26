@@ -145,7 +145,7 @@ struct drbd_connection;
 #define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
 	({	rcu_read_lock(); \
 		dev_printk(level, disk_to_dev((peer_device)->device->vdisk), "%s: " fmt, \
-			   rcu_dereference((peer_device)->connection->net_conf)->name, ## args); \
+			   rcu_dereference((peer_device)->connection->transport.net_conf)->name, ## args); \
 		rcu_read_unlock(); \
 	})
 #else
@@ -154,7 +154,7 @@ struct drbd_connection;
 #define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
 	({	rcu_read_lock(); \
 		printk(level "block drbd%u %s: " fmt, (peer_device)->device->minor, \
-		       rcu_dereference((peer_device)->connection->net_conf)->name, ## args); \
+		       rcu_dereference((peer_device)->connection->transport.net_conf)->name, ## args); \
 		rcu_read_unlock(); \
 	})
 #endif
@@ -165,7 +165,7 @@ struct drbd_connection;
 #define __drbd_printk_connection(level, connection, fmt, args...) \
 	({	rcu_read_lock(); \
 		printk(level "drbd %s %s: " fmt, (connection)->resource->name,  \
-		       rcu_dereference((connection)->net_conf)->name, ## args); \
+		       rcu_dereference((connection)->transport.net_conf)->name, ## args); \
 		rcu_read_unlock(); \
 	})
 
@@ -954,7 +954,6 @@ struct drbd_connection {
 	enum drbd_role peer_role[2];
 
 	unsigned long flags;
-	struct net_conf *net_conf;	/* content protected by rcu */
 	enum drbd_fencing_policy fencing_policy;
 	wait_queue_head_t ping_wait;	/* Woken upon reception of a ping, and a state change */
 

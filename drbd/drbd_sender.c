@@ -595,7 +595,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	peer_device->rs_in_flight -= sect_in;
 
 	rcu_read_lock();
-	nc = rcu_dereference(peer_device->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in) >> (BM_BLOCK_SHIFT - 9);
@@ -1715,7 +1715,7 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 				break;
 			}
 
-			nc = rcu_dereference(peer_device->connection->net_conf);
+			nc = rcu_dereference(peer_device->connection->transport.net_conf);
 			/* Restricting the clause the two_primaries not allowed, otherwise
 			   we need to ensure here that we are neighbor of all primaries,
 			   and that is a lot more challenging. */
@@ -1754,7 +1754,7 @@ static bool use_checksum_based_resync(struct drbd_connection *connection, struct
 {
 	bool csums_after_crash_only;
 	rcu_read_lock();
-	csums_after_crash_only = rcu_dereference(connection->net_conf)->csums_after_crash_only;
+	csums_after_crash_only = rcu_dereference(connection->transport.net_conf)->csums_after_crash_only;
 	rcu_read_unlock();
 	return connection->agreed_pro_version >= 89 &&		/* supported? */
 		connection->csums_tfm &&			/* configured? */
@@ -1915,7 +1915,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 				int timeo;
 
 				rcu_read_lock();
-				nc = rcu_dereference(connection->net_conf);
+				nc = rcu_dereference(connection->transport.net_conf);
 				timeo = nc->ping_int * HZ + nc->ping_timeo * HZ / 9;
 				rcu_read_unlock();
 				schedule_timeout_interruptible(timeo);
@@ -2320,7 +2320,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	 * Also, poke TCP, just in case.
 	 * Then wait for new work (or signal). */
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	uncork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
 	if (uncork) {
@@ -2369,7 +2369,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 
 	/* someone may have changed the config while we have been waiting above. */
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	cork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
 

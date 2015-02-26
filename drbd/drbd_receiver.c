@@ -298,7 +298,7 @@ struct page *drbd_alloc_pages(struct drbd_connection *connection, unsigned int n
 	unsigned int mxb;
 
 	rcu_read_lock();
-	mxb = rcu_dereference(connection->net_conf)->max_buffers;
+	mxb = rcu_dereference(connection->transport.net_conf)->max_buffers;
 	rcu_read_unlock();
 
 	if (atomic_read(&connection->pp_in_use) < mxb)
@@ -517,7 +517,7 @@ static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size
 		if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
 			long t;
 			rcu_read_lock();
-			t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
+			t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
 			rcu_read_unlock();
 
 			t = wait_event_timeout(connection->ping_wait, connection->cstate[NOW] < C_CONNECTED, t);
@@ -677,7 +677,7 @@ start:
 	connection->last_received = jiffies;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	ping_timeo = nc->ping_timeo;
 	ping_int = nc->ping_int;
 	rcu_read_unlock();
@@ -703,7 +703,7 @@ start:
 	transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	discard_my_data = nc->discard_my_data;
 	rcu_read_unlock();
 
@@ -730,14 +730,14 @@ start:
 		 * connection attempt, the handshake of which is now well underway.
 		 * No need for rcu style copying of the whole struct
 		 * just to clear a single value. */
-		connection->net_conf->discard_my_data = 0;
+		connection->transport.net_conf->discard_my_data = 0;
 		mutex_unlock(&resource->conf_update);
 	}
 
 	drbd_thread_start(&connection->asender);
 
 	if (connection->agreed_pro_version >= 110) {
-		if (resource->res_opts.node_id < connection->net_conf->peer_node_id) {
+		if (resource->res_opts.node_id < connection->transport.net_conf->peer_node_id) {
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 11);
 			connection->connect_timer_work.cb = connect_work;
@@ -1932,7 +1932,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 		}
 
 		rcu_read_lock();
-		tp = rcu_dereference(connection->net_conf)->two_primaries;
+		tp = rcu_dereference(connection->transport.net_conf)->two_primaries;
 		rcu_read_unlock();
 
 		if (!tp)
@@ -1942,7 +1942,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 		prepare_to_wait(&peer_device->device->seq_wait, &wait, TASK_INTERRUPTIBLE);
 		spin_unlock(&peer_device->peer_seq_lock);
 		rcu_read_lock();
-		timeout = rcu_dereference(connection->net_conf)->ping_timeo*HZ/10;
+		timeout = rcu_dereference(connection->transport.net_conf)->ping_timeo*HZ/10;
 		rcu_read_unlock();
 		timeout = schedule_timeout(timeout);
 		spin_lock(&peer_device->peer_seq_lock);
@@ -2218,7 +2218,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	spin_unlock(&connection->epoch_lock);
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	tp = nc->two_primaries;
 	if (connection->agreed_pro_version < 100) {
 		switch (nc->wire_protocol) {
@@ -2610,7 +2610,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 	ch_self = peer_device->comm_bm_set;
 
 	rcu_read_lock();
-	after_sb_0p = rcu_dereference(peer_device->connection->net_conf)->after_sb_0p;
+	after_sb_0p = rcu_dereference(peer_device->connection->transport.net_conf)->after_sb_0p;
 	rcu_read_unlock();
 	switch (after_sb_0p) {
 	case ASB_CONSENSUS:
@@ -2686,7 +2686,7 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 	enum drbd_after_sb_p after_sb_1p;
 
 	rcu_read_lock();
-	after_sb_1p = rcu_dereference(connection->net_conf)->after_sb_1p;
+	after_sb_1p = rcu_dereference(connection->transport.net_conf)->after_sb_1p;
 	rcu_read_unlock();
 	switch (after_sb_1p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -2744,7 +2744,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 	enum drbd_after_sb_p after_sb_2p;
 
 	rcu_read_lock();
-	after_sb_2p = rcu_dereference(connection->net_conf)->after_sb_2p;
+	after_sb_2p = rcu_dereference(connection->transport.net_conf)->after_sb_2p;
 	rcu_read_unlock();
 	switch (after_sb_2p) {
 	case ASB_DISCARD_YOUNGER_PRI:
@@ -3252,7 +3252,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		drbd_khelper(device, connection, "initial-split-brain");
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 
 	if (hg == 100 || (hg == -100 && nc->always_asbp)) {
 		int pcount = (device->resource->role[NOW] == R_PRIMARY)
@@ -3387,7 +3387,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 			set_bit(CONN_DRY_RUN, &connection->flags);
 
 		rcu_read_lock();
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 
 		if (p_proto != nc->wire_protocol) {
 			drbd_err(connection, "incompatible %s settings\n", "protocol");
@@ -3467,7 +3467,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	}
 
 	mutex_lock(&connection->mutex[DATA_STREAM]);
-	old_net_conf = connection->net_conf;
+	old_net_conf = connection->transport.net_conf;
 	*new_net_conf = *old_net_conf;
 
 	new_net_conf->wire_protocol = p_proto;
@@ -3476,7 +3476,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	new_net_conf->after_sb_2p = convert_after_sb(p_after_sb_2p);
 	new_net_conf->two_primaries = p_two_primaries;
 
-	rcu_assign_pointer(connection->net_conf, new_net_conf);
+	rcu_assign_pointer(connection->transport.net_conf, new_net_conf);
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	mutex_unlock(&connection->resource->conf_update);
 
@@ -3600,7 +3600,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		drbd_err(connection, "Interrupted while waiting for conf_update\n");
 		return err;
 	}
-	old_net_conf = connection->net_conf;
+	old_net_conf = connection->transport.net_conf;
 	if (get_ldev(device)) {
 		new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
 		if (!new_peer_device_conf) {
@@ -3706,7 +3706,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 				connection->csums_tfm = csums_tfm;
 				drbd_info(device, "using csums-alg: \"%s\"\n", p->csums_alg);
 			}
-			rcu_assign_pointer(connection->net_conf, new_net_conf);
+			rcu_assign_pointer(connection->transport.net_conf, new_net_conf);
 		}
 	}
 
@@ -4575,7 +4575,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		resource->remote_state_change = true;
 	}
 
-	if (reply.initiator_node_id != connection->net_conf->peer_node_id) {
+	if (reply.initiator_node_id != connection->transport.net_conf->peer_node_id) {
 		/*
 		 * This is an indirect request.  Unless we are directly
 		 * connected to the initiator as well as indirectly, we don't
@@ -4583,7 +4583,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		 */
 		for_each_connection(affected_connection, resource) {
 			if (reply.initiator_node_id ==
-			    affected_connection->net_conf->peer_node_id)
+			    affected_connection->transport.net_conf->peer_node_id)
 				goto directly_connected;
 		}
 		/* only indirectly connected */
@@ -5342,7 +5342,7 @@ struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resourc
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 		if (nc && nc->peer_node_id == node_id) {
 			rcu_read_unlock();
 			return connection;
@@ -5397,7 +5397,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		unsigned long irq_flags;
 
 		drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
-			  lost_peer->net_conf->name, (int)dagtag_offset);
+			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -5407,7 +5407,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		end_state_change(resource, &irq_flags);
 	} else {
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
-			  lost_peer->net_conf->name, (int)dagtag_offset);
+			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
@@ -5731,7 +5731,7 @@ int drbd_do_features(struct drbd_connection *connection)
 	int peer_node_id = -1, err;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (nc)
 		peer_node_id = nc->peer_node_id;
 	rcu_read_unlock();
@@ -5850,7 +5850,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	void *packet_body;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	peer_node_id = nc->peer_node_id;
 	key_len = strlen(nc->shared_secret);
 	memcpy(secret, nc->shared_secret, key_len);
@@ -6026,7 +6026,7 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 	int err;
 
 	rcu_read_lock();
-	idx = 1 + connection->net_conf->peer_node_id;
+	idx = 1 + connection->transport.net_conf->peer_node_id;
 	rcu_read_unlock();
 
 restart:
@@ -6118,7 +6118,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 
 			if (resource->res_opts.node_id ==
 			    resource->twopc_reply.initiator_node_id &&
-			    connection->net_conf->peer_node_id ==
+			    connection->transport.net_conf->peer_node_id ==
 			    resource->twopc_reply.target_node_id) {
 				resource->twopc_reply.target_reachable_nodes |=
 					reachable_nodes;
@@ -6584,7 +6584,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	int idx;
 
 	spin_lock_irq(&resource->req_lock);
-	idx = 1 + connection->net_conf->peer_node_id;
+	idx = 1 + connection->transport.net_conf->peer_node_id;
 	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
 		if (!(req->rq_state[idx] & RQ_PEER_ACK))
 			continue;
@@ -6687,7 +6687,7 @@ int drbd_asender(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		rcu_read_lock();
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 		ping_timeo = nc->ping_timeo;
 		tcp_cork = nc->tcp_cork;
 		ping_int = nc->ping_int;
@@ -6747,7 +6747,7 @@ received_more:
 			if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
 				long t;
 				rcu_read_lock();
-				t = rcu_dereference(connection->net_conf)->ping_timeo * HZ/10;
+				t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
 				rcu_read_unlock();
 
 				t = wait_event_timeout(connection->ping_wait,

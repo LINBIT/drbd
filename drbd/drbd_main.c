@@ -603,16 +603,19 @@ static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *aut
 {
 	struct drbd_connection *connection;
 	bool all_secondary = true;
+	int id;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
 		if (connection->cstate[NOW] >= C_CONNECTED &&
 		    connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
-			if (authoritative)
-				*authoritative |= NODE_MASK(connection->net_conf->peer_node_id);
-			else
+			if (authoritative) {
+				id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+				*authoritative |= NODE_MASK(id);
+			} else {
 				break;
+			}
 		}
 	}
 	rcu_read_unlock();
@@ -990,7 +993,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	struct peer_device_conf *pdc;
 
 	rcu_read_lock();
-	nc = rcu_dereference(peer_device->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 
 	size = apv <= 87 ? sizeof(struct p_rs_param)
 		: apv == 88 ? sizeof(struct p_rs_param)
@@ -1009,7 +1012,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
 
 	rcu_read_lock();
-	nc = rcu_dereference(peer_device->connection->net_conf);
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 
 	if (get_ldev(peer_device->device)) {
 		pdc = rcu_dereference(peer_device->conf);
@@ -1043,7 +1046,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	int size, cf;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 
 	if (nc->tentative && connection->agreed_pro_version < 92) {
 		rcu_read_unlock();
@@ -1062,7 +1065,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 		return -EIO;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 
 	p->protocol      = cpu_to_be32(nc->wire_protocol);
 	p->after_sb_0p   = cpu_to_be32(nc->after_sb_0p);
@@ -1119,7 +1122,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
-	if (rcu_dereference(peer_device->connection->net_conf)->discard_my_data)
+	if (rcu_dereference(peer_device->connection->transport.net_conf)->discard_my_data)
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
 	rcu_read_unlock();
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
@@ -1175,7 +1178,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
 	rcu_read_lock();
-	if (rcu_dereference(peer_device->connection->net_conf)->discard_my_data)
+	if (rcu_dereference(peer_device->connection->transport.net_conf)->discard_my_data)
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
 	rcu_read_unlock();
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
@@ -1476,7 +1479,7 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 		return -EIO;
 
 	rcu_read_lock();
-	nc = rcu_dereference(lost_peer->net_conf);
+	nc = rcu_dereference(lost_peer->transport.net_conf);
 	if (nc)
 		lost_node_id = nc->peer_node_id;
 	rcu_read_unlock();
@@ -1521,7 +1524,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 
 	/* may we use this feature? */
 	rcu_read_lock();
-	use_rle = rcu_dereference(peer_device->connection->net_conf)->use_rle;
+	use_rle = rcu_dereference(peer_device->connection->transport.net_conf)->use_rle;
 	rcu_read_unlock();
 	if (!use_rle || peer_device->connection->agreed_pro_version < 90)
 		return 0;
@@ -2159,7 +2162,7 @@ static bool primary_peer_present(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
 
 		if (connection->peer_role[NOW] == R_PRIMARY && !two_primaries) {
@@ -3102,9 +3105,9 @@ void drbd_destroy_connection(struct kref *kref)
 	}
 	idr_destroy(&connection->peer_devices);
 
+	kfree(connection->transport.net_conf);
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 	drbd_put_send_buffers(connection);
-	kfree(connection->net_conf);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
 	memset(connection, 0xfc, sizeof(*connection)); /* poison */
@@ -3357,7 +3360,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
-		peer_device->node_id = connection->net_conf->peer_node_id;
+		peer_device->node_id = connection->transport.net_conf->peer_node_id;
 
 		if (connection->cstate[NOW] >= C_CONNECTED)
 			drbd_connected(peer_device);
@@ -4232,7 +4235,7 @@ static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
 {
 	struct drbd_connection *connection = drbd_connection_by_node_id(resource, node_id);
 
-	return connection ? rcu_dereference(connection->net_conf)->name : "";
+	return connection ? rcu_dereference(connection->transport.net_conf)->name : "";
 }
 
 static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
@@ -4716,7 +4719,7 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_dev
 
 	rcu_read_lock();
 	if (peer_device) {
-		struct net_conf *net_conf = rcu_dereference(peer_device->connection->net_conf);
+		struct net_conf *net_conf = rcu_dereference(peer_device->connection->transport.net_conf);
 		if (!net_conf) {
 			rcu_read_unlock();
 			return -ETIMEDOUT;
@@ -4839,13 +4842,17 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 {
 	u64 directly_connected = 0;
 	struct drbd_connection *connection;
+	int id;
 
+	rcu_read_lock();
 	for_each_connection(connection, resource) {
 		if (connection->cstate[which] < C_CONNECTED)
 			continue;
-		directly_connected |=
-			NODE_MASK(connection->net_conf->peer_node_id);
+		id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+		directly_connected |= NODE_MASK(id);
 	}
+	rcu_read_unlock();
+
 	return directly_connected;
 }
 

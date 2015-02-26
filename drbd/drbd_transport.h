@@ -60,6 +60,8 @@ struct drbd_transport {
 	int my_addr_len;
 	int peer_addr_len;
 
+	struct net_conf *net_conf;	/* content protected by rcu */
+
 	/* These members are intended to be updated by the transport: */
 	unsigned int ko_count;
 	unsigned long flags;

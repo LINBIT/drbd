@@ -146,7 +146,7 @@ void drbd_queue_peer_ack(struct drbd_request *req)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		unsigned int node_id = connection->net_conf->peer_node_id;
+		unsigned int node_id = connection->transport.net_conf->peer_node_id;
 		if (connection->agreed_pro_version < 110 ||
 		    connection->cstate[NOW] != C_CONNECTED ||
 		    !(req->rq_state[1 + node_id] & RQ_NET_SENT))
@@ -833,7 +833,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * and from w_read_retry_remote */
 		D_ASSERT(device, idx && !(req->rq_state[idx] & RQ_NET_MASK));
 		rcu_read_lock();
-		nc = rcu_dereference(peer_device->connection->net_conf);
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		p = nc->wire_protocol;
 		rcu_read_unlock();
 		req->rq_state[idx] |=
@@ -935,7 +935,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* close the epoch, in case it outgrew the limit */
 		rcu_read_lock();
-		nc = rcu_dereference(peer_device->connection->net_conf);
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		p = nc->max_epoch_size;
 		rcu_read_unlock();
 		if (device->resource->current_tle_writes >= p)
@@ -1240,7 +1240,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	on_congestion = nc ? nc->on_congestion : OC_BLOCK;
 	rcu_read_unlock();
 	if (on_congestion == OC_BLOCK ||
@@ -1953,7 +1953,7 @@ void request_timer_fn(unsigned long data)
 			continue;
 
 		rcu_read_lock();
-		nc = rcu_dereference(connection->net_conf);
+		nc = rcu_dereference(connection->transport.net_conf);
 		if (nc) {
 			/* effective timeout = ko_count * timeout */
 			if (connection->cstate[NOW] == C_CONNECTED)

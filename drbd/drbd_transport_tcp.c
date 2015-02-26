@@ -331,7 +331,7 @@ static int dtt_try_connect(struct drbd_connection *connection, struct socket **r
 	int sndbuf_size, rcvbuf_size, connect_int;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EIO;
@@ -459,7 +459,7 @@ static bool dtt_connection_established(struct drbd_connection *connection,
 		return false;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	timeout = (nc->sock_check_timeo ?: nc->ping_timeo) * HZ / 10;
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
@@ -502,7 +502,7 @@ static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socke
 		container_of(waiter->waiter.listener, struct dtt_listener, listener);
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EINVAL;
@@ -616,7 +616,7 @@ static int dtt_receive_first_packet(struct drbd_connection *connection, struct s
 	int err;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EIO;
@@ -677,7 +677,7 @@ static int dtt_create_listener(struct drbd_connection *connection, struct drbd_l
 	const char *what;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EINVAL;
@@ -861,7 +861,7 @@ randomize:
 	csocket->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
 	/* NOT YET ...
-	 * sock.socket->sk->sk_sndtimeo = connection->net_conf->timeout*HZ/10;
+	 * sock.socket->sk->sk_sndtimeo = connection->transport.net_conf->timeout*HZ/10;
 	 * sock.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 	 * first set it to the P_CONNECTION_FEATURES timeout,
 	 * which we set to 4x the configured ping_timeout. */
@@ -875,7 +875,7 @@ randomize:
 	tcp_transport->stream[CONTROL_STREAM] = csocket;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(connection->transport.net_conf);
 
 	timeout = nc->timeout * HZ / 10;
 	rcu_read_unlock();
