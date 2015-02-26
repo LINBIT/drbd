@@ -35,11 +35,9 @@
 #include <linux/slab.h>
 #include <linux/crypto.h>
 #include <linux/ratelimit.h>
-#include <linux/tcp.h>
 #include <linux/mutex.h>
 #include <linux/genhd.h>
 #include <linux/idr.h>
-#include <net/tcp.h>
 #include <linux/lru_cache.h>
 #include <linux/prefetch.h>
 #include <linux/drbd_genl_api.h>
