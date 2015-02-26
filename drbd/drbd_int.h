@@ -1883,7 +1883,7 @@ extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, 
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
 #define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
-extern struct page *drbd_alloc_pages(struct drbd_peer_device *, unsigned int, gfp_t);
+extern struct page *drbd_alloc_pages(struct drbd_connection *, unsigned int, gfp_t);
 extern void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net);
 extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);

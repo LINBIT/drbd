@@ -290,10 +290,9 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_connection *connection)
  *
  * Returns a page chain linked via page->private.
  */
-struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int number,
+struct page *drbd_alloc_pages(struct drbd_connection *connection, unsigned int number,
 			      gfp_t gfp_mask)
 {
-	struct drbd_connection *connection = peer_device->connection;
 	struct page *page = NULL;
 	DEFINE_WAIT(wait);
 	unsigned int mxb;
@@ -2435,7 +2434,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (!peer_req)
 		goto fail;
 	if (size) {
-		peer_req->pages = drbd_alloc_pages(peer_device,
+		peer_req->pages = drbd_alloc_pages(peer_device->connection,
 			DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 		if (!peer_req->pages)
 			goto fail2;

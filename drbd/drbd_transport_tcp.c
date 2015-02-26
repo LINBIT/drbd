@@ -271,7 +271,7 @@ static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	struct page *all_pages, *page;
 	int err;
 
-	all_pages = drbd_alloc_pages(peer_device, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	all_pages = drbd_alloc_pages(peer_device->connection, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 	if (!all_pages)
 		return -ENOMEM;
 
