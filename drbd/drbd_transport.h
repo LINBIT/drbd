@@ -183,7 +183,6 @@ struct drbd_listener {
    incoming connection attempt. Again, should be embedded into a
    implementation object */
 struct drbd_waiter {
-	struct drbd_connection *connection;
 	struct drbd_transport *transport;
 	wait_queue_head_t wait;
 	struct list_head list;

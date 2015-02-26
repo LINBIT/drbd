@@ -578,7 +578,7 @@ retry:
 				container_of(waiter2_gen, struct dtt_waiter, waiter);
 
 			if (waiter2->socket) {
-				tr_err(&waiter2->waiter.connection->transport,
+				tr_err(waiter2->waiter.transport,
 					 "Receiver busy; rejecting incoming connection\n");
 				goto retry_locked;
 			}
@@ -757,7 +757,6 @@ static int dtt_connect(struct drbd_transport *transport)
 	dsocket = NULL;
 	csocket = NULL;
 
-	waiter.waiter.connection = connection;
 	waiter.waiter.transport = transport;
 	waiter.socket = NULL;
 	err = drbd_get_listener(&waiter.waiter, dtt_create_listener);

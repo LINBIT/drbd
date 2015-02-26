@@ -109,7 +109,8 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection)
 int drbd_get_listener(struct drbd_waiter *waiter,
 		      int (*create_listener)(struct drbd_transport *, struct drbd_listener **))
 {
-	struct drbd_connection *connection = waiter->connection;
+	struct drbd_connection *connection =
+		container_of(waiter->transport, struct drbd_connection, transport);
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener, *new_listener = NULL;
 	int err;
@@ -136,7 +137,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		if (listener)
 			return 0;
 
-		err = create_listener(&waiter->connection->transport, &new_listener);
+		err = create_listener(waiter->transport, &new_listener);
 		if (err)
 			return err;
 
@@ -188,7 +189,7 @@ struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, str
 	struct drbd_waiter *waiter;
 
 	list_for_each_entry(waiter, &listener->waiters, list) {
-		if (addr_equal(&waiter->connection->transport.peer_addr, addr))
+		if (addr_equal(&waiter->transport->peer_addr, addr))
 			return waiter;
 	}
 
