@@ -205,8 +205,10 @@ struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, str
  * send function. When it returns false the transport should keep on trying to
  * get the packet through.
  */
-bool drbd_stream_send_timed_out(struct drbd_connection *connection, enum drbd_stream stream)
+bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stream stream)
 {
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
 	bool drop_it;
 
 	drop_it = stream == CONTROL_STREAM
@@ -227,6 +229,7 @@ bool drbd_stream_send_timed_out(struct drbd_connection *connection, enum drbd_st
 	return drop_it;
 
 }
+
 
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);

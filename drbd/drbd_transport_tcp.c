@@ -186,12 +186,12 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
  */
 		rv = kernel_sendmsg(socket, &msg, &iov, 1, size);
 		if (rv == -EAGAIN) {
-			struct drbd_connection *connection = tcp_transport->transport.connection;
+			struct drbd_transport *transport = &tcp_transport->transport;
 			enum drbd_stream stream =
 				tcp_transport->stream[DATA_STREAM] == socket ?
 					DATA_STREAM : CONTROL_STREAM;
 
-			if (drbd_stream_send_timed_out(connection, stream))
+			if (drbd_stream_send_timed_out(transport, stream))
 				break;
 			else
 				continue;
@@ -945,7 +945,7 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		sent = socket->ops->sendpage(socket, page, offset, len, msg_flags);
 		if (sent <= 0) {
 			if (sent == -EAGAIN) {
-				if (drbd_stream_send_timed_out(transport->connection, stream))
+				if (drbd_stream_send_timed_out(transport, stream))
 					break;
 				continue;
 			}
