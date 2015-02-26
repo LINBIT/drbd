@@ -55,6 +55,11 @@ struct drbd_transport {
 	struct drbd_connection *connection;
 	struct drbd_transport_class *class;
 
+	struct sockaddr_storage my_addr;
+	struct sockaddr_storage peer_addr;
+	int my_addr_len;
+	int peer_addr_len;
+
 	/* These members are intended to be updated by the transport: */
 	unsigned int ko_count;
 	unsigned long flags;

@@ -244,9 +244,9 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		adm_ctx->my_addr = nested_attr_tb[__nla_type(T_ctx_my_addr)];
 		adm_ctx->peer_addr = nested_attr_tb[__nla_type(T_ctx_peer_addr)];
 		if ((adm_ctx->my_addr &&
-		     nla_len(adm_ctx->my_addr) > sizeof(adm_ctx->connection->my_addr)) ||
+		     nla_len(adm_ctx->my_addr) > sizeof(adm_ctx->connection->transport.my_addr)) ||
 		    (adm_ctx->peer_addr &&
-		     nla_len(adm_ctx->peer_addr) > sizeof(adm_ctx->connection->peer_addr))) {
+		     nla_len(adm_ctx->peer_addr) > sizeof(adm_ctx->connection->transport.peer_addr))) {
 			err = -EINVAL;
 			goto fail;
 		}
@@ -530,8 +530,8 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 		}
 	}
 	if (connection) {
-		env_print_address(&env, "DRBD_MY_", &connection->my_addr);
-		env_print_address(&env, "DRBD_PEER_", &connection->peer_addr);
+		env_print_address(&env, "DRBD_MY_", &connection->transport.my_addr);
+		env_print_address(&env, "DRBD_PEER_", &connection->transport.peer_addr);
 	}
 	if (connection && !device) {
 		struct drbd_peer_device *peer_device;
@@ -2780,6 +2780,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct crypto crypto = { };
 	struct drbd_resource *resource;
 	struct drbd_connection *connection;
+	struct drbd_transport *transport;
 	enum drbd_ret_code retcode;
 	int i, err;
 	bool allocate_bitmap_slots = false;
@@ -2804,16 +2805,16 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	for_each_resource(resource, &drbd_resources) {
 		for_each_connection(connection, resource) {
 			if (resource != adm_ctx.resource &&
-			    nla_len(adm_ctx.my_addr) == connection->my_addr_len &&
-			    !memcmp(nla_data(adm_ctx.my_addr), &connection->my_addr,
-				    connection->my_addr_len)) {
+			    nla_len(adm_ctx.my_addr) == connection->transport.my_addr_len &&
+			    !memcmp(nla_data(adm_ctx.my_addr), &connection->transport.my_addr,
+				    connection->transport.my_addr_len)) {
 				retcode = ERR_LOCAL_ADDR;
 				goto out;
 			}
 
-			if (nla_len(adm_ctx.peer_addr) == connection->peer_addr_len &&
-			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->peer_addr,
-				    connection->peer_addr_len)) {
+			if (nla_len(adm_ctx.peer_addr) == connection->transport.peer_addr_len &&
+			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->transport.peer_addr,
+				    connection->transport.peer_addr_len)) {
 				retcode = ERR_PEER_ADDR;
 				goto out;
 			}
@@ -2868,8 +2869,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail_put_transport;
 	}
 
-	connection->transport.connection = connection;
-	err = tr_class->init(&connection->transport);
+	transport = &connection->transport;
+	transport->connection = connection;
+	err = tr_class->init(transport);
 	if (err) {
 		retcode = ERR_CREATE_TRANSPORT;
 		goto fail_free_connection;
@@ -2928,10 +2930,10 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	connection->csums_tfm = crypto.csums_tfm;
 	connection->verify_tfm = crypto.verify_tfm;
 
-	connection->my_addr_len = nla_len(adm_ctx.my_addr);
-	memcpy(&connection->my_addr, nla_data(adm_ctx.my_addr), connection->my_addr_len);
-	connection->peer_addr_len = nla_len(adm_ctx.peer_addr);
-	memcpy(&connection->peer_addr, nla_data(adm_ctx.peer_addr), connection->peer_addr_len);
+	transport->my_addr_len = nla_len(adm_ctx.my_addr);
+	memcpy(&transport->my_addr, nla_data(adm_ctx.my_addr), transport->my_addr_len);
+	transport->peer_addr_len = nla_len(adm_ctx.peer_addr);
+	memcpy(&transport->peer_addr, nla_data(adm_ctx.peer_addr), transport->peer_addr_len);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
 		peer_device->node_id = connection->net_conf->peer_node_id;
@@ -3716,12 +3718,12 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (resource)
 		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
-		if (connection->my_addr_len)
+		if (connection->transport.my_addr_len)
 			nla_put(skb, T_ctx_my_addr,
-				connection->my_addr_len, &connection->my_addr);
-		if (connection->peer_addr_len)
+				connection->transport.my_addr_len, &connection->transport.my_addr);
+		if (connection->transport.peer_addr_len)
 			nla_put(skb, T_ctx_peer_addr,
-				connection->peer_addr_len, &connection->peer_addr);
+				connection->transport.peer_addr_len, &connection->transport.peer_addr);
 		rcu_read_lock();
 		if (connection->net_conf && connection->net_conf->name)
 			nla_put_string(skb, T_ctx_conn_name, connection->net_conf->name);

@@ -98,7 +98,7 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection)
 	struct drbd_listener *listener;
 
 	list_for_each_entry(listener, &resource->listeners, list) {
-		if (addr_equal(&listener->listen_addr, &connection->my_addr)) {
+		if (addr_equal(&listener->listen_addr, &connection->transport.my_addr)) {
 			kref_get(&listener->kref);
 			return listener;
 		}
@@ -187,7 +187,7 @@ struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, str
 	struct drbd_waiter *waiter;
 
 	list_for_each_entry(waiter, &listener->waiters, list) {
-		if (addr_equal(&waiter->connection->peer_addr, addr))
+		if (addr_equal(&waiter->connection->transport.peer_addr, addr))
 			return waiter;
 	}
 

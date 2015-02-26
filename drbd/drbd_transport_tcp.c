@@ -322,6 +322,7 @@ static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 
 static int dtt_try_connect(struct drbd_connection *connection, struct socket **ret_socket)
 {
+	struct drbd_transport *transport = &connection->transport;
 	const char *what;
 	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
@@ -340,7 +341,7 @@ static int dtt_try_connect(struct drbd_connection *connection, struct socket **r
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
 
-	my_addr = connection->my_addr;
+	my_addr = transport->my_addr;
 	if (my_addr.ss_family == AF_INET6)
 		((struct sockaddr_in6 *)&my_addr)->sin6_port = 0;
 	else
@@ -348,7 +349,7 @@ static int dtt_try_connect(struct drbd_connection *connection, struct socket **r
 
 	/* In some cases, the network stack can end up overwriting
 	   peer_addr.ss_family, so use a copy here. */
-	peer_addr = connection->peer_addr;
+	peer_addr = transport->peer_addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
@@ -369,14 +370,15 @@ static int dtt_try_connect(struct drbd_connection *connection, struct socket **r
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, connection->my_addr_len);
+	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, transport->my_addr_len);
 	if (err < 0)
 		goto out;
 
 	/* connect may fail, peer not yet available.
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	what = "connect";
-	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr, connection->peer_addr_len, 0);
+	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr,
+				   transport->peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
 		case -ETIMEDOUT:
@@ -541,9 +543,10 @@ retry:
 			struct sockaddr_in6 *from_sin6, *to_sin6;
 			struct sockaddr_in *from_sin, *to_sin;
 			struct drbd_connection *connection2;
+			struct drbd_transport *transport = &connection->transport;
 
 			connection2 = conn_get_by_addrs(
-				&connection->my_addr, connection->my_addr_len,
+				&transport->my_addr, transport->my_addr_len,
 				&peer_addr, peer_addr_len);
 			if (connection2) {
 				/* conn_get_by_addrs() does a get, put follows here... no debug */
@@ -556,7 +559,7 @@ retry:
 			switch (peer_addr.ss_family) {
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				to_sin6 = (struct sockaddr_in6 *)&connection->my_addr;
+				to_sin6 = (struct sockaddr_in6 *)&transport->my_addr;
 				drbd_err(resource, "Closing unexpected connection from "
 					 "%pI6 to port %u\n",
 					 &from_sin6->sin6_addr,
@@ -564,7 +567,7 @@ retry:
 				break;
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
-				to_sin = (struct sockaddr_in *)&connection->my_addr;
+				to_sin = (struct sockaddr_in *)&transport->my_addr;
 				drbd_err(resource, "Closing unexpected connection from "
 					 "%pI4 to port %u\n",
 					 &from_sin->sin_addr,
@@ -665,6 +668,7 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 
 static int dtt_create_listener(struct drbd_connection *connection, struct drbd_listener **ret_listener)
 {
+	struct drbd_transport *transport = &connection->transport;
 	int err, sndbuf_size, rcvbuf_size;
 	struct sockaddr_storage my_addr;
 	struct dtt_listener *listener = NULL;
@@ -682,7 +686,7 @@ static int dtt_create_listener(struct drbd_connection *connection, struct drbd_l
 	rcvbuf_size = nc->rcvbuf_size;
 	rcu_read_unlock();
 
-	my_addr = connection->my_addr;
+	my_addr = transport->my_addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
@@ -695,7 +699,7 @@ static int dtt_create_listener(struct drbd_connection *connection, struct drbd_l
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, connection->my_addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, transport->my_addr_len);
 	if (err < 0)
 		goto out;
 
