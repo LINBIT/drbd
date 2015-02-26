@@ -468,13 +468,12 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 
 static bool dtt_wait_connect_cond(struct dtt_waiter *waiter)
 {
-	struct drbd_connection *connection = waiter->waiter.connection;
-	struct drbd_resource *resource = connection->resource;
+	struct drbd_listener *listener = waiter->waiter.listener;
 	bool rv;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_bh(&listener->waiters_lock);
 	rv = waiter->waiter.listener->pending_accepts > 0 || waiter->socket != NULL;
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->waiters_lock);
 
 	return rv;
 }
@@ -489,8 +488,6 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 
 static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socket)
 {
-	struct drbd_connection *connection = waiter->waiter.connection;
-	struct drbd_resource *resource = connection->resource;
 	struct sockaddr_storage peer_addr;
 	int connect_int, peer_addr_len, err = 0;
 	long timeo;
@@ -501,7 +498,7 @@ static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socke
 		container_of(waiter->waiter.listener, struct dtt_listener, listener);
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(waiter->waiter.transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EINVAL;
@@ -517,13 +514,13 @@ retry:
 	if (timeo <= 0)
 		return -EAGAIN;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_bh(&listener->listener.waiters_lock);
 	if (waiter->socket) {
 		s_estab = waiter->socket;
 		waiter->socket = NULL;
 	} else if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
-		spin_unlock_bh(&resource->listeners_lock);
+		spin_unlock_bh(&listener->listener.waiters_lock);
 
 		s_estab = NULL;
 		err = kernel_accept(listener->s_listen, &s_estab, 0);
@@ -536,13 +533,13 @@ retry:
 
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
 
-		spin_lock_bh(&resource->listeners_lock);
+		spin_lock_bh(&listener->listener.waiters_lock);
 		waiter2_gen = drbd_find_waiter_by_addr(waiter->waiter.listener, &peer_addr);
 		if (!waiter2_gen) {
 			struct sockaddr_in6 *from_sin6, *to_sin6;
 			struct sockaddr_in *from_sin, *to_sin;
 			struct drbd_connection *connection2;
-			struct drbd_transport *transport = &connection->transport;
+			struct drbd_transport *transport = waiter->waiter.transport;
 
 			connection2 = conn_get_by_addrs(
 				&transport->my_addr, transport->my_addr_len,
@@ -591,12 +588,12 @@ retry:
 			goto retry_locked;
 		}
 	}
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->listener.waiters_lock);
 	*socket = s_estab;
 	return 0;
 
 retry_locked:
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->listener.waiters_lock);
 	if (s_estab) {
 		sock_release(s_estab);
 		s_estab = NULL;
@@ -644,11 +641,11 @@ static void dtt_incoming_connection(struct sock *sock)
 	if (sock->sk_state == TCP_ESTABLISHED) {
 		struct drbd_waiter *waiter;
 
-		spin_lock(&listener->listener.resource->listeners_lock);
+		spin_lock(&listener->listener.waiters_lock);
 		listener->listener.pending_accepts++;
 		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
 		wake_up(&waiter->wait);
-		spin_unlock(&listener->listener.resource->listeners_lock);
+		spin_unlock(&listener->listener.waiters_lock);
 	}
 	state_change(sock);
 }
@@ -761,6 +758,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	csocket = NULL;
 
 	waiter.waiter.connection = connection;
+	waiter.waiter.transport = transport;
 	waiter.socket = NULL;
 	err = drbd_get_listener(&waiter.waiter, dtt_create_listener);
 	if (err)
@@ -854,7 +852,7 @@ randomize:
 	csocket->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
 	/* NOT YET ...
-	 * sock.socket->sk->sk_sndtimeo = connection->transport.net_conf->timeout*HZ/10;
+	 * sock.socket->sk->sk_sndtimeo = transport->net_conf->timeout*HZ/10;
 	 * sock.socket->sk->sk_rcvtimeo = MAX_SCHEDULE_TIMEOUT;
 	 * first set it to the P_CONNECTION_FEATURES timeout,
 	 * which we set to 4x the configured ping_timeout. */
@@ -868,7 +866,7 @@ randomize:
 	tcp_transport->stream[CONTROL_STREAM] = csocket;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(transport->net_conf);
 
 	timeout = nc->timeout * HZ / 10;
 	rcu_read_unlock();

@@ -173,6 +173,7 @@ struct drbd_listener {
 	struct drbd_resource *resource;
 	struct list_head list; /* link for resource->listeners */
 	struct list_head waiters; /* list head for waiter structs*/
+	spinlock_t waiters_lock;
 	int pending_accepts;
 	struct sockaddr_storage listen_addr;
 	void (*destroy)(struct drbd_listener *);
@@ -183,6 +184,7 @@ struct drbd_listener {
    implementation object */
 struct drbd_waiter {
 	struct drbd_connection *connection;
+	struct drbd_transport *transport;
 	wait_queue_head_t wait;
 	struct list_head list;
 	struct drbd_listener *listener;

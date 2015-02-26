@@ -144,6 +144,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		INIT_LIST_HEAD(&new_listener->waiters);
 		new_listener->resource = resource;
 		new_listener->pending_accepts = 0;
+		spin_lock_init(&new_listener->waiters_lock);
 	}
 }
 
