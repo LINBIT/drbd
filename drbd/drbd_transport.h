@@ -158,7 +158,9 @@ struct drbd_waiter {
 	struct drbd_listener *listener;
 };
 
-extern int drbd_register_transport_class(struct drbd_transport_class *transport_class, int api_version);
+extern int drbd_register_transport_class(struct drbd_transport_class *transport_class,
+					 int api_version,
+					 int drbd_transport_size);
 extern void drbd_unregister_transport_class(struct drbd_transport_class *transport_class);
 extern struct drbd_transport *drbd_create_transport(const char *name, struct drbd_connection *);
 

@@ -1,3 +1,5 @@
+#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
+
 #include <linux/spinlock.h>
 #include <linux/module.h>
 #include <net/ipv6.h>
@@ -7,10 +9,18 @@
 static LIST_HEAD(transport_classes);
 static spinlock_t transport_classes_lock = __SPIN_LOCK_UNLOCKED(&transport_classes_lock);
 
-int drbd_register_transport_class(struct drbd_transport_class *transport_class, int version)
+int drbd_register_transport_class(struct drbd_transport_class *transport_class, int version,
+				  int drbd_transport_size)
 {
-	if (version != DRBD_TRANSPORT_API_VERSION)
+	if (version != DRBD_TRANSPORT_API_VERSION) {
+		pr_err("DRBD_TRANSPORT_API_VERSION not compatible\n");
 		return -EINVAL;
+	}
+
+	if (drbd_transport_size != sizeof(struct drbd_transport)) {
+		pr_err("sizeof(drbd_transport) not compatible\n");
+		return -EINVAL;
+	}
 
 	spin_lock(&transport_classes_lock);
 	list_add_tail(&transport_class->list, &transport_classes);

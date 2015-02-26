@@ -1067,7 +1067,8 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 static int __init dtt_init(void)
 {
 	return drbd_register_transport_class(&tcp_transport_class,
-					     DRBD_TRANSPORT_API_VERSION);
+					     DRBD_TRANSPORT_API_VERSION,
+					     sizeof(struct drbd_transport));
 }
 
 static void __exit dtt_cleanup(void)
