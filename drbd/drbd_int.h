@@ -994,6 +994,8 @@ struct drbd_connection {
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
+	atomic_t pp_in_use;		/* allocated from page pool */
+	atomic_t pp_in_use_by_net;	/* sendpage()d, still referenced by transport */
 	/* sender side */
 	struct drbd_work_queue sender_work;
 
@@ -1260,8 +1262,6 @@ struct drbd_device {
 	struct list_head net_ee;    /* zero-copy network send in progress */
 
 	int next_barrier_nr;
-	atomic_t pp_in_use;		/* allocated from page pool */
-	atomic_t pp_in_use_by_net;	/* sendpage()d, still referenced by tcp */
 	wait_queue_head_t ee_wait;
 	struct drbd_md_io md_io;
 	spinlock_t al_lock;
@@ -1880,12 +1880,11 @@ extern int drbd_submit_peer_request(struct drbd_device *,
 				    const int);
 extern int drbd_free_peer_reqs(struct drbd_device *, struct list_head *);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
-extern void __drbd_free_peer_req(struct drbd_device *, struct drbd_peer_request *,
-				 int);
-#define drbd_free_peer_req(m,e) __drbd_free_peer_req(m, e, 0)
-#define drbd_free_net_peer_req(m,e) __drbd_free_peer_req(m, e, 1)
+extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
+#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
+#define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
 extern struct page *drbd_alloc_pages(struct drbd_peer_device *, unsigned int, gfp_t);
-extern void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net);
+extern void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net);
 extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);

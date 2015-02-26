@@ -289,7 +289,7 @@ static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	*pages = all_pages;
 	return 0;
 fail:
-	drbd_free_pages(peer_device->device, all_pages, 0);
+	drbd_free_pages(peer_device->connection, all_pages, 0);
 	return err;
 }
 

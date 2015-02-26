@@ -360,7 +360,6 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_device *device = peer_device->device;
 	int digest_size;
 	void *digest;
 	int err = 0;
@@ -380,21 +379,21 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 		 * some distributed deadlock, if the other side blocks on
 		 * congestion as well, because our receiver blocks in
 		 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		peer_req = NULL;
 		inc_rs_pending(peer_device);
 		err = drbd_send_command(peer_device, P_CSUM_RS_REQUEST, DATA_STREAM);
 	} else {
-		drbd_err(device, "kmalloc() of digest failed.\n");
+		drbd_err(peer_device, "kmalloc() of digest failed.\n");
 		err = -ENOMEM;
 	}
 
 out:
 	if (peer_req)
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 
 	if (unlikely(err))
-		drbd_err(device, "drbd_send_drequest(..., csum) failed\n");
+		drbd_err(peer_device, "drbd_send_drequest(..., csum) failed\n");
 	return err;
 }
 
@@ -439,7 +438,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	spin_unlock_irq(&device->resource->req_lock);
 
 defer2:
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 defer:
 	put_ldev(device);
 	return -EAGAIN;
@@ -1128,19 +1127,19 @@ out:
 }
 
 /* helper */
-static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_request *peer_req)
+static void move_to_net_ee_or_free(struct drbd_connection *connection, struct drbd_peer_request *peer_req)
 {
 	if (drbd_peer_req_has_active_page(peer_req)) {
 		/* This might happen if sendpage() has not finished */
 		int i = DIV_ROUND_UP(peer_req->i.size, PAGE_SIZE);
-		atomic_add(i, &device->pp_in_use_by_net);
-		atomic_sub(i, &device->pp_in_use);
-		spin_lock_irq(&device->resource->req_lock);
-		list_add_tail(&peer_req->w.list, &device->net_ee);
-		spin_unlock_irq(&device->resource->req_lock);
+		atomic_add(i, &connection->pp_in_use_by_net);
+		atomic_sub(i, &connection->pp_in_use);
+		spin_lock_irq(&connection->resource->req_lock);
+		list_add_tail(&peer_req->w.list, &peer_req->peer_device->device->net_ee);
+		spin_unlock_irq(&connection->resource->req_lock);
 		wake_up(&drbd_pp_wait);
 	} else
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 }
 
 /**
@@ -1153,11 +1152,10 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_device *device = peer_device->device;
 	int err;
 
 	if (unlikely(cancel)) {
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
 	}
@@ -1166,7 +1164,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 		err = drbd_send_block(peer_device, P_DATA_REPLY, peer_req);
 	} else {
 		if (drbd_ratelimit())
-			drbd_err(device, "Sending NegDReply. sector=%llus.\n",
+			drbd_err(peer_device, "Sending NegDReply. sector=%llus.\n",
 			    (unsigned long long)peer_req->i.sector);
 
 		err = drbd_send_ack(peer_device, P_NEG_DREPLY, peer_req);
@@ -1174,10 +1172,10 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 
 	dec_unacked(peer_device);
 
-	move_to_net_ee_or_free(device, peer_req);
+	move_to_net_ee_or_free(peer_device->connection, peer_req);
 
 	if (unlikely(err))
-		drbd_err(device, "drbd_send_block() failed\n");
+		drbd_err(peer_device, "drbd_send_block() failed\n");
 	return err;
 }
 
@@ -1194,7 +1192,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	int err;
 
 	if (unlikely(cancel)) {
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
 	}
@@ -1212,13 +1210,13 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {
 			if (drbd_ratelimit())
-				drbd_err(device, "Not sending RSDataReply, "
+				drbd_err(peer_device, "Not sending RSDataReply, "
 				    "partner DISKLESS!\n");
 			err = 0;
 		}
 	} else {
 		if (drbd_ratelimit())
-			drbd_err(device, "Sending NegRSDReply. sector %llus.\n",
+			drbd_err(peer_device, "Sending NegRSDReply. sector %llus.\n",
 			    (unsigned long long)peer_req->i.sector);
 
 		err = drbd_send_ack(peer_device, P_NEG_RS_DREPLY, peer_req);
@@ -1229,10 +1227,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 
 	dec_unacked(peer_device);
 
-	move_to_net_ee_or_free(device, peer_req);
+	move_to_net_ee_or_free(peer_device->connection, peer_req);
 
 	if (unlikely(err))
-		drbd_err(device, "drbd_send_block() failed\n");
+		drbd_err(peer_device, "drbd_send_block() failed\n");
 	return err;
 }
 
@@ -1247,7 +1245,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	int err, eq = 0;
 
 	if (unlikely(cancel)) {
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
 	}
@@ -1293,7 +1291,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	}
 
 	dec_unacked(peer_device);
-	move_to_net_ee_or_free(device, peer_req);
+	move_to_net_ee_or_free(peer_device->connection, peer_req);
 
 	if (unlikely(err))
 		drbd_err(device, "drbd_send_block/ack() failed\n");
@@ -1304,7 +1302,6 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_device *device = peer_device->device;
 	int digest_size;
 	void *digest;
 	int err = 0;
@@ -1330,7 +1327,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 	peer_req = NULL;
 
 	inc_rs_pending(peer_device);
@@ -1341,7 +1338,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 
 out:
 	if (peer_req)
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 	dec_unacked(peer_device);
 	return err;
 }
@@ -1371,7 +1368,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	bool stop_sector_reached = false;
 
 	if (unlikely(cancel)) {
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
 	}
@@ -1402,7 +1399,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 	if (!eq)
 		drbd_ov_out_of_sync_found(peer_device, sector, size);
 	else

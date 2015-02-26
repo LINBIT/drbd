@@ -169,9 +169,7 @@ static void page_chain_add(struct page **head,
 	*head = chain_first;
 }
 
-static struct page *__drbd_alloc_pages(struct drbd_device *device,
-				       unsigned int number,
-				       gfp_t gfp_mask)
+static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
 {
 	struct page *page = NULL;
 	struct page *tmp = NULL;
@@ -248,18 +246,28 @@ static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 	}
 }
 
-static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
+static void drbd_kick_lo_and_reclaim_net(struct drbd_connection *connection)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_device *device;
+	int vnr;
 
-	maybe_kick_lo(device);
-	spin_lock_irq(&device->resource->req_lock);
-	reclaim_finished_net_peer_reqs(device, &reclaimed);
-	spin_unlock_irq(&device->resource->req_lock);
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		maybe_kick_lo(device);
 
-	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_net_peer_req(device, peer_req);
+		spin_lock_irq(&resource->req_lock);
+		reclaim_finished_net_peer_reqs(device, &reclaimed);
+		spin_unlock_irq(&resource->req_lock);
+
+		if (!list_empty(&reclaimed)) {
+			list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
+				drbd_free_net_peer_req(peer_req);
+
+			return;
+		}
+	}
 }
 
 /**
@@ -285,25 +293,25 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
 struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int number,
 			      gfp_t gfp_mask)
 {
-	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct page *page = NULL;
 	DEFINE_WAIT(wait);
 	unsigned int mxb;
 
 	rcu_read_lock();
-	mxb = rcu_dereference(peer_device->connection->net_conf)->max_buffers;
+	mxb = rcu_dereference(connection->net_conf)->max_buffers;
 	rcu_read_unlock();
 
-	if (atomic_read(&device->pp_in_use) < mxb)
-		page = __drbd_alloc_pages(device, number, gfp_mask & ~__GFP_WAIT);
+	if (atomic_read(&connection->pp_in_use) < mxb)
+		page = __drbd_alloc_pages(number, gfp_mask & ~__GFP_WAIT);
 
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		drbd_kick_lo_and_reclaim_net(device);
+		drbd_kick_lo_and_reclaim_net(connection);
 
-		if (atomic_read(&device->pp_in_use) < mxb) {
-			page = __drbd_alloc_pages(device, number, gfp_mask);
+		if (atomic_read(&connection->pp_in_use) < mxb) {
+			page = __drbd_alloc_pages(number, gfp_mask);
 			if (page)
 				break;
 		}
@@ -312,7 +320,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 			break;
 
 		if (signal_pending(current)) {
-			drbd_warn(device, "drbd_alloc_pages interrupted!\n");
+			drbd_warn(connection, "drbd_alloc_pages interrupted!\n");
 			break;
 		}
 
@@ -322,7 +330,7 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 	finish_wait(&drbd_pp_wait, &wait);
 
 	if (page)
-		atomic_add(number, &device->pp_in_use);
+		atomic_add(number, &connection->pp_in_use);
 	return page;
 }
 
@@ -330,9 +338,9 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
  * Is also used from inside an other spin_lock_irq(&resource->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
-void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
+void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net)
 {
-	atomic_t *a = is_net ? &device->pp_in_use_by_net : &device->pp_in_use;
+	atomic_t *a = is_net ? &connection->pp_in_use_by_net : &connection->pp_in_use;
 	int i;
 
 	if (page == NULL)
@@ -350,7 +358,7 @@ void drbd_free_pages(struct drbd_device *device, struct page *page, int is_net)
 	}
 	i = atomic_sub_return(i, a);
 	if (i < 0)
-		drbd_warn(device, "ASSERTION FAILED: %s: %d < 0\n",
+		drbd_warn(connection, "ASSERTION FAILED: %s: %d < 0\n",
 			is_net ? "pp_in_use_by_net" : "pp_in_use", i);
 	wake_up(&drbd_pp_wait);
 }
@@ -396,15 +404,16 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	return peer_req;
 }
 
-void __drbd_free_peer_req(struct drbd_device *device, struct drbd_peer_request *peer_req,
-		       int is_net)
+void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 {
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
-	drbd_free_pages(device, peer_req->pages, is_net);
-	D_ASSERT(device, atomic_read(&peer_req->pending_bios) == 0);
-	D_ASSERT(device, drbd_interval_empty(&peer_req->i));
+	drbd_free_pages(peer_device->connection, peer_req->pages, is_net);
+	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
+	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	mempool_free(peer_req, drbd_ee_mempool);
 }
 
@@ -420,7 +429,7 @@ int drbd_free_peer_reqs(struct drbd_device *device, struct list_head *list)
 	spin_unlock_irq(&device->resource->req_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
-		__drbd_free_peer_req(device, peer_req, is_net);
+		__drbd_free_peer_req(peer_req, is_net);
 		count++;
 	}
 	return count;
@@ -429,8 +438,10 @@ int drbd_free_peer_reqs(struct drbd_device *device, struct list_head *list)
 /*
  * See also comments in _req_mod(,BARRIER_ACKED) and receive_Barrier.
  */
-static int drbd_finish_peer_reqs(struct drbd_device *device)
+static int drbd_finish_peer_reqs(struct drbd_peer_device *peer_device)
 {
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
 	LIST_HEAD(work_list);
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
@@ -442,7 +453,7 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 	spin_unlock_irq(&device->resource->req_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_net_peer_req(device, peer_req);
+		drbd_free_net_peer_req(peer_req);
 
 	/* possible callbacks here:
 	 * e_end_block, and e_end_resync_block, e_send_discard_write.
@@ -456,10 +467,10 @@ static int drbd_finish_peer_reqs(struct drbd_device *device)
 		if (!err)
 			err = err2;
 		if (!list_empty(&peer_req->recv_order)) {
-			drbd_free_pages(device, peer_req->pages, 0);
+			drbd_free_pages(connection, peer_req->pages, 0);
 			peer_req->pages = NULL;
 		} else
-			drbd_free_peer_req(device, peer_req);
+			drbd_free_peer_req(peer_req);
 	}
 	wake_up(&device->ee_wait);
 
@@ -1263,7 +1274,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		spin_unlock_irq(&device->resource->req_lock);
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
 		return err;
 	}
@@ -1491,7 +1502,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	return peer_req;
 
 fail:
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 	return NULL;
 }
 
@@ -1630,7 +1641,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device, sector_t secto
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&device->resource->req_lock);
 
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 	return -EIO;
 }
 
@@ -2286,7 +2297,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 out_interrupted:
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 	return err;
 }
 
@@ -2576,7 +2587,7 @@ fail3:
 	spin_unlock_irq(&device->resource->req_lock);
 	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
 fail2:
-	drbd_free_peer_req(device, peer_req);
+	drbd_free_peer_req(peer_req);
 fail:
 	put_ldev(device);
 	return err;
@@ -5534,7 +5545,7 @@ void conn_disconnect(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
-	int vnr;
+	int vnr, i;
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;
@@ -5568,16 +5579,12 @@ void conn_disconnect(struct drbd_connection *connection)
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);
 
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		int i;
-
-		i = atomic_read(&device->pp_in_use);
-		if (i)
-			drbd_info(device, "pp_in_use = %d, expected 0\n", i);
-	}
-	rcu_read_unlock();
+	i = atomic_read(&connection->pp_in_use);
+	if (i)
+		drbd_info(connection, "pp_in_use = %d, expected 0\n", i);
+	i = atomic_read(&connection->pp_in_use_by_net);
+	if (i)
+		drbd_info(connection, "pp_in_use_by_net = %d, expected 0\n", i);
 
 	if (!list_empty(&connection->current_epoch->list))
 		drbd_err(connection, "ASSERTION FAILED: connection->current_epoch->list not empty\n");
@@ -5640,7 +5647,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	 * to be "canceled" */
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
 
-	drbd_finish_peer_reqs(device);
+	drbd_finish_peer_reqs(peer_device);
 
 	/* This second workqueue flush is necessary, since drbd_finish_peer_reqs()
 	   might have issued a work again. The one before drbd_finish_peer_reqs() is
@@ -5672,9 +5679,6 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	i = drbd_free_peer_reqs(device, &device->net_ee);
 	if (i)
 		drbd_info(device, "net_ee not empty, killed %u entries\n", i);
-	i = atomic_read(&device->pp_in_use_by_net);
-	if (i)
-		drbd_info(device, "pp_in_use_by_net = %d, expected 0\n", i);
 
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->active_ee));
@@ -6520,7 +6524,7 @@ found:
 		}
 		list_del(&peer_req->recv_order);
 		drbd_al_complete_io(device, &peer_req->i);
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 	}
 	return 0;
 }
@@ -6560,7 +6564,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 
 		list_del(&peer_req->recv_order);
 		drbd_al_complete_io(device, &peer_req->i);
-		drbd_free_peer_req(device, peer_req);
+		drbd_free_peer_req(peer_req);
 	}
 }
 
@@ -6605,7 +6609,7 @@ static int connection_finish_peer_reqs(struct drbd_connection *connection)
 
 			kref_get(&device->kref);
 			rcu_read_unlock();
-			if (drbd_finish_peer_reqs(device)) {
+			if (drbd_finish_peer_reqs(peer_device)) {
 				kref_put(&device->kref, drbd_destroy_device);
 				return 1;
 			}
