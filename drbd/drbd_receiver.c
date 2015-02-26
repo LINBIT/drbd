@@ -503,10 +503,10 @@ static void drbd_wait_ee_list_empty(struct drbd_device *device,
 
 static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size, int flags)
 {
-	struct drbd_transport_ops *tr_ops = connection->transport->ops;
+	struct drbd_transport_ops *tr_ops = connection->transport.ops;
 	int rv;
 
-	rv = tr_ops->recv(connection->transport, DATA_STREAM, buf, size, flags);
+	rv = tr_ops->recv(&connection->transport, DATA_STREAM, buf, size, flags);
 
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
@@ -654,7 +654,7 @@ int connect_work(struct drbd_work *work, int cancel)
  */
 static bool conn_connect(struct drbd_connection *connection)
 {
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_resource *resource = connection->resource;
 	int ping_timeo, ping_int, h, err, vnr, timeout;
 	struct drbd_peer_device *peer_device;
@@ -1430,7 +1430,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	struct p_trim *trim = (pi->cmd == P_TRIM) ? pi->data : NULL;
-	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_transport *transport = &peer_device->connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	digest_size = 0;
@@ -1853,7 +1853,7 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
 {
 	unsigned int newest_peer_seq;
 
-	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)) {
+	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)) {
 		spin_lock(&peer_device->peer_seq_lock);
 		newest_peer_seq = seq_max(peer_device->peer_seq, peer_seq);
 		peer_device->peer_seq = newest_peer_seq;
@@ -1916,7 +1916,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	long timeout;
 	int ret = 0, tp;
 
-	if (!test_bit(RESOLVE_CONFLICTS, &connection->transport->flags))
+	if (!test_bit(RESOLVE_CONFLICTS, &connection->transport.flags))
 		return 0;
 
 	spin_lock(&peer_device->peer_seq_lock);
@@ -2005,7 +2005,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->transport->flags);
+	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->transport.flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
 	struct drbd_interval *i;
@@ -2645,7 +2645,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			  "Using discard-least-changes instead\n");
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
-			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)
 				? -1 : 1;
 			break;
 		} else {
@@ -2661,7 +2661,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			rv =  1;
 		else /* ( ch_self == ch_peer ) */
 		     /* Well, then use something else. */
-			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport->flags)
+			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)
 				? -1 : 1;
 		break;
 	case ASB_DISCARD_LOCAL:
@@ -3003,7 +3003,7 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		*rule_nr = 40;
 		if (test_bit(CRASHED_PRIMARY, &device->flags)) {
 			if ((peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) &&
-			    test_bit(RESOLVE_CONFLICTS, &connection->transport->flags))
+			    test_bit(RESOLVE_CONFLICTS, &connection->transport.flags))
 				return -1;
 			return 1;
 		} else if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
@@ -5289,7 +5289,7 @@ static int receive_skip(struct drbd_connection *connection, struct packet_info *
 
 static int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 
 	/* just unplug all devices always, regardless which volume number */
 	drbd_unplug_all_devices(connection->resource);
@@ -6676,7 +6676,7 @@ int drbd_asender(struct drbd_thread *thi)
 	struct net_conf *nc;
 	int ping_timeo, tcp_cork, ping_int;
 	struct sched_param param = { .sched_priority = 2 };
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	rv = sched_setscheduler(current, SCHED_RR, &param);

@@ -963,7 +963,6 @@ struct drbd_connection {
 	struct sockaddr_storage peer_addr;
 	int peer_addr_len;
 
-	struct drbd_transport *transport;
 	struct drbd_send_buffer send_buffer[2];
 	struct mutex mutex[2]; /* Protect assembling of new packet until sending it (in send_buffer) */
 	int agreed_pro_version;		/* actually used protocol version */
@@ -1074,6 +1073,10 @@ struct drbd_connection {
 		/* position in change stream */
 		u64 current_dagtag_sector;
 	} send;
+
+	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
+					    implementation might have more members than the
+					    abstract one. */
 };
 
 struct drbd_peer_device {
@@ -1755,7 +1758,7 @@ extern void drbd_free_resource(struct drbd_resource *resource);
 extern void drbd_destroy_device(struct kref *kref);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
-extern struct drbd_connection *drbd_create_connection(struct drbd_resource *);
+extern struct drbd_connection *drbd_create_connection(struct drbd_resource *, int transport_size);
 extern void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op);
 extern void drbd_destroy_connection(struct kref *kref);
 extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,

@@ -51,8 +51,8 @@ found:
 	return transport_class;
 }
 
-struct drbd_transport *drbd_create_transport(const char *transport_name,
-		struct drbd_connection *connection)
+struct drbd_transport_class *
+drbd_find_transport_class(const char *transport_name)
 {
 	struct drbd_transport_class *transport_class;
 
@@ -63,9 +63,10 @@ struct drbd_transport *drbd_create_transport(const char *transport_name,
 		if (!err)
 			transport_class = __find_transport_class(transport_name);
 		else
-			drbd_warn(connection->resource, "cannot load drbd_transport_%s kernel module\n", transport_name);
+			pr_warn("cannot load drbd_transport_%s kernel module\n", transport_name);
 	}
-	return transport_class ? transport_class->create(connection) : NULL;
+
+	return transport_class;
 }
 
 
@@ -214,10 +215,10 @@ bool drbd_stream_send_timed_out(struct drbd_connection *connection, enum drbd_st
 	if (drop_it)
 		return true;
 
-	drop_it = !--connection->transport->ko_count;
+	drop_it = !--connection->transport.ko_count;
 	if (!drop_it) {
 		drbd_err(connection, "[%s/%d] sending time expired, ko = %u\n",
-			 current->comm, current->pid, connection->transport->ko_count);
+			 current->comm, current->pid, connection->transport.ko_count);
 		request_ping(connection);
 	}
 

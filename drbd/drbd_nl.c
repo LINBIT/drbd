@@ -2783,6 +2783,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_ret_code retcode;
 	int i, err;
 	bool allocate_bitmap_slots = false;
+	char *transport_name;
+	struct drbd_transport_class *tr_class;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
@@ -2848,18 +2850,27 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	connection = drbd_create_connection(adm_ctx.resource);
-	if (!connection) {
-		retcode = ERR_NOMEM;
+	transport_name = new_net_conf->transport_name[0] ? new_net_conf->transport_name : "tcp";
+	tr_class = drbd_find_transport_class(transport_name);
+	if (!tr_class) {
+		retcode = ERR_CREATE_TRANSPORT;
 		goto fail;
 	}
-	INIT_LIST_HEAD(&connection->connections);
 
-	connection->transport =
-		drbd_create_transport(new_net_conf->transport_name[0] ?
-				      new_net_conf->transport_name : "tcp",
-				      connection);
-	if (!connection->transport) {
+	if (!try_module_get(tr_class->module)) {
+		retcode = ERR_CREATE_TRANSPORT;
+		goto fail;
+	}
+
+	connection = drbd_create_connection(adm_ctx.resource, tr_class->instance_size);
+	if (!connection) {
+		retcode = ERR_NOMEM;
+		goto fail_put_transport;
+	}
+
+	connection->transport.connection = connection;
+	err = tr_class->init(&connection->transport);
+	if (err) {
 		retcode = ERR_CREATE_TRANSPORT;
 		goto fail_free_connection;
 	}
@@ -3032,6 +3043,8 @@ fail_free_connection:
 	}
 	drbd_put_connection(connection);
 	goto out;
+fail_put_transport:
+	module_put(tr_class->module);
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);
@@ -3166,7 +3179,7 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 		sync_source = (device->resource->role[NOW] == R_PRIMARY);
 	else
 		sync_source = test_bit(RESOLVE_CONFLICTS,
-				       &peer_device->connection->transport->flags);
+				       &peer_device->connection->transport.flags);
 
 	if (!sync_source && connection->agreed_pro_version < 110) {
 		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
@@ -4055,7 +4068,7 @@ put_result:
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport->flags);
+		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
 		err = connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -4836,7 +4849,7 @@ void notify_connection_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
-	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport->flags);
+	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
 	connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {

@@ -775,7 +775,7 @@ static void additional_size_command(struct drbd_connection *connection,
 static void *__conn_prepare_command(struct drbd_connection *connection, int size,
 				    enum drbd_stream drbd_stream)
 {
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	int header_size;
 
 	if (!transport->ops->stream_ok(transport, drbd_stream))
@@ -828,7 +828,7 @@ void *drbd_prepare_command(struct drbd_peer_device *peer_device, int size, enum 
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	int msg_flags, err, offset, size;
 
@@ -851,7 +851,7 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 			  enum drbd_packet cmd, enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	bool corked = test_bit(CORKED + drbd_stream, &connection->flags);
 	bool flush = (cmd == P_PING || cmd == P_PING_ACK || cmd == P_TWOPC_PREPARE);
@@ -902,7 +902,7 @@ void drbd_drop_unsent(struct drbd_connection* connection)
 
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 {
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	set_bit(CORKED + stream, &connection->flags);
@@ -912,7 +912,7 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[stream];
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	if (sbuf->unsent != sbuf->pos)
@@ -1711,7 +1711,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 
 int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_device)
 {
-	struct drbd_transport *peer_transport = peer_device->connection->transport;
+	struct drbd_transport *peer_transport = &peer_device->connection->transport;
 	int err = -1;
 
 	mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
@@ -1876,7 +1876,7 @@ static int __drbd_send_page(struct drbd_peer_device *peer_device, struct page *p
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	int err;
 
@@ -2728,7 +2728,7 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 
 		rcu_read_lock();
 		for_each_peer_device(peer_device, device) {
-			if (test_bit(NET_CONGESTED, &peer_device->connection->transport->flags)) {
+			if (test_bit(NET_CONGESTED, &peer_device->connection->transport.flags)) {
 				r |= (1 << BDI_async_congested);
 				break;
 			}
@@ -3000,11 +3000,14 @@ fail:
 }
 
 /* caller must be under adm_mutex */
-struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
+struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
+					       int transport_size)
 {
 	struct drbd_connection *connection;
+	int size;
 
-	connection = kzalloc(sizeof(struct drbd_connection), GFP_KERNEL);
+	size = sizeof(*connection) - sizeof(connection->transport) + transport_size;
+	connection = kzalloc(size, GFP_KERNEL);
 	if (!connection)
 		return NULL;
 
@@ -3049,6 +3052,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource)
 	drbd_thread_init(resource, &connection->asender, drbd_asender, "asender");
 	connection->asender.connection = connection;
 	INIT_LIST_HEAD(&connection->peer_requests);
+	INIT_LIST_HEAD(&connection->connections);
 
 	kref_init(&connection->kref);
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
@@ -3070,15 +3074,13 @@ fail:
 /* free the transport specific members (e.g., sockets) of a connection */
 void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op)
 {
-	if (connection->transport) {
-		mutex_lock(&connection->mutex[DATA_STREAM]);
-		mutex_lock(&connection->mutex[CONTROL_STREAM]);
+	mutex_lock(&connection->mutex[DATA_STREAM]);
+	mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
-		connection->transport->ops->free(connection->transport, op);
+	connection->transport.ops->free(&connection->transport, op);
 
-		mutex_unlock(&connection->mutex[CONTROL_STREAM]);
-		mutex_unlock(&connection->mutex[DATA_STREAM]);
-	}
+	mutex_unlock(&connection->mutex[CONTROL_STREAM]);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 }
 
 void drbd_destroy_connection(struct kref *kref)

@@ -130,7 +130,9 @@ struct drbd_transport_ops {
 
 struct drbd_transport_class {
 	const char *name;
-	struct drbd_transport *(*create)(struct drbd_connection *);
+	const int instance_size;
+	struct module *module;
+	int (*init)(struct drbd_transport *);
 	struct list_head list;
 };
 
@@ -162,7 +164,7 @@ extern int drbd_register_transport_class(struct drbd_transport_class *transport_
 					 int api_version,
 					 int drbd_transport_size);
 extern void drbd_unregister_transport_class(struct drbd_transport_class *transport_class);
-extern struct drbd_transport *drbd_create_transport(const char *name, struct drbd_connection *);
+extern struct drbd_transport_class *drbd_find_transport_class(const char *transport_name);
 
 extern int drbd_get_listener(struct drbd_waiter *waiter,
 			     int (*create_fn)(struct drbd_connection *, struct drbd_listener **));

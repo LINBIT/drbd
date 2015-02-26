@@ -624,7 +624,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_transport *peer_transport = peer_device->connection->transport;
+	struct drbd_transport *transport = &peer_device->connection->transport;
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
@@ -659,16 +659,16 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	for (i = 0; i < number; i++) {
 		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
-		if (peer_transport->ops->stream_ok(peer_transport, DATA_STREAM)) {
+		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
 			struct drbd_transport_stats transport_stats;
 			int queued, sndbuf;
 
-			peer_transport->ops->stats(peer_transport, &transport_stats);
+			transport->ops->stats(transport, &transport_stats);
 			queued = transport_stats.send_buffer_used;
 			sndbuf = transport_stats.send_buffer_size;
 			if (queued > sndbuf / 2) {
 				requeue = 1;
-				peer_transport->ops->hint(peer_transport, DATA_STREAM, NOSPACE);
+				transport->ops->hint(transport, DATA_STREAM, NOSPACE);
 			}
 		} else
 			requeue = 1;
@@ -2302,7 +2302,7 @@ static bool check_sender_todo(struct drbd_connection *connection)
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct net_conf *nc;
 	int uncork, cork;
 	bool got_something = 0;

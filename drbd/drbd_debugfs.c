@@ -403,7 +403,7 @@ static int in_flight_summary_show(struct seq_file *m, void *pos)
 	unsigned long jif = jiffies;
 
 	connection = first_connection(resource);
-	transport = connection->transport;
+	transport = &connection->transport;
 	/* This does not happen, actually.
 	 * But be robust and prepare for future code changes. */
 	if (!connection || !kref_get_unless_zero(&connection->kref))
@@ -650,7 +650,7 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 static int connection_transport_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_connection *connection = m->private;
-	struct drbd_transport *transport = connection->transport;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	seq_printf(m, "transport_type: %s\n\n", transport->class->name);

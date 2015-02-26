@@ -40,7 +40,7 @@ struct buffer {
 };
 
 struct drbd_tcp_transport {
-	struct drbd_transport transport;
+	struct drbd_transport transport; /* Must be first! */
 	struct socket *stream[2];
 	struct buffer rbuf[2];
 };
@@ -56,7 +56,7 @@ struct dtt_waiter {
 	struct socket *socket;
 };
 
-static struct drbd_transport *dtt_create(struct drbd_connection *connection);
+static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
@@ -73,7 +73,9 @@ static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
-	.create = dtt_create,
+	.instance_size = sizeof(struct drbd_tcp_transport),
+	.module = THIS_MODULE,
+	.init = dtt_init,
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
 };
 
@@ -98,22 +100,13 @@ static void dtt_nodelay(struct socket *socket)
 	(void) kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 }
 
-static struct drbd_transport *dtt_create(struct drbd_connection *connection)
+int dtt_init(struct drbd_transport *transport)
 {
-	struct drbd_tcp_transport *tcp_transport;
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
 	enum drbd_stream i;
 
-	if (!try_module_get(THIS_MODULE))
-		return NULL;
-
-	tcp_transport = kzalloc(sizeof(struct drbd_tcp_transport), GFP_KERNEL);
-	if (!tcp_transport) {
-		module_put(THIS_MODULE);
-		return NULL;
-	}
-
 	tcp_transport->transport.ops = &dtt_ops;
-	tcp_transport->transport.connection = connection;
 	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 		void *buffer = (void *)__get_free_page(GFP_KERNEL);
@@ -123,10 +116,10 @@ static struct drbd_transport *dtt_create(struct drbd_connection *connection)
 		tcp_transport->rbuf[i].pos = buffer;
 	}
 
-	return &tcp_transport->transport;
+	return 0;
 fail:
 	free_page((unsigned long)tcp_transport->rbuf[0].base);
-	return NULL;
+	return -ENOMEM;
 }
 
 static void dtt_free_one_sock(struct socket *socket)
@@ -155,9 +148,10 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	}
 
 	if (free_op == DESTROY_TRANSPORT) {
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
-		kfree(tcp_transport);
+			tcp_transport->rbuf[i].base = NULL;
+		}
 		module_put(THIS_MODULE);
 	}
 }
@@ -610,8 +604,9 @@ retry_locked:
 
 static int dtt_receive_first_packet(struct drbd_connection *connection, struct socket *socket)
 {
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_tcp_transport *tcp_transport =
-		container_of(connection->transport, struct drbd_tcp_transport, transport);
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct p_header80 *h = tcp_transport->rbuf[DATA_STREAM].base;
 	const unsigned int header_size = sizeof(*h);
 	struct net_conf *nc;
@@ -1064,7 +1059,7 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 }
 
-static int __init dtt_init(void)
+static int __init dtt_initialize(void)
 {
 	return drbd_register_transport_class(&tcp_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
@@ -1076,5 +1071,5 @@ static void __exit dtt_cleanup(void)
 	drbd_unregister_transport_class(&tcp_transport_class);
 }
 
-module_init(dtt_init)
+module_init(dtt_initialize)
 module_exit(dtt_cleanup)
