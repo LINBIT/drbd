@@ -1430,7 +1430,8 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	struct p_trim *trim = (pi->cmd == P_TRIM) ? pi->data : NULL;
-	struct drbd_transport_ops *tr_ops = peer_device->connection->transport->ops;
+	struct drbd_transport *transport = peer_device->connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
 
 	digest_size = 0;
 	if (!trim && peer_device->connection->peer_integrity_tfm) {
@@ -1477,7 +1478,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	if (trim)
 		return peer_req;
 
-	err = tr_ops->recv_pages(peer_device, &peer_req->pages, data_size);
+	err = tr_ops->recv_pages(transport, &peer_req->pages, data_size);
 	if (err)
 		goto fail;
 

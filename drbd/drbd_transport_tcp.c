@@ -60,7 +60,7 @@ static struct drbd_transport *dtt_create(struct drbd_connection *connection);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
-static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
+static int dtt_recv_pages(struct drbd_transport *transport, struct page **page, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
@@ -263,15 +263,16 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	return rv;
 }
 
-static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
+static int dtt_recv_pages(struct drbd_transport *transport, struct page **pages, size_t size)
 {
 	struct drbd_tcp_transport *tcp_transport =
-		container_of(peer_device->connection->transport, struct drbd_tcp_transport, transport);
+		container_of(transport, struct drbd_tcp_transport, transport);
+	struct drbd_connection *connection = tcp_transport->transport.connection;
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 	struct page *all_pages, *page;
 	int err;
 
-	all_pages = drbd_alloc_pages(peer_device->connection, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	all_pages = drbd_alloc_pages(connection, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 	if (!all_pages)
 		return -ENOMEM;
 
@@ -289,7 +290,7 @@ static int dtt_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	*pages = all_pages;
 	return 0;
 fail:
-	drbd_free_pages(peer_device->connection, all_pages, 0);
+	drbd_free_pages(connection, all_pages, 0);
 	return err;
 }
 
