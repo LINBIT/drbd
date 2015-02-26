@@ -238,9 +238,9 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 		buffer = *buf;
 		rv = dtt_recv_short(socket, buffer, size, flags & ~CALLER_BUFFER);
 	} else if (flags & GROW_BUFFER) {
-		D_ASSERT(transport->connection, *buf == tcp_transport->rbuf[stream].base);
+		TR_ASSERT(transport, *buf == tcp_transport->rbuf[stream].base);
 		buffer = tcp_transport->rbuf[stream].pos;
-		D_ASSERT(transport->connection, (buffer - *buf) + size <= PAGE_SIZE);
+		TR_ASSERT(transport, (buffer - *buf) + size <= PAGE_SIZE);
 
 		rv = dtt_recv_short(socket, buffer, size, flags & ~GROW_BUFFER);
 	} else {
@@ -398,7 +398,7 @@ out:
 		if (socket)
 			sock_release(socket);
 		if (err != -EAGAIN)
-			drbd_err(connection, "%s failed, err = %d\n", what, err);
+			tr_err(transport, "%s failed, err = %d\n", what, err);
 	} else {
 		*ret_socket = socket;
 	}
@@ -550,7 +550,7 @@ retry:
 				&peer_addr, peer_addr_len);
 			if (connection2) {
 				/* conn_get_by_addrs() does a get, put follows here... no debug */
-				drbd_info(connection2,
+				tr_info(&connection2->transport,
 					  "Receiver busy; rejecting incoming connection\n");
 				kref_put(&connection2->kref, drbd_destroy_connection);
 				goto retry_locked;
@@ -560,7 +560,7 @@ retry:
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
 				to_sin6 = (struct sockaddr_in6 *)&transport->my_addr;
-				drbd_err(resource, "Closing unexpected connection from "
+				tr_err(transport, "Closing unexpected connection from "
 					 "%pI6 to port %u\n",
 					 &from_sin6->sin6_addr,
 					 be16_to_cpu(to_sin6->sin6_port));
@@ -568,7 +568,7 @@ retry:
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
 				to_sin = (struct sockaddr_in *)&transport->my_addr;
-				drbd_err(resource, "Closing unexpected connection from "
+				tr_err(transport, "Closing unexpected connection from "
 					 "%pI4 to port %u\n",
 					 &from_sin->sin_addr,
 					 be16_to_cpu(to_sin->sin_port));
@@ -582,7 +582,7 @@ retry:
 				container_of(waiter2_gen, struct dtt_waiter, waiter);
 
 			if (waiter2->socket) {
-				drbd_err(waiter2->waiter.connection,
+				tr_err(&waiter2->waiter.connection->transport,
 					 "Receiver busy; rejecting incoming connection\n");
 				goto retry_locked;
 			}
@@ -631,7 +631,7 @@ static int dtt_receive_first_packet(struct drbd_connection *connection, struct s
 		return err;
 	}
 	if (h->magic != cpu_to_be32(DRBD_MAGIC)) {
-		drbd_err(connection, "Wrong magic value 0x%08x in receive_first_packet\n",
+		tr_err(transport, "Wrong magic value 0x%08x in receive_first_packet\n",
 			 be32_to_cpu(h->magic));
 		return -EINVAL;
 	}
@@ -733,7 +733,7 @@ out:
 
 	if (err < 0 &&
 	    err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS && err != -EADDRINUSE)
-		drbd_err(connection, "%s failed, err = %d\n", what, err);
+		tr_err(transport, "%s failed, err = %d\n", what, err);
 
 	kfree(listener);
 
@@ -789,7 +789,7 @@ static int dtt_connect(struct drbd_transport *transport)
 				csocket = s;
 				dtt_send_first_packet(tcp_transport, csocket, P_INITIAL_META, CONTROL_STREAM);
 			} else {
-				drbd_err(connection, "Logic error in conn_connect()\n");
+				tr_err(transport, "Logic error in conn_connect()\n");
 				goto out_eagain;
 			}
 		}
@@ -811,7 +811,7 @@ retry:
 			switch (fp) {
 			case P_INITIAL_DATA:
 				if (dsocket) {
-					drbd_warn(connection, "initial packet S crossed\n");
+					tr_warn(transport, "initial packet S crossed\n");
 					sock_release(dsocket);
 					dsocket = s;
 					goto randomize;
@@ -821,7 +821,7 @@ retry:
 			case P_INITIAL_META:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
 				if (csocket) {
-					drbd_warn(connection, "initial packet M crossed\n");
+					tr_warn(transport, "initial packet M crossed\n");
 					sock_release(csocket);
 					csocket = s;
 					goto randomize;
@@ -829,7 +829,7 @@ retry:
 				csocket = s;
 				break;
 			default:
-				drbd_warn(connection, "Error receiving initial packet\n");
+				tr_warn(transport, "Error receiving initial packet\n");
 				sock_release(s);
 randomize:
 				if (prandom_u32() & 1)
@@ -959,7 +959,7 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 					break;
 				continue;
 			}
-			drbd_warn(transport->connection, "%s: size=%d len=%d sent=%d\n",
+			tr_warn(transport, "%s: size=%d len=%d sent=%d\n",
 			     __func__, (int)size, len, sent);
 			if (sent < 0)
 				err = sent;
