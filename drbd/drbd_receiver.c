@@ -668,6 +668,9 @@ start:
 		return false;
 	}
 
+	/* Assume that the peer only understands protocol 80 until we know better.  */
+	connection->agreed_pro_version = 80;
+
 	err = transport->ops->connect(transport);
 	if (err == -EAGAIN)
 		goto retry;

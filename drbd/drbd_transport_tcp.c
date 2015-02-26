@@ -760,9 +760,6 @@ static int dtt_connect(struct drbd_transport *transport)
 	dsocket = NULL;
 	csocket = NULL;
 
-	/* Assume that the peer only understands protocol 80 until we know better.  */
-	connection->agreed_pro_version = 80;
-
 	waiter.waiter.connection = connection;
 	waiter.socket = NULL;
 	err = drbd_get_listener(&waiter.waiter, dtt_create_listener);
