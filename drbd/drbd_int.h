@@ -52,15 +52,6 @@
 #include "drbd_kref_debug.h"
 #include "drbd_transport.h"
 
-/*
- * gfp_mask for allocating memory with no write-out.
- *
- * When drbd allocates memory on behalf of the peer, we prevent it from causing
- * write-out because in a criss-cross setup, the write-out could lead to memory
- * pressure on the peer, eventually leading to deadlock.
- */
-#define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN | __GFP_WAIT)
-
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
 # define __protected_read_by(x)  __attribute__((require_context(x,1,999,"read")))
@@ -238,7 +229,7 @@ static inline int drbd_ratelimit(void)
 #define D_ASSERT(x, exp)							\
 	do {									\
 		if (!(exp))							\
-			drbd_err(x, "ASSERTION %s FAILED in %s\n", 		\
+			drbd_err(x, "ASSERTION %s FAILED in %s\n",		\
 				 #exp, __func__);				\
 	} while (0)
 
@@ -1885,8 +1876,6 @@ extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, 
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
 #define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
-extern struct page *drbd_alloc_pages(struct drbd_connection *, unsigned int, gfp_t);
-extern void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net);
 extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
@@ -2008,18 +1997,6 @@ extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 /*
  * inline helper functions
  *************************/
-
-/* see also page_chain_add and friends in drbd_receiver.c */
-static inline struct page *page_chain_next(struct page *page)
-{
-	return (struct page *)page_private(page);
-}
-#define page_chain_for_each(page) \
-	for (; page && ({ prefetch(page_chain_next(page)); 1; }); \
-			page = page_chain_next(page))
-#define page_chain_for_each_safe(page, n) \
-	for (; page && ({ n = page_chain_next(page); 1; }); page = n)
-
 
 static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_req)
 {

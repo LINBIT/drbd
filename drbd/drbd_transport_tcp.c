@@ -26,8 +26,10 @@
 #include <linux/pkt_sched.h>
 #include <linux/net.h>
 #include <linux/tcp.h>
+#include <linux/highmem.h>
+#include <linux/drbd_genl_api.h>
+#include <drbd_protocol.h>
 #include <drbd_transport.h>
-#include "drbd_int.h"
 
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -507,7 +509,7 @@ static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socke
 	rcu_read_unlock();
 
 	timeo = connect_int * HZ;
-	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
 retry:
 	timeo = wait_event_interruptible_timeout(waiter->waiter.wait, dtt_wait_connect_cond(waiter), timeo);
@@ -538,19 +540,7 @@ retry:
 		if (!waiter2_gen) {
 			struct sockaddr_in6 *from_sin6, *to_sin6;
 			struct sockaddr_in *from_sin, *to_sin;
-			struct drbd_connection *connection2;
 			struct drbd_transport *transport = waiter->waiter.transport;
-
-			connection2 = conn_get_by_addrs(
-				&transport->my_addr, transport->my_addr_len,
-				&peer_addr, peer_addr_len);
-			if (connection2) {
-				/* conn_get_by_addrs() does a get, put follows here... no debug */
-				tr_info(&connection2->transport,
-					  "Receiver busy; rejecting incoming connection\n");
-				kref_put(&connection2->kref, drbd_destroy_connection);
-				goto retry_locked;
-			}
 
 			switch (peer_addr.ss_family) {
 			case AF_INET6:
@@ -821,7 +811,7 @@ retry:
 				tr_warn(transport, "Error receiving initial packet\n");
 				sock_release(s);
 randomize:
-				if (prandom_u32() & 1)
+				if (random32() & 1)
 					goto retry;
 			}
 		}

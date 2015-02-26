@@ -18,6 +18,15 @@
 #define CALLER_BUFFER  MSG_DONTROUTE
 #define GROW_BUFFER    MSG_PROBE
 
+/*
+ * gfp_mask for allocating memory with no write-out.
+ *
+ * When drbd allocates memory on behalf of the peer, we prevent it from causing
+ * write-out because in a criss-cross setup, the write-out could lead to memory
+ * pressure on the peer, eventually leading to deadlock.
+ */
+#define GFP_TRY	(__GFP_HIGHMEM | __GFP_NOWARN | __GFP_WAIT)
+
 #define tr_printk(level, transport, fmt, args...)  ({		\
 	rcu_read_lock();					\
 	printk(level "tr %s: " fmt,				\
@@ -189,6 +198,7 @@ struct drbd_waiter {
 	struct drbd_listener *listener;
 };
 
+/* drbd_transport.c */
 extern int drbd_register_transport_class(struct drbd_transport_class *transport_class,
 					 int api_version,
 					 int drbd_transport_size);
@@ -201,4 +211,27 @@ extern void drbd_put_listener(struct drbd_waiter *waiter);
 extern struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *, struct sockaddr_storage *);
 extern bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stream stream);
 extern bool drbd_should_abort_listening(struct drbd_transport *transport);
+
+/* drbd_receiver.c*/
+extern struct page *drbd_alloc_pages(struct drbd_connection *, unsigned int, gfp_t);
+extern void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net);
+
+/* see also page_chain_add and friends in drbd_receiver.c */
+static inline struct page *page_chain_next(struct page *page)
+{
+	return (struct page *)page_private(page);
+}
+#define page_chain_for_each(page) \
+	for (; page && ({ prefetch(page_chain_next(page)); 1; }); \
+			page = page_chain_next(page))
+#define page_chain_for_each_safe(page, n) \
+	for (; page && ({ n = page_chain_next(page); 1; }); page = n)
+
+#ifndef SK_CAN_REUSE
+/* This constant was introduced by Pavel Emelyanov <xemul@parallels.com> on
+   Thu Apr 19 03:39:36 2012 +0000. Before the release of linux-3.5
+   commit 4a17fd52 sock: Introduce named constants for sk_reuse */
+#define SK_CAN_REUSE   1
+#endif
+
 #endif
