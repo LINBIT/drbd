@@ -747,7 +747,6 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
-	struct drbd_connection *connection = transport->connection;
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
@@ -827,14 +826,8 @@ randomize:
 			}
 		}
 
-		if (connection->cstate[NOW] <= C_DISCONNECTING)
+		if (drbd_should_abort_listening(transport))
 			goto out_eagain;
-		if (signal_pending(current)) {
-			flush_signals(current);
-			smp_rmb();
-			if (get_t_state(&connection->receiver) == EXITING)
-				goto out_eagain;
-		}
 
 		ok = dtt_connection_established(transport, &dsocket, &csocket);
 	} while (!ok);

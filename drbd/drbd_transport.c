@@ -230,6 +230,25 @@ bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stre
 
 }
 
+bool drbd_should_abort_listening(struct drbd_transport *transport)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+	bool abort = false;
+
+	if (connection->cstate[NOW] <= C_DISCONNECTING)
+		abort = true;
+	if (signal_pending(current)) {
+		flush_signals(current);
+		smp_rmb();
+		if (get_t_state(&connection->receiver) == EXITING)
+			abort = true;
+	}
+
+	return abort;
+}
+
+
 
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);
@@ -238,3 +257,4 @@ EXPORT_SYMBOL_GPL(drbd_get_listener);
 EXPORT_SYMBOL_GPL(drbd_put_listener);
 EXPORT_SYMBOL_GPL(drbd_find_waiter_by_addr);
 EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);
+EXPORT_SYMBOL_GPL(drbd_should_abort_listening);
