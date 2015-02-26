@@ -107,7 +107,7 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection)
 }
 
 int drbd_get_listener(struct drbd_waiter *waiter,
-		      int (*create_listener)(struct drbd_connection *, struct drbd_listener **))
+		      int (*create_listener)(struct drbd_transport *, struct drbd_listener **))
 {
 	struct drbd_connection *connection = waiter->connection;
 	struct drbd_resource *resource = connection->resource;
@@ -136,7 +136,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		if (listener)
 			return 0;
 
-		err = create_listener(waiter->connection, &new_listener);
+		err = create_listener(&waiter->connection->transport, &new_listener);
 		if (err)
 			return err;
 

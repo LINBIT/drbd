@@ -195,7 +195,7 @@ extern void drbd_unregister_transport_class(struct drbd_transport_class *transpo
 extern struct drbd_transport_class *drbd_find_transport_class(const char *transport_name);
 
 extern int drbd_get_listener(struct drbd_waiter *waiter,
-			     int (*create_fn)(struct drbd_connection *, struct drbd_listener **));
+			     int (*create_fn)(struct drbd_transport *, struct drbd_listener **));
 extern void drbd_put_listener(struct drbd_waiter *waiter);
 extern struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *, struct sockaddr_storage *);
 extern bool drbd_stream_send_timed_out(struct drbd_connection *connection, enum drbd_stream stream);

@@ -320,9 +320,8 @@ static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 	}
 }
 
-static int dtt_try_connect(struct drbd_connection *connection, struct socket **ret_socket)
+static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret_socket)
 {
-	struct drbd_transport *transport = &connection->transport;
 	const char *what;
 	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
@@ -331,7 +330,7 @@ static int dtt_try_connect(struct drbd_connection *connection, struct socket **r
 	int sndbuf_size, rcvbuf_size, connect_int;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EIO;
@@ -448,7 +447,7 @@ static bool dtt_socket_ok_or_free(struct socket **socket)
 	}
 }
 
-static bool dtt_connection_established(struct drbd_connection *connection,
+static bool dtt_connection_established(struct drbd_transport *transport,
 				   struct socket **socket1,
 				   struct socket **socket2)
 {
@@ -459,7 +458,7 @@ static bool dtt_connection_established(struct drbd_connection *connection,
 		return false;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	timeout = (nc->sock_check_timeo ?: nc->ping_timeo) * HZ / 10;
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
@@ -605,18 +604,16 @@ retry_locked:
 	goto retry;
 }
 
-static int dtt_receive_first_packet(struct drbd_connection *connection, struct socket *socket)
+static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket)
 {
-	struct drbd_transport *transport = &connection->transport;
-	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
+	struct drbd_transport *transport = &tcp_transport->transport;
 	struct p_header80 *h = tcp_transport->rbuf[DATA_STREAM].base;
 	const unsigned int header_size = sizeof(*h);
 	struct net_conf *nc;
 	int err;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EIO;
@@ -666,9 +663,8 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtt_create_listener(struct drbd_connection *connection, struct drbd_listener **ret_listener)
+static int dtt_create_listener(struct drbd_transport *transport, struct drbd_listener **ret_listener)
 {
-	struct drbd_transport *transport = &connection->transport;
 	int err, sndbuf_size, rcvbuf_size;
 	struct sockaddr_storage my_addr;
 	struct dtt_listener *listener = NULL;
@@ -677,7 +673,7 @@ static int dtt_create_listener(struct drbd_connection *connection, struct drbd_l
 	const char *what;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EINVAL;
@@ -776,7 +772,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	do {
 		struct socket *s = NULL;
 
-		err = dtt_try_connect(connection, &s);
+		err = dtt_try_connect(transport, &s);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
@@ -794,7 +790,7 @@ static int dtt_connect(struct drbd_transport *transport)
 			}
 		}
 
-		if (dtt_connection_established(connection, &dsocket, &csocket))
+		if (dtt_connection_established(transport, &dsocket, &csocket))
 			break;
 
 retry:
@@ -804,7 +800,7 @@ retry:
 			goto out;
 
 		if (s) {
-			int fp = dtt_receive_first_packet(connection, s);
+			int fp = dtt_receive_first_packet(tcp_transport, s);
 
 			dtt_socket_ok_or_free(&dsocket);
 			dtt_socket_ok_or_free(&csocket);
@@ -846,7 +842,7 @@ randomize:
 				goto out_eagain;
 		}
 
-		ok = dtt_connection_established(connection, &dsocket, &csocket);
+		ok = dtt_connection_established(transport, &dsocket, &csocket);
 	} while (!ok);
 
 	dtt_put_listener(&waiter);
