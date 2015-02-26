@@ -77,12 +77,9 @@ enum drbd_tr_free_op {
 };
 
 /* Each transport implementation should embed a struct drbd_transport
-   into it's instance data structure.
-   The transport implementation should only access the connection
-   only for reading (connection config, etc...) */
+   into it's instance data structure. */
 struct drbd_transport {
 	struct drbd_transport_ops *ops;
-	struct drbd_connection *connection;
 	struct drbd_transport_class *class;
 
 	struct sockaddr_storage my_addr;
@@ -213,8 +210,8 @@ extern bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum dr
 extern bool drbd_should_abort_listening(struct drbd_transport *transport);
 
 /* drbd_receiver.c*/
-extern struct page *drbd_alloc_pages(struct drbd_connection *, unsigned int, gfp_t);
-extern void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net);
+extern struct page *drbd_alloc_pages(struct drbd_transport *, unsigned int, gfp_t);
+extern void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is_net);
 
 /* see also page_chain_add and friends in drbd_receiver.c */
 static inline struct page *page_chain_next(struct page *page)

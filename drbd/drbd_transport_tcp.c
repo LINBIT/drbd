@@ -263,12 +263,11 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct page **pages,
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-	struct drbd_connection *connection = tcp_transport->transport.connection;
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 	struct page *all_pages, *page;
 	int err;
 
-	all_pages = drbd_alloc_pages(connection, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	all_pages = drbd_alloc_pages(transport, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 	if (!all_pages)
 		return -ENOMEM;
 
@@ -286,7 +285,7 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct page **pages,
 	*pages = all_pages;
 	return 0;
 fail:
-	drbd_free_pages(connection, all_pages, 0);
+	drbd_free_pages(transport, all_pages, 0);
 	return err;
 }
 

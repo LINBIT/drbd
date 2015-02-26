@@ -2870,7 +2870,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	transport = &connection->transport;
-	transport->connection = connection;
 	err = tr_class->init(transport);
 	if (err) {
 		retcode = ERR_CREATE_TRANSPORT;

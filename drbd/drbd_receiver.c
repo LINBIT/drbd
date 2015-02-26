@@ -290,15 +290,17 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_connection *connection)
  *
  * Returns a page chain linked via page->private.
  */
-struct page *drbd_alloc_pages(struct drbd_connection *connection, unsigned int number,
+struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int number,
 			      gfp_t gfp_mask)
 {
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
 	struct page *page = NULL;
 	DEFINE_WAIT(wait);
 	unsigned int mxb;
 
 	rcu_read_lock();
-	mxb = rcu_dereference(connection->transport.net_conf)->max_buffers;
+	mxb = rcu_dereference(transport->net_conf)->max_buffers;
 	rcu_read_unlock();
 
 	if (atomic_read(&connection->pp_in_use) < mxb)
@@ -337,8 +339,10 @@ struct page *drbd_alloc_pages(struct drbd_connection *connection, unsigned int n
  * Is also used from inside an other spin_lock_irq(&resource->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
-void drbd_free_pages(struct drbd_connection *connection, struct page *page, int is_net)
+void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is_net)
 {
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
 	atomic_t *a = is_net ? &connection->pp_in_use_by_net : &connection->pp_in_use;
 	int i;
 
@@ -410,7 +414,7 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
-	drbd_free_pages(peer_device->connection, peer_req->pages, is_net);
+	drbd_free_pages(&peer_device->connection->transport, peer_req->pages, is_net);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	mempool_free(peer_req, drbd_ee_mempool);
@@ -466,7 +470,7 @@ static int drbd_finish_peer_reqs(struct drbd_peer_device *peer_device)
 		if (!err)
 			err = err2;
 		if (!list_empty(&peer_req->recv_order)) {
-			drbd_free_pages(connection, peer_req->pages, 0);
+			drbd_free_pages(&connection->transport, peer_req->pages, 0);
 			peer_req->pages = NULL;
 		} else
 			drbd_free_peer_req(peer_req);
@@ -2438,7 +2442,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (!peer_req)
 		goto fail;
 	if (size) {
-		peer_req->pages = drbd_alloc_pages(peer_device->connection,
+		peer_req->pages = drbd_alloc_pages(&peer_device->connection->transport,
 			DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 		if (!peer_req->pages)
 			goto fail2;

@@ -410,7 +410,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!peer_req)
 		goto defer;
 	if (size) {
-		peer_req->pages = drbd_alloc_pages(peer_device->connection,
+		peer_req->pages = drbd_alloc_pages(&peer_device->connection->transport,
 						   DIV_ROUND_UP(size, PAGE_SIZE),
 						   GFP_TRY & ~__GFP_WAIT);
 		if (!peer_req->pages)
