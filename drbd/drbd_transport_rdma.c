@@ -24,10 +24,13 @@
 #define pr_fmt(fmt)	"drbd_rdma: " fmt
 
 #include <linux/module.h>
-#include <drbd_transport.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
-#include "drbd_int.h"
+
+#include <linux/drbd_genl_api.h>
+#include <drbd_protocol.h>
+#include <drbd_transport.h>
+
 
 /* Nearly all data transfer uses the send/receive semantics. No need to
    actually use RDMA WRITE / READ.
@@ -180,7 +183,7 @@ struct dtr_waiter {
 
 static int stream_nr = 0; /* debugging */
 
-static struct drbd_transport *dtr_create(struct drbd_connection *connection);
+static int dtr_init(struct drbd_transport *transport);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
@@ -189,7 +192,7 @@ static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
-static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **page, size_t size);
+static int dtr_recv_pages(struct drbd_transport *transport, struct page **page, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
@@ -203,13 +206,15 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream);
 static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream);
-static bool dtr_connection_established(struct drbd_connection *, struct drbd_rdma_stream **, struct drbd_rdma_stream **);
+static bool dtr_connection_established(struct drbd_transport *, struct drbd_rdma_stream **, struct drbd_rdma_stream **);
 static bool dtr_stream_ok_or_free(struct drbd_rdma_stream **rdma_stream);
 
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
-	.create = dtr_create,
+	.instance_size = sizeof(struct drbd_rdma_transport),
+	.module = THIS_MODULE,
+	.init = dtr_init,
 	.list = LIST_HEAD_INIT(rdma_transport_class.list),
 };
 
@@ -228,24 +233,19 @@ static struct drbd_transport_ops dtr_ops = {
 };
 
 
-static struct drbd_transport *dtr_create(struct drbd_connection *connection)
+static int dtr_init(struct drbd_transport *transport)
 {
-	struct drbd_rdma_transport *rdma_transport;
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+	enum drbd_stream i;
 
-	if (!try_module_get(THIS_MODULE))
-		return NULL;
+	transport->ops = &dtr_ops;
+	transport->class = &rdma_transport_class;
 
-	rdma_transport = kzalloc(sizeof(struct drbd_rdma_transport), GFP_KERNEL);
-	if (!rdma_transport) {
-		module_put(THIS_MODULE);
-		return NULL;
-	}
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		rdma_transport->stream[i] = NULL;
 
-	rdma_transport->transport.ops = &dtr_ops;
-	rdma_transport->transport.connection = connection;
-	rdma_transport->transport.class = &rdma_transport_class;
-
-	return &rdma_transport->transport;
+	return 0;
 }
 
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
@@ -259,10 +259,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		rdma_transport->stream[i] = NULL;
 	}
 
-	if (free_op == DESTROY_TRANSPORT) {
-		kfree(rdma_transport);
+	if (free_op == DESTROY_TRANSPORT)
 		module_put(THIS_MODULE);
-	}
 }
 
 
@@ -298,14 +296,10 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 }
 
 
-static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pages, size_t size)
+static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages, size_t size)
 {
-	/* TODO: Here we pass back pages that we allocated using alloc_page(GFP_KERNEL) while
-	   DRBD thinks they came from drbd_alloc_pages(). Needs to be fixed by making
-	   drbd_alloc_pages usable for transports. */
-
 	struct drbd_rdma_transport *rdma_transport =
-		container_of(peer_device->connection->transport, struct drbd_rdma_transport, transport);
+		container_of(transport, struct drbd_rdma_transport, transport);
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
 	struct page *page, *all_pages = NULL;
 	int i = 0;
@@ -314,7 +308,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 		return -ECONNRESET;
 
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
-	D_ASSERT(peer_device, rdma_stream->current_rx.bytes_left == 0);
+	TR_ASSERT(transport, rdma_stream->current_rx.bytes_left == 0);
 	dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
 
 	while (size) {
@@ -326,8 +320,7 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
-			atomic_add(i, &peer_device->device->pp_in_use);
-			drbd_free_pages(peer_device->device, all_pages, 0);
+			drbd_free_pages(transport, all_pages, 0);
 			return t == 0 ? -EAGAIN : -EINTR;
 		}
 
@@ -343,7 +336,6 @@ static int dtr_recv_pages(struct drbd_peer_device *peer_device, struct page **pa
 	}
 
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
-	atomic_add(i, &peer_device->device->pp_in_use);
 	*pages = all_pages;
 	return 0;
 }
@@ -482,7 +474,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		listener = container_of(cm_context, struct dtr_listener, cm);
 
-		spin_lock(&listener->listener.resource->listeners_lock);
+		spin_lock(&listener->listener.waiters_lock);
 		listener->listener.pending_accepts++;
 		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
 
@@ -498,7 +490,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		cm_id = cm_context->id;
 
 		wake_up(&waiter->wait); /* wake an arbitrary waiter */
-		spin_unlock(&listener->listener.resource->listeners_lock);
+		spin_unlock(&listener->listener.waiters_lock);
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
@@ -797,19 +789,14 @@ static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 
 static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 {
+	struct drbd_transport *transport = &rdma_stream->rdma_transport->transport;
 	struct drbd_rdma_rx_desc *rx_desc;
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct page *page;
 	void *pos;
 	int err, size, alloc_size = rdma_stream->rx_allocation_size;
 
-	/* Should use drbd_alloc_pages() here. But that needs a peer_device.
-	   Need to refactor that to be based on connections.
-	page = drbd_alloc_pages(peer_device, 1, GFP_TRY);
-	drbd_free_pages(peer_device->device, page, 0);
-	*/
-
-	page = alloc_page(GFP_NOIO);
+	page = drbd_alloc_pages(transport, 1, GFP_NOIO);
 	if (!page)
 		return -ENOMEM;
 
@@ -926,12 +913,11 @@ retry:
 
 	if (t == 0) {
 		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-		struct drbd_connection *connection = rdma_transport->transport.connection;
 		enum drbd_stream stream =
 			rdma_transport->stream[DATA_STREAM] == rdma_stream ?
 				DATA_STREAM : CONTROL_STREAM;
 
-		if (drbd_stream_send_timed_out(connection, stream))
+		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
 			return -EAGAIN;
 		goto retry;
 	} else if (t < 0)
@@ -963,7 +949,8 @@ retry:
 }
 
 /* allocate rdma specific resources for the stream */
-static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct drbd_connection *connection)
+static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
+				    struct drbd_transport *transport)
 {
 	struct net_conf *nc;
 	int i, err;
@@ -971,7 +958,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 	int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (nc) {
 		if (nc->rcvbuf_size)
 			rcvbuf_size = nc->rcvbuf_size;
@@ -1001,7 +988,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream, struct
 	init_waitqueue_head(&rdma_stream->recv_wq);
 	init_waitqueue_head(&rdma_stream->send_wq);
 	rdma_stream->rdma_transport =
-		container_of(connection->transport, struct drbd_rdma_transport, transport);
+		container_of(transport, struct drbd_rdma_transport, transport);
 
 	// pr_info("creating stream: %s\n", rdma_stream->name);
 
@@ -1167,7 +1154,7 @@ static int dtr_send_first_packet(struct drbd_rdma_stream *rdma_stream, enum drbd
 	return err;
 }
 
-static int dtr_receive_first_packet(struct drbd_connection *connection, struct drbd_rdma_stream *rdma_stream)
+static int dtr_receive_first_packet(struct drbd_transport *transport, struct drbd_rdma_stream *rdma_stream)
 {
 	struct p_header80 *h;
 	const unsigned int header_size = sizeof(*h);
@@ -1175,7 +1162,7 @@ static int dtr_receive_first_packet(struct drbd_connection *connection, struct d
 	int err;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EIO;
@@ -1192,7 +1179,7 @@ static int dtr_receive_first_packet(struct drbd_connection *connection, struct d
 	dtr_create_some_rx_desc(rdma_stream);
 
 	if (h->magic != cpu_to_be32(DRBD_MAGIC)) {
-		drbd_err(connection, "Wrong magic value 0x%08x in receive_first_packet\n",
+		tr_err(transport, "Wrong magic value 0x%08x in receive_first_packet\n",
 			 be32_to_cpu(h->magic));
 		return -EINVAL;
 	}
@@ -1200,7 +1187,7 @@ static int dtr_receive_first_packet(struct drbd_connection *connection, struct d
 }
 
 
-static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_stream **ret_rdma_stream)
+static int dtr_try_connect(struct drbd_transport *transport, struct drbd_rdma_stream **ret_rdma_stream)
 {
 	struct drbd_rdma_stream *rdma_stream = NULL;
 	struct rdma_conn_param conn_param;
@@ -1212,14 +1199,14 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 
 	err = dtr_create_cm_id(&rdma_stream->cm);
 	if (err) {
-		drbd_err(connection, "rdma_create_id() failed %d\n", err);
+		tr_err(transport, "rdma_create_id() failed %d\n", err);
 		goto out;
 	}
 	strcpy(rdma_stream->cm.name, "new");
 
-	err = rdma_resolve_addr(rdma_stream->cm.id, NULL, (struct sockaddr *)&connection->peer_addr, 2000);
+	err = rdma_resolve_addr(rdma_stream->cm.id, NULL, (struct sockaddr *)&transport->peer_addr, 2000);
 	if (err) {
-		drbd_err(connection, "rdma_resolve_addr error %d\n", err);
+		tr_err(transport, "rdma_resolve_addr error %d\n", err);
 		goto out;
 	}
 
@@ -1229,9 +1216,9 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 	if (rdma_stream->cm.state != ROUTE_RESOLVED)
 		goto out; /* Happens if peer not reachable */
 
-	err = dtr_alloc_rdma_resources(rdma_stream, connection);
+	err = dtr_alloc_rdma_resources(rdma_stream, transport);
 	if (err) {
-		drbd_err(connection, "failed allocating resources %d\n", err);
+		tr_err(transport, "failed allocating resources %d\n", err);
 		goto out;
 	}
 	strcpy(rdma_stream->cm.name, rdma_stream->name);
@@ -1244,7 +1231,7 @@ static int dtr_try_connect(struct drbd_connection *connection, struct drbd_rdma_
 
 	err = rdma_connect(rdma_stream->cm.id, &conn_param);
 	if (err) {
-		drbd_err(connection, "rdma_connect error %d\n", err);
+		tr_err(transport, "rdma_connect error %d\n", err);
 		goto out;
 	}
 
@@ -1277,7 +1264,7 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtr_create_listener(struct drbd_connection *connection, struct drbd_listener **ret_listener)
+static int dtr_create_listener(struct drbd_transport *transport, struct drbd_listener **ret_listener)
 {
 	struct dtr_listener *listener = NULL;
 	int err = -ENOMEM;
@@ -1288,24 +1275,24 @@ static int dtr_create_listener(struct drbd_connection *connection, struct drbd_l
 
 	err = dtr_create_cm_id(&listener->cm);
 	if (err) {
-		drbd_err(connection, "rdma_create_id() failed\n");
+		tr_err(transport, "rdma_create_id() failed\n");
 		goto out;
 	}
 	strcpy(listener->cm.name, "listen");
 
-	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &connection->my_addr);
+	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &transport->my_addr);
 	if (err) {
-		drbd_err(connection, "rdma_bind_addr error %d\n", err);
+		tr_err(transport, "rdma_bind_addr error %d\n", err);
 		goto out;
 	}
 
 	err = rdma_listen(listener->cm.id, 3);
 	if (err) {
-		drbd_err(connection, "rdma_listen error %d\n", err);
+		tr_err(transport, "rdma_listen error %d\n", err);
 		goto out;
 	}
 
-	listener->listener.listen_addr = connection->my_addr;
+	listener->listener.listen_addr = transport->my_addr;
 	listener->listener.destroy = dtr_destroy_listener;
 
 	*ret_listener = &listener->listener;
@@ -1319,21 +1306,19 @@ out:
 
 static bool dtr_wait_connect_cond(struct dtr_waiter *waiter)
 {
-	struct drbd_connection *connection = waiter->waiter.connection;
-	struct drbd_resource *resource = connection->resource;
+	struct drbd_listener *listener = waiter->waiter.listener;
 	bool rv;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_bh(&listener->waiters_lock);
 	rv = waiter->waiter.listener->pending_accepts > 0 || waiter->rdma_stream != NULL;
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->waiters_lock);
 
 	return rv;
 }
 
 static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stream **ret_rdma_stream)
 {
-	struct drbd_connection *connection = waiter->waiter.connection;
-	struct drbd_resource *resource = connection->resource;
+	struct drbd_transport *transport = waiter->waiter.transport;
 	struct drbd_rdma_stream *rdma_stream = NULL;
 	struct sockaddr_storage *peer_addr;
 	struct net_conf *nc;
@@ -1346,7 +1331,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	int connect_int, err = 0;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		return -EINVAL;
@@ -1355,7 +1340,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct drbd_rdma_stre
 	rcu_read_unlock();
 
 	timeo = connect_int * HZ;
-	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jotter */
 
 retry:
 	dtr_free_stream(rdma_stream);
@@ -1365,7 +1350,7 @@ retry:
 	if (timeo <= 0)
 		return -EAGAIN;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_bh(&listener->listener.waiters_lock);
 	if (waiter->rdma_stream) {
 		rdma_stream = waiter->rdma_stream;
 		waiter->rdma_stream = NULL;
@@ -1376,7 +1361,7 @@ retry:
 		listener->child_cms = cm_id->context;
 		cm_id->context = NULL;
 	}
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->listener.waiters_lock);
 
 	if (cm_id) {
 		rdma_stream = kzalloc(sizeof(*rdma_stream), GFP_KERNEL);
@@ -1388,9 +1373,9 @@ retry:
 		cm_id->context = &rdma_stream->cm;
 		rdma_stream->cm.id = cm_id;
 
-		err = dtr_alloc_rdma_resources(rdma_stream, connection);
+		err = dtr_alloc_rdma_resources(rdma_stream, transport);
 		if (err) {
-			drbd_err(connection, "failed allocating stream resources %d\n", err);
+			tr_err(transport, "failed allocating stream resources %d\n", err);
 			goto err;
 		}
 		strcpy(rdma_stream->cm.name, rdma_stream->name);
@@ -1401,13 +1386,13 @@ retry:
 
 		err = rdma_accept(rdma_stream->cm.id, &conn_param);
 		if (err) {
-			drbd_err(connection, "rdma_accept error %d\n", err);
+			tr_err(transport, "rdma_accept error %d\n", err);
 			goto err;
 		}
 
 		peer_addr = &cm_id->route.addr.dst_addr;
 
-		spin_lock_bh(&resource->listeners_lock);
+		spin_lock_bh(&listener->listener.waiters_lock);
 		waiter2_gen = drbd_find_waiter_by_addr(waiter->waiter.listener, peer_addr);
 
 		if (waiter2_gen && waiter2_gen != &waiter->waiter) {
@@ -1415,7 +1400,7 @@ retry:
 				container_of(waiter2_gen, struct dtr_waiter, waiter);
 
 			if (waiter2->rdma_stream) {
-				drbd_err(waiter2->waiter.connection,
+				tr_err(waiter2->waiter.transport,
 					 "Receiver busy; rejecting incoming connection\n");
 				goto retry_locked;
 			}
@@ -1425,14 +1410,14 @@ retry:
 			wake_up(&waiter2->waiter.wait);
 			goto retry_locked;
 		}
-		spin_unlock_bh(&resource->listeners_lock);
+		spin_unlock_bh(&listener->listener.waiters_lock);
 
 		if (!waiter2_gen) {
 			struct sockaddr_in *from_sin, *to_sin;
 
 			from_sin = (struct sockaddr_in *)&peer_addr;
-			to_sin = (struct sockaddr_in *)&connection->my_addr;
-			drbd_err(resource, "Closing unexpected connection from "
+			to_sin = (struct sockaddr_in *)&transport->my_addr;
+			tr_err(transport, "Closing unexpected connection from "
 				 "%pI4 to port %u\n",
 				 &from_sin->sin_addr,
 				 be16_to_cpu(to_sin->sin_port));
@@ -1452,7 +1437,7 @@ err:
 	return err;
 
 retry_locked:
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->listener.waiters_lock);
 	goto retry;
 }
 
@@ -1466,17 +1451,11 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	struct drbd_rdma_stream *data_stream = NULL, *control_stream = NULL;
 	struct net_conf *nc;
-	struct drbd_connection *connection;
 	struct dtr_waiter waiter;
 	int timeout, err;
 	bool ok;
 
-	connection = transport->connection;
-
-	/* Assume that the peer only understands protocol 80 until we know better.  */
-	connection->agreed_pro_version = 80;
-
-	waiter.waiter.connection = connection;
+	waiter.waiter.transport = transport;
 	waiter.rdma_stream = NULL;
 
 	err = drbd_get_listener(&waiter.waiter, dtr_create_listener);
@@ -1486,7 +1465,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	do {
 		struct drbd_rdma_stream *s = NULL;
 
-		err = dtr_try_connect(connection, &s);
+		err = dtr_try_connect(transport, &s);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
@@ -1499,12 +1478,12 @@ static int dtr_connect(struct drbd_transport *transport)
 				control_stream = s;
 				dtr_send_first_packet(control_stream, P_INITIAL_META);
 			} else {
-				drbd_err(connection, "Logic error in conn_connect()\n");
+				tr_err(transport, "Logic error in conn_connect()\n");
 				goto out_eagain;
 			}
 		}
 
-		if (dtr_connection_established(connection, &data_stream, &control_stream))
+		if (dtr_connection_established(transport, &data_stream, &control_stream))
 			break;
 
 retry:
@@ -1514,14 +1493,14 @@ retry:
 			goto out;
 
 		if (s) {
-			int fp = dtr_receive_first_packet(connection, s);
+			int fp = dtr_receive_first_packet(transport, s);
 
 			dtr_stream_ok_or_free(&data_stream);
 			dtr_stream_ok_or_free(&control_stream);
 			switch (fp) {
 			case P_INITIAL_DATA:
 				if (data_stream) {
-					drbd_warn(connection, "initial packet S crossed\n");
+					tr_warn(transport, "initial packet S crossed\n");
 					dtr_free_stream(data_stream);
 					data_stream = s;
 					goto randomize;
@@ -1531,7 +1510,7 @@ retry:
 			case P_INITIAL_META:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
 				if (control_stream) {
-					drbd_warn(connection, "initial packet M crossed\n");
+					tr_warn(transport, "initial packet M crossed\n");
 					dtr_free_stream(control_stream);
 					control_stream = s;
 					goto randomize;
@@ -1539,7 +1518,7 @@ retry:
 				control_stream = s;
 				break;
 			default:
-				drbd_warn(connection, "Error receiving initial packet\n");
+				tr_warn(transport, "Error receiving initial packet\n");
 				dtr_free_stream(s);
 randomize:
 				if (prandom_u32() & 1)
@@ -1547,16 +1526,10 @@ randomize:
 			}
 		}
 
-		if (connection->cstate[NOW] <= C_DISCONNECTING)
+		if (drbd_should_abort_listening(transport))
 			goto out_eagain;
-		if (signal_pending(current)) {
-			flush_signals(current);
-			smp_rmb();
-			if (get_t_state(&connection->receiver) == EXITING)
-				goto out_eagain;
-		}
 
-		ok = dtr_connection_established(connection, &data_stream, &control_stream);
+		ok = dtr_connection_established(transport, &data_stream, &control_stream);
 	} while (!ok);
 
 	drbd_put_listener(&waiter.waiter);
@@ -1571,7 +1544,7 @@ randomize:
 	rdma_transport->stream[CONTROL_STREAM] = control_stream;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(transport->net_conf);
 
 	timeout = nc->timeout * HZ / 10;
 	rcu_read_unlock();
@@ -1651,7 +1624,7 @@ static bool dtr_stream_ok_or_free(struct drbd_rdma_stream **rdma_stream)
 	return true;
 }
 
-static bool dtr_connection_established(struct drbd_connection *connection,
+static bool dtr_connection_established(struct drbd_transport *transport,
 				       struct drbd_rdma_stream **stream1,
 				       struct drbd_rdma_stream **stream2)
 {
@@ -1662,7 +1635,7 @@ static bool dtr_connection_established(struct drbd_connection *connection,
 		return false;
 
 	rcu_read_lock();
-	nc = rcu_dereference(connection->net_conf);
+	nc = rcu_dereference(transport->net_conf);
 	timeout = (nc->sock_check_timeo ?: nc->ping_timeo) * HZ / 10;
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
@@ -1753,10 +1726,11 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 }
 
-static int __init dtr_init(void)
+static int __init dtr_initialize(void)
 {
 	return drbd_register_transport_class(&rdma_transport_class,
-			DRBD_TRANSPORT_API_VERSION);
+					     DRBD_TRANSPORT_API_VERSION,
+					     sizeof(struct drbd_transport));
 }
 
 static void __exit dtr_cleanup(void)
@@ -1764,5 +1738,5 @@ static void __exit dtr_cleanup(void)
 	drbd_unregister_transport_class(&rdma_transport_class);
 }
 
-module_init(dtr_init)
+module_init(dtr_initialize)
 module_exit(dtr_cleanup)
