@@ -348,7 +348,7 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 	if (flags & GROW_BUFFER) {
 		/* Since transport_rdma always returns the full, requested amount
 		   of data, DRBD should never call with GROW_BUFFER! */
-		pr_err("Called with GROW_BUFFER\n");
+		tr_err(&rdma_stream->rdma_transport->transport, "Called with GROW_BUFFER\n");
 		return -EINVAL;
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
 		long t;
@@ -371,8 +371,8 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		rdma_stream->current_rx.pos = buffer + size;
 		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
 		if (rdma_stream->current_rx.bytes_left < 0)
-			pr_warn("%s: new, requesting more (%zu) than available (%d)\n",
-				rdma_stream->name, size, rx_desc->size);
+			tr_warn(&rdma_stream->rdma_transport->transport,
+					"new, requesting more (%zu) than available (%d)\n", size, rx_desc->size);
 
 		if (flags & CALLER_BUFFER)
 			memcpy(*buf, buffer, size);
@@ -389,8 +389,9 @@ static int _dtr_recv(struct drbd_rdma_stream *rdma_stream, void **buf, size_t si
 		rdma_stream->current_rx.pos += size;
 
 		if (rdma_stream->current_rx.bytes_left < size) {
-			pr_err("%s: requested more than left! bytes_left = %d, size = %zu\n",
-			       rdma_stream->name, rdma_stream->current_rx.bytes_left, size);
+			tr_err(&rdma_stream->rdma_transport->transport,
+					"requested more than left! bytes_left = %d, size = %zu\n",
+					rdma_stream->current_rx.bytes_left, size);
 			rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
 		} else {
 			rdma_stream->current_rx.bytes_left -= size;
@@ -563,17 +564,19 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 				(*rx_desc)->size = size;
 				// pr_info("%s: in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
 			} else
-				pr_warn("%s: WC SUCCESS, but strange opcode... %d\n", rdma_stream->name, wc.opcode);
+				tr_warn(&rdma_stream->rdma_transport->transport,
+						"WC SUCCESS, but strange opcode... %d\n", wc.opcode);
 
 			return true;
 		} else {
-			pr_err("%s: rx_drain: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
+			tr_err(&rdma_stream->rdma_transport->transport,
+					"rx_drain: wc.status != IB_WC_SUCCESS %d\n", wc.status);
 		}
 	}
 
 	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
 	if (ret)
-		pr_err("%s: ib_req_notify_cq failed\n", rdma_stream->name);
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_req_notify_cq failed\n");
 
 	return false;
 }
@@ -689,7 +692,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 	if (ret)
-		pr_err("ib_req_notify_cq failed\n");
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_req_notify_cq failed\n");
 
 	/* Alternatively put them onto a list here, and do the processing (freeing)
 	   at a later point in time. Probably resource freeing is cheap enough to do
@@ -698,12 +701,13 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		atomic_dec(&rdma_stream->tx_descs_posted);
 
 		if (wc.status != IB_WC_SUCCESS) {
-			pr_err("%s: tx_event: wc.status != IB_WC_SUCCESS %d\n", rdma_stream->name, wc.status);
+			tr_err(&rdma_stream->rdma_transport->transport,
+					"tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
 			goto disconnect;
 		}
 
 		if (wc.opcode != IB_WC_SEND) {
-			pr_err("%s: wc.opcode != IB_WC_SEND %d\n", rdma_stream->name, wc.opcode);
+			tr_err(&rdma_stream->rdma_transport->transport, "wc.opcode != IB_WC_SEND %d\n", wc.opcode);
 			goto disconnect;
 		}
 
@@ -712,7 +716,8 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	}
 
 	if (ret != 0)
-		pr_warn("%s: ib_poll_cq() returned %d\n", rdma_stream->name, ret);
+		tr_warn(&rdma_stream->rdma_transport->transport,
+				"ib_poll_cq() returned %d\n", ret);
 
 	if (0) {
 disconnect:
@@ -738,7 +743,8 @@ static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
 
 	err = rdma_create_qp(rdma_stream->cm.id, rdma_stream->pd, &init_attr);
 	if (err) {
-		pr_err("%s: rdma_create_qp failed: %d\n", rdma_stream->name, err);
+		tr_err(&rdma_stream->rdma_transport->transport,
+				"rdma_create_qp failed: %d\n", err);
 		return err;
 	}
 
@@ -763,7 +769,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
 	if (err) {
-		pr_err("%s: ib_post_recv error %d\n", rdma_stream->name, err);
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_post_recv error %d\n", err);
 		rdma_stream->rx_descs_posted--;
 		return err;
 	}
@@ -826,7 +832,7 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 
 		err = dtr_post_rx_desc(rdma_stream, rx_desc);
 		if (err) {
-			pr_err("%s: dtr_post_rx_desc() returned %d\n", rdma_stream->name, err);
+			tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
 			dtr_free_rx_desc(rdma_stream, rx_desc);
 			break;
 		}
@@ -935,7 +941,7 @@ retry:
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
-		pr_err("%s: ib_post_send failed\n", rdma_stream->name);
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_post_send failed\n");
 
 		return err;
 	}
@@ -995,7 +1001,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 	/* alloc protection domain (PD) */
 	rdma_stream->pd = ib_alloc_pd(rdma_stream->cm.id->device);
 	if (IS_ERR(rdma_stream->pd)) {
-		pr_err("ib_alloc_pd failed\n");
+		tr_err(transport, "ib_alloc_pd failed\n");
 		err = PTR_ERR(rdma_stream->pd);
 		goto pd_failed;
 	}
@@ -1005,7 +1011,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 			dtr_rx_cq_event_handler, NULL, rdma_stream,
 			rdma_stream->rx_descs_max, 0);
 	if (IS_ERR(rdma_stream->recv_cq)) {
-		pr_err("ib_create_cq recv failed\n");
+		tr_err(transport, "ib_create_cq recv failed\n");
 		err = PTR_ERR(rdma_stream->recv_cq);
 		goto recv_cq_failed;
 	}
@@ -1015,7 +1021,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 			dtr_tx_cq_event_handler, NULL, rdma_stream,
 			rdma_stream->rx_descs_max, 0);
 	if (IS_ERR(rdma_stream->send_cq)) {
-		pr_err("ib_create_cq send failed\n");
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_create_cq send failed\n");
 		err = PTR_ERR(rdma_stream->send_cq);
 		goto send_cq_failed;
 	}
@@ -1023,20 +1029,20 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 	/* arm CQs */
 	err = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		pr_err("ib_req_notify_cq recv failed\n");
+		tr_err(transport, "ib_req_notify_cq recv failed\n");
 		goto notify_failed;
 	}
 
 	err = ib_req_notify_cq(rdma_stream->send_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		pr_err(" ib_req_notify_cq send failed\n");
+		tr_err(transport, "ib_req_notify_cq send failed\n");
 		goto notify_failed;
 	}
 
 	/* create a queue pair (QP) */
 	err = dtr_create_qp(rdma_stream);
 	if (err) {
-		pr_err(" create_qp error %d\n", err);
+		tr_err(transport, "create_qp error %d\n", err);
 		goto createqp_failed;
 	}
 
@@ -1046,7 +1052,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 			IB_ACCESS_REMOTE_READ |
 			IB_ACCESS_REMOTE_WRITE);
 	if (IS_ERR(rdma_stream->dma_mr)) {
-		pr_err(" ib_get_dma_mr failed\n");
+		tr_err(transport, "ib_get_dma_mr failed\n");
 		err = PTR_ERR(rdma_stream->dma_mr);
 		goto dma_failed;
 	}
@@ -1107,7 +1113,8 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_rx_desc);
 
 	if (rdma_stream->cm.state < DISCONNECTED)
-		pr_warn("%s: WARN: not properly disconnected\n", rdma_stream->name);
+		tr_warn(&rdma_stream->rdma_transport->transport,
+				"WARN: not properly disconnected\n");
 }
 
 static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
@@ -1563,7 +1570,7 @@ randomize:
 	__dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
 	err = dtr_send_flow_control_msg(rdma_transport, DATA_STREAM);
 	if (err < 0) {
-		pr_err("sending first flow_control_msg() failed\n");
+		tr_err(transport, "sending first flow_control_msg() failed\n");
 		goto out_late_eagain;
 	}
 
