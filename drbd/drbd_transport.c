@@ -69,6 +69,18 @@ drbd_find_transport_class(const char *transport_name)
 	return transport_class;
 }
 
+void drbd_print_transports_loaded(struct seq_file *seq)
+{
+	struct drbd_transport_class *transport_class;
+
+	seq_puts(seq, "Transports (api:" __stringify(DRBD_TRANSPORT_API_VERSION) "):");
+	spin_lock(&transport_classes_lock);
+	list_for_each_entry(transport_class, &transport_classes, list) {
+		seq_printf(seq, " %s", transport_class->name);
+	}
+	spin_unlock(&transport_classes_lock);
+	seq_putc(seq, '\n');
+}
 
 static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
 {

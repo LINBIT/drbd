@@ -201,6 +201,7 @@ extern int drbd_register_transport_class(struct drbd_transport_class *transport_
 					 int drbd_transport_size);
 extern void drbd_unregister_transport_class(struct drbd_transport_class *transport_class);
 extern struct drbd_transport_class *drbd_find_transport_class(const char *transport_name);
+extern void drbd_print_transports_loaded(struct seq_file *seq);
 
 extern int drbd_get_listener(struct drbd_waiter *waiter,
 			     int (*create_fn)(struct drbd_transport *, struct drbd_listener **));

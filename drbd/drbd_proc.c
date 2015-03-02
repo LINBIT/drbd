@@ -32,6 +32,7 @@
 #include <linux/seq_file.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
+#include <drbd_transport.h>
 
 static int drbd_proc_open(struct inode *inode, struct file *file);
 static int drbd_proc_release(struct inode *inode, struct file *file);
@@ -51,6 +52,8 @@ static int drbd_seq_show(struct seq_file *seq, void *v)
 		   API_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, drbd_buildtag());
 
 	print_kref_debug_info(seq);
+
+	drbd_print_transports_loaded(seq);
 
 	return 0;
 }
