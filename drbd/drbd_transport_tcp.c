@@ -30,6 +30,7 @@
 #include <linux/drbd_genl_api.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
+#include "drbd_wrappers.h"
 
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -508,7 +509,7 @@ static int dtt_wait_for_connect(struct dtt_waiter *waiter, struct socket **socke
 	rcu_read_unlock();
 
 	timeo = connect_int * HZ;
-	timeo += (random32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
 retry:
 	timeo = wait_event_interruptible_timeout(waiter->waiter.wait, dtt_wait_connect_cond(waiter), timeo);
@@ -810,7 +811,7 @@ retry:
 				tr_warn(transport, "Error receiving initial packet\n");
 				sock_release(s);
 randomize:
-				if (random32() & 1)
+				if (prandom_u32() & 1)
 					goto retry;
 			}
 		}

@@ -588,9 +588,6 @@ static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
 }
 #endif
 
-#ifndef net_random
-#define random32 net_random
-#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
 #define BDI_async_congested BDI_write_congested
