@@ -2,7 +2,7 @@ obj-m := drbd.o drbd_transport_tcp.o
 
 clean-files := compat.h .config.timestamp
 
-LINUXINCLUDE := -I$(src) -I$(src)/../common $(LINUXINCLUDE)
+LINUXINCLUDE := -I$(src) -I$(src)/../drbd-headers $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
 # in the drbd-kernel-compat directory.

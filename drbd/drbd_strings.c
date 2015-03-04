@@ -1,1 +1,1 @@
-../common/drbd_strings.c
+../drbd-headers/drbd_strings.c
