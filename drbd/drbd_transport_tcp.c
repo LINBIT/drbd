@@ -36,6 +36,7 @@
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
 MODULE_DESCRIPTION("TCP (SDP, SSOCKS) transport layer for DRBD");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("1.0.0");
 
 struct buffer {
 	void *base;

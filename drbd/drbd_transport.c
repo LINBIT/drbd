@@ -76,7 +76,8 @@ void drbd_print_transports_loaded(struct seq_file *seq)
 	seq_puts(seq, "Transports (api:" __stringify(DRBD_TRANSPORT_API_VERSION) "):");
 	spin_lock(&transport_classes_lock);
 	list_for_each_entry(transport_class, &transport_classes, list) {
-		seq_printf(seq, " %s", transport_class->name);
+		seq_printf(seq, " %s (%s)", transport_class->name,
+				transport_class->module->version ? transport_class->module->version : "NONE");
 	}
 	spin_unlock(&transport_classes_lock);
 	seq_putc(seq, '\n');
