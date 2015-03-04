@@ -80,6 +80,7 @@ for flavor in %flavors_to_build ; do
 	M=$PWD/obj/$flavor
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv obj/$flavor/.kernel.config.gz obj/k-config-$kernelrelease.gz
+    cp obj/$flavor/Module.symvers ../../RPMS/Module-$flavor.symvers
 done
 
 %if %{defined suse_kernel_module_package}
