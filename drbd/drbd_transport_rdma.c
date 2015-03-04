@@ -62,6 +62,7 @@ MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
+MODULE_VERSION("1.0.0");
 
 /* If no recvbuf_size or sendbuf_size is configured use 512KiB for the DATA_STREAM */
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
