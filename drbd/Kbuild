@@ -5,7 +5,7 @@ clean-files := compat.h .config.timestamp
 LINUXINCLUDE := -I$(src) -I$(src)/../common $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
-# in the compat directory.
+# in the drbd-kernel-compat directory.
 #
 # Add -I$(src) to EXTRA_CFLAGS again: some (rhel5, maybe other) kbuild does not
 # yet use LINUXINCLUDE like we expect it to ;( fortunately it does not contain
@@ -13,7 +13,7 @@ LINUXINCLUDE := -I$(src) -I$(src)/../common $(LINUXINCLUDE)
 #
 # override: we absolutely need this, even if EXTRA_CFLAGS originates from make
 # command line or environment
-override EXTRA_CFLAGS += -I$(src) -I$(src)/compat
+override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
 
 # The augmented rbtree helper functions are not exported at least until kernel
 # version 2.6.38-rc2.
@@ -28,14 +28,14 @@ ifeq ($(shell grep -e '\<idr_get_next\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
 override EXTRA_CFLAGS += -DIDR_GET_NEXT_EXPORTED
 else
-compat_objs += compat/idr.o
+compat_objs += drbd-kernel-compat/idr.o
 endif
 
 ifeq ($(shell grep -e '\<blkdev_issue_zeroout\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
 override EXTRA_CFLAGS += -DBLKDEV_ISSUE_ZEROOUT_EXPORTED
 else
-compat_objs += compat/blkdev_issue_zeroout.o
+compat_objs += drbd-kernel-compat/blkdev_issue_zeroout.o
 endif
 
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
@@ -66,7 +66,7 @@ COMPAT_FORCE := FORCE
 endif
 
 ifneq ($(KBUILD_STAGE),modpost)
-$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
+$(obj)/compat.h: $(wildcard $(src)/drbd-kernel-compat/tests/*.c) $(COMPAT_FORCE)
 	$(call filechk,compat.h)
 	$(Q)touch $@
 	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp

@@ -1,0 +1,3 @@
+[submodule "drbd/drbd-kernel-compat"]
+	path = drbd/drbd-kernel-compat
+	url = git@bk:drbd/PUBLIC-GPL/drbd-kernel-compat

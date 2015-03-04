@@ -36,7 +36,7 @@
 
 /* See the ifdefs and comments inside that header file.
  * On recent kernels this is not needed. */
-#include "compat/bitops.h"
+#include "drbd-kernel-compat/bitops.h"
 
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 
