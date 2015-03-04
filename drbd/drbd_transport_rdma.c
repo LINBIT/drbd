@@ -30,6 +30,7 @@
 #include <linux/drbd_genl_api.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
+#include <drbd_wrappers.h>
 
 
 /* Nearly all data transfer uses the send/receive semantics. No need to
