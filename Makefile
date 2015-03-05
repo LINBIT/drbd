@@ -63,13 +63,27 @@ ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
 endif
 
-all: tools module
+all: check-submods tools module
 
 .PHONY: all tools module
 tools:
 	@cat README.drbd-utils
 doc:
 	@echo "Man page sources moved to http://git.linbit.com/drbd-utils.git"
+
+# we cannot use 'git submodule foreach':
+# foreach only works if submodule already checked out
+.PHONY: check-submods
+check-submods:
+	@if test -d .git && test -s .gitmodules; then \
+		for d in `grep "^\[submodule" .gitmodules | cut -f2 -d'"'`; do \
+			if [ ! "`ls -A $$d`" ]; then \
+				git submodule init; \
+				git submodule update; \
+				break; \
+			fi; \
+		done; \
+	fi
 
 .PHONY: check-kdir
 check-kdir:
@@ -185,7 +199,7 @@ prepare_release:
 	$(MAKE) tarball
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
-tarball: check_all_committed distclean drbd/.drbd_git_revision .filelist
+tarball: check-submods check_all_committed distclean drbd/.drbd_git_revision .filelist
 	$(MAKE) tgz
 
 module .filelist: drbd/.drbd_git_revision
