@@ -150,6 +150,7 @@ endif
 .PHONY: .filelist
 .filelist:
 	@$(GIT) ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
+	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' >> .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
