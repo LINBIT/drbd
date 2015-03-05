@@ -1,6 +1,6 @@
 [submodule "drbd/drbd-kernel-compat"]
 	path = drbd/drbd-kernel-compat
-	url = git@bk:drbd/PUBLIC-GPL/drbd-kernel-compat
+	url = git://git.linbit.com/drbd-kernel-compat.git
 [submodule "drbd-headers"]
 	path = drbd-headers
-	url = git@bk:drbd/PUBLIC-GPL/drbd-headers
+	url = git://git.linbit.com/drbd-headers.git
