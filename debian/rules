@@ -27,11 +27,11 @@ override_dh_auto_install: ;
 override_dh_install:
 	# dkms
 	dh_install drbd ../$(DKMSDIR)/usr/src/drbd-$(VERSION)/src
-	dh_install common ../$(DKMSDIR)/usr/src/drbd-$(VERSION)/src
+	dh_install drbd-headers ../$(DKMSDIR)/usr/src/drbd-$(VERSION)/src
 
 	# m-a
 	dh_install drbd ../$(MODSRCDIR)/usr/src/modules/drbd/
-	dh_install common ../$(MODSRCDIR)/usr/src/modules/drbd/
+	dh_install drbd-headers ../$(MODSRCDIR)/usr/src/modules/drbd/
 	dh_install debian/changelog ../$(MODSRCDIR)/usr/src/modules/drbd/debian
 	dh_install debian/control ../$(MODSRCDIR)/usr/src/modules/drbd/debian
 	dh_install debian/compat ../$(MODSRCDIR)/usr/src/modules/drbd/debian
