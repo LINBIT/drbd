@@ -860,9 +860,11 @@ static void __dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	descs_want_posted = rdma_stream->rx_descs_want_posted;
 
 	while (rdma_stream->rx_descs_posted < descs_want_posted &&
-	       rdma_stream->rx_descs_allocated < descs_max)
-		dtr_create_some_rx_desc(rdma_stream);
-
+	       rdma_stream->rx_descs_allocated < descs_max) {
+		int err = dtr_create_some_rx_desc(rdma_stream);
+		if (err)
+			break;
+	}
 }
 
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
