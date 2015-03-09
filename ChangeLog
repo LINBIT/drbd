@@ -2,6 +2,20 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0rc2 (api:genl1/proto:86-110)
+--------
+ * implemented trivial corking (network packet coalescing) in drbd,
+   that makes the use of packet oriented transport feasible
+ * create a new configuration object 'peer-device'; move config
+   params of resync to the peer-device
+ * move max_buffers from disk options to net options
+ * merge 8.4 fixes
+ * more work on the transport interface (triggered by the work
+   on the RDMA transport)
+ * Expose the loaded transports in /proc/drbd
+ * Use git submodules to share code between drbd core, user-space
+   tools and drbd transports
+
 9.0.0rc1 (api:genl1/proto:86-110)
 --------
  * some work on drbd-9.0 to drbd-8.4 compatibility
