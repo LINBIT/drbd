@@ -2749,7 +2749,7 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (set_resource_options(resource, res_opts))
 		goto fail_resource;
 
-	INIT_WORK(&connection->ping_work, drbd_ack_sender);
+	INIT_WORK(&connection->ping_work, drbd_send_ping_wf);
 
 	kref_get(&resource->kref);
 	list_add_tail_rcu(&connection->connections, &resource->connections);
@@ -2923,6 +2923,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			goto out_idr_remove_from_resource;
 		}
 		kref_get(&connection->kref);
+		INIT_WORK(&peer_device->send_acks_work, drbd_send_acks_wf);
 	}
 
 	if (init_submitter(device)) {

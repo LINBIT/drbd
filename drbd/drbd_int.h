@@ -733,7 +733,6 @@ extern struct fifo_buffer *fifo_alloc(int fifo_size);
 enum {
 	NET_CONGESTED,		/* The data socket is congested */
 	RESOLVE_CONFLICTS,	/* Set on one node, cleared on the peer! */
-	SEND_PING,		/* whether asender should send a ping asap */
 	PING_TIMEOUT_ACTIVE,
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
 	CONN_WD_ST_CHG_REQ,	/* A cluster wide state change on the connection is active */
@@ -915,6 +914,7 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+	struct work_struct send_acks_work;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_peer_dev;
 #endif
@@ -1657,7 +1657,8 @@ extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
 extern int drbd_ack_receiver(struct drbd_thread *thi);
-extern void drbd_ack_sender(struct work_struct *ws);
+extern void drbd_send_ping_wf(struct work_struct *ws);
+extern void drbd_send_acks_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_device *device);
 extern bool drbd_rs_should_slow_down(struct drbd_device *device, sector_t sector,
 		bool throttle_if_app_is_waiting);
@@ -2078,8 +2079,11 @@ extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
 static inline void request_ping(struct drbd_connection *connection)
 {
-	set_bit(SEND_PING, &connection->flags);
-	queue_work(connection->ack_sender, &connection->ping_work);
+	unsigned long flags;
+	spin_lock_irqsave(&connection->resource->req_lock, flags);
+	if (connection->cstate >= C_WF_REPORT_PARAMS)
+		queue_work(connection->ack_sender, &connection->ping_work);
+	spin_unlock_irqrestore(&connection->resource->req_lock, flags);
 }
 
 extern void *conn_prepare_command(struct drbd_connection *, struct drbd_socket *);

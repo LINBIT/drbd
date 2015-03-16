@@ -2561,7 +2561,7 @@ static int handle_write_conflicts(struct drbd_device *device,
 			peer_req->w.cb = superseded ? e_send_superseded :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
-			queue_work(connection->ack_sender, &connection->ping_work);
+			queue_work(connection->ack_sender, &peer_req->peer_device->send_acks_work);
 
 			err = -ENOENT;
 			goto out;
@@ -5818,29 +5818,6 @@ static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 	return 0;
 }
 
-static int connection_finish_peer_reqs(struct drbd_connection *connection)
-{
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-
-		kref_get(&device->kref);
-		rcu_read_unlock();
-		if (drbd_finish_peer_reqs(device)) {
-			kref_put(&device->kref, drbd_destroy_device);
-			return 1;
-		}
-		kref_put(&device->kref, drbd_destroy_device);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-
-	return 0;
-}
-
 struct asender_cmd {
 	size_t pkt_size;
 	int (*fn)(struct drbd_connection *connection, struct packet_info *);
@@ -5926,7 +5903,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
-			set_bit(SEND_PING, &connection->flags);
+			request_ping(connection);
 			continue;
 		} else if (rv == -EINTR) {
 			continue;
@@ -5998,40 +5975,59 @@ disconnect:
 	return 0;
 }
 
-void drbd_ack_sender(struct work_struct *ws)
+
+void drbd_send_acks_wf(struct work_struct *ws)
+{
+	struct drbd_peer_device *peer_device =
+		container_of(ws, struct drbd_peer_device, send_acks_work);
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	struct net_conf *nc;
+	int tcp_cork, err;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->net_conf);
+	tcp_cork = nc->tcp_cork;
+	rcu_read_unlock();
+
+	if (tcp_cork)
+		drbd_tcp_cork(connection->meta.socket);
+
+	err = drbd_finish_peer_reqs(device);
+	kref_put(&device->kref, drbd_destroy_device);
+	/* get is in drbd_endio_write_sec_final(). That is necessary to keep the
+	   struct work_struct send_acks_work alive, which is in the peer_device object */
+
+	if (err)
+		goto reconnect;
+
+	if (tcp_cork)
+		drbd_tcp_uncork(connection->meta.socket);
+
+	return;
+reconnect:
+	conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
+}
+
+
+void drbd_send_ping_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
 		container_of(ws, struct drbd_connection, ping_work);
 	struct net_conf *nc;
-	int ping_timeo, tcp_cork;
+	int ping_timeo;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->net_conf);
 	ping_timeo = nc->ping_timeo;
-	tcp_cork = nc->tcp_cork;
 	rcu_read_unlock();
 
-	if (test_and_clear_bit(SEND_PING, &connection->flags)) {
-		if (drbd_send_ping(connection)) {
-			drbd_err(connection, "drbd_send_ping has failed\n");
-			goto reconnect;
-		}
-		set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
-		connection->meta.socket->sk->sk_rcvtimeo = ping_timeo * HZ / 10;
-	}
-
-	/* TODO: conditionally cork; it may hurt latency if we cork without
-	   much to send */
-	if (tcp_cork)
-		drbd_tcp_cork(connection->meta.socket);
-	if (connection_finish_peer_reqs(connection)) {
-		drbd_err(connection, "connection_finish_peer_reqs() failed\n");
+	if (drbd_send_ping(connection)) {
+		drbd_err(connection, "drbd_send_ping has failed\n");
 		goto reconnect;
 	}
-
-	/* but unconditionally uncork unless disabled */
-	if (tcp_cork)
-		drbd_tcp_uncork(connection->meta.socket);
+	set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
+	connection->meta.socket->sk->sk_rcvtimeo = ping_timeo * HZ / 10;
 
 	return;
 reconnect:
