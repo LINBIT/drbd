@@ -123,6 +123,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_interval i;
 	int do_wake;
 	u64 block_id;
@@ -139,7 +140,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
-		drbd_queue_work(&peer_device->connection->sender_work, &peer_req->w);
+		drbd_queue_work(&connection->sender_work, &peer_req->w);
 		return;
 	}
 
@@ -181,7 +182,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	if (do_al_complete_io)
 		drbd_al_complete_io(device, &i);
 
-	wake_asender(peer_device->connection);
+	queue_work(connection->ack_sender, &connection->ping_work);
 	put_ldev(device);
 }
 
