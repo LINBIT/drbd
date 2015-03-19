@@ -2581,6 +2581,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 				was_io_error = disk_state[NEW] == D_FAILED;
 
+				/* Intentionally call this handler first, before drbd_send_state().
+				 * See: 2932204 drbd: call local-io-error handler early
+				 * People may chose to hard-reset the box from this handler.
+				 * It is useful if this looks like a "regular node crash". */
 				if (was_io_error && eh == EP_CALL_HELPER)
 					drbd_khelper(device, NULL, "local-io-error");
 
