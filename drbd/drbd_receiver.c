@@ -1029,6 +1029,7 @@ static int conn_connect(struct drbd_connection *connection)
 		.using_addr = 0,
 	};
 
+	clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	clear_bit(DISCONNECT_SENT, &connection->flags);
 	if (conn_request_state(connection, NS(conn, C_WF_CONNECTION), CS_VERBOSE) < SS_SUCCESS)
 		return -2;
@@ -5848,6 +5849,8 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	struct drbd_connection *connection = thi->connection;
 	struct asender_cmd *cmd = NULL;
 	struct packet_info pi;
+	unsigned long pre_recv_jif;
+	int ping_timeout_expired = 0;
 	int rv;
 	void *buf    = connection->meta.rbuf;
 	int received = 0;
@@ -5863,6 +5866,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 
+		pre_recv_jif = jiffies;
 		rv = drbd_recv_short(connection->meta.socket, buf, expect-received, 0);
 
 		/* Note:
@@ -5894,15 +5898,30 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 			drbd_err(connection, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
+			long t;
+
 			/* If the data socket received something meanwhile,
 			 * that is good enough: peer is still alive. */
-			if (time_after(connection->last_received,
-				jiffies - connection->meta.socket->sk->sk_rcvtimeo))
+			if (time_after(connection->last_received, pre_recv_jif))
 				continue;
 			if (test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
+				/* We don't want to introduce hard
+				 * synchronization between this receiving
+				 * thread and the work queue requesting those pings.
+				 * Rather have the timeout expire twice (worst
+				 * case), than too early (if the ping request
+				 * did not even leave this box yet).
+				 */
+				if (!ping_timeout_expired++)
+					continue;
 				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
+
+			rcu_read_lock();
+			t = rcu_dereference(connection->net_conf)->ping_timeo;
+			rcu_read_unlock();
+			connection->meta.socket->sk->sk_rcvtimeo = t * HZ/10;
 			request_ping(connection);
 			continue;
 		} else if (rv == -EINTR) {
@@ -5951,6 +5970,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 
 				connection->meta.socket->sk->sk_rcvtimeo = ping_int * HZ;
 				clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
+				ping_timeout_expired = 0;
 			}
 
 			buf	 = connection->meta.rbuf;
@@ -6027,7 +6047,6 @@ void drbd_send_ping_wf(struct work_struct *ws)
 		goto reconnect;
 	}
 	set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
-	connection->meta.socket->sk->sk_rcvtimeo = ping_timeo * HZ / 10;
 
 	return;
 reconnect:
