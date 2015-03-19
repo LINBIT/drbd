@@ -225,8 +225,8 @@ bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stre
 	bool drop_it;
 
 	drop_it = stream == CONTROL_STREAM
-		|| !connection->asender.task
-		|| get_t_state(&connection->asender) != RUNNING
+		|| !connection->ack_receiver.task
+		|| get_t_state(&connection->ack_receiver) != RUNNING
 		|| connection->cstate[NOW] < C_CONNECTED;
 
 	if (drop_it)

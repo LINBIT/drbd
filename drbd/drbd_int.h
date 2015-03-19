@@ -979,7 +979,7 @@ struct drbd_connection {
 	unsigned long last_reconnect_jif;
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
-	struct drbd_thread asender;
+	struct drbd_thread ack_receiver;
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
@@ -1866,7 +1866,7 @@ void __update_timing_details(
 
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
-extern int drbd_asender(struct drbd_thread *thi);
+extern int drbd_ack_receiver(struct drbd_thread *thi);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
 extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
 				     bool throttle_if_app_is_waiting);
@@ -2254,7 +2254,7 @@ extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 static inline void wake_asender(struct drbd_connection *connection)
 {
 	if (test_and_clear_bit(SIGNAL_ASENDER, &connection->flags))
-		force_sig(DRBD_SIG, connection->asender.task);
+		force_sig(DRBD_SIG, connection->ack_receiver.task);
 }
 
 static inline void request_ping(struct drbd_connection *connection)

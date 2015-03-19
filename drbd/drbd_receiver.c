@@ -741,7 +741,7 @@ start:
 		mutex_unlock(&resource->conf_update);
 	}
 
-	drbd_thread_start(&connection->asender);
+	drbd_thread_start(&connection->ack_receiver);
 
 	if (connection->agreed_pro_version >= 110) {
 		if (resource->res_opts.node_id < connection->transport.net_conf->peer_node_id) {
@@ -5567,7 +5567,7 @@ void conn_disconnect(struct drbd_connection *connection)
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 
 	/* asender does not clean up anything. it must not interfere, either */
-	drbd_thread_stop(&connection->asender);
+	drbd_thread_stop(&connection->ack_receiver);
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
 	drbd_drop_unsent(connection);
 
@@ -6669,7 +6669,7 @@ static struct asender_cmd asender_tbl[] = {
 	[P_TWOPC_RETRY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 
-int drbd_asender(struct drbd_thread *thi)
+int drbd_ack_receiver(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
 	struct asender_cmd *cmd = NULL;
