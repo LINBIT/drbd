@@ -742,6 +742,11 @@ start:
 	}
 
 	drbd_thread_start(&connection->ack_receiver);
+	connection->ack_sender = create_singlethread_workqueue("drbd_ack_sender");
+	if (!connection->ack_sender) {
+		drbd_err(connection, "Failed to create workqueue ack_sender\n");
+		goto abort;
+	}
 
 	if (connection->agreed_pro_version >= 110) {
 		if (resource->res_opts.node_id < connection->transport.net_conf->peer_node_id) {
@@ -2066,7 +2071,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			list_add_tail(&peer_req->w.list, &device->done_ee);
-			wake_asender(connection);
+			queue_work(connection->ack_sender, &connection->ping_work);
 
 			err = -ENOENT;
 			goto out;
@@ -5568,6 +5573,11 @@ void conn_disconnect(struct drbd_connection *connection)
 
 	/* asender does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&connection->ack_receiver);
+	if (connection->ack_sender) {
+		destroy_workqueue(connection->ack_sender);
+		connection->ack_sender = NULL;
+	}
+
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
 	drbd_drop_unsent(connection);
 
@@ -6604,37 +6614,22 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 static int connection_finish_peer_reqs(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
-	int vnr, not_empty = 0;
+	int vnr;
 
-	do {
-		clear_bit(SIGNAL_ASENDER, &connection->flags);
-		flush_signals(current);
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
 
-		rcu_read_lock();
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			struct drbd_device *device = peer_device->device;
-
-			kref_get(&device->kref);
-			rcu_read_unlock();
-			if (drbd_finish_peer_reqs(peer_device)) {
-				kref_put(&device->kref, drbd_destroy_device);
-				return 1;
-			}
-			kref_put(&device->kref, drbd_destroy_device);
-			rcu_read_lock();
-		}
-		set_bit(SIGNAL_ASENDER, &connection->flags);
-
-		spin_lock_irq(&connection->resource->req_lock);
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			struct drbd_device *device = peer_device->device;
-			not_empty = !list_empty(&device->done_ee);
-			if (not_empty)
-				break;
-		}
-		spin_unlock_irq(&connection->resource->req_lock);
+		kref_get(&device->kref);
 		rcu_read_unlock();
-	} while (not_empty);
+		if (drbd_finish_peer_reqs(peer_device)) {
+			kref_put(&device->kref, drbd_destroy_device);
+			return 1;
+		}
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -6679,9 +6674,6 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	int received = 0, rflags = 0;
 	unsigned int header_size = drbd_header_size(connection);
 	int expect   = header_size;
-	bool ping_timeout_active = false;
-	struct net_conf *nc;
-	int ping_timeo, tcp_cork, ping_int;
 	struct sched_param param = { .sched_priority = 2 };
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
@@ -6693,45 +6685,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
-		rcu_read_lock();
-		nc = rcu_dereference(connection->transport.net_conf);
-		ping_timeo = nc->ping_timeo;
-		tcp_cork = nc->tcp_cork;
-		ping_int = nc->ping_int;
-		rcu_read_unlock();
-
-		if (test_and_clear_bit(SEND_PING, &connection->flags)) {
-			if (drbd_send_ping(connection)) {
-				drbd_err(connection, "drbd_send_ping has failed\n");
-				goto reconnect;
-			}
-			tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_timeo * HZ / 10);
-			ping_timeout_active = true;
-		}
-
-		/* TODO: conditionally cork; it may hurt latency if we cork without
-		   much to send */
-		if (tcp_cork)
-			drbd_cork(connection, CONTROL_STREAM);
-		if (connection_finish_peer_reqs(connection)) {
-			drbd_err(connection, "connection_finish_peer_reqs() failed\n");
-			goto reconnect;
-		}
-		if (process_peer_ack_list(connection))
-			goto reconnect;
-
-		/* but unconditionally uncork unless disabled */
-		if (tcp_cork)
-			drbd_uncork(connection, CONTROL_STREAM);
-
-		/* short circuit, recv_msg would return EINTR anyways. */
-		if (signal_pending(current))
-			continue;
-
 		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received, rflags);
-		clear_bit(SIGNAL_ASENDER, &connection->flags);
-
-		flush_signals(current);
 
 		/* Note:
 		 * -EINTR	 (on meta) we got a signal
@@ -6743,7 +6697,6 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 		 * rv <  expected: "woken" by signal during receive
 		 * rv == 0	 : "connection shut down by peer"
 		 */
-received_more:
 		if (likely(rv > 0)) {
 			received += rv;
 
@@ -6772,8 +6725,7 @@ received_more:
 			if (time_after(connection->last_received,
 				       jiffies - tr_ops->get_rcvtimeo(transport, CONTROL_STREAM)))
 				continue;
-
-			if (ping_timeout_active) {
+			if (test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
 				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
@@ -6818,9 +6770,16 @@ received_more:
 
 			if (cmd == &asender_tbl[P_PING_ACK]) {
 				/* restore idle timeout */
-				tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
+				struct net_conf *nc;
+				int ping_int;
 
-				ping_timeout_active = false;
+				rcu_read_lock();
+				nc = rcu_dereference(transport->net_conf);
+				ping_int = nc->ping_int;
+				rcu_read_unlock();
+
+				tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
+				clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 			}
 
 			received = 0;
@@ -6828,14 +6787,6 @@ received_more:
 			cmd = NULL;
 			rflags = 0;
 		}
-		if (test_bit(SEND_PING, &connection->flags))
-			continue;
-
-		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received,
-				  MSG_DONTWAIT | rflags);
-
-		if (rv > 0)
-			goto received_more;
 	}
 
 	if (0) {
@@ -6846,11 +6797,60 @@ reconnect:
 disconnect:
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	}
-	clear_bit(SIGNAL_ASENDER, &connection->flags);
 
 	drbd_info(connection, "asender terminated\n");
 
 	return 0;
+}
+
+void drbd_ack_sender(struct work_struct *ws)
+{
+	struct drbd_connection *connection =
+		container_of(ws, struct drbd_connection, ping_work);
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct net_conf *nc;
+	int ping_timeo, tcp_cork;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	ping_timeo = nc->ping_timeo;
+	tcp_cork = nc->tcp_cork;
+	rcu_read_unlock();
+
+	if (test_and_clear_bit(SEND_PING, &connection->flags)) {
+		if (drbd_send_ping(connection)) {
+			drbd_err(connection, "drbd_send_ping has failed\n");
+			goto reconnect;
+		}
+		set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
+		tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_timeo * HZ / 10);
+	}
+
+	/* TODO: conditionally cork; it may hurt latency if we cork without
+	   much to send */
+	if (tcp_cork)
+		drbd_cork(connection, CONTROL_STREAM);
+	if (connection_finish_peer_reqs(connection)) {
+		drbd_err(connection, "connection_finish_peer_reqs() failed\n");
+		goto reconnect;
+	}
+	/* but unconditionally uncork unless disabled */
+	if (tcp_cork)
+		drbd_uncork(connection, CONTROL_STREAM);
+
+	return;
+reconnect:
+	change_cstate(connection, C_DISCONNECTING, CS_HARD);
+}
+
+void drbd_send_peer_ack_wf(struct work_struct *ws)
+{
+	struct drbd_connection *connection =
+		container_of(ws, struct drbd_connection, peer_ack_work);
+
+	if (process_peer_ack_list(connection))
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 }
 
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */

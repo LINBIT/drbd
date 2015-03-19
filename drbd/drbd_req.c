@@ -157,7 +157,7 @@ void drbd_queue_peer_ack(struct drbd_request *req)
 			list_add_tail(&req->tl_requests, &resource->peer_ack_list);
 			queued = true;
 		}
-		wake_asender(connection);
+		queue_work(connection->ack_sender, &connection->peer_ack_work);
 	}
 	rcu_read_unlock();
 

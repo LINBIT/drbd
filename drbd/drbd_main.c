@@ -3061,6 +3061,9 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_init(&connection->kref);
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
+	INIT_WORK(&connection->ping_work, drbd_ack_sender);
+	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
+
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
