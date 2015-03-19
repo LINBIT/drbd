@@ -2302,11 +2302,11 @@ static int adm_detach(struct drbd_device *device, int force)
 		change_disk_state(device, D_DETACHING,
 			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 	/* D_DETACHING will transition to DISKLESS. */
+	drbd_resume_io(device);
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS)
 		drbd_cleanup_device(device);
-	drbd_resume_io(device);
 	if (retcode == SS_IS_DISKLESS)
 		retcode = SS_NOTHING_TO_DO;
 	if (ret)
