@@ -1451,6 +1451,7 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	p->barrier = connection->send.current_epoch_nr;
 	p->pad = 0;
 	connection->send.current_epoch_writes = 0;
+	connection->send.last_sent_barrier_jif = jiffies;
 
 	err = send_command(connection, -1, P_BARRIER, DATA_STREAM);
 	if (err == 0)
@@ -2396,6 +2397,7 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 		connection->send.seen_any_write_yet = true;
 		connection->send.current_epoch_nr = epoch;
 		connection->send.current_epoch_writes = 0;
+		connection->send.last_sent_barrier_jif = jiffies;
 		connection->send.current_dagtag_sector =
 			connection->resource->dagtag_sector - (BIO_MAX_SIZE >> 9) - 1;
 	}
