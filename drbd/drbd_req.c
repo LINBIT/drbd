@@ -108,11 +108,6 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (!req)
 		return NULL;
-
-	/* COMPAT hack: cache_grow(), potentially implicitly called from
-	 * mempool_alloc(), would BUG_ON(__GFP_ZERO) prior to
-	 * 2007-07-17 d07dbea Slab allocators: support __GFP_ZERO in all allocators
-	 */
 	memset(req, 0, sizeof(*req));
 
 	drbd_req_make_private_bio(req, bio_src);
