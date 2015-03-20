@@ -1117,8 +1117,8 @@ static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 			(void (*)(struct drbd_rdma_stream *, void *)) dtr_free_rx_desc);
 
 	if (rdma_stream->cm.state < DISCONNECTED)
-		tr_warn(&rdma_stream->rdma_transport->transport,
-				"WARN: not properly disconnected\n");
+		/* rdma_stream->rdma_transport might still be NULL here. */
+		pr_warn("WARN: not properly disconnected\n");
 }
 
 static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
