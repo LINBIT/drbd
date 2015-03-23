@@ -254,18 +254,36 @@ static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 	}
 }
 
-static void drbd_kick_lo_and_reclaim_net(struct drbd_device *device)
+static void drbd_reclaim_net_peer_reqs(struct drbd_device *device)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
 
-	maybe_kick_lo(device);
 	spin_lock_irq(&device->resource->req_lock);
 	reclaim_finished_net_peer_reqs(device, &reclaimed);
 	spin_unlock_irq(&device->resource->req_lock);
-
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(device, peer_req);
+}
+
+static void conn_reclaim_net_peer_reqs(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		if (!atomic_read(&device->pp_in_use_by_net))
+			continue;
+
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		drbd_reclaim_net_peer_reqs(device);
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
 }
 
 /**
@@ -305,10 +323,16 @@ struct page *drbd_alloc_pages(struct drbd_peer_device *peer_device, unsigned int
 	if (atomic_read(&device->pp_in_use) < mxb)
 		page = __drbd_alloc_pages(device, number);
 
+	/* Try to keep the fast path fast, but occasionally we need
+	 * to reclaim the pages we lended to the network stack. */
+	if (page && atomic_read(&device->pp_in_use_by_net) > 512)
+		drbd_reclaim_net_peer_reqs(device);
+
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		drbd_kick_lo_and_reclaim_net(device);
+		maybe_kick_lo(device);
+		drbd_reclaim_net_peer_reqs(device);
 
 		if (atomic_read(&device->pp_in_use) < mxb) {
 			page = __drbd_alloc_pages(device, number);
@@ -5891,6 +5915,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
+		conn_reclaim_net_peer_reqs(connection);
 
 		if (test_and_clear_bit(SEND_PING, &connection->flags)) {
 			if (drbd_send_ping(connection)) {
@@ -6030,13 +6055,13 @@ void drbd_send_acks_wf(struct work_struct *ws)
 	/* get is in drbd_endio_write_sec_final(). That is necessary to keep the
 	   struct work_struct send_acks_work alive, which is in the peer_device object */
 
-	if (err)
-		goto reconnect;
+	if (err) {
+		conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
+		return;
+	}
 
 	if (tcp_cork)
 		drbd_tcp_uncork(connection->meta.socket);
 
 	return;
-reconnect:
-	conn_request_state(connection, NS(conn, C_NETWORK_FAILURE), CS_HARD);
 }
