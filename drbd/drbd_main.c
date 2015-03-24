@@ -2749,8 +2749,6 @@ struct drbd_connection *conn_create(const char *name, struct res_opts *res_opts)
 	if (set_resource_options(resource, res_opts))
 		goto fail_resource;
 
-	INIT_WORK(&connection->ping_work, drbd_send_ping_wf);
-
 	kref_get(&resource->kref);
 	list_add_tail_rcu(&connection->connections, &resource->connections);
 	drbd_debugfs_connection_add(connection);
