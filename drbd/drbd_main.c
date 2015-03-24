@@ -2787,13 +2787,13 @@ void drbd_destroy_connection(struct kref *kref)
 
 static int init_submitter(struct drbd_device *device)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 	/* opencoded create_singlethread_workqueue(),
-	 * to be able to say "drbd%d", ..., minor */
-	device->submit.wq = alloc_workqueue("drbd%u_submit",
-			WQ_UNBOUND | WQ_MEM_RECLAIM, 1, device->minor);
+	 * to be able to use format string arguments */
+	device->submit.wq =
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
+		alloc_ordered_workqueue("drbd%u_submit", WQ_MEM_RECLAIM, device->minor);
 #else
-	device->submit.wq = create_singlethread_workqueue("drbd_submit");
+		create_singlethread_workqueue("drbd_submit");
 #endif
 	if (!device->submit.wq)
 		return -ENOMEM;
