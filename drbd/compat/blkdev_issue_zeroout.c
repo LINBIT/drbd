@@ -33,13 +33,15 @@ BIO_ENDIO_TYPE bio_batch_end_io BIO_ENDIO_ARGS(struct bio *bio, int err)
  * @sector:	start sector
  * @nr_sects:	number of sectors to write
  * @gfp_mask:	memory allocation flags (for bio_alloc)
+ * @discard:    whether to discard the block range.
+ *              IGNORED in this compat implementation.
  *
  * Description:
  *  Generate and issue number of bios with zerofiled pages.
  */
-
+#warning "using compat implementation of blkdev_issue_zeroout"
 int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-			 sector_t nr_sects, gfp_t gfp_mask)
+			 sector_t nr_sects, gfp_t gfp_mask, /*IGNORED*/)
 {
 	int ret;
 	struct bio *bio;
