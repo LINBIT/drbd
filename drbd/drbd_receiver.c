@@ -229,7 +229,7 @@ static void maybe_kick_lo(struct drbd_device *device)
 		drbd_kick_lo(device);
 }
 
-static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
+static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
 					   struct list_head *to_be_freed)
 {
 	struct drbd_peer_request *peer_req, *tmp;
@@ -239,7 +239,7 @@ static void reclaim_finished_net_peer_reqs(struct drbd_device *device,
 	   in order. As soon as we see the first not finished we can
 	   stop to examine the list... */
 
-	list_for_each_entry_safe(peer_req, tmp, &device->net_ee, w.list) {
+	list_for_each_entry_safe(peer_req, tmp, &connection->net_ee, w.list) {
 		if (drbd_peer_req_has_active_page(peer_req))
 			break;
 		list_move(&peer_req->w.list, to_be_freed);
@@ -254,20 +254,15 @@ static void drbd_kick_lo_and_reclaim_net(struct drbd_connection *connection)
 	struct drbd_device *device;
 	int vnr;
 
-	idr_for_each_entry(&resource->devices, device, vnr) {
+	spin_lock_irq(&resource->req_lock);
+	reclaim_finished_net_peer_reqs(connection, &reclaimed);
+	spin_unlock_irq(&resource->req_lock);
+
+	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
+		drbd_free_net_peer_req(peer_req);
+
+	idr_for_each_entry(&resource->devices, device, vnr)
 		maybe_kick_lo(device);
-
-		spin_lock_irq(&resource->req_lock);
-		reclaim_finished_net_peer_reqs(device, &reclaimed);
-		spin_unlock_irq(&resource->req_lock);
-
-		if (!list_empty(&reclaimed)) {
-			list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-				drbd_free_net_peer_req(peer_req);
-
-			return;
-		}
-	}
 }
 
 /**
@@ -420,19 +415,18 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	mempool_free(peer_req, drbd_ee_mempool);
 }
 
-int drbd_free_peer_reqs(struct drbd_device *device, struct list_head *list)
+int drbd_free_peer_reqs(struct drbd_resource *resource, struct list_head *list, bool is_net_ee)
 {
 	LIST_HEAD(work_list);
 	struct drbd_peer_request *peer_req, *t;
 	int count = 0;
-	int is_net = list == &device->net_ee;
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
 	list_splice_init(list, &work_list);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&resource->req_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
-		__drbd_free_peer_req(peer_req, is_net);
+		__drbd_free_peer_req(peer_req, is_net_ee);
 		count++;
 	}
 	return count;
@@ -451,7 +445,7 @@ static int drbd_finish_peer_reqs(struct drbd_peer_device *peer_device)
 	int err = 0;
 
 	spin_lock_irq(&device->resource->req_lock);
-	reclaim_finished_net_peer_reqs(device, &reclaimed);
+	reclaim_finished_net_peer_reqs(connection, &reclaimed);
 	list_splice_init(&device->done_ee, &work_list);
 	spin_unlock_irq(&device->resource->req_lock);
 
@@ -5593,6 +5587,10 @@ void conn_disconnect(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 
+	i = drbd_free_peer_reqs(resource, &connection->net_ee, true);
+	if (i)
+		drbd_info(connection, "net_ee not empty, killed %u entries\n", i);
+
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);
 
@@ -5630,7 +5628,6 @@ void conn_disconnect(struct drbd_connection *connection)
 static int drbd_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	unsigned int i;
 
 	/* wait for current activity to cease. */
 	spin_lock_irq(&device->resource->req_lock);
@@ -5693,9 +5690,6 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
 	 * Actually we don't care for exactly when the network stack does its
 	 * put_page(), but release our reference on these pages right here.
 	 */
-	i = drbd_free_peer_reqs(device, &device->net_ee);
-	if (i)
-		drbd_info(device, "net_ee not empty, killed %u entries\n", i);
 
 	D_ASSERT(device, list_empty(&device->read_ee));
 	D_ASSERT(device, list_empty(&device->active_ee));

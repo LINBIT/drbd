@@ -978,6 +978,8 @@ struct drbd_connection {
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
+	struct list_head net_ee;    /* zero-copy network send in progress */
+
 	atomic_t pp_in_use;		/* allocated from page pool */
 	atomic_t pp_in_use_by_net;	/* sendpage()d, still referenced by transport */
 	/* sender side */
@@ -1251,7 +1253,7 @@ struct drbd_device {
 	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
 	struct list_head done_ee;   /* need to send P_WRITE_ACK */
 	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
-	struct list_head net_ee;    /* zero-copy network send in progress */
+	/* see also net_ee in the connection */
 
 	int next_barrier_nr;
 	wait_queue_head_t ee_wait;
@@ -1873,7 +1875,7 @@ extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
 extern int drbd_submit_peer_request(struct drbd_device *,
 				    struct drbd_peer_request *, const unsigned,
 				    const int);
-extern int drbd_free_peer_reqs(struct drbd_device *, struct list_head *);
+extern int drbd_free_peer_reqs(struct drbd_resource *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)

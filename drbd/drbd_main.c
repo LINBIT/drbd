@@ -2352,7 +2352,6 @@ void drbd_cleanup_device(struct drbd_device *device)
 	D_ASSERT(device, list_empty(&device->sync_ee));
 	D_ASSERT(device, list_empty(&device->done_ee));
 	D_ASSERT(device, list_empty(&device->read_ee));
-	D_ASSERT(device, list_empty(&device->net_ee));
 	drbd_set_defaults(device);
 }
 
@@ -2476,27 +2475,24 @@ Enomem:
 
 static void drbd_release_all_peer_reqs(struct drbd_device *device)
 {
+	struct drbd_resource *resource = device->resource;
 	int rr;
 
-	rr = drbd_free_peer_reqs(device, &device->active_ee);
+	rr = drbd_free_peer_reqs(resource, &device->active_ee, false);
 	if (rr)
 		drbd_err(device, "%d EEs in active list found!\n", rr);
 
-	rr = drbd_free_peer_reqs(device, &device->sync_ee);
+	rr = drbd_free_peer_reqs(resource, &device->sync_ee, false);
 	if (rr)
 		drbd_err(device, "%d EEs in sync list found!\n", rr);
 
-	rr = drbd_free_peer_reqs(device, &device->read_ee);
+	rr = drbd_free_peer_reqs(resource, &device->read_ee, false);
 	if (rr)
 		drbd_err(device, "%d EEs in read list found!\n", rr);
 
-	rr = drbd_free_peer_reqs(device, &device->done_ee);
+	rr = drbd_free_peer_reqs(resource, &device->done_ee, false);
 	if (rr)
 		drbd_err(device, "%d EEs in done list found!\n", rr);
-
-	rr = drbd_free_peer_reqs(device, &device->net_ee);
-	if (rr)
-		drbd_err(device, "%d EEs in net list found!\n", rr);
 }
 
 static void free_peer_device(struct drbd_peer_device *peer_device)
@@ -3057,6 +3053,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->ack_receiver.connection = connection;
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->connections);
+	INIT_LIST_HEAD(&connection->net_ee);
 
 	kref_init(&connection->kref);
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
@@ -3094,7 +3091,11 @@ void drbd_destroy_connection(struct kref *kref)
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
-	int vnr;
+	int vnr, rr;
+
+	rr = drbd_free_peer_reqs(resource, &connection->net_ee, true);
+	if (rr)
+		drbd_err(connection, "%d EEs in net list found!\n", rr);
 
 	if (atomic_read(&connection->current_epoch->epoch_size) !=  0)
 		drbd_err(connection, "epoch_size:%d\n", atomic_read(&connection->current_epoch->epoch_size));
@@ -3236,7 +3237,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->sync_ee);
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
-	INIT_LIST_HEAD(&device->net_ee);
 	INIT_LIST_HEAD(&device->pending_bitmap_work);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);

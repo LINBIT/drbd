@@ -1148,7 +1148,7 @@ static void move_to_net_ee_or_free(struct drbd_connection *connection, struct dr
 		atomic_add(i, &connection->pp_in_use_by_net);
 		atomic_sub(i, &connection->pp_in_use);
 		spin_lock_irq(&connection->resource->req_lock);
-		list_add_tail(&peer_req->w.list, &peer_req->peer_device->device->net_ee);
+		list_add_tail(&peer_req->w.list, &peer_req->peer_device->connection->net_ee);
 		spin_unlock_irq(&connection->resource->req_lock);
 		wake_up(&drbd_pp_wait);
 	} else
