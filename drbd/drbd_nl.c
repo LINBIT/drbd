@@ -1203,26 +1203,27 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_max_segments(q, max_segments ? max_segments : BLK_MAX_SEGMENTS);
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
-
 	if (b) {
 		struct drbd_connection *connection = first_peer_device(device)->connection;
 
-#if QUEUE_FLAG_DISCARD != -1 /* If this is not defined, the there is might be no q->limits */
+#ifdef QUEUE_FLAG_DISCARD
+		q->limits.max_discard_sectors = DRBD_MAX_DISCARD_SECTORS;
+
 		if (blk_queue_discard(b) &&
 		    (connection->cstate < C_CONNECTED || connection->agreed_features & FF_TRIM)) {
-			/* For now, don't allow more than one activity log extent worth of data
-			 * to be discarded in one go. We may need to rework drbd_al_begin_io()
-			 * to allow for even larger discard ranges */
-			q->limits.max_discard_sectors = DRBD_MAX_DISCARD_SECTORS;
-
+			/* We don't care, stacking below should fix it for the local device.
+			 * Whether or not it is a suitable granularity on the remote device
+			 * is not our problem, really. If you care, you need to
+			 * use devices with similar topology on all peers. */
+#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
+			q->limits.discard_granularity = 512;
+#endif
 			queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
-			/* REALLY? Is stacking secdiscard "legal"? */
-			if (blk_queue_secdiscard(b))
-				queue_flag_set_unlocked(QUEUE_FLAG_SECDISCARD, q);
 		} else {
-			q->limits.max_discard_sectors = 0;
 			queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
-			queue_flag_clear_unlocked(QUEUE_FLAG_SECDISCARD, q);
+#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
+			q->limits.discard_granularity = 0;
+#endif
 		}
 #endif
 		blk_queue_stack_limits(q, b);
@@ -1234,6 +1235,16 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 			q->backing_dev_info.ra_pages = b->backing_dev_info.ra_pages;
 		}
 	}
+#ifdef QUEUE_FLAG_DISCARD
+	/* To avoid confusion, if this queue does not support discard, clear
+	 * max_discard_sectors, which is what lsblk -D reports to the user.  */
+	if (!blk_queue_discard(q)) {
+		q->limits.max_discard_sectors = 0;
+#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
+		q->limits.discard_granularity = 0;
+#endif
+	}
+#endif
 }
 
 void drbd_reconsider_max_bio_size(struct drbd_device *device, struct drbd_backing_dev *bdev)
