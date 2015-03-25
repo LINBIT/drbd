@@ -85,10 +85,8 @@ install-indep:
 	dh_testroot
 	dh_clean -k -i
 	dh_installdirs -i
-	cp -a drbd/* debian/$(PACKAGE)-source/usr/src/modules/drbd/drbd
-	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd
-	cp drbd/linux/drbd_config.h debian/$(PACKAGE)-source/usr/src/modules/drbd
-	mkdir debian/$(PACKAGE)-source/usr/src/modules/drbd/scripts/
+	cp -a drbd debian/$(PACKAGE)-source/usr/src/modules/drbd/
+	cp Makefile debian/$(PACKAGE)-source/usr/src/modules/drbd/
 
 #	 install debian/ files
 	cd debian ; cp changelog control compat *.modules.in rules copyright $(PACKAGE)-source/usr/src/modules/drbd/debian
