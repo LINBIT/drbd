@@ -2786,11 +2786,7 @@ static int init_submitter(struct drbd_device *device)
 #endif
 	if (!device->submit.wq)
 		return -ENOMEM;
-#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
-	INIT_WORK(&device->submit.worker, do_submit, &device->submit.worker);
-#else
-	INIT_WORK(&device->submit.worker, do_submit);
-#endif
+	COMPAT_INIT_WORK(&device->submit.worker, do_submit);
 	INIT_LIST_HEAD(&device->submit.writes);
 	return 0;
 }
@@ -2910,7 +2906,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 			goto out_idr_remove_from_resource;
 		}
 		kref_get(&connection->kref);
-		INIT_WORK(&peer_device->send_acks_work, drbd_send_acks_wf);
+		COMPAT_INIT_WORK(&peer_device->send_acks_work, drbd_send_acks_wf);
 	}
 
 	if (init_submitter(device)) {
@@ -3041,11 +3037,7 @@ static int __init drbd_init(void)
 		pr_err("unable to create retry workqueue\n");
 		goto fail;
 	}
-#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
-	INIT_WORK(&retry.worker, do_retry, &retry.worker);
-#else
-	INIT_WORK(&retry.worker, do_retry);
-#endif
+	COMPAT_INIT_WORK(&retry.worker, do_retry);
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
 

@@ -1344,6 +1344,11 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #endif
 #endif
 
+#ifdef COMPAT_INIT_WORK_HAS_THREE_ARGUMENTS
+#define COMPAT_INIT_WORK(a, b) INIT_WORK(a, b, a)
+#else
+#define COMPAT_INIT_WORK(a, b) INIT_WORK(a, b)
+#endif
 
 #ifndef COMPAT_HAVE_GENL_LOCK
 static inline void genl_lock(void)  { }
