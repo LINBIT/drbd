@@ -786,7 +786,7 @@ extern struct fifo_buffer *fifo_alloc(int fifo_size);
 
 /* flag bits per connection */
 enum {
-	PING_TIMEOUT_ACTIVE,
+	SEND_PING,
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
 	TWOPC_PREPARED,
 	TWOPC_YES,
@@ -974,7 +974,6 @@ struct drbd_connection {
 	struct drbd_thread ack_receiver;
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
-	struct work_struct ping_work;
 
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
@@ -2252,13 +2251,21 @@ drbd_post_work(struct drbd_resource *resource, int work_bit)
 
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
+/* To get the ack_receiver out of the blocking network stack,
+ * so it can change its sk_rcvtimeo from idle- to ping-timeout,
+ * and send a ping, we need to send a signal.
+ * Which signal we send is irrelevant. */
+static inline void wake_ack_receiver(struct drbd_connection *connection)
+{
+	struct task_struct *task = connection->ack_receiver.task;
+	if (task && get_t_state(&connection->ack_receiver) == RUNNING)
+		force_sig(SIGXCPU, task);
+}
+
 static inline void request_ping(struct drbd_connection *connection)
 {
-	unsigned long flags;
-	spin_lock_irqsave(&connection->resource->req_lock, flags);
-	if (connection->cstate[NOW] == C_CONNECTED)
-		queue_work(connection->ack_sender, &connection->ping_work);
-	spin_unlock_irqrestore(&connection->resource->req_lock, flags);
+	set_bit(SEND_PING, &connection->flags);
+	wake_ack_receiver(connection);
 }
 
 extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);

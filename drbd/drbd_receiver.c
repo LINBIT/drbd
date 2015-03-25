@@ -666,7 +666,6 @@ static bool conn_connect(struct drbd_connection *connection)
 	struct net_conf *nc;
 
 start:
-	clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
 	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS) {
 		/* We do not have a network config. */
@@ -6617,6 +6616,36 @@ struct asender_cmd {
 	int (*fn)(struct drbd_connection *connection, struct packet_info *);
 };
 
+static void set_rcvtimeo(struct drbd_connection *connection, bool ping_timeout)
+{
+	long t;
+	struct net_conf *nc;
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_transport_ops *tr_ops = transport->ops;
+
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	t = ping_timeout ? nc->ping_timeo : nc->ping_int;
+	rcu_read_unlock();
+
+	t *= HZ;
+	if (ping_timeout)
+		t /= 10;
+
+	tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, t);
+}
+
+static void set_ping_timeout(struct drbd_connection *connection)
+{
+	set_rcvtimeo(connection, 1);
+}
+
+static void set_idle_timeout(struct drbd_connection *connection)
+{
+	set_rcvtimeo(connection, 0);
+}
+
 static struct asender_cmd asender_tbl[] = {
 	[P_PING]	    = { 0, got_Ping },
 	[P_PING_ACK]	    = { 0, got_PingAck },
@@ -6648,12 +6677,12 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	struct asender_cmd *cmd = NULL;
 	struct packet_info pi;
 	unsigned long pre_recv_jif;
-	int ping_timeout_expired = 0;
 	int rv;
 	void *buffer;
 	int received = 0, rflags = 0;
 	unsigned int header_size = drbd_header_size(connection);
 	int expect   = header_size;
+	bool ping_timeout_active = false;
 	struct sched_param param = { .sched_priority = 2 };
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
@@ -6664,6 +6693,15 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
+
+		if (test_and_clear_bit(SEND_PING, &connection->flags)) {
+			if (drbd_send_ping(connection)) {
+				drbd_err(connection, "drbd_send_ping has failed\n");
+				goto reconnect;
+			}
+			set_ping_timeout(connection);
+			ping_timeout_active = true;
+		}
 
 		pre_recv_jif = jiffies;
 		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received, rflags);
@@ -6700,34 +6738,22 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 			drbd_err(connection, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {
-			long t;
-
 			/* If the data socket received something meanwhile,
 			 * that is good enough: peer is still alive. */
 
 			if (time_after(connection->last_received, pre_recv_jif))
 				continue;
-			if (test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
-				/* We don't want to introduce hard
-				 * synchronization between this receiving
-				 * thread and the work queue requesting those pings.
-				 * Rather have the timeout expire twice (worst
-				 * case), than too early (if the ping request
-				 * did not even leave this box yet).
-				 */
-				if (!ping_timeout_expired++)
-					continue;
+			if (ping_timeout_active) {
 				drbd_err(connection, "PingAck did not arrive in time.\n");
 				goto reconnect;
 			}
-
-			rcu_read_lock();
-			t = rcu_dereference(transport->net_conf)->ping_timeo;
-			rcu_read_unlock();
-			tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, t * HZ / 10);
-			request_ping(connection);
+			set_bit(SEND_PING, &connection->flags);
 			continue;
 		} else if (rv == -EINTR) {
+			/* maybe drbd_thread_stop(): the while condition will notice.
+			 * maybe woken for send_ping: we'll send a ping above,
+			 * and change the rcvtimeo */
+			flush_signals(current);
 			continue;
 		} else {
 			drbd_err(connection, "sock_recvmsg returned %d\n", rv);
@@ -6765,18 +6791,8 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 			connection->last_received = jiffies;
 
 			if (cmd == &asender_tbl[P_PING_ACK]) {
-				/* restore idle timeout */
-				struct net_conf *nc;
-				int ping_int;
-
-				rcu_read_lock();
-				nc = rcu_dereference(transport->net_conf);
-				ping_int = nc->ping_int;
-				rcu_read_unlock();
-
-				tr_ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
-				clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
-				ping_timeout_expired = 0;
+				set_idle_timeout(connection);
+				ping_timeout_active = false;
 			}
 
 			received = 0;
@@ -6843,22 +6859,6 @@ void drbd_send_peer_ack_wf(struct work_struct *ws)
 
 	if (process_peer_ack_list(connection))
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-}
-
-void drbd_send_ping_wf(struct work_struct *ws)
-{
-	struct drbd_connection *connection =
-		container_of(ws, struct drbd_connection, ping_work);
-
-	if (drbd_send_ping(connection)) {
-		drbd_err(connection, "drbd_send_ping has failed\n");
-		goto reconnect;
-	}
-	set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
-
-	return;
-reconnect:
-	change_cstate(connection, C_DISCONNECTING, CS_HARD);
 }
 
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
