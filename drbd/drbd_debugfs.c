@@ -843,6 +843,13 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	seq_printf(m, "0x%016llX\n", (unsigned long long)device->exposed_data_uuid);
+	return 0;
+}
+
 static int device_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_device *device = inode->i_private;
@@ -869,6 +876,7 @@ drbd_debugfs_device_attr(oldest_requests)
 drbd_debugfs_device_attr(act_log_extents)
 drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
+drbd_debugfs_device_attr(ed_gen_id)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -913,6 +921,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	DCF(act_log_extents);
 	DCF(data_gen_id);
 	DCF(io_frozen);
+	DCF(ed_gen_id);
 #undef DCF
 
 	for_each_peer_device(peer_device, device) {
@@ -934,6 +943,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_act_log_extents);
 	drbd_debugfs_remove(&device->debugfs_vol_data_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
+	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol);
 }
 
