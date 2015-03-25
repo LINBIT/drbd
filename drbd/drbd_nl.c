@@ -1204,9 +1204,8 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	blk_queue_max_segments(q, max_segments ? max_segments : BLK_MAX_SEGMENTS);
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
 	if (b) {
-		struct drbd_connection *connection = first_peer_device(device)->connection;
-
 #ifdef QUEUE_FLAG_DISCARD
+		struct drbd_connection *connection = first_peer_device(device)->connection;
 		q->limits.max_discard_sectors = DRBD_MAX_DISCARD_SECTORS;
 
 		if (blk_queue_discard(b) &&
