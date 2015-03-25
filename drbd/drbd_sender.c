@@ -170,6 +170,12 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	 * ((peer_req->flags & (EE_WAS_ERROR|EE_IS_TRIM)) == EE_WAS_ERROR) */
 	if (peer_req->flags & EE_WAS_ERROR)
 		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
+
+	if (connection->cstate[NOW] == C_CONNECTED) {
+		kref_get(&device->kref); /* put is in drbd_send_acks_wf() */
+		if (!queue_work(connection->ack_sender, &peer_device->send_acks_work))
+			kref_put(&device->kref, drbd_destroy_device);
+	}
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	if (block_id == ID_SYNCER)
@@ -178,7 +184,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	if (do_wake)
 		wake_up(&device->ee_wait);
 
-	queue_work(connection->ack_sender, &connection->ping_work);
 	put_ldev(device);
 }
 

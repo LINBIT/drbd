@@ -3061,7 +3061,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_init(&connection->kref);
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
-	INIT_WORK(&connection->ping_work, drbd_ack_sender);
+	INIT_WORK(&connection->ping_work, drbd_send_ping_wf);
 	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
 
 	kref_get(&resource->kref);
@@ -3160,6 +3160,9 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
+
+	INIT_WORK(&peer_device->send_acks_work, drbd_send_acks_wf);
+
 	return peer_device;
 }
 

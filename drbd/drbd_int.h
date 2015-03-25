@@ -786,7 +786,6 @@ extern struct fifo_buffer *fifo_alloc(int fifo_size);
 
 /* flag bits per connection */
 enum {
-	SEND_PING,		/* whether asender should send a ping asap */
 	PING_TIMEOUT_ACTIVE,
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
 	TWOPC_PREPARED,
@@ -1072,6 +1071,7 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
+	struct work_struct send_acks_work;
 	struct peer_device_conf *conf; /* RCU, for updates: resource->conf_update */
 	enum drbd_disk_state disk_state[2];
 	enum drbd_repl_state repl_state[2];
@@ -1864,7 +1864,8 @@ void __update_timing_details(
 /* drbd_receiver.c */
 extern int drbd_receiver(struct drbd_thread *thi);
 extern int drbd_ack_receiver(struct drbd_thread *thi);
-extern void drbd_ack_sender(struct work_struct *ws);
+extern void drbd_send_ping_wf(struct work_struct *ws);
+extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
 extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
@@ -2252,8 +2253,11 @@ extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 
 static inline void request_ping(struct drbd_connection *connection)
 {
-	set_bit(SEND_PING, &connection->flags);
-	queue_work(connection->ack_sender, &connection->ping_work);
+	unsigned long flags;
+	spin_lock_irqsave(&connection->resource->req_lock, flags);
+	if (connection->cstate[NOW] == C_CONNECTED)
+		queue_work(connection->ack_sender, &connection->ping_work);
+	spin_unlock_irqrestore(&connection->resource->req_lock, flags);
 }
 
 extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
