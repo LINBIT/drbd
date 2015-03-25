@@ -3863,6 +3863,9 @@ bool idr_is_empty(struct idr *idr)
 }
 #endif
 
+#ifndef __maybe_unused
+#define __maybe_unused                  __attribute__((unused))
+#endif
 void lock_all_resources(void)
 {
 	struct drbd_resource *resource;
