@@ -33,6 +33,7 @@
 #include <linux/slab.h>
 #include <linux/blkpg.h>
 #include <linux/cpumask.h>
+#include <linux/random.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
