@@ -1396,7 +1396,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 		if (rv == FE_RECYCLED)
 			return 0;
 
-		/* The asender will send all the ACKs and barrier ACKs out, since
+		/* The ack_sender will send all the ACKs and barrier ACKs out, since
 		   all EEs moved from the active_ee to the done_ee. We need to
 		   provide a new epoch object for the EEs that come in soon */
 		break;
@@ -1593,7 +1593,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 }
 
 /*
- * e_end_resync_block() is called in asender context via
+ * e_end_resync_block() is called in ack_sender context via
  * drbd_finish_peer_reqs().
  */
 static int e_end_resync_block(struct drbd_work *w, int unused)
@@ -1775,7 +1775,7 @@ static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 }
 
 /*
- * e_end_block() is called in asender context via drbd_finish_peer_reqs().
+ * e_end_block() is called in ack_sender context via drbd_finish_peer_reqs().
  */
 static int e_end_block(struct drbd_work *w, int cancel)
 {
@@ -4786,7 +4786,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
  retry:
 	new_repl_state = max_t(enum drbd_repl_state, old_peer_state.conn, L_OFF);
 
-	/* If some other part of the code (asender thread, timeout)
+	/* If some other part of the code (ack_receiver thread, timeout)
 	 * already decided to close the connection again,
 	 * we must not "re-establish" it here. */
 	if (old_peer_state.conn <= C_TEAR_DOWN)
@@ -5581,7 +5581,7 @@ void conn_disconnect(struct drbd_connection *connection)
 
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 
-	/* asender does not clean up anything. it must not interfere, either */
+	/* ack_receiver does not clean up anything. it must not interfere, either */
 	drbd_thread_stop(&connection->ack_receiver);
 	if (connection->ack_sender) {
 		destroy_workqueue(connection->ack_sender);
@@ -6621,7 +6621,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	spin_unlock_irq(&resource->req_lock);
 }
 
-struct asender_cmd {
+struct meta_sock_cmd {
 	size_t pkt_size;
 	int (*fn)(struct drbd_connection *connection, struct packet_info *);
 };
@@ -6656,7 +6656,7 @@ static void set_idle_timeout(struct drbd_connection *connection)
 	set_rcvtimeo(connection, 0);
 }
 
-static struct asender_cmd asender_tbl[] = {
+static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_PING]	    = { 0, got_Ping },
 	[P_PING_ACK]	    = { 0, got_PingAck },
 	[P_RECV_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
@@ -6684,7 +6684,7 @@ static struct asender_cmd asender_tbl[] = {
 int drbd_ack_receiver(struct drbd_thread *thi)
 {
 	struct drbd_connection *connection = thi->connection;
-	struct asender_cmd *cmd = NULL;
+	struct meta_sock_cmd *cmd = NULL;
 	struct packet_info pi;
 	unsigned long pre_recv_jif;
 	int rv;
@@ -6699,7 +6699,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 
 	rv = sched_setscheduler(current, SCHED_RR, &param);
 	if (rv < 0)
-		drbd_err(connection, "drbd_asender: ERROR set priority, ret=%d\n", rv);
+		drbd_err(connection, "drbd_ack_receiver: ERROR set priority, ret=%d\n", rv);
 
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
@@ -6776,8 +6776,8 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 			if (decode_header(connection, buffer, &pi))
 				goto reconnect;
 
-			cmd = &asender_tbl[pi.cmd];
-			if (pi.cmd >= ARRAY_SIZE(asender_tbl) || !cmd->fn) {
+			cmd = &ack_receiver_tbl[pi.cmd];
+			if (pi.cmd >= ARRAY_SIZE(ack_receiver_tbl) || !cmd->fn) {
 				drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
 					 drbd_packet_name(pi.cmd), pi.cmd);
 				goto disconnect;
@@ -6802,7 +6802,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 
 			connection->last_received = jiffies;
 
-			if (cmd == &asender_tbl[P_PING_ACK]) {
+			if (cmd == &ack_receiver_tbl[P_PING_ACK]) {
 				set_idle_timeout(connection);
 				ping_timeout_active = false;
 			}
@@ -6823,7 +6823,7 @@ disconnect:
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	}
 
-	drbd_info(connection, "asender terminated\n");
+	drbd_info(connection, "ack_receiver terminated\n");
 
 	return 0;
 }

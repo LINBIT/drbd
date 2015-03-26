@@ -678,7 +678,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		kref_get(&req->kref); /* wait for the DONE */
 
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
-		/* potentially already completed in the asender thread */
+		/* potentially already completed in the ack_receiver thread */
 		if (!(old_net & RQ_NET_DONE)) {
 			atomic_add(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 			set_if_null_req_not_net_done(peer_device, req);
