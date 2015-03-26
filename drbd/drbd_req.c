@@ -106,9 +106,11 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	struct drbd_request *req;
 	int i;
 
-	req = mempool_alloc(drbd_request_mempool, GFP_NOIO | __GFP_ZERO);
+	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
 	if (!req)
 		return NULL;
+
+	memset(req, 0, sizeof(*req));
 
 	drbd_req_make_private_bio(req, bio_src);
 	req->device      = device;
