@@ -956,11 +956,11 @@ static int drbd_single_open_peer_device(struct file *file,
 	bool got_connection, got_device;
 	struct dentry *parent;
 
-	parent = file->f_dentry->d_parent;
+	parent = file->f_path.dentry->d_parent;
 	if (!parent || !parent->d_inode)
 		goto out;
 	mutex_lock(&parent->d_inode->i_mutex);
-	if (!debugfs_positive(file->f_dentry))
+	if (!debugfs_positive(file->f_path.dentry))
 		goto out_unlock;
 
 	got_connection = kref_get_unless_zero(&connection->kref);
