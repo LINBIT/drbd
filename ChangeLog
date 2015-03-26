@@ -12,8 +12,10 @@ Latest:
  * fix a (hard to trigger) race condition between promoting to primary an
    connection handshake. In case the bug was hit the Primary got stuck in
    WFBitmapS connection state
+ * Fix a NULL deref when resuming IO on a diskless primary
+ * Fix compile issues with uncommon architectures
  * improvements to asender performance. With high end backing storage and
-   networking equipment you may see IOPS improvements between 25 to 50%.
+   networking equipment you may see IOPS improvements between 25% to 50%.
    Highest number on a single drbd seen by LINBIT so far: 160000 IOPS
  * backport of events2 and status commands from drbd9. This allows to be
    DRBD9 compatible starting with this release, and to get used to DRBD9
