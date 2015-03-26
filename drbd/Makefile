@@ -135,7 +135,7 @@ else
 	fi
 
   tags:
-	ctags -R -I__initdata,__exitdata,__acquires,__releases \
+	git ls-files | ctags -L - -I__initdata,__exitdata,__acquires,__releases \
 		-I __must_hold,__protected_by,__protected_read_by,__protected_write_by \
 		-I BIO_ENDIO_ARGS
 
