@@ -1335,4 +1335,8 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 #define rcu_dereference_protected(p, c) (p)
 #endif
 
+#ifndef COMPAT_HAVE_F_PATH_DENTRY
+#define f_path.dentry f_dentry
+#endif
+
 #endif
