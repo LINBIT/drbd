@@ -38,7 +38,13 @@
  * On recent kernels this is not needed. */
 #include "drbd-kernel-compat/bitops.h"
 
+#ifndef BITS_PER_PAGE
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
+#else
+# if BITS_PER_PAGE != (1UL << (PAGE_SHIFT + 3))
+#  error "ambiguous BITS_PER_PAGE"
+# endif
+#endif
 
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
