@@ -2316,7 +2316,6 @@ static bool check_sender_todo(struct drbd_connection *connection)
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
-	struct drbd_transport *transport = &connection->transport;
 	struct net_conf *nc;
 	int uncork, cork;
 	bool got_something = 0;
@@ -2337,12 +2336,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	nc = rcu_dereference(connection->transport.net_conf);
 	uncork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
-	if (uncork) {
-		mutex_lock(&connection->mutex[DATA_STREAM]);
-		if (transport->ops->stream_ok(transport, DATA_STREAM))
-			drbd_uncork(connection, DATA_STREAM);
-		mutex_unlock(&connection->mutex[DATA_STREAM]);
-	}
+	if (uncork)
+		drbd_uncork(connection, DATA_STREAM);
 
 	for (;;) {
 		int send_barrier;
@@ -2387,14 +2382,10 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	cork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
 
-	mutex_lock(&connection->mutex[DATA_STREAM]);
-	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
-		if (cork)
-			drbd_cork(connection, DATA_STREAM);
-		else if (!uncork)
-			drbd_uncork(connection, DATA_STREAM);
-	}
-	mutex_unlock(&connection->mutex[DATA_STREAM]);
+	if (cork)
+		drbd_cork(connection, DATA_STREAM);
+	else if (!uncork)
+		drbd_uncork(connection, DATA_STREAM);
 }
 
 static void re_init_if_first_write(struct drbd_connection *connection, unsigned int epoch)

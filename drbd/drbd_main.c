@@ -908,8 +908,10 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
+	mutex_lock(&connection->mutex[stream]);
 	set_bit(CORKED + stream, &connection->flags);
 	tr_ops->hint(transport, stream, CORK);
+	mutex_unlock(&connection->mutex[stream]);
 }
 
 void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
@@ -918,11 +920,14 @@ void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
+
+	mutex_lock(&connection->mutex[stream]);
 	if (sbuf->unsent != sbuf->pos)
 		flush_send_buffer(connection, stream);
 
 	clear_bit(CORKED + stream, &connection->flags);
 	tr_ops->hint(transport, stream, UNCORK);
+	mutex_unlock(&connection->mutex[stream]);
 }
 
 int send_command(struct drbd_connection *connection, int vnr,
