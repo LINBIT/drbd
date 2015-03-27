@@ -2,6 +2,10 @@ Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: 9.0.0rc2
 Release: 1%{?dist}
+
+# always require a suitable userland
+Requires: drbd-utils >= 8.9.2
+
 Source: http://oss.linbit.com/drbd/drbd-%{version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
@@ -29,9 +33,9 @@ installed kernel.
 %if 0%{?suse_version} < 1110
 # We need to exclude some flavours on sles10 etc,
 # or we hit an rpm internal buffer limit.
-%suse_kernel_module_package -n drbd -p preamble -f filelist-suse kdump kdumppae vmi vmipae um
+%suse_kernel_module_package -n drbd -f filelist-suse kdump kdumppae vmi vmipae um
 %else
-%suse_kernel_module_package -n drbd -p preamble -f filelist-suse
+%suse_kernel_module_package -n drbd -f filelist-suse
 %endif
 %else
 # Concept stolen from sles kernel-module-subpackage:
@@ -44,7 +48,7 @@ installed kernel.
 # and have yum/rpm figure out via dependencies, which kmod version should be installed.
 # This is a dirty hack, non generic, and should probably be enclosed in some "if-on-rhel6".
 %define _this_kmp_version %{version}_%(echo %kernel_version | sed -r 'y/-/_/; s/\.el.\.(x86_64|i.86)$//;')
-%kernel_module_package -v %_this_kmp_version -n drbd -p preamble -f filelist-redhat
+%kernel_module_package -v %_this_kmp_version -n drbd -f filelist-redhat
 %endif
 
 %build
