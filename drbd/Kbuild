@@ -59,7 +59,11 @@ obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
 # Are we in stage 2 of the build (modpost)?
 
-KBUILD_STAGE ?= $(if $(filter $(srctree)/scripts/Makefile.modpost,$(MAKEFILE_LIST)),modpost)
+# Apparently GNU Make 4.0 strips leading ./ from MAKEFILE_LIST. Yay.
+
+KBUILD_STAGE ?= $(if $(filter      scripts/Makefile.modpost \
+			$(srctree)/scripts/Makefile.modpost,\
+			$(MAKEFILE_LIST)),modpost)
 
 ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
