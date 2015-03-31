@@ -2646,7 +2646,7 @@ static int adjust_resync_fifo(struct drbd_peer_device *peer_device,
 	fifo_size = (conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
 
 	old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
-					     lockdep_is_held(&resource->conf_update));
+			     lockdep_is_held(&peer_device->connection->resource->conf_update));
 	if (!old_plan || fifo_size != old_plan->size) {
 		new_plan = fifo_alloc(fifo_size);
 		if (!new_plan) {
