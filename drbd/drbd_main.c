@@ -3131,17 +3131,17 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	if (!peer_device)
 		return NULL;
 
-	err = drbd_create_peer_device_default_config(peer_device);
-	if (err) {
-		kfree(peer_device);
-		return NULL;
-	}
-
 	peer_device->connection = connection;
 	peer_device->device = device;
 	peer_device->disk_state[NOW] = D_UNKNOWN;
 	peer_device->repl_state[NOW] = L_OFF;
 	spin_lock_init(&peer_device->peer_seq_lock);
+
+	err = drbd_create_peer_device_default_config(peer_device);
+	if (err) {
+		kfree(peer_device);
+		return NULL;
+	}
 
 	init_timer(&peer_device->start_resync_timer);
 	peer_device->start_resync_timer.function = start_resync_timer_fn;
