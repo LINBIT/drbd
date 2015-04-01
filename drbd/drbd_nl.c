@@ -3018,7 +3018,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CREATE | flags);
 	}
 	mutex_unlock(&notification_mutex);
-	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		if (get_ldev_if_state(peer_device->device, D_NEGOTIATING)) {
@@ -3026,12 +3025,13 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			put_ldev(peer_device->device);
 			if (err) {
 				retcode = ERR_NOMEM;
-				goto fail_free_connection;
+				goto unlock_fail_free_connection;
 			}
 		}
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}
+	mutex_unlock(&adm_ctx.resource->conf_update);
 
 	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
 
