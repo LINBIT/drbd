@@ -1141,6 +1141,34 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	return drbd_send_command(peer_device, P_UUIDS, DATA_STREAM);
 }
 
+static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(local)
+{
+	struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	u64 bitmap_uuid = peer_md[node_id].bitmap_uuid;
+
+	/* Sending a bitmap_uuid of 0 means that we are in sync with that peer.
+	   The recipient of this message might use this assumption to throw away it's
+	   bitmap to that peer.
+
+	   Send -1 instead if we are (resync target from that peer) not at the same
+	   current uuid.
+	   This corner case is relevant if we finish resync from an UpToDate peer first,
+	   and the second resync (which was paused first) is from an Outdated node.
+	   And that second resync gets canceled by the resync target due to the first
+	   resync finished successfully.
+	 */
+
+	if (bitmap_uuid != 0 || !peer_device)
+		return bitmap_uuid;
+
+	if ((peer_device->current_uuid & ~UUID_PRIMARY) ==
+	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
+		return 0;
+	else
+		return -1;
+}
+
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1172,7 +1200,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	}
 
 	for_each_set_bit(i, (unsigned long *)&bitmap_uuids_mask, sizeof(bitmap_uuids_mask))
-		p->other_uuids[pos++] = cpu_to_be64(peer_md[i].bitmap_uuid);
+		p->other_uuids[pos++] = cpu_to_be64(__bitmap_uuid(device, i));
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
 		p->other_uuids[pos++] = cpu_to_be64(drbd_history_uuid(device, i));
