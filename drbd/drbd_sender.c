@@ -943,6 +943,16 @@ static bool was_resync_stable(struct drbd_peer_device *peer_device)
 	return true;
 }
 
+static void __cancel_other_resyncs(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T)
+			__change_repl_state(peer_device, L_ESTABLISHED);
+	}
+}
+
 static void init_resync_stable_bits(struct drbd_peer_device *first_target_pd)
 {
 	struct drbd_device *device = first_target_pd->device;
@@ -1083,6 +1093,9 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			bool stable_resync = was_resync_stable(peer_device);
 			if (stable_resync)
 				__change_disk_state(device, peer_device->disk_state[NOW]);
+
+			if (device->disk_state[NEW] == D_UP_TO_DATE)
+				__cancel_other_resyncs(device);
 
 			if (stable_resync &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
