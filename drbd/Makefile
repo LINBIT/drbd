@@ -136,9 +136,13 @@ else
 	rm -f drbd_buildtag.c compat.h
 
   tags:
-	ctags -R -I__initdata,__exitdata,__acquires,__releases \
-		-I __must_hold,__protected_by,__protected_read_by,__protected_write_by \
-		-I BIO_ENDIO_ARGS
+	( git ls-files ;						\
+	  git submodule foreach -q --recursive				\
+		'git ls-files | sed -e "s,^,$$displaypath/,"' ) |	\
+		ctags -L -						\
+		-I __initdata,__exitdata,__acquires,__releases		\
+		-I __must_hold,__protected_by,__protected_read_by	\
+		-I __protected_write_by,BIO_ENDIO_ARGS
 
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
