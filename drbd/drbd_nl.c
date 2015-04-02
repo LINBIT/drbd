@@ -3476,27 +3476,27 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
 
-	do {
-		struct drbd_connection *connection;
+	if (sync_from_peer_device) {
+		retcode = invalidate_resync(sync_from_peer_device);
+	} else {
+		int retry = 3;
+		do {
+			struct drbd_connection *connection;
 
-		if (sync_from_peer_device) {
-			retcode = invalidate_resync(sync_from_peer_device);
+			for_each_connection(connection, resource) {
+				struct drbd_peer_device *peer_device;
 
-			if (retcode >= SS_SUCCESS)
+				peer_device = conn_peer_device(connection, device->vnr);
+				retcode = invalidate_resync(peer_device);
+				if (retcode >= SS_SUCCESS)
+					goto out;
+			}
+			if (retcode != SS_NEED_CONNECTION)
 				break;
-		}
 
-		for_each_connection(connection, resource) {
-			struct drbd_peer_device *peer_device;
-
-			peer_device = conn_peer_device(connection, device->vnr);
-			retcode = invalidate_resync(peer_device);
-			if (retcode >= SS_SUCCESS)
-				goto out;
-		}
-
-		retcode = invalidate_no_resync(device);
-	} while (retcode == SS_UNKNOWN_ERROR);
+			retcode = invalidate_no_resync(device);
+		} while (retcode == SS_UNKNOWN_ERROR && retry--);
+	}
 
 out:
 	drbd_resume_io(device);
