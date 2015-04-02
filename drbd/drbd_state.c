@@ -3103,7 +3103,10 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		rv = try_state_change(resource);
 		if (rv != SS_SUCCESS) {
 			/* Failure or nothing to do. */
-			abort_state_change(resource, &irq_flags);
+			/* abort_state_change(resource, &irq_flags); */
+			if (rv == SS_NOTHING_TO_DO)
+				resource->state_change_flags &= ~CS_VERBOSE;
+			__end_state_change(resource, &irq_flags, rv);
 			return rv;
 		}
 		/* Really a cluster-wide state change. */
