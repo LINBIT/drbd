@@ -119,29 +119,31 @@ extern char usermode_helper[];
 struct drbd_device;
 struct drbd_connection;
 
-/*
- * dev_printk() and dev_dbg() exist since "forever".
- * dynamic_dev_dbg() and disk_to_dev() exists since v2.6.28-rc1.
- */
-#if defined(disk_to_dev)
-#define __drbd_printk_device(level, device, fmt, args...) \
-	dev_printk(level, disk_to_dev((device)->vdisk), fmt, ## args)
-#define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
-	({	rcu_read_lock(); \
-		dev_printk(level, disk_to_dev((peer_device)->device->vdisk), "%s: " fmt, \
-			   rcu_dereference((peer_device)->connection->transport.net_conf)->name, ## args); \
-		rcu_read_unlock(); \
+/* I want to be able to grep for "drbd $resource_name"
+ * and get all relevant log lines. */
+#define __drbd_printk_device(level, device, fmt, args...)		\
+	({								\
+		const struct drbd_device *__d = (device);		\
+		const struct drbd_resource *__r = __d->resource;	\
+		printk(level "drbd %s/%u drbd%u: " fmt,			\
+			__r->name, __d->vnr, __d->minor, ## args);	\
 	})
-#else
-#define __drbd_printk_device(level, device, fmt, args...) \
-	printk(level "block drbd%u: " fmt, (device)->minor, ## args)
-#define __drbd_printk_peer_device(level, peer_device, fmt, args...) \
-	({	rcu_read_lock(); \
-		printk(level "block drbd%u %s: " fmt, (peer_device)->device->minor, \
-		       rcu_dereference((peer_device)->connection->transport.net_conf)->name, ## args); \
-		rcu_read_unlock(); \
+
+#define __drbd_printk_peer_device(level, peer_device, fmt, args...)	\
+	({								\
+		const struct drbd_device *__d;				\
+		const struct drbd_connection *__c;			\
+		const struct drbd_resource *__r;			\
+		const char *__cn;					\
+		rcu_read_lock();					\
+		__d = (peer_device)->device;				\
+		__c = (peer_device)->connection;			\
+		__r = __d->resource;					\
+		__cn = rcu_dereference(__c->transport.net_conf)->name;	\
+		printk(level "drbd %s/%u drbd%u %s: " fmt,		\
+			__r->name, __d->vnr, __d->minor, __cn, ## args);\
+		rcu_read_unlock();					\
 	})
-#endif
 
 #define __drbd_printk_resource(level, resource, fmt, args...) \
 	printk(level "drbd %s: " fmt, (resource)->name, ## args)
