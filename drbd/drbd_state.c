@@ -2188,8 +2188,12 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 			struct drbd_peer_device *peer_device;
 			int vnr;
 
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-				drbd_send_current_uuid(peer_device, drbd_current_uuid(peer_device->device));
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				struct drbd_device *device = peer_device->device;
+				u64 current_uuid = drbd_current_uuid(device);
+				u64 weak_nodes = drbd_weak_nodes_device(device);
+				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+			}
 
 			drbd_send_peer_dagtag(connection, lost_peer);
 		}

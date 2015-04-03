@@ -1431,7 +1431,7 @@ extern void drbd_send_twopc_reply(struct drbd_connection *connection,
 				  enum drbd_packet, struct twopc_reply *);
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);
-extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid);
+extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes);
 extern void drbd_free_ldev(struct drbd_backing_dev *ldev);
 extern void drbd_cleanup_device(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
@@ -1452,6 +1452,7 @@ extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_
 extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
 extern u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
+extern u64 drbd_weak_nodes_device(struct drbd_device *device);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);

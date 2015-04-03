@@ -5444,8 +5444,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
-	struct p_uuid *p = pi->data;
-	u64 current_uuid;
+	struct p_current_uuid *p = pi->data;
+	u64 current_uuid, weak_nodes;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -5453,6 +5453,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	device = peer_device->device;
 
 	current_uuid = be64_to_cpu(p->uuid);
+	weak_nodes = be64_to_cpu(p->weak_nodes);
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 	peer_device->current_uuid = current_uuid;
@@ -5460,7 +5461,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	if (get_ldev(device)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_warn(peer_device, "received new current UUID: %016llX\n", current_uuid);
-			drbd_uuid_received_new_current(peer_device, current_uuid, 0);
+			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
 		}
 		put_ldev(device);
 	} else if (resource->role[NOW] == R_PRIMARY) {
@@ -5506,7 +5507,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_DAGTAG]	    = { 0, sizeof(struct p_dagtag), receive_dagtag },
 	[P_UUIDS110]	    = { 1, sizeof(struct p_uuids110), receive_uuids110 },
 	[P_PEER_DAGTAG]     = { 0, sizeof(struct p_peer_dagtag), receive_peer_dagtag },
-	[P_CURRENT_UUID]    = { 0, sizeof(struct p_uuid), receive_current_uuid },
+	[P_CURRENT_UUID]    = { 0, sizeof(struct p_current_uuid), receive_current_uuid },
 	[P_TWOPC_COMMIT]    = { 0, sizeof(struct p_twopc_request), receive_twopc },
 	[P_TRIM]	    = { 0, sizeof(struct p_trim), receive_Data },
 };

@@ -1263,13 +1263,14 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 	}
 }
 
-void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid)
+void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes)
 {
-	struct p_uuid *p;
+	struct p_current_uuid *p;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
 	if (p) {
 		p->uuid = cpu_to_be64(current_uuid);
+		p->weak_nodes = cpu_to_be64(weak_nodes);
 		drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
 	}
 }
@@ -4109,7 +4110,7 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 	return nodes;
 }
 
-static u64 weak_nodes_for_device(struct drbd_device *device)
+u64 drbd_weak_nodes_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 	int node_id;
@@ -4150,7 +4151,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __m
 	get_random_bytes(&val, sizeof(u64));
 	__drbd_uuid_set_current(device, val);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	weak_nodes = weak_nodes_for_device(device);
+	weak_nodes = drbd_weak_nodes_device(device);
 	drbd_info(device, "new current UUID: %016llX weak: %016llX\n",
 		  device->ldev->md.current_uuid, weak_nodes);
 
@@ -4178,14 +4179,15 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	} else {
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
-		u64 current_uuid;
+		u64 current_uuid, weak_nodes;
 		get_random_bytes(&current_uuid, sizeof(u64));
 		current_uuid &= ~UUID_PRIMARY;
 		drbd_set_exposed_data_uuid(device, current_uuid);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
 
+		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
-			drbd_send_current_uuid(peer_device, current_uuid);
+			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 			peer_device->current_uuid = current_uuid; /* In case resync finishes soon */
 		}
 	}
