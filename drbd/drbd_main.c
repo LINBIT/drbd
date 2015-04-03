@@ -4077,8 +4077,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 			do_it = pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED;
-			node_id = peer_device->node_id;
-			do_it = do_it || NODE_MASK(peer_device->node_id) & weak_nodes;
+			do_it = do_it || NODE_MASK(node_id) & weak_nodes;
 		} else {
 			do_it = true;
 		}
@@ -4110,11 +4109,33 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 	return nodes;
 }
 
+static u64 weak_nodes_for_device(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	int node_id;
+	u64 weak = 0;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == device->ldev->md.node_id)
+			continue;
+
+		peer_device = peer_device_by_node_id(device, node_id);
+		if (peer_device) {
+			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+			if (!(pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED))
+				continue;
+		}
+		weak |= NODE_MASK(node_id);
+	}
+
+	return weak;
+}
+
+
 static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
 	u64 got_new_bitmap_uuid, weak_nodes, val;
-	const int my_node_id = device->ldev->md.node_id;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
@@ -4129,12 +4150,13 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __m
 	get_random_bytes(&val, sizeof(u64));
 	__drbd_uuid_set_current(device, val);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	drbd_info(device, "new current UUID: %016llX\n", device->ldev->md.current_uuid);
+	weak_nodes = weak_nodes_for_device(device);
+	drbd_info(device, "new current UUID: %016llX weak: %016llX\n",
+		  device->ldev->md.current_uuid, weak_nodes);
 
 	/* get it to stable storage _now_ */
 	drbd_md_sync(device);
 
-	weak_nodes = ~(directly_connected_nodes(device->resource, NOW) | NODE_MASK(my_node_id));
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
