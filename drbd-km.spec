@@ -9,7 +9,7 @@
 
 Name: drbd-km
 Summary: DRBD driver for Linux
-Version: 8.4.6rc1
+Version: 8.4.6
 Release: 1
 Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}.tar.gz
 License: GPLv2+
@@ -92,7 +92,7 @@ uname -r | grep BOOT ||
 
 
 %changelog
-* Wed Dec 17 2014 Philipp Reisner <phil@linbit.com> - 8.4.6rc1-1
+* Fri Apr  3 2015 Philipp Reisner <phil@linbit.com> - 8.4.6-1
 - New upstream release.
 
 * Mon Jun  2 2014 Philipp Reisner <phil@linbit.com> - 8.4.5-1
