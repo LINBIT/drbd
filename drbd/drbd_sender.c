@@ -1726,6 +1726,11 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 	struct drbd_peer_device *peer_device;
 	bool rv = false;
 
+	/* If a peer considers himself as unstable and sees me as an authoritative
+	   node, then we have a stable resync source! */
+	if (authoritative_nodes & NODE_MASK(device->resource->res_opts.node_id))
+		return true;
+
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state;
