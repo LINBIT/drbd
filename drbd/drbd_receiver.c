@@ -4536,6 +4536,37 @@ static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
 	return SS_NOTHING_TO_DO;
 }
 
+enum csc_rv {
+	CSC_CLEAR,
+	CSC_REJECT,
+	CSC_ABORT_LOCAL,
+	CSC_QUEUE,
+	CSC_TID_MISS,
+	CSC_MATCH,
+};
+
+static enum csc_rv
+check_concurrent_transactions(struct drbd_resource *resource, struct twopc_reply *new_r)
+{
+	struct twopc_reply *ongoing = &resource->twopc_reply;
+
+	if (!resource->remote_state_change)
+		return CSC_CLEAR;
+
+	if (new_r->initiator_node_id < ongoing->initiator_node_id) {
+		if (ongoing->initiator_node_id == resource->res_opts.node_id)
+			return CSC_ABORT_LOCAL;
+		else
+			return CSC_QUEUE;
+	} else if (new_r->initiator_node_id > ongoing->initiator_node_id) {
+		return CSC_REJECT;
+	}
+	if (new_r->tid != ongoing->tid)
+		return CSC_TID_MISS;
+
+	return CSC_MATCH;
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -4546,6 +4577,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	union drbd_state mask = {}, val = {};
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv;
+	enum csc_rv csc_rv;
 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
@@ -4559,33 +4591,9 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
+	csc_rv = check_concurrent_transactions(resource, &reply);
 
-	if (resource->remote_state_change) {
-		if (resource->twopc_reply.initiator_node_id != reply.initiator_node_id ||
-		    resource->twopc_reply.tid != reply.tid) {
-			spin_unlock_irq(&resource->req_lock);
-			if (pi->cmd == P_TWOPC_PREPARE) {
-				drbd_info(connection, "Rejecting concurrent "
-					  "remote state change %u because of "
-					  "state change %u\n",
-					  reply.tid,
-					  resource->twopc_reply.tid);
-				drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
-			} else {
-				drbd_info(connection, "Ignoring %s packet %u\n",
-					  drbd_packet_name(pi->cmd),
-					  reply.tid);
-			}
-			return 0;
-		}
-		if (pi->cmd == P_TWOPC_PREPARE) {
-			/* We have prepared this transaction already. */
-			spin_unlock_irq(&resource->req_lock);
-			drbd_send_twopc_reply(connection, P_TWOPC_YES, &reply);
-			return 0;
-		}
-		flags |= CS_PREPARED;
-	} else {
+	if (csc_rv == CSC_CLEAR) {
 		if (pi->cmd != P_TWOPC_PREPARE) {
 			/* We have committed or aborted this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
@@ -4595,6 +4603,45 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			return 0;
 		}
 		resource->remote_state_change = true;
+	} else if (csc_rv == CSC_MATCH && pi->cmd != P_TWOPC_PREPARE) {
+		flags |= CS_PREPARED;
+	} else {
+		spin_unlock_irq(&resource->req_lock);
+
+		if (csc_rv == CSC_REJECT) {
+		reject:
+			drbd_info(connection, "Rejecting concurrent "
+				  "remote state change %u because of "
+				  "state change %u\n",
+				  reply.tid,
+				  resource->twopc_reply.tid);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+			return 0;
+		}
+
+		if (pi->cmd == P_TWOPC_PREPARE) {
+			if (csc_rv == CSC_ABORT_LOCAL) {
+				/* TODO implement */
+				goto reject;
+			} else if (csc_rv == CSC_QUEUE) {
+				/* TODO implement */
+				goto reject;
+			} else if (csc_rv == CSC_TID_MISS) {
+				goto reject;
+			} else if (csc_rv == CSC_MATCH) {
+				/* We have prepared this transaction already. */
+				drbd_send_twopc_reply(connection, P_TWOPC_YES, &reply);
+				return 0;
+			}
+		} else {
+		ignore_verbose:
+			drbd_info(connection, "Ignoring %s packet %u "
+				  "current processing state change %u\n",
+				  drbd_packet_name(pi->cmd),
+				  reply.tid,
+				  resource->twopc_reply.tid);
+			return 0;
+		}
 	}
 
 	if (reply.initiator_node_id != connection->transport.net_conf->peer_node_id) {
