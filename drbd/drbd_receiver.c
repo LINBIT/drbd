@@ -4567,6 +4567,28 @@ check_concurrent_transactions(struct drbd_resource *resource, struct twopc_reply
 	return CSC_MATCH;
 }
 
+
+static bool when_done_lock(struct drbd_resource *resource)
+{
+	spin_lock_irq(&resource->req_lock);
+	if (!resource->remote_state_change)
+		return true;
+	spin_unlock_irq(&resource->req_lock);
+	return false;
+}
+
+static int abort_local_transaction(struct drbd_resource *resource)
+{
+	long t = twopc_timeout(resource);
+
+	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
+	spin_unlock_irq(&resource->req_lock);
+	wake_up(&resource->state_wait);
+	t = wait_event_timeout(resource->twopc_wait, when_done_lock(resource), t);
+	clear_bit(TWOPC_ABORT_LOCAL, &resource->flags);
+	return t ? 0 : -ETIMEDOUT;
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_connection *affected_connection = connection;
@@ -4605,6 +4627,23 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		resource->remote_state_change = true;
 	} else if (csc_rv == CSC_MATCH && pi->cmd != P_TWOPC_PREPARE) {
 		flags |= CS_PREPARED;
+	} else if (csc_rv == CSC_ABORT_LOCAL && pi->cmd == P_TWOPC_PREPARE) {
+		int err;
+
+		drbd_info(connection, "Aborting local state change %u to yield to remote "
+			  "state change %u.\n",
+			  resource->twopc_reply.tid,
+			  reply.tid);
+		err = abort_local_transaction(resource);
+		if (err) {
+			drbd_info(connection, "Aborting local state change %u "
+				  "failed. Rejecting remote state change %u.\n",
+				  resource->twopc_reply.tid,
+				  reply.tid);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+			return 0;
+		}
+		resource->remote_state_change = true;
 	} else {
 		spin_unlock_irq(&resource->req_lock);
 
@@ -4620,10 +4659,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		}
 
 		if (pi->cmd == P_TWOPC_PREPARE) {
-			if (csc_rv == CSC_ABORT_LOCAL) {
-				/* TODO implement */
-				goto reject;
-			} else if (csc_rv == CSC_QUEUE) {
+			if (csc_rv == CSC_QUEUE) {
 				/* TODO implement */
 				goto reject;
 			} else if (csc_rv == CSC_TID_MISS) {

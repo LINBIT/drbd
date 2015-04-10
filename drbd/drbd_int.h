@@ -813,6 +813,7 @@ enum {
 				 * and potentially deadlock on, this drbd worker.
 				 */
 	NEGOTIATION_RESULT_TOCHED,
+	TWOPC_ABORT_LOCAL,
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */

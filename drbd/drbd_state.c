@@ -2902,6 +2902,9 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 	struct drbd_connection *connection;
 	bool ready = true;
 
+	if (test_bit(TWOPC_ABORT_LOCAL, &resource->flags))
+		return ready;
+
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
@@ -2922,6 +2925,9 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_CW_SUCCESS;
+
+	if (test_bit(TWOPC_ABORT_LOCAL, &resource->flags))
+		return SS_CONCURRENT_ST_CHG;
 
 	rcu_read_lock();
 	for_each_connection(connection, resource) {
