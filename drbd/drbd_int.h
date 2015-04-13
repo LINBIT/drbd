@@ -894,6 +894,9 @@ struct drbd_resource {
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
 	wait_queue_head_t twopc_wait;
+	struct list_head queued_twopc;
+	spinlock_t queued_twopc_lock;
+	struct timer_list queued_twopc_timer;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
@@ -1868,6 +1871,22 @@ void __update_timing_details(
 	__update_timing_details(r->w_timing_details, &r->w_cb_nr, cb, __func__ , __LINE__ )
 
 /* drbd_receiver.c */
+struct packet_info {
+	enum drbd_packet cmd;
+	unsigned int size;
+	int vnr;
+	void *data;
+};
+
+struct queued_twopc {
+	struct drbd_work w;
+	unsigned long start_jif;
+	struct drbd_connection *connection;
+	struct twopc_reply reply;
+	struct packet_info packet_info;
+	struct p_twopc_request packet_data;
+};
+
 extern int drbd_receiver(struct drbd_thread *thi);
 extern int drbd_ack_receiver(struct drbd_thread *thi);
 extern void drbd_send_ping_wf(struct work_struct *ws);
@@ -1890,6 +1909,9 @@ extern int drbd_connected(struct drbd_peer_device *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local);
+extern void queue_queued_twopc(struct drbd_resource *resource);
+extern void queued_twopc_timer_fn(unsigned long data);
+
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {

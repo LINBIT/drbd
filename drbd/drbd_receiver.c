@@ -56,13 +56,6 @@ struct flush_work {
 	struct drbd_epoch *epoch;
 };
 
-struct packet_info {
-	enum drbd_packet cmd;
-	unsigned int size;
-	int vnr;
-	void *data;
-};
-
 enum finish_epoch {
 	FE_STILL_LIVE,
 	FE_DESTROYED,
@@ -78,6 +71,7 @@ static int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
+static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -4475,6 +4469,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	resource->remote_state_change = false;
 	spin_unlock_irq(&resource->req_lock);
 	wake_up(&resource->twopc_wait);
+	queue_queued_twopc(resource);
 
 	return 0;
 }
@@ -4499,6 +4494,7 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 	}
 	spin_unlock_irq(&resource->req_lock);
 	wake_up(&resource->twopc_wait);
+	queue_queued_twopc(resource);
 
 	if (prepared)
 		abort_prepared_state_change(resource);
@@ -4588,17 +4584,157 @@ static int abort_local_transaction(struct drbd_resource *resource)
 	return t ? 0 : -ETIMEDOUT;
 }
 
+static void arm_queue_twopc_timer(struct drbd_resource *resource)
+{
+	struct queued_twopc *q;
+	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
+
+	if (q) {
+		unsigned long t = twopc_timeout(resource) / 4;
+		mod_timer(&resource->queued_twopc_timer, q->start_jif + t);
+	} else {
+		del_timer(&resource->queued_twopc_timer);
+	}
+}
+
+static int queue_twopc(struct drbd_connection *connection, struct twopc_reply *twopc, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct queued_twopc *q;
+	bool was_empty, already_queued = false;
+
+	spin_lock_irq(&resource->queued_twopc_lock);
+	list_for_each_entry(q, &resource->queued_twopc, w.list) {
+		if (q->reply.tid == twopc->tid &&
+		    q->reply.initiator_node_id == twopc->initiator_node_id)
+			already_queued = true;
+	}
+	spin_unlock_irq(&resource->queued_twopc_lock);
+
+	if (already_queued)
+		return 0;
+
+	q = kmalloc(sizeof(*q), GFP_NOIO);
+	if (!q)
+		return -ENOMEM;
+
+	q->reply = *twopc;
+	q->packet_data = *(struct p_twopc_request *)pi->data;
+	q->packet_info = *pi;
+	q->packet_info.data = &q->packet_data;
+	kref_get(&connection->kref);
+	q->connection = connection;
+	q->start_jif = jiffies;
+
+	spin_lock_irq(&resource->queued_twopc_lock);
+	was_empty = list_empty(&resource->queued_twopc);
+	list_add_tail(&q->w.list, &resource->queued_twopc);
+	if (was_empty)
+		arm_queue_twopc_timer(resource);
+	spin_unlock_irq(&resource->queued_twopc_lock);
+
+	return 0;
+}
+
+static int queued_twopc_work(struct drbd_work *w, int cancel)
+{
+	struct queued_twopc *q = container_of(w, struct queued_twopc, w);
+	struct drbd_connection *connection = q->connection;
+	unsigned long t = twopc_timeout(connection->resource) / 4;
+
+	if (jiffies - q->start_jif >= t || cancel) {
+		if (!cancel)
+			drbd_info(connection, "Rejecting concurrent "
+				  "remote state change %u because of "
+				  "state change %u takes too long\n",
+				  q->reply.tid,
+				  connection->resource->twopc_reply.tid);
+		drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &q->reply);
+	} else {
+		process_twopc(connection, &q->reply, &q->packet_info);
+	}
+
+
+	kref_put(&connection->kref, drbd_destroy_connection);
+	kfree(q);
+
+	return 0;
+}
+
+void queued_twopc_timer_fn(unsigned long data)
+{
+	struct drbd_resource *resource = (struct drbd_resource *) data;
+	struct queued_twopc *q;
+	unsigned long irq_flags;
+	unsigned long t = twopc_timeout(resource) / 4;
+
+	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
+	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
+	if (q) {
+		if (jiffies - q->start_jif >= t)
+			list_del(&q->w.list);
+		else
+			q = NULL;
+	}
+	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
+
+	if (q) {
+		q->w.cb = &queued_twopc_work;
+		drbd_queue_work(&resource->work , &q->w);
+	}
+}
+
+void queue_queued_twopc(struct drbd_resource *resource)
+{
+	struct queued_twopc *q;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
+	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
+	if (q) {
+		list_del(&q->w.list);
+		arm_queue_twopc_timer(resource);
+	}
+	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
+
+	if (!q)
+		return;
+
+	q->w.cb = &queued_twopc_work;
+	drbd_queue_work(&resource->work , &q->w);
+}
+
+static int abort_queued_twopc(struct drbd_resource *resource, struct twopc_reply *twopc)
+{
+	struct queued_twopc *q;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
+	list_for_each_entry(q, &resource->queued_twopc, w.list) {
+		if (q->reply.tid == twopc->tid) {
+			list_del(&q->w.list);
+			goto found;
+		}
+	}
+	q = NULL;
+found:
+	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
+
+	if (q) {
+		kref_put(&q->connection->kref, drbd_destroy_connection);
+		kfree(q);
+		return 0;
+	}
+
+	return -ENOENT;
+}
+
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_connection *affected_connection = connection;
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_peer_device *peer_device = NULL;
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply;
-	union drbd_state mask = {}, val = {};
-	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
-	enum drbd_state_rv rv;
-	enum csc_rv csc_rv;
+	int rv;
 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
@@ -4610,9 +4746,55 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.weak_nodes = 0;
 	reply.is_disconnect = 0;
 
+	rv = process_twopc(connection, &reply, pi);
+
+	return rv;
+}
+
+static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
+			       struct p_twopc_request *request)
+{
+	struct drbd_connection *connection;
+	u64 nodes_to_reach, reach_immediately;
+
+	spin_lock_irq(&resource->req_lock);
+	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
+	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
+	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
+	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	spin_unlock_irq(&resource->req_lock);
+
+	rcu_read_lock();
+	for_each_connection(connection, resource) {
+		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		if (reach_immediately & mask) {
+			kref_get(&connection->kref);
+			rcu_read_unlock();
+			conn_send_twopc_request(connection, vnr, cmd, request);
+			rcu_read_lock();
+			kref_put(&connection->kref, drbd_destroy_connection);
+		}
+	}
+	rcu_read_unlock();
+}
+
+
+static int process_twopc(struct drbd_connection *connection,
+			 struct twopc_reply *reply,
+			 struct packet_info *pi)
+{
+	struct drbd_connection *affected_connection = connection;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device = NULL;
+	struct p_twopc_request *p = pi->data;
+	union drbd_state mask = {}, val = {};
+	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
+	enum drbd_state_rv rv;
+	enum csc_rv csc_rv;
+
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
-	csc_rv = check_concurrent_transactions(resource, &reply);
+	csc_rv = check_concurrent_transactions(resource, reply);
 
 	if (csc_rv == CSC_CLEAR) {
 		if (pi->cmd != P_TWOPC_PREPARE) {
@@ -4620,7 +4802,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			spin_unlock_irq(&resource->req_lock);
 			drbd_debug(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
-				   reply.tid);
+				   reply->tid);
 			return 0;
 		}
 		resource->remote_state_change = true;
@@ -4632,17 +4814,31 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		drbd_info(connection, "Aborting local state change %u to yield to remote "
 			  "state change %u.\n",
 			  resource->twopc_reply.tid,
-			  reply.tid);
+			  reply->tid);
 		err = abort_local_transaction(resource);
 		if (err) {
+			/* abort_local_transaction() comes back unlocked if it fails... */
 			drbd_info(connection, "Aborting local state change %u "
 				  "failed. Rejecting remote state change %u.\n",
 				  resource->twopc_reply.tid,
-				  reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+				  reply->tid);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 			return 0;
 		}
 		resource->remote_state_change = true;
+	} else if (pi->cmd == P_TWOPC_ABORT) {
+		/* crc_rc != CRC_MATCH */
+		int err;
+
+		spin_unlock_irq(&resource->req_lock);
+		err = abort_queued_twopc(resource, reply);
+		if (err)
+			drbd_info(connection, "Ignoring %s packet %u.\n",
+				  drbd_packet_name(pi->cmd),
+				  reply->tid);
+
+		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
+		return 0;
 	} else {
 		spin_unlock_irq(&resource->req_lock);
 
@@ -4651,42 +4847,41 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 			drbd_info(connection, "Rejecting concurrent "
 				  "remote state change %u because of "
 				  "state change %u\n",
-				  reply.tid,
+				  reply->tid,
 				  resource->twopc_reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &reply);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 			return 0;
 		}
 
 		if (pi->cmd == P_TWOPC_PREPARE) {
 			if (csc_rv == CSC_QUEUE) {
-				/* TODO implement */
-				goto reject;
+				int err = queue_twopc(connection, reply, pi);
+				if (err)
+					goto reject;
 			} else if (csc_rv == CSC_TID_MISS) {
 				goto reject;
 			} else if (csc_rv == CSC_MATCH) {
 				/* We have prepared this transaction already. */
-				drbd_send_twopc_reply(connection, P_TWOPC_YES, &reply);
-				return 0;
+				drbd_send_twopc_reply(connection, P_TWOPC_YES, reply);
 			}
 		} else {
-		ignore_verbose:
 			drbd_info(connection, "Ignoring %s packet %u "
 				  "current processing state change %u\n",
 				  drbd_packet_name(pi->cmd),
-				  reply.tid,
+				  reply->tid,
 				  resource->twopc_reply.tid);
-			return 0;
 		}
+		return 0;
 	}
 
-	if (reply.initiator_node_id != connection->transport.net_conf->peer_node_id) {
+	if (reply->initiator_node_id != connection->transport.net_conf->peer_node_id) {
 		/*
 		 * This is an indirect request.  Unless we are directly
 		 * connected to the initiator as well as indirectly, we don't
 		 * have connection or peer device objects for this peer.
 		 */
 		for_each_connection(affected_connection, resource) {
-			if (reply.initiator_node_id ==
+			if (reply->initiator_node_id ==
 			    affected_connection->transport.net_conf->peer_node_id)
 				goto directly_connected;
 		}
@@ -4696,8 +4891,8 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 
     directly_connected:
-	if (reply.target_node_id != -1 &&
-	    reply.target_node_id != resource->res_opts.node_id) {
+	if (reply->target_node_id != -1 &&
+	    reply->target_node_id != resource->res_opts.node_id) {
 		affected_connection = NULL;
 		goto next;
 	}
@@ -4706,13 +4901,13 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	val.i = be32_to_cpu(p->val);
 
 	if (mask.conn == conn_MASK) {
-		u64 m = NODE_MASK(reply.initiator_node_id);
+		u64 m = NODE_MASK(reply->initiator_node_id);
 
 		if (val.conn == C_CONNECTED)
-			reply.reachable_nodes |= m;
+			reply->reachable_nodes |= m;
 		if (val.conn == C_DISCONNECTING) {
-			reply.reachable_nodes &= ~m;
-			reply.is_disconnect = 1;
+			reply->reachable_nodes &= ~m;
+			reply->is_disconnect = 1;
 		}
 	}
 
@@ -4729,31 +4924,31 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	if (pi->cmd == P_TWOPC_PREPARE) {
 		if ((mask.peer == role_MASK && val.peer == R_PRIMARY) ||
 		    (mask.peer != role_MASK && resource->role[NOW] == R_PRIMARY)) {
-			reply.primary_nodes = NODE_MASK(resource->res_opts.node_id);
-			reply.weak_nodes = ~reply.reachable_nodes;
+			reply->primary_nodes = NODE_MASK(resource->res_opts.node_id);
+			reply->weak_nodes = ~reply->reachable_nodes;
 		}
 	}
 
-	resource->twopc_reply = reply;
+	resource->twopc_reply = *reply;
 	spin_unlock_irq(&resource->req_lock);
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
 		drbd_info(connection, "Preparing remote state change %u "
 			  "(primary_nodes=%lX, weak_nodes=%lX)\n",
-			  reply.tid,
-			  (unsigned long)reply.primary_nodes,
-			  (unsigned long)reply.weak_nodes);
+			  reply->tid,
+			  (unsigned long)reply->primary_nodes,
+			  (unsigned long)reply->weak_nodes);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_ABORT:
 		drbd_info(connection, "Aborting remote state change %u\n",
-			  reply.tid);
+			  reply->tid);
 		flags |= CS_ABORT;
 		break;
 	default:
 		drbd_info(connection, "Committing remote state change %u\n",
-			  reply.tid);
+			  reply->tid);
 		break;
 	}
 
@@ -4761,9 +4956,9 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		rv = change_peer_device_state(peer_device, mask, val, flags);
 	else if (affected_connection)
 		rv = change_connection_state(affected_connection,
-					     mask, val, &reply, flags | CS_IGN_OUTD_FAIL);
+					     mask, val, reply, flags | CS_IGN_OUTD_FAIL);
 	else
-		rv = outdate_if_weak(resource, &reply, flags);
+		rv = outdate_if_weak(resource, reply, flags);
 
 	if (flags & CS_PREPARE) {
 		if (rv >= SS_SUCCESS) {
@@ -4779,7 +4974,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		} else {
 			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
 				P_TWOPC_RETRY : P_TWOPC_NO;
-			drbd_send_twopc_reply(connection, cmd, &reply);
+			drbd_send_twopc_reply(connection, cmd, reply);
 		}
 	} else {
 		if (flags & CS_PREPARED)

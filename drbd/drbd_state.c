@@ -377,6 +377,7 @@ static void __clear_remote_state_change(struct drbd_resource *resource) {
 		resource->twopc_parent = NULL;
 	}
 	wake_up(&resource->twopc_wait);
+	queue_queued_twopc(resource);
 }
 
 static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
