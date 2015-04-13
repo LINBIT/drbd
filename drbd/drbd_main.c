@@ -4113,11 +4113,12 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 u64 drbd_weak_nodes_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
+	int my_node_id = device->resource->res_opts.node_id;
 	int node_id;
 	u64 weak = 0;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (node_id == device->ldev->md.node_id)
+		if (node_id == my_node_id)
 			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
