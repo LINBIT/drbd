@@ -452,6 +452,73 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	return 0;
 }
 
+static int resource_twopc_show(struct seq_file *m, void *pos)
+{
+	struct drbd_resource *resource = m->private;
+	struct twopc_reply twopc;
+	bool active = false;
+	unsigned long jif;
+	struct queued_twopc *q;
+
+	spin_lock_irq(&resource->req_lock);
+	if (resource->remote_state_change) {
+		twopc = resource->twopc_reply;
+		active = true;
+	}
+	spin_unlock_irq(&resource->req_lock);
+
+	seq_printf(m, "v: %u\n\n", 0);
+	if (active) {
+		seq_printf(m,
+			   "Executing tid: %u\n"
+			   "  initiator_node_id: %d\n"
+			   "  target_node_id: %d\n",
+			   twopc.tid, twopc.initiator_node_id,
+			   twopc.target_node_id);
+		if (twopc.initiator_node_id == resource->res_opts.node_id) {
+			struct drbd_connection *connection;
+
+			seq_puts(m, "  peers reply's: ");
+			rcu_read_lock();
+			for_each_connection(connection, resource) {
+				char *name = rcu_dereference((connection)->transport.net_conf)->name;
+
+				if (!test_bit(TWOPC_PREPARED, &connection->flags))
+					seq_printf(m, "%s n.p., ", name);
+				else if (test_bit(TWOPC_NO, &connection->flags))
+					seq_printf(m, "%s no, ", name);
+				else if (test_bit(TWOPC_RETRY, &connection->flags))
+					seq_printf(m, "%s ret, ", name);
+				else if (test_bit(TWOPC_YES, &connection->flags))
+					seq_printf(m, "%s yes, ", name);
+				else seq_printf(m, "%s ___, ", name);
+			}
+			rcu_read_unlock();
+			seq_puts(m, "\n");
+		}
+		jif = resource->twopc_timer.expires - jiffies;
+		if (jif > 0)
+			seq_printf(m, "  timer expires in: %d ms\n", jiffies_to_msecs(jif));
+	} else {
+		seq_puts(m, "No ongoing two phase state transaction\n");
+	}
+
+	spin_lock_irq(&resource->queued_twopc_lock);
+	if (list_empty(&resource->queued_twopc)) {
+		spin_unlock_irq(&resource->queued_twopc_lock);
+		return 0;
+	}
+	seq_puts(m, "\n Queued for later execution:\n");
+	list_for_each_entry(q, &resource->queued_twopc, w.list) {
+		jif = jiffies - q->start_jif;
+		seq_printf(m, "  tid: %u, initiator_node_id: %d, since: %d ms\n",
+			   q->reply.tid, q->reply.initiator_node_id, jiffies_to_msecs(jif));
+	}
+	spin_unlock_irq(&resource->queued_twopc_lock);
+
+	return 0;
+}
+
 /* simple_positive(file->f_path.dentry) respectively debugfs_positive(),
  * but neither is "reachable" from here.
  * So we have our own inline version of it above.  :-( */
@@ -513,6 +580,7 @@ static const struct file_operations resource_ ## name ## _fops = {	\
 };
 
 drbd_debugfs_resource_attr(in_flight_summary)
+drbd_debugfs_resource_attr(twopc)
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource)
 {
@@ -541,6 +609,14 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	resource->debugfs_res_in_flight_summary = dentry;
+
+	dentry = debugfs_create_file("state_twopc", S_IRUSR|S_IRGRP,
+			resource->debugfs_res, resource,
+			&resource_twopc_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	resource->debugfs_res_twopc = dentry;
+
 	return;
 
 fail:
@@ -564,6 +640,7 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 	 * and call debugfs_remove on all of them separately.
 	 */
 	/* it is ok to call debugfs_remove(NULL) */
+	drbd_debugfs_remove(&resource->debugfs_res_twopc);
 	drbd_debugfs_remove(&resource->debugfs_res_in_flight_summary);
 	drbd_debugfs_remove(&resource->debugfs_res_connections);
 	drbd_debugfs_remove(&resource->debugfs_res_volumes);
