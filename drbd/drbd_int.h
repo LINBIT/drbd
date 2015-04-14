@@ -1115,6 +1115,7 @@ struct drbd_peer_device {
 	unsigned int resync_locked;
 	/* resync extent number waiting for application requests */
 	unsigned int resync_wenr;
+	enum drbd_disk_state resync_finished_pdsk; /* Finished while starting resync */
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t unacked_cnt;	 /* Need to send replies for */

@@ -1807,6 +1807,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
+	enum drbd_disk_state finished_resync_pdsk = D_UNKNOWN;
 	enum drbd_repl_state repl_state;
 	int r;
 
@@ -1877,6 +1878,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		init_resync_stable_bits(peer_device);
 	} else /* side == L_SYNC_SOURCE */
 		__change_peer_disk_state(peer_device, D_INCONSISTENT);
+	finished_resync_pdsk = peer_device->resync_finished_pdsk;
+	peer_device->resync_finished_pdsk = D_UNKNOWN;
 	r = end_state_change_locked(device->resource);
 	repl_state = peer_device->repl_state[NOW];
 
@@ -1960,6 +1963,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	put_ldev(device);
     out:
 	up(&device->resource->state_sem);
+	if (finished_resync_pdsk != D_UNKNOWN)
+		drbd_resync_finished(peer_device, finished_resync_pdsk);
 }
 
 static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool resync_done)

@@ -5113,16 +5113,28 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* if peer_state changes to connected at the same time,
 		 * it explicitly notifies us that it finished resync.
 		 * Maybe we should finish it up, too? */
-		else if (old_peer_state.conn >= L_SYNC_SOURCE &&
-			 peer_state.conn == L_ESTABLISHED) {
+		else if (peer_state.conn == L_ESTABLISHED) {
+			bool finish_now = false;
 
-			/* TODO: Since DRBD9 we experience that SyncSource still has
-			   bits set... NEED TO UNDERSTAND AND FIX! */
-			if (drbd_bm_total_weight(peer_device) > peer_device->rs_failed)
-				drbd_warn(peer_device, "SyncSource still sees bits set!! FIXME\n");
+			if (old_peer_state.conn == L_WF_BITMAP_S) {
+				spin_lock_irq(&resource->req_lock);
+				if (peer_device->repl_state[NOW] == L_WF_BITMAP_S)
+					peer_device->resync_finished_pdsk = peer_state.disk;
+				else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE)
+					finish_now = true;
+				spin_unlock_irq(&resource->req_lock);
+			}
 
-			drbd_resync_finished(peer_device, peer_state.disk);
-			return 0;
+			if (finish_now || old_peer_state.conn == L_SYNC_SOURCE ||
+			    old_peer_state.conn == L_PAUSED_SYNC_S) {
+				/* TODO: Since DRBD9 we experience that SyncSource still has
+				   bits set... NEED TO UNDERSTAND AND FIX! */
+				if (drbd_bm_total_weight(peer_device) > peer_device->rs_failed)
+					drbd_warn(peer_device, "SyncSource still sees bits set!! FIXME\n");
+
+				drbd_resync_finished(peer_device, peer_state.disk);
+				return 0;
+			}
 		}
 	}
 

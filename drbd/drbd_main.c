@@ -3235,6 +3235,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_wenr = LC_FREE;
+	peer_device->resync_finished_pdsk = D_UNKNOWN;
 
 	INIT_WORK(&peer_device->send_acks_work, drbd_send_acks_wf);
 
