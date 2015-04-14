@@ -394,7 +394,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 }
 
 /* TODO: transfer_log and friends should be moved to resource */
-static int in_flight_summary_show(struct seq_file *m, void *pos)
+static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
 	struct drbd_connection *connection;
@@ -490,27 +490,29 @@ out:
 	return ret;
 }
 
-static int in_flight_summary_open(struct inode *inode, struct file *file)
-{
-	struct drbd_resource *resource = inode->i_private;
-	return drbd_single_open(file, in_flight_summary_show, resource,
-				&resource->kref, drbd_destroy_resource);
-}
-
-static int in_flight_summary_release(struct inode *inode, struct file *file)
+static int resource_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_resource *resource = inode->i_private;
 	kref_put(&resource->kref, drbd_destroy_resource);
 	return single_release(inode, file);
 }
 
-static const struct file_operations in_flight_summary_fops = {
-	.owner		= THIS_MODULE,
-	.open		= in_flight_summary_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= in_flight_summary_release,
+#define drbd_debugfs_resource_attr(name)				\
+static int resource_ ## name ## _open(struct inode *inode, struct file *file) \
+{									\
+	struct drbd_resource *resource = inode->i_private;		\
+	return drbd_single_open(file, resource_ ## name ## _show, resource, \
+				&resource->kref, drbd_destroy_resource); \
+}									\
+static const struct file_operations resource_ ## name ## _fops = {	\
+	.owner		= THIS_MODULE,					\
+	.open		= resource_ ## name ## _open,			\
+	.read		= seq_read,					\
+	.llseek		= seq_lseek,					\
+	.release	= resource_attr_release,			\
 };
+
+drbd_debugfs_resource_attr(in_flight_summary)
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource)
 {
@@ -535,7 +537,7 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 
 	dentry = debugfs_create_file("in_flight_summary", S_IRUSR|S_IRGRP,
 			resource->debugfs_res, resource,
-			&in_flight_summary_fops);
+			&resource_in_flight_summary_fops);
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	resource->debugfs_res_in_flight_summary = dentry;
