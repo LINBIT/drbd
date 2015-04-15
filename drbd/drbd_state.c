@@ -1072,9 +1072,11 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] > L_ESTABLISHED && peer_disk_state[NEW] < D_INCONSISTENT))
 				return SS_NO_REMOTE_DISK;
 
+			/*
 			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_OUTDATED && peer_disk_state[OLD] < D_OUTDATED) &&
 			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_OUTDATED && peer_disk_state[NEW] < D_OUTDATED))
 				return SS_NO_UP_TO_DATE_DISK;
+			*/
 
 			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(device, OLD)) &&
 			    (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(device, NEW)))
