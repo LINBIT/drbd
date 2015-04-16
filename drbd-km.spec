@@ -32,7 +32,7 @@ setting up high availability (HA) clusters.
 Summary: Kernel driver for DRBD.
 Group: System Environment/Kernel
 # always require a suitable userland and depmod.
-Requires: drbd-utils = %{version}, /sbin/depmod
+Requires: drbd-utils >= 8.9.2, /sbin/depmod
 # to be able to override from build scripts which flavor of kernel we are building against.
 Requires: %{expand: %(echo ${DRBD_KMOD_REQUIRES:-kernel})}
 # TODO: break up this generic .spec file into per distribution ones,
