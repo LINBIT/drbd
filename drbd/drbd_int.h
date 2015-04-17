@@ -833,7 +833,8 @@ struct twopc_reply {
 	u64 reachable_nodes;  /* behind other nodes */
 	u64 primary_nodes;
 	u64 weak_nodes;
-	bool is_disconnect;
+	int is_disconnect:1;
+	int is_aborted:1;
 };
 
 struct drbd_thread_timing_details
@@ -897,6 +898,7 @@ struct drbd_resource {
 	struct list_head queued_twopc;
 	spinlock_t queued_twopc_lock;
 	struct timer_list queued_twopc_timer;
+	struct queued_twopc *starting_queued_twopc;
 
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */

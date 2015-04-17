@@ -4654,7 +4654,6 @@ static int queued_twopc_work(struct drbd_work *w, int cancel)
 		process_twopc(connection, &q->reply, &q->packet_info);
 	}
 
-
 	kref_put(&connection->kref, drbd_destroy_connection);
 	kfree(q);
 
@@ -4692,6 +4691,8 @@ void queue_queued_twopc(struct drbd_resource *resource)
 	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
 	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
 	if (q) {
+		resource->starting_queued_twopc = q;
+		mb();
 		list_del(&q->w.list);
 		arm_queue_twopc_timer(resource);
 	}
@@ -4702,6 +4703,18 @@ void queue_queued_twopc(struct drbd_resource *resource)
 
 	q->w.cb = &queued_twopc_work;
 	drbd_queue_work(&resource->work , &q->w);
+}
+
+static int abort_starting_twopc(struct drbd_resource *resource, struct twopc_reply *twopc)
+{
+	struct queued_twopc *q = resource->starting_queued_twopc;
+
+	if (q && q->reply.tid == twopc->tid) {
+		q->reply.is_aborted = 1;
+		return 0;
+	}
+
+	return -ENOENT;
 }
 
 static int abort_queued_twopc(struct drbd_resource *resource, struct twopc_reply *twopc)
@@ -4745,6 +4758,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
 	reply.weak_nodes = 0;
 	reply.is_disconnect = 0;
+	reply.is_aborted = 0;
 
 	rv = process_twopc(connection, &reply, pi);
 
@@ -4794,6 +4808,11 @@ static int process_twopc(struct drbd_connection *connection,
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
+	resource->starting_queued_twopc = NULL;
+	if (reply->is_aborted) {
+		spin_unlock_irq(&resource->req_lock);
+		return 0;
+	}
 	csc_rv = check_concurrent_transactions(resource, reply);
 
 	if (csc_rv == CSC_CLEAR) {
@@ -4830,12 +4849,15 @@ static int process_twopc(struct drbd_connection *connection,
 		/* crc_rc != CRC_MATCH */
 		int err;
 
+		err = abort_starting_twopc(resource, reply);
 		spin_unlock_irq(&resource->req_lock);
-		err = abort_queued_twopc(resource, reply);
-		if (err)
-			drbd_info(connection, "Ignoring %s packet %u.\n",
-				  drbd_packet_name(pi->cmd),
-				  reply->tid);
+		if (err) {
+			err = abort_queued_twopc(resource, reply);
+			if (err)
+				drbd_info(connection, "Ignoring %s packet %u.\n",
+					  drbd_packet_name(pi->cmd),
+					  reply->tid);
+		}
 
 		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
 		return 0;
