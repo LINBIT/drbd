@@ -4115,7 +4115,7 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 	int my_node_id = device->resource->res_opts.node_id;
 	int node_id;
-	u64 weak = 0;
+	u64 not_weak = NODE_MASK(my_node_id);
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == my_node_id)
@@ -4125,12 +4125,11 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 			if (!(pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED))
-				continue;
+				not_weak |= NODE_MASK(node_id);
 		}
-		weak |= NODE_MASK(node_id);
 	}
 
-	return weak;
+	return ~not_weak;
 }
 
 
