@@ -710,24 +710,26 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 	if (!bitmap->bm_bits)
 		return 0;
 
-	switch(op) {
-	case BM_OP_CLEAR:
-		if (bitmap->bm_flags & BM_LOCK_CLEAR)
-			bm_print_lock_info(device);
-		break;
-	case BM_OP_SET:
-	case BM_OP_MERGE:
-		if (bitmap->bm_flags & BM_LOCK_SET)
-			bm_print_lock_info(device);
-		break;
-	case BM_OP_TEST:
-	case BM_OP_COUNT:
-	case BM_OP_EXTRACT:
-	case BM_OP_FIND_BIT:
-	case BM_OP_FIND_ZERO_BIT:
-		if (bitmap->bm_flags & BM_LOCK_TEST)
-			bm_print_lock_info(device);
-		break;
+	if (bitmap->bm_task != current) {
+		switch(op) {
+		case BM_OP_CLEAR:
+			if (bitmap->bm_flags & BM_LOCK_CLEAR)
+				bm_print_lock_info(device);
+			break;
+		case BM_OP_SET:
+		case BM_OP_MERGE:
+			if (bitmap->bm_flags & BM_LOCK_SET)
+				bm_print_lock_info(device);
+			break;
+		case BM_OP_TEST:
+		case BM_OP_COUNT:
+		case BM_OP_EXTRACT:
+		case BM_OP_FIND_BIT:
+		case BM_OP_FIND_ZERO_BIT:
+			if (bitmap->bm_flags & BM_LOCK_TEST)
+				bm_print_lock_info(device);
+			break;
+		}
 	}
 	return ____bm_op(device, bitmap_index, start, end, op, buffer, KM_IRQ1);
 }
