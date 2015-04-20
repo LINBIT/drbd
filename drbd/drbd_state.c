@@ -1078,8 +1078,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 				return SS_NO_UP_TO_DATE_DISK;
 			*/
 
-			if (!(disk_state[OLD] == D_OUTDATED && !local_disk_may_be_outdated(device, OLD)) &&
-			    (disk_state[NEW] == D_OUTDATED && !local_disk_may_be_outdated(device, NEW)))
+
+			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
+			    !local_disk_may_be_outdated(device, NEW))
 				return SS_CONNECTED_OUTDATES;
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
