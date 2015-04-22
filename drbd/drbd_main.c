@@ -867,6 +867,8 @@ static int __send_command(struct drbd_connection *connection, int vnr,
 	   in turn waits for reply packets. -> Need to send it regardless of
 	   corking.  */
 
+	if (connection->cstate[NOW] < C_CONNECTING)
+		return -EIO;
 	prepare_header(connection, vnr, sbuf->pos, cmd,
 		       sbuf->allocated_size + sbuf->additional_size);
 
