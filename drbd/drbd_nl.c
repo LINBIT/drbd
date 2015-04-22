@@ -3474,7 +3474,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	 * resync just being finished, wait for it before requesting a new resync.
 	 * Also wait for its after_state_ch(). */
 	drbd_suspend_io(device, READ_AND_WRITE);
-	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
+	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
 
 	if (sync_from_peer_device) {
 		retcode = invalidate_resync(sync_from_peer_device);
@@ -3541,7 +3541,7 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&resource->adm_mutex);
 
 	drbd_suspend_io(device, READ_AND_WRITE);
-	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
+	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
 	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S, CS_SERIALIZE);
 
@@ -4286,7 +4286,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	/* If there is still bitmap IO pending, e.g. previous resync or verify
 	 * just being finished, wait for it before requesting a new resync. */
 	drbd_suspend_io(device, READ_AND_WRITE);
-	wait_event(device->misc_wait, list_empty(&device->pending_bitmap_work));
+	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
 	retcode = stable_change_repl_state(peer_device,
 		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	drbd_resume_io(device);

@@ -3284,11 +3284,14 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->sync_ee);
 	INIT_LIST_HEAD(&device->done_ee);
 	INIT_LIST_HEAD(&device->read_ee);
-	INIT_LIST_HEAD(&device->pending_bitmap_work);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);
 	INIT_LIST_HEAD(&device->pending_completion[0]);
 	INIT_LIST_HEAD(&device->pending_completion[1]);
+
+	atomic_set(&device->pending_bitmap_work.n, 0);
+	spin_lock_init(&device->pending_bitmap_work.q_lock);
+	INIT_LIST_HEAD(&device->pending_bitmap_work.q);
 
 	init_timer(&device->md_sync_timer);
 	init_timer(&device->request_timer);
@@ -4592,11 +4595,11 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 		put_ldev(device);
 	}
 
-	if (!list_empty(&device->pending_bitmap_work))
-		wake_up(&device->misc_wait);
-
 	if (work->done)
 		work->done(device, work->peer_device, rv);
+
+	if (atomic_dec_and_test(&device->pending_bitmap_work.n))
+		wake_up(&device->misc_wait);
 	kfree(work);
 
 	return 0;
@@ -4605,14 +4608,13 @@ static int w_bitmap_io(struct drbd_work *w, int unused)
 void drbd_queue_pending_bitmap_work(struct drbd_device *device)
 {
 	unsigned long flags;
-	struct bm_io_work *work, *tmp;
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
-	list_for_each_entry_safe(work, tmp, &device->pending_bitmap_work, w.list) {
-		list_del(&work->w.list);
-		drbd_queue_work(&device->resource->work, &work->w);
-	}
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	spin_lock_irqsave(&device->pending_bitmap_work.q_lock, flags);
+	spin_lock(&device->resource->work.q_lock);
+	list_splice_tail_init(&device->pending_bitmap_work.q, &device->resource->work.q);
+	spin_unlock(&device->resource->work.q_lock);
+	spin_unlock_irqrestore(&device->pending_bitmap_work.q_lock, flags);
+	wake_up(&device->resource->work.q_wait);
 }
 
 /**
@@ -4676,11 +4678,14 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	 *
 	 */
 
-	spin_lock_irq(&device->resource->req_lock);
-	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work);
-	spin_unlock_irq(&device->resource->req_lock);
+	/* no one should accidentally schedule the next bitmap IO
+	 * when it is only half-queued yet */
 	atomic_inc(&device->ap_bio_cnt[WRITE]);
-	dec_ap_bio(device, WRITE);
+	atomic_inc(&device->pending_bitmap_work.n);
+	spin_lock_irq(&device->pending_bitmap_work.q_lock);
+	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work.q);
+	spin_unlock_irq(&device->pending_bitmap_work.q_lock);
+	dec_ap_bio(device, WRITE);  /* may move to actual work queue */
 }
 
 /**

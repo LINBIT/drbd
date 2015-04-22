@@ -914,8 +914,7 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "!drbd_state_is_stable(): %d\n", !drbd_state_is_stable(device));
 	seq_printf(m, "ap_bio_cnt[READ]: %d\n", atomic_read(&device->ap_bio_cnt[READ]));
 	seq_printf(m, "ap_bio_cnt[WRITE]: %d\n", atomic_read(&device->ap_bio_cnt[WRITE]));
-	seq_printf(m, "!list_empty(&device->pending_bitmap_work): %d\n",
-		   !list_empty(&device->pending_bitmap_work));
+	seq_printf(m, "device->pending_bitmap_work.n: %d\n", atomic_read(&device->pending_bitmap_work.n));
 	seq_printf(m, "may_inc_ap_bio(): %d\n", may_inc_ap_bio(device));
 	put_ldev(device);
 

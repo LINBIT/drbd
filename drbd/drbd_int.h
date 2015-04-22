@@ -1276,7 +1276,11 @@ struct drbd_device {
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
-	struct list_head pending_bitmap_work;
+	struct pending_bitmap_work_s {
+		atomic_t n;		/* inc when queued here, */
+		spinlock_t q_lock;	/* dec only once finished. */
+		struct list_head q;	/* n > 0 even if q already empty */
+	} pending_bitmap_work;
 	struct device_conf device_conf;
 
 	/* any requests that would block in drbd_make_request()
@@ -2545,13 +2549,20 @@ static inline bool drbd_state_is_stable(struct drbd_device *device)
 
 extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
 
+/* rw = READ or WRITE (0 or 1); nothing else. */
 static inline void dec_ap_bio(struct drbd_device *device, int rw)
 {
 	int ap_bio = atomic_dec_return(&device->ap_bio_cnt[rw]);
 
 	D_ASSERT(device, ap_bio >= 0);
 
-	if (ap_bio == 0 && !list_empty(&device->pending_bitmap_work))
+	/* Check for list_empty outside the lock is ok.  Worst case it queues
+	 * nothing because someone else just now did.  During list_add, both
+	 * resource->req_lock *and* a refcount on ap_bio_cnt[WRITE] are held,
+	 * a list_add cannot race with this code path.
+	 * Checking pending_bitmap_work.n is not correct,
+	 * it has a different lifetime. */
+	if (ap_bio == 0 && rw == WRITE && !list_empty(&device->pending_bitmap_work.q))
 		drbd_queue_pending_bitmap_work(device);
 
 	if (ap_bio == 0)
@@ -2580,7 +2591,7 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	if (!drbd_state_is_stable(device))
 		return false;
 
-	if (!list_empty(&device->pending_bitmap_work))
+	if (atomic_read(&device->pending_bitmap_work.n))
 		return false;
 	return true;
 }
