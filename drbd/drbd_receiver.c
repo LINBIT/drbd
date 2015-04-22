@@ -71,7 +71,7 @@ static int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
-static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *);
+static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -4651,7 +4651,7 @@ static int queued_twopc_work(struct drbd_work *w, int cancel)
 				  connection->resource->twopc_reply.tid);
 		drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &q->reply);
 	} else {
-		process_twopc(connection, &q->reply, &q->packet_info);
+		process_twopc(connection, &q->reply, &q->packet_info, q->start_jif);
 	}
 
 	kref_put(&connection->kref, drbd_destroy_connection);
@@ -4760,7 +4760,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.is_disconnect = 0;
 	reply.is_aborted = 0;
 
-	rv = process_twopc(connection, &reply, pi);
+	rv = process_twopc(connection, &reply, pi, jiffies);
 
 	return rv;
 }
@@ -4795,7 +4795,8 @@ static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drb
 
 static int process_twopc(struct drbd_connection *connection,
 			 struct twopc_reply *reply,
-			 struct packet_info *pi)
+			 struct packet_info *pi,
+			 unsigned long receive_jif)
 {
 	struct drbd_connection *affected_connection = connection;
 	struct drbd_resource *resource = connection->resource;
@@ -4988,7 +4989,7 @@ static int process_twopc(struct drbd_connection *connection,
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 9);
 			resource->twopc_parent = connection;
-			resource->twopc_timer.expires = jiffies + twopc_timeout(resource);
+			resource->twopc_timer.expires = receive_jif + twopc_timeout(resource);
 			add_timer(&resource->twopc_timer);
 			spin_unlock_irq(&resource->req_lock);
 
