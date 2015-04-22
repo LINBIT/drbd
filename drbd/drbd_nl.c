@@ -2677,6 +2677,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 	peer_device = adm_ctx.peer_device;
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
+	mutex_lock(&adm_ctx.resource->conf_update);
 
 	new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
 	if (!new_peer_device_conf)
@@ -2716,6 +2717,7 @@ fail:
 		kfree(new_peer_device_conf);
 	}
 
+	mutex_unlock(&adm_ctx.resource->conf_update);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
