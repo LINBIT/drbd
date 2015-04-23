@@ -1472,10 +1472,12 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 	connection->send.current_epoch_writes = 0;
 	connection->send.last_sent_barrier_jif = jiffies;
 
+	set_bit(BARRIER_ACK_PENDING, &connection->flags);
 	err = send_command(connection, -1, P_BARRIER, DATA_STREAM);
-	if (err == 0)
-		set_bit(BARRIER_ACK_PENDING, &connection->flags);
-
+	if (err) {
+		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+		wake_up(&connection->resource->barrier_wait);
+	}
 	return err;
 }
 
