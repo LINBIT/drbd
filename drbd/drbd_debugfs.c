@@ -452,7 +452,7 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	return 0;
 }
 
-static int resource_twopc_show(struct seq_file *m, void *pos)
+static int resource_state_twopc_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
 	struct twopc_reply twopc;
@@ -580,7 +580,27 @@ static const struct file_operations resource_ ## name ## _fops = {	\
 };
 
 drbd_debugfs_resource_attr(in_flight_summary)
-drbd_debugfs_resource_attr(twopc)
+drbd_debugfs_resource_attr(state_twopc)
+
+#define drbd_dcf(top, obj, attr) do {		\
+	dentry = debugfs_create_file(#attr, S_IRUSR|S_IRUSR,	\
+			top, obj, &obj ## _ ## attr ## _fops);	\
+	if (IS_ERR_OR_NULL(dentry))				\
+		goto fail;					\
+	top ## _ ## attr = dentry;				\
+	} while (0)
+
+#define res_dcf(attr) \
+	drbd_dcf(resource->debugfs_res, resource, attr)
+
+#define conn_dcf(attr) \
+	drbd_dcf(connection->debugfs_conn, connection, attr)
+
+#define vol_dcf(attr) \
+	drbd_dcf(device->debugfs_vol, device, attr)
+
+#define peer_dev_dcf(attr) \
+	drbd_dcf(peer_device->debugfs_peer_dev, peer_device, attr)
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource)
 {
@@ -603,19 +623,9 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 		goto fail;
 	resource->debugfs_res_connections = dentry;
 
-	dentry = debugfs_create_file("in_flight_summary", S_IRUSR|S_IRGRP,
-			resource->debugfs_res, resource,
-			&resource_in_flight_summary_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
-	resource->debugfs_res_in_flight_summary = dentry;
-
-	dentry = debugfs_create_file("state_twopc", S_IRUSR|S_IRGRP,
-			resource->debugfs_res, resource,
-			&resource_twopc_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
-	resource->debugfs_res_twopc = dentry;
+	/* debugfs create file */
+	res_dcf(in_flight_summary);
+	res_dcf(state_twopc);
 
 	return;
 
@@ -640,7 +650,7 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 	 * and call debugfs_remove on all of them separately.
 	 */
 	/* it is ok to call debugfs_remove(NULL) */
-	drbd_debugfs_remove(&resource->debugfs_res_twopc);
+	drbd_debugfs_remove(&resource->debugfs_res_state_twopc);
 	drbd_debugfs_remove(&resource->debugfs_res_in_flight_summary);
 	drbd_debugfs_remove(&resource->debugfs_res_connections);
 	drbd_debugfs_remove(&resource->debugfs_res_volumes);
@@ -797,26 +807,10 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 		goto fail;
 	connection->debugfs_conn = dentry;
 
-	dentry = debugfs_create_file("callback_history", S_IRUSR|S_IRGRP,
-			connection->debugfs_conn, connection,
-			&connection_callback_history_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
-	connection->debugfs_conn_callback_history = dentry;
-
-	dentry = debugfs_create_file("oldest_requests", S_IRUSR|S_IRGRP,
-			connection->debugfs_conn, connection,
-			&connection_oldest_requests_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
-	connection->debugfs_conn_oldest_requests = dentry;
-
-	dentry = debugfs_create_file("transport", S_IRUSR|S_IRGRP,
-			connection->debugfs_conn, connection,
-			&connection_transport_fops);
-	if (IS_ERR_OR_NULL(dentry))
-		goto fail;
-	connection->debugfs_conn_transport = dentry;
+	/* debugfs create file */
+	conn_dcf(callback_history);
+	conn_dcf(oldest_requests);
+	conn_dcf(transport);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (!peer_device->debugfs_peer_dev)
@@ -997,21 +991,12 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 		goto fail;
 	device->debugfs_minor = dentry;
 
-#define DCF(name)	do {					\
-	dentry = debugfs_create_file(#name, S_IRUSR|S_IRGRP,	\
-			device->debugfs_vol, device,		\
-			&device_ ## name ## _fops);		\
-	if (IS_ERR_OR_NULL(dentry))				\
-		goto fail;					\
-	device->debugfs_vol_ ## name = dentry;			\
-	} while (0)
-
-	DCF(oldest_requests);
-	DCF(act_log_extents);
-	DCF(data_gen_id);
-	DCF(io_frozen);
-	DCF(ed_gen_id);
-#undef DCF
+	/* debugfs create file */
+	vol_dcf(oldest_requests);
+	vol_dcf(act_log_extents);
+	vol_dcf(data_gen_id);
+	vol_dcf(io_frozen);
+	vol_dcf(ed_gen_id);
 
 	for_each_peer_device(peer_device, device) {
 		if (!peer_device->debugfs_peer_dev)
@@ -1128,16 +1113,6 @@ static const struct file_operations peer_device_ ## name ## _fops = {		\
 
 drbd_debugfs_peer_device_attr(resync_extents)
 
-#define DCF(name)	do {						\
-	dentry = debugfs_create_file(#name, S_IRUSR|S_IRGRP,		\
-			peer_device->debugfs_peer_dev, peer_device,	\
-			&peer_device_ ## name ## _fops);		\
-	if (IS_ERR_OR_NULL(dentry))					\
-		goto fail;						\
-	peer_device->debugfs_peer_dev_ ## name = dentry;		\
-	} while (0)
-
-
 void drbd_debugfs_peer_device_add(struct drbd_peer_device *peer_device)
 {
 	struct dentry *conn_dir = peer_device->connection->debugfs_conn;
@@ -1153,7 +1128,8 @@ void drbd_debugfs_peer_device_add(struct drbd_peer_device *peer_device)
 		goto fail;
 	peer_device->debugfs_peer_dev = dentry;
 
-	DCF(resync_extents);
+	/* debugfs create file */
+	peer_dev_dcf(resync_extents);
 	return;
 
 fail:
