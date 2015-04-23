@@ -2170,7 +2170,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 	}
 
-	peer_req->dagtag_sector = connection->last_dagtag_sector + (pi->size >> 9);
+	peer_req->dagtag_sector = connection->last_dagtag_sector + (peer_req->i.size >> 9);
 	connection->last_dagtag_sector = peer_req->dagtag_sector;
 
 	peer_req->w.cb = e_end_block;
