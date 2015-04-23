@@ -1448,6 +1448,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
+	atomic_inc(&device->ap_actlog_cnt);
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&req->tl_requests, &device->submit.writes);
 	list_add_tail(&req->req_pending_master_completion,
@@ -1490,6 +1491,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	_drbd_start_io_acct(device, req);
 
 	if (rw == WRITE && req->i.size) {
+		/* Unconditionally defer to worker,
+		 * if we still need to bumpt our data generation id */
 		if (test_bit(NEW_CUR_UUID, &device->flags)) {
 			drbd_queue_write(device, req);
 			return NULL;
@@ -1497,7 +1500,6 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 
 		if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
 			if (!drbd_al_begin_io_fastpath(device, &req->i)) {
-				atomic_inc(&device->ap_actlog_cnt);
 				drbd_queue_write(device, req);
 				return NULL;
 			}
