@@ -760,6 +760,52 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int connection_debug_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_connection *connection = m->private;
+	struct drbd_resource *resource = connection->resource;
+	unsigned long flags = connection->flags;
+	unsigned int u1, u2;
+	unsigned long long ull1, ull2;
+	char sep = ' ';
+
+	seq_printf(m, "content and format of this will change without notice\n");
+
+	seq_printf(m, "flags: 0x%04lx :", flags);
+#define pretty_print_bit(n) \
+	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n);
+	pretty_print_bit(SEND_PING);
+	pretty_print_bit(GOT_PING_ACK);
+	pretty_print_bit(TWOPC_PREPARED);
+	pretty_print_bit(TWOPC_YES);
+	pretty_print_bit(TWOPC_NO);
+	pretty_print_bit(TWOPC_RETRY);
+	pretty_print_bit(CONN_DRY_RUN);
+	pretty_print_bit(CREATE_BARRIER);
+	pretty_print_bit(DISCONNECT_EXPECTED);
+	pretty_print_bit(BARRIER_ACK_PENDING);
+	pretty_print_bit(DATA_CORKED);
+	pretty_print_bit(CONTROL_CORKED);
+#undef pretty_print_bit
+	seq_putc(m, '\n');
+
+	u1 = atomic_read(&resource->current_tle_nr);
+	u2 = connection->send.current_epoch_nr;
+	seq_printf(m, "resource->current_tle_nr: %u\n", u1);
+	seq_printf(m, "   send.current_epoch_nr: %u (%d)\n", u2, (int)(u2 - u1));
+
+	ull1 = resource->dagtag_sector;
+	ull2 = resource->last_peer_acked_dagtag;
+	seq_printf(m, " resource->dagtag_sector: %llu\n", ull1);
+	seq_printf(m, "  last_peer_acked_dagtag: %llu (%lld)\n", ull2, (long long)(ull2 - ull1));
+	ull2 = connection->send.current_dagtag_sector;
+	seq_printf(m, " send.current_dagtag_sec: %llu (%lld)\n", ull2, (long long)(ull2 - ull1));
+	ull2 = connection->last_dagtag_sector;
+	seq_printf(m, "      last_dagtag_sector: %llu\n", ull2);
+
+	return 0;
+}
+
 static int connection_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
@@ -786,6 +832,7 @@ static const struct file_operations connection_ ## name ## _fops = {	\
 drbd_debugfs_connection_attr(oldest_requests)
 drbd_debugfs_connection_attr(callback_history)
 drbd_debugfs_connection_attr(transport)
+drbd_debugfs_connection_attr(debug)
 
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
@@ -811,6 +858,7 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 	conn_dcf(callback_history);
 	conn_dcf(oldest_requests);
 	conn_dcf(transport);
+	conn_dcf(debug);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (!peer_device->debugfs_peer_dev)
@@ -826,6 +874,7 @@ fail:
 
 void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 {
+	drbd_debugfs_remove(&connection->debugfs_conn_debug);
 	drbd_debugfs_remove(&connection->debugfs_conn_transport);
 	drbd_debugfs_remove(&connection->debugfs_conn_callback_history);
 	drbd_debugfs_remove(&connection->debugfs_conn_oldest_requests);
