@@ -785,9 +785,10 @@ static void drbd_report_io_error(struct drbd_device *device, struct drbd_request
  * (and we must not set RQ_NET_OK) */
 static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx)
 {
-	return (req->rq_state[idx] &
-		   (RQ_WRITE|RQ_NET_PENDING|RQ_EXP_WRITE_ACK|RQ_EXP_RECEIVE_ACK))
-		== (RQ_WRITE|RQ_NET_PENDING);
+	return (req->rq_state[0] & RQ_WRITE) == 0 ? 0 :
+		(req->rq_state[idx] &
+		   (RQ_NET_PENDING|RQ_EXP_WRITE_ACK|RQ_EXP_RECEIVE_ACK))
+		==  RQ_NET_PENDING;
 }
 
 /* obviously this could be coded as many single functions
@@ -958,7 +959,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case HANDED_OVER_TO_NETWORK:
 		/* assert something? */
-			if (is_pending_write_protocol_A(req, idx))
+		if (is_pending_write_protocol_A(req, idx))
 			/* this is what is dangerous about protocol A:
 			 * pretend it was successfully written on the peer. */
 			mod_rq_state(req, m, peer_device, RQ_NET_QUEUED|RQ_NET_PENDING,
