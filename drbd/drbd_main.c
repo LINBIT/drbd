@@ -2051,28 +2051,27 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long b
 int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
 	struct drbd_device *device = peer_device->device;
+	struct p_trim *trim = NULL;
 	struct p_data *p;
 	unsigned int dp_flags = 0;
-	int digest_size;
+	int digest_size = 0;
 	int err;
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 
 	if (req->master_bio->bi_rw & DRBD_REQ_DISCARD) {
-		struct p_trim *t;
-		t = drbd_prepare_command(peer_device, sizeof(*t), DATA_STREAM);
-		if (!t)
+		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);
+		if (!trim)
 			return -EIO;
-		t->size = cpu_to_be32(req->i.size);
-		err = __send_command(peer_device->connection, device->vnr, P_TRIM, DATA_STREAM);
-		goto out;
+		p = &trim->p_data;
+		trim->size = cpu_to_be32(req->i.size);
+	} else {
+		if (peer_device->connection->integrity_tfm)
+			digest_size = crypto_hash_digestsize(peer_device->connection->integrity_tfm);
+		p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
+		if (!p)
+			return -EIO;
 	}
 
-	digest_size = peer_device->connection->integrity_tfm ?
-		      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
-	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
-
-	if (!p)
-		return -EIO;
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
@@ -2091,6 +2090,11 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	 * TRIM does not carry any payload. */
 	if (digest_size)
 		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, p + 1);
+
+	if (trim) {
+		err = __send_command(peer_device->connection, device->vnr, P_TRIM, DATA_STREAM);
+		goto out;
+	}
 
 	additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
 	err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
