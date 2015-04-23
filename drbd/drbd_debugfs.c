@@ -731,6 +731,17 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 	struct drbd_connection *connection = m->private;
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
+	enum drbd_stream i;
+
+	seq_printf(m, "v: %u\n\n", 0);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		struct drbd_send_buffer *sbuf = &connection->send_buffer[i];
+		seq_printf(m, "%s stream\n", i == DATA_STREAM ? "data" : "control");
+		seq_printf(m, "  corked: %d\n", test_bit(CORKED + i, &connection->flags));
+		seq_printf(m, "  unsent: %ld bytes\n", (long)(sbuf->pos - sbuf->unsent));
+		seq_printf(m, "  allocated: %d bytes\n", sbuf->allocated_size);
+	}
 
 	seq_printf(m, "transport_type: %s\n\n", transport->class->name);
 
