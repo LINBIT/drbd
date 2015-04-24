@@ -2237,6 +2237,25 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 	return ret;
 }
 
+static int try_to_promote(struct drbd_resource *resource, struct drbd_device *device)
+{
+	signed long timeout = 5*HZ;
+	int retry = 3, rv;
+	do {
+		rv = drbd_set_role(resource, R_PRIMARY, false);
+		if (rv >= SS_SUCCESS || rv != SS_TWO_PRIMARIES)
+			return rv;
+
+		timeout = wait_event_interruptible_timeout(resource->state_wait,
+				resource->role[NOW] == R_PRIMARY ||
+				(!primary_peer_present(resource) && any_disk_is_uptodate(device)),
+				timeout);
+		if (timeout <= 0)
+			break;
+	} while (--retry);
+	return rv;
+}
+
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
@@ -2251,10 +2270,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		   temporarily by udev while it scans for PV signatures. */
 
 		if (mode & FMODE_WRITE && resource->role[NOW] == R_SECONDARY) {
-			rv = drbd_set_role(resource, R_PRIMARY, false);
+			rv = try_to_promote(resource, device);
 			if (rv < SS_SUCCESS)
-				drbd_warn(resource, "Auto-promote failed: %s\n",
-					  drbd_set_st_err_str(rv));
+				drbd_info(resource, "Auto-promote failed: %s\n", drbd_set_st_err_str(rv));
 		}
 	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos)
 		return -EMEDIUMTYPE;
