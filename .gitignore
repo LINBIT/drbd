@@ -11,6 +11,8 @@
 
 drbd/drbd.ko
 drbd/drbd.ko.unsigned
+drbd/drbd_transport_tcp.ko
+drbd/drbd_transport_tcp.ko.unsigned
 drbd/.*.cmd
 drbd/compat/.*.cmd
 drbd/.compat.h.d
@@ -18,6 +20,7 @@ drbd/.config.timestamp
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
 drbd/.drbd_kernelrelease.new
+drbd/.drbd_git_revision
 drbd/.tmp_versions
 drbd/Module.symvers
 drbd/compat.h
