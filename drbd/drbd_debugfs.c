@@ -495,10 +495,11 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 			}
 			rcu_read_unlock();
 			seq_puts(m, "\n");
-		}
-		jif = resource->twopc_timer.expires - jiffies;
-		if (jif > 0)
+		} else {
+			/* The timer is only relevant for twopcs initiated by other nodes */
+			jif = resource->twopc_timer.expires - jiffies;
 			seq_printf(m, "  timer expires in: %d ms\n", jiffies_to_msecs(jif));
+		}
 	} else {
 		seq_puts(m, "No ongoing two phase state transaction\n");
 	}
