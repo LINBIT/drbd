@@ -105,13 +105,33 @@ static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockad
 	}
 }
 
+static bool addr_and_port_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
+{
+	if (!addr_equal(addr1, addr2))
+		return false;
+
+	if (addr1->ss_family == AF_INET6) {
+		const struct sockaddr_in6 *v6a1 = (const struct sockaddr_in6 *)addr1;
+		const struct sockaddr_in6 *v6a2 = (const struct sockaddr_in6 *)addr2;
+
+		return v6a1->sin6_port == v6a2->sin6_port;
+	} else /* AF_INET, AF_SSOCKS, AF_SDP */ {
+		const struct sockaddr_in *v4a1 = (const struct sockaddr_in *)addr1;
+		const struct sockaddr_in *v4a2 = (const struct sockaddr_in *)addr2;
+
+		return v4a1->sin_port == v4a2->sin_port;
+	}
+
+	return false;
+}
+
 static struct drbd_listener *find_listener(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener;
 
 	list_for_each_entry(listener, &resource->listeners, list) {
-		if (addr_equal(&listener->listen_addr, &connection->transport.my_addr)) {
+		if (addr_and_port_equal(&listener->listen_addr, &connection->transport.my_addr)) {
 			kref_get(&listener->kref);
 			return listener;
 		}
