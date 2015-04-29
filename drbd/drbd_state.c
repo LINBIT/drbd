@@ -3120,8 +3120,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			/* abort_state_change(resource, &irq_flags); */
 			if (rv == SS_NOTHING_TO_DO)
 				resource->state_change_flags &= ~CS_VERBOSE;
-			__end_state_change(resource, &irq_flags, rv);
-			return rv;
+			return __end_state_change(resource, &irq_flags, rv);
 		}
 		/* Really a cluster-wide state change. */
 	}
@@ -3137,12 +3136,12 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		}
 		if (rv >= SS_SUCCESS)
 			change(context, false);
-		goto out;
+		return __end_state_change(resource, &irq_flags, rv);
 	}
 
 	if (!expect(resource, context->flags & CS_SERIALIZE)) {
 		rv = SS_CW_FAILED_BY_PEER;
-		goto out;
+		return __end_state_change(resource, &irq_flags, rv);
 	}
 
 	rcu_read_lock();
@@ -3167,7 +3166,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		connection = drbd_connection_by_node_id(resource, context->target_node_id);
 		if (!connection) {
 			rv = SS_CW_FAILED_BY_PEER;
-			goto out;
+			return __end_state_change(resource, &irq_flags, rv);
 		}
 
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
@@ -3175,7 +3174,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		       context->mask.conn == conn_MASK &&
 		       context->val.conn == C_CONNECTED))) {
 			rv = SS_CW_FAILED_BY_PEER;
-			goto out;
+			return __end_state_change(resource, &irq_flags, rv);
 		}
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 8);
@@ -3289,6 +3288,25 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			request.primary_nodes = cpu_to_be64(reply->primary_nodes);
 		}
 	}
+
+	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
+	    !(context->flags & CS_ALREADY_SERIALIZED)) {
+		long timeout = twopc_retry_timeout(resource, retries++);
+		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
+			  jiffies_to_msecs(timeout));
+		if (have_peers)
+			twopc_phase2(resource, context->vnr, 0, &request, reach_immediately);
+		if (target_connection) {
+			kref_debug_put(&target_connection->kref_debug, 8);
+			kref_put(&target_connection->kref, drbd_destroy_connection);
+			target_connection = NULL;
+		}
+		clear_remote_state_change(resource);
+		schedule_timeout_interruptible(timeout);
+		end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
+		goto retry;
+	}
+
 	if (rv >= SS_SUCCESS)
 		drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
 			  be32_to_cpu(request.tid),
@@ -3301,8 +3319,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 
 	if (have_peers && context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
+	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 	if (rv >= SS_SUCCESS) {
-		begin_state_change(resource, &irq_flags, (context->flags & ~CS_SERIALIZE) | CS_LOCAL_ONLY);
 		change(context, false);
 		if (target_connection &&
 		    target_connection->peer_role[NOW] == R_UNKNOWN) {
@@ -3312,37 +3330,16 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			__change_peer_role(target_connection, target_role);
 		}
 		rv = end_state_change(resource, &irq_flags);
+	} else {
+		abort_state_change(resource, &irq_flags);
 	}
 	if (have_peers && !context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 
-	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
-	    !(context->flags & CS_ALREADY_SERIALIZED)) {
-		long timeout = twopc_retry_timeout(resource, retries++);
-		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
-			  jiffies_to_msecs(timeout));
-		clear_remote_state_change(resource);
-		schedule_timeout_interruptible(timeout);
-		end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
-		if (target_connection) {
-			kref_debug_put(&target_connection->kref_debug, 8);
-			kref_put(&target_connection->kref, drbd_destroy_connection);
-			target_connection = NULL;
-		}
-		goto retry;
-	}
-
-	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
-
-    out:
 	if (target_connection) {
 		kref_debug_put(&target_connection->kref_debug, 8);
 		kref_put(&target_connection->kref, drbd_destroy_connection);
 	}
-	if (rv < SS_SUCCESS)
-		abort_state_change(resource, &irq_flags);
-	else
-		end_state_change(resource, &irq_flags);
 	return rv;
 }
 
