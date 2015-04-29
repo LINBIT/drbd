@@ -1096,6 +1096,12 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 				  peer_device->connection->agreed_pro_version < 88)
 				return SS_NOT_SUPPORTED;
 
+			if (repl_state[OLD] == L_SYNC_SOURCE && repl_state[NEW] == L_WF_BITMAP_S)
+				return SS_RESYNC_RUNNING;
+
+			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] == L_WF_BITMAP_T)
+				return SS_RESYNC_RUNNING;
+
 			if (repl_state[NEW] != repl_state[OLD] &&
 			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
 			    repl_state[OLD] > L_ESTABLISHED )

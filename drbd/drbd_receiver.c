@@ -3979,6 +3979,7 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 {
 	enum drbd_repl_state new_repl_state;
 	int hg, rule_nr, peer_node_id;
+	enum drbd_state_rv rv;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, false);
 	new_repl_state = hg < -3 || hg > 3 ? -1 : goodness_to_repl_state(peer_device, hg);
@@ -3991,7 +3992,15 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 		drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
 	}
 
-	change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+	if ((rv == SS_NOTHING_TO_DO || rv == SS_RESYNC_RUNNING) &&
+	    (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)) {
+		/* Those events might happen very quickly. In case we are still processing
+		   the previous resync we need to re-enter that state. Schedule sending of
+		   the bitmap here explicitly */
+		peer_device->resync_again++;
+		drbd_info(peer_device, "...postponing this until current resync finished\n");
+	}
 }
 
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
@@ -5603,7 +5612,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	} else if (peer_device->repl_state[NOW] != L_WF_BITMAP_S) {
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
-		drbd_info(device, "unexpected repl_state (%s) in receive_bitmap\n",
+		drbd_info(peer_device, "unexpected repl_state (%s) in receive_bitmap\n",
 		    drbd_repl_str(peer_device->repl_state[NOW]));
 	}
 	err = 0;

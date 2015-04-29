@@ -978,6 +978,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
+	enum drbd_repl_state old_repl_state = L_ESTABLISHED;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
 	char *khelper_cmd = NULL;
@@ -1036,6 +1037,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	drbd_ping_peer(connection);
 
 	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	old_repl_state = repl_state[NOW];
 
 	verify_done = (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T);
 
@@ -1148,6 +1150,19 @@ out:
 
 	if (khelper_cmd)
 		drbd_khelper(device, connection, khelper_cmd);
+
+	if (peer_device->resync_again) {
+		enum drbd_repl_state new_repl_state =
+			old_repl_state == L_SYNC_TARGET || old_repl_state == L_PAUSED_SYNC_T ?
+			L_WF_BITMAP_T :
+			old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S ?
+			L_WF_BITMAP_S : L_ESTABLISHED;
+
+		if (new_repl_state != L_ESTABLISHED) {
+			peer_device->resync_again--;
+			change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+		}
+	}
 
 	return 1;
 }
