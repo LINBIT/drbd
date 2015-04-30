@@ -2883,6 +2883,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_CREATE_TRANSPORT;
 		goto fail_free_connection;
 	}
+	transport->log_prefix = adm_ctx.resource->name;
 
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
