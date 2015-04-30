@@ -466,7 +466,10 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 	rcu_read_unlock();
 	schedule_timeout_interruptible(timeout);
 
-	return (dtt_socket_ok_or_free(socket1) && dtt_socket_ok_or_free(socket2));
+	dtt_socket_ok_or_free(socket1);
+	dtt_socket_ok_or_free(socket2);
+
+	return *socket1 && *socket2;
 }
 
 static bool dtt_wait_connect_cond(struct dtt_waiter *waiter)
