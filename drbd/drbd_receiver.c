@@ -692,8 +692,10 @@ start:
 	transport->ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
 	h = drbd_do_features(connection);
-	if (h <= 0)
+	if (h < 0)
 		goto abort;
+	if (h == 0)
+		goto retry;
 
 	if (connection->cram_hmac_tfm) {
 		switch (drbd_do_auth(connection)) {
