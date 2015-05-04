@@ -1459,8 +1459,10 @@ void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_s
 
 	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
 	if (p) {
-		enum drbd_packet cmd =
-			connection->agreed_pro_version < 100 ? P_STATE_CHG_REPLY : P_CONN_ST_CHG_REPLY;
+		enum drbd_packet cmd = P_STATE_CHG_REPLY;
+
+		if (connection->agreed_pro_version >= 100 && vnr < 0)
+			cmd = P_CONN_ST_CHG_REPLY;
 
 		p->retcode = cpu_to_be32(retcode);
 		send_command(connection, vnr, cmd, CONTROL_STREAM);

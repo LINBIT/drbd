@@ -2790,6 +2790,12 @@ static enum drbd_state_rv __peer_reply(struct drbd_connection *connection)
 	if (test_and_clear_bit(TWOPC_YES, &connection->flags) ||
 	    !test_bit(TWOPC_PREPARED, &connection->flags))
 		return SS_CW_SUCCESS;
+
+	/* This is DRBD 9.x <-> 8.4 compat code.
+	 * Consistent with __peer_request() above:
+	 * No more connection: fake success. */
+	if (connection->cstate[NOW] != C_CONNECTED)
+		return SS_SUCCESS;
 	return SS_UNKNOWN_ERROR;
 }
 
