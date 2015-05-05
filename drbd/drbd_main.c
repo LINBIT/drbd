@@ -1858,6 +1858,7 @@ int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = block_id;
+	p->pad = 0;
 	p->blksize = cpu_to_be32(size);
 	return drbd_send_command(peer_device, cmd, DATA_STREAM);
 }
