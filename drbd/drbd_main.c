@@ -1502,6 +1502,7 @@ void drbd_send_peers_in_sync(struct drbd_peer_device *peer_device, u64 mask, sec
 		p->sector = cpu_to_be64(sector);
 		p->mask = cpu_to_be64(mask);
 		p->size = cpu_to_be32(size);
+		p->pad = 0;
 		drbd_send_command(peer_device, P_PEERS_IN_SYNC, CONTROL_STREAM);
 	}
 }
