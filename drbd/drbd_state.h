@@ -36,6 +36,7 @@ enum chg_state_flags {
 	CS_ABORT	 = 1 << 8,
 	CS_TWOPC	 = 1 << 9,
 	CS_IGN_OUTD_FAIL = 1 << 10,
+	CS_DONT_RETRY    = 1 << 11, /* Disable internal retry. Caller has a retry loop */
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

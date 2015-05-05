@@ -3311,7 +3311,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	}
 
 	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
-	    !(context->flags & CS_ALREADY_SERIALIZED)) {
+	    !(context->flags & CS_DONT_RETRY)) {
 		long timeout = twopc_retry_timeout(resource, retries++);
 		drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
 			  jiffies_to_msecs(timeout));

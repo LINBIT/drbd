@@ -799,7 +799,7 @@ retry:
 	while (try++ < max_tries) {
 		rv = stable_state_change(resource,
 			change_role(resource, role,
-				    CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
+				    CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE,
 				    with_force));
 
 		if (rv == SS_CONCURRENT_ST_CHG)
@@ -897,7 +897,8 @@ retry:
 		if (rv < SS_SUCCESS) {
 			rv = stable_state_change(resource,
 				change_role(resource, role,
-					    CS_VERBOSE | CS_ALREADY_SERIALIZED | CS_WAIT_COMPLETE,
+					    CS_VERBOSE | CS_ALREADY_SERIALIZED |
+					    CS_DONT_RETRY | CS_WAIT_COMPLETE,
 					    with_force));
 			if (rv < SS_SUCCESS)
 				goto out;
