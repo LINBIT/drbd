@@ -3046,11 +3046,20 @@ static void twopc_phase2(struct drbd_resource *resource, int vnr,
 	enum drbd_packet twopc_cmd = success ? P_TWOPC_COMMIT : P_TWOPC_ABORT;
 	struct drbd_connection *connection;
 
-	__cluster_wide_request(resource, vnr, twopc_cmd, request,
-			       reach_immediately);
 	rcu_read_lock();
-	for_each_connection(connection, resource)
-		clear_bit(TWOPC_PREPARED, &connection->flags);
+	for_each_connection_rcu(connection, resource) {
+		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		if (!(reach_immediately & mask))
+			continue;
+
+		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 5);
+		rcu_read_unlock();
+		conn_send_twopc_request(connection, vnr, twopc_cmd, request);
+		rcu_read_lock();
+		kref_debug_put(&connection->kref_debug, 5);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
 	rcu_read_unlock();
 }
 
