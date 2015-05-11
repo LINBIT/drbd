@@ -641,12 +641,21 @@ int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
+	enum drbd_state_rv rv;
 
-	if (change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE) < SS_SUCCESS) {
+	rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE | CS_DONT_RETRY);
+
+	if (rv >= SS_SUCCESS) {
+		conn_connect2(connection);
+	} else if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+		connection->connect_timer.expires = jiffies + HZ/20;
+		add_timer(&connection->connect_timer);
+		return 0; /* Return early. Keep the reference on the connection! */
+	} else {
 		drbd_info(connection, "Failure to connect; retrying\n");
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-	} else
-		conn_connect2(connection);
+	}
+
 	kref_debug_put(&connection->kref_debug, 11);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return 0;
