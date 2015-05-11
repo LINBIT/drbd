@@ -6370,40 +6370,45 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
+void req_destroy_after_send_peer_ack(struct kref *kref)
+{
+	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+	list_del(&req->tl_requests);
+	mempool_free(req, drbd_request_mempool);
+}
+
 static int process_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_request *req;
+	struct drbd_request *req, *tmp;
 	unsigned int idx;
-	int err;
+	int err = 0;
 
 	rcu_read_lock();
 	idx = 1 + connection->transport.net_conf->peer_node_id;
 	rcu_read_unlock();
 
-restart:
 	spin_lock_irq(&resource->req_lock);
-	list_for_each_entry(req, &resource->peer_ack_list, tl_requests) {
-		bool destroy;
-
-		if (!(req->rq_state[idx] & RQ_PEER_ACK))
+	req = list_first_entry(&resource->peer_ack_list, struct drbd_request, tl_requests);
+	while (&req->tl_requests != &resource->peer_ack_list) {
+		if (!(req->rq_state[idx] & RQ_PEER_ACK)) {
+			req = list_next_entry(req, tl_requests);
 			continue;
+		}
 		req->rq_state[idx] &= ~RQ_PEER_ACK;
-		destroy = atomic_dec_and_test(&req->kref.refcount);
-		if (destroy)
-			list_del(&req->tl_requests);
 		spin_unlock_irq(&resource->req_lock);
 
 		err = drbd_send_peer_ack(connection, req);
-		if (destroy)
-			mempool_free(req, drbd_request_mempool);
-		if (err)
-			return err;
-		goto restart;
 
+		spin_lock_irq(&resource->req_lock);
+		tmp = list_next_entry(req, tl_requests);
+		kref_put(&req->kref, req_destroy_after_send_peer_ack);
+		if (err)
+			break;
+		req = tmp;
 	}
 	spin_unlock_irq(&resource->req_lock);
-	return 0;
+	return err;
 }
 
 static int got_peers_in_sync(struct drbd_connection *connection, struct packet_info *pi)
