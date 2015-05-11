@@ -3515,15 +3515,18 @@ void drbd_unregister_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
 
 	spin_lock_irq(&resource->req_lock);
 	for_each_connection(connection, resource) {
-		drbd_debugfs_peer_device_cleanup(conn_peer_device(connection, device->vnr));
 		idr_remove(&connection->peer_devices, device->vnr);
 	}
 	idr_remove(&resource->devices, device->vnr);
 	idr_remove(&drbd_devices, device_to_minor(device));
 	spin_unlock_irq(&resource->req_lock);
+
+	for_each_peer_device(peer_device, device)
+		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_device_cleanup(device);
 }
 
