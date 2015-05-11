@@ -2704,7 +2704,7 @@ static void do_retry(struct work_struct *ws)
 
 		/* We are not just doing generic_make_request(),
 		 * as we want to keep the start_time information. */
-		inc_ap_bio(device, bio_data_dir(req->master_bio));
+		inc_ap_bio(device, bio_data_dir(bio));
 		__drbd_make_request(device, bio, start_jif);
 	}
 }
