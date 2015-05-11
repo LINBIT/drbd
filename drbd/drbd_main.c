@@ -963,7 +963,7 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 	return send_command(connection, -1, P_PING_ACK, CONTROL_STREAM);
 }
 
-extern int drbd_send_peer_ack(struct drbd_connection *connection,
+int drbd_send_peer_ack(struct drbd_connection *connection,
 			      struct drbd_request *req)
 {
 	struct drbd_peer_device *peer_device;
