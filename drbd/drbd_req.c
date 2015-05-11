@@ -201,6 +201,7 @@ static void drbd_remove_request_interval(struct rb_root *root,
 		wake_up(&device->misc_wait);
 }
 
+/* must_hold resource->req_lock */
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
@@ -238,14 +239,6 @@ tail_recursion:
 		return;
 	}
 
-	/* If called from mod_rq_state (expected normal case) or
-	 * drbd_send_and_submit (the less likely normal path), this holds the
-	 * req_lock, and req->tl_requests will typicaly be on ->transfer_log,
-	 * though it may be still empty (never added to the transfer log).
-	 *
-	 * If called from do_retry(), we do NOT hold the req_lock, but we are
-	 * still allowed to unconditionally list_del(&req->tl_requests),
-	 * because it will be on a local on-stack list only. */
 	list_del_init(&req->tl_requests);
 
 	/* finally remove the request from the conflict detection

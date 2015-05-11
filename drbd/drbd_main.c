@@ -2657,6 +2657,16 @@ static struct retry_worker {
 	struct list_head writes;
 } retry;
 
+void drbd_req_destroy_lock(struct kref *kref)
+{
+	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+	struct drbd_resource *resource = req->device->resource;
+
+	spin_lock_irq(&resource->req_lock);
+	drbd_req_destroy(kref);
+	spin_unlock_irq(&resource->req_lock);
+}
+
 static void do_retry(struct work_struct *ws)
 {
 	struct retry_worker *retry = container_of(ws, struct retry_worker, worker);
@@ -2689,7 +2699,7 @@ static void do_retry(struct work_struct *ws)
 		 * here.  The request object may still be referenced by a
 		 * frozen local req->private_bio, in case we force-detached.
 		 */
-		kref_put(&req->kref, drbd_req_destroy);
+		kref_put(&req->kref, drbd_req_destroy_lock);
 
 		/* A single suspended or otherwise blocking device may stall
 		 * all others as well.  Fortunately, this code path is to
