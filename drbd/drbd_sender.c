@@ -983,7 +983,6 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	unsigned long n_oos;
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
-	unsigned long irq_flags;
 
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
@@ -1036,7 +1035,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	drbd_ping_peer(connection);
 
-	begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+	spin_lock_irq(&device->resource->req_lock);
+	begin_state_change_locked(device->resource, CS_VERBOSE);
 	old_repl_state = repl_state[NOW];
 
 	verify_done = (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T);
@@ -1135,21 +1135,12 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	}
 
 out_unlock:
-	end_state_change(device->resource, &irq_flags);
+	end_state_change_locked(device->resource);
 	put_ldev(device);
 out:
 	peer_device->rs_total  = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
-
-	/* reset start sector, if we reached end of device */
-	if (verify_done && peer_device->ov_left == 0)
-		peer_device->ov_start_sector = 0;
-
-	drbd_md_sync(device);
-
-	if (khelper_cmd)
-		drbd_khelper(device, connection, khelper_cmd);
 
 	if (peer_device->resync_again) {
 		enum drbd_repl_state new_repl_state =
@@ -1160,9 +1151,22 @@ out:
 
 		if (new_repl_state != L_ESTABLISHED) {
 			peer_device->resync_again--;
-			change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+			begin_state_change_locked(device->resource, CS_VERBOSE);
+			__change_repl_state(peer_device, new_repl_state);
+			end_state_change_locked(device->resource);
 		}
 	}
+	spin_unlock_irq(&device->resource->req_lock);
+
+	/* reset start sector, if we reached end of device */
+	if (verify_done && peer_device->ov_left == 0)
+		peer_device->ov_start_sector = 0;
+
+	drbd_md_sync(device);
+
+	if (khelper_cmd)
+		drbd_khelper(device, connection, khelper_cmd);
+
 
 	return 1;
 }
