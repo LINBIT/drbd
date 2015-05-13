@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0rc3 (api:genl1/proto:86-110)
+--------
+ * Merged changes of 8.4.6 release
+ * Minor fixes in DRBD9 core for the RDMA transport
+ * All log messages are not prefixed with drbd and resource_name
+ * Fixed  wire protocol compatibility with drbd-8.4 for role changes
+ * A lot of work on the two-phase commits: if two commits conflict
+   one will succeed always; fixed bugs that caused tow-phase commits
+   to hang
+ * Fixed discard/trim in drbd9; was broken since the transport
+   abstraction code was merged
+ * Fixed the resync rate controller
+ * Fixed protocol A
+ * Fixed binding to the right port if for multiple peers the same
+   local address with different ports is configured
+
 9.0.0rc2 (api:genl1/proto:86-110)
 --------
  * implemented trivial corking (network packet coalescing) in drbd,
