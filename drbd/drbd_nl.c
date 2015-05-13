@@ -3463,6 +3463,8 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 	resource = device->resource;
 
+	mutex_lock(&resource->adm_mutex);
+
 	if (info->attrs[DRBD_NLA_INVALIDATE_PARMS]) {
 		struct invalidate_parms inv = {};
 		int err;
@@ -3472,7 +3474,7 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
-			goto out_no_adm_mutex;
+			goto out_no_resume;
 		}
 
 		if (inv.sync_from_peer_node_id != -1) {
@@ -3481,8 +3483,6 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 			sync_from_peer_device = conn_peer_device(connection, device->vnr);
 		}
 	}
-
-	mutex_lock(&resource->adm_mutex);
 
 	/* If there is still bitmap IO pending, probably because of a previous
 	 * resync just being finished, wait for it before requesting a new resync.
@@ -3514,8 +3514,8 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 
 out:
 	drbd_resume_io(device);
+out_no_resume:
 	mutex_unlock(&resource->adm_mutex);
-out_no_adm_mutex:
 	put_ldev(device);
 out_no_ldev:
 	drbd_adm_finish(&adm_ctx, info, retcode);
@@ -5150,8 +5150,10 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
-		goto out;
+		goto out_no_adm;
 	}
+
+	mutex_lock(&resource->adm_mutex);
 
 	peer_node_id = parms.forget_peer_node_id;
 	if (drbd_connection_by_node_id(resource, peer_node_id)) {
@@ -5164,7 +5166,6 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	mutex_lock(&resource->adm_mutex);
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_md *peer_md;
 
@@ -5185,8 +5186,9 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 		drbd_md_sync(device);
 		put_ldev(device);
 	}
-	mutex_unlock(&resource->adm_mutex);
 out:
+	mutex_unlock(&resource->adm_mutex);
+out_no_adm:
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
 	return 0;
 

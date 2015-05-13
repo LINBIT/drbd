@@ -5691,20 +5691,31 @@ static int receive_dagtag(struct drbd_connection *connection, struct packet_info
 
 struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resource, int node_id)
 {
+	/* Caller needs to hold rcu_read_lock or resource->adm_mutex */
 	struct drbd_connection *connection;
 	struct net_conf *nc;
 
-	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		nc = rcu_dereference(connection->transport.net_conf);
 		if (nc && nc->peer_node_id == node_id) {
-			rcu_read_unlock();
 			return connection;
 		}
 	}
-	rcu_read_unlock();
 
 	return NULL;
+}
+
+struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *resource, int node_id)
+{
+	struct drbd_connection *connection;
+
+	rcu_read_lock();
+	connection = drbd_connection_by_node_id(resource, node_id);
+	if (connection)
+		kref_get(&connection->kref);
+	rcu_read_unlock();
+
+	return connection;
 }
 
 static int receive_peer_dagtag(struct drbd_connection *connection, struct packet_info *pi)
@@ -5717,21 +5728,23 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	s64 dagtag_offset;
 	int vnr = 0;
 
-	lost_peer = drbd_connection_by_node_id(resource, be32_to_cpu(p->node_id));
+	lost_peer = drbd_get_connection_by_node_id(resource, be32_to_cpu(p->node_id));
 	if (!lost_peer)
 		return 0;
+
+	kref_debug_get(&lost_peer->kref_debug, 12);
 
 	if (lost_peer->cstate[NOW] == C_CONNECTED) {
 		drbd_ping_peer(lost_peer);
 		if (lost_peer->cstate[NOW] == C_CONNECTED)
-			return 0;
+			goto out;
 	}
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (peer_device->repl_state[NOW] > L_ESTABLISHED)
-			return 0;
+			goto out;
 		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device))
-			return 0;
+			goto out;
 	}
 
 	/* Need to wait until the other receiver thread has called the
@@ -5767,6 +5780,9 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 	}
 
+out:
+	kref_debug_put(&lost_peer->kref_debug, 12);
+	kref_put(&lost_peer->kref, drbd_destroy_connection);
 	return 0;
 }
 

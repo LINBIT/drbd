@@ -27,6 +27,7 @@ struct kref_debug_class kref_class_connection = {
 		[9] = "resource->twopc_parent",
 		[10] = "free",
 		[11] = "connect_timer",
+		[12] = "receive_peer_dagtag()",
 	}
 };
 

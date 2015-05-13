@@ -3184,21 +3184,23 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		struct drbd_connection *connection;
 
 		/* Fail if the target node is no longer directly reachable. */
-		connection = drbd_connection_by_node_id(resource, context->target_node_id);
+		connection = drbd_get_connection_by_node_id(resource, context->target_node_id);
 		if (!connection) {
 			rv = SS_CW_FAILED_BY_PEER;
 			return __end_state_change(resource, &irq_flags, rv);
 		}
+		kref_debug_get(&connection->kref_debug, 8);
 
 		if (!(connection->cstate[NOW] == C_CONNECTED ||
 		      (connection->cstate[NOW] == C_CONNECTING &&
 		       context->mask.conn == conn_MASK &&
 		       context->val.conn == C_CONNECTED))) {
 			rv = SS_CW_FAILED_BY_PEER;
+
+			kref_debug_put(&connection->kref_debug, 8);
+			kref_put(&connection->kref, drbd_destroy_connection);
 			return __end_state_change(resource, &irq_flags, rv);
 		}
-		kref_get(&connection->kref);
-		kref_debug_get(&connection->kref_debug, 8);
 		target_connection = connection;
 
 		/* For connect transactions, add the target node id. */

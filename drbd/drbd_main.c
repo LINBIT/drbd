@@ -4357,6 +4357,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 
 static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
 {
+	/* Caller need to hold rcu_read_lock */
 	struct drbd_connection *connection = drbd_connection_by_node_id(resource, node_id);
 
 	return connection ? rcu_dereference(connection->transport.net_conf)->name : "";
@@ -4431,9 +4432,15 @@ static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) 
 static bool node_connected(struct drbd_resource *resource, int node_id)
 {
 	struct drbd_connection *connection;
+	bool r = false;
 
+	rcu_read_lock();
 	connection = drbd_connection_by_node_id(resource, node_id);
-	return connection ? connection->cstate[NOW] == C_CONNECTED : false;
+	if (connection)
+		r = connection->cstate[NOW] == C_CONNECTED;
+	rcu_read_unlock();
+
+	return r;
 }
 
 static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)

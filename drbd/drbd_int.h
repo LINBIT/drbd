@@ -1918,6 +1918,7 @@ extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to
 extern int drbd_connected(struct drbd_peer_device *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
+extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
 extern void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void queue_queued_twopc(struct drbd_resource *resource);
 extern void queued_twopc_timer_fn(unsigned long data);
