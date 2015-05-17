@@ -215,7 +215,6 @@ tail_recursion:
 	req_size = req->i.size;
 
 	/* paranoia */
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
 		if (!(ns & RQ_NET_MASK))
@@ -226,10 +225,8 @@ tail_recursion:
 		drbd_err(device,
 			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
 			s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
-		rcu_read_unlock();
 		return;
 	}
-	rcu_read_unlock();
 
 	/* more paranoia */
 	if ((req->master_bio && !(s & RQ_POSTPONED)) ||
@@ -410,7 +407,6 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		++ok;
 	error = PTR_ERR(req->private_bio);
 
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
 		/* any net ok ok local ok is good enough to complete this bio as OK */
@@ -436,10 +432,8 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		drbd_err(device,
 			"drbd_req_complete: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
 			s, 1 + peer_device->bitmap_index, ns, atomic_read(&req->completion_ref));
-		rcu_read_unlock();
 		return;
 	}
-	rcu_read_unlock();
 
 	/* more paranoia */
 	if (atomic_read(&req->completion_ref) ||
@@ -1385,7 +1379,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 		return 0;
 	}
 
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		remote = drbd_should_do_remote(peer_device, NOW);
 		send_oos = drbd_should_send_out_of_sync(peer_device);
@@ -1408,7 +1401,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 		} else if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size))
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
 	}
-	rcu_read_unlock();
 
 	return count;
 }
@@ -1700,6 +1692,17 @@ void send_and_submit_pending(struct drbd_device *device, struct list_head *pendi
 	}
 }
 
+
+static void ensure_current_uuid(struct drbd_device *device)
+{
+	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+		struct drbd_resource *resource = device->resource;
+		mutex_lock(&resource->conf_update);
+		drbd_uuid_new_current(device, false);
+		mutex_unlock(&resource->conf_update);
+	}
+}
+
 void do_submit(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, submit.worker);
@@ -1715,8 +1718,7 @@ void do_submit(struct work_struct *ws)
 	for (;;) {
 		DEFINE_WAIT(wait);
 
-		if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-			drbd_uuid_new_current(device, false);
+		ensure_current_uuid(device);
 
 		/* move used-to-be-busy back to front of incoming */
 		list_splice_init(&busy, &incoming);
@@ -1800,8 +1802,7 @@ void do_submit(struct work_struct *ws)
 
 		drbd_al_begin_io_commit(device);
 
-		if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-			drbd_uuid_new_current(device, false);
+		ensure_current_uuid(device);
 
 		send_and_submit_pending(device, &pending);
 	}

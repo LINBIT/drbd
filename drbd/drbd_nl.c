@@ -1180,17 +1180,23 @@ void drbd_resume_io(struct drbd_device *device)
 static bool effective_disk_size_determined(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
+	bool rv = false;
 
 	if (device->ldev->md.effective_size != 0)
 		return true;
 	if (device->disk_state[NEW] == D_UP_TO_DATE)
 		return true;
 
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
-			return true;
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE) {
+			rv = true;
+			break;
+		}
 	}
-	return false;
+	rcu_read_unlock();
+
+	return rv;
 }
 
 /**
@@ -1394,11 +1400,13 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
 	sector_t m_size; /* my size */
 	sector_t size = 0;
 
-	for_each_peer_device(peer_device, device) {
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 			continue;
 		p_size = min_not_zero(p_size, peer_device->max_size);
 	}
+	rcu_read_unlock();
 
 	m_size = drbd_get_max_capacity(device->ldev);
 
@@ -1576,12 +1584,10 @@ void drbd_reconsider_max_bio_size(struct drbd_device *device, struct drbd_backin
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			max_bio_size = min(max_bio_size, peer_device->max_bio_size);
 	}
-	rcu_read_unlock();
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_setup_queue_param(device, bdev, max_bio_size);
@@ -1948,13 +1954,11 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	clear_bit(WAS_READ_ERROR, &device->flags);
 
 	/* and no leftover from previously aborted resync or verify, either */
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		peer_device->rs_total = 0;
 		peer_device->rs_failed = 0;
 		atomic_set(&peer_device->rs_pending_cnt, 0);
 	}
-	rcu_read_unlock();
 
 	if (!device->bitmap) {
 		device->bitmap = drbd_bm_alloc();
@@ -2206,7 +2210,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * so we can automatically recover from a crash of a
 	 * degraded but active "cluster" after a certain timeout.
 	 */
-	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
 		clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
 		if (resource->role[NOW] != R_PRIMARY &&
@@ -2214,7 +2217,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		    !drbd_md_test_peer_flag(peer_device, MDF_PEER_CONNECTED))
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	}
-	rcu_read_unlock();
 
 	dd = drbd_determine_dev_size(device, 0, NULL);
 	if (dd == DS_ERROR) {
@@ -4189,7 +4191,7 @@ next_device:
 		}
 	}
 	if (cb->args[2]) {
-		for_each_peer_device(peer_device, device)
+		for_each_peer_device_rcu(peer_device, device)
 			if (peer_device == (struct drbd_peer_device *)cb->args[2])
 				goto found_peer_device;
 		/* peer device was probably deleted */

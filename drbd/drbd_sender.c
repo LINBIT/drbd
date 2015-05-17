@@ -1754,7 +1754,7 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 		return true;
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_repl_state repl_state;
 		struct net_conf *nc;
 
@@ -2010,7 +2010,7 @@ static void drbd_ldev_destroy(struct drbd_device *device)
         struct drbd_peer_device *peer_device;
 
         rcu_read_lock();
-        for_each_peer_device(peer_device, device) {
+        for_each_peer_device_rcu(peer_device, device) {
                 lc_destroy(peer_device->resync_lru);
                 peer_device->resync_lru = NULL;
         }
@@ -2056,9 +2056,10 @@ static void go_diskless(struct drbd_device *device)
                         if (test_bit(CRASHED_PRIMARY, &device->flags)) {
                                 struct drbd_peer_device *peer_device;
 
-                                for_each_peer_device(peer_device, device)
+				rcu_read_lock();
+                                for_each_peer_device_rcu(peer_device, device)
                                         drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
-
+				rcu_read_unlock();
                                 drbd_md_sync(device);
                         }
                 }

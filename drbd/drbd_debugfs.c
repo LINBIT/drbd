@@ -1048,6 +1048,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
 
+	/* Caller holds conf_update */
 	for_each_peer_device(peer_device, device) {
 		if (!peer_device->debugfs_peer_dev)
 			drbd_debugfs_peer_device_add(peer_device);

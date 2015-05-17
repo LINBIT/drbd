@@ -1381,6 +1381,8 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 	     connection;						\
 	     connection = __drbd_next_connection_ref(&m, connection, resource))
 
+/* Each caller of for_each_peer_device() must hold req_lock or adm_mutex or conf_update.
+   The update locations hold all three! */
 #define for_each_peer_device(peer_device, device) \
 	list_for_each_entry(peer_device, &device->peer_devices, peer_devices)
 
@@ -2505,7 +2507,7 @@ static inline bool drbd_state_is_stable(struct drbd_device *device)
 	 * for any newly introduced state we may have forgotten to add here */
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		switch (peer_device->repl_state[NOW]) {
 		/* New io is only accepted when the peer device is unknown or there is
 		 * a well-established connection. */

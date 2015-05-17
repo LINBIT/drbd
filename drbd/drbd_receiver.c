@@ -3928,11 +3928,13 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_reconsider_max_bio_size(device, NULL);
 		/* I am diskless, need to accept the peer disk sizes. */
 
-		for_each_peer_device(peer_device, device) {
+		rcu_read_lock();
+		for_each_peer_device_rcu(peer_device, device) {
 			/* When a peer device is in L_OFF state, max_size is zero
 			 * until a P_SIZES packet is received.  */
 			size = min_not_zero(size, peer_device->max_size);
 		}
+		rcu_read_unlock();
 		if (size)
 			drbd_set_my_capacity(device, size);
 	}
@@ -5266,7 +5268,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_clear(connection);
+		mutex_lock(&resource->conf_update);
 		drbd_uuid_new_current(device, false);
+		mutex_unlock(&resource->conf_update);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);

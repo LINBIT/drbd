@@ -1025,7 +1025,7 @@ int drbd_send_peer_ack(struct drbd_connection *connection,
 	if (req->rq_state[0] & RQ_LOCAL_OK)
 		mask |= NODE_MASK(connection->resource->res_opts.node_id);
 	rcu_read_lock();
-	for_each_peer_device(peer_device, req->device) {
+	for_each_peer_device_rcu(peer_device, req->device) {
 		int idx = 1 + peer_device->node_id;
 
 		if (req->rq_state[idx] & RQ_NET_OK)
@@ -2284,7 +2284,7 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 	else {
 		struct drbd_peer_device *peer_device;
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
 				ret = true;
 				break;
@@ -2863,7 +2863,7 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		struct drbd_peer_device *peer_device;
 
 		rcu_read_lock();
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			if (test_bit(NET_CONGESTED, &peer_device->connection->transport.flags)) {
 				r |= (1 << BDI_async_congested);
 				break;
@@ -4293,6 +4293,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced) __m
  *
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
+ * The caller must hold adm_mutex or conf_update
  */
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
@@ -4320,7 +4321,8 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 {
 	struct drbd_peer_device *peer_device;
 
-	for_each_peer_device(peer_device, device) {
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
 		if (!(nodes & NODE_MASK(peer_device->node_id)))
 			continue;
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
@@ -4330,6 +4332,7 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 			drbd_queue_work(&peer_device->connection->sender_work,
 					&peer_device->propagate_uuids_work);
 	}
+	rcu_read_unlock();
 }
 
 void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 val, u64 weak_nodes) __must_hold(local)

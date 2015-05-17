@@ -256,16 +256,21 @@ find_active_resync_extent(struct drbd_device *device, struct drbd_peer_device *e
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;
-	for_each_peer_device(peer_device, device) {
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
 		if (peer_device == except)
 			continue;
 		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
 		if (unlikely(tmp != NULL)) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags))
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
+				rcu_read_unlock();
 				return bm_ext;
+			}
 		}
 	}
+	rcu_read_unlock();
 	return NULL;
 }
 
@@ -1170,7 +1175,7 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		clear_end = BM_SECT_TO_BIT(esector + 1) - 1;
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		int bitmap_index = peer_device->bitmap_index;
 
 		if (!test_and_clear_bit(bitmap_index, &mask))

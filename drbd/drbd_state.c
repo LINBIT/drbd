@@ -1908,8 +1908,10 @@ static void abw_start_sync(struct drbd_device *device,
 	case L_STARTING_SYNC_T:
 		/* Since the number of set bits changed and the other peer_devices are
 		   lready in L_PAUSED_SYNC_T state, we need to set rs_total here */
-		for_each_peer_device(pd, device)
+		rcu_read_lock();
+		for_each_peer_device_rcu(pd, device)
 			initialize_resync(pd);
+		rcu_read_unlock();
 
 		if (peer_device->connection->agreed_pro_version < 110)
 			stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
@@ -2704,13 +2706,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				unsigned long irq_flags;
 				int vnr;
 
-				rcu_read_lock();
+				mutex_lock(&resource->conf_update);
 				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 					struct drbd_device *device = peer_device->device;
 					if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 						drbd_uuid_new_current(device, false);
 				}
-				rcu_read_unlock();
+				mutex_unlock(&resource->conf_update);
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);
 				_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 				__change_io_susp_fencing(resource, false);
