@@ -4309,7 +4309,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	}
 }
 
-void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
+static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 {
 	struct drbd_peer_device *peer_device;
 
