@@ -1367,6 +1367,7 @@ static bool all_known_peer_devices_connected(struct drbd_device *device) __must_
 	bool all_known;
 
 	all_known = true;
+	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_device *peer_device;
 
@@ -1380,6 +1381,7 @@ static bool all_known_peer_devices_connected(struct drbd_device *device) __must_
 		all_known = false;
 		break;
 	}
+	rcu_read_unlock();
 	return all_known;
 }
 

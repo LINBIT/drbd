@@ -1197,7 +1197,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 
 static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(local)
 {
-	struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+	struct drbd_peer_device *peer_device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 bitmap_uuid = peer_md[node_id].bitmap_uuid;
 
@@ -1213,14 +1213,17 @@ static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(lo
 	   resync finished successfully.
 	 */
 
-	if (bitmap_uuid != 0 || !peer_device)
-		return bitmap_uuid;
+	rcu_read_lock();
+	peer_device = peer_device_by_node_id(device, node_id);
 
-	if ((peer_device->current_uuid & ~UUID_PRIMARY) ==
+	if (bitmap_uuid == 0 && peer_device &&
+	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
 	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
-		return 0;
-	else
-		return -1;
+		bitmap_uuid = -1;
+
+	rcu_read_unlock();
+
+	return bitmap_uuid;
 }
 
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
@@ -4184,6 +4187,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	u64 bm_uuid, got_new_bitmap_uuid = 0;
 	bool do_it;
 
+	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == device->ldev->md.node_id)
 			continue;
@@ -4208,6 +4212,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
 	}
+	rcu_read_unlock();
 
 	return got_new_bitmap_uuid;
 }
@@ -4233,6 +4238,7 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 	int node_id;
 	u64 not_weak = NODE_MASK(my_node_id);
 
+	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == my_node_id)
 			continue;
@@ -4244,6 +4250,7 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 				not_weak |= NODE_MASK(node_id);
 		}
 	}
+	rcu_read_unlock();
 
 	return ~not_weak;
 }
@@ -4997,6 +5004,7 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(
 		bool all_peers_outdated = true;
 		int node_id;
 
+		rcu_read_lock();
 		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 			enum drbd_disk_state peer_disk_state;
@@ -5019,6 +5027,7 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(
 				break;
 			}
 		}
+		rcu_read_unlock();
 		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
 	}
 

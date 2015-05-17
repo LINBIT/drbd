@@ -896,11 +896,12 @@ void drbd_ping_peer(struct drbd_connection *connection)
 		   connection->cstate[NOW] < C_CONNECTED);
 }
 
+/* caller needs to hold rcu_read_lock, req_lock, adm_mutex or conf_update */
 struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device, int node_id)
 {
 	struct drbd_peer_device *peer_device;
 
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		if (peer_device->node_id == node_id)
 			return peer_device;
 	}
