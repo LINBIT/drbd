@@ -5061,6 +5061,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	union drbd_state old_peer_state, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
+	bool peer_was_resync_target;
 	int rv;
 
 	if (pi->vnr != -1) {
@@ -5112,11 +5113,18 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
+	peer_was_resync_target =
+		connection->agreed_pro_version >= 110 ?
+		peer_device->last_repl_state == L_SYNC_TARGET ||
+		peer_device->last_repl_state == L_PAUSED_SYNC_T
+		:
+		true;
 	/* If this is the "end of sync" confirmation, usually the peer disk
 	 * was D_INCONSISTENT or D_CONSISTENT. (Since the peer might be
 	 * weak we do not know anything about its new disk state)
 	 */
-	if ((old_peer_state.pdsk == D_INCONSISTENT || old_peer_state.pdsk == D_CONSISTENT) &&
+	if (peer_was_resync_target &&
+	    (old_peer_state.pdsk == D_INCONSISTENT || old_peer_state.pdsk == D_CONSISTENT) &&
 	    old_peer_state.conn > L_ESTABLISHED && old_peer_state.disk >= D_OUTDATED) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
@@ -5151,6 +5159,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 					drbd_warn(peer_device, "SyncSource still sees bits set!! FIXME\n");
 
 				drbd_resync_finished(peer_device, peer_state.disk);
+				peer_device->last_repl_state = peer_state.conn;
 				return 0;
 			}
 		}
@@ -5161,6 +5170,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	    peer_state.conn == C_CONNECTED && peer_disk_state == D_UP_TO_DATE) {
 		ov_out_of_sync_print(peer_device);
 		drbd_resync_finished(peer_device, D_MASK);
+		peer_device->last_repl_state = peer_state.conn;
 		return 0;
 	}
 
@@ -5292,6 +5302,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
+	peer_device->last_repl_state = peer_state.conn;
 	return 0;
 fail:
 	change_cstate(connection, C_DISCONNECTING, CS_HARD);

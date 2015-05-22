@@ -1104,6 +1104,7 @@ struct drbd_peer_device {
 	unsigned long flags;
 
 	enum drbd_repl_state start_resync_side;
+	enum drbd_repl_state last_repl_state; /* What we received from the peer */
 	struct timer_list start_resync_timer;
 	struct drbd_work resync_work;
 	struct timer_list resync_timer;
