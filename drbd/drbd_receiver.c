@@ -5004,15 +5004,15 @@ static int process_twopc(struct drbd_connection *connection,
 		rv = outdate_if_weak(resource, reply, flags);
 
 	if (flags & CS_PREPARE) {
-		if (rv >= SS_SUCCESS) {
-			spin_lock_irq(&resource->req_lock);
-			kref_get(&connection->kref);
-			kref_debug_get(&connection->kref_debug, 9);
-			resource->twopc_parent = connection;
-			resource->twopc_timer.expires = receive_jif + twopc_timeout(resource);
-			add_timer(&resource->twopc_timer);
-			spin_unlock_irq(&resource->req_lock);
+		spin_lock_irq(&resource->req_lock);
+		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 9);
+		resource->twopc_parent = connection;
+		resource->twopc_timer.expires = receive_jif + twopc_timeout(resource);
+		add_timer(&resource->twopc_timer);
+		spin_unlock_irq(&resource->req_lock);
 
+		if (rv >= SS_SUCCESS) {
 			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		} else {
 			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
