@@ -543,7 +543,7 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	cm_context->id = rdma_create_id(dtr_cma_event_handler,
 					cm_context, RDMA_PS_TCP, IB_QPT_RC);
 
-	return cm_context->id ? 0 : -ENOMEM;
+	return IS_ERR(cm_context->id) ? PTR_ERR(cm_context->id) : 0;
 }
 
 static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
