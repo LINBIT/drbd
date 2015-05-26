@@ -2028,44 +2028,44 @@ static void drbd_ldev_destroy(struct drbd_device *device)
 
 static void go_diskless(struct drbd_device *device)
 {
-        D_ASSERT(device, device->disk_state[NOW] == D_FAILED ||
-                         device->disk_state[NOW] == D_DETACHING);
-        /* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
-         * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
-         * the protected members anymore, though, so once put_ldev reaches zero
-         * again, it will be safe to free them. */
+	D_ASSERT(device, device->disk_state[NOW] == D_FAILED ||
+			 device->disk_state[NOW] == D_DETACHING);
+	/* we cannot assert local_cnt == 0 here, as get_ldev_if_state will
+	 * inc/dec it frequently. Once we are D_DISKLESS, no one will touch
+	 * the protected members anymore, though, so once put_ldev reaches zero
+	 * again, it will be safe to free them. */
 
-        /* Try to write changed bitmap pages, read errors may have just
-         * set some bits outside the area covered by the activity log.
-         *
-         * If we have an IO error during the bitmap writeout,
-         * we will want a full sync next time, just in case.
-         * (Do we want a specific meta data flag for this?)
-         *
-         * If that does not make it to stable storage either,
-         * we cannot do anything about that anymore.
-         *
-         * We still need to check if both bitmap and ldev are present, we may
-         * end up here after a failed attach, before ldev was even assigned.
-         */
-        if (device->bitmap && device->ldev) {
-                if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
-                                               "detach",
-                                               BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
-                                               NULL)) {
-                        if (test_bit(CRASHED_PRIMARY, &device->flags)) {
-                                struct drbd_peer_device *peer_device;
+	/* Try to write changed bitmap pages, read errors may have just
+	 * set some bits outside the area covered by the activity log.
+	 *
+	 * If we have an IO error during the bitmap writeout,
+	 * we will want a full sync next time, just in case.
+	 * (Do we want a specific meta data flag for this?)
+	 *
+	 * If that does not make it to stable storage either,
+	 * we cannot do anything about that anymore.
+	 *
+	 * We still need to check if both bitmap and ldev are present, we may
+	 * end up here after a failed attach, before ldev was even assigned.
+	 */
+	if (device->bitmap && device->ldev) {
+		if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
+					       "detach",
+					       BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+					       NULL)) {
+			if (test_bit(CRASHED_PRIMARY, &device->flags)) {
+				struct drbd_peer_device *peer_device;
 
 				rcu_read_lock();
-                                for_each_peer_device_rcu(peer_device, device)
-                                        drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+				for_each_peer_device_rcu(peer_device, device)
+					drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 				rcu_read_unlock();
-                                drbd_md_sync(device);
-                        }
-                }
-        }
+				drbd_md_sync(device);
+			}
+		}
+	}
 
-        change_disk_state(device, D_DISKLESS, CS_HARD);
+	change_disk_state(device, D_DISKLESS, CS_HARD);
 }
 
 static int do_md_sync(struct drbd_device *device)
