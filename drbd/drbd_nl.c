@@ -745,13 +745,18 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 static bool barrier_pending(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	bool rv = false;
 
-	for_each_connection(connection, resource) {
-		if (test_bit(BARRIER_ACK_PENDING, &connection->flags))
-			return true;
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (test_bit(BARRIER_ACK_PENDING, &connection->flags)) {
+			rv = true;
+			break;
+		}
 	}
+	rcu_read_unlock();
 
-	return false;
+	return rv;
 }
 
 enum drbd_state_rv
@@ -774,8 +779,10 @@ retry:
 
 		/* Detect dead peers as soon as possible.  */
 
-		for_each_connection(connection, resource)
+		rcu_read_lock();
+		for_each_connection_rcu(connection, resource)
 			request_ping(connection);
+		rcu_read_unlock();
 	} else /* (role == R_SECONDARY) */ {
 		if (start_new_tl_epoch(resource)) {
 			struct drbd_connection *connection;
@@ -877,13 +884,13 @@ retry:
 			 * failure: retry once after a short timeout.
 			 */
 
-			for_each_connection(connection, resource) {
-				rcu_read_lock();
+			rcu_read_lock();
+			for_each_connection_rcu(connection, resource) {
 				nc = rcu_dereference(connection->transport.net_conf);
 				if (nc && nc->ping_timeo > timeout)
 					timeout = nc->ping_timeo;
-				rcu_read_unlock();
 			}
+			rcu_read_unlock();
 			timeout = timeout * HZ / 10;
 			if (timeout == 0)
 				timeout = 1;
@@ -1483,11 +1490,13 @@ static u32 common_connection_features(struct drbd_resource *resource)
 	struct drbd_connection *connection;
 	u32 features = -1;
 
-	for_each_connection(connection, resource) {
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[NOW] < C_CONNECTED)
 			continue;
 		features &= connection->agreed_features;
 	}
+	rcu_read_unlock();
 
 	return features;
 }

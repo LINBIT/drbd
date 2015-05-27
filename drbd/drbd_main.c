@@ -606,7 +606,7 @@ static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *aut
 	int id;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[NOW] >= C_CONNECTED &&
 		    connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
@@ -641,7 +641,7 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative)
 		return false;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		peer_device = conn_peer_device(connection, device->vnr);
 		switch (peer_device->repl_state[NOW]) {
 		case L_WF_BITMAP_T:
@@ -3014,11 +3014,13 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		drbd_calc_cpu_mask(&new_cpu_mask);
 	if (!cpumask_equal(resource->cpu_mask, new_cpu_mask)) {
 		cpumask_copy(resource->cpu_mask, new_cpu_mask);
+		rcu_read_lock();
 		for_each_connection_rcu(connection, resource) {
 			connection->receiver.reset_cpu_mask = 1;
 			connection->ack_receiver.reset_cpu_mask = 1;
 			connection->sender.reset_cpu_mask = 1;
 		}
+		rcu_read_unlock();
 	}
 	err = 0;
 
@@ -4981,7 +4983,7 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 	int id;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[which] < C_CONNECTED)
 			continue;
 		id = rcu_dereference(connection->transport.net_conf)->peer_node_id;

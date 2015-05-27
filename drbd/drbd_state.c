@@ -45,6 +45,7 @@ static void count_objects(struct drbd_resource *resource,
 			  unsigned int *n_devices,
 			  unsigned int *n_connections)
 {
+	/* Caller holds req_lock */
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
@@ -87,6 +88,7 @@ static struct drbd_state_change *alloc_state_change(unsigned int n_devices, unsi
 
 struct drbd_state_change *remember_state_change(struct drbd_resource *resource, gfp_t gfp)
 {
+	/* Caller holds req_lock */
 	struct drbd_state_change *state_change;
 	struct drbd_device *device;
 	unsigned int n_devices;
@@ -98,21 +100,10 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	struct drbd_peer_device_state_change *peer_device_state_change;
 	struct drbd_connection_state_change *connection_state_change;
 
-retry:
-	rcu_read_lock();
 	count_objects(resource, &n_devices, &n_connections);
-	rcu_read_unlock();
 	state_change = alloc_state_change(n_devices, n_connections, gfp);
 	if (!state_change)
 		return NULL;
-	rcu_read_lock();
-	count_objects(resource, &n_devices, &n_connections);
-	if (n_devices != state_change->n_devices ||
-	    n_connections != state_change->n_connections) {
-		kfree(state_change);
-		rcu_read_unlock();
-		goto retry;
-	}
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 5);
@@ -177,7 +168,6 @@ retry:
 		       connection->peer_role, sizeof(connection->peer_role));
 		connection_state_change++;
 	}
-	rcu_read_unlock();
 
 	return state_change;
 }
@@ -1557,6 +1547,7 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 static void queue_after_state_change_work(struct drbd_resource *resource,
 					  struct completion *done)
 {
+	/* Caller holds req_lock */
 	struct after_state_change_work *work;
 	gfp_t gfp = GFP_ATOMIC;
 
@@ -2926,7 +2917,7 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 		return ready;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		if (!(test_bit(TWOPC_YES, &connection->flags) ||
@@ -2950,7 +2941,7 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource)
 		return SS_CONCURRENT_ST_CHG;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		if (test_bit(TWOPC_NO, &connection->flags))
@@ -2970,7 +2961,7 @@ static bool supports_two_phase_commit(struct drbd_resource *resource)
 	bool supported = true;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[NOW] != C_CONNECTED)
 			continue;
 		if (connection->agreed_pro_version < 110) {
@@ -3025,7 +3016,7 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 	long timeout = 0;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[NOW] < C_CONNECTING)
 			continue;
 		connections++;
@@ -3170,7 +3161,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	}
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		if (!expect(connection, current != connection->receiver.task) ||
 		    !expect(connection, current != connection->ack_receiver.task)) {
 			rcu_read_unlock();
@@ -3303,7 +3294,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 				reply->reachable_nodes = m;
 				reply->target_reachable_nodes = m;
 			} else {
-				for_each_connection(connection, resource) {
+				rcu_read_lock();
+				for_each_connection_rcu(connection, resource) {
 					int node_id = connection->transport.net_conf->peer_node_id;
 
 					if (node_id == context->target_node_id) {
@@ -3311,6 +3303,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 						break;
 					}
 				}
+				rcu_read_unlock();
 			}
 			request.primary_nodes = cpu_to_be64(reply->primary_nodes);
 		}

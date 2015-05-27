@@ -4924,6 +4924,7 @@ static int process_twopc(struct drbd_connection *connection,
 		 * have connection or peer device objects for this peer.
 		 */
 		for_each_connection(affected_connection, resource) {
+			/* for_each_connection() protected by holding req_lock here */
 			if (reply->initiator_node_id ==
 			    affected_connection->transport.net_conf->peer_node_id)
 				goto directly_connected;
@@ -5702,7 +5703,7 @@ static int receive_dagtag(struct drbd_connection *connection, struct packet_info
 
 struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resource, int node_id)
 {
-	/* Caller needs to hold rcu_read_lock or resource->adm_mutex */
+	/* Caller needs to hold rcu_read_lock(), conf_update */
 	struct drbd_connection *connection;
 	struct net_conf *nc;
 
@@ -6167,10 +6168,17 @@ int drbd_do_features(struct drbd_connection *connection)
 
 	if (connection->agreed_pro_version < 110) {
 		struct drbd_connection *connection2;
+		bool multiple = false;
 
-		for_each_connection(connection2, resource) {
+		rcu_read_lock();
+		for_each_connection_rcu(connection2, resource) {
 			if (connection == connection2)
 				continue;
+			multiple = true;
+		}
+		rcu_read_unlock();
+
+		if (multiple) {
 			drbd_err(connection, "Peer supports protocols %d-%d, but "
 				 "multiple connections are only supported in protocol "
 				 "110 and above\n", p->protocol_min, p->protocol_max);

@@ -1364,6 +1364,8 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 #define for_each_resource_safe(resource, tmp, _resources) \
 	list_for_each_entry_safe(resource, tmp, _resources, resources)
 
+/* Each caller of for_each_connect() must hold req_lock or adm_mutex or conf_update.
+   The update locations hold all three! */
 #define for_each_connection(connection, resource) \
 	list_for_each_entry(connection, &resource->connections, connections)
 
