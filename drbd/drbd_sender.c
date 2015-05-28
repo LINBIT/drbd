@@ -2186,8 +2186,9 @@ static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 static void do_unqueued_peer_device_work(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	u64 im;
 
-	for_each_connection(connection, resource)
+	for_each_connection_ref(connection, im, resource)
 		__do_unqueued_peer_device_work(connection);
 }
 

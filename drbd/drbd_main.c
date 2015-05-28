@@ -203,6 +203,58 @@ int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
 
 #endif
 
+struct drbd_connection *__drbd_next_connection_ref(u64 *visited,
+						   struct drbd_connection *connection,
+						   struct drbd_resource *resource)
+{
+	int node_id;
+
+	rcu_read_lock();
+	if (!connection) {
+		connection = list_first_or_null_rcu(&resource->connections,
+						    struct drbd_connection,
+						    connections);
+		*visited = 0;
+	} else {
+		struct list_head *pos;
+		bool previous_visible; /* on the resources connections list */
+
+		pos = list_next_rcu(&connection->connections);
+		/* follow the pointer first, then check if the previous element was
+		   still an element on the list of visible connections. */
+		smp_rmb();
+		previous_visible = !test_bit(C_UNREGISTERED, &connection->flags);
+
+		kref_debug_put(&connection->kref_debug, 13);
+		kref_put(&connection->kref, drbd_destroy_connection);
+
+		if (pos == &resource->connections) {
+			connection = NULL;
+		} else if (previous_visible) {	/* visible -> we are now on a vital element */
+			connection = list_entry_rcu(pos, struct drbd_connection, connections);
+		} else { /* not visible -> pos might point to a dead element now */
+			for_each_connection_rcu(connection, resource) {
+				node_id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+				if (!(*visited & NODE_MASK(node_id)))
+					goto found;
+			}
+			connection = NULL;
+		}
+	}
+
+	if (connection) {
+	found:
+		node_id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+		*visited |= NODE_MASK(node_id);
+
+		kref_get(&connection->kref);
+		kref_debug_get(&connection->kref_debug, 13);
+	}
+
+	rcu_read_unlock();
+	return connection;
+}
+
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
@@ -3567,6 +3619,8 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 		list_del_rcu(&peer_device->peer_devices);
 		list_add(&peer_device->peer_devices, &work_list);
 	}
+	set_bit(C_UNREGISTERED, &connection->flags);
+	smp_wmb();
 	list_del_rcu(&connection->connections);
 	spin_unlock_irq(&resource->req_lock);
 

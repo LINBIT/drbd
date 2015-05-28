@@ -4789,7 +4789,7 @@ static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drb
 			       struct p_twopc_request *request)
 {
 	struct drbd_connection *connection;
-	u64 nodes_to_reach, reach_immediately;
+	u64 nodes_to_reach, reach_immediately, im;
 
 	spin_lock_irq(&resource->req_lock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
@@ -4798,18 +4798,11 @@ static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drb
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
 	spin_unlock_irq(&resource->req_lock);
 
-	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_ref(connection, im, resource) {
 		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
-		if (reach_immediately & mask) {
-			kref_get(&connection->kref);
-			rcu_read_unlock();
+		if (reach_immediately & mask)
 			conn_send_twopc_request(connection, vnr, cmd, request);
-			rcu_read_lock();
-			kref_put(&connection->kref, drbd_destroy_connection);
-		}
 	}
-	rcu_read_unlock();
 }
 
 

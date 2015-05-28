@@ -2181,8 +2181,9 @@ static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
 {
 	struct drbd_resource *resource = lost_peer->resource;
 	struct drbd_connection *connection;
+	u64 im;
 
-	for_each_connection(connection, resource) {
+	for_each_connection_ref(connection, im, resource) {
 		if (connection == lost_peer)
 			continue;
 		if (connection->cstate[NOW] == C_CONNECTED) {
@@ -2870,41 +2871,32 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 {
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_SUCCESS;
+	u64 im;
 
-	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_ref(connection, im, resource) {
 		u64 mask;
 
 		if (connection->agreed_pro_version < 110)
 			continue;
 		mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
-		if (reach_immediately & mask)
+		if (reach_immediately & mask) {
 			set_bit(TWOPC_PREPARED, &connection->flags);
-		else
+		} else {
 			clear_bit(TWOPC_PREPARED, &connection->flags);
-	}
-	for_each_connection(connection, resource) {
-		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		kref_get(&connection->kref);
-		kref_debug_get(&connection->kref_debug, 5);
-		rcu_read_unlock();
+		}
 
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
 		clear_bit(TWOPC_RETRY, &connection->flags);
 
-		if (!conn_send_twopc_request(connection, vnr, cmd, request))
+		if (!conn_send_twopc_request(connection, vnr, cmd, request)) {
 			rv = SS_CW_SUCCESS;
-		else {
+		} else {
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 			wake_up(&resource->work.q_wait);
 		}
-		rcu_read_lock();
-		kref_debug_put(&connection->kref_debug, 5);
-		kref_put(&connection->kref, drbd_destroy_connection);
 	}
-	rcu_read_unlock();
 	return rv;
 }
 
@@ -3040,22 +3032,15 @@ static void twopc_phase2(struct drbd_resource *resource, int vnr,
 {
 	enum drbd_packet twopc_cmd = success ? P_TWOPC_COMMIT : P_TWOPC_ABORT;
 	struct drbd_connection *connection;
+	u64 im;
 
-	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
+	for_each_connection_ref(connection, im, resource) {
 		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
 		if (!(reach_immediately & mask))
 			continue;
 
-		kref_get(&connection->kref);
-		kref_debug_get(&connection->kref_debug, 5);
-		rcu_read_unlock();
 		conn_send_twopc_request(connection, vnr, twopc_cmd, request);
-		rcu_read_lock();
-		kref_debug_put(&connection->kref_debug, 5);
-		kref_put(&connection->kref, drbd_destroy_connection);
 	}
-	rcu_read_unlock();
 }
 
 struct change_context {

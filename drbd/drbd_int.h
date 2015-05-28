@@ -801,6 +801,7 @@ enum {
 	CORKED,
 	DATA_CORKED = CORKED,
 	CONTROL_CORKED,
+	C_UNREGISTERED,
 };
 
 /* flag bits per resource */
@@ -1375,6 +1376,11 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 #define for_each_connection_safe(connection, tmp, resource) \
 	list_for_each_entry_safe(connection, tmp, &resource->connections, connections)
 
+#define for_each_connection_ref(connection, m, resource)		\
+	for (connection = __drbd_next_connection_ref(&m, NULL, resource); \
+	     connection;						\
+	     connection = __drbd_next_connection_ref(&m, connection, resource))
+
 #define for_each_peer_device(peer_device, device) \
 	list_for_each_entry(peer_device, &device->peer_devices, peer_devices)
 
@@ -1505,6 +1511,9 @@ extern void drbd_flush_peer_acks(struct drbd_resource *resource);
 extern void drbd_drop_unsent(struct drbd_connection* connection);
 extern void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
 extern void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream);
+
+extern struct drbd_connection *
+__drbd_next_connection_ref(u64 *, struct drbd_connection *, struct drbd_resource *);
 
 
 /* Meta data layout

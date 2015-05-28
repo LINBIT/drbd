@@ -786,8 +786,9 @@ retry:
 	} else /* (role == R_SECONDARY) */ {
 		if (start_new_tl_epoch(resource)) {
 			struct drbd_connection *connection;
+			u64 im;
 
-			for_each_connection(connection, resource)
+			for_each_connection_ref(connection, im, resource)
 				drbd_flush_workqueue(&connection->sender_work);
 		}
 		wait_event(resource->barrier_wait, !barrier_pending(resource));
@@ -836,8 +837,9 @@ retry:
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && !with_force) {
 			struct drbd_connection *connection;
+			u64 im;
 
-			for_each_connection(connection, resource) {
+			for_each_connection_ref(connection, im, resource) {
 				struct drbd_peer_device *peer_device;
 				int vnr;
 
@@ -862,8 +864,9 @@ retry:
 			goto out;
 		if (rv == SS_PRIMARY_NOP && !with_force) {
 			struct drbd_connection *connection;
+			u64 im;
 
-			for_each_connection(connection, resource) {
+			for_each_connection_ref(connection, im, resource) {
 				if (!conn_try_outdate_peer(connection) && force) {
 					drbd_warn(connection, "Forced into split brain situation!\n");
 					with_force = true;
