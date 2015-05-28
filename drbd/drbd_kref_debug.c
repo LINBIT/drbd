@@ -20,7 +20,7 @@ struct kref_debug_class kref_class_connection = {
 		[2] = "drbd_adm_prepare()/drbd_adm_finish()",
 		[3] = "struct drbd_peer_device",
 		[4] = "conn_try_outdate_peer_async()",
-		[5] = "__cluster_wide_request()",
+		[5] = "remember_state_change()forget_state_change()",
 		[6] = "change_cluster_wide_state()",
 		[7] = "struct drbd_state_change",
 		[8] = "target_connection/change_cluster_wide_state()",
@@ -28,6 +28,8 @@ struct kref_debug_class kref_class_connection = {
 		[10] = "free",
 		[11] = "connect_timer",
 		[12] = "receive_peer_dagtag()",
+		[13] = "for_each_conneciton_ref()",
+		[14] = "w_update_peers",
 	}
 };
 
@@ -37,6 +39,7 @@ struct kref_debug_class kref_class_device = {
 		[2] = "struct drbd_state_change",
 		[3] = "open / release",
 		[4] = "drbd_adm_prepare()/drbd_adm_finish()",
+		[5] = "w_update_peers",
 	}
 };
 

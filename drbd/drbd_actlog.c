@@ -809,10 +809,18 @@ static int w_update_peers(struct drbd_work *w, int unused)
 {
        struct update_peers_work *upw = container_of(w, struct update_peers_work, w);
        struct drbd_peer_device *peer_device = upw->peer_device;
+       struct drbd_device *device = peer_device->device;
+       struct drbd_connection *connection = peer_device->connection;
 
        consider_sending_peers_in_sync(peer_device, upw->enr);
 
        kfree(upw);
+
+       kref_debug_put(&device->kref_debug, 5);
+       kref_put(&device->kref, drbd_destroy_device);
+
+       kref_debug_put(&connection->kref_debug, 14);
+       kref_put(&connection->kref, drbd_destroy_connection);
 
        return 0;
 }
@@ -947,6 +955,13 @@ static bool update_rs_extent(struct drbd_peer_device *peer_device,
 			if (upw) {
 				upw->enr = ext->lce.lc_number;
 				upw->w.cb = w_update_peers;
+
+				kref_get(&peer_device->device->kref);
+				kref_debug_get(&peer_device->device->kref_debug, 5);
+
+				kref_get(&peer_device->connection->kref);
+				kref_debug_get(&peer_device->connection->kref_debug, 14);
+
 				upw->peer_device = peer_device;
 				drbd_queue_work(&device->resource->work, &upw->w);
 			} else {
