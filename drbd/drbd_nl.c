@@ -953,8 +953,9 @@ retry:
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		 struct drbd_peer_device *peer_device;
+		 u64 im;
 
-		for_each_peer_device(peer_device, device) {
+		 for_each_peer_device_ref(peer_device, im, device) {
 			/* writeout of activity log covered areas of the bitmap
 			 * to stable storage done in after state change already */
 
@@ -4581,6 +4582,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code ret;
+	u64 im;
 
 	spin_lock_irq(&resource->req_lock);
 	if (device->disk_state[NOW] == D_DISKLESS &&
@@ -4595,7 +4597,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	if (ret != NO_ERROR)
 		return ret;
 
-	for_each_peer_device(peer_device, device)
+	for_each_peer_device_ref(peer_device, im, device)
 		stable_change_repl_state(peer_device, L_OFF,
 					 CS_VERBOSE | CS_WAIT_COMPLETE);
 
@@ -4609,7 +4611,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	drbd_unregister_device(device);
 
 	mutex_lock(&notification_mutex);
-	for_each_peer_device(peer_device, device)
+	for_each_peer_device_ref(peer_device, im, device)
 		notify_peer_device_state(NULL, 0, peer_device, NULL,
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);

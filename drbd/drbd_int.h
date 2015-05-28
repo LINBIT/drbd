@@ -1392,6 +1392,11 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 #define for_each_peer_device_safe(peer_device, tmp, device) \
 	list_for_each_entry_safe(peer_device, tmp, &device->peer_devices, peer_devices)
 
+#define for_each_peer_device_ref(peer_device, m, resource)		\
+	for (peer_device = __drbd_next_peer_device_ref(&m, NULL, resource); \
+	     peer_device;						\
+	     peer_device = __drbd_next_peer_device_ref(&m, peer_device, resource))
+
 static inline unsigned int device_to_minor(struct drbd_device *device)
 {
 	return device->minor;
@@ -1515,6 +1520,9 @@ extern void drbd_uncork(struct drbd_connection *connection, enum drbd_stream str
 
 extern struct drbd_connection *
 __drbd_next_connection_ref(u64 *, struct drbd_connection *, struct drbd_resource *);
+
+extern struct drbd_peer_device *
+__drbd_next_peer_device_ref(u64 *, struct drbd_peer_device *, struct drbd_device *);
 
 
 /* Meta data layout

@@ -255,6 +255,53 @@ struct drbd_connection *__drbd_next_connection_ref(u64 *visited,
 	return connection;
 }
 
+
+struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
+						     struct drbd_peer_device *peer_device,
+						     struct drbd_device *device)
+{
+	rcu_read_lock();
+	if (!peer_device) {
+		peer_device = list_first_or_null_rcu(&device->peer_devices,
+						    struct drbd_peer_device,
+						    peer_devices);
+		*visited = 0;
+	} else {
+		struct list_head *pos;
+		bool previous_visible;
+
+		pos = list_next_rcu(&peer_device->peer_devices);
+		smp_rmb();
+		previous_visible = !test_bit(C_UNREGISTERED, &peer_device->connection->flags);
+
+		kref_debug_put(&peer_device->connection->kref_debug, 15);
+		kref_put(&peer_device->connection->kref, drbd_destroy_connection);
+
+		if (pos == &device->peer_devices) {
+			peer_device = NULL;
+		} else if (previous_visible) {
+			peer_device = list_entry_rcu(pos, struct drbd_peer_device, peer_devices);
+		} else {
+			for_each_peer_device_rcu(peer_device, device) {
+				if (!(*visited & NODE_MASK(peer_device->node_id)))
+					goto found;
+			}
+			peer_device = NULL;
+		}
+	}
+
+	if (peer_device) {
+	found:
+		*visited |= NODE_MASK(peer_device->node_id);
+
+		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 15);
+	}
+
+	rcu_read_unlock();
+	return peer_device;
+}
+
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
@@ -3618,12 +3665,12 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	int vnr;
 
 	spin_lock_irq(&resource->req_lock);
+	set_bit(C_UNREGISTERED, &connection->flags);
+	smp_wmb();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		list_del_rcu(&peer_device->peer_devices);
 		list_add(&peer_device->peer_devices, &work_list);
 	}
-	set_bit(C_UNREGISTERED, &connection->flags);
-	smp_wmb();
 	list_del_rcu(&connection->connections);
 	spin_unlock_irq(&resource->req_lock);
 

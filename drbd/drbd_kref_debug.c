@@ -30,6 +30,7 @@ struct kref_debug_class kref_class_connection = {
 		[12] = "receive_peer_dagtag()",
 		[13] = "for_each_conneciton_ref()",
 		[14] = "w_update_peers",
+		[15] = "for_each_peer_device_ref()",
 	}
 };
 
