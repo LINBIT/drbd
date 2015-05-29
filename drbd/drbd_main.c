@@ -2702,7 +2702,6 @@ void drbd_destroy_device(struct kref *kref)
 	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
 
-	memset(device, 0xfd, sizeof(*device)); /* poison */
 	kfree(device);
 
 	kref_debug_put(&resource->kref_debug, 4);
@@ -2717,7 +2716,6 @@ void drbd_destroy_resource(struct kref *kref)
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
 	kref_debug_destroy(&resource->kref_debug);
-	memset(resource, 0xf2, sizeof(*resource)); /* poison */
 	kfree(resource);
 	module_put(THIS_MODULE);
 }
@@ -3303,7 +3301,6 @@ void drbd_destroy_connection(struct kref *kref)
 	drbd_put_send_buffers(connection);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
-	memset(connection, 0xfc, sizeof(*connection)); /* poison */
 	kfree(connection);
 	kref_debug_put(&resource->kref_debug, 3);
 	kref_put(&resource->kref, drbd_destroy_resource);
