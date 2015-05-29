@@ -3046,7 +3046,7 @@ void drbd_flush_peer_acks(struct drbd_resource *resource)
 	spin_lock_irq(&resource->req_lock);
 	if (resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
-		drbd_queue_peer_ack(resource->peer_ack_req);
+		drbd_queue_peer_ack(resource, resource->peer_ack_req);
 		resource->peer_ack_req = NULL;
 	}
 	spin_unlock_irq(&resource->req_lock);

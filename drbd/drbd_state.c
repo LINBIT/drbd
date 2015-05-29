@@ -1641,7 +1641,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
-		drbd_queue_peer_ack(resource->peer_ack_req);
+		drbd_queue_peer_ack(resource, resource->peer_ack_req);
 		resource->peer_ack_req = NULL;
 	}
 

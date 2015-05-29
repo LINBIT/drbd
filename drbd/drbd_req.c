@@ -140,9 +140,8 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	return req;
 }
 
-void drbd_queue_peer_ack(struct drbd_request *req)
+void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
 {
-	struct drbd_resource *resource = req->device->resource;
 	struct drbd_connection *connection;
 	bool queued = false;
 
@@ -312,7 +311,7 @@ tail_recursion:
 		if (peer_ack_req) {
 			if (peer_ack_differs(req, peer_ack_req) ||
 			    peer_ack_window_full(req)) {
-				drbd_queue_peer_ack(peer_ack_req);
+				drbd_queue_peer_ack(resource, peer_ack_req);
 				peer_ack_req = NULL;
 			} else
 				mempool_free(peer_ack_req, drbd_request_mempool);
