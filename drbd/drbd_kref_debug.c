@@ -41,6 +41,7 @@ struct kref_debug_class kref_class_device = {
 		[3] = "open / release",
 		[4] = "drbd_adm_prepare()/drbd_adm_finish()",
 		[5] = "w_update_peers",
+		[6] = "drbd_request",
 	}
 };
 

@@ -1065,18 +1065,21 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 int drbd_send_peer_ack(struct drbd_connection *connection,
 			      struct drbd_request *req)
 {
-	struct drbd_peer_device *peer_device;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_connection *c;
 	struct p_peer_ack *p;
 	u64 mask = 0;
 
 	if (req->rq_state[0] & RQ_LOCAL_OK)
-		mask |= NODE_MASK(connection->resource->res_opts.node_id);
+		mask |= NODE_MASK(resource->res_opts.node_id);
+
 	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, req->device) {
-		int idx = 1 + peer_device->node_id;
+	for_each_connection_rcu(c, resource) {
+		int node_id = rcu_dereference(c->transport.net_conf)->peer_node_id;
+		int idx = 1 + node_id;
 
 		if (req->rq_state[idx] & RQ_NET_OK)
-			mask |= NODE_MASK(peer_device->node_id);
+			mask |= NODE_MASK(node_id);
 	}
 	rcu_read_unlock();
 
@@ -2672,8 +2675,6 @@ void drbd_destroy_device(struct kref *kref)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device, *tmp;
 
-	del_timer_sync(&device->request_timer);
-
 	/* cleanup stuff that may have been allocated during
 	 * device (re-)configuration or state changes */
 
@@ -3637,18 +3638,18 @@ void drbd_unregister_device(struct drbd_device *device)
 void drbd_put_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
-	int refs = 3, i;
+	int refs = 3;
 
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
 	del_gendisk(device->vdisk);
+	del_timer_sync(&device->request_timer);
+
 	for_each_peer_device(peer_device, device)
 		refs++;
 
-	for (i = 0; i < refs; i++) {
-		kref_debug_put(&device->kref_debug, 1);
-		kref_put(&device->kref, drbd_destroy_device);
-	}
+	kref_debug_sub(&device->kref_debug, refs, 1);
+	kref_sub(&device->kref, refs, drbd_destroy_device);
 }
 
 /**

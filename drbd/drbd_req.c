@@ -113,7 +113,11 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	memset(req, 0, sizeof(*req));
 
 	drbd_req_make_private_bio(req, bio_src);
+
+	kref_get(&device->kref);
+	kref_debug_get(&device->kref_debug, 6);
 	req->device      = device;
+
 	req->master_bio  = bio_src;
 	req->epoch       = 0;
 
@@ -206,7 +210,7 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
-	unsigned int req_size, s;
+	unsigned int req_size, s, device_refs = 0;
 
 tail_recursion:
 	device = req->device;
@@ -224,7 +228,7 @@ tail_recursion:
 		drbd_err(device,
 			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
 			s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
-		return;
+		goto out;
 	}
 
 	/* more paranoia */
@@ -232,7 +236,7 @@ tail_recursion:
 		atomic_read(&req->completion_ref) || (s & RQ_LOCAL_PENDING)) {
 		drbd_err(device, "drbd_req_destroy: Logic BUG rq_state: %x, completion_ref = %d\n",
 				s, atomic_read(&req->completion_ref));
-		return;
+		goto out;
 	}
 
 	list_del_init(&req->tl_requests);
@@ -304,6 +308,7 @@ tail_recursion:
 		}
 	}
 
+	device_refs++; /* In both branches of the if the reference to device gets released */
 	if (s & RQ_WRITE && req->i.size) {
 		struct drbd_resource *resource = device->resource;
 		struct drbd_request *peer_ack_req = resource->peer_ack_req;
@@ -316,6 +321,7 @@ tail_recursion:
 			} else
 				mempool_free(peer_ack_req, drbd_request_mempool);
 		}
+		req->device = NULL;
 		resource->peer_ack_req = req;
 		mod_timer(&resource->peer_ack_timer,
 			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
@@ -339,6 +345,10 @@ tail_recursion:
 			}
 		}
 	}
+
+out:
+	kref_debug_sub(&device->kref_debug, device_refs, 6);
+	kref_sub(&device->kref, device_refs, drbd_destroy_device);
 }
 
 static void wake_all_senders(struct drbd_resource *resource) {
