@@ -2348,17 +2348,18 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 
 static int try_to_promote(struct drbd_resource *resource, struct drbd_device *device)
 {
-	signed long timeout = 5*HZ;
-	int retry = 3, rv;
+	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
 	do {
 		rv = drbd_set_role(resource, R_PRIMARY, false);
-		if (rv >= SS_SUCCESS) {
+		if (rv >= SS_SUCCESS || timeout == 0) {
 			return rv;
 		} else if (rv == SS_CW_FAILED_BY_PEER) {
 			/* Probably udev has it open read-only on one of the peers */
 			long t = schedule_timeout_interruptible(HZ / 5);
 			if (t < 0)
 				break;
+			timeout -= HZ / 5;
 		} else if (rv == SS_TWO_PRIMARIES) {
 			/* Wait till the peer demoted itself */
 			timeout = wait_event_interruptible_timeout(resource->state_wait,
