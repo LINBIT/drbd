@@ -2352,15 +2352,24 @@ static int try_to_promote(struct drbd_resource *resource, struct drbd_device *de
 	int retry = 3, rv;
 	do {
 		rv = drbd_set_role(resource, R_PRIMARY, false);
-		if (rv >= SS_SUCCESS || rv != SS_TWO_PRIMARIES)
+		if (rv >= SS_SUCCESS) {
 			return rv;
-
-		timeout = wait_event_interruptible_timeout(resource->state_wait,
+		} else if (rv == SS_CW_FAILED_BY_PEER) {
+			/* Probably udev has it open read-only on one of the peers */
+			long t = schedule_timeout_interruptible(HZ / 5);
+			if (t < 0)
+				break;
+		} else if (rv == SS_TWO_PRIMARIES) {
+			/* Wait till the peer demoted itself */
+			timeout = wait_event_interruptible_timeout(resource->state_wait,
 				resource->role[NOW] == R_PRIMARY ||
 				(!primary_peer_present(resource) && any_disk_is_uptodate(device)),
 				timeout);
-		if (timeout <= 0)
-			break;
+			if (timeout <= 0)
+				break;
+		} else {
+			return rv;
+		}
 	} while (--retry);
 	return rv;
 }
