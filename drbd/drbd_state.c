@@ -1856,6 +1856,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 		}
 
+		if (connection->last_reconnect_jif)
+			set_bit(RECONNECT, &connection->flags);
 		/* remember last connect time so request_timer_fn() won't
 		 * kill newly established sessions while we are still trying to thaw
 		 * previously frozen IO */

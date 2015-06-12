@@ -802,6 +802,7 @@ enum {
 	DATA_CORKED = CORKED,
 	CONTROL_CORKED,
 	C_UNREGISTERED,
+	RECONNECT,
 };
 
 /* flag bits per resource */

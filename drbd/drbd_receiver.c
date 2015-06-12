@@ -3028,6 +3028,23 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 				return rv;
 		}
 
+		*rule_nr = 35;
+		/* Peer crashed as primary, I survived, resync from me */
+		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
+		    test_bit(RECONNECT, &peer_device->connection->flags))
+			return 1;
+
+		/* I am a crashed primary, peer survived, resync to me */
+		if (test_bit(CRASHED_PRIMARY, &device->flags) &&
+		    peer_device->uuid_flags & UUID_FLAG_RECONNECT)
+			return -1;
+
+		/* One of us had a connection to the other node before.
+		   i.e. this is not a common power failure. */
+		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT ||
+		    test_bit(RECONNECT, &peer_device->connection->flags))
+			return 0;
+
 		/* Common power [off|failure]? */
 		*rule_nr = 40;
 		if (test_bit(CRASHED_PRIMARY, &device->flags)) {
