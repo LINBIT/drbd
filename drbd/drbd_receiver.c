@@ -4552,7 +4552,7 @@ void twopc_timer_fn(unsigned long data)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
-	if (list_empty(&resource->twopc_work.list)) {
+	if (resource->twopc_work.cb == NULL) {
 		drbd_err(resource, "Two-phase commit %u timeout\n",
 			   resource->twopc_reply.tid);
 		resource->twopc_work.cb = abort_nested_twopc_work;
@@ -5029,8 +5029,7 @@ static int process_twopc(struct drbd_connection *connection,
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 9);
 		resource->twopc_parent = connection;
-		resource->twopc_timer.expires = receive_jif + twopc_timeout(resource);
-		add_timer(&resource->twopc_timer);
+		mod_timer(&resource->twopc_timer, receive_jif + twopc_timeout(resource));
 		spin_unlock_irq(&resource->req_lock);
 
 		if (rv >= SS_SUCCESS) {
@@ -6553,10 +6552,9 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			int my_node_id = resource->res_opts.node_id;
-			del_timer(&resource->twopc_timer);
 			if (resource->twopc_reply.initiator_node_id == my_node_id) {
 				wake_up(&resource->state_wait);
-			} else if (list_empty(&resource->twopc_work.list)) {
+			} else if (resource->twopc_work.cb == NULL) {
 				/* in case the timeout timer was not quicker in queuing the work... */
 				resource->twopc_work.cb = nested_twopc_work;
 				drbd_queue_work(&resource->work, &resource->twopc_work);
@@ -6582,10 +6580,9 @@ void twopc_connection_down(struct drbd_connection *connection)
 		set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
 			int my_node_id = resource->res_opts.node_id;
-			del_timer(&resource->twopc_timer);
 			if (resource->twopc_reply.initiator_node_id == my_node_id) {
 				wake_up(&resource->state_wait);
-			} else if (list_empty(&resource->twopc_work.list)) {
+			} else if (resource->twopc_work.cb == NULL) {
 				/* in case the timeout timer was not quicker in queuing the work... */
 				resource->twopc_work.cb = nested_twopc_work;
 				drbd_queue_work(&resource->work, &resource->twopc_work);
