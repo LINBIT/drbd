@@ -2809,7 +2809,7 @@ static bool when_done_lock(struct drbd_resource *resource,
 			   unsigned long *irq_flags)
 {
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
-	if (!resource->remote_state_change)
+	if (!resource->remote_state_change && resource->twopc_work.cb == NULL)
 		return true;
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 	return false;
@@ -3228,8 +3228,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
 
-	D_ASSERT(resource, list_empty(&resource->twopc_work.list));
-	resource->twopc_work.cb = NULL;
+	D_ASSERT(resource, resource->twopc_work.cb == NULL);
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_PREPARE,
 				    &request, reach_immediately);
@@ -3361,6 +3360,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	twopc_parent = resource->twopc_parent;
 	resource->twopc_parent = NULL;
 	twopc_reply = resource->twopc_reply;
+	resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 
 	if (!twopc_reply.tid || !expect(resource, twopc_parent))
@@ -3380,9 +3380,10 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
 	kref_debug_put(&twopc_parent->kref_debug, 9);
 	kref_put(&twopc_parent->kref, drbd_destroy_connection);
+	wake_up(&resource->twopc_wait);
 }
 
-static int nested_twopc_work(struct drbd_work *work, int cancel)
+int nested_twopc_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
@@ -3412,7 +3413,6 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
-	resource->twopc_work.cb = nested_twopc_work;
 	spin_unlock_irq(&resource->req_lock);
 
 	rv = __cluster_wide_request(resource, vnr, cmd, request, reach_immediately);

@@ -4549,6 +4549,7 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 		}
 		prepared = true;
 	}
+	resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 	wake_up(&resource->twopc_wait);
 	queue_queued_twopc(resource);
@@ -4569,6 +4570,8 @@ void twopc_timer_fn(unsigned long data)
 			   resource->twopc_reply.tid);
 		resource->twopc_work.cb = abort_nested_twopc_work;
 		drbd_queue_work(&resource->work, &resource->twopc_work);
+	} else {
+		mod_timer(&resource->twopc_timer, jiffies + HZ/10);
 	}
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
@@ -6572,12 +6575,14 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 		else if (pi->cmd == P_TWOPC_RETRY)
 			set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
+			int my_node_id = resource->res_opts.node_id;
 			del_timer(&resource->twopc_timer);
-			if (list_empty(&resource->twopc_work.list)) {
-				if (resource->twopc_work.cb == NULL)
-					wake_up(&resource->state_wait);
-				else
-					drbd_queue_work(&resource->work, &resource->twopc_work);
+			if (resource->twopc_reply.initiator_node_id == my_node_id) {
+				wake_up(&resource->state_wait);
+			} else if (list_empty(&resource->twopc_work.list)) {
+				/* in case the timeout timer was not quicker in queuing the work... */
+				resource->twopc_work.cb = nested_twopc_work;
+				drbd_queue_work(&resource->work, &resource->twopc_work);
 			}
 		}
 	} else {
@@ -6599,10 +6604,15 @@ void twopc_connection_down(struct drbd_connection *connection)
 	    test_bit(TWOPC_PREPARED, &connection->flags)) {
 		set_bit(TWOPC_RETRY, &connection->flags);
 		if (cluster_wide_reply_ready(resource)) {
+			int my_node_id = resource->res_opts.node_id;
 			del_timer(&resource->twopc_timer);
-			if (list_empty(&resource->twopc_work.list) &&
-			    resource->twopc_work.cb)
+			if (resource->twopc_reply.initiator_node_id == my_node_id) {
+				wake_up(&resource->state_wait);
+			} else if (list_empty(&resource->twopc_work.list)) {
+				/* in case the timeout timer was not quicker in queuing the work... */
+				resource->twopc_work.cb = nested_twopc_work;
 				drbd_queue_work(&resource->work, &resource->twopc_work);
+			}
 		}
 	}
 }

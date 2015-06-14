@@ -7,6 +7,7 @@ struct drbd_resource;
 struct drbd_device;
 struct drbd_connection;
 struct drbd_peer_device;
+struct drbd_work;
 
 /**
  * DOC: DRBD State macros
@@ -76,6 +77,7 @@ extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum
 		err;								\
 	})
 
+extern int nested_twopc_work(struct drbd_work *work, int cancel);
 extern enum drbd_state_rv nested_twopc_request(struct drbd_resource *, int, enum drbd_packet, struct p_twopc_request *);
 extern bool cluster_wide_reply_ready(struct drbd_resource *);
 
