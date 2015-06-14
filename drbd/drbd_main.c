@@ -4595,6 +4595,8 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 found:
 	from_id = find_node_id_by_bitmap_uuid(device, peer_bm_uuid);
 	if (from_id == -1) {
+		if (peer_md[node_id1].bitmap_uuid == 0 && peer_md[node_id2].bitmap_uuid == 0)
+			return false;
 		drbd_err(peer_device, "unexpected\n");
 		drbd_err(peer_device, "In UUIDs from node %d found equal UUID (%llX) for nodes %d %d\n",
 			 peer_device->node_id, peer_bm_uuid, node_id1, node_id2);
