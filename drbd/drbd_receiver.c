@@ -764,7 +764,7 @@ start:
 	}
 
 	if (connection->agreed_pro_version >= 110) {
-		if (resource->res_opts.node_id < connection->transport.net_conf->peer_node_id) {
+		if (resource->res_opts.node_id < connection->peer_node_id) {
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 11);
 			connection->connect_timer_work.cb = connect_work;
@@ -4839,7 +4839,7 @@ static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drb
 	spin_unlock_irq(&resource->req_lock);
 
 	for_each_connection_ref(connection, im, resource) {
-		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		u64 mask = NODE_MASK(connection->peer_node_id);
 		if (reach_immediately & mask)
 			conn_send_twopc_request(connection, vnr, cmd, request);
 	}
@@ -4950,7 +4950,7 @@ static int process_twopc(struct drbd_connection *connection,
 		return 0;
 	}
 
-	if (reply->initiator_node_id != connection->transport.net_conf->peer_node_id) {
+	if (reply->initiator_node_id != connection->peer_node_id) {
 		/*
 		 * This is an indirect request.  Unless we are directly
 		 * connected to the initiator as well as indirectly, we don't
@@ -4959,7 +4959,7 @@ static int process_twopc(struct drbd_connection *connection,
 		for_each_connection(affected_connection, resource) {
 			/* for_each_connection() protected by holding req_lock here */
 			if (reply->initiator_node_id ==
-			    affected_connection->transport.net_conf->peer_node_id)
+			    affected_connection->peer_node_id)
 				goto directly_connected;
 		}
 		/* only indirectly connected */
@@ -5740,13 +5740,10 @@ struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resourc
 {
 	/* Caller needs to hold rcu_read_lock(), conf_update */
 	struct drbd_connection *connection;
-	struct net_conf *nc;
 
 	for_each_connection_rcu(connection, resource) {
-		nc = rcu_dereference(connection->transport.net_conf);
-		if (nc && nc->peer_node_id == node_id) {
+		if (connection->peer_node_id == node_id)
 			return connection;
-		}
 	}
 
 	return NULL;
@@ -6121,7 +6118,7 @@ static int drbd_disconnected(struct drbd_peer_device *peer_device)
  *
  * for now, they are expected to be zero, but ignored.
  */
-static int drbd_send_features(struct drbd_connection *connection, int peer_node_id)
+static int drbd_send_features(struct drbd_connection *connection)
 {
 	struct p_connection_features *p;
 
@@ -6132,7 +6129,7 @@ static int drbd_send_features(struct drbd_connection *connection, int peer_node_
 	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
-	p->receiver_node_id = cpu_to_be32(peer_node_id);
+	p->receiver_node_id = cpu_to_be32(connection->peer_node_id);
 	p->feature_flags = cpu_to_be32(PRO_FEATURES);
 	return send_command(connection, -1, P_CONNECTION_FEATURES, DATA_STREAM);
 }
@@ -6151,16 +6148,9 @@ int drbd_do_features(struct drbd_connection *connection)
 	struct p_connection_features *p;
 	const int expect = sizeof(struct p_connection_features);
 	struct packet_info pi;
-	struct net_conf *nc;
-	int peer_node_id = -1, err;
+	int err;
 
-	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
-	if (nc)
-		peer_node_id = nc->peer_node_id;
-	rcu_read_unlock();
-
-	err = drbd_send_features(connection, peer_node_id);
+	err = drbd_send_features(connection);
 	if (err)
 		return 0;
 
@@ -6222,9 +6212,9 @@ int drbd_do_features(struct drbd_connection *connection)
 	}
 
 	if (connection->agreed_pro_version >= 110) {
-		if (be32_to_cpu(p->sender_node_id) != peer_node_id) {
+		if (be32_to_cpu(p->sender_node_id) != connection->peer_node_id) {
 			drbd_err(connection, "Peer presented a node_id of %d instead of %d\n",
-				 be32_to_cpu(p->sender_node_id), peer_node_id);
+				 be32_to_cpu(p->sender_node_id), connection->peer_node_id);
 			return 0;
 		}
 		if (be32_to_cpu(p->receiver_node_id) != resource->res_opts.node_id) {
@@ -6276,13 +6266,12 @@ int drbd_do_auth(struct drbd_connection *connection)
 	struct hash_desc desc;
 	struct packet_info pi;
 	struct net_conf *nc;
-	int err, rv, peer_node_id, dig_size;
+	int err, rv, dig_size;
 	bool peer_is_drbd_9 = connection->agreed_pro_version >= 110;
 	void *packet_body;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
-	peer_node_id = nc->peer_node_id;
 	key_len = strlen(nc->shared_secret);
 	memcpy(secret, nc->shared_secret, key_len);
 	rcu_read_unlock();
@@ -6408,7 +6397,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 
 	dig_size = sizeof(my_challenge.d);
 	if (peer_is_drbd_9) {
-		my_challenge.i = cpu_to_be32(peer_node_id);
+		my_challenge.i = cpu_to_be32(connection->peer_node_id);
 		dig_size += sizeof(my_challenge.i);
 	}
 	sg_set_buf(&sg, &my_challenge, dig_size);
@@ -6463,9 +6452,7 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 	unsigned int idx;
 	int err = 0;
 
-	rcu_read_lock();
-	idx = 1 + connection->transport.net_conf->peer_node_id;
-	rcu_read_unlock();
+	idx = 1 + connection->peer_node_id;
 
 	spin_lock_irq(&resource->req_lock);
 	req = list_first_entry(&resource->peer_ack_list, struct drbd_request, tl_requests);
@@ -6554,7 +6541,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 
 			if (resource->res_opts.node_id ==
 			    resource->twopc_reply.initiator_node_id &&
-			    connection->transport.net_conf->peer_node_id ==
+			    connection->peer_node_id ==
 			    resource->twopc_reply.target_node_id) {
 				resource->twopc_reply.target_reachable_nodes |=
 					reachable_nodes;
@@ -7027,7 +7014,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	int idx;
 
 	spin_lock_irq(&resource->req_lock);
-	idx = 1 + connection->transport.net_conf->peer_node_id;
+	idx = 1 + connection->peer_node_id;
 	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
 		if (!(req->rq_state[idx] & RQ_PEER_ACK))
 			continue;

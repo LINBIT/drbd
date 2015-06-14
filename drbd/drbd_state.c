@@ -2882,7 +2882,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 		if (connection->agreed_pro_version < 110)
 			continue;
-		mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		mask = NODE_MASK(connection->peer_node_id);
 		if (reach_immediately & mask) {
 			set_bit(TWOPC_PREPARED, &connection->flags);
 		} else {
@@ -2994,7 +2994,7 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 		u64 mask;
 
 		/* If this peer is primary as well, the config must allow it. */
-		mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		mask = NODE_MASK(connection->peer_node_id);
 		if ((resource->twopc_reply.primary_nodes & mask) &&
 		    !(connection->transport.net_conf->two_primaries)) {
 			rv = SS_TWO_PRIMARIES;
@@ -3039,7 +3039,7 @@ static void twopc_phase2(struct drbd_resource *resource, int vnr,
 	u64 im;
 
 	for_each_connection_ref(connection, im, resource) {
-		u64 mask = NODE_MASK(connection->transport.net_conf->peer_node_id);
+		u64 mask = NODE_MASK(connection->peer_node_id);
 		if (!(reach_immediately & mask))
 			continue;
 
@@ -3284,7 +3284,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			} else {
 				rcu_read_lock();
 				for_each_connection_rcu(connection, resource) {
-					int node_id = connection->transport.net_conf->peer_node_id;
+					int node_id = connection->peer_node_id;
 
 					if (node_id == context->target_node_id) {
 						drbd_info(connection, "Cluster is now split\n");
@@ -3817,7 +3817,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 			.vnr = -1,
 			.mask = { { .conn = conn_MASK } },
 			.val = { { .conn = cstate } },
-			.target_node_id = connection->transport.net_conf->peer_node_id,
+			.target_node_id = connection->peer_node_id,
 			.flags = flags,
 			.change_local_state_last = true,
 		},

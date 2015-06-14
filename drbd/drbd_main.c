@@ -234,7 +234,7 @@ struct drbd_connection *__drbd_next_connection_ref(u64 *visited,
 			connection = list_entry_rcu(pos, struct drbd_connection, connections);
 		} else { /* not visible -> pos might point to a dead element now */
 			for_each_connection_rcu(connection, resource) {
-				node_id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+				node_id = connection->peer_node_id;
 				if (!(*visited & NODE_MASK(node_id)))
 					goto found;
 			}
@@ -244,7 +244,7 @@ struct drbd_connection *__drbd_next_connection_ref(u64 *visited,
 
 	if (connection) {
 	found:
-		node_id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+		node_id = connection->peer_node_id;
 		*visited |= NODE_MASK(node_id);
 
 		kref_get(&connection->kref);
@@ -710,7 +710,7 @@ static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *aut
 		    connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
 			if (authoritative) {
-				id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
+				id = connection->peer_node_id;
 				*authoritative |= NODE_MASK(id);
 			} else {
 				break;
@@ -1075,7 +1075,7 @@ int drbd_send_peer_ack(struct drbd_connection *connection,
 
 	rcu_read_lock();
 	for_each_connection_rcu(c, resource) {
-		int node_id = rcu_dereference(c->transport.net_conf)->peer_node_id;
+		int node_id = c->peer_node_id;
 		int idx = 1 + node_id;
 
 		if (req->rq_state[idx] & RQ_NET_OK)
@@ -1617,23 +1617,13 @@ void drbd_send_peers_in_sync(struct drbd_peer_device *peer_device, u64 mask, sec
 int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer)
 {
 	struct p_peer_dagtag *p;
-	struct net_conf *nc;
-	int lost_node_id;
 
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
 
-	rcu_read_lock();
-	nc = rcu_dereference(lost_peer->transport.net_conf);
-	if (nc)
-		lost_node_id = nc->peer_node_id;
-	rcu_read_unlock();
-	if (!nc)
-		return 0;
-
 	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
-	p->node_id = cpu_to_be32(lost_node_id);
+	p->node_id = cpu_to_be32(lost_peer->peer_node_id);
 
 	return send_command(connection, -1, P_PEER_DAGTAG, DATA_STREAM);
 }
@@ -3568,7 +3558,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
-		peer_device->node_id = connection->transport.net_conf->peer_node_id;
+		peer_device->node_id = connection->peer_node_id;
 
 		if (connection->cstate[NOW] >= C_CONNECTED)
 			drbd_connected(peer_device);
@@ -5129,14 +5119,12 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 {
 	u64 directly_connected = 0;
 	struct drbd_connection *connection;
-	int id;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		if (connection->cstate[which] < C_CONNECTED)
 			continue;
-		id = rcu_dereference(connection->transport.net_conf)->peer_node_id;
-		directly_connected |= NODE_MASK(id);
+		directly_connected |= NODE_MASK(connection->peer_node_id);
 	}
 	rcu_read_unlock();
 

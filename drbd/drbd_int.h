@@ -1075,6 +1075,7 @@ struct drbd_connection {
 		u64 current_dagtag_sector;
 	} send;
 
+	unsigned int peer_node_id;
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
 					    implementation might have more members than the
 					    abstract one. */
@@ -1316,6 +1317,8 @@ struct drbd_config_context {
 	/* assigned from request attributes, if present */
 	unsigned int volume;
 #define VOLUME_UNSPECIFIED		(-1U)
+	unsigned int peer_node_id;
+#define PEER_NODE_ID_UNSPECIFIED	(-1U)
 	/* pointer into the request skb,
 	 * limited lifetime! */
 	char *resource_name;

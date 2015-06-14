@@ -179,10 +179,11 @@ static inline bool drbd_security_netlink_recv(struct sk_buff *skb, int cap)
  * If we want to avoid that, and allow "genl_family.parallel_ops", we may need
  * to add additional synchronization against object destruction/modification.
  */
-#define DRBD_ADM_NEED_MINOR	1
-#define DRBD_ADM_NEED_RESOURCE	2
-#define DRBD_ADM_NEED_CONNECTION 4
-#define DRBD_ADM_NEED_PEER_DEVICE 8
+#define DRBD_ADM_NEED_MINOR        (1 << 0)
+#define DRBD_ADM_NEED_RESOURCE     (1 << 1)
+#define DRBD_ADM_NEED_CONNECTION   (1 << 2)
+#define DRBD_ADM_NEED_PEER_DEVICE  (1 << 3)
+#define DRBD_ADM_NEED_PEER_NODE    (1 << 4)
 static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	struct sk_buff *skb, struct genl_info *info, unsigned flags)
 {
@@ -216,10 +217,18 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		goto fail;
 	}
 
+	if (flags & DRBD_ADM_NEED_PEER_DEVICE)
+		flags |= DRBD_ADM_NEED_CONNECTION;
+	if (flags & DRBD_ADM_NEED_CONNECTION)
+		flags |= DRBD_ADM_NEED_PEER_NODE;
+	if (flags & DRBD_ADM_NEED_PEER_NODE)
+		flags |= DRBD_ADM_NEED_RESOURCE;
+
 	adm_ctx->reply_dh->minor = d_in->minor;
 	adm_ctx->reply_dh->ret_code = NO_ERROR;
 
 	adm_ctx->volume = VOLUME_UNSPECIFIED;
+	adm_ctx->peer_node_id = PEER_NODE_ID_UNSPECIFIED;
 	if (info->attrs[DRBD_NLA_CFG_CONTEXT]) {
 		struct nlattr *nla;
 		/* parse and validate only */
@@ -239,6 +248,9 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		nla = nested_attr_tb[__nla_type(T_ctx_volume)];
 		if (nla)
 			adm_ctx->volume = nla_get_u32(nla);
+		nla = nested_attr_tb[__nla_type(T_ctx_peer_node_id)];
+		if (nla)
+			adm_ctx->peer_node_id = nla_get_u32(nla);
 		nla = nested_attr_tb[__nla_type(T_ctx_resource_name)];
 		if (nla)
 			adm_ctx->resource_name = nla_data(nla);
@@ -253,23 +265,14 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		}
 	}
 
-	adm_ctx->minor = d_in->minor;
-	adm_ctx->device = minor_to_device(d_in->minor);
-
-	/* We are protected by the global genl_lock().
-	 * But we may explicitly drop it/retake it in drbd_adm_set_role(),
-	 * so make sure this object stays around. */
-	if (adm_ctx->device) {
-		kref_get(&adm_ctx->device->kref);
-		kref_debug_get(&adm_ctx->device->kref_debug, 4);
-	}
-
 	if (adm_ctx->resource_name) {
 		adm_ctx->resource = drbd_find_resource(adm_ctx->resource_name);
 		if (adm_ctx->resource)
 			kref_debug_get(&adm_ctx->resource->kref_debug, 2);
 	}
 
+	adm_ctx->minor = d_in->minor;
+	adm_ctx->device = minor_to_device(d_in->minor);
 	if (!adm_ctx->device && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "unknown minor");
 		err = ERR_MINOR_INVALID;
@@ -282,28 +285,32 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_RES_NOT_KNOWN;
 		goto finish;
 	}
-
-	if (flags & (DRBD_ADM_NEED_CONNECTION | DRBD_ADM_NEED_PEER_DEVICE)) {
-		if (adm_ctx->resource) {
-			drbd_msg_put_info(adm_ctx->reply_skb, "no resource name expected");
+	if (adm_ctx->peer_node_id != PEER_NODE_ID_UNSPECIFIED) {
+		/* peer_node_id is unsigned int */
+		if (adm_ctx->peer_node_id >= DRBD_NODE_ID_MAX) {
+			drbd_msg_put_info(adm_ctx->reply_skb, "peer node id out of range");
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		if (adm_ctx->device) {
-			drbd_msg_put_info(adm_ctx->reply_skb, "no minor number expected");
+		if (adm_ctx->peer_node_id == adm_ctx->resource->res_opts.node_id) {
+			drbd_msg_put_info(adm_ctx->reply_skb, "peer node id cannot be my own node id");
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		if (adm_ctx->my_addr && adm_ctx->peer_addr)
-			adm_ctx->connection = conn_get_by_addrs(
-				nla_data(adm_ctx->my_addr), nla_len(adm_ctx->my_addr),
-				nla_data(adm_ctx->peer_addr), nla_len(adm_ctx->peer_addr));
+		adm_ctx->connection = drbd_get_connection_by_node_id(adm_ctx->resource, adm_ctx->peer_node_id);
+		if (adm_ctx->connection)
+			kref_debug_get(&adm_ctx->connection->kref_debug, 2);
+	} else if (flags & DRBD_ADM_NEED_PEER_NODE) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "peer node id missing");
+		err = ERR_INVALID_REQUEST;
+		goto finish;
+	}
+	if (flags & DRBD_ADM_NEED_CONNECTION) {
 		if (!adm_ctx->connection) {
 			drbd_msg_put_info(adm_ctx->reply_skb, "unknown connection");
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		kref_debug_get(&adm_ctx->connection->kref_debug, 2);
 	}
 	if (flags & DRBD_ADM_NEED_PEER_DEVICE) {
 		if (adm_ctx->volume != VOLUME_UNSPECIFIED)
@@ -315,6 +322,12 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
+		if (!adm_ctx->device)
+			adm_ctx->device = adm_ctx->peer_device->device;
+	}
+	if (adm_ctx->device) {
+		kref_get(&adm_ctx->device->kref);
+		kref_debug_get(&adm_ctx->device->kref_debug, 4);
 	}
 
 	/* some more paranoia, if the request was over-determined */
@@ -338,6 +351,15 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		err = ERR_INVALID_REQUEST;
 		goto finish;
 	}
+	if (adm_ctx->peer_device &&
+	    adm_ctx->peer_device->device != adm_ctx->device) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "peer_device->device != device");
+		pr_warning("request: minor=%u, resource=%s, volume=%u, peer_node=%u; device != peer_device->device\n",
+				adm_ctx->minor, adm_ctx->resource->name,
+				adm_ctx->device->vnr, adm_ctx->peer_node_id);
+		err = ERR_INVALID_REQUEST;
+		goto finish;
+	}
 
 	/* still, provide adm_ctx->resource always, if possible. */
 	if (!adm_ctx->resource) {
@@ -348,7 +370,6 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			kref_debug_get(&adm_ctx->resource->kref_debug, 2);
 		}
 	}
-
 	return NO_ERROR;
 
 fail:
@@ -2071,7 +2092,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		struct drbd_connection *connection = peer_device->connection;
 		int bitmap_index;
 
-		bitmap_index = nbc->md.peers[connection->transport.net_conf->peer_node_id].bitmap_index;
+		bitmap_index = nbc->md.peers[connection->peer_node_id].bitmap_index;
 		if (bitmap_index != -1)
 			peer_device->bitmap_index = bitmap_index;
 		else
@@ -2097,7 +2118,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
 				if (bitmap_index_vacant(nbc, bitmap_index)) {
-					const int node_id = connection->transport.net_conf->peer_node_id;
+					const int node_id = connection->peer_node_id;
 					struct drbd_peer_md *peer_md = &nbc->md.peers[node_id];
 
 					peer_md->bitmap_index = bitmap_index;
@@ -2813,11 +2834,21 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
 
-	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
+
+	retcode = 0;
+	if (adm_ctx.connection) {
+		/* FIXME if all of connection peer_node_id, my_addr and peer_addr match,
+		 * jump to drbd_adm_net_opts and possibly restart the network threads. */
+		retcode = ERR_INVALID_REQUEST;
+		drbd_err(adm_ctx.resource, "Connection for peer node id %d already exists\n",
+			 adm_ctx.peer_node_id);
+		goto out;
+	}
 
 	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
 		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
@@ -2863,20 +2894,6 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	retcode = 0;
-	if (adm_ctx.resource->res_opts.node_id == new_net_conf->peer_node_id)
-		retcode = ERR_INVALID_REQUEST;
-	for_each_connection(connection, adm_ctx.resource) {
-		if (connection->transport.net_conf->peer_node_id == new_net_conf->peer_node_id)
-			retcode = ERR_INVALID_REQUEST;
-	}
-	if (retcode) {
-		drbd_err(adm_ctx.resource, "Peer node id %d is not unique\n",
-			 new_net_conf->peer_node_id);
-		retcode = ERR_INVALID_REQUEST;
-		goto fail;
-	}
-
 	transport_name = new_net_conf->transport_name[0] ? new_net_conf->transport_name : "tcp";
 	tr_class = drbd_find_transport_class(transport_name);
 	if (!tr_class) {
@@ -2894,6 +2911,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail_put_transport;
 	}
+	connection->peer_node_id = adm_ctx.peer_node_id;
 
 	transport = &connection->transport;
 	err = tr_class->init(transport);
@@ -2962,10 +2980,10 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	memcpy(&transport->peer_addr, nla_data(adm_ctx.peer_addr), transport->peer_addr_len);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
-		peer_device->node_id = connection->transport.net_conf->peer_node_id;
+		peer_device->node_id = connection->peer_node_id;
 
-	if (connection->transport.net_conf->peer_node_id > adm_ctx.resource->max_node_id)
-		adm_ctx.resource->max_node_id = connection->transport.net_conf->peer_node_id;
+	if (connection->peer_node_id > adm_ctx.resource->max_node_id)
+		adm_ctx.resource->max_node_id = connection->peer_node_id;
 
 	/* Make sure we have a bitmap slot for this peer id on each device */
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
@@ -2975,7 +2993,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		if (!get_ldev(device))
 			continue;
 
-		bitmap_index = device->ldev->md.peers[new_net_conf->peer_node_id].bitmap_index;
+		bitmap_index = device->ldev->md.peers[adm_ctx.peer_node_id].bitmap_index;
 		if (bitmap_index != -1) {
 			peer_device->bitmap_index = bitmap_index;
 		} else {
@@ -3007,7 +3025,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 				goto next_device_2;
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
 				if (bitmap_index_vacant(device->ldev, bitmap_index)) {
-					const int node_id = new_net_conf->peer_node_id;
+					const int node_id = adm_ctx.peer_node_id;
 					struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
 					peer_md->bitmap_index = bitmap_index;
@@ -3754,6 +3772,8 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (resource)
 		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
+		drbd_info(connection, "peer_node_id: %d\n", connection->peer_node_id);
+		nla_put_u32(skb, T_ctx_peer_node_id, connection->peer_node_id);
 		if (connection->transport.my_addr_len)
 			nla_put(skb, T_ctx_my_addr,
 				connection->transport.my_addr_len, &connection->transport.my_addr);

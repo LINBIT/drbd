@@ -151,7 +151,7 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		unsigned int node_id = connection->transport.net_conf->peer_node_id;
+		unsigned int node_id = connection->peer_node_id;
 		if (connection->agreed_pro_version < 110 ||
 		    connection->cstate[NOW] != C_CONNECTED ||
 		    !(req->rq_state[1 + node_id] & RQ_NET_SENT))
@@ -2043,12 +2043,13 @@ void request_timer_fn(unsigned long data)
 				ko_count = nc->ko_count;
 				timeout = nc->timeout;
 			}
-			pre_send_jif = req->pre_send_jif[nc->peer_node_id];
 		}
 		rcu_read_unlock();
 
-		if (!ent || !pre_send_jif)
+		if (!timeout)
 			continue;
+
+		pre_send_jif = req->pre_send_jif[connection->peer_node_id];
 
 		ent = timeout * HZ/10 * ko_count;
 		et = min_not_zero(et, ent);
