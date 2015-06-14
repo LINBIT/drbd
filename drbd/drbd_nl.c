@@ -4470,6 +4470,12 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.resource)
 		goto out;
 
+	if (res_opts.node_id < 0 || res_opts.node_id >= DRBD_NODE_ID_MAX) {
+		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
 	if (!try_module_get(THIS_MODULE)) {
 		pr_err("drbd: Could not get a module reference\n");
 		retcode = ERR_INVALID_REQUEST;

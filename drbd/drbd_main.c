@@ -4042,6 +4042,8 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	struct meta_data_on_disk_9 *buffer;
 	u32 magic, flags;
 	int i, rv = NO_ERROR;
+	int my_node_id = device->resource->res_opts.node_id;
+	u32 max_peers;
 
 	if (device->disk_state[NOW] != D_DISKLESS)
 		return ERR_DISK_CONFIGURED;
@@ -4104,6 +4106,15 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
+	bdev->md.node_id = be32_to_cpu(buffer->node_id);
+
+	if (bdev->md.node_id != -1 && bdev->md.node_id != my_node_id) {
+		drbd_err(device, "ambiguous node id: meta-data: %d, config: %d\n",
+			bdev->md.node_id, my_node_id);
+		goto err;
+	}
+
+	max_peers = be32_to_cpu(buffer->bm_max_peers);
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
 
@@ -4111,6 +4122,21 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		peer_md->bitmap_dagtag = be64_to_cpu(buffer->peers[i].bitmap_dagtag);
 		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
 		peer_md->bitmap_index = be32_to_cpu(buffer->peers[i].bitmap_index);
+
+		if (peer_md->bitmap_index == -1)
+			continue;
+		if (i == my_node_id) {
+			drbd_warn(device, "my own node id (%d) should not have a bitmap index (%d)\n",
+				my_node_id, peer_md->bitmap_index);
+			goto err;
+		}
+		if (peer_md->bitmap_index < -1 || peer_md->bitmap_index >= max_peers) {
+			drbd_warn(device, "peer node id %d: bitmap index (%d) exceeds allocated bitmap slots (%d)\n",
+				i, peer_md->bitmap_index, max_peers);
+			goto err;
+		}
+		/* maybe: for each bitmap_index != -1, create a connection object
+		 * with peer_node_id = i, unless already present. */
 	}
 	BUILD_BUG_ON(ARRAY_SIZE(bdev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
 	for (i = 0; i < ARRAY_SIZE(buffer->history_uuids); i++)
