@@ -2857,7 +2857,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	set_net_conf_defaults(new_net_conf);
 
 	err = net_conf_from_attrs(new_net_conf, info);
-	if (err && err != -ENOMSG) {
+	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 		goto fail;
@@ -3391,7 +3391,7 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		set_res_opts_defaults(&res_opts);
 
 	err = res_opts_from_attrs_for_change(&res_opts, info);
-	if (err) {
+	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 		goto fail;
@@ -4457,7 +4457,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 
 	set_res_opts_defaults(&res_opts);
 	err = res_opts_from_attrs(&res_opts, info);
-	if (err && err != -ENOMSG) {
+	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 		goto out;
