@@ -3158,6 +3158,24 @@ static int drbd_handshake(struct drbd_peer_device *peer_device,
 	return hg;
 }
 
+static bool is_resync_running(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int hg, int peer_node_id)
 {
 	struct drbd_device *device = peer_device->device;
@@ -3184,6 +3202,11 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int 
 		drbd_bm_slot_unlock(peer_device);
 		drbd_resume_io(device);
 	} else if (abs(hg) >= 3) {
+		if (hg == -3 &&
+		    drbd_current_uuid(device) == UUID_JUST_CREATED &&
+		    is_resync_running(device))
+			return 0;
+
 		drbd_info(peer_device,
 			  "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
