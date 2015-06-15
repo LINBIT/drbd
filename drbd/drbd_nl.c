@@ -2815,9 +2815,9 @@ static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_d
 	return false;
 }
 
-int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
+static int adm_new_connection(struct drbd_connection **ret_conn,
+		struct drbd_config_context *adm_ctx, struct genl_info *info)
 {
-	struct drbd_config_context adm_ctx;
 	struct connection_info connection_info;
 	enum drbd_notification_type flags;
 	unsigned int peer_devices = 0;
@@ -2825,72 +2825,31 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
 	struct crypto crypto = { NULL, };
-	struct drbd_resource *resource;
 	struct drbd_connection *connection;
-	struct drbd_transport *transport;
 	enum drbd_ret_code retcode;
 	int i, err;
 	bool allocate_bitmap_slots = false;
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
 
-	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
-	if (!adm_ctx.reply_skb)
-		return retcode;
-
-	mutex_lock(&adm_ctx.resource->adm_mutex);
-
-	retcode = 0;
-	if (adm_ctx.connection) {
-		/* FIXME if all of connection peer_node_id, my_addr and peer_addr match,
-		 * jump to drbd_adm_net_opts and possibly restart the network threads. */
-		retcode = ERR_INVALID_REQUEST;
-		drbd_err(adm_ctx.resource, "Connection for peer node id %d already exists\n",
-			 adm_ctx.peer_node_id);
-		goto out;
-	}
-
-	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
-		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
-		retcode = ERR_INVALID_REQUEST;
-		goto out;
-	}
-
-	/* No need for _rcu here. All reconfiguration is
-	 * strictly serialized on genl_lock(). We are protected against
-	 * concurrent reconfiguration/addition/deletion */
-	for_each_resource(resource, &drbd_resources) {
-		for_each_connection(connection, resource) {
-			if (resource != adm_ctx.resource &&
-			    nla_len(adm_ctx.my_addr) == connection->transport.my_addr_len &&
-			    !memcmp(nla_data(adm_ctx.my_addr), &connection->transport.my_addr,
-				    connection->transport.my_addr_len)) {
-				retcode = ERR_LOCAL_ADDR;
-				goto out;
-			}
-
-			if (nla_len(adm_ctx.peer_addr) == connection->transport.peer_addr_len &&
-			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->transport.peer_addr,
-				    connection->transport.peer_addr_len)) {
-				retcode = ERR_PEER_ADDR;
-				goto out;
-			}
-		}
+	*ret_conn = NULL;
+	if (adm_ctx->connection) {
+		drbd_err(adm_ctx->resource, "Connection for peer node id %d already exists\n",
+			 adm_ctx->peer_node_id);
+		return ERR_INVALID_REQUEST;
 	}
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
-	if (!new_net_conf) {
-		retcode = ERR_NOMEM;
-		goto out;
-	}
+	if (!new_net_conf)
+		return ERR_NOMEM;
 
 	set_net_conf_defaults(new_net_conf);
 
 	err = net_conf_from_attrs(new_net_conf, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
-		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
 		goto fail;
 	}
 
@@ -2901,12 +2860,12 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	connection = drbd_create_connection(adm_ctx.resource, tr_class);
+	connection = drbd_create_connection(adm_ctx->resource, tr_class);
 	if (!connection) {
 		retcode = ERR_NOMEM;
 		goto fail_put_transport;
 	}
-	connection->peer_node_id = adm_ctx.peer_node_id;
+	connection->peer_node_id = adm_ctx->peer_node_id;
 	/* transport class reference now owned by connection,
 	 * prevent double cleanup. */
 	tr_class = NULL;
@@ -2921,8 +2880,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	((char *)new_net_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
-	mutex_lock(&adm_ctx.resource->conf_update);
-	idr_for_each_entry(&adm_ctx.resource->devices, device, i) {
+	mutex_lock(&adm_ctx->resource->conf_update);
+	idr_for_each_entry(&adm_ctx->resource->devices, device, i) {
 		int id;
 
 		retcode = ERR_NOMEM;
@@ -2935,8 +2894,8 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 			goto unlock_fail_free_connection;
 	}
 
-	spin_lock_irq(&adm_ctx.resource->req_lock);
-	list_add_tail_rcu(&connection->connections, &adm_ctx.resource->connections);
+	spin_lock_irq(&adm_ctx->resource->req_lock);
+	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 
@@ -2949,7 +2908,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		kref_debug_get(&device->kref_debug, 1);
 		peer_devices++;
 	}
-	spin_unlock_irq(&adm_ctx.resource->req_lock);
+	spin_unlock_irq(&adm_ctx->resource->req_lock);
 
 	old_net_conf = connection->transport.net_conf;
 	if (old_net_conf) {
@@ -2968,17 +2927,11 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	new_net_conf = NULL;
 	memset(&crypto, 0, sizeof(crypto));
 
-	transport = &connection->transport;
-	transport->my_addr_len = nla_len(adm_ctx.my_addr);
-	memcpy(&transport->my_addr, nla_data(adm_ctx.my_addr), transport->my_addr_len);
-	transport->peer_addr_len = nla_len(adm_ctx.peer_addr);
-	memcpy(&transport->peer_addr, nla_data(adm_ctx.peer_addr), transport->peer_addr_len);
-
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
 		peer_device->node_id = connection->peer_node_id;
 
-	if (connection->peer_node_id > adm_ctx.resource->max_node_id)
-		adm_ctx.resource->max_node_id = connection->peer_node_id;
+	if (connection->peer_node_id > adm_ctx->resource->max_node_id)
+		adm_ctx->resource->max_node_id = connection->peer_node_id;
 
 	/* Make sure we have a bitmap slot for this peer id on each device */
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
@@ -2988,7 +2941,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		if (!get_ldev(device))
 			continue;
 
-		bitmap_index = device->ldev->md.peers[adm_ctx.peer_node_id].bitmap_index;
+		bitmap_index = device->ldev->md.peers[adm_ctx->peer_node_id].bitmap_index;
 		if (bitmap_index != -1) {
 			peer_device->bitmap_index = bitmap_index;
 		} else {
@@ -3020,7 +2973,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 				goto next_device_2;
 			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
 				if (bitmap_index_vacant(device->ldev, bitmap_index)) {
-					const int node_id = adm_ctx.peer_node_id;
+					const int node_id = adm_ctx->peer_node_id;
 					struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
 					peer_md->bitmap_index = bitmap_index;
@@ -3065,16 +3018,14 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}
-	mutex_unlock(&adm_ctx.resource->conf_update);
-
-	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
+	mutex_unlock(&adm_ctx->resource->conf_update);
 
 	drbd_debugfs_connection_add(connection); /* after ->net_conf was assigned */
-	drbd_thread_start(&connection->sender);
-	goto out;
+	*ret_conn = connection;
+	return NO_ERROR;
 
 unlock_fail_free_connection:
-	mutex_unlock(&adm_ctx.resource->conf_update);
+	mutex_unlock(&adm_ctx->resource->conf_update);
 fail_free_connection:
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 
@@ -3088,6 +3039,62 @@ fail_put_transport:
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);
+
+	return retcode;
+}
+
+int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	struct drbd_resource *resource;
+	struct drbd_connection *connection;
+	enum drbd_ret_code retcode;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	mutex_lock(&adm_ctx.resource->adm_mutex);
+
+	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
+		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	/* No need for _rcu here. All reconfiguration is
+	 * strictly serialized on genl_lock(). We are protected against
+	 * concurrent reconfiguration/addition/deletion */
+	for_each_resource(resource, &drbd_resources) {
+		for_each_connection(connection, resource) {
+			if (resource != adm_ctx.resource &&
+			    nla_len(adm_ctx.my_addr) == connection->transport.my_addr_len &&
+			    !memcmp(nla_data(adm_ctx.my_addr), &connection->transport.my_addr,
+				    connection->transport.my_addr_len)) {
+				retcode = ERR_LOCAL_ADDR;
+				goto out;
+			}
+
+			if (nla_len(adm_ctx.peer_addr) == connection->transport.peer_addr_len &&
+			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->transport.peer_addr,
+				    connection->transport.peer_addr_len)) {
+				retcode = ERR_PEER_ADDR;
+				goto out;
+			}
+		}
+	}
+
+	retcode = adm_new_connection(&connection, &adm_ctx, info);
+	if (connection) {
+		struct drbd_transport *transport = &connection->transport;
+		transport->my_addr_len = nla_len(adm_ctx.my_addr);
+		memcpy(&transport->my_addr, nla_data(adm_ctx.my_addr), transport->my_addr_len);
+		transport->peer_addr_len = nla_len(adm_ctx.peer_addr);
+		memcpy(&transport->peer_addr, nla_data(adm_ctx.peer_addr), transport->peer_addr_len);
+
+		retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
+		drbd_thread_start(&connection->sender);
+	}
 out:
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
@@ -3766,7 +3773,6 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (resource)
 		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
-		drbd_info(connection, "peer_node_id: %d\n", connection->peer_node_id);
 		nla_put_u32(skb, T_ctx_peer_node_id, connection->peer_node_id);
 		if (connection->transport.my_addr_len)
 			nla_put(skb, T_ctx_my_addr,
