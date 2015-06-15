@@ -2985,31 +2985,6 @@ found:
 	return resource;
 }
 
-struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
-					  void *peer_addr, int peer_addr_len)
-{
-	struct drbd_resource *resource;
-	struct drbd_connection *connection;
-
-	rcu_read_lock();
-	for_each_resource_rcu(resource, &drbd_resources) {
-		for_each_connection_rcu(connection, resource) {
-			struct drbd_transport *transport = &connection->transport;
-			if (transport->my_addr_len == my_addr_len &&
-			    transport->peer_addr_len == peer_addr_len &&
-			    !memcmp(&transport->my_addr, my_addr, my_addr_len) &&
-			    !memcmp(&transport->peer_addr, peer_addr, peer_addr_len)) {
-				kref_get(&connection->kref);
-				goto found;
-			}
-		}
-	}
-	connection = NULL;
-found:
-	rcu_read_unlock();
-	return connection;
-}
-
 static void drbd_put_send_buffers(struct drbd_connection *connection)
 {
 	unsigned int i;
@@ -5210,12 +5185,5 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 module_init(drbd_init)
 module_exit(drbd_cleanup)
 
-/* For drbd_tracing: */
-EXPORT_SYMBOL(drbd_conn_str);
-EXPORT_SYMBOL(drbd_role_str);
-EXPORT_SYMBOL(drbd_disk_str);
-EXPORT_SYMBOL(drbd_set_st_err_str);
-
 /* For transport layer */
 EXPORT_SYMBOL(drbd_destroy_connection);
-EXPORT_SYMBOL(conn_get_by_addrs);

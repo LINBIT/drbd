@@ -1795,8 +1795,6 @@ extern struct drbd_connection *drbd_create_connection(struct drbd_resource *reso
 						      struct drbd_transport_class *tc);
 extern void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op);
 extern void drbd_destroy_connection(struct kref *kref);
-extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
-						 void *peer_addr, int peer_addr_len);
 extern struct drbd_resource *drbd_find_resource(const char *name);
 extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
