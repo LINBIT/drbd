@@ -5203,8 +5203,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 				drbd_resync_finished(peer_device, peer_state.disk);
 				peer_device->last_repl_state = peer_state.conn;
-				return 0;
 			}
+			return 0;
 		}
 	}
 
