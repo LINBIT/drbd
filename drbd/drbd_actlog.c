@@ -274,6 +274,30 @@ find_active_resync_extent(struct drbd_device *device, struct drbd_peer_device *e
 	return NULL;
 }
 
+static int
+set_bme_priority(struct drbd_device *device, struct drbd_peer_device *except,
+		 unsigned int enr)
+{
+	struct drbd_peer_device *peer_device;
+	struct lc_element *tmp;
+	int wake = 0;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device == except)
+			continue;
+		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
+		if (unlikely(tmp != NULL)) {
+			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags))
+				wake |= !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+		}
+	}
+	rcu_read_unlock();
+
+	return wake;
+}
+
 static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool nonblock)
 {
@@ -284,7 +308,7 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool no
 	spin_lock_irq(&device->al_lock);
 	bm_ext = find_active_resync_extent(device, NULL, enr);
 	if (bm_ext) {
-		wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+		wake = set_bme_priority(device, NULL, enr);
 		spin_unlock_irq(&device->al_lock);
 		if (wake)
 			wake_up(&device->al_wait);
@@ -408,7 +432,7 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
 	spin_lock_irq(&device->al_lock);
 	bm_ext = find_active_resync_extent(device, peer_device, enr);
 	if (bm_ext) {
-		wake = !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+		wake = set_bme_priority(device, peer_device, enr);
 		spin_unlock_irq(&device->al_lock);
 		if (wake)
 			wake_up(&device->al_wait);
@@ -492,11 +516,9 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 	for (enr = first; enr <= last; enr++) {
 		bm_ext = find_active_resync_extent(device, NULL, enr);
 		if (unlikely(bm_ext != NULL)) {
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
-				if (!test_and_set_bit(BME_PRIORITY, &bm_ext->flags))
-					return -EBUSY;
-				return -EWOULDBLOCK;
-			}
+			if (set_bme_priority(device, NULL, enr))
+				return -EBUSY;
+			return -EWOULDBLOCK;
 		}
 	}
 
@@ -1445,6 +1467,7 @@ try_again:
 			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
 			D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
 			clear_bit(BME_NO_WRITES, &bm_ext->flags);
+			clear_bit(BME_PRIORITY, &bm_ext->flags);
 			peer_device->resync_wenr = LC_FREE;
 			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
 				bm_ext->flags = 0;
