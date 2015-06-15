@@ -2824,7 +2824,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
-	struct crypto crypto = { };
+	struct crypto crypto = { NULL, };
 	struct drbd_resource *resource;
 	struct drbd_connection *connection;
 	struct drbd_transport *transport;
@@ -2895,31 +2895,21 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	transport_name = new_net_conf->transport_name[0] ? new_net_conf->transport_name : "tcp";
-	tr_class = drbd_find_transport_class(transport_name);
+	tr_class = drbd_get_transport_class(transport_name);
 	if (!tr_class) {
 		retcode = ERR_CREATE_TRANSPORT;
 		goto fail;
 	}
 
-	if (!try_module_get(tr_class->module)) {
-		retcode = ERR_CREATE_TRANSPORT;
-		goto fail;
-	}
-
-	connection = drbd_create_connection(adm_ctx.resource, tr_class->instance_size);
+	connection = drbd_create_connection(adm_ctx.resource, tr_class);
 	if (!connection) {
 		retcode = ERR_NOMEM;
 		goto fail_put_transport;
 	}
 	connection->peer_node_id = adm_ctx.peer_node_id;
-
-	transport = &connection->transport;
-	err = tr_class->init(transport);
-	if (err) {
-		retcode = ERR_CREATE_TRANSPORT;
-		goto fail_free_connection;
-	}
-	transport->log_prefix = adm_ctx.resource->name;
+	/* transport class reference now owned by connection,
+	 * prevent double cleanup. */
+	tr_class = NULL;
 
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
@@ -2974,6 +2964,11 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	connection->csums_tfm = crypto.csums_tfm;
 	connection->verify_tfm = crypto.verify_tfm;
 
+	/* transferred ownership. prevent double cleanup. */
+	new_net_conf = NULL;
+	memset(&crypto, 0, sizeof(crypto));
+
+	transport = &connection->transport;
 	transport->my_addr_len = nla_len(adm_ctx.my_addr);
 	memcpy(&transport->my_addr, nla_data(adm_ctx.my_addr), transport->my_addr_len);
 	transport->peer_addr_len = nla_len(adm_ctx.peer_addr);
@@ -3088,9 +3083,8 @@ fail_free_connection:
 		synchronize_rcu();
 	}
 	drbd_put_connection(connection);
-	goto out;
 fail_put_transport:
-	module_put(tr_class->module);
+	drbd_put_transport_class(tr_class);
 fail:
 	free_crypto(&crypto);
 	kfree(new_net_conf);

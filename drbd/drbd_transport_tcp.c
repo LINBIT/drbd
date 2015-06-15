@@ -156,7 +156,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 			tcp_transport->rbuf[i].base = NULL;
 		}
-		module_put(THIS_MODULE);
 	}
 }
 

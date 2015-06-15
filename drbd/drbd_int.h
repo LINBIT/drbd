@@ -1791,7 +1791,8 @@ extern void drbd_free_resource(struct drbd_resource *resource);
 extern void drbd_destroy_device(struct kref *kref);
 
 extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
-extern struct drbd_connection *drbd_create_connection(struct drbd_resource *, int transport_size);
+extern struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
+						      struct drbd_transport_class *tc);
 extern void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op);
 extern void drbd_destroy_connection(struct kref *kref);
 extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,

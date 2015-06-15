@@ -3191,12 +3191,12 @@ fail:
 
 /* caller must be under adm_mutex */
 struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
-					       int transport_size)
+					       struct drbd_transport_class *tc)
 {
 	struct drbd_connection *connection;
 	int size;
 
-	size = sizeof(*connection) - sizeof(connection->transport) + transport_size;
+	size = sizeof(*connection) - sizeof(connection->transport) + tc->instance_size;
 	connection = kzalloc(size, GFP_KERNEL);
 	if (!connection)
 		return NULL;
@@ -3254,6 +3254,10 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
 
+	connection->transport.log_prefix = resource->name;
+	if (tc->init(&connection->transport))
+		goto fail;
+
 	return connection;
 
 fail:
@@ -3271,6 +3275,8 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
 	connection->transport.ops->free(&connection->transport, op);
+	if (op == DESTROY_TRANSPORT)
+		drbd_put_transport_class(connection->transport.class);
 
 	mutex_unlock(&connection->mutex[CONTROL_STREAM]);
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
@@ -3298,8 +3304,8 @@ void drbd_destroy_connection(struct kref *kref)
 	}
 	idr_destroy(&connection->peer_devices);
 
-	kfree(connection->transport.net_conf);
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
+	kfree(connection->transport.net_conf);
 	drbd_put_send_buffers(connection);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);

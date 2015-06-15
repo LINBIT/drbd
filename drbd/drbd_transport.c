@@ -7,11 +7,23 @@
 #include <drbd_int.h>
 
 static LIST_HEAD(transport_classes);
-static spinlock_t transport_classes_lock = __SPIN_LOCK_UNLOCKED(&transport_classes_lock);
+static DECLARE_RWSEM(transport_classes_lock);
+
+static struct drbd_transport_class *__find_transport_class(const char *transport_name)
+{
+	struct drbd_transport_class *transport_class;
+
+	list_for_each_entry(transport_class, &transport_classes, list)
+		if (!strcmp(transport_class->name, transport_name))
+			return transport_class;
+
+	return NULL;
+}
 
 int drbd_register_transport_class(struct drbd_transport_class *transport_class, int version,
 				  int drbd_transport_size)
 {
+	int rv = 0;
 	if (version != DRBD_TRANSPORT_API_VERSION) {
 		pr_err("DRBD_TRANSPORT_API_VERSION not compatible\n");
 		return -EINVAL;
@@ -22,65 +34,76 @@ int drbd_register_transport_class(struct drbd_transport_class *transport_class, 
 		return -EINVAL;
 	}
 
-	spin_lock(&transport_classes_lock);
-	list_add_tail(&transport_class->list, &transport_classes);
-	spin_unlock(&transport_classes_lock);
-
-	return 0;
+	down_write(&transport_classes_lock);
+	if (__find_transport_class(transport_class->name)) {
+		pr_err("transport class '%s' already registered\n", transport_class->name);
+		rv = -EEXIST;
+	} else
+		list_add_tail(&transport_class->list, &transport_classes);
+	up_write(&transport_classes_lock);
+	return rv;
 }
 
 void drbd_unregister_transport_class(struct drbd_transport_class *transport_class)
 {
-	spin_lock(&transport_classes_lock);
+	down_write(&transport_classes_lock);
+	if (!__find_transport_class(transport_class->name)) {
+		pr_crit("unregistering unknown transport class '%s'\n",
+			transport_class->name);
+		BUG();
+	}
 	list_del_init(&transport_class->list);
-	spin_unlock(&transport_classes_lock);
+	up_write(&transport_classes_lock);
 }
 
-static struct drbd_transport_class *__find_transport_class(const char *transport_name)
+static struct drbd_transport_class *get_transport_class(const char *name)
 {
-	struct drbd_transport_class *transport_class;
+	struct drbd_transport_class *tc;
 
-	spin_lock(&transport_classes_lock);
-	list_for_each_entry(transport_class, &transport_classes, list) {
-		if (!strcmp(transport_class->name, transport_name))
-			goto found;
-	}
-	transport_class = NULL;
-found:
-	spin_unlock(&transport_classes_lock);
-	return transport_class;
+	down_read(&transport_classes_lock);
+	tc = __find_transport_class(name);
+	if (tc && !try_module_get(tc->module))
+		tc = NULL;
+	up_read(&transport_classes_lock);
+	return tc;
 }
 
-struct drbd_transport_class *
-drbd_find_transport_class(const char *transport_name)
+struct drbd_transport_class *drbd_get_transport_class(const char *name)
 {
-	struct drbd_transport_class *transport_class;
+	struct drbd_transport_class *tc = get_transport_class(name);
 
-	transport_class = __find_transport_class(transport_name);
-	if (!transport_class) {
-		int err = request_module("drbd_transport_%s", transport_name);
-
-		if (!err)
-			transport_class = __find_transport_class(transport_name);
-		else
-			pr_warn("cannot load drbd_transport_%s kernel module\n", transport_name);
+	if (!tc) {
+		request_module("drbd_transport_%s", name);
+		tc = get_transport_class(name);
 	}
 
-	return transport_class;
+	return tc;
+}
+
+void drbd_put_transport_class(struct drbd_transport_class *tc)
+{
+	/* convenient in the error cleanup path */
+	if (!tc)
+		return;
+	down_read(&transport_classes_lock);
+	module_put(tc->module);
+	up_read(&transport_classes_lock);
 }
 
 void drbd_print_transports_loaded(struct seq_file *seq)
 {
-	struct drbd_transport_class *transport_class;
+	struct drbd_transport_class *tc;
+
+	down_read(&transport_classes_lock);
 
 	seq_puts(seq, "Transports (api:" __stringify(DRBD_TRANSPORT_API_VERSION) "):");
-	spin_lock(&transport_classes_lock);
-	list_for_each_entry(transport_class, &transport_classes, list) {
-		seq_printf(seq, " %s (%s)", transport_class->name,
-				transport_class->module->version ? transport_class->module->version : "NONE");
+	list_for_each_entry(tc, &transport_classes, list) {
+		seq_printf(seq, " %s (%s)", tc->name,
+				tc->module->version ? tc->module->version : "NONE");
 	}
-	spin_unlock(&transport_classes_lock);
 	seq_putc(seq, '\n');
+
+	up_read(&transport_classes_lock);
 }
 
 static bool addr_equal(const struct sockaddr_storage *addr1, const struct sockaddr_storage *addr2)
