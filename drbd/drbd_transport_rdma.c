@@ -260,9 +260,6 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		dtr_free_stream(rdma_transport->stream[i]);
 		rdma_transport->stream[i] = NULL;
 	}
-
-	if (free_op == DESTROY_TRANSPORT)
-		module_put(THIS_MODULE);
 }
 
 
