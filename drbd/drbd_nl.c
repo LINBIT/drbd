@@ -39,6 +39,7 @@
 #include "drbd_req.h"
 #include "drbd_state_change.h"
 #include "drbd_debugfs.h"
+#include "drbd_transport.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
@@ -170,6 +171,16 @@ static inline bool drbd_security_netlink_recv(struct sk_buff *skb, int cap)
 }
 #endif
 
+
+static struct drbd_path *first_path(struct drbd_connection *connection)
+{
+	/* Ideally this function is removed at a later point in time.
+	   It was introduced when replacing the single address pair
+	   with a list of address pairs (or paths). */
+
+	return list_first_entry_or_null(&connection->transport.paths, struct drbd_path, list);
+}
+
 /* This would be a good candidate for a "pre_doit" hook,
  * and per-family private info->pointers.
  * But we need to stay compatible with older kernels.
@@ -257,9 +268,9 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		adm_ctx->my_addr = nested_attr_tb[__nla_type(T_ctx_my_addr)];
 		adm_ctx->peer_addr = nested_attr_tb[__nla_type(T_ctx_peer_addr)];
 		if ((adm_ctx->my_addr &&
-		     nla_len(adm_ctx->my_addr) > sizeof(adm_ctx->connection->transport.my_addr)) ||
+		     nla_len(adm_ctx->my_addr) > sizeof(struct sockaddr_storage)) ||
 		    (adm_ctx->peer_addr &&
-		     nla_len(adm_ctx->peer_addr) > sizeof(adm_ctx->connection->transport.peer_addr))) {
+		     nla_len(adm_ctx->peer_addr) > sizeof(struct sockaddr_storage))) {
 			err = -EINVAL;
 			goto fail;
 		}
@@ -552,8 +563,13 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 		}
 	}
 	if (connection) {
-		env_print_address(&env, "DRBD_MY_", &connection->transport.my_addr);
-		env_print_address(&env, "DRBD_PEER_", &connection->transport.peer_addr);
+		struct drbd_path *path = first_path(connection);
+		if (path) {
+			/* TO BE DELETED */
+			env_print_address(&env, "DRBD_MY_", &path->my_addr);
+			env_print_address(&env, "DRBD_PEER_", &path->peer_addr);
+		}
+		env_print(&env, "DRBD_PEER_NODE_ID=%u", connection->peer_node_id);
 	}
 	if (connection && !device) {
 		struct drbd_peer_device *peer_device;
@@ -3043,10 +3059,56 @@ fail:
 	return retcode;
 }
 
+static enum drbd_ret_code
+check_path_against_nla(const struct drbd_path *path,
+		       const struct nlattr *my_addr, const struct nlattr *peer_addr)
+{
+	if (nla_len(my_addr) == path->my_addr_len &&
+	    !memcmp(nla_data(my_addr), &path->my_addr, path->my_addr_len))
+		return ERR_LOCAL_ADDR;
+	if (nla_len(peer_addr) == path->peer_addr_len &&
+	    !memcmp(nla_data(peer_addr), &path->peer_addr, path->peer_addr_len))
+		return ERR_PEER_ADDR;
+	return NO_ERROR;
+}
+
+static enum drbd_ret_code
+check_path_usable(const struct drbd_config_context *adm_ctx)
+{
+	struct drbd_resource *resource;
+	struct drbd_connection *connection;
+	enum drbd_ret_code retcode;
+
+	if (!(adm_ctx->my_addr && adm_ctx->peer_addr)) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "connection endpoint(s) missing");
+		return ERR_INVALID_REQUEST;
+	}
+
+	/* No need for _rcu here. All reconfiguration is
+	 * strictly serialized on genl_lock(). We are protected against
+	 * concurrent reconfiguration/addition/deletion */
+	for_each_resource(resource, &drbd_resources) {
+		for_each_connection(connection, resource) {
+			struct drbd_path *path;
+			list_for_each_entry(path, &connection->transport.paths, list) {
+				retcode = check_path_against_nla(path, adm_ctx->my_addr, adm_ctx->peer_addr);
+				if (retcode == NO_ERROR)
+					continue;
+				/* Within the same resource, it is ok to use
+				 * the same local endpoint several times */
+				if (retcode == ERR_LOCAL_ADDR &&
+				    resource == adm_ctx->resource)
+					continue;
+				return retcode;
+			}
+		}
+	}
+	return NO_ERROR;
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
-	struct drbd_resource *resource;
 	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 
@@ -3056,41 +3118,34 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
-	if (!(adm_ctx.my_addr && adm_ctx.peer_addr)) {
-		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
-		retcode = ERR_INVALID_REQUEST;
+	retcode = check_path_usable(&adm_ctx);
+	if (retcode != NO_ERROR)
 		goto out;
-	}
-
-	/* No need for _rcu here. All reconfiguration is
-	 * strictly serialized on genl_lock(). We are protected against
-	 * concurrent reconfiguration/addition/deletion */
-	for_each_resource(resource, &drbd_resources) {
-		for_each_connection(connection, resource) {
-			if (resource != adm_ctx.resource &&
-			    nla_len(adm_ctx.my_addr) == connection->transport.my_addr_len &&
-			    !memcmp(nla_data(adm_ctx.my_addr), &connection->transport.my_addr,
-				    connection->transport.my_addr_len)) {
-				retcode = ERR_LOCAL_ADDR;
-				goto out;
-			}
-
-			if (nla_len(adm_ctx.peer_addr) == connection->transport.peer_addr_len &&
-			    !memcmp(nla_data(adm_ctx.peer_addr), &connection->transport.peer_addr,
-				    connection->transport.peer_addr_len)) {
-				retcode = ERR_PEER_ADDR;
-				goto out;
-			}
-		}
-	}
 
 	retcode = adm_new_connection(&connection, &adm_ctx, info);
 	if (connection) {
 		struct drbd_transport *transport = &connection->transport;
-		transport->my_addr_len = nla_len(adm_ctx.my_addr);
-		memcpy(&transport->my_addr, nla_data(adm_ctx.my_addr), transport->my_addr_len);
-		transport->peer_addr_len = nla_len(adm_ctx.peer_addr);
-		memcpy(&transport->peer_addr, nla_data(adm_ctx.peer_addr), transport->peer_addr_len);
+		struct drbd_path *path = kzalloc(sizeof(struct drbd_path), GFP_KERNEL);
+		int err;
+
+		if (!path) {
+			retcode = ERR_NOMEM;
+			goto out;
+		}
+
+		path->my_addr_len = nla_len(adm_ctx.my_addr);
+		memcpy(&path->my_addr, nla_data(adm_ctx.my_addr), path->my_addr_len);
+		path->peer_addr_len = nla_len(adm_ctx.peer_addr);
+		memcpy(&path->peer_addr, nla_data(adm_ctx.peer_addr), path->peer_addr_len);
+
+		err = transport->ops->add_path(transport, path);
+		if (err) {
+			kfree(path);
+			drbd_err(connection, "add_path() failed with %d\n", err);
+			drbd_msg_put_info(adm_ctx.reply_skb, "add_path on transport failed");
+			retcode = ERR_INVALID_REQUEST;
+			goto out;
+		}
 
 		retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
 		drbd_thread_start(&connection->sender);
@@ -3773,13 +3828,16 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (resource)
 		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
+		struct drbd_path *path = first_path(connection);
 		nla_put_u32(skb, T_ctx_peer_node_id, connection->peer_node_id);
-		if (connection->transport.my_addr_len)
-			nla_put(skb, T_ctx_my_addr,
-				connection->transport.my_addr_len, &connection->transport.my_addr);
-		if (connection->transport.peer_addr_len)
-			nla_put(skb, T_ctx_peer_addr,
-				connection->transport.peer_addr_len, &connection->transport.peer_addr);
+		if (path) {
+			if (path->my_addr_len)
+				nla_put(skb, T_ctx_my_addr,
+					path->my_addr_len, &path->my_addr);
+			if (path->peer_addr_len)
+				nla_put(skb, T_ctx_peer_addr,
+					path->peer_addr_len, &path->peer_addr);
+		}
 		rcu_read_lock();
 		if (connection->transport.net_conf && connection->transport.net_conf->name)
 			nla_put_string(skb, T_ctx_conn_name, connection->transport.net_conf->name);

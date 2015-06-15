@@ -3229,6 +3229,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
 
+	INIT_LIST_HEAD(&connection->transport.paths);
 	connection->transport.log_prefix = resource->name;
 	if (tc->init(&connection->transport))
 		goto fail;

@@ -47,6 +47,7 @@ struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
 	struct socket *stream[2];
 	struct buffer rbuf[2];
+	bool in_use;
 };
 
 struct dtt_listener {
@@ -74,6 +75,8 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *m);
 static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
+static int dtt_add_path(struct drbd_transport *, struct drbd_path *path);
+static int dtt_remove_path(struct drbd_transport *, struct drbd_path *);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
@@ -95,6 +98,8 @@ static struct drbd_transport_ops dtt_ops = {
 	.stream_ok = dtt_stream_ok,
 	.hint = dtt_hint,
 	.debugfs_show = dtt_debugfs_show,
+	.add_path = dtt_add_path,
+	.remove_path = dtt_remove_path,
 };
 
 
@@ -119,11 +124,17 @@ int dtt_init(struct drbd_transport *transport)
 		tcp_transport->rbuf[i].base = buffer;
 		tcp_transport->rbuf[i].pos = buffer;
 	}
+	tcp_transport->in_use = false;
 
 	return 0;
 fail:
 	free_page((unsigned long)tcp_transport->rbuf[0].base);
 	return -ENOMEM;
+}
+
+static struct drbd_path* dtt_path(struct drbd_transport *transport)
+{
+	return list_first_entry_or_null(&transport->paths, struct drbd_path, list);
 }
 
 static void dtt_free_one_sock(struct socket *socket)
@@ -140,6 +151,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	enum drbd_stream i;
+	struct drbd_path *path;
 
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
@@ -150,11 +162,17 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			tcp_transport->stream[i] = NULL;
 		}
 	}
+	tcp_transport->in_use = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 			tcp_transport->rbuf[i].base = NULL;
+		}
+		path = dtt_path(transport);
+		if (path) {
+			list_del(&path->list);
+			kfree(path);
 		}
 	}
 }
@@ -342,7 +360,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
 
-	my_addr = transport->my_addr;
+	my_addr = dtt_path(transport)->my_addr;
 	if (my_addr.ss_family == AF_INET6)
 		((struct sockaddr_in6 *)&my_addr)->sin6_port = 0;
 	else
@@ -350,7 +368,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 
 	/* In some cases, the network stack can end up overwriting
 	   peer_addr.ss_family, so use a copy here. */
-	peer_addr = transport->peer_addr;
+	peer_addr = dtt_path(transport)->peer_addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
@@ -371,7 +389,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, transport->my_addr_len);
+	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, dtt_path(transport)->my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -379,7 +397,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	what = "connect";
 	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr,
-				   transport->peer_addr_len, 0);
+				   dtt_path(transport)->peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
 		case -ETIMEDOUT:
@@ -548,7 +566,7 @@ retry:
 			switch (peer_addr.ss_family) {
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				to_sin6 = (struct sockaddr_in6 *)&transport->my_addr;
+				to_sin6 = (struct sockaddr_in6 *)&dtt_path(transport)->my_addr;
 				tr_err(transport, "Closing unexpected connection from "
 					 "%pI6 to port %u\n",
 					 &from_sin6->sin6_addr,
@@ -556,7 +574,7 @@ retry:
 				break;
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
-				to_sin = (struct sockaddr_in *)&transport->my_addr;
+				to_sin = (struct sockaddr_in *)&dtt_path(transport)->my_addr;
 				tr_err(transport, "Closing unexpected connection from "
 					 "%pI4 to port %u\n",
 					 &from_sin->sin_addr,
@@ -672,7 +690,7 @@ static int dtt_create_listener(struct drbd_transport *transport, struct drbd_lis
 	rcvbuf_size = nc->rcvbuf_size;
 	rcu_read_unlock();
 
-	my_addr = transport->my_addr;
+	my_addr = dtt_path(transport)->my_addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
@@ -685,7 +703,7 @@ static int dtt_create_listener(struct drbd_transport *transport, struct drbd_lis
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, transport->my_addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, dtt_path(transport)->my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -748,6 +766,10 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	dsocket = NULL;
 	csocket = NULL;
+
+	if (!dtt_path(transport))
+		return -EDESTADDRREQ;
+	tcp_transport->in_use = true;
 
 	waiter.waiter.transport = transport;
 	waiter.socket = NULL;
@@ -1037,6 +1059,33 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 		}
 	}
 
+}
+
+static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *path)
+{
+	if (!list_empty(&transport->paths))
+		return -EEXIST;
+
+	list_add(&path->list, &transport->paths);
+
+	return 0;
+}
+
+static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *path)
+{
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+	struct drbd_path *existing = dtt_path(transport);
+
+	if (tcp_transport->in_use)
+		return -EBUSY;
+
+	if (path && path == existing) {
+		list_del_init(&existing->list);
+		return 0;
+	}
+
+	return -ENOENT;
 }
 
 static int __init dtt_initialize(void)

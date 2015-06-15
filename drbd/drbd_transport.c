@@ -152,11 +152,14 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener;
+	struct drbd_path *path;
 
 	list_for_each_entry(listener, &resource->listeners, list) {
-		if (addr_and_port_equal(&listener->listen_addr, &connection->transport.my_addr)) {
-			kref_get(&listener->kref);
-			return listener;
+		list_for_each_entry(path, &connection->transport.paths, list) {
+			if (addr_and_port_equal(&listener->listen_addr, &path->my_addr)) {
+				kref_get(&listener->kref);
+				return listener;
+			}
 		}
 	}
 	return NULL;
@@ -243,10 +246,13 @@ void drbd_put_listener(struct drbd_waiter *waiter)
 struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
 {
 	struct drbd_waiter *waiter;
+	struct drbd_path *path;
 
 	list_for_each_entry(waiter, &listener->waiters, list) {
-		if (addr_equal(&waiter->transport->peer_addr, addr))
-			return waiter;
+		list_for_each_entry(path, &waiter->transport->paths, list) {
+			if (addr_equal(&path->peer_addr, addr))
+				return waiter;
+		}
 	}
 
 	return NULL;
