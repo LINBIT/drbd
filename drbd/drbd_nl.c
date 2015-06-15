@@ -86,6 +86,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
@@ -969,15 +971,9 @@ retry:
 	} else {
 		struct drbd_connection *connection;
 
-
 		mutex_lock(&resource->conf_update);
-		for_each_connection(connection, resource) {
-			struct net_conf *nc;
-
-			nc = connection->transport.net_conf;
-			if (nc)
-				nc->discard_my_data = 0; /* without copy; single bit op is atomic */
-		}
+		for_each_connection(connection, resource)
+			clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 		mutex_unlock(&resource->conf_update);
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
@@ -2479,10 +2475,6 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 	    new_net_conf->fencing_policy == FP_STONITH)
 		return ERR_STONITH_AND_PROT_A;
 
-	if (connection->resource->role[NOW] == R_PRIMARY &&
-	    new_net_conf->discard_my_data)
-		return ERR_DISCARD_IMPOSSIBLE;
-
 	if (new_net_conf->on_congestion != OC_BLOCK &&
 	    new_net_conf->wire_protocol != DRBD_PROT_A)
 		return ERR_CONG_NOT_PROTO_A;
@@ -3037,6 +3029,7 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	mutex_unlock(&adm_ctx->resource->conf_update);
 
 	drbd_debugfs_connection_add(connection); /* after ->net_conf was assigned */
+	drbd_thread_start(&connection->sender);
 	*ret_conn = connection;
 	return NO_ERROR;
 
@@ -3073,13 +3066,14 @@ check_path_against_nla(const struct drbd_path *path,
 }
 
 static enum drbd_ret_code
-check_path_usable(const struct drbd_config_context *adm_ctx)
+check_path_usable(const struct drbd_config_context *adm_ctx,
+		  const struct nlattr *my_addr, const struct nlattr *peer_addr)
 {
 	struct drbd_resource *resource;
 	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
 
-	if (!(adm_ctx->my_addr && adm_ctx->peer_addr)) {
+	if (!(my_addr && peer_addr)) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "connection endpoint(s) missing");
 		return ERR_INVALID_REQUEST;
 	}
@@ -3091,7 +3085,7 @@ check_path_usable(const struct drbd_config_context *adm_ctx)
 		for_each_connection(connection, resource) {
 			struct drbd_path *path;
 			list_for_each_entry(path, &connection->transport.paths, list) {
-				retcode = check_path_against_nla(path, adm_ctx->my_addr, adm_ctx->peer_addr);
+				retcode = check_path_against_nla(path, my_addr, peer_addr);
 				if (retcode == NO_ERROR)
 					continue;
 				/* Within the same resource, it is ok to use
@@ -3106,7 +3100,97 @@ check_path_usable(const struct drbd_config_context *adm_ctx)
 	return NO_ERROR;
 }
 
+static enum drbd_ret_code
+adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
+{
+	struct drbd_transport *transport = &adm_ctx->connection->transport;
+	struct nlattr *my_addr = NULL, *peer_addr = NULL;
+	struct drbd_path *path;
+	enum drbd_ret_code retcode;
+	int err;
+
+	/* parse and validate only */
+	err = path_parms_from_attrs(NULL, info);
+	if (err) {
+		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
+		return ERR_MANDATORY_TAG;
+	}
+	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
+	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+
+	retcode = check_path_usable(adm_ctx, my_addr, peer_addr);
+	if (retcode != NO_ERROR)
+		return retcode;
+
+	path = kzalloc(sizeof(struct drbd_path), GFP_KERNEL);
+	if (!path)
+		return ERR_NOMEM;
+
+	path->my_addr_len = nla_len(my_addr);
+	memcpy(&path->my_addr, nla_data(my_addr), path->my_addr_len);
+	path->peer_addr_len = nla_len(peer_addr);
+	memcpy(&path->peer_addr, nla_data(peer_addr), path->peer_addr_len);
+
+	err = transport->ops->add_path(transport, path);
+	if (err) {
+		kfree(path);
+		drbd_err(adm_ctx->connection, "add_path() failed with %d\n", err);
+		drbd_msg_put_info(adm_ctx->reply_skb, "add_path on transport failed");
+		return ERR_INVALID_REQUEST;
+	}
+	return NO_ERROR;
+}
+
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	struct connect_parms parms = { 0, };
+	enum drbd_ret_code retcode;
+	enum drbd_conn_state cstate;
+	int err;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_CONNECTION);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	cstate = adm_ctx.connection->cstate[NOW];
+	if (cstate != C_STANDALONE) {
+		retcode = ERR_NET_CONFIGURED;
+		goto out;
+	}
+
+	if (first_path(adm_ctx.connection) == NULL) {
+		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	if (info->attrs[DRBD_NLA_CONNECT_PARMS]) {
+		err = connect_parms_from_attrs(&parms, info);
+		if (err) {
+			retcode = ERR_MANDATORY_TAG;
+			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+			goto out;
+		}
+	}
+	if (parms.discard_my_data) {
+		if (adm_ctx.resource->role[NOW] == R_PRIMARY) {
+			retcode = ERR_DISCARD_IMPOSSIBLE;
+			goto out;
+		}
+		set_bit(CONN_DISCARD_MY_DATA, &adm_ctx.connection->flags);
+	}
+	if (parms.tentative)
+		set_bit(CONN_DRY_RUN, &adm_ctx.connection->flags);
+
+	retcode = change_cstate(adm_ctx.connection, C_UNCONNECTED, CS_VERBOSE);
+
+out:
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
+}
+
+int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
@@ -3118,40 +3202,35 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
-	retcode = check_path_usable(&adm_ctx);
-	if (retcode != NO_ERROR)
-		goto out;
-
-	retcode = adm_new_connection(&connection, &adm_ctx, info);
-	if (connection) {
-		struct drbd_transport *transport = &connection->transport;
-		struct drbd_path *path = kzalloc(sizeof(struct drbd_path), GFP_KERNEL);
-		int err;
-
-		if (!path) {
-			retcode = ERR_NOMEM;
-			goto out;
-		}
-
-		path->my_addr_len = nla_len(adm_ctx.my_addr);
-		memcpy(&path->my_addr, nla_data(adm_ctx.my_addr), path->my_addr_len);
-		path->peer_addr_len = nla_len(adm_ctx.peer_addr);
-		memcpy(&path->peer_addr, nla_data(adm_ctx.peer_addr), path->peer_addr_len);
-
-		err = transport->ops->add_path(transport, path);
-		if (err) {
-			kfree(path);
-			drbd_err(connection, "add_path() failed with %d\n", err);
-			drbd_msg_put_info(adm_ctx.reply_skb, "add_path on transport failed");
-			retcode = ERR_INVALID_REQUEST;
-			goto out;
-		}
-
-		retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
-		drbd_thread_start(&connection->sender);
+	if (adm_ctx.connection) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_put_info(adm_ctx.reply_skb, "peer connection already exists");
+	} else {
+		retcode = adm_new_connection(&connection, &adm_ctx, info);
 	}
-out:
+
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
+}
+
+int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	enum drbd_ret_code retcode;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_CONNECTION);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	/* remote transport endpoints need to be globaly unique */
+	mutex_lock(&resources_mutex);
+	mutex_lock(&adm_ctx.resource->adm_mutex);
+
+	retcode = adm_add_path(&adm_ctx, info);
+
+	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	mutex_unlock(&resources_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }

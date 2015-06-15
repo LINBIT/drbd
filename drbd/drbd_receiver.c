@@ -686,8 +686,10 @@ start:
 	err = transport->ops->connect(transport);
 	if (err == -EAGAIN)
 		goto retry;
-	else if (err < 0)
+	else if (err < 0) {
+		drbd_warn(connection, "Failed to initiate connection, err=%d\n", err);
 		goto abort;
+	}
 
 	connection->last_received = jiffies;
 
@@ -719,10 +721,7 @@ start:
 
 	transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 
-	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
-	discard_my_data = nc->discard_my_data;
-	rcu_read_unlock();
+	discard_my_data = test_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
 		goto abort;
@@ -741,15 +740,6 @@ start:
 			clear_bit(DISCARD_MY_DATA, &device->flags);
 	}
 	rcu_read_unlock();
-
-	if (mutex_lock_interruptible(&resource->conf_update) == 0) {
-		/* The discard_my_data flag is a single-shot modifier to the next
-		 * connection attempt, the handshake of which is now well underway.
-		 * No need for rcu style copying of the whole struct
-		 * just to clear a single value. */
-		connection->transport.net_conf->discard_my_data = 0;
-		mutex_unlock(&resource->conf_update);
-	}
 
 	drbd_thread_start(&connection->ack_receiver);
 	connection->ack_sender =
@@ -3290,7 +3280,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
-	int hg, rule_nr, rr_conflict, tentative, peer_node_id = 0, r;
+	int hg, rule_nr, rr_conflict, peer_node_id = 0, r;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, true);
 
@@ -3357,7 +3347,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			     (hg < 0) ? "peer" : "this");
 	}
 	rr_conflict = nc->rr_conflict;
-	tentative = nc->tentative;
 	rcu_read_unlock();
 
 	if (hg == -100) {
@@ -3381,7 +3370,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		}
 	}
 
-	if (tentative || test_bit(CONN_DRY_RUN, &connection->flags)) {
+	if (test_bit(CONN_DRY_RUN, &connection->flags)) {
 		if (hg == 0)
 			drbd_info(device, "dry-run connect: No resync, would become Connected immediately.\n");
 		else
@@ -3442,8 +3431,6 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	}
 
 	if (pi->cmd != P_PROTOCOL_UPDATE) {
-		clear_bit(CONN_DRY_RUN, &connection->flags);
-
 		if (cf & CF_DRY_RUN)
 			set_bit(CONN_DRY_RUN, &connection->flags);
 
@@ -3470,7 +3457,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 			goto disconnect_rcu_unlock;
 		}
 
-		if (p_discard_my_data && nc->discard_my_data) {
+		if (p_discard_my_data && test_bit(CONN_DISCARD_MY_DATA, &connection->flags)) {
 			drbd_err(connection, "incompatible %s settings\n", "discard-my-data");
 			goto disconnect_rcu_unlock;
 		}
@@ -5962,6 +5949,9 @@ void conn_disconnect(struct drbd_connection *connection)
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
 	int vnr, i;
+
+	clear_bit(CONN_DRY_RUN, &connection->flags);
+	clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;

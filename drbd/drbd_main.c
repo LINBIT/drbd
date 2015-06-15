@@ -1154,19 +1154,17 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	struct net_conf *nc;
 	int size, cf;
 
-	rcu_read_lock();
-	nc = rcu_dereference(connection->transport.net_conf);
-
-	if (nc->tentative && connection->agreed_pro_version < 92) {
-		rcu_read_unlock();
+	if (test_bit(CONN_DRY_RUN, &connection->flags) && connection->agreed_pro_version < 92) {
+		clear_bit(CONN_DRY_RUN, &connection->flags);
 		drbd_err(connection, "--dry-run is not supported by peer");
 		return -EOPNOTSUPP;
 	}
 
 	size = sizeof(*p);
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
 	if (connection->agreed_pro_version >= 87)
 		size += strlen(nc->integrity_alg) + 1;
-
 	rcu_read_unlock();
 
 	p = __conn_prepare_command(connection, size, DATA_STREAM);
@@ -1182,9 +1180,9 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	p->after_sb_2p   = cpu_to_be32(nc->after_sb_2p);
 	p->two_primaries = cpu_to_be32(nc->two_primaries);
 	cf = 0;
-	if (nc->discard_my_data)
+	if (test_bit(CONN_DISCARD_MY_DATA, &connection->flags))
 		cf |= CF_DISCARD_MY_DATA;
-	if (nc->tentative)
+	if (test_bit(CONN_DRY_RUN, &connection->flags))
 		cf |= CF_DRY_RUN;
 	p->conn_flags    = cpu_to_be32(cf);
 
@@ -1230,10 +1228,9 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
-	rcu_read_lock();
-	if (rcu_dereference(peer_device->connection->transport.net_conf)->discard_my_data)
+
+	if (test_bit(DISCARD_MY_DATA, &device->flags))
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
-	rcu_read_unlock();
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
@@ -1317,10 +1314,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
-	rcu_read_lock();
-	if (rcu_dereference(peer_device->connection->transport.net_conf)->discard_my_data)
+	if (test_bit(DISCARD_MY_DATA, &device->flags))
 		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
-	rcu_read_unlock();
 	if (test_bit(CRASHED_PRIMARY, &device->flags))
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))

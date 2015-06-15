@@ -803,6 +803,7 @@ enum {
 	CONTROL_CORKED,
 	C_UNREGISTERED,
 	RECONNECT,
+	CONN_DISCARD_MY_DATA,
 };
 
 /* flag bits per resource */

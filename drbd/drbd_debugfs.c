@@ -787,6 +787,9 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	pretty_print_bit(BARRIER_ACK_PENDING);
 	pretty_print_bit(DATA_CORKED);
 	pretty_print_bit(CONTROL_CORKED);
+	pretty_print_bit(C_UNREGISTERED);
+	pretty_print_bit(RECONNECT);
+	pretty_print_bit(CONN_DISCARD_MY_DATA);
 #undef pretty_print_bit
 	seq_putc(m, '\n');
 
