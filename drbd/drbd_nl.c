@@ -87,7 +87,9 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
@@ -3052,15 +3054,18 @@ fail:
 	return retcode;
 }
 
+bool addr_eq_nla(const struct sockaddr_storage *addr, const int addr_len, const struct nlattr *nla)
+{
+	return	nla_len(nla) == addr_len && memcmp(nla_data(nla), addr, addr_len) == 0;
+}
+
 static enum drbd_ret_code
 check_path_against_nla(const struct drbd_path *path,
 		       const struct nlattr *my_addr, const struct nlattr *peer_addr)
 {
-	if (nla_len(my_addr) == path->my_addr_len &&
-	    !memcmp(nla_data(my_addr), &path->my_addr, path->my_addr_len))
+	if (addr_eq_nla(&path->my_addr, path->my_addr_len, my_addr))
 		return ERR_LOCAL_ADDR;
-	if (nla_len(peer_addr) == path->peer_addr_len &&
-	    !memcmp(nla_data(peer_addr), &path->peer_addr, path->peer_addr_len))
+	if (addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
 		return ERR_PEER_ADDR;
 	return NO_ERROR;
 }
@@ -3235,6 +3240,63 @@ int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static enum drbd_ret_code
+adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
+{
+	struct drbd_transport *transport = &adm_ctx->connection->transport;
+	struct nlattr *my_addr = NULL, *peer_addr = NULL;
+	struct drbd_path *path;
+	int err;
+
+	/* parse and validate only */
+	err = path_parms_from_attrs(NULL, info);
+	if (err) {
+		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
+		return ERR_MANDATORY_TAG;
+	}
+	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
+	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+
+	list_for_each_entry(path, &transport->paths, list) {
+		if (!addr_eq_nla(&path->my_addr, path->my_addr_len, my_addr))
+			continue;
+		if (!addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
+			continue;
+
+		err = transport->ops->remove_path(transport, path);
+		if (!err)
+			kfree(path);
+		break;
+	}
+	if (err) {
+		drbd_err(adm_ctx->connection, "del_path() failed with %d\n", err);
+		drbd_msg_put_info(adm_ctx->reply_skb, "del_path on transport failed");
+		return ERR_INVALID_REQUEST;
+	}
+	return NO_ERROR;
+}
+
+int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	enum drbd_ret_code retcode;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_CONNECTION);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	/* remote transport endpoints need to be globaly unique */
+	mutex_lock(&resources_mutex);
+	mutex_lock(&adm_ctx.resource->adm_mutex);
+
+	retcode = adm_del_path(&adm_ctx, info);
+
+	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	mutex_unlock(&resources_mutex);
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
+}
+
 static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection, bool force)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -3262,72 +3324,74 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	default:;
 		/* no special handling necessary */
 	}
-
-	if (rv >= SS_SUCCESS) {
-		enum drbd_state_rv rv2;
-		struct drbd_peer_device *peer_device;
-		int vnr;
-
-		/* No one else can reconfigure the network while I am here.
-		 * The state handling only uses drbd_thread_stop_nowait(),
-		 * we want to really wait here until the receiver is no more.
-		 */
-		drbd_thread_stop(&connection->receiver);
-
-		/* Race breaker.  This additional state change request may be
-		 * necessary, if this was a forced disconnect during a receiver
-		 * restart.  We may have "killed" the receiver thread just
-		 * after drbd_receiver() returned.  Typically, we should be
-		 * C_STANDALONE already, now, and this becomes a no-op.
-		 */
-		rv2 = change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD);
-		if (rv2 < SS_SUCCESS)
-			drbd_err(connection,
-				"unexpected rv2=%d in conn_try_disconnect()\n",
-				rv2);
-		/* Make sure the sender thread has actually stopped: state
-		 * handling only does drbd_thread_stop_nowait().
-		 */
-		drbd_thread_stop(&connection->sender);
-
-		drbd_unregister_connection(connection);
-
-		/*
-		 * Flush the resource work queue to make sure that no more
-		 * events like state change notifications for this connection
-		 * are queued: we want the "destroy" event to come last.
-		 */
-		drbd_flush_workqueue(&resource->work);
-
-		mutex_lock(&notification_mutex);
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-			notify_peer_device_state(NULL, 0, peer_device, NULL,
-						 NOTIFY_DESTROY | NOTIFY_CONTINUES);
-		notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
-		mutex_unlock(&notification_mutex);
-		synchronize_rcu();
-		drbd_put_connection(connection);
-	}
 	return rv;
 }
 
-int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
+/* this cann only be called immediately after a successful
+ * conn_try_disconnect, within the same resource->adm_mutex */
+void del_connection(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	enum drbd_state_rv rv2;
+	int vnr;
+
+	/* No one else can reconfigure the network while I am here.
+	 * The state handling only uses drbd_thread_stop_nowait(),
+	 * we want to really wait here until the receiver is no more.
+	 */
+	drbd_thread_stop(&connection->receiver);
+
+	/* Race breaker.  This additional state change request may be
+	 * necessary, if this was a forced disconnect during a receiver
+	 * restart.  We may have "killed" the receiver thread just
+	 * after drbd_receiver() returned.  Typically, we should be
+	 * C_STANDALONE already, now, and this becomes a no-op.
+	 */
+	rv2 = change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD);
+	if (rv2 < SS_SUCCESS)
+		drbd_err(connection,
+			"unexpected rv2=%d in del_connection()\n",
+			rv2);
+	/* Make sure the sender thread has actually stopped: state
+	 * handling only does drbd_thread_stop_nowait().
+	 */
+	drbd_thread_stop(&connection->sender);
+
+	drbd_unregister_connection(connection);
+
+	/*
+	 * Flush the resource work queue to make sure that no more
+	 * events like state change notifications for this connection
+	 * are queued: we want the "destroy" event to come last.
+	 */
+	drbd_flush_workqueue(&resource->work);
+
+	mutex_lock(&notification_mutex);
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		notify_peer_device_state(NULL, 0, peer_device, NULL,
+					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
+	notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
+	mutex_unlock(&notification_mutex);
+	synchronize_rcu();
+	drbd_put_connection(connection);
+}
+
+int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)
 {
 	struct drbd_config_context adm_ctx;
 	struct disconnect_parms parms;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv;
 	enum drbd_ret_code retcode;
-	int err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_CONNECTION);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	connection = adm_ctx.connection;
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_DISCONNECT_PARMS]) {
-		err = disconnect_parms_from_attrs(&parms, info);
+		int err = disconnect_parms_from_attrs(&parms, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
 			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
@@ -3335,9 +3399,12 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	connection = adm_ctx.connection;
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 	mutex_lock(&connection->resource->conf_update);
 	rv = conn_try_disconnect(connection, parms.force_disconnect);
+	if (rv >= SS_SUCCESS && destroy)
+		del_connection(connection);
 	mutex_unlock(&connection->resource->conf_update);
 	if (rv < SS_SUCCESS)
 		retcode = rv;  /* FIXME: Type mismatch. */
@@ -3347,6 +3414,16 @@ int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
  fail:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
+}
+
+int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
+{
+	return adm_disconnect(skb, info, 0);
+}
+
+int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info)
+{
+	return adm_disconnect(skb, info, 1);
 }
 
 void resync_after_online_grow(struct drbd_peer_device *peer_device)
@@ -4860,7 +4937,9 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&resource->conf_update);
 	for_each_connection_safe(connection, tmp, resource) {
 		retcode = conn_try_disconnect(connection, 0);
-		if (retcode < SS_SUCCESS) {
+		if (retcode >= SS_SUCCESS) {
+			del_connection(connection);
+		} else {
 			drbd_msg_put_info(adm_ctx.reply_skb, "failed to disconnect");
 			goto unlock_out;
 		}
