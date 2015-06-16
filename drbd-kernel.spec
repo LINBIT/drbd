@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.0.0rc3
+Version: 9.0.0
 Release: 1%{?dist}
 
 # always require a suitable userland
@@ -102,43 +102,7 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
-* Wed May 13 2015 Philipp Reisner <phil@linbit.com> - 9.0.0rc3-1
-- New upstream release.
-
-* Thu Mar  5 2015 Philipp Reisner <phil@linbit.com> - 9.0.0rc2-1
-- New upstream release.
-
-* Tue Jan 20 2015 Philipp Reisner <phil@linbit.com> - 9.0.0rc1-1
-- New upstream release.
-
-* Fri Sep 19 2014 Philipp Reisner <phil@linbit.com> - 9.0.0pre10-1
-- New upstream release.
-
-* Fri Mar  7 2014 Philipp Reisner <phil@linbit.com> - 9.0.0pre9-1
-- New upstream release.
-
-* Thu Feb  6 2014 Philipp Reisner <phil@linbit.com> - 9.0.0pre8-1
-- New upstream release.
-
-* Sun Dec 22 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre7-1
-- New upstream release.
-
-* Wed Aug 14 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre6-1
-- New upstream release.
-
-* Fri Jul 12 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre5-1
-- New upstream release.
-
-* Fri May 31 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre4-1
-- New upstream release.
-
-* Tue Apr 30 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre3-1
-- New upstream release.
-
-* Mon Apr 15 2013 Philipp Reisner <phil@linbit.com> - 9.0.0pre2-1
-- New upstream release.
-
-* Mon Dec  3 2012 Philipp Reisner <phil@linbit.com> - 9.0.0pre1-1
+* Tue Jun 16 2015 Philipp Reisner <phil@linbit.com> - 9.0.0-1
 - New upstream release.
 
 * Mon Jul 18 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1

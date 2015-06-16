@@ -2,159 +2,34 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-9.0.0rc3 (api:genl1/proto:86-110)
+9.0.0 (api:genl2/proto:86-110)
 --------
- * Merged changes of 8.4.6 release
- * Minor fixes in DRBD9 core for the RDMA transport
- * All log messages are not prefixed with drbd and resource_name
- * Fixed  wire protocol compatibility with drbd-8.4 for role changes
- * A lot of work on the two-phase commits: if two commits conflict
-   one will succeed always; fixed bugs that caused tow-phase commits
-   to hang
- * Fixed discard/trim in drbd9; was broken since the transport
-   abstraction code was merged
- * Fixed the resync rate controller
- * Fixed protocol A
- * Fixed binding to the right port if for multiple peers the same
-   local address with different ports is configured
-
-9.0.0rc2 (api:genl1/proto:86-110)
---------
- * implemented trivial corking (network packet coalescing) in drbd,
-   that makes the use of packet oriented transport feasible
+ * split drbdsetup connect into new-peer, add-path, connect;
+   split disconnect into del-path, disconnect and del-peer
  * create a new configuration object 'peer-device'; move config
    params of resync to the peer-device
- * move max_buffers from disk options to net options
- * merge 8.4 fixes
- * more work on the transport interface (triggered by the work
-   on the RDMA transport)
- * Expose the loaded transports in /proc/drbd
- * Use git submodules to share code between drbd core, user-space
-   tools and drbd transports
-
-9.0.0rc1 (api:genl1/proto:86-110)
---------
- * some work on drbd-9.0 to drbd-8.4 compatibility
- * many bug fixes to all areas of the new code; especially the
-   the resync procedure, which is a lot more complex than it's
-   8.4 ancestor
  * a transport abstraction layer that will allow for alternative
    transports besides TCP. Planed are RDMA/Infiniband and SCTP
-
-9.0.0pre10 (api:genl1/proto:86-110)
---------
- * completed the merge from the 8.4 branch (including debugfs)
- * final fixes on the reference counts
- * many fixes to the state engine to express the drbd9 semantics
- * nodes not directly connected to a newly promoted primary
-   now outdate themselves in the two-phase commit operation
- * fix disallowing of detach in case the device is opened
-   read only
- * fixed resync: When a node is SyncSource to multiple targets
-   make sure that all targets get informed about blocks set
-   in sync on the other nodes (Last of those packets was
-   not sent previously)
- * fixed resync: Sometimes froze due to a forgotten act
-   log entry on secondary nodes
- * fixes and improvements to the UUID modifications for resync
-   decissions
- * fixed resync: No longer wake more than one paused resync
-   operations
- * fixed role changes on resources without volumes
-
-9.0.0pre9 (api:genl1/proto:86-110)
---------
- * fixed the "list corruption bug"
  * moved the user space code to a dedicated repository (with
    that the driver no longer uses autotools)
- * fixed race conditions with changing the in kernel objects
- * fixed UUID modifications for attach & detach operations
- * allow a diskless node to become primary when there is
-   up-to-date data on secondary nodes
- * the transition into disk state Negotiating is now a two-phase
-   commit. With that only one disk in a resource is allowed at
-   a time in Negotiating state.
- * Completed the resync-negotiation for disk getting attached
-   to a diskless node that has multiple peers
- * a dedicated disk state for Detaching (previously Failed was
-   used for a detaching disk)
-
-9.0.0pre8 (api:genl1/proto:86-110)
---------
- * Fixed an issue with 2-phase commit when the members of
-   the cluster know different numbers of minor devices for the
-   resource
- * drbdsetup events: no longer terminates of 2KiB socket buffer gets full
- * drbdsetup events: output format changed
- * drbdsetup events: terminates if read side of pipe is closed
- * drbd-8.4 merges
- * Minor fixes
-
-9.0.0pre7 (api:genl1/proto:86-110)
---------
- * Merge up and bejone 8.4.4
- * Do not crash if DRBD runs out of available bitmap slots
- * Fix reference counting (A few bugs in this area caused crashed
-   when/after unloading the module)
- * Fix crashes on PAE/highmem
- * Many fixes to the two phase commit protocol (used for cluster
-   wide state changes)
- * Lots of minor fixes
-
-9.0.0pre6 (api:genl1/proto:86-110)
---------
+ * drbdsetup events2 supersedes events; drbdsetup status supersedes
+   cat /proc/drbd; both commands are also available with drbd 8.4.6
+   and recent drbd-utils
  * Fixed the wait-[connect|sync] drbdadm commands. Now they actually
    work on all three object types (resources, connections, volumes)
- * Fixed the resync vs application IO deadlock on a resync from
-   Primary/SyncSource to Secondary/SyncTarget [Was introduced in
-   drbd9 development]
- * Correctly deal with writes from a Primary on two Secondaries that
-   do a resync
  * New command called "forget-peer". It is used to free a peer-device
    slot. Online (via drbdsetup) or offline (via drbdmeta)
- * Lots of minor fixes
-
-9.0.0pre5 (api:genl1/proto:86-110)
---------
- * Fixed the drbdadm invalidate command (Now it takes a device or
-   a peer device)
- * Builds on recent linux kernels not (up to 3.10)
- * drbdsetup down all (downs everything independent of the config file)
- * Fixed an OOPS on a diskless node in case of an detach/attach on an
-   other node in the cluster
- * Fixed a deadlock in the down code path
- * Fixed the "bind before listen failed, err = -98" race
- * Do not OOPS when "downing" an opened device
-
-9.0.0pre4 (api:genl1/proto:86-110)
---------
- * Fixes in the area of cluster wide commits
- * Fixes in the area of the resync code
-
-9.0.0pre3 (api:genl1/proto:86-110)
---------
- * Lots of bugs fixed in the two phase cluster wide commits
- * Work on the state engine, to fit it to multiple connections
-
-9.0.0pre2 (api:genl1/proto:86-110)
---------
  * Introduced two phase commits that span include all (direct
    and indirectly) connected nodes. This new type of transactions
    is used when a node bacomes primary, or when a new connection
    is established.
- * Introduce a new state flag "weak"; if it is set, the node has
-   no direct connection to a primary node, but a primary node is
-   present in the cluster.
- * Reworked resync decissions for multiple connections, and weakly
+ * Reworked resync decisions for multiple connections, and weakly
    connected nodes.
-
-9.0.0pre1 (api:genl1/proto:86-110)
---------
  * Support for multiple connections in a single resource; this feature
    obsoletes device stacking; new configuration keywords: connection,
    host, node-id, connection-mesh, hosts.
  * Automatic promote; if a process opens a drbd device for r/w, drbd
-   tries to promotes that resource to primary; it the last process
+   tries to promotes that resource to primary; if the last process
    closes the device drbd demotes that resource to secondary; opens
    fails if promotion fails. This feature obsoletes become-primary-on
  * Activity log striping; Besides the striping this allows AL
@@ -163,6 +38,11 @@ Latest:
    improves the number of IOPs in case the workload does not fit into
    the configured AL size.
  * Resync extents are now 128MiByte instead of 16MiBytes
+ * Use git submodules to share code between drbd core, user-space
+   tools and drbd transports
+ * a dedicated disk state for Detaching (previously Failed was
+   used for a detaching disk)
+
 
 8.4.0 (api:genl1/proto:86-100)
 --------
