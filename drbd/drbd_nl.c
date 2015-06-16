@@ -269,15 +269,6 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		nla = nested_attr_tb[__nla_type(T_ctx_resource_name)];
 		if (nla)
 			adm_ctx->resource_name = nla_data(nla);
-		adm_ctx->my_addr = nested_attr_tb[__nla_type(T_ctx_my_addr)];
-		adm_ctx->peer_addr = nested_attr_tb[__nla_type(T_ctx_peer_addr)];
-		if ((adm_ctx->my_addr &&
-		     nla_len(adm_ctx->my_addr) > sizeof(struct sockaddr_storage)) ||
-		    (adm_ctx->peer_addr &&
-		     nla_len(adm_ctx->peer_addr) > sizeof(struct sockaddr_storage))) {
-			err = -EINVAL;
-			goto fail;
-		}
 	}
 
 	if (adm_ctx->resource_name) {
@@ -3984,16 +3975,7 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (resource)
 		nla_put_string(skb, T_ctx_resource_name, resource->name);
 	if (connection) {
-		struct drbd_path *path = first_path(connection);
 		nla_put_u32(skb, T_ctx_peer_node_id, connection->peer_node_id);
-		if (path) {
-			if (path->my_addr_len)
-				nla_put(skb, T_ctx_my_addr,
-					path->my_addr_len, &path->my_addr);
-			if (path->peer_addr_len)
-				nla_put(skb, T_ctx_peer_addr,
-					path->peer_addr_len, &path->peer_addr);
-		}
 		rcu_read_lock();
 		if (connection->transport.net_conf && connection->transport.net_conf->name)
 			nla_put_string(skb, T_ctx_conn_name, connection->transport.net_conf->name);
@@ -4236,6 +4218,29 @@ int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 	return put_resource_in_arg0(cb, 6);
 }
 
+int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *connection)
+{
+	struct drbd_path *path;
+	struct nlattr *tla = nla_nest_start(skb, DRBD_NLA_PATH_PARMS);
+	if (!tla)
+		goto nla_put_failure;
+
+	/* array of such paths. */
+	list_for_each_entry(path, &connection->transport.paths, list) {
+		if (nla_put(skb, T_my_addr, path->my_addr_len, &path->my_addr))
+			goto nla_put_failure;
+		if (nla_put(skb, T_peer_addr, path->peer_addr_len, &path->peer_addr))
+			goto nla_put_failure;
+	}
+	nla_nest_end(skb, tla);
+	return 0;
+
+nla_put_failure:
+	if (tla)
+		nla_nest_cancel(skb, tla);
+	return -EMSGSIZE;
+}
+
 enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
 
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
@@ -4337,6 +4342,7 @@ put_result:
 				goto out;
 		}
 		connection_to_info(&connection_info, connection);
+		connection_paths_to_skb(skb, connection);
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -5099,6 +5105,7 @@ failed:
 		 err, seq);
 }
 
+/* open coded path_parms_to_skb() iterating of the list */
 void notify_connection_state(struct sk_buff *skb,
 			     unsigned int seq,
 			     struct drbd_connection *connection,
@@ -5130,6 +5137,7 @@ void notify_connection_state(struct sk_buff *skb,
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
+	connection_paths_to_skb(skb, connection);
 	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
 	connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
