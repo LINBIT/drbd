@@ -199,6 +199,7 @@ static struct drbd_path *first_path(struct drbd_connection *connection)
 #define DRBD_ADM_NEED_CONNECTION   (1 << 2)
 #define DRBD_ADM_NEED_PEER_DEVICE  (1 << 3)
 #define DRBD_ADM_NEED_PEER_NODE    (1 << 4)
+#define DRBD_ADM_IGNORE_VERSION    (1 << 5)
 static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	struct sk_buff *skb, struct genl_info *info, unsigned flags)
 {
@@ -229,6 +230,12 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	 * but anyways */
 	if (!adm_ctx->reply_dh) {
 		err = -ENOMEM;
+		goto fail;
+	}
+
+	if (info->genlhdr->version != GENL_MAGIC_VERSION && (flags & DRBD_ADM_IGNORE_VERSION) == 0) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "Wrong API version, upgrade your drbd utils.");
+		err = -EINVAL;
 		goto fail;
 	}
 
@@ -4927,7 +4934,8 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 	unsigned i;
 
-	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info,
+			DRBD_ADM_NEED_RESOURCE | DRBD_ADM_IGNORE_VERSION);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
