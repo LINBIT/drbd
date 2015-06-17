@@ -118,20 +118,10 @@ uninstall:
 check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
 	echo "checking for presence of $$dver_re in various changelog files"; \
-	if ! grep "^Version: $$dver_re\>" >/dev/null 2>&1 drbd-km.spec; \
-	then \
-	   echo -e "\n\tdrbd-km.spec Version: line needs update"; \
-	   up2date=false; fi ; \
 	if ! grep "^Version: $$dver_re\>" >/dev/null 2>&1 drbd-kernel.spec; \
 	then \
 	   echo -e "\n\tdrbd-kernel.spec Version: line needs update"; \
 	   up2date=false; fi ; \
-	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
-			     -e '/- '"$$dver_re"'-/p' < drbd-km.spec) ; \
-	if test -z "$$in_changelog" ; \
-	then \
-	   echo -e "\n\t%changelog in drbd-km.spec needs update"; \
-	   up2date=false; fi; \
 	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
 			     -e '/- '"$$dver_re"'-/p' < drbd-kernel.spec) ; \
 	if test -z "$$in_changelog" ; \
@@ -206,16 +196,6 @@ module .filelist: drbd/.drbd_git_revision
 
 ifdef RPMBUILD
 
-.PHONY: km-rpm
-km-rpm: check-kdir tgz drbd-km.spec
-	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
-	$(RPMBUILD) -bb \
-	    --define "kernelversion $(KVER)" \
-	    --define "kdir $(KDIR)" \
-	    $(RPMOPT) \
-	    drbd-km.spec
-	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
-
 # kernel module package using the system macros.
 # result is kABI aware and uses the weak-updates mechanism.
 # Only define %kernel_version, it it was set outside of this file,
@@ -239,6 +219,6 @@ srpm: tgz
 	    --define "kernel_version $(KVER)" \
 	    --define "kdir $(KDIR)" \
 		$(RPMOPT) \
-		drbd-km.spec drbd-kernel.spec
+		drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
 endif
