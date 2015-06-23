@@ -2296,7 +2296,21 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET)
 		wait_event(device->ee_wait, !overlapping_resync_write(device, peer_req));
 
-	drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
+	/* In protocol < 110 (which is compat mode 8.4 <-> 9.0),
+	 * we must not block in the activity log here, that would
+	 * deadlock during an ongoing resync with the drbd_rs_begin_io
+	 * we did when receiving the resync request.
+	 *
+	 * We still need to update the activity log, if ours is the
+	 * only remaining disk, in which case there cannot be a resync,
+	 * and the deadlock paths cannot be taken.
+	 */
+	if (connection->agreed_pro_version >= 110 ||
+	    peer_device->disk_state[NOW] < D_INCONSISTENT) {
+		err = drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
+		if (err)
+			goto disconnect_during_al_begin_io;
+	}
 
 	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
 	if (!err)
@@ -2304,12 +2318,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
+	drbd_al_complete_io(device, &peer_req->i);
+
+disconnect_during_al_begin_io:
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
 	drbd_remove_peer_req_interval(device, peer_req);
 	spin_unlock_irq(&device->resource->req_lock);
-	drbd_al_complete_io(device, &peer_req->i);
 
 out_interrupted:
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);

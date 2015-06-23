@@ -284,10 +284,8 @@ set_bme_priority(struct drbd_device *device, struct drbd_peer_device *except,
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device == except)
-			continue;
 		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
-		if (unlikely(tmp != NULL)) {
+		if (tmp) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
 			if (test_bit(BME_NO_WRITES, &bm_ext->flags))
 				wake |= !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
@@ -443,6 +441,29 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
 	return al_ext;
 }
 
+void put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
+{
+	struct lc_element *extent;
+	unsigned long flags;
+	unsigned int enr;
+	bool wake = false;
+
+	D_ASSERT(device, first <= last);
+	spin_lock_irqsave(&device->al_lock, flags);
+	for (enr = first; enr <= last; enr++) {
+		extent = lc_find(device->act_log, enr);
+		if (!extent) {
+			drbd_err(device, "al_complete_io() called on inactive extent %u\n", enr);
+			continue;
+		}
+		if (lc_put(device->act_log, extent) == 0)
+			wake = true;
+	}
+	spin_unlock_irqrestore(&device->al_lock, flags);
+	if (wake)
+		wake_up(&device->al_wait);
+}
+
 /**
  * drbd_al_begin_io_for_peer() - Gets (a) reference(s) to AL extent(s)
  * @device:	DRBD device.
@@ -453,7 +474,7 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
  * resync activity to the @peer_device.
  * This is necessary to ensure progress on Pri/SyncSouce - Sec/SyncTarget
  */
-void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
+int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
 {
 	/* compare with drbd_al_begin_io_prepare() */
 	struct drbd_device *device = peer_device->device;
@@ -468,13 +489,21 @@ void drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
 		wait_event(device->al_wait,
-				(al_ext = _al_get_for_peer(peer_device, enr)) != NULL);
+				(al_ext = _al_get_for_peer(peer_device, enr)) != NULL ||
+				peer_device->connection->cstate[NOW] < C_CONNECTED);
+		if (al_ext == NULL) {
+			if (enr)
+				put_actlog(device, first, enr-1);
+			return -ECONNABORTED;
+		}
 		if (al_ext->lc_number != enr)
 			need_transaction = true;
 	}
 
 	if (need_transaction)
 		drbd_al_begin_io_commit(peer_device->device);
+	return 0;
+
 }
 
 int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i)
@@ -540,26 +569,8 @@ void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
-	unsigned enr;
-	struct lc_element *extent;
-	unsigned long flags;
-	bool wake = false;
 
-	D_ASSERT(device, first <= last);
-	spin_lock_irqsave(&device->al_lock, flags);
-
-	for (enr = first; enr <= last; enr++) {
-		extent = lc_find(device->act_log, enr);
-		if (!extent) {
-			drbd_err(device, "al_complete_io() called on inactive extent %u\n", enr);
-			continue;
-		}
-		if (lc_put(device->act_log, extent) == 0)
-			wake = true;
-	}
-	spin_unlock_irqrestore(&device->al_lock, flags);
-	if (wake)
-		wake_up(&device->al_wait);
+	put_actlog(device, first, last);
 }
 
 #if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
