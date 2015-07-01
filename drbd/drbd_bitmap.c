@@ -586,6 +586,11 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 				goto next_page;
 		}
 
+		/* don't overrun buffers with MERGE or EXTRACT,
+		 * jump to the kunmap and then out... */
+		if (start > end)
+			goto next_page;
+
 		switch(op) {
 		default:
 			while (start <= end) {
