@@ -113,6 +113,10 @@ drbd_remove_interval(struct rb_root *root, struct drbd_interval *this)
 {
 	struct rb_node *deepest;
 
+	/* avoid endless loop */
+	if (drbd_interval_empty(this))
+		return;
+
 	deepest = rb_augment_erase_begin(&this->rb);
 	rb_erase(&this->rb, root);
 	rb_augment_erase_end(deepest, update_interval_end, NULL);
