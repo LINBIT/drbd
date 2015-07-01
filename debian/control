@@ -13,8 +13,8 @@ Package: drbd-dkms
 Architecture: all
 Section: admin
 Depends: drbd-utils, dkms (>= 1.9.5), debhelper (>=7), ${misc:Depends}
-Conflicts: drbd-module-source
-Provides: drbd-module-source
+Conflicts: drbd-module-source, drbd8-module-source
+Provides: drbd-dkms
 Replaces: drbd-module-source
 Description: RAID 1 over TCP/IP for Linux module source
  DRBD is a block device which is designed to build high availability
@@ -30,9 +30,9 @@ Package: drbd-module-source
 Architecture: all
 Section: admin
 Depends: debhelper (>= 7), ${misc:Depends}
-Conflicts: drbd-module-source
+Conflicts: drbd-dkms, drbd8-module-source
 Provides: drbd-module-source
-Replaces: drbd-module-source
+Replaces: drbd-dkms
 Recommends: kernel-package | module-assistant
 Description: RAID 1 over TCP/IP for Linux module source
  DRBD is a block device which is designed to build high availability
