@@ -24,6 +24,7 @@
 GIT = git
 LN_S = ln -s
 RPMBUILD = rpmbuild
+DEBBUILD = debuild
 SED = sed
 
 # default for KDIR/KVER
@@ -221,4 +222,10 @@ srpm: tgz
 		$(RPMOPT) \
 		drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_srcrpmdir"` -name *.src.rpm
+endif
+
+ifdef DEBBUILD
+.PHONY: km-deb
+km-deb: distclean drbd/.drbd_git_revision
+	$(DEBBUILD) -i -us -uc -b
 endif
