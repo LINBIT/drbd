@@ -2282,6 +2282,9 @@ int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 {
 	struct p_dagtag *p;
 
+	if (connection->agreed_pro_version < 110)
+		return 0;
+
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
