@@ -1436,8 +1436,6 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
-			continue;
 		p_size = min_not_zero(p_size, peer_device->max_size);
 	}
 	rcu_read_unlock();
