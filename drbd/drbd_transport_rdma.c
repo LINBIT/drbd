@@ -458,13 +458,18 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	struct dtr_listener *listener;
 	struct drbd_waiter *waiter;
 
+	if (!cm_context) {
+		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
+		return 0;
+	}
+
 	switch (event->event) {
 	case RDMA_CM_EVENT_ADDR_RESOLVED:
 		// pr_info("%s: RDMA_CM_EVENT_ADDR_RESOLVED\n", cm_context->name);
 		cm_context->state = ADDR_RESOLVED;
 		err = rdma_resolve_route(cm_id, 2000);
 		if (err)
-			pr_err("RDMA: rdma_resolve_route error %d\n", err);
+			pr_err("rdma_resolve_route error %d\n", err);
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
@@ -532,7 +537,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		break;
 
 	default:
-		pr_warn("RDMA(cma event): oof bad type!\n");
+		pr_warn("id %p context %p unexpected event %d!\n",
+				cm_id, cm_context, event->event);
 		wake_up_interruptible(&cm_context->state_wq);
 		break;
 	}
@@ -541,13 +547,20 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 static int dtr_create_cm_id(struct dtr_cm *cm_context)
 {
+	struct rdma_cm_id *id;
+
 	cm_context->state = IDLE;
 	init_waitqueue_head(&cm_context->state_wq);
 
-	cm_context->id = rdma_create_id(dtr_cma_event_handler,
-					cm_context, RDMA_PS_TCP, IB_QPT_RC);
+	id = rdma_create_id(dtr_cma_event_handler, cm_context, RDMA_PS_TCP, IB_QPT_RC);
+	if (IS_ERR(id)) {
+		cm_context->id = NULL;
+		cm_context->state = ERROR;
+		return PTR_ERR(id);
+	}
 
-	return IS_ERR(cm_context->id) ? PTR_ERR(cm_context->id) : 0;
+	cm_context->id = id;
+	return 0;
 }
 
 static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
@@ -1101,11 +1114,17 @@ static void dtr_drain_cq(struct drbd_rdma_stream *rdma_stream, struct ib_cq *cq,
 
 static void dtr_disconnect_stream(struct drbd_rdma_stream *rdma_stream)
 {
+	int err;
+
 	if (!rdma_stream || !rdma_stream->cm.id)
 		return;
 
-	rdma_disconnect(rdma_stream->cm.id);
-	/* We are ignoring errors here on purpose */
+	err = rdma_disconnect(rdma_stream->cm.id);
+	if (err) {
+		pr_warn("failed to disconnect, id %p context %p err %d\n",
+			rdma_stream->cm.id, rdma_stream->cm.id->context, err);
+		/* We are ignoring errors here on purpose */
+	}
 
 	/* There might be a signal pending here. Not incorruptible! */
 	wait_event_timeout(rdma_stream->cm.state_wq,
@@ -1142,8 +1161,12 @@ static void dtr_free_stream(struct drbd_rdma_stream *rdma_stream)
 		ib_destroy_cq(rdma_stream->recv_cq);
 	if (rdma_stream->pd)
 		ib_dealloc_pd(rdma_stream->pd);
-	if (rdma_stream->cm.id)
+	if (rdma_stream->cm.id) {
+		/* Just in case some callback is still triggered
+		 * after we kfree'd rdma_stream. */
+		rdma_stream->cm.id->context = NULL;
 		rdma_destroy_id(rdma_stream->cm.id);
+	}
 
 	// pr_info("%s: dtr_free_stream() %p\n", rdma_stream->name, rdma_stream);
 	rdma_stream->name[0] = 'X';
