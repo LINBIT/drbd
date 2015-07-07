@@ -1394,12 +1394,44 @@ static bool write_ordering_changed(struct disk_conf *a, struct disk_conf *b)
 		a->disk_drain != b->disk_drain;
 }
 
-static void sanitize_disk_conf(struct disk_conf *disk_conf, struct drbd_backing_dev *nbc)
+static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *disk_conf,
+			       struct drbd_backing_dev *nbc)
 {
+	struct request_queue * const q = nbc->backing_bdev->bd_disk->queue;
+
 	if (disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
 		disk_conf->al_extents = DRBD_AL_EXTENTS_MIN;
 	if (disk_conf->al_extents > drbd_al_extents_max(nbc))
 		disk_conf->al_extents = drbd_al_extents_max(nbc);
+
+#ifdef QUEUE_FLAG_DISCARD
+	if (!blk_queue_discard(q) || !q->limits.discard_zeroes_data) {
+		disk_conf->rs_discard_granularity = 0; /* disable feature */
+		drbd_info(device, "rs_discard_granularity feature disabled\n");
+	}
+#else
+	disk_conf->rs_discard_granularity = 0;
+#endif
+
+#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
+	if (disk_conf->rs_discard_granularity) {
+		int orig_value = disk_conf->rs_discard_granularity;
+		int remainder;
+
+		if (q->limits.discard_granularity > disk_conf->rs_discard_granularity)
+			disk_conf->rs_discard_granularity = q->limits.discard_granularity;
+
+		remainder = disk_conf->rs_discard_granularity % q->limits.discard_granularity;
+		disk_conf->rs_discard_granularity += remainder;
+
+		if (disk_conf->rs_discard_granularity > q->limits.max_discard_sectors << 9)
+			disk_conf->rs_discard_granularity = q->limits.max_discard_sectors << 9;
+
+		if (disk_conf->rs_discard_granularity != orig_value)
+			drbd_info(device, "rs_discard_granularity changed to %d\n",
+				  disk_conf->rs_discard_granularity);
+	}
+#endif
 }
 
 int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
@@ -1449,7 +1481,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	if (!expect(new_disk_conf->resync_rate >= 1))
 		new_disk_conf->resync_rate = 1;
 
-	sanitize_disk_conf(new_disk_conf, device->ldev);
+	sanitize_disk_conf(device, new_disk_conf, device->ldev);
 
 	if (new_disk_conf->c_plan_ahead > DRBD_C_PLAN_AHEAD_MAX)
 		new_disk_conf->c_plan_ahead = DRBD_C_PLAN_AHEAD_MAX;
@@ -1753,7 +1785,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
-	sanitize_disk_conf(new_disk_conf, nbc);
+	sanitize_disk_conf(device, new_disk_conf, nbc);
 
 	if (drbd_get_max_capacity(nbc) < new_disk_conf->disk_size) {
 		drbd_err(device, "max capacity %llu smaller than disk size %llu\n",
