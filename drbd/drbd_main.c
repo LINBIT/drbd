@@ -847,8 +847,7 @@ static void *alloc_send_buffer(struct drbd_connection *connection, int size,
 	char *page_start = page_address(sbuf->page);
 
 	if (sbuf->pos - page_start + size > PAGE_SIZE) {
-		if (sbuf->unsent != sbuf->pos)
-			flush_send_buffer(connection, drbd_stream);
+		flush_send_buffer(connection, drbd_stream);
 		new_or_recycle_send_buffer_page(sbuf);
 	}
 
@@ -934,10 +933,12 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	int msg_flags, err, offset, size;
 
-	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
-
-	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
+	if (size == 0)
+		return 0;
+
+	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
+	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, msg_flags);
 	if (!err) {
 		sbuf->unsent =
@@ -1017,14 +1018,12 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 
 void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 {
-	struct drbd_send_buffer *sbuf = &connection->send_buffer[stream];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
 
 	mutex_lock(&connection->mutex[stream]);
-	if (sbuf->unsent != sbuf->pos)
-		flush_send_buffer(connection, stream);
+	flush_send_buffer(connection, stream);
 
 	clear_bit(CORKED + stream, &connection->flags);
 	tr_ops->hint(transport, stream, UNCORK);
