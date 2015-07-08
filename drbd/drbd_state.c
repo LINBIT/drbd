@@ -2508,12 +2508,18 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
 			 * if the resync finished cleanly, or aborted because of peer disk
-			 * failure, or because of connection loss.
+			 * failure, or on transition from resync back to AHEAD/BEHIND.
+			 *
+			 * Connection loss is handled in drbd_disconnected() by the receiver.
+			 *
 			 * For resync aborted because of local disk failure, we cannot do
 			 * any bitmap writeout anymore.
+			 *
 			 * No harm done if some bits change during this phase.
 			 */
-			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED && get_ldev(device)) {
+			if ((repl_state[OLD] > L_ESTABLISHED && repl_state[OLD] < L_AHEAD) &&
+			    (repl_state[NEW] == L_ESTABLISHED || repl_state[NEW] >= L_AHEAD) &&
+			    get_ldev(device)) {
 				drbd_queue_bitmap_io(device, &drbd_bm_write_copy_pages, NULL,
 					"write from resync_finished", BM_LOCK_BULK,
 					NULL);
