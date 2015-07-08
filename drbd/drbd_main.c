@@ -4857,11 +4857,13 @@ int drbd_bitmap_io(struct drbd_device *device,
 		char *why, enum bm_flag flags,
 		struct drbd_peer_device *peer_device)
 {
+	/* Only suspend io, if some operation is supposed to be locked out */
+	const bool do_suspend_io = flags & (BM_LOCK_CLEAR|BM_LOCK_SET|BM_LOCK_TEST);
 	int rv;
 
 	D_ASSERT(device, current != device->resource->worker.task);
 
-	if (!(flags & BM_LOCK_CLEAR))
+	if (do_suspend_io)
 		drbd_suspend_io(device, WRITE_ONLY);
 
 	if (flags & BM_LOCK_SINGLE_SLOT)
@@ -4876,7 +4878,7 @@ int drbd_bitmap_io(struct drbd_device *device,
 	else
 		drbd_bm_unlock(device);
 
-	if (!(flags & BM_LOCK_CLEAR))
+	if (do_suspend_io)
 		drbd_resume_io(device);
 
 	return rv;
