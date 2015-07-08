@@ -2005,7 +2005,7 @@ int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, 
  * As a workaround, we disable sendpage on pages
  * with page_count == 0 or PageSlab.
  */
-static int __drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			    int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -2045,21 +2045,6 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 	return err;
 }
 
-static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
-			   int offset, size_t size, unsigned msg_flags)
-{
-	/* e.g. XFS meta- & log-data is in slab pages, which have a
-	 * page_count of 0 and/or have PageSlab() set.
-	 * we cannot use send_page for those, as that does get_page();
-	 * put_page(); and would cause either a VM_BUG directly, or
-	 * __page_cache_release a page that would actually still be referenced
-	 * by someone, leading to some obscure delayed Oops somewhere else. */
-	if (disable_sendpage || (page_count(page) < 1) || PageSlab(page))
-		return _drbd_no_send_page(peer_device, page, offset, size, msg_flags);
-
-	return __drbd_send_page(peer_device, page, offset, size, msg_flags);
-}
-
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -2087,6 +2072,26 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 {
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
+	bool no_zc = disable_sendpage;
+
+	/* e.g. XFS meta- & log-data is in slab pages, which have a
+	 * page_count of 0 and/or have PageSlab() set.
+	 * we cannot use send_page for those, as that does get_page();
+	 * put_page(); and would cause either a VM_BUG directly, or
+	 * __page_cache_release a page that would actually still be referenced
+	 * by someone, leading to some obscure delayed Oops somewhere else. */
+	if (!no_zc)
+		bio_for_each_segment(bvec, bio, iter) {
+			struct page *page = bvec BVD bv_page;
+
+			if (page_count(page) < 1 || PageSlab(page)) {
+				no_zc = true;
+				break;
+			}
+		}
+
+	if (no_zc)
+		return _drbd_send_bio(peer_device, bio);
 
 	flush_send_buffer(peer_device->connection, DATA_STREAM);
 	/* hint all but last page with MSG_MORE */
