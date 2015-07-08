@@ -71,6 +71,7 @@ static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
+static int dtt_send_zc_bio(struct drbd_transport *, struct bio *bio);
 static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *m);
@@ -95,6 +96,7 @@ static struct drbd_transport_ops dtt_ops = {
 	.set_rcvtimeo = dtt_set_rcvtimeo,
 	.get_rcvtimeo = dtt_get_rcvtimeo,
 	.send_page = dtt_send_page,
+	.send_zc_bio = dtt_send_zc_bio,
 	.stream_ok = dtt_stream_ok,
 	.hint = dtt_hint,
 	.debugfs_show = dtt_debugfs_show,
@@ -973,6 +975,23 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		err = 0;
 
 	return err;
+}
+
+static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
+{
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
+
+	bio_for_each_segment(bvec, bio, iter) {
+		int err;
+
+		err = dtt_send_page(transport, DATA_STREAM, bvec BVD bv_page,
+				      bvec BVD bv_offset, bvec BVD bv_len,
+				      bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
+		if (err)
+			return err;
+	}
+	return 0;
 }
 
 static void dtt_cork(struct socket *socket)

@@ -2090,21 +2090,22 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 			}
 		}
 
-	if (no_zc)
+	if (no_zc) {
 		return _drbd_send_bio(peer_device, bio);
-
-	flush_send_buffer(peer_device->connection, DATA_STREAM);
-	/* hint all but last page with MSG_MORE */
-	bio_for_each_segment(bvec, bio, iter) {
+	} else {
+		struct drbd_connection *connection = peer_device->connection;
+		struct drbd_transport *transport = &connection->transport;
+		struct drbd_transport_ops *tr_ops = transport->ops;
 		int err;
 
-		err = _drbd_send_page(peer_device, bvec BVD bv_page,
-				      bvec BVD bv_offset, bvec BVD bv_len,
-				      bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
-		if (err)
-			return err;
+		flush_send_buffer(connection, DATA_STREAM);
+
+		err = tr_ops->send_zc_bio(transport, bio);
+		if (!err)
+			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
+
+		return err;
 	}
-	return 0;
 }
 
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
