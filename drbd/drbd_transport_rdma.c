@@ -114,7 +114,6 @@ struct drbd_rdma_tx_desc {
 		void *data;
 	};
 	struct ib_sge sge;
-	struct list_head tx_entry;
 };
 
 struct dtr_cm {
