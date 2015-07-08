@@ -4,7 +4,7 @@ Version: 9.0.0
 Release: 1%{?dist}
 
 # always require a suitable userland
-Requires: drbd-utils >= 8.9.2
+Requires: drbd-utils >= 8.9.3
 
 Source: http://oss.linbit.com/drbd/drbd-%{version}.tar.gz
 License: GPLv2+
