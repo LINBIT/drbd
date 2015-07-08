@@ -679,7 +679,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			atomic_add(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 			set_if_null_req_not_net_done(peer_device, req);
 		}
-		if (old_net & RQ_NET_PENDING)
+		if (req->rq_state[idx] & RQ_NET_PENDING)
 			set_if_null_req_ack_pending(peer_device, req);
 	}
 
