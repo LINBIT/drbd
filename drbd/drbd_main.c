@@ -2009,13 +2009,9 @@ static int __drbd_send_page(struct drbd_peer_device *peer_device, struct page *p
 			    int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	int err;
-
-	if (sbuf->unsent != sbuf->pos)
-		flush_send_buffer(connection, DATA_STREAM);
 
 	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
 	if (!err)
@@ -2031,23 +2027,19 @@ int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
 	void *from_base;
 	void *buffer2;
-	struct page *page2;
-	int offset2, err;
-
-	if (sbuf->unsent != sbuf->pos)
-		flush_send_buffer(connection, DATA_STREAM);
+	int err;
 
 	buffer2 = alloc_send_buffer(connection, size, DATA_STREAM);
-	page2 = sbuf->page;
-	offset2 = buffer2 - page_address(page2);
 	from_base = drbd_kmap_atomic(page, KM_USER0);
 	memcpy(buffer2, from_base + offset, size);
 	drbd_kunmap_atomic(from_base, KM_USER0);
-	err = __drbd_send_page(peer_device, page2, offset2, size, msg_flags);
 
-	if (!err) {
-		sbuf->unsent =
-		sbuf->pos += size;
+	if (msg_flags & MSG_MORE) {
+		sbuf->pos += sbuf->allocated_size;
+		sbuf->allocated_size = 0;
+		err = 0;
+	} else {
+		err = flush_send_buffer(connection, DATA_STREAM);
 	}
 
 	return err;
@@ -2070,8 +2062,13 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
+
+	/* Flush send buffer and make sure PAGE_SIZE is available... */
+	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
+	connection->send_buffer[DATA_STREAM].allocated_size = 0;
 
 	/* hint all but last page with MSG_MORE */
 	bio_for_each_segment(bvec, bio, iter) {
@@ -2091,6 +2088,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 
+	flush_send_buffer(peer_device->connection, DATA_STREAM);
 	/* hint all but last page with MSG_MORE */
 	bio_for_each_segment(bvec, bio, iter) {
 		int err;
@@ -2111,6 +2109,7 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 	unsigned len = peer_req->i.size;
 	int err;
 
+	flush_send_buffer(peer_device->connection, DATA_STREAM);
 	/* hint all but last page with MSG_MORE */
 	page_chain_for_each(page) {
 		unsigned l = min_t(unsigned, len, PAGE_SIZE);
