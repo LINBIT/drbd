@@ -2030,7 +2030,7 @@ extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sec
 	__drbd_change_sync(peer_device, sector, size, RECORD_RS_FAILED)
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
-extern int drbd_initialize_al(struct drbd_device *, void *);
+extern int drbd_al_initialize(struct drbd_device *, void *);
 
 /* drbd_nl.c */
 
