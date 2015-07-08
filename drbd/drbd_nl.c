@@ -1242,12 +1242,18 @@ static bool effective_disk_size_determined(struct drbd_device *device)
 enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct resize_parms *rs) __must_hold(local)
 {
-	sector_t prev_first_sect, prev_size; /* previous meta location */
-	sector_t la_size, u_size;
+	struct md_offsets_and_sizes {
+		u64 effective_size;
+		u64 md_offset;
+		s32 al_offset;
+		s32 bm_offset;
+		u32 md_size_sect;
+
+		u32 al_stripes;
+		u32 al_stripe_size_4k;
+	} prev;
+	sector_t u_size, size;
 	struct drbd_md *md = &device->ldev->md;
-	u32 prev_al_stripe_size_4k;
-	u32 prev_al_stripes;
-	sector_t size;
 	char ppb[10];
 	void *buffer;
 
@@ -1269,16 +1275,17 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 		return DS_ERROR;
 	}
 
-	prev_first_sect = drbd_md_first_sector(device->ldev);
-	prev_size = device->ldev->md.md_size_sect;
-	la_size = device->ldev->md.effective_size;
+	/* remember current offset and sizes */
+	prev.effective_size = md->effective_size;
+	prev.md_offset = md->md_offset;
+	prev.al_offset = md->al_offset;
+	prev.bm_offset = md->bm_offset;
+	prev.md_size_sect = md->md_size_sect;
+	prev.al_stripes = md->al_stripes;
+	prev.al_stripe_size_4k = md->al_stripe_size_4k;
 
 	if (rs) {
 		/* rs is non NULL if we should change the AL layout only */
-
-		prev_al_stripes = md->al_stripes;
-		prev_al_stripe_size_4k = md->al_stripe_size_4k;
-
 		md->al_stripes = rs->al_stripes;
 		md->al_stripe_size_4k = rs->al_stripe_size / 4;
 		md->al_size_4k = (u64)rs->al_stripes * rs->al_stripe_size / 4;
@@ -1291,7 +1298,7 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	rcu_read_unlock();
 	size = drbd_new_dev_size(device, u_size, flags & DDSF_FORCED);
 
-	if (size < la_size) {
+	if (size < prev.effective_size) {
 		if (rs && u_size == 0) {
 			/* Remove "rs &&" later. This check should always be active, but
 			   right now the receiver expects the permissive behavior */
@@ -1312,21 +1319,20 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 		err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
-			size = drbd_bm_capacity(device)>>1;
+			size = drbd_bm_capacity(device);
 			if (size == 0) {
 				drbd_err(device, "OUT OF MEMORY! "
 				    "Could not allocate bitmap!\n");
 			} else {
 				drbd_err(device, "BM resizing failed. "
-				    "Leaving size unchanged at size = %lu KB\n",
-				    (unsigned long)size);
+				    "Leaving size unchanged\n");
 			}
 			rv = DS_ERROR;
 		}
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
 		if (effective_disk_size_determined(device)) {
-			device->ldev->md.effective_size = size;
+			md->effective_size = size;
 			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
 			     (unsigned long long)size >> 1);
 		}
@@ -1334,10 +1340,10 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	if (rv <= DS_ERROR)
 		goto err_out;
 
-	la_size_changed = (la_size != device->ldev->md.effective_size);
+	la_size_changed = (prev.effective_size != md->effective_size);
 
-	md_moved = prev_first_sect != drbd_md_first_sector(device->ldev)
-		|| prev_size	   != device->ldev->md.md_size_sect;
+	md_moved = prev.md_offset    != md->md_offset
+		|| prev.md_size_sect != md->md_size_sect;
 
 	if (la_size_changed || md_moved || rs) {
 		int i;
@@ -1390,20 +1396,22 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 				 md->al_stripes, md->al_stripe_size_4k * 4);
 	}
 
-	if (size > la_size)
-		rv = la_size ? DS_GREW : DS_GREW_FROM_ZERO;
-	if (size < la_size)
+	if (size > prev.effective_size)
+		rv = prev.effective_size ? DS_GREW : DS_GREW_FROM_ZERO;
+	if (size < prev.effective_size)
 		rv = DS_SHRUNK;
 
 	if (0) {
 	err_out:
-		if (rs) {
-			md->al_stripes = prev_al_stripes;
-			md->al_stripe_size_4k = prev_al_stripe_size_4k;
-			md->al_size_4k = (u64)prev_al_stripes * prev_al_stripe_size_4k;
-
-			drbd_md_set_sector_offsets(device, device->ldev);
-		}
+		/* restore previous offset and sizes */
+		md->effective_size = prev.effective_size;
+		md->md_offset = prev.md_offset;
+		md->al_offset = prev.al_offset;
+		md->bm_offset = prev.bm_offset;
+		md->md_size_sect = prev.md_size_sect;
+		md->al_stripes = prev.al_stripes;
+		md->al_stripe_size_4k = prev.al_stripe_size_4k;
+		md->al_size_4k = (u64)prev.al_stripes * prev.al_stripe_size_4k;
 	}
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
