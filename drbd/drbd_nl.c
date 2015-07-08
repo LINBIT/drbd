@@ -1871,6 +1871,97 @@ static bool bitmap_index_vacant(struct drbd_backing_dev *bdev, int bitmap_index)
 	return true;
 }
 
+static struct block_device *open_backing_dev(struct drbd_device *device,
+		const char *bdev_path, void *claim_ptr, bool do_bd_link)
+{
+	struct block_device *bdev;
+	int err = 0;
+
+	bdev = blkdev_get_by_path(bdev_path,
+				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, claim_ptr);
+	if (IS_ERR(bdev)) {
+		drbd_err(device, "open(\"%s\") failed with %ld\n",
+				bdev_path, PTR_ERR(bdev));
+		return bdev;
+	}
+
+	if (!do_bd_link)
+		return bdev;
+
+#if   defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER)
+	err = bd_link_disk_holder(bdev, device->vdisk);
+#elif defined(COMPAT_HAVE_BD_CLAIM_BY_DISK)
+	err = bd_claim_by_disk(bdev, claim_ptr, device->vdisk);
+#endif
+	if (err) {
+		blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+		drbd_err(device, "bd_link_disk_holder(\"%s\", ...) failed with %d\n",
+				bdev_path, err);
+		bdev = ERR_PTR(err);
+	}
+	return bdev;
+}
+
+static int open_backing_devices(struct drbd_device *device,
+		struct disk_conf *new_disk_conf,
+		struct drbd_backing_dev *nbc)
+{
+	struct block_device *bdev;
+
+	bdev = open_backing_dev(device, new_disk_conf->backing_dev, device, true);
+	if (IS_ERR(bdev))
+		return ERR_OPEN_DISK;
+	nbc->backing_bdev = bdev;
+
+	/*
+	 * meta_dev_idx >= 0: external fixed size, possibly multiple
+	 * drbd sharing one meta device.  TODO in that case, paranoia
+	 * check that [md_bdev, meta_dev_idx] is not yet used by some
+	 * other drbd minor!  (if you use drbd.conf + drbdadm, that
+	 * should check it for you already; but if you don't, or
+	 * someone fooled it, we need to double check here)
+	 */
+	bdev = open_backing_dev(device, new_disk_conf->meta_dev,
+		/* claim ptr: device, if claimed exclusively; shared drbd_m_holder,
+		 * if potentially shared with other drbd minors */
+			(new_disk_conf->meta_dev_idx < 0) ? (void*)device : (void*)drbd_m_holder,
+		/* avoid double bd_claim_by_disk() for the same (source,target) tuple,
+		 * as would happen with internal metadata. */
+			(new_disk_conf->meta_dev_idx != DRBD_MD_INDEX_FLEX_INT &&
+			 new_disk_conf->meta_dev_idx != DRBD_MD_INDEX_INTERNAL));
+	if (IS_ERR(bdev))
+		return ERR_OPEN_MD_DISK;
+	nbc->md_bdev = bdev;
+	return NO_ERROR;
+}
+
+static void close_backing_dev(struct drbd_device *device, struct block_device *bdev,
+	bool do_bd_unlink)
+{
+	if (!bdev)
+		return;
+	if (do_bd_unlink) {
+#if   defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER)
+		bd_unlink_disk_holder(bdev, device->vdisk);
+#elif defined(COMPAT_HAVE_BD_CLAIM_BY_DISK)
+		bd_release_from_disk(bdev, device->vdisk);
+#endif
+	}
+	blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+}
+
+void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev)
+{
+	if (ldev == NULL)
+		return;
+
+	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
+	close_backing_dev(device, ldev->backing_bdev, true);
+
+	kfree(ldev->disk_conf);
+	kfree(ldev);
+}
+
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -1883,7 +1974,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
 	struct disk_conf *new_disk_conf = NULL;
-	struct block_device *bdev;
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
 	unsigned int slots_needed = 0;
@@ -1930,35 +2020,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
-	bdev = blkdev_get_by_path(new_disk_conf->backing_dev,
-				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, device);
-	if (IS_ERR(bdev)) {
-		drbd_err(device, "open(\"%s\") failed with %ld\n", new_disk_conf->backing_dev,
-			PTR_ERR(bdev));
-		retcode = ERR_OPEN_DISK;
+	retcode = open_backing_devices(device, new_disk_conf, nbc);
+	if (retcode != NO_ERROR)
 		goto fail;
-	}
-	nbc->backing_bdev = bdev;
-
-	/*
-	 * meta_dev_idx >= 0: external fixed size, possibly multiple
-	 * drbd sharing one meta device.  TODO in that case, paranoia
-	 * check that [md_bdev, meta_dev_idx] is not yet used by some
-	 * other drbd minor!  (if you use drbd.conf + drbdadm, that
-	 * should check it for you already; but if you don't, or
-	 * someone fooled it, we need to double check here)
-	 */
-	bdev = blkdev_get_by_path(new_disk_conf->meta_dev,
-				  FMODE_READ | FMODE_WRITE | FMODE_EXCL,
-				  (new_disk_conf->meta_dev_idx < 0) ?
-				  (void *)device : (void *)drbd_m_holder);
-	if (IS_ERR(bdev)) {
-		drbd_err(device, "open(\"%s\") failed with %ld\n", new_disk_conf->meta_dev,
-			PTR_ERR(bdev));
-		retcode = ERR_OPEN_MD_DISK;
-		goto fail;
-	}
-	nbc->md_bdev = bdev;
 
 	if ((nbc->backing_bdev == nbc->md_bdev) !=
 	    (new_disk_conf->meta_dev_idx == DRBD_MD_INDEX_INTERNAL ||
@@ -2322,8 +2386,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_md_sync(device);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
-	drbd_free_ldev(nbc); /* frees also new_disk_conf */
-
+	drbd_backing_dev_free(device, nbc);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
