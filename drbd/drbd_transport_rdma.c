@@ -1777,6 +1777,10 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 	if (!size_tx_desc)
 		return 0;
 
+	//tr_info(&rdma_transport->transport,
+	//	"  dtr_send_bio_part(start = %d, size = %d, sges = %d)\n",
+	//	start, size_tx_desc, sges);
+
 	tx_desc = kmalloc(sizeof(*tx_desc) + sizeof(struct ib_sge) * sges, GFP_NOIO);
 	if (!tx_desc)
 		return -ENOMEM;
@@ -1806,6 +1810,10 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 		offset += shift;
 		size = min(size - shift, size_tx_desc - done);
 
+		//tr_info(&rdma_transport->transport,
+		//	"   sge (i = %d, offset = %d, size = %d)\n",
+		//	i, offset, size);
+
 		tx_desc->sge[i].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
 		tx_desc->sge[i].lkey = rdma_stream->dma_mr->lkey;
 		tx_desc->sge[i].length = size;
@@ -1833,13 +1841,14 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 
-	// pr_info("%s: in send_zc_bio, size: %zu\n", rdma_stream->name, size);
+	//tr_info(transport, "in send_zc_bio, size: %d\n", bio->bi_size);
 
 	if (rdma_stream->cm.state > CONNECTED)
 		return -ECONNRESET;
 
 	bio_for_each_segment(bvec, bio, iter) {
 		size_tx_desc += bvec BVD bv_len;
+		//tr_info(transport, " bvec len = %d\n", bvec BVD bv_len);
 		if (size_tx_desc > DRBD_SOCKET_BUFFER_SIZE) {
 			remaining = size_tx_desc - DRBD_SOCKET_BUFFER_SIZE;
 			size_tx_desc = DRBD_SOCKET_BUFFER_SIZE;
