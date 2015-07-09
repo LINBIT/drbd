@@ -78,6 +78,16 @@ MODULE_VERSION("1.0.0");
 /* If we can send less than 8 packets, we consider the transport as congested. */
 #define DESCS_LOW_LEVEL 8
 
+/* Assuming that a singe 4k write should be at the highest scatterd over 8
+   pages. I.e. has no parts smaller than 512 bytes.
+   Arbitrary assumption. It seems that Mellanox hardware can do up to 29
+   ppc64 page size might be 64k */
+#if (PAGE_SIZE / 512) > 28
+# define DTR_MAX_TX_SGES 28
+#else
+# define DTR_MAX_TX_SGES (PAGE_SIZE / 512)
+#endif
+
 #define DTR_MAGIC ((u32)0x5257494E)
 
 struct dtr_flow_control {
@@ -105,15 +115,18 @@ struct drbd_rdma_rx_desc {
 };
 
 struct drbd_rdma_tx_desc {
-	enum {
-		SEND_PAGE,
-		SEND_MSG,
-	} type;
 	union {
 		struct page *page;
 		void *data;
+		struct bio *bio;
 	};
-	struct ib_sge sge;
+	enum {
+		SEND_PAGE,
+		SEND_MSG,
+		SEND_BIO,
+	} type;
+	int nr_sges;
+	struct ib_sge sge[0];
 };
 
 struct dtr_cm {
@@ -194,6 +207,7 @@ static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
+static int dtr_send_zc_bio(struct drbd_transport *, struct bio *bio);
 static int dtr_recv_pages(struct drbd_transport *transport, struct page **page, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
@@ -229,6 +243,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.set_rcvtimeo = dtr_set_rcvtimeo,
 	.get_rcvtimeo = dtr_get_rcvtimeo,
 	.send_page = dtr_send_page,
+	.send_zc_bio = dtr_send_zc_bio,
 	.recv_pages = dtr_recv_pages,
 	.stream_ok = dtr_stream_ok,
 	.hint = dtr_hint,
@@ -277,7 +292,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 
 	// pr_info("%s: dtr_send() size = %d data[0]:%x\n", rdma_stream->name, (int)size, ((char*)buf)[0]);
 
-	tx_desc = kzalloc(sizeof(*tx_desc), GFP_NOIO);
+	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
 	if (!tx_desc)
 		return -ENOMEM;
 
@@ -291,9 +306,10 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 	device = rdma_stream->cm.id->device;
 	tx_desc->type = SEND_MSG;
 	tx_desc->data = send_buffer;
-	tx_desc->sge.addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
-	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
-	tx_desc->sge.length = size;
+	tx_desc->nr_sges = 1;
+	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
+	tx_desc->sge[0].lkey = rdma_stream->dma_mr->lkey;
+	tx_desc->sge[0].length = size;
 
 	dtr_post_tx_desc(rdma_stream, tx_desc);
 
@@ -332,6 +348,10 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 		page = rx_desc->page;
 		rx_desc->page = NULL;
 		size -= rx_desc->size;
+		TR_ASSERT(transport, !size || rx_desc->size == DRBD_SOCKET_BUFFER_SIZE);
+		/* In case this assert fires, most probably the sender saw a bio
+		   that has more bvecs than DTR_MAX_TX_SEGS per 4k data */
+
 		dtr_free_rx_desc(rdma_stream, rx_desc);
 
 		set_page_private(page, (unsigned long)all_pages);
@@ -685,15 +705,26 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 static void dtr_free_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct ib_device *device = rdma_stream->cm.id->device;
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
+	int i, bi_vcnt;
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
-		ib_dma_unmap_page(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
 		put_page(tx_desc->page);
 		break;
 	case SEND_MSG:
-		ib_dma_unmap_single(device, tx_desc->sge.addr, tx_desc->sge.length, DMA_TO_DEVICE);
+		ib_dma_unmap_single(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
 		kfree(tx_desc->data);
+		break;
+	case SEND_BIO:
+		bi_vcnt = tx_desc->bio->bi_vcnt;
+		for (i = 0; i < bi_vcnt; i++)
+			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
+					  DMA_TO_DEVICE);
+		bio_for_each_segment(bvec, tx_desc->bio, iter)
+			put_page(bvec BVD bv_page);
 		break;
 	}
 	kfree(tx_desc);
@@ -751,8 +782,8 @@ static int dtr_create_qp(struct drbd_rdma_stream *rdma_stream)
 	struct ib_qp_init_attr init_attr = {
 		.cap.max_send_wr = rdma_stream->tx_descs_max,
 		.cap.max_recv_wr = rdma_stream->rx_descs_max,
-		.cap.max_recv_sge = 1,
-		.cap.max_send_sge = 1,
+		.cap.max_recv_sge = 1, /* We only receive into single pages */
+		.cap.max_send_sge = DTR_MAX_TX_SGES,
 		.qp_type = IB_QPT_RC,
 		.send_cq = rdma_stream->send_cq,
 		.recv_cq = rdma_stream->recv_cq,
@@ -929,7 +960,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rd
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	long t;
-	int err;
+	int i, err;
 
 retry:
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
@@ -951,17 +982,18 @@ retry:
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
-	send_wr.sg_list = &tx_desc->sge;
-	send_wr.num_sge = 1;
+	send_wr.sg_list = tx_desc->sge;
+	send_wr.num_sge = tx_desc->nr_sges;
 	send_wr.opcode = IB_WR_SEND;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
-	ib_dma_sync_single_for_device(device, tx_desc->sge.addr,
-			tx_desc->sge.length, DMA_TO_DEVICE);
+	for (i = 0; i < tx_desc->nr_sges; i++)
+		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
+					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
-		tr_err(&rdma_stream->rdma_transport->transport, "ib_post_send failed\n");
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_post_send() failed %d\n", err);
 
 		return err;
 	}
@@ -1701,7 +1733,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (rdma_stream->cm.state > CONNECTED)
 		return -ECONNRESET;
 
-	tx_desc = kmalloc(sizeof(*tx_desc), GFP_NOIO);
+	tx_desc = kmalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
 	if (!tx_desc)
 		return -ENOMEM;
 
@@ -1709,15 +1741,129 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	device = rdma_stream->cm.id->device;
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
-	tx_desc->sge.addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
-	tx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
-	tx_desc->sge.length = size;
+	tx_desc->nr_sges = 1;
+	tx_desc->sge[0].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
+	tx_desc->sge[0].lkey = rdma_stream->dma_mr->lkey;
+	tx_desc->sge[0].length = size;
 
 	err = dtr_post_tx_desc(rdma_stream, tx_desc);
 	if (err)
 		put_page(page);
 
 	if (stream == DATA_STREAM) {
+		int tx_descs_posted;
+		bool congested = false;
+
+		tx_descs_posted = atomic_read(&rdma_stream->tx_descs_posted);
+		congested |= rdma_stream->tx_descs_max - tx_descs_posted < DESCS_LOW_LEVEL;
+		congested |= atomic_read(&rdma_stream->peer_rx_descs) < DESCS_LOW_LEVEL;
+		if (congested)
+			set_bit(NET_CONGESTED, &rdma_stream->rdma_transport->transport.flags);
+	}
+
+	return err;
+}
+
+static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
+			     struct bio *bio, int start, int size_tx_desc, int sges)
+{
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+	struct drbd_rdma_tx_desc *tx_desc;
+	struct ib_device *device;
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
+	int i = 0, pos = 0, done = 0, err;
+
+	if (!size_tx_desc)
+		return 0;
+
+	tx_desc = kmalloc(sizeof(*tx_desc) + sizeof(struct ib_sge) * sges, GFP_NOIO);
+	if (!tx_desc)
+		return -ENOMEM;
+
+	tx_desc->type = SEND_BIO;
+	tx_desc->bio = bio;
+	tx_desc->nr_sges = sges;
+	device = rdma_stream->cm.id->device;
+
+	bio_for_each_segment(bvec, tx_desc->bio, iter) {
+		struct page *page = bvec BVD bv_page;
+		int offset = bvec BVD bv_offset;
+		int size = bvec BVD bv_len;
+		int shift = 0;
+		get_page(page);
+
+		if (pos < start || done == size_tx_desc) {
+			if (done != size_tx_desc && pos + size > start) {
+				shift = (start - pos);
+			} else {
+				pos += size;
+				continue;
+			}
+		}
+
+		pos += size;
+		offset += shift;
+		size = min(size - shift, size_tx_desc - done);
+
+		tx_desc->sge[i].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
+		tx_desc->sge[i].lkey = rdma_stream->dma_mr->lkey;
+		tx_desc->sge[i].length = size;
+		done += size;
+		i++;
+	}
+
+	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
+
+	err = dtr_post_tx_desc(rdma_stream, tx_desc);
+	if (err) {
+		bio_for_each_segment(bvec, tx_desc->bio, iter)
+			put_page(bvec BVD bv_page);
+	}
+
+	return err;
+}
+
+static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
+{
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+	int start = 0, sges = 0, size_tx_desc = 0, remaining = 0, err;
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
+
+	// pr_info("%s: in send_zc_bio, size: %zu\n", rdma_stream->name, size);
+
+	if (rdma_stream->cm.state > CONNECTED)
+		return -ECONNRESET;
+
+	bio_for_each_segment(bvec, bio, iter) {
+		size_tx_desc += bvec BVD bv_len;
+		if (size_tx_desc > DRBD_SOCKET_BUFFER_SIZE) {
+			remaining = size_tx_desc - DRBD_SOCKET_BUFFER_SIZE;
+			size_tx_desc = DRBD_SOCKET_BUFFER_SIZE;
+		}
+		sges++;
+		if (size_tx_desc == DRBD_SOCKET_BUFFER_SIZE || sges == DTR_MAX_TX_SGES) {
+			err = dtr_send_bio_part(rdma_transport, bio, start, size_tx_desc, sges);
+			if (err)
+				goto out;
+			start += size_tx_desc;
+			sges = 0;
+			size_tx_desc = remaining;
+			if (remaining) {
+				sges++;
+				remaining = 0;
+			}
+		}
+	}
+	err = dtr_send_bio_part(rdma_transport, bio, start, size_tx_desc, sges);
+	start += size_tx_desc;
+
+	TR_ASSERT(transport, start == bio->bi_size);
+out:
+	if (1 /* stream == DATA_STREAM */) {
 		int tx_descs_posted;
 		bool congested = false;
 
