@@ -712,7 +712,7 @@ static void dtr_free_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 	struct ib_device *device = rdma_stream->cm.id->device;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
-	int i, bi_vcnt;
+	int i, nr_sges;
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -724,8 +724,8 @@ static void dtr_free_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 		kfree(tx_desc->data);
 		break;
 	case SEND_BIO:
-		bi_vcnt = tx_desc->bio->bi_vcnt;
-		for (i = 0; i < bi_vcnt; i++)
+		nr_sges = tx_desc->nr_sges;
+		for (i = 0; i < nr_sges; i++)
 			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
 					  DMA_TO_DEVICE);
 		bio_for_each_segment(bvec, tx_desc->bio, iter)
