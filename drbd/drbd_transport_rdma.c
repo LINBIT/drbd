@@ -65,10 +65,15 @@ MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0.0");
 
-/* If no recvbuf_size or sendbuf_size is configured use 512KiB for the DATA_STREAM */
+/* If no recvbuf_size or sendbuf_size is configured use 1MiByte + 3 pages the DATA_STREAM */
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
    very comparable to the socket sendbuf and recvbuf sizes */
-#define RDMA_DEF_BUFFER_SIZE (1 << 19)
+/* Right now refilling the peer_rx_descs only works while the receiver on both sides tries
+   to receive something, better make sure a complete BIO always fits in.
+   Probably a better approach would be to do the receiving actually in the callback
+   dtr_rx_cq_event_handler(), then we would always get flowcontrol messages in in a timely
+   manner */
+#define RDMA_DEF_BUFFER_SIZE (BIO_MAX_SIZE + (3 * DRBD_SOCKET_BUFFER_SIZE))
 
 /* one for the handshake's first packet, one for the first flow_control msg.
    The third for the feature packet. Only after that drbd starts to receive,
@@ -1024,6 +1029,9 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 			sndbuf_size = nc->sndbuf_size;
 	}
 	rcu_read_unlock();
+	/* Do not allow smaller settings than RDMA_DEF_BUFFER_SIZE */
+	rcvbuf_size = max(rcvbuf_size, RDMA_DEF_BUFFER_SIZE);
+	sndbuf_size = max(sndbuf_size, RDMA_DEF_BUFFER_SIZE);
 
 	rdma_stream->tx_descs_max = sndbuf_size / DRBD_SOCKET_BUFFER_SIZE;
 	rdma_stream->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
