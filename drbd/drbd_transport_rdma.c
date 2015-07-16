@@ -1878,7 +1878,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	err = dtr_send_bio_part(rdma_transport, bio, start, size_tx_desc, sges);
 	start += size_tx_desc;
 
-	TR_ASSERT(transport, start == bio->bi_size);
+	TR_ASSERT(transport, start == DRBD_BIO_BI_SIZE(bio));
 out:
 	if (1 /* stream == DATA_STREAM */) {
 		int tx_descs_posted;
