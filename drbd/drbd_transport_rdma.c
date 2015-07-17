@@ -73,7 +73,7 @@ MODULE_VERSION("1.0.0");
    Probably a better approach would be to do the receiving actually in the callback
    dtr_rx_cq_event_handler(), then we would always get flowcontrol messages in in a timely
    manner */
-#define RDMA_DEF_BUFFER_SIZE (BIO_MAX_SIZE + (3 * DRBD_SOCKET_BUFFER_SIZE))
+#define RDMA_DEF_BUFFER_SIZE (2 * DRBD_MAX_BIO_SIZE + (3 * DRBD_SOCKET_BUFFER_SIZE))
 
 /* one for the handshake's first packet, one for the first flow_control msg.
    The third for the feature packet. Only after that drbd starts to receive,
@@ -1017,8 +1017,8 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 {
 	struct net_conf *nc;
 	int i, err;
-	int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
-	int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
+	unsigned int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
+	unsigned int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
