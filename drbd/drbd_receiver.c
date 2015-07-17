@@ -108,6 +108,8 @@ static struct page *page_chain_del(struct page **head, int n)
 
 	while (page) {
 		tmp = page_chain_next(page);
+		set_page_chain_offset(page, 0);
+		set_page_chain_size(page, 0);
 		if (--n == 0)
 			break; /* found sufficient pages */
 		if (tmp == NULL)
@@ -117,7 +119,7 @@ static struct page *page_chain_del(struct page **head, int n)
 	}
 
 	/* add end of list marker for the returned list */
-	set_page_private(page, 0);
+	set_page_chain_next(page, NULL);
 	/* actual return value, and adjustment of head */
 	page = *head;
 	*head = tmp;
@@ -143,6 +145,7 @@ static int page_chain_free(struct page *page)
 	struct page *tmp;
 	int i = 0;
 	page_chain_for_each_safe(page, tmp) {
+		set_page_chain_next_offset_size(page, NULL, 0, 0);
 		put_page(page);
 		++i;
 	}
@@ -159,7 +162,7 @@ static void page_chain_add(struct page **head,
 #endif
 
 	/* add chain to head */
-	set_page_private(chain_last, (unsigned long)*head);
+	set_page_chain_next(chain_last, *head);
 	*head = chain_first;
 }
 
@@ -185,7 +188,7 @@ static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
 		tmp = alloc_page(gfp_mask);
 		if (!tmp)
 			break;
-		set_page_private(tmp, (unsigned long)page);
+		set_page_chain_next_offset_size(tmp, page, 0, 0);
 		page = tmp;
 	}
 
@@ -282,7 +285,7 @@ static void conn_maybe_kick_lo(struct drbd_connection *connection)
  * (checksum based) resync, if the max-buffers, socket buffer sizes and
  * resync-rate settings are mis-configured.
  *
- * Returns a page chain linked via page->private.
+ * Returns a page chain linked via (struct drbd_page_chain*)&page->lru.
  */
 struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int number,
 			      gfp_t gfp_mask)
@@ -402,7 +405,6 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
-	peer_req->pages = NULL;
 
 	return peer_req;
 }
@@ -414,9 +416,9 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
-	drbd_free_pages(&peer_device->connection->transport, peer_req->pages, is_net);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
 	mempool_free(peer_req, drbd_ee_mempool);
 }
 
@@ -469,8 +471,7 @@ static int drbd_finish_peer_reqs(struct drbd_peer_device *peer_device)
 		if (!err)
 			err = err2;
 		if (!list_empty(&peer_req->recv_order)) {
-			drbd_free_pages(&connection->transport, peer_req->pages, 0);
-			peer_req->pages = NULL;
+			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, 0);
 		} else
 			drbd_free_peer_req(peer_req);
 	}
@@ -1107,11 +1108,11 @@ int drbd_submit_peer_request(struct drbd_device *device,
 {
 	struct bio *bios = NULL;
 	struct bio *bio;
-	struct page *page = peer_req->pages;
+	struct page *page = peer_req->page_chain.head;
 	sector_t sector = peer_req->i.sector;
 	unsigned data_size = peer_req->i.size;
 	unsigned n_bios = 0;
-	unsigned nr_pages = DIV_ROUND_UP(data_size, PAGE_SIZE);
+	unsigned nr_pages = peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
 
 	if (peer_req->flags & EE_IS_TRIM_USE_ZEROOUT) {
@@ -1171,16 +1172,33 @@ next_bio:
 	}
 
 	page_chain_for_each(page) {
-		unsigned len = min_t(unsigned, data_size, PAGE_SIZE);
-		if (!bio_add_page(bio, page, len, 0)) {
+		unsigned off, len;
+		int res;
+
+		if (rw == READ) {
+			set_page_chain_offset(page, 0);
+			set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
+		}
+		off = page_chain_offset(page);
+		len = page_chain_size(page);
+
+		if (off > PAGE_SIZE || len > PAGE_SIZE - off || len > data_size || len == 0) {
+			drbd_err(device, "invalid page chain: offset %u size %u remaining data_size %u\n",
+					off, len, data_size);
+			err = -EINVAL;
+			goto fail;
+		}
+
+		res = bio_add_page(bio, page, len, off);
+		if (res <= 0) {
 			/* A single page must always be possible!
 			 * But in case it fails anyways,
 			 * we deal with it, and complain (below). */
 			if (bio->bi_vcnt == 0) {
 				drbd_err(device,
-					"bio_add_page failed for len=%u, "
-					"bi_vcnt=0 (bi_sector=%llu)\n",
-					len, (uint64_t)DRBD_BIO_BI_SECTOR(bio));
+					"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
+					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
+					bio->bi_flags);
 				err = -ENOSPC;
 				goto fail;
 			}
@@ -1501,21 +1519,23 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (d->length == 0)
 		return peer_req;
 
-	err = tr_ops->recv_pages(transport, &peer_req->pages, d->bi_size);
+	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->bi_size);
 	if (err)
 		goto fail;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
+		struct page *page;
 		unsigned long *data;
 		drbd_err(device, "Fault injection: Corrupting data on receive, sector %llu\n",
 				d->sector);
-		data = kmap(peer_req->pages);
+		page = peer_req->page_chain.head;
+		data = kmap(page) + page_chain_offset(page);
 		data[0] = ~data[0];
-		kunmap(peer_req->pages);
+		kunmap(page);
 	}
 
 	if (digest_size) {
-		drbd_csum_ee(peer_device->connection->peer_integrity_tfm, peer_req, dig_vv);
+		drbd_csum_pages(peer_device->connection->peer_integrity_tfm, peer_req->page_chain.head, dig_vv);
 		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				d->sector, d->bi_size);
@@ -2263,8 +2283,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			peer_req->flags |= EE_IS_TRIM_USE_ZEROOUT;
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
-		D_ASSERT(peer_device, peer_req->pages == NULL);
-	} else if (peer_req->pages == NULL) {
+		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
+		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
+	} else if (peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
 		 * "empty" flushes are mapped to P_BARRIER,
 		 * and should never end up here.
@@ -2548,14 +2569,16 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (!peer_req)
 		goto fail;
 	if (size) {
-		peer_req->pages = drbd_alloc_pages(&peer_device->connection->transport,
-			DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-		if (!peer_req->pages)
+		drbd_alloc_page_chain(&peer_device->connection->transport,
+			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+		if (!peer_req->page_chain.head)
 			goto fail2;
 	}
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
 	peer_req->block_id = p->block_id;
+	/* no longer valid, about to call drbd_recv again for the digest... */
+	p = pi->data = NULL;
 
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:

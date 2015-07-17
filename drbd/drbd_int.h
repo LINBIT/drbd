@@ -531,7 +531,7 @@ struct drbd_peer_request {
 	struct drbd_peer_device *peer_device;
 	struct list_head recv_order; /* writes only */
 	struct drbd_epoch *epoch; /* for writes */
-	struct page *pages;
+	struct drbd_page_chain_head page_chain;
 	atomic_t pending_bios;
 	struct drbd_interval i;
 	/* see comments on ee flag bits below */
@@ -1862,7 +1862,7 @@ static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 
 
 extern void drbd_csum_bio(struct crypto_hash *, struct bio *, void *);
-extern void drbd_csum_ee(struct crypto_hash *, struct drbd_peer_request *, void *);
+extern void drbd_csum_pages(struct crypto_hash *, struct page *, void *);
 /* worker callbacks */
 extern int w_e_end_data_req(struct drbd_work *, int);
 extern int w_e_end_rsdata_req(struct drbd_work *, int);
@@ -2080,7 +2080,7 @@ extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 
 static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_req)
 {
-	struct page *page = peer_req->pages;
+	struct page *page = peer_req->page_chain.head;
 	page_chain_for_each(page) {
 		if (page_count(page) > 1)
 			return 1;

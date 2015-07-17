@@ -65,7 +65,7 @@ static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
-static int dtt_recv_pages(struct drbd_transport *transport, struct page **page, size_t size);
+static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
@@ -280,33 +280,33 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	return rv;
 }
 
-static int dtt_recv_pages(struct drbd_transport *transport, struct page **pages, size_t size)
+static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
-	struct page *all_pages, *page;
+	struct page *page;
 	int err;
 
-	all_pages = drbd_alloc_pages(transport, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-	if (!all_pages)
+	drbd_alloc_page_chain(transport, chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	page = chain->head;
+	if (!page)
 		return -ENOMEM;
 
-	page = all_pages;
 	page_chain_for_each(page) {
 		size_t len = min_t(int, size, PAGE_SIZE);
 		void *data = kmap(page);
 		err = dtt_recv_short(socket, data, len, 0);
 		kunmap(page);
+		set_page_chain_offset(page, 0);
+		set_page_chain_size(page, len);
 		if (err < 0)
 			goto fail;
 		size -= len;
 	}
-
-	*pages = all_pages;
 	return 0;
 fail:
-	drbd_free_pages(transport, all_pages, 0);
+	drbd_free_page_chain(transport, chain, 0);
 	return err;
 }
 

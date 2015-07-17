@@ -321,13 +321,10 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-void drbd_csum_ee(struct crypto_hash *tfm, struct drbd_peer_request *peer_req, void *digest)
+void drbd_csum_pages(struct crypto_hash *tfm, struct page *page, void *digest)
 {
 	struct hash_desc desc;
 	struct scatterlist sg;
-	struct page *page = peer_req->pages;
-	struct page *tmp;
-	unsigned len;
 
 	desc.tfm = tfm;
 	desc.flags = 0;
@@ -335,16 +332,12 @@ void drbd_csum_ee(struct crypto_hash *tfm, struct drbd_peer_request *peer_req, v
 	sg_init_table(&sg, 1);
 	crypto_hash_init(&desc);
 
-	while ((tmp = page_chain_next(page))) {
-		/* all but the last page will be fully used */
-		sg_set_page(&sg, page, PAGE_SIZE, 0);
+	page_chain_for_each(page) {
+		unsigned off = page_chain_offset(page);
+		unsigned len = page_chain_size(page);
+		sg_set_page(&sg, page, len, off);
 		crypto_hash_update(&desc, &sg, sg.length);
-		page = tmp;
 	}
-	/* and now the last, possibly only partially used page */
-	len = peer_req->i.size & (PAGE_SIZE - 1);
-	sg_set_page(&sg, page, len ?: PAGE_SIZE, 0);
-	crypto_hash_update(&desc, &sg, sg.length);
 	crypto_hash_final(&desc, digest);
 }
 
@@ -386,7 +379,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	digest_size = crypto_hash_digestsize(peer_device->connection->csums_tfm);
 	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (digest) {
-		drbd_csum_ee(peer_device->connection->csums_tfm, peer_req, digest);
+		drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
 		/* Free peer_req and pages before send.
 		 * In case we block on congestion, we could otherwise run into
 		 * some distributed deadlock, if the other side blocks on
@@ -423,10 +416,9 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	if (!peer_req)
 		goto defer;
 	if (size) {
-		peer_req->pages = drbd_alloc_pages(&peer_device->connection->transport,
-						   DIV_ROUND_UP(size, PAGE_SIZE),
-						   GFP_TRY & ~__GFP_WAIT);
-		if (!peer_req->pages)
+		drbd_alloc_page_chain(&peer_device->connection->transport,
+			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+		if (!peer_req->page_chain.head)
 			goto defer2;
 	}
 	peer_req->i.size = size;
@@ -1313,7 +1305,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			digest = kmalloc(digest_size, GFP_NOIO);
 		}
 		if (digest) {
-			drbd_csum_ee(peer_device->connection->csums_tfm, peer_req, digest);
+			drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
 			eq = !memcmp(digest, di->digest, digest_size);
 			kfree(digest);
 		}
@@ -1364,7 +1356,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	}
 
 	if (!(peer_req->flags & EE_WAS_ERROR))
-		drbd_csum_ee(peer_device->connection->verify_tfm, peer_req, digest);
+		drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);
 	else
 		memset(digest, 0, digest_size);
 
@@ -1432,7 +1424,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 		digest_size = crypto_hash_digestsize(peer_device->connection->verify_tfm);
 		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
-			drbd_csum_ee(peer_device->connection->verify_tfm, peer_req, digest);
+			drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);
 
 			D_ASSERT(device, digest_size == di->digest_size);
 			eq = !memcmp(digest, di->digest, digest_size);

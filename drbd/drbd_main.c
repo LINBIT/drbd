@@ -2041,7 +2041,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
 {
-	struct page *page = peer_req->pages;
+	struct page *page = peer_req->page_chain.head;
 	unsigned len = peer_req->i.size;
 	int err;
 
@@ -2049,6 +2049,11 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 	/* hint all but last page with MSG_MORE */
 	page_chain_for_each(page) {
 		unsigned l = min_t(unsigned, len, PAGE_SIZE);
+		if (page_chain_offset(page) != 0 ||
+		    page_chain_size(page) != l) {
+			drbd_err(peer_device, "FIXME page %p offset %u len %u\n",
+				page, page_chain_offset(page), page_chain_size(page));
+		}
 
 		err = _drbd_send_page(peer_device, page, 0, l,
 				      page_chain_next(page) ? MSG_MORE : 0);
@@ -2189,7 +2194,7 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	p->seq_num = 0;  /* unused */
 	p->dp_flags = 0;
 	if (digest_size)
-		drbd_csum_ee(peer_device->connection->integrity_tfm, peer_req, p + 1);
+		drbd_csum_pages(peer_device->connection->integrity_tfm, peer_req->page_chain.head, p + 1);
 	additional_size_command(peer_device->connection, DATA_STREAM, peer_req->i.size);
 	err = __send_command(peer_device->connection,
 			     peer_device->device->vnr, cmd, DATA_STREAM);
@@ -2463,7 +2468,7 @@ static void drbd_destroy_mempools(void)
 
 	while (drbd_pp_pool) {
 		page = drbd_pp_pool;
-		drbd_pp_pool = (struct page *)page_private(page);
+		drbd_pp_pool = page_chain_next(page);
 		__free_page(page);
 		drbd_pp_vacant--;
 	}
@@ -2560,7 +2565,7 @@ static int drbd_create_mempools(void)
 		page = alloc_page(GFP_HIGHUSER);
 		if (!page)
 			goto Enomem;
-		set_page_private(page, (unsigned long)drbd_pp_pool);
+		set_page_chain_next_offset_size(page, drbd_pp_pool, 0, 0);
 		drbd_pp_pool = page;
 	}
 	drbd_pp_vacant = number;
