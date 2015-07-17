@@ -327,7 +327,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
-	struct page *page, *all_pages = NULL;
+	struct page *page, *head = NULL, *tail = NULL;
 	int i = 0;
 
 	if (rdma_stream->cm.state > CONNECTED)
@@ -346,7 +346,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
-			drbd_free_pages(transport, all_pages, 0);
+			drbd_free_pages(transport, head, 0);
 			return t == 0 ? -EAGAIN : -EINTR;
 		}
 
@@ -359,14 +359,18 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 
 		dtr_free_rx_desc(rdma_stream, rx_desc);
 
-		set_page_private(page, (unsigned long)all_pages);
-		all_pages = page;
+		if (tail) {
+			set_page_private(tail, (unsigned long)page);
+			tail = page;
+		} else
+			head = tail = page;
+
 		i++;
 		dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	}
 
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
-	*pages = all_pages;
+	*pages = head;
 	return 0;
 }
 
