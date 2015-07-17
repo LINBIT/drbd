@@ -61,6 +61,7 @@
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
+MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0.0");
@@ -213,7 +214,7 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static int dtr_send_zc_bio(struct drbd_transport *, struct bio *bio);
-static int dtr_recv_pages(struct drbd_transport *transport, struct page **page, size_t size);
+static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
@@ -295,7 +296,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
 
-	// pr_info("%s: dtr_send() size = %d data[0]:%x\n", rdma_stream->name, (int)size, ((char*)buf)[0]);
+	// pr_info("%s: dtr_send() size = %d data[0]:%lx\n", rdma_stream->name, (int)size, *(unsigned long*)buf);
 
 	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
 	if (!tx_desc)
@@ -322,7 +323,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 }
 
 
-static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages, size_t size)
+static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
@@ -336,6 +337,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	TR_ASSERT(transport, rdma_stream->current_rx.bytes_left == 0);
 	dtr_recycle_rx_desc(rdma_stream, &rdma_stream->current_rx.desc);
+	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 
 	while (size) {
 		struct drbd_rdma_rx_desc *rx_desc = NULL;
@@ -346,31 +348,55 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct page **pages,
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
+			/*
+			 * Cannot give back pages that may still be in use!
+			 * (More reason why we only have one rx_desc per page,
+			 * and don't get_page() in dtr_create_some_rx_desc).
+			 */
 			drbd_free_pages(transport, head, 0);
 			return t == 0 ? -EAGAIN : -EINTR;
 		}
 
 		page = rx_desc->page;
+		/* put_page() if we would get_page() in
+		 * dtr_create_some_rx_desc().  but we don't. We return the page
+		 * chain to the user, which is supposed to give it back to
+		 * drbd_free_pages() eventually. */
 		rx_desc->page = NULL;
 		size -= rx_desc->size;
-		TR_ASSERT(transport, !size || rx_desc->size == DRBD_SOCKET_BUFFER_SIZE);
-		/* In case this assert fires, most probably the sender saw a bio
-		   that has more bvecs than DTR_MAX_TX_SEGS per 4k data */
 
-		dtr_free_rx_desc(rdma_stream, rx_desc);
-
+		/* If the sender did dtr_send_page every bvec of a bio with
+		 * unaligned bvecs (as xfs often creates), rx_desc->size and
+		 * offset may well be not the PAGE_SIZE and 0 we hope for.
+		 */
 		if (tail) {
-			set_page_private(tail, (unsigned long)page);
+			/* See also dtr_create_some_rx_desc().
+			 * For PAGE_SIZE > 4k, we may create several RR per page.
+			 * We cannot link a page to itself, though.
+			 *
+			 * Adding to size would be easy enough.
+			 * But what do we do about possible holes?
+			 * FIXME
+			 */
+			BUG_ON(page == tail);
+
+			set_page_chain_next(tail, page);
 			tail = page;
 		} else
 			head = tail = page;
+
+		set_page_chain_offset(page, rx_desc->data - page_address(page));
+		set_page_chain_size(page, rx_desc->size);
+
+		dtr_free_rx_desc(rdma_stream, rx_desc);
 
 		i++;
 		dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	}
 
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
-	*pages = head;
+	chain->head = head;
+	chain->nr_pages = i;
 	return 0;
 }
 
@@ -609,7 +635,7 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 				ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, (*rx_desc)->dma_addr,
 						(*rx_desc)->size, DMA_FROM_DEVICE);
 				(*rx_desc)->size = size;
-				// pr_info("%s: in drain: %p, size = %d, data[0]:%x\n", rdma_stream->name, rx_desc, size, (*rx_desc)->data[0]);
+				// pr_info("%s: in drain: %p, size = %d, data[0]:%lx\n", rdma_stream->name, rx_desc, size, *(unsigned long*)(*rx_desc)->data);
 			} else
 				tr_warn(&rdma_stream->rdma_transport->transport,
 						"WC SUCCESS, but strange opcode... %d\n", wc.opcode);
@@ -832,6 +858,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 		rdma_stream->rx_descs_posted--;
 		return err;
 	}
+	// pr_info("%s: Created recv_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, rx_desc->page, rx_desc, rx_desc->sge.lkey, rx_desc->sge.addr, rx_desc->sge.length);
 
 	return 0;
 }
@@ -847,8 +874,11 @@ static void dtr_free_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_r
 	ib_dma_unmap_single(device, rx_desc->dma_addr, alloc_size, DMA_FROM_DEVICE);
 
 	rdma_stream->rx_descs_allocated--;
-	if (rx_desc->page)
-		put_page(rx_desc->page);
+	if (rx_desc->page) {
+		/* put_page(), if we had more than one rx_desc per page,
+		 * but see comments in dtr_create_some_rx_desc */
+		drbd_free_pages(&rdma_stream->rdma_transport->transport, rx_desc->page, 0);
+	}
 	kfree(rx_desc);
 }
 
@@ -861,22 +891,45 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 	void *pos;
 	int err, size, alloc_size = rdma_stream->rx_allocation_size;
 
+	/* Really. Does not work yet. For a lot of reasons. */
+	BUILD_BUG_ON(PAGE_SIZE != 4096);
+
+	/* FIXME
+	 * As of now, this MUST NEVER return a highmem page!
+	 * Which means no other user may ever have requested and then given
+	 * back a highmem page!
+	 */
 	page = drbd_alloc_pages(transport, 1, GFP_NOIO);
 	if (!page)
 		return -ENOMEM;
+	BUG_ON(PageHighMem(page));
 
 	pos = page_address(page);
 	size = PAGE_SIZE;
 
+	/* Assumptions: alloc_size = 4k, PAGE_SIZE multiple of alloc_size.
+	 * Otherwise this will break.
+	 *
+	 * TODO: can we make better use of PAGE_SIZE > 4k,
+	 * and still only post one descriptor per page?
+	 */
+
 	while (size) {
 		rx_desc = kzalloc(sizeof(*rx_desc), GFP_NOIO);
 		if (!rx_desc) {
-			put_page(page);
+			/* FIXME for PAGE_SIZE != 4k:
+			 * cannot drbd_free_pages() if other rx_desc still reference it!
+			 * but must not put_page a page from drbd_alloc_pages() either.
+			 */
+			drbd_free_pages(transport, page, 0);
 			return -ENOMEM;
 		}
 		rdma_stream->rx_descs_allocated++;
 
-		get_page(page);
+		/* get_page(page);
+		 * Not needed, as long as we have one rx_desc per page.
+		 * Wrong, if we have more than one rx_desc per page, because we
+		 * then cannot properly give it back to drbd_free_pages(). */
 		rx_desc->page = page;
 		rx_desc->data = pos;
 		rx_desc->size = alloc_size;
@@ -895,9 +948,13 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 			dtr_free_rx_desc(rdma_stream, rx_desc);
 			break;
 		}
-	}
 
-	put_page(page);
+		/* FIXME for PAGE_SIZE != 4k,
+		 * we still cannot have multiple descriptors here,
+		 * or drbd alloc/free pages and get/put page would get out-of-sync,
+		 * with all sorts of complications. */
+		break;
+	}
 
 	return err;
 }
@@ -1011,7 +1068,7 @@ retry:
 	atomic_inc(&rdma_stream->tx_descs_posted);
 	atomic_dec(&rdma_stream->peer_rx_descs);
 
-	// pr_info("%s: Created send_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->sge.lkey, tx_desc->sge.addr, tx_desc->sge.length);
+	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 
 	return 0;
 }
@@ -1558,6 +1615,9 @@ static int dtr_connect(struct drbd_transport *transport)
 			goto out;
 
 		if (s) {
+/* FIXME not sure what exactly we need to wait for here,
+ * but without this, it often does not work. */
+			schedule_timeout_interruptible(HZ/4);
 			if (!data_stream) {
 				data_stream = s;
 				dtr_send_first_packet(data_stream, P_INITIAL_DATA);
@@ -1911,7 +1971,7 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
 
 static void dtr_debugfs_show_stream(struct seq_file *m, struct drbd_rdma_stream *stream)
 {
-	seq_printf(m,    "%-7s  field:  posted\t alloc\tdesrire\t  max\n", stream->name);
+	seq_printf(m,    "%-7s  field:  posted\t alloc\tdesired\t  max\n", stream->name);
 	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&stream->tx_descs_posted), stream->tx_descs_max);
 	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&stream->peer_rx_descs));
 	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", stream->rx_descs_posted, stream->rx_descs_allocated, stream->rx_descs_want_posted, stream->rx_descs_max);
