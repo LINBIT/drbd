@@ -1905,6 +1905,24 @@ struct packet_info {
 	void *data;
 };
 
+/* packet_info->data is just a pointer into some temporary buffer
+ * owned by the transport. As soon as we call into the transport for
+ * any further receive operation, the data it points to is undefined.
+ * The buffer may be freed/recycled/re-used already.
+ * Convert and store the relevant information for any incoming data
+ * in drbd_peer_request_detail.
+ */
+
+struct drbd_peer_request_details {
+	uint64_t sector;	/* be64_to_cpu(p_data.sector) */
+	uint64_t block_id;	/* unmodified p_data.block_id */
+	uint32_t peer_seq;	/* be32_to_cpu(p_data.seq_num) */
+	uint32_t dp_flags;	/* be32_to_cpu(p_data.dp_flags) */
+	uint32_t length;	/* endian converted p_head*.length */
+	uint32_t bi_size;	/* resulting bio size */
+	/* for non-discards: bi_size = length - digest_size */
+};
+
 struct queued_twopc {
 	struct drbd_work w;
 	unsigned long start_jif;
