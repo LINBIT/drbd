@@ -754,7 +754,7 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 		seq_printf(m, "  allocated: %d bytes\n", sbuf->allocated_size);
 	}
 
-	seq_printf(m, "transport_type: %s\n\n", transport->class->name);
+	seq_printf(m, "\ntransport_type: %s\n", transport->class->name);
 
 	tr_ops->debugfs_show(transport, m);
 
