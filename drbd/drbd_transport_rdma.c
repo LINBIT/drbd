@@ -23,6 +23,17 @@
 #undef pr_fmt
 #define pr_fmt(fmt)	"drbd_rdma: " fmt
 
+#ifndef SENDER_COMPACTS_BVECS
+/* My benchmarking shows a limit of 30 MB/s
+ * with the current implementation of this idea.
+ * cpu bound, perf top shows mainly get_page/put_page.
+ * Without this, using the plain send_page,
+ * I achieve > 400 MB/s on the same system.
+ * => disable for now, improve later.
+ */
+#define SENDER_COMPACTS_BVECS 0
+#endif
+
 #include <linux/module.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
@@ -1837,6 +1848,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	return err;
 }
 
+#if SENDER_COMPACTS_BVECS
 static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 			     struct bio *bio, int start, int size_tx_desc, int sges)
 {
@@ -1904,13 +1916,17 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 
 	return err;
 }
+#endif
 
 static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct drbd_rdma_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
+#if SENDER_COMPACTS_BVECS
 	int start = 0, sges = 0, size_tx_desc = 0, remaining = 0, err;
+#endif
+	int err = -EINVAL;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 
@@ -1919,6 +1935,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	if (rdma_stream->cm.state > CONNECTED)
 		return -ECONNRESET;
 
+#if SENDER_COMPACTS_BVECS
 	bio_for_each_segment(bvec, bio, iter) {
 		size_tx_desc += bvec BVD bv_len;
 		//tr_info(transport, " bvec len = %d\n", bvec BVD bv_len);
@@ -1945,6 +1962,15 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 
 	TR_ASSERT(transport, start == DRBD_BIO_BI_SIZE(bio));
 out:
+#else
+	bio_for_each_segment(bvec, bio, iter) {
+		err = dtr_send_page(transport, DATA_STREAM,
+			bvec BVD bv_page, bvec BVD bv_offset, bvec BVD bv_len,
+			0 /* flags currently unused by dtr_send_page */);
+		if (err)
+			break;
+	}
+#endif
 	if (1 /* stream == DATA_STREAM */) {
 		int tx_descs_posted;
 		bool congested = false;
