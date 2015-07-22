@@ -692,7 +692,8 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 		if (!r)
 			return false;
 
-		if (*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
+		if (rx_desc->size == sizeof(struct dtr_flow_control) &&
+			*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
 			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
 			dtr_recycle_rx_desc(rdma_stream, &rx_desc);
 			continue;
