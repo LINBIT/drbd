@@ -1,6 +1,13 @@
 #ifndef _DRBD_WRAPPERS_H
 #define _DRBD_WRAPPERS_H
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
+# error "At least kernel version 2.6.18 (with patches) required"
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+# warning "Kernels <2.6.32 likely have compat issues we did not cover here"
+#endif
+
 #include "compat.h"
 #include <linux/ctype.h>
 #include <linux/net.h>
@@ -69,10 +76,6 @@
 #endif
 /* }}} pr_* macros */
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
-# error "At least kernel version 2.6.18 (with patches) required"
-#endif
 
 /* The history of blkdev_issue_flush()
 
@@ -1336,7 +1339,9 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 #endif
 
 #ifndef COMPAT_HAVE_F_PATH_DENTRY
-#define f_path.dentry f_dentry
+#error "won't compile with this kernel version (f_path.dentry vs f_dentry)"
+/* change all occurences of f_path.dentry to f_dentry, and conditionally
+ * #define f_dentry to f_path.dentry */
 #endif
 
 #ifndef list_next_rcu
