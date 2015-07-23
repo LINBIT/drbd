@@ -1,6 +1,12 @@
 Latest:
 ------
- For even more detail, use "git log" or visit http://git.drbd.org/.
+ For even more detail, visit http://git.linbit.com/drbd-8.4.git
+
+ * avoid potential deadlock during handshake
+ * avoid potential deadlock in disconnect during resync
+   with fencing resource-and-stonith
+ * allow IO during some bitmap bulk IO operations
+ * fix "endless" transfer log walk in protocol A
 
 8.4.6 (api:genl1/proto:86-101)
 -------
