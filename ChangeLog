@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.0-2 (api:genl2/proto:86-110/transport:10)
+--------
+ * Fixes for the RDMA transport
+ * Fixes for 8.4 compatibility
+ * Merge changes from the 8.4.6 release
+
 9.0.0 (api:genl2/proto:86-110)
 --------
  * split drbdsetup connect into new-peer, add-path, connect;
