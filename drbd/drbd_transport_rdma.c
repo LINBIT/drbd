@@ -1095,16 +1095,32 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
-	if (nc) {
-		if (nc->rcvbuf_size)
-			rcvbuf_size = nc->rcvbuf_size;
-		if (nc->sndbuf_size)
-			sndbuf_size = nc->sndbuf_size;
+	if (!nc) {
+		rcu_read_unlock();
+		tr_err(transport, "need net_conf\n");
+		err = -EINVAL;
+		goto pd_failed;
 	}
-	rcu_read_unlock();
-	/* Do not allow smaller settings than RDMA_DEF_BUFFER_SIZE */
+
+	if (nc->rcvbuf_size)
+		rcvbuf_size = nc->rcvbuf_size;
+	if (nc->sndbuf_size)
+		sndbuf_size = nc->sndbuf_size;
+
+	/* Do not allow smaller settings than RDMA_DEF_BUFFER_SIZE for now. */
 	rcvbuf_size = max(rcvbuf_size, RDMA_DEF_BUFFER_SIZE);
 	sndbuf_size = max(sndbuf_size, RDMA_DEF_BUFFER_SIZE);
+
+	if (rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
+		tr_err(transport, "Set max-buffers at least to %d, (right now it is %d).\n",
+		       rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE, nc->max_buffers);
+		tr_err(transport, "This is due to rcvbuf-size = %d.\n", rcvbuf_size);
+		rcu_read_unlock();
+		err = -EINVAL;
+		goto pd_failed;
+	}
+
+	rcu_read_unlock();
 
 	rdma_stream->tx_descs_max = sndbuf_size / DRBD_SOCKET_BUFFER_SIZE;
 	rdma_stream->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
