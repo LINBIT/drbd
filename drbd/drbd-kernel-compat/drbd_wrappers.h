@@ -1,6 +1,7 @@
 #ifndef _DRBD_WRAPPERS_H
 #define _DRBD_WRAPPERS_H
 
+#include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
 # error "At least kernel version 2.6.18 (with patches) required"
 #endif
