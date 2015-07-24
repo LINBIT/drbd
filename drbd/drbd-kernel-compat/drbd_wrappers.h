@@ -1411,4 +1411,9 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 #define sock_create_kern(N,F,T,P,S) sock_create_kern(F,T,P,S)
 #endif
 
+#ifndef COMPAT_HAVE_WB_CONGESTED_ENUM
+#define WB_async_congested BDI_async_congested
+#define WB_sync_congested BDI_sync_congested
+#endif
+
 #endif
