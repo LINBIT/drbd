@@ -56,6 +56,7 @@ binary-modules: prep-deb-files
 	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
 	install -m644 -b -D drbd/drbd.ko $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/updates/drbd.ko
 	install -m644 -b -D drbd/drbd_transport_tcp.ko $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/updates/drbd_transport_tcp.ko
+	install -m644 -b -D drbd/Module.symvers $(DEB_DESTDIR)/Module.symvers.$(KVERS)
 	dh_installdocs
 	dh_installchangelogs
 	dh_compress
