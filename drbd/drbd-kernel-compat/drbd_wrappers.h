@@ -1406,4 +1406,9 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 
 #endif
 
+
+#ifndef COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS
+#define sock_create_kern(N,F,T,P,S) sock_create_kern(F,T,P,S)
+#endif
+
 #endif
