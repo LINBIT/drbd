@@ -673,7 +673,7 @@ static struct socket *drbd_try_connect(struct drbd_connection *connection, int u
 		((struct sockaddr_in *)&src_in6)->sin_port = 0; /* AF_INET & AF_SCI */
 
 	what = "sock_create_kern_in_try_connect";
-	err = sock_create_kern(((struct sockaddr *)&src_in6)->sa_family,
+	err = sock_create_kern(&init_net, ((struct sockaddr *)&src_in6)->sa_family,
 			       SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (err < 0) {
 		sock = NULL;
@@ -767,7 +767,7 @@ static struct socket *create_listen_socket(struct drbd_connection *connection,
 	rcu_read_unlock();
 
 	what = "sock_create_kern";
-	err = sock_create_kern(addr->sa_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(&init_net, addr->sa_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;
