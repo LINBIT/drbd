@@ -1416,4 +1416,12 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 #define WB_sync_congested BDI_sync_congested
 #endif
 
+#ifndef COMPAT_HAVE_SIMPLE_POSITIVE
+#include <linux/dcache.h>
+static inline int simple_positive(struct dentry *dentry)
+{
+        return dentry->d_inode && !d_unhashed(dentry);
+}
+#endif
+
 #endif
