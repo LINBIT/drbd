@@ -1422,9 +1422,6 @@ do {								\
 #endif
 
 #ifndef COMPAT_HAVE_GENERIC_START_IO_ACCT
-static inline void generic_start_io_acct(int rw, unsigned long sectors,
-					 struct hd_struct *part)
-{
 #ifdef __disk_stat_inc
 	/* disk_stat on older kernels disabled
 	__disk_stat_inc(device->vdisk, ios[rw]);
@@ -1432,7 +1429,17 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 	disk_round_stats(device->vdisk);
 	device->vdisk->in_flight++;
 	*/
+#define generic_start_io_acct(rw, s, p) do { } while (0)
+	/* disk_stat on older kernels disabled
+	__disk_stat_add(device->vdisk, ticks[rw], duration);
+	disk_round_stats(device->vdisk);
+	device->vdisk->in_flight--;
+	*/
+#define generic_end_io_acct(rw, p, t) do { } while (0)
 #else
+static inline void generic_start_io_acct(int rw, unsigned long sectors,
+					 struct hd_struct *part)
+{
 	int cpu;
 
 	cpu = part_stat_lock();
@@ -1443,19 +1450,11 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 		       the compiler warning about cpu only assigned but never used... */
 	part_inc_in_flight(part, rw);
 	part_stat_unlock();
-#endif
 }
 
 static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 				  unsigned long start_time)
 {
-#ifdef __disk_stat_add
-	/* disk_stat on older kernels disabled
-	__disk_stat_add(device->vdisk, ticks[rw], duration);
-	disk_round_stats(device->vdisk);
-	device->vdisk->in_flight--;
-	*/
-#else
 	unsigned long duration = jiffies - start_time;
 	int cpu;
 
@@ -1464,10 +1463,9 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 	part_round_stats(cpu, part);
 	part_dec_in_flight(part, rw);
 	part_stat_unlock();
-#endif
 }
-
-#endif
+#endif /* __disk_stat_inc */
+#endif /* COMPAT_HAVE_GENERIC_START_IO_ACCT */
 
 
 #ifndef COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS
