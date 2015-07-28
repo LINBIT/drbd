@@ -1847,8 +1847,10 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].length = size;
 
 	err = dtr_post_tx_desc(rdma_stream, tx_desc);
-	if (err)
-		put_page(page);
+	if (err) {
+		dtr_free_tx_desc(rdma_stream, tx_desc);
+		tx_desc = NULL;
+	}
 
 	if (stream == DATA_STREAM) {
 		int tx_descs_posted;
