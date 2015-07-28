@@ -1,9 +1,10 @@
-drbd (9.0.0-2) unstable; urgency=low
+drbd (9.0.0-3) unstable; urgency=low
 
   * Fixes for the RDMA transport
   * Fixes for 8.4 compatibility
+  * Rebuild after compat and build system fixes
 
- -- Philipp Reisner <phil@linbit.com>  Thu, 23 Jul 2015 12:06:11 +0200
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Tue, 28 Jul 2015 17:22:34 +0200
 
 drbd (9.0.0-1) unstable; urgency=low
 
