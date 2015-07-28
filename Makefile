@@ -154,10 +154,13 @@ endif
 # update of .filelist is forced:
 .PHONY: .filelist
 .filelist:
-	@$(GIT) ls-files | sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
+	@set -e ; submodules=`$(GIT) submodule foreach --quiet 'echo $$path'`; \
+	$(GIT) ls-files | \
+	  grep -vxF -e "$$submodules" | \
+	  sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' > .filelist
 	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' >> .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
-	echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
+	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
 	echo "./.filelist updated."
 
