@@ -180,7 +180,7 @@ tgz: check_changelogs_up2date
 endif
 
 check_all_committed:
-	@$(if $(FORCE),-,)modified=`$(GIT) ls-files -m -t`; 		\
+	@$(if $(FORCE),-,)modified=`$(GIT) diff --name-status HEAD`; 	\
 	if test -n "$$modified" ; then	\
 		echo "$$modified";	\
 	       	false;			\
