@@ -1422,25 +1422,12 @@ do {								\
 #endif
 
 #ifndef COMPAT_HAVE_GENERIC_START_IO_ACCT
-#ifdef __disk_stat_inc
-	/* disk_stat on older kernels disabled
-	__disk_stat_inc(device->vdisk, ios[rw]);
-	__disk_stat_add(device->vdisk, sectors[rw], sectors);
-	disk_round_stats(device->vdisk);
-	device->vdisk->in_flight++;
-	*/
-#define generic_start_io_acct(rw, s, p) do { } while (0)
-	/* disk_stat on older kernels disabled
-	__disk_stat_add(device->vdisk, ticks[rw], duration);
-	disk_round_stats(device->vdisk);
-	device->vdisk->in_flight--;
-	*/
-#define generic_end_io_acct(rw, p, t) do { } while (0)
-#else
+#ifndef __disk_stat_inc
 static inline void generic_start_io_acct(int rw, unsigned long sectors,
 					 struct hd_struct *part)
 {
 	int cpu;
+	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0]));
 
 	cpu = part_stat_lock();
 	part_round_stats(cpu, part);
@@ -1448,7 +1435,8 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 	part_stat_add(cpu, part, sectors[rw], sectors);
 	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
 		       the compiler warning about cpu only assigned but never used... */
-	part_inc_in_flight(part, rw);
+	/* part_inc_in_flight(part, rw); */
+	atomic_inc((atomic_t*)&part->in_flight[rw]);
 	part_stat_unlock();
 }
 
@@ -1461,7 +1449,8 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 	cpu = part_stat_lock();
 	part_stat_add(cpu, part, ticks[rw], duration);
 	part_round_stats(cpu, part);
-	part_dec_in_flight(part, rw);
+	/* part_dec_in_flight(part, rw); */
+	atomic_dec((atomic_t*)&part->in_flight[rw]);
 	part_stat_unlock();
 }
 #endif /* __disk_stat_inc */

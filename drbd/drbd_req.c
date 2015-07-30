@@ -34,6 +34,7 @@
 
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
+#ifndef __disk_stat_inc
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
@@ -47,6 +48,25 @@ static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *r
 	generic_end_io_acct(bio_data_dir(req->master_bio),
 			    &device->vdisk->part0, req->start_jif);
 }
+#else
+static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
+{
+	const int rw = bio_data_dir(req->master_bio);
+	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(device->vdisk->in_flight));
+	disk_stat_inc(device->vdisk, ios[rw]);
+	disk_stat_add(device->vdisk, sectors[rw], req->i.size >> 9);
+	disk_round_stats(device->vdisk);
+	atomic_inc((atomic_t*)&device->vdisk->in_flight);
+}
+static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
+{
+	const int rw = bio_data_dir(req->master_bio);
+	unsigned long duration = jiffies - req->start_jif;
+	disk_stat_add(device->vdisk, ticks[rw], duration);
+	disk_round_stats(device->vdisk);
+	atomic_dec((atomic_t*)&device->vdisk->in_flight);
+}
+#endif
 
 static struct drbd_request *drbd_req_new(struct drbd_device *device,
 					       struct bio *bio_src)
