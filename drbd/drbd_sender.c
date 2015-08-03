@@ -1105,12 +1105,13 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
 
-			drbd_print_uuids(peer_device, "updated UUIDs");
-			if (peer_device->uuids_received) {
+			if (stable_resync && peer_device->uuids_received) {
 				/* Now the two UUID sets are equal, update what we
 				 * know of the peer. */
 				const int node_id = device->resource->res_opts.node_id;
 				int i;
+
+				drbd_print_uuids(peer_device, "updated UUIDs");
 				peer_device->current_uuid = drbd_current_uuid(device);
 				peer_device->bitmap_uuids[node_id] = drbd_bitmap_uuid(peer_device);
 				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
