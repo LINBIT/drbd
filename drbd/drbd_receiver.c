@@ -4183,12 +4183,16 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	struct drbd_device *device = peer_device->device;
 	int updated_uuids = 0, err = 0;
+	bool bad_server;
 
-	if (repl_state < L_ESTABLISHED &&
-	    device->disk_state[NOW] < D_INCONSISTENT &&
-	    device->resource->role[NOW] == R_PRIMARY &&
-	    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
-	    (peer_device->current_uuid & ~UUID_PRIMARY)) {
+	bad_server =
+		repl_state < L_ESTABLISHED &&
+		device->disk_state[NOW] < D_INCONSISTENT &&
+		device->resource->role[NOW] == R_PRIMARY &&
+		(device->exposed_data_uuid & ~UUID_PRIMARY) !=
+		(peer_device->current_uuid & ~UUID_PRIMARY);
+
+	if (peer_device->connection->agreed_pro_version < 110 && bad_server) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
 		    (unsigned long long)device->exposed_data_uuid);
 		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
@@ -4242,7 +4246,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 
 		drbd_md_sync(device);
 		put_ldev(device);
-	} else if (device->disk_state[NOW] < D_INCONSISTENT) {
+	} else if (device->disk_state[NOW] < D_INCONSISTENT && !bad_server) {
 		struct drbd_resource *resource = device->resource;
 
 		spin_lock_irq(&resource->req_lock);
