@@ -4384,7 +4384,8 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
 		if (get_ldev(device)) {
-			drbd_resync(peer_device, AFTER_UNSTABLE);
+			bool dp = peer_device->uuid_flags & UUID_FLAG_DISKLESS_PRIMARY;
+			drbd_resync(peer_device, dp ? DISKLESS_PRIMARY : AFTER_UNSTABLE);
 			put_ldev(device);
 		}
 	}
@@ -5225,6 +5226,26 @@ static int process_twopc(struct drbd_connection *connection,
 	return 0;
 }
 
+static void try_to_get_resynced(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
+			goto found;
+	}
+	peer_device = NULL;
+found:
+	rcu_read_unlock();
+
+	if (peer_device && get_ldev(device)) {
+		drbd_resync(peer_device, DISKLESS_PRIMARY);
+		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
+		put_ldev(device);
+	}
+}
+
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -5235,7 +5256,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	union drbd_state old_peer_state, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
-	bool peer_was_resync_target;
+	bool peer_was_resync_target, try_to_get_resync = false;
 	int rv;
 
 	if (pi->vnr != -1) {
@@ -5413,6 +5434,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			set_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags);
 			peer_device->negotiation_result = new_repl_state;
 		}
+	} else if (peer_state.role == R_PRIMARY &&
+		   peer_device->disk_state[NOW] == D_UNKNOWN && peer_state.disk == D_DISKLESS &&
+		   device->disk_state[NOW] >= D_NEGOTIATING && device->disk_state[NOW] < D_UP_TO_DATE) {
+		/* I got connected to a diskless primary. Try to get a resync from
+		   some other node that is D_UP_TO_DATE. */
+		try_to_get_resync = true;
 	}
 
 	spin_lock_irq(&resource->req_lock);
@@ -5475,6 +5502,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	clear_bit(DISCARD_MY_DATA, &device->flags);
+
+	if (try_to_get_resync)
+		try_to_get_resynced(device);
 
 	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
