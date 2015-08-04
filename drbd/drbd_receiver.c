@@ -62,6 +62,11 @@ enum finish_epoch {
 	FE_RECYCLED,
 };
 
+enum resync_reason {
+	AFTER_UNSTABLE,
+	DISKLESS_PRIMARY,
+};
+
 int drbd_do_features(struct drbd_connection *connection);
 int drbd_do_auth(struct drbd_connection *connection);
 static int drbd_disconnected(struct drbd_peer_device *);
@@ -72,6 +77,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
+static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -4149,14 +4155,15 @@ out:
 	return err;
 }
 
-void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hold(local)
+static void drbd_resync(struct drbd_peer_device *peer_device,
+			enum resync_reason reason) __must_hold(local)
 {
 	enum drbd_role peer_role = peer_device->connection->peer_role[NOW];
 	enum drbd_repl_state new_repl_state;
 	int hg, rule_nr, peer_node_id;
 	enum drbd_state_rv rv;
 
-	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, false);
+	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, reason == DISKLESS_PRIMARY);
 	new_repl_state = hg < -4 || hg > 4 ? -1 : goodness_to_repl_state(peer_device, peer_role, hg);
 
 	if (new_repl_state == -1) {
@@ -4164,7 +4171,8 @@ void drbd_resync_after_unstable(struct drbd_peer_device *peer_device) __must_hol
 		return;
 	} else if (new_repl_state != L_ESTABLISHED) {
 		bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
-		drbd_info(peer_device, "Becoming %s after unstable\n", drbd_repl_str(new_repl_state));
+		drbd_info(peer_device, "Becoming %s %s\n", drbd_repl_str(new_repl_state),
+			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
 
 	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
@@ -4369,14 +4377,14 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		if (peer_device->repl_state[NOW] == L_ESTABLISHED &&
 		    drbd_device_stable(device, NULL) && get_ldev(device)) {
 			drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
-			drbd_resync_after_unstable(peer_device);
+			drbd_resync(peer_device, AFTER_UNSTABLE);
 			put_ldev(device);
 		}
 	}
 
 	if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
 		if (get_ldev(device)) {
-			drbd_resync_after_unstable(peer_device);
+			drbd_resync(peer_device, AFTER_UNSTABLE);
 			put_ldev(device);
 		}
 	}
