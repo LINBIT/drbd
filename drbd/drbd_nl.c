@@ -3578,19 +3578,6 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	rcu_read_lock();
-	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
-	rcu_read_unlock();
-	if (u_size && u_size == (sector_t)rs.resize_size &&
-	    device->ldev->md.al_stripes == rs.al_stripes &&
-	    device->ldev->md.al_stripe_size_4k == rs.al_stripe_size / 4) {
-		/* TODO once we can online-change the number of bitmap slots,
-		 * we need add an "unchanged" check for those above. */
-		/* This will be a no-op. Ignore. */
-		retcode = NO_ERROR;
-		goto fail_ldev;
-	}
-
 	has_primary = device->resource->role[NOW] == R_PRIMARY;
 	if (!has_primary) {
 		for_each_peer_device(peer_device, device) {
@@ -3612,6 +3599,9 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	rcu_read_lock();
+	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
+	rcu_read_unlock();
 	if (u_size != (sector_t)rs.resize_size) {
 		new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
