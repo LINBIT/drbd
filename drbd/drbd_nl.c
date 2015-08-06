@@ -3532,6 +3532,23 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 	drbd_start_resync(peer_device, sync_source ? L_SYNC_SOURCE : L_SYNC_TARGET);
 }
 
+static sector_t local_possible_max_size(struct drbd_device *device) __must_hold(local)
+{
+	struct drbd_backing_dev *tmp_bdev;
+	sector_t s;
+
+	tmp_bdev = kmalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	if (!tmp_bdev)
+		return 0;
+
+	*tmp_bdev = *device->ldev;
+	drbd_md_set_sector_offsets(device, tmp_bdev);
+	s = drbd_get_max_capacity(tmp_bdev);
+	kfree(tmp_bdev);
+
+	return s;
+}
+
 int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -3576,6 +3593,11 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_RESIZE_RESYNC;
 			goto fail_ldev;
 		}
+	}
+
+	if (rs.resize_size && local_possible_max_size(device) < (sector_t)rs.resize_size) {
+		retcode = ERR_DISK_TOO_SMALL;
+		goto fail_ldev;
 	}
 
 	has_primary = device->resource->role[NOW] == R_PRIMARY;
