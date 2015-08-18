@@ -3124,8 +3124,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 unlock_fail_free_connection:
 	mutex_unlock(&adm_ctx->resource->conf_update);
 fail_free_connection:
-	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
-
 	if (!list_empty(&connection->connections)) {
 		drbd_unregister_connection(connection);
 		synchronize_rcu();
