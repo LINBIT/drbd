@@ -1,0 +1,4 @@
+version=3
+
+opts=dversionmangle=s/\+linbit\d*$// \
+http://plain.oss.linbit.com/drbd/9.0/drbd-(.+)\.tar\.gz
