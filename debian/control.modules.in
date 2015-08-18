@@ -2,11 +2,11 @@ Source: drbd
 Section: misc
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
-Uploaders:
- Philipp Reisner <phil@linbit.com>,
- Lars Ellenberg <lars@linbit.com>,
- Roland Kammerer <roland.kammerer@linbit.com>
-Build-Depends: debhelper (>= 7), drbd-module-source
+Uploaders: Philipp Reisner <phil@linbit.com>,
+           Lars Ellenberg <lars@linbit.com>,
+           Roland Kammerer <roland.kammerer@linbit.com>
+Build-Depends: debhelper (>= 7),
+               drbd-module-source
 Standards-Version: 3.6.1
 
 Package: drbd-module-_KVERS_

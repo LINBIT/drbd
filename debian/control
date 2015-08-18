@@ -2,18 +2,23 @@ Source: drbd
 Section: admin
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
-Uploaders:
- Philipp Reisner <phil@linbit.com>,
- Lars Ellenberg <lars@linbit.com>,
- Roland Kammerer <roland.kammerer@linbit.com>
-Build-Depends: debhelper (>= 7), dkms, bash
+Uploaders: Philipp Reisner <phil@linbit.com>,
+           Lars Ellenberg <lars@linbit.com>,
+           Roland Kammerer <roland.kammerer@linbit.com>
+Build-Depends: bash,
+               debhelper (>= 7),
+               dkms
 Standards-Version: 3.6.2.1
 
 Package: drbd-dkms
 Architecture: all
 Section: admin
-Depends: drbd-utils, dkms (>= 1.9.5), debhelper (>=7), ${misc:Depends}
-Conflicts: drbd-module-source, drbd8-module-source
+Depends: debhelper (>=7),
+         dkms (>= 1.9.5),
+         drbd-utils,
+         ${misc:Depends}
+Conflicts: drbd-module-source,
+           drbd8-module-source
 Provides: drbd-dkms
 Replaces: drbd-module-source
 Description: RAID 1 over TCP/IP for Linux module source
@@ -29,8 +34,10 @@ Homepage: http://www.drbd.org
 Package: drbd-module-source
 Architecture: all
 Section: admin
-Depends: debhelper (>= 7), ${misc:Depends}
-Conflicts: drbd-dkms, drbd8-module-source
+Depends: debhelper (>= 7),
+         ${misc:Depends}
+Conflicts: drbd-dkms,
+           drbd8-module-source
 Provides: drbd-module-source
 Replaces: drbd-dkms
 Recommends: kernel-package | module-assistant
