@@ -4254,7 +4254,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 
 		drbd_md_sync(device);
 		put_ldev(device);
-	} else if (device->disk_state[NOW] < D_INCONSISTENT && !bad_server) {
+	} else if (device->disk_state[NOW] < D_INCONSISTENT && !bad_server &&
+		   peer_device->current_uuid != device->exposed_data_uuid) {
 		struct drbd_resource *resource = device->resource;
 
 		spin_lock_irq(&resource->req_lock);
