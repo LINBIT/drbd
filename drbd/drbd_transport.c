@@ -172,7 +172,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		container_of(waiter->transport, struct drbd_connection, transport);
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener, *new_listener = NULL;
-	int err;
+	int err, tries = 0;
 
 	init_waitqueue_head(&waiter->wait);
 
@@ -197,8 +197,13 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 			return 0;
 
 		err = create_listener(waiter->transport, &new_listener);
-		if (err)
+		if (err) {
+			if (err == -EADDRINUSE && ++tries < 3) {
+				schedule_timeout_uninterruptible(HZ / 20);
+				continue;
+			}
 			return err;
+		}
 
 		kref_init(&new_listener->kref);
 		INIT_LIST_HEAD(&new_listener->waiters);
