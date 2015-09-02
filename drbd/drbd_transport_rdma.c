@@ -270,6 +270,11 @@ static struct drbd_transport_ops dtr_ops = {
 };
 
 
+static struct drbd_path* dtr_path(struct drbd_transport *transport)
+{
+	return list_first_entry_or_null(&transport->paths, struct drbd_path, list);
+}
+
 static int dtr_init(struct drbd_transport *transport)
 {
 	struct drbd_rdma_transport *rdma_transport =
