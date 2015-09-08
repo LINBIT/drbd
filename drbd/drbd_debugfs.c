@@ -1080,7 +1080,7 @@ static int drbd_single_open_peer_device(struct file *file,
 	if (!parent || !parent->d_inode)
 		goto out;
 	mutex_lock(&parent->d_inode->i_mutex);
-	if (!debugfs_positive(file->f_path.dentry))
+	if (!simple_positive(file->f_path.dentry))
 		goto out_unlock;
 
 	got_connection = kref_get_unless_zero(&connection->kref);
