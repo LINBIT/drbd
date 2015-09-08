@@ -2809,7 +2809,7 @@ static void drbd_cleanup(void)
  * @congested_data:	User data
  * @bdi_bits:		Bits the BDI flusher thread is currently interested in
  *
- * Returns 1<<BDI_async_congested and/or 1<<BDI_sync_congested if we are congested.
+ * Returns 1<<WB_async_congested and/or 1<<WB_sync_congested if we are congested.
  */
 static int drbd_congested(void *congested_data, int bdi_bits)
 {
@@ -2824,14 +2824,14 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 	}
 
 	if (test_bit(CALLBACK_PENDING, &device->resource->flags)) {
-		r |= (1 << BDI_async_congested);
+		r |= (1 << WB_async_congested);
 		/* Without good local data, we would need to read from remote,
 		 * and that would need the worker thread as well, which is
 		 * currently blocked waiting for that usermode helper to
 		 * finish.
 		 */
 		if (!get_ldev_if_state(device, D_UP_TO_DATE))
-			r |= (1 << BDI_sync_congested);
+			r |= (1 << WB_sync_congested);
 		else
 			put_ldev(device);
 		r &= bdi_bits;
@@ -2844,13 +2844,13 @@ static int drbd_congested(void *congested_data, int bdi_bits)
 		put_ldev(device);
 	}
 
-	if (bdi_bits & (1 << BDI_async_congested)) {
+	if (bdi_bits & (1 << WB_async_congested)) {
 		struct drbd_peer_device *peer_device;
 
 		rcu_read_lock();
 		for_each_peer_device_rcu(peer_device, device) {
 			if (test_bit(NET_CONGESTED, &peer_device->connection->transport.flags)) {
-				r |= (1 << BDI_async_congested);
+				r |= (1 << WB_async_congested);
 				break;
 			}
 		}

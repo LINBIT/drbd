@@ -4200,8 +4200,8 @@ static void device_to_statistics(struct device_statistics *s,
 		q = bdev_get_queue(device->ldev->backing_bdev);
 		s->dev_lower_blocked =
 			bdi_congested(&q->backing_dev_info,
-				      (1 << BDI_async_congested) |
-				      (1 << BDI_sync_congested));
+				      (1 << WB_async_congested) |
+				      (1 << WB_sync_congested));
 		put_ldev(device);
 	}
 	s->dev_size = drbd_get_capacity(device->this_bdev);
