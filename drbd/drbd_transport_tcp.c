@@ -373,7 +373,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	peer_addr = dtt_path(transport)->peer_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
+	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
 	if (err < 0) {
 		socket = NULL;
 		goto out;
@@ -695,7 +695,7 @@ static int dtt_create_listener(struct drbd_transport *transport, struct drbd_lis
 	my_addr = dtt_path(transport)->my_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		goto out;
