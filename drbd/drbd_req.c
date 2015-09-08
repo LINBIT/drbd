@@ -31,74 +31,22 @@
 #include "drbd_req.h"
 
 
-/* We only support diskstats for 2.6.16 and up.
- * see also commit commit a362357b6cd62643d4dda3b152639303d78473da
- * Author: Jens Axboe <axboe@suse.de>
- * Date:   Tue Nov 1 09:26:16 2005 +0100
- *     [BLOCK] Unify the separate read/write io stat fields into arrays */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,16)
-#define _drbd_start_io_acct(...) do {} while (0)
-#define _drbd_end_io_acct(...)   do {} while (0)
-#else
 
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	const int rw = bio_data_dir(req->master_bio);
-#ifndef __disk_stat_inc
-	int cpu;
-#endif
-
-#ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
-	spin_lock_irq(&device->resource->req_lock);
-#endif
-
-#ifdef __disk_stat_inc
-	__disk_stat_inc(device->vdisk, ios[rw]);
-	__disk_stat_add(device->vdisk, sectors[rw], req->i.size >> 9);
-	disk_round_stats(device->vdisk);
-	device->vdisk->in_flight++;
-#else
-	cpu = part_stat_lock();
-	part_round_stats(cpu, &device->vdisk->part0);
-	part_stat_inc(cpu, &device->vdisk->part0, ios[rw]);
-	part_stat_add(cpu, &device->vdisk->part0, sectors[rw], req->i.size >> 9);
-	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
-		       the compiler warning about cpu only assigned but never used... */
-	part_inc_in_flight(&device->vdisk->part0, rw);
-	part_stat_unlock();
-#endif
-
-#ifndef COMPAT_HAVE_ATOMIC_IN_FLIGHT
-	spin_unlock_irq(&device->resource->req_lock);
-#endif
+	generic_start_io_acct(bio_data_dir(req->master_bio), req->i.size >> 9,
+			      &device->vdisk->part0);
 }
 
 /* Update disk stats when completing request upwards */
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	int rw = bio_data_dir(req->master_bio);
-	unsigned long duration = jiffies - req->start_jif;
-#ifndef __disk_stat_inc
-	int cpu;
-#endif
-
-#ifdef __disk_stat_add
-	__disk_stat_add(device->vdisk, ticks[rw], duration);
-	disk_round_stats(device->vdisk);
-	device->vdisk->in_flight--;
-#else
-	cpu = part_stat_lock();
-	part_stat_add(cpu, &device->vdisk->part0, ticks[rw], duration);
-	part_round_stats(cpu, &device->vdisk->part0);
-	part_dec_in_flight(&device->vdisk->part0, rw);
-	part_stat_unlock();
-#endif
+	generic_end_io_acct(bio_data_dir(req->master_bio),
+			    &device->vdisk->part0, req->start_jif);
 }
-
-#endif
 
 static struct drbd_request *drbd_req_new(struct drbd_device *device,
 					       struct bio *bio_src)
