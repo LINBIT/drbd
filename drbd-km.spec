@@ -3,6 +3,14 @@
 # PLEASE: provide both (correctly) or none!!
 %{!?kernelversion: %{expand: %%define kernelversion %(uname -r)}}
 %{!?kdir: %{expand: %%define kdir /lib/modules/%(uname -r)/build}}
+%define kernel_devel_rpm %{expand:%%(rpm -q --quiet -f %{kdir}/ 2>/dev/null &&
+          rpm -q --qf '%%%%{name}\\n' -f %{kdir}/ | uniq)}
+%{echo:kernelversion=%{kernelversion}
+}
+%{echo:kdir=%{kdir}
+}
+%{echo:kernel_devel_rpm=%{kernel_devel_rpm}
+}
 
 # encode - to _ to be able to include that in a package name or release "number"
 %global krelver  %(echo %{kernelversion} | tr -s '-' '_')
@@ -17,9 +25,7 @@ ExclusiveOS: linux
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires: gcc
-%(test -e /etc/redhat-release && echo BuildRequires: kernel-devel)
-%(test -e /etc/SuSE-release && echo BuildRequires: kernel-syms)
+BuildRequires: gcc %{kernel_devel_rpm}
 
 %description
 DRBD mirrors a block device over the network to another machine.
