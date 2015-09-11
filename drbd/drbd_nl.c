@@ -3211,7 +3211,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	if (retcode != NO_ERROR)
 		return retcode;
 
-	path = kzalloc(sizeof(struct drbd_path), GFP_KERNEL);
+	path = kzalloc(transport->class->path_instance_size, GFP_KERNEL);
 	if (!path)
 		return ERR_NOMEM;
 
