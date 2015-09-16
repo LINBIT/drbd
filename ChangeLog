@@ -2,6 +2,8 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
+ * fix latency regression introduced with 8.4.5
+   protocol A was sometimes synchronous, C sometimes double-latency
  * avoid potential deadlock during handshake
  * avoid potential deadlock in disconnect during resync
    with fencing resource-and-stonith
