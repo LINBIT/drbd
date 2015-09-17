@@ -639,6 +639,10 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 	struct ib_wc wc;
 	int size, ret;
 
+	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
+	if (ret)
+		tr_err(&rdma_stream->rdma_transport->transport, "ib_req_notify_cq failed\n");
+
 	if (ib_poll_cq(cq, 1, &wc) == 1) {
 		rdma_stream->rx_descs_posted--;
 		atomic_dec(&rdma_stream->rx_descs_known_to_peer);
@@ -662,10 +666,6 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 					"rx_drain: wc.status != IB_WC_SUCCESS %d\n", wc.status);
 		}
 	}
-
-	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		tr_err(&rdma_stream->rdma_transport->transport, "ib_req_notify_cq failed\n");
 
 	return false;
 }
