@@ -247,6 +247,7 @@ static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
 	.instance_size = sizeof(struct drbd_rdma_transport),
+	.path_instance_size = sizeof(struct drbd_path),
 	.module = THIS_MODULE,
 	.init = dtr_init,
 	.list = LIST_HEAD_INIT(rdma_transport_class.list),
