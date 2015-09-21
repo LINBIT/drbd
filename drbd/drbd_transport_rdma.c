@@ -299,7 +299,7 @@ static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
 	.instance_size = sizeof(struct drbd_rdma_transport),
-	.path_instance_size = sizeof(struct drbd_path),
+	.path_instance_size = sizeof(struct drbd_path), /* TODO: dtr_path */
 	.module = THIS_MODULE,
 	.init = dtr_init,
 	.list = LIST_HEAD_INIT(rdma_transport_class.list),
@@ -2154,17 +2154,17 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 }
 
-static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *path)
+static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
 	if (!list_empty(&transport->paths))
 		return -EEXIST;
 
-	list_add(&path->list, &transport->paths);
+	list_add(&drbd_path->list, &transport->paths);
 
 	return 0;
 }
 
-static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *path)
+static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
@@ -2173,7 +2173,7 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *p
 	if (rdma_transport->in_use)
 		return -EBUSY;
 
-	if (path && path == existing) {
+	if (drbd_path && drbd_path == existing) {
 		list_del_init(&existing->list);
 		return 0;
 	}
