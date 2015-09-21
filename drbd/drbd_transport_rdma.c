@@ -112,6 +112,45 @@ struct dtr_flow_control {
 	uint32_t new_rx_descs[2];
 } __packed;
 
+/* These numbers are sent within the immediate data value to identify
+   if the packet is a data, and control or a (transport private) flow_control
+   message */
+enum dtr_stream {
+	ST_DATA = DATA_STREAM,
+	ST_CONTROL = CONTROL_STREAM,
+	ST_FLOW_CTRL
+};
+
+/* IB_WR_SEND_WITH_IMM and IB_WR_RDMA_WRITE_WITH_IMM
+
+   both transfer user data and a 32bit value with is delivered at the receiving
+   to the event handler of the completion queue. I.e. that can be used to queue
+   the incoming messages to different streams.
+
+   dtr_imm:
+   In order to support folding the data and the control stream into one RDMA
+   connection we use the stream field of dtr_imm: DATA_STREAM, CONTROL_STREAM
+   and FLOW_CONTROL.
+   To be able to order the messages on the receiving side before delivering them
+   to the upper layers we use a sequence number.
+
+   */
+union dtr_immediate {
+	struct {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+		unsigned int sequence:30;
+		unsigned int stream:2;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+		unsigned int stream:2;
+		unsigned int sequence:30;
+#else
+# error "this endianness is not supported"
+#endif
+	};
+	unsigned int i;
+};
+
+
 enum drbd_rdma_state {
 	IDLE = 1,
 	CONNECT_REQUEST,
@@ -191,6 +230,7 @@ struct drbd_rdma_stream {
 
 	long recv_timeout;
 	char name[8]; /* "control" or "data" */
+	unsigned int tx_sequence;
 	struct drbd_rdma_transport *rdma_transport;
 };
 
@@ -230,7 +270,7 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 
-static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc);
+static int dtr_post_tx_desc(struct drbd_rdma_stream *, enum dtr_stream, struct drbd_rdma_tx_desc *);
 static bool dtr_receive_rx_desc(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
@@ -307,7 +347,9 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 }
 
 
-static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size)
+static int dtr_send(struct drbd_rdma_stream *rdma_stream,
+		    enum dtr_stream stream_nr,
+		    void *buf, size_t size)
 {
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc *tx_desc;
@@ -334,7 +376,7 @@ static int dtr_send(struct drbd_rdma_stream *rdma_stream, void *buf, size_t size
 	tx_desc->sge[0].lkey = rdma_stream->dma_mr->lkey;
 	tx_desc->sge[0].length = size;
 
-	dtr_post_tx_desc(rdma_stream, tx_desc);
+	dtr_post_tx_desc(rdma_stream, stream_nr, tx_desc);
 
 	return size;
 }
@@ -671,7 +713,7 @@ static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct d
 	return false;
 }
 
-static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum drbd_stream stream)
+static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum dtr_stream stream_nr)
 {
 	struct drbd_rdma_stream *rdma_stream;
 	struct dtr_flow_control msg;
@@ -688,8 +730,8 @@ static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport,
 		msg.new_rx_descs[i] = cpu_to_be32(n);
 	}
 
-	rdma_stream = rdma_transport->stream[stream];
-	return dtr_send(rdma_stream, &msg, sizeof(msg));
+	rdma_stream = rdma_transport->stream[stream_nr];
+	return dtr_send(rdma_stream, stream_nr, &msg, sizeof(msg));
 }
 
 static void dtr_flow_control(struct drbd_rdma_stream *rdma_stream)
@@ -1039,10 +1081,14 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	*pp_rx_desc = NULL;
 }
 
-static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
+static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
+			    enum dtr_stream stream_nr,
+			    struct drbd_rdma_tx_desc *tx_desc)
 {
+	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
 	struct ib_device *device = rdma_stream->cm.id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
+	union dtr_immediate immediate;
 	long t;
 	int i, err;
 
@@ -1054,9 +1100,7 @@ retry:
 
 	if (t == 0) {
 		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-		enum drbd_stream stream =
-			rdma_transport->stream[DATA_STREAM] == rdma_stream ?
-				DATA_STREAM : CONTROL_STREAM;
+		enum drbd_stream stream = stream_nr; /* öö TODO clamp */
 
 		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
 			return -EAGAIN;
@@ -1064,11 +1108,18 @@ retry:
 	} else if (t < 0)
 		return -EINTR;
 
+	immediate = (union dtr_immediate) {
+		.stream = stream_nr,
+		.sequence =
+			stream_nr == ST_FLOW_CTRL ? 0 :
+				rdma_transport->stream[stream_nr]->tx_sequence++,
+	};
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
 	send_wr.sg_list = tx_desc->sge;
 	send_wr.num_sge = tx_desc->nr_sges;
-	send_wr.opcode = IB_WR_SEND;
+	send_wr.ex.imm_data = cpu_to_be32(immediate.i);
+	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
 	for (i = 0; i < tx_desc->nr_sges; i++)
@@ -1077,7 +1128,7 @@ retry:
 
 	err = ib_post_send(rdma_stream->qp, &send_wr, &send_wr_failed);
 	if (err) {
-		tr_err(&rdma_stream->rdma_transport->transport, "ib_post_send() failed %d\n", err);
+		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 
 		return err;
 	}
@@ -1152,6 +1203,7 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 		container_of(transport, struct drbd_rdma_transport, transport);
 
 	// pr_info("creating stream: %s\n", rdma_stream->name);
+	rdma_stream->tx_sequence = 1;
 
 	/* alloc protection domain (PD) */
 	rdma_stream->pd = ib_alloc_pd(rdma_stream->cm.id->device);
@@ -1321,7 +1373,7 @@ static int dtr_send_first_packet(struct drbd_rdma_stream *rdma_stream, enum drbd
 	h.command = cpu_to_be16(cmd);
 	h.length = 0;
 
-	err = dtr_send(rdma_stream, &h, sizeof(h));
+	err = dtr_send(rdma_stream, ST_DATA, &h, sizeof(h));
 
 	return err;
 }
@@ -1852,7 +1904,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].lkey = rdma_stream->dma_mr->lkey;
 	tx_desc->sge[0].length = size;
 
-	err = dtr_post_tx_desc(rdma_stream, tx_desc);
+	err = dtr_post_tx_desc(rdma_stream, stream, tx_desc);
 	if (err) {
 		dtr_free_tx_desc(rdma_stream, tx_desc);
 		tx_desc = NULL;
@@ -1932,7 +1984,7 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 
 	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
 
-	err = dtr_post_tx_desc(rdma_stream, tx_desc);
+	err = dtr_post_tx_desc(rdma_stream, ST_DATA, tx_desc);
 	if (err) {
 		bio_for_each_segment(bvec, tx_desc->bio, iter)
 			put_page(bvec BVD bv_page);
