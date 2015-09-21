@@ -115,7 +115,7 @@ struct dtr_flow_control {
 /* These numbers are sent within the immediate data value to identify
    if the packet is a data, and control or a (transport private) flow_control
    message */
-enum dtr_stream {
+enum dtr_stream_nr {
 	ST_DATA = DATA_STREAM,
 	ST_CONTROL = CONTROL_STREAM,
 	ST_FLOW_CTRL
@@ -270,11 +270,11 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		int offset, size_t size, unsigned msg_flags);
 static int dtr_send_zc_bio(struct drbd_transport *, struct bio *bio);
 static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
-static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
+static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 
-static int dtr_post_tx_desc(struct drbd_rdma_stream *, enum dtr_stream, struct drbd_rdma_tx_desc *);
+static int dtr_post_tx_desc(struct drbd_rdma_stream *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
 static bool dtr_receive_rx_desc(struct drbd_rdma_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
@@ -307,7 +307,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.send_page = dtr_send_page,
 	.send_zc_bio = dtr_send_zc_bio,
 	.recv_pages = dtr_recv_pages,
-	.stream_ok = dtr_stream_ok,
+	.stream_ok = dtr_stream_nr_ok,
 	.hint = dtr_hint,
 	.debugfs_show = dtr_debugfs_show,
 	.add_path = dtr_add_path,
@@ -352,7 +352,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 
 static int dtr_send(struct drbd_rdma_stream *rdma_stream,
-		    enum dtr_stream stream_nr,
+		    enum dtr_stream_nr stream_nr,
 		    void *buf, size_t size)
 {
 	struct ib_device *device;
@@ -702,7 +702,7 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	return false;
 }
 
-static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum dtr_stream stream_nr)
+static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum dtr_stream_nr stream_nr)
 {
 	struct drbd_rdma_stream *rdma_stream;
 	struct dtr_flow_control msg;
@@ -1088,7 +1088,7 @@ static void dtr_recycle_rx_desc(struct drbd_rdma_stream *rdma_stream,
 }
 
 static int dtr_post_tx_desc(struct drbd_rdma_stream *rdma_stream,
-			    enum dtr_stream stream_nr,
+			    enum dtr_stream_nr stream_nr,
 			    struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
@@ -1847,7 +1847,7 @@ static bool __dtr_stream_ok(struct drbd_rdma_stream *rdma_stream)
 	return rdma_stream && rdma_stream->cm.id && rdma_stream->cm.state == CONNECTED;
 }
 
-static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream)
+static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream stream)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
