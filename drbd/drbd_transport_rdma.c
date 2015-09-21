@@ -165,9 +165,10 @@ struct drbd_rdma_rx_desc {
 	struct page *page;
 	void *data;
 	u64 dma_addr;
-	int size; /* At allocation time the allocated size, after something
-		     was received, the actual size of the received data. */
 	struct ib_sge sge;
+	struct list_head list;
+	int alloc_size;
+	int size;
 };
 
 struct drbd_rdma_tx_desc {
@@ -227,6 +228,9 @@ struct drbd_rdma_stream {
 		int bytes_left;
 	} current_rx;
 	int rx_allocation_size;
+
+	struct list_head rx_descs;
+	spinlock_t rx_descs_lock;
 
 	long recv_timeout;
 	char name[8]; /* "control" or "data" */
@@ -676,38 +680,23 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	return 0;
 }
 
-static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_rx_desc **rx_desc)
+static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
+				  struct drbd_rdma_rx_desc **ptr_rx_desc)
 {
-	struct ib_cq *cq = rdma_stream->recv_cq;
-	struct ib_wc wc;
-	int size, ret;
+	struct drbd_rdma_rx_desc *rx_desc;
 
-	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		tr_err(&rdma_stream->rdma_transport->transport, "ib_req_notify_cq failed\n");
+	spin_lock_irq(&rdma_stream->rx_descs_lock);
+	rx_desc = list_first_entry_or_null(&rdma_stream->rx_descs, struct drbd_rdma_rx_desc, list);
+	if (rx_desc)
+		list_del(&rx_desc->list);
+	spin_unlock_irq(&rdma_stream->rx_descs_lock);
 
-	if (ib_poll_cq(cq, 1, &wc) == 1) {
-		rdma_stream->rx_descs_posted--;
-		atomic_dec(&rdma_stream->rx_descs_known_to_peer);
-		*rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
-		WARN_ON(rx_desc == NULL);
-
-		if(wc.status == IB_WC_SUCCESS) {
-			if (wc.opcode == IB_WC_RECV) {
-				size = wc.byte_len;
-				ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, (*rx_desc)->dma_addr,
-						(*rx_desc)->size, DMA_FROM_DEVICE);
-				(*rx_desc)->size = size;
-				// pr_info("%s: in drain: %p, size = %d, data[0]:%lx\n", rdma_stream->name, rx_desc, size, *(unsigned long*)(*rx_desc)->data);
-			} else
-				tr_warn(&rdma_stream->rdma_transport->transport,
-						"WC SUCCESS, but strange opcode... %d\n", wc.opcode);
-
-			return true;
-		} else {
-			tr_err(&rdma_stream->rdma_transport->transport,
-					"rx_drain: wc.status != IB_WC_SUCCESS %d\n", wc.status);
-		}
+	if (rx_desc) {
+		INIT_LIST_HEAD(&rx_desc->list);
+		ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, rx_desc->dma_addr,
+					   rx_desc->alloc_size, DMA_FROM_DEVICE);
+		*ptr_rx_desc = rx_desc;
+		return true;
 	}
 
 	return false;
@@ -791,6 +780,37 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
+	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
+	struct drbd_rdma_rx_desc *rx_desc;
+	union dtr_imm immediate;
+	struct ib_wc wc;
+	int ret;
+
+	ret = ib_req_notify_cq(rdma_stream->recv_cq, IB_CQ_NEXT_COMP);
+	if (ret)
+		tr_err(&rdma_transport->transport, "ib_req_notify_cq failed\n");
+
+	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
+		unsigned long flags;
+
+		rdma_stream->rx_descs_posted--;
+		atomic_dec(&rdma_stream->rx_descs_known_to_peer);
+		rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
+
+		if(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
+			tr_warn(&rdma_stream->rdma_transport->transport,
+				"wc.status = %d (%s), wc.opcode = %d (%s)\n",
+				wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
+				wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+			return;
+		}
+
+		rx_desc->size = wc.byte_len;
+		immediate.i = be32_to_cpu(wc.ex.imm_data);
+		spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
+		list_add_tail(&rx_desc->list, &rdma_stream->rx_descs);
+		spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
+	}
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
 
@@ -908,7 +928,7 @@ static int dtr_post_rx_desc(struct drbd_rdma_stream *rdma_stream,
 	recv_wr.num_sge = 1;
 
 	ib_dma_sync_single_for_device(rdma_stream->cm.id->device,
-			rx_desc->dma_addr, rx_desc->size, DMA_FROM_DEVICE);
+			rx_desc->dma_addr, rx_desc->alloc_size, DMA_FROM_DEVICE);
 
 	rdma_stream->rx_descs_posted++;
 	err = ib_post_recv(rdma_stream->qp, &recv_wr, &recv_wr_failed);
@@ -991,7 +1011,8 @@ static int dtr_create_some_rx_desc(struct drbd_rdma_stream *rdma_stream)
 		 * then cannot properly give it back to drbd_free_pages(). */
 		rx_desc->page = page;
 		rx_desc->data = pos;
-		rx_desc->size = alloc_size;
+		rx_desc->alloc_size = alloc_size;
+		rx_desc->size = 0;
 		rx_desc->dma_addr = ib_dma_map_single(device, pos, alloc_size,
 						      DMA_FROM_DEVICE);
 		rx_desc->sge.lkey = rdma_stream->dma_mr->lkey;
@@ -1266,6 +1287,9 @@ static int dtr_alloc_rdma_resources(struct drbd_rdma_stream *rdma_stream,
 
 	for (i = 0; i < INITIAL_RX_DESCS; i++)
 		dtr_create_some_rx_desc(rdma_stream);
+
+	INIT_LIST_HEAD(&rdma_stream->rx_descs);
+	spin_lock_init(&rdma_stream->rx_descs_lock);
 
 	return 0;
 
