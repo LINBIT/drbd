@@ -84,7 +84,7 @@ MODULE_VERSION("1.0.0");
    to receive something, better make sure a complete BIO always fits in.
    Probably a better approach would be to do the receiving actually in the callback
    dtr_rx_cq_event_handler(), then we would always get flowcontrol messages in in a timely
-   manner */
+   manner */ /* Update! Early processing of flowcontrol messages is implemented! */
 #define RDMA_DEF_BUFFER_SIZE (2 * DRBD_MAX_BIO_SIZE + (3 * DRBD_SOCKET_BUFFER_SIZE))
 
 /* one for the handshake's first packet, one for the first flow_control msg.
@@ -680,8 +680,8 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	return 0;
 }
 
-static bool __dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
-				  struct drbd_rdma_rx_desc **ptr_rx_desc)
+static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
+				struct drbd_rdma_rx_desc **ptr_rx_desc)
 {
 	struct drbd_rdma_rx_desc *rx_desc;
 
@@ -720,7 +720,7 @@ static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport,
 	}
 
 	rdma_stream = rdma_transport->stream[stream_nr];
-	return dtr_send(rdma_stream, stream_nr, &msg, sizeof(msg));
+	return dtr_send(rdma_stream, ST_FLOW_CTRL, &msg, sizeof(msg));
 }
 
 static void dtr_flow_control(struct drbd_rdma_stream *rdma_stream)
@@ -755,34 +755,12 @@ static void dtr_got_flow_control_msg(struct drbd_rdma_stream *rdma_stream,
 	}
 }
 
-static bool dtr_receive_rx_desc(struct drbd_rdma_stream *rdma_stream,
-				struct drbd_rdma_rx_desc **pp_rx_desc)
-{
-	struct drbd_rdma_rx_desc *rx_desc;
-	bool r;
-
-	while (1) {
-		r = __dtr_receive_rx_desc(rdma_stream, &rx_desc);
-		if (!r)
-			return false;
-
-		if (rx_desc->size == sizeof(struct dtr_flow_control) &&
-			*(uint32_t *)rx_desc->data == cpu_to_be32(DTR_MAGIC)) {
-			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
-			dtr_recycle_rx_desc(rdma_stream, &rx_desc);
-			continue;
-		}
-		*pp_rx_desc = rx_desc;
-		return true;
-	}
-}
-
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct drbd_rdma_stream *rdma_stream = ctx;
 	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
 	struct drbd_rdma_rx_desc *rx_desc;
-	union dtr_imm immediate;
+	union dtr_immediate immediate;
 	struct ib_wc wc;
 	int ret;
 
@@ -807,14 +785,21 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 		rx_desc->size = wc.byte_len;
 		immediate.i = be32_to_cpu(wc.ex.imm_data);
-		spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
-		list_add_tail(&rx_desc->list, &rdma_stream->rx_descs);
-		spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
+		if (immediate.stream == ST_FLOW_CTRL) {
+			ib_dma_sync_single_for_cpu(rdma_stream->cm.id->device, rx_desc->dma_addr,
+						   rx_desc->alloc_size, DMA_FROM_DEVICE);
+			dtr_got_flow_control_msg(rdma_stream, rx_desc->data);
+			dtr_recycle_rx_desc(rdma_stream, &rx_desc);
+		} else {
+			spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
+			list_add_tail(&rx_desc->list, &rdma_stream->rx_descs);
+			spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
+
+			wake_up_interruptible(&rdma_stream->recv_wq);
+		}
 	}
 
 	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
-
-	wake_up_interruptible(&rdma_stream->recv_wq);
 }
 
 static void dtr_free_tx_desc(struct drbd_rdma_stream *rdma_stream, struct drbd_rdma_tx_desc *tx_desc)
