@@ -323,7 +323,8 @@ static struct drbd_transport_ops dtr_ops = {
 };
 
 
-static struct drbd_path* dtr_path(struct drbd_transport *transport)
+
+static struct drbd_path* dtr_drbd_path(struct drbd_transport *transport)
 {
 	return list_first_entry_or_null(&transport->paths, struct drbd_path, list);
 }
@@ -1476,7 +1477,7 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_stream *
 	strcpy(path->cm.name, "new");
 
 	err = rdma_resolve_addr(path->cm.id, NULL,
-				(struct sockaddr *)&dtr_path(transport)->peer_addr,
+				(struct sockaddr *)&dtr_drbd_path(transport)->peer_addr,
 				2000);
 	if (err) {
 		tr_err(transport, "rdma_resolve_addr error %d\n", err);
@@ -1553,7 +1554,7 @@ static int dtr_create_listener(struct drbd_transport *transport, struct drbd_lis
 	}
 	strcpy(listener->cm.name, "listen");
 
-	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &dtr_path(transport)->my_addr);
+	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &dtr_drbd_path(transport)->my_addr);
 	if (err) {
 		tr_err(transport, "rdma_bind_addr error %d\n", err);
 		goto out;
@@ -1565,7 +1566,7 @@ static int dtr_create_listener(struct drbd_transport *transport, struct drbd_lis
 		goto out;
 	}
 
-	listener->listener.listen_addr = dtr_path(transport)->my_addr;
+	listener->listener.listen_addr = dtr_drbd_path(transport)->my_addr;
 	listener->listener.destroy = dtr_destroy_listener;
 
 	*ret_listener = &listener->listener;
@@ -1693,7 +1694,7 @@ retry:
 			struct sockaddr_in *from_sin, *to_sin;
 
 			from_sin = (struct sockaddr_in *)&peer_addr;
-			to_sin = (struct sockaddr_in *)&dtr_path(transport)->my_addr;
+			to_sin = (struct sockaddr_in *)&dtr_drbd_path(transport)->my_addr;
 			tr_err(transport, "Closing unexpected connection from "
 				 "%pI4 to port %u\n",
 				 &from_sin->sin_addr,
@@ -1732,7 +1733,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	int timeout, err;
 	bool ok;
 
-	if (!dtr_path(transport))
+	if (!dtr_drbd_path(transport))
 		return -EDESTADDRREQ;
 	rdma_transport->in_use = true;
 
@@ -2168,7 +2169,7 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *d
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct drbd_path *existing = dtr_path(transport);
+	struct drbd_path *existing = dtr_drbd_path(transport);
 
 	if (rdma_transport->in_use)
 		return -EBUSY;
