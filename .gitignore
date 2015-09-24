@@ -19,6 +19,7 @@ drbd/.compat_test.*.stdout
 drbd/compat/.*.cmd
 drbd/.config.timestamp
 drbd/.kernel.config.gz
+drbd/.drbd_git_revision
 drbd/.drbd_kernelrelease
 drbd/.drbd_kernelrelease.new
 drbd/.tmp_versions
@@ -28,3 +29,6 @@ drbd/drbd.mod.c
 drbd/drbd_buildtag.c
 drbd/modules.order
 drbd/linux/drbd_config.h
+
+drbd/cscope.out
+drbd/tags
