@@ -244,7 +244,6 @@ struct dtr_stream {
 	unsigned int tx_sequence;
 	struct dtr_path *path;  /* TEMP. remove me later */
 	struct drbd_rdma_transport *rdma_transport;
-	struct dtr_path path_storage; /* remove me later */
 };
 
 struct drbd_rdma_transport {
@@ -290,7 +289,8 @@ static void dtr_recycle_rx_desc(struct dtr_stream *rdma_stream,
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
 static void dtr_free_rx_desc(struct dtr_stream *rdma_stream, struct drbd_rdma_rx_desc *rx_desc);
-static void dtr_disconnect_stream(struct dtr_stream *rdma_stream);
+static void dtr_disconnect_path(struct dtr_path *path);
+static void dtr_free_path(struct dtr_path *path);
 static void dtr_free_stream(struct dtr_stream *rdma_stream);
 static bool dtr_connection_established(struct drbd_transport *, struct dtr_stream **, struct dtr_stream **);
 static bool dtr_stream_ok_or_free(struct dtr_stream **rdma_stream);
@@ -354,6 +354,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	enum drbd_stream i;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		dtr_free_path(rdma_transport->stream[i]->path);
 		dtr_free_stream(rdma_transport->stream[i]);
 		rdma_transport->stream[i] = NULL;
 	}
@@ -1341,13 +1342,15 @@ static void dtr_drain_cq(struct dtr_stream *rdma_stream, struct ib_cq *cq,
 	}
 }
 
-static void dtr_disconnect_stream(struct dtr_stream *rdma_stream)
+static void dtr_disconnect_path(struct dtr_path *path)
 {
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_stream *rdma_stream;
 	int err;
 
-	if (!rdma_stream || !path->cm.id)
+	if (!path || !path->cm.id)
 		return;
+
+	rdma_stream = path->stream;
 
 	err = rdma_disconnect(path->cm.id);
 	if (err) {
@@ -1374,16 +1377,12 @@ static void dtr_disconnect_stream(struct dtr_stream *rdma_stream)
 		pr_warn("WARN: not properly disconnected\n");
 }
 
-static void dtr_free_stream(struct dtr_stream *rdma_stream)
+static void dtr_free_path(struct dtr_path *path)
 {
-	struct dtr_path *path;
-
-	if (!rdma_stream)
+	if (!path)
 		return;
 
-	path = rdma_stream->path;
-
-	dtr_disconnect_stream(rdma_stream);
+	dtr_disconnect_path(path);
 
 	if (path->dma_mr) {
 		ib_dereg_mr(path->dma_mr);
@@ -1412,6 +1411,14 @@ static void dtr_free_stream(struct dtr_stream *rdma_stream)
 		rdma_destroy_id(path->cm.id);
 		path->cm.id = NULL;
 	}
+
+	kfree(path);
+}
+
+static void dtr_free_stream(struct dtr_stream *rdma_stream)
+{
+	if (!rdma_stream)
+		return;
 
 	// pr_info("%s: dtr_free_stream() %p\n", rdma_stream->name, rdma_stream);
 	rdma_stream->name[0] = 'X';
@@ -1480,7 +1487,9 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_stream *
 	if (!rdma_stream)
 		goto out;
 
-	path = &rdma_stream->path_storage;
+	path = kzalloc(sizeof(*path), GFP_KERNEL);
+	if (!path)
+		goto out;
 
 	err = dtr_create_cm_id(&path->cm);
 	if (err) {
@@ -1544,6 +1553,7 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_stream *
 	return 0;
 
 out:
+	dtr_free_path(path);
 	dtr_free_stream(rdma_stream);
 	return err;
 }
@@ -1636,6 +1646,7 @@ static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct dtr_stream **r
 	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jotter */
 
 retry:
+	dtr_free_path(rdma_stream->path);
 	dtr_free_stream(rdma_stream);
 	rdma_stream = NULL;
 
@@ -1663,7 +1674,11 @@ retry:
 		if (!rdma_stream)
 			return -ENOMEM;
 
-		path = &rdma_stream->path_storage;
+		path = kzalloc(sizeof(*path), GFP_KERNEL);
+		if (!path) {
+			kfree(rdma_stream);
+			return -ENOMEM;
+		}
 
 		path->cm.state = IDLE;
 		init_waitqueue_head(&path->cm.state_wq);
@@ -1735,6 +1750,7 @@ retry:
 	return 0;
 
 err:
+	dtr_free_path(rdma_stream->path);
 	dtr_free_stream(rdma_stream);
 	return err;
 
@@ -1810,6 +1826,7 @@ retry:
 			case P_INITIAL_DATA:
 				if (data_stream) {
 					tr_warn(transport, "initial packet S crossed\n");
+					dtr_free_path(data_stream->path);
 					dtr_free_stream(data_stream);
 					data_stream = s;
 					goto randomize;
@@ -1820,6 +1837,7 @@ retry:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
 				if (control_stream) {
 					tr_warn(transport, "initial packet M crossed\n");
+					dtr_free_path(data_stream->path);
 					dtr_free_stream(control_stream);
 					control_stream = s;
 					goto randomize;
@@ -1828,6 +1846,7 @@ retry:
 				break;
 			default:
 				tr_warn(transport, "Error receiving initial packet\n");
+				dtr_free_path(s->path);
 				dtr_free_stream(s);
 randomize:
 				if (prandom_u32() & 1)
@@ -1885,10 +1904,14 @@ out_eagain:
 	err = -EAGAIN;
 out:
 	drbd_put_listener(&waiter.waiter);
-	if (data_stream)
+	if (data_stream) {
+		dtr_free_path(data_stream->path);
 		dtr_free_stream(data_stream);
-	if (control_stream)
+	}
+	if (control_stream) {
+		dtr_free_path(control_stream->path);
 		dtr_free_stream(control_stream);
+	}
 
 	return err;
 }
@@ -1928,6 +1951,7 @@ static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream 
 static bool dtr_stream_ok_or_free(struct dtr_stream **rdma_stream)
 {
 	if (!__dtr_stream_ok(*rdma_stream)) {
+		dtr_free_path((*rdma_stream)->path);
 		dtr_free_stream(*rdma_stream);
 		*rdma_stream = NULL;
 		return false;
