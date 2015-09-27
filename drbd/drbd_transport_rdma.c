@@ -206,6 +206,7 @@ struct dtr_path {
 
 	struct ib_mr *dma_mr;
 	struct drbd_rdma_transport *rdma_transport;
+	struct dtr_stream *stream; /* remove me later */
 };
 
 struct dtr_stream {
@@ -890,13 +891,12 @@ disconnect:
 	wake_up_interruptible(&rdma_stream->send_wq);
 }
 
-static int dtr_create_qp(struct dtr_stream *rdma_stream)
+static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_max)
 {
-	struct dtr_path *path = rdma_stream->path;
 	int err;
 	struct ib_qp_init_attr init_attr = {
-		.cap.max_send_wr = rdma_stream->tx_descs_max,
-		.cap.max_recv_wr = rdma_stream->rx_descs_max,
+		.cap.max_send_wr = tx_descs_max,
+		.cap.max_recv_wr = rx_descs_max,
 		.cap.max_recv_sge = 1, /* We only receive into single pages */
 		.cap.max_send_sge = DTR_MAX_TX_SGES,
 		.qp_type = IB_QPT_RC,
@@ -907,7 +907,7 @@ static int dtr_create_qp(struct dtr_stream *rdma_stream)
 
 	err = rdma_create_qp(path->cm.id, path->pd, &init_attr);
 	if (err) {
-		tr_err(&rdma_stream->rdma_transport->transport,
+		tr_err(&path->rdma_transport->transport,
 				"rdma_create_qp failed: %d\n", err);
 		return err;
 	}
@@ -1168,14 +1168,13 @@ retry:
 }
 
 /* allocate rdma specific resources for the stream */
-static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
-				    struct drbd_transport *transport)
+static int dtr_init_stream(struct dtr_stream *rdma_stream,
+			   struct drbd_transport *transport)
 {
 	struct net_conf *nc;
-	int i, err;
+	int err;
 	unsigned int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
 	unsigned int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
-	struct dtr_path *path = rdma_stream->path;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -1183,7 +1182,7 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 		rcu_read_unlock();
 		tr_err(transport, "need net_conf\n");
 		err = -EINVAL;
-		goto pd_failed;
+		goto out;
 	}
 
 	if (nc->rcvbuf_size)
@@ -1201,7 +1200,7 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 		tr_err(transport, "This is due to rcvbuf-size = %d.\n", rcvbuf_size);
 		rcu_read_unlock();
 		err = -EINVAL;
-		goto pd_failed;
+		goto out;
 	}
 
 	rcu_read_unlock();
@@ -1228,9 +1227,22 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 	init_waitqueue_head(&rdma_stream->send_wq);
 	rdma_stream->rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-
-	// pr_info("creating stream: %s\n", rdma_stream->name);
 	rdma_stream->tx_sequence = 1;
+
+ out:
+	return err;
+}
+
+/* allocate rdma specific resources for a path */
+static int dtr_init_path(struct dtr_path *path,
+			 struct drbd_transport *transport)
+{
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+	int err, rx_descs_max, tx_descs_max;
+
+	tx_descs_max = path->stream->tx_descs_max;
+	rx_descs_max = path->stream->rx_descs_max;
 
 	/* alloc protection domain (PD) */
 	path->pd = ib_alloc_pd(path->cm.id->device);
@@ -1242,8 +1254,8 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 
 	/* create recv completion queue (CQ) */
 	path->recv_cq = ib_create_cq(path->cm.id->device,
-			dtr_rx_cq_event_handler, NULL, rdma_stream,
-			rdma_stream->rx_descs_max, 0);
+			dtr_rx_cq_event_handler, NULL, path->stream,
+			rx_descs_max, 0);
 	if (IS_ERR(path->recv_cq)) {
 		tr_err(transport, "ib_create_cq recv failed\n");
 		err = PTR_ERR(path->recv_cq);
@@ -1252,10 +1264,10 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 
 	/* create send completion queue (CQ) */
 	path->send_cq = ib_create_cq(path->cm.id->device,
-			dtr_tx_cq_event_handler, NULL, rdma_stream,
-			rdma_stream->rx_descs_max, 0);
+			dtr_tx_cq_event_handler, NULL, path->stream,
+			tx_descs_max, 0);
 	if (IS_ERR(path->send_cq)) {
-		tr_err(&rdma_stream->rdma_transport->transport, "ib_create_cq send failed\n");
+		tr_err(transport, "ib_create_cq send failed\n");
 		err = PTR_ERR(path->send_cq);
 		goto send_cq_failed;
 	}
@@ -1274,7 +1286,7 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 	}
 
 	/* create a queue pair (QP) */
-	err = dtr_create_qp(rdma_stream);
+	err = dtr_create_qp(path, rx_descs_max, tx_descs_max);
 	if (err) {
 		tr_err(transport, "create_qp error %d\n", err);
 		goto createqp_failed;
@@ -1291,11 +1303,11 @@ static int dtr_alloc_rdma_resources(struct dtr_stream *rdma_stream,
 		goto dma_failed;
 	}
 
+	path->rdma_transport = rdma_transport;
+	/* öö TODO
 	for (i = 0; i < INITIAL_RX_DESCS; i++)
-		dtr_create_some_rx_desc(rdma_stream);
-
-	INIT_LIST_HEAD(&rdma_stream->rx_descs);
-	spin_lock_init(&rdma_stream->rx_descs_lock);
+		dtr_create_some_rx_desc(path);
+	*/
 
 	return 0;
 
@@ -1315,6 +1327,7 @@ recv_cq_failed:
 pd_failed:
 	return err;
 }
+
 
 static void dtr_drain_cq(struct dtr_stream *rdma_stream, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_stream *, void *))
@@ -1490,7 +1503,13 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_stream *
 	if (path->cm.state != ROUTE_RESOLVED)
 		goto out; /* Happens if peer not reachable */
 
-	err = dtr_alloc_rdma_resources(rdma_stream, transport);
+
+	err = dtr_init_stream(rdma_stream, transport);
+	if (err)
+		goto out;
+
+	path->stream = rdma_stream;
+	err = dtr_init_path(path, transport);
 	if (err) {
 		tr_err(transport, "failed allocating resources %d\n", err);
 		goto out;
@@ -1651,7 +1670,12 @@ retry:
 		cm_id->context = &path->cm;
 		path->cm.id = cm_id;
 
-		err = dtr_alloc_rdma_resources(rdma_stream, transport);
+		err = dtr_init_stream(rdma_stream, transport);
+		if (err)
+			goto err;
+
+		path->stream = rdma_stream;
+		err = dtr_init_path(path, transport);
 		if (err) {
 			tr_err(transport, "failed allocating stream resources %d\n", err);
 			goto err;
