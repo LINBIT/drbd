@@ -1,0 +1,5 @@
+.idr.o.cmd
+idr.o
+
+.blkdev_issue_zeroout.o.cmd
+blkdev_issue_zeroout.o
