@@ -13,9 +13,12 @@ drbd/drbd.ko
 drbd/drbd.ko.unsigned
 drbd/drbd_transport_tcp.ko
 drbd/drbd_transport_tcp.ko.unsigned
+drbd/drbd_transport_tcp.mod.c
 drbd/.*.cmd
-drbd/compat/.*.cmd
-drbd/.compat.h.d
+drbd/..compat_test.*.d
+drbd/.compat_test.*.result
+drbd/.compat_test.*.stderr
+drbd/.compat_test.*.stdout
 drbd/.config.timestamp
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
