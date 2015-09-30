@@ -187,7 +187,6 @@ struct dtr_cm {
 	struct rdma_cm_id *id;
 	enum drbd_rdma_state state;
 	wait_queue_head_t state_wq;
-	char name[8]; /* debugging purpose */
 };
 
 struct dtr_path {
@@ -1480,7 +1479,6 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_cm **ret
 		tr_err(transport, "rdma_create_id() failed %d\n", err);
 		goto out;
 	}
-	strcpy(cm->name, "new");
 
 	err = rdma_resolve_addr(cm->id, NULL,
 				(struct sockaddr *)&dtr_drbd_path(transport)->peer_addr,
@@ -1552,7 +1550,6 @@ static int dtr_create_listener(struct drbd_transport *transport, struct drbd_lis
 		tr_err(transport, "rdma_create_id() failed\n");
 		goto out;
 	}
-	strcpy(listener->cm.name, "listen");
 
 	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &dtr_drbd_path(transport)->my_addr);
 	if (err) {
@@ -1646,8 +1643,6 @@ retry:
 		init_waitqueue_head(&cm->state_wq);
 		cm_id->context = cm;
 		cm->id = cm_id;
-
-		strcpy(cm->name, "est");
 
 		memset(&conn_param, 0, sizeof conn_param);
 		conn_param.responder_resources = 1;
