@@ -1124,35 +1124,15 @@ static void dtr_recycle_rx_desc(struct dtr_stream *rdma_stream,
 	*pp_rx_desc = NULL;
 }
 
-static int dtr_post_tx_desc(struct dtr_stream *rdma_stream,
-			    enum dtr_stream_nr stream_nr,
-			    struct drbd_rdma_tx_desc *tx_desc)
+static int __dtr_post_tx_desc(struct dtr_path *path,
+			      enum dtr_stream_nr stream_nr,
+			      struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-	struct dtr_path *path = rdma_stream->path;
+	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct ib_device *device = path->cm->id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	union dtr_immediate immediate;
-	long t;
 	int i, err;
-
-retry:
-	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max &&
-			atomic_read(&rdma_stream->peer_rx_descs),
-			rdma_stream->send_timeout);
-
-	if (t == 0) {
-		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-		enum drbd_stream stream = stream_nr; /* öö TODO clamp */
-
-		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
-			return -EAGAIN;
-		goto retry;
-	} else if (t < 0)
-		return -EINTR;
-
-	tx_desc->stream = rdma_stream;
 
 	immediate = (union dtr_immediate) {
 		.stream = stream_nr,
@@ -1173,18 +1153,46 @@ retry:
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 
 	err = ib_post_send(path->qp, &send_wr, &send_wr_failed);
-	if (err) {
+	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 
-		return err;
-	}
+	return err;
+}
+
+static int dtr_post_tx_desc(struct dtr_stream *rdma_stream,
+			    enum dtr_stream_nr stream_nr,
+			    struct drbd_rdma_tx_desc *tx_desc)
+{
+	struct dtr_path *path = rdma_stream->path;
+	long t;
+	int err;
+
+retry:
+	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
+			atomic_read(&rdma_stream->tx_descs_posted) < rdma_stream->tx_descs_max &&
+			atomic_read(&rdma_stream->peer_rx_descs),
+			rdma_stream->send_timeout);
+
+	if (t == 0) {
+		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
+		enum drbd_stream stream = stream_nr;
+
+		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
+			return -EAGAIN;
+		goto retry;
+	} else if (t < 0)
+		return -EINTR;
+
+	tx_desc->stream = rdma_stream;
+
+	err = __dtr_post_tx_desc(path, stream_nr, tx_desc);
 
 	atomic_inc(&rdma_stream->tx_descs_posted);
 	atomic_dec(&rdma_stream->peer_rx_descs);
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 
-	return 0;
+	return err;
 }
 
 /* allocate rdma specific resources for the stream */
