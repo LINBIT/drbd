@@ -192,6 +192,8 @@ struct dtr_cm {
 struct dtr_path {
 	struct drbd_path path;
 
+	struct work_struct connect_work;
+
 	struct dtr_cm *cm;
 
 	struct ib_cq *recv_cq;
@@ -200,6 +202,7 @@ struct dtr_path {
 	struct ib_qp *qp;
 
 	struct ib_mr *dma_mr;
+
 	struct drbd_rdma_transport *rdma_transport;
 };
 
@@ -242,7 +245,10 @@ struct dtr_stream {
 struct drbd_rdma_transport {
 	struct drbd_transport transport;
 	struct dtr_stream *stream[2];
-	bool in_use;
+	bool active; /* connect() returned no error. I.e. C_CONNECTING or C_CONNECTED */
+
+	atomic_t first_path_connect_err;
+	struct completion connected;
 };
 
 struct dtr_listener {
@@ -344,7 +350,7 @@ static int dtr_init(struct drbd_transport *transport)
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		rdma_transport->stream[i] = NULL;
 
-	rdma_transport->in_use = false;
+	rdma_transport->active = false;
 
 	return 0;
 }
@@ -362,7 +368,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		dtr_free_stream(rdma_transport->stream[i]);
 		rdma_transport->stream[i] = NULL;
 	}
-	rdma_transport->in_use = false;
+	rdma_transport->active = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
 		dtr_remove_path(transport, &path->path);
@@ -1708,23 +1714,14 @@ retry_locked:
 	goto retry;
 }
 
-
-/* RCK: this way of connect requires IBoIP, but I guess that is an assumption we can make
- * If this beast will ever work, we can think about all the other ways/possible fallbacks */
-static int dtr_connect(struct drbd_transport *transport)
+static void dtr_connect_path_work_fn(struct work_struct *work)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-
-	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
-	struct dtr_path *path = dtr_path(rdma_transport);
-	struct net_conf *nc;
+	struct dtr_path *path = container_of(work, struct dtr_path, connect_work);
+	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_transport *transport = &rdma_transport->transport;
 	struct dtr_waiter waiter;
-	int timeout, err;
-
-	if (!path)
-		return -EDESTADDRREQ;
-	rdma_transport->in_use = true;
+	bool resolve_conflicts = false;
+	int p, err;
 
 	waiter.waiter.transport = transport;
 	waiter.cm = NULL;
@@ -1733,7 +1730,88 @@ static int dtr_connect(struct drbd_transport *transport)
 				(struct sockaddr *)&path->path.my_addr,
 				dtr_create_listener);
 	if (err)
-		return err;
+		goto out;
+
+	while (true) {
+		struct dtr_cm *cm = NULL;
+
+		err = dtr_try_connect(path, &cm);
+		if (err < 0 && err != -EAGAIN)
+			goto out;
+
+		if (cm) {
+			resolve_conflicts = false;
+			path->cm = cm;
+			break;
+		}
+
+		err = dtr_wait_for_connect(&waiter, &cm);
+		if (err < 0 && err != -EAGAIN)
+			goto out;
+
+		if (cm) {
+			resolve_conflicts = true;
+			path->cm = cm;
+			break;
+		}
+
+		if (drbd_should_abort_listening(transport))
+			goto out_eagain;
+
+	}
+
+	drbd_put_listener(&waiter.waiter);
+
+	dtr_init_path(path, transport);
+
+	if (0) {
+out_eagain:
+		err = -EAGAIN;
+	}
+	if (err) {
+out:
+		drbd_put_listener(&waiter.waiter);
+		dtr_uninit_path(path);
+	}
+
+	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
+	if (p == 1 && err == 0) {
+		/* I was the first! */
+
+		__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
+		__dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
+		err = dtr_send_flow_control_msg(rdma_transport);
+		if (err < 0) {
+			tr_err(transport, "sending first flow_control_msg() failed\n");
+			goto out_eagain;
+		}
+
+		if (resolve_conflicts)
+			set_bit(RESOLVE_CONFLICTS, &transport->flags);
+		else
+			clear_bit(RESOLVE_CONFLICTS, &transport->flags);
+
+		complete(&rdma_transport->connected);
+	}
+}
+
+static int dtr_connect(struct drbd_transport *transport)
+{
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+
+	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
+	struct drbd_path *drbd_path;
+	struct dtr_path *path;
+	struct net_conf *nc;
+	int timeout, n, err = -ENOMEM;
+
+	n = 0;
+	list_for_each_entry(drbd_path, &transport->paths, list)
+		n++;
+
+	if (n == 0)
+		return -EDESTADDRREQ;
 
 	data_stream = kzalloc(sizeof(*data_stream), GFP_KERNEL);
 	if (!data_stream)
@@ -1769,60 +1847,35 @@ static int dtr_connect(struct drbd_transport *transport)
 	data_stream->send_timeout = timeout;
 	control_stream->send_timeout = timeout;
 
-	while (true) {
-		struct dtr_cm *cm = NULL;
+	atomic_set(&rdma_transport->first_path_connect_err, 1);
+	init_completion(&rdma_transport->connected);
 
-		err = dtr_try_connect(dtr_path(rdma_transport), &cm);
-		if (err < 0 && err != -EAGAIN)
-			goto out;
+	rdma_transport->active = true;
 
-		if (cm) {
-			clear_bit(RESOLVE_CONFLICTS, &transport->flags);
-			path->cm = cm;
-			break;
+	if (n == 1) {
+		path = dtr_path(rdma_transport);
+		dtr_connect_path_work_fn(&path->connect_work);
+	} else /* n > 1 */ {
+		list_for_each_entry(drbd_path, &transport->paths, list) {
+			path = container_of(drbd_path, struct dtr_path, path);
+			queue_work(system_long_wq, &path->connect_work);
 		}
-
-		err = dtr_wait_for_connect(&waiter, &cm);
-		if (err < 0 && err != -EAGAIN)
-			goto out;
-
-		if (cm) {
-			set_bit(RESOLVE_CONFLICTS, &transport->flags);
-			path->cm = cm;
-			break;
-		}
-
-		if (drbd_should_abort_listening(transport))
-			goto out_eagain;
-
 	}
 
-	drbd_put_listener(&waiter.waiter);
+	wait_for_completion_interruptible(&rdma_transport->connected);
 
-	dtr_init_path(path, transport);
+	err = atomic_read(&rdma_transport->first_path_connect_err);
 
-	/* Create rx_descs on both streams. At least one is neccesary to
-	   receive the first flow_control message. */
-	__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
-	__dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
-	err = dtr_send_flow_control_msg(rdma_transport);
-	if (err < 0) {
-		tr_err(transport, "sending first flow_control_msg() failed\n");
-		goto out_eagain;
-	}
-
-	return 0;
-
-out_eagain:
-	err = -EAGAIN;
+	if (err) {
 out:
-	drbd_put_listener(&waiter.waiter);
-	dtr_free_stream(data_stream);
-	dtr_free_stream(control_stream);
-	dtr_uninit_path(path);
+		rdma_transport->active = false;
+		/* TODO: abort all the path connect works */
+		dtr_free_stream(data_stream);
+		dtr_free_stream(control_stream);
 
-	rdma_transport->stream[DATA_STREAM] = NULL;
-	rdma_transport->stream[CONTROL_STREAM] = NULL;
+		rdma_transport->stream[DATA_STREAM] = NULL;
+		rdma_transport->stream[CONTROL_STREAM] = NULL;
+	}
 
 	return err;
 }
@@ -2094,31 +2147,46 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
-	if (!list_empty(&transport->paths))
-		return -EEXIST;
-
 	/* initialize private parts of path */
 	path->rdma_transport = rdma_transport;
+	INIT_WORK(&path->connect_work, dtr_connect_path_work_fn);
 
 	list_add(&drbd_path->list, &transport->paths);
+
+	if (rdma_transport->active)
+		queue_work(system_long_wq, &path->connect_work);
 
 	return 0;
 }
 
-static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *del_path)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct drbd_path *existing = dtr_drbd_path(transport);
+	struct drbd_path *drbd_path, *connected_path = NULL;
+	int n = 0, connected = 0, match = 0;
 
-	if (rdma_transport->in_use)
-		return -EBUSY;
-
-	if (drbd_path && drbd_path == existing) {
+	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
+		if (dtr_path_ok(path)) {
+			connected++;
+			connected_path = drbd_path;
+		}
+		if (del_path == drbd_path)
+			match++;
+		n++;
+	}
+
+	if (rdma_transport->active &&
+	    ((connected == 1 && connected_path == del_path) || n == 1))
+		return -EBUSY;
+
+	if (match) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+
+		list_del_init(&del_path->list);
 		dtr_uninit_path(path);
-		list_del_init(&existing->list);
 		return 0;
 	}
 
