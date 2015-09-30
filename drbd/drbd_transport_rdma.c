@@ -1464,8 +1464,9 @@ static void dtr_free_stream(struct dtr_stream *rdma_stream)
 	kfree(rdma_stream);
 }
 
-static int dtr_try_connect(struct drbd_transport *transport, struct dtr_cm **ret_cm)
+static int dtr_try_connect(struct dtr_path *path, struct dtr_cm **ret_cm)
 {
+	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct rdma_conn_param conn_param;
 	struct dtr_cm *cm;
 	int err = -ENOMEM;
@@ -1481,7 +1482,7 @@ static int dtr_try_connect(struct drbd_transport *transport, struct dtr_cm **ret
 	}
 
 	err = rdma_resolve_addr(cm->id, NULL,
-				(struct sockaddr *)&dtr_drbd_path(transport)->peer_addr,
+				(struct sockaddr *)&path->path.peer_addr,
 				2000);
 	if (err) {
 		tr_err(transport, "rdma_resolve_addr error %d\n", err);
@@ -1771,7 +1772,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	while (true) {
 		struct dtr_cm *cm = NULL;
 
-		err = dtr_try_connect(transport, &cm);
+		err = dtr_try_connect(dtr_path(rdma_transport), &cm);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
