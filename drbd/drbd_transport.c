@@ -148,25 +148,24 @@ static bool addr_and_port_equal(const struct sockaddr_storage *addr1, const stru
 	return false;
 }
 
-static struct drbd_listener *find_listener(struct drbd_connection *connection)
+static struct drbd_listener *find_listener(struct drbd_connection *connection,
+					   const struct sockaddr_storage *addr)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener;
-	struct drbd_path *path;
 
 	list_for_each_entry(listener, &resource->listeners, list) {
-		list_for_each_entry(path, &connection->transport.paths, list) {
-			if (addr_and_port_equal(&listener->listen_addr, &path->my_addr)) {
-				kref_get(&listener->kref);
-				return listener;
-			}
+		if (addr_and_port_equal(&listener->listen_addr, addr)) {
+			kref_get(&listener->kref);
+			return listener;
 		}
 	}
 	return NULL;
 }
 
 int drbd_get_listener(struct drbd_waiter *waiter,
-		      int (*create_listener)(struct drbd_transport *, struct drbd_listener **))
+		      const struct sockaddr *addr,
+		      int (*create_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener **))
 {
 	struct drbd_connection *connection =
 		container_of(waiter->transport, struct drbd_connection, transport);
@@ -178,7 +177,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 
 	while (1) {
 		spin_lock_bh(&resource->listeners_lock);
-		listener = find_listener(connection);
+		listener = find_listener(connection, (struct sockaddr_storage *)addr);
 		if (!listener && new_listener) {
 			list_add(&new_listener->list, &resource->listeners);
 			listener = new_listener;
@@ -196,7 +195,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		if (listener)
 			return 0;
 
-		err = create_listener(waiter->transport, &new_listener);
+		err = create_listener(waiter->transport, addr, &new_listener);
 		if (err) {
 			if (err == -EADDRINUSE && ++tries < 3) {
 				schedule_timeout_uninterruptible(HZ / 20);

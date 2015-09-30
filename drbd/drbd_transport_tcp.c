@@ -674,7 +674,9 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtt_create_listener(struct drbd_transport *transport, struct drbd_listener **ret_listener)
+static int dtt_create_listener(struct drbd_transport *transport,
+			       const struct sockaddr *addr,
+			       struct drbd_listener **ret_listener)
 {
 	int err, sndbuf_size, rcvbuf_size;
 	struct sockaddr_storage my_addr;
@@ -693,7 +695,7 @@ static int dtt_create_listener(struct drbd_transport *transport, struct drbd_lis
 	rcvbuf_size = nc->rcvbuf_size;
 	rcu_read_unlock();
 
-	my_addr = dtt_path(transport)->my_addr;
+	my_addr = *(struct sockaddr_storage *)addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
@@ -760,7 +762,7 @@ static int dtt_connect(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-
+	struct drbd_path *path = dtt_path(transport);
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
@@ -776,7 +778,8 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	waiter.waiter.transport = transport;
 	waiter.socket = NULL;
-	err = drbd_get_listener(&waiter.waiter, dtt_create_listener);
+	err = drbd_get_listener(&waiter.waiter, (struct sockaddr *)&path->my_addr,
+				dtt_create_listener);
 	if (err)
 		return err;
 
