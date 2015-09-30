@@ -237,7 +237,6 @@ struct dtr_stream {
 	long recv_timeout;
 	char name[8]; /* "control" or "data" */
 	unsigned int tx_sequence;
-	struct dtr_path *path;  /* TEMP. remove me later */
 	struct drbd_rdma_transport *rdma_transport;
 };
 
@@ -417,7 +416,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_transport);
 	struct page *page, *head = NULL, *tail = NULL;
 	int i = 0;
 
@@ -566,7 +565,7 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[stream];
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_transport);
 	int err;
 
 	if (path->cm->state > CONNECTED)
@@ -982,7 +981,7 @@ static int dtr_create_some_rx_desc(struct dtr_stream *rdma_stream)
 {
 	struct drbd_transport *transport = &rdma_stream->rdma_transport->transport;
 	struct drbd_rdma_rx_desc *rx_desc;
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_stream->rdma_transport);
 	struct ib_device *device = path->cm->id->device;
 	struct page *page;
 	void *pos;
@@ -1106,7 +1105,7 @@ static void dtr_repost_rx_desc(struct dtr_path *path,
 static void dtr_recycle_rx_desc(struct dtr_stream *rdma_stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc)
 {
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_stream->rdma_transport);
 	int max_posted = rdma_stream->rx_descs_max;
 	struct drbd_rdma_rx_desc *rx_desc = *pp_rx_desc;
 
@@ -1163,7 +1162,7 @@ static int dtr_post_tx_desc(struct dtr_stream *rdma_stream,
 			    enum dtr_stream_nr stream_nr,
 			    struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_stream->rdma_transport);
 	long t;
 	int err;
 
@@ -1802,9 +1801,6 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	dtr_init_path(path, transport);
 
-	data_stream->path = path;
-	control_stream->path = path;
-
 	/* Create rx_descs on both streams. At least one is neccesary to
 	   receive the first flow_control message. */
 	__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
@@ -1849,9 +1845,13 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 
 static bool __dtr_stream_ok(struct dtr_stream *rdma_stream)
 {
-	return rdma_stream &&
-		rdma_stream->path->cm->id &&
-		rdma_stream->path->cm->state == CONNECTED;
+	struct dtr_cm *cm;
+
+	if (!rdma_stream)
+		return false;
+
+	cm = dtr_path(rdma_stream->rdma_transport)->cm;
+	return cm->id && cm->state == CONNECTED;
 }
 
 static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream stream)
@@ -1869,7 +1869,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[stream];
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_transport);
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_device *device;
 	int err;
@@ -1987,7 +1987,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_transport);
 #if SENDER_COMPACTS_BVECS
 	int start = 0, sges = 0, size_tx_desc = 0, remaining = 0, err;
 #endif
