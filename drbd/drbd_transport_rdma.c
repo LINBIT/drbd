@@ -279,6 +279,7 @@ static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
+static int __dtr_post_tx_desc(struct dtr_path *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_stream *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
 static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
@@ -375,11 +376,10 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 }
 
 
-static int dtr_send(struct dtr_stream *rdma_stream,
-		    enum dtr_stream_nr stream_nr,
+static int dtr_send(struct drbd_rdma_transport *rdma_transport,
 		    void *buf, size_t size)
 {
-	struct dtr_path *path = rdma_stream->path;
+	struct dtr_path *path = dtr_path(rdma_transport);
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
@@ -404,8 +404,9 @@ static int dtr_send(struct dtr_stream *rdma_stream,
 	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
 	tx_desc->sge[0].lkey = path->dma_mr->lkey;
 	tx_desc->sge[0].length = size;
+	tx_desc->stream = NULL; /* ST_FLOW_CTRL does not account to a stream */
 
-	dtr_post_tx_desc(rdma_stream, stream_nr, tx_desc);
+	__dtr_post_tx_desc(path, ST_FLOW_CTRL, tx_desc);
 
 	return size;
 }
@@ -729,7 +730,7 @@ static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
 	return false;
 }
 
-static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport, enum dtr_stream_nr stream_nr)
+static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport)
 {
 	struct dtr_stream *rdma_stream;
 	struct dtr_flow_control msg;
@@ -746,8 +747,7 @@ static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport,
 		msg.new_rx_descs[i] = cpu_to_be32(n);
 	}
 
-	rdma_stream = rdma_transport->stream[stream_nr];
-	return dtr_send(rdma_stream, ST_FLOW_CTRL, &msg, sizeof(msg));
+	return dtr_send(rdma_transport, &msg, sizeof(msg));
 }
 
 static void dtr_flow_control(struct dtr_stream *rdma_stream)
@@ -757,7 +757,7 @@ static void dtr_flow_control(struct dtr_stream *rdma_stream)
 
 	n = rdma_stream->rx_descs_posted - known_to_peer;
 	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
-		dtr_send_flow_control_msg(rdma_stream->rdma_transport, CONTROL_STREAM);
+		dtr_send_flow_control_msg(rdma_stream->rdma_transport);
 }
 
 static void dtr_got_flow_control_msg(struct drbd_rdma_transport *rdma_transport,
@@ -1809,7 +1809,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	   receive the first flow_control message. */
 	__dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 	__dtr_refill_rx_desc(rdma_transport, CONTROL_STREAM);
-	err = dtr_send_flow_control_msg(rdma_transport, DATA_STREAM);
+	err = dtr_send_flow_control_msg(rdma_transport);
 	if (err < 0) {
 		tr_err(transport, "sending first flow_control_msg() failed\n");
 		goto out_eagain;
