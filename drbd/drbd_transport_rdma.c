@@ -1536,11 +1536,13 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtr_create_listener(struct drbd_transport *transport, struct drbd_listener **ret_listener)
+static int dtr_create_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct drbd_listener **ret_listener)
 {
 	struct dtr_listener *listener = NULL;
+	struct sockaddr_storage my_addr;
 	int err = -ENOMEM;
 
+	my_addr = *(struct sockaddr_storage *)addr;
 	listener = kzalloc(sizeof(*listener), GFP_KERNEL);
 	if (!listener)
 		goto out;
@@ -1551,7 +1553,7 @@ static int dtr_create_listener(struct drbd_transport *transport, struct drbd_lis
 		goto out;
 	}
 
-	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *) &dtr_drbd_path(transport)->my_addr);
+	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *)&my_addr);
 	if (err) {
 		tr_err(transport, "rdma_bind_addr error %d\n", err);
 		goto out;
@@ -1563,7 +1565,7 @@ static int dtr_create_listener(struct drbd_transport *transport, struct drbd_lis
 		goto out;
 	}
 
-	listener->listener.listen_addr = dtr_drbd_path(transport)->my_addr;
+	listener->listener.listen_addr = *(struct sockaddr_storage *)addr;
 	listener->listener.destroy = dtr_destroy_listener;
 
 	*ret_listener = &listener->listener;
@@ -1726,7 +1728,9 @@ static int dtr_connect(struct drbd_transport *transport)
 	waiter.waiter.transport = transport;
 	waiter.cm = NULL;
 
-	err = drbd_get_listener(&waiter.waiter, dtr_create_listener);
+	err = drbd_get_listener(&waiter.waiter,
+				(struct sockaddr *)&path->path.my_addr,
+				dtr_create_listener);
 	if (err)
 		return err;
 
