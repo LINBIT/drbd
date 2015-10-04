@@ -277,7 +277,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		int offset, size_t size, unsigned msg_flags);
 static int dtr_send_zc_bio(struct drbd_transport *, struct bio *bio);
 static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
-static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream stream);
+static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
@@ -315,7 +315,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.send_page = dtr_send_page,
 	.send_zc_bio = dtr_send_zc_bio,
 	.recv_pages = dtr_recv_pages,
-	.stream_ok = dtr_stream_nr_ok,
+	.stream_ok = dtr_stream_ok,
 	.hint = dtr_hint,
 	.debugfs_show = dtr_debugfs_show,
 	.add_path = dtr_add_path,
@@ -1896,24 +1896,22 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 	return rdma_transport->stream[stream]->recv_timeout;
 }
 
-static bool __dtr_stream_ok(struct dtr_stream *rdma_stream)
+static bool dtr_transport_ok(struct drbd_transport *transport)
 {
-	struct dtr_cm *cm;
+	struct drbd_path *drbd_path;
 
-	if (!rdma_stream)
-		return false;
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_cm *cm = container_of(drbd_path, struct dtr_path, path)->cm;
 
-	cm = dtr_path(rdma_stream->rdma_transport)->cm;
-	return cm->id && cm->state == CONNECTED;
+		if (cm && cm->id && cm->state == CONNECTED)
+			return true;
+	}
+	return false;
 }
 
-static bool dtr_stream_nr_ok(struct drbd_transport *transport, enum drbd_stream stream)
+static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-	struct dtr_stream *rdma_stream = rdma_transport->stream[stream];
-
-	return __dtr_stream_ok(rdma_stream);
+	return dtr_transport_ok(transport);
 }
 
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream,
