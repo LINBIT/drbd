@@ -283,6 +283,7 @@ static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
+static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_path *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_stream *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
 static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
@@ -430,11 +431,10 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
-	struct dtr_path *path = dtr_path(rdma_transport);
 	struct page *page, *head = NULL, *tail = NULL;
 	int i = 0;
 
-	if (path->cm->state > CONNECTED)
+	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
@@ -491,7 +491,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		set_page_chain_offset(page, rx_desc->data - page_address(page));
 		set_page_chain_size(page, rx_desc->size);
 
-		dtr_free_rx_desc(path, rx_desc);
+		dtr_free_rx_desc(NULL, rx_desc);
 		rdma_stream->rx_descs_allocated--;
 
 		i++;
@@ -579,10 +579,9 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[stream];
-	struct dtr_path *path = dtr_path(rdma_transport);
 	int err;
 
-	if (path->cm->state > CONNECTED)
+	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
 	err = _dtr_recv(rdma_stream, buf, size, flags);
@@ -973,9 +972,10 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	return 0;
 }
 
-static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc)
+static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *rx_desc)
 {
-	struct ib_device *device = rx_desc->path->cm->id->device;
+	struct dtr_path *path = rx_desc->path;
+	struct ib_device *device = path->cm->id->device;
 	int alloc_size = rx_desc->alloc_size;
 
 	if (!rx_desc)
@@ -1936,7 +1936,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 
 	// pr_info("%s: in send_page, size: %zu\n", rdma_stream->name, size);
 
-	if (path->cm->state > CONNECTED)
+	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
 	tx_desc = kmalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
@@ -2047,7 +2047,6 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_stream *rdma_stream = rdma_transport->stream[DATA_STREAM];
-	struct dtr_path *path = dtr_path(rdma_transport);
 #if SENDER_COMPACTS_BVECS
 	int start = 0, sges = 0, size_tx_desc = 0, remaining = 0, err;
 #endif
@@ -2057,7 +2056,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 
 	//tr_info(transport, "in send_zc_bio, size: %d\n", bio->bi_size);
 
-	if (path->cm->state > CONNECTED)
+	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
 #if SENDER_COMPACTS_BVECS
