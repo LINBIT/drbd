@@ -359,10 +359,13 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct dtr_path *path = dtr_path(rdma_transport);
+	struct drbd_path *drbd_path;
 	enum drbd_stream i;
 
-	dtr_disconnect_path(path);
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+		dtr_disconnect_path(path);
+	}
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		dtr_free_stream(rdma_transport->stream[i]);
@@ -371,8 +374,14 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	rdma_transport->active = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
-		dtr_remove_path(transport, &path->path);
-		kfree(path);
+		struct drbd_path *tmp;
+		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
+			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+			list_del_init(&drbd_path->list);
+			dtr_uninit_path(path);
+			kfree(path);
+		}
+
 		/* The transport object itself is embedded into a conneciton.
 		   Do not free it here! The function should better be called
 		   uninit. */
