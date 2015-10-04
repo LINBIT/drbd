@@ -189,6 +189,11 @@ struct dtr_cm {
 	wait_queue_head_t state_wq;
 };
 
+enum {
+	P_CONNECT_WORK =   1 << 0,
+	P_CANCEL_CONNECT = 1 << 1,
+};
+
 struct dtr_path {
 	struct drbd_path path;
 
@@ -204,6 +209,8 @@ struct dtr_path {
 	struct ib_mr *dma_mr;
 
 	struct drbd_rdma_transport *rdma_transport;
+	unsigned long flags;
+	wait_queue_head_t wq;
 };
 
 struct dtr_stream {
@@ -1386,7 +1393,15 @@ static void dtr_disconnect_path(struct dtr_path *path)
 {
 	int err;
 
-	if (!path || !path->cm || !path->cm->id)
+	if (!path)
+		return;
+
+	if (test_bit(P_CONNECT_WORK, &path->flags)) {
+		set_bit(P_CANCEL_CONNECT, &path->flags);
+		wait_event(path->wq, test_bit(P_CONNECT_WORK, &path->flags) == 0);
+	}
+
+	if (!path->cm || !path->cm->id)
 		return;
 
 	err = rdma_disconnect(path->cm->id);
@@ -1767,6 +1782,9 @@ static void dtr_connect_path_work_fn(struct work_struct *work)
 		if (drbd_should_abort_listening(transport))
 			goto out_eagain;
 
+		if (test_bit(P_CANCEL_CONNECT, &path->flags))
+			goto out_eagain;
+
 	}
 
 	drbd_put_listener(&waiter.waiter);
@@ -1802,6 +1820,9 @@ out:
 
 		complete(&rdma_transport->connected);
 	}
+
+	clear_bit(P_CONNECT_WORK, &path->flags);
+	wake_up_all(&path->wq);
 }
 
 static int dtr_connect(struct drbd_transport *transport)
@@ -1863,10 +1884,12 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	if (n == 1) {
 		path = dtr_path(rdma_transport);
+		set_bit(P_CONNECT_WORK, &path->flags);
 		dtr_connect_path_work_fn(&path->connect_work);
 	} else /* n > 1 */ {
 		list_for_each_entry(drbd_path, &transport->paths, list) {
 			path = container_of(drbd_path, struct dtr_path, path);
+			set_bit(P_CONNECT_WORK, &path->flags);
 			queue_work(system_long_wq, &path->connect_work);
 		}
 	}
@@ -1878,7 +1901,12 @@ static int dtr_connect(struct drbd_transport *transport)
 	if (err) {
 out:
 		rdma_transport->active = false;
-		/* TODO: abort all the path connect works */
+
+		list_for_each_entry(drbd_path, &transport->paths, list) {
+			path = container_of(drbd_path, struct dtr_path, path);
+			dtr_disconnect_path(path);
+		}
+
 		dtr_free_stream(data_stream);
 		dtr_free_stream(control_stream);
 
@@ -2156,6 +2184,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	/* initialize private parts of path */
 	path->rdma_transport = rdma_transport;
 	INIT_WORK(&path->connect_work, dtr_connect_path_work_fn);
+	init_waitqueue_head(&path->wq);
 
 	list_add(&drbd_path->list, &transport->paths);
 
