@@ -60,10 +60,37 @@ obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
 # Are we in stage 2 of the build (modpost)?
 
-KBUILD_STAGE ?= $(if $(filter $(srctree)/scripts/Makefile.modpost,$(MAKEFILE_LIST)),modpost)
+# Apparently GNU Make 4.0 strips leading ./ from MAKEFILE_LIST. Yay.
+
+KBUILD_STAGE ?= $(if $(filter      scripts/Makefile.modpost \
+			$(srctree)/scripts/Makefile.modpost,\
+			$(MAKEFILE_LIST)),modpost)
 
 ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
+endif
+
+ifneq ($(KBUILD_STAGE),modpost)
+TEST_C := $(wildcard $(src)/compat/tests/*.c)
+TEST_R := $(TEST_C:$(src)/compat/tests/%.c=$(obj)/.compat_test.%.result)
+$(obj)/.compat_test.%.result: $(src)/compat/tests/%.c $(COMPAT_FORCE)
+	$(call filechk,compat_test_result)
+
+filechk_compat_test_result = \
+	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
+	if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(@D)/.compat_test.$*.o $<	\
+		> $(@D)/.compat_test.$*.stdout 2> $(@D)/.compat_test.$*.stderr; \
+	then									\
+		echo "\#define $$var" ;						\
+	else									\
+		echo "/* \#undef $$var */" ;					\
+	fi
+
+filechk_compat.h = cat $(TEST_R)
+
+$(obj)/compat.h: $(TEST_R) $(COMPAT_FORCE)
+	$(call filechk,compat.h)
+	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
 endif
 
 # remember KERNELRELEASE for install target
@@ -79,29 +106,6 @@ $(shell printf "%s\n"				\
 	"KERNELVERSION=$(KERNELVERSION)"	\
 	> $(src)/.drbd_kernelrelease.new	\
 )
-
-ifneq ($(KBUILD_STAGE),modpost)
-$(obj)/compat.h: $(wildcard $(src)/compat/tests/*.c) $(COMPAT_FORCE)
-	$(call filechk,compat.h)
-	$(Q)touch $@
-	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
-endif
-
-filechk_compat.h = \
-	for cfg in $(sort $(filter-out FORCE,$^)); do \
-	    var=`echo $$cfg | \
-		 sed -e "s,.*/,COMPAT_," -e "s,\.c,," | \
-		 tr -- -a-z _A-Z | \
-		 tr -dc A-Z0-9_`; \
-	    if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(obj)/dummy.o $$cfg \
-		    > /dev/null $(if $(quiet),2>&1); then \
-		echo "\#define $$var"; \
-		rm -f $(obj)/dummy.{o,gcda,gcno}; \
-	    else \
-		echo "/* \#undef $$var */"; \
-	    fi; \
-	done
-
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash

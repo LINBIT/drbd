@@ -12,8 +12,11 @@
 drbd/drbd.ko
 drbd/drbd.ko.unsigned
 drbd/.*.cmd
+drbd/..compat_test.*.d
+drbd/.compat_test.*.result
+drbd/.compat_test.*.stderr
+drbd/.compat_test.*.stdout
 drbd/compat/.*.cmd
-drbd/.compat.h.d
 drbd/.config.timestamp
 drbd/.kernel.config.gz
 drbd/.drbd_kernelrelease
