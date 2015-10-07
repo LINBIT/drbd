@@ -130,14 +130,15 @@ enum dtr_stream_nr {
    to the upper layers we use a sequence number.
 
    */
+#define SEQUENCE_BITS 30
 union dtr_immediate {
 	struct {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
-		unsigned int sequence:30;
+		unsigned int sequence:SEQUENCE_BITS;
 		unsigned int stream:2;
 #elif defined(__BIG_ENDIAN_BITFIELD)
 		unsigned int stream:2;
-		unsigned int sequence:30;
+		unsigned int sequence:SEQUENCE_BITS;
 #else
 # error "this endianness is not supported"
 #endif
@@ -164,6 +165,7 @@ struct drbd_rdma_rx_desc {
 	struct list_head list;
 	int alloc_size;
 	int size;
+	unsigned int sequence;
 	struct dtr_path *path;
 };
 
@@ -246,6 +248,7 @@ struct dtr_stream {
 	long recv_timeout;
 	char name[8]; /* "control" or "data" */
 	unsigned int tx_sequence;
+	unsigned int rx_sequence;
 	struct drbd_rdma_transport *rdma_transport;
 };
 
@@ -734,8 +737,15 @@ static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
 
 	spin_lock_irq(&rdma_stream->rx_descs_lock);
 	rx_desc = list_first_entry_or_null(&rdma_stream->rx_descs, struct drbd_rdma_rx_desc, list);
-	if (rx_desc)
-		list_del(&rx_desc->list);
+	if (rx_desc) {
+		if (rx_desc->sequence == rdma_stream->rx_sequence) {
+			list_del(&rx_desc->list);
+			rdma_stream->rx_sequence =
+				(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+		} else {
+			rx_desc = NULL;
+		}
+	}
 	spin_unlock_irq(&rdma_stream->rx_descs_lock);
 
 	if (rx_desc) {
@@ -801,6 +811,31 @@ static void dtr_got_flow_control_msg(struct drbd_rdma_transport *rdma_transport,
 	}
 }
 
+static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
+				 struct drbd_rdma_rx_desc *rx_desc)
+{
+	struct drbd_rdma_rx_desc *pos;
+	unsigned int seq = rx_desc->sequence;
+
+	list_for_each_entry_reverse(pos, &rdma_stream->rx_descs, list) {
+		if (seq > pos->sequence) {
+			list_add(&rx_desc->list, &pos->list);
+			return;
+		}
+	}
+	list_add(&rx_desc->list, &rdma_stream->rx_descs);
+}
+
+static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
+			       struct drbd_rdma_rx_desc *rx_desc)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
+	__dtr_order_rx_descs(rdma_stream, rx_desc);
+	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
+}
+
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_path *path = ctx;
@@ -815,8 +850,6 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		tr_err(&rdma_transport->transport, "ib_req_notify_cq failed\n");
 
 	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
-		unsigned long flags;
-
 		rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 
 		if(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
@@ -842,9 +875,8 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			rdma_stream->rx_descs_posted--;
 			atomic_dec(&rdma_stream->rx_descs_known_to_peer);
 
-			spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
-			list_add_tail(&rx_desc->list, &rdma_stream->rx_descs);
-			spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
+			rx_desc->sequence = immediate.sequence;
+			dtr_order_rx_descs(rdma_stream, rx_desc);
 
 			wake_up_interruptible(&rdma_stream->recv_wq);
 		}
@@ -1276,6 +1308,7 @@ static int dtr_init_stream(struct dtr_stream *rdma_stream,
 	rdma_stream->rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	rdma_stream->tx_sequence = 1;
+	rdma_stream->rx_sequence = 1;
 
  out:
 	return err;
