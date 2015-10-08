@@ -1302,9 +1302,8 @@ static int dtr_init_stream(struct dtr_stream *rdma_stream,
 	return err;
 }
 
-/* allocate rdma specific resources for a path */
-static int dtr_init_path(struct dtr_path *path,
-			 struct drbd_transport *transport)
+static int dtr_path_alloc_rdma_res(struct dtr_path *path,
+				   struct drbd_transport *transport)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
@@ -1798,7 +1797,7 @@ static void dtr_connect_path_work_fn(struct work_struct *work)
 
 	drbd_put_listener(&waiter.waiter);
 
-	dtr_init_path(path, transport);
+	dtr_path_alloc_rdma_res(path, transport);
 
 	if (0) {
 out_eagain:
