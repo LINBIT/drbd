@@ -400,10 +400,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 }
 
 
-static int dtr_send(struct drbd_rdma_transport *rdma_transport,
-		    void *buf, size_t size)
+static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 {
-	struct dtr_path *path = dtr_path(rdma_transport);
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
@@ -776,7 +774,7 @@ static int dtr_send_flow_control_msg(struct drbd_rdma_transport *rdma_transport)
 		msg.new_rx_descs[i] = cpu_to_be32(n);
 	}
 
-	return dtr_send(rdma_transport, &msg, sizeof(msg));
+	return dtr_send(dtr_path(rdma_transport), &msg, sizeof(msg));
 }
 
 static void dtr_flow_control(struct dtr_stream *rdma_stream)
