@@ -181,7 +181,7 @@ struct drbd_rdma_tx_desc {
 		SEND_BIO,
 	} type;
 	int nr_sges;
-	struct dtr_stream *stream;
+	enum dtr_stream_nr stream_nr;
 	struct ib_sge sge[0]; /* must be last! */
 };
 
@@ -294,8 +294,8 @@ static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
 static bool dtr_transport_ok(struct drbd_transport *transport);
-static int __dtr_post_tx_desc(struct dtr_path *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
-static int dtr_post_tx_desc(struct dtr_stream *, enum dtr_stream_nr, struct drbd_rdma_tx_desc *);
+static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
+static int dtr_post_tx_desc(struct dtr_stream *, struct drbd_rdma_tx_desc *);
 static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct dtr_stream *rdma_stream,
@@ -428,9 +428,9 @@ static int dtr_send(struct drbd_rdma_transport *rdma_transport,
 	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
 	tx_desc->sge[0].lkey = path->dma_mr->lkey;
 	tx_desc->sge[0].length = size;
-	tx_desc->stream = NULL; /* ST_FLOW_CTRL does not account to a stream */
+	tx_desc->stream_nr = ST_FLOW_CTRL;
 
-	__dtr_post_tx_desc(path, ST_FLOW_CTRL, tx_desc);
+	__dtr_post_tx_desc(path, tx_desc);
 
 	return size;
 }
@@ -920,6 +920,7 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_wc wc;
+	enum dtr_stream_nr stream_nr;
 	int ret;
 
 	// pr_info("%s: got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
@@ -944,9 +945,11 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		}
 
 		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
-		rdma_stream = tx_desc->stream;
-		if (rdma_stream)
+		stream_nr = tx_desc->stream_nr;
+		if (stream_nr != ST_FLOW_CTRL) {
+			rdma_stream = rdma_transport->stream[stream_nr];
 			atomic_dec(&rdma_stream->tx_descs_posted);
+		}
 		dtr_free_tx_desc(path, tx_desc);
 	}
 
@@ -1177,12 +1180,12 @@ static void dtr_recycle_rx_desc(struct dtr_stream *rdma_stream,
 }
 
 static int __dtr_post_tx_desc(struct dtr_path *path,
-			      enum dtr_stream_nr stream_nr,
 			      struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct ib_device *device = path->cm->id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
+	enum dtr_stream_nr stream_nr = tx_desc->stream_nr;
 	union dtr_immediate immediate;
 	int i, err;
 
@@ -1212,7 +1215,6 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 }
 
 static int dtr_post_tx_desc(struct dtr_stream *rdma_stream,
-			    enum dtr_stream_nr stream_nr,
 			    struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct dtr_path *path = dtr_path(rdma_stream->rdma_transport);
@@ -1227,7 +1229,7 @@ retry:
 
 	if (t == 0) {
 		struct drbd_rdma_transport *rdma_transport = rdma_stream->rdma_transport;
-		enum drbd_stream stream = stream_nr;
+		enum drbd_stream stream = tx_desc->stream_nr;
 
 		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
 			return -EAGAIN;
@@ -1235,9 +1237,7 @@ retry:
 	} else if (t < 0)
 		return -EINTR;
 
-	tx_desc->stream = rdma_stream;
-
-	err = __dtr_post_tx_desc(path, stream_nr, tx_desc);
+	err = __dtr_post_tx_desc(path, tx_desc);
 
 	atomic_inc(&rdma_stream->tx_descs_posted);
 	atomic_dec(&rdma_stream->peer_rx_descs);
@@ -2012,8 +2012,9 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
 	tx_desc->sge[0].lkey = path->dma_mr->lkey;
 	tx_desc->sge[0].length = size;
+	tx_desc->stream_nr = stream;
 
-	err = dtr_post_tx_desc(rdma_stream, stream, tx_desc);
+	err = dtr_post_tx_desc(rdma_stream, tx_desc);
 	if (err) {
 		dtr_free_tx_desc(path, tx_desc);
 		tx_desc = NULL;
@@ -2092,8 +2093,9 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 	}
 
 	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
+	tx_desc->stream_nr = ST_DATA;
 
-	err = dtr_post_tx_desc(rdma_stream, ST_DATA, tx_desc);
+	err = dtr_post_tx_desc(rdma_stream, tx_desc);
 	if (err) {
 		bio_for_each_segment(bvec, tx_desc->bio, iter)
 			put_page(bvec BVD bv_page);
