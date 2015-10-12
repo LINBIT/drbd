@@ -345,6 +345,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.remove_path = dtr_remove_path,
 };
 
+static struct workqueue_struct *dtr_work_queue;
 
 
 static struct drbd_path* dtr_drbd_path(struct drbd_transport *transport)
@@ -986,7 +987,7 @@ disconnect:
 		}
 
 		if (!test_and_set_bit(P_CONNECT_WORK, &path->flags))
-			queue_work(system_long_wq, &path->connect_work);
+			queue_work(dtr_work_queue, &path->connect_work);
 	}
 
 	if (rdma_stream)
@@ -1986,7 +1987,7 @@ static int dtr_connect(struct drbd_transport *transport)
 		list_for_each_entry(drbd_path, &transport->paths, list) {
 			path = container_of(drbd_path, struct dtr_path, path);
 			set_bit(P_CONNECT_WORK, &path->flags);
-			queue_work(system_long_wq, &path->connect_work);
+			queue_work(dtr_work_queue, &path->connect_work);
 		}
 	}
 
@@ -2304,7 +2305,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	list_add(&drbd_path->list, &transport->paths);
 
 	if (rdma_transport->active)
-		queue_work(system_long_wq, &path->connect_work);
+		queue_work(dtr_work_queue, &path->connect_work);
 
 	return 0;
 }
@@ -2347,6 +2348,8 @@ static int __init dtr_initialize(void)
 {
 	allocation_size = PAGE_SIZE;
 
+	dtr_work_queue = alloc_workqueue("drbd_rdma", 0, 0);
+
 	return drbd_register_transport_class(&rdma_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
 					     sizeof(struct drbd_transport));
@@ -2354,6 +2357,7 @@ static int __init dtr_initialize(void)
 
 static void __exit dtr_cleanup(void)
 {
+	destroy_workqueue(dtr_work_queue);
 	drbd_unregister_transport_class(&rdma_transport_class);
 }
 
