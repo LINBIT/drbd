@@ -160,13 +160,12 @@ enum drbd_rdma_state {
 struct drbd_rdma_rx_desc {
 	struct page *page;
 	void *data;
-	u64 dma_addr;
-	struct ib_sge sge;
 	struct list_head list;
 	int alloc_size;
 	int size;
 	unsigned int sequence;
 	struct dtr_path *path;
+	struct ib_sge sge;
 };
 
 struct drbd_rdma_tx_desc {
@@ -755,7 +754,7 @@ static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
 
 	if (rx_desc) {
 		INIT_LIST_HEAD(&rx_desc->list);
-		ib_dma_sync_single_for_cpu(rx_desc->path->cm->id->device, rx_desc->dma_addr,
+		ib_dma_sync_single_for_cpu(rx_desc->path->cm->id->device, rx_desc->sge.addr,
 					   rx_desc->alloc_size, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
@@ -869,7 +868,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		rx_desc->size = wc.byte_len;
 		immediate.i = be32_to_cpu(wc.ex.imm_data);
 		if (immediate.stream == ST_FLOW_CTRL) {
-			ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->dma_addr,
+			ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
 						   rx_desc->alloc_size, DMA_FROM_DEVICE);
 			dtr_got_flow_control_msg(path, rx_desc->data);
 			/* rx_descs_posted, rx_descs_konwn_to_peer stays constant */
@@ -1009,7 +1008,7 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	recv_wr.num_sge = 1;
 
 	ib_dma_sync_single_for_device(path->cm->id->device,
-			rx_desc->dma_addr, rx_desc->alloc_size, DMA_FROM_DEVICE);
+			rx_desc->sge.addr, rx_desc->alloc_size, DMA_FROM_DEVICE);
 
 	err = ib_post_recv(path->qp, &recv_wr, &recv_wr_failed);
 	if (err) {
@@ -1030,7 +1029,7 @@ static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
-	ib_dma_unmap_single(device, rx_desc->dma_addr, alloc_size, DMA_FROM_DEVICE);
+	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
 
 	if (rx_desc->page) {
 		/* put_page(), if we had more than one rx_desc per page,
@@ -1094,10 +1093,9 @@ static int dtr_create_some_rx_desc(struct dtr_flow *flow)
 		rx_desc->data = pos;
 		rx_desc->alloc_size = alloc_size;
 		rx_desc->size = 0;
-		rx_desc->dma_addr = ib_dma_map_single(device, pos, alloc_size,
-						      DMA_FROM_DEVICE);
 		rx_desc->sge.lkey = path->dma_mr->lkey;
-		rx_desc->sge.addr = rx_desc->dma_addr;
+		rx_desc->sge.addr = ib_dma_map_single(device, pos, alloc_size,
+						      DMA_FROM_DEVICE);
 		rx_desc->sge.length = alloc_size;
 
 		pos += alloc_size;
@@ -1162,8 +1160,8 @@ static void dtr_repost_rx_desc(struct dtr_path *path,
 
 	rx_desc->size = rx_desc->alloc_size;
 	rx_desc->sge.lkey = path->dma_mr->lkey;
-	rx_desc->sge.addr = rx_desc->dma_addr;
-	rx_desc->sge.length = rx_desc->size;
+	/* rx_desc->sge.addr = rx_desc->dma_addr;
+	   rx_desc->sge.length = rx_desc->alloc_size; */
 
 	err = dtr_post_rx_desc(path, rx_desc);
 	if (err) {
