@@ -303,9 +303,11 @@ static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
+static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
+static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
 static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
@@ -946,6 +948,9 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	   at a later point in time. Probably resource freeing is cheap enough to do
 	   it directly here. */
 	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
+		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
+		stream_nr = tx_desc->stream_nr;
+
 		if (wc.status != IB_WC_SUCCESS) {
 			tr_err(&rdma_transport->transport,
 			       "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
@@ -957,8 +962,6 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			goto disconnect;
 		}
 
-		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
-		stream_nr = tx_desc->stream_nr;
 		if (stream_nr != ST_FLOW_CTRL) {
 			struct dtr_flow *flow = &path->flow[stream_nr];
 			rdma_stream = &rdma_transport->stream[stream_nr];
@@ -971,8 +974,19 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		tr_warn(&rdma_transport->transport, "ib_poll_cq() returned %d\n", ret);
 
 	if (0) {
+		int err;
 disconnect:
 		path->cm->state = ERROR;
+
+		err = dtr_repost_tx_desc(rdma_transport, tx_desc);
+		if (err) {
+			tr_warn(&rdma_transport->transport, "repost of tx_desc failed!\n");
+			/* TODO: queue instead! */
+			dtr_free_tx_desc(path, tx_desc);
+		}
+
+		if (!test_and_set_bit(P_CONNECT_WORK, &path->flags))
+			queue_work(system_long_wq, &path->connect_work);
 	}
 
 	if (rdma_stream)
@@ -1223,12 +1237,29 @@ static struct dtr_path *dtr_select_path_for_tx(struct drbd_rdma_transport *rdma_
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 		struct dtr_flow *flow = &path->flow[stream];
 
+		if (!dtr_path_ok(path))
+			continue;
+
 		if (atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
 		    atomic_read(&flow->peer_rx_descs))
 			return path;
 	}
 
 	return NULL;
+}
+
+static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
+			      struct drbd_rdma_tx_desc *tx_desc)
+{
+	struct dtr_path *path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
+	int err;
+
+	if (path)
+		err = __dtr_post_tx_desc(path, tx_desc);
+	else
+		err = -ECONNRESET;
+
+	return err;
 }
 
 static int dtr_post_tx_desc(struct drbd_rdma_transport *rdma_transport,
@@ -1465,14 +1496,14 @@ static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 	}
 }
 
-static void dtr_disconnect_path(struct dtr_path *path)
+static void __dtr_disconnect_path(struct dtr_path *path, bool cancel_work)
 {
 	int err;
 
 	if (!path)
 		return;
 
-	if (test_bit(P_CONNECT_WORK, &path->flags)) {
+	if (cancel_work && test_bit(P_CONNECT_WORK, &path->flags)) {
 		set_bit(P_CANCEL_CONNECT, &path->flags);
 		wait_event(path->wq, test_bit(P_CONNECT_WORK, &path->flags) == 0);
 	}
@@ -1509,6 +1540,11 @@ static void dtr_disconnect_path(struct dtr_path *path)
 		pr_warn("WARN: not properly disconnected\n");
 }
 
+static void dtr_disconnect_path(struct dtr_path *path)
+{
+	__dtr_disconnect_path(path, true);
+}
+
 static void dtr_free_cm(struct dtr_cm *cm)
 {
 	if (!cm)
@@ -1525,12 +1561,12 @@ static void dtr_free_cm(struct dtr_cm *cm)
 	kfree(cm);
 }
 
-static void dtr_uninit_path(struct dtr_path *path)
+static void __dtr_uninit_path(struct dtr_path *path, bool cancel_work)
 {
 	if (!path)
 		return;
 
-	dtr_disconnect_path(path);
+	__dtr_disconnect_path(path, cancel_work);
 
 	if (path->dma_mr) {
 		ib_dereg_mr(path->dma_mr);
@@ -1556,6 +1592,11 @@ static void dtr_uninit_path(struct dtr_path *path)
 		dtr_free_cm(path->cm);
 		path->cm = NULL;
 	}
+}
+
+static void dtr_uninit_path(struct dtr_path *path)
+{
+	__dtr_uninit_path(path, true);
 }
 
 static int dtr_try_connect(struct dtr_path *path, struct dtr_cm **ret_cm)
@@ -1811,6 +1852,8 @@ static void dtr_connect_path_work_fn(struct work_struct *work)
 	bool resolve_conflicts = false;
 	enum drbd_stream i;
 	int p, err;
+
+	__dtr_uninit_path(path, false);
 
 	waiter.waiter.transport = transport;
 	waiter.cm = NULL;
