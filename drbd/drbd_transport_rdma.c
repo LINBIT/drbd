@@ -1201,12 +1201,10 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 	union dtr_immediate immediate;
 	int i, err;
 
-	immediate = (union dtr_immediate) {
-		.stream = stream_nr,
-		.sequence =
-			stream_nr == ST_FLOW_CTRL ? 0 :
-				rdma_transport->stream[stream_nr].tx_sequence++,
-	};
+	immediate.stream = stream_nr;
+	immediate.sequence = stream_nr == ST_FLOW_CTRL ? 0 :
+		             rdma_transport->stream[stream_nr].tx_sequence++;
+
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
 	send_wr.sg_list = tx_desc->sge;
@@ -1276,7 +1274,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_transport *rdma_transport,
 
 retry:
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			path = dtr_select_path_for_tx(rdma_transport, stream),
+			(path = dtr_select_path_for_tx(rdma_transport, stream)),
 			rdma_stream->send_timeout);
 
 	if (t == 0) {
@@ -2348,7 +2346,11 @@ static int __init dtr_initialize(void)
 {
 	allocation_size = PAGE_SIZE;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 	dtr_work_queue = alloc_workqueue("drbd_rdma", 0, 0);
+#else
+	dtr_work_queue = create_workqueue("drbd_rdma");
+#endif
 
 	return drbd_register_transport_class(&rdma_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
