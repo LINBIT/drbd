@@ -77,6 +77,12 @@ MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0.0");
 
+int allocation_size;
+/* module_param(allocation_size, int, 0664);
+   MODULE_PARM_DESC(allocation_size, "Allocation size for receive buffers (page size of peer)");
+
+   That needs to be implemented in dtr_create_rx_desc() and in dtr_recv() and dtr_recv_pages() */
+
 /* If no recvbuf_size or sendbuf_size is configured use 1MiByte + 3 pages the DATA_STREAM */
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
    very comparable to the socket sendbuf and recvbuf sizes */
@@ -159,7 +165,6 @@ enum drbd_rdma_state {
 
 struct drbd_rdma_rx_desc {
 	struct page *page;
-	void *data;
 	struct list_head list;
 	int size;
 	unsigned int sequence;
@@ -362,6 +367,7 @@ static int dtr_init(struct drbd_transport *transport)
 	transport->ops = &dtr_ops;
 	transport->class = &rdma_transport_class;
 
+	rdma_transport->rx_allocation_size = allocation_size;
 	rdma_transport->active = false;
 
 	return 0;
@@ -458,7 +464,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 			/*
 			 * Cannot give back pages that may still be in use!
 			 * (More reason why we only have one rx_desc per page,
-			 * and don't get_page() in dtr_create_some_rx_desc).
+			 * and don't get_page() in dtr_create_rx_desc).
 			 */
 			drbd_free_pages(transport, head, 0);
 			return t == 0 ? -EAGAIN : -EINTR;
@@ -466,7 +472,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 
 		page = rx_desc->page;
 		/* put_page() if we would get_page() in
-		 * dtr_create_some_rx_desc().  but we don't. We return the page
+		 * dtr_create_rx_desc().  but we don't. We return the page
 		 * chain to the user, which is supposed to give it back to
 		 * drbd_free_pages() eventually. */
 		rx_desc->page = NULL;
@@ -477,7 +483,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		 * offset may well be not the PAGE_SIZE and 0 we hope for.
 		 */
 		if (tail) {
-			/* See also dtr_create_some_rx_desc().
+			/* See also dtr_create_rx_desc().
 			 * For PAGE_SIZE > 4k, we may create several RR per page.
 			 * We cannot link a page to itself, though.
 			 *
@@ -492,7 +498,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		} else
 			head = tail = page;
 
-		set_page_chain_offset(page, rx_desc->data - page_address(page));
+		set_page_chain_offset(page, 0);
 		set_page_chain_size(page, rx_desc->size);
 
 		rx_desc->path->flow[DATA_STREAM].rx_descs_allocated--;
@@ -538,7 +544,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 			return t == 0 ? -EAGAIN : -EINTR;
 
 		// pr_info("%s: got a new page with size: %d\n", rdma_stream->name, rx_desc->size);
-		buffer = rx_desc->data;
+		buffer = page_address(rx_desc->page);
 		rdma_stream->current_rx.desc = rx_desc;
 		rdma_stream->current_rx.pos = buffer + size;
 		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
@@ -872,7 +878,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		if (immediate.stream == ST_FLOW_CTRL) {
 			ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
 						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-			dtr_got_flow_control_msg(path, rx_desc->data);
+			dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 			/* rx_descs_posted, rx_descs_konwn_to_peer stays constant */
 			dtr_repost_rx_desc(path, rx_desc);
 		} else {
@@ -1037,87 +1043,52 @@ static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *
 
 	if (rx_desc->page) {
 		/* put_page(), if we had more than one rx_desc per page,
-		 * but see comments in dtr_create_some_rx_desc */
+		 * but see comments in dtr_create_rx_desc */
 		drbd_free_pages(&rdma_transport->transport, rx_desc->page, 0);
 	}
 	kfree(rx_desc);
 }
 
-static int dtr_create_some_rx_desc(struct dtr_flow *flow)
+static int dtr_create_rx_desc(struct dtr_flow *flow)
 {
 	struct dtr_path *path = flow->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct drbd_rdma_rx_desc *rx_desc;
 	struct ib_device *device = path->cm->id->device;
 	struct page *page;
-	void *pos;
-	int err, size, alloc_size = path->rdma_transport->rx_allocation_size;
+	int err, alloc_size = path->rdma_transport->rx_allocation_size;
+	int nr_pages = alloc_size / PAGE_SIZE;
 
-	/* Really. Does not work yet. For a lot of reasons. */
-	BUILD_BUG_ON(PAGE_SIZE != 4096);
+	rx_desc = kzalloc(sizeof(*rx_desc), GFP_NOIO);
+	if (!rx_desc)
+		return -ENOMEM;
 
-	/* FIXME
-	 * As of now, this MUST NEVER return a highmem page!
+	/* As of now, this MUST NEVER return a highmem page!
 	 * Which means no other user may ever have requested and then given
 	 * back a highmem page!
 	 */
-	page = drbd_alloc_pages(transport, 1, GFP_NOIO);
-	if (!page)
+	page = drbd_alloc_pages(transport, nr_pages, GFP_NOIO);
+	if (!page) {
+		kfree(rx_desc);
 		return -ENOMEM;
+	}
 	BUG_ON(PageHighMem(page));
 
-	pos = page_address(page);
-	size = PAGE_SIZE;
+	rx_desc->path = path;
+	rx_desc->page = page;
+	rx_desc->size = 0;
+	rx_desc->sge.lkey = path->dma_mr->lkey;
+	rx_desc->sge.addr = ib_dma_map_single(device, page_address(page), alloc_size,
+					      DMA_FROM_DEVICE);
+	rx_desc->sge.length = alloc_size;
 
-	/* Assumptions: alloc_size = 4k, PAGE_SIZE multiple of alloc_size.
-	 * Otherwise this will break.
-	 *
-	 * TODO: can we make better use of PAGE_SIZE > 4k,
-	 * and still only post one descriptor per page?
-	 */
-
-	while (size) {
-		rx_desc = kzalloc(sizeof(*rx_desc), GFP_NOIO);
-		if (!rx_desc) {
-			/* FIXME for PAGE_SIZE != 4k:
-			 * cannot drbd_free_pages() if other rx_desc still reference it!
-			 * but must not put_page a page from drbd_alloc_pages() either.
-			 */
-			drbd_free_pages(transport, page, 0);
-			return -ENOMEM;
-		}
+	err = dtr_post_rx_desc(path, rx_desc);
+	if (err) {
+		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
+		dtr_free_rx_desc(path, rx_desc);
+	} else {
 		flow->rx_descs_allocated++;
-
-		/* get_page(page);
-		 * Not needed, as long as we have one rx_desc per page.
-		 * Wrong, if we have more than one rx_desc per page, because we
-		 * then cannot properly give it back to drbd_free_pages(). */
-		rx_desc->path = path;
-		rx_desc->page = page;
-		rx_desc->data = pos;
-		rx_desc->size = 0;
-		rx_desc->sge.lkey = path->dma_mr->lkey;
-		rx_desc->sge.addr = ib_dma_map_single(device, pos, alloc_size,
-						      DMA_FROM_DEVICE);
-		rx_desc->sge.length = alloc_size;
-
-		pos += alloc_size;
-		size -= alloc_size;
-
-		err = dtr_post_rx_desc(path, rx_desc);
-		if (err) {
-			tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
-			dtr_free_rx_desc(path, rx_desc);
-			flow->rx_descs_allocated--;
-			break;
-		}
 		flow->rx_descs_posted++;
-
-		/* FIXME for PAGE_SIZE != 4k,
-		 * we still cannot have multiple descriptors here,
-		 * or drbd alloc/free pages and get/put page would get out-of-sync,
-		 * with all sorts of complications. */
-		break;
 	}
 
 	return err;
@@ -1133,7 +1104,7 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 	while (flow->rx_descs_posted < descs_want_posted &&
 	       flow->rx_descs_allocated < descs_max) {
-		int err = dtr_create_some_rx_desc(flow);
+		int err = dtr_create_rx_desc(flow);
 		if (err)
 			break;
 	}
@@ -2331,6 +2302,8 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *d
 
 static int __init dtr_initialize(void)
 {
+	allocation_size = PAGE_SIZE;
+
 	return drbd_register_transport_class(&rdma_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
 					     sizeof(struct drbd_transport));
