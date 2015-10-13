@@ -232,6 +232,7 @@ struct dtr_path {
 	unsigned long flags;
 	struct dtr_flow flow[2];
 	wait_queue_head_t wq;
+	int nr; /* to identify paths in log/debug messages */
 };
 
 struct dtr_stream {
@@ -2287,6 +2288,7 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
+	static int nr = 1;
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
@@ -2297,6 +2299,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	init_waitqueue_head(&path->wq);
 
 	list_add(&drbd_path->list, &transport->paths);
+	path->nr = nr++;
 
 	if (rdma_transport->active)
 		queue_work(dtr_work_queue, &path->connect_work);
