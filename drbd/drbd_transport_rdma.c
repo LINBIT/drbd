@@ -188,17 +188,6 @@ struct drbd_rdma_tx_desc {
 	struct ib_sge sge[0]; /* must be last! */
 };
 
-struct dtr_cm {
-	struct rdma_cm_id *id;
-	enum drbd_rdma_state state;
-	wait_queue_head_t state_wq;
-};
-
-enum {
-	P_CONNECT_WORK =   1 << 0,
-	P_CANCEL_CONNECT = 1 << 1,
-};
-
 struct dtr_flow {
 	struct dtr_path *path;
 
@@ -214,10 +203,24 @@ struct dtr_flow {
 	atomic_t rx_descs_known_to_peer;
 };
 
+enum connect_state_enum {
+	PCS_INACTIVE,
+	PCS_REQUEST_ABORT,
+	PCS_CONNECTING,
+};
+
+struct dtr_connect_state {
+	struct drbd_waiter waiter; /* passive_cm in here.. */
+	struct delayed_work work;
+	atomic_t active_state; /* trying to establish a connection*/
+	atomic_t passive_state; /* listening for a connection */
+	wait_queue_head_t wq;
+};
+
 struct dtr_path {
 	struct drbd_path path;
 
-	struct work_struct connect_work;
+	struct dtr_connect_state cs;
 
 	struct dtr_cm *cm;
 
@@ -229,9 +232,7 @@ struct dtr_path {
 	struct ib_mr *dma_mr;
 
 	struct drbd_rdma_transport *rdma_transport;
-	unsigned long flags;
 	struct dtr_flow flow[2];
-	wait_queue_head_t wq;
 	int nr; /* to identify paths in log/debug messages */
 };
 
@@ -271,17 +272,23 @@ struct drbd_rdma_transport {
 	struct completion connected;
 };
 
+struct dtr_cm {
+	struct rdma_cm_id *id;
+	enum drbd_rdma_state state;
+	wait_queue_head_t state_wq;
+	struct dtr_path *path; /* only set on the active side! */
+};
+
 struct dtr_listener {
 	struct drbd_listener listener;
 
 	struct dtr_cm cm;
-	struct rdma_cm_id *child_cms; /* Single linked list on the context member */
 };
 
-struct dtr_waiter {
-	struct drbd_waiter waiter;
-
-	struct dtr_cm *cm; /* to pass a path between waiters... */
+struct dtr_accept_data {
+	struct work_struct work;
+	struct rdma_cm_id *new_cm_id;
+	struct dtr_path *path;
 };
 
 static int dtr_init(struct drbd_transport *transport);
@@ -301,6 +308,7 @@ static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
+static int dtr_create_cm_id(struct dtr_cm *cm_context);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
@@ -313,9 +321,18 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
+static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
 static void dtr_uninit_path(struct dtr_path *path);
+static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path);
+static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct drbd_transport *transport);
+static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
+static int dtr_send_flow_control_msg(struct dtr_path *path);
+static void dtr_free_cm(struct dtr_cm *cm);
+static void __dtr_uninit_path(struct dtr_path *path);
+static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
+			 void (*free_desc)(struct dtr_path *, void *));
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -341,6 +358,12 @@ static struct drbd_transport_ops dtr_ops = {
 	.debugfs_show = dtr_debugfs_show,
 	.add_path = dtr_add_path,
 	.remove_path = dtr_remove_path,
+};
+
+static struct rdma_conn_param dtr_conn_param = {
+	.responder_resources = 1,
+	.initiator_depth = 1,
+	.retry_count = 10,
 };
 
 static struct workqueue_struct *dtr_work_queue;
@@ -627,13 +650,274 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 }
 
+static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
+{
+	struct dtr_cm *cm2;
+	int i;
+
+	cm2 = cmpxchg(&path->cm, NULL, cm);
+	if (cm2) {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+		dtr_free_cm(cm);
+		tr_err(transport, "Uhh, there was already a cm!\n");
+		return -EAGAIN;
+	}
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		dtr_init_flow(&path->flow[i], path);
+
+	return dtr_path_alloc_rdma_res(path, &path->rdma_transport->transport);
+}
+
+static void dtr_path_established(struct dtr_path *path)
+{
+	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_transport *transport = &rdma_transport->transport;
+	int p, err = 0;
+
+	atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	p = atomic_xchg(&path->cs.passive_state, PCS_INACTIVE);
+	if (p > PCS_INACTIVE)
+		drbd_put_listener(&path->cs.waiter);
+
+	wake_up(&path->cs.wq);
+
+	err = dtr_send_flow_control_msg(path);
+	if (err > 0)
+		err = 0;
+	if (err)
+		tr_err(transport, "sending first flow_control_msg() failed\n");
+
+	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
+	if (p == 1)
+		complete(&rdma_transport->connected);
+}
+
+static void dtr_unprepare_path(struct dtr_path *path)
+{
+	struct dtr_cm *cm;
+
+	if (path->send_cq)
+		dtr_drain_cq(path, path->send_cq,
+			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
+
+	if (path->recv_cq)
+		dtr_drain_cq(path, path->recv_cq,
+			     (void (*)(struct dtr_path *, void *)) dtr_free_rx_desc);
+
+	/* Beware! dtr_free_rx_desc() needs the path->cm in place !! */
+
+	cm = xchg(&path->cm, NULL);
+	dtr_free_cm(cm);
+
+	__dtr_uninit_path(path);
+}
+
+static void dtr_cma_accept_work_fn(struct work_struct *work)
+{
+	struct dtr_accept_data *ad = container_of(work, struct dtr_accept_data, work);
+	struct dtr_path *path = ad->path;
+	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_transport *transport = &rdma_transport->transport;
+	struct rdma_cm_id *new_cm_id = ad->new_cm_id;
+	struct dtr_cm *cm;
+	int err;
+
+	kfree(ad);
+
+	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
+	if (!cm) {
+		tr_err(transport, "rejecting connecting since -ENOMEM for cm\n");
+		rdma_reject(new_cm_id, NULL, 0);
+		return;
+	}
+
+	cm->state = IDLE;
+	init_waitqueue_head(&cm->state_wq);
+	new_cm_id->context = cm;
+	cm->id = new_cm_id;
+
+	err = dtr_path_prepare(path, cm);
+	if (err)
+		return;
+
+	cm->path = path;
+
+	err = rdma_accept(new_cm_id, &dtr_conn_param);
+	if (err)
+		dtr_unprepare_path(path);
+}
+
+
+static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id)
+{
+	struct sockaddr_storage *peer_addr;
+	struct dtr_connect_state *cs;
+	struct dtr_accept_data *ad;
+	struct drbd_waiter *waiter;
+	struct dtr_path *path;
+
+	peer_addr = &new_cm_id->route.addr.dst_addr;
+
+	spin_lock(&listener->listener.waiters_lock);
+	waiter = drbd_find_waiter_by_addr(&listener->listener, peer_addr);
+	spin_unlock(&listener->listener.waiters_lock);
+
+	if (!waiter) {
+		struct sockaddr_in *from_sin, *to_sin;
+
+		from_sin = (struct sockaddr_in *)&peer_addr;
+		to_sin = (struct sockaddr_in *)&listener->listener.listen_addr;
+
+		pr_warn("Closing unexpected connection from "
+			"%pI4 to port %u\n",
+			&from_sin->sin_addr,
+			be16_to_cpu(to_sin->sin_port));
+
+		rdma_reject(new_cm_id, NULL, 0);
+		return 0;
+	}
+
+	cs = container_of(waiter, struct dtr_connect_state, waiter);
+	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
+		rdma_reject(new_cm_id, NULL, 0);
+		return -EAGAIN;
+	}
+	path = container_of(cs, struct dtr_path, cs);
+
+	ad = kmalloc(sizeof(*ad), GFP_KERNEL);
+	if (!ad) {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+		tr_err(transport,"rejecting connecting since -ENOMEM for ad\n");
+		rdma_reject(new_cm_id, NULL, 0);
+		return -ENOMEM;
+	}
+	INIT_WORK(&ad->work, dtr_cma_accept_work_fn);
+	ad->new_cm_id = new_cm_id;
+	ad->path = path;
+
+	queue_work(dtr_work_queue, &ad->work);
+
+	return 0;
+}
+
+static int dtr_start_try_connect(struct dtr_connect_state *cs)
+{
+	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct dtr_cm *cm;
+	int err = -ENOMEM;
+
+	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
+	if (!cm)
+		goto out;
+
+	cm->path = path;
+
+	err = dtr_create_cm_id(cm);
+	if (err) {
+		tr_err(transport, "rdma_create_id() failed %d\n", err);
+		goto out;
+	}
+
+	err = rdma_resolve_addr(cm->id, NULL,
+				(struct sockaddr *)&path->path.peer_addr,
+				2000);
+	if (err) {
+		tr_err(transport, "rdma_resolve_addr error %d\n", err);
+		goto out;
+	}
+
+	return 0;
+out:
+	dtr_free_cm(cm);
+	return err;
+}
+
+static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
+{
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	enum connect_state_enum p;
+	int err;
+
+	p = atomic_cmpxchg(&cs->active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
+	if (p != PCS_CONNECTING) {
+		wake_up(&cs->wq);
+		return;
+	}
+
+	err = dtr_start_try_connect(cs);
+	if (err) {
+		struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+
+		tr_err(transport, "dtr_start_try_connect failed  %d\n", err);
+		queue_delayed_work(dtr_work_queue, &cs->work, HZ);
+	}
+}
+
+static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
+{
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct net_conf *nc;
+	long connect_int = 10 * HZ;
+
+	dtr_unprepare_path(path);
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc)
+		connect_int = nc->connect_int * HZ;
+	rcu_read_unlock();
+
+	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
+	queue_delayed_work(dtr_work_queue, &cs->work, connect_int);
+}
+
+static void dtr_cma_retry_connect(struct dtr_path *path)
+{
+	struct dtr_connect_state *cs = &path->cs;
+
+	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
+	queue_work(dtr_work_queue, &cs->work.work);
+}
+
+static void dtr_cma_connect(struct dtr_cm *cm)
+{
+	struct dtr_path *path = cm->path;
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	enum connect_state_enum p;
+	int err;
+
+	p = atomic_cmpxchg(&path->cs.active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
+	if (p != PCS_CONNECTING) {
+		wake_up(&path->cs.wq);
+		return;
+	}
+
+	err = dtr_path_prepare(path, cm);
+	if (err)
+		goto out;
+
+	err = rdma_connect(cm->id, &dtr_conn_param);
+	if (err) {
+		tr_err(transport, "rdma_connect error %d\n", err);
+		goto out;
+	}
+
+	return;
+out:
+	dtr_cma_retry_connect(path);
+}
+
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
 {
 	int err;
 	/* context comes from rdma_create_id() */
 	struct dtr_cm *cm_context = cm_id->context;
 	struct dtr_listener *listener;
-	struct drbd_waiter *waiter;
 
 	if (!cm_context) {
 		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
@@ -647,13 +931,13 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		err = rdma_resolve_route(cm_id, 2000);
 		if (err)
 			pr_err("rdma_resolve_route error %d\n", err);
-		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
 		// pr_info("%s: RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm_context->name);
 		cm_context->state = ROUTE_RESOLVED;
-		wake_up_interruptible(&cm_context->state_wq);
+
+		dtr_cma_connect(cm_context);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
@@ -662,30 +946,27 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		cm_context->state = CONNECT_REQUEST;
 
 		listener = container_of(cm_context, struct dtr_listener, cm);
-
-		spin_lock(&listener->listener.waiters_lock);
-		listener->listener.pending_accepts++;
-		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
+		dtr_cma_accept(listener, cm_id);
 
 		/* I found this a bit confusing. When a new connection comes in, the callback
 		   gets called with a new rdma_cm_id. The new rdma_cm_id inherits its context
 		   pointer from the listening rdma_cm_id. We will create a new context later */
 
-		/* Insert the fresh cm_id it at the head of the list child_cms */
-		cm_id->context = listener->child_cms;
-		listener->child_cms = cm_id;
-
 		/* set cm_id to the listener */
 		cm_id = cm_context->id;
+		break;
 
-		wake_up(&waiter->wait); /* wake an arbitrary waiter */
-		spin_unlock(&listener->listener.waiters_lock);
+	case RDMA_CM_EVENT_CONNECT_RESPONSE:
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm_context->name);
+		/*cm_context->state = CONNECTED;
+		  cm_context->path->cm = cm_context;
+		  dtr_path_established(cm_context->path); */
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
 		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
 		cm_context->state = CONNECTED;
-		wake_up_interruptible(&cm_context->state_wq);
+		dtr_path_established(cm_context->path);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -700,13 +981,14 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_REJECTED\n", cm_context->name);
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm_context->state = ERROR;
-		wake_up_interruptible(&cm_context->state_wq);
+
+		if (cm_context->path)
+			dtr_cma_retry_connect(cm_context->path);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
 		cm_context->state = DISCONNECTED;
-		wake_up_interruptible(&cm_context->state_wq);
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
@@ -716,9 +998,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	default:
 		pr_warn("id %p context %p unexpected event %d!\n",
 				cm_id, cm_context, event->event);
-		wake_up_interruptible(&cm_context->state_wq);
 		break;
 	}
+	wake_up_interruptible(&cm_context->state_wq);
 	return 0;
 }
 
@@ -984,8 +1266,10 @@ disconnect:
 			dtr_free_tx_desc(path, tx_desc);
 		}
 
+		/* TODO try to re-establish the path
 		if (!test_and_set_bit(P_CONNECT_WORK, &path->flags))
 			queue_work(dtr_work_queue, &path->connect_work);
+		*/
 	}
 
 	if (rdma_stream)
@@ -1459,6 +1743,9 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path,
 
 	path->rdma_transport = rdma_transport;
 
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		dtr_create_rx_desc(&path->flow[i]);
+
 	return 0;
 
 dma_failed:
@@ -1491,16 +1778,26 @@ static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 	}
 }
 
-static void __dtr_disconnect_path(struct dtr_path *path, bool cancel_work)
+static void dtr_disconnect_path(struct dtr_path *path)
 {
+	enum connect_state_enum p;
 	int err;
 
 	if (!path)
 		return;
 
-	if (cancel_work && test_bit(P_CONNECT_WORK, &path->flags)) {
-		set_bit(P_CANCEL_CONNECT, &path->flags);
-		wait_event(path->wq, test_bit(P_CONNECT_WORK, &path->flags) == 0);
+	p = atomic_xchg(&path->cs.passive_state, PCS_INACTIVE);
+	if (p > PCS_INACTIVE)
+		drbd_put_listener(&path->cs.waiter);
+
+	p = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
+	switch (p) {
+	case PCS_CONNECTING:
+		mod_timer_pending(&path->cs.work.timer, 1);
+	case PCS_REQUEST_ABORT:
+		wait_event(path->cs.wq, atomic_read(&path->cs.active_state) == PCS_INACTIVE);
+	case PCS_INACTIVE:
+		break;
 	}
 
 	if (!path->cm || !path->cm->id)
@@ -1535,11 +1832,6 @@ static void __dtr_disconnect_path(struct dtr_path *path, bool cancel_work)
 		pr_warn("WARN: not properly disconnected\n");
 }
 
-static void dtr_disconnect_path(struct dtr_path *path)
-{
-	__dtr_disconnect_path(path, true);
-}
-
 static void dtr_free_cm(struct dtr_cm *cm)
 {
 	if (!cm)
@@ -1556,13 +1848,8 @@ static void dtr_free_cm(struct dtr_cm *cm)
 	kfree(cm);
 }
 
-static void __dtr_uninit_path(struct dtr_path *path, bool cancel_work)
+static void __dtr_uninit_path(struct dtr_path *path)
 {
-	if (!path)
-		return;
-
-	__dtr_disconnect_path(path, cancel_work);
-
 	if (path->dma_mr) {
 		ib_dereg_mr(path->dma_mr);
 		path->dma_mr = NULL;
@@ -1591,71 +1878,12 @@ static void __dtr_uninit_path(struct dtr_path *path, bool cancel_work)
 
 static void dtr_uninit_path(struct dtr_path *path)
 {
-	__dtr_uninit_path(path, true);
-}
+	if (!path)
+		return;
 
-static int dtr_try_connect(struct dtr_path *path, struct dtr_cm **ret_cm)
-{
-	struct drbd_transport *transport = &path->rdma_transport->transport;
-	struct rdma_conn_param conn_param;
-	struct dtr_cm *cm;
-	int err = -ENOMEM;
+	dtr_disconnect_path(path);
 
-	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
-	if (!cm)
-		goto out;
-
-	err = dtr_create_cm_id(cm);
-	if (err) {
-		tr_err(transport, "rdma_create_id() failed %d\n", err);
-		goto out;
-	}
-
-	err = rdma_resolve_addr(cm->id, NULL,
-				(struct sockaddr *)&path->path.peer_addr,
-				2000);
-	if (err) {
-		tr_err(transport, "rdma_resolve_addr error %d\n", err);
-		goto out;
-	}
-
-	wait_event_interruptible(cm->state_wq,
-				 cm->state >= ROUTE_RESOLVED);
-
-	if (cm->state != ROUTE_RESOLVED)
-		goto out; /* Happens if peer not reachable */
-
-	/* Connect peer */
-	memset(&conn_param, 0, sizeof conn_param);
-	conn_param.responder_resources = 1;
-	conn_param.initiator_depth = 1;
-	conn_param.retry_count = 10;
-
-	err = rdma_connect(cm->id, &conn_param);
-	if (err) {
-		tr_err(transport, "rdma_connect error %d\n", err);
-		goto out;
-	}
-
-	/* Make sure that we see an eventuall RDMA_CM_EVENT_REJECTED here (cm.state
-	   is ERROR in that case). We can not wait for RDMA_CM_EVENT_ESTABLISHED since
-	   that requires the peer to call accept.
-	   -> would lead to distributed deadlock. */
-	wait_event_interruptible_timeout(cm->state_wq,
-					 cm->state != ROUTE_RESOLVED,
-					 HZ/20);
-
-	if (cm->state == ERROR)
-		goto out;
-
-	// pr_info("%s: rdma_connect successful\n", path->name);
-	*ret_cm = cm;
-	return 0;
-
-out:
-	/* TODO: Eventually wait longer, till no callback can come in. */
-	dtr_free_cm(cm);
-	return err;
+	__dtr_uninit_path(path);
 }
 
 static void dtr_destroy_listener(struct drbd_listener *generic_listener)
@@ -1708,228 +1936,36 @@ out:
 	return err;
 }
 
-static bool dtr_wait_connect_cond(struct dtr_waiter *waiter)
+static int dtr_activate_path(struct dtr_path *path)
 {
-	struct drbd_listener *listener = waiter->waiter.listener;
-	bool rv;
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct dtr_connect_state *cs;
+	int err = -ENOMEM;
 
-	spin_lock_bh(&listener->waiters_lock);
-	rv = waiter->waiter.listener->pending_accepts > 0 || waiter->cm != NULL;
-	spin_unlock_bh(&listener->waiters_lock);
+	cs = &path->cs;
 
-	return rv;
-}
+	cs->waiter.transport = transport;
+	init_waitqueue_head(&cs->wq);
+	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
 
-static int dtr_wait_for_connect(struct dtr_waiter *waiter, struct dtr_cm **ret_cm)
-{
-	struct drbd_transport *transport = waiter->waiter.transport;
-	struct dtr_cm *cm = NULL;
-	struct sockaddr_storage *peer_addr;
-	struct net_conf *nc;
-	struct dtr_listener *listener =
-		container_of(waiter->waiter.listener, struct dtr_listener, listener);
-	struct rdma_conn_param conn_param;
-	struct rdma_cm_id *cm_id = NULL;
-	struct drbd_waiter *waiter2_gen;
-	long timeo;
-	int connect_int, err = 0;
+	atomic_set(&cs->passive_state, PCS_CONNECTING);
+	atomic_set(&cs->active_state, PCS_CONNECTING);
 
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-	if (!nc) {
-		rcu_read_unlock();
-		return -EINVAL;
-	}
-	connect_int = nc->connect_int;
-	rcu_read_unlock();
-
-	timeo = connect_int * HZ;
-	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jotter */
-
-retry:
-	dtr_free_cm(cm);
-	cm = NULL;
-
-	timeo = wait_event_interruptible_timeout(waiter->waiter.wait, dtr_wait_connect_cond(waiter), timeo);
-	if (timeo <= 0)
-		return -EAGAIN;
-
-	spin_lock_bh(&listener->listener.waiters_lock);
-	if (waiter->cm) {
-		cm = waiter->cm;
-		waiter->cm = NULL;
-	} else if (listener->listener.pending_accepts > 0) {
-		listener->listener.pending_accepts--;
-
-		cm_id = listener->child_cms; /* Get head from single linked list */
-		listener->child_cms = cm_id->context;
-		cm_id->context = NULL;
-	}
-	spin_unlock_bh(&listener->listener.waiters_lock);
-
-	if (cm_id) {
-		cm = kzalloc(sizeof(*cm), GFP_KERNEL);
-		if (!cm)
-			return -ENOMEM;
-
-		cm->state = IDLE;
-		init_waitqueue_head(&cm->state_wq);
-		cm_id->context = cm;
-		cm->id = cm_id;
-
-		memset(&conn_param, 0, sizeof conn_param);
-		conn_param.responder_resources = 1;
-		conn_param.initiator_depth = 1;
-
-		err = rdma_accept(cm->id, &conn_param);
-		if (err) {
-			tr_err(transport, "rdma_accept error %d\n", err);
-			goto err;
-		}
-
-		peer_addr = &cm_id->route.addr.dst_addr;
-
-		spin_lock_bh(&listener->listener.waiters_lock);
-		waiter2_gen = drbd_find_waiter_by_addr(waiter->waiter.listener, peer_addr);
-
-		if (waiter2_gen && waiter2_gen != &waiter->waiter) {
-			struct dtr_waiter *waiter2 =
-				container_of(waiter2_gen, struct dtr_waiter, waiter);
-
-			if (waiter2->cm) {
-				tr_err(waiter2->waiter.transport,
-					 "Receiver busy; rejecting incoming connection\n");
-				goto retry_locked;
-			}
-			/* pass it to the right waiter... */
-			waiter2->cm = cm;
-			cm = NULL;
-			wake_up(&waiter2->waiter.wait);
-			goto retry_locked;
-		}
-		spin_unlock_bh(&listener->listener.waiters_lock);
-
-		if (!waiter2_gen) {
-			struct sockaddr_in *from_sin, *to_sin;
-
-			from_sin = (struct sockaddr_in *)&peer_addr;
-			to_sin = (struct sockaddr_in *)&dtr_drbd_path(transport)->my_addr;
-			tr_err(transport, "Closing unexpected connection from "
-				 "%pI4 to port %u\n",
-				 &from_sin->sin_addr,
-				 be16_to_cpu(to_sin->sin_port));
-
-			goto retry;
-		}
-
-		/* if waiter2_gen is not null and rdma_stream is also not null,
-		   we know the connection is for us... return it with RC = success */
-	}
-
-	*ret_cm = cm;
-	return 0;
-
-err:
-	dtr_free_cm(cm);
-	return err;
-
-retry_locked:
-	spin_unlock_bh(&listener->listener.waiters_lock);
-	goto retry;
-}
-
-static void dtr_connect_path_work_fn(struct work_struct *work)
-{
-	struct dtr_path *path = container_of(work, struct dtr_path, connect_work);
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-	struct drbd_transport *transport = &rdma_transport->transport;
-	struct dtr_waiter waiter;
-	bool resolve_conflicts = false;
-	enum drbd_stream i;
-	int p, err;
-
-	__dtr_uninit_path(path, false);
-
-	waiter.waiter.transport = transport;
-	waiter.cm = NULL;
-
-	err = drbd_get_listener(&waiter.waiter,
+	err = drbd_get_listener(&cs->waiter,
 				(struct sockaddr *)&path->path.my_addr,
 				dtr_create_listener);
 	if (err)
+		return err;
+
+	err = dtr_start_try_connect(cs);
+	if (err)
 		goto out;
 
-	while (true) {
-		struct dtr_cm *cm = NULL;
+	return 0;
 
-		err = dtr_try_connect(path, &cm);
-		if (err < 0 && err != -EAGAIN)
-			goto out;
-
-		if (cm) {
-			resolve_conflicts = false;
-			path->cm = cm;
-			break;
-		}
-
-		err = dtr_wait_for_connect(&waiter, &cm);
-		if (err < 0 && err != -EAGAIN)
-			goto out;
-
-		if (cm) {
-			resolve_conflicts = true;
-			path->cm = cm;
-			break;
-		}
-
-		if (drbd_should_abort_listening(transport))
-			goto out_eagain;
-
-		if (test_bit(P_CANCEL_CONNECT, &path->flags))
-			goto out_eagain;
-
-	}
-
-	drbd_put_listener(&waiter.waiter);
-
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		dtr_init_flow(&path->flow[i], path);
-	dtr_path_alloc_rdma_res(path, transport);
-
-	if (0) {
-out_eagain:
-		err = -EAGAIN;
-	}
-	if (err) {
 out:
-		drbd_put_listener(&waiter.waiter);
-		dtr_uninit_path(path);
-	}
-
-	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
-	if (!err) {
-		__dtr_refill_rx_desc(path, DATA_STREAM);
-		__dtr_refill_rx_desc(path, CONTROL_STREAM);
-		err = dtr_send_flow_control_msg(path);
-		if (err < 0) {
-			tr_err(transport, "sending first flow_control_msg() failed\n");
-			goto out_eagain;
-		}
-
-		if (p == 1) {
-			/* I was the first! */
-
-			if (resolve_conflicts)
-				set_bit(RESOLVE_CONFLICTS, &transport->flags);
-			else
-				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
-
-			complete(&rdma_transport->connected);
-		}
-	}
-
-	clear_bit(P_CONNECT_WORK, &path->flags);
-	wake_up_all(&path->wq);
+	drbd_put_listener(&cs->waiter);
+	return err;
 }
 
 static int dtr_connect(struct drbd_transport *transport)
@@ -1939,15 +1975,11 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
 	struct drbd_path *drbd_path;
-	struct dtr_path *path;
 	struct net_conf *nc;
-	int timeout, n, err = -ENOMEM;
 
-	n = 0;
-	list_for_each_entry(drbd_path, &transport->paths, list)
-		n++;
+	int timeout, err = -ENOMEM;
 
-	if (n == 0)
+	if (list_empty(&transport->paths))
 		return -EDESTADDRREQ;
 
 	data_stream = &rdma_transport->stream[DATA_STREAM];
@@ -1970,29 +2002,34 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	rdma_transport->active = true;
 
-	if (n == 1) {
-		path = dtr_path(rdma_transport);
-		set_bit(P_CONNECT_WORK, &path->flags);
-		dtr_connect_path_work_fn(&path->connect_work);
-	} else /* n > 1 */ {
-		list_for_each_entry(drbd_path, &transport->paths, list) {
-			path = container_of(drbd_path, struct dtr_path, path);
-			set_bit(P_CONNECT_WORK, &path->flags);
-			queue_work(dtr_work_queue, &path->connect_work);
-		}
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+
+		err = dtr_activate_path(path);
+		if (err)
+			goto abort;
 	}
 
 	wait_for_completion_interruptible(&rdma_transport->connected);
 
 	err = atomic_read(&rdma_transport->first_path_connect_err);
-
 	if (err) {
+abort:
 		rdma_transport->active = false;
 
 		list_for_each_entry(drbd_path, &transport->paths, list) {
-			path = container_of(drbd_path, struct dtr_path, path);
+			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 			dtr_disconnect_path(path);
 		}
+	} else {
+		int i;
+
+		/* Make sure at least one path has rx_descs... */
+		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+			dtr_refill_rx_desc(rdma_transport, i);
+
+		/* make sure the other side had time to create rx_descs */
+		schedule_timeout(HZ / 4);
 	}
 
 	return err;
@@ -2292,19 +2329,23 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	int err = 0;
 
 	/* initialize private parts of path */
 	path->rdma_transport = rdma_transport;
-	INIT_WORK(&path->connect_work, dtr_connect_path_work_fn);
-	init_waitqueue_head(&path->wq);
+	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
+	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 
 	list_add(&drbd_path->list, &transport->paths);
 	path->nr = nr++;
 
-	if (rdma_transport->active)
-		queue_work(dtr_work_queue, &path->connect_work);
+	if (rdma_transport->active) {
+		err = dtr_activate_path(path);
+		if (err)
+			list_del_init(&drbd_path->list);
+	}
 
-	return 0;
+	return err;
 }
 
 static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *del_path)
@@ -2345,10 +2386,10 @@ static int __init dtr_initialize(void)
 {
 	allocation_size = PAGE_SIZE;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
-	dtr_work_queue = alloc_workqueue("drbd_rdma", 0, 0);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
+	dtr_work_queue = create_singlethread_workqueue("drbd_rdma");
 #else
-	dtr_work_queue = create_workqueue("drbd_rdma");
+	dtr_work_queue = system_wq;
 #endif
 
 	return drbd_register_transport_class(&rdma_transport_class,
@@ -2358,7 +2399,9 @@ static int __init dtr_initialize(void)
 
 static void __exit dtr_cleanup(void)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
 	destroy_workqueue(dtr_work_queue);
+#endif
 	drbd_unregister_transport_class(&rdma_transport_class);
 }
 
