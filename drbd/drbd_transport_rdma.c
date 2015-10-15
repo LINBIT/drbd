@@ -326,7 +326,7 @@ static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx
 static void dtr_disconnect_path(struct dtr_path *path);
 static void dtr_uninit_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path);
-static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct drbd_transport *transport);
+static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_free_cm(struct dtr_cm *cm);
@@ -666,7 +666,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(&path->flow[i], path);
 
-	return dtr_path_alloc_rdma_res(path, &path->rdma_transport->transport);
+	return dtr_path_alloc_rdma_res(path);
 }
 
 static void dtr_path_established(struct dtr_path *path)
@@ -1668,11 +1668,10 @@ static void dtr_init_stream(struct dtr_stream *rdma_stream,
 	spin_lock_init(&rdma_stream->rx_descs_lock);
 }
 
-static int dtr_path_alloc_rdma_res(struct dtr_path *path,
-				   struct drbd_transport *transport)
+static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 {
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
+	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_transport *transport = &rdma_transport->transport;
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
 
 	/* Each path might be the sole path, therefore it must be able to
@@ -1740,8 +1739,6 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path,
 		err = PTR_ERR(path->dma_mr);
 		goto dma_failed;
 	}
-
-	path->rdma_transport = rdma_transport;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_create_rx_desc(&path->flow[i]);
