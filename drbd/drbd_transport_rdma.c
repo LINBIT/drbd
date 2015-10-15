@@ -1153,6 +1153,11 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 				"wc.status = %d (%s), wc.opcode = %d (%s)\n",
 				wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
 				wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+
+			tr_warn(&rdma_transport->transport,
+				"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+				wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+
 			return;
 		}
 
@@ -1235,6 +1240,11 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		if (wc.status != IB_WC_SUCCESS) {
 			tr_err(&rdma_transport->transport,
 			       "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+
+			tr_err(&rdma_transport->transport,
+			       "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+
 			goto disconnect;
 		}
 
