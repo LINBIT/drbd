@@ -699,6 +699,13 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 #define DRBD_REQ_DISCARD	0
 #endif
 
+#ifndef WRITE_FLUSH
+#ifndef WRITE_SYNC
+#error  FIXME WRITE_SYNC undefined??
+#endif
+#define WRITE_FLUSH       (WRITE_SYNC | DRBD_REQ_FLUSH)
+#endif
+
 /* this results in:
 	bi_rw   -> dp_flags
 
