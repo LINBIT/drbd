@@ -1412,8 +1412,11 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 	while (flow->rx_descs_posted < descs_want_posted &&
 	       flow->rx_descs_allocated < descs_max) {
 		int err = dtr_create_rx_desc(flow);
-		if (err)
+		if (err) {
+			struct drbd_transport *transport = &path->rdma_transport->transport;
+			tr_err(transport, "dtr_create_rx_desc() = %d\n", err);
 			break;
+		}
 	}
 }
 
