@@ -198,7 +198,6 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 {
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
-	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 	int is_write = bio_data_dir(bio) == WRITE;
 	int is_discard = !!(bio->bi_rw & DRBD_REQ_DISCARD);
 
@@ -208,17 +207,6 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 				is_write ? (is_discard ? "discard" : "write")
 					: "read", error,
 				(unsigned long long)peer_req->i.sector);
-	if (!error && !uptodate) {
-		if (DRBD_ratelimit(5*HZ, 5))
-			drbd_warn(device, "%s: setting error to -EIO s=%llus\n",
-					is_write ? "write" : "read",
-					(unsigned long long)peer_req->i.sector);
-		/* strange behavior of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?! */
-		error = -EIO;
-	}
-
 	if (error)
 		set_bit(__EE_WAS_ERROR, &peer_req->flags);
 
@@ -247,18 +235,8 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	struct drbd_device *device = req->device;
 	struct bio_and_error m;
 	enum drbd_req_event what;
-	int uptodate = bio_flagged(bio, BIO_UPTODATE);
 
 	BIO_ENDIO_FN_START;
-	if (!error && !uptodate) {
-		drbd_warn(device, "p %s: setting error to -EIO\n",
-			 bio_data_dir(bio) == WRITE ? "write" : "read");
-		/* strange behavior of some lower level drivers...
-		 * fail the request by clearing the uptodate flag,
-		 * but do not return any error?! */
-		error = -EIO;
-	}
-
 
 	/* If this request was aborted locally before,
 	 * but now was completed "successfully",

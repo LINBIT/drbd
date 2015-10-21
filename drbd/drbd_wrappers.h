@@ -168,17 +168,29 @@ static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
 #define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-/* Before Linux-2.6.24 bie_endio() had the size of the bio as second argument.
+/* Before Linux-2.6.24 bio_endio() had the size of the bio as second argument.
    See 6712ecf8f648118c3363c142196418f89a510b90 */
 #define bio_endio(B,E) bio_endio(B, (B)->bi_size, E)
 #define BIO_ENDIO_TYPE int
 #define BIO_ENDIO_ARGS(b,e) (b, unsigned int bytes_done, e)
-#define BIO_ENDIO_FN_START if (bio->bi_size) return 1
+#define BIO_ENDIO_FN_START	\
+	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
+	if (!error && !uptodate) error = -EIO; \
+	if (bio->bi_size) return 1
 #define BIO_ENDIO_FN_RETURN return 0
-#else
+#elif !defined(COMPAT_HAVE_BIO_BI_ERROR)
 #define BIO_ENDIO_TYPE void
 #define BIO_ENDIO_ARGS(b,e) (b,e)
-#define BIO_ENDIO_FN_START do {} while (0)
+#define BIO_ENDIO_FN_START	\
+	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
+	if (!error && !uptodate) error = -EIO
+#define BIO_ENDIO_FN_RETURN return
+#else
+#define bio_endio(B,E) do { (B)->bi_error = E; bio_endio(B); } while (0)
+#define BIO_ENDIO_TYPE void
+#define BIO_ENDIO_ARGS(b,e) (b)
+#define BIO_ENDIO_FN_START	\
+	int error = bio->bi_error
 #define BIO_ENDIO_FN_RETURN return
 #endif
 

@@ -1562,12 +1562,18 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-	start_jif = jiffies;
+#ifdef HAVE_BLK_QUEUE_SPLIT
+/* 54efd50 block: make generic_make_request handle arbitrarily sized bios
+ * introduced blk_queue_split(), which is supposed to split (and put on the
+ * current->bio_list bio chain) any bio that is violating the queue limits.
+ * Before that, any user was supposed to go through bio_add_page(), which
+ * would call our merge bvec function, and that should already be sufficient
+ * to not violate queue limits.
+ */
+	blk_queue_split(q, &bio, q->bio_split);
+#endif
 
-	/*
-	 * what we "blindly" assume:
-	 */
-	D_ASSERT(device, IS_ALIGNED(DRBD_BIO_BI_SIZE(bio), 512));
+	start_jif = jiffies;
 
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_jif);
@@ -1587,6 +1593,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
  * As long as the BIO is empty we have to allow at least one bvec,
  * regardless of size and offset, so no need to ask lower levels.
  */
+#ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 #ifdef HAVE_bvec_merge_data
 int drbd_merge_bvec(struct request_queue *q,
 		struct bvec_merge_data *bvm,
@@ -1639,6 +1646,7 @@ int drbd_merge_bvec(struct request_queue *q,
 	}
 	return limit;
 }
+#endif
 #endif
 
 static bool net_timeout_reached(struct drbd_request *net_req,

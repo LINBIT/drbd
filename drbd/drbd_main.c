@@ -2855,7 +2855,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	   This triggers a max_bio_size message upon first attach or connect */
 	blk_queue_max_hw_sectors(q, DRBD_MAX_BIO_SIZE_SAFE >> 8);
 	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
+#ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
+#endif
 	q->queue_lock = &resource->req_lock;
 #ifdef blk_queue_plugged
 		/* plugging on a queue, that actually has no requests! */

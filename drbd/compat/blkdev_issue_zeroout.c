@@ -12,13 +12,13 @@ struct bio_batch {
 	struct completion	*wait;
 };
 
-BIO_ENDIO_TYPE bio_batch_end_io BIO_ENDIO_ARGS(struct bio *bio, int err)
+BIO_ENDIO_TYPE bio_batch_end_io BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct bio_batch *bb = bio->bi_private;
 
 	BIO_ENDIO_FN_START;
 
-	if (err && (err != -EOPNOTSUPP))
+	if (error && (error != -EOPNOTSUPP))
 		clear_bit(BIO_UPTODATE, &bb->flags);
 	if (atomic_dec_and_test(&bb->done))
 		complete(bb->wait);
