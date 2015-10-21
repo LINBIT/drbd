@@ -995,6 +995,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm_context->name);
 		break;
 
+	case RDMA_CM_EVENT_TIMEWAIT_EXIT:
+		break;
+
 	default:
 		pr_warn("id %p context %p unexpected event %d!\n",
 				cm_id, cm_context, event->event);
