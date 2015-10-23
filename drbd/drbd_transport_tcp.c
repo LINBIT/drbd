@@ -349,8 +349,9 @@ static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 	}
 }
 
-static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret_socket)
+static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 {
+	struct drbd_transport *transport = path->transport;
 	const char *what;
 	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
@@ -369,7 +370,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
 
-	my_addr = dtt_path(transport)->my_addr;
+	my_addr = path->path.my_addr;
 	if (my_addr.ss_family == AF_INET6)
 		((struct sockaddr_in6 *)&my_addr)->sin6_port = 0;
 	else
@@ -377,7 +378,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 
 	/* In some cases, the network stack can end up overwriting
 	   peer_addr.ss_family, so use a copy here. */
-	peer_addr = dtt_path(transport)->peer_addr;
+	peer_addr = path->path.peer_addr;
 
 	what = "sock_create_kern";
 	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
@@ -398,7 +399,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, dtt_path(transport)->my_addr_len);
+	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, path->path.my_addr_len);
 	if (err < 0)
 		goto out;
 
@@ -406,7 +407,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct socket **ret
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	what = "connect";
 	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr,
-				   dtt_path(transport)->peer_addr_len, 0);
+				   path->path.peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
 		case -ETIMEDOUT:
@@ -768,7 +769,8 @@ static int dtt_connect(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-	struct drbd_path *path = dtt_path(transport);
+	struct drbd_path *drbd_path = dtt_path(transport);
+	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	struct dtt_waiter waiter;
@@ -778,13 +780,13 @@ static int dtt_connect(struct drbd_transport *transport)
 	dsocket = NULL;
 	csocket = NULL;
 
-	if (!dtt_path(transport))
+	if (!drbd_path)
 		return -EDESTADDRREQ;
 	tcp_transport->in_use = true;
 
 	waiter.waiter.transport = transport;
 	waiter.socket = NULL;
-	err = drbd_get_listener(&waiter.waiter, (struct sockaddr *)&path->my_addr,
+	err = drbd_get_listener(&waiter.waiter, (struct sockaddr *)&drbd_path->my_addr,
 				dtt_create_listener);
 	if (err)
 		return err;
@@ -792,7 +794,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	do {
 		struct socket *s = NULL;
 
-		err = dtt_try_connect(transport, &s);
+		err = dtt_try_connect(path, &s);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
