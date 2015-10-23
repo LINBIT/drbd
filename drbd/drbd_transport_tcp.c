@@ -61,6 +61,12 @@ struct dtt_waiter {
 	struct socket *socket;
 };
 
+struct dtt_path {
+	struct drbd_path path;
+
+	struct drbd_transport *transport;
+};
+
 static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int dtt_connect(struct drbd_transport *transport);
@@ -82,7 +88,7 @@ static int dtt_remove_path(struct drbd_transport *, struct drbd_path *);
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
 	.instance_size = sizeof(struct drbd_tcp_transport),
-	.path_instance_size = sizeof(struct drbd_path),
+	.path_instance_size = sizeof(struct dtt_path),
 	.module = THIS_MODULE,
 	.init = dtt_init,
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
@@ -1084,12 +1090,16 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 }
 
-static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *path)
+static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
+	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
+
 	if (!list_empty(&transport->paths))
 		return -EEXIST;
 
-	list_add(&path->list, &transport->paths);
+	path->transport = transport;
+
+	list_add(&drbd_path->list, &transport->paths);
 
 	return 0;
 }
