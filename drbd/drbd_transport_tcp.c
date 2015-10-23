@@ -141,11 +141,6 @@ fail:
 	return -ENOMEM;
 }
 
-static struct drbd_path* dtt_path(struct drbd_transport *transport)
-{
-	return list_first_entry_or_null(&transport->paths, struct drbd_path, list);
-}
-
 static void dtt_free_one_sock(struct socket *socket)
 {
 	if (socket) {
@@ -161,7 +156,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		container_of(transport, struct drbd_tcp_transport, transport);
 	enum drbd_stream i;
 	struct drbd_path *drbd_path;
-
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
 
@@ -176,12 +170,13 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		drbd_path->established = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
+		struct drbd_path *tmp;
+
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 			tcp_transport->rbuf[i].base = NULL;
 		}
-		drbd_path = dtt_path(transport);
-		if (drbd_path) {
+		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
 			list_del(&drbd_path->list);
 			kfree(drbd_path);
 		}
@@ -588,25 +583,19 @@ retry:
 		spin_lock_bh(&listener->listener.waiters_lock);
 		waiter2_gen = drbd_find_waiter_by_addr(&listener->listener, &peer_addr);
 		if (!waiter2_gen) {
-			struct sockaddr_in6 *from_sin6, *to_sin6;
-			struct sockaddr_in *from_sin, *to_sin;
+			struct sockaddr_in6 *from_sin6;
+			struct sockaddr_in *from_sin;
 
 			switch (peer_addr.ss_family) {
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				to_sin6 = (struct sockaddr_in6 *)&dtt_path(transport)->my_addr;
 				tr_err(transport, "Closing unexpected connection from "
-					 "%pI6 to port %u\n",
-					 &from_sin6->sin6_addr,
-					 be16_to_cpu(to_sin6->sin6_port));
+				       "%pI6\n", &from_sin6->sin6_addr);
 				break;
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
-				to_sin = (struct sockaddr_in *)&dtt_path(transport)->my_addr;
 				tr_err(transport, "Closing unexpected connection from "
-					 "%pI4 to port %u\n",
-					 &from_sin->sin_addr,
-					 be16_to_cpu(to_sin->sin_port));
+					 "%pI4\n", &from_sin->sin_addr);
 				break;
 			}
 
@@ -707,7 +696,7 @@ static int dtt_create_listener(struct drbd_transport *transport,
 			       const struct sockaddr *addr,
 			       struct drbd_listener **ret_listener)
 {
-	int err, sndbuf_size, rcvbuf_size;
+	int err, sndbuf_size, rcvbuf_size, addr_len;
 	struct sockaddr_storage my_addr;
 	struct dtt_listener *listener = NULL;
 	struct socket *s_listen;
@@ -737,7 +726,11 @@ static int dtt_create_listener(struct drbd_transport *transport,
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	what = "bind before listen";
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, dtt_path(transport)->my_addr_len);
+
+	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
+		: sizeof(struct sockaddr_in);
+
+	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, addr_len);
 	if (err < 0)
 		goto out;
 
