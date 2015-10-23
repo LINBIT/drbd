@@ -1690,6 +1690,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	if (!discard)
 		goto zero_out;
 
+#ifdef QUEUE_FLAG_DISCARD
 	/* Zero-sector (unknown) and one-sector granularities are the same.  */
 #ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
@@ -1726,6 +1727,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		nr_sectors -= nr;
 		start += nr;
 	}
+#endif
  zero_out:
 	if (nr_sectors) {
 		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0);
