@@ -47,7 +47,6 @@ struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
 	struct socket *stream[2];
 	struct buffer rbuf[2];
-	bool in_use;
 };
 
 struct dtt_listener {
@@ -135,7 +134,6 @@ int dtt_init(struct drbd_transport *transport)
 		tcp_transport->rbuf[i].base = buffer;
 		tcp_transport->rbuf[i].pos = buffer;
 	}
-	tcp_transport->in_use = false;
 
 	return 0;
 fail:
@@ -173,7 +171,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			tcp_transport->stream[i] = NULL;
 		}
 	}
-	tcp_transport->in_use = false;
 
 	list_for_each_entry(drbd_path, &transport->paths, list)
 		drbd_path->established = false;
@@ -827,7 +824,6 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	if (list_empty(&transport->paths))
 		return -EDESTADDRREQ;
-	tcp_transport->in_use = true;
 
 	waiter.transport = transport;
 	init_waitqueue_head(&waiter.wait);
@@ -1169,9 +1165,6 @@ static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 {
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
-	if (!list_empty(&transport->paths))
-		return -EEXIST;
-
 	path->waiter.transport = transport;
 	drbd_path->established = false;
 
@@ -1180,21 +1173,13 @@ static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	return 0;
 }
 
-static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *path)
+static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
-	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
-	struct drbd_path *existing = dtt_path(transport);
-
-	if (tcp_transport->in_use)
+	if (drbd_path->established)
 		return -EBUSY;
 
-	if (path && path == existing) {
-		list_del_init(&existing->list);
-		return 0;
-	}
-
-	return -ENOENT;
+	list_del_init(&drbd_path->list);
+	return 0;
 }
 
 static int __init dtt_initialize(void)
