@@ -2071,6 +2071,8 @@ extern void notify_peer_device_state(struct sk_buff *,
 				     enum drbd_notification_type);
 extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 			  struct drbd_connection *, const char *, int);
+extern void notify_path(struct drbd_connection *, struct drbd_path *,
+			enum drbd_notification_type);
 
 /*
  * inline helper functions

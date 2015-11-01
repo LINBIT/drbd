@@ -3227,6 +3227,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		drbd_msg_put_info(adm_ctx->reply_skb, "add_path on transport failed");
 		return ERR_INVALID_REQUEST;
 	}
+	notify_path(adm_ctx->connection, path, NOTIFY_CREATE);
 	return NO_ERROR;
 }
 
@@ -3357,6 +3358,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		drbd_msg_put_info(adm_ctx->reply_skb, "del_path on transport failed");
 		return ERR_INVALID_REQUEST;
 	}
+	notify_path(adm_ctx->connection, path, NOTIFY_DESTROY);
 	return NO_ERROR;
 }
 
@@ -5316,6 +5318,53 @@ nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
+		 err, seq);
+}
+
+void notify_path(struct drbd_connection *connection, struct drbd_path *path,
+		 enum drbd_notification_type type)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_path_info path_info;
+	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
+	struct sk_buff *skb = NULL;
+	struct drbd_genlmsghdr *dh;
+	int err;
+
+	path_info.path_established = path->established;
+
+	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+	err = -ENOMEM;
+	if (!skb)
+		goto fail;
+
+	err = -EMSGSIZE;
+	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_PATH_STATE);
+	if (!dh)
+		goto fail;
+
+	dh->minor = -1U;
+	dh->ret_code = NO_ERROR;
+	mutex_lock(&notification_mutex);
+	if (nla_put_drbd_cfg_context(skb, resource, connection, NULL, path) ||
+	    nla_put_notification_header(skb, type) ||
+	    drbd_path_info_to_skb(skb, &path_info, true))
+		goto unlock_fail;
+
+	genlmsg_end(skb, dh);
+	err = drbd_genl_multicast_events(skb, GFP_NOWAIT);
+	skb = NULL;
+	/* skb has been consumed or freed in netlink_broadcast() */
+	if (err && err != -ESRCH)
+		goto unlock_fail;
+	mutex_unlock(&notification_mutex);
+	return;
+
+unlock_fail:
+	mutex_unlock(&notification_mutex);
+fail:
+	nlmsg_free(skb);
+	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
 }
 

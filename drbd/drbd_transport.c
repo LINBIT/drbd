@@ -314,7 +314,14 @@ bool drbd_should_abort_listening(struct drbd_transport *transport)
 	return abort;
 }
 
+/* Called by a transport if a path was established / disconnected */
+void drbd_path_event(struct drbd_transport *transport, struct drbd_path *path)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
 
+	notify_path(connection, path, NOTIFY_CHANGE);
+}
 
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);
@@ -324,3 +331,4 @@ EXPORT_SYMBOL_GPL(drbd_put_listener);
 EXPORT_SYMBOL_GPL(drbd_find_waiter_by_addr);
 EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);
 EXPORT_SYMBOL_GPL(drbd_should_abort_listening);
+EXPORT_SYMBOL_GPL(drbd_path_event);
