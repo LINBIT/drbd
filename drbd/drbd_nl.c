@@ -4071,7 +4071,8 @@ int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 				    struct drbd_resource *resource,
 				    struct drbd_connection *connection,
-				    struct drbd_device *device)
+				    struct drbd_device *device,
+				    struct drbd_path *path)
 {
 	struct nlattr *nla;
 	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
@@ -4087,6 +4088,10 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 		if (connection->transport.net_conf && connection->transport.net_conf->name)
 			nla_put_string(skb, T_ctx_conn_name, connection->transport.net_conf->name);
 		rcu_read_unlock();
+	}
+	if (path) {
+		nla_put(skb, T_ctx_my_addr, path->my_addr_len, &path->my_addr);
+		nla_put(skb, T_ctx_peer_addr, path->peer_addr_len, &path->peer_addr);
 	}
 	nla_nest_end(skb, nla);
 	return 0;
@@ -4152,7 +4157,7 @@ put_result:
 		goto out;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	err = nla_put_drbd_cfg_context(skb, resource, NULL, NULL);
+	err = nla_put_drbd_cfg_context(skb, resource, NULL, NULL, NULL);
 	if (err)
 		goto out;
 	err = res_opts_to_skb(skb, &resource->res_opts, !capable(CAP_SYS_ADMIN));
@@ -4284,7 +4289,7 @@ put_result:
 	dh->minor = -1U;
 	if (retcode == NO_ERROR) {
 		dh->minor = device->minor;
-		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device);
+		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device, NULL);
 		if (err)
 			goto out;
 		if (get_ldev(device)) {
@@ -4439,7 +4444,7 @@ put_result:
 	if (retcode == NO_ERROR) {
 		struct net_conf *net_conf;
 
-		err = nla_put_drbd_cfg_context(skb, resource, connection, NULL);
+		err = nla_put_drbd_cfg_context(skb, resource, connection, NULL, NULL);
 		if (err)
 			goto out;
 		net_conf = rcu_dereference(connection->transport.net_conf);
@@ -4570,7 +4575,7 @@ put_result:
 		struct peer_device_conf *peer_device_conf;
 
 		dh->minor = minor;
-		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device);
+		err = nla_put_drbd_cfg_context(skb, device->resource, peer_device->connection, device, NULL);
 		if (err)
 			goto out;
 		peer_device_to_info(&peer_device_info, peer_device);
@@ -5139,7 +5144,7 @@ void notify_resource_state(struct sk_buff *skb,
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL) ||
+	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL, NULL) ||
 	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     resource_info_to_skb(skb, resource_info, true)))
@@ -5190,7 +5195,7 @@ void notify_device_state(struct sk_buff *skb,
 		goto nla_put_failure;
 	dh->minor = device->minor;
 	dh->ret_code = NO_ERROR;
-	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device) ||
+	if (nla_put_drbd_cfg_context(skb, device->resource, NULL, device, NULL) ||
 	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     device_info_to_skb(skb, device_info, true)))
@@ -5240,7 +5245,7 @@ void notify_connection_state(struct sk_buff *skb,
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL) ||
+	if (nla_put_drbd_cfg_context(skb, connection->resource, connection, NULL, NULL) ||
 	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     connection_info_to_skb(skb, connection_info, true)))
@@ -5291,7 +5296,7 @@ void notify_peer_device_state(struct sk_buff *skb,
 		goto nla_put_failure;
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device) ||
+	if (nla_put_drbd_cfg_context(skb, resource, peer_device->connection, peer_device->device, NULL) ||
 	    nla_put_notification_header(skb, type) ||
 	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
 	     peer_device_info_to_skb(skb, peer_device_info, true)))
@@ -5341,7 +5346,7 @@ void notify_helper(enum drbd_notification_type type,
 	dh->minor = device ? device->minor : -1;
 	dh->ret_code = NO_ERROR;
 	mutex_lock(&notification_mutex);
-	if (nla_put_drbd_cfg_context(skb, resource, connection, device) ||
+	if (nla_put_drbd_cfg_context(skb, resource, connection, device, NULL) ||
 	    nla_put_notification_header(skb, type) ||
 	    drbd_helper_info_to_skb(skb, &helper_info, true))
 		goto unlock_fail;
