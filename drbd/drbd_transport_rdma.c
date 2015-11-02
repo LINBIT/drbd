@@ -324,7 +324,6 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
-static void dtr_uninit_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
@@ -415,7 +414,6 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
 			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 			list_del_init(&drbd_path->list);
-			dtr_uninit_path(path);
 			kfree(path);
 		}
 
@@ -1792,7 +1790,7 @@ static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 	}
 }
 
-static void dtr_disconnect_path(struct dtr_path *path)
+static void __dtr_disconnect_path(struct dtr_path *path)
 {
 	enum connect_state_enum p;
 	int err;
@@ -1890,12 +1888,12 @@ static void __dtr_uninit_path(struct dtr_path *path)
 	}
 }
 
-static void dtr_uninit_path(struct dtr_path *path)
+static void dtr_disconnect_path(struct dtr_path *path)
 {
 	if (!path)
 		return;
 
-	dtr_disconnect_path(path);
+	__dtr_disconnect_path(path);
 
 	__dtr_uninit_path(path);
 }
@@ -2389,7 +2387,7 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *d
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
 		list_del_init(&del_path->list);
-		dtr_uninit_path(path);
+		dtr_disconnect_path(path);
 		return 0;
 	}
 
