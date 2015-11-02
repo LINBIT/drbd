@@ -658,8 +658,9 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
 	cm2 = cmpxchg(&path->cm, NULL, cm);
 	if (cm2) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
-		dtr_free_cm(cm);
+
 		tr_err(transport, "Uhh, there was already a cm!\n");
+		dtr_free_cm(cm); /* Uhh, may not do this in the cma callback context! deadlocks! */
 		return -EAGAIN;
 	}
 
