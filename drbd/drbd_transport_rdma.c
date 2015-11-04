@@ -2061,7 +2061,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	p = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
 	switch (p) {
 	case PCS_CONNECTING:
-		mod_timer_pending(&path->cs.work.timer, 1);
+		if (delayed_work_pending(&path->cs.work))
+			mod_timer_pending(&path->cs.work.timer, 1);
 	case PCS_REQUEST_ABORT:
 		wait_event(path->cs.wq, atomic_read(&path->cs.active_state) == PCS_INACTIVE);
 	case PCS_INACTIVE:
