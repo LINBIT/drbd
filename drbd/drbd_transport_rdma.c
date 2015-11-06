@@ -668,18 +668,19 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
 	return dtr_path_alloc_rdma_res(path);
 }
 
-static void dtr_path_established(struct dtr_path *path)
+static void dtr_path_established_work_fn(struct work_struct *work)
 {
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-	struct drbd_transport *transport = &rdma_transport->transport;
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct drbd_transport *transport = &path->rdma_transport->transport;
 	int p, err = 0;
 
-	atomic_set(&path->cs.active_state, PCS_INACTIVE);
-	p = atomic_xchg(&path->cs.passive_state, PCS_INACTIVE);
+	atomic_set(&cs->active_state, PCS_INACTIVE);
+	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
 	if (p > PCS_INACTIVE)
-		drbd_put_listener(&path->cs.waiter);
+		drbd_put_listener(&cs->waiter);
 
-	wake_up(&path->cs.wq);
+	wake_up(&cs->wq);
 
 	err = dtr_send_flow_control_msg(path);
 	if (err > 0)
@@ -687,9 +688,24 @@ static void dtr_path_established(struct dtr_path *path)
 	if (err)
 		tr_err(transport, "sending first flow_control_msg() failed\n");
 
-	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
+	p = atomic_cmpxchg(&path->rdma_transport->first_path_connect_err, 1, err);
 	if (p == 1)
-		complete(&rdma_transport->connected);
+		complete(&path->rdma_transport->connected);
+
+	path->path.established = true;
+	drbd_path_event(transport, &path->path);
+}
+
+static void dtr_path_established(struct dtr_path *path)
+{
+	struct dtr_connect_state *cs = &path->cs;
+
+	/* In case we came here, since a passive side was established, we
+	   might need to cancel the delayed work for the active connect tries */
+	cancel_delayed_work(&cs->work);
+
+	INIT_WORK(&cs->work.work, dtr_path_established_work_fn);
+	queue_work(dtr_work_queue, &cs->work.work);
 }
 
 static void dtr_unprepare_path(struct dtr_path *path)
@@ -911,6 +927,35 @@ out:
 	dtr_cma_retry_connect(path);
 }
 
+static void dtr_cma_disconnect_work_fn(struct work_struct *work)
+{
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct drbd_path *drbd_path = &path->path;
+
+	if (drbd_path->established) {
+		drbd_path->established = false;
+		drbd_path_event(transport, drbd_path);
+	}
+}
+
+static void dtr_cma_disconnect(struct dtr_path *path)
+{
+	struct dtr_connect_state *cs = &path->cs;
+
+	if (!path->path.established)
+		return;
+
+	if (!delayed_work_pending(&cs->work)) {
+		INIT_WORK(&cs->work.work, dtr_cma_disconnect_work_fn);
+		queue_work(dtr_work_queue, &cs->work.work);
+	} else {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+		tr_warn(transport, "not generating disconnect drbd event\n");
+	}
+}
+
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
 {
 	int err;
@@ -988,6 +1033,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
 		cm_context->state = DISCONNECTED;
+
+		if (cm_context->path)
+			dtr_cma_disconnect(cm_context->path);
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
