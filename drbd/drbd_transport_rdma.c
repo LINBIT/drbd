@@ -891,8 +891,9 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 	queue_delayed_work(dtr_work_queue, &cs->work, connect_int);
 }
 
-static void dtr_cma_retry_connect(struct dtr_path *path)
+static void dtr_cma_retry_connect(struct dtr_cm *cm)
 {
+	struct dtr_path *path = cm->path;
 	struct dtr_connect_state *cs = &path->cs;
 
 	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
@@ -924,7 +925,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 
 	return;
 out:
-	dtr_cma_retry_connect(path);
+	dtr_cma_retry_connect(cm);
 }
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
@@ -1027,7 +1028,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		cm_context->state = ERROR;
 
 		if (cm_context->path)
-			dtr_cma_retry_connect(cm_context->path);
+			dtr_cma_retry_connect(cm_context);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
