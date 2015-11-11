@@ -5,7 +5,7 @@
 
   That started out as "drbd-utils version 8.9.0",
   and provides compatible drbdadm, drbdsetup and drbdmeta tools
-  for DRBD module versions 8.3, 8.4 and 9 (prereleases as of now).
+  for DRBD module versions 8.3, 8.4 and 9.
 
   Again: to manage DRBD 8.4.5 kernel modules and above,
   you want drbd-utils >= 8.9.0 from above url.
