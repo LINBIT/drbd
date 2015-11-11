@@ -64,7 +64,7 @@ ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
 endif
 
-all: check-submods tools module
+all: module tools
 
 .PHONY: all tools module
 tools: | $(if $(filter module all,$(if $(MAKECMDGOALS),,all)),module)
