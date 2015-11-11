@@ -67,7 +67,7 @@ endif
 all: check-submods tools module
 
 .PHONY: all tools module
-tools:
+tools: | $(if $(filter module all,$(if $(MAKECMDGOALS),,all)),module)
 	@cat README.drbd-utils
 doc:
 	@echo "Man page sources moved to http://git.linbit.com/drbd-utils.git"
@@ -97,7 +97,7 @@ check-kdir:
 	fi
 
 .PHONY: module
-module: check-kdir
+module: check-kdir check-submods
 	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR)
 	@ echo -e "\n\tModule build was successful."
 
@@ -232,3 +232,5 @@ ifdef DEBBUILD
 km-deb: distclean drbd/.drbd_git_revision
 	$(DEBBUILD) -i -us -uc -b
 endif
+
+Makefile: ;
