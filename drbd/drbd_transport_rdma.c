@@ -312,7 +312,8 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
-static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
+static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *,
+			    struct dtr_path **);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
 static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
@@ -367,20 +368,6 @@ static struct rdma_conn_param dtr_conn_param = {
 
 static struct workqueue_struct *dtr_work_queue;
 
-
-static struct drbd_path* dtr_drbd_path(struct drbd_transport *transport)
-{
-	return list_first_entry_or_null(&transport->paths, struct drbd_path, list);
-}
-
-static struct dtr_path *dtr_path(struct drbd_rdma_transport *rdma_transport)
-{
-	struct drbd_path *path = dtr_drbd_path(&rdma_transport->transport);
-
-	/* path might be NULL. Using container_of on that is safe since
-	   the offset is 0. I.e. the NULL pointer will continue to be NULL */
-	return container_of(path, struct dtr_path, path);
-}
 
 static int dtr_init(struct drbd_transport *transport)
 {
@@ -1608,7 +1595,8 @@ static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
 }
 
 static int dtr_post_tx_desc(struct drbd_rdma_transport *rdma_transport,
-			    struct drbd_rdma_tx_desc *tx_desc)
+			    struct drbd_rdma_tx_desc *tx_desc,
+			    struct dtr_path **ret_path)
 {
 	enum drbd_stream stream = tx_desc->stream_nr;
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
@@ -1652,6 +1640,7 @@ retry:
 	atomic_dec(&flow->peer_rx_descs);
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
+	*ret_path = path;
 
 	return err;
 }
@@ -2170,7 +2159,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct dtr_path *path = dtr_path(rdma_transport);
+	struct dtr_path *path = NULL;
 	struct drbd_rdma_tx_desc *tx_desc;
 	int err;
 
@@ -2191,9 +2180,14 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].length = size;
 	tx_desc->sge[0].lkey = offset; /* abusing lkey fild. See dtr_post_tx_desc() */
 
-	err = dtr_post_tx_desc(rdma_transport, tx_desc);
+	err = dtr_post_tx_desc(rdma_transport, tx_desc, &path);
 	if (err) {
-		dtr_free_tx_desc(path, tx_desc);
+		if (path) {
+			dtr_free_tx_desc(path, tx_desc);
+		} else {
+			put_page(page);
+			kfree(tx_desc);
+		}
 		tx_desc = NULL;
 	}
 
@@ -2210,6 +2204,7 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[DATA_STREAM];
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_device *device;
+	struct dtr_path *path = NULL;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 	int i = 0, pos = 0, done = 0, err;
@@ -2264,10 +2259,15 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
 	tx_desc->stream_nr = ST_DATA;
 
-	err = dtr_post_tx_desc(rdma_stream, tx_desc);
+	err = dtr_post_tx_desc(rdma_stream, tx_desc, &path);
 	if (err) {
-		bio_for_each_segment(bvec, tx_desc->bio, iter)
-			put_page(bvec BVD bv_page);
+		if (path) {
+			dtr_free_tx_desc(path, tx_desc);
+		} else {
+			bio_for_each_segment(bvec, tx_desc->bio, iter)
+				put_page(bvec BVD bv_page);
+			kfree(tx_desc);
+		}
 	}
 
 	return err;
