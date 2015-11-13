@@ -291,6 +291,12 @@ struct dtr_accept_data {
 	struct dtr_path *path;
 };
 
+struct dtr_connect_data {
+	struct work_struct work;
+	struct dtr_cm *cm;
+	struct dtr_path *path;
+};
+
 static int dtr_init(struct drbd_transport *transport);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
@@ -645,7 +651,6 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "Uhh, there was already a cm!\n");
-		dtr_free_cm(cm); /* Uhh, may not do this in the cma callback context! deadlocks! */
 		return -EAGAIN;
 	}
 
@@ -740,8 +745,10 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	cm->id = new_cm_id;
 
 	err = dtr_path_prepare(path, cm);
-	if (err)
+	if (err) {
+		dtr_free_cm(cm);
 		return;
+	}
 
 	cm->path = path;
 
@@ -887,6 +894,20 @@ static void dtr_cma_retry_connect(struct dtr_cm *cm)
 	queue_work(dtr_work_queue, &cs->work.work);
 }
 
+static void dtr_cma_connect_fail_work_fn(struct work_struct *work)
+{
+	struct dtr_connect_data *cd = container_of(work, struct dtr_connect_data, work);
+	struct dtr_cm *cm = cd->cm;
+	struct dtr_path *path = cd->path;
+
+	kfree(cd);
+
+	atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	wake_up(&path->cs.wq);
+
+	dtr_free_cm(cm);
+}
+
 static void dtr_cma_connect(struct dtr_cm *cm)
 {
 	struct dtr_path *path = cm->path;
@@ -901,8 +922,22 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 	}
 
 	err = dtr_path_prepare(path, cm);
-	if (err)
-		goto out;
+	if (err) {
+		struct dtr_connect_data *cd;
+
+		cd = kmalloc(sizeof(*cd), GFP_KERNEL);
+		if (!cd) {
+			tr_err(transport, "leaking a cm because -ENOMEM for a cd\n");
+			return;
+		}
+
+		INIT_WORK(&cd->work, dtr_cma_connect_fail_work_fn);
+		cd->cm = cm;
+		cd->path = path;
+
+		queue_work(dtr_work_queue, &cd->work);
+		return;
+	}
 
 	err = rdma_connect(cm->id, &dtr_conn_param);
 	if (err) {
