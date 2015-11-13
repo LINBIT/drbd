@@ -2279,10 +2279,18 @@ static int dtr_connect(struct drbd_transport *transport)
 			goto abort;
 	}
 
-	wait_for_completion_interruptible(&rdma_transport->connected);
+	err = wait_for_completion_interruptible(&rdma_transport->connected);
+	if (err) {
+		tr_err(transport, "wait_for_completion_int() = %d", err);
+	}
 
 	err = atomic_read(&rdma_transport->first_path_connect_err);
-	if (err) {
+	if (err == 1) {
+		flush_signals(current);
+		err = -EAGAIN;
+		goto abort;
+	}
+	else if (err) {
 abort:
 		rdma_transport->active = false;
 
