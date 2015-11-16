@@ -83,15 +83,10 @@ int allocation_size;
 
    That needs to be implemented in dtr_create_rx_desc() and in dtr_recv() and dtr_recv_pages() */
 
-/* If no recvbuf_size or sendbuf_size is configured use 1MiByte + 3 pages the DATA_STREAM */
+/* If no recvbuf_size or sendbuf_size is configured use 512KiByte for the DATA_STREAM */
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
    very comparable to the socket sendbuf and recvbuf sizes */
-/* Right now refilling the peer_rx_descs only works while the receiver on both sides tries
-   to receive something, better make sure a complete BIO always fits in.
-   Probably a better approach would be to do the receiving actually in the callback
-   dtr_rx_cq_event_handler(), then we would always get flowcontrol messages in in a timely
-   manner */ /* Update! Early processing of flowcontrol messages is implemented! */
-#define RDMA_DEF_BUFFER_SIZE (2 * DRBD_MAX_BIO_SIZE + (3 * DRBD_SOCKET_BUFFER_SIZE))
+#define RDMA_DEF_BUFFER_SIZE (1 << 19)
 
 /* If we can send less than 8 packets, we consider the transport as congested. */
 #define DESCS_LOW_LEVEL 8
@@ -332,7 +327,7 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
-static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path);
+static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
@@ -657,7 +652,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 
 	path->cs.active = active;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		dtr_init_flow(&path->flow[i], path);
+		dtr_init_flow(path, i);
 
 	return dtr_path_alloc_rdma_res(path);
 }
@@ -1687,11 +1682,13 @@ retry:
 	return err;
 }
 
-static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path)
+static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &path->rdma_transport->transport;
+	unsigned int alloc_size = path->rdma_transport->rx_allocation_size;
 	unsigned int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
 	unsigned int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
+	struct dtr_flow *flow = &path->flow[stream];
 	struct net_conf *nc;
 	int err = 0;
 
@@ -1709,9 +1706,10 @@ static int dtr_init_flow(struct dtr_flow *flow, struct dtr_path *path)
 	if (nc->sndbuf_size)
 		sndbuf_size = nc->sndbuf_size;
 
-	/* Do not allow smaller settings than RDMA_DEF_BUFFER_SIZE for now. */
-	rcvbuf_size = max(rcvbuf_size, RDMA_DEF_BUFFER_SIZE);
-	sndbuf_size = max(sndbuf_size, RDMA_DEF_BUFFER_SIZE);
+	if (stream == CONTROL_STREAM) {
+		rcvbuf_size = max(rcvbuf_size / 64, alloc_size * 8);
+		sndbuf_size = max(sndbuf_size / 64, alloc_size * 8);
+	}
 
 	if (rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
 		tr_err(transport, "Set max-buffers at least to %d, (right now it is %d).\n",
