@@ -317,7 +317,7 @@ static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *,
 			    struct dtr_path **);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
-static void dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
+static int dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				enum drbd_stream stream,
@@ -1239,11 +1239,22 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		rx_desc->size = wc.byte_len;
 		immediate.i = be32_to_cpu(wc.ex.imm_data);
 		if (immediate.stream == ST_FLOW_CTRL) {
+			int err;
+
 			ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
 						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 			dtr_got_flow_control_msg(path, page_address(rx_desc->page));
-			/* rx_descs_posted, rx_descs_konwn_to_peer stays constant */
-			dtr_repost_rx_desc(path, rx_desc);
+			err = dtr_repost_rx_desc(path, rx_desc);
+			if (err) {
+				dtr_free_rx_desc(path, rx_desc);
+				if (path->flow[DATA_STREAM].rx_descs_posted) {
+					path->flow[DATA_STREAM].rx_descs_posted--;
+					path->flow[DATA_STREAM].rx_descs_allocated--;
+				} else {
+					path->flow[CONTROL_STREAM].rx_descs_posted--;
+					path->flow[CONTROL_STREAM].rx_descs_allocated--;
+				}
+			}
 		} else {
 			struct dtr_flow *flow = &path->flow[immediate.stream];
 			struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
@@ -1512,23 +1523,15 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	}
 }
 
-static void dtr_repost_rx_desc(struct dtr_path *path,
+static int dtr_repost_rx_desc(struct dtr_path *path,
 			       struct drbd_rdma_rx_desc *rx_desc)
 {
-	int err;
-
 	rx_desc->size = 0;
 	rx_desc->sge.lkey = path->dma_mr->lkey;
 	/* rx_desc->sge.addr = rx_desc->dma_addr;
 	   rx_desc->sge.length = rx_desc->alloc_size; */
 
-	err = dtr_post_rx_desc(path, rx_desc);
-	if (err) {
-		struct drbd_transport *transport = &path->rdma_transport->transport;
-		tr_err(transport, "repost of an rx_desc failed!\n");
-		/* one of the rx_descs_allocated is now off by one! */
-		dtr_free_rx_desc(path, rx_desc);
-	}
+	return dtr_post_rx_desc(path, rx_desc);
 }
 
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
@@ -1537,26 +1540,53 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 {
 	struct drbd_path *drbd_path;
 	struct drbd_rdma_rx_desc *rx_desc = *pp_rx_desc;
+	int err;
 
 	if (!rx_desc)
 		return;
 
+	rx_desc->path->flow[stream].rx_descs_allocated--;
+
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 		struct dtr_flow *flow = &path->flow[stream];
-		int max_posted = flow->rx_descs_max;
+		int want_posted = flow->rx_descs_want_posted;
 
+		if (!dtr_path_ok(path))
+			continue;
 
-		if (flow->rx_descs_posted < max_posted) {
-			dtr_repost_rx_desc(path, rx_desc);
+		if (flow->rx_descs_posted < want_posted) {
+			err = dtr_repost_rx_desc(path, rx_desc);
+			if (err)
+				goto out;
+			flow->rx_descs_allocated++;
+			flow->rx_descs_posted++;
 			dtr_flow_control(flow);
 			goto done;
 		}
 	}
 
-	rx_desc->path->flow[stream].rx_descs_allocated--;
-	dtr_free_rx_desc(NULL, rx_desc);
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+		struct dtr_flow *flow = &path->flow[stream];
+		int max_allocated = flow->rx_descs_max;
 
+		if (!dtr_path_ok(path))
+			continue;
+
+		if (flow->rx_descs_allocated < max_allocated) {
+			err = dtr_repost_rx_desc(path, rx_desc);
+			if (err)
+				goto out;
+			flow->rx_descs_allocated++;
+			flow->rx_descs_posted++;
+			dtr_flow_control(flow);
+			goto done;
+		}
+	}
+
+out:
+	dtr_free_rx_desc(NULL, rx_desc);
 done:
 	*pp_rx_desc = NULL;
 }
