@@ -215,6 +215,7 @@ struct dtr_connect_state {
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
 	wait_queue_head_t wq;
+	bool active; /* active = established by connect ; !active = established by accept */
 };
 
 struct dtr_path {
@@ -641,7 +642,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 }
 
-static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
+static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
 	struct dtr_cm *cm2;
 	int i;
@@ -654,6 +655,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm)
 		return -EAGAIN;
 	}
 
+	path->cs.active = active;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(&path->flow[i], path);
 
@@ -681,8 +683,13 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 		tr_err(transport, "sending first flow_control_msg() failed\n");
 
 	p = atomic_cmpxchg(&path->rdma_transport->first_path_connect_err, 1, err);
-	if (p == 1)
+	if (p == 1) {
+		if (cs->active)
+			set_bit(RESOLVE_CONFLICTS, &transport->flags);
+		else
+			clear_bit(RESOLVE_CONFLICTS, &transport->flags);
 		complete(&path->rdma_transport->connected);
+	}
 
 	path->path.established = true;
 	drbd_path_event(transport, &path->path);
@@ -744,7 +751,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	new_cm_id->context = cm;
 	cm->id = new_cm_id;
 
-	err = dtr_path_prepare(path, cm);
+	err = dtr_path_prepare(path, cm, false);
 	if (err) {
 		dtr_free_cm(cm);
 		return;
@@ -921,7 +928,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 		return;
 	}
 
-	err = dtr_path_prepare(path, cm);
+	err = dtr_path_prepare(path, cm, true);
 	if (err) {
 		struct dtr_connect_data *cd;
 
