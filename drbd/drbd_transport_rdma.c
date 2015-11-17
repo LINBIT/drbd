@@ -1316,13 +1316,18 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		stream_nr = tx_desc->stream_nr;
 
 		if (wc.status != IB_WC_SUCCESS) {
-			tr_err(&rdma_transport->transport,
-			       "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+			struct drbd_transport *transport = &rdma_transport->transport;
 
-			tr_err(&rdma_transport->transport,
-			       "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+			if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
+				struct dtr_flow *flow = &path->flow[stream_nr];
+				tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
+				tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
+			} else {
 
+				tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+				tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+				       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+			}
 			goto disconnect;
 		}
 
@@ -1636,8 +1641,10 @@ static struct dtr_path *dtr_select_path_for_tx(struct drbd_rdma_transport *rdma_
 		if (!dtr_path_ok(path))
 			continue;
 
+		/* Normal packets are not allowed to consume all of the peer's rx_descs,
+		   the last one is reserved for flow-control messages. */
 		if (atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
-		    atomic_read(&flow->peer_rx_descs))
+		    atomic_read(&flow->peer_rx_descs) > 1)
 			return path;
 	}
 
