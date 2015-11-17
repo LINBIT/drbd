@@ -190,7 +190,7 @@ struct dtr_flow {
 	int tx_descs_max; /* derived from net_conf->sndbuf_size. Do not change after alloc. */
 	atomic_t peer_rx_descs; /* peer's receive window in number of rx descs */
 
-	int rx_descs_posted;
+	atomic_t rx_descs_posted;
 	int rx_descs_max;  /* derived from net_conf->rcvbuf_size. Do not change after alloc. */
 
 	int rx_descs_allocated;  // keep in stream??
@@ -1140,7 +1140,7 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 		int n;
 
 		flow = &path->flow[i];
-		n = flow->rx_descs_posted - atomic_read(&flow->rx_descs_known_to_peer);
+		n = atomic_read(&flow->rx_descs_posted) - atomic_read(&flow->rx_descs_known_to_peer);
 
 		atomic_add(n, &flow->rx_descs_known_to_peer);
 		msg.new_rx_descs[i] = cpu_to_be32(n);
@@ -1154,7 +1154,7 @@ static void dtr_flow_control(struct dtr_flow *flow)
 	int n, known_to_peer = atomic_read(&flow->rx_descs_known_to_peer);
 	int tx_descs_max = flow->tx_descs_max;
 
-	n = flow->rx_descs_posted - known_to_peer;
+	n = atomic_read(&flow->rx_descs_posted) - known_to_peer;
 	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
 		dtr_send_flow_control_msg(flow->path);
 }
@@ -1247,11 +1247,10 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			err = dtr_repost_rx_desc(path, rx_desc);
 			if (err) {
 				dtr_free_rx_desc(path, rx_desc);
-				if (path->flow[DATA_STREAM].rx_descs_posted) {
-					path->flow[DATA_STREAM].rx_descs_posted--;
+				if (atomic_dec_if_positive(&path->flow[DATA_STREAM].rx_descs_posted) >= 0) {
 					path->flow[DATA_STREAM].rx_descs_allocated--;
 				} else {
-					path->flow[CONTROL_STREAM].rx_descs_posted--;
+					atomic_dec(&path->flow[CONTROL_STREAM].rx_descs_posted);
 					path->flow[CONTROL_STREAM].rx_descs_allocated--;
 				}
 			}
@@ -1259,7 +1258,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			struct dtr_flow *flow = &path->flow[immediate.stream];
 			struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
 
-			flow->rx_descs_posted--;
+			atomic_dec(&flow->rx_descs_posted);
 			atomic_dec(&flow->rx_descs_known_to_peer);
 
 			rx_desc->sequence = immediate.sequence;
@@ -1486,7 +1485,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 		dtr_free_rx_desc(path, rx_desc);
 	} else {
 		flow->rx_descs_allocated++;
-		flow->rx_descs_posted++;
+		atomic_inc(&flow->rx_descs_posted);
 	}
 
 	return err;
@@ -1500,7 +1499,7 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 	descs_max = flow->rx_descs_max;
 	descs_want_posted = flow->rx_descs_want_posted;
 
-	while (flow->rx_descs_posted < descs_want_posted &&
+	while (atomic_read(&flow->rx_descs_posted) < descs_want_posted &&
 	       flow->rx_descs_allocated < descs_max) {
 		int err = dtr_create_rx_desc(flow);
 		if (err) {
@@ -1560,12 +1559,12 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 		if (!dtr_path_ok(path))
 			continue;
 
-		if (flow->rx_descs_posted < want_posted) {
+		if (atomic_read(&flow->rx_descs_posted) < want_posted) {
 			err = dtr_repost_rx_desc(path, rx_desc);
 			if (err)
 				goto out;
 			flow->rx_descs_allocated++;
-			flow->rx_descs_posted++;
+			atomic_inc(&flow->rx_descs_posted);
 			dtr_flow_control(flow);
 			goto done;
 		}
@@ -1584,7 +1583,7 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 			if (err)
 				goto out;
 			flow->rx_descs_allocated++;
-			flow->rx_descs_posted++;
+			atomic_inc(&flow->rx_descs_posted);
 			dtr_flow_control(flow);
 			goto done;
 		}
@@ -1765,7 +1764,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	atomic_set(&flow->peer_rx_descs, 0);
 	atomic_set(&flow->rx_descs_known_to_peer, 0);
 
-	flow->rx_descs_posted = 0;
+	atomic_set(&flow->rx_descs_posted, 0);
 	flow->rx_descs_allocated = 0;
 
 	flow->rx_descs_want_posted = flow->rx_descs_max / 2;
@@ -2420,8 +2419,8 @@ static void dtr_debugfs_show_flow(struct dtr_flow *flow, const char *name, struc
 	seq_printf(m,    "%-7s  field:  posted\t alloc\tdesired\t  max\n", name);
 	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&flow->tx_descs_posted), flow->tx_descs_max);
 	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&flow->peer_rx_descs));
-	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", flow->rx_descs_posted, flow->rx_descs_allocated,
-		   flow->rx_descs_want_posted, flow->rx_descs_max);
+	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", atomic_read(&flow->rx_descs_posted),
+		   flow->rx_descs_allocated, flow->rx_descs_want_posted, flow->rx_descs_max);
 	seq_printf(m, " rx_peer_knows: %5d (what the peer knows about my recive window)\n\n",
 		   atomic_read(&flow->rx_descs_known_to_peer));
 }
