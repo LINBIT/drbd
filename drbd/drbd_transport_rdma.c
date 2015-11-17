@@ -1424,20 +1424,25 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 
 static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *rx_desc)
 {
-	struct dtr_path *path = rx_desc->path;
-	struct ib_device *device = path->cm->id->device;
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-	int alloc_size = rdma_transport->rx_allocation_size;
+	struct dtr_path *path;
 
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
-	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
+	path = rx_desc->path;
+	if (path->cm) {
+		struct ib_device *device = path->cm->id->device;
+		int alloc_size = path->rdma_transport->rx_allocation_size;
+
+		ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
+	}
 
 	if (rx_desc->page) {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+
 		/* put_page(), if we had more than one rx_desc per page,
 		 * but see comments in dtr_create_rx_desc */
-		drbd_free_pages(&rdma_transport->transport, rx_desc->page, 0);
+		drbd_free_pages(transport, rx_desc->page, 0);
 	}
 	kfree(rx_desc);
 }
