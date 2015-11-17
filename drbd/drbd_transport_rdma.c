@@ -1245,15 +1245,8 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 			dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 			err = dtr_repost_rx_desc(path, rx_desc);
-			if (err) {
-				dtr_free_rx_desc(path, rx_desc);
-				if (atomic_dec_if_positive(&path->flow[DATA_STREAM].rx_descs_posted) >= 0) {
-					path->flow[DATA_STREAM].rx_descs_allocated--;
-				} else {
-					atomic_dec(&path->flow[CONTROL_STREAM].rx_descs_posted);
-					path->flow[CONTROL_STREAM].rx_descs_allocated--;
-				}
-			}
+			if (err)
+				tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
 		} else {
 			struct dtr_flow *flow = &path->flow[immediate.stream];
 			struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
