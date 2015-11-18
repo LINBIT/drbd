@@ -1540,56 +1540,25 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				enum drbd_stream stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc)
 {
-	struct drbd_path *drbd_path;
 	struct drbd_rdma_rx_desc *rx_desc = *pp_rx_desc;
+	struct dtr_path *path;
+	struct dtr_flow *flow;
 	int err;
 
 	if (!rx_desc)
 		return;
 
-	rx_desc->path->flow[stream].rx_descs_allocated--;
+	path = rx_desc->path;
+	flow = &path->flow[stream];
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-		struct dtr_flow *flow = &path->flow[stream];
-		int want_posted = flow->rx_descs_want_posted;
-
-		if (!dtr_path_ok(path))
-			continue;
-
-		if (atomic_read(&flow->rx_descs_posted) < want_posted) {
-			err = dtr_repost_rx_desc(path, rx_desc);
-			if (err)
-				goto out;
-			flow->rx_descs_allocated++;
-			atomic_inc(&flow->rx_descs_posted);
-			dtr_flow_control(flow);
-			goto done;
-		}
+	err = dtr_repost_rx_desc(path, rx_desc);
+	if (err) {
+		dtr_free_rx_desc(NULL, rx_desc);
+	} else {
+		atomic_inc(&flow->rx_descs_posted);
+		dtr_flow_control(flow);
 	}
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-		struct dtr_flow *flow = &path->flow[stream];
-		int max_allocated = flow->rx_descs_max;
-
-		if (!dtr_path_ok(path))
-			continue;
-
-		if (flow->rx_descs_allocated < max_allocated) {
-			err = dtr_repost_rx_desc(path, rx_desc);
-			if (err)
-				goto out;
-			flow->rx_descs_allocated++;
-			atomic_inc(&flow->rx_descs_posted);
-			dtr_flow_control(flow);
-			goto done;
-		}
-	}
-
-out:
-	dtr_free_rx_desc(NULL, rx_desc);
-done:
 	*pp_rx_desc = NULL;
 }
 
