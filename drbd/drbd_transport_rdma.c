@@ -664,13 +664,6 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	int p, err = 0;
 
-	atomic_set(&cs->active_state, PCS_INACTIVE);
-	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
-	if (p > PCS_INACTIVE)
-		drbd_put_listener(&cs->waiter);
-
-	wake_up(&cs->wq);
-
 	err = dtr_send_flow_control_msg(path);
 	if (err > 0)
 		err = 0;
@@ -688,6 +681,13 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 
 	path->path.established = true;
 	drbd_path_event(transport, &path->path);
+
+	atomic_set(&cs->active_state, PCS_INACTIVE);
+	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
+	if (p > PCS_INACTIVE)
+		drbd_put_listener(&cs->waiter);
+
+	wake_up(&cs->wq);
 }
 
 static void dtr_path_established(struct dtr_path *path)
