@@ -1228,7 +1228,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
 		rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 
-		if(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
+		if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 			tr_warn(&rdma_transport->transport,
 				"wc.status = %d (%s), wc.opcode = %d (%s)\n",
 				wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
@@ -1238,7 +1238,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 				"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
 				wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 
-			return;
+			continue;
 		}
 
 		rx_desc->size = wc.byte_len;
