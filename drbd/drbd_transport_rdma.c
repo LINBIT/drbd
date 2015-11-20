@@ -247,6 +247,7 @@ struct dtr_stream {
 		int bytes_left;
 	} current_rx;
 
+	unsigned long unread; /* unread received; unit: bytes */
 	struct list_head rx_descs;
 	spinlock_t rx_descs_lock;
 
@@ -616,6 +617,8 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 
 static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats)
 {
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
 	struct drbd_path *drbd_path;
 	int sb_size = 0, sb_used = 0;
 
@@ -632,7 +635,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 	stats->send_buffer_used = sb_used * DRBD_SOCKET_BUFFER_SIZE;
 
 	/* these two for debugfs */
-	stats->unread_received = 0; /* Iterate over tx_descs... to find out */
+	stats->unread_received = rdma_transport->stream[DATA_STREAM].unread;
 	stats->unacked_send = stats->send_buffer_used;
 
 }
@@ -1109,6 +1112,7 @@ static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
 			list_del(&rx_desc->list);
 			rdma_stream->rx_sequence =
 				(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+			rdma_stream->unread -= rx_desc->size;
 		} else {
 			rx_desc = NULL;
 		}
@@ -1204,6 +1208,7 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 
 	spin_lock_irqsave(&rdma_stream->rx_descs_lock, flags);
 	__dtr_order_rx_descs(rdma_stream, rx_desc);
+	rdma_stream->unread += rx_desc->size;
 	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
 }
 
@@ -1759,6 +1764,8 @@ static void dtr_init_stream(struct dtr_stream *rdma_stream,
 		container_of(transport, struct drbd_rdma_transport, transport);
 	rdma_stream->tx_sequence = 1;
 	rdma_stream->rx_sequence = 1;
+
+	rdma_stream->unread = 0;
 
 	INIT_LIST_HEAD(&rdma_stream->rx_descs);
 	spin_lock_init(&rdma_stream->rx_descs_lock);
