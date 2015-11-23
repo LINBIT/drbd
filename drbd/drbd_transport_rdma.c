@@ -442,9 +442,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->sge[0].length = size;
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
-	__dtr_post_tx_desc(path, tx_desc);
-
-	return size;
+	return __dtr_post_tx_desc(path, tx_desc);
 }
 
 
@@ -1135,22 +1133,37 @@ static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
 
 static int dtr_send_flow_control_msg(struct dtr_path *path)
 {
-	struct dtr_flow *flow;
 	struct dtr_flow_control msg;
 	enum drbd_stream i;
+	int err, n[2], peer_rx_descs = 0;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		int n;
+		struct dtr_flow *flow = &path->flow[i];
 
-		flow = &path->flow[i];
-		n = atomic_read(&flow->rx_descs_posted) - atomic_read(&flow->rx_descs_known_to_peer);
+		n[i] = atomic_read(&flow->rx_descs_posted) - atomic_read(&flow->rx_descs_known_to_peer);
 
-		atomic_add(n, &flow->rx_descs_known_to_peer);
-		msg.new_rx_descs[i] = cpu_to_be32(n);
+		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
+		peer_rx_descs += atomic_read(&flow->peer_rx_descs);
 	}
 
-	return dtr_send(path, &msg, sizeof(msg));
+	if (!peer_rx_descs) {
+		tr_err(&path->rdma_transport->transport,
+		       "Not sending flow_control mgs, no receive window!\n");
+		return -ENOBUFS;
+	}
+
+	err = dtr_send(path, &msg, sizeof(msg));
+	if (err)
+		return err;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		struct dtr_flow *flow = &path->flow[i];
+
+		atomic_add(n[i], &flow->rx_descs_known_to_peer);
+	}
+
+	return 0;
 }
 
 static void dtr_flow_control(struct dtr_flow *flow)
@@ -1735,8 +1748,8 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	flow->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
 
 	atomic_set(&flow->tx_descs_posted, 0);
-	atomic_set(&flow->peer_rx_descs, 0);
-	atomic_set(&flow->rx_descs_known_to_peer, 0);
+	atomic_set(&flow->peer_rx_descs, stream == CONTROL_STREAM ? 1 : 0);
+	atomic_set(&flow->rx_descs_known_to_peer, stream == CONTROL_STREAM ? 1 : 0);
 
 	atomic_set(&flow->rx_descs_posted, 0);
 	flow->rx_descs_allocated = 0;
