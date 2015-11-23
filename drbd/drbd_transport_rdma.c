@@ -1333,81 +1333,80 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 	kfree(tx_desc);
 }
 
-static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
+static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 {
-	struct dtr_path *path = ctx;
-	struct dtr_stream *rdma_stream = NULL;
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_wc wc;
 	enum dtr_stream_nr stream_nr;
 	int ret;
 
-	// pr_info("%s: got tx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	ret = ib_poll_cq(cq, 1, &wc);
+	if (!ret)
+		return -EAGAIN;
 
-	ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		tr_err(&rdma_transport->transport, "ib_req_notify_cq failed\n");
+	tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
+	stream_nr = tx_desc->stream_nr;
 
-	/* Alternatively put them onto a list here, and do the processing (freeing)
-	   at a later point in time. Probably resource freeing is cheap enough to do
-	   it directly here. */
-	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
-		tx_desc = (struct drbd_rdma_tx_desc *) (unsigned long) wc.wr_id;
-		stream_nr = tx_desc->stream_nr;
+	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
+		struct drbd_transport *transport = &rdma_transport->transport;
+		int err;
 
-		if (wc.status != IB_WC_SUCCESS) {
-			struct drbd_transport *transport = &rdma_transport->transport;
+		if (path->cm->state != CONNECTED)
+			goto out;
+		path->cm->state = ERROR;
 
-			if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
-				struct dtr_flow *flow = &path->flow[stream_nr];
-				tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
-				tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
-			} else {
-
-				tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
-				tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-				       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
-			}
-			goto disconnect;
-		}
-
-		if (wc.opcode != IB_WC_SEND) {
-			tr_err(&rdma_transport->transport, "wc.opcode != IB_WC_SEND %d\n", wc.opcode);
-			goto disconnect;
+		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
+			struct dtr_flow *flow = &path->flow[stream_nr];
+			tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
+			tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
+		} else {
+			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+			tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 		}
 
 		if (stream_nr != ST_FLOW_CTRL) {
-			struct dtr_flow *flow = &path->flow[stream_nr];
-			rdma_stream = &rdma_transport->stream[stream_nr];
-			atomic_dec(&flow->tx_descs_posted);
-		}
-		dtr_free_tx_desc(path, tx_desc);
-	}
-
-	if (ret != 0)
-		tr_warn(&rdma_transport->transport, "ib_poll_cq() returned %d\n", ret);
-
-	if (0) {
-		int err;
-disconnect:
-		path->cm->state = ERROR;
-
-		err = dtr_repost_tx_desc(rdma_transport, tx_desc);
-		if (err) {
-			tr_warn(&rdma_transport->transport, "repost of tx_desc failed!\n");
-			/* TODO: queue instead! */
-			dtr_free_tx_desc(path, tx_desc);
+			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
+			if (err)
+				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
 		}
 
-		/* TODO try to re-establish the path
-		if (!test_and_set_bit(P_CONNECT_WORK, &path->flags))
-			queue_work(dtr_work_queue, &path->connect_work);
-		*/
+		goto out;
 	}
 
-	if (rdma_stream)
+	if (stream_nr != ST_FLOW_CTRL) {
+		struct dtr_flow *flow = &path->flow[stream_nr];
+		struct dtr_stream *rdma_stream = &rdma_transport->stream[stream_nr];
+
+		atomic_dec(&flow->tx_descs_posted);
 		wake_up_interruptible(&rdma_stream->send_wq);
+	}
+
+out:
+	dtr_free_tx_desc(path, tx_desc);
+
+	return 0;
+}
+
+static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
+{
+	struct dtr_path *path = ctx;
+	int err;
+
+	do {
+		do {
+			err = dtr_handle_tx_cq_event(cq, path);
+		} while (!err);
+
+		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+		if (err) {
+			struct drbd_transport *transport = &path->rdma_transport->transport;
+			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+		}
+
+		err = dtr_handle_tx_cq_event(cq, path);
+	} while (!err);
 }
 
 static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_max)
