@@ -1225,61 +1225,84 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
 }
 
-static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
+static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 {
-	struct dtr_path *path = ctx;
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_rx_desc *rx_desc;
 	union dtr_immediate immediate;
 	struct ib_wc wc;
 	int ret;
 
-	ret = ib_req_notify_cq(path->recv_cq, IB_CQ_NEXT_COMP);
-	if (ret)
-		tr_err(&rdma_transport->transport, "ib_req_notify_cq failed\n");
+	ret = ib_poll_cq(cq, 1, &wc);
+	if (!ret)
+		return -EAGAIN;
 
-	while ((ret = ib_poll_cq(cq, 1, &wc)) == 1) {
-		rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
+	rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 
-		if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
-			tr_warn(&rdma_transport->transport,
-				"wc.status = %d (%s), wc.opcode = %d (%s)\n",
-				wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
-				wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
+		struct drbd_transport *transport = &rdma_transport->transport;
 
-			tr_warn(&rdma_transport->transport,
-				"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-				wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+		if (path->cm->state != CONNECTED)
+			return 0;
+		path->cm->state = ERROR;
 
-			continue;
-		}
+		tr_warn(transport,
+			"wc.status = %d (%s), wc.opcode = %d (%s)\n",
+			wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
+			wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
 
-		rx_desc->size = wc.byte_len;
-		immediate.i = be32_to_cpu(wc.ex.imm_data);
-		if (immediate.stream == ST_FLOW_CTRL) {
-			int err;
+		tr_warn(transport,
+			"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+			wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 
-			ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
-						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-			dtr_got_flow_control_msg(path, page_address(rx_desc->page));
-			err = dtr_repost_rx_desc(path, rx_desc);
-			if (err)
-				tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
-		} else {
-			struct dtr_flow *flow = &path->flow[immediate.stream];
-			struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
-
-			atomic_dec(&flow->rx_descs_posted);
-			atomic_dec(&flow->rx_descs_known_to_peer);
-
-			rx_desc->sequence = immediate.sequence;
-			dtr_order_rx_descs(rdma_stream, rx_desc);
-
-			wake_up_interruptible(&rdma_stream->recv_wq);
-		}
+		return 0;
 	}
 
-	// pr_info("%s: got rx cq event. state %d\n", rdma_stream->name, rdma_stream->cm.state);
+	rx_desc->size = wc.byte_len;
+	immediate.i = be32_to_cpu(wc.ex.imm_data);
+	if (immediate.stream == ST_FLOW_CTRL) {
+		int err;
+
+		ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
+					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+		dtr_got_flow_control_msg(path, page_address(rx_desc->page));
+		err = dtr_repost_rx_desc(path, rx_desc);
+		if (err)
+			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
+	} else {
+		struct dtr_flow *flow = &path->flow[immediate.stream];
+		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
+
+		atomic_dec(&flow->rx_descs_posted);
+		atomic_dec(&flow->rx_descs_known_to_peer);
+
+		rx_desc->sequence = immediate.sequence;
+		dtr_order_rx_descs(rdma_stream, rx_desc);
+
+		wake_up_interruptible(&rdma_stream->recv_wq);
+	}
+
+	return 0;
+}
+
+static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
+{
+	struct dtr_path *path = ctx;
+	int err;
+
+	do {
+		do {
+			err = dtr_handle_rx_cq_event(cq, path);
+		} while (!err);
+
+		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+		if (err) {
+			struct drbd_transport *transport = &path->rdma_transport->transport;
+			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+		}
+
+		err = dtr_handle_rx_cq_event(cq, path);
+	} while (!err);
 }
 
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
