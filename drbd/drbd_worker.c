@@ -198,8 +198,8 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 {
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
-	int is_write = bio_data_dir(bio) == WRITE;
-	int is_discard = !!(bio->bi_rw & DRBD_REQ_DISCARD);
+	bool is_write = bio_data_dir(bio) == WRITE;
+	bool is_discard = !!(bio->bi_rw & DRBD_REQ_DISCARD);
 
 	BIO_ENDIO_FN_START;
 	if (error && DRBD_ratelimit(5*HZ, 5))
@@ -1063,7 +1063,6 @@ static void move_to_net_ee_or_free(struct drbd_device *device, struct drbd_peer_
 
 /**
  * w_e_end_data_req() - Worker callback, to send a P_DATA_REPLY packet in response to a P_DATA_REQUEST
- * @device:	DRBD device.
  * @w:		work object.
  * @cancel:	The connection will be closed anyways
  */
@@ -1724,7 +1723,7 @@ static bool use_checksum_based_resync(struct drbd_connection *connection, struct
 	rcu_read_unlock();
 	return connection->agreed_pro_version >= 89 &&		/* supported? */
 		connection->csums_tfm &&			/* configured? */
-		(csums_after_crash_only == 0			/* use for each resync? */
+		(csums_after_crash_only == false		/* use for each resync? */
 		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
 }
 
@@ -1859,7 +1858,7 @@ void drbd_start_resync(struct drbd_device *device, enum drbd_conns side)
 			device->bm_resync_fo = 0;
 			device->use_csums = use_checksum_based_resync(connection, device);
 		} else {
-			device->use_csums = 0;
+			device->use_csums = false;
 		}
 
 		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
