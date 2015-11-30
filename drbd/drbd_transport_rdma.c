@@ -1132,6 +1132,19 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
+	} else {
+		/* The waiting thread gets woken up if a packet arrived, or if there is no
+		   new packet but we need to tell the peer about space in our receive window */
+		struct drbd_path *drbd_path;
+
+		list_for_each_entry(drbd_path, &rdma_transport->transport.paths, list) {
+			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+			struct dtr_flow *flow = &path->flow[stream];
+
+			if (atomic_read(&flow->rx_descs_known_to_peer) <
+			    atomic_read(&flow->rx_descs_posted) / 8)
+				dtr_send_flow_control_msg(path);
+		}
 	}
 
 	return false;
@@ -1194,7 +1207,7 @@ static void dtr_got_flow_control_msg(struct dtr_path *path,
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct dtr_flow *flow;
-	int i, n;
+	int i, n, rx_desc_stolen_from;
 
 	for (i = CONTROL_STREAM; i >= DATA_STREAM; i--) {
 		uint32_t new_rx_descs = be32_to_cpu(msg->new_rx_descs[i]);
@@ -1210,8 +1223,16 @@ static void dtr_got_flow_control_msg(struct dtr_path *path,
 		if (flow->tx_descs_max - tx_descs_posted >= DESCS_LOW_LEVEL)
 			clear_bit(NET_CONGESTED, &rdma_transport->transport.flags);
 	}
-	flow = &path->flow[be32_to_cpu(msg->rx_desc_stolen_from_stream)];
-	atomic_dec(&flow->rx_descs_known_to_peer);
+
+	rx_desc_stolen_from = be32_to_cpu(msg->rx_desc_stolen_from_stream);
+	flow = &path->flow[rx_desc_stolen_from];
+	n = atomic_dec_return(&flow->rx_descs_known_to_peer);
+	/* If we get a lot of flow control messages in, but no data on this
+	   path, we need to tell the peer that we recycled all these buffers */
+	if (n < atomic_read(&flow->rx_descs_posted) / 8) {
+		struct dtr_stream *rdma_stream = &path->rdma_transport->stream[rx_desc_stolen_from];
+		wake_up_interruptible(&rdma_stream->recv_wq); /* No packet, send flow_control! */
+	}
 }
 
 static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
