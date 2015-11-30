@@ -106,6 +106,7 @@ int allocation_size;
 struct dtr_flow_control {
 	uint32_t magic;
 	uint32_t new_rx_descs[2];
+	uint32_t rx_desc_stolen_from_stream;
 } __packed;
 
 /* These numbers are sent within the immediate data value to identify
@@ -663,8 +664,10 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
-	int p, err = 0;
+	int i, p, err;
 
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		__dtr_refill_rx_desc(path, i);
 	err = dtr_send_flow_control_msg(path);
 	if (err > 0)
 		err = 0;
@@ -1135,7 +1138,7 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 {
 	struct dtr_flow_control msg;
 	enum drbd_stream i;
-	int err, n[2], peer_rx_descs = 0;
+	int err, n[2], rx_desc_stolen_from = -1;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
@@ -1144,18 +1147,21 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 		n[i] = atomic_read(&flow->rx_descs_posted) - atomic_read(&flow->rx_descs_known_to_peer);
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
-		peer_rx_descs += atomic_read(&flow->peer_rx_descs);
+		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
+			rx_desc_stolen_from = i;
 	}
 
-	if (!peer_rx_descs) {
+	if (rx_desc_stolen_from == -1) {
 		tr_err(&path->rdma_transport->transport,
 		       "Not sending flow_control mgs, no receive window!\n");
-		return -ENOBUFS;
+		err = -ENOBUFS;
+		goto out;
 	}
 
+	msg.rx_desc_stolen_from_stream = cpu_to_be32(rx_desc_stolen_from);
 	err = dtr_send(path, &msg, sizeof(msg));
 	if (err)
-		return err;
+		goto out_put;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct dtr_flow *flow = &path->flow[i];
@@ -1163,7 +1169,11 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 		atomic_add(n[i], &flow->rx_descs_known_to_peer);
 	}
 
-	return 0;
+	goto out;
+out_put:
+	atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
+out:
+	return err;
 }
 
 static void dtr_flow_control(struct dtr_flow *flow)
@@ -1197,6 +1207,8 @@ static void dtr_got_flow_control_msg(struct dtr_path *path,
 		if (flow->tx_descs_max - tx_descs_posted >= DESCS_LOW_LEVEL)
 			clear_bit(NET_CONGESTED, &rdma_transport->transport.flags);
 	}
+	flow = &path->flow[be32_to_cpu(msg->rx_desc_stolen_from_stream)];
+	atomic_dec(&flow->rx_descs_known_to_peer);
 }
 
 static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
@@ -1700,6 +1712,10 @@ retry:
 	} else if (t < 0)
 		return -EINTR;
 
+	flow = &path->flow[stream];
+	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
+		goto retry;
+
 	device = path->cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -1714,10 +1730,8 @@ retry:
 	}
 
 	err = __dtr_post_tx_desc(path, tx_desc);
-	flow = &path->flow[stream];
 
 	atomic_inc(&flow->tx_descs_posted);
-	atomic_dec(&flow->peer_rx_descs);
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 	*ret_path = path;
