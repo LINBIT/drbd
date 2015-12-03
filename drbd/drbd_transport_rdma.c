@@ -320,7 +320,8 @@ static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_de
 			    struct dtr_path **);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
 static int dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
-static bool dtr_receive_rx_desc(struct dtr_stream *, struct drbd_rdma_rx_desc **);
+static bool dtr_receive_rx_desc(struct drbd_rdma_transport *, enum drbd_stream,
+				struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				enum drbd_stream stream,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
@@ -468,7 +469,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		long t;
 
 		t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-					dtr_receive_rx_desc(rdma_stream, &rx_desc),
+					dtr_receive_rx_desc(rdma_transport, DATA_STREAM, &rx_desc),
 					rdma_stream->recv_timeout);
 
 		if (t <= 0) {
@@ -544,10 +545,10 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 
 		dtr_recycle_rx_desc(transport, stream, &rdma_stream->current_rx.desc);
 		if (flags & MSG_DONTWAIT) {
-			t = dtr_receive_rx_desc(rdma_stream, &rx_desc);
+			t = dtr_receive_rx_desc(rdma_transport, stream, &rx_desc);
 		} else {
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-						dtr_receive_rx_desc(rdma_stream, &rx_desc),
+						dtr_receive_rx_desc(rdma_transport, stream, &rx_desc),
 						rdma_stream->recv_timeout);
 		}
 
@@ -1101,9 +1102,11 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	return 0;
 }
 
-static bool dtr_receive_rx_desc(struct dtr_stream *rdma_stream,
+static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
+				enum drbd_stream stream,
 				struct drbd_rdma_rx_desc **ptr_rx_desc)
 {
+	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct drbd_rdma_rx_desc *rx_desc;
 
 	spin_lock_irq(&rdma_stream->rx_descs_lock);
