@@ -1814,9 +1814,14 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		 * so we can find it to present it in debugfs */
 		peer_req->submit_jif = jiffies;
 		peer_req->flags |= EE_SUBMITTED;
-		spin_lock_irq(&device->resource->req_lock);
-		list_add_tail(&peer_req->w.list, &device->active_ee);
-		spin_unlock_irq(&device->resource->req_lock);
+
+		/* If this was a resync request from receive_rs_deallocated(),
+		 * it is already on the sync_ee list */
+		if (list_empty(&peer_req->w.list)) {
+			spin_lock_irq(&device->resource->req_lock);
+			list_add_tail(&peer_req->w.list, &device->active_ee);
+			spin_unlock_irq(&device->resource->req_lock);
+		}
 
 		drbd_issue_peer_discard(device, peer_req);
 		return 0;
