@@ -1741,7 +1741,10 @@ static bool can_do_reliable_discards(struct drbd_device *device)
 	struct disk_conf *dc;
 	bool can_do;
 
-	if (blk_queue_discard(q) && q->limits.discard_zeroes_data)
+	if (!blk_queue_discard(q))
+		return false;
+
+	if (q->limits.discard_zeroes_data)
 		return true;
 
 	rcu_read_lock();
