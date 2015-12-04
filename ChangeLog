@@ -2,6 +2,20 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
+8.4.7 rc 1
+----------
+
+ * introduce WRITE_SAME support
+ * introduce discard-capable (or thinly allocated) device friendly resync
+ * improve latency on certain kernel versions and usage patterns
+ * improve latency of disk flushes with multiple volumes
+ * fix recovery handling of certain multiple error scenarios,
+   including possible deadlocks after certain multiple failure sequences
+ * introduce unfence-peer handler,
+   to close possible races if the replication link is flaky
+ * avoid potential spurious full resync by
+ * improve discard support, reliably zero-out/discard even with discard_zeroes_data=0
+ * update wrapper defines for linux 4.3
  * fix latency regression introduced with 8.4.5
    protocol A was sometimes synchronous, C sometimes double-latency
  * avoid potential deadlock during handshake

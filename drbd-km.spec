@@ -98,6 +98,9 @@ uname -r | grep BOOT ||
 
 
 %changelog
+* Fri Dec 04 2015  Lars Ellenberg <lars@linbit.com> - 8.4.7-0.rc1
+- New upstream release candidate.
+
 * Wed Sep 16 2015  Lars Ellenberg <lars@linbit.com> - 8.4.6-5
 - New upstream release.
 
