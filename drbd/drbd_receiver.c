@@ -1331,16 +1331,34 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 	return 0;
 }
 
+static void drbd_unplug_all_devices(struct drbd_connection *connection);
+
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
 {
 	void *buffer = connection->data.rbuf;
+	unsigned int size = drbd_header_size(connection);
 	int err;
 
-	err = drbd_recv_all_warn(connection, buffer, drbd_header_size(connection));
-	if (err)
-		return err;
+	err = drbd_recv_short(connection->data.socket, buffer, size, MSG_NOSIGNAL|MSG_DONTWAIT);
+	if (err != size) {
+		/* If we have nothing in the receive buffer now, to reduce
+		 * application latency, try to drain the backend queues as
+		 * quickly as possible, and let remote TCP know what we have
+		 * received so far. */
+		if (err == -EAGAIN) {
+			drbd_unplug_all_devices(connection);
+			drbd_tcp_quickack(connection->data.socket);
+		}
+		if (err > 0) {
+			buffer += err;
+			size -= err;
+		}
+		err = drbd_recv_all_warn(connection, buffer, size);
+		if (err)
+			return err;
+	}
 
-	err = decode_header(connection, buffer, pi);
+	err = decode_header(connection, connection->data.rbuf, pi);
 	connection->last_received = jiffies;
 
 	return err;
