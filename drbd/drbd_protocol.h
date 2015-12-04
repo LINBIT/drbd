@@ -60,6 +60,10 @@ enum drbd_packet {
 	 * which is why I chose TRIM here, to disambiguate. */
 	P_TRIM                = 0x31,
 
+	/* Only use these two if both support FF_THIN_RESYNC */
+	P_RS_THIN_REQ         = 0x32, /* Request a block for resync or reply P_RS_DEALLOCATED */
+	P_RS_DEALLOCATED      = 0x33, /* Contains only zeros on sync source node */
+
 	P_MAY_IGNORE	      = 0x100, /* Flag to test if (cmd > P_MAY_IGNORE) ... */
 	P_MAX_OPT_CMD	      = 0x101,
 
@@ -161,6 +165,7 @@ struct p_block_req {
  */
 
 #define FF_TRIM      1
+#define FF_THIN_RESYNC 2
 
 struct p_connection_features {
 	u32 protocol_min;

@@ -606,6 +606,7 @@ static int make_resync_request(struct drbd_device *const device, int cancel)
 	int number, rollback_i, size;
 	int align, requeue = 0;
 	int i = 0;
+	int discard_granularity = 0;
 
 	if (unlikely(cancel))
 		return 0;
@@ -623,6 +624,12 @@ static int make_resync_request(struct drbd_device *const device, int cancel)
 		   all */
 		drbd_err(device, "Disk broke down during resync!\n");
 		return 0;
+	}
+
+	if (connection->agreed_features & FF_THIN_RESYNC) {
+		rcu_read_lock();
+		discard_granularity = rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
+		rcu_read_unlock();
 	}
 
 	max_bio_size = queue_max_hw_sectors(device->rq_queue) << 9;
@@ -689,6 +696,9 @@ next_sector:
 			if (sector & ((1<<(align+3))-1))
 				break;
 
+			if (discard_granularity && size == discard_granularity)
+				break;
+
 			/* do not cross extent boundaries */
 			if (((bit+1) & BM_BLOCKS_PER_BM_EXT_MASK) == 0)
 				break;
@@ -735,7 +745,8 @@ next_sector:
 			int err;
 
 			inc_rs_pending(device);
-			err = drbd_send_drequest(peer_device, P_RS_DATA_REQUEST,
+			err = drbd_send_drequest(peer_device,
+						 size == discard_granularity ? P_RS_THIN_REQ : P_RS_DATA_REQUEST,
 						 sector, size, ID_SYNCER);
 			if (err) {
 				drbd_err(device, "drbd_send_drequest() failed, aborting...\n");
@@ -1084,6 +1095,30 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
+static bool all_zero(struct drbd_peer_request *peer_req)
+{
+	struct page *page = peer_req->pages;
+	unsigned int len = peer_req->i.size;
+
+	page_chain_for_each(page) {
+		unsigned int l = min_t(unsigned int, len, PAGE_SIZE);
+		unsigned int i, words = l / sizeof(long);
+		unsigned long *d;
+
+		d = drbd_kmap_atomic(page, KM_USER1);
+		for (i = 0; i < words; i++) {
+			if (d[i]) {
+				drbd_kunmap_atomic(d, KM_USER1);
+				return false;
+			}
+		}
+		drbd_kunmap_atomic(d, KM_USER1);
+		len -= l;
+	}
+
+	return true;
+}
+
 /**
  * w_e_end_rsdata_req() - Worker callback to send a P_RS_DATA_REPLY packet in response to a P_RS_DATA_REQUEST
  * @w:		work object.
@@ -1112,7 +1147,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(device->state.pdsk >= D_INCONSISTENT)) {
 			inc_rs_pending(device);
-			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req))
+				err = drbd_send_rs_deallocated(peer_device, peer_req);
+			else
+				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {
 			if (DRBD_ratelimit(5*HZ, 5))
 				drbd_err(device, "Not sending RSDataReply, "
