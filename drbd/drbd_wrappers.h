@@ -684,6 +684,10 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 #define DRBD_REQ_UNPLUG		0
 #endif
 
+#ifdef REQ_WRITE_SAME
+#define DRBD_REQ_WSAME		REQ_WRITE_SAME
+#endif
+
 #else				/* "older", and hopefully not
 				 * "partially backported" kernel */
 
@@ -709,6 +713,10 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 /* we don't support DISCARDS yet, anyways.
  * cannot test on defined(BIO_RW_DISCARD), it may be an enum */
 #define DRBD_REQ_DISCARD	0
+#endif
+
+#ifndef DRBD_REQ_WSAME
+#define DRBD_REQ_WSAME		0
 #endif
 
 #ifndef WRITE_FLUSH

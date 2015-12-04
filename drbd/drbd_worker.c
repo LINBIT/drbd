@@ -346,6 +346,10 @@ void drbd_csum_bio(struct crypto_hash *tfm, struct bio *bio, void *digest)
 	bio_for_each_segment(bvec, bio, iter) {
 		sg_set_page(&sg, bvec BVD bv_page, bvec BVD bv_len, bvec BVD bv_offset);
 		crypto_hash_update(&desc, &sg, sg.length);
+		/* REQ_WRITE_SAME has only one segment,
+		 * checksum the payload only once. */
+		if (bio->bi_rw & DRBD_REQ_WSAME)
+			break;
 	}
 	crypto_hash_final(&desc, digest);
 }
@@ -411,7 +415,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	/* GFP_TRY, because if there is no memory available right now, this may
 	 * be rescheduled for later. It is "only" background resync, after all. */
 	peer_req = drbd_alloc_peer_req(peer_device, ID_SYNCER /* unused */, sector,
-				       size, true /* has real payload */, GFP_TRY);
+				       size, size, GFP_TRY);
 	if (!peer_req)
 		goto defer;
 
@@ -626,7 +630,7 @@ static int make_resync_request(struct drbd_device *const device, int cancel)
 		return 0;
 	}
 
-	if (connection->agreed_features & FF_THIN_RESYNC) {
+	if (connection->agreed_features & DRBD_FF_THIN_RESYNC) {
 		rcu_read_lock();
 		discard_granularity = rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
 		rcu_read_unlock();
