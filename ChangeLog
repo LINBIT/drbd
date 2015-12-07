@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
-8.4.7 rc 1
+8.4.7-0.rc1
 ----------
 
  * introduce WRITE_SAME support
