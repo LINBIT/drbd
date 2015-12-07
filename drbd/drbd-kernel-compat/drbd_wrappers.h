@@ -1411,4 +1411,22 @@ static inline int simple_positive(struct dentry *dentry)
 }
 #endif
 
+#ifndef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE
+static inline int atomic_dec_if_positive(atomic_t *v)
+{
+        int c, old, dec;
+        c = atomic_read(v);
+        for (;;) {
+                dec = c - 1;
+                if (unlikely(dec < 0))
+                        break;
+                old = atomic_cmpxchg((v), c, dec);
+                if (likely(old == c))
+                        break;
+                c = old;
+        }
+        return dec;
+}
+#endif
+
 #endif
