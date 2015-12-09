@@ -1849,6 +1849,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_transport *transport = &rdma_transport->transport;
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
+	struct ib_cq_init_attr cq_attr = {};
 
 	/* Each path might be the sole path, therefore it must be able to
 	   support both streams */
@@ -1866,9 +1867,10 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	}
 
 	/* create recv completion queue (CQ) */
+	cq_attr.cqe = rx_descs_max;
 	path->recv_cq = ib_create_cq(path->cm->id->device,
 			dtr_rx_cq_event_handler, NULL, path,
-			rx_descs_max, 0);
+			&cq_attr);
 	if (IS_ERR(path->recv_cq)) {
 		tr_err(transport, "ib_create_cq recv failed\n");
 		err = PTR_ERR(path->recv_cq);
@@ -1876,9 +1878,10 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	}
 
 	/* create send completion queue (CQ) */
+	cq_attr.cqe = tx_descs_max;
 	path->send_cq = ib_create_cq(path->cm->id->device,
 			dtr_tx_cq_event_handler, NULL, path,
-			tx_descs_max, 0);
+			&cq_attr);
 	if (IS_ERR(path->send_cq)) {
 		tr_err(transport, "ib_create_cq send failed\n");
 		err = PTR_ERR(path->send_cq);
