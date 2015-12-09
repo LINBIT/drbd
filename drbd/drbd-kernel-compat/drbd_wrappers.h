@@ -1429,4 +1429,28 @@ static inline int atomic_dec_if_positive(atomic_t *v)
 }
 #endif
 
+#ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
+#include <rdma/ib_verbs.h>
+
+struct ib_cq_init_attr {
+	unsigned int    cqe;
+	int             comp_vector;
+	u32             flags;
+};
+
+static inline struct ib_cq *
+drbd_ib_create_cq(struct ib_device *device,
+		  ib_comp_handler comp_handler,
+		  void (*event_handler)(struct ib_event *, void *),
+		  void *cq_context,
+		  const struct ib_cq_init_attr *cq_attr)
+{
+	return ib_create_cq(device, comp_handler, event_handler, cq_context,
+			    cq_attr->cqe, cq_attr->comp_vector);
+}
+
+#define ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR) \
+	drbd_ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR)
+#endif
+
 #endif
