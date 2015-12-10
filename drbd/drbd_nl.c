@@ -1238,7 +1238,7 @@ static void decide_on_discard_support(struct drbd_device *device,
 	struct drbd_connection *connection = first_peer_device(device)->connection;
 	bool can_do = b ? blk_queue_discard(b) : true;
 
-	if (can_do && b && !b->limits.discard_zeroes_data && !discard_zeroes_if_aligned) {
+	if (can_do && b && !queue_discard_zeroes_data(b) && !discard_zeroes_if_aligned) {
 		can_do = false;
 		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
 	}
@@ -1536,7 +1536,7 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 
 #ifdef QUEUE_FLAG_DISCARD
 	if (!blk_queue_discard(q)
-	||  (!q->limits.discard_zeroes_data && !disk_conf->discard_zeroes_if_aligned))
+	||  (!queue_discard_zeroes_data(q) && !disk_conf->discard_zeroes_if_aligned))
 #endif
 	{
 		if (disk_conf->rs_discard_granularity) {
