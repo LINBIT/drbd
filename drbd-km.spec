@@ -19,7 +19,7 @@ Name: drbd-km
 Summary: DRBD driver for Linux
 Version: 8.4.7
 Release: 0.rc1
-Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}.tar.gz
+Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}-%{release}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
 Group: System Environment/Kernel
@@ -57,7 +57,7 @@ installed kernel.
 %doc drbd/k-config-%{kernelversion}.gz
 
 %prep
-%setup -q -n drbd-%{version}
+%setup -q -n drbd-%{version}-%{release}
 test -d %{kdir}/.
 test "$(KDIR=%{kdir} scripts/get_uts_release.sh)" = %{kernelversion}
 
