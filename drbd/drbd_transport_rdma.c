@@ -1242,10 +1242,6 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
-		if (path->cm->state != CONNECTED)
-			return 0;
-		path->cm->state = ERROR;
-
 		tr_warn(transport,
 			"wc.status = %d (%s), wc.opcode = %d (%s)\n",
 			wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
@@ -1254,6 +1250,9 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		tr_warn(transport,
 			"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
 			wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+
+		if (dtr_path_ok(path))
+			path->cm->state = ERROR;
 
 		return 0;
 	}
@@ -1352,10 +1351,6 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		struct drbd_transport *transport = &rdma_transport->transport;
 		int err;
 
-		if (path->cm->state != CONNECTED)
-			goto out;
-		path->cm->state = ERROR;
-
 		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
 			struct dtr_flow *flow = &path->flow[stream_nr];
 			tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
@@ -1365,6 +1360,11 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 			tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
 			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 		}
+
+		if (dtr_path_ok(path))
+			path->cm->state = ERROR;
+		else
+			goto out;
 
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
