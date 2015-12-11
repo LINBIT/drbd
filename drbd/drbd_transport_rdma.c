@@ -159,6 +159,16 @@ enum drbd_rdma_state {
 	ERROR
 };
 
+enum dtr_alloc_rdma_res_causes {
+	IB_ALLOC_PD,
+	IB_CREATE_CQ_RX,
+	IB_CREATE_CQ_TX,
+	IB_REQ_NOTIFY_CQ_RX,
+	IB_REQ_NOTIFY_CQ_TX,
+	RDMA_CREATE_QP,
+	IB_GET_DMA_MR
+};
+
 struct drbd_rdma_rx_desc {
 	struct page *page;
 	struct list_head list;
@@ -1460,11 +1470,8 @@ static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_m
 	};
 
 	err = rdma_create_qp(path->cm->id, path->pd, &init_attr);
-	if (err) {
-		tr_err(&path->rdma_transport->transport,
-				"rdma_create_qp failed: %d\n", err);
+	if (err)
 		return err;
-	}
 
 	path->qp = path->cm->id->qp;
 	return 0;
@@ -1844,10 +1851,8 @@ static void dtr_init_stream(struct dtr_stream *rdma_stream,
 	spin_lock_init(&rdma_stream->rx_descs_lock);
 }
 
-static int dtr_path_alloc_rdma_res(struct dtr_path *path)
+static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_res_causes *cause)
 {
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-	struct drbd_transport *transport = &rdma_transport->transport;
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
 	struct ib_cq_init_attr cq_attr = {};
 
@@ -1861,7 +1866,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	/* alloc protection domain (PD) */
 	path->pd = ib_alloc_pd(path->cm->id->device);
 	if (IS_ERR(path->pd)) {
-		tr_err(transport, "ib_alloc_pd failed\n");
+		*cause = IB_ALLOC_PD;
 		err = PTR_ERR(path->pd);
 		goto pd_failed;
 	}
@@ -1872,7 +1877,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 			dtr_rx_cq_event_handler, NULL, path,
 			&cq_attr);
 	if (IS_ERR(path->recv_cq)) {
-		tr_err(transport, "ib_create_cq recv failed\n");
+		*cause = IB_CREATE_CQ_RX;
 		err = PTR_ERR(path->recv_cq);
 		goto recv_cq_failed;
 	}
@@ -1883,7 +1888,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 			dtr_tx_cq_event_handler, NULL, path,
 			&cq_attr);
 	if (IS_ERR(path->send_cq)) {
-		tr_err(transport, "ib_create_cq send failed\n");
+		*cause = IB_CREATE_CQ_TX;
 		err = PTR_ERR(path->send_cq);
 		goto send_cq_failed;
 	}
@@ -1891,20 +1896,20 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	/* arm CQs */
 	err = ib_req_notify_cq(path->recv_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		tr_err(transport, "ib_req_notify_cq recv failed\n");
+		*cause = IB_REQ_NOTIFY_CQ_RX;
 		goto notify_failed;
 	}
 
 	err = ib_req_notify_cq(path->send_cq, IB_CQ_NEXT_COMP);
 	if (err) {
-		tr_err(transport, "ib_req_notify_cq send failed\n");
+		*cause = IB_REQ_NOTIFY_CQ_TX;
 		goto notify_failed;
 	}
 
 	/* create a queue pair (QP) */
 	err = dtr_create_qp(path, rx_descs_max, tx_descs_max);
 	if (err) {
-		tr_err(transport, "create_qp error %d\n", err);
+		*cause = RDMA_CREATE_QP;
 		goto createqp_failed;
 	}
 
@@ -1914,7 +1919,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 			IB_ACCESS_REMOTE_READ |
 			IB_ACCESS_REMOTE_WRITE);
 	if (IS_ERR(path->dma_mr)) {
-		tr_err(transport, "ib_get_dma_mr failed\n");
+		*cause = IB_GET_DMA_MR;
 		err = PTR_ERR(path->dma_mr);
 		goto dma_failed;
 	}
@@ -1941,6 +1946,93 @@ pd_failed:
 	return err;
 }
 
+
+static int dtr_path_alloc_rdma_res(struct dtr_path *path)
+{
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	enum dtr_alloc_rdma_res_causes cause;
+	struct ib_device_attr dev_attr;
+	int rx_descs_max = 0, tx_descs_max = 0;
+	bool reduced = false;
+	int i, hca_max, err;
+
+	static const char * const err_txt[] = {
+		[IB_ALLOC_PD] = "ib_alloc_pd()",
+		[IB_CREATE_CQ_RX] = "ib_create_cq() rx",
+		[IB_CREATE_CQ_TX] = "ib_create_cq() tx",
+		[IB_REQ_NOTIFY_CQ_RX] = "ib_req_notify_cq() rx",
+		[IB_REQ_NOTIFY_CQ_TX] = "ib_req_notify_cq() tx",
+		[RDMA_CREATE_QP] = "rdma_create_qp()",
+		[IB_GET_DMA_MR] = "ib_get_dma_mr()",
+	};
+
+	err = ib_query_device(path->cm->id->device, &dev_attr);
+	if (err) {
+		tr_err(&path->rdma_transport->transport,
+				"ib_query_device: %d\n", err);
+		return err;
+	}
+
+	hca_max = min(dev_attr.max_qp_wr, dev_attr.max_cqe);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		rx_descs_max += path->flow[i].rx_descs_max;
+		tx_descs_max += path->flow[i].tx_descs_max;
+	}
+
+	if (tx_descs_max > hca_max || rx_descs_max > hca_max) {
+		int rx_correction = 0, tx_correction = 0;
+		reduced = true;
+
+		if (tx_descs_max > hca_max)
+			tx_correction = hca_max - tx_descs_max;
+
+		if (rx_descs_max > hca_max)
+			rx_correction = hca_max - rx_descs_max;
+
+		path->flow[DATA_STREAM].rx_descs_max -= rx_correction;
+		path->flow[DATA_STREAM].tx_descs_max -= tx_correction;
+
+		rx_descs_max -= rx_correction;
+		tx_descs_max -= tx_correction;
+	}
+
+	for (;;) {
+		err = _dtr_path_alloc_rdma_res(path, &cause);
+
+		if (err == 0 || cause != RDMA_CREATE_QP || err != -ENOMEM)
+			break;
+
+		reduced = true;
+		if (path->flow[DATA_STREAM].rx_descs_max <= 64)
+			break;
+		path->flow[DATA_STREAM].rx_descs_max -= 64;
+		if (path->flow[DATA_STREAM].tx_descs_max <= 64)
+			break;
+		path->flow[DATA_STREAM].tx_descs_max -= 64;
+		if (path->flow[CONTROL_STREAM].rx_descs_max > 8)
+			path->flow[CONTROL_STREAM].rx_descs_max -= 1;
+		if (path->flow[CONTROL_STREAM].tx_descs_max > 8)
+			path->flow[CONTROL_STREAM].tx_descs_max -= 1;
+	}
+
+	if (err) {
+		tr_err(transport, "%s failed with err = %d\n", err_txt[cause], err);
+	} else if (reduced) {
+		/* ib_create_qp() may return -ENOMEM if max_send_wr or max_recv_wr are
+		   too big. Unfortunately there is no way to find the working maxima.
+		   http://www.rdmamojo.com/2012/12/21/ibv_create_qp/
+		   Suggests "Trial end error" to find the maximal number. */
+
+		tr_warn(transport, "Needed to adjust buffer sizes for HCA\n");
+		tr_warn(transport, "rcvbuf = %d sndbuf = %d \n",
+			path->flow[DATA_STREAM].rx_descs_max * DRBD_SOCKET_BUFFER_SIZE,
+			path->flow[DATA_STREAM].tx_descs_max * DRBD_SOCKET_BUFFER_SIZE);
+		tr_warn(transport, "It is recommended to apply this change to the configuration\n");
+	}
+
+	return err;
+}
 
 static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_path *, void *))
