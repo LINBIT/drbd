@@ -1349,8 +1349,8 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 		 * quickly as possible, and let remote TCP know what we have
 		 * received so far. */
 		if (err == -EAGAIN) {
-			drbd_unplug_all_devices(connection);
 			drbd_tcp_quickack(connection->data.socket);
+			drbd_unplug_all_devices(connection);
 		}
 		if (err > 0) {
 			buffer += err;
@@ -2094,6 +2094,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
 
+	drbd_tcp_quickack(connection->data.socket);
 	drbd_unplug_all_devices(connection);
 
 	/* FIXME these are unacked on connection,
@@ -5209,12 +5210,12 @@ static int receive_skip(struct drbd_connection *connection, struct packet_info *
 
 static int receive_UnplugRemote(struct drbd_connection *connection, struct packet_info *pi)
 {
-	/* just unplug all devices always, regardless which volume number */
-	drbd_unplug_all_devices(connection);
-
 	/* Make sure we've acked all the TCP data associated
 	 * with the data requests being unplugged */
 	drbd_tcp_quickack(connection->data.socket);
+
+	/* just unplug all devices always, regardless which volume number */
+	drbd_unplug_all_devices(connection);
 
 	return 0;
 }
