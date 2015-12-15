@@ -1870,6 +1870,20 @@ void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set
 	send_command(connection, -1, P_BARRIER_ACK, CONTROL_STREAM);
 }
 
+int drbd_send_rs_deallocated(struct drbd_peer_device *peer_device,
+			     struct drbd_peer_request *peer_req)
+{
+	struct p_block_desc *p;
+
+	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	if (!p)
+		return -EIO;
+	p->sector = cpu_to_be64(peer_req->i.sector);
+	p->blksize = cpu_to_be32(peer_req->i.size);
+	p->pad = 0;
+	return drbd_send_command(peer_device, P_RS_DEALLOCATED, DATA_STREAM);
+}
+
 int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 		       sector_t sector, int size, u64 block_id)
 {

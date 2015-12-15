@@ -1218,6 +1218,30 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
+static bool all_zero(struct drbd_peer_request *peer_req)
+{
+	struct page *page = peer_req->page_chain.head;
+	unsigned int len = peer_req->i.size;
+
+	page_chain_for_each(page) {
+		unsigned int l = min_t(unsigned int, len, PAGE_SIZE);
+		unsigned int i, words = l / sizeof(long);
+		unsigned long *d;
+
+		d = drbd_kmap_atomic(page, KM_USER1);
+		for (i = 0; i < words; i++) {
+			if (d[i]) {
+				drbd_kunmap_atomic(d, KM_USER1);
+				return false;
+			}
+		}
+		drbd_kunmap_atomic(d, KM_USER1);
+		len -= l;
+	}
+
+	return true;
+}
+
 /**
  * w_e_end_rsdata_req() - Worker callback to send a P_RS_DATA_REPLY packet in response to a P_RS_DATA_REQUEST
  * @w:		work object.
@@ -1246,7 +1270,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
 			inc_rs_pending(peer_device);
-			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req))
+				err = drbd_send_rs_deallocated(peer_device, peer_req);
+			else
+				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		} else {
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "Not sending RSDataReply, "
