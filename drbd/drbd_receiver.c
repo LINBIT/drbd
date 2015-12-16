@@ -48,7 +48,7 @@
 #include "drbd_vli.h"
 #include <linux/scatterlist.h>
 
-#define PRO_FEATURES (FF_TRIM)
+#define PRO_FEATURES (FF_TRIM | FF_THIN_RESYNC)
 
 struct flush_work {
 	struct drbd_work w;
@@ -6489,6 +6489,9 @@ int drbd_do_features(struct drbd_connection *connection)
 
 	drbd_info(connection, "Agreed to%ssupport TRIM on protocol level\n",
 		  connection->agreed_features & FF_TRIM ? " " : " not ");
+
+	drbd_info(connection, "Agreed to%ssupport THIN_RESYNC on protocol level\n",
+		  connection->agreed_features & FF_THIN_RESYNC ? " " : " not ");
 
 	return 1;
 }
