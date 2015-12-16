@@ -2,9 +2,8 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
-8.4.7-0.rc1 (api:genl1/proto:86-101)
+8.4.7-1 (api:genl1/proto:86-101)
 -------
-
  * introduce WRITE_SAME support
  * introduce discard-capable (or thinly allocated) device friendly resync
  * improve latency on certain kernel versions and usage patterns
