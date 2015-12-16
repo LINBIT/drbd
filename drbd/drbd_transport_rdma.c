@@ -75,7 +75,7 @@ MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.0");
+MODULE_VERSION("2.0.0");
 
 int allocation_size;
 /* module_param(allocation_size, int, 0664);
