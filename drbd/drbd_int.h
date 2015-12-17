@@ -1936,6 +1936,8 @@ struct queued_twopc {
 	struct p_twopc_request packet_data;
 };
 
+extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
+		sector_t start, unsigned int nr_sectors, bool discard);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
 extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,

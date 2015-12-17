@@ -1386,6 +1386,13 @@ static int drbd_process_write_request(struct drbd_request *req)
 	return count;
 }
 
+static void drbd_process_discard_req(struct drbd_request *req)
+{
+	int err = drbd_issue_discard_or_zero_out(req->device,
+				req->i.sector, req->i.size >> 9, true);
+	bio_endio(req->private_bio, err ? -EIO : 0);
+}
+
 static void
 drbd_submit_req_private_bio(struct drbd_request *req)
 {
@@ -1406,6 +1413,8 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 				    : rw == READ  ? DRBD_FAULT_DT_RD
 				    :               DRBD_FAULT_DT_RA))
 			bio_endio(bio, -EIO);
+		else if (bio->bi_rw & DRBD_REQ_DISCARD)
+			drbd_process_discard_req(req);
 		else
 			generic_make_request(bio);
 		put_ldev(device);
@@ -1457,6 +1466,10 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	/* Update disk stats */
 	_drbd_start_io_acct(device, req);
 
+	/* process discards always from our submitter thread */
+	if (bio->bi_rw & DRBD_REQ_DISCARD)
+		goto queue_for_submitter_thread;
+
 	if (rw == WRITE && req->i.size) {
 		/* Unconditionally defer to worker,
 		 * if we still need to bumpt our data generation id */
@@ -1474,8 +1487,12 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 			req->in_actlog_jif = jiffies;
 		}
 	}
-
 	return req;
+
+ queue_for_submitter_thread:
+	atomic_inc(&device->ap_actlog_cnt);
+	drbd_queue_write(device, req);
+	return NULL;
 }
 
 static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
