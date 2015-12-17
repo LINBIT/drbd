@@ -1825,7 +1825,7 @@ enum determine_dev_size {
 extern enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *, enum dds_flags, struct resize_parms *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_peer_device *);
-extern void drbd_reconsider_max_bio_size(struct drbd_device *device, struct drbd_backing_dev *bdev);
+extern void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool);
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
