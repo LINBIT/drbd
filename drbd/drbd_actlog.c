@@ -198,8 +198,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	else
 		submit_bio(rw, bio);
 	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
-	if (bio_flagged(bio, BIO_UPTODATE))
-		err = device->md_io.error;
+	err = device->md_io.error;
 
 #ifndef REQ_FLUSH
 	/* check for unsupported barrier op.

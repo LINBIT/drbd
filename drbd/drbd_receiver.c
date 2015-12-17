@@ -1375,7 +1375,7 @@ next_bio:
 				drbd_err(device,
 					"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
 					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
-					bio->bi_flags);
+					 (unsigned long)bio->bi_flags);
 				err = -ENOSPC;
 				goto fail;
 			}

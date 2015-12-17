@@ -1800,7 +1800,9 @@ extern void conn_free_crypto(struct drbd_connection *connection);
 extern void do_submit(struct work_struct *ws);
 extern void __drbd_make_request(struct drbd_device *, struct bio *, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
+#ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
+#endif
 extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
