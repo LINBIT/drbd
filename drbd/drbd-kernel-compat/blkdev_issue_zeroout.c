@@ -11,11 +11,11 @@ struct bio_batch {
 	struct completion	*wait;
 };
 
-static void bio_batch_end_io(struct bio *bio, int err)
+static void bio_batch_end_io(struct bio *bio, int error)
 {
 	struct bio_batch *bb = bio->bi_private;
 
-	if (err && (err != -EOPNOTSUPP))
+	if (error && (error != -EOPNOTSUPP))
 		clear_bit(BIO_UPTODATE, &bb->flags);
 	if (atomic_dec_and_test(&bb->done))
 		complete(bb->wait);
