@@ -329,7 +329,7 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	bool fastpath_ok = true;
 
 
-	D_ASSERT(device, (unsigned)(last - first) <= 1);
+	D_ASSERT(device, first <= last);
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
 
 	/* FIXME figure out a fast path for bios crossing AL extent boundaries */
