@@ -1121,6 +1121,30 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 out_unlock:
 	end_state_change_locked(device->resource);
+
+	/* If we have been sync source, and have an effective fencing-policy,
+	 * once *all* volumes are back in sync, call "unfence". */
+	if (old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S) {
+		enum drbd_disk_state disk_state = D_MASK;
+		enum drbd_disk_state pdsk_state = D_MASK;
+		enum drbd_fencing_policy fencing_policy = FP_DONT_CARE;
+
+		rcu_read_lock();
+		fencing_policy = connection->fencing_policy;
+		if (fencing_policy != FP_DONT_CARE) {
+			struct drbd_peer_device *peer_device;
+			int vnr;
+			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+				struct drbd_device *device = peer_device->device;
+				disk_state = min_t(enum drbd_disk_state, disk_state, device->disk_state[NOW]);
+				pdsk_state = min_t(enum drbd_disk_state, pdsk_state, peer_device->disk_state[NOW]);
+			}
+		}
+		rcu_read_unlock();
+		if (disk_state == D_UP_TO_DATE && pdsk_state == D_UP_TO_DATE)
+			drbd_khelper(NULL, connection, "unfence-peer");
+	}
+
 	put_ldev(device);
 out:
 	peer_device->rs_total  = 0;
