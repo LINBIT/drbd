@@ -2224,7 +2224,7 @@ static int dtr_activate_path(struct dtr_path *path)
 				(struct sockaddr *)&path->path.my_addr,
 				dtr_create_listener);
 	if (err)
-		return err;
+		goto out_no_put;
 
 	err = dtr_start_try_connect(cs);
 	if (err)
@@ -2234,6 +2234,11 @@ static int dtr_activate_path(struct dtr_path *path)
 
 out:
 	drbd_put_listener(&cs->waiter);
+out_no_put:
+	atomic_set(&cs->passive_state, PCS_INACTIVE);
+	atomic_set(&cs->active_state, PCS_INACTIVE);
+	wake_up(&cs->wq);
+
 	return err;
 }
 
