@@ -2465,15 +2465,27 @@ static inline int __sub_unacked(struct drbd_peer_device *peer_device, int n)
 	return atomic_sub_return(n, &peer_device->unacked_cnt);
 }
 
-static inline bool is_sync_state(struct drbd_peer_device *peer_device,
-				 enum which_state which)
+static inline bool is_sync_target_state(struct drbd_peer_device *peer_device,
+					enum which_state which)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[which];
 
-	return repl_state == L_SYNC_SOURCE
-		|| repl_state == L_SYNC_TARGET
-		|| repl_state == L_PAUSED_SYNC_S
-		|| repl_state  == L_PAUSED_SYNC_T;
+	return repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T;
+}
+
+static inline bool is_sync_source_state(struct drbd_peer_device *peer_device,
+					enum which_state which)
+{
+	enum drbd_repl_state repl_state = peer_device->repl_state[which];
+
+	return repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S;
+}
+
+static inline bool is_sync_state(struct drbd_peer_device *peer_device,
+				 enum which_state which)
+{
+	return is_sync_source_state(peer_device, which) ||
+		is_sync_target_state(peer_device, which);
 }
 
 /**
