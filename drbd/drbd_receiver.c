@@ -4188,6 +4188,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	if (get_ldev(device)) {
 		sector_t p_usize = be64_to_cpu(p->u_size), my_usize;
+		sector_t new_size, cur_size;
 
 		have_ldev = true;
 
@@ -4207,11 +4208,13 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 		/* Never shrink a device with usable data during connect.
 		   But allow online shrinking if we are connected. */
-		if (drbd_new_dev_size(device, p_usize, 0) <
-		    drbd_get_capacity(device->this_bdev) &&
+		new_size = drbd_new_dev_size(device, p_usize, 0);
+		cur_size = drbd_get_capacity(device->this_bdev);
+		if (new_size < cur_size &&
 		    device->disk_state[NOW] >= D_OUTDATED &&
 		    peer_device->repl_state[NOW] < L_ESTABLISHED) {
-			drbd_err(device, "The peer's disk size is too small!\n");
+			drbd_err(device, "The peer's disk size is too small! (%llu < %llu sectors)\n",
+					(unsigned long long)new_size, (unsigned long long)cur_size);
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 			err = -EIO;
 			goto out;
