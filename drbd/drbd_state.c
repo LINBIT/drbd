@@ -2333,7 +2333,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 /* FIXME currently broken.
  * RESTART_FROZEN_DISK_IO may need a (temporary?) dedicated kernel thread */
 				if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
-				    conn_lowest_disk(connection) > D_NEGOTIATING)
+				    conn_lowest_disk(connection) == D_UP_TO_DATE)
 					what = RESTART_FROZEN_DISK_IO;
 #endif
 
