@@ -863,9 +863,8 @@ static int w_resync_finished(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device_work, w),
 		struct resync_finished_work, pdw);
 
-	struct drbd_peer_device *peer_device = rfw->pdw.peer_device;
+	drbd_resync_finished(rfw->pdw.peer_device, rfw->new_peer_disk_state);
 	kfree(rfw);
-	drbd_resync_finished(peer_device, rfw->new_peer_disk_state);
 
 	return 0;
 }
