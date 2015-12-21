@@ -78,6 +78,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
+static void drbd_unplug_all_devices(struct drbd_resource *resource);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -829,12 +830,38 @@ int decode_header(struct drbd_connection *connection, void *header, struct packe
 
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
 {
+	struct drbd_transport_ops *tr_ops = connection->transport.ops;
+	unsigned int size = drbd_header_size(connection);
 	void *buffer;
 	int err;
 
-	err = drbd_recv_all_warn(connection, &buffer, drbd_header_size(connection));
-	if (err)
-		return err;
+	err = tr_ops->recv(&connection->transport, DATA_STREAM, &buffer,
+			   size, MSG_NOSIGNAL | MSG_DONTWAIT);
+	if (err != size) {
+		int rflags = 0;
+
+		/* If we have nothing in the receive buffer now, to reduce
+		 * application latency, try to drain the backend queues as
+		 * quickly as possible, and let remote TCP know what we have
+		 * received so far. */
+		if (err == -EAGAIN) {
+			drbd_unplug_all_devices(connection->resource);
+			tr_ops->hint(&connection->transport, DATA_STREAM, QUICKACK);
+		} else if (err > 0) {
+			size -= err;
+			rflags |= GROW_BUFFER;
+		}
+
+		err = drbd_recv(connection, &buffer, size, rflags);
+		if (err != size) {
+			if (err >= 0)
+				err = -EIO;
+		} else
+			err = 0;
+
+		if (err)
+			return err;
+	}
 
 	err = decode_header(connection, buffer, pi);
 	connection->last_received = jiffies;
@@ -1529,7 +1556,7 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 }
 
 #ifdef blk_queue_plugged
-void drbd_unplug_all_devices(struct drbd_resource *resource)
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	int vnr;
@@ -1545,7 +1572,7 @@ void drbd_unplug_all_devices(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 #else
-void drbd_unplug_all_devices(struct drbd_resource *resource)
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
 {
 }
 #endif
