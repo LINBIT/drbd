@@ -917,7 +917,6 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 
 	if (resource->write_ordering >= WO_BDEV_FLUSH) {
 		struct drbd_device *device;
-		struct completion done;
 		struct issue_flush_context ctx;
 		int vnr;
 
@@ -941,7 +940,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 		/* Do we want to add a timeout,
 		 * if disk-timeout is set? */
 		if (!atomic_dec_and_test(&ctx.pending))
-			wait_for_completion(&done);
+			wait_for_completion(&ctx.done);
 
 		if (ctx.error) {
 			/* would rather check on EOPNOTSUPP, but that is not reliable.
