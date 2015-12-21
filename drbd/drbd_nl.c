@@ -663,21 +663,35 @@ static bool initial_states_pending(struct drbd_connection *connection)
 
 bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	unsigned long last_reconnect_jif;
 	enum drbd_fencing_policy fencing_policy;
 	char *ex_to_string;
 	int r;
 	unsigned long irq_flags;
 
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
-		spin_unlock_irq(&connection->resource->req_lock);
+		spin_unlock_irq(&resource->req_lock);
 		return false;
 	}
 
 	last_reconnect_jif = connection->last_reconnect_jif;
-	spin_unlock_irq(&connection->resource->req_lock);
+
+	if (conn_highest_disk(connection) < D_CONSISTENT) {
+		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
+		__change_io_susp_fencing(resource, false);
+		/* We are no longer suspended due to the fencing policy.
+		 * We may still be suspended due to the on-no-data-accessible policy.
+		 * If that was OND_IO_ERROR, fail pending requests. */
+		if (!resource_is_suspended(resource))
+			_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
+		end_state_change_locked(resource);
+		spin_unlock_irq(&resource->req_lock);
+		return false;
+	}
+	spin_unlock_irq(&resource->req_lock);
 
 	fencing_policy = connection->fencing_policy;
 	if (fencing_policy == FP_DONT_CARE)
@@ -685,7 +699,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 
 	r = drbd_khelper(NULL, connection, "fence-peer");
 
-	begin_state_change(connection->resource, &irq_flags, CS_VERBOSE);
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 	switch ((r>>8) & 0xff) {
 	case 3: /* peer is inconsistent */
 		ex_to_string = "peer is inconsistent or worse";
@@ -709,7 +723,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		 * become R_PRIMARY, but finds the other peer being active. */
 		ex_to_string = "peer is active";
 		drbd_warn(connection, "Peer is primary, outdating myself.\n");
-		__change_disk_states(connection->resource, D_OUTDATED);
+		__change_disk_states(resource, D_OUTDATED);
 		break;
 	case 7:
 		/* THINK: do we need to handle this
@@ -722,7 +736,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	default:
 		/* The script is broken ... */
 		drbd_err(connection, "fence-peer helper broken, returned %d\n", (r>>8)&0xff);
-		abort_state_change(connection->resource, &irq_flags);
+		abort_state_change(resource, &irq_flags);
 		return false; /* Eventually leave IO frozen */
 	}
 
@@ -741,11 +755,11 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		goto abort;
 	}
 
-	end_state_change(connection->resource, &irq_flags);
+	end_state_change(resource, &irq_flags);
 
 	goto out;
  abort:
-	abort_state_change(connection->resource, &irq_flags);
+	abort_state_change(resource, &irq_flags);
  out:
 	return conn_highest_pdsk(connection) <= D_OUTDATED;
 }

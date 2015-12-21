@@ -2633,11 +2633,14 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 		wake_up(&device->misc_wait);
 }
 
-static inline int drbd_suspended(struct drbd_device *device)
+static inline bool resource_is_suspended(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource = device->resource;
-
 	return resource->susp[NOW] || resource->susp_fen[NOW] || resource->susp_nod[NOW];
+}
+
+static inline bool drbd_suspended(struct drbd_device *device)
+{
+	return resource_is_suspended(device->resource);
 }
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)
