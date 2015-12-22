@@ -820,7 +820,7 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 	}
 
 	if (rv <= 0)
-		/* already found a reason to abort */;
+		goto out; /* already found a reason to abort */
 	else if (ns.role == R_SECONDARY && device->open_cnt)
 		rv = SS_DEVICE_IN_USE;
 
@@ -868,6 +868,7 @@ is_valid_state(struct drbd_device *device, union drbd_state ns)
 	else if (ns.conn >= C_CONNECTED && ns.pdsk == D_UNKNOWN)
 		rv = SS_CONNECTED_OUTDATES;
 
+out:
 	rcu_read_unlock();
 
 	return rv;
