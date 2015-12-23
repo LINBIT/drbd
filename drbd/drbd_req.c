@@ -68,8 +68,7 @@ static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *r
 }
 #endif
 
-static struct drbd_request *drbd_req_new(struct drbd_device *device,
-					       struct bio *bio_src)
+static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio *bio_src)
 {
 	struct drbd_request *req;
 	int i;
@@ -84,10 +83,10 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 
 	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 6);
-	req->device      = device;
 
-	req->master_bio  = bio_src;
-	req->epoch       = 0;
+	req->device = device;
+	req->master_bio = bio_src;
+	req->epoch = 0;
 
 	drbd_clear_interval(&req->i);
 	req->i.sector = DRBD_BIO_BI_SECTOR(bio_src);
@@ -104,10 +103,11 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device,
 	/* one kref as long as completion_ref > 0 */
 	kref_init(&req->kref);
 
-	for (i = 0; i < ARRAY_SIZE(req->rq_state); i++)
+	req->rq_state[0] = (bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0)
+	              | (bio_src->bi_rw & DRBD_REQ_WSAME ? RQ_WSAME : 0)
+	              | (bio_src->bi_rw & DRBD_REQ_DISCARD ? RQ_UNMAP : 0);
+	for (i = 1; i < ARRAY_SIZE(req->rq_state); i++)
 		req->rq_state[i] = 0;
-	if (bio_data_dir(bio_src) == WRITE)
-		req->rq_state[0] |= RQ_WRITE;
 
 	return req;
 }

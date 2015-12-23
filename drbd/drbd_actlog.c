@@ -1122,6 +1122,13 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 	return count;
 }
 
+static bool plausible_request_size(int size)
+{
+	return size > 0
+		&& size <= DRBD_MAX_BATCH_BIO_SIZE
+		&& IS_ALIGNED(size, 512);
+}
+
 /* clear the bit corresponding to the piece of storage in question:
  * size byte of data starting from sector.  Only clear a bits of the affected
  * one ore more _aligned_ BM_BLOCK_SIZE blocks.
@@ -1142,7 +1149,7 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 	if ((mode == SET_OUT_OF_SYNC) && size == 0)
 		return 0;
 
-	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_DISCARD_SIZE) {
+	if (!plausible_request_size(size)) {
 		drbd_err(device, "%s: sector=%llus size=%d nonsense!\n",
 				drbd_change_sync_fname[mode],
 				(unsigned long long)sector, size);

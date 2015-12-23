@@ -1591,6 +1591,26 @@ static void blk_queue_discard_granularity(struct request_queue *q, unsigned int 
 {
 	q->limits.discard_granularity = granularity;
 }
+
+static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	unsigned int s = DRBD_MAX_BBIO_SECTORS;
+
+	/* when we introduced REQ_WRITE_SAME support, we also bumped
+	 * our maximum supported batch bio size used for discards. */
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (!(connection->agreed_features & DRBD_FF_WSAME)) {
+			/* before, with DRBD <= 8.4.6, we only allowed up to one AL_EXTENT_SIZE. */
+			s = AL_EXTENT_SIZE >> 9;
+		}
+	}
+	rcu_read_unlock();
+
+	return s;
+}
+
 static void decide_on_discard_support(struct drbd_device *device,
 			struct request_queue *q,
 			struct request_queue *b,
@@ -1606,7 +1626,7 @@ static void decide_on_discard_support(struct drbd_device *device,
 		can_do = false;
 		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
 	}
-	if (can_do && (common_connection_features(device->resource) & FF_TRIM)) {
+	if (can_do && (common_connection_features(device->resource) & DRBD_FF_TRIM)) {
 		can_do = false;
 		drbd_info(device, "peer DRBD too old, does not support TRIM: disabling discards\n");
 	}
@@ -1618,7 +1638,7 @@ static void decide_on_discard_support(struct drbd_device *device,
 		 * you care, you need to use devices with similar
 		 * topology on all peers. */
 		blk_queue_discard_granularity(q, 512);
-		q->limits.max_discard_sectors = DRBD_MAX_DISCARD_SECTORS;
+		q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
 	} else {
 		queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
@@ -1639,8 +1659,69 @@ static void fixup_discard_if_not_supported(struct request_queue *q)
 	}
 }
 
+static void decide_on_write_same_support(struct drbd_device *device,
+			struct request_queue *q,
+			struct request_queue *b, struct o_qlim *o)
+{
+#ifndef REQ_WRITE_SAME
+	drbd_dbg(device, "This kernel is too old, no WRITE_SAME support.\n");
+#else
+	bool can_do = b ? b->limits.max_write_same_sectors : true;
+
+	if (can_do && common_connection_features(device->resource) & DRBD_FF_WSAME) {
+		can_do = false;
+		drbd_info(device, "peer does not support WRITE_SAME\n");
+	}
+
+	if (o) {
+		/* logical block size; queue_logical_block_size(NULL) is 512 */
+		unsigned int peer_lbs = be32_to_cpu(o->logical_block_size);
+		unsigned int me_lbs_b = queue_logical_block_size(b);
+		unsigned int me_lbs = queue_logical_block_size(q);
+
+		if (me_lbs_b != me_lbs) {
+			drbd_warn(device,
+				"logical block size of local backend does not match (drbd:%u, backend:%u); was this a late attach?\n",
+				me_lbs, me_lbs_b);
+			/* rather disable write same than trigger some BUG_ON later in the scsi layer. */
+			can_do = false;
+		}
+		if (me_lbs_b != peer_lbs) {
+			drbd_warn(device, "logical block sizes do not match (me:%u, peer:%u); this may cause problems.\n",
+				me_lbs, peer_lbs);
+			if (can_do) {
+				drbd_dbg(device, "logical block size mismatch: WRITE_SAME disabled.\n");
+				can_do = false;
+			}
+			me_lbs = max(me_lbs, me_lbs_b);
+			/* We cannot change the logical block size of an in-use queue.
+			 * We can only hope that access happens to be properly aligned.
+			 * If not, the peer will likely produce an IO error, and detach. */
+			if (peer_lbs > me_lbs) {
+				if (device->resource->role[NOW] != R_PRIMARY) {
+					blk_queue_logical_block_size(q, peer_lbs);
+					drbd_warn(device, "logical block size set to %u\n", peer_lbs);
+				} else {
+					drbd_warn(device,
+						"current Primary must NOT adjust logical block size (%u -> %u); hope for the best.\n",
+						me_lbs, peer_lbs);
+				}
+			}
+		}
+		if (can_do && !o->write_same_capable) {
+			/* If we introduce an open-coded write-same loop on the receiving side,
+			 * the peer would present itself as "capable". */
+			drbd_dbg(device, "WRITE_SAME disabled (peer device not capable)\n");
+			can_do = false;
+		}
+	}
+
+	blk_queue_max_write_same_sectors(q, can_do ? DRBD_MAX_BBIO_SECTORS : 0);
+#endif
+}
+
 static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backing_dev *bdev,
-				   unsigned int max_bio_size)
+				   unsigned int max_bio_size, struct o_qlim *o)
 {
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
@@ -1658,16 +1739,14 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		rcu_read_unlock();
 
 		blk_set_stacking_limits(&q->limits);
-#ifdef REQ_WRITE_SAME
-		blk_queue_max_write_same_sectors(q, 0);
-#endif
 	}
 
-	blk_queue_logical_block_size(q, 512);
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
 	decide_on_discard_support(device, q, b, discard_zeroes_if_aligned);
+	decide_on_write_same_support(device, q, b, o);
+
 	if (b) {
 		blk_queue_stack_limits(q, b);
 
@@ -1681,7 +1760,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	fixup_discard_if_not_supported(q);
 }
 
-void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
+void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev, struct o_qlim *o)
 {
 	unsigned int max_bio_size = device->device_conf.max_bio_size;
 	struct drbd_peer_device *peer_device;
@@ -1698,7 +1777,7 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 	}
 	spin_unlock_irq(&device->resource->req_lock);
 
-	drbd_setup_queue_param(device, bdev, max_bio_size);
+	drbd_setup_queue_param(device, bdev, max_bio_size, o);
 }
 
 /* Make sure IO is suspended before calling this function(). */
@@ -1901,7 +1980,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		drbd_bump_write_ordering(device->resource, NULL, WO_BIO_BARRIER);
 
 	if (old_disk_conf->discard_zeroes_if_aligned != new_disk_conf->discard_zeroes_if_aligned)
-		drbd_reconsider_queue_parameters(device, device->ldev);
+		drbd_reconsider_queue_parameters(device, device->ldev, NULL);
 
 	drbd_md_sync(device);
 
@@ -2400,7 +2479,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
-	drbd_reconsider_queue_parameters(device, device->ldev);
+	drbd_reconsider_queue_parameters(device, device->ldev, NULL);
 
 	/* If I am currently not R_PRIMARY,
 	 * but meta data primary indicator is set,
