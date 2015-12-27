@@ -133,4 +133,4 @@ $(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
 		exit 1;								\
 	fi ;									\
 	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-	mv --force $@.new $@
+	mv -f $@.new $@
