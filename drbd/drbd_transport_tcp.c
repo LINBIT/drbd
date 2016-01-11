@@ -43,9 +43,12 @@ struct buffer {
 	void *pos;
 };
 
+#define DTT_CONNECTING 1
+
 struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
 	struct mutex paths_mutex;
+	unsigned long flags;
 	struct socket *stream[2];
 	struct buffer rbuf[2];
 };
@@ -792,6 +795,8 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 	struct drbd_path *drbd_path;
 
 	mutex_lock(&tcp_transport->paths_mutex);
+	clear_bit(DTT_CONNECTING, &tcp_transport->flags);
+
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
@@ -839,6 +844,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	init_waitqueue_head(&waiter.wait);
 
 	mutex_lock(&tcp_transport->paths_mutex);
+	set_bit(DTT_CONNECTING, &tcp_transport->flags);
 
 	err = -EDESTADDRREQ;
 	if (list_empty(&transport->paths))
@@ -1192,27 +1198,39 @@ static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
+	int err = 0;
 
 	path->waiter.transport = transport;
 	drbd_path->established = false;
 
 	mutex_lock(&tcp_transport->paths_mutex);
+	if (test_bit(DTT_CONNECTING, &tcp_transport->flags)) {
+		err = drbd_get_listener(&path->waiter, (struct sockaddr *)&drbd_path->my_addr,
+					dtt_create_listener);
+		if (err)
+			goto out_unlock;
+	}
+
 	list_add(&drbd_path->list, &transport->paths);
+
+out_unlock:
 	mutex_unlock(&tcp_transport->paths_mutex);
 
-	return 0;
+	return err;
 }
 
 static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
+	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
 	if (drbd_path->established)
 		return -EBUSY;
 
 	mutex_lock(&tcp_transport->paths_mutex);
 	list_del_init(&drbd_path->list);
+	drbd_put_listener(&path->waiter);
 	mutex_unlock(&tcp_transport->paths_mutex);
 
 	return 0;
