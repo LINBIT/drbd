@@ -45,6 +45,7 @@ struct buffer {
 
 struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
+	struct mutex paths_mutex;
 	struct socket *stream[2];
 	struct buffer rbuf[2];
 };
@@ -125,6 +126,7 @@ int dtt_init(struct drbd_transport *transport)
 		container_of(transport, struct drbd_tcp_transport, transport);
 	enum drbd_stream i;
 
+	mutex_init(&tcp_transport->paths_mutex);
 	tcp_transport->transport.ops = &dtt_ops;
 	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
@@ -166,6 +168,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		}
 	}
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		bool was_established = drbd_path->established;
 		drbd_path->established = false;
@@ -185,6 +188,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			kfree(drbd_path);
 		}
 	}
+	mutex_unlock(&tcp_transport->paths_mutex);
 }
 
 static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
@@ -506,22 +510,28 @@ static bool dtt_connection_established(struct drbd_transport *transport,
 
 static struct dtt_path *dtt_wait_connect_cond(struct drbd_transport *transport)
 {
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+	struct drbd_listener *listener;
 	struct drbd_path *drbd_path;
-	bool rv;
+	struct dtt_path *path;
+	bool rv = false;
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
-		struct drbd_listener *listener = path->waiter.listener;
+		path = container_of(drbd_path, struct dtt_path, path);
+		listener = path->waiter.listener;
 
 		spin_lock_bh(&listener->waiters_lock);
 		rv = listener->pending_accepts > 0 || path->socket != NULL;
 		spin_unlock_bh(&listener->waiters_lock);
 
 		if (rv)
-			return path;
+			break;
 	}
+	mutex_unlock(&tcp_transport->paths_mutex);
 
-	return NULL;
+	return rv ? path : NULL;
 }
 
 static void unregister_state_change(struct sock *sock, struct dtt_listener *listener)
@@ -677,7 +687,7 @@ static void dtt_incoming_connection(struct sock *sock)
 
 		spin_lock(&listener->listener.waiters_lock);
 		listener->listener.pending_accepts++;
-		waiter = list_entry(listener->listener.waiters.next, struct drbd_waiter, list);
+		waiter = list_first_entry(&listener->listener.waiters, struct drbd_waiter, list);
 		path = container_of(waiter, struct dtt_path, waiter);
 		if (path->first)
 			wake_up(&path->first->wait);
@@ -777,8 +787,11 @@ out:
 
 static void dtt_put_listeners(struct drbd_transport *transport)
 {
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct drbd_path *drbd_path;
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
@@ -789,17 +802,20 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 			path->socket = NULL;
 		}
 	}
+	mutex_unlock(&tcp_transport->paths_mutex);
 }
 
-static struct dtt_path *dtt_next_path(struct dtt_path *path)
+static struct dtt_path *dtt_next_path(struct drbd_tcp_transport *tcp_transport, struct dtt_path *path)
 {
-	struct drbd_transport *transport = path->waiter.transport;
+	struct drbd_transport *transport = &tcp_transport->transport;
 	struct drbd_path *drbd_path;
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	if (list_is_last(&path->path.list, &transport->paths))
 		drbd_path = list_first_entry(&transport->paths, struct drbd_path, list);
 	else
 		drbd_path = list_next_entry(&path->path, list);
+	mutex_unlock(&tcp_transport->paths_mutex);
 
 	return container_of(drbd_path, struct dtt_path, path);
 }
@@ -819,11 +835,14 @@ static int dtt_connect(struct drbd_transport *transport)
 	dsocket = NULL;
 	csocket = NULL;
 
-	if (list_empty(&transport->paths))
-		return -EDESTADDRREQ;
-
 	waiter.transport = transport;
 	init_waitqueue_head(&waiter.wait);
+
+	mutex_lock(&tcp_transport->paths_mutex);
+
+	err = -EDESTADDRREQ;
+	if (list_empty(&transport->paths))
+		goto out_unlock;
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
@@ -832,11 +851,12 @@ static int dtt_connect(struct drbd_transport *transport)
 		err = drbd_get_listener(&path->waiter, (struct sockaddr *)&drbd_path->my_addr,
 					dtt_create_listener);
 		if (err)
-			goto out;
+			goto out_unlock;
 	}
 
 	drbd_path = list_first_entry(&transport->paths, struct drbd_path, list);
 	connect_to_path = container_of(drbd_path, struct dtt_path, path);
+	mutex_unlock(&tcp_transport->paths_mutex);
 
 	do {
 		struct socket *s = NULL;
@@ -866,7 +886,7 @@ static int dtt_connect(struct drbd_transport *transport)
 				goto out_eagain;
 			}
 		} else if (!first_path)
-			connect_to_path = dtt_next_path(connect_to_path);
+			connect_to_path = dtt_next_path(tcp_transport, connect_to_path);
 
 		if (dtt_connection_established(transport, &dsocket, &csocket, &first_path))
 			break;
@@ -965,6 +985,11 @@ randomize:
 
 out_eagain:
 	err = -EAGAIN;
+
+	if (0) {
+out_unlock:
+		mutex_unlock(&tcp_transport->paths_mutex);
+	}
 out:
 	dtt_put_listeners(transport);
 
@@ -1164,22 +1189,32 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
 	path->waiter.transport = transport;
 	drbd_path->established = false;
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	list_add(&drbd_path->list, &transport->paths);
+	mutex_unlock(&tcp_transport->paths_mutex);
 
 	return 0;
 }
 
 static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
 {
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+
 	if (drbd_path->established)
 		return -EBUSY;
 
+	mutex_lock(&tcp_transport->paths_mutex);
 	list_del_init(&drbd_path->list);
+	mutex_unlock(&tcp_transport->paths_mutex);
+
 	return 0;
 }
 
