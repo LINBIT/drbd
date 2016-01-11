@@ -1241,13 +1241,17 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	}
 
 	if (congested) {
-		/* start a new epoch for non-mirrored writes */
-		start_new_tl_epoch(device->resource);
+		struct drbd_resource *resource = device->resource;
 
+		/* start a new epoch for non-mirrored writes */
+		start_new_tl_epoch(resource);
+
+		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
 		if (on_congestion == OC_PULL_AHEAD)
-			change_repl_state(peer_device, L_AHEAD, 0);
+			__change_repl_state(peer_device, L_AHEAD);
 		else			/* on_congestion == OC_DISCONNECT */
-			change_cstate(peer_device->connection, C_DISCONNECTING, 0);
+			__change_cstate(peer_device->connection, C_DISCONNECTING);
+		end_state_change_locked(resource);
 	}
 	put_ldev(device);
 }
