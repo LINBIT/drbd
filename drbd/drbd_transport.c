@@ -227,24 +227,25 @@ static void drbd_listener_destroy(struct kref *kref)
 void drbd_put_listener(struct drbd_waiter *waiter)
 {
 	struct drbd_resource *resource;
+	struct drbd_listener *listener;
 
-	if (!waiter->listener)
+	listener = xchg(&waiter->listener, NULL);
+	if (!listener)
 		return;
 
-	resource = waiter->listener->resource;
+	resource = listener->resource;
 	spin_lock_bh(&resource->listeners_lock);
 	list_del(&waiter->list);
-	if (!list_empty(&waiter->listener->waiters) && waiter->listener->pending_accepts) {
+	if (!list_empty(&listener->waiters) && listener->pending_accepts) {
 		/* This receiver no longer does accept wake ups. In case we got woken up to do
 		   one, and there are more receivers, wake one of the other guys to do it */
 		struct drbd_waiter *ad2;
 
-		ad2 = list_entry(waiter->listener->waiters.next, struct drbd_waiter, list);
+		ad2 = list_entry(listener->waiters.next, struct drbd_waiter, list);
 		wake_up(&ad2->wait);
 	}
 	spin_unlock_bh(&resource->listeners_lock);
-	kref_put(&waiter->listener->kref, drbd_listener_destroy);
-	waiter->listener = NULL;
+	kref_put(&listener->kref, drbd_listener_destroy);
 }
 
 struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
