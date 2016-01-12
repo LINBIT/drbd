@@ -5609,6 +5609,13 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		return 0;
 	}
 
+	/* Start resync after AHEAD/BEHIND */
+	if (connection->agreed_pro_version >= 110 &&
+	    peer_state.conn == L_SYNC_SOURCE && old_peer_state.conn == L_BEHIND) {
+		drbd_start_resync(peer_device, L_SYNC_TARGET);
+		return 0;
+	}
+
 	/* peer says his disk is inconsistent, while we think it is uptodate,
 	 * and this happens while the peer still thinks we have a sync going on,
 	 * but we think we are already done with the sync.

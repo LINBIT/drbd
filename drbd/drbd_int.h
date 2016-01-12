@@ -665,6 +665,7 @@ enum {
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
+	SEND_STATE_AFTER_AHEAD,
 };
 
 /* definition of bits in bm_flags to be used in drbd_bm_lock
@@ -811,6 +812,7 @@ enum {
 	C_UNREGISTERED,
 	RECONNECT,
 	CONN_DISCARD_MY_DATA,
+	SEND_STATE_AFTER_AHEAD_C,
 };
 
 /* flag bits per resource */

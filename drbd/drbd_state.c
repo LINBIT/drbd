@@ -1784,6 +1784,12 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 					drbd_resume_al(device);
 				put_ldev(device);
 			}
+
+			if (repl_state[OLD] == L_AHEAD && repl_state[NEW] == L_SYNC_SOURCE) {
+				set_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags);
+				set_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags);
+				wake_up(&connection->sender_work.q_wait);
+			}
 		}
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
