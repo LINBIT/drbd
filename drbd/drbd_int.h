@@ -1190,6 +1190,9 @@ struct drbd_peer_device {
 	struct dentry *debugfs_peer_dev;
 	struct dentry *debugfs_peer_dev_resync_extents;
 #endif
+	struct {/* sender todo per peer_device */
+		bool was_ahead;
+	} todo;
 };
 
 struct submit_worker {
