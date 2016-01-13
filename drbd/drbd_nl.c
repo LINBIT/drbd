@@ -45,30 +45,6 @@
 #include <linux/kthread.h>
 #include <linux/security.h>
 #include <net/genetlink.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-/*
- * copied from more recent kernel source
- */
-int genl_register_family_with_ops(struct genl_family *family,
-	struct genl_ops *ops, size_t n_ops)
-{
-	int err, i;
-
-	err = genl_register_family(family);
-	if (err)
-		return err;
-
-	for (i = 0; i < n_ops; ++i, ++ops) {
-		err = genl_register_ops(family, ops);
-		if (err)
-			goto err_out;
-	}
-	return 0;
-err_out:
-	genl_unregister_family(family);
-	return err;
-}
-#endif
 
 /* .doit */
 // int drbd_adm_create_resource(struct sk_buff *skb, struct genl_info *info);
