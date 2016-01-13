@@ -4285,21 +4285,14 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 u64 drbd_weak_nodes_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
-	int my_node_id = device->resource->res_opts.node_id;
-	int node_id;
-	u64 not_weak = NODE_MASK(my_node_id);
+	u64 not_weak = NODE_MASK(device->resource->res_opts.node_id);
 
 	rcu_read_lock();
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (node_id == my_node_id)
-			continue;
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+		if (!(pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED))
+			not_weak |= NODE_MASK(peer_device->node_id);
 
-		peer_device = peer_device_by_node_id(device, node_id);
-		if (peer_device) {
-			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
-			if (!(pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED))
-				not_weak |= NODE_MASK(node_id);
-		}
 	}
 	rcu_read_unlock();
 
