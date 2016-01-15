@@ -3285,11 +3285,13 @@ static enum drbd_ret_code
 check_path_against_nla(const struct drbd_path *path,
 		       const struct nlattr *my_addr, const struct nlattr *peer_addr)
 {
+	enum drbd_ret_code ret = NO_ERROR;
+
 	if (addr_eq_nla(&path->my_addr, path->my_addr_len, my_addr))
-		return ERR_LOCAL_ADDR;
+		ret = ERR_LOCAL_ADDR;
 	if (addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
-		return ERR_PEER_ADDR;
-	return NO_ERROR;
+		ret = (ret == ERR_LOCAL_ADDR ? ERR_LOCAL_AND_PEER_ADDR : ERR_PEER_ADDR);
+	return ret;
 }
 
 static enum drbd_ret_code
@@ -3316,8 +3318,8 @@ check_path_usable(const struct drbd_config_context *adm_ctx,
 				if (retcode == NO_ERROR)
 					continue;
 				/* Within the same resource, it is ok to use
-				 * the same local endpoint several times */
-				if (retcode == ERR_LOCAL_ADDR &&
+				 * the same endpoint several times */
+				if (retcode != ERR_LOCAL_AND_PEER_ADDR &&
 				    resource == adm_ctx->resource)
 					continue;
 				return retcode;
