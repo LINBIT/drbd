@@ -414,6 +414,47 @@ static void conn_md_sync(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
+/* Try to figure out where we are happy to become primary.
+   This is unsed by the crm-fence-peer mechanism
+*/
+static u64 up_to_date_nodes(struct drbd_device *device, bool op_is_fence)
+{
+	struct drbd_resource *resource = device->resource;
+	const int my_node_id = resource->res_opts.node_id;
+	u64 mask = NODE_MASK(my_node_id);
+
+	if (resource->role[NOW] == R_PRIMARY || op_is_fence) {
+		struct drbd_peer_device *peer_device;
+
+		rcu_read_lock();
+		for_each_peer_device_rcu(peer_device, device) {
+			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+			if (pdsk == D_UP_TO_DATE)
+				mask |= NODE_MASK(peer_device->node_id);
+		}
+		rcu_read_unlock();
+	} else if (device->disk_state[NOW] == D_UP_TO_DATE) {
+		struct drbd_peer_md *peer_md = device->ldev->md.peers;
+		int node_id;
+
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			struct drbd_peer_device *peer_device;
+			if (node_id == my_node_id)
+				continue;
+
+			peer_device = peer_device_by_node_id(device, node_id);
+
+			if ((peer_device && peer_device->disk_state[NOW] == D_UP_TO_DATE) ||
+			    (peer_md[node_id].flags & MDF_NODE_EXISTS &&
+			     peer_md[node_id].bitmap_uuid == 0))
+				mask |= NODE_MASK(node_id);
+		}
+	} else
+		  mask = 0;
+
+	return mask;
+}
+
 /* Buffer to construct the environment of a user-space helper in. */
 struct env {
 	char *buffer;
@@ -568,6 +609,27 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 		}
 	}
 	rcu_read_unlock();
+
+	if (strstr(cmd, "fence")) {
+		bool op_is_fence = strcmp(cmd, "fence-peer") == 0;
+		struct drbd_peer_device *peer_device;
+		u64 mask = -1ULL;
+		int vnr;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+
+			if (get_ldev(device)) {
+				u64 m = up_to_date_nodes(device, op_is_fence);
+				if (m)
+					mask &= m;
+				put_ldev(device);
+				/* Yes we outright ignore volumes that are not up-to-date
+				   on a single node. */
+			}
+		}
+		env_print(&env, "UP_TO_DATE_NODES=0x%08llX", mask);
+	}
 
 	envp = make_envp(&env);
 	if (!envp) {
