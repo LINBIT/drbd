@@ -1125,6 +1125,38 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 out_unlock:
 	end_state_change_locked(device->resource);
 
+	put_ldev(device);
+
+	peer_device->rs_total  = 0;
+	peer_device->rs_failed = 0;
+	peer_device->rs_paused = 0;
+
+	if (peer_device->resync_again) {
+		enum drbd_repl_state new_repl_state =
+			old_repl_state == L_SYNC_TARGET || old_repl_state == L_PAUSED_SYNC_T ?
+			L_WF_BITMAP_T :
+			old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S ?
+			L_WF_BITMAP_S : L_ESTABLISHED;
+
+		if (new_repl_state != L_ESTABLISHED) {
+			peer_device->resync_again--;
+			begin_state_change_locked(device->resource, CS_VERBOSE);
+			__change_repl_state(peer_device, new_repl_state);
+			end_state_change_locked(device->resource);
+		}
+	}
+	spin_unlock_irq(&device->resource->req_lock);
+
+out:
+	/* reset start sector, if we reached end of device */
+	if (verify_done && peer_device->ov_left == 0)
+		peer_device->ov_start_sector = 0;
+
+	drbd_md_sync(device);
+
+	if (khelper_cmd)
+		drbd_khelper(device, connection, khelper_cmd);
+
 	/* If we have been sync source, and have an effective fencing-policy,
 	 * once *all* volumes are back in sync, call "unfence". */
 	if (old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S) {
@@ -1147,38 +1179,6 @@ out_unlock:
 		if (disk_state == D_UP_TO_DATE && pdsk_state == D_UP_TO_DATE)
 			drbd_khelper(NULL, connection, "unfence-peer");
 	}
-
-	put_ldev(device);
-out:
-	peer_device->rs_total  = 0;
-	peer_device->rs_failed = 0;
-	peer_device->rs_paused = 0;
-
-	if (peer_device->resync_again) {
-		enum drbd_repl_state new_repl_state =
-			old_repl_state == L_SYNC_TARGET || old_repl_state == L_PAUSED_SYNC_T ?
-			L_WF_BITMAP_T :
-			old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S ?
-			L_WF_BITMAP_S : L_ESTABLISHED;
-
-		if (new_repl_state != L_ESTABLISHED) {
-			peer_device->resync_again--;
-			begin_state_change_locked(device->resource, CS_VERBOSE);
-			__change_repl_state(peer_device, new_repl_state);
-			end_state_change_locked(device->resource);
-		}
-	}
-	spin_unlock_irq(&device->resource->req_lock);
-
-	/* reset start sector, if we reached end of device */
-	if (verify_done && peer_device->ov_left == 0)
-		peer_device->ov_start_sector = 0;
-
-	drbd_md_sync(device);
-
-	if (khelper_cmd)
-		drbd_khelper(device, connection, khelper_cmd);
-
 
 	return 1;
 }
