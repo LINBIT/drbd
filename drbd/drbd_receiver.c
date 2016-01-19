@@ -223,14 +223,17 @@ static void maybe_kick_lo(struct drbd_device *device)
 	struct disk_conf *dc;
 	unsigned int watermark = 1000000;
 
-	rcu_read_lock();
-	dc = rcu_dereference(device->ldev->disk_conf);
-	if (dc)
-		min_not_zero(dc->unplug_watermark, watermark);
-	rcu_read_unlock();
+	if (get_ldev(device)) {
+		rcu_read_lock();
+		dc = rcu_dereference(device->ldev->disk_conf);
+		if (dc)
+			min_not_zero(dc->unplug_watermark, watermark);
+		rcu_read_unlock();
 
-	if (atomic_read(&device->local_cnt) >= watermark)
-		drbd_kick_lo(device);
+		if (atomic_read(&device->local_cnt) >= watermark)
+			drbd_kick_lo(device);
+		put_ldev(device);
+	}
 }
 
 static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
@@ -270,8 +273,10 @@ static void conn_maybe_kick_lo(struct drbd_connection *connection)
 	struct drbd_device *device;
 	int vnr;
 
+	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr)
 		maybe_kick_lo(device);
+	rcu_read_unlock();
 }
 
 /**
