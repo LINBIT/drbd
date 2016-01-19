@@ -1418,7 +1418,6 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	err = drbd_send_command(peer_device, P_OV_REPLY, DATA_STREAM);
 	if (err)
 		dec_rs_pending(peer_device);
-	kfree(digest);
 
 out:
 	if (peer_req)
