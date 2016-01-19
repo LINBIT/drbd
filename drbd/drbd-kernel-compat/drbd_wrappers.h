@@ -86,9 +86,30 @@ static inline unsigned short queue_logical_block_size(struct request_queue *q)
 	return retval;
 }
 
-static inline sector_t bdev_logical_block_size(struct block_device *bdev)
+/* we only have hardsect_size yet */
+static inline unsigned short queue_physical_block_size(struct request_queue *q)
+{
+	return queue_logical_block_size(q);
+}
+
+static inline unsigned short bdev_logical_block_size(struct block_device *bdev)
 {
 	return queue_logical_block_size(bdev_get_queue(bdev));
+}
+
+static inline unsigned int queue_io_min(struct request_queue *q)
+{
+	return queue_logical_block_size(q);
+}
+
+static inline unsigned int queue_io_opt(struct request_queue *q)
+{
+	return queue_logical_block_size(q);
+}
+
+static inline int queue_alignment_offset(struct request_queue *q)
+{
+	return 0;
 }
 
 static inline unsigned int queue_max_hw_sectors(struct request_queue *q)
@@ -104,6 +125,28 @@ static inline unsigned int queue_max_sectors(struct request_queue *q)
 static inline void blk_queue_logical_block_size(struct request_queue *q, unsigned short size)
 {
 	q->hardsect_size = size;
+}
+#endif
+#ifndef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
+static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
+{
+	return 0;
+}
+#endif
+
+#ifndef COMPAT_HAVE_BDEV_DISCARD_ALIGNMENT
+static inline int bdev_discard_alignment(struct block_device *bdev)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)
+	return 0;
+#else
+	struct request_queue *q = bdev_get_queue(bdev);
+
+	if (bdev != bdev->bd_contains)
+		return bdev->bd_part->discard_alignment;
+
+	return q->limits.discard_alignment;
+#endif
 }
 #endif
 
