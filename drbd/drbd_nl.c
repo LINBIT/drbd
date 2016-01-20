@@ -3530,9 +3530,11 @@ int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 static enum drbd_ret_code
 adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
-	struct drbd_transport *transport = &adm_ctx->connection->transport;
+	struct drbd_connection *connection = adm_ctx->connection;
+	struct drbd_transport *transport = &connection->transport;
 	struct nlattr *my_addr = NULL, *peer_addr = NULL;
 	struct drbd_path *path;
+	int nr_paths = 0;
 	int err;
 
 	/* parse and validate only */
@@ -3543,6 +3545,15 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	}
 	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
 	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+
+	list_for_each_entry(path, &transport->paths, list)
+		nr_paths++;
+
+	if (nr_paths == 1 && connection->cstate[NOW] >= C_CONNECTING) {
+		drbd_msg_put_info(adm_ctx->reply_skb,
+				  "Can not delete last path, use disconnect first!");
+		return ERR_INVALID_REQUEST;
+	}
 
 	list_for_each_entry(path, &transport->paths, list) {
 		if (!addr_eq_nla(&path->my_addr, path->my_addr_len, my_addr))
@@ -3556,11 +3567,11 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		break;
 	}
 	if (err) {
-		drbd_err(adm_ctx->connection, "del_path() failed with %d\n", err);
+		drbd_err(connection, "del_path() failed with %d\n", err);
 		drbd_msg_put_info(adm_ctx->reply_skb, "del_path on transport failed");
 		return ERR_INVALID_REQUEST;
 	}
-	notify_path(adm_ctx->connection, path, NOTIFY_DESTROY);
+	notify_path(connection, path, NOTIFY_DESTROY);
 	return NO_ERROR;
 }
 
@@ -3612,6 +3623,11 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	default:;
 		/* no special handling necessary */
 	}
+
+	if (rv >= SS_SUCCESS)
+		wait_event_interruptible_timeout(resource->state_wait,
+						 connection->cstate[NOW] == C_STANDALONE,
+						 HZ);
 	return rv;
 }
 
