@@ -700,9 +700,11 @@ start:
 	connection->agreed_pro_version = 80;
 
 	err = transport->ops->connect(transport);
-	if (err == -EAGAIN)
+	if (err == -EAGAIN) {
+		if (connection->cstate[NOW] == C_DISCONNECTING)
+			return false;
 		goto retry;
-	else if (err < 0) {
+	} else if (err < 0) {
 		drbd_warn(connection, "Failed to initiate connection, err=%d\n", err);
 		goto abort;
 	}
