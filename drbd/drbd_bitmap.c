@@ -913,11 +913,21 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	b->bm_words = words;
 	b->bm_dev_capacity = capacity;
 
-	if (growing && set_new_bits) {
+	if (growing) {
 		unsigned int bitmap_index;
 
-		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
-			___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL, KM_IRQ1);
+		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++) {
+			unsigned long bm_set = b->bm_set[bitmap_index];
+
+			if (set_new_bits) {
+				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL, KM_IRQ1);
+				bm_set += bits - obits;
+			}
+			else
+				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL, KM_IRQ1);
+
+			b->bm_set[bitmap_index] = bm_set;
+		}
 	}
 
 	if (want < have) {
