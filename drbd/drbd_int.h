@@ -962,11 +962,6 @@ struct drbd_connection {
 	enum drbd_fencing_policy fencing_policy;
 	wait_queue_head_t ping_wait;	/* Woken upon reception of a ping, and a state change */
 
-	struct sockaddr_storage my_addr;
-	int my_addr_len;
-	struct sockaddr_storage peer_addr;
-	int peer_addr_len;
-
 	struct drbd_send_buffer send_buffer[2];
 	struct mutex mutex[2]; /* Protect assembling of new packet until sending it (in send_buffer) */
 	int agreed_pro_version;		/* actually used protocol version */
