@@ -439,12 +439,12 @@ static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, vo
 	if (!parent || !parent->d_inode)
 		goto out;
 	/* serialize with d_delete() */
-	mutex_lock(&parent->d_inode->i_mutex);
+	inode_lock(d_inode(parent));
 	/* Make sure the object is still alive */
 	if (simple_positive(file->f_dentry)
 	&& kref_get_unless_zero(kref))
 		ret = 0;
-	mutex_unlock(&parent->d_inode->i_mutex);
+	inode_unlock(d_inode(parent));
 	if (!ret) {
 		ret = single_open(file, show, data);
 		if (ret)
