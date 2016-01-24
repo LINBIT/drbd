@@ -2124,6 +2124,7 @@ static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
 	enum connect_state_enum p;
+	long t;
 	int err;
 
 	if (!path)
@@ -2139,7 +2140,11 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		if (delayed_work_pending(&path->cs.work))
 			mod_timer_pending(&path->cs.work.timer, 1);
 	case PCS_REQUEST_ABORT:
-		wait_event(path->cs.wq, atomic_read(&path->cs.active_state) == PCS_INACTIVE);
+		t = wait_event_timeout(path->cs.wq,
+				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
+				       HZ);
+		if (t == 0)
+			pr_warn("active_state still %d\n", atomic_read(&path->cs.active_state));
 	case PCS_INACTIVE:
 		break;
 	}
