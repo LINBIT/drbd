@@ -240,7 +240,7 @@ struct dtr_path {
 
 	struct drbd_rdma_transport *rdma_transport;
 	struct dtr_flow flow[2];
-	int nr; /* to identify paths in log/debug messages */
+	int nr;
 };
 
 struct dtr_stream {
@@ -2616,28 +2616,40 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	}
 }
 
-static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_path)
 {
-	static int nr = 1;
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	struct dtr_path *path;
 	int err = 0;
+	u32 em = 0; /* existing paths mask */
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list)
+		em |= (1 << path->nr);
+	rcu_read_unlock();
+
+	if (em == ~0UL) {
+		err = ENOSPC;
+		goto abort;
+	}
+
+	path = container_of(add_path, struct dtr_path, path);
+	path->nr = ffz(em) - 1;
 
 	/* initialize private parts of path */
 	path->rdma_transport = rdma_transport;
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 
-	list_add(&drbd_path->list, &transport->paths);
-	path->nr = nr++;
+	list_add(&path->path.list, &transport->paths);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
 		if (err)
-			list_del_init(&drbd_path->list);
+			list_del_init(&path->path.list);
 	}
-
+abort:
 	return err;
 }
 
