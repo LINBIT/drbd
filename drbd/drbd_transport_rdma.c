@@ -226,6 +226,7 @@ struct dtr_connect_state {
 
 struct dtr_path {
 	struct drbd_path path;
+	struct kref kref;
 
 	struct dtr_connect_state cs;
 
@@ -278,6 +279,8 @@ struct drbd_rdma_transport {
 
 	atomic_t first_path_connect_err;
 	struct completion connected;
+
+	wait_queue_head_t path_finished;
 };
 
 struct dtr_cm {
@@ -383,6 +386,61 @@ static struct rdma_conn_param dtr_conn_param = {
 
 static struct workqueue_struct *dtr_work_queue;
 
+#define for_each_path_ref(path, m, transport)				\
+	for (path = __next_path_ref(&m, NULL, transport);		\
+	     path;							\
+	     path = __next_path_ref(&m, path, transport))
+
+static void dtr_finished_using_path(struct kref *kref)
+{
+	struct dtr_path *path = container_of(kref, struct dtr_path, kref);
+
+	wake_up(&path->rdma_transport->path_finished);
+}
+
+static struct dtr_path *
+__next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* transport)
+{
+	rcu_read_lock();
+	if (!path) {
+		path = list_first_or_null_rcu(&transport->paths,
+					      struct dtr_path,
+					      path.list);
+		*visited = 0;
+	} else {
+		struct list_head *pos;
+		bool previous_visible;
+
+		pos = list_next_rcu(&path->path.list);
+		smp_rmb();
+		previous_visible = (path->nr != -1);
+		kref_put(&path->kref, dtr_finished_using_path);
+
+		if (pos == &transport->paths) {
+			path = NULL;
+		} else if (previous_visible) {
+			path = list_entry_rcu(pos, struct dtr_path, path.list);
+		} else {
+			struct drbd_path *drbd_path;
+
+			list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
+				struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+				if (path->nr == -1)
+					continue;
+				if (!(*visited & (1 << path->nr)))
+					goto found;
+			}
+			path = NULL;
+		}
+	}
+	if (path) {
+	found:
+		*visited |= 1 << path->nr;
+		kref_get(&path->kref);
+	}
+	rcu_read_unlock();
+	return path;
+}
 
 static int dtr_init(struct drbd_transport *transport)
 {
@@ -395,6 +453,8 @@ static int dtr_init(struct drbd_transport *transport)
 	rdma_transport->rx_allocation_size = allocation_size;
 	rdma_transport->active = false;
 
+	init_waitqueue_head(&rdma_transport->path_finished);
+
 	return 0;
 }
 
@@ -402,20 +462,31 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
+	u32 im;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	for_each_path_ref(path, im, transport)
 		dtr_disconnect_path(path);
-	}
 
 	rdma_transport->active = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
-		struct drbd_path *tmp;
-		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
-			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-			list_del_init(&drbd_path->list);
+		LIST_HEAD(work_list);
+		struct dtr_path *tmp;
+
+		rcu_read_lock();
+		list_for_each_entry_rcu(path, &transport->paths, path.list)
+			path->nr = -1;
+		rcu_read_unlock();
+
+		list_splice_init_rcu(&transport->paths, &work_list, synchronize_rcu);
+
+		list_for_each_entry_safe(path, tmp, &work_list, path.list) {
+			list_del_init(&path->path.list);
+
+			kref_put(&path->kref, dtr_finished_using_path);
+			wait_event(rdma_transport->path_finished, atomic_read(&path->kref.refcount) == 0);
+
 			kfree(path);
 		}
 
@@ -629,16 +700,17 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
 	int sb_size = 0, sb_used = 0;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[DATA_STREAM];
 
 		sb_size += flow->tx_descs_max;
 		sb_used += atomic_read(&flow->tx_descs_posted);
 	}
+	rcu_read_unlock();
 
 	/* these are used by the sender, guess we should them get right */
 	stats->send_buffer_size = sb_size * DRBD_SOCKET_BUFFER_SIZE;
@@ -1145,16 +1217,17 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	} else {
 		/* The waiting thread gets woken up if a packet arrived, or if there is no
 		   new packet but we need to tell the peer about space in our receive window */
-		struct drbd_path *drbd_path;
+		struct dtr_path *path;
 
-		list_for_each_entry(drbd_path, &rdma_transport->transport.paths, list) {
-			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+		rcu_read_lock();
+		list_for_each_entry_rcu(path, &rdma_transport->transport.paths, path.list) {
 			struct dtr_flow *flow = &path->flow[stream];
 
 			if (atomic_read(&flow->rx_descs_known_to_peer) <
 			    atomic_read(&flow->rx_descs_posted) / 8)
 				dtr_send_flow_control_msg(path);
 		}
+		rcu_read_unlock();
 	}
 
 	return false;
@@ -1595,11 +1668,10 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &rdma_transport->transport;
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
+	u32 im;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-
+	for_each_path_ref(path, im, transport) {
 		if (!dtr_path_ok(path))
 			continue;
 
@@ -1682,12 +1754,12 @@ static struct dtr_path *dtr_select_path_for_tx(struct drbd_rdma_transport *rdma_
 					       enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &rdma_transport->transport;
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
 
 	/* TOOD: Could try to balance along the paths in a more clever way */
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[stream];
 
 		if (!dtr_path_ok(path))
@@ -1696,9 +1768,12 @@ static struct dtr_path *dtr_select_path_for_tx(struct drbd_rdma_transport *rdma_
 		/* Normal packets are not allowed to consume all of the peer's rx_descs,
 		   the last one is reserved for flow-control messages. */
 		if (atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
-		    atomic_read(&flow->peer_rx_descs) > 1)
+		    atomic_read(&flow->peer_rx_descs) > 1) {
+			rcu_read_unlock();
 			return path;
+		}
 	}
+	rcu_read_unlock();
 
 	return NULL;
 }
@@ -2248,12 +2323,12 @@ static int dtr_connect(struct drbd_transport *transport)
 		container_of(transport, struct drbd_rdma_transport, transport);
 
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
 	struct net_conf *nc;
-
 	int timeout, err = -ENOMEM;
+	u32 im;
 
-	if (list_empty(&transport->paths))
+	if (!list_first_or_null_rcu(&transport->paths, struct drbd_path, list))
 		return -EDESTADDRREQ;
 
 	data_stream = &rdma_transport->stream[DATA_STREAM];
@@ -2276,12 +2351,12 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	rdma_transport->active = true;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-
+	for_each_path_ref(path, im, transport) {
 		err = dtr_activate_path(path);
-		if (err)
+		if (err) {
+			kref_put(&path->kref, dtr_finished_using_path);
 			goto abort;
+		}
 	}
 
 	err = wait_for_completion_interruptible(&rdma_transport->connected);
@@ -2299,10 +2374,8 @@ static int dtr_connect(struct drbd_transport *transport)
 abort:
 		rdma_transport->active = false;
 
-		list_for_each_entry(drbd_path, &transport->paths, list) {
-			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+		for_each_path_ref(path, im, transport)
 			dtr_disconnect_path(path);
-		}
 	} else {
 		int i;
 
@@ -2342,15 +2415,18 @@ static bool dtr_path_ok(struct dtr_path *path)
 
 static bool dtr_transport_ok(struct drbd_transport *transport)
 {
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
+	bool r = false;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-
-		if (dtr_path_ok(path))
-			return true;
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list) {
+		r = dtr_path_ok(path);
+		if (r)
+			break;
 	}
-	return false;
+	rcu_read_unlock();
+
+	return r;
 }
 
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream)
@@ -2360,11 +2436,11 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 
 static void dtr_update_congested(struct drbd_transport *transport)
 {
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
 	bool congested = true;
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[DATA_STREAM];
 		bool path_congested = false;
 		int tx_descs_posted;
@@ -2381,6 +2457,7 @@ static void dtr_update_congested(struct drbd_transport *transport)
 			break;
 		}
 	}
+	rcu_read_unlock();
 
 	if (congested)
 		set_bit(NET_CONGESTED, &transport->flags);
@@ -2604,16 +2681,15 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 
 static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
 {
-	struct drbd_path *drbd_path;
+	struct dtr_path *path;
 
 	/* BUMP me if you change the file format/content/presentation */
 	seq_printf(m, "v: %u\n\n", 0);
 
-	list_for_each_entry(drbd_path, &transport->paths, list) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
-
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list)
 		dtr_debugfs_show_path(path, m);
-	}
+	rcu_read_unlock();
 }
 
 static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_path)
@@ -2635,20 +2711,22 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	}
 
 	path = container_of(add_path, struct dtr_path, path);
-	path->nr = ffz(em) - 1;
+	path->nr = ffz(em);
 
 	/* initialize private parts of path */
 	path->rdma_transport = rdma_transport;
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
-
-	list_add(&path->path.list, &transport->paths);
+	kref_init(&path->kref);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
 		if (err)
-			list_del_init(&path->path.list);
+			goto abort;
 	}
+
+	list_add_rcu(&path->path.list, &transport->paths);
+
 abort:
 	return err;
 }
@@ -2677,11 +2755,20 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *d
 		return -EBUSY;
 
 	if (match) {
-		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+		struct dtr_path *path = container_of(del_path, struct dtr_path, path);
 
-		list_del_init(&del_path->list);
+		path->nr = -1; /* mark it as unvisible */
+		smp_wmb();
+		list_del_rcu(&del_path->list);
+		synchronize_rcu();
+		INIT_LIST_HEAD(&del_path->list);
 		dtr_disconnect_path(path);
-		return 0;
+
+		/* Wait until no for_each_path_ref() walk holds the object */
+		kref_put(&path->kref, dtr_finished_using_path);
+		wait_event(rdma_transport->path_finished, atomic_read(&path->kref.refcount) == 0);
+
+		return 0; /* Let the caller kfree() it now */
 	}
 
 	return -ENOENT;
