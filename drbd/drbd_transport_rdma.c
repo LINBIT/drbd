@@ -351,6 +351,7 @@ static void dtr_free_cm(struct dtr_cm *cm);
 static void __dtr_uninit_path(struct dtr_path *path);
 static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_path *, void *));
+static int dtr_activate_path(struct dtr_path *path);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -465,10 +466,10 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	struct dtr_path *path;
 	u32 im;
 
+	rdma_transport->active = false;
+
 	for_each_path_ref(path, im, transport)
 		dtr_disconnect_path(path);
-
-	rdma_transport->active = false;
 
 	if (free_op == DESTROY_TRANSPORT) {
 		LIST_HEAD(work_list);
@@ -1050,14 +1051,20 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 		drbd_path->established = false;
 		drbd_path_event(transport, drbd_path);
 	}
+
+	if (path->nr != -1 && path->rdma_transport->active == true) {
+		int err;
+
+		dtr_disconnect_path(path);
+		err = dtr_activate_path(path);
+		if (err)
+			tr_err(transport, "dtr_activate_path() = %d\n", err);
+	}
 }
 
 static void dtr_cma_disconnect(struct dtr_path *path)
 {
 	struct dtr_connect_state *cs = &path->cs;
-
-	if (!path->path.established)
-		return;
 
 	if (!delayed_work_pending(&cs->work)) {
 		INIT_WORK(&cs->work.work, dtr_cma_disconnect_work_fn);
