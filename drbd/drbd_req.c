@@ -1587,7 +1587,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-#ifdef HAVE_BLK_QUEUE_SPLIT
+#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
 /* 54efd50 block: make generic_make_request handle arbitrarily sized bios
  * introduced blk_queue_split(), which is supposed to split (and put on the
  * current->bio_list bio chain) any bio that is violating the queue limits.
