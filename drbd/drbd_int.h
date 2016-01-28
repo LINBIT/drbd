@@ -1086,6 +1086,12 @@ struct drbd_connection {
 					    abstract one. */
 };
 
+/* used to get the next lower or next higher peer_device depending on device node-id */
+enum drbd_neighbor {
+	NEXT_LOWER,
+	NEXT_HIGHER
+};
+
 struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;

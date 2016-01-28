@@ -4220,9 +4220,44 @@ static unsigned int conn_max_bio_size(struct drbd_connection *connection)
 		return DRBD_MAX_SIZE_H80_PACKET;
 }
 
+static struct drbd_peer_device *get_neighbor(struct drbd_device *device,
+		enum drbd_neighbor neighbor)
+{
+	s32 self_id, peer_id, pivot;
+	struct drbd_peer_device *peer_device, *peer_device_ret = NULL;
+
+	if (!get_ldev(device))
+		return NULL;
+	self_id = device->ldev->md.node_id;
+	put_ldev(device);
+
+	pivot = neighbor == NEXT_LOWER ? 0 : neighbor == NEXT_HIGHER ? S32_MAX : -1;
+	if (pivot == -1)
+		return NULL;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		bool found_new = false;
+		peer_id = peer_device->node_id;
+
+		if (neighbor == NEXT_LOWER && peer_id < self_id && peer_id >= pivot)
+			found_new = true;
+		else if (neighbor == NEXT_HIGHER && peer_id > self_id && peer_id <= pivot)
+			found_new = true;
+
+		if (found_new) {
+			pivot = peer_id;
+			peer_device_ret = peer_device;
+		}
+	}
+	rcu_read_unlock();
+
+	return peer_device_ret;
+}
+
 static int receive_sizes(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *peer_device, *peer_device_it = NULL;
 	struct drbd_device *device;
 	struct p_sizes *p = pi->data;
 	struct o_qlim *o = (connection->agreed_features & DRBD_FF_WSAME) ? p->qlim : NULL;
@@ -4375,11 +4410,15 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	}
 
 	if (peer_device->repl_state[NOW] > L_OFF) {
-		if (be64_to_cpu(p->c_size) !=
+		if (peer_device->max_size !=
 		    drbd_get_capacity(device->this_bdev) || ldsc) {
-			/* we have different sizes, probably peer
-			 * needs to know my new size... */
-			drbd_send_sizes(peer_device, 0, ddsf);
+			/* we have different sizes, probably peers
+			 * need to know my new size... */
+			rcu_read_lock();
+			for_each_peer_device_rcu(peer_device_it, device) {
+				drbd_send_sizes(peer_device_it, 1, ddsf);
+			}
+			rcu_read_unlock();
 		}
 		if (test_and_clear_bit(RESIZE_PENDING, &peer_device->flags) ||
 		    (dd == DS_GREW && peer_device->repl_state[NOW] == L_ESTABLISHED)) {
@@ -4387,8 +4426,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			    device->disk_state[NOW] >= D_INCONSISTENT) {
 				if (ddsf & DDSF_NO_RESYNC)
 					drbd_info(device, "Resync of new storage suppressed with --assume-clean\n");
-				else
-					resync_after_online_grow(peer_device);
+				else {
+					if ((peer_device_it = get_neighbor(device, NEXT_HIGHER)))
+						resync_after_online_grow(peer_device_it);
+					if ((peer_device_it = get_neighbor(device, NEXT_LOWER)))
+						resync_after_online_grow(peer_device_it);
+				}
 			} else
 				set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 		}

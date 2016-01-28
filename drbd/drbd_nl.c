@@ -3734,14 +3734,23 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	bool sync_source;
+	bool sync_source = false;
+	s32 peer_id;
 
 	drbd_info(peer_device, "Resync of new storage after online grow\n");
 	if (device->resource->role[NOW] != connection->peer_role[NOW])
 		sync_source = (device->resource->role[NOW] == R_PRIMARY);
-	else
+	else if (connection->agreed_pro_version < 111)
 		sync_source = test_bit(RESOLVE_CONFLICTS,
-				       &peer_device->connection->transport.flags);
+				&peer_device->connection->transport.flags);
+	else if (get_ldev(device)) {
+		/* multiple or no primaries, proto new enough, resolve by node-id */
+		s32 self_id = device->ldev->md.node_id;
+		put_ldev(device);
+		peer_id = peer_device->node_id;
+
+		sync_source = self_id < peer_id ? 1 : 0;
+	}
 
 	if (!sync_source && connection->agreed_pro_version < 110) {
 		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
@@ -3781,7 +3790,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	sector_t u_size;
 	int err;
 	struct drbd_peer_device *peer_device;
-	bool has_primary;
+	bool has_primary = false, resolve_by_node_id = true;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -3826,9 +3835,11 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 				has_primary = true;
 				break;
 			}
+			if (peer_device->connection->agreed_pro_version < 111)
+				resolve_by_node_id = false;
 		}
 	}
-	if (!has_primary) {
+	if (!has_primary && !resolve_by_node_id) {
 		retcode = ERR_NO_PRIMARY;
 		goto fail_ldev;
 	}
