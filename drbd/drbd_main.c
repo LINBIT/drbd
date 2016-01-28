@@ -2144,7 +2144,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	struct p_trim *trim = NULL;
 	struct p_data *p;
 	struct p_wsame *wsame = NULL;
-	void *digest_out;
+	void *digest_out = NULL;
 	unsigned int dp_flags = 0;
 	int digest_size = 0;
 	int err;
@@ -2194,7 +2194,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		goto out;
 	}
 
-	if (digest_size)
+	if (digest_size && digest_out)
 		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, digest_out);
 
 	if (wsame) {
