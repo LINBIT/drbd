@@ -22,6 +22,7 @@
 #include <linux/completion.h>
 #include <linux/proc_fs.h>
 #include <linux/blkdev.h>
+#include <linux/kernel.h>
 
 #ifndef pr_fmt
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
@@ -76,6 +77,13 @@
 #endif
 #endif
 /* }}} pr_* macros */
+
+#ifndef U32_MAX
+#define U32_MAX ((u32)~0U)
+#endif
+#ifndef S32_MAX
+#define S32_MAX ((s32)(U32_MAX>>1))
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
 static inline unsigned short queue_logical_block_size(struct request_queue *q)
