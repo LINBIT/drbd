@@ -270,6 +270,11 @@ static void bm_set_page_need_writeout(struct page *page)
 	set_bit(BM_PAGE_NEED_WRITEOUT, &page_private(page));
 }
 
+void drbd_bm_reset_al_hints(struct drbd_device *device)
+{
+	device->bitmap->n_bitmap_hints = 0;
+}
+
 static int bm_test_page_unchanged(struct page *page)
 {
 	volatile const unsigned long *addr = &page_private(page);
@@ -1200,12 +1205,34 @@ static int bm_rw_range(struct drbd_device *device,
 	now = jiffies;
 
 	/* let the layers below us try to merge these bios... */
-	for (i = start_page; i <= end_page; i++) {
-		if (!(flags & BM_AIO_READ)) {
-			if ((flags & BM_AIO_WRITE_HINTED) &&
-			    !test_and_clear_bit(BM_PAGE_HINT_WRITEOUT,
-				    &page_private(b->bm_pages[i])))
+
+	if (flags & BM_AIO_READ) {
+		for (i = start_page; i <= end_page; i++) {
+			atomic_inc(&ctx->in_flight);
+			bm_page_io_async(ctx, i);
+			++count;
+			cond_resched();
+		}
+	} else if (flags & BM_AIO_WRITE_HINTED) {
+		/* ASSERT: BM_AIO_WRITE_ALL_PAGES is not set. */
+		unsigned int hint;
+		for (hint = 0; hint < b->n_bitmap_hints; hint++) {
+			i = b->al_bitmap_hints[hint];
+			if (i > end_page)
 				continue;
+			/* Several AL-extents may point to the same page. */
+			if (!test_and_clear_bit(BM_PAGE_HINT_WRITEOUT,
+			    &page_private(b->bm_pages[i])))
+				continue;
+			/* Has it even changed? */
+			if (bm_test_page_unchanged(b->bm_pages[i]))
+				continue;
+			atomic_inc(&ctx->in_flight);
+			bm_page_io_async(ctx, i);
+			++count;
+		}
+	} else {
+		for (i = start_page; i <= end_page; i++) {
 			/* ignore completely unchanged pages,
 			 * unless specifically requested to write ALL pages */
 			if (!(flags & BM_AIO_WRITE_ALL_PAGES) &&
@@ -1220,11 +1247,11 @@ static int bm_rw_range(struct drbd_device *device,
 				dynamic_drbd_dbg(device, "skipped bm lazy write for idx %u\n", i);
 				continue;
 			}
+			atomic_inc(&ctx->in_flight);
+			bm_page_io_async(ctx, i);
+			++count;
+			cond_resched();
 		}
-		atomic_inc(&ctx->in_flight);
-		bm_page_io_async(ctx, i);
-		++count;
-		cond_resched();
 	}
 
 	/*
@@ -1286,6 +1313,15 @@ int drbd_bm_read(struct drbd_device *device,
 	return bm_rw(device, BM_AIO_READ);
 }
 
+static void push_al_bitmap_hint(struct drbd_device *device, unsigned int page_nr)
+{
+	struct drbd_bitmap *b = device->bitmap;
+	struct page *page = b->bm_pages[page_nr];
+	BUG_ON(b->n_bitmap_hints >= ARRAY_SIZE(b->al_bitmap_hints));
+	if (!test_and_set_bit(BM_PAGE_HINT_WRITEOUT, &page_private(page)))
+		b->al_bitmap_hints[b->n_bitmap_hints++] = page_nr;
+}
+
 /**
  * drbd_bm_mark_range_for_writeout() - mark with a "hint" to be considered for writeout
  * @device:	DRBD device.
@@ -1298,17 +1334,14 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int page_nr, last_page;
-	struct page *page;
 
 	if (end >= bitmap->bm_bits)
 		end = bitmap->bm_bits - 1;
 
 	page_nr = bit_to_page_interleaved(bitmap, 0, start);
 	last_page = bit_to_page_interleaved(bitmap, bitmap->bm_max_peers - 1, end);
-	for (; page_nr <= last_page; page_nr++) {
-		page = device->bitmap->bm_pages[page_nr];
-		set_bit(BM_PAGE_HINT_WRITEOUT, &page_private(page));
-	}
+	for (; page_nr <= last_page; page_nr++)
+		push_al_bitmap_hint(device, page_nr);
 }
 
 

@@ -668,6 +668,23 @@ enum {
 	SEND_STATE_AFTER_AHEAD,
 };
 
+/* We could make these currently hardcoded constants configurable
+ * variables at create-md time (or even re-configurable at runtime?).
+ * Which will require some more changes to the DRBD "super block"
+ * and attach code.
+ *
+ * updates per transaction:
+ *   This many changes to the active set can be logged with one transaction.
+ *   This number is arbitrary.
+ * context per transaction:
+ *   This many context extent numbers are logged with each transaction.
+ *   This number is resulting from the transaction block size (4k), the layout
+ *   of the transaction header, and the number of updates per transaction.
+ *   See drbd_actlog.c:struct al_transaction_on_disk
+ * */
+#define AL_UPDATES_PER_TRANSACTION	 64	// arbitrary
+#define AL_CONTEXT_PER_TRANSACTION	919	// (4096 - 36 - 6*64)/4
+
 /* definition of bits in bm_flags to be used in drbd_bm_lock
  * and drbd_bitmap_io and friends. */
 enum bm_flag {
@@ -706,6 +723,17 @@ struct drbd_bitmap {
 
 	enum bm_flag bm_flags;
 	unsigned int bm_max_peers;
+
+	/* exclusively to be used by __al_write_transaction(),
+	 * and drbd_bm_write_hinted() -> bm_rw() called from there.
+	 * One activity log extent represents 4MB of storage, which are 1024
+	 * bits (at 4k per bit), times at most DRBD_PEERS_MAX (currently 32).
+	 * The bitmap is created interleaved, with a potentially odd number
+	 * of peer slots determined at create-md time.  Which means that one
+	 * AL-extent may be associated with one or two bitmap pages.
+	 */
+	unsigned int n_bitmap_hints;
+	unsigned int al_bitmap_hints[2*AL_UPDATES_PER_TRANSACTION];
 
 	/* debugging aid, in case we are still racy somewhere */
 	char          *bm_why;
@@ -1568,23 +1596,6 @@ __drbd_next_peer_device_ref(u64 *, struct drbd_peer_device *, struct drbd_device
 #define AL_EXTENT_SHIFT 22
 #define AL_EXTENT_SIZE (1<<AL_EXTENT_SHIFT)
 
-/* We could make these currently hardcoded constants configurable
- * variables at create-md time (or even re-configurable at runtime?).
- * Which will require some more changes to the DRBD "super block"
- * and attach code.
- *
- * updates per transaction:
- *   This many changes to the active set can be logged with one transaction.
- *   This number is arbitrary.
- * context per transaction:
- *   This many context extent numbers are logged with each transaction.
- *   This number is resulting from the transaction block size (4k), the layout
- *   of the transaction header, and the number of updates per transaction.
- *   See drbd_actlog.c:struct al_transaction_on_disk
- * */
-#define AL_UPDATES_PER_TRANSACTION	 64	// arbitrary
-#define AL_CONTEXT_PER_TRANSACTION	919	// (4096 - 36 - 6*64)/4
-
 /* drbd_bitmap.c */
 /*
  * We need to store one bit for a block.
@@ -1710,6 +1721,7 @@ extern void drbd_bm_clear_many_bits(struct drbd_peer_device *, unsigned long, un
 extern void _drbd_bm_clear_many_bits(struct drbd_device *, int, unsigned long, unsigned long);
 extern int drbd_bm_test_bit(struct drbd_peer_device *, unsigned long);
 extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
+extern void drbd_bm_reset_al_hints(struct drbd_device *device) __must_hold(local);
 extern void drbd_bm_mark_range_for_writeout(struct drbd_device *, unsigned long, unsigned long);
 extern int  drbd_bm_write(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
