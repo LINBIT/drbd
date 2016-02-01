@@ -1469,6 +1469,29 @@ static inline int simple_positive(struct dentry *dentry)
 }
 #endif
 
+#ifndef COMPAT_HAVE_IS_VMALLOC_ADDR
+static inline int is_vmalloc_addr(const void *x)
+{
+#ifdef CONFIG_MMU
+	unsigned long addr = (unsigned long)x;
+	return addr >= VMALLOC_START && addr < VMALLOC_END;
+#else
+	return 0;
+#endif
+}
+#endif
+
+#ifndef COMPAT_HAVE_KVFREE
+#include <linux/mm.h>
+static inline void kvfree(void /* intentionally discarded const */ *addr)
+{
+	if (is_vmalloc_addr(addr))
+		vfree(addr);
+	else
+		kfree(addr);
+}
+#endif
+
 #ifndef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE
 static inline int atomic_dec_if_positive(atomic_t *v)
 {
