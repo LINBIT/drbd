@@ -313,7 +313,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 	rcu_read_unlock();
 
 	if (atomic_read(&connection->pp_in_use) < mxb)
-		page = __drbd_alloc_pages(number, gfp_mask & ~__GFP_WAIT);
+		page = __drbd_alloc_pages(number, gfp_mask & ~__GFP_RECLAIM);
 
 	/* Try to keep the fast path fast, but occasionally we need
 	 * to reclaim the pages we lended to the network stack. */
@@ -332,7 +332,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 				break;
 		}
 
-		if (!(gfp_mask & __GFP_WAIT))
+		if (!(gfp_mask & __GFP_RECLAIM))
 			break;
 
 		if (signal_pending(current)) {
