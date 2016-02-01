@@ -58,6 +58,9 @@ REL_VERSION := $(REL_VERSION)-$(GITHEAD)
 endif
 
 DIST_VERSION := $(REL_VERSION)
+ifeq ($(subst -,_,$(DIST_VERSION)),$(DIST_VERSION))
+    DIST_VERSION := $(DIST_VERSION)-1
+endif
 FDIST_VERSION := $(shell test -s .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
 ifeq ($(FDIST_VERSION),)
 FDIST_VERSION := $(DIST_VERSION)
@@ -136,7 +139,7 @@ check check_changelogs_up2date:
 	   grep -Hn "^%changelog" $$f ; 					\
 	   up2date=false; fi; 							\
 	done ; 									\
-	if ! grep -H "^$$dver_re\([^[:alnum:]]\|$$\)" ChangeLog; 		\
+	if ! grep -H "^\($$dver_re\|$$dver\) (api:" ChangeLog; 			\
 	then 									\
 	   printf "\nChangeLog:3:\tneeds update\n"; 				\
 	   up2date=false; fi ; 							\

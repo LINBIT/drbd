@@ -6,7 +6,8 @@ Release: 3%{?dist}
 # always require a suitable userland
 Requires: drbd-utils >= 8.9.5
 
-Source: http://oss.linbit.com/drbd/drbd-%{version}.tar.gz
+%global tarball_version %(echo "%{version}-%{?release}" | sed -e "s,%{?dist}$,,")
+Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
@@ -24,7 +25,7 @@ that multiple kernel driver versions can be installed, one for each
 installed kernel.
 
 %prep
-%setup -q -n drbd-%{version}
+%setup -q -n drbd-%{tarball_version}
 
 %if %{defined suse_kernel_module_package}
 # Support also sles10, where kernel_module_package was not yet defined.
