@@ -836,7 +836,8 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	unsigned long bits, words, obits;
 	unsigned long want, have, onpages; /* number of pages */
 	struct page **npages, **opages = NULL;
-	int err = 0, growing;
+	int err = 0;
+	bool growing;
 	int opages_vmalloced;
 
 	if (!expect(device, b))

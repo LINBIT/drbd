@@ -27,7 +27,7 @@ static void seq_print_age_or_dash(struct seq_file *m, bool valid, unsigned long 
 	if (valid)
 		seq_printf(m, "\t%d", jiffies_to_msecs(dt));
 	else
-		seq_printf(m, "\t-");
+		seq_puts(m, "\t-");
 }
 
 static void __seq_print_rq_state_bit(struct seq_file *m,
@@ -86,7 +86,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		if (sep == ' ')
 			seq_puts(m, " -");
 
-		seq_printf(m, " :");
+		seq_puts(m, " :");
 		sep = ' ';
 		seq_print_rq_state_bit(m, s & RQ_EXP_RECEIVE_ACK, &sep, "B");
 		seq_print_rq_state_bit(m, s & RQ_EXP_WRITE_ACK, &sep, "C");
@@ -94,7 +94,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		if (sep == ' ')
 			seq_puts(m, " -");
 	}
-	seq_printf(m, "\n");
+	seq_putc(m, '\n');
 }
 
 #define memberat(PTR, TYPE, OFFSET) (*(TYPE *)((char *)PTR + OFFSET))
@@ -115,7 +115,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 			return;
 		}
 	}
-	seq_printf(m, "\t-");
+	seq_puts(m, "\t-");
 }
 
 static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, unsigned long now)
@@ -757,7 +757,7 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	unsigned long long ull1, ull2;
 	char sep = ' ';
 
-	seq_printf(m, "content and format of this will change without notice\n");
+	seq_puts(m, "content and format of this will change without notice\n");
 
 	seq_printf(m, "flags: 0x%04lx :", flags);
 #define pretty_print_bit(n) \
@@ -935,7 +935,7 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 		seq_printf(m, "%s[%d]0x%016llX", i++ ? " " : "", node_id,
 			   md->peers[node_id].bitmap_uuid);
 	}
-	seq_printf(m, "\n");
+	seq_putc(m, '\n');
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
 		seq_printf(m, "0x%016llX\n", drbd_history_uuid(device, i));
@@ -1199,7 +1199,7 @@ static int drbd_version_open(struct inode *inode, struct file *file)
 	return single_open(file, drbd_version_show, NULL);
 }
 
-static struct file_operations drbd_version_fops = {
+static const struct file_operations drbd_version_fops = {
 	.owner = THIS_MODULE,
 	.open = drbd_version_open,
 	.llseek = seq_lseek,

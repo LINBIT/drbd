@@ -117,9 +117,9 @@ void print_kref_debug_info(struct seq_file *seq)
 			seq_printf(seq, "  [%d] = %d", i, debug_info->holders[i]);
 			if (debug_info->class->holder_name[i])
 				seq_printf(seq, " (%s)", debug_info->class->holder_name[i]);
-			seq_printf(seq, "\n");
+			seq_putc(seq, '\n');
 		}
-		seq_printf(seq, "\n");
+		seq_putc(seq, '\n');
 	}
 	spin_unlock_irq(&kref_debug_lock);
 }

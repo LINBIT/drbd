@@ -1256,7 +1256,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	put_ldev(device);
 }
 
-/* called within req_lock and rcu_read_lock() */
+/* called within req_lock */
 static void maybe_pull_ahead(struct drbd_device *device)
 {
 	struct drbd_connection *connection;
