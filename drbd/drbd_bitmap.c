@@ -320,14 +320,6 @@ static void bm_free_pages(struct page **pages, unsigned long number)
 	}
 }
 
-static void bm_vk_free(void *ptr, int v)
-{
-	if (v)
-		vfree(ptr);
-	else
-		kfree(ptr);
-}
-
 /*
  * "have" and "want" are NUMBER OF PAGES.
  */
@@ -367,7 +359,7 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM | __GFP_ZERO);
 			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
-				bm_vk_free(new_pages, vmalloced);
+				kvfree(new_pages);
 				return NULL;
 			}
 			/* we want to know which page it is
@@ -382,12 +374,6 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 		bm_free_pages(old_pages + want, have - want);
 		*/
 	}
-
-	if (vmalloced)
-		b->bm_flags |= BM_P_VMALLOCED;
-	else
-		b->bm_flags &= ~BM_P_VMALLOCED;
-
 	return new_pages;
 }
 
@@ -418,7 +404,7 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 void drbd_bm_free(struct drbd_bitmap *bitmap)
 {
 	bm_free_pages(bitmap->bm_pages, bitmap->bm_number_of_pages);
-	bm_vk_free(bitmap->bm_pages, (BM_P_VMALLOCED & bitmap->bm_flags));
+	kvfree(bitmap->bm_pages);
 	kfree(bitmap);
 }
 
@@ -838,7 +824,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 	struct page **npages, **opages = NULL;
 	int err = 0;
 	bool growing;
-	int opages_vmalloced;
 
 	if (!expect(device, b))
 		return -ENOMEM;
@@ -850,8 +835,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
-
-	opages_vmalloced = (BM_P_VMALLOCED & b->bm_flags);
 
 	if (capacity == 0) {
 		unsigned int bitmap_index;
@@ -868,7 +851,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 		b->bm_dev_capacity = 0;
 		spin_unlock_irq(&b->bm_lock);
 		bm_free_pages(opages, onpages);
-		bm_vk_free(opages, opages_vmalloced);
+		kvfree(opages);
 		goto out;
 	}
 	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
@@ -938,7 +921,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bi
 
 	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
-		bm_vk_free(opages, opages_vmalloced);
+		kvfree(opages);
 	if (!growing)
 		bm_count_bits(device);
 	drbd_info(device, "resync bitmap: bits=%lu words=%lu pages=%lu\n", bits, words, want);

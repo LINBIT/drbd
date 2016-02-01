@@ -671,8 +671,6 @@ enum {
 /* definition of bits in bm_flags to be used in drbd_bm_lock
  * and drbd_bitmap_io and friends. */
 enum bm_flag {
-	BM_P_VMALLOCED = 0x10000,  /* do we need to kfree or vfree bm_pages? */
-
 	/*
 	 * The bitmap can be locked to prevent others from clearing, setting,
 	 * and/or testing bits.  The following combinations of lock flags make
