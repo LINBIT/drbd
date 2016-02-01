@@ -226,7 +226,6 @@ struct dtr_connect_state {
 
 struct dtr_path {
 	struct drbd_path path;
-	struct kref kref;
 
 	struct dtr_connect_state cs;
 
@@ -279,8 +278,6 @@ struct drbd_rdma_transport {
 
 	atomic_t first_path_connect_err;
 	struct completion connected;
-
-	wait_queue_head_t path_finished;
 };
 
 struct dtr_cm {
@@ -392,13 +389,6 @@ static struct workqueue_struct *dtr_work_queue;
 	     path;							\
 	     path = __next_path_ref(&m, path, transport))
 
-static void dtr_finished_using_path(struct kref *kref)
-{
-	struct dtr_path *path = container_of(kref, struct dtr_path, kref);
-
-	wake_up(&path->rdma_transport->path_finished);
-}
-
 static struct dtr_path *
 __next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* transport)
 {
@@ -415,7 +405,7 @@ __next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* tran
 		pos = list_next_rcu(&path->path.list);
 		smp_rmb();
 		previous_visible = (path->nr != -1);
-		kref_put(&path->kref, dtr_finished_using_path);
+		kref_put(&path->path.kref, drbd_destroy_path);
 
 		if (pos == &transport->paths) {
 			path = NULL;
@@ -437,7 +427,7 @@ __next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* tran
 	if (path) {
 	found:
 		*visited |= 1 << path->nr;
-		kref_get(&path->kref);
+		kref_get(&path->path.kref);
 	}
 	rcu_read_unlock();
 	return path;
@@ -453,8 +443,6 @@ static int dtr_init(struct drbd_transport *transport)
 
 	rdma_transport->rx_allocation_size = allocation_size;
 	rdma_transport->active = false;
-
-	init_waitqueue_head(&rdma_transport->path_finished);
 
 	return 0;
 }
@@ -485,10 +473,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		list_for_each_entry_safe(path, tmp, &work_list, path.list) {
 			list_del_init(&path->path.list);
 
-			kref_put(&path->kref, dtr_finished_using_path);
-			wait_event(rdma_transport->path_finished, atomic_read(&path->kref.refcount) == 0);
-
-			kfree(path);
+			kref_put(&path->path.kref, drbd_destroy_path);
 		}
 
 		/* The transport object itself is embedded into a conneciton.
@@ -2366,7 +2351,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	for_each_path_ref(path, im, transport) {
 		err = dtr_activate_path(path);
 		if (err) {
-			kref_put(&path->kref, dtr_finished_using_path);
+			kref_put(&path->path.kref, drbd_destroy_path);
 			goto abort;
 		}
 	}
@@ -2729,7 +2714,6 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	path->rdma_transport = rdma_transport;
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
-	kref_init(&path->kref);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
@@ -2776,11 +2760,7 @@ static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *d
 		INIT_LIST_HEAD(&del_path->list);
 		dtr_disconnect_path(path);
 
-		/* Wait until no for_each_path_ref() walk holds the object */
-		kref_put(&path->kref, dtr_finished_using_path);
-		wait_event(rdma_transport->path_finished, atomic_read(&path->kref.refcount) == 0);
-
-		return 0; /* Let the caller kfree() it now */
+		return 0;
 	}
 
 	return -ENOENT;
