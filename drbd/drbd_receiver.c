@@ -855,8 +855,8 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 		 * quickly as possible, and let remote TCP know what we have
 		 * received so far. */
 		if (err == -EAGAIN) {
-			drbd_unplug_all_devices(connection->resource);
 			tr_ops->hint(&connection->transport, DATA_STREAM, QUICKACK);
+			drbd_unplug_all_devices(connection->resource);
 		} else if (err > 0) {
 			size -= err;
 			rflags |= GROW_BUFFER;
@@ -1612,10 +1612,12 @@ static void drbd_unplug_all_devices(struct drbd_resource *resource)
 
 static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
+	struct drbd_transport_ops *tr_ops = connection->transport.ops;
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
 
+	tr_ops->hint(&connection->transport, DATA_STREAM, QUICKACK);
 	drbd_unplug_all_devices(connection->resource);
 
 	/* FIXME these are unacked on connection,
@@ -6159,12 +6161,12 @@ static int receive_UnplugRemote(struct drbd_connection *connection, struct packe
 {
 	struct drbd_transport *transport = &connection->transport;
 
-	/* just unplug all devices always, regardless which volume number */
-	drbd_unplug_all_devices(connection->resource);
-
 	/* Make sure we've acked all the data associated
 	 * with the data requests being unplugged */
 	transport->ops->hint(transport, DATA_STREAM, QUICKACK);
+
+	/* just unplug all devices always, regardless which volume number */
+	drbd_unplug_all_devices(connection->resource);
 
 	return 0;
 }
