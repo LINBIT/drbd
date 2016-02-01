@@ -190,7 +190,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		}
 		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
 			list_del(&drbd_path->list);
-			kfree(drbd_path);
+			kref_put(&drbd_path->kref, drbd_destroy_path);
 		}
 	}
 	mutex_unlock(&tcp_transport->paths_mutex);

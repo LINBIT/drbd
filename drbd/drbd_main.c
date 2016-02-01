@@ -3267,6 +3267,13 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 }
 
+void drbd_destroy_path(struct kref *kref)
+{
+	struct drbd_path *path = container_of(kref, struct drbd_path, kref);
+
+	kfree(path);
+}
+
 void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
@@ -5181,3 +5188,4 @@ module_exit(drbd_cleanup)
 
 /* For transport layer */
 EXPORT_SYMBOL(drbd_destroy_connection);
+EXPORT_SYMBOL(drbd_destroy_path);

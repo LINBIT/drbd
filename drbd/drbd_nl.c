@@ -3422,9 +3422,11 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	path->peer_addr_len = nla_len(peer_addr);
 	memcpy(&path->peer_addr, nla_data(peer_addr), path->peer_addr_len);
 
+	kref_init(&path->kref);
+
 	err = transport->ops->add_path(transport, path);
 	if (err) {
-		kfree(path);
+		kref_put(&path->kref, drbd_destroy_path);
 		drbd_err(adm_ctx->connection, "add_path() failed with %d\n", err);
 		drbd_msg_put_info(adm_ctx->reply_skb, "add_path on transport failed");
 		return ERR_INVALID_REQUEST;
@@ -3563,7 +3565,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 		err = transport->ops->remove_path(transport, path);
 		if (!err)
-			kfree(path);
+			kref_put(&path->kref, drbd_destroy_path);
 		break;
 	}
 	if (err) {
