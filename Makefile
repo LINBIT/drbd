@@ -25,7 +25,6 @@ GIT = git
 LN_S = ln -s
 RPMBUILD = rpmbuild
 DEBBUILD = debuild
-SED = sed
 
 # default for KDIR/KVER
 ifndef KVER
@@ -44,7 +43,7 @@ SHELL=/bin/bash
 
 SUBDIRS     = drbd
 
-REL_VERSION := $(shell $(SED) -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
+REL_VERSION := $(shell sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 override GITHEAD := $(shell test -e .git && $(GIT) rev-parse HEAD)
 
 ifdef FORCE
@@ -116,27 +115,36 @@ distclean:
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
-check_changelogs_up2date:
-	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.}; \
-	echo "checking for presence of $$dver_re in various changelog files"; \
-	if ! grep "^Version: $$dver_re\>" >/dev/null 2>&1 drbd-kernel.spec; \
-	then \
-	   echo -e "\n\tdrbd-kernel.spec Version: line needs update"; \
-	   up2date=false; fi ; \
-	in_changelog=$$(sed -n -e '0,/^%changelog/d' \
-			     -e '/- '"$$dver_re"'-/p' < drbd-kernel.spec) ; \
-	if test -z "$$in_changelog" ; \
-	then \
-	   echo -e "\n\t%changelog in drbd-kernel.spec needs update"; \
-	   up2date=false; fi; \
-	if ! grep "^$$dver_re\>" >/dev/null 2>&1 ChangeLog; \
-	then \
-	   echo -e "\n\tChangeLog needs update"; \
-	   up2date=false; fi ; \
-	if ! grep "^drbd ($$dver_re-" >/dev/null 2>&1 debian/changelog; \
-	then \
-	   echo -e "\n\tdebian/changelog needs update [ignored]\n"; \
-	   : do not fail the build because of outdated debian/changelog ; fi ; \
+.PHONY: check check_changelogs_up2date install uninstall distclean clean
+check check_changelogs_up2date:
+	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.};	\
+	dver=$${dver_re%[-~]*}; 						\
+	drel="$${dver_re#"$$dver"}"; drel="$${drel#[-~]}"; 			\
+	test -z "$$drel" && drel=1 && dver_re=$$dver_re"\(-1\| \|$$\)"; 	\
+	echo "checking for presence of $$dver_re in various changelog files"; 	\
+	for f in drbd-kernel.spec ; do 						\
+	v=$$(sed -ne 's/^Version: //p' $$f); 					\
+	r=$$(sed -ne 's/^Release: //p' $$f); 					\
+	if ! printf "%s-%s" "$$v" "$$r" | grep -H --label $$f "$$dver_re\>"; then \
+	   printf "\n\t%s Version/Release: tags need update\n" $$f; 		\
+	   grep -Hn "^Version: " $$f ; 						\
+	   up2date=false; fi ; 							\
+	   in_changelog=$$(sed -n -e '0,/^%changelog/d' 			\
+			     -e '/- '"$$dver_re"'\>/p' < $$f) ; 		\
+	   if test -z "$$in_changelog" ; then 					\
+	   printf "\n\t%%changelog in %s needs update\n" $$f; 			\
+	   grep -Hn "^%changelog" $$f ; 					\
+	   up2date=false; fi; 							\
+	done ; 									\
+	if ! grep -H "^$$dver_re\([^[:alnum:]]\|$$\)" ChangeLog; 		\
+	then 									\
+	   printf "\nChangeLog:3:\tneeds update\n"; 				\
+	   up2date=false; fi ; 							\
+	if test -e debian/changelog 						\
+	&& ! grep -H "^drbd ($$dver\(+linbit\)\?[-~]$$drel" debian/changelog; \
+	then 									\
+	   printf "\n\tdebian/changelog:1: needs update\n"; 			\
+	   up2date=false; fi ; 							\
 	$$up2date
 
 .PHONY: drbd/.drbd_git_revision
