@@ -73,9 +73,10 @@ ifneq ($(KBUILD_STAGE),modpost)
 TEST_C := $(wildcard $(src)/drbd-kernel-compat/tests/*.c)
 TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj)/.compat_test.%.result)
 $(obj)/.compat_test.%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
-	$(call filechk,compat_test_result)
+	$(call cmd,compat_test_result)
 
-filechk_compat_test_result = \
+quiet_cmd_compat_test_result = COMPAT  $*
+      cmd_compat_test_result = \
 	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
 	if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(@D)/.compat_test.$*.o $<	\
 		> $(@D)/.compat_test.$*.stdout 2> $(@D)/.compat_test.$*.stderr; \
@@ -83,7 +84,7 @@ filechk_compat_test_result = \
 		echo "\#define $$var" ;						\
 	else									\
 		echo "/* \#undef $$var */" ;					\
-	fi
+	fi > $@
 
 filechk_compat.h = cat $(TEST_R)
 
