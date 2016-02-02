@@ -877,9 +877,10 @@ static int dtt_connect(struct drbd_transport *transport)
 			if (!first_path) {
 				first_path = connect_to_path;
 			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial pathes crossed\n");
+				tr_warn(transport, "initial pathes crossed A\n");
 				sock_release(s);
-				goto randomize;
+				connect_to_path = first_path;
+				continue;
 			}
 
 			if (!dsocket) {
@@ -911,8 +912,9 @@ retry:
 			if (!first_path) {
 				first_path = connect_to_path;
 			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial pathes crossed\n");
+				tr_warn(transport, "initial pathes crossed P\n");
 				sock_release(s);
+				connect_to_path = first_path;
 				goto randomize;
 			}
 			dtt_socket_ok_or_free(&dsocket);
