@@ -3387,7 +3387,8 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 				return rv;
 		}
 
-		*rule_nr = 35;
+
+		*rule_nr = 38;
 		/* Peer crashed as primary, I survived, resync from me */
 		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
 		    test_bit(RECONNECT, &peer_device->connection->flags))
@@ -3627,12 +3628,17 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 
 static void disk_states_to_goodness(struct drbd_device *device,
 				    enum drbd_disk_state peer_disk_state,
-				    int *hg)
+				    int *hg, int rule_nr)
 {
 	enum drbd_disk_state disk_state = device->disk_state[NOW];
+	bool p = false;
 
-	if (*hg != 0)
+	if (*hg != 0 && rule_nr != 40)
 		return;
+
+	/* rule_nr 40 means that the current UUIDs are equal. The decision
+	   was found by looking at the crashed_primary bits.
+	   The current disk states might give a better basis for decision-making! */
 
 	if (disk_state == D_NEGOTIATING)
 		disk_state = disk_state_from_md(device);
@@ -3640,9 +3646,16 @@ static void disk_states_to_goodness(struct drbd_device *device,
 	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
 	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
 		*hg = disk_state > D_INCONSISTENT ? 1 : -1;
+		p = true;
+	} else if ((disk_state == D_OUTDATED && peer_disk_state > D_OUTDATED) ||
+		   (peer_disk_state == D_OUTDATED && disk_state > D_OUTDATED)) {
+		*hg = disk_state > D_OUTDATED ? 1 : -1;
+		p = true;
+	}
+
+	if (p)
 		drbd_info(device, "Becoming sync %s due to disk states.\n",
 			  *hg > 0 ? "source" : "target");
-	}
 }
 
 static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device,
@@ -3656,7 +3669,7 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 		return -1;
 
 	bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
-	disk_states_to_goodness(peer_device->device, peer_disk_state, &hg);
+	disk_states_to_goodness(peer_device->device, peer_disk_state, &hg, rule_nr);
 
 	return goodness_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], hg);
 }
@@ -3689,7 +3702,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1;
 	}
 
-	disk_states_to_goodness(device, peer_disk_state, &hg);
+	disk_states_to_goodness(device, peer_disk_state, &hg, rule_nr);
 
 	if (abs(hg) == 100)
 		drbd_khelper(device, connection, "initial-split-brain");
