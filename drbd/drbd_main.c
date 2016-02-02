@@ -1319,7 +1319,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
-	if (peer_device->connection->last_reconnect_jif)
+	if (test_bit(RECONNECT, &peer_device->connection->flags))
 		uuid_flags |= UUID_FLAG_RECONNECT;
 	if (drbd_device_stable(device, &authoritative_mask)) {
 		uuid_flags |= UUID_FLAG_STABLE;
