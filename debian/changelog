@@ -1,3 +1,9 @@
+drbd (9.0.1-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Philipp Reisner <phil@linbit.com>  Tue, 02 Feb 2016 16:39:11 +0100
+
 drbd (9.0.0-3) unstable; urgency=low
 
   * Fixes for the RDMA transport

@@ -2,7 +2,23 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+
+9.0.1-1 (api:genl2/proto:86-111/transport:14)
+--------
+ * Fix ahead/behind mode: spinlock deadlock when entering and resync afterwards
+ * Fix crash in online verify
+ * Fix crash when receiving pages on a diskless node
+ * Fix issues with resize when more than two nodes are present
+ * Many minor fixes
+ * Work on the multi-path support; the TCP transport now tries all paths while
+   connecting, afterwards it uses one path
+ * The RDMA transport supports multiple paths and can use them in parallel
+ * Configuration option to make resync thinly provisioned storage
+   friendly: rs-discard-granularity
+ * Make sure it compiles with Linux 4.4
  * Merge changes from the 8.4.7 release
+ * Fix a preformance regression of 8.4.0; it got worse with bigger devices;
+   really significant above 1TByte
 
 9.0.0-3 (api:genl2/proto:86-110/transport:10)
 --------
