@@ -3564,8 +3564,13 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 			continue;
 
 		err = transport->ops->remove_path(transport, path);
-		if (!err)
+		if (!err) {
+			synchronize_rcu();
+			/* Transport modules might use RCU on the path list.
+			   We do the synchronize_rcu() here in the generic code */
+			INIT_LIST_HEAD(&path->list);
 			kref_put(&path->kref, drbd_destroy_path);
+		}
 		break;
 	}
 	if (err) {
