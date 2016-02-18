@@ -1367,6 +1367,10 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+#define CAN_DO_ASYNC_FLUSH
+#endif
+
 /* This is blkdev_issue_flush, but asynchronous.
  * We want to submit to all component volumes in parallel,
  * then wait for all completions.
@@ -1376,6 +1380,8 @@ struct issue_flush_context {
 	int error;
 	struct completion done;
 };
+
+#ifdef CAN_DO_ASYNC_FLUSH
 struct one_flush_context {
 	struct drbd_device *device;
 	struct issue_flush_context *ctx;
@@ -1436,6 +1442,30 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 	atomic_inc(&ctx->pending);
 	submit_bio(WRITE_FLUSH, bio);
 }
+#else
+/* no CAN_DO_ASYNC_FLUSH
+ * before 2.6.24, 2007, fd5d806 block: convert blkdev_issue_flush() to use empty barriers
+ * there is no infrastructure for "empty flush bios",
+ * and no easy way to submit asynchronous block device flushes.
+ * Fall back to the synchronous blkdev_issue_flush().
+ */
+static void submit_one_flush(struct drbd_device *device, struct issue_flush_context *ctx)
+{
+	int rv;
+	device->flush_jif = jiffies;
+	set_bit(FLUSH_PENDING, &device->flags);
+	rv = blkdev_issue_flush(device->ldev->backing_bdev,
+			GFP_NOIO, NULL);
+	clear_bit(FLUSH_PENDING, &device->flags);
+	if (rv) {
+		drbd_info(device, "local disk flush failed with status %d\n", rv);
+		ctx->error = rv;
+	}
+	put_ldev(device);
+	kref_put(&device->kref, drbd_destroy_device);
+}
+#endif
+
 
 static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
