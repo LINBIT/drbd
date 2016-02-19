@@ -18,7 +18,7 @@
 Name: drbd-km
 Summary: DRBD driver for Linux
 Version: 8.4.7
-Release: 1
+Release: 2
 Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}-%{release}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -98,6 +98,10 @@ uname -r | grep BOOT ||
 
 
 %changelog
+* Fri Feb 19 2016  Lars Ellenberg <lars@linbit.com> - 8.4.7-2
+- compat: don't trigger BUG_ON on flush in kernel < 2.6.24 (e.g. RHEL 5)
+- al_write_transaction: skip re-scanning of bitmap page pointer array.
+
 * Wed Dec 16 2015  Philipp Reisner <phil@linbit.com> - 8.4.7-1
 - New upstream release.
 

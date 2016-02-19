@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: 8.4.7
-Release: 1%{?dist}
+Release: 2%{?dist}
 %global tarball_version %(echo "%{version}-%{?release}" | sed -e "s,%{?dist}$,,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
 License: GPLv2+
@@ -98,6 +98,10 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Fri Feb 19 2016  Lars Ellenberg <lars@linbit.com> - 8.4.7-2
+- compat: don't trigger BUG_ON on flush in kernel < 2.6.24 (e.g. RHEL 5)
+- al_write_transaction: skip re-scanning of bitmap page pointer array.
+
 * Wed Dec 16 2015  Philipp Reisner <phil@linbit.com> - 8.4.7-1
 - New upstream release.
 
