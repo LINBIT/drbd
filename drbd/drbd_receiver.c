@@ -1766,7 +1766,7 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (d->length == 0)
 		return peer_req;
 
-	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length);
+	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->bi_size);
 	if (err)
 		goto fail;
 
