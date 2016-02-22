@@ -1571,6 +1571,9 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	struct ib_recv_wr recv_wr, *recv_wr_failed;
 	int err;
 
+	if (!dtr_path_get_cm(path))
+		return -ENOENT;
+
 	recv_wr.next = NULL;
 	recv_wr.wr_id = (unsigned long)rx_desc;
 	recv_wr.sg_list = &rx_desc->sge;
@@ -1580,13 +1583,11 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 
 	err = ib_post_recv(path->qp, &recv_wr, &recv_wr_failed);
-	if (err) {
+	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
-		return err;
-	}
-	// pr_info("%s: Created recv_wr (%p, %p): lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, rx_desc->page, rx_desc, rx_desc->sge.lkey, rx_desc->sge.addr, rx_desc->sge.length);
 
-	return 0;
+	dtr_path_put_cm(path);
+	return err;
 }
 
 static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *rx_desc)
