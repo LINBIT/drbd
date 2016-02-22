@@ -1371,8 +1371,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 			"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
 			wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 
-		if (dtr_path_ok(path))
-			path->cm->state = ERROR;
+		path->cm->state = ERROR;
 
 		return 0;
 	}
@@ -1409,19 +1408,26 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct dtr_path *path = ctx;
 	int err;
 
-	do {
+	if (dtr_path_get_cm(path)) {
 		do {
+			do {
+				err = dtr_handle_rx_cq_event(cq, path);
+			} while (!err);
+
+			err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+			if (err) {
+				struct drbd_transport *transport = &path->rdma_transport->transport;
+				tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+			}
+
 			err = dtr_handle_rx_cq_event(cq, path);
 		} while (!err);
-
-		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-		if (err) {
-			struct drbd_transport *transport = &path->rdma_transport->transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
-		}
-
-		err = dtr_handle_rx_cq_event(cq, path);
-	} while (!err);
+		dtr_path_put_cm(path);
+	} else {
+		// This is not a real solution yet. dtr_free_rx_desc() needs to get the device ptr!!
+		dtr_drain_cq(path, cq,
+			     (void (*)(struct dtr_path *, void *)) dtr_free_rx_desc);
+	}
 }
 
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
@@ -1514,19 +1520,26 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	struct dtr_path *path = ctx;
 	int err;
 
-	do {
+	if (dtr_path_get_cm(path)) {
 		do {
+			do {
+				err = dtr_handle_tx_cq_event(cq, path);
+			} while (!err);
+
+			err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+			if (err) {
+				struct drbd_transport *transport = &path->rdma_transport->transport;
+				tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+			}
+
 			err = dtr_handle_tx_cq_event(cq, path);
 		} while (!err);
-
-		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-		if (err) {
-			struct drbd_transport *transport = &path->rdma_transport->transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
-		}
-
-		err = dtr_handle_tx_cq_event(cq, path);
-	} while (!err);
+		dtr_path_put_cm(path);
+	} else {
+		// Inprove, so that dtr_free_tx_desc works without path->cm
+		dtr_drain_cq(path, cq,
+			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
+	}
 }
 
 static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_max)
