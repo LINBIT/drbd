@@ -1837,6 +1837,9 @@ retry:
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
 		goto retry;
 
+	if (!dtr_path_get_cm(path))
+		return -ENOENT;
+
 	device = path->cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -1851,6 +1854,7 @@ retry:
 	}
 
 	err = __dtr_post_tx_desc(path, tx_desc);
+	dtr_path_put_cm(path);
 
 	atomic_inc(&flow->tx_descs_posted);
 
