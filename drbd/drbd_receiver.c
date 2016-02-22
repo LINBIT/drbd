@@ -918,7 +918,7 @@ BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-static int submit_one_flush(struct drbd_device *device, struct issue_flush_context *ctx)
+static void submit_one_flush(struct drbd_device *device, struct issue_flush_context *ctx)
 {
 	struct bio *bio = bio_alloc(GFP_NOIO, 0);
 	struct one_flush_context *octx = kmalloc(sizeof(*octx), GFP_NOIO);
@@ -930,7 +930,11 @@ static int submit_one_flush(struct drbd_device *device, struct issue_flush_conte
 		kfree(octx);
 		if (bio)
 			bio_put(bio);
-		return -ENOMEM;
+
+		ctx->error = -ENOMEM;
+		put_ldev(device);
+		kref_put(&device->kref, drbd_destroy_device);
+		return;
 	}
 
 	octx->device = device;
@@ -939,13 +943,10 @@ static int submit_one_flush(struct drbd_device *device, struct issue_flush_conte
 	bio->bi_private = octx;
 	bio->bi_end_io = one_flush_endio;
 
-	BUG_ON(test_bit(FLUSH_PENDING, &device->flags));
-
 	device->flush_jif = jiffies;
 	set_bit(FLUSH_PENDING, &device->flags);
 	atomic_inc(&ctx->pending);
 	submit_bio(WRITE_FLUSH, bio);
-	return 0;
 }
 
 static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
