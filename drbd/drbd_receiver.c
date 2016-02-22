@@ -424,7 +424,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, u64 id, sector_t secto
 	}
 
 	if (nr_pages) {
-		page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_WAIT));
+		page = drbd_alloc_pages(peer_device, nr_pages, (gfp_mask & __GFP_RECLAIM));
 		if (!page)
 			goto fail;
 	}
