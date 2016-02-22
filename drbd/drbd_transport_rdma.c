@@ -715,7 +715,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
-	int i;
+	int i, err = -ENOENT;
 
 	if (!dtr_path_set_cm(path, cm)) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -728,7 +728,12 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(path, i);
 
-	return dtr_path_alloc_rdma_res(path);
+	if (dtr_path_get_cm(path)) {
+		err = dtr_path_alloc_rdma_res(path);
+		dtr_path_put_cm(path);
+	}
+
+	return err;
 }
 
 static void dtr_path_established_work_fn(struct work_struct *work)
