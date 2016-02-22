@@ -493,17 +493,21 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc *tx_desc;
 	void *send_buffer;
+	int err = -ENOMEM;
 
 	// pr_info("%s: dtr_send() size = %d data[0]:%lx\n", rdma_stream->name, (int)size, *(unsigned long*)buf);
 
+	if (!dtr_path_get_cm(path))
+		return -ENOENT;
+
 	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
 	if (!tx_desc)
-		return -ENOMEM;
+		goto out;
 
 	send_buffer = kmalloc(size, GFP_NOIO);
 	if (!send_buffer) {
 		kfree(tx_desc);
-		return -ENOMEM;
+		goto out;
 	}
 	memcpy(send_buffer, buf, size);
 
@@ -516,7 +520,10 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->sge[0].length = size;
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
-	return __dtr_post_tx_desc(path, tx_desc);
+	err = __dtr_post_tx_desc(path, tx_desc);
+out:
+	dtr_path_put_cm(path);
+	return err;
 }
 
 
