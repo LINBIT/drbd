@@ -2454,9 +2454,15 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 
 static bool dtr_path_ok(struct dtr_path *path)
 {
-	struct dtr_cm *cm = path->cm;
+	bool r = false;
 
-	return cm && cm->id && cm->state == CONNECTED;
+	if (dtr_path_get_cm(path)) {
+		struct dtr_cm *cm = path->cm;
+		r = cm->id && cm->state == CONNECTED;
+		dtr_path_put_cm(path);
+	}
+
+	return r;
 }
 
 static bool dtr_transport_ok(struct drbd_transport *transport)
