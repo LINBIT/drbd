@@ -230,6 +230,8 @@ struct dtr_path {
 	struct dtr_connect_state cs;
 
 	struct dtr_cm *cm;
+	atomic_t cm_refs; /* Number of users */
+	bool have_cm_ref; /* This path holds a ref to its cm */
 
 	struct ib_cq *recv_cq;
 	struct ib_cq *send_cq;
@@ -344,6 +346,9 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
+static bool dtr_path_set_cm(struct dtr_path *path, struct dtr_cm *cm);
+static bool dtr_path_get_cm(struct dtr_path *path);
+static void dtr_path_put_cm(struct dtr_path *path);
 static void dtr_free_cm(struct dtr_cm *cm);
 static void __dtr_uninit_path(struct dtr_path *path);
 static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
@@ -710,11 +715,9 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
-	struct dtr_cm *cm2;
 	int i;
 
-	cm2 = cmpxchg(&path->cm, NULL, cm);
-	if (cm2) {
+	if (!dtr_path_set_cm(path, cm)) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "Uhh, there was already a cm!\n");
@@ -777,8 +780,6 @@ static void dtr_path_established(struct dtr_path *path)
 
 static void dtr_unprepare_path(struct dtr_path *path)
 {
-	struct dtr_cm *cm;
-
 	if (path->send_cq)
 		dtr_drain_cq(path, path->send_cq,
 			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
@@ -786,11 +787,6 @@ static void dtr_unprepare_path(struct dtr_path *path)
 	if (path->recv_cq)
 		dtr_drain_cq(path, path->recv_cq,
 			     (void (*)(struct dtr_path *, void *)) dtr_free_rx_desc);
-
-	/* Beware! dtr_free_rx_desc() needs the path->cm in place !! */
-
-	cm = xchg(&path->cm, NULL);
-	dtr_free_cm(cm);
 
 	__dtr_uninit_path(path);
 }
@@ -914,7 +910,8 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 
 	return 0;
 out:
-	dtr_free_cm(cm);
+	if (cm)
+		dtr_free_cm(cm);
 	return err;
 }
 
@@ -2175,9 +2172,6 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 static void dtr_free_cm(struct dtr_cm *cm)
 {
-	if (!cm)
-		return;
-
 	if (cm->id) {
 		/* Just in case some callback is still triggered
 		 * after we kfree'd path. */
@@ -2187,6 +2181,31 @@ static void dtr_free_cm(struct dtr_cm *cm)
 	}
 
 	kfree(cm);
+}
+
+static bool dtr_path_set_cm(struct dtr_path *path, struct dtr_cm *cm)
+{
+	struct dtr_cm *cm2;
+	cm2 = cmpxchg(&path->cm, NULL, cm);
+	if (cm2)
+		return false;
+
+	path->have_cm_ref = 1;
+	atomic_set(&path->cm_refs, 1);
+	return true;
+}
+
+static bool dtr_path_get_cm(struct dtr_path *path)
+{
+	return atomic_add_unless(&path->cm_refs, 1, 0);
+}
+
+static void dtr_path_put_cm(struct dtr_path *path)
+{
+	if (atomic_dec_and_test(&path->cm_refs)) {
+		dtr_free_cm(path->cm);
+		path->cm = NULL;
+	}
 }
 
 static void __dtr_uninit_path(struct dtr_path *path)
@@ -2211,9 +2230,9 @@ static void __dtr_uninit_path(struct dtr_path *path)
 		ib_dealloc_pd(path->pd);
 		path->pd = NULL;
 	}
-	if (path->cm) {
-		dtr_free_cm(path->cm);
-		path->cm = NULL;
+	if (path->have_cm_ref) {
+		dtr_path_put_cm(path);
+		path->have_cm_ref = 0;
 	}
 }
 
