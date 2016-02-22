@@ -233,6 +233,8 @@ struct dtr_path {
 	atomic_t cm_refs; /* Number of users */
 	bool have_cm_ref; /* This path holds a ref to its cm */
 
+	struct ib_device *ib_device; /* cache of  path->cm->id->device */
+
 	struct ib_cq *recv_cq;
 	struct ib_cq *send_cq;
 	struct ib_pd *pd;
@@ -739,6 +741,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 		err = dtr_path_alloc_rdma_res(path);
 		dtr_path_put_cm(path);
 	}
+	path->ib_device = path->cm->id->device;
 
 	return err;
 }
@@ -1424,7 +1427,6 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		} while (!err);
 		dtr_path_put_cm(path);
 	} else {
-		// This is not a real solution yet. dtr_free_rx_desc() needs to get the device ptr!!
 		dtr_drain_cq(path, cq,
 			     (void (*)(struct dtr_path *, void *)) dtr_free_rx_desc);
 	}
@@ -1432,7 +1434,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct ib_device *device = path->cm->id->device;
+	struct ib_device *device = path->ib_device;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 	int i, nr_sges;
@@ -1533,7 +1535,6 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		} while (!err);
 		dtr_path_put_cm(path);
 	} else {
-		// Inprove, so that dtr_free_tx_desc works without path->cm
 		dtr_drain_cq(path, cq,
 			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
 	}
@@ -1590,17 +1591,16 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 static void dtr_free_rx_desc(struct dtr_path *unused, struct drbd_rdma_rx_desc *rx_desc)
 {
 	struct dtr_path *path;
+	struct ib_device *device;
+	int alloc_size;
 
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
 	path = rx_desc->path;
-	if (path->cm) {
-		struct ib_device *device = path->cm->id->device;
-		int alloc_size = path->rdma_transport->rx_allocation_size;
-
-		ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
-	}
+	device = path->ib_device;
+	alloc_size = path->rdma_transport->rx_allocation_size;
+	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
 
 	if (rx_desc->page) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
