@@ -1487,10 +1487,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 		}
 
-		if (dtr_path_ok(path))
-			path->cm->state = ERROR;
-		else
-			goto out;
+		path->cm->state = ERROR;
 
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
