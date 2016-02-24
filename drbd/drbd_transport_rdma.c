@@ -1177,7 +1177,7 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	cm_context->state = IDLE;
 	init_waitqueue_head(&cm_context->state_wq);
 
-	id = rdma_create_id(dtr_cma_event_handler, cm_context, RDMA_PS_TCP, IB_QPT_RC);
+	id = rdma_create_id(&init_net, dtr_cma_event_handler, cm_context, RDMA_PS_TCP, IB_QPT_RC);
 	if (IS_ERR(id)) {
 		cm_context->id = NULL;
 		cm_context->state = ERROR;
