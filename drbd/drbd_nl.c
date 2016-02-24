@@ -340,7 +340,8 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		err = ERR_INVALID_REQUEST;
 		goto finish;
 	}
-	if (adm_ctx->peer_device &&
+	if (adm_ctx->device && adm_ctx->peer_device &&
+	    adm_ctx->resource && adm_ctx->resource->name &&
 	    adm_ctx->peer_device->device != adm_ctx->device) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "peer_device->device != device");
 		pr_warning("request: minor=%u, resource=%s, volume=%u, peer_node=%u; device != peer_device->device\n",
