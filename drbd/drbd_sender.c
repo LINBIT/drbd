@@ -1629,7 +1629,7 @@ static bool drbd_pause_after(struct drbd_device *device)
 		struct drbd_peer_device *other_peer_device;
 
 		begin_state_change_locked(other_device->resource, CS_HARD);
-		if (other_device->disk_state == D_DISKLESS) {
+		if (other_device->disk_state[NOW] == D_DISKLESS) {
 			abort_state_change_locked(other_device->resource);
 			continue;
 		}
@@ -1663,7 +1663,7 @@ static bool drbd_resume_next(struct drbd_device *device)
 		struct drbd_peer_device *other_peer_device;
 
 		begin_state_change_locked(other_device->resource, CS_HARD);
-		if (other_device->disk_state == D_DISKLESS) {
+		if (other_device->disk_state[NOW] == D_DISKLESS) {
 			abort_state_change_locked(other_device->resource);
 			continue;
 		}
