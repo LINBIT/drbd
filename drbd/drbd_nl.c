@@ -4489,6 +4489,8 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct idr *idr_to_search;
 
 	resource = (struct drbd_resource *)cb->args[0];
+
+	rcu_read_lock();
 	if (!cb->args[0] && !cb->args[1]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
 		if (resource_filter) {
@@ -4501,7 +4503,6 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 		}
 	}
 
-	rcu_read_lock();
 	minor = cb->args[1];
 	idr_to_search = resource ? &resource->devices : &drbd_devices;
 	device = idr_get_next(idr_to_search, &minor);
@@ -4755,6 +4756,8 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct idr *idr_to_search;
 
 	resource = (struct drbd_resource *)cb->args[0];
+
+	rcu_read_lock();
 	if (!cb->args[0] && !cb->args[1]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
 		if (resource_filter) {
@@ -4767,7 +4770,6 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 		cb->args[0] = (long)resource;
 	}
 
-	rcu_read_lock();
 	minor = cb->args[1];
 	idr_to_search = resource ? &resource->devices : &drbd_devices;
 	device = idr_find(idr_to_search, minor);
