@@ -554,7 +554,7 @@ static int dtt_wait_for_connect(struct dtt_wait_first *waiter, struct socket **s
 	struct sockaddr_storage peer_addr;
 	int connect_int, peer_addr_len, err = 0;
 	long timeo;
-	struct socket *s_estab;
+	struct socket *s_estab = NULL;
 	struct net_conf *nc;
 	struct drbd_waiter *waiter2_gen;
 	struct dtt_listener *listener;
