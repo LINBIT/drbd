@@ -332,7 +332,7 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 {
 	struct page **old_pages = b->bm_pages;
 	struct page **new_pages, *page;
-	unsigned int i, bytes, vmalloced = 0;
+	unsigned int i, bytes;
 	unsigned long have = b->bm_number_of_pages;
 
 	BUG_ON(have == 0 && old_pages != NULL);
@@ -354,7 +354,6 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 				PAGE_KERNEL);
 		if (!new_pages)
 			return NULL;
-		vmalloced = 1;
 	}
 
 	if (want >= have) {
