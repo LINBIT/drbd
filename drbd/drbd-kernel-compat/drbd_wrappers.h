@@ -1534,4 +1534,10 @@ drbd_ib_create_cq(struct ib_device *device,
 	drbd_ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR)
 #endif
 
+
+#ifndef COMPAT_RDMA_CREATE_ID_HAS_NET_NS
+/* Since linux v4.4 it has a network namespace as first argument */
+#define rdma_create_id(NS, H, C, P, T) rdma_create_id(H, C, P, T)
+#endif
+
 #endif
