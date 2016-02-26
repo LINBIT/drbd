@@ -180,7 +180,19 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_peer_device *peer_device;
 	unsigned int req_size, s, device_refs = 0;
 
-tail_recursion:
+ tail_recursion:
+	if (device_refs > 0 && device != req->device) {
+		/* We accumulate device refs to put, it is very likely that we
+		 * destroy a number of requests for the same volume in a row.
+		 * But if the tail-recursed request happens to be for a
+		 * different volume, we need to put the accumulated device refs
+		 * now, while we still know the corresponding device,
+		 * and start accumulating for the other device.
+		 */
+		kref_debug_sub(&device->kref_debug, device_refs, 6);
+		kref_sub(&device->kref, device_refs, drbd_destroy_device);
+		device_refs = 0;
+	}
 	device = req->device;
 	s = req->rq_state[0];
 	req_size = req->i.size;
