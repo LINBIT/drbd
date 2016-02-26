@@ -176,9 +176,10 @@ static void drbd_remove_request_interval(struct rb_root *root,
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+	struct drbd_request *destroy_next;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
-	unsigned int req_size, s, device_refs = 0;
+	unsigned int s, device_refs = 0;
 
  tail_recursion:
 	if (device_refs > 0 && device != req->device) {
@@ -195,7 +196,7 @@ void drbd_req_destroy(struct kref *kref)
 	}
 	device = req->device;
 	s = req->rq_state[0];
-	req_size = req->i.size;
+	destroy_next = req->destroy_next;
 
 	/* paranoia */
 	for_each_peer_device(peer_device, device) {
@@ -311,19 +312,15 @@ void drbd_req_destroy(struct kref *kref)
 	} else
 		mempool_free(req, drbd_request_mempool);
 
-	if (s & RQ_WRITE && req_size) {
-		list_for_each_entry(req, &device->resource->transfer_log, tl_requests) {
-			if (req->rq_state[0] & RQ_WRITE) {
-				/*
-				 * Do the equivalent of:
-				 *   kref_put(&req->kref, drbd_req_destroy)
-				 * without recursing into the destructor.
-				 */
-				if (atomic_dec_and_test(&req->kref.refcount))
-					goto tail_recursion;
-				break;
-			}
-		}
+	/*
+	 * Do the equivalent of:
+	 *   kref_put(&req->kref, drbd_req_destroy)
+	 * without recursing into the destructor.
+	 */
+	if (destroy_next) {
+		req = destroy_next;
+		if (atomic_dec_and_test(&req->kref.refcount))
+			goto tail_recursion;
 	}
 
 out:
@@ -1596,6 +1593,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				if (req2->rq_state[0] & RQ_WRITE) {
 					/* Make the new write request depend on
 					 * the previous one. */
+					BUG_ON(req2->destroy_next);
+					req2->destroy_next = req;
 					kref_get(&req->kref);
 					break;
 				}

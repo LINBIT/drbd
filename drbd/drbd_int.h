@@ -489,6 +489,10 @@ struct drbd_request {
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
+	/* If not NULL, destruction of this drbd_request will
+	 * cause kref_put() on ->destroy_next. */
+	struct drbd_request *destroy_next;
+
 	/* rq_state[0] is for local disk,
 	 * rest is indexed by peer_device->bitmap_index + 1 */
 	unsigned rq_state[1 + DRBD_NODE_ID_MAX];
