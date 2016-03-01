@@ -1268,6 +1268,7 @@ static void sanitize_state(struct drbd_resource *resource)
 		/* Is disk state negotiation finished? */
 		if (disk_state[OLD] == D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
 			int all = 0, target = 0, no_result = 0;
+			bool up_to_date_neighbor = false;
 
 			for_each_peer_device(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
@@ -1275,6 +1276,9 @@ static void sanitize_state(struct drbd_resource *resource)
 
 				if (pdsk == D_UNKNOWN || pdsk < D_NEGOTIATING)
 					continue;
+
+				if (pdsk == D_UP_TO_DATE)
+					up_to_date_neighbor = true;
 
 				all++;
 				if (nr == L_NEG_NO_RESULT)
@@ -1293,7 +1297,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			else if (target)
 				disk_state[NEW] = D_INCONSISTENT;
 			else
-				disk_state[NEW] = disk_state_from_md(device);
+				disk_state[NEW] = up_to_date_neighbor ? D_UP_TO_DATE :
+					disk_state_from_md(device);
 
 			for_each_peer_device(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;

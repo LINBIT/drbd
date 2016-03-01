@@ -3646,11 +3646,7 @@ static void disk_states_to_goodness(struct drbd_device *device,
 
 	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
 	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
-		*hg = disk_state > D_INCONSISTENT ? 1 : -1;
-		p = true;
-	} else if ((disk_state == D_OUTDATED && peer_disk_state > D_OUTDATED) ||
-		   (peer_disk_state == D_OUTDATED && disk_state > D_OUTDATED)) {
-		*hg = disk_state > D_OUTDATED ? 1 : -1;
+		*hg = disk_state > D_INCONSISTENT ? 2 : -2;
 		p = true;
 	}
 
@@ -5719,6 +5715,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_peer_state.disk == D_NEGOTIATING)) {
 			new_repl_state = drbd_attach_handshake(peer_device, peer_disk_state);
+			if (new_repl_state == L_ESTABLISHED && device->disk_state[NOW] == D_UP_TO_DATE)
+				peer_disk_state = D_UP_TO_DATE;
 		}
 
 		put_ldev(device);

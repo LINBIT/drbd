@@ -2512,7 +2512,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		clear_bit(CRASHED_PRIMARY, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]))
+	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
+	    !device->exposed_data_uuid && !test_bit(NEW_CUR_UUID, &device->flags))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
 	device->read_cnt = 0;
