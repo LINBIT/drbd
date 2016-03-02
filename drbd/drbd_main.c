@@ -302,6 +302,64 @@ struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
 	return peer_device;
 }
 
+/* This is a list walk that holds a reference on the next element! The
+   reason for that is that one of the requests might hold a reference to a
+   following request. A _req_mod() that destroys the current req might drop
+   the references on the next request as well! I.e. the "save" of a
+   list_for_each_entry_safe() element gets destroyed! -- With holding a
+   reference that destroy gets delayed as necessary */
+
+#define tl_for_each_req_ref_from(req, next, tl)		\
+	for (req = __tl_first_req_ref(&next, req, tl);	\
+	     req;					\
+	     req = __tl_next_req_ref(&next, req, tl))
+
+#define tl_for_each_req_ref(req, next, tl)				\
+	for (req = __tl_first_req_ref(&next,				\
+	list_first_entry_or_null(tl, struct drbd_request, tl_requests), \
+				      tl);				\
+	     req;							\
+	     req = __tl_next_req_ref(&next, req, tl))
+
+static struct drbd_request *__tl_first_req_ref(struct drbd_request **pnext,
+					       struct drbd_request *req,
+					       struct list_head *transfer_log)
+{
+	if (req) {
+		struct drbd_request *next = list_next_entry(req, tl_requests);
+		if (&next->tl_requests != transfer_log)
+			kref_get(&next->kref);
+		*pnext = next;
+	}
+	return req;
+}
+
+static struct drbd_request *__tl_next_req_ref(struct drbd_request **pnext,
+					      struct drbd_request *req,
+					      struct list_head *transfer_log)
+{
+	struct drbd_request *next = *pnext;
+	bool next_is_head = (&next->tl_requests == transfer_log);
+
+	do {
+		if (next_is_head)
+			return NULL;
+		req = next;
+		next = list_next_entry(req, tl_requests);
+		next_is_head = (&next->tl_requests == transfer_log);
+		if (!next_is_head)
+			kref_get(&next->kref);
+	} while (kref_put(&req->kref, drbd_req_destroy));
+	*pnext = next;
+	return req;
+}
+
+static void tl_abort_for_each_req_ref(struct drbd_request *next, struct list_head *transfer_log)
+{
+	if (&next->tl_requests != transfer_log)
+		kref_put(&next->kref, drbd_req_destroy);
+}
+
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
@@ -377,10 +435,12 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	list_for_each_entry(req, &resource->transfer_log, tl_requests)
 		if (req->epoch == expect_epoch)
 			break;
-	list_for_each_entry_safe_from(req, r, &resource->transfer_log, tl_requests) {
+	tl_for_each_req_ref_from(req, r, &resource->transfer_log) {
 		struct drbd_peer_device *peer_device;
-		if (req->epoch != expect_epoch)
+		if (req->epoch != expect_epoch) {
+			tl_abort_for_each_req_ref(r, &resource->transfer_log);
 			break;
+		}
 		peer_device = conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, BARRIER_ACKED, peer_device);
 	}
@@ -414,7 +474,7 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 	struct drbd_peer_device *peer_device;
 	struct drbd_request *req, *r;
 
-	list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
+	tl_for_each_req_ref(req, r, &resource->transfer_log) {
 		peer_device = conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, what, peer_device);
 	}
@@ -454,7 +514,7 @@ void tl_abort_disk_io(struct drbd_device *device)
         struct drbd_request *req, *r;
 
         spin_lock_irq(&resource->req_lock);
-        list_for_each_entry_safe(req, r, &resource->transfer_log, tl_requests) {
+        tl_for_each_req_ref(req, r, &resource->transfer_log) {
                 if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
                         continue;
                 if (req->device != device)
