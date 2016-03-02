@@ -16,6 +16,7 @@
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
 #include <linux/types.h>
+#include "compat.h"
 
 #define CONCAT__(a,b)	a ## b
 #define CONCAT_(a,b)	CONCAT__(a,b)
@@ -76,9 +77,15 @@ extern void CONCAT_(GENL_MAGIC_FAMILY, _genl_unregister)(void);
 #define __u32_field(attr_nr, attr_flag, name)	\
 	__field(attr_nr, attr_flag, name, NLA_U32, __u32, \
 			nla_get_u32, nla_put_u32, false)
+#ifdef COMPAT_HAVE_SIGNED_NLA_PUT
+#define __s32_field(attr_nr, attr_flag, name)	\
+	__field(attr_nr, attr_flag, name, NLA_S32, __s32, \
+			nla_get_s32, nla_put_s32, true)
+#else
 #define __s32_field(attr_nr, attr_flag, name)	\
 	__field(attr_nr, attr_flag, name, NLA_U32, __s32, \
 			nla_get_u32, nla_put_u32, true)
+#endif
 #define __u64_field(attr_nr, attr_flag, name)	\
 	__field(attr_nr, attr_flag, name, NLA_U64, __u64, \
 			nla_get_u64, nla_put_u64, false)
