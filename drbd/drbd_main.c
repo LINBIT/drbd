@@ -2014,6 +2014,19 @@ static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file)
 }
 #endif
 
+/* need to hold resource->req_lock */
+void drbd_queue_unplug(struct drbd_device *device)
+{
+	if (device->state.pdsk >= D_INCONSISTENT && device->state.conn >= C_CONNECTED) {
+		D_ASSERT(device, device->state.role == R_PRIMARY);
+		if (test_and_clear_bit(UNPLUG_REMOTE, &device->flags)) {
+			drbd_queue_work_if_unqueued(
+				&first_peer_device(device)->connection->sender_work,
+				&device->unplug_work);
+		}
+	}
+}
+
 #ifdef blk_queue_plugged
 static void drbd_unplug_fn(struct request_queue *q)
 {
@@ -2026,14 +2039,7 @@ static void drbd_unplug_fn(struct request_queue *q)
 
 	/* only if connected */
 	spin_lock_irq(&device->resource->req_lock);
-	if (device->state.pdsk >= D_INCONSISTENT && device->state.conn >= C_CONNECTED) {
-		D_ASSERT(device, device->state.role == R_PRIMARY);
-		if (test_and_clear_bit(UNPLUG_REMOTE, &device->flags)) {
-			drbd_queue_work_if_unqueued(
-				&first_peer_device(device)->connection->sender_work,
-				&device->unplug_work);
-		}
-	}
+	drbd_queue_unplug(device);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (device->state.disk >= D_INCONSISTENT)
