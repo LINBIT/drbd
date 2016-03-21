@@ -838,7 +838,44 @@ int decode_header(struct drbd_connection *connection, void *header, struct packe
 	return 0;
 }
 
+#ifdef blk_queue_plugged
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		drbd_kick_lo(device);
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+}
+#else
+static void drbd_unplug_all_devices(struct drbd_resource *resource)
+{
+}
+#endif
+
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
+{
+	void *buffer;
+	int err;
+
+	err = drbd_recv_all_warn(connection, &buffer, drbd_header_size(connection));
+	if (err)
+		return err;
+
+	err = decode_header(connection, buffer, pi);
+	connection->last_received = jiffies;
+
+	return err;
+}
+
+static int drbd_recv_header_maybe_unplug(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_transport_ops *tr_ops = connection->transport.ops;
 	unsigned int size = drbd_header_size(connection);
@@ -1588,28 +1625,6 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 }
-
-#ifdef blk_queue_plugged
-static void drbd_unplug_all_devices(struct drbd_resource *resource)
-{
-	struct drbd_device *device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		kref_get(&device->kref);
-		rcu_read_unlock();
-		drbd_kick_lo(device);
-		kref_put(&device->kref, drbd_destroy_device);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-}
-#else
-static void drbd_unplug_all_devices(struct drbd_resource *resource)
-{
-}
-#endif
 
 static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
@@ -6467,8 +6482,8 @@ static void drbdd(struct drbd_connection *connection)
 		struct data_cmd const *cmd;
 
 		drbd_thread_current_set_cpu(&connection->receiver);
-		update_receiver_timing_details(connection, drbd_recv_header);
-		if (drbd_recv_header(connection, &pi))
+		update_receiver_timing_details(connection, drbd_recv_header_maybe_unplug);
+		if (drbd_recv_header_maybe_unplug(connection, &pi))
 			goto err_out;
 
 		cmd = &drbd_cmd_handler[pi.cmd];
