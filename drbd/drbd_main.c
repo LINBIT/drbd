@@ -2541,18 +2541,12 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 #endif
 }
 
-#ifdef blk_queue_plugged
-static void drbd_unplug_fn(struct request_queue *q)
+/* need to hold resource->req_lock */
+void drbd_queue_unplug(struct drbd_device *device)
 {
-	struct drbd_device *device = q->queuedata;
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	u64 dagtag_sector;
-
-	/* unplug FIRST */
-	/* note: q->queue_lock == resource->req_lock */
-	spin_lock_irq(&resource->req_lock);
-	blk_remove_plug(q);
 
 	dagtag_sector = resource->dagtag_sector;
 
@@ -2562,6 +2556,21 @@ static void drbd_unplug_fn(struct request_queue *q)
 		connection->todo.unplug_dagtag_sector[i] = dagtag_sector;
 		wake_up(&connection->sender_work.q_wait);
 	}
+}
+
+#ifdef blk_queue_plugged
+static void drbd_unplug_fn(struct request_queue *q)
+{
+	struct drbd_device *device = q->queuedata;
+	struct drbd_resource *resource = device->resource;
+
+	/* unplug FIRST */
+	/* note: q->queue_lock == resource->req_lock */
+	spin_lock_irq(&resource->req_lock);
+	blk_remove_plug(q);
+
+	/* only if connected */
+	drbd_queue_unplug(device);
 	spin_unlock_irq(&resource->req_lock);
 
 	drbd_kick_lo(device);

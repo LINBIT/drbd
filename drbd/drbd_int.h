@@ -1016,6 +1016,8 @@ struct drbd_connection {
 	unsigned int epochs;
 
 	unsigned long last_reconnect_jif;
+	/* empty member on older kernels without blk_start_plug() */
+	struct blk_plug receiver_plug;
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
 	struct drbd_thread ack_receiver;
@@ -1035,12 +1037,7 @@ struct drbd_connection {
 	struct sender_todo {
 		struct list_head work_list;
 
-#ifdef blk_queue_plugged
-		/* For older kernels that do and need explicit unplug,
-		 * we store here the resource->dagtag_sector of unplug events
-		 * when they occur.
-		 *
-		 * If upper layers trigger an unplug on this side, we want to
+		/* If upper layers trigger an unplug on this side, we want to
 		 * send and unplug hint over to the peer.  Sending it too
 		 * early, or missing it completely, causes a potential latency
 		 * penalty (requests idling too long in the remote queue).
@@ -1057,7 +1054,6 @@ struct drbd_connection {
 		 */
 		u64 unplug_dagtag_sector[2];
 		unsigned int unplug_slot; /* 0 or 1 */
-#endif
 
 		/* the currently (or last) processed request,
 		 * see process_sender_todo() */
@@ -1505,7 +1501,8 @@ extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd
 extern void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes);
 extern void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev);
 extern void drbd_cleanup_device(struct drbd_device *device);
-void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
+extern void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
+extern void drbd_queue_unplug(struct drbd_device *device);
 
 extern u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers);
 extern void drbd_md_set_sector_offsets(struct drbd_device *device,
