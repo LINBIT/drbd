@@ -4686,7 +4686,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		put_ldev(device);
 
 	for (i = 0; i < history_uuids; i++)
-		peer_device->history_uuids[i++] = be64_to_cpu(p->other_uuids[pos++]);
+		peer_device->history_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
 	while (i < ARRAY_SIZE(peer_device->history_uuids))
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
