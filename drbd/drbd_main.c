@@ -1320,12 +1320,15 @@ static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(lo
 	   and the second resync (which was paused first) is from an Outdated node.
 	   And that second resync gets canceled by the resync target due to the first
 	   resync finished successfully.
+
+	   Exceptions to the above are when the peer's UUID is not known yet
 	 */
 
 	rcu_read_lock();
 	peer_device = peer_device_by_node_id(device, node_id);
 
 	if (bitmap_uuid == 0 && peer_device &&
+	    peer_device->current_uuid != 0 &&
 	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
 	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
 		bitmap_uuid = -1;
