@@ -4542,8 +4542,6 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
-	drbd_propagate_uuids(device, newer | equal | NODE_MASK(peer_device->node_id));
-
 	return newer;
 }
 
