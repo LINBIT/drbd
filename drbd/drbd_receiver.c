@@ -4507,6 +4507,26 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	}
 }
 
+static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int node_id, u64 bitmap_uuid)
+{
+	if (peer_device->bitmap_uuids[node_id] && bitmap_uuid == 0) {
+		/* If we learn from a neighbor that it no longer has a bitmap
+		   against a third node, we need to deduce from that knowledge
+		   that in the other direction the bitmap was cleared as well.
+		 */
+		struct drbd_peer_device *peer_device2;
+
+		rcu_read_lock();
+		peer_device2 = peer_device_by_node_id(peer_device->device, node_id);
+		if (peer_device2) {
+			int node_id2 = peer_device->connection->peer_node_id;
+			peer_device2->bitmap_uuids[node_id2] = 0;
+		}
+		rcu_read_unlock();
+	}
+	peer_device->bitmap_uuids[node_id] = bitmap_uuid;
+}
+
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
@@ -4674,13 +4694,18 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_md = device->ldev->md.peers;
 	pos = 0;
 	for (i = 0; i < ARRAY_SIZE(peer_device->bitmap_uuids); i++) {
+		u64 bitmap_uuid;
+
 		if (bitmap_uuids_mask & NODE_MASK(i)) {
-			peer_device->bitmap_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
+			bitmap_uuid = be64_to_cpu(p->other_uuids[pos++]);
+
 			if (peer_md && peer_md[i].bitmap_index == -1)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
 		} else {
-			peer_device->bitmap_uuids[i] = 0;
+			bitmap_uuid = 0;
 		}
+
+		update_bitmap_slot_of_peer(peer_device, i, bitmap_uuid);
 	}
 	if (peer_md)
 		put_ldev(device);
