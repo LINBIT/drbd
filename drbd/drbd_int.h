@@ -1089,6 +1089,7 @@ struct drbd_connection {
 
 	struct {
 		unsigned long last_sent_barrier_jif;
+		int last_sent_epoch_nr;
 
 		/* whether this sender thread
 		 * has processed a single write yet. */

@@ -446,7 +446,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	}
 	spin_unlock_irq(&connection->resource->req_lock);
 
-	if (barrier_nr + 1 == atomic_read(&resource->current_tle_nr)) {
+	if (barrier_nr == connection->send.last_sent_epoch_nr) {
 		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
 		wake_up(&resource->barrier_wait);
 	}
