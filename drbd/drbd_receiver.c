@@ -3479,6 +3479,9 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 			continue;
 		if (i == device->ldev->md.node_id)
 			continue;
+		/* Skip bitmap indexes which are not assigned to a peer. */
+		if (device->ldev->md.peers[i].bitmap_index == -1)
+			continue;
 		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
 		if (self == peer) {
 			*peer_node_id = i;
