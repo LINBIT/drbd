@@ -5020,8 +5020,8 @@ drbd_check_resource_name(struct drbd_config_context *adm_ctx)
 		drbd_msg_put_info(adm_ctx->reply_skb, "resource name missing");
 		return ERR_MANDATORY_TAG;
 	}
-	/* if we want to use these in sysfs/configfs/debugfs some day,
-	 * we must not allow slashes */
+	/* As we want to use these in sysfs/configfs/debugfs,
+	 * we must not allow slashes. */
 	if (strchr(name, '/')) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "invalid resource name");
 		return ERR_INVALID_REQUEST;
