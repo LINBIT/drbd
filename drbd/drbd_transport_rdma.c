@@ -683,6 +683,9 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
 {
+	if (!transport)
+		return -ECONNRESET;
+
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
 	int err;
@@ -2705,7 +2708,7 @@ static void dtr_debugfs_show_flow(struct dtr_flow *flow, const char *name, struc
 	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&flow->peer_rx_descs));
 	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", atomic_read(&flow->rx_descs_posted),
 		   flow->rx_descs_allocated, flow->rx_descs_want_posted, flow->rx_descs_max);
-	seq_printf(m, " rx_peer_knows: %5d (what the peer knows about my recive window)\n\n",
+	seq_printf(m, " rx_peer_knows: %5d (what the peer knows about my receive window)\n\n",
 		   atomic_read(&flow->rx_descs_known_to_peer));
 }
 
