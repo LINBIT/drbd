@@ -2478,7 +2478,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			/* Started resync, tell peer if drbd9 */
-			if (repl_state[NEW] >= L_SYNC_SOURCE && repl_state[OLD] < L_SYNC_SOURCE)
+			if (repl_state[NEW] >= L_SYNC_SOURCE && repl_state[NEW] <= L_PAUSED_SYNC_T &&
+			    (repl_state[OLD] < L_SYNC_SOURCE || repl_state[OLD] > L_PAUSED_SYNC_T))
 				send_state = true;
 
 			/* We want to pause/continue resync, tell peer. */
