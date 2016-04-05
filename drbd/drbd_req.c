@@ -1738,7 +1738,10 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 
 static void submit_fast_path(struct drbd_device *device, struct list_head *incoming)
 {
+	struct blk_plug plug;
 	struct drbd_request *req, *tmp;
+
+	blk_start_plug(&plug);
 	list_for_each_entry_safe(req, tmp, incoming, tl_requests) {
 		const int rw = bio_data_dir(req->master_bio);
 
@@ -1755,6 +1758,7 @@ static void submit_fast_path(struct drbd_device *device, struct list_head *incom
 		list_del_init(&req->tl_requests);
 		drbd_send_and_submit(device, req);
 	}
+	blk_finish_plug(&plug);
 }
 
 static bool prepare_al_transaction_nonblock(struct drbd_device *device,
@@ -1784,10 +1788,12 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 	return !list_empty(pending);
 }
 
-void send_and_submit_pending(struct drbd_device *device, struct list_head *pending)
+static void send_and_submit_pending(struct drbd_device *device, struct list_head *pending)
 {
+	struct blk_plug plug;
 	struct drbd_request *req;
 
+	blk_start_plug(&plug);
 	while ((req = list_first_entry_or_null(pending, struct drbd_request, tl_requests))) {
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
 		req->in_actlog_jif = jiffies;
@@ -1795,6 +1801,7 @@ void send_and_submit_pending(struct drbd_device *device, struct list_head *pendi
 		list_del_init(&req->tl_requests);
 		drbd_send_and_submit(device, req);
 	}
+	blk_finish_plug(&plug);
 }
 
 
