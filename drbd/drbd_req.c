@@ -1546,6 +1546,7 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 	struct drbd_resource *resource = plug->cb.data;
 	struct drbd_request *req = plug->most_recent_req;
 
+	kfree(cb);
 	if (!req)
 		return;
 
