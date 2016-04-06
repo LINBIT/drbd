@@ -2535,6 +2535,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		put_ldev(device);
 		return -EIO;
 	}
+	if (pi->cmd == P_TRIM)
+		peer_req->flags |= EE_IS_TRIM;
+	else if (pi->cmd == P_WSAME)
+		peer_req->flags |= EE_WRITE_SAME;
 
 	peer_req->dagtag_sector = connection->last_dagtag_sector + (peer_req->i.size >> 9);
 	connection->last_dagtag_sector = peer_req->dagtag_sector;
