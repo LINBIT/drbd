@@ -7571,10 +7571,10 @@ found:
 
 			drbd_set_sync(device, peer_req->i.sector,
 				      peer_req->i.size, ~in_sync_b, -1);
+			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
 		list_del(&peer_req->recv_order);
-		drbd_al_complete_io(device, &peer_req->i);
 		drbd_free_peer_req(peer_req);
 	}
 	return 0;
