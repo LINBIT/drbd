@@ -1665,7 +1665,7 @@ static void decide_on_discard_support(struct drbd_device *device,
 		can_do = false;
 		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
 	}
-	if (can_do && (common_connection_features(device->resource) & DRBD_FF_TRIM)) {
+	if (can_do && !(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
 		can_do = false;
 		drbd_info(device, "peer DRBD too old, does not support TRIM: disabling discards\n");
 	}
@@ -1707,7 +1707,7 @@ static void decide_on_write_same_support(struct drbd_device *device,
 #else
 	bool can_do = b ? b->limits.max_write_same_sectors : true;
 
-	if (can_do && common_connection_features(device->resource) & DRBD_FF_WSAME) {
+	if (can_do && !(common_connection_features(device->resource) & DRBD_FF_WSAME)) {
 		can_do = false;
 		drbd_info(device, "peer does not support WRITE_SAME\n");
 	}
