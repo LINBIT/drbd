@@ -1486,16 +1486,12 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	if (rw == WRITE && req->i.size) {
 		/* Unconditionally defer to worker,
 		 * if we still need to bumpt our data generation id */
-		if (test_bit(NEW_CUR_UUID, &device->flags)) {
-			drbd_queue_write(device, req);
-			return NULL;
-		}
+		if (test_bit(NEW_CUR_UUID, &device->flags))
+			goto queue_for_submitter_thread;
 
 		if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
-			if (!drbd_al_begin_io_fastpath(device, &req->i)) {
-				drbd_queue_write(device, req);
-				return NULL;
-			}
+			if (!drbd_al_begin_io_fastpath(device, &req->i))
+				goto queue_for_submitter_thread;
 			req->rq_state[0] |= RQ_IN_ACT_LOG;
 			req->in_actlog_jif = jiffies;
 		}
@@ -1503,7 +1499,6 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 	return req;
 
  queue_for_submitter_thread:
-	atomic_inc(&device->ap_actlog_cnt);
 	drbd_queue_write(device, req);
 	return NULL;
 }
