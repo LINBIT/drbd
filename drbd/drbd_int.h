@@ -1219,6 +1219,7 @@ struct drbd_peer_device {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_peer_dev;
 	struct dentry *debugfs_peer_dev_resync_extents;
+	struct dentry *debugfs_peer_dev_proc_drbd;
 #endif
 	struct {/* sender todo per peer_device */
 		bool was_ahead;
