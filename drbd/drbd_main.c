@@ -3138,11 +3138,22 @@ void conn_free_crypto(struct drbd_connection *connection)
 	connection->int_dig_vv = NULL;
 }
 
+void wake_all_device_misc(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr)
+		wake_up(&device->misc_wait);
+	rcu_read_unlock();
+}
+
 int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts)
 {
 	struct drbd_connection *connection;
 	cpumask_var_t new_cpu_mask;
 	int err;
+	bool wake_device_misc = false;
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
@@ -3171,6 +3182,11 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 			goto fail;
 		}
 	}
+	if (res_opts->nr_requests < DRBD_NR_REQUESTS_MIN)
+		res_opts->nr_requests = DRBD_NR_REQUESTS_MIN;
+	if (resource->res_opts.nr_requests < res_opts->nr_requests)
+		wake_device_misc = true;
+
 	resource->res_opts = *res_opts;
 	if (cpumask_empty(new_cpu_mask))
 		drbd_calc_cpu_mask(&new_cpu_mask);
@@ -3185,6 +3201,8 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		rcu_read_unlock();
 	}
 	err = 0;
+	if (wake_device_misc)
+		wake_all_device_misc(resource);
 
 fail:
 	free_cpumask_var(new_cpu_mask);

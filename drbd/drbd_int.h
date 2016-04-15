@@ -2640,6 +2640,7 @@ extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
 /* rw = READ or WRITE (0 or 1); nothing else. */
 static inline void dec_ap_bio(struct drbd_device *device, int rw)
 {
+	unsigned int nr_requests = device->resource->res_opts.nr_requests;
 	int ap_bio = atomic_dec_return(&device->ap_bio_cnt[rw]);
 
 	D_ASSERT(device, ap_bio >= 0);
@@ -2653,7 +2654,7 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 	if (ap_bio == 0 && rw == WRITE && !list_empty(&device->pending_bitmap_work.q))
 		drbd_queue_pending_bitmap_work(device);
 
-	if (ap_bio == 0)
+	if (ap_bio == 0 || ap_bio == nr_requests-1)
 		wake_up(&device->misc_wait);
 }
 
@@ -2690,9 +2691,11 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 static inline bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 {
 	bool rv = false;
+	unsigned int nr_requests;
 
 	spin_lock_irq(&device->resource->req_lock);
-	rv = may_inc_ap_bio(device);
+	nr_requests = device->resource->res_opts.nr_requests;
+	rv = may_inc_ap_bio(device) && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
 	if (rv)
 		atomic_inc(&device->ap_bio_cnt[rw]);
 	spin_unlock_irq(&device->resource->req_lock);
