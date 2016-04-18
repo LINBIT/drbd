@@ -593,7 +593,7 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
 	return al_ext;
 }
 
-void put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
+bool put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
 {
 	struct lc_element *extent;
 	unsigned long flags;
@@ -614,6 +614,7 @@ void put_actlog(struct drbd_device *device, unsigned int first, unsigned int las
 	spin_unlock_irqrestore(&device->al_lock, flags);
 	if (wake)
 		wake_up(&device->al_wait);
+	return wake;
 }
 
 /**
@@ -644,7 +645,7 @@ int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_
 				(al_ext = _al_get_for_peer(peer_device, enr)) != NULL ||
 				peer_device->connection->cstate[NOW] < C_CONNECTED);
 		if (al_ext == NULL) {
-			if (enr)
+			if (enr > first)
 				put_actlog(device, first, enr-1);
 			return -ECONNABORTED;
 		}
@@ -715,14 +716,16 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 	return 0;
 }
 
-void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
+/* put activity log extent references corresponding to interval i, return true
+ * if at least one extent is now unreferenced. */
+bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 
-	put_actlog(device, first, last);
+	return put_actlog(device, first, last);
 }
 
 static int _try_lc_del(struct drbd_device *device, struct lc_element *al_ext)

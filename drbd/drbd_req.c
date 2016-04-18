@@ -180,6 +180,7 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	unsigned int s, device_refs = 0;
+	bool was_last_ref = false;
 
  tail_recursion:
 	if (device_refs > 0 && device != req->device) {
@@ -278,7 +279,7 @@ void drbd_req_destroy(struct kref *kref)
 		 */
 		if (s & RQ_IN_ACT_LOG) {
 			if (get_ldev_if_state(device, D_DETACHING)) {
-				drbd_al_complete_io(device, &req->i);
+				was_last_ref = drbd_al_complete_io(device, &req->i);
 				put_ldev(device);
 			} else if (drbd_ratelimit()) {
 				drbd_warn(device, "Should have called drbd_al_complete_io(, %llu, %u), "
@@ -296,6 +297,7 @@ void drbd_req_destroy(struct kref *kref)
 
 		if (peer_ack_req) {
 			if (peer_ack_differs(req, peer_ack_req) ||
+			    (was_last_ref && atomic_read(&device->ap_actlog_cnt)) ||
 			    peer_ack_window_full(req)) {
 				drbd_queue_peer_ack(resource, peer_ack_req);
 				peer_ack_req = NULL;

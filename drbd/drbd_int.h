@@ -2054,7 +2054,7 @@ extern void drbd_al_begin_io_commit(struct drbd_device *device);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i);
 extern int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i);
-extern void drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
+extern bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_rs_complete_io(struct drbd_peer_device *, sector_t);
 extern int drbd_rs_begin_io(struct drbd_peer_device *, sector_t);
 extern int drbd_try_rs_begin_io(struct drbd_peer_device *, sector_t, bool);
