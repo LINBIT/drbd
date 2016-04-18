@@ -1683,6 +1683,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		}
 
+		wake_up(&device->al_wait);
 		wake_up(&device->misc_wait);
 		wake_up(&device->resource->state_wait);
 
