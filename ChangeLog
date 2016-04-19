@@ -2,6 +2,25 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.2-1 (api:genl2/proto:86-111/transport:14)
+--------
+ * Fix list walks on the transfer log; Lead to crashes in _tl_restart()
+   and (sometimes) other places.
+ * Fix a corner case that lead to nodes showing the disk states of
+   other nodes as Outdated after resync
+ * Fix waiting for barrier acks; The bug was that demoting to secondary
+   after AHEAD/BEHIND may blocked forever
+ * Fix WRITE_SAME support
+ * Fix a possible OOPS in got_peer_ack()
+ * Fix resync controller; Was always on c-min-rate
+ * Fix a possible deadlock on disconnect
+ * Use modern kernel's expclicit plugging to reduce number of IOPs on
+   the secondary node
+ * Introduce a per resource max-io-depth limit; applies to each volume
+   in the resource
+ * Promptly send peer_acks if we can put the last reference on an
+   activity log entry. Helps the to get the AL in use on secondaries
+   down.
 
 9.0.1-1 (api:genl2/proto:86-111/transport:14)
 --------
