@@ -683,12 +683,13 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
 {
+	struct drbd_rdma_transport *rdma_transport;
+	int err;
+
 	if (!transport)
 		return -ECONNRESET;
 
-	struct drbd_rdma_transport *rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-	int err;
+	rdma_transport = container_of(transport, struct drbd_rdma_transport, transport);
 
 	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
