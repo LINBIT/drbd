@@ -2046,6 +2046,8 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	enum dtr_alloc_rdma_res_causes cause;
 	struct ib_device_attr dev_attr;
+	struct ib_udata uhw = {.outlen = 0, .inlen = 0};
+	struct ib_device *device = path->cm->id->device;
 	int rx_descs_max = 0, tx_descs_max = 0;
 	bool reduced = false;
 	int i, hca_max, err;
@@ -2060,12 +2062,13 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 		[IB_GET_DMA_MR] = "ib_get_dma_mr()",
 	};
 
-	err = ib_query_device(path->cm->id->device, &dev_attr);
+	err = device->query_device(device, &dev_attr, &uhw);
 	if (err) {
 		tr_err(&path->rdma_transport->transport,
 				"ib_query_device: %d\n", err);
 		return err;
 	}
+
 
 	hca_max = min(dev_attr.max_qp_wr, dev_attr.max_cqe);
 
