@@ -2114,6 +2114,8 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 		/* REQ_WRITE_SAME has only one segment */
 		if (bio->bi_rw & DRBD_REQ_WSAME)
 			break;
+
+		peer_device->send_cnt += (bvec BVD bv_len) >> 9;
 	}
 	return 0;
 }
