@@ -1666,8 +1666,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		}
 		if (!drbd_process_write_request(req))
 			no_remote = true;
-		else
-			wake_all_senders(resource);
+		wake_all_senders(resource);
 	} else {
 		if (peer_device) {
 			_req_mod(req, TO_BE_SENT, peer_device);
