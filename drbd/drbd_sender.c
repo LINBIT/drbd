@@ -2111,9 +2111,17 @@ static int try_become_up_to_date(struct drbd_resource *resource)
 	enum drbd_state_rv rv;
 
 	/* Doing a two_phase_commit from worker context is only possible
-	   if twopc_work is not queued! Let it get executed first! */
+	 * if twopc_work is not queued. Let it get executed first.
+	 *
+	 * Avoid deadlock on state_sem, in case someone holds it while
+	 * waiting for the completion of some after-state-change work.
+	 */
 	if (list_empty(&resource->twopc_work.list)) {
-		rv = change_from_consistent(resource, CS_VERBOSE | CS_SERIALIZE | CS_DONT_RETRY);
+		if (down_trylock(&resource->state_sem))
+			goto repost;
+		rv = change_from_consistent(resource, CS_ALREADY_SERIALIZED |
+			CS_VERBOSE | CS_SERIALIZE | CS_DONT_RETRY);
+		up(&resource->state_sem);
 		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG)
 			goto repost;
 	} else {
