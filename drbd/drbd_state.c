@@ -438,8 +438,11 @@ out:
 
 void state_change_lock(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
-	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED)))
+	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARED))) {
+		WARN_ONCE(current == resource->worker.task,
+			"worker should not initiate state changes with CS_SERIALIZE\n");
 		down(&resource->state_sem);
+	}
 	spin_lock_irqsave(&resource->req_lock, *irq_flags);
 	resource->state_change_flags = flags;
 }
