@@ -2634,6 +2634,15 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_send_uuids(peer_device, UUID_FLAG_GOT_STABLE, 0);
 				put_ldev(device);
 			}
+
+			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
+			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&
+			    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
+				   we know that a write failed on that node. Therefore we need to create
+				   the new UUID right now (not wait for the next write to come in) */
+				drbd_uuid_new_current(device, false);
+			}
 		}
 
 
