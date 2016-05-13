@@ -650,6 +650,7 @@ enum {
 
 	HAVE_LDEV,
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
+	READ_BALANCE_RR,
 };
 
 /* flag bits per peer device */
@@ -664,7 +665,6 @@ enum {
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
-	READ_BALANCE_RR,
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
