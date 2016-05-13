@@ -851,6 +851,27 @@ static bool barrier_pending(struct drbd_resource *resource)
 	return rv;
 }
 
+static void wait_for_peer_disk_updates(struct drbd_resource *resource)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	int vnr;
+
+restart:
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		for_each_peer_device_rcu(peer_device, device) {
+			if (test_bit(GOT_NEG_ACK, &peer_device->flags)) {
+				clear_bit(GOT_NEG_ACK, &peer_device->flags);
+				rcu_read_unlock();
+				wait_event(resource->state_wait, peer_device->disk_state[NOW] < D_UP_TO_DATE);
+				goto restart;
+			}
+		}
+	}
+	rcu_read_unlock();
+}
+
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 {
@@ -884,6 +905,10 @@ retry:
 				drbd_flush_workqueue(&connection->sender_work);
 		}
 		wait_event(resource->barrier_wait, !barrier_pending(resource));
+		/* After waiting for pending barriers, we got any possible NEG_ACKs,
+		   and see them in wait_for_peer_disk_updates() */
+		wait_for_peer_disk_updates(resource);
+
 		/* In case switching from R_PRIMARY to R_SECONDARY works
 		   out, there is no rw opener at this point. Thus, no new
 		   writes can come in. -> Flushing queued peer acks is

@@ -671,6 +671,8 @@ enum {
 	RECONCILIATION_RESYNC,
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	SEND_STATE_AFTER_AHEAD,
+	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
+				   D_UP_TO_DATE before becoming secondary! */
 };
 
 /* We could make these currently hardcoded constants configurable

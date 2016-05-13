@@ -7352,6 +7352,9 @@ static int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
+	if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
+		set_bit(GOT_NEG_ACK, &peer_device->flags);
+
 	if (p->block_id == ID_SYNCER) {
 		dec_rs_pending(peer_device);
 		drbd_rs_failed_io(peer_device, sector, size);
