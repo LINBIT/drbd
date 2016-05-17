@@ -1807,7 +1807,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
-	blk_queue_segment_boundary(q, PAGE_CACHE_SIZE-1);
+	blk_queue_segment_boundary(q, PAGE_SIZE-1);
 	decide_on_discard_support(device, q, b, discard_zeroes_if_aligned);
 	decide_on_write_same_support(device, q, b, o);
 
