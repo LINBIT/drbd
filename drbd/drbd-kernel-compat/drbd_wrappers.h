@@ -1511,12 +1511,14 @@ static void blk_finish_plug(struct blk_plug *plug) {};
 #endif
 
 
-#ifndef COMPAT_HAVE_INODE_LOCK
+#ifdef COMPAT_NEED_D_INODE
 static inline struct inode *d_inode(struct dentry *dentry)
 {
 	return dentry->d_inode;
 }
+#endif
 
+#ifndef COMPAT_HAVE_INODE_LOCK
 static inline void inode_lock(struct inode *inode)
 {
 	mutex_lock(&inode->i_mutex);
