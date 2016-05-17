@@ -1530,6 +1530,40 @@ static inline void inode_unlock(struct inode *inode)
 }
 #endif
 
+#if !(defined(COMPAT_HAVE_AHASH_REQEUST_ON_STACK) && \
+      defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
+      defined COMPAT_HAVE_SHASH_DESC_ZERO)
+#include <crypto/hash.h>
+
+#ifndef COMPAT_HAVE_AHASH_REQEUST_ON_STACK
+#define AHASH_REQUEST_ON_STACK(name, ahash)			   \
+	char __##name##_desc[sizeof(struct ahash_request) +	   \
+		crypto_ahash_reqsize(ahash)] CRYPTO_MINALIGN_ATTR; \
+	struct ahash_request *name = (void *)__##name##_desc
+#endif
+
+#ifndef COMPAT_HAVE_SHASH_DESC_ON_STACK
+#define SHASH_DESC_ON_STACK(shash, ctx)				  \
+	char __##shash##_desc[sizeof(struct shash_desc) +	  \
+		crypto_shash_descsize(ctx)] CRYPTO_MINALIGN_ATTR; \
+	struct shash_desc *shash = (struct shash_desc *)__##shash##_desc
+#endif
+
+#ifndef COMPAT_HAVE_SHASH_DESC_ZERO
+static inline void ahash_request_zero(struct ahash_request *req)
+{
+	memzero_explicit(req, sizeof(*req) +
+			 crypto_ahash_reqsize(crypto_ahash_reqtfm(req)));
+}
+
+static inline void shash_desc_zero(struct shash_desc *desc)
+{
+	memzero_explicit(desc,
+			 sizeof(*desc) + crypto_shash_descsize(desc->tfm));
+}
+#endif
+#endif
+
 #ifndef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE
 static inline int atomic_dec_if_positive(atomic_t *v)
 {
