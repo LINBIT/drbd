@@ -2226,7 +2226,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		trim->size = cpu_to_be32(req->i.size);
 	} else {
 		if (peer_device->connection->integrity_tfm)
-			digest_size = crypto_hash_digestsize(peer_device->connection->integrity_tfm);
+			digest_size = crypto_ahash_digestsize(peer_device->connection->integrity_tfm);
 
 		if (req->master_bio->bi_rw & DRBD_REQ_WSAME) {
 			wsame = drbd_prepare_command(peer_device, sizeof(*wsame) + digest_size, DATA_STREAM);
@@ -2323,7 +2323,7 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	int digest_size;
 
 	digest_size = peer_device->connection->integrity_tfm ?
-		      crypto_hash_digestsize(peer_device->connection->integrity_tfm) : 0;
+		      crypto_ahash_digestsize(peer_device->connection->integrity_tfm) : 0;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
 
@@ -3123,11 +3123,11 @@ static void peer_ack_timer_fn(unsigned long data)
 
 void conn_free_crypto(struct drbd_connection *connection)
 {
-	crypto_free_hash(connection->csums_tfm);
-	crypto_free_hash(connection->verify_tfm);
-	crypto_free_hash(connection->cram_hmac_tfm);
-	crypto_free_hash(connection->integrity_tfm);
-	crypto_free_hash(connection->peer_integrity_tfm);
+	crypto_free_ahash(connection->csums_tfm);
+	crypto_free_ahash(connection->verify_tfm);
+	crypto_free_shash(connection->cram_hmac_tfm);
+	crypto_free_ahash(connection->integrity_tfm);
+	crypto_free_ahash(connection->peer_integrity_tfm);
 	kfree(connection->int_dig_in);
 	kfree(connection->int_dig_vv);
 

@@ -301,48 +301,54 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	BIO_ENDIO_FN_RETURN;
 }
 
-void drbd_csum_pages(struct crypto_hash *tfm, struct page *page, void *digest)
+void drbd_csum_pages(struct crypto_ahash *tfm, struct page *page, void *digest)
 {
-	struct hash_desc desc;
+	AHASH_REQUEST_ON_STACK(req, tfm);
 	struct scatterlist sg;
 
-	desc.tfm = tfm;
-	desc.flags = 0;
+	ahash_request_set_tfm(req, tfm);
+	ahash_request_set_callback(req, 0, NULL, NULL);
 
 	sg_init_table(&sg, 1);
-	crypto_hash_init(&desc);
+	crypto_ahash_init(req);
 
 	page_chain_for_each(page) {
 		unsigned off = page_chain_offset(page);
 		unsigned len = page_chain_size(page);
 		sg_set_page(&sg, page, len, off);
-		crypto_hash_update(&desc, &sg, sg.length);
+		ahash_request_set_crypt(req, &sg, NULL, sg.length);
+		crypto_ahash_update(req);
 	}
-	crypto_hash_final(&desc, digest);
+	ahash_request_set_crypt(req, NULL, digest, 0);
+	crypto_ahash_final(req);
+	ahash_request_zero(req);
 }
 
-void drbd_csum_bio(struct crypto_hash *tfm, struct bio *bio, void *digest)
+void drbd_csum_bio(struct crypto_ahash *tfm, struct bio *bio, void *digest)
 {
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
-	struct hash_desc desc;
+	AHASH_REQUEST_ON_STACK(req, tfm);
 	struct scatterlist sg;
 
-	desc.tfm = tfm;
-	desc.flags = 0;
+	ahash_request_set_tfm(req, tfm);
+	ahash_request_set_callback(req, 0, NULL, NULL);
 
 	sg_init_table(&sg, 1);
-	crypto_hash_init(&desc);
+	crypto_ahash_init(req);
 
 	bio_for_each_segment(bvec, bio, iter) {
 		sg_set_page(&sg, bvec BVD bv_page, bvec BVD bv_len, bvec BVD bv_offset);
-		crypto_hash_update(&desc, &sg, sg.length);
+		ahash_request_set_crypt(req, &sg, NULL, sg.length);
+		crypto_ahash_update(req);
 		/* REQ_WRITE_SAME has only one segment,
 		 * checksum the payload only once. */
 		if (bio->bi_rw & DRBD_REQ_WSAME)
 			break;
 	}
-	crypto_hash_final(&desc, digest);
+	ahash_request_set_crypt(req, NULL, digest, 0);
+	crypto_ahash_final(req);
+	ahash_request_zero(req);
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
@@ -360,7 +366,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))
 		goto out;
 
-	digest_size = crypto_hash_digestsize(peer_device->connection->csums_tfm);
+	digest_size = crypto_ahash_digestsize(peer_device->connection->csums_tfm);
 	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (digest) {
 		drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
@@ -1345,7 +1351,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 		 * a real fix would be much more involved,
 		 * introducing more locking mechanisms */
 		if (peer_device->connection->csums_tfm) {
-			digest_size = crypto_hash_digestsize(peer_device->connection->csums_tfm);
+			digest_size = crypto_ahash_digestsize(peer_device->connection->csums_tfm);
 			D_ASSERT(device, digest_size == di->digest_size);
 			digest = kmalloc(digest_size, GFP_NOIO);
 		}
@@ -1392,7 +1398,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	digest_size = crypto_hash_digestsize(peer_device->connection->verify_tfm);
+	digest_size = crypto_ahash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (!digest) {
@@ -1465,7 +1471,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	di = peer_req->digest;
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		digest_size = crypto_hash_digestsize(peer_device->connection->verify_tfm);
+		digest_size = crypto_ahash_digestsize(peer_device->connection->verify_tfm);
 		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
 			drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);
