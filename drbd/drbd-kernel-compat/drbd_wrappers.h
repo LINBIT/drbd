@@ -1612,4 +1612,11 @@ drbd_ib_create_cq(struct ib_device *device,
 #define rdma_create_id(NS, H, C, P, T) rdma_create_id(H, C, P, T)
 #endif
 
+#ifndef COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS
+/* Since linux v4.5 ib_query_device() is gone and device->query_device() is used
+ * device->query_device() exists for all interesting kernel versions,
+ * but the number of arguments got changed over time */
+#define query_device(D, A, U) query_device(D, A)
+#endif
+
 #endif
