@@ -1550,16 +1550,21 @@ static inline void inode_unlock(struct inode *inode)
 #endif
 
 #ifndef COMPAT_HAVE_SHASH_DESC_ZERO
+#ifndef barrier_data
+#define barrier_data(ptr) barrier()
+#endif
 static inline void ahash_request_zero(struct ahash_request *req)
 {
-	memzero_explicit(req, sizeof(*req) +
-			 crypto_ahash_reqsize(crypto_ahash_reqtfm(req)));
+	/* memzero_explicit(...) */
+	memset(req, 0, sizeof(*req) + crypto_ahash_reqsize(crypto_ahash_reqtfm(req)));
+	barrier_data(req);
 }
 
 static inline void shash_desc_zero(struct shash_desc *desc)
 {
-	memzero_explicit(desc,
-			 sizeof(*desc) + crypto_shash_descsize(desc->tfm));
+	/* memzero_explicit(...) */
+	memset(desc, 0, sizeof(*desc) + crypto_shash_descsize(desc->tfm));
+	barrier_data(desc);
 }
 #endif
 #endif
