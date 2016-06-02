@@ -5792,7 +5792,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 
 		if (device->disk_state[NOW] == D_NEGOTIATING) {
-			set_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags);
+			set_bit(NEGOTIATION_RESULT_TOUCHED, &resource->flags);
 			peer_device->negotiation_result = new_repl_state;
 		}
 	} else if (peer_state.role == R_PRIMARY &&

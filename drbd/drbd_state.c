@@ -264,7 +264,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr;
 
-	if (test_and_clear_bit(NEGOTIATION_RESULT_TOCHED, &resource->flags))
+	if (test_and_clear_bit(NEGOTIATION_RESULT_TOUCHED, &resource->flags))
 		return true;
 
 	if (resource->role[OLD] != resource->role[NEW] ||
