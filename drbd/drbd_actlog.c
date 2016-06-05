@@ -138,16 +138,16 @@ void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_b
 
 static int _drbd_md_sync_page_io(struct drbd_device *device,
 				 struct drbd_backing_dev *bdev,
-				 sector_t sector, int rw)
+				 sector_t sector, int op)
 {
 	struct bio *bio;
 	/* we do all our meta data IO in aligned 4k blocks. */
 	const int size = 4096;
-	int err;
+	int err, op_flags = 0;
 
-	if ((rw & WRITE) && !test_bit(MD_NO_FUA, &device->flags))
-		rw |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
-	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
+	if ((op == REQ_OP_WRITE) && !test_bit(MD_NO_FUA, &device->flags))
+		op_flags |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
+	op_flags |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
 
 #ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
@@ -164,9 +164,10 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 		goto out;
 	bio->bi_private = device;
 	bio->bi_end_io = drbd_md_endio;
-	bio->bi_rw = rw;
 
-	if (!(rw & WRITE) && device->state.disk == D_DISKLESS && device->ldev == NULL)
+	bio_set_op_attrs(bio, op, op_flags);
+
+	if (op != REQ_OP_WRITE && device->state.disk == D_DISKLESS && device->ldev == NULL)
 		/* special case, drbd_md_read() during drbd_adm_attach(): no get_ldev */
 		;
 	else if (!get_ldev_if_state(device, D_ATTACHING)) {
@@ -179,10 +180,10 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio_get(bio); /* one bio_put() is in the completion handler */
 	atomic_inc(&device->md_io.in_use); /* drbd_md_put_buffer() is in the completion handler */
 	device->md_io.submit_jif = jiffies;
-	if (drbd_insert_fault(device, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
+	if (drbd_insert_fault(device, (op == REQ_OP_WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
 		bio_endio(bio, -EIO);
 	else
-		submit_bio(rw, bio);
+		submit_bio(bio);
 	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
 	err = device->md_io.error;
 
@@ -194,7 +195,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 		/* Try again with no barrier */
 		drbd_warn(device, "Barriers not supported on meta data device - disabling\n");
 		set_bit(MD_NO_FUA, &device->flags);
-		rw &= ~DRBD_REQ_HARDBARRIER;
+		op_flags &= ~DRBD_REQ_HARDBARRIER;
 		bio_put(bio);
 		goto retry;
 	}
@@ -205,7 +206,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 }
 
 int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bdev,
-			 sector_t sector, int rw)
+			 sector_t sector, int op)
 {
 	int err;
 	D_ASSERT(device, atomic_read(&device->md_io.in_use) == 1);
@@ -218,19 +219,21 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 
 	dynamic_drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s) %pS\n",
 	     current->comm, current->pid, __func__,
-	     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ",
+	     (unsigned long long)sector, (op == REQ_OP_WRITE) ? "WRITE" : "READ",
 	     (void*)_RET_IP_ );
 
 	if (sector < drbd_md_first_sector(bdev) ||
 	    sector + 7 > drbd_md_last_sector(bdev))
 		drbd_alert(device, "%s [%d]:%s(,%llus,%s) out of range md access!\n",
 		     current->comm, current->pid, __func__,
-		     (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ");
+		     (unsigned long long)sector,
+		     (op == REQ_OP_WRITE) ? "WRITE" : "READ");
 
-	err = _drbd_md_sync_page_io(device, bdev, sector, rw);
+	err = _drbd_md_sync_page_io(device, bdev, sector, op);
 	if (err) {
 		drbd_err(device, "drbd_md_sync_page_io(,%llus,%s) failed with error %d\n",
-		    (unsigned long long)sector, (rw & WRITE) ? "WRITE" : "READ", err);
+		    (unsigned long long)sector,
+		    (op == REQ_OP_WRITE) ? "WRITE" : "READ", err);
 	}
 	return err;
 }
@@ -420,7 +423,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 		write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
 		rcu_read_unlock();
 		if (write_al_updates) {
-			if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
+			if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
 				err = -EIO;
 				drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 			} else {

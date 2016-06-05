@@ -82,7 +82,8 @@ int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 		}
 		ret = 0;
 		atomic_inc(&bb.done);
-		submit_bio(WRITE, bio);
+		bio_set_op_attrs(bio, REQ_OP_WRITE, 0);
+		submit_bio(bio);
 	}
 
 	/* Wait for bios in-flight */
