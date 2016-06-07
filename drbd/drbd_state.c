@@ -1274,6 +1274,9 @@ static void sanitize_state(struct drbd_resource *resource)
 		bool lost_connection = false;
 		int good_data_count[2] = { };
 
+		if (disk_state[OLD] == D_DISKLESS && disk_state[NEW] == D_DETACHING)
+			disk_state[NEW] = D_DISKLESS;
+
 		if ((resource->state_change_flags & CS_IGN_OUTD_FAIL) &&
 		    disk_state[OLD] < D_OUTDATED && disk_state[NEW] == D_OUTDATED)
 			disk_state[NEW] = disk_state[OLD];
