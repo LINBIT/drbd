@@ -1789,13 +1789,21 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
 				if (peer_device->bitmap_index != -1) {
+					enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
 					u32 mdf = device->ldev->md.peers[peer_device->node_id].flags;
+					/* Do NOT clear MDF_PEER_DEVICE_SEEN.
+					 * We want to be able to refuse a resize beyond "last agreed" size,
+					 * even if the peer is currently detached.
+					 */
 					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
 					if (repl_state[NEW] > L_OFF)
 						mdf |= MDF_PEER_CONNECTED;
-					if (peer_device->disk_state[NEW] <= D_OUTDATED &&
-					    peer_device->disk_state[NEW] >= D_INCONSISTENT)
-						mdf |= MDF_PEER_OUTDATED;
+					if (pdsk >= D_INCONSISTENT) {
+						if (pdsk <= D_OUTDATED)
+							mdf |= MDF_PEER_OUTDATED;
+						if (pdsk != D_UNKNOWN)
+							mdf |= MDF_PEER_DEVICE_SEEN;
+					}
 					if (peer_device->connection->fencing_policy != FP_DONT_CARE)
 						mdf |= MDF_PEER_FENCING;
 					if (mdf != device->ldev->md.peers[peer_device->node_id].flags) {
