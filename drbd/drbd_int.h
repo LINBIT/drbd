@@ -1144,7 +1144,10 @@ struct drbd_peer_device {
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
 	unsigned int max_bio_size;
-	sector_t max_size;  /* maximum disk size allowed by peer */
+	uint64_t d_size;  /* size of disk */
+	uint64_t u_size;  /* user requested size */
+	uint64_t c_size;  /* current exported size */
+	uint64_t max_size;
 	int bitmap_index;
 	int node_id;
 

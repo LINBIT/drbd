@@ -1754,10 +1754,16 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 
-			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) {
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
 				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+
+#if 0
+/* Why would I want to reset this?
+ * It is useful to not accidentally resize beyond end of backend of peer.
+ */
+			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED)
 				peer_device->max_size = 0;
-			}
+#endif
 
 			if (repl_state[OLD] == L_ESTABLISHED &&
 			    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
