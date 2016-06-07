@@ -213,12 +213,14 @@ void drbd_printk_with_wrong_object_type(void);
 #define drbd_debug(obj, fmt, args...)
 #endif
 
-extern struct ratelimit_state drbd_ratelimit_state;
 
-static inline int drbd_ratelimit(void)
-{
-	return __ratelimit(&drbd_ratelimit_state);
-}
+#define drbd_ratelimit() \
+({						\
+	static DEFINE_RATELIMIT_STATE(_rs,	\
+		DEFAULT_RATELIMIT_INTERVAL,	\
+		DEFAULT_RATELIMIT_BURST);	\
+	__ratelimit(&_rs);			\
+})
 
 #define D_ASSERT(x, exp)							\
 	do {									\
@@ -234,7 +236,7 @@ static inline int drbd_ratelimit(void)
  */
 #define expect(x, exp) ({							\
 		bool _bool = (exp);						\
-		if (!_bool)							\
+		if (!_bool && drbd_ratelimit())					\
 			drbd_err(x, "ASSERTION %s FAILED in %s\n",		\
 			        #exp, __func__);				\
 		_bool;								\
