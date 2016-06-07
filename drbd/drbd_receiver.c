@@ -4234,7 +4234,7 @@ static void drbd_setup_order_type(struct drbd_device *device, int peer)
 }
 
 /* warn if the arguments differ by more than 12.5% */
-static void warn_if_differ_considerably(struct drbd_device *device,
+static void warn_if_differ_considerably(struct drbd_peer_device *peer_device,
 	const char *s, sector_t a, sector_t b)
 {
 	sector_t d;
@@ -4242,7 +4242,7 @@ static void warn_if_differ_considerably(struct drbd_device *device,
 		return;
 	d = (a > b) ? (a - b) : (b - a);
 	if (d > (a>>3) || d > (b>>3))
-		drbd_warn(device, "Considerable difference in %s: %llus vs. %llus\n", s,
+		drbd_warn(peer_device, "Considerable difference in %s: %llus vs. %llus\n", s,
 		     (unsigned long long)a, (unsigned long long)b);
 }
 
@@ -4298,6 +4298,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	struct drbd_device *device;
 	struct p_sizes *p = pi->data;
 	struct o_qlim *o = (connection->agreed_features & DRBD_FF_WSAME) ? p->qlim : NULL;
+	uint64_t p_size, p_usize, p_csize, my_usize;
 	enum determine_dev_size dd = DS_UNCHANGED;
 	int ldsc = 0; /* local disk size changed */
 	enum dds_flags ddsf;
@@ -4324,9 +4325,11 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	 */
 	peer_device->max_size =
 		be64_to_cpu(p->c_size) ?: be64_to_cpu(p->u_size) ?: be64_to_cpu(p->d_size);
+	p_size = be64_to_cpu(p->d_size);
+	p_usize = be64_to_cpu(p->u_size);
+	p_csize = be64_to_cpu(p->c_size);
 
 	if (get_ldev(device)) {
-		sector_t p_usize = be64_to_cpu(p->u_size), my_usize;
 		sector_t new_size, cur_size;
 
 		have_ldev = true;
@@ -4335,9 +4338,14 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
 
-		warn_if_differ_considerably(device, "lower level device sizes",
-			   peer_device->max_size, drbd_get_max_capacity(device->ldev));
-		warn_if_differ_considerably(device, "user requested size",
+		drbd_info(peer_device, "la_size: %llu my_usize: %llu\n",
+			(unsigned long long)device->ldev->md.effective_size,
+			(unsigned long long)my_usize);
+
+		if (peer_device->disk_state[NOW] > D_DISKLESS)
+			warn_if_differ_considerably(peer_device, "lower level device sizes",
+				   p_size, drbd_get_max_capacity(device->ldev));
+		warn_if_differ_considerably(peer_device, "user requested size",
 					    p_usize, my_usize);
 
 		/* if this is the first connect, or an otherwise expected
