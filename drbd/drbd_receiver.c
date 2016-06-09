@@ -4387,6 +4387,14 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		if (peer_device->repl_state[NOW] == L_OFF)
 			p_usize = min_not_zero(my_usize, p_usize);
 
+		if (p_usize == 0) {
+			/* Peer may reset usize to zero only if it has a backend.
+			 * Because a diskless node has no disk config,
+			 * and always sends zero. */
+			if (p_size == 0)
+				p_usize = my_usize;
+		}
+
 		/* Never shrink a device with usable data during connect.
 		   But allow online shrinking if we are connected. */
 		new_size = drbd_new_dev_size(device, p_usize, 0);
@@ -4421,8 +4429,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			synchronize_rcu();
 			kfree(old_disk_conf);
 
-			drbd_info(device, "Peer sets u_size to %lu sectors\n",
-				 (unsigned long)my_usize);
+			drbd_info(peer_device, "Peer sets u_size to %llu sectors\n",
+				 (unsigned long long)p_usize);
 		}
 	}
 
@@ -4473,8 +4481,11 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 		rcu_read_unlock();
 		if (size != drbd_get_capacity(device->this_bdev)) {
+			char ppb[10];
 			should_send_sizes = true;
 			drbd_set_my_capacity(device, size);
+			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
+			     (unsigned long long)size >> 1);
 		}
 	}
 
