@@ -4561,6 +4561,13 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
 
+	if (new_repl_state == L_ESTABLISHED && peer_device->disk_state[NOW] == D_UP_TO_DATE &&
+	    peer_device->device->disk_state[NOW] == D_OUTDATED) {
+		/* No resync with up to date peer -> I should be up to date as well.*/
+		change_disk_state(peer_device->device, D_UP_TO_DATE, CS_VERBOSE);
+		return;
+	}
+
 	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
 	if ((rv == SS_NOTHING_TO_DO || rv == SS_RESYNC_RUNNING) &&
 	    (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)) {
