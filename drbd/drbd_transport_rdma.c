@@ -389,8 +389,6 @@ static struct rdma_conn_param dtr_conn_param = {
 	.retry_count = 10,
 };
 
-static struct workqueue_struct *dtr_work_queue;
-
 #define for_each_path_ref(path, m, transport)				\
 	for (path = __next_path_ref(&m, NULL, transport);		\
 	     path;							\
@@ -794,7 +792,7 @@ static void dtr_path_established(struct dtr_path *path)
 	cancel_delayed_work(&cs->work);
 
 	INIT_WORK(&cs->work.work, dtr_path_established_work_fn);
-	queue_work(dtr_work_queue, &cs->work.work);
+	schedule_work(&cs->work.work);
 }
 
 static void dtr_unprepare_path(struct dtr_path *path)
@@ -895,7 +893,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	ad->new_cm_id = new_cm_id;
 	ad->path = path;
 
-	queue_work(dtr_work_queue, &ad->work);
+	schedule_work(&ad->work);
 
 	return 0;
 }
@@ -952,7 +950,7 @@ static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "dtr_start_try_connect failed  %d\n", err);
-		queue_delayed_work(dtr_work_queue, &cs->work, HZ);
+		schedule_delayed_work(&cs->work, HZ);
 	}
 }
 
@@ -973,7 +971,7 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 	rcu_read_unlock();
 
 	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
-	queue_delayed_work(dtr_work_queue, &cs->work, connect_int);
+	schedule_delayed_work(&cs->work, connect_int);
 }
 
 static void dtr_cma_retry_connect(struct dtr_cm *cm)
@@ -982,7 +980,7 @@ static void dtr_cma_retry_connect(struct dtr_cm *cm)
 	struct dtr_connect_state *cs = &path->cs;
 
 	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
-	queue_work(dtr_work_queue, &cs->work.work);
+	schedule_work(&cs->work.work);
 }
 
 static void dtr_cma_connect_fail_work_fn(struct work_struct *work)
@@ -1026,7 +1024,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 		cd->cm = cm;
 		cd->path = path;
 
-		queue_work(dtr_work_queue, &cd->work);
+		schedule_work(&cd->work);
 		return;
 	}
 
@@ -1069,7 +1067,7 @@ static void dtr_cma_disconnect(struct dtr_path *path)
 
 	if (!delayed_work_pending(&cs->work)) {
 		INIT_WORK(&cs->work.work, dtr_cma_disconnect_work_fn);
-		queue_work(dtr_work_queue, &cs->work.work);
+		schedule_work(&cs->work.work);
 	} else {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 		tr_warn(transport, "not generating disconnect drbd event\n");
@@ -2829,12 +2827,6 @@ static int __init dtr_initialize(void)
 {
 	allocation_size = PAGE_SIZE;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
-	dtr_work_queue = create_singlethread_workqueue("drbd_rdma");
-#else
-	dtr_work_queue = system_wq;
-#endif
-
 	return drbd_register_transport_class(&rdma_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
 					     sizeof(struct drbd_transport));
@@ -2842,9 +2834,6 @@ static int __init dtr_initialize(void)
 
 static void __exit dtr_cleanup(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
-	destroy_workqueue(dtr_work_queue);
-#endif
 	drbd_unregister_transport_class(&rdma_transport_class);
 }
 
