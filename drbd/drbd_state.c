@@ -3149,6 +3149,13 @@ struct change_context {
 	bool change_local_state_last;
 };
 
+enum change_phase {
+	PH_LOCAL_COMMIT,
+	PH_PREPARE,
+	PH_84_COMMIT,
+	PH_COMMIT,
+};
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -3187,7 +3194,7 @@ struct change_context {
  * to have aborted.
  */
 static enum drbd_state_rv
-change_cluster_wide_state(bool (*change)(struct change_context *, bool),
+change_cluster_wide_state(bool (*change)(struct change_context *, enum change_phase),
 			  struct change_context *context)
 {
 	struct drbd_resource *resource = context->resource;
@@ -3204,10 +3211,10 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
 	if (local_state_change(context->flags)) {
 		/* Not a cluster-wide state change. */
-		change(context, false);
+		change(context, PH_LOCAL_COMMIT);
 		return end_state_change(resource, &irq_flags);
 	} else {
-		if (!change(context, true)) {
+		if (!change(context, PH_PREPARE)) {
 			/* Not a cluster-wide state change. */
 			return end_state_change(resource, &irq_flags);
 		}
@@ -3232,7 +3239,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 			kref_put(&connection->kref, drbd_destroy_connection);
 		}
 		if (rv >= SS_SUCCESS)
-			change(context, false);
+			change(context, PH_84_COMMIT);
 		return __end_state_change(resource, &irq_flags, rv);
 	}
 
@@ -3421,7 +3428,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, bool),
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 	if (rv >= SS_SUCCESS) {
-		change(context, false);
+		change(context, PH_COMMIT);
 		if (target_connection &&
 		    target_connection->peer_role[NOW] == R_UNKNOWN) {
 			enum drbd_role target_role =
@@ -3559,13 +3566,13 @@ static void __change_role(struct change_role_context *role_context)
 	}
 }
 
-static bool do_change_role(struct change_context *context, bool prepare)
+static bool do_change_role(struct change_context *context, enum change_phase phase)
 {
 	struct change_role_context *role_context =
 		container_of(context, struct change_role_context, context);
 
 	__change_role(role_context);
-	return !prepare ||
+	return phase != PH_PREPARE ||
 	       (context->resource->role[NOW] != R_PRIMARY &&
 		context->val.role == R_PRIMARY);
 }
@@ -3690,14 +3697,14 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 	return rv;
 }
 
-static bool do_change_from_consistent(struct change_context *context, bool prepare)
+static bool do_change_from_consistent(struct change_context *context, enum change_phase phase)
 {
 	struct drbd_resource *resource = context->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
 	u64 directly_reachable = directly_connected_nodes(resource, NEW) |
 		NODE_MASK(resource->res_opts.node_id);
 
-	if (reply->primary_nodes & ~directly_reachable) {
+	if (phase == PH_COMMIT && (reply->primary_nodes & ~directly_reachable)) {
 		__outdate_myself(resource);
 	} else {
 		struct drbd_device *device;
@@ -3709,7 +3716,7 @@ static bool do_change_from_consistent(struct change_context *context, bool prepa
 		}
 	}
 
-	return !prepare || reply->reachable_nodes != NODE_MASK(resource->res_opts.node_id);
+	return phase != PH_PREPARE || reply->reachable_nodes != NODE_MASK(resource->res_opts.node_id);
 }
 
 enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
@@ -3736,7 +3743,7 @@ struct change_disk_state_context {
 	struct drbd_device *device;
 };
 
-static bool do_change_disk_state(struct change_context *context, bool prepare)
+static bool do_change_disk_state(struct change_context *context, enum change_phase phase)
 {
 	struct drbd_device *device =
 		container_of(context, struct change_disk_state_context, context)->device;
@@ -3757,7 +3764,7 @@ static bool do_change_disk_state(struct change_context *context, bool prepare)
 		cluster_wide_state_change = true;
 	}
 	__change_disk_state(device, context->val.disk);
-	return !prepare || cluster_wide_state_change;
+	return phase != PH_PREPARE || cluster_wide_state_change;
 }
 
 enum drbd_state_rv change_disk_state(struct drbd_device *device,
@@ -3848,12 +3855,12 @@ struct change_cstate_context {
 	enum outdate_what outdate_what;
 };
 
-static bool do_change_cstate(struct change_context *context, bool prepare)
+static bool do_change_cstate(struct change_context *context, enum change_phase phase)
 {
 	struct change_cstate_context *cstate_context =
 		container_of(context, struct change_cstate_context, context);
 
-	if (prepare) {
+	if (phase == PH_PREPARE) {
 		cstate_context->outdate_what = OUTDATE_NOTHING;
 		if (context->val.conn == C_DISCONNECTING) {
 			cstate_context->outdate_what =
@@ -3876,7 +3883,7 @@ static bool do_change_cstate(struct change_context *context, bool prepare)
 				    context->val.conn,
 				    cstate_context->outdate_what);
 
-	if (!prepare && context->val.conn == C_DISCONNECTING) {
+	if (phase == PH_COMMIT && context->val.conn == C_DISCONNECTING) {
 		struct drbd_resource *resource = context->resource;
 		struct twopc_reply *reply = &resource->twopc_reply;
 		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
@@ -3886,7 +3893,7 @@ static bool do_change_cstate(struct change_context *context, bool prepare)
 			__outdate_myself(resource);
 	}
 
-	return !prepare ||
+	return phase != PH_PREPARE ||
 	       context->val.conn == C_CONNECTED ||
 	       (context->val.conn == C_DISCONNECTING &&
 		connection_has_connected_peer_devices(cstate_context->connection));
@@ -3950,7 +3957,7 @@ struct change_repl_context {
 	struct drbd_peer_device *peer_device;
 };
 
-static bool do_change_repl_state(struct change_context *context, bool prepare)
+static bool do_change_repl_state(struct change_context *context, enum change_phase phase)
 {
 	struct change_repl_context *repl_context =
 		container_of(context, struct change_repl_context, context);
@@ -3960,7 +3967,7 @@ static bool do_change_repl_state(struct change_context *context, bool prepare)
 
 	__change_repl_state(peer_device, new_repl_state);
 
-	return !prepare ||
+	return phase != PH_PREPARE ||
 		((repl_state[NOW] >= L_ESTABLISHED &&
 		  (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
 		 (repl_state[NOW] == L_ESTABLISHED &&
