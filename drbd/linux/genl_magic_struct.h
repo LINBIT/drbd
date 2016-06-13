@@ -13,8 +13,7 @@
 # error "you need to define GENL_MAGIC_INCLUDE_FILE before inclusion"
 #endif
 
-#include <linux/netlink.h>
-#include <linux/genetlink.h>
+#include <net/genetlink.h>
 #include <linux/types.h>
 #include "compat.h"
 
@@ -64,6 +63,15 @@ extern void CONCAT_(GENL_MAGIC_FAMILY, _genl_unregister)(void);
 
 /* MAGIC helpers							{{{2 */
 
+static inline int nla_put_u64_0pad(struct sk_buff *skb, int attrtype, u64 value)
+{
+#ifdef COMPAT_HAVE_NLA_PUT_64BIT
+	return nla_put_64bit(skb, attrtype, sizeof(u64), &value, 0);
+#else
+	return nla_put_u64(skb, attrtype, value);
+#endif
+}
+
 /* possible field types */
 #define __flg_field(attr_nr, attr_flag, name) \
 	__field(attr_nr, attr_flag, name, NLA_U8, char, \
@@ -88,7 +96,7 @@ extern void CONCAT_(GENL_MAGIC_FAMILY, _genl_unregister)(void);
 #endif
 #define __u64_field(attr_nr, attr_flag, name)	\
 	__field(attr_nr, attr_flag, name, NLA_U64, __u64, \
-			nla_get_u64, nla_put_u64, false)
+			nla_get_u64, nla_put_u64_0pad, false)
 #define __str_field(attr_nr, attr_flag, name, maxlen) \
 	__array(attr_nr, attr_flag, name, NLA_NUL_STRING, char, maxlen, \
 			nla_strlcpy, nla_put, false)
