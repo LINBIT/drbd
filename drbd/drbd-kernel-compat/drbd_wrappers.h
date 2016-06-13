@@ -694,6 +694,21 @@ enum {
 };
 #endif
 
+/* How do we tell the block layer to pass down flush/fua? */
+#ifndef COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE
+static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua)
+{
+#ifdef REQ_FLUSH
+/* Linux version 2.6.36 up to 4.7
+ * needs blk_queue_flush() to announce driver support */
+	blk_queue_flush(q, (enabled ? REQ_FLUSH : 0) | (fua ? REQ_FUA : 0));
+#else
+/* Older kernels either flag affected bios with BIO_RW_BARRIER, or do not know
+ * how to handle this at all. No need to "announce" driver support. */
+#endif
+}
+#endif
+
 /* REQ_* and BIO_RW_* flags have been moved around in the tree,
  * and have finally been "merged" with
  * 7b6d91daee5cac6402186ff224c3af39d79f4a0e and
