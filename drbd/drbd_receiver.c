@@ -4546,6 +4546,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 {
 	enum drbd_role peer_role = peer_device->connection->peer_role[NOW];
 	enum drbd_repl_state new_repl_state;
+	enum drbd_disk_state peer_disk_state;
 	int hg, rule_nr, peer_node_id;
 	enum drbd_state_rv rv;
 
@@ -4561,10 +4562,16 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
 
-	if (new_repl_state == L_ESTABLISHED && peer_device->disk_state[NOW] == D_UP_TO_DATE &&
+	peer_disk_state = peer_device->disk_state[NOW];
+	if (new_repl_state == L_ESTABLISHED && peer_disk_state >= D_CONSISTENT &&
 	    peer_device->device->disk_state[NOW] == D_OUTDATED) {
-		/* No resync with up to date peer -> I should be up to date as well.*/
-		change_disk_state(peer_device->device, D_UP_TO_DATE, CS_VERBOSE);
+		/* No resync with up-to-date peer -> I should be consistent or up-to-date as well.
+		   Note: Former unstable (but up-to-date) nodes become consistent for a short
+		   time after loosing their primary peer. Therefore consider consistent here
+		   as well. */
+		drbd_info(peer_device, "Upgrading local disk to %s after unstable (and no resync).\n",
+			  drbd_disk_str(peer_disk_state));
+		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE);
 		return;
 	}
 
