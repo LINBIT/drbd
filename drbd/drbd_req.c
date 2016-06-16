@@ -1290,7 +1290,7 @@ static bool may_do_writes(struct drbd_device *device)
 	return s.disk == D_UP_TO_DATE || s.pdsk == D_UP_TO_DATE;
 }
 
-#ifndef blk_queue_plugged
+#ifdef COMPAT_HAVE_BLK_PLUG_CB_DATA
 struct drbd_plug_cb {
 	struct blk_plug_cb cb;
 	struct drbd_request *most_recent_req;
