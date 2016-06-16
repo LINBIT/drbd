@@ -1647,6 +1647,10 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	unsigned long start_jif;
+#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
+	struct bio_list *current_bio_list = NULL;
+	struct bio_list my_on_stack_bl;
+#endif
 
 	/* We never supported BIO_RW_BARRIER.
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
@@ -1666,12 +1670,27 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
  * to not violate queue limits.
  */
 	blk_queue_split(q, &bio, q->bio_split);
+	if (current->bio_list && !bio_list_empty(current->bio_list)) {
+		bio_list_init(&my_on_stack_bl);
+		current_bio_list = current->bio_list;
+		current->bio_list = &my_on_stack_bl;
+	}
 #endif
 
 	start_jif = jiffies;
 
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_jif);
+
+#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
+	if (current_bio_list) {
+		/* REAL RECURSION */
+		current->bio_list = NULL;
+		while ((bio = bio_list_pop(&my_on_stack_bl)))
+			generic_make_request(bio);
+		current->bio_list = current_bio_list;
+	}
+#endif
 
 	MAKE_REQUEST_RETURN;
 }
