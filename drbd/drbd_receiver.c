@@ -6912,8 +6912,10 @@ int drbd_do_features(struct drbd_connection *connection)
 		}
 	}
 
-	drbd_info(connection, "Handshake successful: "
-	     "Agreed network protocol version %d\n", connection->agreed_pro_version);
+	drbd_info(connection, "Handshake to peer %d successful: "
+			"Agreed network protocol version %d\n",
+			connection->peer_node_id,
+			connection->agreed_pro_version);
 
 	drbd_info(connection, "Feature flags enabled on protocol level: 0x%x%s%s%s.\n",
 		  connection->agreed_features,
