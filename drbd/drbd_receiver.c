@@ -5159,6 +5159,38 @@ static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
 	return SS_NOTHING_TO_DO;
 }
 
+bool drbd_have_local_disk(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (device->disk_state[NOW] > D_DISKLESS) {
+			rcu_read_unlock();
+			return true;
+		}
+	}
+	rcu_read_unlock();
+	return false;
+}
+
+static enum drbd_state_rv
+far_away_change(struct drbd_resource *resource, union drbd_state mask,
+		union drbd_state val, struct twopc_reply *reply,
+		enum chg_state_flags flags)
+{
+	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
+	    resource->role[NEW] == R_PRIMARY) {
+		/* A node further away wants to become primary. In case I am
+		   primary allow it only when I am diskless. See
+		   also check_primaries_distances() in drbd_state.c */
+		if (drbd_have_local_disk(resource))
+			return SS_WEAKLY_CONNECTED;
+	}
+	return outdate_if_weak(resource, reply, flags);
+}
+
 enum csc_rv {
 	CSC_CLEAR,
 	CSC_REJECT,
@@ -5532,18 +5564,20 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		/* only indirectly connected */
 		affected_connection = NULL;
-		goto next;
 	}
 
     directly_connected:
 	if (reply->target_node_id != -1 &&
 	    reply->target_node_id != resource->res_opts.node_id) {
 		affected_connection = NULL;
-		goto next;
 	}
 
 	mask.i = be32_to_cpu(p->mask);
 	val.i = be32_to_cpu(p->val);
+
+	if (affected_connection && affected_connection->cstate[NOW] < C_CONNECTED &&
+	    mask.conn == 0)
+		affected_connection = NULL;
 
 	if (mask.conn == conn_MASK) {
 		u64 m = NODE_MASK(reply->initiator_node_id);
@@ -5556,7 +5590,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 	}
 
-	if (pi->vnr != -1) {
+	if (pi->vnr != -1 && affected_connection) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
 		/* If we do not know the peer_device, then we are fine with
 		   whatever is going on in the cluster. E.g. detach and del-minor
@@ -5565,7 +5599,6 @@ static int process_twopc(struct drbd_connection *connection,
 		affected_connection = NULL; /* It is intended for a peer_device! */
 	}
 
-    next:
 	if (pi->cmd == P_TWOPC_PREPARE) {
 		if ((mask.peer == role_MASK && val.peer == R_PRIMARY) ||
 		    (mask.peer != role_MASK && resource->role[NOW] == R_PRIMARY)) {
@@ -5603,7 +5636,7 @@ static int process_twopc(struct drbd_connection *connection,
 		rv = change_connection_state(affected_connection,
 					     mask, val, reply, flags | CS_IGN_OUTD_FAIL);
 	else
-		rv = outdate_if_weak(resource, reply, flags);
+		rv = far_away_change(resource, mask, val, reply, flags);
 
 	if (flags & CS_PREPARE) {
 		spin_lock_irq(&resource->req_lock);

@@ -3100,6 +3100,31 @@ static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
 	return rv;
 }
 
+static enum drbd_state_rv
+check_primaries_distances(struct drbd_resource *resource)
+{
+	struct twopc_reply *reply = &resource->twopc_reply;
+	u64 common_server;
+
+	/* All primaries directly connected. Good */
+	if (!(reply->primary_nodes & reply->weak_nodes))
+		return SS_SUCCESS;
+
+	/* For virtualisation setups with diskless hypervisors (R_PRIMARY) and one
+	   or multiple storage servers (R_SECONDAY) allow live-migration between the
+	   hypervisors. */
+	common_server = ~reply->weak_nodes;
+	if (common_server) {
+		/* Only allow if the new primary is diskless. See also far_away_change()
+		   in drbd_receiver.c for the diskless check on the other primary */
+		if ((reply->primary_nodes & NODE_MASK(resource->res_opts.node_id)) &&
+		    drbd_have_local_disk(resource))
+			return SS_WEAKLY_CONNECTED;
+
+		return SS_SUCCESS;
+	}
+	return SS_WEAKLY_CONNECTED;
+}
 long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 {
 	struct drbd_connection *connection;
@@ -3366,11 +3391,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 			if (context->mask.role == role_MASK && context->val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
 			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
-			    (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED)) {
-				/* All the primary nodes must be connected to each other. */
-				if (reply->primary_nodes & reply->weak_nodes)
-					rv = SS_WEAKLY_CONNECTED;
-			}
+			    (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED))
+				rv = check_primaries_distances(resource);
+
 			if (!(context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) ||
 			    (reply->reachable_nodes & reply->target_reachable_nodes)) {
 				/* The cluster is still connected after this

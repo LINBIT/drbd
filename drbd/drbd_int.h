@@ -2002,7 +2002,7 @@ extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *
 extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
 extern void queue_queued_twopc(struct drbd_resource *resource);
 extern void queued_twopc_timer_fn(unsigned long data);
-
+extern bool drbd_have_local_disk(struct drbd_resource *resource);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
