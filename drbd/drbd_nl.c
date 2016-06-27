@@ -3889,7 +3889,8 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	sector_t u_size;
 	int err;
 	struct drbd_peer_device *peer_device;
-	bool has_primary = false, resolve_by_node_id = true;
+	bool resolve_by_node_id = true;
+	bool has_up_to_date_primary;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -3927,18 +3928,28 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail_ldev;
 	}
 
-	has_primary = device->resource->role[NOW] == R_PRIMARY;
-	if (!has_primary) {
+	/* Maybe I could serve as sync source myself? */
+	has_up_to_date_primary =
+		device->resource->role[NOW] == R_PRIMARY &&
+		device->disk_state[NOW] == D_UP_TO_DATE;
+
+	if (!has_up_to_date_primary) {
 		for_each_peer_device(peer_device, device) {
-			if (peer_device->connection->peer_role[NOW] == R_PRIMARY) {
-				has_primary = true;
-				break;
-			}
-			if (peer_device->connection->agreed_pro_version < 111)
+			/* ignore unless connection is fully established */
+			if (peer_device->repl_state[NOW] < L_ESTABLISHED)
+				continue;
+			if (peer_device->connection->agreed_pro_version < 111) {
 				resolve_by_node_id = false;
+				if (peer_device->connection->peer_role[NOW] == R_PRIMARY
+				&&  peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+					has_up_to_date_primary = true;
+					break;
+				}
+			}
 		}
 	}
-	if (!has_primary && !resolve_by_node_id) {
+
+	if (!has_up_to_date_primary && !resolve_by_node_id) {
 		retcode = ERR_NO_PRIMARY;
 		goto fail_ldev;
 	}
