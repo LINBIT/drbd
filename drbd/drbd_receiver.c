@@ -5176,12 +5176,20 @@ bool drbd_have_local_disk(struct drbd_resource *resource)
 }
 
 static enum drbd_state_rv
-far_away_change(struct drbd_resource *resource, union drbd_state mask,
+far_away_change(struct drbd_connection *connection, union drbd_state mask,
 		union drbd_state val, struct twopc_reply *reply,
 		enum chg_state_flags flags)
 {
+	struct drbd_resource *resource = connection->resource;
+
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NEW] == R_PRIMARY) {
+		struct net_conf *nc;
+
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (!nc || !nc->two_primaries)
+			return SS_TWO_PRIMARIES;
+
 		/* A node further away wants to become primary. In case I am
 		   primary allow it only when I am diskless. See
 		   also check_primaries_distances() in drbd_state.c */
@@ -5636,7 +5644,7 @@ static int process_twopc(struct drbd_connection *connection,
 		rv = change_connection_state(affected_connection,
 					     mask, val, reply, flags | CS_IGN_OUTD_FAIL);
 	else
-		rv = far_away_change(resource, mask, val, reply, flags);
+		rv = far_away_change(connection, mask, val, reply, flags);
 
 	if (flags & CS_PREPARE) {
 		spin_lock_irq(&resource->req_lock);

@@ -3105,6 +3105,7 @@ check_primaries_distances(struct drbd_resource *resource)
 {
 	struct twopc_reply *reply = &resource->twopc_reply;
 	u64 common_server;
+	int node_id;
 
 	/* All primaries directly connected. Good */
 	if (!(reply->primary_nodes & reply->weak_nodes))
@@ -3120,6 +3121,26 @@ check_primaries_distances(struct drbd_resource *resource)
 		if ((reply->primary_nodes & NODE_MASK(resource->res_opts.node_id)) &&
 		    drbd_have_local_disk(resource))
 			return SS_WEAKLY_CONNECTED;
+
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			struct drbd_connection *connection;
+			struct net_conf *nc;
+			bool two_primaries;
+
+			if (!(common_server & NODE_MASK(node_id)))
+				continue;
+			connection = drbd_connection_by_node_id(resource, node_id);
+			if (!connection)
+				continue;
+
+			rcu_read_lock();
+			nc = rcu_dereference(connection->transport.net_conf);
+			two_primaries = nc ? nc->two_primaries : false;
+			rcu_read_unlock();
+
+			if (!two_primaries)
+				return SS_TWO_PRIMARIES;
+		}
 
 		return SS_SUCCESS;
 	}
