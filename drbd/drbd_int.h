@@ -1520,6 +1520,7 @@ extern void drbd_md_set_sector_offsets(struct drbd_device *device,
 				       struct drbd_backing_dev *bdev);
 extern void drbd_md_write(struct drbd_device *device, void *buffer);
 extern void drbd_md_sync(struct drbd_device *device);
+extern void drbd_md_sync_if_dirty(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_received_new_current(struct drbd_peer_device *, u64 , u64) __must_hold(local);
 extern void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);

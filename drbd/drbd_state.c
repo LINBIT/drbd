@@ -2732,7 +2732,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				/* In case we want to get something to stable storage still,
 				 * this may be the last chance.
 				 * Following put_ldev may transition to D_DISKLESS. */
-				drbd_md_sync(device);
+				drbd_md_sync_if_dirty(device);
 			}
 		}
 
@@ -2746,6 +2746,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_err(device,
 					"ASSERT FAILED: disk is %s while going diskless\n",
 					drbd_disk_str(device->disk_state[NOW]));
+
+			/* we may need to cancel the md_sync timer */
+			del_timer_sync(&device->md_sync_timer);
 
 			if (expect(device, device_state_change->have_ldev))
 				send_new_state_to_all_peer_devices(state_change, n_device);
@@ -2761,7 +2764,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] != D_CONSISTENT && disk_state[NEW] == D_CONSISTENT)
 			try_become_up_to_date = true;
 
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 	}
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)

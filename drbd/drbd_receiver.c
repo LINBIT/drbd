@@ -4454,7 +4454,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			err = -EIO;
 			goto out;
 		}
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 	} else {
 		struct drbd_peer_device *peer_device;
 		uint64_t size = 0;
@@ -4672,7 +4672,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 
 		drbd_uuid_detect_finished_resyncs(peer_device);
 
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
 	} else if (device->disk_state[NOW] < D_INCONSISTENT && !bad_server &&
 		   peer_device->current_uuid != device->exposed_data_uuid) {
@@ -5082,7 +5082,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 		drbd_send_sr_reply(connection, vnr, rv);
 		rv = change_peer_device_state(peer_device, mask, val, flags | CS_PREPARED);
 		if (rv >= SS_SUCCESS)
-			drbd_md_sync(peer_device->device);
+			drbd_md_sync_if_dirty(peer_device->device);
 	} else {
 		flags |= CS_IGN_OUTD_FAIL;
 		rv = change_connection_state(connection, mask, val, NULL, flags | CS_PREPARE);
@@ -5628,7 +5628,7 @@ static int process_twopc(struct drbd_connection *connection,
 		clear_remote_state_change(resource);
 
 		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
-			drbd_md_sync(peer_device->device);
+			drbd_md_sync_if_dirty(peer_device->device);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_ABORT)) {
 			struct drbd_device *device;

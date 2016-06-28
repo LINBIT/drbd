@@ -3931,10 +3931,11 @@ void drbd_md_write(struct drbd_device *device, void *b)
 }
 
 /**
- * drbd_md_sync() - Writes the meta data super block if the MD_DIRTY flag bit is set
- * @mdev:	DRBD device.
+ * __drbd_md_sync() - Writes the meta data super block (conditionally) if the MD_DIRTY flag bit is set
+ * @device:	DRBD device.
+ * @maybe:	meta data may in fact be "clean", the actual write may be skipped.
  */
-void drbd_md_sync(struct drbd_device *device)
+static void __drbd_md_sync(struct drbd_device *device, bool maybe)
 {
 	struct meta_data_on_disk_9 *buffer;
 
@@ -3945,7 +3946,7 @@ void drbd_md_sync(struct drbd_device *device)
 
 	del_timer(&device->md_sync_timer);
 	/* timer may be rearmed by drbd_md_mark_dirty() now. */
-	if (!test_and_clear_bit(MD_DIRTY, &device->flags))
+	if (!test_and_clear_bit(MD_DIRTY, &device->flags) && maybe)
 		return;
 
 	/* We use here D_FAILED and not D_ATTACHING because we try to write
@@ -3962,6 +3963,16 @@ void drbd_md_sync(struct drbd_device *device)
 	drbd_md_put_buffer(device);
 out:
 	put_ldev(device);
+}
+
+void drbd_md_sync(struct drbd_device *device)
+{
+	__drbd_md_sync(device, false);
+}
+
+void drbd_md_sync_if_dirty(struct drbd_device *device)
+{
+	__drbd_md_sync(device, true);
 }
 
 static int check_activity_log_stripe_size(struct drbd_device *device,

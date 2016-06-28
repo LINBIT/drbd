@@ -408,7 +408,7 @@ static void conn_md_sync(struct drbd_connection *connection)
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
 		rcu_read_unlock();
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
@@ -649,7 +649,7 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 	/* The helper may take some time.
 	 * write out any unsynced meta data changes now */
 	if (device)
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 	else if (connection)
 		conn_md_sync(connection);
 
@@ -1082,7 +1082,7 @@ retry:
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 		set_disk_ro(device->vdisk, role == R_SECONDARY);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
 			drbd_kobject_uevent(device);
@@ -2091,7 +2091,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	if (old_disk_conf->discard_zeroes_if_aligned != new_disk_conf->discard_zeroes_if_aligned)
 		drbd_reconsider_queue_parameters(device, device->ldev, NULL);
 
-	drbd_md_sync(device);
+	drbd_md_sync_if_dirty(device);
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
@@ -2672,7 +2672,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	else
 		device->ldev->md.current_uuid &= ~UUID_PRIMARY;
 
-	drbd_md_mark_dirty(device);
 	drbd_md_sync(device);
 
 	drbd_kobject_uevent(device);
@@ -2686,7 +2685,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	put_ldev(device);
  force_diskless:
 	change_disk_state(device, D_DISKLESS, CS_HARD);
-	drbd_md_sync(device);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_backing_dev_free(device, nbc);
@@ -4011,7 +4009,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 
 	ddsf = (rs.resize_force ? DDSF_FORCED : 0) | (rs.no_resync ? DDSF_NO_RESYNC : 0);
 	dd = drbd_determine_dev_size(device, ddsf, change_al_layout ? &rs : NULL);
-	drbd_md_sync(device);
+	drbd_md_sync_if_dirty(device);
 	put_ldev(device);
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
@@ -5101,7 +5099,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		end_state_change(device->resource, &irq_flags);
 	}
 
-	drbd_md_sync(device);
+	drbd_md_sync_if_dirty(device);
 out_dec:
 	put_ldev(device);
 out:

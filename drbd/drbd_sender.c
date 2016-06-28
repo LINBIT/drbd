@@ -1166,7 +1166,7 @@ out:
 	if (verify_done && peer_device->ov_left == 0)
 		peer_device->ov_start_sector = 0;
 
-	drbd_md_sync(device);
+	drbd_md_sync_if_dirty(device);
 
 	if (khelper_cmd)
 		drbd_khelper(device, connection, khelper_cmd);
@@ -2019,7 +2019,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 		if (repl_state == L_SYNC_TARGET)
 			mod_timer(&peer_device->resync_timer, jiffies);
 
-		drbd_md_sync(device);
+		drbd_md_sync_if_dirty(device);
 	}
 	put_ldev(device);
     out:
@@ -2101,7 +2101,7 @@ static void go_diskless(struct drbd_device *device)
 				for_each_peer_device_rcu(peer_device, device)
 					drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 				rcu_read_unlock();
-				drbd_md_sync(device);
+				drbd_md_sync_if_dirty(device);
 			}
 		}
 	}
