@@ -1362,19 +1362,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 	int remote, send_oos;
 	int count = 0;
 
-	/* Need to replicate writes.  Unless it is an empty flush,
-	 * which is better mapped to a DRBD P_BARRIER packet,
-	 * also for drbd wire protocol compatibility reasons.
-	 * If this was a flush, just start a new epoch.
-	 * Unless the current epoch was empty anyways, or we are not currently
-	 * replicating, in which case there is no point. */
-	if (unlikely(req->i.size == 0)) {
-		/* The only size==0 bios we expect are empty flushes. */
-		D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
-		_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
-		return 0;
-	}
-
 	for_each_peer_device(peer_device, device) {
 		remote = drbd_should_do_remote(peer_device, NOW);
 		send_oos = drbd_should_send_out_of_sync(peer_device);
@@ -1664,7 +1651,17 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			put_ldev(device);
 			goto nodata;
 		}
-		if (!drbd_process_write_request(req))
+		/* Need to replicate writes.  Unless it is an empty flush,
+		 * which is better mapped to a DRBD P_BARRIER packet,
+		 * also for drbd wire protocol compatibility reasons.
+		 * If this was a flush, just start a new epoch.
+		 * Unless the current epoch was empty anyways, or we are not currently
+		 * replicating, in which case there is no point. */
+		if (unlikely(req->i.size == 0)) {
+			/* The only size==0 bios we expect are empty flushes. */
+			D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
+			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
+		} else if (!drbd_process_write_request(req))
 			no_remote = true;
 		wake_all_senders(resource);
 	} else {
