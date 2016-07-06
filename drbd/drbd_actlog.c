@@ -774,7 +774,8 @@ static bool extent_in_sync(struct drbd_peer_device *peer_device, unsigned int rs
 			return true;
 		if (bm_e_weight(peer_device, rs_enr) == 0)
 			return true;
-	} else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE) {
+	} else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+		   peer_device->repl_state[NOW] == L_SYNC_TARGET) {
 		bool rv = false;
 
 		if (!drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr), false)) {
@@ -799,11 +800,7 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 	struct drbd_device *device = peer_device->device;
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
-	int peers = 1;
 	int size_sect;
-
-	if (peer_device->repl_state[NOW] != L_SYNC_SOURCE)
-		return;
 
 	if (peer_device->connection->agreed_pro_version < 110)
 		return;
@@ -813,7 +810,6 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 			continue;
 		if (extent_in_sync(p, rs_enr))
 			mask |= NODE_MASK(p->node_id);
-		peers++;
 	}
 
 	size_sect = min(BM_SECT_PER_EXT,
