@@ -357,6 +357,10 @@ static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
 #define drbd_unregister_blkdev unregister_blkdev
 #endif
 
+#ifndef barrier_data
+#define barrier_data(ptr) barrier()
+#endif
+
 #if !defined(CRYPTO_ALG_ASYNC)
 /* With Linux-2.6.19 the crypto API changed! */
 /* This is not a generic backport of the new api, it just implements
@@ -474,6 +478,67 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 	crypto_digest_final(desc->tfm->base, out);
 	return 0;
 }
+
+/* ... and the api changed once again ...
+ * Makes _our_ usage of it appear to work on RHEL 2.6.18.
+ * HACK! Certainly not a generic "backport" or compat layer! */
+
+#define crypto_ahash crypto_hash
+#define crypto_ahash_digestsize crypto_hash_digestsize
+#define crypto_alloc_ahash(name, dummy1, dummy2)	crypto_alloc_hash(name, dummy1, dummy2)
+#define crypto_alloc_shash(name, dummy1, dummy2)	crypto_alloc_hash(name, dummy1, dummy2)
+#define crypto_free_ahash crypto_free_hash
+#define crypto_free_shash crypto_free_hash
+
+#define AHASH_REQUEST_ON_STACK(name, tfm) \
+	struct hash_desc __##name##_desc;			\
+	struct hash_desc *name = (void*)&__##name##_desc
+
+#define ahash_request_set_tfm(req, tfm)	\
+	do { req->tfm = tfm; } while (0)
+#define ahash_request_set_callback(req, _flags, completion, data)	\
+	do { req->flags = _flags; } while (0)
+
+#define crypto_ahash_init(req)	crypto_hash_init(req)
+
+#define ahash_request_set_crypt(req, src, result, nbytes) do {	\
+		if (src)					\
+			crypto_hash_update(req, src, nbytes);	\
+		if (result)					\
+			crypto_hash_final(req, result);		\
+	} while (0)
+
+#define crypto_ahash_update(req)			do { } while (0)
+#define crypto_ahash_final(req)				do { } while (0)
+#define crypto_ahash_finup(req)				do { } while (0)
+
+static inline void hash_desc_zero(struct hash_desc *desc)
+{
+	memset(desc, 0, sizeof(*desc));
+	barrier_data(desc);
+}
+
+#define ahash_request_zero(req)		hash_desc_zero(req)
+#define shash_desc_zero(desc)		hash_desc_zero(desc)
+
+#define SHASH_DESC_ON_STACK(name, tfm) \
+	struct hash_desc __##name##_desc;			\
+	struct hash_desc *name = (void*)&__##name##_desc
+
+#define crypto_shash_setkey	crypto_hash_setkey
+#define crypto_shash_digestsize crypto_hash_digestsize
+
+#include <linux/scatterlist.h>
+static inline int crypto_shash_digest(struct hash_desc *desc, u8 *data,
+				      unsigned int len, u8 *out)
+{
+	struct scatterlist sg;
+	sg_init_table(&sg, 1);
+	sg_set_buf(&sg, data, len);
+	return crypto_hash_digest(desc, &sg, sg.length, out);
+}
+
+#define COMPAT_CRYPTO_BACKPORT_2_6_18_IN_USE 1
 
 #endif
 
@@ -1636,7 +1701,8 @@ static inline void inode_unlock(struct inode *inode)
 
 #if !(defined(COMPAT_HAVE_AHASH_REQEUST_ON_STACK) && \
 	defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&  \
-	defined COMPAT_HAVE_SHASH_DESC_ZERO)
+	defined(COMPAT_HAVE_SHASH_DESC_ZERO)) && \
+	!defined(COMPAT_CRYPTO_BACKPORT_2_6_18_IN_USE)
 #include <crypto/hash.h>
 
 #ifndef COMPAT_HAVE_AHASH_REQEUST_ON_STACK
@@ -1654,9 +1720,6 @@ static inline void inode_unlock(struct inode *inode)
 #endif
 
 #ifndef COMPAT_HAVE_SHASH_DESC_ZERO
-#ifndef barrier_data
-#define barrier_data(ptr) barrier()
-#endif
 static inline void ahash_request_zero(struct ahash_request *req)
 {
 	/* memzero_explicit(...) */
