@@ -1,11 +1,8 @@
-drbd8 (2:8.4.7-2) unstable; urgency=medium
+drbd8 (2:8.4.8-0rc1) unstable; urgency=medium
 
-  * compat: don't trigger BUG_ON on flush in kernel < 2.6.24 (e.g. RHEL 5)
-  * al_write_transaction: skip re-scanning of bitmap page pointer array.
-    Improves performance of random writes on "huge" volumes
-    by burning less CPU and avoiding CPU cache pressure.
+  * 8.4.8, New upstream release
 
- -- Lars Ellenberg <lars.ellenberg@linbit.com>  Fri, 19 Feb 2016 09:51:16 +0100
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Mon, 11 Jul 2016 10:35:54 +0200
 
 drbd8 (2:8.4.7-1) unstable; urgency=low
 
