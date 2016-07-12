@@ -1534,7 +1534,11 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 					peer_device->max_size,
 					drbd_disk_str(pdsk));
 
-			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
+			/* Note: in receive_sizes during connection handshake,
+			 * repl_state may still be L_OFF;
+			 * double check on cstate ... */
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED ||
+			    peer_device->connection->cstate[NOW] >= C_CONNECTED) {
 				/* If we still can see it, consider its last
 				 * known size, even if it may have meanwhile
 				 * detached from its disk.
