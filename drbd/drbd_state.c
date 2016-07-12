@@ -2342,6 +2342,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	struct drbd_resource *resource = resource_state_change->resource;
 	enum drbd_role *role = resource_state_change->role;
+	struct drbd_peer_device *send_state_others = NULL;
 	bool *susp_nod = resource_state_change->susp_nod;
 	bool *susp_fen = resource_state_change->susp_fen;
 	int n_device, n_connection;
@@ -2370,6 +2371,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			struct drbd_peer_device_state_change *peer_device_state_change =
 				&state_change->peer_devices[
 					n_device * state_change->n_connections + n_connection];
+			struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
 			enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
 
@@ -2381,6 +2383,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    repl_state[NEW] == L_ESTABLISHED)
 				resync_finished = true;
+
+			if (disk_state[OLD] == D_INCONSISTENT && disk_state[NEW] == D_UP_TO_DATE &&
+			    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE)
+				send_state_others = peer_device;
 		}
 
 		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
@@ -2590,6 +2596,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* Outdated myself, or became D_UP_TO_DATE tell peers */
 			if (disk_state[OLD] >= D_OUTDATED && disk_state[NEW] >= D_OUTDATED &&
 			    disk_state[NEW] != disk_state[OLD] && repl_state[NEW] >= L_ESTABLISHED)
+				send_state = true;
+
+			/* Skipped resync with peer_device, tell others... */
+			if (send_state_others && send_state_others != peer_device)
 				send_state = true;
 
 			/* This triggers bitmap writeout of potentially still unwritten pages
