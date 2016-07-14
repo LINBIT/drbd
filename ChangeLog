@@ -2,6 +2,34 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.3-1 (api:genl2/proto:86-111/transport:14)
+--------
+ * fix a deadlock in try_become_up_to_date()
+ * fix an unintended overlay of an internal peer device flag and a device flag
+   The bug manifested itself that sometimes DRBD forgot to create a new
+   current UUID
+ * Create a new current UUID when the peer's disk breaks, do not wait
+   for a following write
+ * In case of an auto-promote event with no up-to-date data present wait
+   also wait for an connection with an up-to-date data peer for the time
+   of the auto-promote-timeout
+ * mark permanently diskless nodes in the meta-data of all nodes
+ * rework online resizing
+ * fix a reace condition that triggered a BUG() because it called
+   add_timer() twice for the same timer object
+ * fix multiple causes of outdated disks not becomming up-to-date
+   after no longer being weakly connected
+ * removed a use of an uninitialized value that might lead to an
+   unexpected outdate of the local disk upon disconnect
+ * found and fixed why sometimes a P_TWOPC_ABORT packet did not reached
+   all nodes of a cluster; that was the reason for hanging two-phase
+   commits
+ * Allow multiple diskless primaries if they are connected to a common
+   secondary that has a disk
+ * empty flush requests no longer trigger a bogus "IO ERROR" log entry
+ * restored the new-current-uuid --clear-bitmap functionality to skip
+   the initial resync
+
 9.0.2-1 (api:genl2/proto:86-111/transport:14)
 --------
  * Fix list walks on the transfer log; Lead to crashes in _tl_restart()
