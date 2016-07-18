@@ -775,6 +775,8 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	path->path.established = true;
 	drbd_path_event(transport, &path->path);
 
+	path->cm->state = CONNECTED;
+
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
 	if (p > PCS_INACTIVE)
@@ -1128,7 +1130,10 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 	case RDMA_CM_EVENT_ESTABLISHED:
 		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
-		cm_context->state = CONNECTED;
+		/* cm_context->state = CONNECTED; is set later in the work item */
+
+		/* This is called for active and passive connections */
+
 		dtr_path_established(cm_context->path);
 		break;
 
