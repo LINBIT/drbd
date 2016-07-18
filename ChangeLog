@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
-8.4.8-0rc1 (api:genl1/proto:86-101)
+8.4.8-1 (api:genl1/proto:86-101)
 -------
  * compat fixes for linux kernels up to 4.7
  * fix potential deadlock with many parallel request on kernels >= 4.3

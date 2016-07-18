@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
 Version: 8.4.8
-Release: 0rc1%{?dist}
+Release: 1%{?dist}
 %global tarball_version %(echo "%{version}-%{?release}" | sed -e "s,%{?dist}$,,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
 License: GPLv2+
@@ -98,7 +98,7 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
-* Mon Jul 11 2016  Lars Ellenberg <lars@linbit.com> - 8.4.8-0rc1
+* Mon Jul 18 2016  Lars Ellenberg <lars@linbit.com> - 8.4.8-1
 - New upstream release.
 
 * Wed Dec 16 2015  Philipp Reisner <phil@linbit.com> - 8.4.7-1
