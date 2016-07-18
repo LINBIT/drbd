@@ -834,6 +834,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
+		rdma_reject(new_cm_id, NULL, 0);
 		dtr_free_cm(cm);
 		return;
 	}
