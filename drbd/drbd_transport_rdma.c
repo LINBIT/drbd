@@ -212,6 +212,7 @@ struct dtr_flow {
 enum connect_state_enum {
 	PCS_INACTIVE,
 	PCS_REQUEST_ABORT,
+	PCS_FINISHING = PCS_REQUEST_ABORT,
 	PCS_CONNECTING,
 };
 
@@ -755,6 +756,11 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	int i, p, err;
 
+
+	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
+	if (p < PCS_CONNECTING)
+		return;
+
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		__dtr_refill_rx_desc(path, i);
 	err = dtr_send_flow_control_msg(path);
@@ -788,6 +794,9 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 static void dtr_path_established(struct dtr_path *path)
 {
 	struct dtr_connect_state *cs = &path->cs;
+
+	if (atomic_read(&cs->passive_state) < PCS_CONNECTING)
+		return;
 
 	/* In case we came here, since a passive side was established, we
 	   might need to cancel the delayed work for the active connect tries */
@@ -2150,26 +2159,38 @@ static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
-	enum connect_state_enum p;
+	enum connect_state_enum a, p;
 	long t;
 	int err;
 
 	if (!path)
 		return;
 
-	p = atomic_xchg(&path->cs.passive_state, PCS_INACTIVE);
-	if (p > PCS_INACTIVE)
-		drbd_put_listener(&path->cs.waiter);
+	a = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
+	p = atomic_cmpxchg(&path->cs.passive_state, PCS_CONNECTING, PCS_INACTIVE);
 
-	p = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
 	switch (p) {
+	case PCS_CONNECTING:
+		drbd_put_listener(&path->cs.waiter);
+		break;
+	case PCS_FINISHING:
+		t = wait_event_timeout(path->cs.wq,
+				       atomic_read(&path->cs.passive_state) == PCS_INACTIVE,
+				       HZ * 60);
+		if (t == 0)
+			pr_warn("passive_state still %d\n", atomic_read(&path->cs.passive_state));
+	case PCS_INACTIVE:
+		break;
+	}
+
+	switch (a) {
 	case PCS_CONNECTING:
 		if (delayed_work_pending(&path->cs.work))
 			mod_timer_pending(&path->cs.work.timer, 1);
 	case PCS_REQUEST_ABORT:
 		t = wait_event_timeout(path->cs.wq,
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
-				       HZ);
+				       HZ * 60);
 		if (t == 0)
 			pr_warn("active_state still %d\n", atomic_read(&path->cs.active_state));
 	case PCS_INACTIVE:
