@@ -1339,6 +1339,19 @@ static void dtr_got_flow_control_msg(struct dtr_path *path,
 	}
 }
 
+static bool higher_in_sequence(unsigned int higher, unsigned int base)
+{
+	/*
+	  SEQUENCE Arithmetic: By looking at the most signifficant bit of
+	  the reduced word size we find out if the difference is positive.
+	  The difference is necessary to deal with the overflow in the
+	  sequence number space.
+	 */
+	unsigned int diff = higher - base;
+
+	return !(diff & (1 << (SEQUENCE_BITS - 1)));
+}
+
 static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 				 struct drbd_rdma_rx_desc *rx_desc)
 {
@@ -1346,7 +1359,7 @@ static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	unsigned int seq = rx_desc->sequence;
 
 	list_for_each_entry_reverse(pos, &rdma_stream->rx_descs, list) {
-		if (seq > pos->sequence) {
+		if (higher_in_sequence(seq, pos->sequence)) { /* think: seq > pos->sequence */
 			list_add(&rx_desc->list, &pos->list);
 			return;
 		}
