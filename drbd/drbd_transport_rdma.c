@@ -281,6 +281,12 @@ struct drbd_rdma_transport {
 	int rx_allocation_size;
 	bool active; /* connect() returned no error. I.e. C_CONNECTING or C_CONNECTED */
 
+	/* per transport rate limit state for diagnostic messages.
+	 * maybe: one for debug, one for warning, one for error?
+	 * maybe: move into generic drbd_transport an tr_{warn,err,debug}().
+	 */
+	struct ratelimit_state rate_limit;
+
 	atomic_t first_path_connect_err;
 	struct completion connected;
 };
@@ -449,6 +455,8 @@ static int dtr_init(struct drbd_transport *transport)
 
 	rdma_transport->rx_allocation_size = allocation_size;
 	rdma_transport->active = false;
+
+	ratelimit_state_init(&rdma_transport->rate_limit, 5*HZ, 4);
 
 	return 0;
 }
@@ -1395,14 +1403,28 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
-		tr_warn(transport,
-			"wc.status = %d (%s), wc.opcode = %d (%s)\n",
-			wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
-			wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+		switch (wc.status) {
+		case IB_WC_WR_FLUSH_ERR:
+			/* "Work Request Flushed Error: A Work Request was in
+			 * process or outstanding when the QP transitioned into
+			 * the Error State."
+			 *
+			 * Which is not entirely unexpected...
+			 */
+			break;
 
-		tr_warn(transport,
-			"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-			wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+		default:
+			if (__ratelimit(&rdma_transport->rate_limit)) {
+				tr_warn(transport,
+					"wc.status = %d (%s), wc.opcode = %d (%s)\n",
+					wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
+					wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+
+				tr_warn(transport,
+					"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
+					wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+			}
+		}
 
 		path->cm->state = ERROR;
 
