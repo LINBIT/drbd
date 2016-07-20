@@ -996,7 +996,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		nc = rcu_dereference(connection->transport.net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
-		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] == R_SECONDARY && !two_primaries) {
+		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] != R_PRIMARY && !two_primaries) {
+			if (role[NOW] == R_PRIMARY)
+				return SS_TWO_PRIMARIES;
 			idr_for_each_entry(&resource->devices, device, vnr) {
 				if (device->open_ro_cnt)
 					return SS_PRIMARY_READER;
