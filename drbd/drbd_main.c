@@ -998,6 +998,12 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	if (size == 0)
 		return 0;
 
+	if (drbd_stream == DATA_STREAM) {
+		rcu_read_lock();
+		connection->transport.ko_count = rcu_dereference(connection->transport.net_conf)->ko_count;
+		rcu_read_unlock();
+	}
+
 	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, msg_flags);
