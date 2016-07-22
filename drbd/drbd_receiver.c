@@ -4354,7 +4354,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	/* Ignore "current" size for calculating "max" size. */
 	/* If it used to have a disk, but now is detached, don't revert back to zero. */
-	peer_device->max_size = min_not_zero(p_size ?: peer_device->max_size, p_usize);
+	if (p_size)
+		peer_device->max_size = p_size;
 
 	drbd_info(device, "current_size: %llu\n", (unsigned long long)drbd_get_capacity(device->this_bdev));
 	drbd_info(peer_device, "c_size: %llu u_size: %llu d_size: %llu max_size: %llu\n",
@@ -4372,9 +4373,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
 
-		drbd_info(peer_device, "la_size: %llu my_usize: %llu\n",
+		drbd_info(peer_device, "la_size: %llu my_usize: %llu my_max_size: %llu\n",
 			(unsigned long long)device->ldev->md.effective_size,
-			(unsigned long long)my_usize);
+			(unsigned long long)my_usize,
+			(unsigned long long)drbd_get_max_capacity(device->ldev));
 
 		if (peer_device->disk_state[NOW] > D_DISKLESS)
 			warn_if_differ_considerably(peer_device, "lower level device sizes",
@@ -4431,6 +4433,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 			drbd_info(peer_device, "Peer sets u_size to %llu sectors\n",
 				 (unsigned long long)p_usize);
+			should_send_sizes = true;
 		}
 	}
 
