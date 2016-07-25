@@ -19,6 +19,7 @@
 
 static struct dentry *drbd_debugfs_root;
 static struct dentry *drbd_debugfs_version;
+static struct dentry *drbd_debugfs_refcounts;
 static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
 
@@ -1474,6 +1475,27 @@ static const struct file_operations drbd_version_fops = {
 	.release = single_release,
 };
 
+static int drbd_refcounts_show(struct seq_file *m, void *ignored)
+{
+	seq_printf(m, "v: %u\n\n", 0);
+
+	print_kref_debug_info(m);
+	return 0;
+}
+
+static int drbd_refcounts_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, drbd_refcounts_show, NULL);
+}
+
+static const struct file_operations drbd_refcounts_fops = {
+	.owner = THIS_MODULE,
+	.open = drbd_refcounts_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = single_release,
+};
+
 /* not __exit, may be indirectly called
  * from the module-load-failure path as well. */
 void drbd_debugfs_cleanup(void)
@@ -1481,6 +1503,7 @@ void drbd_debugfs_cleanup(void)
 	drbd_debugfs_remove(&drbd_debugfs_resources);
 	drbd_debugfs_remove(&drbd_debugfs_minors);
 	drbd_debugfs_remove(&drbd_debugfs_version);
+	drbd_debugfs_remove(&drbd_debugfs_refcounts);
 	drbd_debugfs_remove(&drbd_debugfs_root);
 }
 
@@ -1497,6 +1520,11 @@ int __init drbd_debugfs_init(void)
 	if (IS_ERR_OR_NULL(dentry))
 		goto fail;
 	drbd_debugfs_version = dentry;
+
+	dentry = debugfs_create_file("reference_counts", 0444, drbd_debugfs_root, NULL, &drbd_refcounts_fops);
+	if (IS_ERR_OR_NULL(dentry))
+		goto fail;
+	drbd_debugfs_refcounts = dentry;
 
 	dentry = debugfs_create_dir("resources", drbd_debugfs_root);
 	if (IS_ERR_OR_NULL(dentry))
