@@ -954,6 +954,7 @@ BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	clear_bit(FLUSH_PENDING, &device->flags);
 	put_ldev(device);
+	kref_debug_put(&device->kref_debug, 7);
 	kref_put(&device->kref, drbd_destroy_device);
 
 	if (atomic_dec_and_test(&ctx->pending))
@@ -977,6 +978,7 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 
 		ctx->error = -ENOMEM;
 		put_ldev(device);
+		kref_debug_put(&device->kref_debug, 7);
 		kref_put(&device->kref, drbd_destroy_device);
 		return;
 	}
@@ -1011,6 +1013,7 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 			if (!get_ldev(device))
 				continue;
 			kref_get(&device->kref);
+			kref_debug_get(&device->kref_debug, 7);
 			rcu_read_unlock();
 
 			submit_one_flush(device, &ctx);
@@ -5294,6 +5297,7 @@ static int queue_twopc(struct drbd_connection *connection, struct twopc_reply *t
 	q->packet_info = *pi;
 	q->packet_info.data = &q->packet_data;
 	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 16);
 	q->connection = connection;
 	q->start_jif = jiffies;
 
@@ -5325,6 +5329,7 @@ static int queued_twopc_work(struct drbd_work *w, int cancel)
 		process_twopc(connection, &q->reply, &q->packet_info, q->start_jif);
 	}
 
+	kref_debug_put(&connection->kref_debug, 16);
 	kref_put(&connection->kref, drbd_destroy_connection);
 	kfree(q);
 
@@ -7990,6 +7995,7 @@ void drbd_send_acks_wf(struct work_struct *ws)
 	if (tcp_cork)
 		drbd_cork(connection, CONTROL_STREAM);
 	err = drbd_finish_peer_reqs(peer_device);
+	kref_debug_put(&device->kref_debug, 8);
 	kref_put(&device->kref, drbd_destroy_device);
 	/* get is in drbd_endio_write_sec_final(). That is necessary to keep the
 	   struct work_struct send_acks_work alive, which is in the peer_device object */

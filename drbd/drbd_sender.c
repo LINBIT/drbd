@@ -181,8 +181,11 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 
 	if (connection->cstate[NOW] == C_CONNECTED) {
 		kref_get(&device->kref); /* put is in drbd_send_acks_wf() */
-		if (!queue_work(connection->ack_sender, &peer_device->send_acks_work))
+		kref_debug_get(&device->kref_debug, 8);
+		if (!queue_work(connection->ack_sender, &peer_device->send_acks_work)) {
+			kref_debug_put(&device->kref_debug, 8);
 			kref_put(&device->kref, drbd_destroy_device);
+		}
 	}
 	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 

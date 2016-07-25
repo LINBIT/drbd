@@ -5,7 +5,7 @@
 
 #ifdef CONFIG_KREF_DEBUG
 
-#define KREF_DEBUG_HOLDER_MAX 16
+#define KREF_DEBUG_HOLDER_MAX 20
 
 extern struct list_head kref_debug_objects;
 extern spinlock_t kref_debug_lock;
