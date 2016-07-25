@@ -105,12 +105,14 @@ void print_kref_debug_info(struct seq_file *seq)
 	spin_lock_irq(&kref_debug_lock);
 	list_for_each_entry(debug_info, &kref_debug_objects, objects) {
 		int debug_refs, refs;
+		char obj_name[80];
 
 		debug_refs = number_of_debug_refs(debug_info);
 		refs = atomic_read(&debug_info->kref->refcount);
+		debug_info->class->get_object_name(debug_info, obj_name);
 
-		seq_printf(seq, "object of class: %s (r = %d, dr = %d)\n",
-			   debug_info->class->name, refs, debug_refs);
+		seq_printf(seq, "class: %s, name: %s, refs: %d, dr: %d\n",
+			   debug_info->class->name, obj_name, refs, debug_refs);
 		for (i = 0; i < KREF_DEBUG_HOLDER_MAX; i++) {
 			if (debug_info->holders[i] == 0)
 				continue;

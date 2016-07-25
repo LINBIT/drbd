@@ -10,8 +10,11 @@
 extern struct list_head kref_debug_objects;
 extern spinlock_t kref_debug_lock;
 
+struct kref_debug_info;
+
 struct kref_debug_class {
 	const char *name;
+	void (*get_object_name)(const struct kref_debug_info *, char *);
 	const char *holder_name[KREF_DEBUG_HOLDER_MAX];
 };
 
