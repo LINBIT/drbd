@@ -1604,7 +1604,7 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
 		DDUMP_LLU(device, la_size);
 		p_size = min_not_zero(p_size, m_size);
 		if (p_size > la_size)
-			drbd_warn(device, "Resize while not connected was forced by the user!\n");
+			drbd_warn(device, "Resize forced while not fully connected!\n");
 	} else {
 		DDUMP_LLU(device, p_size);
 		DDUMP_LLU(device, m_size);
