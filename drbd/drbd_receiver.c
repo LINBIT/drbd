@@ -667,6 +667,8 @@ int connect_work(struct drbd_work *work, int cancel)
 	if (rv >= SS_SUCCESS) {
 		conn_connect2(connection);
 	} else if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+		if (connection->cstate[NOW] != C_CONNECTING)
+			goto out_put;
 		connection->connect_timer.expires = jiffies + HZ/20;
 		add_timer(&connection->connect_timer);
 		return 0; /* Return early. Keep the reference on the connection! */
