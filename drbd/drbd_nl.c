@@ -4031,7 +4031,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 			if (dd == DS_GREW)
 				set_bit(RESIZE_PENDING, &peer_device->flags);
 			drbd_send_uuids(peer_device, 0, 0);
-			drbd_send_sizes(peer_device, 1, ddsf);
+			drbd_send_sizes(peer_device, rs.resize_size, ddsf);
 		}
 	}
 
