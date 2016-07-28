@@ -1464,8 +1464,11 @@ static inline unsigned int device_to_minor(struct drbd_device *device)
 /* drbd_main.c */
 
 enum dds_flags {
-	DDSF_FORCED    = 1,
+	/* This enum is part of the wire protocol!
+	 * See P_SIZES, struct p_sizes; */
+	DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE    = 1,
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
+	DDSF_IGNORE_PEER_CONSTRAINTS = 4,
 };
 
 extern int  drbd_thread_start(struct drbd_thread *thi);
@@ -1848,7 +1851,10 @@ enum suspend_scope {
 extern void drbd_suspend_io(struct drbd_device *device, enum suspend_scope);
 extern void drbd_resume_io(struct drbd_device *device);
 extern char *ppsize(char *buf, unsigned long long size);
-extern sector_t drbd_new_dev_size(struct drbd_device *, sector_t, int) __must_hold(local);
+extern sector_t drbd_new_dev_size(struct drbd_device *,
+		sector_t current_size, /* need at least this much */
+		sector_t user_capped_size, /* want (at most) this much */
+		enum dds_flags flags) __must_hold(local);
 enum determine_dev_size {
 	DS_ERROR_SHRINK = -3,
 	DS_ERROR_SPACE_MD = -2,
@@ -1859,7 +1865,8 @@ enum determine_dev_size {
 	DS_GREW_FROM_ZERO = 3,
 };
 extern enum determine_dev_size
-drbd_determine_dev_size(struct drbd_device *, enum dds_flags, struct resize_parms *) __must_hold(local);
+drbd_determine_dev_size(struct drbd_device *, sector_t peer_current_size,
+			enum dds_flags, struct resize_parms *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_peer_device *);
 extern void drbd_reconsider_queue_parameters(struct drbd_device *device,
 			struct drbd_backing_dev *bdev, struct o_qlim *o);

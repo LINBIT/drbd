@@ -1322,7 +1322,8 @@ static bool effective_disk_size_determined(struct drbd_device *device)
  * You should call drbd_md_sync() after calling this function.
  */
 enum determine_dev_size
-drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct resize_parms *rs) __must_hold(local)
+drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
+			enum dds_flags flags, struct resize_parms *rs) __must_hold(local)
 {
 	struct md_offsets_and_sizes {
 		u64 effective_size;
@@ -1378,7 +1379,7 @@ drbd_determine_dev_size(struct drbd_device *device, enum dds_flags flags, struct
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
-	size = drbd_new_dev_size(device, u_size, flags & DDSF_FORCED);
+	size = drbd_new_dev_size(device, peer_current_size, u_size, flags);
 
 	if (size < prev.effective_size) {
 		if (rs && u_size == 0) {
@@ -1583,7 +1584,10 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 
 /* MUST hold a reference on ldev. */
 sector_t
-drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_has_space) __must_hold(local)
+drbd_new_dev_size(struct drbd_device *device,
+		sector_t current_size, /* need at least this much */
+		sector_t user_capped_size, /* want (at most) this much */
+		enum dds_flags flags) __must_hold(local)
 {
 	uint64_t p_size = 0;
 	uint64_t la_size = device->ldev->md.effective_size; /* last agreed size */
@@ -1602,7 +1606,7 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
 		DDUMP_LLU(device, p_size);
 		DDUMP_LLU(device, m_size);
 		p_size = min_not_zero(p_size, m_size);
-	} else if (assume_peer_has_space) {
+	} else if (flags & DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE) {
 		DDUMP_LLU(device, p_size);
 		DDUMP_LLU(device, m_size);
 		DDUMP_LLU(device, la_size);
@@ -1625,13 +1629,18 @@ drbd_new_dev_size(struct drbd_device *device, sector_t u_size, int assume_peer_h
 	if (size == 0)
 		drbd_err(device, "All nodes diskless!\n");
 
-	if (u_size) {
-		if (u_size > size)
-			drbd_err(device, "Requested disk size is too big (%lu > %lu)kiB\n",
-			    (unsigned long)u_size>>1, (unsigned long)size>>1);
-		else
-			size = u_size;
+	if (flags & DDSF_IGNORE_PEER_CONSTRAINTS) {
+		if (current_size > size
+		&&  current_size <= m_size)
+			size = current_size;
 	}
+
+	if (user_capped_size > size)
+		drbd_err(device, "Requested disk size is too big (%llu > %llu)kiB\n",
+		    (unsigned long long)user_capped_size>>1,
+		    (unsigned long long)size>>1);
+	else if (user_capped_size)
+		size = user_capped_size;
 
 	return size;
 }
@@ -2577,7 +2586,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Prevent shrinking of consistent devices ! */
 	{
-	unsigned long long nsz = drbd_new_dev_size(device, device->ldev->disk_conf->disk_size, 0);
+	unsigned long long nsz = drbd_new_dev_size(device, 0, device->ldev->disk_conf->disk_size, 0);
 	unsigned long long eff = device->ldev->md.effective_size;
 	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT) && nsz < eff) {
 		drbd_warn(device,
@@ -2625,7 +2634,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	}
 
-	dd = drbd_determine_dev_size(device, 0, NULL);
+	dd = drbd_determine_dev_size(device, 0, 0, NULL);
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
@@ -4007,8 +4016,9 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		new_disk_conf = NULL;
 	}
 
-	ddsf = (rs.resize_force ? DDSF_FORCED : 0) | (rs.no_resync ? DDSF_NO_RESYNC : 0);
-	dd = drbd_determine_dev_size(device, ddsf, change_al_layout ? &rs : NULL);
+	ddsf = (rs.resize_force ? DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE : 0)
+		| (rs.no_resync ? DDSF_NO_RESYNC : 0);
+	dd = drbd_determine_dev_size(device, 0, ddsf, change_al_layout ? &rs : NULL);
 	drbd_md_sync_if_dirty(device);
 	put_ldev(device);
 	if (dd == DS_ERROR) {
