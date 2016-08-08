@@ -4531,19 +4531,18 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	}
 
 	if (should_send_sizes) {
-		rcu_read_lock();
-		for_each_peer_device_rcu(peer_device_it, device) {
+		u64 im;
+
+		for_each_peer_device_ref(peer_device_it, im, device)
 			drbd_send_sizes(peer_device_it, p_usize, ddsf);
-		}
-		rcu_read_unlock();
 	} else {
-		rcu_read_lock();
-		for_each_peer_device_rcu(peer_device_it, device) {
+		u64 im;
+
+		for_each_peer_device_ref(peer_device_it, im, device) {
 			if (peer_device_it->repl_state[NOW] > L_OFF
 			&&  peer_device_it->c_size != cur_size)
 				drbd_send_sizes(peer_device_it, p_usize, ddsf);
 		}
-		rcu_read_unlock();
 	}
 
 	maybe_trigger_resync(device, get_neighbor_device(device, NEXT_HIGHER),
