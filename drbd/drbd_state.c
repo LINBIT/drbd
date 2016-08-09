@@ -1928,13 +1928,14 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 		}
 
-		if (connection->last_reconnect_jif)
-			set_bit(RECONNECT, &connection->flags);
 		/* remember last connect time so request_timer_fn() won't
 		 * kill newly established sessions while we are still trying to thaw
 		 * previously frozen IO */
-		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED) {
+			if (connection->last_reconnect_jif)
+				set_bit(RECONNECT, &connection->flags);
 			connection->last_reconnect_jif = jiffies;
+		}
 
 		if (starting_resync && peer_role[NEW] == R_PRIMARY)
 			apply_unacked_peer_requests(connection);

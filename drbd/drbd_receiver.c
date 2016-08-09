@@ -3419,8 +3419,12 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 				return rv;
 		}
 
-
 		*rule_nr = 38;
+		/* This is a safety net for the following two clauses */
+		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
+		    test_bit(RECONNECT, &peer_device->connection->flags))
+			return 0;
+
 		/* Peer crashed as primary, I survived, resync from me */
 		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
 		    test_bit(RECONNECT, &peer_device->connection->flags))
