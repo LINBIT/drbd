@@ -3535,8 +3535,22 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 
 static void log_handshake(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
+	u64 uuid_flags = 0;
+
+	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
+		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
+	if (test_bit(CRASHED_PRIMARY, &device->flags))
+		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		uuid_flags |= UUID_FLAG_INCONSISTENT;
+	if (test_bit(RECONNECT, &peer_device->connection->flags))
+		uuid_flags |= UUID_FLAG_RECONNECT;
+	if (drbd_device_stable(device, NULL))
+		uuid_flags |= UUID_FLAG_STABLE;
+
 	drbd_info(peer_device, "drbd_sync_handshake:\n");
-	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, 0);
+	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, uuid_flags);
 	drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 }
 
