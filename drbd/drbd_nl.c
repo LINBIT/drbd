@@ -166,10 +166,6 @@ static struct drbd_path *first_path(struct drbd_connection *connection)
  * and per-family private info->pointers.
  * But we need to stay compatible with older kernels.
  * If it returns successfully, adm_ctx members are valid.
- *
- * At this point, we still rely on the global genl_lock().
- * If we want to avoid that, and allow "genl_family.parallel_ops", we may need
- * to add additional synchronization against object destruction/modification.
  */
 #define DRBD_ADM_NEED_MINOR        (1 << 0)
 #define DRBD_ADM_NEED_RESOURCE     (1 << 1)
@@ -262,7 +258,14 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	}
 
 	adm_ctx->minor = d_in->minor;
+	rcu_read_lock();
 	adm_ctx->device = minor_to_device(d_in->minor);
+	if (adm_ctx->device) {
+		kref_get(&adm_ctx->device->kref);
+		kref_debug_get(&adm_ctx->device->kref_debug, 4);
+	}
+	rcu_read_unlock();
+
 	if (!adm_ctx->device && (flags & DRBD_ADM_NEED_MINOR)) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "unknown minor");
 		err = ERR_MINOR_INVALID;
@@ -303,6 +306,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		}
 	}
 	if (flags & DRBD_ADM_NEED_PEER_DEVICE) {
+		rcu_read_lock();
 		if (adm_ctx->volume != VOLUME_UNSPECIFIED)
 			adm_ctx->peer_device =
 				idr_find(&adm_ctx->connection->peer_devices,
@@ -310,14 +314,15 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		if (!adm_ctx->peer_device) {
 			drbd_msg_put_info(adm_ctx->reply_skb, "unknown volume");
 			err = ERR_INVALID_REQUEST;
+			rcu_read_unlock();
 			goto finish;
 		}
-		if (!adm_ctx->device)
+		if (!adm_ctx->device) {
 			adm_ctx->device = adm_ctx->peer_device->device;
-	}
-	if (adm_ctx->device) {
-		kref_get(&adm_ctx->device->kref);
-		kref_debug_get(&adm_ctx->device->kref_debug, 4);
+			kref_get(&adm_ctx->device->kref);
+			kref_debug_get(&adm_ctx->device->kref_debug, 4);
+		}
+		rcu_read_unlock();
 	}
 
 	/* some more paranoia, if the request was over-determined */
