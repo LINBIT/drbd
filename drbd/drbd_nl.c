@@ -3288,8 +3288,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 			goto unlock_fail_free_connection;
 	}
 
-	spin_lock_irq(&adm_ctx->resource->req_lock);
-	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 
@@ -3301,7 +3299,10 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 		peer_devices++;
+		peer_device->node_id = connection->peer_node_id;
 	}
+	spin_lock_irq(&adm_ctx->resource->req_lock);
+	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	spin_unlock_irq(&adm_ctx->resource->req_lock);
 
 	old_net_conf = connection->transport.net_conf;
@@ -3320,9 +3321,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	/* transferred ownership. prevent double cleanup. */
 	new_net_conf = NULL;
 	memset(&crypto, 0, sizeof(crypto));
-
-	idr_for_each_entry(&connection->peer_devices, peer_device, i)
-		peer_device->node_id = connection->peer_node_id;
 
 	if (connection->peer_node_id > adm_ctx->resource->max_node_id)
 		adm_ctx->resource->max_node_id = connection->peer_node_id;
