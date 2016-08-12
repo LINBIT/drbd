@@ -934,7 +934,7 @@ static void additional_size_command(struct drbd_connection *connection,
 	connection->send_buffer[drbd_stream].additional_size = additional_size;
 }
 
-static void *__conn_prepare_command(struct drbd_connection *connection, int size,
+void *__conn_prepare_command(struct drbd_connection *connection, int size,
 				    enum drbd_stream drbd_stream)
 {
 	struct drbd_transport *transport = &connection->transport;
@@ -1017,7 +1017,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	return err;
 }
 
-static int __send_command(struct drbd_connection *connection, int vnr,
+int __send_command(struct drbd_connection *connection, int vnr,
 			  enum drbd_packet cmd, enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];

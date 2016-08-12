@@ -692,10 +692,12 @@ static bool conn_connect(struct drbd_connection *connection)
 	struct drbd_resource *resource = connection->resource;
 	int ping_timeo, ping_int, h, err, vnr, timeout;
 	struct drbd_peer_device *peer_device;
-	bool discard_my_data;
 	struct net_conf *nc;
+	bool discard_my_data;
+	bool have_mutex;
 
 start:
+	have_mutex = false;
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
 	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS) {
 		/* We do not have a network config. */
@@ -723,6 +725,15 @@ start:
 	ping_int = nc->ping_int;
 	rcu_read_unlock();
 
+	/* Make sure we are "uncorked", otherwise we risk timeouts,
+	 * in case this is a reconnect and we had been corked before. */
+	drbd_uncork(connection, CONTROL_STREAM);
+	drbd_uncork(connection, DATA_STREAM);
+
+	/* Make sure the handshake happens without interference from other threads,
+	 * or the challenge respons authentication could be garbled. */
+	mutex_lock(&connection->mutex[DATA_STREAM]);
+	have_mutex = true;
 	transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
 	transport->ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
@@ -747,7 +758,7 @@ start:
 
 	discard_my_data = test_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
-	if (drbd_send_protocol(connection) == -EOPNOTSUPP)
+	if (__drbd_send_protocol(connection, P_PROTOCOL) == -EOPNOTSUPP)
 		goto abort;
 
 	rcu_read_lock();
@@ -762,6 +773,8 @@ start:
 			clear_bit(DISCARD_MY_DATA, &peer_device->flags);
 	}
 	rcu_read_unlock();
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
+	have_mutex = false;
 
 	drbd_thread_start(&connection->ack_receiver);
 	connection->ack_sender =
@@ -797,11 +810,15 @@ start:
 	return true;
 
 retry:
+	if (have_mutex)
+		mutex_unlock(&connection->mutex[DATA_STREAM]);
 	conn_disconnect(connection);
 	schedule_timeout_interruptible(HZ);
 	goto start;
 
 abort:
+	if (have_mutex)
+		mutex_unlock(&connection->mutex[DATA_STREAM]);
 	change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	return false;
 }
@@ -7148,7 +7165,7 @@ static int drbd_send_features(struct drbd_connection *connection)
 {
 	struct p_connection_features *p;
 
-	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
+	p = __conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
 	memset(p, 0, sizeof(*p));
@@ -7157,7 +7174,7 @@ static int drbd_send_features(struct drbd_connection *connection)
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(connection->peer_node_id);
 	p->feature_flags = cpu_to_be32(PRO_FEATURES);
-	return send_command(connection, -1, P_CONNECTION_FEATURES, DATA_STREAM);
+	return __send_command(connection, -1, P_CONNECTION_FEATURES, DATA_STREAM);
 }
 
 /*
@@ -7322,14 +7339,14 @@ int drbd_do_auth(struct drbd_connection *connection)
 
 	get_random_bytes(my_challenge.d, sizeof(my_challenge.d));
 
-	packet_body = conn_prepare_command(connection, sizeof(my_challenge.d), DATA_STREAM);
+	packet_body = __conn_prepare_command(connection, sizeof(my_challenge.d), DATA_STREAM);
 	if (!packet_body) {
 		rv = 0;
 		goto fail;
 	}
 	memcpy(packet_body, my_challenge.d, sizeof(my_challenge.d));
 
-	rv = !send_command(connection, -1, P_AUTH_CHALLENGE, DATA_STREAM);
+	rv = !__send_command(connection, -1, P_AUTH_CHALLENGE, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -7372,7 +7389,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	resp_size = crypto_shash_digestsize(connection->cram_hmac_tfm);
-	response = conn_prepare_command(connection, resp_size, DATA_STREAM);
+	response = __conn_prepare_command(connection, resp_size, DATA_STREAM);
 	if (!response) {
 		rv = 0;
 		goto fail;
@@ -7391,7 +7408,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	rv = !send_command(connection, -1, P_AUTH_RESPONSE, DATA_STREAM);
+	rv = !__send_command(connection, -1, P_AUTH_RESPONSE, DATA_STREAM);
 	if (!rv)
 		goto fail;
 
@@ -7409,7 +7426,8 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	if (pi.size != resp_size) {
-		drbd_err(connection, "expected AuthResponse payload of wrong size\n");
+		drbd_err(connection, "expected AuthResponse payload of %u bytes, received %u\n",
+				resp_size, pi.size);
 		rv = 0;
 		goto fail;
 	}
