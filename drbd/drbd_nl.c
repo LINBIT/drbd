@@ -2419,6 +2419,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * (we may currently be R_PRIMARY with no local disk...) */
 	if (drbd_get_max_capacity(nbc) <
 	    drbd_get_capacity(device->this_bdev)) {
+		drbd_err(device,
+			"Current (diskless) capacity %llu, cannot attach smaller (%llu) disk\n",
+			(unsigned long long)drbd_get_capacity(device->this_bdev),
+			(unsigned long long)drbd_get_max_capacity(nbc));
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail;
 	}
@@ -3931,6 +3935,9 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (rs.resize_size && local_possible_max_size(device) < (sector_t)rs.resize_size) {
+		drbd_err(device, "requested %llu sectors, backend seems only able to support %llu\n",
+			(unsigned long long)(sector_t)rs.resize_size,
+			(unsigned long long)local_possible_max_size(device));
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail_ldev;
 	}
