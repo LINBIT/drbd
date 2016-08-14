@@ -804,6 +804,19 @@ out:
 	return err;
 }
 
+static void dtt_cleanup_accepted_sockets(struct dtt_path *path)
+{
+	while (!list_empty(&path->sockets)) {
+		struct dtt_socket_container *socket_c =
+			list_first_entry(&path->sockets, struct dtt_socket_container, list);
+
+		list_del(&socket_c->list);
+		kernel_sock_shutdown(socket_c->socket, SHUT_RDWR);
+		sock_release(socket_c->socket);
+		kfree(socket_c);
+	}
+}
+
 static void dtt_put_listeners(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -818,14 +831,7 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 
 		path->first = NULL;
 		drbd_put_listener(&path->waiter);
-		while (!list_empty(&path->sockets)) {
-			struct dtt_socket_container *socket_c =
-				list_first_entry(&path->sockets, struct dtt_socket_container, list);
-
-			list_del(&socket_c->list);
-			sock_release(socket_c->socket);
-			kfree(socket_c);
-		}
+		dtt_cleanup_accepted_sockets(path);
 	}
 	mutex_unlock(&tcp_transport->paths_mutex);
 }
@@ -872,6 +878,8 @@ static int dtt_connect(struct drbd_transport *transport)
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
+
+		dtt_cleanup_accepted_sockets(path);
 
 		path->first = &waiter;
 		err = drbd_get_listener(&path->waiter, (struct sockaddr *)&drbd_path->my_addr,
