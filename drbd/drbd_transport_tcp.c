@@ -359,6 +359,15 @@ static void dtt_setbufsize(struct socket *socket, unsigned int snd,
 	}
 }
 
+static bool dtt_path_cmp_addr(struct dtt_path *path)
+{
+	struct drbd_path *drbd_path = &path->path;
+	int addr_size;
+
+	addr_size = min(drbd_path->my_addr_len, drbd_path->peer_addr_len);
+	return memcmp(&drbd_path->my_addr, &drbd_path->peer_addr, addr_size) > 0;
+}
+
 static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 {
 	struct drbd_transport *transport = path->waiter.transport;
@@ -874,6 +883,8 @@ static int dtt_connect(struct drbd_transport *transport)
 			goto out;
 
 		if (s) {
+			bool use_for_data;
+
 			if (!first_path) {
 				first_path = connect_to_path;
 			} else if (first_path != connect_to_path) {
@@ -883,16 +894,25 @@ static int dtt_connect(struct drbd_transport *transport)
 				continue;
 			}
 
-			if (!dsocket) {
+			if (!dsocket && !csocket) {
+				use_for_data = dtt_path_cmp_addr(first_path);
+			} else if (!dsocket) {
+				use_for_data = true;
+			} else {
+				if (csocket) {
+					tr_err(transport, "Logic error in conn_connect()\n");
+					goto out_eagain;
+				}
+				use_for_data = false;
+			}
+
+			if (use_for_data) {
 				dsocket = s;
 				dtt_send_first_packet(tcp_transport, dsocket, P_INITIAL_DATA, DATA_STREAM);
-			} else if (!csocket) {
+			} else {
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
 				csocket = s;
 				dtt_send_first_packet(tcp_transport, csocket, P_INITIAL_META, CONTROL_STREAM);
-			} else {
-				tr_err(transport, "Logic error in conn_connect()\n");
-				goto out_eagain;
 			}
 		} else if (!first_path)
 			connect_to_path = dtt_next_path(tcp_transport, connect_to_path);
