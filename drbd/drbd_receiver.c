@@ -6929,8 +6929,11 @@ int drbd_do_features(struct drbd_connection *connection)
 		return 0;
 
 	err = drbd_recv_header(connection, &pi);
-	if (err)
+	if (err) {
+		if (err == -EAGAIN)
+			drbd_err(connection, "timeout while waiting for feature packet\n");
 		return 0;
+	}
 
 	if (pi.cmd != P_CONNECTION_FEATURES) {
 		drbd_err(connection, "expected ConnectionFeatures packet, received: %s (0x%04x)\n",
