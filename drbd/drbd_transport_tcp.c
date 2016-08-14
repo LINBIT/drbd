@@ -66,11 +66,16 @@ struct dtt_wait_first {
 	struct drbd_transport *transport;
 };
 
+struct dtt_socket_container {
+	struct list_head list;
+	struct socket *socket;
+};
+
 struct dtt_path {
 	struct drbd_path path;
 
 	struct drbd_waiter waiter;
-	struct socket *socket;
+	struct list_head sockets;
 	struct dtt_wait_first *first;
 };
 
@@ -531,7 +536,7 @@ static struct dtt_path *dtt_wait_connect_cond(struct drbd_transport *transport)
 		listener = path->waiter.listener;
 
 		spin_lock_bh(&listener->waiters_lock);
-		rv = listener->pending_accepts > 0 || path->socket != NULL;
+		rv = listener->pending_accepts > 0 || !list_empty(&path->sockets);
 		spin_unlock_bh(&listener->waiters_lock);
 
 		if (rv)
@@ -554,6 +559,7 @@ static int dtt_wait_for_connect(struct dtt_wait_first *waiter, struct socket **s
 				struct dtt_path **ret_path)
 {
 	struct drbd_transport *transport = waiter->transport;
+	struct dtt_socket_container *socket_c;
 	struct sockaddr_storage peer_addr;
 	int connect_int, peer_addr_len, err = 0;
 	long timeo;
@@ -584,9 +590,11 @@ retry:
 
 	listener = container_of(path->waiter.listener, struct dtt_listener, listener);
 	spin_lock_bh(&listener->listener.waiters_lock);
-	if (path->socket) {
-		s_estab = path->socket;
-		path->socket = NULL;
+	socket_c = list_first_entry_or_null(&path->sockets, struct dtt_socket_container, list);
+	if (socket_c) {
+		s_estab = socket_c->socket;
+		list_del(&socket_c->list);
+		kfree(socket_c);
 	} else if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
 		spin_unlock_bh(&listener->listener.waiters_lock);
@@ -627,13 +635,16 @@ retry:
 			struct dtt_path *path2 =
 				container_of(waiter2_gen, struct dtt_path, waiter);
 
-			if (path2->socket) {
-				tr_err(path2->waiter.transport,
-					 "Receiver busy; rejecting incoming connection\n");
+			socket_c = kmalloc(sizeof(*socket_c), GFP_KERNEL);
+			if (!socket_c) {
+				tr_info(path2->waiter.transport,
+					"No mem, dropped an incoming connection\n");
 				goto retry_locked;
 			}
-			path2->socket = s_estab;
+
+			socket_c->socket = s_estab;
 			s_estab = NULL;
+			list_add_tail(&socket_c->list, &path2->sockets);
 			wake_up(&path2->waiter.wait);
 			goto retry_locked;
 		}
@@ -807,9 +818,13 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 
 		path->first = NULL;
 		drbd_put_listener(&path->waiter);
-		if (path->socket) {
-			sock_release(path->socket);
-			path->socket = NULL;
+		while (!list_empty(&path->sockets)) {
+			struct dtt_socket_container *socket_c =
+				list_first_entry(&path->sockets, struct dtt_socket_container, list);
+
+			list_del(&socket_c->list);
+			sock_release(socket_c->socket);
+			kfree(socket_c);
 		}
 	}
 	mutex_unlock(&tcp_transport->paths_mutex);
@@ -1220,6 +1235,7 @@ static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 
 	path->waiter.transport = transport;
 	drbd_path->established = false;
+	INIT_LIST_HEAD(&path->sockets);
 
 	mutex_lock(&tcp_transport->paths_mutex);
 	if (test_bit(DTT_CONNECTING, &tcp_transport->flags)) {
