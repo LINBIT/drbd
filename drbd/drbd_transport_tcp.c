@@ -479,21 +479,15 @@ static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struc
  */
 static bool dtt_socket_ok_or_free(struct socket **socket)
 {
-	int rr;
-	char tb[4];
-
 	if (!*socket)
 		return false;
 
-	rr = dtt_recv_short(*socket, tb, 4, MSG_DONTWAIT | MSG_PEEK);
-
-	if (rr > 0 || rr == -EAGAIN) {
+	if ((*socket)->sk->sk_state == TCP_ESTABLISHED)
 		return true;
-	} else {
-		sock_release(*socket);
-		*socket = NULL;
-		return false;
-	}
+
+	sock_release(*socket);
+	*socket = NULL;
+	return false;
 }
 
 static bool dtt_connection_established(struct drbd_transport *transport,
