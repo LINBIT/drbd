@@ -646,7 +646,7 @@ retry:
 			socket_c->socket = s_estab;
 			s_estab = NULL;
 			list_add_tail(&socket_c->list, &path2->sockets);
-			wake_up(&path2->waiter.wait);
+			wake_up(&path2->first->wait);
 			goto retry_locked;
 		}
 	}
