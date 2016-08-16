@@ -5166,8 +5166,10 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&resources_mutex);
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, 0);
-	if (!adm_ctx.reply_skb)
+	if (!adm_ctx.reply_skb) {
+		mutex_unlock(&resources_mutex);
 		return retcode;
+	}
 
 	set_res_opts_defaults(&res_opts);
 	err = res_opts_from_attrs(&res_opts, info);
