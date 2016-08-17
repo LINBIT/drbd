@@ -3465,13 +3465,10 @@ check_path_usable(const struct drbd_config_context *adm_ctx,
 		return ERR_INVALID_REQUEST;
 	}
 
-	/* No need for _rcu here. All reconfiguration is
-	 * strictly serialized on resources_mutex. We are protected against
-	 * concurrent reconfiguration/addition/deletion */
-	for_each_resource(resource, &drbd_resources) {
-		for_each_connection(connection, resource) {
+	for_each_resource_rcu(resource, &drbd_resources) {
+		for_each_connection_rcu(connection, resource) {
 			struct drbd_path *path;
-			list_for_each_entry(path, &connection->transport.paths, list) {
+			list_for_each_entry_rcu(path, &connection->transport.paths, list) {
 				retcode = check_path_against_nla(path, my_addr, peer_addr);
 				if (retcode == NO_ERROR)
 					continue;
@@ -3505,7 +3502,9 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
 	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
 
+	rcu_read_lock();
 	retcode = check_path_usable(adm_ctx, my_addr, peer_addr);
+	rcu_read_unlock();
 	if (retcode != NO_ERROR)
 		return retcode;
 
@@ -3614,13 +3613,11 @@ int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	/* remote transport endpoints need to be globaly unique */
-	mutex_lock(&resources_mutex);
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	retcode = adm_add_path(&adm_ctx, info);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
-	mutex_unlock(&resources_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
@@ -3687,14 +3684,11 @@ int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	/* remote transport endpoints need to be globaly unique */
-	mutex_lock(&resources_mutex);
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	retcode = adm_del_path(&adm_ctx, info);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
-	mutex_unlock(&resources_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
@@ -5191,6 +5185,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	resource = drbd_create_resource(adm_ctx.resource_name, &res_opts);
+	mutex_unlock(&resources_mutex);
 
 	if (resource) {
 		struct resource_info resource_info;
@@ -5203,9 +5198,10 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		module_put(THIS_MODULE);
 		retcode = ERR_NOMEM;
 	}
-
+	goto out_no_unlock;
 out:
 	mutex_unlock(&resources_mutex);
+out_no_unlock:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
@@ -5370,16 +5366,19 @@ static int adm_del_resource(struct drbd_resource *resource)
 	err = ERR_RES_IN_USE;
 	if (!idr_is_empty(&resource->devices))
 		goto out;
-	err = NO_ERROR;
-
-	mutex_lock(&notification_mutex);
-	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
-	mutex_unlock(&notification_mutex);
 
 	list_del_rcu(&resource->resources);
 	drbd_debugfs_resource_cleanup(resource);
 	synchronize_rcu();
 	drbd_free_resource(resource);
+
+	mutex_unlock(&resources_mutex);
+
+	mutex_lock(&notification_mutex);
+	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
+	mutex_unlock(&notification_mutex);
+
+	return NO_ERROR;
 out:
 	mutex_unlock(&resources_mutex);
 	return err;
