@@ -4475,7 +4475,6 @@ int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
 	struct resource_statistics resource_statistics;
 	int err;
 
-	mutex_lock(&resources_mutex);
 	rcu_read_lock();
 	if (cb->args[0]) {
 		for_each_resource_rcu(resource, &drbd_resources)
@@ -4523,7 +4522,6 @@ put_result:
 
 out:
 	rcu_read_unlock();
-	mutex_unlock(&resources_mutex);
 	if (err)
 		return err;
 	return skb->len;
@@ -4597,7 +4595,6 @@ int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct device_statistics device_statistics;
 	struct idr *idr_to_search;
 
-	mutex_lock(&resources_mutex);
 	resource = (struct drbd_resource *)cb->args[0];
 
 	rcu_read_lock();
@@ -4669,7 +4666,6 @@ put_result:
 
 out:
 	rcu_read_unlock();
-	mutex_unlock(&resources_mutex);
 	if (err)
 		return err;
 	return skb->len;
@@ -4715,7 +4711,6 @@ int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 	struct connection_info connection_info;
 	struct connection_statistics connection_statistics;
 
-	mutex_lock(&resources_mutex);
 	rcu_read_lock();
 	resource = (struct drbd_resource *)cb->args[0];
 	if (!cb->args[0]) {
@@ -4822,7 +4817,6 @@ out:
 	rcu_read_unlock();
 	if (resource)
 		mutex_unlock(&resource->conf_update);
-	mutex_unlock(&resources_mutex);
 	if (err)
 		return err;
 	return skb->len;
@@ -4868,7 +4862,6 @@ int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 	struct drbd_genlmsghdr *dh;
 	struct idr *idr_to_search;
 
-	mutex_lock(&resources_mutex);
 	resource = (struct drbd_resource *)cb->args[0];
 
 	rcu_read_lock();
@@ -4955,7 +4948,6 @@ put_result:
 
 out:
 	rcu_read_unlock();
-	mutex_unlock(&resources_mutex);
 	if (err)
 		return err;
 	return skb->len;
