@@ -4479,7 +4479,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 			drbd_info(peer_device, "Peer sets u_size to %llu sectors\n",
 				 (unsigned long long)p_usize);
-			should_send_sizes = true;
+			/* Do not set should_send_sizes here. That might cause packet storms */
 		}
 	}
 
@@ -4491,6 +4491,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_reconsider_queue_parameters(device, device->ldev, o);
 		drbd_info(peer_device, "calling drbd_determine_dev_size()\n");
 		dd = drbd_determine_dev_size(device, p_csize, ddsf, NULL);
+
+		if (dd == DS_GREW || dd == DS_SHRUNK)
+			should_send_sizes = true;
+
 		if (dd == DS_ERROR) {
 			err = -EIO;
 			goto out;
@@ -4541,13 +4545,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	cur_size = drbd_get_capacity(device->this_bdev);
 
-	/* Loop avoidance band-aid: If I've not been able to resize to at least
-	 * the peer's current size, disconnect. */
-	if (!is_handshake) {
-		if (cur_size < p_csize)
-			goto disconnect;
-	}
-
 	for_each_peer_device_ref(peer_device_it, im, device) {
 		struct drbd_connection *con_it = peer_device_it->connection;
 
@@ -4561,9 +4558,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		/* Send size updates only if something relevant has changed.
 		 * TODO: only tell the sender thread to do so,
 		 * or we may end up in a distributed deadlock on congestion. */
-		if (should_send_sizes ||
-				   (peer_device_it->repl_state[NOW] > L_OFF &&
-				    peer_device_it->c_size != cur_size))
+
+		if (should_send_sizes)
 			drbd_send_sizes(peer_device_it, p_usize, ddsf);
 	}
 
