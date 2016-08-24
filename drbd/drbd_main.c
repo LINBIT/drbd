@@ -1692,16 +1692,15 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
 		p->reachable_nodes = cpu_to_be64(reply->reachable_nodes);
-		p->primary_nodes = cpu_to_be64(reply->primary_nodes);
-		p->weak_nodes = cpu_to_be64(reply->weak_nodes);
-		drbd_debug(connection, "Sending %s reply for state change %u "
-			   "(reachable_nodes=%lX, primary_nodes=%lX, "
-			   "weak_nodes=%lX)\n",
-			   drbd_packet_name(cmd),
-			   reply->tid,
-			   (unsigned long)reply->reachable_nodes,
-			   (unsigned long)reply->primary_nodes,
-			   (unsigned long)reply->weak_nodes);
+		switch (reply->type) {
+		case TWOPC_STATE_CHANGE:
+			p->primary_nodes = cpu_to_be64(reply->primary_nodes);
+			p->weak_nodes = cpu_to_be64(reply->weak_nodes);
+			break;
+		case TWOPC_RESIZE:
+			p->max_possible_size = cpu_to_be64(reply->max_possible_size);
+			break;
+		}
 		send_command(connection, reply->vnr, cmd, CONTROL_STREAM);
 	}
 }

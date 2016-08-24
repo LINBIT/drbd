@@ -872,15 +872,29 @@ enum {
 
 enum which_state { NOW, OLD = NOW, NEW };
 
+enum twopc_type {
+	TWOPC_STATE_CHANGE,
+	TWOPC_RESIZE,
+};
+
 struct twopc_reply {
+	enum twopc_type type; /* from prepare phase */
 	int vnr;
 	unsigned int tid;  /* transaction identifier */
 	int initiator_node_id;  /* initiator of the transaction */
 	int target_node_id;  /* target of the transaction (or -1) */
 	u64 target_reachable_nodes;  /* behind the target node */
 	u64 reachable_nodes;  /* behind other nodes */
-	u64 primary_nodes;
-	u64 weak_nodes;
+	union {
+		struct { /* type == TWOPC_STATE_CHANGE */
+			u64 primary_nodes;
+			u64 weak_nodes;
+		};
+		struct { /* type == TWOPC_RESIZE */
+			int dds_flags; /* from prepare phase */
+			u64 max_possible_size;
+		};
+	};
 	int is_disconnect:1;
 	int is_aborted:1;
 };
@@ -1472,6 +1486,7 @@ enum dds_flags {
 	DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE    = 1,
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
 	DDSF_IGNORE_PEER_CONSTRAINTS = 4,
+	DDSF_2PC = 8, /* local only, not on the wire */
 };
 
 extern int  drbd_thread_start(struct drbd_thread *thi);
@@ -1859,6 +1874,8 @@ extern sector_t drbd_new_dev_size(struct drbd_device *,
 		sector_t user_capped_size, /* want (at most) this much */
 		enum dds_flags flags) __must_hold(local);
 enum determine_dev_size {
+	DS_2PC_ERR = -5,
+	DS_2PC_NOT_SUPPORTED = -4,
 	DS_ERROR_SHRINK = -3,
 	DS_ERROR_SPACE_MD = -2,
 	DS_ERROR = -1,
@@ -2014,6 +2031,10 @@ extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resour
 extern void queue_queued_twopc(struct drbd_resource *resource);
 extern void queued_twopc_timer_fn(unsigned long data);
 extern bool drbd_have_local_disk(struct drbd_resource *resource);
+extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
+extern enum determine_dev_size
+drbd_commit_size_change(struct drbd_device *device, int dds_flags,
+			u64 new_size, u64 new_user_size, struct resize_parms *rs);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
@@ -2128,6 +2149,7 @@ extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 extern void notify_path(struct drbd_connection *, struct drbd_path *,
 			enum drbd_notification_type);
 
+extern sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
 /*
  * inline helper functions
  *************************/

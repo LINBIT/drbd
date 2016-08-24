@@ -3513,6 +3513,128 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	return rv;
 }
 
+enum determine_dev_size
+change_cluster_wide_device_size(struct drbd_device *device,
+				sector_t local_max_size,
+				uint64_t new_user_size,
+				enum dds_flags dds_flags,
+				struct resize_parms * rs)
+{
+	struct drbd_resource *resource = device->resource;
+	struct twopc_reply *reply = &resource->twopc_reply;
+	struct p_twopc_request request;
+	unsigned long start_time;
+	unsigned long irq_flags;
+	enum drbd_state_rv rv;
+	enum determine_dev_size dd;
+	u64 reach_immediately;
+	bool have_peers, commit_it;
+	sector_t new_size = 0;
+	int retries = 1;
+
+retry:
+	rv = drbd_support_2pc_resize(resource);
+	if (rv < SS_SUCCESS)
+		return DS_2PC_NOT_SUPPORTED;
+
+	state_change_lock(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
+	complete_remote_state_change(resource, &irq_flags);
+	start_time = jiffies;
+	reach_immediately = directly_connected_nodes(resource, NOW);
+
+	do
+		reply->tid = prandom_u32();
+	while (!reply->tid);
+
+	request.tid = cpu_to_be32(reply->tid);
+	request.initiator_node_id = cpu_to_be32(resource->res_opts.node_id);
+	request.target_node_id = -1;
+	request.nodes_to_reach = cpu_to_be64(
+		~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
+	request.dds_flags = cpu_to_be16(dds_flags);
+	request.user_size = cpu_to_be64(new_user_size);
+
+	resource->remote_state_change = true;
+	reply->initiator_node_id = resource->res_opts.node_id;
+	reply->target_node_id = -1;
+	reply->max_possible_size = local_max_size;
+	reply->reachable_nodes = reach_immediately | NODE_MASK(resource->res_opts.node_id);
+	reply->target_reachable_nodes = reply->reachable_nodes;
+	state_change_unlock(resource, &irq_flags);
+
+	drbd_info(resource, "Preparing cluster-wide state change %u "
+		  "(local_max_size = %llu KB, user_cap = %llu KB)\n",
+		  be32_to_cpu(request.tid),
+		  (unsigned long long)local_max_size >> 1,
+		  (unsigned long long)new_user_size >> 1);
+
+	rv = __cluster_wide_request(resource, device->vnr, P_TWOPC_PREP_RSZ,
+				    &request, reach_immediately);
+
+	have_peers = rv == SS_CW_SUCCESS;
+	if (have_peers) {
+		if (wait_event_timeout(resource->state_wait,
+				       cluster_wide_reply_ready(resource),
+				       twopc_timeout(resource)))
+			rv = get_cluster_wide_reply(resource);
+		else
+			rv = SS_TIMEOUT;
+
+		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+			long timeout = twopc_retry_timeout(resource, retries++);
+
+			drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
+				  jiffies_to_msecs(timeout));
+
+			twopc_phase2(resource, device->vnr, 0, &request, reach_immediately);
+
+			clear_remote_state_change(resource);
+			schedule_timeout_interruptible(timeout);
+			goto retry;
+		}
+	}
+
+	if (rv >= SS_SUCCESS) {
+		new_size = min_not_zero(reply->max_possible_size, new_user_size);
+		commit_it = new_size != drbd_get_capacity(device->this_bdev);
+
+		if (commit_it) {
+			request.exposed_size = cpu_to_be64(new_size);
+			drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
+				  be32_to_cpu(request.tid),
+				  jiffies_to_msecs(jiffies - start_time));
+		} else {
+			drbd_info(resource, "Aborting cluster-wide state change %u (%ums) size unchanged\n",
+				  be32_to_cpu(request.tid),
+				  jiffies_to_msecs(jiffies - start_time));
+		}
+	} else {
+		commit_it = false;
+		drbd_info(resource, "Aborting cluster-wide state change %u (%ums) rv = %d\n",
+			  be32_to_cpu(request.tid),
+			  jiffies_to_msecs(jiffies - start_time),
+			  rv);
+	}
+
+	if (have_peers)
+		twopc_phase2(resource, device->vnr, commit_it, &request, reach_immediately);
+
+	if (commit_it) {
+		reply->max_possible_size = new_size;
+		dd = drbd_commit_size_change(device, dds_flags, new_size, new_user_size, rs);
+	} else {
+		if (rv == SS_CW_FAILED_BY_PEER)
+			dd = DS_2PC_NOT_SUPPORTED;
+		else if (rv >= SS_SUCCESS)
+			dd = DS_UNCHANGED;
+		else
+			dd = DS_2PC_ERR;
+	}
+
+	clear_remote_state_change(resource);
+	return dd;
+}
+
 static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
 {
 	struct drbd_connection *twopc_parent, *tmp;
@@ -3576,7 +3698,7 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 	spin_unlock_irq(&resource->req_lock);
 
 	rv = __cluster_wide_request(resource, vnr, cmd, request, reach_immediately);
-	if (cmd == P_TWOPC_PREPARE) {
+	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
 		if (rv <= SS_SUCCESS) {
 			cmd = (rv == SS_SUCCESS) ? P_TWOPC_YES : P_TWOPC_NO;
 			twopc_end_nested(resource, cmd);

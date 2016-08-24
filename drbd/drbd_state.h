@@ -116,4 +116,14 @@ extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
 struct drbd_work;
 extern int abort_nested_twopc_work(struct drbd_work *, int);
 
+
+
+enum dds_flags;
+enum determine_dev_size;
+struct resize_parms;
+
+extern enum determine_dev_size
+change_cluster_wide_device_size(struct drbd_device *, sector_t, uint64_t, enum dds_flags,
+				struct resize_parms *);
+
 #endif
