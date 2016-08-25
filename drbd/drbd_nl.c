@@ -1055,10 +1055,10 @@ retry:
 	} else {
 		struct drbd_connection *connection;
 
-		mutex_lock(&resource->conf_update);
-		for_each_connection(connection, resource)
+		rcu_read_lock();
+		for_each_connection_rcu(connection, resource)
 			clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
-		mutex_unlock(&resource->conf_update);
+		rcu_read_unlock();
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (forced)
