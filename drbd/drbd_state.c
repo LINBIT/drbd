@@ -2988,15 +2988,15 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 	for_each_connection_ref(connection, im, resource) {
 		u64 mask;
 
+		clear_bit(TWOPC_PREPARED, &connection->flags);
+
 		if (connection->agreed_pro_version < 110)
 			continue;
 		mask = NODE_MASK(connection->peer_node_id);
-		if (reach_immediately & mask) {
+		if (reach_immediately & mask)
 			set_bit(TWOPC_PREPARED, &connection->flags);
-		} else {
-			clear_bit(TWOPC_PREPARED, &connection->flags);
+		else
 			continue;
-		}
 
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
