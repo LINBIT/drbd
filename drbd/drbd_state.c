@@ -359,15 +359,18 @@ static enum drbd_state_rv try_state_change(struct drbd_resource *resource)
 }
 
 static void __clear_remote_state_change(struct drbd_resource *resource) {
+	struct drbd_connection *connection, *tmp;
+
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
-	if (resource->twopc_parent) {
-		kref_debug_put(&resource->twopc_parent->kref_debug, 9);
-		kref_put(&resource->twopc_parent->kref,
-			 drbd_destroy_connection);
-		resource->twopc_parent = NULL;
+
+	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
+		kref_debug_put(&connection->kref_debug, 9);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
+	INIT_LIST_HEAD(&resource->twopc_parents);
+
 	wake_up(&resource->twopc_wait);
 	queue_queued_twopc(resource);
 }
@@ -3512,28 +3515,31 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 
 static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
 {
-	struct drbd_connection *twopc_parent;
+	struct drbd_connection *twopc_parent, *tmp;
 	struct twopc_reply twopc_reply;
+	LIST_HEAD(parents);
 
 	spin_lock_irq(&resource->req_lock);
-	twopc_parent = resource->twopc_parent;
-	resource->twopc_parent = NULL;
+	resource->twopc_prepare_reply_cmd = cmd;
+	list_splice_init(&resource->twopc_parents, &parents);
 	twopc_reply = resource->twopc_reply;
 	resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 
-	if (!twopc_reply.tid || !expect(resource, twopc_parent))
+	if (!twopc_reply.tid || !expect(resource, !list_empty(&parents)))
 		return;
 
 	drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
 		   twopc_reply.tid, drbd_packet_name(cmd));
 
-	if (twopc_reply.is_disconnect)
-		set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
+	list_for_each_entry_safe(twopc_parent, tmp, &parents, twopc_parent_list) {
+		if (twopc_reply.is_disconnect)
+			set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
 
-	drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
-	kref_debug_put(&twopc_parent->kref_debug, 9);
-	kref_put(&twopc_parent->kref, drbd_destroy_connection);
+		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
+		kref_debug_put(&twopc_parent->kref_debug, 9);
+		kref_put(&twopc_parent->kref, drbd_destroy_connection);
+	}
 	wake_up(&resource->twopc_wait);
 }
 

@@ -5150,14 +5150,15 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 
 	spin_lock_irq(&resource->req_lock);
 	if (resource->twopc_reply.initiator_node_id != -1) {
+		struct drbd_connection *connection, *tmp;
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
-		if (resource->twopc_parent) {
-			kref_debug_put(&resource->twopc_parent->kref_debug, 9);
-			kref_put(&resource->twopc_parent->kref,
-				 drbd_destroy_connection);
-			resource->twopc_parent = NULL;
+		list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
+			kref_debug_put(&connection->kref_debug, 9);
+			kref_put(&connection->kref, drbd_destroy_connection);
 		}
+		INIT_LIST_HEAD(&resource->twopc_parents);
+
 		prepared = true;
 	}
 	resource->twopc_work.cb = NULL;
@@ -5532,6 +5533,7 @@ static int process_twopc(struct drbd_connection *connection,
 			return 0;
 		}
 		resource->remote_state_change = true;
+		resource->twopc_prepare_reply_cmd = 0;
 	} else if (csc_rv == CSC_MATCH && pi->cmd != P_TWOPC_PREPARE) {
 		flags |= CS_PREPARED;
 	} else if (csc_rv == CSC_ABORT_LOCAL && pi->cmd == P_TWOPC_PREPARE) {
@@ -5552,6 +5554,7 @@ static int process_twopc(struct drbd_connection *connection,
 			return 0;
 		}
 		resource->remote_state_change = true;
+		resource->twopc_prepare_reply_cmd = 0;
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
 		int err;
@@ -5591,7 +5594,21 @@ static int process_twopc(struct drbd_connection *connection,
 				goto reject;
 			} else if (csc_rv == CSC_MATCH) {
 				/* We have prepared this transaction already. */
-				drbd_send_twopc_reply(connection, P_TWOPC_YES, reply);
+				enum drbd_packet reply_cmd;
+
+				spin_lock_irq(&resource->req_lock);
+				reply_cmd = resource->twopc_prepare_reply_cmd;
+				if (!reply_cmd) {
+					kref_get(&connection->kref);
+					kref_debug_get(&connection->kref_debug, 9);
+					list_add(&connection->twopc_parent_list,
+						 &resource->twopc_parents);
+				}
+				spin_unlock_irq(&resource->req_lock);
+
+				if (reply_cmd)
+					drbd_send_twopc_reply(connection, reply_cmd,
+							      &resource->twopc_reply);
 			}
 		} else {
 			drbd_info(connection, "Ignoring %s packet %u "
@@ -5695,7 +5712,7 @@ static int process_twopc(struct drbd_connection *connection,
 		spin_lock_irq(&resource->req_lock);
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 9);
-		resource->twopc_parent = connection;
+		list_add(&connection->twopc_parent_list, &resource->twopc_parents);
 		mod_timer(&resource->twopc_timer, receive_jif + twopc_timeout(resource));
 		spin_unlock_irq(&resource->req_lock);
 

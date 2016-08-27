@@ -2827,6 +2827,7 @@ void drbd_destroy_resource(struct kref *kref)
 void drbd_free_resource(struct drbd_resource *resource)
 {
 	struct queued_twopc *q, *q1;
+	struct drbd_connection *connection, *tmp;
 
 	del_timer_sync(&resource->queued_twopc_timer);
 
@@ -2839,10 +2840,10 @@ void drbd_free_resource(struct drbd_resource *resource)
 	spin_unlock_irq(&resource->queued_twopc_lock);
 
 	drbd_thread_stop(&resource->worker);
-	if (resource->twopc_parent) {
-		kref_debug_put(&resource->twopc_parent->kref_debug, 9);
-		kref_put(&resource->twopc_parent->kref,
-			 drbd_destroy_connection);
+
+	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
+		kref_debug_put(&connection->kref_debug, 9);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	del_timer_sync(&resource->twopc_timer);
@@ -3262,6 +3263,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	init_waitqueue_head(&resource->state_wait);
 	init_waitqueue_head(&resource->twopc_wait);
 	init_waitqueue_head(&resource->barrier_wait);
+	INIT_LIST_HEAD(&resource->twopc_parents);
 	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
 	INIT_LIST_HEAD(&resource->queued_twopc);
