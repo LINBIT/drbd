@@ -5534,8 +5534,17 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		resource->remote_state_change = true;
 		resource->twopc_prepare_reply_cmd = 0;
+		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (csc_rv == CSC_MATCH && pi->cmd != P_TWOPC_PREPARE) {
 		flags |= CS_PREPARED;
+
+		if (test_and_set_bit(TWOPC_EXECUTED, &resource->flags)) {
+			spin_unlock_irq(&resource->req_lock);
+			drbd_info(connection, "Ignoring redundant %s packet %u.\n",
+				  drbd_packet_name(pi->cmd),
+				  reply->tid);
+			return 0;
+		}
 	} else if (csc_rv == CSC_ABORT_LOCAL && pi->cmd == P_TWOPC_PREPARE) {
 		int err;
 
@@ -5555,6 +5564,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		resource->remote_state_change = true;
 		resource->twopc_prepare_reply_cmd = 0;
+		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
 		int err;

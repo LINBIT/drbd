@@ -861,6 +861,7 @@ enum {
 				 */
 	NEGOTIATION_RESULT_TOUCHED,
 	TWOPC_ABORT_LOCAL,
+	TWOPC_EXECUTED,         /* Commited or aborted */
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
