@@ -5825,19 +5825,8 @@ static int process_twopc(struct drbd_connection *connection,
 			rv = far_away_change(connection, mask, val, reply, flags);
 		break;
 	case TWOPC_RESIZE:
-		if (flags & CS_PREPARE) {
+		if (flags & CS_PREPARE)
 			rv = drbd_support_2pc_resize(resource);
-		} else if (flags & CS_PREPARED && !(flags & CS_ABORT)) {
-			struct drbd_device *device;
-			u64 new_size = be64_to_cpu(p->exposed_size);
-			u64 new_user_size = be64_to_cpu(p->user_size);
-			int dds_flags = reply->dds_flags;
-			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
-
-			resource->twopc_reply.max_possible_size = new_size;
-			drbd_commit_size_change(device, dds_flags, new_size, new_user_size, NULL);
-			rv = SS_SUCCESS;
-		}
 		break;
 	}
 
@@ -5861,6 +5850,18 @@ static int process_twopc(struct drbd_connection *connection,
 			del_timer(&resource->twopc_timer);
 
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+
+		if (reply->type == TWOPC_RESIZE && flags & CS_PREPARED && !(flags & CS_ABORT)) {
+			struct drbd_device *device;
+			u64 new_size = be64_to_cpu(p->exposed_size);
+			u64 new_user_size = be64_to_cpu(p->user_size);
+			int dds_flags = reply->dds_flags;
+			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
+
+			resource->twopc_reply.max_possible_size = new_size;
+			drbd_commit_size_change(device, dds_flags, new_size, new_user_size, NULL);
+			rv = SS_SUCCESS;
+		}
 		clear_remote_state_change(resource);
 
 		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
