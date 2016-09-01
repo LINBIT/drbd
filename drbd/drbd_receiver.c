@@ -5469,7 +5469,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
-	reply.primary_nodes = be64_to_cpu(p->primary_nodes);
+	reply.primary_nodes = 0;
 	reply.weak_nodes = 0;
 	reply.is_disconnect = 0;
 	reply.is_aborted = 0;
@@ -5802,14 +5802,19 @@ static int process_twopc(struct drbd_connection *connection,
 			  reply->tid);
 		flags |= CS_ABORT;
 		break;
-	default:
+	case P_TWOPC_COMMIT:
 		drbd_info(connection, "Committing remote state change %u\n",
 			  reply->tid);
 		break;
+	default:
+		BUG();
 	}
 
 	switch (resource->twopc_type) {
 	case TWOPC_STATE_CHANGE:
+		if (flags & CS_PREPARED)
+			reply->primary_nodes = be64_to_cpu(p->primary_nodes);
+
 		if (peer_device)
 			rv = change_peer_device_state(peer_device, mask, val, flags);
 		else if (affected_connection)
