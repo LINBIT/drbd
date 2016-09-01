@@ -890,6 +890,7 @@ struct twopc_reply {
 			u64 weak_nodes;
 		};
 		struct { /* type == TWOPC_RESIZE */
+			u64 diskful_primary_nodes;
 			u64 max_possible_size;
 		};
 	};
@@ -961,6 +962,7 @@ struct drbd_resource {
 	struct twopc_resize {
 		int dds_flags;            /* from prepare phase */
 		sector_t user_size;       /* from prepare phase */
+		u64 diskful_primary_nodes;/* added in commit phase */
 		u64 new_size;             /* added in commit phase */
 	} twopc_resize;
 	struct list_head queued_twopc;

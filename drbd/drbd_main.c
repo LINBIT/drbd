@@ -1698,6 +1698,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 			p->weak_nodes = cpu_to_be64(reply->weak_nodes);
 			break;
 		case TWOPC_RESIZE:
+			p->diskful_primary_nodes = cpu_to_be64(reply->diskful_primary_nodes);
 			p->max_possible_size = cpu_to_be64(reply->max_possible_size);
 			break;
 		}

@@ -3600,6 +3600,7 @@ retry:
 
 		if (commit_it) {
 			request.exposed_size = cpu_to_be64(new_size);
+			request.diskful_primary_nodes = cpu_to_be64(reply->diskful_primary_nodes);
 			drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
 				  be32_to_cpu(request.tid),
 				  jiffies_to_msecs(jiffies - start_time));
@@ -3622,6 +3623,7 @@ retry:
 	if (commit_it) {
 		struct twopc_resize *tr = &resource->twopc_resize;
 
+		tr->diskful_primary_nodes = reply->diskful_primary_nodes;
 		tr->new_size = new_size;
 		tr->dds_flags = dds_flags;
 		tr->user_size = new_user_size;

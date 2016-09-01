@@ -5769,12 +5769,16 @@ static int process_twopc(struct drbd_connection *connection,
 	}
 	if (pi->cmd == P_TWOPC_PREP_RSZ) {
 		struct drbd_device *device;
+
 		device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
 		if (get_ldev(device)) {
+			if (resource->role[NOW] == R_PRIMARY)
+				reply->diskful_primary_nodes = NODE_MASK(resource->res_opts.node_id);
 			reply->max_possible_size = drbd_local_max_size(device);
 			put_ldev(device);
 		} else {
 			reply->max_possible_size = DRBD_MAX_SECTORS;
+			reply->diskful_primary_nodes = 0;
 		}
 		resource->twopc_resize.dds_flags = be16_to_cpu(p->dds_flags);
 		resource->twopc_resize.user_size = be64_to_cpu(p->user_size);
@@ -5855,6 +5859,7 @@ static int process_twopc(struct drbd_connection *connection,
 			struct twopc_resize *tr = &resource->twopc_resize;
 			struct drbd_device *device;
 
+			tr->diskful_primary_nodes = be64_to_cpu(p->diskful_primary_nodes);
 			tr->new_size = be64_to_cpu(p->exposed_size);
 			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
 
@@ -7492,6 +7497,8 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 					be64_to_cpu(p->weak_nodes);
 				break;
 			case TWOPC_RESIZE:
+				resource->twopc_reply.diskful_primary_nodes |=
+					be64_to_cpu(p->diskful_primary_nodes);
 				resource->twopc_reply.max_possible_size =
 					min_t(sector_t, resource->twopc_reply.max_possible_size,
 					      be64_to_cpu(p->max_possible_size));
