@@ -1692,7 +1692,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 		p->tid = cpu_to_be32(reply->tid);
 		p->initiator_node_id = cpu_to_be32(reply->initiator_node_id);
 		p->reachable_nodes = cpu_to_be64(reply->reachable_nodes);
-		switch (reply->type) {
+		switch (connection->resource->twopc_type) {
 		case TWOPC_STATE_CHANGE:
 			p->primary_nodes = cpu_to_be64(reply->primary_nodes);
 			p->weak_nodes = cpu_to_be64(reply->weak_nodes);
