@@ -958,7 +958,11 @@ struct drbd_resource {
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
 	wait_queue_head_t twopc_wait;
-	int twopc_resize_dds_flags; /* from prepare phase */
+	struct twopc_resize {
+		int dds_flags;            /* from prepare phase */
+		sector_t user_size;       /* from prepare phase */
+		u64 new_size;             /* added in commit phase */
+	} twopc_resize;
 	struct list_head queued_twopc;
 	spinlock_t queued_twopc_lock;
 	struct timer_list queued_twopc_timer;
@@ -2033,8 +2037,7 @@ extern void queued_twopc_timer_fn(unsigned long data);
 extern bool drbd_have_local_disk(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 extern enum determine_dev_size
-drbd_commit_size_change(struct drbd_device *device, int dds_flags,
-			u64 new_size, u64 new_user_size, struct resize_parms *rs);
+drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {

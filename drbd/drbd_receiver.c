@@ -5506,18 +5506,18 @@ static bool is_prepare(enum drbd_packet cmd)
 
 
 enum determine_dev_size
-drbd_commit_size_change(struct drbd_device *device, int dds_flags,
-			u64 new_size, u64 new_user_size, struct resize_parms *rs)
+drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs)
 {
+	struct twopc_resize *tr = &device->resource->twopc_resize;
 	enum determine_dev_size dd;
 	uint64_t my_usize;
 
 	if (!get_ldev(device)) {
 		char ppb[10];
 
-		drbd_set_my_capacity(device, new_size);
-		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, new_size >> 1),
-			  (unsigned long long)new_size >> 1);
+		drbd_set_my_capacity(device, tr->new_size);
+		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, tr->new_size >> 1),
+			  (unsigned long long)tr->new_size >> 1);
 		return DS_UNCHANGED; /* Not entirely true, but we are diskless... */
 	}
 
@@ -5525,34 +5525,34 @@ drbd_commit_size_change(struct drbd_device *device, int dds_flags,
 	my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
 
-	if (my_usize != new_user_size) {
+	if (my_usize != tr->user_size) {
 		struct disk_conf *old_disk_conf, *new_disk_conf;
 
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
 			drbd_err(device, "Allocation of new disk_conf failed\n");
-			device->ldev->disk_conf->disk_size = new_user_size;
+			device->ldev->disk_conf->disk_size = tr->user_size;
 			goto cont;
 		}
 
 		old_disk_conf = device->ldev->disk_conf;
 		*new_disk_conf = *old_disk_conf;
-		new_disk_conf->disk_size = new_user_size;
+		new_disk_conf->disk_size = tr->user_size;
 
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
 		synchronize_rcu();
 		kfree(old_disk_conf);
 
 		drbd_info(device, "New u_size %llu sectors\n",
-			  (unsigned long long)new_user_size);
+			  (unsigned long long)tr->user_size);
 	}
 cont:
-	dd = drbd_determine_dev_size(device, new_size, dds_flags | DDSF_2PC, rs);
+	dd = drbd_determine_dev_size(device, tr->new_size, tr->dds_flags | DDSF_2PC, rs);
 
 	maybe_trigger_resync(device, get_neighbor_device(device, NEXT_HIGHER),
-			     dd == DS_GREW, dds_flags & DDSF_NO_RESYNC);
+			     dd == DS_GREW, tr->dds_flags & DDSF_NO_RESYNC);
 	maybe_trigger_resync(device, get_neighbor_device(device, NEXT_LOWER),
-			     dd == DS_GREW, dds_flags & DDSF_NO_RESYNC);
+			     dd == DS_GREW, tr->dds_flags & DDSF_NO_RESYNC);
 
 	put_ldev(device);
 	return dd;
@@ -5776,7 +5776,8 @@ static int process_twopc(struct drbd_connection *connection,
 		} else {
 			reply->max_possible_size = DRBD_MAX_SECTORS;
 		}
-		resource->twopc_resize_dds_flags = be16_to_cpu(p->dds_flags);
+		resource->twopc_resize.dds_flags = be16_to_cpu(p->dds_flags);
+		resource->twopc_resize.user_size = be64_to_cpu(p->user_size);
 	}
 
 	resource->twopc_reply = *reply;
@@ -5851,14 +5852,13 @@ static int process_twopc(struct drbd_connection *connection,
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 
 		if (resource->twopc_type == TWOPC_RESIZE && flags & CS_PREPARED && !(flags & CS_ABORT)) {
+			struct twopc_resize *tr = &resource->twopc_resize;
 			struct drbd_device *device;
-			u64 new_size = be64_to_cpu(p->exposed_size);
-			u64 new_user_size = be64_to_cpu(p->user_size);
-			int dds_flags = resource->twopc_resize_dds_flags;
+
+			tr->new_size = be64_to_cpu(p->exposed_size);
 			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
 
-			resource->twopc_reply.max_possible_size = new_size;
-			drbd_commit_size_change(device, dds_flags, new_size, new_user_size, NULL);
+			drbd_commit_size_change(device, NULL);
 			rv = SS_SUCCESS;
 		}
 		clear_remote_state_change(resource);

@@ -3620,8 +3620,13 @@ retry:
 		twopc_phase2(resource, device->vnr, commit_it, &request, reach_immediately);
 
 	if (commit_it) {
-		reply->max_possible_size = new_size;
-		dd = drbd_commit_size_change(device, dds_flags, new_size, new_user_size, rs);
+		struct twopc_resize *tr = &resource->twopc_resize;
+
+		tr->new_size = new_size;
+		tr->dds_flags = dds_flags;
+		tr->user_size = new_user_size;
+
+		dd = drbd_commit_size_change(device, rs);
 	} else {
 		if (rv == SS_CW_FAILED_BY_PEER)
 			dd = DS_2PC_NOT_SUPPORTED;
