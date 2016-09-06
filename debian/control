@@ -15,7 +15,7 @@ Architecture: all
 Section: admin
 Depends: debhelper (>=7),
          dkms (>= 1.9.5),
-         drbd-utils (>= 8.9.6),
+         drbd-utils (>= 8.9.8),
          ${misc:Depends}
 Conflicts: drbd-module-source,
            drbd8-module-source

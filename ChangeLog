@@ -2,6 +2,33 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.4-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * fix enforcement of single-primary constraint; a regression of 9.0.3
+ * fix resetting of ko_count
+ * fix the sometimes seen two-phase-commit ABORT endless loop
+ * fix a possible sleep in atomic with no longer taking locks in _destroy
+   functions
+ * fix two-phase-commits when the nodes build a loop; correctly handle
+   them where the two "flows" merge, both for PREPARE and COMMIT
+ * fix the resync after online grow
+ * fix a refcount leak in case a user-process terminates while doing
+   a .dumpit operation (drbdsetup state; drbdsetup show; drbdsetup events2...)
+   The damage of the bug was a resouce that never goes away
+ * fix a multi-node issue in comparing the GIs
+ * fix data-structure handling for RCU consumers (adding connections)
+ * reimplement online resize as two-phase-commit operation; the old online resize
+   code could get into packet-loop storms, had many problems; works when all nodes
+   support protocol 112
+ * enable kref-debug code by default
+ * enable parallel_ops for gennetlink operations; that is a workaround for
+   a "sleep while atomic" on kernels 4.3 and upwards; it is a performance
+   improvement for all; especially users of Open vSwitch will rejoice
+ * avoid "initial packet S crossed"
+ * a number of fixes to speed up establishing of connections
+ * remove some home made mutex deadlocks
+   (auto promote - down; del_resource - new_path)
+
 9.0.3-1 (api:genl2/proto:86-111/transport:14)
 --------
  * fix a deadlock in try_become_up_to_date()
