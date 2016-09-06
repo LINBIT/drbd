@@ -5506,7 +5506,7 @@ static bool is_prepare(enum drbd_packet cmd)
 
 
 enum determine_dev_size
-drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs)
+drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach)
 {
 	struct twopc_resize *tr = &device->resource->twopc_resize;
 	enum determine_dev_size dd;
@@ -5549,10 +5549,41 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs)
 cont:
 	dd = drbd_determine_dev_size(device, tr->new_size, tr->dds_flags | DDSF_2PC, rs);
 
-	maybe_trigger_resync(device, get_neighbor_device(device, NEXT_HIGHER),
-			     dd == DS_GREW, tr->dds_flags & DDSF_NO_RESYNC);
-	maybe_trigger_resync(device, get_neighbor_device(device, NEXT_LOWER),
-			     dd == DS_GREW, tr->dds_flags & DDSF_NO_RESYNC);
+	if (dd == DS_GREW && !(tr->dds_flags & DDSF_NO_RESYNC)) {
+		struct drbd_resource *resource = device->resource;
+		const int my_node_id = resource->res_opts.node_id;
+		struct drbd_peer_device *peer_device;
+		u64 im;
+
+		for_each_peer_device_ref(peer_device, im, device) {
+			if (peer_device->repl_state[NOW] != L_ESTABLISHED ||
+			    peer_device->disk_state[NOW] < D_INCONSISTENT)
+				continue;
+
+			if (tr->diskful_primary_nodes) {
+				if (tr->diskful_primary_nodes & NODE_MASK(my_node_id)) {
+					enum drbd_repl_state resync;
+					if (peer_device->connection->peer_role[NOW] == R_SECONDARY) {
+						resync = L_SYNC_SOURCE;
+					} else /* peer == R_PRIMARY */ {
+						resync = peer_device->node_id < my_node_id ?
+							L_SYNC_TARGET : L_SYNC_SOURCE;
+					}
+					drbd_start_resync(peer_device, resync);
+				} else {
+					if (peer_device->connection->peer_role[NOW] == R_PRIMARY)
+						drbd_start_resync(peer_device, L_SYNC_TARGET);
+					/* else  no resync */
+				}
+			} else {
+				if (resource->twopc_parent_nodes & NODE_MASK(peer_device->node_id))
+					drbd_start_resync(peer_device, L_SYNC_TARGET);
+				else if (nodes_to_reach & NODE_MASK(peer_device->node_id))
+					drbd_start_resync(peer_device, L_SYNC_SOURCE);
+				/* else  no resync */
+			}
+		}
+	}
 
 	put_ldev(device);
 	return dd;
@@ -5612,6 +5643,7 @@ static int process_twopc(struct drbd_connection *connection,
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_prepare_reply_cmd = 0;
+		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (csc_rv == CSC_MATCH && !is_prepare(pi->cmd)) {
 		flags |= CS_PREPARED;
@@ -5642,6 +5674,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
+		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		resource->twopc_prepare_reply_cmd = 0;
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
@@ -5686,6 +5719,7 @@ static int process_twopc(struct drbd_connection *connection,
 				enum drbd_packet reply_cmd;
 
 				spin_lock_irq(&resource->req_lock);
+				resource->twopc_parent_nodes |= NODE_MASK(connection->peer_node_id);
 				reply_cmd = resource->twopc_prepare_reply_cmd;
 				if (!reply_cmd) {
 					kref_get(&connection->kref);
@@ -5863,7 +5897,7 @@ static int process_twopc(struct drbd_connection *connection,
 			tr->new_size = be64_to_cpu(p->exposed_size);
 			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
 
-			drbd_commit_size_change(device, NULL);
+			drbd_commit_size_change(device, NULL, be64_to_cpu(p->nodes_to_reach));
 			rv = SS_SUCCESS;
 		}
 		clear_remote_state_change(resource);

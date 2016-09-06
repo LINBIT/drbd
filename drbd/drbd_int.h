@@ -955,6 +955,7 @@ struct drbd_resource {
 	enum twopc_type twopc_type; /* from prepare phase */
 	enum drbd_packet twopc_prepare_reply_cmd; /* this node's answer to the prepare phase or 0 */
 	struct list_head twopc_parents;  /* prepared on behalf of peer */
+	u64 twopc_parent_nodes;
 	struct twopc_reply twopc_reply;
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
@@ -2039,7 +2040,7 @@ extern void queued_twopc_timer_fn(unsigned long data);
 extern bool drbd_have_local_disk(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 extern enum determine_dev_size
-drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs);
+drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
