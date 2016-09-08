@@ -2402,9 +2402,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	mutex_lock(&resource->conf_update);
-	have_conf_update = true;
-
 	/* if you want to reconfigure, please tear down first */
 	if (device->disk_state[NOW] > D_DISKLESS) {
 		retcode = ERR_DISK_CONFIGURED;
@@ -2516,6 +2513,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	drbd_info(device, "Maximum number of peer devices = %u\n",
 		  device->bitmap->bm_max_peers);
 
+	mutex_lock(&resource->conf_update);
+	have_conf_update = true;
+
 	/* Make sure the local node id matches or is unassigned */
 	if (nbc->md.node_id != -1 && nbc->md.node_id != resource->res_opts.node_id) {
 		drbd_err(device, "Local node id %d differs from local "
@@ -2609,6 +2609,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			goto force_diskless_dec;
 		}
 	}
+
+	mutex_unlock(&resource->conf_update);
+	have_conf_update = false;
 
 	lock_all_resources();
 	retcode = drbd_resync_after_valid(device, device->ldev->disk_conf->resync_after);
@@ -2737,7 +2740,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_kobject_uevent(device);
 	put_ldev(device);
-	mutex_unlock(&resource->conf_update);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
