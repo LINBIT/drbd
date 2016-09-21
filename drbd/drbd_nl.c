@@ -2193,6 +2193,28 @@ static bool bitmap_index_vacant(struct drbd_backing_dev *bdev, int bitmap_index)
 	return true;
 }
 
+static int
+allocate_bitmap_index(struct drbd_peer_device *peer_device,
+		      struct drbd_backing_dev *nbc)
+{
+	struct drbd_device *device = peer_device->device;
+	const int peer_node_id = peer_device->connection->peer_node_id;
+	int bitmap_index;
+
+	for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
+		if (bitmap_index_vacant(nbc, bitmap_index)) {
+			struct drbd_peer_md *peer_md = &nbc->md.peers[peer_node_id];
+
+			peer_md->bitmap_index = bitmap_index;
+			peer_device->bitmap_index = bitmap_index;
+			peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
+			return 0;
+		}
+	}
+	drbd_err(peer_device, "Not enough free bitmap slots\n");
+	return -ENOSPC;
+}
+
 static struct block_device *open_backing_dev(struct drbd_device *device,
 		const char *bdev_path, void *claim_ptr, bool do_bd_link)
 {
@@ -2507,28 +2529,14 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			goto force_diskless_dec;
 		}
 		for_each_peer_device(peer_device, device) {
-			struct drbd_connection *connection = peer_device->connection;
-			int bitmap_index;
-
 			if (peer_device->bitmap_index != -1)
 				continue;
 
-			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				if (bitmap_index_vacant(nbc, bitmap_index)) {
-					const int node_id = connection->peer_node_id;
-					struct drbd_peer_md *peer_md = &nbc->md.peers[node_id];
-
-					peer_md->bitmap_index = bitmap_index;
-					peer_device->bitmap_index = bitmap_index;
-					peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
-					goto next_device;
-				}
+			err = allocate_bitmap_index(peer_device, nbc);
+			if (err) {
+				retcode = ERR_INVALID_REQUEST;
+				goto force_diskless_dec;
 			}
-			drbd_err(device, "Not enough free bitmap slots\n");
-			retcode = ERR_INVALID_REQUEST;
-			goto force_diskless_dec;
-		next_device:
-			/* nothing to do */;
 		}
 	}
 
@@ -3373,32 +3381,20 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	}
 	if (allocate_bitmap_slots) {
 		idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-			unsigned int bitmap_index;
+			if (peer_device->bitmap_index != -1)
+				continue;
 
 			device = peer_device->device;
 			if (!get_ldev(device))
 				continue;
-			if (peer_device->bitmap_index != -1)
-				goto next_device_2;
-			for (bitmap_index = 0; bitmap_index < device->bitmap->bm_max_peers; bitmap_index++) {
-				if (bitmap_index_vacant(device->ldev, bitmap_index)) {
-					const int node_id = adm_ctx->peer_node_id;
-					struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
-					peer_md->bitmap_index = bitmap_index;
-					drbd_md_mark_dirty(device);
-					peer_device->bitmap_index = bitmap_index;
-					peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
-					goto next_device_2;
-				}
+			err = allocate_bitmap_index(peer_device, device->ldev);
+			put_ldev(device);
+			if (err) {
+				retcode = ERR_INVALID_REQUEST;
+				goto unlock_fail_free_connection;
 			}
-			drbd_err(device, "Not enough free bitmap slots\n");
-			put_ldev(device);
-			retcode = ERR_INVALID_REQUEST;
-			goto unlock_fail_free_connection;
-
-		next_device_2:
-			put_ldev(device);
+			drbd_md_mark_dirty(device);
 		}
 	}
 
