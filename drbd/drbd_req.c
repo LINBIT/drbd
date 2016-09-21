@@ -257,6 +257,9 @@ void drbd_req_destroy(struct kref *kref)
 				if (rq_state & RQ_NET_OK) {
 					int bitmap_index = peer_md[node_id].bitmap_index;
 
+					if (bitmap_index == -1)
+						continue;
+
 					if (rq_state & RQ_NET_SIS)
 						clear_bit(bitmap_index, &bits);
 					else
@@ -419,7 +422,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 
 		drbd_err(device,
 			"drbd_req_complete: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
-			s, 1 + peer_device->bitmap_index, ns, atomic_read(&req->completion_ref));
+			 s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
 		return;
 	}
 

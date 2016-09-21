@@ -5083,7 +5083,7 @@ bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_
 {
 	struct drbd_md *md = &peer_device->device->ldev->md;
 
-	if (!expect(peer_device, peer_device->bitmap_index != -1))
+	if (peer_device->bitmap_index == -1)
 		return false;
 
 	return md->peers[peer_device->node_id].flags & flag;

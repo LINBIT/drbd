@@ -3606,7 +3606,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, int 
 	if (hg == 4) {
 		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
 
-		if (from == -1)
+		if (from == -1 || peer_device->bitmap_index == -1)
 			return 0;
 
 		drbd_info(peer_device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
@@ -7953,7 +7953,8 @@ void apply_unacked_peer_requests(struct drbd_connection *connection)
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
 		struct drbd_device *device = peer_device->device;
-		u64 mask = ~(1 << peer_device->bitmap_index);
+		int bitmap_index = peer_device->bitmap_index;
+		u64 mask = ~(bitmap_index != -1 ? 1UL << bitmap_index : 0UL);
 
 		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 			      mask, mask);
@@ -7973,7 +7974,8 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
 		struct drbd_device *device = peer_device->device;
-		u64 mask = ~(1 << peer_device->bitmap_index);
+		int bitmap_index = peer_device->bitmap_index;
+		u64 mask = ~(bitmap_index != -1 ? 1UL << bitmap_index : 0UL);
 
 		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 			      mask, mask);
