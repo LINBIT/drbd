@@ -4033,9 +4033,14 @@ static enum outdate_what outdate_on_disconnect(struct drbd_connection *connectio
 
 	if (connection->fencing_policy >= FP_RESOURCE &&
 	    resource->role[NOW] != connection->peer_role[NOW]) {
+		/* primary politely disconnects from secondary,
+		 * tells peer to please outdate itself */
 		if (resource->role[NOW] == R_PRIMARY)
 			return OUTDATE_PEER_DISKS;
-		if (connection->peer_role[NOW] != R_PRIMARY)
+
+		/* secondary politely disconnect from primary,
+		 * proposes to outdate itself. */
+		if (connection->peer_role[NOW] == R_PRIMARY)
 			return OUTDATE_DISKS;
 	}
 	return OUTDATE_NOTHING;
