@@ -5235,8 +5235,7 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(
 			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 			enum drbd_disk_state peer_disk_state;
 
-			if (!peer_md->bitmap_uuid ||
-			    !(peer_md->flags & MDF_PEER_FENCING))
+			if (!(peer_md->flags & MDF_PEER_FENCING))
 				continue;
 			peer_device = peer_device_by_node_id(device, node_id);
 			if (peer_device)
