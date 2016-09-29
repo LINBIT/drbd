@@ -6730,14 +6730,14 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		return 0;
 	peer_device->current_uuid = current_uuid;
 
-	if (get_ldev(device)) {
+	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_warn(peer_device, "received new current UUID: %016llX "
 				  "weak_nodes=%016llX\n", current_uuid, weak_nodes);
 			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
 		}
 		put_ldev(device);
-	} else if (resource->role[NOW] == R_PRIMARY) {
+	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
 		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 	}
 

@@ -36,6 +36,8 @@
 extern void tl_abort_disk_io(struct drbd_device *device);
 
 static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_state ns);
+static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
+				  enum drbd_disk_state os, enum drbd_disk_state ns);
 
 struct after_state_change_work {
 	struct drbd_work w;
@@ -1853,7 +1855,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				    disk_state[NEW] >= D_UP_TO_DATE)
 					create_new_uuid = true;
 			}
-
+			if (peer_returns_diskless(peer_device, peer_disk_state[OLD], peer_disk_state[NEW])) {
+				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
+				    disk_state[NEW] == D_UP_TO_DATE)
+					create_new_uuid = true;
+			}
 		}
 
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
@@ -2320,9 +2326,15 @@ static bool calc_device_stable(struct drbd_state_change *state_change, int n_dev
 /* takes old and new peer disk state */
 static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_state ns)
 {
-	if ((os >= D_INCONSISTENT && os != D_UNKNOWN && os != D_OUTDATED)
-	&&  (ns < D_INCONSISTENT || ns == D_UNKNOWN || ns == D_OUTDATED))
-		return true;
+	return (os >= D_INCONSISTENT && os != D_UNKNOWN && os != D_OUTDATED)
+		&& (ns < D_INCONSISTENT || ns == D_UNKNOWN || ns == D_OUTDATED);
+}
+
+static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
+				  enum drbd_disk_state os, enum drbd_disk_state ns)
+{
+	struct drbd_device *device = peer_device->device;
+	bool rv = false;
 
 	/* Scenario, starting with normal operation
 	 * Connected Primary/Secondary UpToDate/UpToDate
@@ -2330,11 +2342,14 @@ static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_st
 	 * ...
 	 * Connected Primary/Secondary UpToDate/Diskless (resumed; needs to bump uuid!)
 	 */
-	if (os == D_UNKNOWN
-	&&  (ns == D_DISKLESS || ns == D_FAILED || ns == D_OUTDATED))
-		return true;
 
-	return false;
+	if (get_ldev(device)) {
+		if (os == D_UNKNOWN && (ns == D_DISKLESS || ns == D_FAILED || ns == D_OUTDATED) &&
+		    drbd_bitmap_uuid(peer_device) == 0)
+			rv = true;
+		put_ldev(device);
+	}
+	return rv;
 }
 
 /*
