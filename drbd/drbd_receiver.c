@@ -1728,7 +1728,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 	struct p_trim *p = pi->data;
 	bool is_trim_or_wsame = pi->cmd == P_TRIM || pi->cmd == P_WSAME;
 	unsigned int digest_size =
-		connection->peer_integrity_tfm ?
+		pi->cmd != P_TRIM && connection->peer_integrity_tfm ?
 		crypto_ahash_digestsize(connection->peer_integrity_tfm) : 0;
 
 	d->sector = be64_to_cpu(p->p_data.sector);
@@ -1737,6 +1737,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 	d->dp_flags = be32_to_cpu(p->p_data.dp_flags);
 	d->length = pi->size;
 	d->bi_size = is_trim_or_wsame ? be32_to_cpu(p->size) : pi->size - digest_size;
+	d->digest_size = digest_size;
 }
 
 /* used from receive_RSDataReply (recv_resync_read)
@@ -1754,15 +1755,14 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	struct drbd_device *device = peer_device->device;
 	const uint64_t capacity = drbd_get_capacity(device->this_bdev);
 	struct drbd_peer_request *peer_req;
-	int digest_size, err;
+	int err;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	struct drbd_transport *transport = &peer_device->connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
-	digest_size = d->length ? d->length - d->bi_size : 0;
-	if (digest_size) {
-		err = drbd_recv_into(peer_device->connection, dig_in, digest_size);
+	if (d->digest_size) {
+		err = drbd_recv_into(peer_device->connection, dig_in, d->digest_size);
 		if (err)
 			return NULL;
 	}
@@ -1794,7 +1794,7 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (d->length == 0)
 		return peer_req;
 
-	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->bi_size);
+	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length - d->digest_size);
 	if (err)
 		goto fail;
 
@@ -1809,9 +1809,9 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 		kunmap(page);
 	}
 
-	if (digest_size) {
+	if (d->digest_size) {
 		drbd_csum_pages(peer_device->connection->peer_integrity_tfm, peer_req->page_chain.head, dig_vv);
-		if (memcmp(dig_in, dig_vv, digest_size)) {
+		if (memcmp(dig_in, dig_vv, d->digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				d->sector, d->bi_size);
 			goto fail;

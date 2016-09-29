@@ -1998,6 +1998,7 @@ struct drbd_peer_request_details {
 	uint32_t length;	/* endian converted p_head*.length */
 	uint32_t bi_size;	/* resulting bio size */
 	/* for non-discards: bi_size = length - digest_size */
+	uint32_t digest_size;
 };
 
 struct queued_twopc {
