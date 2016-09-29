@@ -2121,6 +2121,12 @@ static int do_md_sync(struct drbd_device *device)
 	return 0;
 }
 
+void repost_up_to_date_fn(unsigned long data)
+{
+	struct drbd_resource *resource = (struct drbd_resource *) data;
+	drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+}
+
 static int try_become_up_to_date(struct drbd_resource *resource)
 {
 	enum drbd_state_rv rv;
@@ -2141,7 +2147,7 @@ static int try_become_up_to_date(struct drbd_resource *resource)
 			goto repost;
 	} else {
 	repost:
-		drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+		mod_timer(&resource->repost_up_to_date_timer, jiffies + HZ/10);
 	}
 
 	return 0;

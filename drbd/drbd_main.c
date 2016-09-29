@@ -2848,6 +2848,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
+	del_timer_sync(&resource->repost_up_to_date_timer);
 	kref_debug_put(&resource->kref_debug, 8);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
@@ -3249,6 +3250,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->transfer_log);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
 	setup_timer(&resource->peer_ack_timer, peer_ack_timer_fn, (unsigned long) resource);
+	setup_timer(&resource->repost_up_to_date_timer, repost_up_to_date_fn, (unsigned long) resource);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	if (set_resource_options(resource, res_opts))
