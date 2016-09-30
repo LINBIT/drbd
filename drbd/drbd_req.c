@@ -1282,11 +1282,12 @@ static void maybe_pull_ahead(struct drbd_device *device)
 bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	enum drbd_disk_state peer_disk_state = peer_device->disk_state[which];
+	enum drbd_repl_state repl_state = peer_device->repl_state[which];
 
 	return peer_disk_state == D_UP_TO_DATE ||
 		(peer_disk_state == D_INCONSISTENT &&
-		 peer_device->repl_state[which] >= L_WF_BITMAP_T &&
-		 peer_device->repl_state[which] < L_AHEAD);
+		 (repl_state == L_ESTABLISHED ||
+		  (repl_state >= L_WF_BITMAP_T && repl_state < L_AHEAD)));
 	/* Before proto 96 that was >= CONNECTED instead of >= L_WF_BITMAP_T.
 	   That is equivalent since before 96 IO was frozen in the L_WF_BITMAP*
 	   states. */
