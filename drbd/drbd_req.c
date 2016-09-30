@@ -1300,6 +1300,34 @@ static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 	   since we enter state L_AHEAD only if proto >= 96 */
 }
 
+/* Prefer to read from protcol C peers, then B, last A */
+static u64 calc_nodes_to_read_from(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 candidates[DRBD_PROT_C] = {};
+	int wp;
+
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		struct net_conf *nc;
+
+		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+			continue;
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (!nc)
+			continue;
+		wp = nc->wire_protocol;
+		candidates[wp - 1] |= NODE_MASK(peer_device->node_id);
+	}
+	rcu_read_unlock();
+
+	for (wp = DRBD_PROT_C; wp >= DRBD_PROT_A; wp--) {
+		if (candidates[wp - 1])
+			return candidates[wp - 1];
+	}
+	return 0;
+}
+
 /* If this returns NULL, and req->private_bio is still set,
  * the request should be submitted locally.
  *
@@ -1333,21 +1361,27 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		}
 	}
 
-	/* TODO: improve read balancing decisions, take into account drbd
-	 * protocol, all peers, pending requests etc. */
-
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
-			continue;
-		if (req->private_bio == NULL ||
-		    remote_due_to_read_balancing(device, peer_device,
-						 req->i.sector, rbm)) {
-			goto found;
+	/* TODO: improve read balancing decisions, allow user to configure node weights */
+	while (true) {
+		if (!device->read_nodes)
+			device->read_nodes = calc_nodes_to_read_from(device);
+		if (device->read_nodes) {
+			int peer_node_id = __ffs64(device->read_nodes);
+			device->read_nodes &= ~NODE_MASK(peer_node_id);
+			peer_device = peer_device_by_node_id(device, peer_node_id);
+			if (!peer_device)
+				continue;
+			if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+				continue;
+			if (req->private_bio &&
+			    !remote_due_to_read_balancing(device, peer_device, req->i.sector, rbm))
+				peer_device = NULL;
+		} else {
+			peer_device = NULL;
 		}
+		break;
 	}
-	peer_device = NULL;
 
-    found:
 	if (peer_device && req->private_bio) {
 		bio_put(req->private_bio);
 		req->private_bio = NULL;
