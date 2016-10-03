@@ -2579,7 +2579,7 @@ static int process_one_request(struct drbd_connection *connection)
 				peer_device->todo.was_ahead = true;
 				drbd_send_current_state(peer_device);
 			}
-			err = drbd_send_out_of_sync(peer_device, req);
+			err = drbd_send_out_of_sync(peer_device, &req->i);
 			what = OOS_HANDED_TO_NETWORK;
 		}
 	} else {

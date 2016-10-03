@@ -2354,15 +2354,15 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	return err;
 }
 
-int drbd_send_out_of_sync(struct drbd_peer_device *peer_device, struct drbd_request *req)
+int drbd_send_out_of_sync(struct drbd_peer_device *peer_device, struct drbd_interval *i)
 {
 	struct p_block_desc *p;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
-	p->sector = cpu_to_be64(req->i.sector);
-	p->blksize = cpu_to_be32(req->i.size);
+	p->sector = cpu_to_be64(i->sector);
+	p->blksize = cpu_to_be32(i->size);
 	return drbd_send_command(peer_device, P_OUT_OF_SYNC, DATA_STREAM);
 }
 
