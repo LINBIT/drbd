@@ -2320,6 +2320,19 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 	kfree(ldev);
 }
 
+static void discard_not_wanted_bitmap_uuids(struct drbd_device *device, struct drbd_backing_dev *ldev)
+{
+	struct drbd_peer_md *peer_md = ldev->md.peers;
+	struct drbd_peer_device *peer_device;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		peer_device = peer_device_by_node_id(device, node_id);
+		if (peer_device && peer_md[node_id].bitmap_uuid && !want_bitmap(peer_device))
+			peer_md[node_id].bitmap_uuid = 0;
+	}
+}
+
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -2428,6 +2441,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
+	discard_not_wanted_bitmap_uuids(device, nbc);
 	sanitize_disk_conf(device, new_disk_conf, nbc);
 
 	if (drbd_get_max_capacity(nbc) < new_disk_conf->disk_size) {
