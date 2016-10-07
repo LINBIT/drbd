@@ -4617,7 +4617,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		   Note: Former unstable (but up-to-date) nodes become consistent for a short
 		   time after loosing their primary peer. Therefore consider consistent here
 		   as well. */
-		drbd_info(peer_device, "Upgrading local disk to %s after unstable (and no resync).\n",
+		drbd_info(peer_device, "Upgrading local disk to %s after unstable/weak (and no resync).\n",
 			  drbd_disk_str(peer_disk_state));
 		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE);
 		return;
@@ -5934,22 +5934,33 @@ static int process_twopc(struct drbd_connection *connection,
 
 static void try_to_get_resynced(struct drbd_device *device)
 {
+	int best_hg = -3000;
+	struct drbd_peer_device *best_peer_device = NULL;
 	struct drbd_peer_device *peer_device;
+
+	if (!get_ldev(device))
+		return;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
-			goto found;
+		int hg, rule_nr, peer_node_id;
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+			hg = drbd_uuid_compare(peer_device, &rule_nr, &peer_node_id);
+			drbd_info(peer_device, "hg = %d\n",hg);
+			if (hg <= 0 && hg > best_hg) {
+				best_hg = hg;
+				best_peer_device = peer_device;
+			}
+		}
 	}
-	peer_device = NULL;
-found:
 	rcu_read_unlock();
+	peer_device = best_peer_device;
 
-	if (peer_device && get_ldev(device)) {
+	if (peer_device) {
 		drbd_resync(peer_device, DISKLESS_PRIMARY);
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
-		put_ldev(device);
 	}
+	put_ldev(device);
 }
 
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
