@@ -785,7 +785,7 @@ static int dtt_create_listener(struct drbd_transport *transport,
 	write_unlock_bh(&s_listen->sk->sk_callback_lock);
 
 	what = "listen";
-	err = s_listen->ops->listen(s_listen, 5);
+	err = s_listen->ops->listen(s_listen, DRBD_PEERS_MAX * 2);
 	if (err < 0)
 		goto out;
 
