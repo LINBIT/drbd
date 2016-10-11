@@ -79,7 +79,7 @@ quiet_cmd_compat_test_result = COMPAT  $*
       cmd_compat_test_result = \
 	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
 	if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(@D)/.compat_test.$*.o $<	\
-		-D"KBUILD_MODNAME=KBUILD_STR(compat_dummy)"			\
+		-D"KBUILD_MODNAME=\"compat_dummy\""				\
 		> $(@D)/.compat_test.$*.stdout 2> $(@D)/.compat_test.$*.stderr; \
 	then									\
 		echo "\#define $$var" ;						\
