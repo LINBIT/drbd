@@ -439,6 +439,7 @@ static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 		case -EINTR:
 		case -ERESTARTSYS:
 		case -ECONNREFUSED:
+		case -ECONNRESET:
 		case -ENETUNREACH:
 		case -EHOSTDOWN:
 		case -EHOSTUNREACH:
