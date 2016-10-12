@@ -463,35 +463,61 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	}
 	spin_unlock_irq(&resource->req_lock);
 
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 	if (active) {
+		struct drbd_connection *connection;
+
 		seq_printf(m,
 			   "Executing tid: %u\n"
 			   "  initiator_node_id: %d\n"
 			   "  target_node_id: %d\n",
 			   twopc.tid, twopc.initiator_node_id,
 			   twopc.target_node_id);
-		if (twopc.initiator_node_id == resource->res_opts.node_id) {
-			struct drbd_connection *connection;
 
-			seq_puts(m, "  peers reply's: ");
-			rcu_read_lock();
-			for_each_connection(connection, resource) {
+		if (twopc.initiator_node_id != resource->res_opts.node_id) {
+			u64 parents = 0;
+
+			seq_puts(m, "  parents: ");
+			spin_lock_irq(&resource->req_lock);
+			list_for_each_entry(connection, &resource->twopc_parents, twopc_parent_list) {
 				char *name = rcu_dereference((connection)->transport.net_conf)->name;
-
-				if (!test_bit(TWOPC_PREPARED, &connection->flags))
-					seq_printf(m, "%s n.p., ", name);
-				else if (test_bit(TWOPC_NO, &connection->flags))
-					seq_printf(m, "%s no, ", name);
-				else if (test_bit(TWOPC_RETRY, &connection->flags))
-					seq_printf(m, "%s ret, ", name);
-				else if (test_bit(TWOPC_YES, &connection->flags))
-					seq_printf(m, "%s yes, ", name);
-				else seq_printf(m, "%s ___, ", name);
+				seq_printf(m, "%s, ", name);
+				parents |= NODE_MASK(connection->peer_node_id);
 			}
-			rcu_read_unlock();
+			spin_unlock_irq(&resource->req_lock);
 			seq_puts(m, "\n");
-		} else {
+			if (parents != resource->twopc_parent_nodes)
+				seq_printf(m,
+					   "  !ATT twopc_parent_nodes: %llX != %llX\n",
+					   resource->twopc_parent_nodes,
+					   parents);
+			if (resource->twopc_prepare_reply_cmd)
+				seq_printf(m,
+					   "  Reply sent: %s\n",
+					   resource->twopc_prepare_reply_cmd == P_TWOPC_YES ? "yes" :
+					   resource->twopc_prepare_reply_cmd == P_TWOPC_NO ? "no" :
+					   resource->twopc_prepare_reply_cmd == P_TWOPC_RETRY ? "retry" :
+					   "else!?!");
+		}
+
+		seq_puts(m, "  received replys: ");
+		rcu_read_lock();
+		for_each_connection_rcu(connection, resource) {
+			char *name = rcu_dereference((connection)->transport.net_conf)->name;
+
+			if (!test_bit(TWOPC_PREPARED, &connection->flags))
+				/* seq_printf(m, "%s n.p., ", name) * print nothing! */;
+			else if (test_bit(TWOPC_NO, &connection->flags))
+				seq_printf(m, "%s no, ", name);
+			else if (test_bit(TWOPC_RETRY, &connection->flags))
+				seq_printf(m, "%s ret, ", name);
+			else if (test_bit(TWOPC_YES, &connection->flags))
+				seq_printf(m, "%s yes, ", name);
+			else seq_printf(m, "%s ___, ", name);
+		}
+		rcu_read_unlock();
+		seq_puts(m, "\n");
+		if (twopc.initiator_node_id != resource->res_opts.node_id) {
 			/* The timer is only relevant for twopcs initiated by other nodes */
 			jif = resource->twopc_timer.expires - jiffies;
 			seq_printf(m, "  timer expires in: %d ms\n", jiffies_to_msecs(jif));
