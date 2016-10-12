@@ -5734,9 +5734,21 @@ static int process_twopc(struct drbd_connection *connection,
 				}
 				spin_unlock_irq(&resource->req_lock);
 
-				if (reply_cmd)
+				if (reply_cmd) {
 					drbd_send_twopc_reply(connection, reply_cmd,
 							      &resource->twopc_reply);
+				} else {
+					/* if a node sends us a prepare, that means he has
+					   prepared this himsilf successfully. */
+					set_bit(TWOPC_YES, &connection->flags);
+
+					if (cluster_wide_reply_ready(resource)) {
+						if (resource->twopc_work.cb == NULL) {
+							resource->twopc_work.cb = nested_twopc_work;
+							drbd_queue_work(&resource->work, &resource->twopc_work);
+						}
+					}
+				}
 			}
 		} else {
 			drbd_info(connection, "Ignoring %s packet %u "
