@@ -3339,6 +3339,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	rcu_read_unlock();
 
     retry:
+	if (current == resource->worker.task && resource->remote_state_change)
+		return __end_state_change(resource, &irq_flags, SS_CONCURRENT_ST_CHG);
+
 	complete_remote_state_change(resource, &irq_flags);
 	start_time = jiffies;
 
