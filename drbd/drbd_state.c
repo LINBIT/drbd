@@ -3676,12 +3676,12 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	if (!twopc_reply.tid || !expect(resource, !list_empty(&parents)))
 		return;
 
-	drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
-		   twopc_reply.tid, drbd_packet_name(cmd));
-
 	list_for_each_entry_safe(twopc_parent, tmp, &parents, twopc_parent_list) {
 		if (twopc_reply.is_disconnect)
 			set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
+
+		drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
+			   twopc_reply.tid, drbd_packet_name(cmd));
 
 		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
 		kref_debug_put(&twopc_parent->kref_debug, 9);
