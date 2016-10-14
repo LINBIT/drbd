@@ -3676,7 +3676,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 
-	if (!twopc_reply.tid || !expect(resource, !list_empty(&parents)))
+	if (!twopc_reply.tid)
 		return;
 
 	list_for_each_entry_safe(twopc_parent, tmp, &parents, twopc_parent_list) {
