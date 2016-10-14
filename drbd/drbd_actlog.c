@@ -1255,6 +1255,9 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	for_each_peer_device_rcu(peer_device, device) {
 		int bitmap_index = peer_device->bitmap_index;
 
+		if (bitmap_index == -1)
+			continue;
+
 		if (!test_and_clear_bit(bitmap_index, &mask))
 			continue;
 
