@@ -797,12 +797,16 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * bi_rw (some kernel version) -> data packet flags -> bi_rw (other kernel version)
  */
 
+#if defined(bio_set_op_attrs)
+/* FIXME add compat for Linux 4.8 */
+#error "does not work yet"
+
 /* RHEL 6.1 backported FLUSH/FUA as BIO_RW_FLUSH/FUA
  * and at that time also introduced the defines BIO_FLUSH/FUA.
  * There is also REQ_FLUSH/FUA, but these do NOT share
  * the same value space as the bio rw flags, yet.
  */
-#ifdef BIO_FLUSH
+#elif defined(BIO_FLUSH)
 
 #define DRBD_REQ_FLUSH		(1UL << BIO_RW_FLUSH)
 #define DRBD_REQ_FUA		(1UL << BIO_RW_FUA)
@@ -862,6 +866,8 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * without a direct equivalent in bi_rw. */
 #define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
 #define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
+
+#define COMPAT_MAYBE_RETRY_HARDBARRIER
 
 /* we don't support DISCARDS yet, anyways.
  * cannot test on defined(BIO_RW_DISCARD), it may be an enum */

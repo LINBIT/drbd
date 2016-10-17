@@ -149,7 +149,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
 	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
 
-#ifndef REQ_FLUSH
+#ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
  retry:
 #endif
@@ -186,7 +186,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
 	err = device->md_io.error;
 
-#ifndef REQ_FLUSH
+#ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
 	/* check for unsupported barrier op.
 	 * would rather check on EOPNOTSUPP, but that is not reliable.
 	 * don't try again for ANY return value != 0 */
