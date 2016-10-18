@@ -1665,9 +1665,9 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		device->ldev->md.flags |= MDF_AL_DISABLED;
 
 	if (new_disk_conf->md_flushes)
-		clear_bit(MD_NO_BARRIER, &device->flags);
+		clear_bit(MD_NO_FUA, &device->flags);
 	else
-		set_bit(MD_NO_BARRIER, &device->flags);
+		set_bit(MD_NO_FUA, &device->flags);
 
 	if (write_ordering_changed(old_disk_conf, new_disk_conf))
 		drbd_bump_write_ordering(device->resource, NULL, WO_BIO_BARRIER);
@@ -2027,9 +2027,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* Reset the "barriers don't work" bits here, then force meta data to
 	 * be written, to ensure we determine if barriers are supported. */
 	if (new_disk_conf->md_flushes)
-		clear_bit(MD_NO_BARRIER, &device->flags);
+		clear_bit(MD_NO_FUA, &device->flags);
 	else
-		set_bit(MD_NO_BARRIER, &device->flags);
+		set_bit(MD_NO_FUA, &device->flags);
 
 	/* Point of no return reached.
 	 * Devices and memory are no longer released by error cleanup below.

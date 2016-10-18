@@ -145,7 +145,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	const int size = 4096;
 	int err;
 
-	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &device->flags))
+	if ((rw & WRITE) && !test_bit(MD_NO_FUA, &device->flags))
 		rw |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
 	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
 
@@ -193,7 +193,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	if (err && device->md_io.done && (bio->bi_rw & DRBD_REQ_HARDBARRIER)) {
 		/* Try again with no barrier */
 		drbd_warn(device, "Barriers not supported on meta data device - disabling\n");
-		set_bit(MD_NO_BARRIER, &device->flags);
+		set_bit(MD_NO_FUA, &device->flags);
 		rw &= ~DRBD_REQ_HARDBARRIER;
 		bio_put(bio);
 		goto retry;

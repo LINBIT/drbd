@@ -598,7 +598,7 @@ enum {
 				 * goes into C_CONNECTED state. */
 	CONSIDER_RESYNC,
 
-	MD_NO_BARRIER,		/* meta data device does not support barriers,
+	MD_NO_FUA,		/* meta data device does not support barriers,
 				   so don't even try */
 	BITMAP_IO,		/* suspend application io;
 				   once no more io in flight, start bitmap io */
