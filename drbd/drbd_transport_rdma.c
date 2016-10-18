@@ -1314,12 +1314,12 @@ static void dtr_flow_control(struct dtr_flow *flow)
 		dtr_send_flow_control_msg(flow->path);
 }
 
-static void dtr_got_flow_control_msg(struct dtr_path *path,
+static int dtr_got_flow_control_msg(struct dtr_path *path,
 				     struct dtr_flow_control *msg)
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct dtr_flow *flow;
-	int i, n, rx_desc_stolen_from;
+	int i, n;
 
 	for (i = CONTROL_STREAM; i >= DATA_STREAM; i--) {
 		uint32_t new_rx_descs = be32_to_cpu(msg->new_rx_descs[i]);
@@ -1336,7 +1336,14 @@ static void dtr_got_flow_control_msg(struct dtr_path *path,
 			clear_bit(NET_CONGESTED, &rdma_transport->transport.flags);
 	}
 
-	rx_desc_stolen_from = be32_to_cpu(msg->rx_desc_stolen_from_stream);
+	return be32_to_cpu(msg->rx_desc_stolen_from_stream);
+}
+
+static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_desc_stolen_from)
+{
+	struct dtr_flow *flow;
+	int n;
+
 	flow = &path->flow[rx_desc_stolen_from];
 	n = atomic_dec_return(&flow->rx_descs_known_to_peer);
 	/* If we get a lot of flow control messages in, but no data on this
@@ -1434,14 +1441,15 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	rx_desc->size = wc.byte_len;
 	immediate.i = be32_to_cpu(wc.ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
-		int err;
+		int err, rx_desc_stolen_from;
 
 		ib_dma_sync_single_for_cpu(path->cm->id->device, rx_desc->sge.addr,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		dtr_got_flow_control_msg(path, page_address(rx_desc->page));
+		rx_desc_stolen_from = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 		err = dtr_repost_rx_desc(path, rx_desc);
 		if (err)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
+		dtr_maybe_trigger_flow_control_msg(path, rx_desc_stolen_from);
 	} else {
 		struct dtr_flow *flow = &path->flow[immediate.stream];
 		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
