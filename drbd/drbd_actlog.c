@@ -146,7 +146,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	int err;
 
 	if ((rw & WRITE) && !test_bit(MD_NO_BARRIER, &device->flags))
-		rw |= DRBD_REQ_FUA | DRBD_REQ_FLUSH;
+		rw |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
 	rw |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
 
 #ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
@@ -885,7 +885,7 @@ int __drbd_change_sync(struct drbd_device *device, sector_t sector, int size,
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
 
-	/* This would be an empty REQ_FLUSH, be silent. */
+	/* This would be an empty REQ_OP_FLUSH, be silent. */
 	if ((mode == SET_OUT_OF_SYNC) && size == 0)
 		return 0;
 

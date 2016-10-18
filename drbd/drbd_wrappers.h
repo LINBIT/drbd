@@ -801,7 +801,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #if defined(bio_set_op_attrs)
 /* Linux 4.8 split bio OPs and FLAGs {{{2 */
 
-#define DRBD_REQ_FLUSH		REQ_PREFLUSH
+#define DRBD_REQ_PREFLUSH	REQ_PREFLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_SYNC		REQ_SYNC
 
@@ -822,7 +822,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * the same value space as the bio rw flags, yet.
  */
 
-#define DRBD_REQ_FLUSH		(1UL << BIO_RW_FLUSH)
+#define DRBD_REQ_PREFLUSH	(1UL << BIO_RW_FLUSH)
 #define DRBD_REQ_FUA		(1UL << BIO_RW_FUA)
 #define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
 #define DRBD_REQ_DISCARD	(1UL << BIO_RW_DISCARD)
@@ -835,7 +835,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 				 * now equivalent to bi_rw */
 
 #define DRBD_REQ_SYNC		REQ_SYNC
-#define DRBD_REQ_FLUSH		REQ_FLUSH
+#define DRBD_REQ_PREFLUSH	REQ_FLUSH
 #define DRBD_REQ_FUA		REQ_FUA
 #define DRBD_REQ_DISCARD	REQ_DISCARD
 /* REQ_HARDBARRIER has been around for a long time,
@@ -880,7 +880,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
 #endif
 
-#define DRBD_REQ_FLUSH		(1UL << BIO_RW_BARRIER)
+#define DRBD_REQ_PREFLUSH	(1UL << BIO_RW_BARRIER)
 /* REQ_FUA has been around for a longer time,
  * without a direct equivalent in bi_rw. */
 #define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
@@ -955,7 +955,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #ifndef WRITE_SYNC
 #error  FIXME WRITE_SYNC undefined??
 #endif
-#define WRITE_FLUSH       (WRITE_SYNC | DRBD_REQ_FLUSH)
+#define WRITE_FLUSH       (WRITE_SYNC | DRBD_REQ_PREFLUSH)
 #endif
 
 #ifndef REQ_NOIDLE
