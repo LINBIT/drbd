@@ -1453,7 +1453,7 @@ next_bio:
 	DRBD_BIO_BI_SECTOR(bio) = sector;
 	bio->bi_bdev = device->ldev->backing_bdev;
 	/* we special case some flags in the multi-bio case, see below
-	 * (REQ_UNPLUG, REQ_FLUSH, or BIO_RW_BARRIER in older kernels) */
+	 * (REQ_UNPLUG, REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
 	bio->bi_rw = rw;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
@@ -1516,10 +1516,10 @@ next_bio:
 			bio->bi_rw &= ~DRBD_REQ_UNPLUG;
 		drbd_generic_make_request(device, fault_type, bio);
 
-		/* strip off REQ_FLUSH,
+		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
 		if (bios && bios->bi_next)
-			bios->bi_rw &= ~DRBD_REQ_FLUSH;
+			bios->bi_rw &= ~DRBD_REQ_PREFLUSH;
 	} while (bios);
 	maybe_kick_lo(device);
 	return 0;
@@ -2355,7 +2355,7 @@ static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 d
 		return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
 			(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
 			(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
-			(dpf & DP_FLUSH ? DRBD_REQ_FLUSH : 0) |
+			(dpf & DP_FLUSH ? DRBD_REQ_PREFLUSH : 0) |
 			(dpf & DP_DISCARD ? DRBD_REQ_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
@@ -2598,14 +2598,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		epoch = list_entry(peer_req->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == peer_req->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-			rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
+			rw |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
 			peer_req->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-				rw |= DRBD_REQ_FLUSH | DRBD_REQ_FUA;
+				rw |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
 				peer_req->flags |= EE_IS_BARRIER;
 			}
 		}

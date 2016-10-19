@@ -1697,7 +1697,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		 * replicating, in which case there is no point. */
 		if (unlikely(req->i.size == 0)) {
 			/* The only size==0 bios we expect are empty flushes. */
-			D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_FLUSH);
+			D_ASSERT(device, req->master_bio->bi_rw & DRBD_REQ_PREFLUSH);
 			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 		} else if (!drbd_process_write_request(req))
 			no_remote = true;
@@ -1966,7 +1966,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 
 	/* We never supported BIO_RW_BARRIER.
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
-	 * we have REQ_FUA and REQ_FLUSH, which will be handled transparently
+	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
 	 * by the block layer. */
 	if (unlikely(bio->bi_rw & DRBD_REQ_HARDBARRIER)) {
 		bio_endio(bio, -EOPNOTSUPP);

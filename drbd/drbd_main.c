@@ -2204,7 +2204,7 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long b
 		return  (bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
 			(bi_rw & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
 			(bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
-			(bi_rw & DRBD_REQ_FLUSH ? DP_FLUSH : 0) |
+			(bi_rw & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
 			(bi_rw & DRBD_REQ_WSAME ? DP_WSAME : 0) |
 			(bi_rw & DRBD_REQ_DISCARD ? DP_DISCARD : 0);
 
