@@ -994,7 +994,8 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 	device->flush_jif = jiffies;
 	set_bit(FLUSH_PENDING, &device->flags);
 	atomic_inc(&ctx->pending);
-	submit_bio(WRITE_FLUSH, bio);
+	bio_set_op_attrs(bio, REQ_OP_FLUSH, WRITE_FLUSH);
+	submit_bio(bio);
 }
 
 static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
@@ -1354,7 +1355,7 @@ static void drbd_issue_peer_discard(struct drbd_device *device, struct drbd_peer
 static void drbd_issue_peer_wsame(struct drbd_device *device,
 				  struct drbd_peer_request *peer_req)
 {
-#ifndef REQ_WRITE_SAME
+#ifndef COMPAT_WRITE_SAME_CAPABLE
 	/* We should have never received this request!  At least not until we
 	 * implement an open-coded write-same equivalend submit loop, and tell
 	 * our peer we were write_same_capable. */
@@ -1394,7 +1395,8 @@ static void drbd_issue_peer_wsame(struct drbd_device *device,
 /* TODO allocate from our own bio_set. */
 int drbd_submit_peer_request(struct drbd_device *device,
 			     struct drbd_peer_request *peer_req,
-			     const unsigned rw, const int fault_type)
+			     const unsigned op, const unsigned op_flags,
+			     const int fault_type)
 {
 	struct bio *bios = NULL;
 	struct bio *bio;
@@ -1444,6 +1446,16 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	 * generated bio, but a bio allocated on behalf of the peer.
 	 */
 next_bio:
+	/* REQ_OP_WRITE_SAME and REQ_OP_DISCARD handled above.
+	 * REQ_OP_FLUSH (empty flush) not expected,
+	 * should have been mapped to a "drbd protocol barrier".
+	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
+	 */
+	if (!(op == REQ_OP_WRITE || op == REQ_OP_READ)) {
+		drbd_err(device, "Invalid bio op received: 0x%x\n", op);
+		err = -EINVAL;
+	}
+
 	bio = bio_alloc(GFP_NOIO, nr_pages);
 	if (!bio) {
 		drbd_err(device, "submit_ee: Allocation of a bio failed (nr_pages=%u)\n", nr_pages);
@@ -1454,7 +1466,7 @@ next_bio:
 	bio->bi_bdev = device->ldev->backing_bdev;
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_UNPLUG, REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio->bi_rw = rw;
+	bio_set_op_attrs(bio, op, op_flags);
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
 
@@ -1466,7 +1478,7 @@ next_bio:
 		unsigned off, len;
 		int res;
 
-		if (rw == READ) {
+		if (op == REQ_OP_READ) {
 			set_page_chain_offset(page, 0);
 			set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
 		}
@@ -1576,7 +1588,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	 * get_ldev was done in receive_Data. */
 
 	peer_req->w.cb = e_end_block;
-	err = drbd_submit_peer_request(device, peer_req, WRITE, DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_DT_WR);
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
@@ -1953,7 +1965,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
 	drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
 
-	if (drbd_submit_peer_request(device, peer_req, WRITE, DRBD_FAULT_RS_WR) == 0)
+	if (drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_RS_WR) == 0)
 		return 0;
 
 	/* don't care for the reason here */
@@ -2349,17 +2361,24 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 /* see also bio_flags_to_wire()
  * DRBD_REQ_*, because we need to semantically map the flags to data packet
  * flags and back. We may replicate to other kernel versions. */
-static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 dpf)
+static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection, u32 dpf)
 {
 	if (connection->agreed_pro_version >= 95)
 		return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
 			(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
 			(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
-			(dpf & DP_FLUSH ? DRBD_REQ_PREFLUSH : 0) |
-			(dpf & DP_DISCARD ? DRBD_REQ_DISCARD : 0);
+			(dpf & DP_FLUSH ? DRBD_REQ_PREFLUSH : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
 	return dpf & DP_RW_SYNC ? (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) : 0;
+}
+
+static unsigned long wire_flags_to_bio_op(u32 dpf)
+{
+	if (dpf & DP_DISCARD)
+		return REQ_OP_DISCARD;
+	else
+		return REQ_OP_WRITE;
 }
 
 static void fail_postponed_requests(struct drbd_peer_request *peer_req)
@@ -2507,7 +2526,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	struct net_conf *nc;
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request_details d;
-	int rw = WRITE;
+	int op, op_flags;
 	int err, tp;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -2556,7 +2575,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	peer_req->submit_jif = jiffies;
 	peer_req->flags |= EE_APPLICATION;
 
-	rw |= wire_flags_to_bio(connection, d.dp_flags);
+	op = wire_flags_to_bio_op(d.dp_flags);
+	op_flags = wire_flags_to_bio_flags(connection, d.dp_flags);
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
@@ -2582,7 +2602,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * Note that the epoch handling code below
 	 * may add it again, though.
 	 */
-	rw &= ~DRBD_REQ_HARDBARRIER;
+	op_flags &= ~DRBD_REQ_HARDBARRIER;
 
 	spin_lock(&connection->epoch_lock);
 	peer_req->epoch = connection->current_epoch;
@@ -2598,14 +2618,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		epoch = list_entry(peer_req->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == peer_req->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-			rw |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
+			op_flags |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
 			peer_req->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-				rw |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
+				op_flags |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
 				peer_req->flags |= EE_IS_BARRIER;
 			}
 		}
@@ -2690,7 +2710,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			goto disconnect_during_al_begin_io;
 	}
 
-	err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(device, peer_req, op, op_flags,
+				       DRBD_FAULT_DT_WR);
 	if (!err)
 		return 0;
 
@@ -2994,7 +3015,7 @@ submit_for_resync:
 submit:
 	update_receiver_timing_details(connection, drbd_submit_peer_request);
 	inc_unacked(peer_device);
-	if (drbd_submit_peer_request(device, peer_req, READ, fault_type) == 0)
+	if (drbd_submit_peer_request(device, peer_req, REQ_OP_READ, 0, fault_type) == 0)
 		return 0;
 
 	/* don't care for the reason here */
@@ -6804,7 +6825,6 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 
 	if (get_ldev(device)) {
 		struct drbd_peer_request *peer_req;
-		const int rw = WRITE | DRBD_REQ_DISCARD;
 
 		peer_req = drbd_alloc_peer_req(peer_device, GFP_NOIO);
 		if (!peer_req) {
@@ -6824,7 +6844,8 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&device->resource->req_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(device, peer_req, rw, DRBD_FAULT_RS_WR);
+		err = drbd_submit_peer_request(device, peer_req, REQ_OP_DISCARD,
+				0, DRBD_FAULT_RS_WR);
 
 		if (err) {
 			spin_lock_irq(&device->resource->req_lock);

@@ -288,18 +288,26 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	/* to avoid recursion in __req_mod */
 	if (unlikely(error)) {
-		if (bio->bi_rw & DRBD_REQ_DISCARD)
-			what = (error == -EOPNOTSUPP)
-				? DISCARD_COMPLETED_NOTSUPP
-				: DISCARD_COMPLETED_WITH_ERROR;
-		else
-			what = (bio_data_dir(bio) == WRITE)
-			? WRITE_COMPLETED_WITH_ERROR
-			: (bio_rw(bio) == READ)
-			  ? READ_COMPLETED_WITH_ERROR
-			  : READ_AHEAD_COMPLETED_WITH_ERROR;
-	} else
+		switch (bio_op(bio)) {
+		case REQ_OP_DISCARD:
+			if (error == -EOPNOTSUPP)
+				what = DISCARD_COMPLETED_NOTSUPP;
+			else
+				what = DISCARD_COMPLETED_WITH_ERROR;
+			break;
+		case REQ_OP_READ:
+			if (bio->bi_rw & REQ_RAHEAD)
+				what = READ_AHEAD_COMPLETED_WITH_ERROR;
+			else
+				what = READ_COMPLETED_WITH_ERROR;
+			break;
+		default:
+			what = WRITE_COMPLETED_WITH_ERROR;
+			break;
+		}
+	} else {
 		what = COMPLETED_OK;
+	}
 
 	bio_put(req->private_bio);
 	req->private_bio = ERR_PTR(error);
@@ -357,7 +365,7 @@ void drbd_csum_bio(struct crypto_ahash *tfm, struct bio *bio, void *digest)
 		crypto_ahash_update(req);
 		/* REQ_WRITE_SAME has only one segment,
 		 * checksum the payload only once. */
-		if (bio->bi_rw & DRBD_REQ_WSAME)
+		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}
 	ahash_request_set_crypt(req, NULL, digest, 0);
@@ -435,7 +443,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	spin_unlock_irq(&device->resource->req_lock);
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
-	if (drbd_submit_peer_request(device, peer_req, READ, DRBD_FAULT_RS_RD) == 0)
+	if (drbd_submit_peer_request(device, peer_req, REQ_OP_READ, 0, DRBD_FAULT_RS_RD) == 0)
 		return 0;
 
 	/* If it failed because of ENOMEM, retry should help.  If it failed

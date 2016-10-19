@@ -32,8 +32,6 @@
 #include "drbd_req.h"
 #include "drbd_state_change.h"
 
-/* in drbd_main.c */
-extern void tl_abort_disk_io(struct drbd_device *device);
 
 static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_state ns);
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,

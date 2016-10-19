@@ -2121,7 +2121,7 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 		if (err)
 			return err;
 		/* REQ_WRITE_SAME has only one segment */
-		if (bio->bi_rw & DRBD_REQ_WSAME)
+		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 
 		peer_device->send_cnt += (bvec BVD bv_len) >> 9;
@@ -2198,18 +2198,18 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 /* see also wire_flags_to_bio()
  * DRBD_REQ_*, because we need to semantically map the flags to data packet
  * flags and back. We may replicate to other kernel versions. */
-static u32 bio_flags_to_wire(struct drbd_connection *connection, unsigned long bi_rw)
+static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio)
 {
 	if (connection->agreed_pro_version >= 95)
-		return  (bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
-			(bi_rw & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
-			(bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
-			(bi_rw & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
-			(bi_rw & DRBD_REQ_WSAME ? DP_WSAME : 0) |
-			(bi_rw & DRBD_REQ_DISCARD ? DP_DISCARD : 0);
+		return  (bio->bi_rw & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
+			(bio->bi_rw & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
+			(bio->bi_rw & DRBD_REQ_FUA ? DP_FUA : 0) |
+			(bio->bi_rw & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
+			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
+			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
-	return bi_rw & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
+	return bio->bi_rw & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
 }
 
 /* Used to send write or TRIM aka REQ_DISCARD requests
@@ -2227,7 +2227,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	int err;
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 
-	if (req->master_bio->bi_rw & DRBD_REQ_DISCARD) {
+	if (bio_op(req->master_bio) == REQ_OP_DISCARD) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);
 		if (!trim)
 			return -EIO;
@@ -2237,7 +2237,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		if (peer_device->connection->integrity_tfm)
 			digest_size = crypto_ahash_digestsize(peer_device->connection->integrity_tfm);
 
-		if (req->master_bio->bi_rw & DRBD_REQ_WSAME) {
+		if (bio_op(req->master_bio) == REQ_OP_WRITE_SAME) {
 			wsame = drbd_prepare_command(peer_device, sizeof(*wsame) + digest_size, DATA_STREAM);
 			if (!wsame)
 				return -EIO;
@@ -2255,7 +2255,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
-	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio->bi_rw);
+	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio);
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
 	if (peer_device->connection->agreed_pro_version >= 100) {
@@ -3940,7 +3940,7 @@ void drbd_md_write(struct drbd_device *device, void *b)
 	D_ASSERT(device, drbd_md_ss(device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
 
-	if (drbd_md_sync_page_io(device, device->ldev, sector, WRITE)) {
+	if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
 		/* this was a try anyways ... */
 		drbd_err(device, "meta data update failed!\n");
 		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
@@ -4166,7 +4166,8 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	 * Affects the paranoia out-of-range access check in drbd_md_sync_page_io(). */
 	bdev->md.md_size_sect = 8;
 
-	if (drbd_md_sync_page_io(device, bdev, bdev->md.md_offset, READ)) {
+	if (drbd_md_sync_page_io(device, bdev, bdev->md.md_offset,
+				 REQ_OP_READ)) {
 		/* NOTE: can't do normal error processing here as this is
 		   called BEFORE disk is attached */
 		drbd_err(device, "Error while reading metadata.\n");

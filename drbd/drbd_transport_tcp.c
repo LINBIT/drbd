@@ -1154,7 +1154,7 @@ static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		if (err)
 			return err;
 
-		if (bio->bi_rw & DRBD_REQ_WSAME)
+		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}
 	return 0;
