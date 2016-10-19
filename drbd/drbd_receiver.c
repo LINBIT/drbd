@@ -1264,10 +1264,12 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection);
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
 {
 	struct block_device *bdev = device->ldev->backing_bdev;
+#ifdef QUEUE_FLAG_DISCARD
 	struct request_queue *q = bdev_get_queue(bdev);
 	sector_t tmp, nr;
 	unsigned int max_discard_sectors, granularity;
 	int alignment;
+#endif
 	int err = 0;
 
 	if (!discard)
