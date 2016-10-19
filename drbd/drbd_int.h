@@ -640,7 +640,7 @@ enum {
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
 				 * goes into L_ESTABLISHED state. */
-	MD_NO_BARRIER,		/* meta data device does not support barriers,
+	MD_NO_FUA,		/* meta data device does not support barriers,
 				   so don't even try */
 	WAS_READ_ERROR,		/* Local disk READ failed, returned IO error */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
