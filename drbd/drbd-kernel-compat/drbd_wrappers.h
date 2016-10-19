@@ -910,7 +910,17 @@ enum req_op {
        REQ_OP_WRITE_SAME	= DRBD_REQ_WSAME   ?: -2,
 };
 #define bio_op(bio)                            (op_from_rq_bits((bio)->bi_rw))
-#define bio_set_op_attrs(bio, op, flags)       ((bio)->bi_rw |= (op | flags))
+
+static inline void bio_set_op_attrs(struct bio *bio, const int op, const long flags)
+{
+	/* If we explicitly issue discards or write_same, we use
+	 * blkdev_isse_discard() and blkdev_issue_write_same() helpers.
+	 * If we implicitly submit them, we just pass on a cloned bio to
+	 * generic_make_request().  We expect to use bio_set_op_attrs() with
+	 * REQ_OP_READ or REQ_OP_WRITE only. */
+	BUG_ON(!(op == REQ_OP_READ || op == REQ_OP_WRITE));
+	bio->bi_rw |= (op | flags);
+}
 
 static inline int op_from_rq_bits(u64 flags)
 {
@@ -923,7 +933,7 @@ static inline int op_from_rq_bits(u64 flags)
 	else
 		return REQ_OP_READ;
 }
-// soon: #define submit_bio(bio)	submit_bio(0, bio)
+#define submit_bio(__bio)      submit_bio(__bio->bi_rw, __bio)
 #endif
 /* }}}1 bio -> bi_rw/bi_opf REQ_* and BIO_RW_* REQ_OP_* compat stuff */
 
