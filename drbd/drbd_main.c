@@ -1504,7 +1504,7 @@ out:
 }
 
 /* communicated if (agreed_features & DRBD_FF_WSAME) */
-void assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p, struct request_queue *q)
+static void assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p, struct request_queue *q)
 {
 	if (q) {
 		p->qlim->physical_block_size = cpu_to_be32(queue_physical_block_size(q));
@@ -2076,7 +2076,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 	return err;
 }
 
-int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
+static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -2864,7 +2864,7 @@ static struct retry_worker {
 	struct list_head writes;
 } retry;
 
-void drbd_req_destroy_lock(struct kref *kref)
+static void drbd_req_destroy_lock(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	struct drbd_resource *resource = req->device->resource;
@@ -3158,7 +3158,7 @@ void conn_free_crypto(struct drbd_connection *connection)
 	connection->int_dig_vv = NULL;
 }
 
-void wake_all_device_misc(struct drbd_resource *resource)
+static void wake_all_device_misc(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	int vnr;
@@ -4606,13 +4606,13 @@ static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __m
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 set_bitmap_slots, newer, equal;
+	u64 set_bitmap_slots, newer;
 	unsigned long flags;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	set_bitmap_slots = __test_bitmap_slots_of_peer(peer_device);
 	newer = __set_bitmap_slots(device, drbd_current_uuid(device), set_bitmap_slots);
-	equal = __set_bitmap_slots(device, 0, ~set_bitmap_slots);
+	__set_bitmap_slots(device, 0, ~set_bitmap_slots);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);

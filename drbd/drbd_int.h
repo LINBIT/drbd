@@ -1614,6 +1614,7 @@ __drbd_next_connection_ref(u64 *, struct drbd_connection *, struct drbd_resource
 extern struct drbd_peer_device *
 __drbd_next_peer_device_ref(u64 *, struct drbd_peer_device *, struct drbd_device *);
 
+extern void tl_abort_disk_io(struct drbd_device *device);
 
 /* Meta data layout
  *

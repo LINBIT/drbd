@@ -3442,7 +3442,7 @@ fail:
 	return retcode;
 }
 
-bool addr_eq_nla(const struct sockaddr_storage *addr, const int addr_len, const struct nlattr *nla)
+static bool addr_eq_nla(const struct sockaddr_storage *addr, const int addr_len, const struct nlattr *nla)
 {
 	return	nla_len(nla) == addr_len && memcmp(nla_data(nla), addr, addr_len) == 0;
 }
@@ -3761,7 +3761,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 
 /* this cann only be called immediately after a successful
  * conn_try_disconnect, within the same resource->adm_mutex */
-void del_connection(struct drbd_connection *connection)
+static void del_connection(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
@@ -3809,7 +3809,7 @@ void del_connection(struct drbd_connection *connection)
 	drbd_put_connection(connection);
 }
 
-int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)
+static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)
 {
 	struct drbd_config_context adm_ctx;
 	struct disconnect_parms parms;
@@ -4721,7 +4721,7 @@ int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 	return put_resource_in_arg0(cb, 6);
 }
 
-int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *connection)
+static int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *connection)
 {
 	struct drbd_path *path;
 	struct nlattr *tla = nla_nest_start(skb, DRBD_NLA_PATH_PARMS);
@@ -5223,7 +5223,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.resource)
 		goto out;
 
-	if (res_opts.node_id < 0 || res_opts.node_id >= DRBD_NODE_ID_MAX) {
+	if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
 		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;
 		goto out;

@@ -38,6 +38,8 @@
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 
+void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *device);
+
 static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
@@ -228,6 +230,7 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 	BIO_ENDIO_FN_RETURN;
 }
 
+/* Not static to increase the likelyhood that it will show up in a stack trace */
 void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *device)
 {
 	panic("drbd%u %s/%u potential random memory corruption caused by delayed completion of aborted local request\n",

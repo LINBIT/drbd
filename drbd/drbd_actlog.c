@@ -601,7 +601,7 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
 	return al_ext;
 }
 
-bool put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
+static bool put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
 {
 	struct lc_element *extent;
 	unsigned long flags;

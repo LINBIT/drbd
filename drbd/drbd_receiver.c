@@ -631,7 +631,7 @@ void connect_timer_fn(unsigned long data)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
-void conn_connect2(struct drbd_connection *connection)
+static void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
@@ -653,7 +653,7 @@ void conn_connect2(struct drbd_connection *connection)
 
 void conn_disconnect(struct drbd_connection *connection);
 
-int connect_work(struct drbd_work *work, int cancel)
+static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
@@ -939,7 +939,7 @@ struct one_flush_context {
 	struct issue_flush_context *ctx;
 };
 
-BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+static BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct one_flush_context *octx = bio->bi_private;
 	struct drbd_device *device = octx->device;
@@ -7449,7 +7449,7 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
-void req_destroy_after_send_peer_ack(struct kref *kref)
+static void req_destroy_after_send_peer_ack(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	list_del(&req->tl_requests);
