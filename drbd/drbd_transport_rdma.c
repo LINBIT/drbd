@@ -2829,7 +2829,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 		em |= (1 << path->nr);
 	rcu_read_unlock();
 
-	if (em == ~0UL) {
+	if (em == ~((u32)0)) {
 		err = ENOSPC;
 		goto abort;
 	}
