@@ -1377,7 +1377,8 @@ static void drbd_issue_peer_wsame(struct drbd_device *device,
  * drbd_submit_peer_request()
  * @device:	DRBD device.
  * @peer_req:	peer request
- * @rw:		flag field, see bio->bi_rw
+ * @op:		REQ_OP_READ, REQ_OP_WRITE, ...
+ * @op_flags:	flag field, see bio->bi_opf
  *
  * May spread the pages to multiple bios,
  * depending on bio_add_page restrictions.
@@ -1524,14 +1525,14 @@ next_bio:
 		bio->bi_next = NULL;
 
 		/* strip off REQ_UNPLUG unless it is the last bio */
-		if (bios)
-			bio->bi_rw &= ~DRBD_REQ_UNPLUG;
+		if (bios && DRBD_REQ_UNPLUG)
+			bio->bi_opf &= ~DRBD_REQ_UNPLUG;
 		drbd_generic_make_request(device, fault_type, bio);
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
 		if (bios && bios->bi_next)
-			bios->bi_rw &= ~DRBD_REQ_PREFLUSH;
+			bios->bi_opf &= ~DRBD_REQ_PREFLUSH;
 	} while (bios);
 	maybe_kick_lo(device);
 	return 0;
