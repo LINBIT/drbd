@@ -1,10 +1,10 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.0.4
+Version: 9.0.5
 Release: 1%{?dist}
 
 # always require a suitable userland
-Requires: drbd-utils >= 8.9.8
+Requires: drbd-utils >= 8.9.9
 
 %global tarball_version %(echo "%{version}-%{?release}" | sed -e "s,%{?dist}$,,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
@@ -103,6 +103,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Thu Oct 20 2016 Philipp Reisner <phil@linbit.com> - 9.0.5-1
+- New upstream release.
+
 * Tue Sep 06 2016 Philipp Reisner <phil@linbit.com> - 9.0.4-1
 - New upstream release.
 

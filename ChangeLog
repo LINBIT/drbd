@@ -2,6 +2,27 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.5-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * fix a bug that causes data inconsistency between mirrors. The bug triggered
+   if you write on a diskless primary while a resync is going on between two
+   nodes with disk.
+   It might happen that the diskless primary chooses the not-updated mirror for
+   subsequent reads of those blocks, then this bug manifests as data corruption.
+ * no longer allocate bitmap-slots on diskfull nodes for nodes that are
+   configures to be diskless; Saves bitmap-slots, thus allows you to use
+   smaller max-peers numbers, thus saves memory and CPU resources
+ * fix bugs in the try_become_up_to_date() logic; they caused hanging
+   machines or hangs during state transitions
+ * fix a IO deadlock that could happen when two secondaries are in a resync
+   and a write on a third node (primary) is sent two the two resyncing nodes
+ * fix two phase-commits when the nodes form a circular structure
+ * fix support for WRITE_SAME. Was broken since merged from 8.4
+ * balance read requests from diskless primary nodes among multiple peers
+   (if available). In the past it read always from one node (that happened
+   to be first in the internal data structures)
+ * make sure it compiles with Linux 4.8
+
 9.0.4-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix enforcement of single-primary constraint; a regression of 9.0.3
