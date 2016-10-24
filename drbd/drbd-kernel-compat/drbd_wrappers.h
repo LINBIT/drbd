@@ -1726,4 +1726,16 @@ drbd_ib_create_cq(struct ib_device *device,
 #define query_device(D, A, U) query_device(D, A)
 #endif
 
+#ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
+static inline void ratelimit_state_init(struct ratelimit_state *rs,
+                                        int interval, int burst)
+{
+	rs->interval = interval;
+	rs->burst = burst;
+	rs->printed = 0;
+	rs->missed = 0;
+	rs->begin = 0;
+}
+#endif
+
 #endif
