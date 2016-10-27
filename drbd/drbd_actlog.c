@@ -281,8 +281,7 @@ find_active_resync_extent(struct drbd_device *device, struct drbd_peer_device *e
 }
 
 static int
-set_bme_priority(struct drbd_device *device, struct drbd_peer_device *except,
-		 unsigned int enr)
+set_bme_priority(struct drbd_device *device, unsigned int enr)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;
@@ -312,7 +311,7 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr, bool no
 	spin_lock_irq(&device->al_lock);
 	bm_ext = find_active_resync_extent(device, NULL, enr);
 	if (bm_ext) {
-		wake = set_bme_priority(device, NULL, enr);
+		wake = set_bme_priority(device, enr);
 		spin_unlock_irq(&device->al_lock);
 		if (wake)
 			wake_up(&device->al_wait);
@@ -553,7 +552,7 @@ struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsign
 	spin_lock_irq(&device->al_lock);
 	bm_ext = find_active_resync_extent(device, peer_device, enr);
 	if (bm_ext) {
-		wake = set_bme_priority(device, peer_device, enr);
+		wake = set_bme_priority(device, enr);
 		spin_unlock_irq(&device->al_lock);
 		if (wake)
 			wake_up(&device->al_wait);
@@ -668,7 +667,7 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 	for (enr = first; enr <= last; enr++) {
 		bm_ext = find_active_resync_extent(device, NULL, enr);
 		if (unlikely(bm_ext != NULL)) {
-			if (set_bme_priority(device, NULL, enr))
+			if (set_bme_priority(device, enr))
 				return -EBUSY;
 			return -EWOULDBLOCK;
 		}
