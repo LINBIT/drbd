@@ -346,37 +346,6 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	return fastpath_ok;
 }
 
-bool drbd_al_begin_io_prepare(struct drbd_device *device, struct drbd_interval *i)
-{
-	/* for bios crossing activity log extent boundaries,
-	 * we may need to activate two extents in one go */
-	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
-	unsigned enr;
-	bool need_transaction = false;
-
-	/* When called through generic_make_request(), we must delegate
-	 * activity log I/O to the worker thread: a further request
-	 * submitted via generic_make_request() within the same task
-	 * would be queued on current->bio_list, and would only start
-	 * after this function returns (see generic_make_request()).
-	 *
-	 * However, if we *are* the worker, we must not delegate to ourselves.
-	 */
-
-	D_ASSERT(device, first <= last);
-	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
-
-	for (enr = first; enr <= last; enr++) {
-		struct lc_element *al_ext;
-		wait_event(device->al_wait,
-				(al_ext = _al_get(device, enr, false)) != NULL);
-		if (al_ext->lc_number != enr)
-			need_transaction = true;
-	}
-	return need_transaction;
-}
-
 #if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
 /* Currently BM_BLOCK_SHIFT, BM_EXT_SHIFT and AL_EXTENT_SHIFT
  * are still coupled, or assume too much about their relation.
@@ -573,15 +542,6 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 	}
 }
 
-/*
- * @delegate:	delegate activity log I/O to the worker thread
- */
-void drbd_al_begin_io(struct drbd_device *device, struct drbd_interval *i)
-{
-	if (drbd_al_begin_io_prepare(device, i))
-		drbd_al_begin_io_commit(device);
-}
-
 static
 struct lc_element *_al_get_for_peer(struct drbd_peer_device *peer_device, unsigned int enr)
 {
@@ -640,7 +600,6 @@ static bool put_actlog(struct drbd_device *device, unsigned int first, unsigned 
  */
 int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
 {
-	/* compare with drbd_al_begin_io_prepare() */
 	struct drbd_device *device = peer_device->device;
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
