@@ -701,7 +701,7 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 		 * stop the fast path until we made some progress,
 		 * or requests to "cold" extents could be starved. */
 		if (!al->pending_changes)
-			__set_bit(__LC_STARVING, &device->act_log->flags);
+			set_bit(__LC_STARVING, &device->act_log->flags);
 		return -ENOBUFS;
 	}
 
