@@ -1213,6 +1213,21 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context)
 	return 0;
 }
 
+/* Number of rx_descs the peer does not know */
+static int dtr_new_rx_descs(struct dtr_flow *flow)
+{
+	int posted, known;
+
+	posted = atomic_read(&flow->rx_descs_posted);
+	smp_rmb(); /* smp_wmb() is in dtr_handle_rx_cq_event() */
+	known = atomic_read(&flow->rx_descs_known_to_peer);
+
+	/* If the two decrements in dtr_handle_rx_cq_event() execute in
+           parallel our result might be one too low, that does not matter.
+	   Only make sure to never return a -1 because that would matter! */
+	return max(posted - known, 0);
+}
+
 static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
 				enum drbd_stream stream,
 				struct drbd_rdma_rx_desc **ptr_rx_desc)
@@ -1271,13 +1286,8 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct dtr_flow *flow = &path->flow[i];
-		int posted, known;
 
-		posted = atomic_read(&flow->rx_descs_posted);
-		smp_rmb();
-		known = atomic_read(&flow->rx_descs_known_to_peer);
-
-		n[i] = max(posted - known, 0);
+		n[i] = dtr_new_rx_descs(flow);
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
 		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
@@ -1314,7 +1324,7 @@ static void dtr_flow_control(struct dtr_flow *flow)
 	int n, known_to_peer = atomic_read(&flow->rx_descs_known_to_peer);
 	int tx_descs_max = flow->tx_descs_max;
 
-	n = atomic_read(&flow->rx_descs_posted) - known_to_peer;
+	n = dtr_new_rx_descs(flow);
 	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
 		dtr_send_flow_control_msg(flow->path);
 }
@@ -1460,7 +1470,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
 
 		atomic_dec(&flow->rx_descs_posted);
-		smp_wmb();
+		smp_wmb(); /* smp_rmb() is in dtr_new_rx_descs() */
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
 		rx_desc->sequence = immediate.sequence;
