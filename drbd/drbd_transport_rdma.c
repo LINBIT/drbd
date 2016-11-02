@@ -1271,8 +1271,13 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct dtr_flow *flow = &path->flow[i];
+		int posted, known;
 
-		n[i] = atomic_read(&flow->rx_descs_posted) - atomic_read(&flow->rx_descs_known_to_peer);
+		posted = atomic_read(&flow->rx_descs_posted);
+		smp_rmb();
+		known = atomic_read(&flow->rx_descs_known_to_peer);
+
+		n[i] = max(posted - known, 0);
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
 		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
@@ -1455,6 +1460,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
 
 		atomic_dec(&flow->rx_descs_posted);
+		smp_wmb();
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
 		rx_desc->sequence = immediate.sequence;
