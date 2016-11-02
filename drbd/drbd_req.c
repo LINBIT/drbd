@@ -1773,13 +1773,84 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned l
 	drbd_send_and_submit(device, req);
 }
 
-static void submit_fast_path(struct drbd_device *device, struct list_head *incoming)
+/* helpers for do_submit */
+
+struct incoming_pending_later {
+	/* from drbd_make_request() or receive_Data() */
+	struct list_head incoming;
+	/* for non-blocking fill-up # of updates in the transaction */
+	struct list_head more_incoming;
+	/* to be submitted after next AL-transaction commit */
+	struct list_head pending;
+	/* currently blocked e.g. by concurrent resync requests */
+	struct list_head later;
+};
+
+struct waiting_for_act_log {
+	struct incoming_pending_later requests;
+	struct incoming_pending_later peer_requests;
+};
+
+static void ipb_init(struct incoming_pending_later *ipb)
+{
+	INIT_LIST_HEAD(&ipb->incoming);
+	INIT_LIST_HEAD(&ipb->more_incoming);
+	INIT_LIST_HEAD(&ipb->pending);
+	INIT_LIST_HEAD(&ipb->later);
+}
+
+static void wfa_init(struct waiting_for_act_log *wfa)
+{
+	ipb_init(&wfa->requests);
+	ipb_init(&wfa->peer_requests);
+}
+
+#define wfa_lists_empty(_wfa, name)	\
+	(list_empty(&(_wfa)->requests.name) && list_empty(&(_wfa)->peer_requests.name))
+#define wfa_splice_init(_wfa, from, to) do { \
+	list_splice_init(&(_wfa)->requests.from, &(_wfa)->requests.to); \
+	list_splice_init(&(_wfa)->peer_requests.from, &(_wfa)->peer_requests.to); \
+	} while (0)
+#define wfa_splice_tail_init(_wfa, from, to) do { \
+	list_splice_tail_init(&(_wfa)->requests.from, &(_wfa)->requests.to); \
+	list_splice_tail_init(&(_wfa)->peer_requests.from, &(_wfa)->peer_requests.to); \
+	} while (0)
+
+static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	int err;
+
+	D_ASSERT(peer_device,
+		0 == (peer_req->flags & (EE_IS_BARRIER|EE_IS_TRIM|
+					EE_IS_TRIM_USE_ZEROOUT|EE_WRITE_SAME)));
+
+	peer_req->flags |= EE_IN_ACTLOG;
+	atomic_dec(&peer_req->peer_device->wait_for_actlog);
+	list_del_init(&peer_req->wait_for_actlog);
+
+	err = drbd_submit_peer_request(device, peer_req,
+			REQ_OP_WRITE, peer_req->op_flags, DRBD_FAULT_DT_WR);
+
+	if (err)
+		drbd_cleanup_after_failed_submit_peer_request(peer_req);
+}
+
+static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_log *wfa)
 {
 	struct blk_plug plug;
 	struct drbd_request *req, *tmp;
+	struct drbd_peer_request *pr, *pr_tmp;
 
 	blk_start_plug(&plug);
-	list_for_each_entry_safe(req, tmp, incoming, tl_requests) {
+	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.incoming, wait_for_actlog) {
+		if (!drbd_al_begin_io_fastpath(pr->peer_device->device, &pr->i))
+			continue;
+
+		__drbd_submit_peer_request(pr);
+	}
+	list_for_each_entry_safe(req, tmp, &wfa->requests.incoming, tl_requests) {
 		const int rw = bio_data_dir(req->master_bio);
 
 		if (rw == WRITE && req->private_bio && req->i.size
@@ -1798,40 +1869,79 @@ static void submit_fast_path(struct drbd_device *device, struct list_head *incom
 	blk_finish_plug(&plug);
 }
 
-static bool prepare_al_transaction_nonblock(struct drbd_device *device,
-					    struct list_head *incoming,
-					    struct list_head *pending,
-					    struct list_head *later)
+static struct drbd_request *wfa_next_request(struct waiting_for_act_log *wfa)
 {
+	struct list_head *lh = !list_empty(&wfa->requests.more_incoming) ?
+			&wfa->requests.more_incoming: &wfa->requests.incoming;
+	return list_first_entry_or_null(lh, struct drbd_request, tl_requests);
+}
+
+static struct drbd_peer_request *wfa_next_peer_request(struct waiting_for_act_log *wfa)
+{
+	struct list_head *lh = !list_empty(&wfa->peer_requests.more_incoming) ?
+			&wfa->peer_requests.more_incoming: &wfa->peer_requests.incoming;
+	return list_first_entry_or_null(lh, struct drbd_peer_request, wait_for_actlog);
+}
+
+static bool prepare_al_transaction_nonblock(struct drbd_device *device,
+					    struct waiting_for_act_log *wfa)
+{
+	struct drbd_peer_request *peer_req;
 	struct drbd_request *req;
-	int wake = 0;
+	bool made_progress = false;
+	bool wake = false;
 	int err;
 
 	spin_lock_irq(&device->al_lock);
-	while ((req = list_first_entry_or_null(incoming, struct drbd_request, tl_requests))) {
+
+	/* Don't even try, if someone has it locked right now. */
+	if (test_bit(__LC_LOCKED, &device->act_log->flags))
+		goto out;
+
+	while ((peer_req = wfa_next_peer_request(wfa))) {
+		err = drbd_al_begin_io_nonblock(device, &peer_req->i);
+		if (err == -ENOBUFS)
+			break;
+		if (err == -EBUSY)
+			wake = true;
+		if (err)
+			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.later);
+		else {
+			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.pending);
+			made_progress = true;
+		}
+	}
+	while ((req = wfa_next_request(wfa))) {
 		err = drbd_al_begin_io_nonblock(device, &req->i);
 		if (err == -ENOBUFS)
 			break;
 		if (err == -EBUSY)
-			wake = 1;
+			wake = true;
 		if (err)
-			list_move_tail(&req->tl_requests, later);
-		else
-			list_move_tail(&req->tl_requests, pending);
+			list_move_tail(&req->tl_requests, &wfa->requests.later);
+		else {
+			list_move_tail(&req->tl_requests, &wfa->requests.pending);
+			made_progress = true;
+		}
 	}
+ out:
 	spin_unlock_irq(&device->al_lock);
 	if (wake)
 		wake_up(&device->al_wait);
-	return !list_empty(pending);
+	return made_progress;
 }
 
-static void send_and_submit_pending(struct drbd_device *device, struct list_head *pending)
+static void send_and_submit_pending(struct drbd_device *device, struct waiting_for_act_log *wfa)
 {
 	struct blk_plug plug;
-	struct drbd_request *req;
+	struct drbd_request *req, *tmp;
+	struct drbd_peer_request *pr, *pr_tmp;
 
 	blk_start_plug(&plug);
-	while ((req = list_first_entry_or_null(pending, struct drbd_request, tl_requests))) {
+	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.pending, wait_for_actlog) {
+		__drbd_submit_peer_request(pr);
+	}
+	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, tl_requests) {
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
 		req->in_actlog_jif = jiffies;
 		atomic_dec(&device->ap_actlog_cnt);
@@ -1852,35 +1962,74 @@ static void ensure_current_uuid(struct drbd_device *device)
 	}
 }
 
+/* more: for non-blocking fill-up # of updates in the transaction */
+static bool grab_new_incoming_requests(struct drbd_device *device, struct waiting_for_act_log *wfa, bool more)
+{
+	/* grab new incoming requests */
+	struct list_head *reqs = more ? &wfa->requests.more_incoming : &wfa->requests.incoming;
+	struct list_head *peer_reqs = more ? &wfa->peer_requests.more_incoming : &wfa->peer_requests.incoming;
+	bool found_new = false;
+
+	spin_lock_irq(&device->resource->req_lock);
+	found_new = !list_empty(&device->submit.writes);
+	list_splice_tail_init(&device->submit.writes, reqs);
+	found_new |= !list_empty(&device->submit.peer_writes);
+	list_splice_tail_init(&device->submit.peer_writes, peer_reqs);
+	spin_unlock_irq(&device->resource->req_lock);
+
+	return found_new;
+}
+
 void do_submit(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, submit.worker);
-	LIST_HEAD(incoming);	/* from drbd_make_request() */
-	LIST_HEAD(pending);	/* to be submitted after next AL-transaction commit */
-	LIST_HEAD(busy);	/* blocked by resync requests */
+	struct waiting_for_act_log wfa;
+	wfa_init(&wfa);
 
-	/* grab new incoming requests */
-	spin_lock_irq(&device->resource->req_lock);
-	list_splice_tail_init(&device->submit.writes, &incoming);
-	spin_unlock_irq(&device->resource->req_lock);
+	grab_new_incoming_requests(device, &wfa, false);
 
 	for (;;) {
 		DEFINE_WAIT(wait);
 
 		ensure_current_uuid(device);
 
-		/* move used-to-be-busy back to front of incoming */
-		list_splice_init(&busy, &incoming);
-		submit_fast_path(device, &incoming);
-		if (list_empty(&incoming))
+		/* move used-to-be-postponed back to front of incoming */
+		wfa_splice_init(&wfa, later, incoming);
+		submit_fast_path(device, &wfa);
+		if (wfa_lists_empty(&wfa, incoming))
 			break;
 
 		for (;;) {
+			/*
+			 * We put ourselves on device->al_wait, then check if
+			 * we can need to actually sleep and wait for someone
+			 * else to make progress.
+			 *
+			 * We need to sleep if we cannot activate enough
+			 * activity log extents for even one single request.
+			 * That would mean that all (peer-)requests in our incoming lists
+			 * either target "cold" activity log extent, all
+			 * activity log extent slots are have on-going
+			 * in-flight IO (are "hot"), and no idle or free slot
+			 * is available, or the target regions are busy doing resync,
+			 * and lock out application requests for that reason.
+			 *
+			 * prepare_to_wait() can internally cause a wake_up()
+			 * as well, though, so this may appear to busy-loop
+			 * a couple times, but should settle down quickly.
+			 *
+			 * When resync and/or application requests make
+			 * sufficient progress, some refcount on some extent
+			 * will eventually drop to zero, we will be woken up,
+			 * and can try to move that now idle extent to "cold",
+			 * and recycle it's slot for one of the extents we'd
+			 * like to become hot.
+			 */
 			prepare_to_wait(&device->al_wait, &wait, TASK_UNINTERRUPTIBLE);
 
-			list_splice_init(&busy, &incoming);
-			prepare_al_transaction_nonblock(device, &incoming, &pending, &busy);
-			if (!list_empty(&pending))
+			wfa_splice_init(&wfa, later, incoming);
+			prepare_al_transaction_nonblock(device, &wfa);
+			if (!wfa_lists_empty(&wfa, pending))
 				break;
 
 			drbd_kick_lo(device);
@@ -1897,15 +2046,13 @@ void do_submit(struct work_struct *ws)
 			 * effectively blocking all new requests until we made
 			 * at least _some_ progress with what we currently have.
 			 */
-			if (!list_empty(&incoming))
+			if (!wfa_lists_empty(&wfa, incoming))
 				continue;
 
 			/* Nothing moved to pending, but nothing left
-			 * on incoming: all moved to busy!
+			 * on incoming: all moved to "later"!
 			 * Grab new and iterate. */
-			spin_lock_irq(&device->resource->req_lock);
-			list_splice_tail_init(&device->submit.writes, &incoming);
-			spin_unlock_irq(&device->resource->req_lock);
+			grab_new_incoming_requests(device, &wfa, false);
 		}
 		finish_wait(&device->al_wait, &wait);
 
@@ -1922,30 +2069,24 @@ void do_submit(struct work_struct *ws)
 		 * Be strictly non-blocking here,
 		 * we already have something to commit.
 		 *
-		 * Commit if we don't make any more progres.
+		 * Commit as soon as we don't make any more progress.
 		 */
 
-		while (list_empty(&incoming)) {
-			LIST_HEAD(more_pending);
-			LIST_HEAD(more_incoming);
+		while (wfa_lists_empty(&wfa, incoming)) {
 			bool made_progress;
 
 			/* It is ok to look outside the lock,
 			 * it's only an optimization anyways */
-			if (list_empty(&device->submit.writes))
+			if (list_empty(&device->submit.writes) &&
+			    list_empty(&device->submit.peer_writes))
 				break;
 
-			spin_lock_irq(&device->resource->req_lock);
-			list_splice_tail_init(&device->submit.writes, &more_incoming);
-			spin_unlock_irq(&device->resource->req_lock);
-
-			if (list_empty(&more_incoming))
+			if (!grab_new_incoming_requests(device, &wfa, true))
 				break;
 
-			made_progress = prepare_al_transaction_nonblock(device, &more_incoming, &more_pending, &busy);
+			made_progress = prepare_al_transaction_nonblock(device, &wfa);
 
-			list_splice_tail_init(&more_pending, &pending);
-			list_splice_tail_init(&more_incoming, &incoming);
+			wfa_splice_tail_init(&wfa, more_incoming, incoming);
 			if (!made_progress)
 				break;
 		}
@@ -1954,7 +2095,7 @@ void do_submit(struct work_struct *ws)
 
 		ensure_current_uuid(device);
 
-		send_and_submit_pending(device, &pending);
+		send_and_submit_pending(device, &wfa);
 	}
 	drbd_kick_lo(device);
 }

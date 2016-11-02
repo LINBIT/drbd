@@ -3453,6 +3453,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	atomic_set(&peer_device->ap_pending_cnt, 0);
 	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);
+	atomic_set(&peer_device->wait_for_actlog, 0);
 	atomic_set(&peer_device->rs_sect_in, 0);
 
 	peer_device->bitmap_index = -1;
@@ -3478,6 +3479,7 @@ static int init_submitter(struct drbd_device *device)
 		return -ENOMEM;
 	INIT_WORK(&device->submit.worker, do_submit);
 	INIT_LIST_HEAD(&device->submit.writes);
+	INIT_LIST_HEAD(&device->submit.peer_writes);
 	return 0;
 }
 

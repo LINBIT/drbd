@@ -530,16 +530,35 @@ static int al_write_transaction(struct drbd_device *device)
 
 static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
 
+bool drbd_al_try_lock(struct drbd_device *device)
+{
+	bool locked;
+
+	spin_lock_irq(&device->al_lock);
+	locked = lc_try_lock(device->act_log);
+	spin_unlock_irq(&device->al_lock);
+
+	return locked;
+}
+
+bool drbd_al_try_lock_for_transaction(struct drbd_device *device)
+{
+	bool locked;
+
+	spin_lock_irq(&device->al_lock);
+	locked = lc_try_lock_for_transaction(device->act_log);
+	spin_unlock_irq(&device->al_lock);
+
+	return locked;
+}
+
 void drbd_al_begin_io_commit(struct drbd_device *device)
 {
 	bool locked = false;
 
-	/* Serialize multiple transactions.
-	 * This uses test_and_set_bit, memory barrier is implicit.
-	 */
 	wait_event(device->al_wait,
 			device->act_log->pending_changes == 0 ||
-			(locked = lc_try_lock_for_transaction(device->act_log)));
+			(locked = drbd_al_try_lock_for_transaction(device)));
 
 	if (locked) {
 		/* Double check: it may have been committed by someone else
@@ -607,8 +626,8 @@ int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_
 	unsigned enr;
 	bool need_transaction = false;
 
-	D_ASSERT(device, first <= last);
-	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
+	D_ASSERT(peer_device, first <= last);
+	D_ASSERT(peer_device, atomic_read(&device->local_cnt) > 0);
 
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
@@ -625,7 +644,7 @@ int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_
 	}
 
 	if (need_transaction)
-		drbd_al_begin_io_commit(peer_device->device);
+		drbd_al_begin_io_commit(device);
 	return 0;
 
 }

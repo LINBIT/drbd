@@ -1442,7 +1442,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		 * to move the on-disk location of the activity log ringbuffer.
 		 * Lock for transaction is good enough, it may well be "dirty"
 		 * or even "starving". */
-		wait_event(device->al_wait, lc_try_lock_for_transaction(device->act_log));
+		wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
 
 		/* mark current on-disk bitmap and activity log as unreliable */
 		prev_al_disabled = !!(md->flags & MDF_AL_DISABLED);
@@ -1925,7 +1925,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 			return;
 	}
 
-	if (!lc_try_lock(device->act_log)) {
+	if (!drbd_al_try_lock(device)) {
 		drbd_warn(device, "Failed to lock al in %s()", __func__);
 		return;
 	}
@@ -2073,7 +2073,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	sanitize_disk_conf(device, new_disk_conf, device->ldev);
 
 	drbd_suspend_io(device, READ_AND_WRITE);
-	wait_event(device->al_wait, lc_try_lock(device->act_log));
+	wait_event(device->al_wait, drbd_al_try_lock(device));
 	drbd_al_shrink(device);
 	err = drbd_check_al_size(device, new_disk_conf);
 	lc_unlock(device->act_log);
