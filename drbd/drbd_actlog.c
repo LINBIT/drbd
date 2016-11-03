@@ -482,6 +482,9 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 			} else {
 				device->al_tr_number++;
 				device->al_writ_cnt++;
+				device->al_histogram[min_t(unsigned int,
+						device->act_log->pending_changes,
+						AL_UPDATES_PER_TRANSACTION)]++;
 			}
 		}
 	}

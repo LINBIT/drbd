@@ -910,6 +910,48 @@ void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 	drbd_debugfs_remove(&connection->debugfs_conn);
 }
 
+static void seq_printf_nice_histogram(struct seq_file *m, unsigned *hist, unsigned const n)
+{
+	unsigned i;
+	unsigned max = 0;
+	unsigned n_transactions = 0;
+	unsigned long n_updates = 0;
+
+	for (i = 1; i <= n; i++) {
+		if (hist[i] > max)
+			max = hist[i];
+		n_updates += i * hist[i];
+		n_transactions += hist[i];
+	}
+
+	seq_puts(m, "updates per activity log transaction\n");
+	seq_printf(m, "avg: %lu\n", n_transactions == 0 ? 0 : n_updates / n_transactions);
+
+	if (!max)
+		return;
+
+	for (i = 0; i <= n; i++) {
+		unsigned v = (hist[i] * 60UL + max-1) / max;
+		seq_printf(m, "%2u : %10u : %-60.*s\n", i, hist[i], v,
+			"############################################################");
+	}
+}
+
+
+static int device_act_log_histogram_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+
+	/* BUMP me if you change the file format/content/presentation */
+	seq_printf(m, "v: %u\n\n", 0);
+
+	if (get_ldev_if_state(device, D_FAILED)) {
+		seq_printf_nice_histogram(m, device->al_histogram, AL_UPDATES_PER_TRANSACTION);
+		put_ldev(device);
+	}
+	return 0;
+}
+
 static int device_act_log_extents_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -1035,6 +1077,7 @@ static const struct file_operations device_ ## name ## _fops = {		\
 
 drbd_debugfs_device_attr(oldest_requests)
 drbd_debugfs_device_attr(act_log_extents)
+drbd_debugfs_device_attr(act_log_histogram)
 drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
@@ -1072,6 +1115,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	/* debugfs create file */
 	vol_dcf(oldest_requests);
 	vol_dcf(act_log_extents);
+	vol_dcf(act_log_histogram);
 	vol_dcf(data_gen_id);
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
@@ -1094,6 +1138,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_minor);
 	drbd_debugfs_remove(&device->debugfs_vol_oldest_requests);
 	drbd_debugfs_remove(&device->debugfs_vol_act_log_extents);
+	drbd_debugfs_remove(&device->debugfs_vol_act_log_histogram);
 	drbd_debugfs_remove(&device->debugfs_vol_data_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);

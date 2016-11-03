@@ -1696,6 +1696,8 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 		return -EBUSY;
 	} else {
 		lc_destroy(t);
+		device->al_writ_cnt = 0;
+		memset(device->al_histogram, 0, sizeof(device->al_histogram));
 	}
 	drbd_md_mark_dirty(device); /* we changed device->act_log->nr_elemens */
 	return 0;

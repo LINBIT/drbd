@@ -1291,6 +1291,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol;
 	struct dentry *debugfs_vol_oldest_requests;
 	struct dentry *debugfs_vol_act_log_extents;
+	struct dentry *debugfs_vol_act_log_histogram;
 	struct dentry *debugfs_vol_data_gen_id;
 	struct dentry *debugfs_vol_io_frozen;
 	struct dentry *debugfs_vol_ed_gen_id;
@@ -1362,6 +1363,7 @@ struct drbd_device {
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;
 	struct lru_cache *act_log;	/* activity log */
+	unsigned al_histogram[AL_UPDATES_PER_TRANSACTION+1];
 	unsigned int al_tr_number;
 	int al_tr_cycle;
 	wait_queue_head_t seq_wait;
