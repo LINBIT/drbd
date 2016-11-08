@@ -272,12 +272,15 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 }
 
 static void seq_print_peer_request(struct seq_file *m,
-	struct drbd_device *device, struct list_head *lh,
+	struct drbd_connection *connection, struct list_head *lh,
 	unsigned long now)
 {
 	bool reported_preparing = false;
 	struct drbd_peer_request *peer_req;
 	list_for_each_entry(peer_req, lh, w.list) {
+		struct drbd_peer_device *peer_device = peer_req->peer_device;
+		struct drbd_device *device = peer_device ? peer_device->device : NULL;
+
 		if (reported_preparing && !(peer_req->flags & EE_SUBMITTED))
 			continue;
 
@@ -296,15 +299,20 @@ static void seq_print_peer_request(struct seq_file *m,
 	}
 }
 
-static void seq_print_device_peer_requests(struct seq_file *m,
-	struct drbd_device *device, unsigned long now)
+static void seq_print_connection_peer_requests(struct seq_file *m,
+	struct drbd_connection *connection, unsigned long now)
 {
 	seq_puts(m, "minor\tvnr\tsector\tsize\trw\tage\tflags\n");
-	spin_lock_irq(&device->resource->req_lock);
-	seq_print_peer_request(m, device, &device->active_ee, now);
-	seq_print_peer_request(m, device, &device->read_ee, now);
-	seq_print_peer_request(m, device, &device->sync_ee, now);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->resource->req_lock);
+	seq_print_peer_request(m, connection, &connection->active_ee, now);
+	seq_print_peer_request(m, connection, &connection->read_ee, now);
+	seq_print_peer_request(m, connection, &connection->sync_ee, now);
+	spin_unlock_irq(&connection->resource->req_lock);
+}
+
+static void seq_print_device_peer_flushes(struct seq_file *m,
+	struct drbd_device *device, unsigned long now)
+{
 	if (test_bit(FLUSH_PENDING, &device->flags)) {
 		seq_printf(m, "%u\t%u\t-\t-\tF\t%u\tflush\n",
 			device->minor, device->vnr,
@@ -315,12 +323,16 @@ static void seq_print_device_peer_requests(struct seq_file *m,
 static void seq_print_resource_pending_peer_requests(struct seq_file *m,
 	struct drbd_resource *resource, unsigned long now)
 {
+	struct drbd_connection *connection;
 	struct drbd_device *device;
 	unsigned int i;
 
 	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		seq_print_connection_peer_requests(m, connection, now);
+	}
 	idr_for_each_entry(&resource->devices, device, i) {
-		seq_print_device_peer_requests(m, device, now);
+		seq_print_device_peer_flushes(m, device, now);
 	}
 	rcu_read_unlock();
 }

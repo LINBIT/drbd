@@ -1075,7 +1075,14 @@ struct drbd_connection {
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
+	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
+	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
+	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
 	struct list_head net_ee;    /* zero-copy network send in progress */
+	struct list_head done_ee;   /* need to send P_WRITE_ACK */
+	atomic_t done_ee_cnt;
+	struct work_struct send_acks_work;
+	wait_queue_head_t ee_wait;
 
 	atomic_t pp_in_use;		/* allocated from page pool */
 	atomic_t pp_in_use_by_net;	/* sendpage()d, still referenced by transport */
@@ -1172,7 +1179,6 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
-	struct work_struct send_acks_work;
 	struct peer_device_conf *conf; /* RCU, for updates: resource->conf_update */
 	enum drbd_disk_state disk_state[2];
 	enum drbd_repl_state repl_state[2];
@@ -1362,14 +1368,7 @@ struct drbd_device {
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 
-	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
-	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
-	struct list_head done_ee;   /* need to send P_WRITE_ACK */
-	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
-	/* see also net_ee in the connection */
-
 	int next_barrier_nr;
-	wait_queue_head_t ee_wait;
 	struct drbd_md_io md_io;
 	spinlock_t al_lock;
 	wait_queue_head_t al_wait;

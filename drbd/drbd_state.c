@@ -2625,7 +2625,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			 * if the resync finished cleanly, or aborted because of peer disk
 			 * failure, or on transition from resync back to AHEAD/BEHIND.
 			 *
-			 * Connection loss is handled in drbd_disconnected() by the receiver.
+			 * Connection loss is handled in conn_disconnect() by the receiver.
 			 *
 			 * For resync aborted because of local disk failure, we cannot do
 			 * any bitmap writeout anymore.
