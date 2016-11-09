@@ -217,7 +217,6 @@ enum connect_state_enum {
 };
 
 struct dtr_connect_state {
-	struct drbd_waiter waiter; /* passive_cm in here.. */
 	struct delayed_work work;
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
@@ -795,7 +794,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
 	if (p > PCS_INACTIVE)
-		drbd_put_listener(&cs->waiter);
+		drbd_put_listener(&path->path);
 
 	wake_up(&cs->wq);
 }
@@ -872,16 +871,16 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	struct sockaddr_storage *peer_addr;
 	struct dtr_connect_state *cs;
 	struct dtr_accept_data *ad;
-	struct drbd_waiter *waiter;
 	struct dtr_path *path;
+	struct drbd_path *drbd_path;
 
 	peer_addr = &new_cm_id->route.addr.dst_addr;
 
 	spin_lock(&listener->listener.waiters_lock);
-	waiter = drbd_find_waiter_by_addr(&listener->listener, peer_addr);
+	drbd_path = drbd_find_path_by_addr(&listener->listener, peer_addr);
 	spin_unlock(&listener->listener.waiters_lock);
 
-	if (!waiter) {
+	if (!drbd_path) {
 		struct sockaddr_in *from_sin, *to_sin;
 
 		from_sin = (struct sockaddr_in *)&peer_addr;
@@ -896,12 +895,12 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 		return 0;
 	}
 
-	cs = container_of(waiter, struct dtr_connect_state, waiter);
+	path = container_of(drbd_path, struct dtr_path, path);
+	cs = &path->cs;
 	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
 		rdma_reject(new_cm_id, NULL, 0);
 		return -EAGAIN;
 	}
-	path = container_of(cs, struct dtr_path, cs);
 
 	ad = kmalloc(sizeof(*ad), GFP_KERNEL);
 	if (!ad) {
@@ -2241,7 +2240,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	switch (p) {
 	case PCS_CONNECTING:
-		drbd_put_listener(&path->cs.waiter);
+		drbd_put_listener(&path->path);
 		break;
 	case PCS_FINISHING:
 		t = wait_event_timeout(path->cs.wq,
@@ -2433,16 +2432,13 @@ static int dtr_activate_path(struct dtr_path *path)
 
 	cs = &path->cs;
 
-	cs->waiter.transport = transport;
 	init_waitqueue_head(&cs->wq);
 	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
 
 	atomic_set(&cs->passive_state, PCS_CONNECTING);
 	atomic_set(&cs->active_state, PCS_CONNECTING);
 
-	err = drbd_get_listener(&cs->waiter,
-				(struct sockaddr *)&path->path.my_addr,
-				dtr_create_listener);
+	err = drbd_get_listener(transport, &path->path, dtr_create_listener);
 	if (err)
 		goto out_no_put;
 
@@ -2453,7 +2449,7 @@ static int dtr_activate_path(struct dtr_path *path)
 	return 0;
 
 out:
-	drbd_put_listener(&cs->waiter);
+	drbd_put_listener(&path->path);
 out_no_put:
 	atomic_set(&cs->passive_state, PCS_INACTIVE);
 	atomic_set(&cs->active_state, PCS_INACTIVE);
