@@ -59,12 +59,13 @@ struct dtt_listener {
 	struct drbd_listener listener;
 	void (*original_sk_state_change)(struct sock *sk);
 	struct socket *s_listen;
+
+	wait_queue_head_t wait; /* woken if a connection came in */
 };
 
-struct dtt_wait_first {
-	wait_queue_head_t wait;
-	struct drbd_transport *transport;
-};
+/* Since earch patch might have a different local IP address, each
+   path might need its own listener. Therefore the drbd_waiter object
+   is embebedded into the dtt_path and _not_ the dtt_waiter */
 
 struct dtt_socket_container {
 	struct list_head list;
@@ -74,9 +75,8 @@ struct dtt_socket_container {
 struct dtt_path {
 	struct drbd_path path;
 
-	struct drbd_waiter waiter;
-	struct list_head sockets;
-	struct dtt_wait_first *first;
+	struct drbd_waiter waiter; /* ...to wait for incomming conneciton */
+	struct list_head sockets; /* sockets passed to me by other receiver threads */
 };
 
 static int dtt_init(struct drbd_transport *transport);
@@ -557,10 +557,10 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 	write_unlock_bh(&sock->sk_callback_lock);
 }
 
-static int dtt_wait_for_connect(struct dtt_wait_first *waiter, struct socket **socket,
+static int dtt_wait_for_connect(struct drbd_transport *transport,
+				struct drbd_listener *drbd_listener, struct socket **socket,
 				struct dtt_path **ret_path)
 {
-	struct drbd_transport *transport = waiter->transport;
 	struct dtt_socket_container *socket_c;
 	struct sockaddr_storage peer_addr;
 	int connect_int, peer_addr_len, err = 0;
@@ -568,7 +568,7 @@ static int dtt_wait_for_connect(struct dtt_wait_first *waiter, struct socket **s
 	struct socket *s_estab = NULL;
 	struct net_conf *nc;
 	struct drbd_waiter *waiter2_gen;
-	struct dtt_listener *listener;
+	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
 	struct dtt_path *path = NULL;
 
 	rcu_read_lock();
@@ -584,13 +584,12 @@ static int dtt_wait_for_connect(struct dtt_wait_first *waiter, struct socket **s
 	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
 retry:
-	timeo = wait_event_interruptible_timeout(waiter->wait,
+	timeo = wait_event_interruptible_timeout(listener->wait,
 			(path = dtt_wait_connect_cond(transport)),
 			timeo);
 	if (timeo <= 0)
 		return -EAGAIN;
 
-	listener = container_of(path->waiter.listener, struct dtt_listener, listener);
 	spin_lock_bh(&listener->listener.waiters_lock);
 	socket_c = list_first_entry_or_null(&path->sockets, struct dtt_socket_container, list);
 	if (socket_c) {
@@ -647,7 +646,7 @@ retry:
 			socket_c->socket = s_estab;
 			s_estab = NULL;
 			list_add_tail(&socket_c->list, &path2->sockets);
-			wake_up(&path2->first->wait);
+			wake_up(&listener->wait);
 			goto retry_locked;
 		}
 	}
@@ -704,16 +703,10 @@ static void dtt_incoming_connection(struct sock *sock)
 
 	state_change = listener->original_sk_state_change;
 	if (sock->sk_state == TCP_ESTABLISHED) {
-		struct drbd_waiter *waiter;
-		struct dtt_path *path;
-
 		spin_lock(&listener->listener.waiters_lock);
 		listener->listener.pending_accepts++;
-		waiter = list_first_entry(&listener->listener.waiters, struct drbd_waiter, list);
-		path = container_of(waiter, struct dtt_path, waiter);
-		if (path->first)
-			wake_up(&path->first->wait);
 		spin_unlock(&listener->listener.waiters_lock);
+		wake_up(&listener->wait);
 	}
 	state_change(sock);
 }
@@ -791,6 +784,7 @@ static int dtt_create_listener(struct drbd_transport *transport,
 
 	listener->listener.listen_addr = my_addr;
 	listener->listener.destroy = dtt_destroy_listener;
+	init_waitqueue_head(&listener->wait);
 
 	*ret_listener = &listener->listener;
 	return 0;
@@ -832,7 +826,6 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
-		path->first = NULL;
 		drbd_put_listener(&path->waiter);
 		dtt_cleanup_accepted_sockets(path);
 	}
@@ -862,15 +855,11 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct dtt_path *connect_to_path, *first_path = NULL;
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
-	struct dtt_wait_first waiter;
 	int timeout, err;
 	bool ok;
 
 	dsocket = NULL;
 	csocket = NULL;
-
-	waiter.transport = transport;
-	init_waitqueue_head(&waiter.wait);
 
 	mutex_lock(&tcp_transport->paths_mutex);
 	set_bit(DTT_CONNECTING, &tcp_transport->flags);
@@ -884,7 +873,6 @@ static int dtt_connect(struct drbd_transport *transport)
 
 		dtt_cleanup_accepted_sockets(path);
 
-		path->first = &waiter;
 		err = drbd_get_listener(&path->waiter, (struct sockaddr *)&drbd_path->my_addr,
 					dtt_create_listener);
 		if (err)
@@ -943,7 +931,7 @@ static int dtt_connect(struct drbd_transport *transport)
 
 retry:
 		s = NULL;
-		err = dtt_wait_for_connect(&waiter, &s, &connect_to_path);
+		err = dtt_wait_for_connect(transport, connect_to_path->waiter.listener, &s, &connect_to_path);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
