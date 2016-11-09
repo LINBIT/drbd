@@ -163,17 +163,15 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 	return NULL;
 }
 
-int drbd_get_listener(struct drbd_waiter *waiter,
-		      const struct sockaddr *addr,
+int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		      int (*create_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener **))
 {
 	struct drbd_connection *connection =
-		container_of(waiter->transport, struct drbd_connection, transport);
+		container_of(transport, struct drbd_connection, transport);
+	struct sockaddr *addr = (struct sockaddr *)&path->my_addr;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_listener *listener, *new_listener = NULL;
 	int err, tries = 0;
-
-	init_waitqueue_head(&waiter->wait);
 
 	while (1) {
 		spin_lock_bh(&resource->listeners_lock);
@@ -184,8 +182,8 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 			new_listener = NULL;
 		}
 		if (listener) {
-			list_add(&waiter->list, &listener->waiters);
-			waiter->listener = listener;
+			list_add(&path->listener_link, &listener->waiters);
+			path->listener = listener;
 		}
 		spin_unlock_bh(&resource->listeners_lock);
 
@@ -195,7 +193,7 @@ int drbd_get_listener(struct drbd_waiter *waiter,
 		if (listener)
 			return 0;
 
-		err = create_listener(waiter->transport, addr, &new_listener);
+		err = create_listener(transport, addr, &new_listener);
 		if (err) {
 			if (err == -EADDRINUSE && ++tries < 3) {
 				schedule_timeout_uninterruptible(HZ / 20);
@@ -224,40 +222,29 @@ static void drbd_listener_destroy(struct kref *kref)
 	listener->destroy(listener);
 }
 
-void drbd_put_listener(struct drbd_waiter *waiter)
+void drbd_put_listener(struct drbd_path *path)
 {
 	struct drbd_resource *resource;
 	struct drbd_listener *listener;
 
-	listener = xchg(&waiter->listener, NULL);
+	listener = xchg(&path->listener, NULL);
 	if (!listener)
 		return;
 
 	resource = listener->resource;
 	spin_lock_bh(&resource->listeners_lock);
-	list_del(&waiter->list);
-	if (!list_empty(&listener->waiters) && listener->pending_accepts) {
-		/* This receiver no longer does accept wake ups. In case we got woken up to do
-		   one, and there are more receivers, wake one of the other guys to do it */
-		struct drbd_waiter *ad2;
-
-		ad2 = list_entry(listener->waiters.next, struct drbd_waiter, list);
-		wake_up(&ad2->wait);
-	}
+	list_del(&path->listener_link);
 	spin_unlock_bh(&resource->listeners_lock);
 	kref_put(&listener->kref, drbd_listener_destroy);
 }
 
-struct drbd_waiter *drbd_find_waiter_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
+struct drbd_path *drbd_find_path_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
 {
-	struct drbd_waiter *waiter;
 	struct drbd_path *path;
 
-	list_for_each_entry(waiter, &listener->waiters, list) {
-		list_for_each_entry(path, &waiter->transport->paths, list) {
-			if (addr_equal(&path->peer_addr, addr))
-				return waiter;
-		}
+	list_for_each_entry(path, &listener->waiters, listener_link) {
+		if (addr_equal(&path->peer_addr, addr))
+			return path;
 	}
 
 	return NULL;
@@ -329,7 +316,7 @@ EXPORT_SYMBOL_GPL(drbd_register_transport_class);
 EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
 EXPORT_SYMBOL_GPL(drbd_get_listener);
 EXPORT_SYMBOL_GPL(drbd_put_listener);
-EXPORT_SYMBOL_GPL(drbd_find_waiter_by_addr);
+EXPORT_SYMBOL_GPL(drbd_find_path_by_addr);
 EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);
 EXPORT_SYMBOL_GPL(drbd_should_abort_listening);
 EXPORT_SYMBOL_GPL(drbd_path_event);
