@@ -636,7 +636,7 @@ retry:
 			struct dtt_path *path2 =
 				container_of(waiter2_gen, struct dtt_path, waiter);
 
-			socket_c = kmalloc(sizeof(*socket_c), GFP_KERNEL);
+			socket_c = kmalloc(sizeof(*socket_c), GFP_ATOMIC);
 			if (!socket_c) {
 				tr_info(path2->waiter.transport,
 					"No mem, dropped an incoming connection\n");
