@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
+8.4.9-2 (api:genl1/proto:86-101)
+-------
+ * Fix kernel_sendmsg() usage - potential NULL deref
+   Relevant for kernel >= 4.0
+
 8.4.9-1 (api:genl1/proto:86-101)
 -------
  * compat fixes for linux kernels up to 4.8

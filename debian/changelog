@@ -1,3 +1,10 @@
+drbd8 (2:8.4.9-2) unstable; urgency=medium
+
+  * Fix kernel_sendmsg() usage - potential NULL deref
+    Relevant for kernel >= 4.0
+
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Thu, 10 Nov 2016 14:45:29 +0100
+
 drbd8 (2:8.4.9-1) unstable; urgency=medium
 
   * 8.4.9, New upstream release
