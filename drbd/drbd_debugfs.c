@@ -477,7 +477,7 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 		if (twopc.initiator_node_id != resource->res_opts.node_id) {
 			u64 parents = 0;
 
-			seq_puts(m, "  parents: ");
+			seq_puts(m, "  parent list: ");
 			spin_lock_irq(&resource->req_lock);
 			list_for_each_entry(connection, &resource->twopc_parents, twopc_parent_list) {
 				char *name = rcu_dereference((connection)->transport.net_conf)->name;
@@ -486,6 +486,17 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 			}
 			spin_unlock_irq(&resource->req_lock);
 			seq_puts(m, "\n");
+			seq_puts(m, "  parent node mask: ");
+			rcu_read_lock();
+			for_each_connection_rcu(connection, resource) {
+				if (NODE_MASK(connection->peer_node_id) & resource->twopc_parent_nodes) {
+					char *name = rcu_dereference((connection)->transport.net_conf)->name;
+					seq_printf(m, "%s, ", name);
+				}
+			}
+			rcu_read_unlock();
+			seq_puts(m, "\n");
+
 			if (parents != resource->twopc_parent_nodes)
 				seq_printf(m,
 					   "  !ATT twopc_parent_nodes: %llX != %llX\n",
