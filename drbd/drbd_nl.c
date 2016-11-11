@@ -5443,6 +5443,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	enum drbd_ret_code ret;
 	unsigned i;
 	u64 im;
 
@@ -5472,30 +5473,32 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	mutex_lock(&resource->conf_update);
-	/* detach */
+	/* detach and delete minor */
+	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, i) {
+		kref_get(&device->kref);
+		rcu_read_unlock();
 		retcode = adm_detach(device, 0);
+		mutex_lock(&resource->conf_update);
+		ret = adm_del_minor(device);
+		mutex_unlock(&resource->conf_update);
+		kref_put(&device->kref, drbd_destroy_device);
 		if (retcode < SS_SUCCESS || retcode > NO_ERROR) {
 			drbd_msg_put_info(adm_ctx.reply_skb, "failed to detach");
-			goto unlock_out;
+			goto out;
 		}
-	}
-
-	/* delete volumes */
-	idr_for_each_entry(&resource->devices, device, i) {
-		retcode = adm_del_minor(device);
-		if (retcode != NO_ERROR) {
+		if (ret != NO_ERROR) {
 			/* "can not happen" */
 			drbd_msg_put_info(adm_ctx.reply_skb, "failed to delete volume");
-			goto unlock_out;
+			goto out;
 		}
+		rcu_read_lock();
 	}
+	rcu_read_unlock();
 
+	mutex_lock(&resource->conf_update);
 	retcode = adm_del_resource(resource);
 	/* holding a reference to resource in adm_crx until drbd_adm_finish() */
-
-unlock_out:
 	mutex_unlock(&resource->conf_update);
 out:
 	mutex_unlock(&resource->adm_mutex);
