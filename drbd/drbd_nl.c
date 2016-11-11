@@ -3833,11 +3833,12 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 
 	connection = adm_ctx.connection;
 	mutex_lock(&adm_ctx.resource->adm_mutex);
-	mutex_lock(&connection->resource->conf_update);
 	rv = conn_try_disconnect(connection, parms.force_disconnect);
-	if (rv >= SS_SUCCESS && destroy)
+	if (rv >= SS_SUCCESS && destroy) {
+		mutex_lock(&connection->resource->conf_update);
 		del_connection(connection);
-	mutex_unlock(&connection->resource->conf_update);
+		mutex_unlock(&connection->resource->conf_update);
+	}
 	if (rv < SS_SUCCESS)
 		retcode = rv;  /* FIXME: Type mismatch. */
 	else
@@ -5439,10 +5440,11 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
-	struct drbd_connection *connection, *tmp;
+	struct drbd_connection *connection;
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 	unsigned i;
+	u64 im;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info,
 			DRBD_ADM_NEED_RESOURCE | DRBD_ADM_IGNORE_VERSION);
@@ -5458,17 +5460,19 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	mutex_lock(&resource->conf_update);
-	for_each_connection_safe(connection, tmp, resource) {
+	for_each_connection_ref(connection, im, resource) {
 		retcode = conn_try_disconnect(connection, 0);
 		if (retcode >= SS_SUCCESS) {
+			mutex_lock(&resource->conf_update);
 			del_connection(connection);
+			mutex_unlock(&resource->conf_update);
 		} else {
 			drbd_msg_put_info(adm_ctx.reply_skb, "failed to disconnect");
-			goto unlock_out;
+			goto out;
 		}
 	}
 
+	mutex_lock(&resource->conf_update);
 	/* detach */
 	idr_for_each_entry(&resource->devices, device, i) {
 		retcode = adm_detach(device, 0);
