@@ -5407,25 +5407,45 @@ static int queue_twopc(struct drbd_connection *connection, struct twopc_reply *t
 
 static int queued_twopc_work(struct drbd_work *w, int cancel)
 {
-	struct queued_twopc *q = container_of(w, struct queued_twopc, w);
+	struct queued_twopc *q = container_of(w, struct queued_twopc, w), *q2, *tmp;
 	struct drbd_connection *connection = q->connection;
-	unsigned long t = twopc_timeout(connection->resource) / 4;
+	struct drbd_resource *resource = connection->resource;
+	unsigned long t = twopc_timeout(resource) / 4;
+	LIST_HEAD(work_list);
 
-	if (jiffies - q->start_jif >= t || cancel) {
-		if (!cancel)
-			drbd_info(connection, "Rejecting concurrent "
-				  "remote state change %u because of "
-				  "state change %u takes too long\n",
-				  q->reply.tid,
-				  connection->resource->twopc_reply.tid);
-		drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &q->reply);
-	} else {
-		process_twopc(connection, &q->reply, &q->packet_info, q->start_jif);
+	/* Look for more for the same TID... */
+	spin_lock_irq(&resource->queued_twopc_lock);
+	list_for_each_entry_safe(q2, tmp, &resource->queued_twopc, w.list) {
+		if (q2->reply.tid == q->reply.tid &&
+		    q2->reply.initiator_node_id == q->reply.initiator_node_id)
+			list_move_tail(&q2->w.list, &work_list);
 	}
+	spin_unlock_irq(&resource->queued_twopc_lock);
 
-	kref_debug_put(&connection->kref_debug, 16);
-	kref_put(&connection->kref, drbd_destroy_connection);
-	kfree(q);
+	while (true) {
+		if (jiffies - q->start_jif >= t || cancel) {
+			if (!cancel)
+				drbd_info(connection, "Rejecting concurrent "
+					  "remote state change %u because of "
+					  "state change %u takes too long\n",
+					  q->reply.tid,
+					  resource->twopc_reply.tid);
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &q->reply);
+		} else {
+			process_twopc(connection, &q->reply, &q->packet_info, q->start_jif);
+		}
+
+		kref_debug_put(&connection->kref_debug, 16);
+		kref_put(&connection->kref, drbd_destroy_connection);
+		kfree(q);
+
+		q = list_first_entry_or_null(&work_list, struct queued_twopc, w.list);
+		if (q) {
+			list_del(&q->w.list);
+			connection = q->connection;
+		} else
+			break;
+	}
 
 	return 0;
 }
