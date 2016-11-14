@@ -5374,7 +5374,8 @@ static int queue_twopc(struct drbd_connection *connection, struct twopc_reply *t
 	spin_lock_irq(&resource->queued_twopc_lock);
 	list_for_each_entry(q, &resource->queued_twopc, w.list) {
 		if (q->reply.tid == twopc->tid &&
-		    q->reply.initiator_node_id == twopc->initiator_node_id)
+		    q->reply.initiator_node_id == twopc->initiator_node_id &&
+		    q->connection == connection)
 			already_queued = true;
 	}
 	spin_unlock_irq(&resource->queued_twopc_lock);
