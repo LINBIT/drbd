@@ -1568,6 +1568,7 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 
 	drbd_remove_interval(&device->write_requests, i);
 	drbd_clear_interval(i);
+	peer_req->flags &= ~EE_IN_INTERVAL_TREE;
 
 	/* Wake up any processes waiting for this peer request to complete.  */
 	if (i->waiting)
@@ -2441,6 +2442,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	 * new conflicting local requests from being added.
 	 */
 	drbd_insert_interval(&device->write_requests, &peer_req->i);
+	peer_req->flags |= EE_IN_INTERVAL_TREE;
 
     repeat:
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
@@ -2679,7 +2681,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (tp) {
 		/* two primaries implies protocol C */
 		D_ASSERT(device, d.dp_flags & DP_SEND_WRITE_ACK);
-		peer_req->flags |= EE_IN_INTERVAL_TREE;
 		err = wait_for_and_update_peer_seq(peer_device, d.peer_seq);
 		if (err)
 			goto out_interrupted;
