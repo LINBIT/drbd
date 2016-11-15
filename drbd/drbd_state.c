@@ -3661,17 +3661,20 @@ retry:
 	return dd;
 }
 
-static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
+static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd, bool as_work)
 {
 	struct drbd_connection *twopc_parent, *tmp;
 	struct twopc_reply twopc_reply;
 	LIST_HEAD(parents);
 
 	spin_lock_irq(&resource->req_lock);
-	resource->twopc_prepare_reply_cmd = cmd;
-	list_splice_init(&resource->twopc_parents, &parents);
 	twopc_reply = resource->twopc_reply;
-	resource->twopc_work.cb = NULL;
+	if (twopc_reply.tid) {
+		resource->twopc_prepare_reply_cmd = cmd;
+		list_splice_init(&resource->twopc_parents, &parents);
+	}
+	if (as_work)
+		resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 
 	if (!twopc_reply.tid)
@@ -3705,7 +3708,7 @@ int nested_twopc_work(struct drbd_work *work, int cancel)
 		cmd = P_TWOPC_RETRY;
 	else
 		cmd = P_TWOPC_NO;
-	twopc_end_nested(resource, cmd);
+	twopc_end_nested(resource, cmd, true);
 	return 0;
 }
 
@@ -3727,7 +3730,7 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
 		if (rv <= SS_SUCCESS) {
 			cmd = (rv == SS_SUCCESS) ? P_TWOPC_YES : P_TWOPC_NO;
-			twopc_end_nested(resource, cmd);
+			twopc_end_nested(resource, cmd, false);
 		}
 	}
 	return rv;
