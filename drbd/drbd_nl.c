@@ -5469,6 +5469,9 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 			mutex_unlock(&resource->conf_update);
 		} else {
 			drbd_msg_put_info(adm_ctx.reply_skb, "failed to disconnect");
+
+			kref_debug_put(&connection->kref_debug, 13);
+			kref_put(&connection->kref, drbd_destroy_connection);
 			goto out;
 		}
 	}
