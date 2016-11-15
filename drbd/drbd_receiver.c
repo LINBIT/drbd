@@ -5461,10 +5461,10 @@ void queued_twopc_timer_fn(unsigned long data)
 	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
 	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
 	if (q) {
-		if (jiffies - q->start_jif >= t)
+		if (jiffies - q->start_jif >= t) {
+			resource->starting_queued_twopc = q;
 			list_del(&q->w.list);
-		else
-			q = NULL;
+		}
 	}
 	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
 
@@ -5483,7 +5483,6 @@ void queue_queued_twopc(struct drbd_resource *resource)
 	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
 	if (q) {
 		resource->starting_queued_twopc = q;
-		mb();
 		list_del(&q->w.list);
 		arm_queue_twopc_timer(resource);
 	}
