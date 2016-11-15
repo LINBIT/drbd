@@ -5707,7 +5707,7 @@ static int process_twopc(struct drbd_connection *connection,
 
 	csc_rv = check_concurrent_transactions(resource, reply);
 
-	if (csc_rv == CSC_CLEAR) {
+	if (csc_rv == CSC_CLEAR && pi->cmd != P_TWOPC_ABORT) {
 		if (!is_prepare(pi->cmd)) {
 			/* We have committed or aborted this transaction already. */
 			spin_unlock_irq(&resource->req_lock);
