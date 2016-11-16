@@ -5699,11 +5699,6 @@ static int process_twopc(struct drbd_connection *connection,
 
 	/* Check for concurrent transactions and duplicate packets. */
 	spin_lock_irq(&resource->req_lock);
-	resource->starting_queued_twopc = NULL;
-	if (reply->is_aborted) {
-		spin_unlock_irq(&resource->req_lock);
-		return 0;
-	}
 
 	csc_rv = check_concurrent_transactions(resource, reply);
 
@@ -5716,6 +5711,11 @@ static int process_twopc(struct drbd_connection *connection,
 				   reply->tid);
 			return 0;
 		}
+		if (reply->is_aborted) {
+			spin_unlock_irq(&resource->req_lock);
+			return 0;
+		}
+		resource->starting_queued_twopc = NULL;
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_prepare_reply_cmd = 0;
@@ -5752,6 +5752,11 @@ static int process_twopc(struct drbd_connection *connection,
 			return 0;
 		}
 		/* abort_local_transaction() returned with the req_lock */
+		if (reply->is_aborted) {
+			spin_unlock_irq(&resource->req_lock);
+			return 0;
+		}
+		resource->starting_queued_twopc = NULL;
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
