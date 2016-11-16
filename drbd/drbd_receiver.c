@@ -5340,7 +5340,7 @@ static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int f
 }
 static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsigned int for_tid)
 {
-	long t = twopc_timeout(resource);
+	long t = twopc_timeout(resource) / 8;
 	enum alt_rv rv;
 
 	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
