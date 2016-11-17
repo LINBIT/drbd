@@ -246,6 +246,7 @@ struct dtr_path {
 	struct drbd_rdma_transport *rdma_transport;
 	struct dtr_flow flow[2];
 	int nr;
+	spinlock_t send_flow_control_lock;
 };
 
 struct dtr_stream {
@@ -1281,41 +1282,51 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 {
 	struct dtr_flow_control msg;
 	enum drbd_stream i;
-	int err, n[2], rx_desc_stolen_from = -1;
+	int err, n[2], rx_desc_stolen_from = -1, rx_descs = 0;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
+
+	spin_lock(&path->send_flow_control_lock);
+	/* dtr_send_flow_control_msg() is called from the receiver thread and
+	   areceiver, asender (multiple threads).
+	   determining the number of new tx_descs and subtracting this number
+	   from rx_descs_known_to_peer has to be atomic!
+	 */
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct dtr_flow *flow = &path->flow[i];
 
 		n[i] = dtr_new_rx_descs(flow);
+		atomic_add(n[i], &flow->rx_descs_known_to_peer);
+		rx_descs += n[i];
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
 		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
 			rx_desc_stolen_from = i;
 	}
+	spin_unlock(&path->send_flow_control_lock);
 
 	if (rx_desc_stolen_from == -1) {
 		tr_err(&path->rdma_transport->transport,
 		       "Not sending flow_control mgs, no receive window!\n");
 		err = -ENOBUFS;
-		goto out;
+		goto out_undo;
+	}
+
+	if (rx_descs == 0) {
+		atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
+		return 0;
 	}
 
 	msg.rx_desc_stolen_from_stream = cpu_to_be32(rx_desc_stolen_from);
 	err = dtr_send(path, &msg, sizeof(msg));
-	if (err)
-		goto out_put;
-
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		struct dtr_flow *flow = &path->flow[i];
-
-		atomic_add(n[i], &flow->rx_descs_known_to_peer);
+	if (err) {
+		atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
+	out_undo:
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+			struct dtr_flow *flow = &path->flow[i];
+			atomic_sub(n[i], &flow->rx_descs_known_to_peer);
+		}
 	}
-
-	goto out;
-out_put:
-	atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
-out:
 	return err;
 }
 
@@ -2857,6 +2868,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	path->rdma_transport = rdma_transport;
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
+	spin_lock_init(&path->send_flow_control_lock);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
