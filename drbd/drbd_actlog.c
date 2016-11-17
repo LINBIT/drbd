@@ -248,15 +248,25 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
+struct get_activity_log_ref_ctx {
+	/* in: which extent on which device? */
+	struct drbd_device *device;
+	unsigned int enr;
+	bool nonblock;
+
+	/* out: do we need to wake_up(&device->al_wait)? */
+	bool wake_up;
+};
+
 static struct bm_extent*
-find_active_resync_extent(struct drbd_device *device, unsigned int enr)
+find_active_resync_extent(struct get_activity_log_ref_ctx *al_ctx)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;
 
 	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, device) {
-		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
+	for_each_peer_device_rcu(peer_device, al_ctx->device) {
+		tmp = lc_find(peer_device->resync_lru, al_ctx->enr/AL_EXT_PER_BM_SECT);
 		if (unlikely(tmp != NULL)) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
 			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
@@ -264,6 +274,7 @@ find_active_resync_extent(struct drbd_device *device, unsigned int enr)
 					peer_device->resync_wenr = LC_FREE;
 					if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
 						bm_ext->flags = 0;
+						al_ctx->wake_up = true;
 						peer_device->resync_locked--;
 						continue;
 					}
@@ -277,56 +288,63 @@ find_active_resync_extent(struct drbd_device *device, unsigned int enr)
 	return NULL;
 }
 
-static int
-set_bme_priority(struct drbd_device *device, unsigned int enr)
+void
+set_bme_priority(struct get_activity_log_ref_ctx *al_ctx)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;
-	int wake = 0;
 
 	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, device) {
-		tmp = lc_find(peer_device->resync_lru, enr/AL_EXT_PER_BM_SECT);
+	for_each_peer_device_rcu(peer_device, al_ctx->device) {
+		tmp = lc_find(peer_device->resync_lru, al_ctx->enr/AL_EXT_PER_BM_SECT);
 		if (tmp) {
 			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags))
-				wake |= !test_and_set_bit(BME_PRIORITY, &bm_ext->flags);
+			if (test_bit(BME_NO_WRITES, &bm_ext->flags)
+			&& !test_and_set_bit(BME_PRIORITY, &bm_ext->flags))
+				al_ctx->wake_up = true;
 		}
 	}
 	rcu_read_unlock();
-
-	return wake;
 }
 
 static
-struct lc_element *__al_get(struct drbd_device *device,
-	 unsigned int enr, bool nonblock)
+struct lc_element *__al_get(struct get_activity_log_ref_ctx *al_ctx)
 {
-	struct lc_element *al_ext;
+	struct drbd_device *device = al_ctx->device;
+	struct lc_element *al_ext = NULL;
 	struct bm_extent *bm_ext;
-	int wake;
 
 	spin_lock_irq(&device->al_lock);
-	bm_ext = find_active_resync_extent(device, enr);
+	bm_ext = find_active_resync_extent(al_ctx);
 	if (bm_ext) {
-		wake = set_bme_priority(device, enr);
-		spin_unlock_irq(&device->al_lock);
-		if (wake)
-			wake_up(&device->al_wait);
-		return NULL;
+		set_bme_priority(al_ctx);
+		goto out;
 	}
-	if (nonblock)
-		al_ext = lc_try_get(device->act_log, enr);
+	if (al_ctx->nonblock)
+		al_ext = lc_try_get(device->act_log, al_ctx->enr);
 	else
-		al_ext = lc_get(device->act_log, enr);
+		al_ext = lc_get(device->act_log, al_ctx->enr);
+ out:
 	spin_unlock_irq(&device->al_lock);
+	if (al_ctx->wake_up)
+		wake_up(&device->al_wait);
 	return al_ext;
 }
 
 static
 struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr)
 {
-	return __al_get(device, enr, true);
+	struct get_activity_log_ref_ctx al_ctx =
+		{ .device = device, .enr = enr, .nonblock = true };
+	return __al_get(&al_ctx);
+}
+
+static
+struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
+{
+	struct get_activity_log_ref_ctx al_ctx =
+		{ .device = device, .enr = enr, .nonblock = false };
+	return __al_get(&al_ctx);
 }
 
 bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i)
@@ -545,12 +563,6 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 	}
 }
 
-static
-struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
-{
-	return __al_get(device, enr, false);
-}
-
 static bool put_actlog(struct drbd_device *device, unsigned int first, unsigned int last)
 {
 	struct lc_element *extent;
@@ -625,6 +637,7 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned nr_al_extents;
 	unsigned available_update_slots;
+	struct get_activity_log_ref_ctx al_ctx = { .device = device, };
 	unsigned enr;
 
 	D_ASSERT(device, first <= last);
@@ -652,9 +665,11 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 
 	/* Is resync active in this area? */
 	for (enr = first; enr <= last; enr++) {
-		bm_ext = find_active_resync_extent(device, enr);
+		al_ctx.enr = enr;
+		bm_ext = find_active_resync_extent(&al_ctx);
 		if (unlikely(bm_ext != NULL)) {
-			if (set_bme_priority(device, enr))
+			set_bme_priority(&al_ctx);
+			if (al_ctx.wake_up)
 				return -EBUSY;
 			return -EWOULDBLOCK;
 		}
