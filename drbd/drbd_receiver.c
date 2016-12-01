@@ -8217,11 +8217,13 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 		int bitmap_index = peer_device->bitmap_index;
 		u64 mask = ~(bitmap_index != -1 ? 1UL << bitmap_index : 0UL);
 
-		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
-			      mask, mask);
-
+		if (get_ldev(device)) {
+			drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
+				      mask, mask);
+			drbd_al_complete_io(device, &peer_req->i);
+			put_ldev(device);
+		}
 		list_del(&peer_req->recv_order);
-		drbd_al_complete_io(device, &peer_req->i);
 		notify_sync_targets_or_free(peer_req, 0);
 	}
 }
