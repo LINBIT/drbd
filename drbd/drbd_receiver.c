@@ -8072,8 +8072,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_h
 	u64 bitmap_bits = 0;
 	int node_id;
 
-	for_each_set_bit(node_id, (unsigned long *)&node_ids,
-			 sizeof(node_ids) * BITS_PER_BYTE) {
+	for_each_set_bit(node_id, (unsigned long *)&node_ids, DRBD_NODE_ID_MAX) {
 		int bitmap_bit = peer_md[node_id].bitmap_index;
 		if (bitmap_bit >= 0)
 			bitmap_bits |= NODE_MASK(bitmap_bit);

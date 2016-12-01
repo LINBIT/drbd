@@ -912,8 +912,8 @@ struct twopc_reply {
 			u64 max_possible_size;
 		};
 	};
-	int is_disconnect:1;
-	int is_aborted:1;
+	unsigned int is_disconnect:1;
+	unsigned int is_aborted:1;
 };
 
 struct drbd_thread_timing_details

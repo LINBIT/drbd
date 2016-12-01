@@ -285,7 +285,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		if (adm_ctx->peer_node_id == adm_ctx->resource->res_opts.node_id) {
+		if (adm_ctx->resource && adm_ctx->peer_node_id == adm_ctx->resource->res_opts.node_id) {
 			drbd_msg_put_info(adm_ctx->reply_skb, "peer node id cannot be my own node id");
 			err = ERR_INVALID_REQUEST;
 			goto finish;

@@ -1506,8 +1506,8 @@ void drbd_bm_clear_all(struct drbd_device *device)
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int bitmap_index;
 
-       for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++)
-	       __bm_many_bits_op(device, bitmap_index, 0, -1, BM_OP_CLEAR);
+	for (bitmap_index = 0; bitmap_index < bitmap->bm_max_peers; bitmap_index++)
+		__bm_many_bits_op(device, bitmap_index, 0, -1, BM_OP_CLEAR);
 }
 
 unsigned int drbd_bm_clear_bits(struct drbd_device *device, unsigned int bitmap_index,
