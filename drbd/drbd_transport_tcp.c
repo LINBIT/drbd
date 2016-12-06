@@ -228,7 +228,7 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
  * do we need to block DRBD_SIG if sock == &meta.socket ??
  * otherwise wake_asender() might interrupt some send_*Ack !
  */
-		rv = kernel_sendmsg(socket, &msg, &iov, 1, size);
+		rv = kernel_sendmsg(socket, &msg, &iov, 1, iov.iov_len);
 		if (rv == -EAGAIN) {
 			struct drbd_transport *transport = &tcp_transport->transport;
 			enum drbd_stream stream =
