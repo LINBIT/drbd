@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.6rc1-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * fixed error handling in del_path
+ * merge fixes from drbd-8.4; a potential NULL deref with kernel_sendmsg()
+ * fix multiple issues with concurrent two-phase-commits
+ * improve connect time; with older releases it usually took between 20 to
+   40 seconds to establish a connection; now it usually works now in less than
+   2 seconds
+ * allow multiple updatese per AL-transaction on a secondary; this can
+   (depending on the IO pattern) dramatically increase the the write
+   throuput and decrease IO amplification
+ * reorganize data structures of receiver for efficiency
+ * upon an open for read-only access, wait for up the auto-promote-timeout
+   for accessible data
+
 9.0.5-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix a bug that causes data inconsistency between mirrors. The bug triggered
