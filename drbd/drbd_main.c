@@ -2479,6 +2479,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	unsigned long flags;
 	int rv = 0;
 
+	kref_get(&device->kref);
+	kref_debug_get(&device->kref_debug, 9);
+
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
 		/* Allow opening in read-only mode on an unconnected secondary.
@@ -2497,8 +2500,10 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 				ro_open_cond(device) != -EAGAIN,
 				resource->res_opts.auto_promote_timeout * HZ / 10);
 		}
-	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos)
-		return -EMEDIUMTYPE;
+	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos) {
+		rv = -EMEDIUMTYPE;
+		goto out;
+	}
 
 
 	down(&resource->state_sem);
@@ -2531,7 +2536,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	}
 	spin_unlock_irqrestore(&resource->req_lock, flags);
 	up(&resource->state_sem);
-
+out:
+	kref_debug_put(&device->kref_debug, 9);
+	kref_put(&device->kref, drbd_destroy_device);
 	return rv;
 }
 
@@ -3735,6 +3742,7 @@ void drbd_unregister_device(struct drbd_device *device)
 	for_each_peer_device(peer_device, device)
 		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_device_cleanup(device);
+	del_gendisk(device->vdisk);
 }
 
 void drbd_put_device(struct drbd_device *device)
@@ -3744,7 +3752,6 @@ void drbd_put_device(struct drbd_device *device)
 
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
-	del_gendisk(device->vdisk);
 	del_timer_sync(&device->request_timer);
 
 	for_each_peer_device(peer_device, device)
