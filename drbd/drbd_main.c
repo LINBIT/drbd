@@ -1959,6 +1959,11 @@ int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_d
 	struct drbd_transport *peer_transport = &peer_device->connection->transport;
 	int err = -1;
 
+	if (peer_device->bitmap_index == -1) {
+		drbd_err(peer_device, "No bitmap allocated in drbd_send_bitmap()!\n");
+		return -EIO;
+	}
+
 	mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
 	if (peer_transport->ops->stream_ok(peer_transport, DATA_STREAM))
 		err = !_drbd_send_bitmap(device, peer_device);

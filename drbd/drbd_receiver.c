@@ -6615,6 +6615,10 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return -EIO;
+	if (peer_device->bitmap_index == -1) {
+		drbd_err(peer_device, "No bitmap allocated in receive_bitmap()!\n");
+		return -EIO;
+	}
 	device = peer_device->device;
 
 	/* Final repl_states become visible when the disk leaves NEGOTIATING state */
