@@ -4100,7 +4100,7 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 				    context->val.conn,
 				    cstate_context->outdate_what);
 
-	if (phase == PH_COMMIT && context->val.conn == C_DISCONNECTING) {
+	if (phase == PH_COMMIT) {
 		struct drbd_resource *resource = context->resource;
 		struct twopc_reply *reply = &resource->twopc_reply;
 		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
