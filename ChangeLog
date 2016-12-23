@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-9.0.6rc1-1 (api:genl2/proto:86-112/transport:14)
+9.0.6-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fixed error handling in del_path
  * merge fixes from drbd-8.4; a potential NULL deref with kernel_sendmsg()
