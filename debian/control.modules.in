@@ -13,7 +13,7 @@ Conflicts: drbd-module-_KVERS_
 Provides: drbd-module-_KVERS_
 Replaces: drbd-module-_KVERS_
 Section: misc
-Recommends: kernel-image-_KVERS_
+Recommends: linux-image-_KVERS_
 Description: RAID 1 over tcp/ip for Linux kernel module
  Drbd is a block device which is designed to build high availability
  clusters by providing a virtual shared device which keeps disks in nodes
