@@ -3,17 +3,17 @@ Section: admin
 Priority: extra
 Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
 Uploaders: Philipp Reisner <philipp.reisner@linbit.com>, Lars Ellenberg <lars.ellenberg@linbit.com>
-Build-Depends: debhelper (>= 5), debconf-utils, docbook-xml, docbook-xsl, dpatch, flex, xsltproc, bash
+Build-Depends: debhelper (>= 5), bash
 Standards-Version: 3.6.2.1
 
 Package: drbd8-module-source
 Architecture: all
 Section: admin
-Depends: module-assistant, debhelper (>= 4), dpatch
+Depends: module-assistant, debhelper (>= 4)
 Conflicts: drbd-module-source, drbd-source
 Provides: drbd-module-source
 Replaces: drbd-module-source, drbd-source
-Recommends:  dpkg-dev, kernel-package, debconf-utils
+Recommends:  dpkg-dev, kernel-package
 Description: RAID 1 over tcp/ip for Linux module source
  DRBD is a block device which is designed to build high availability
  clusters by providing a virtual shared device which keeps disks in

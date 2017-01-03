@@ -9,8 +9,6 @@
 # Uncomment this to turn on verbose mode.
 # export DH_VERBOSE=1
 
-include /usr/share/dpatch/dpatch.make
-
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
 
