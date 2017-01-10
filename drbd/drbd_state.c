@@ -3392,6 +3392,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		  context->val.i);
 	resource->remote_state_change = true;
 	resource->twopc_parent_nodes = 0;
+	resource->twopc_type = TWOPC_STATE_CHANGE;
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = context->target_node_id;
 	reply->primary_nodes = 0;
@@ -3573,6 +3574,7 @@ retry:
 
 	resource->remote_state_change = true;
 	resource->twopc_parent_nodes = 0;
+	resource->twopc_type = TWOPC_RESIZE;
 
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = -1;

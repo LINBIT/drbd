@@ -5943,7 +5943,7 @@ static int process_twopc(struct drbd_connection *connection,
 			reply->max_possible_size = drbd_local_max_size(device);
 			put_ldev(device);
 		} else {
-			reply->max_possible_size = DRBD_MAX_SECTORS;
+			reply->max_possible_size = DRBD_MAX_SECTORS_FLEX;
 			reply->diskful_primary_nodes = 0;
 		}
 		resource->twopc_resize.dds_flags = be16_to_cpu(p->dds_flags);
