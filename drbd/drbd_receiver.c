@@ -1968,6 +1968,7 @@ next_bio:
 	if (!(op == REQ_OP_WRITE || op == REQ_OP_READ)) {
 		drbd_err(device, "Invalid bio op received: 0x%x\n", op);
 		err = -EINVAL;
+		goto fail;
 	}
 
 	bio = bio_alloc(GFP_NOIO, nr_pages);
