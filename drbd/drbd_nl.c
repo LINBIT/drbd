@@ -3995,7 +3995,10 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_peer_device(peer_device, device) {
-		if (rs.no_resync && peer_device->connection->agreed_pro_version < 93) {
+		struct drbd_connection *connection = peer_device->connection;
+		if (rs.no_resync &&
+		    connection->cstate[NOW] == C_CONNECTED &&
+		    connection->agreed_pro_version < 93) {
 			retcode = ERR_NEED_APV_93;
 			goto fail_ldev;
 		}
