@@ -5659,6 +5659,35 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 cont:
 	dd = drbd_determine_dev_size(device, tr->new_size, tr->dds_flags | DDSF_2PC, rs);
 
+	if (dd > DS_UNCHANGED) { /* DS_SHRUNK, DS_GREW, DS_GREW_FROM_ZERO */
+		struct drbd_peer_device *peer_device;
+		u64 im;
+
+		for_each_peer_device_ref(peer_device, im, device) {
+			if (peer_device->repl_state[NOW] != L_ESTABLISHED ||
+			    peer_device->disk_state[NOW] < D_INCONSISTENT)
+				continue;
+
+			/* update cached sizes, relevant for the next handshake
+			 * of a currently unconnected peeer. */
+			peer_device->c_size = tr->new_size;
+			peer_device->u_size = tr->user_size;
+			if (dd >= DS_GREW) {
+				if (tr->new_size > peer_device->d_size)
+					peer_device->d_size = tr->new_size;
+
+				if (tr->new_size > peer_device->max_size)
+					peer_device->max_size = tr->new_size;
+			} else if (dd == DS_SHRUNK) {
+				if (tr->new_size < peer_device->d_size)
+					peer_device->d_size = tr->new_size;
+
+				if (tr->new_size < peer_device->max_size)
+					peer_device->max_size = tr->new_size;
+			}
+		}
+	}
+
 	if (dd == DS_GREW && !(tr->dds_flags & DDSF_NO_RESYNC)) {
 		struct drbd_resource *resource = device->resource;
 		const int my_node_id = resource->res_opts.node_id;
@@ -7693,8 +7722,11 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			   resource->twopc_reply.tid);
 
 		if (pi->cmd == P_TWOPC_YES) {
+			struct drbd_peer_device *peer_device;
+			u64 reachable_nodes;
+			u64 max_size;
+
 			switch (resource->twopc_type) {
-				u64 reachable_nodes;
 			case TWOPC_STATE_CHANGE:
 				reachable_nodes =
 					be64_to_cpu(p->reachable_nodes);
@@ -7717,9 +7749,13 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			case TWOPC_RESIZE:
 				resource->twopc_reply.diskful_primary_nodes |=
 					be64_to_cpu(p->diskful_primary_nodes);
+				max_size = be64_to_cpu(p->max_possible_size);
 				resource->twopc_reply.max_possible_size =
 					min_t(sector_t, resource->twopc_reply.max_possible_size,
-					      be64_to_cpu(p->max_possible_size));
+					      max_size);
+				peer_device = conn_peer_device(connection, resource->twopc_reply.vnr);
+				if (peer_device)
+					peer_device->max_size = max_size;
 				break;
 			}
 		}
