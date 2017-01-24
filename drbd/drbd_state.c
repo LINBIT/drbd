@@ -43,6 +43,33 @@ struct after_state_change_work {
 	struct completion *done;
 };
 
+bool is_suspended_fen(struct drbd_resource *resource, enum which_state which)
+{
+	struct drbd_connection *connection;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection->susp_fen[which]) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
+bool resource_is_suspended(struct drbd_resource *resource, enum which_state which)
+{
+	bool rv = resource->susp[which] || resource->susp_nod[which];
+
+	if (rv)
+		return rv;
+
+	return is_suspended_fen(resource, which);
+}
+
 static void count_objects(struct drbd_resource *resource,
 			  unsigned int *n_devices,
 			  unsigned int *n_connections)
@@ -116,8 +143,6 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	       resource->susp, sizeof(resource->susp));
 	memcpy(state_change->resource->susp_nod,
 	       resource->susp_nod, sizeof(resource->susp_nod));
-	memcpy(state_change->resource->susp_fen,
-	       resource->susp_fen, sizeof(resource->susp_fen));
 
 	device_state_change = state_change->devices;
 	peer_device_state_change = state_change->peer_devices;
@@ -168,6 +193,9 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 		       connection->cstate, sizeof(connection->cstate));
 		memcpy(connection_state_change->peer_role,
 		       connection->peer_role, sizeof(connection->peer_role));
+		memcpy(connection_state_change->susp_fen,
+		       connection->susp_fen, sizeof(connection->susp_fen));
+
 		connection_state_change++;
 	}
 
@@ -185,7 +213,6 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 	OLD_TO_NEW(resource_state_change->role);
 	OLD_TO_NEW(resource_state_change->susp);
 	OLD_TO_NEW(resource_state_change->susp_nod);
-	OLD_TO_NEW(resource_state_change->susp_fen);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -193,6 +220,7 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 
 		OLD_TO_NEW(connection_state_change->peer_role);
 		OLD_TO_NEW(connection_state_change->cstate);
+		OLD_TO_NEW(connection_state_change->susp_fen);
 	}
 
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
@@ -269,13 +297,13 @@ static bool state_has_changed(struct drbd_resource *resource)
 
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp[OLD] != resource->susp[NEW] ||
-	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
-	    resource->susp_fen[OLD] != resource->susp_fen[NEW])
+	    resource->susp_nod[OLD] != resource->susp_nod[NEW])
 		return true;
 
 	for_each_connection(connection, resource) {
 		if (connection->cstate[OLD] != connection->cstate[NEW] ||
-		    connection->peer_role[OLD] != connection->peer_role[NEW])
+		    connection->peer_role[OLD] != connection->peer_role[NEW] ||
+		    connection->susp_fen[OLD] != connection->susp_fen[NEW])
 			return true;
 	}
 
@@ -312,11 +340,11 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->role[NEW] = resource->role[NOW];
 	resource->susp[NEW] = resource->susp[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
-	resource->susp_fen[NEW] = resource->susp_fen[NOW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
 		connection->peer_role[NEW] = connection->peer_role[NOW];
+		connection->susp_fen[NEW] = connection->susp_fen[NOW];
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
@@ -406,11 +434,11 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->role[NOW] = resource->role[NEW];
 	resource->susp[NOW] = resource->susp[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
-	resource->susp_fen[NOW] = resource->susp_fen[NEW];
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
 		connection->peer_role[NOW] = connection->peer_role[NEW];
+		connection->susp_fen[NOW] = connection->susp_fen[NEW];
 
 		wake_up(&connection->ping_wait);
 	}
@@ -600,7 +628,7 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.peer = R_UNKNOWN,  /* really: undefined */
 		.susp = resource->susp[which],
 		.susp_nod = resource->susp_nod[which],
-		.susp_fen = resource->susp_fen[which],
+		.susp_fen = is_suspended_fen(resource, which),
 		.pdsk = D_UNKNOWN,  /* really: undefined */
 	} };
 
@@ -792,27 +820,20 @@ static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
 	return b - buffer;
 }
 
-static bool io_suspended(struct drbd_resource *resource, enum which_state which)
-{
-	return resource->susp[which] ||
-	       resource->susp_nod[which] ||
-	       resource->susp_fen[which];
-}
-
 static int scnprintf_io_suspend_flags(char *buffer, size_t size,
 				      struct drbd_resource *resource,
 				      enum which_state which)
 {
 	char *b = buffer, *end = buffer + size;
 
-	if (!io_suspended(resource, which))
+	if (!resource_is_suspended(resource, which))
 		return scnprintf(buffer, size, "no");
 
 	if (resource->susp[which])
 		b += scnprintf(b, end - b, "user,");
 	if (resource->susp_nod[which])
 		b += scnprintf(b, end - b, "no-disk,");
-	if (resource->susp_fen[which])
+	if (is_suspended_fen(resource, which))
 		b += scnprintf(b, end - b, "fencing,");
 	*(--b) = 0;
 
@@ -832,7 +853,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		b += scnprintf(b, end - b, "role( %s -> %s ) ",
 			       drbd_role_str(role[OLD]),
 			       drbd_role_str(role[NEW]));
-	if (io_suspended(resource, OLD) != io_suspended(resource, NEW)) {
+	if (resource_is_suspended(resource, OLD) != resource_is_suspended(resource, NEW)) {
 		b += scnprintf(b, end - b, "susp-io( ");
 		b += scnprintf_io_suspend_flags(b, end - b, resource, OLD);
 		b += scnprintf(b, end - b, " -> ");
@@ -1463,7 +1484,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[NEW] == D_UNKNOWN) &&
 			    (role[OLD] != R_PRIMARY ||
 			     peer_disk_state[OLD] != D_UNKNOWN))
-				resource->susp_fen[NEW] = true;
+				connection->susp_fen[NEW] = true;
 
 			/* Count access to good data */
 			if (peer_disk_state[OLD] == D_UP_TO_DATE)
@@ -2035,6 +2056,22 @@ int drbd_bitmap_io_from_worker(struct drbd_device *device,
 	return rv;
 }
 
+static inline bool state_change_is_susp_fen(struct drbd_state_change *state_change,
+					    enum which_state which)
+{
+	int n_connection;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_connection_state_change *connection_state_change =
+				&state_change->connections[n_connection];
+
+		if (connection_state_change->susp_fen[which])
+			return true;
+	}
+
+	return false;
+}
+
 static union drbd_state state_change_word(struct drbd_state_change *state_change,
 					  unsigned int n_device, int n_connection,
 					  enum which_state which)
@@ -2054,7 +2091,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	state.role = resource_state_change->role[which];
 	state.susp = resource_state_change->susp[which];
 	state.susp_nod = resource_state_change->susp_nod[which];
-	state.susp_fen = resource_state_change->susp_fen[which];
+	state.susp_fen = state_change_is_susp_fen(state_change, which);
 	state.disk = device_state_change->disk_state[which];
 	if (n_connection != -1) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -2077,15 +2114,16 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 
 void notify_resource_state_change(struct sk_buff *skb,
 				  unsigned int seq,
-				  struct drbd_resource_state_change *resource_state_change,
+				  struct drbd_state_change *state_change,
 				  enum drbd_notification_type type)
 {
+	struct drbd_resource_state_change *resource_state_change = state_change->resource;
 	struct drbd_resource *resource = resource_state_change->resource;
 	struct resource_info resource_info = {
 		.res_role = resource_state_change->role[NEW],
 		.res_susp = resource_state_change->susp[NEW],
 		.res_susp_nod = resource_state_change->susp_nod[NEW],
-		.res_susp_fen = resource_state_change->susp_fen[NEW],
+		.res_susp_fen = state_change_is_susp_fen(state_change, NEW),
 	};
 
 	notify_resource_state(skb, seq, resource, &resource_info, type);
@@ -2161,11 +2199,12 @@ static void notify_state_change(struct drbd_state_change *state_change)
 	    HAS_CHANGED(resource_state_change->role) ||
 	    HAS_CHANGED(resource_state_change->susp) ||
 	    HAS_CHANGED(resource_state_change->susp_nod) ||
-	    HAS_CHANGED(resource_state_change->susp_fen);
+		state_change_is_susp_fen(state_change, OLD) !=
+		state_change_is_susp_fen(state_change, NEW);
 
 	if (resource_state_has_changed)
 		REMEMBER_STATE_CHANGE(notify_resource_state_change,
-				      resource_state_change, NOTIFY_CHANGE);
+				      state_change, NOTIFY_CHANGE);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -2363,7 +2402,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	enum drbd_role *role = resource_state_change->role;
 	struct drbd_peer_device *send_state_others = NULL;
 	bool *susp_nod = resource_state_change->susp_nod;
-	bool *susp_fen = resource_state_change->susp_fen;
 	int n_device, n_connection;
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
@@ -2804,6 +2842,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_connection *connection = connection_state_change->connection;
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
 		enum drbd_role *peer_role = connection_state_change->peer_role;
+		bool *susp_fen = connection_state_change->susp_fen;
 
 		/* Upon network configuration, we need to start the receiver */
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
@@ -2841,7 +2880,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				mutex_unlock(&resource->conf_update);
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);
 				_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
-				__change_io_susp_fencing(resource, false);
+				__change_io_susp_fencing(connection, false);
 				end_state_change(resource, &irq_flags);
 			}
 			/* case2: The connection was established again: */
@@ -2858,7 +2897,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				rcu_read_unlock();
 				begin_state_change(resource, &irq_flags, CS_VERBOSE);
 				_tl_restart(connection, RESEND);
-				__change_io_susp_fencing(resource, false);
+				__change_io_susp_fencing(connection, false);
 				end_state_change(resource, &irq_flags);
 			}
 		}
@@ -3849,9 +3888,9 @@ void __change_io_susp_no_data(struct drbd_resource *resource, bool value)
 	resource->susp_nod[NEW] = value;
 }
 
-void __change_io_susp_fencing(struct drbd_resource *resource, bool value)
+void __change_io_susp_fencing(struct drbd_connection *connection, bool value)
 {
-	resource->susp_fen[NEW] = value;
+	connection->susp_fen[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)

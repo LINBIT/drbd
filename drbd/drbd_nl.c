@@ -726,11 +726,11 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 
 	if (conn_highest_disk(connection) < D_CONSISTENT) {
 		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
-		__change_io_susp_fencing(resource, false);
+		__change_io_susp_fencing(connection, false);
 		/* We are no longer suspended due to the fencing policy.
 		 * We may still be suspended due to the on-no-data-accessible policy.
 		 * If that was OND_IO_ERROR, fail pending requests. */
-		if (!resource_is_suspended(resource))
+		if (!resource_is_suspended(resource, NOW))
 			_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 		end_state_change_locked(resource);
 		spin_unlock_irq(&resource->req_lock);
@@ -4406,6 +4406,7 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
+	struct drbd_connection *connection;
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	unsigned long irq_flags;
@@ -4424,7 +4425,8 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);
 	__change_io_susp_no_data(resource, false);
-	__change_io_susp_fencing(resource, false);
+	for_each_connection(connection, resource)
+		__change_io_susp_fencing(connection, false);
 	retcode = end_state_change(resource, &irq_flags);
 	if (retcode == SS_SUCCESS) {
 		struct drbd_peer_device *peer_device;
@@ -5197,7 +5199,7 @@ static void resource_to_info(struct resource_info *info,
 	info->res_role = resource->role[NOW];
 	info->res_susp = resource->susp[NOW];
 	info->res_susp_nod = resource->susp_nod[NOW];
-	info->res_susp_fen = resource->susp_fen[NOW];
+	info->res_susp_fen = is_suspended_fen(resource, NOW);
 }
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
@@ -5896,7 +5898,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	if (cb->args[4] < cb->args[3])
 		flags |= NOTIFY_CONTINUES;
 	if (n < 1) {
-		notify_resource_state_change(skb, seq, state_change->resource,
+		notify_resource_state_change(skb, seq, state_change,
 					     NOTIFY_EXISTS | flags);
 		goto next;
 	}

@@ -4994,7 +4994,7 @@ __change_connection_state(struct drbd_connection *connection,
 	}
 	if (mask.susp_fen) {
 		mask.susp_fen ^= -1;
-		__change_io_susp_fencing(resource, val.susp_fen);
+		__change_io_susp_fencing(connection, val.susp_fen);
 	}
 	if (mask.disk) {
 		/* Handled in __change_peer_device_state(). */

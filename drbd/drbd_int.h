@@ -992,7 +992,6 @@ struct drbd_resource {
 	enum drbd_role role[2];
 	bool susp[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
-	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
 
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
@@ -1034,6 +1033,7 @@ struct drbd_connection {
 	struct idr peer_devices;	/* volume number to peer device mapping */
 	enum drbd_conn_state cstate[2];
 	enum drbd_role peer_role[2];
+	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
 
 	unsigned long flags;
 	enum drbd_fencing_policy fencing_policy;
@@ -2735,14 +2735,9 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 		wake_up(&device->misc_wait);
 }
 
-static inline bool resource_is_suspended(struct drbd_resource *resource)
-{
-	return resource->susp[NOW] || resource->susp_fen[NOW] || resource->susp_nod[NOW];
-}
-
 static inline bool drbd_suspended(struct drbd_device *device)
 {
-	return resource_is_suspended(device->resource);
+	return resource_is_suspended(device->resource, NOW);
 }
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)
