@@ -2389,6 +2389,60 @@ static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
 	return rv;
 }
 
+static void check_may_resume_io_after_fencing(struct drbd_state_change *state_change, int n_connection)
+{
+	struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
+	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
+	struct drbd_connection *connection = connection_state_change->connection;
+	struct drbd_resource *resource = resource_state_change->resource;
+	bool all_peer_disks_outdated = true;
+	bool all_peer_disks_connected = true;
+	struct drbd_peer_device *peer_device;
+	unsigned long irq_flags;
+	int vnr, n_device;
+
+	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+		enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
+		enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
+
+		if (peer_disk_state[NEW] > D_OUTDATED)
+			all_peer_disks_outdated = false;
+		if (repl_state[NEW] < L_ESTABLISHED)
+			all_peer_disks_connected = false;
+	}
+
+	/* case1: The outdate peer handler is successful: */
+	if (all_peer_disks_outdated) {
+		mutex_lock(&resource->conf_update);
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+				drbd_uuid_new_current(device, false);
+		}
+		mutex_unlock(&resource->conf_update);
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
+		__change_io_susp_fencing(connection, false);
+		end_state_change(resource, &irq_flags);
+	}
+	/* case2: The connection was established again: */
+	if (all_peer_disks_connected) {
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+			clear_bit(NEW_CUR_UUID, &device->flags);
+		}
+		rcu_read_unlock();
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		_tl_restart(connection, RESEND);
+		__change_io_susp_fencing(connection, false);
+		end_state_change(resource, &irq_flags);
+	}
+}
+
+
 /*
  * Perform after state change actions that may sleep.
  */
@@ -2848,59 +2902,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
 			drbd_thread_start(&connection->receiver);
 
-		if (susp_fen[NEW]) {
-			bool all_peer_disks_outdated = true;
-			bool all_peer_disks_connected = true;
-
-			/* Iterate over all peer devices on this connection.  */
-			for (n_device = 0; n_device < state_change->n_devices; n_device++) {
-				struct drbd_peer_device_state_change *peer_device_state_change =
-					&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
-				enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
-				enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
-
-				if (peer_disk_state[NEW] > D_OUTDATED)
-					all_peer_disks_outdated = false;
-				if (repl_state[NEW] < L_ESTABLISHED)
-					all_peer_disks_connected = false;
-			}
-
-			/* case1: The outdate peer handler is successful: */
-			if (all_peer_disks_outdated) {
-				struct drbd_peer_device *peer_device;
-				unsigned long irq_flags;
-				int vnr;
-
-				mutex_lock(&resource->conf_update);
-				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-					struct drbd_device *device = peer_device->device;
-					if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-						drbd_uuid_new_current(device, false);
-				}
-				mutex_unlock(&resource->conf_update);
-				begin_state_change(resource, &irq_flags, CS_VERBOSE);
-				_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
-				__change_io_susp_fencing(connection, false);
-				end_state_change(resource, &irq_flags);
-			}
-			/* case2: The connection was established again: */
-			if (all_peer_disks_connected) {
-				struct drbd_peer_device *peer_device;
-				unsigned long irq_flags;
-				int vnr;
-
-				rcu_read_lock();
-				idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-					struct drbd_device *device = peer_device->device;
-					clear_bit(NEW_CUR_UUID, &device->flags);
-				}
-				rcu_read_unlock();
-				begin_state_change(resource, &irq_flags, CS_VERBOSE);
-				_tl_restart(connection, RESEND);
-				__change_io_susp_fencing(connection, false);
-				end_state_change(resource, &irq_flags);
-			}
-		}
+		if (susp_fen[NEW])
+			check_may_resume_io_after_fencing(state_change, n_connection);
 
 		if (peer_role[OLD] == R_PRIMARY &&
 		    cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
