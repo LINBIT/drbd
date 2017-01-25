@@ -4401,7 +4401,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 					continue;
 			}
 
-			do_it = pdsk <= D_FAILED || pdsk == D_UNKNOWN || pdsk == D_OUTDATED ||
+			do_it = (pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
 				(NODE_MASK(node_id) & weak_nodes);
 
 		} else {
