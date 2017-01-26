@@ -5305,7 +5305,28 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 		enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	int vnr = resource->twopc_reply.vnr;
 
+	if (mask.i == 0 && val.i == 0 &&
+	    resource->role[NEW] == R_PRIMARY && vnr == -1) {
+		/* A node far away test if there are primaries. I am the guy he
+		   is concerned about... He learned about me in the CS_PREPARE phase.
+		   Since he is commiting it I know that he is outdated now... */
+		struct drbd_connection *affected_connection;
+		int initiator_node_id = resource->twopc_reply.initiator_node_id;
+
+		affected_connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
+		if (affected_connection) {
+			unsigned long irq_flags;
+			enum drbd_state_rv rv;
+
+			begin_state_change(resource, &irq_flags, flags);
+			__change_peer_disk_states(affected_connection, D_OUTDATED);
+			rv = end_state_change(resource, &irq_flags);
+			kref_put(&affected_connection->kref, drbd_destroy_connection);
+			return rv;
+		}
+	}
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NEW] == R_PRIMARY) {
 		struct net_conf *nc;
