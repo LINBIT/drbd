@@ -139,11 +139,11 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 
 	/* preallocate all objects */
 	for (i = 0; i < e_count; i++) {
-		void *p = kmem_cache_alloc(cache, GFP_KERNEL);
+		unsigned char *p = kmem_cache_alloc(cache, GFP_KERNEL);
 		if (!p)
 			break;
 		memset(p, 0, lc->element_size);
-		e = p + e_off;
+		e = (struct lc_element *)(p + e_off);
 		e->lc_index = i;
 		e->lc_number = LC_FREE;
 		e->lc_new_number = LC_FREE;
@@ -156,7 +156,7 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 	/* else: could not allocate all elements, give up */
 	for (i--; i; i--) {
 		void *p = element[i];
-		kmem_cache_free(cache, p - e_off);
+		kmem_cache_free(cache, (unsigned char *)p - e_off);
 	}
 	kfree(lc);
 out_fail:
@@ -170,7 +170,7 @@ static void lc_free_by_index(struct lru_cache *lc, unsigned i)
 	void *p = lc->lc_element[i];
 	WARN_ON(!p);
 	if (p) {
-		p -= lc->element_off;
+		p = (unsigned char*)p - lc->element_off;
 		kmem_cache_free(lc->lc_cache, p);
 	}
 }
@@ -219,7 +219,7 @@ void lc_reset(struct lru_cache *lc)
 	for (i = 0; i < lc->nr_elements; i++) {
 		struct lc_element *e = lc->lc_element[i];
 		void *p = e;
-		p -= lc->element_off;
+		p = (unsigned char*)p - lc->element_off;
 		memset(p, 0, lc->element_size);
 		/* re-init it */
 		e->lc_index = i;
