@@ -1275,7 +1275,7 @@ struct drbd_device {
 
 struct drbd_bm_aio_ctx {
 	struct drbd_device *device;
-	struct list_head list; /* on device->pending_bitmap_io */;
+	struct list_head list; /* on device->pending_bitmap_io */
 	unsigned long start_jif;
 	atomic_t in_flight;
 	unsigned int done;
