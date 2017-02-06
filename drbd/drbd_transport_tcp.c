@@ -3,7 +3,7 @@
 
    This file is part of DRBD.
 
-   Copyright (C) 2014, LINBIT HA-Solutions GmbH.
+   Copyright (C) 2014-2017, LINBIT HA-Solutions GmbH.
 
    drbd is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,9 +63,9 @@ struct dtt_listener {
 	wait_queue_head_t wait; /* woken if a connection came in */
 };
 
-/* Since earch patch might have a different local IP address, each
+/* Since each path might have a different local IP address, each
    path might need its own listener. Therefore the drbd_waiter object
-   is embebedded into the dtt_path and _not_ the dtt_waiter */
+   is embedded into the dtt_path and _not_ the dtt_waiter. */
 
 struct dtt_socket_container {
 	struct list_head list;
