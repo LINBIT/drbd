@@ -901,8 +901,8 @@ have_page:
 	sbuf->pos = page_address(sbuf->page);
 }
 
-static void *alloc_send_buffer(struct drbd_connection *connection, int size,
-			      enum drbd_stream drbd_stream)
+static char *alloc_send_buffer(struct drbd_connection *connection, int size,
+			       enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	char *page_start = page_address(sbuf->page);
