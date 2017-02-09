@@ -2087,7 +2087,7 @@ static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
-	void *from_base;
+	char *from_base;
 	void *buffer2;
 	int err;
 
