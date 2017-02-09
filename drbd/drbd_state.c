@@ -2458,7 +2458,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	int n_device, n_connection;
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
-	bool resync_finished;
+	bool resync_finished = false;
 
 	notify_state_change(state_change);
 
