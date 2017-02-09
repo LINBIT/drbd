@@ -1862,7 +1862,8 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 	struct p_compressed_bm *pc;
 	int len, err;
 
-	pc = alloc_send_buffer(peer_device->connection, DRBD_SOCKET_BUFFER_SIZE, DATA_STREAM) + header_size;
+	pc = (struct p_compressed_bm *)
+		(alloc_send_buffer(peer_device->connection, DRBD_SOCKET_BUFFER_SIZE, DATA_STREAM) + header_size);
 
 	len = fill_bitmap_rle_bits(peer_device, pc,
 			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*pc), c);
