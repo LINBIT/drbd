@@ -1010,7 +1010,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (!(cstate[OLD] == C_CONNECTED ||
 		     (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_CONNECTING))) {
 			struct drbd_peer_device *peer_device;
-			int vnr;
 
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
@@ -1949,7 +1948,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (cstate[NEW] < C_CONNECTED) {
 			struct drbd_peer_device *peer_device;
-			int vnr;
 
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
