@@ -353,7 +353,6 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
-	bool fastpath_ok = true;
 
 
 	D_ASSERT(device, first <= last);
@@ -363,8 +362,7 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	if (first != last)
 		return false;
 
-	fastpath_ok = _al_get_nonblock(device, first);
-	return fastpath_ok;
+	return _al_get_nonblock(device, first) != NULL;
 }
 
 #if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
