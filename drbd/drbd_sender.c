@@ -1373,11 +1373,11 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			digest_size = crypto_ahash_digestsize(peer_device->connection->csums_tfm);
 			D_ASSERT(device, digest_size == di->digest_size);
 			digest = kmalloc(digest_size, GFP_NOIO);
-		}
-		if (digest) {
-			drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
-			eq = !memcmp(digest, di->digest, digest_size);
-			kfree(digest);
+			if (digest) {
+				drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
+				eq = !memcmp(digest, di->digest, digest_size);
+				kfree(digest);
+			}
 		}
 
 		if (eq) {
