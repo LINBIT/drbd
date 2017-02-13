@@ -154,7 +154,7 @@ static void seq_print_minor_vnr_req(struct seq_file *m, struct drbd_request *req
 static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
 {
 	struct drbd_device *device;
-	unsigned int i;
+	int i;
 
 	seq_puts(m, "minor\tvnr\tstart\tsubmit\tintent\n");
 	rcu_read_lock();
@@ -182,7 +182,7 @@ static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_r
 static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
 {
 	struct drbd_device *device;
-	unsigned int i;
+	int i;
 
 	seq_puts(m, "minor\tvnr\tage\t#waiting\n");
 	rcu_read_lock();
@@ -242,7 +242,7 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 static void seq_print_resource_pending_bitmap_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
 {
 	struct drbd_device *device;
-	unsigned int i;
+	int i;
 
 	seq_puts(m, "minor\tvnr\trw\tage\t#in-flight\n");
 	rcu_read_lock();
@@ -325,7 +325,7 @@ static void seq_print_resource_pending_peer_requests(struct seq_file *m,
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	unsigned int i;
+	int i;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
