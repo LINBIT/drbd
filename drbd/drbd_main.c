@@ -965,7 +965,7 @@ assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p,
 		p->qlim->io_opt = cpu_to_be32(queue_io_opt(q));
 		p->qlim->discard_enabled = blk_queue_discard(q);
 		p->qlim->discard_zeroes_data = queue_discard_zeroes_data(q);
-#ifdef REQ_WRITE_SAME
+#ifdef COMPAT_WRITE_SAME_CAPABLE
 		p->qlim->write_same_capable = !!q->limits.max_write_same_sectors;
 #else
 		p->qlim->write_same_capable = 0;
@@ -1647,7 +1647,7 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 					 bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
-		/* REQ_WRITE_SAME has only one segment */
+		/* WRITE_SAME has only one segment */
 		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}
@@ -1668,7 +1668,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 				      bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
-		/* REQ_WRITE_SAME has only one segment */
+		/* WRITE_SAME has only one segment */
 		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}

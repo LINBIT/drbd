@@ -1218,7 +1218,7 @@ static void blk_queue_discard_granularity(struct request_queue *q, unsigned int 
 
 static unsigned int drbd_max_discard_sectors(struct drbd_connection *connection)
 {
-	/* when we introduced REQ_WRITE_SAME support, we also bumped
+	/* when we introduced WRITE_SAME support, we also bumped
 	 * our maximum supported batch bio size used for discards. */
 	if (connection->agreed_features & DRBD_FF_WSAME)
 		return DRBD_MAX_BBIO_SECTORS;
@@ -1292,7 +1292,7 @@ static void decide_on_write_same_support(struct drbd_device *device,
 			bool disable_write_same)
 {
 	struct drbd_peer_device *peer_device = first_peer_device(device);
-#ifndef REQ_WRITE_SAME
+#ifndef COMPAT_WRITE_SAME_CAPABLE
 	drbd_dbg(peer_device, "This kernel is too old, no WRITE_SAME support.\n");
 #else
 	struct drbd_connection *connection = peer_device->connection;
