@@ -5456,7 +5456,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 	enum drbd_ret_code ret;
-	unsigned i;
+	int i;
 	u64 im;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info,
