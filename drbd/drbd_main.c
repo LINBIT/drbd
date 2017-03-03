@@ -759,10 +759,11 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 #define drbd_calc_cpu_mask(A) ({})
 #endif
 
-static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *authoritative)
+static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *authoritative_ptr)
 {
 	struct drbd_connection *connection;
 	bool all_secondary = true;
+	u64 authoritative = 0;
 	int id;
 
 	rcu_read_lock();
@@ -770,16 +771,13 @@ static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *aut
 		if (connection->cstate[NOW] >= C_CONNECTED &&
 		    connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
-			if (authoritative) {
-				id = connection->peer_node_id;
-				*authoritative |= NODE_MASK(id);
-			} else {
-				break;
-			}
+			id = connection->peer_node_id;
+			authoritative |= NODE_MASK(id);
 		}
 	}
 	rcu_read_unlock();
-
+	if (authoritative_ptr)
+		*authoritative_ptr = authoritative;
 	return all_secondary;
 }
 
@@ -787,17 +785,18 @@ static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *aut
    A primary is stable since it is authoritative.
    Unstable are neighbors of a primary and resync target nodes.
    Nodes further away from a primary are stable! */
-bool drbd_device_stable(struct drbd_device *device, u64 *authoritative)
+bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	struct drbd_peer_device *peer_device;
+	u64 authoritative = 0;
 	bool device_stable = true;
 
 	if (resource->role[NOW] == R_PRIMARY)
 		return true;
 
-	if (!drbd_all_neighbor_secondary(resource, authoritative))
+	if (!drbd_all_neighbor_secondary(resource, authoritative_ptr))
 		return false;
 
 	rcu_read_lock();
@@ -808,8 +807,7 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative)
 		case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_T:
 			device_stable = false;
-			if (authoritative)
-				*authoritative |= NODE_MASK(peer_device->node_id);
+			authoritative |= NODE_MASK(peer_device->node_id);
 			goto out;
 		default:
 			continue;
@@ -818,6 +816,8 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative)
 
 out:
 	rcu_read_unlock();
+	if (authoritative_ptr)
+		*authoritative_ptr = authoritative;
 	return device_stable;
 }
 
