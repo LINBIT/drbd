@@ -1353,7 +1353,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	int p_size = sizeof(*p);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
-		return 0;
+		return drbd_send_current_uuid(peer_device, device->exposed_data_uuid,
+					      drbd_weak_nodes_device(device));
 
 	peer_md = device->ldev->md.peers;
 
@@ -1436,16 +1437,17 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 	}
 }
 
-void drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes)
+int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes)
 {
 	struct p_current_uuid *p;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
-	if (p) {
-		p->uuid = cpu_to_be64(current_uuid);
-		p->weak_nodes = cpu_to_be64(weak_nodes);
-		drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
-	}
+	if (!p)
+		return -EIO;
+
+	p->uuid = cpu_to_be64(current_uuid);
+	p->weak_nodes = cpu_to_be64(weak_nodes);
+	return drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
 }
 
 void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
