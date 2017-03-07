@@ -3731,7 +3731,7 @@ int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static int open_ro_count(struct drbd_resource *resource)
+int drbd_open_ro_count(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	int vnr, open_ro_cnt = 0;
@@ -3767,7 +3767,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 		/* Most probably udev opened it read-only. That might happen
 		   if it was demoted very recently. Wait up to one second. */
 		t = wait_event_interruptible_timeout(resource->state_wait,
-						     open_ro_count(resource) == 0,
+						     drbd_open_ro_count(resource) == 0,
 						     HZ);
 		if (t <= 0)
 			break;

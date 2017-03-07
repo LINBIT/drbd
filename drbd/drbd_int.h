@@ -2062,6 +2062,7 @@ extern void notify_path(struct drbd_connection *, struct drbd_path *,
 			enum drbd_notification_type);
 
 extern sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
+extern int drbd_open_ro_count(struct drbd_resource *resource);
 /*
  * inline helper functions
  *************************/

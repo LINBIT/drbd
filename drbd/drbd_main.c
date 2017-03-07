@@ -2580,7 +2580,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	if (open_ro_cnt == 0)
-		wake_up(&resource->state_wait);
+		wake_up_all(&resource->state_wait);
 
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
