@@ -3731,24 +3731,47 @@ int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static int open_ro_count(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr, open_ro_cnt = 0;
+
+	spin_lock_irq(&resource->req_lock);
+	idr_for_each_entry(&resource->devices, device, vnr)
+		open_ro_cnt += device->open_ro_cnt;
+	spin_unlock_irq(&resource->req_lock);
+
+	return open_ro_cnt;
+}
+
 static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection, bool force)
 {
 	struct drbd_resource *resource = connection->resource;
+	enum drbd_conn_state cstate;
 	enum drbd_state_rv rv;
+	long t;
 
     repeat:
 	rv = change_cstate(connection, C_DISCONNECTING, force ? CS_HARD : 0);
-	if (rv == SS_CW_FAILED_BY_PEER) {
-		enum drbd_conn_state cstate;
-
+	switch (rv) {
+	case SS_CW_FAILED_BY_PEER:
 		spin_lock_irq(&resource->req_lock);
 		cstate = connection->cstate[NOW];
 		spin_unlock_irq(&resource->req_lock);
 		if (cstate < C_CONNECTED)
 			goto repeat;
-	}
-
-	switch (rv) {
+		break;
+	case SS_NO_UP_TO_DATE_DISK:
+		if (resource->role[NOW] == R_PRIMARY)
+			break;
+		/* Most probably udev opened it read-only. That might happen
+		   if it was demoted very recently. Wait up to one second. */
+		t = wait_event_interruptible_timeout(resource->state_wait,
+						     open_ro_count(resource) == 0,
+						     HZ);
+		if (t <= 0)
+			break;
+		goto repeat;
 	case SS_ALREADY_STANDALONE:
 		rv = SS_SUCCESS;
 		break;
