@@ -2881,7 +2881,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		if (disk_state[OLD] != D_CONSISTENT && disk_state[NEW] == D_CONSISTENT)
+		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT)
 			try_become_up_to_date = true;
 
 		drbd_md_sync_if_dirty(device);
