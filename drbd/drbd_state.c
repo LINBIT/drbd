@@ -4051,6 +4051,25 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 	return rv;
 }
 
+static void restore_outdated_in_pdsk(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	if (!get_ldev_if_state(device, D_ATTACHING))
+		return;
+
+	for_each_peer_device(peer_device, device) {
+		int node_id = peer_device->connection->peer_node_id;
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+		if ((peer_md->flags & MDF_PEER_OUTDATED) &&
+		    peer_device->disk_state[NEW] == D_UNKNOWN)
+			__change_peer_disk_state(peer_device, D_OUTDATED);
+	}
+
+	put_ldev(device);
+}
+
 static bool do_change_from_consistent(struct change_context *context, enum change_phase phase)
 {
 	struct drbd_resource *resource = context->resource;
@@ -4110,8 +4129,11 @@ static bool do_change_disk_state(struct change_context *context, enum change_pha
 				first_connection(device->resource);
 			cluster_wide_state_change =
 				connection && connection->agreed_pro_version >= 110;
-		} else
+		} else {
+			/* very last part of attach */
 			context->val.disk = disk_state_from_md(device);
+			restore_outdated_in_pdsk(device);
+		}
 	} else if (device->disk_state[NOW] != D_DETACHING &&
 		   context->val.disk == D_DETACHING &&
 		   device_has_connected_peer_devices(device)) {
