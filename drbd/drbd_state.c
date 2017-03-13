@@ -60,31 +60,60 @@ static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union
  */
 static bool may_be_up_to_date(struct drbd_device *device) __must_hold(local)
 {
-	struct drbd_peer_device *peer_device;
 	bool all_peers_outdated = true;
 	int node_id;
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state peer_disk_state;
+		bool want_bitmap = true;
+
+		if (node_id == device->ldev->md.node_id)
+			continue;
+
+		if (peer_md[node_id].bitmap_index == -1 && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
+			continue;
 
 		if (!(peer_md->flags & MDF_PEER_FENCING))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
-		if (peer_device)
+		if (peer_device) {
+			struct peer_device_conf *pdc = rcu_dereference(peer_device->conf);
+			want_bitmap = pdc->bitmap;
 			peer_disk_state = peer_device->disk_state[NEW];
-		else
+		} else {
 			peer_disk_state = D_UNKNOWN;
-
-		if (peer_disk_state == D_OUTDATED ||
-		    peer_disk_state == D_INCONSISTENT)
-			continue;
-		else if (peer_disk_state != D_UNKNOWN ||
-			 !(peer_md->flags & MDF_PEER_OUTDATED)) {
-			all_peers_outdated = false;
-			break;
 		}
+
+		switch (peer_disk_state) {
+		case D_DISKLESS:
+			if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN))
+				continue;
+		case D_ATTACHING:
+		case D_DETACHING:
+		case D_FAILED:
+		case D_NEGOTIATING:
+		case D_UNKNOWN:
+			if (!want_bitmap)
+				continue;
+			if ((peer_md->flags & MDF_PEER_OUTDATED))
+				continue;
+			break;
+		case D_INCONSISTENT:
+		case D_OUTDATED:
+			continue;
+		case D_CONSISTENT:
+		case D_UP_TO_DATE:
+			/* These states imply that there is a connection. If there is
+			   a conneciton we do not need to insist that the peer was
+			   outdated. */
+			continue;
+		case D_MASK: ;
+		}
+
+		all_peers_outdated = false;
 	}
 	rcu_read_unlock();
 	return all_peers_outdated;
@@ -1542,6 +1571,10 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			if (peer_disk_state[NEW] < min_peer_disk_state)
 				peer_disk_state[NEW] = min_peer_disk_state;
+
+			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED &&
+			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device))
+				disk_state[NEW] = D_UP_TO_DATE;
 
 			/* Suspend IO while fence-peer handler runs (peer lost) */
 			if (connection->fencing_policy == FP_STONITH &&
