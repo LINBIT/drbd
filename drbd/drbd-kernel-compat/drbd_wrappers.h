@@ -719,7 +719,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * bi_opf (some kernel version) -> data packet flags -> bi_opf (other kernel version)
  */
 
-#if defined(bio_set_op_attrs)
+#ifdef COMPAT_HAVE_BIO_SET_OP_ATTRS
 /* Linux 4.8 split bio OPs and FLAGs {{{2 */
 
 #define DRBD_REQ_PREFLUSH	REQ_PREFLUSH
@@ -733,6 +733,11 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 	/* became an op, no longer flag */
 #define DRBD_REQ_DISCARD	0
 #define DRBD_REQ_WSAME		0
+
+/* Gone in Linux 4.10 */
+#ifndef WRITE_SYNC
+#define WRITE_SYNC REQ_SYNC
+#endif
 
 #define COMPAT_WRITE_SAME_CAPABLE
 
@@ -885,7 +890,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #endif
 
 
-#ifndef bio_set_op_attrs /* compat for Linux before 4.8 {{{2 */
+#ifndef COMPAT_HAVE_BIO_SET_OP_ATTRS /*compat for Linux before 4.8 {{{2 */
 
 #define bi_opf bi_rw
 
