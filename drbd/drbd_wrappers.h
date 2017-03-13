@@ -1457,6 +1457,16 @@ static inline int __must_check kref_get_unless_zero(struct kref *kref)
 }
 #endif
 
+#ifndef COMPAT_HAVE_REFCOUNT_INC
+#define refcount_inc(R) atomic_inc(R)
+#define refcount_read(R) atomic_read(R)
+#define refcount_dec_and_test(R) atomic_dec_and_test(R)
+#endif
+
+#ifndef KREF_INIT
+#define KREF_INIT(N) { ATOMIC_INIT(N) }
+#endif
+
 #ifndef KOBJECT_CREATE_AND_ADD_EXPORTED
 struct kobject *kobject_create_and_add(const char *name, struct kobject *parent);
 int kobject_init_and_add(struct kobject *kobj, struct kobj_type *ktype,
