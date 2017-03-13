@@ -34,15 +34,23 @@
 #include "drbd_state_change.h"
 
 
-static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_state ns);
-static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
-				  enum drbd_disk_state os, enum drbd_disk_state ns);
-
 struct after_state_change_work {
 	struct drbd_work w;
 	struct drbd_state_change *state_change;
 	struct completion *done;
 };
+
+static bool lost_contact_to_peer_data(enum drbd_disk_state os, enum drbd_disk_state ns);
+static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
+				  enum drbd_disk_state os, enum drbd_disk_state ns);
+static void print_state_change(struct drbd_resource *resource, const char *prefix);
+static void finish_state_change(struct drbd_resource *, struct completion *);
+static int w_after_state_change(struct drbd_work *w, int unused);
+static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
+static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
+static void sanitize_state(struct drbd_resource *resource);
+static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
+					    union drbd_state, unsigned long *);
 
 bool is_suspended_fen(struct drbd_resource *resource, enum which_state which)
 {
@@ -277,15 +285,6 @@ void forget_state_change(struct drbd_state_change *state_change)
 	}
 	kfree(state_change);
 }
-
-static void print_state_change(struct drbd_resource *resource, const char *prefix);
-static void finish_state_change(struct drbd_resource *, struct completion *);
-static int w_after_state_change(struct drbd_work *w, int unused);
-static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
-static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
-static void sanitize_state(struct drbd_resource *resource);
-static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
-					    union drbd_state, unsigned long *);
 
 static bool state_has_changed(struct drbd_resource *resource)
 {
