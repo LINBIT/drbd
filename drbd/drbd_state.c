@@ -2148,9 +2148,9 @@ void notify_device_state_change(struct sk_buff *skb,
 				enum drbd_notification_type type)
 {
 	struct drbd_device *device = device_state_change->device;
-	struct device_info device_info = {
-		.dev_disk_state = device_state_change->disk_state[NEW],
-	};
+	struct device_info device_info;
+
+	device_to_info(&device_info, device);
 
 	notify_device_state(skb, seq, device, &device_info, type);
 }
