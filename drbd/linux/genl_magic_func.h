@@ -261,15 +261,7 @@ static struct genl_ops ZZZ_genl_ops[] __read_mostly = {
  *									{{{2
  */
 #define ZZZ_genl_family		CONCAT_(GENL_MAGIC_FAMILY, _genl_family)
-static struct genl_family ZZZ_genl_family __read_mostly = {
-	.id = GENL_ID_GENERATE,
-	.name = __stringify(GENL_MAGIC_FAMILY),
-	.version = GENL_MAGIC_VERSION,
-#ifdef GENL_MAGIC_FAMILY_HDRSZ
-	.hdrsize = NLA_ALIGN(GENL_MAGIC_FAMILY_HDRSZ),
-#endif
-	.maxattr = ARRAY_SIZE(drbd_tla_nl_policy)-1,
-};
+static struct genl_family ZZZ_genl_family;
 
 /*
  * Magic: define multicast groups
@@ -282,12 +274,34 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
  * genetlink: pass family to functions using groups
  * genetlink: only pass array to genl_register_family_with_ops()
  * which are commits c53ed742..2a94fe48
+ *
+ * v4.10, 489111e5 genetlink: statically initialize families
+ *   and previous commit drop GENL_ID_GENERATE and register helper functions.
  */
-#ifdef genl_register_family_with_ops_groups
+#if defined(genl_register_family_with_ops_groups) || !defined(GENL_ID_GENERATE)
 #include <linux/genl_magic_func-genl_register_family_with_ops_groups.h>
 #else
 #include <linux/genl_magic_func-genl_register_mc_group.h>
 #endif
+
+static struct genl_family ZZZ_genl_family __read_mostly = {
+	/* .id = GENL_ID_GENERATE, which exists no longer, and was 0 anyways */
+	.name = __stringify(GENL_MAGIC_FAMILY),
+	.version = GENL_MAGIC_VERSION,
+#ifdef GENL_MAGIC_FAMILY_HDRSZ
+	.hdrsize = NLA_ALIGN(GENL_MAGIC_FAMILY_HDRSZ),
+#endif
+	.maxattr = ARRAY_SIZE(CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy))-1,
+
+#ifndef GENL_ID_GENERATE
+	.ops = ZZZ_genl_ops,
+	.n_ops = ARRAY_SIZE(ZZZ_genl_ops),
+	.mcgrps = ZZZ_genl_mcgrps,
+	.n_mcgrps = ARRAY_SIZE(ZZZ_genl_mcgrps),
+	.module = THIS_MODULE,
+#endif
+};
+
 
 /*
  * Magic: provide conversion functions					{{{1
