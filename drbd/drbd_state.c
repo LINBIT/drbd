@@ -52,6 +52,63 @@ static void sanitize_state(struct drbd_resource *resource);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 
+/**
+ * disk_state_from_md()  -  determine initial disk state
+ *
+ * When a disk is attached to a device, we set the disk state to D_NEGOTIATING.
+ * We then wait for all connected peers to send the peer disk state.  Once that
+ * has happened, we can determine the actual disk state based on the peer disk
+ * states and the state of the disk itself.
+ *
+ * The initial disk state becomes D_UP_TO_DATE without fencing or when we know
+ * that all peers have been outdated, and D_CONSISTENT otherwise.
+ *
+ * The caller either needs to have a get_ldev() reference, or need to call
+ * this function only if disk_state[NOW] >= D_NEGOTIATING and holding the
+ * req_lock
+ */
+enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(local)
+{
+	struct drbd_peer_device *peer_device;
+	enum drbd_disk_state disk_state;
+
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		disk_state = D_INCONSISTENT;
+	else if (!drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
+		disk_state = D_OUTDATED;
+	else {
+		bool all_peers_outdated = true;
+		int node_id;
+
+		rcu_read_lock();
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+			enum drbd_disk_state peer_disk_state;
+
+			if (!(peer_md->flags & MDF_PEER_FENCING))
+				continue;
+			peer_device = peer_device_by_node_id(device, node_id);
+			if (peer_device)
+				peer_disk_state = peer_device->disk_state[NEW];
+			else
+				peer_disk_state = D_UNKNOWN;
+
+			if (peer_disk_state == D_OUTDATED ||
+			    peer_disk_state == D_INCONSISTENT)
+				continue;
+			else if (peer_disk_state != D_UNKNOWN ||
+				 !(peer_md->flags & MDF_PEER_OUTDATED)) {
+				all_peers_outdated = false;
+				break;
+			}
+		}
+		rcu_read_unlock();
+		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
+	}
+
+	return disk_state;
+}
+
 bool is_suspended_fen(struct drbd_resource *resource, enum which_state which)
 {
 	struct drbd_connection *connection;
