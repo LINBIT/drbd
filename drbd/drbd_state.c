@@ -53,6 +53,44 @@ static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union
 					    union drbd_state, unsigned long *);
 
 /**
+ * may_be_up_to_date()  -  check if transition from D_CONSISTENT to D_UP_TO_DATE is allowed
+ *
+ * When fencing is enabled, it may only transition from D_CONSISTENT to D_UP_TO_DATE
+ * when ether all peers are connected, or outdated.
+ */
+static bool may_be_up_to_date(struct drbd_device *device) __must_hold(local)
+{
+	struct drbd_peer_device *peer_device;
+	bool all_peers_outdated = true;
+	int node_id;
+
+	rcu_read_lock();
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+		enum drbd_disk_state peer_disk_state;
+
+		if (!(peer_md->flags & MDF_PEER_FENCING))
+			continue;
+		peer_device = peer_device_by_node_id(device, node_id);
+		if (peer_device)
+			peer_disk_state = peer_device->disk_state[NEW];
+		else
+			peer_disk_state = D_UNKNOWN;
+
+		if (peer_disk_state == D_OUTDATED ||
+		    peer_disk_state == D_INCONSISTENT)
+			continue;
+		else if (peer_disk_state != D_UNKNOWN ||
+			 !(peer_md->flags & MDF_PEER_OUTDATED)) {
+			all_peers_outdated = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return all_peers_outdated;
+}
+
+/**
  * disk_state_from_md()  -  determine initial disk state
  *
  * When a disk is attached to a device, we set the disk state to D_NEGOTIATING.
@@ -69,42 +107,14 @@ static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union
  */
 enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(local)
 {
-	struct drbd_peer_device *peer_device;
 	enum drbd_disk_state disk_state;
 
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		disk_state = D_INCONSISTENT;
 	else if (!drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
 		disk_state = D_OUTDATED;
-	else {
-		bool all_peers_outdated = true;
-		int node_id;
-
-		rcu_read_lock();
-		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
-			enum drbd_disk_state peer_disk_state;
-
-			if (!(peer_md->flags & MDF_PEER_FENCING))
-				continue;
-			peer_device = peer_device_by_node_id(device, node_id);
-			if (peer_device)
-				peer_disk_state = peer_device->disk_state[NEW];
-			else
-				peer_disk_state = D_UNKNOWN;
-
-			if (peer_disk_state == D_OUTDATED ||
-			    peer_disk_state == D_INCONSISTENT)
-				continue;
-			else if (peer_disk_state != D_UNKNOWN ||
-				 !(peer_md->flags & MDF_PEER_OUTDATED)) {
-				all_peers_outdated = false;
-				break;
-			}
-		}
-		rcu_read_unlock();
-		disk_state = all_peers_outdated ? D_UP_TO_DATE : D_CONSISTENT;
-	}
+	else
+		disk_state = may_be_up_to_date(device) ? D_UP_TO_DATE : D_CONSISTENT;
 
 	return disk_state;
 }
