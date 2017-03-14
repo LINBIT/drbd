@@ -1387,7 +1387,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			connection->peer_role[NEW] = R_UNKNOWN;
 
 		if (connection->peer_role[OLD] == R_PRIMARY && cstate[OLD] == C_CONNECTED &&
-		    cstate[NEW] >= C_TIMEOUT && cstate[NEW] <= C_PROTOCOL_ERROR)
+		    ((cstate[NEW] >= C_TIMEOUT && cstate[NEW] <= C_PROTOCOL_ERROR) ||
+		     (cstate[NEW] == C_DISCONNECTING && resource->state_change_flags & CS_HARD)))
 			/* implies also C_BROKEN_PIPE and C_NETWORK_FAILURE */
 			maybe_crashed_primary = true;
 
