@@ -1627,17 +1627,17 @@ static void sanitize_state(struct drbd_resource *resource)
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_DETACHING))
 				peer_disk_state[NEW] = D_DISKLESS;
 
-			/* Upgrade myself from D_OUTDATED to D_UP_TO_DATE if..
-			   1) We connect to stable D_UP_TO_DATE peer without resnyc
+			/* Upgrade myself from D_OUTDATED if..
+			   1) We connect to stable D_UP_TO_DATE(or D_CONSISTENT) peer without resnyc
 			   2) The peer just became stable
 			   3) the peer was stable and just became D_UP_TO_DATE */
 			if (repl_state[NEW] == L_ESTABLISHED && disk_state[NEW] == D_OUTDATED &&
-			    peer_disk_state[NEW] == D_UP_TO_DATE && peer_device->uuids_received &&
+			    peer_disk_state[NEW] >= D_CONSISTENT && peer_device->uuids_received &&
 			    peer_device->uuid_flags & UUID_FLAG_STABLE &&
 			    (repl_state[OLD] < L_ESTABLISHED ||
 			     peer_device->uuid_flags & UUID_FLAG_GOT_STABLE ||
 			     peer_disk_state[OLD] == D_OUTDATED))
-				disk_state[NEW] = D_UP_TO_DATE;
+				disk_state[NEW] = peer_disk_state[NEW];
 
 			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
 		}
