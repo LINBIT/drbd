@@ -1064,6 +1064,56 @@ have_primary_neighbor:
 	return false;
 }
 
+static bool calc_quorum(struct drbd_device *device, enum which_state which)
+{
+	struct drbd_resource *resource = device->resource;
+	const int my_node_id = resource->res_opts.node_id;
+	int node_id, voters = 0, votes = 0, quorum_at;
+	enum drbd_disk_state disk_state;
+	bool have_quorum;
+
+	rcu_read_lock();
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+		struct drbd_peer_device *peer_device;
+
+		if (node_id == my_node_id) {
+			voters++;
+			votes++;
+			continue;
+		}
+
+		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS))
+			continue;
+
+		voters++;
+
+		peer_device = peer_device_by_node_id(device, node_id);
+		disk_state = peer_device ? peer_device->disk_state[which] : D_UNKNOWN;
+		if (disk_state >= D_NEGOTIATING && disk_state != D_UNKNOWN)
+			votes++;
+	}
+	rcu_read_unlock();
+
+	switch (resource->res_opts.quorum) {
+	case QOU_MAJORITY:
+		quorum_at = voters / 2 + 1;
+		break;
+	case QOU_ALL:
+		quorum_at = voters;
+		break;
+	default:
+		quorum_at = resource->res_opts.quorum;
+	}
+
+	have_quorum = votes >= quorum_at;
+	if (!have_quorum)
+		drbd_info(device, "no quorum; votes = %d; voters = %d; quorum_at = %d",
+			  votes, voters, quorum_at);
+
+	return have_quorum;
+}
+
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -1178,6 +1228,17 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		if (disk_state[NEW] == D_NEGOTIATING)
 			nr_negotiating++;
+
+		if (role[NEW] == R_PRIMARY &&
+		    resource->res_opts.quorum != QOU_OFF && get_ldev(device)) {
+			bool had_quorum = role[OLD] == R_PRIMARY ? calc_quorum(device, OLD) : true;
+			bool have_quorum = calc_quorum(device, NEW);
+
+			put_ldev(device);
+
+			if (had_quorum && !have_quorum)
+				return SS_NO_QUORUM;
+		}
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
