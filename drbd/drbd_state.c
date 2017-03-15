@@ -2262,12 +2262,14 @@ void notify_peer_device_state_change(struct sk_buff *skb,
 				     enum drbd_notification_type type)
 {
 	struct drbd_peer_device *peer_device = p->peer_device;
+	/* THINK maybe unify with peer_device_to_info */
 	struct peer_device_info peer_device_info = {
 		.peer_repl_state = p->repl_state[NEW],
 		.peer_disk_state = p->disk_state[NEW],
 		.peer_resync_susp_user = p->resync_susp_user[NEW],
 		.peer_resync_susp_peer = p->resync_susp_peer[NEW],
 		.peer_resync_susp_dependency = p->resync_susp_dependency[NEW] || p->resync_susp_other_c[NEW],
+		.peer_is_intentional_diskless = !want_bitmap(peer_device),
 	};
 
 	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type);

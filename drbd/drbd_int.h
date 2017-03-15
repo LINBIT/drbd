@@ -259,6 +259,7 @@ extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
 extern enum drbd_disk_state disk_state_from_md(struct drbd_device *);
+extern bool want_bitmap(struct drbd_peer_device *peer_device);
 extern void device_to_info(struct device_info *, struct drbd_device *);
 extern long twopc_timeout(struct drbd_resource *);
 extern long twopc_retry_timeout(struct drbd_resource *, int);
