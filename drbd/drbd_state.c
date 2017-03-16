@@ -278,6 +278,8 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 		device_state_change->device = device;
 		memcpy(device_state_change->disk_state,
 		       device->disk_state, sizeof(device->disk_state));
+		memcpy(device_state_change->susp_quorum,
+		       device->susp_quorum, sizeof(device->susp_quorum));
 		if (test_and_clear_bit(HAVE_LDEV, &device->flags))
 			device_state_change->have_ldev = true;
 
@@ -2270,6 +2272,22 @@ static inline bool state_change_is_susp_fen(struct drbd_state_change *state_chan
 	return false;
 }
 
+static inline bool state_change_is_susp_quorum(struct drbd_state_change *state_change,
+					       enum which_state which)
+{
+	int n_device;
+
+	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+		struct drbd_device_state_change *device_state_change =
+				&state_change->devices[n_device];
+
+		if (device_state_change->susp_quorum[which])
+			return true;
+	}
+
+	return false;
+}
+
 static union drbd_state state_change_word(struct drbd_state_change *state_change,
 					  unsigned int n_device, int n_connection,
 					  enum which_state which)
@@ -2287,7 +2305,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	} };
 
 	state.role = resource_state_change->role[which];
-	state.susp = resource_state_change->susp[which];
+	state.susp = resource_state_change->susp[which] || state_change_is_susp_quorum(state_change, which);
 	state.susp_nod = resource_state_change->susp_nod[which];
 	state.susp_fen = state_change_is_susp_fen(state_change, which);
 	state.disk = device_state_change->disk_state[which];
@@ -2322,6 +2340,7 @@ void notify_resource_state_change(struct sk_buff *skb,
 		.res_susp = resource_state_change->susp[NEW],
 		.res_susp_nod = resource_state_change->susp_nod[NEW],
 		.res_susp_fen = state_change_is_susp_fen(state_change, NEW),
+		.res_susp_quorum = state_change_is_susp_quorum(state_change, NEW),
 	};
 
 	notify_resource_state(skb, seq, resource, &resource_info, type);
@@ -2400,7 +2419,9 @@ static void notify_state_change(struct drbd_state_change *state_change)
 	    HAS_CHANGED(resource_state_change->susp) ||
 	    HAS_CHANGED(resource_state_change->susp_nod) ||
 		state_change_is_susp_fen(state_change, OLD) !=
-		state_change_is_susp_fen(state_change, NEW);
+		state_change_is_susp_fen(state_change, NEW) ||
+		state_change_is_susp_quorum(state_change, OLD) !=
+		state_change_is_susp_quorum(state_change, NEW);
 
 	if (resource_state_has_changed)
 		REMEMBER_STATE_CHANGE(notify_resource_state_change,

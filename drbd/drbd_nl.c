@@ -5243,6 +5243,7 @@ static void resource_to_info(struct resource_info *info,
 	info->res_susp = resource->susp[NOW];
 	info->res_susp_nod = resource->susp_nod[NOW];
 	info->res_susp_fen = is_suspended_fen(resource, NOW);
+	info->res_susp_quorum = is_suspended_quorum(resource, NOW);
 }
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
