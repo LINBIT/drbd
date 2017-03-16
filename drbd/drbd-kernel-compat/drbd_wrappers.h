@@ -1729,6 +1729,20 @@ static inline int atomic_dec_if_positive(atomic_t *v)
 }
 #endif
 
+#ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
+static inline void ratelimit_state_init(struct ratelimit_state *rs,
+                                        int interval, int burst)
+{
+	rs->interval = interval;
+	rs->burst = burst;
+	rs->printed = 0;
+	rs->missed = 0;
+	rs->begin = 0;
+}
+#endif
+
+/* RDMA related */
+#ifdef COMPATH_HAVE_IB_VERBS_H
 #ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
 #include <rdma/ib_verbs.h>
 
@@ -1765,17 +1779,6 @@ drbd_ib_create_cq(struct ib_device *device,
  * but the number of arguments got changed over time */
 #define query_device(D, A, U) query_device(D, A)
 #endif
-
-#ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
-static inline void ratelimit_state_init(struct ratelimit_state *rs,
-                                        int interval, int burst)
-{
-	rs->interval = interval;
-	rs->burst = burst;
-	rs->printed = 0;
-	rs->missed = 0;
-	rs->begin = 0;
-}
-#endif
+#endif /* RDMA */
 
 #endif
