@@ -40,6 +40,12 @@ struct after_state_change_work {
 	struct completion *done;
 };
 
+struct quorum_info {
+	int votes;
+	int voters;
+	int quorum_at;
+};
+
 static bool lost_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool got_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
@@ -1091,7 +1097,7 @@ have_primary_neighbor:
 	return false;
 }
 
-static bool calc_quorum(struct drbd_device *device, enum which_state which)
+static bool calc_quorum(struct drbd_device *device, enum which_state which, struct quorum_info *qi)
 {
 	struct drbd_resource *resource = device->resource;
 	const int my_node_id = resource->res_opts.node_id;
@@ -1133,11 +1139,13 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which)
 		quorum_at = resource->res_opts.quorum;
 	}
 
-	have_quorum = votes >= quorum_at;
-	if (!have_quorum)
-		drbd_info(device, "no quorum; votes = %d; voters = %d; quorum_at = %d",
-			  votes, voters, quorum_at);
+	if (qi) {
+		qi->voters = voters;
+		qi->votes = votes;
+		qi->quorum_at = quorum_at;
+	}
 
+	have_quorum = votes >= quorum_at;
 	return have_quorum;
 }
 
@@ -1258,13 +1266,19 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		if (role[NEW] == R_PRIMARY &&
 		    resource->res_opts.quorum != QOU_OFF && get_ldev(device)) {
-			bool had_quorum = role[OLD] == R_PRIMARY ? calc_quorum(device, OLD) : true;
-			bool have_quorum = calc_quorum(device, NEW);
+			struct quorum_info qi;
+			bool had_quorum = role[OLD] == R_PRIMARY ? calc_quorum(device, OLD, NULL) : true;
+			bool have_quorum = calc_quorum(device, NEW, &qi);
 
 			put_ldev(device);
 
-			if (had_quorum && !have_quorum)
+			if (had_quorum && !have_quorum) {
+				if (resource->state_change_flags & CS_VERBOSE) {
+					drbd_err(device, "quorum: votes = %d; voters = %d; quorum_at = %d\n",
+						 qi.votes, qi.voters, qi.quorum_at);
+				}
 				return SS_NO_QUORUM;
+			}
 		}
 
 		for_each_peer_device(peer_device, device) {
@@ -1733,8 +1747,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (resource->res_opts.quorum != QOU_OFF && role[NEW] == R_PRIMARY &&
 			    get_ldev(device)) {
 				if (lost_contact_to_peer_data(peer_disk_state)) {
-					bool had_quorum = calc_quorum(device, OLD);
-					bool have_quorum = calc_quorum(device, NEW);
+					bool had_quorum = calc_quorum(device, OLD, NULL);
+					bool have_quorum = calc_quorum(device, NEW, NULL);
 
 					if (had_quorum && !have_quorum)
 						device->susp_quorum[NEW] = true;
@@ -3017,7 +3031,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (device->susp_quorum[NEW] && got_contact_to_peer_data(peer_disk_state) &&
 			    get_ldev(device)) {
-				bool have_quorum = calc_quorum(device, NEW);
+				bool have_quorum = calc_quorum(device, NEW, NULL);
 				if (have_quorum) {
 					unsigned long irq_flags;
 
