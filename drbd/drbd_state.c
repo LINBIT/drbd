@@ -4423,7 +4423,7 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 
 	if (phase == PH_PREPARE) {
 		cstate_context->outdate_what = OUTDATE_NOTHING;
-		if (context->val.conn == C_DISCONNECTING) {
+		if (context->val.conn == C_DISCONNECTING && !(context->flags & CS_HARD)) {
 			cstate_context->outdate_what =
 				outdate_on_disconnect(cstate_context->connection);
 			switch(cstate_context->outdate_what) {
