@@ -1101,7 +1101,7 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 {
 	struct drbd_resource *resource = device->resource;
 	const int my_node_id = resource->res_opts.node_id;
-	int node_id, voters = 0, votes = 0, quorum_at;
+	int node_id, voters, votes = 0, outdated = 0, unknown = 0, quorum_at;
 	enum drbd_disk_state disk_state;
 	bool have_quorum;
 
@@ -1111,7 +1111,6 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 		struct drbd_peer_device *peer_device;
 
 		if (node_id == my_node_id) {
-			voters++;
 			votes++;
 			continue;
 		}
@@ -1119,14 +1118,24 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS))
 			continue;
 
-		voters++;
-
 		peer_device = peer_device_by_node_id(device, node_id);
 		disk_state = peer_device ? peer_device->disk_state[which] : D_UNKNOWN;
-		if (disk_state >= D_NEGOTIATING && disk_state != D_UNKNOWN)
+		if (disk_state == D_OUTDATED)
+			outdated++;
+		else if (disk_state == D_UNKNOWN || disk_state <= D_FAILED)
+			unknown++;
+		else /* D_NEGOTIATING, D_INCONSISTENT, D_CONSISTENT, D_UP_TO_DATE */
 			votes++;
 	}
 	rcu_read_unlock();
+
+	/* When all the absent nodes are D_OUTDATED (no one D_UNKNOWN), we can be
+	   sure that the other partition is not able to promote. ->
+	   We remove them from the voters. -> We have quorum */
+	if (unknown)
+		voters = outdated + unknown + votes;
+	else
+		voters = votes;
 
 	switch (resource->res_opts.quorum) {
 	case QOU_MAJORITY:
@@ -4368,7 +4377,8 @@ static enum outdate_what outdate_on_disconnect(struct drbd_connection *connectio
 {
 	struct drbd_resource *resource = connection->resource;
 
-	if (connection->fencing_policy >= FP_RESOURCE &&
+	if ((connection->fencing_policy >= FP_RESOURCE ||
+	     connection->resource->res_opts.quorum != QOU_OFF) &&
 	    resource->role[NOW] != connection->peer_role[NOW]) {
 		/* primary politely disconnects from secondary,
 		 * tells peer to please outdate itself */
