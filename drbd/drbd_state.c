@@ -54,6 +54,7 @@ struct change_context {
 	int target_node_id;
 	enum chg_state_flags flags;
 	bool change_local_state_last;
+	const char **err_str;
 };
 
 enum change_phase {
@@ -624,6 +625,7 @@ out:
 	if ((flags & CS_TWOPC) && !(flags & CS_PREPARE))
 		__clear_remote_state_change(resource);
 
+	resource->state_change_err_str = NULL;
 	return rv;
 }
 
@@ -1175,6 +1177,23 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 	return have_quorum;
 }
 
+
+static __printf(2, 3) void drbd_state_err(struct drbd_resource *resource, const char *fmt, ...)
+{
+	const char *err_str;
+	va_list args;
+
+	va_start(args, fmt);
+	err_str = kvasprintf(GFP_ATOMIC, fmt, args);
+	va_end(args);
+	if (!err_str)
+		return;
+	if (resource->state_change_err_str)
+		*resource->state_change_err_str = err_str;
+	if (resource->state_change_flags & CS_VERBOSE)
+		drbd_err(resource, "%s\n", err_str);
+}
+
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -1299,10 +1318,8 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			put_ldev(device);
 
 			if (had_quorum && !have_quorum) {
-				if (resource->state_change_flags & CS_VERBOSE) {
-					drbd_err(device, "quorum: votes = %d; voters = %d; quorum_at = %d\n",
-						 qi.votes, qi.voters, qi.quorum_at);
-				}
+				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
+					       qi.votes, qi.voters, qi.quorum_at);
 				return SS_NO_QUORUM;
 			}
 		}
@@ -3601,6 +3618,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	bool have_peers;
 
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
+	resource->state_change_err_str = context->err_str;
+
 	if (local_state_change(context->flags)) {
 		/* Not a cluster-wide state change. */
 		change(context, PH_LOCAL_COMMIT);
@@ -3656,6 +3675,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 
 	complete_remote_state_change(resource, &irq_flags);
 	start_time = jiffies;
+	resource->state_change_err_str = context->err_str;
 
 	reach_immediately = directly_connected_nodes(resource, NOW);
 	if (context->target_node_id != -1) {
@@ -4467,9 +4487,11 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
  * peer disks depending on the fencing policy.  This cannot easily be split
  * into two state changes.
  */
-enum drbd_state_rv change_cstate(struct drbd_connection *connection,
-				 enum drbd_conn_state cstate,
-				 enum chg_state_flags flags)
+enum drbd_state_rv change_cstate_es(struct drbd_connection *connection,
+				    enum drbd_conn_state cstate,
+				    enum chg_state_flags flags,
+				    const char **err_str
+	)
 {
 	struct change_cstate_context cstate_context = {
 		.context = {
@@ -4480,6 +4502,7 @@ enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 			.target_node_id = connection->peer_node_id,
 			.flags = flags,
 			.change_local_state_last = true,
+			.err_str = err_str,
 		},
 		.connection = connection,
 	};

@@ -94,7 +94,13 @@ extern void __change_disk_states(struct drbd_resource *, enum drbd_disk_state);
 extern enum drbd_state_rv change_disk_state(struct drbd_device *, enum drbd_disk_state, enum chg_state_flags);
 
 extern void __change_cstate(struct drbd_connection *, enum drbd_conn_state);
-extern enum drbd_state_rv change_cstate(struct drbd_connection *, enum drbd_conn_state, enum chg_state_flags);
+extern enum drbd_state_rv change_cstate_es(struct drbd_connection *, enum drbd_conn_state, enum chg_state_flags, const char **);
+static inline enum drbd_state_rv change_cstate(struct drbd_connection *connection,
+					       enum drbd_conn_state cstate,
+					       enum chg_state_flags flags)
+{
+	return change_cstate_es(connection, cstate, flags, NULL);
+}
 
 extern void __change_peer_role(struct drbd_connection *, enum drbd_role);
 
