@@ -900,7 +900,7 @@ restart:
 }
 
 enum drbd_state_rv
-drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
+drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, struct sk_buff *reply_skb)
 {
 	struct drbd_device *device;
 	int vnr;
@@ -909,7 +909,8 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force)
 	int try = 0;
 	int forced = 0;
 	bool with_force = false;
-
+	const char *err_str = NULL;
+	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 
 retry:
 	down(&resource->state_sem);
@@ -949,10 +950,15 @@ retry:
 	}
 
 	while (try++ < max_tries) {
+		if (try == max_tries - 1)
+			flags |= CS_VERBOSE;
+
+		if (err_str) {
+			kfree(err_str);
+			err_str = NULL;
+		}
 		rv = stable_state_change(resource,
-			change_role(resource, role,
-				    CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE,
-				    with_force));
+			change_role(resource, role, flags, with_force, &err_str));
 
 		if (rv == SS_CONCURRENT_ST_CHG)
 			continue;
@@ -1052,14 +1058,9 @@ retry:
 			continue;
 		}
 
-		if (rv < SS_SUCCESS) {
-			rv = stable_state_change(resource,
-				change_role(resource, role,
-					    CS_VERBOSE | CS_ALREADY_SERIALIZED |
-					    CS_DONT_RETRY | CS_WAIT_COMPLETE,
-					    with_force));
-			if (rv < SS_SUCCESS)
-				goto out;
+		if (rv < SS_SUCCESS && !(flags & CS_VERBOSE)) {
+			flags |= CS_VERBOSE;
+			continue;
 		}
 		break;
 	}
@@ -1121,6 +1122,11 @@ retry:
 
 out:
 	up(&resource->state_sem);
+	if (err_str) {
+		if (reply_skb)
+			drbd_msg_put_info(reply_skb, err_str);
+		kfree(err_str);
+	}
 	return rv;
 }
 
@@ -1155,11 +1161,12 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
-		retcode = drbd_set_role(adm_ctx.resource, R_PRIMARY, parms.assume_uptodate);
+		retcode = drbd_set_role(adm_ctx.resource, R_PRIMARY, parms.assume_uptodate,
+					adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	} else {
-		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false);
+		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	}
@@ -5523,7 +5530,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	resource = adm_ctx.resource;
 	mutex_lock(&resource->adm_mutex);
 	/* demote */
-	retcode = drbd_set_role(resource, R_SECONDARY, false);
+	retcode = drbd_set_role(resource, R_SECONDARY, false, adm_ctx.reply_skb);
 	if (retcode < SS_SUCCESS) {
 		drbd_msg_put_info(adm_ctx.reply_skb, "failed to demote");
 		goto out;

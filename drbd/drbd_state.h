@@ -81,7 +81,7 @@ extern int nested_twopc_work(struct drbd_work *work, int cancel);
 extern enum drbd_state_rv nested_twopc_request(struct drbd_resource *, int, enum drbd_packet, struct p_twopc_request *);
 extern bool cluster_wide_reply_ready(struct drbd_resource *);
 
-extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags, bool);
+extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags, bool, const char **);
 
 extern void __change_io_susp_user(struct drbd_resource *, bool);
 extern enum drbd_state_rv change_io_susp_user(struct drbd_resource *, bool, enum chg_state_flags);

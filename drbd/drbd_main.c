@@ -2438,7 +2438,7 @@ static int try_to_promote(struct drbd_device *device)
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
 	do {
-		rv = drbd_set_role(resource, R_PRIMARY, false);
+		rv = drbd_set_role(resource, R_PRIMARY, false, NULL);
 		if (rv >= SS_SUCCESS || timeout == 0) {
 			return rv;
 		} else if (rv == SS_CW_FAILED_BY_PEER) {
@@ -2588,7 +2588,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 		if (open_rw_cnt == 0 &&
 		    resource->role[NOW] == R_PRIMARY &&
 		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
-			rv = drbd_set_role(resource, R_SECONDARY, false);
+			rv = drbd_set_role(resource, R_SECONDARY, false, NULL);
 			if (rv < SS_SUCCESS)
 				drbd_warn(resource, "Auto-demote failed: %s\n",
 					  drbd_set_st_err_str(rv));
