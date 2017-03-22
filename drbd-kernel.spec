@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.0.6
+Version: 9.0.7rc1
 Release: 1%{?dist}
 
 # always require a suitable userland
@@ -103,6 +103,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
+* Wed Mar 22 2017 Philipp Reisner <phil@linbit.com> - 9.0.7rc1-1
+- New upstream release.
+
 * Fri Dec 23 2016 Philipp Reisner <phil@linbit.com> - 9.0.6-1
 - New upstream release.
 

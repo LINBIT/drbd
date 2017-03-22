@@ -2,6 +2,27 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.7rc1-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * various fixes to the 2-phase-commit online resize
+ * fix fencing and disk state transition and from Consistent; Now it is
+   as complete as it was under drbd-8.4; Necessary for crm-fence-peer
+ * fix moving previous current-uuid into bitmap slot for peer with
+   inconsistent disk state. Old code produced false "split-brain detected"
+ * fix calculation of authoritative nodes. Old code could lead to to
+   false "split-bain detected"
+ * udev workaround: Do not fail down if there is a read-only opener, instead
+   wait up to a second if the read-only-opener goes away.
+ * a primary notes if a "far away" nodes outdates itself, and records the
+   fact in its meta-data.
+ * report back to userspace if a node (or peer) is diskless by intention
+ * restore "Outdated" peer disk state from the meta-data upon attach
+ * Quorum to avoid data divergence, an alternative to fencing when the
+   resource has 3 or more replicas
+ * improve error reporting in case a promote/down/disconnect/detach
+   operation failes. E.g. tells which peer declined a state transition
+ * compiles with Linux 4.10
+
 9.0.6-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fixed error handling in del_path
