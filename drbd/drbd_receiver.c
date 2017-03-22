@@ -4694,7 +4694,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		   as well. */
 		drbd_info(peer_device, "Upgrading local disk to %s after unstable/weak (and no resync).\n",
 			  drbd_disk_str(peer_disk_state));
-		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE);
+		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE, NULL);
 		return;
 	}
 

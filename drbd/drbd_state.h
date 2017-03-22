@@ -91,7 +91,7 @@ extern void __change_io_susp_quorum(struct drbd_device *, bool);
 
 extern void __change_disk_state(struct drbd_device *, enum drbd_disk_state);
 extern void __change_disk_states(struct drbd_resource *, enum drbd_disk_state);
-extern enum drbd_state_rv change_disk_state(struct drbd_device *, enum drbd_disk_state, enum chg_state_flags);
+extern enum drbd_state_rv change_disk_state(struct drbd_device *, enum drbd_disk_state, enum chg_state_flags, const char **);
 
 extern void __change_cstate(struct drbd_connection *, enum drbd_conn_state);
 extern enum drbd_state_rv change_cstate_es(struct drbd_connection *, enum drbd_conn_state, enum chg_state_flags, const char **);

@@ -2117,7 +2117,7 @@ static void go_diskless(struct drbd_device *device)
 		}
 	}
 
-	change_disk_state(device, D_DISKLESS, CS_HARD);
+	change_disk_state(device, D_DISKLESS, CS_HARD, NULL);
 }
 
 static int do_md_sync(struct drbd_device *device)
