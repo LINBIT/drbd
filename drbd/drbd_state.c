@@ -4119,15 +4119,15 @@ static void __change_role(struct change_role_context *role_context)
 	struct drbd_resource *resource = role_context->context.resource;
 	enum drbd_role role = role_context->context.val.role;
 	bool force = role_context->force;
+	struct drbd_device *device;
+	int vnr;
 
 	resource->role[NEW] = role;
 
-	if (role == R_PRIMARY && force) {
-		struct drbd_device *device;
-		int vnr;
 
-		rcu_read_lock();
-		idr_for_each_entry(&resource->devices, device, vnr) {
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (role == R_PRIMARY && force) {
 			if (device->disk_state[NEW] < D_UP_TO_DATE &&
 			    device->disk_state[NEW] >= D_INCONSISTENT &&
 			    !has_up_to_date_peer_disks(device)) {
@@ -4136,9 +4136,11 @@ static void __change_role(struct change_role_context *role_context)
 				role_context->context.mask.disk |= disk_MASK;
 				role_context->context.val.disk |= D_UP_TO_DATE;
 			}
+		} else if (role == R_SECONDARY) {
+			device->susp_quorum[NEW] = false;
 		}
-		rcu_read_unlock();
 	}
+	rcu_read_unlock();
 }
 
 static bool do_change_role(struct change_context *context, enum change_phase phase)
