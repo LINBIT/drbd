@@ -1779,6 +1779,10 @@ drbd_ib_create_cq(struct ib_device *device,
  * but the number of arguments got changed over time */
 #define query_device(D, A, U) query_device(D, A)
 #endif
+
+#ifndef COMPAT_IB_ALLOC_PD_HAS_2_PARAMS
+#define ib_alloc_pd(dev, flags) ib_alloc_pd(dev)
+#endif
 #endif /* RDMA */
 
 #endif
