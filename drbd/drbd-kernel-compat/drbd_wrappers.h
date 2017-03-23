@@ -1742,7 +1742,7 @@ static inline void ratelimit_state_init(struct ratelimit_state *rs,
 #endif
 
 /* RDMA related */
-#ifdef COMPATH_HAVE_IB_VERBS_H
+#ifdef COMPAT_HAVE_IB_VERBS_H
 #ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
 #include <rdma/ib_verbs.h>
 
