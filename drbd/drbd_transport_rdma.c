@@ -2041,7 +2041,10 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 	}
 
 	/* alloc protection domain (PD) */
-	path->pd = ib_alloc_pd(path->cm->id->device);
+	/* in 4.9 ib_alloc_pd got the ability to specify flags as second param */
+	/* so far we don't use flags, but if we start using them, we have to be
+	 * aware that the compat layer removes this parameter for old kernels */
+	path->pd = ib_alloc_pd(path->cm->id->device, 0);
 	if (IS_ERR(path->pd)) {
 		*cause = IB_ALLOC_PD;
 		err = PTR_ERR(path->pd);
@@ -2091,7 +2094,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 	}
 
 	/* create RDMA memory region (MR) */
-	path->dma_mr = ib_get_dma_mr(path->pd,
+	path->dma_mr = path->pd->device->get_dma_mr(path->pd,
 			IB_ACCESS_LOCAL_WRITE |
 			IB_ACCESS_REMOTE_READ |
 			IB_ACCESS_REMOTE_WRITE);
