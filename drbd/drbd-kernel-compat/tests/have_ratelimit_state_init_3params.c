@@ -3,7 +3,7 @@
 int main(void)
 {
 	struct ratelimit_state rs;
-	ratelimit_state_init(&rs, 5 * HZ, 10);
+	ratelimit_state_init(&rs, 5 * HZ, 10, 0);
 
 	return 0;
 }

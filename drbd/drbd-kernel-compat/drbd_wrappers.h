@@ -1730,6 +1730,10 @@ static inline int atomic_dec_if_positive(atomic_t *v)
 #endif
 
 #ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
+# ifdef COMPAT_HAVE_RATELIMIT_STATE_INIT_3PARAMS
+/* SLES12 kernel has an aditional flags parameter */
+# define ratelimit_state_init(RS, I, B) ratelimit_state_init(RS, I, B, 0)
+# else
 static inline void ratelimit_state_init(struct ratelimit_state *rs,
                                         int interval, int burst)
 {
@@ -1739,6 +1743,7 @@ static inline void ratelimit_state_init(struct ratelimit_state *rs,
 	rs->missed = 0;
 	rs->begin = 0;
 }
+# endif
 #endif
 
 /* RDMA related */
