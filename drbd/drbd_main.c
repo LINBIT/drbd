@@ -2495,7 +2495,6 @@ static void drbd_cleanup(void)
 		destroy_workqueue(retry.wq);
 
 	drbd_genl_unregister();
-	drbd_debugfs_cleanup();
 
 	idr_for_each_entry(&drbd_devices, device, i)
 		drbd_delete_device(device);
@@ -2505,6 +2504,8 @@ static void drbd_cleanup(void)
 		list_del(&resource->resources);
 		drbd_free_resource(resource);
 	}
+
+	drbd_debugfs_cleanup();
 
 	drbd_destroy_mempools();
 	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
