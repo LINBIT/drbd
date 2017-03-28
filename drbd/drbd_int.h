@@ -32,6 +32,7 @@
 #include <linux/version.h>
 #include <linux/list.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/bitops.h>
 #include <linux/slab.h>
 #include <linux/tcp.h>
