@@ -24,6 +24,7 @@
 #include <linux/errno.h>
 #include <linux/socket.h>
 #include <linux/pkt_sched.h>
+#include <linux/sched/signal.h>
 #include <linux/net.h>
 #include <linux/tcp.h>
 #include <linux/highmem.h>
