@@ -3925,29 +3925,6 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_interval *i)
 	return 0;
 }
 
-#ifdef COMPAT_HAVE_IDR_FOR_EACH
-static int idr_has_entry(int id, void *p, void *data)
-{
-	return 1;
-}
-
-bool idr_is_empty(struct idr *idr)
-{
-	return !idr_for_each(idr, idr_has_entry, NULL);
-}
-#else
-bool idr_is_empty(struct idr *idr)
-{
-	int n = 0;
-	void *p;
-
-	idr_for_each_entry(idr, p, n)
-		return false;
-
-	return true;
-}
-#endif
-
 #ifndef __maybe_unused
 #define __maybe_unused                  __attribute__((unused))
 #endif

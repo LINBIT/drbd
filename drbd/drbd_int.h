@@ -368,7 +368,6 @@ struct drbd_device_work {
 #include "drbd_interval.h"
 
 extern int drbd_wait_misc(struct drbd_device *, struct drbd_interval *);
-extern bool idr_is_empty(struct idr *idr);
 
 extern void lock_all_resources(void);
 extern void unlock_all_resources(void);

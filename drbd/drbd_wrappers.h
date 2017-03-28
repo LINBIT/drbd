@@ -1557,6 +1557,18 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
 #endif
 
+#ifndef COMPAT_HAVE_IDR_IS_EMPTY
+static int idr_has_entry(int id, void *p, void *data)
+{
+	return 1;
+}
+
+static inline bool idr_is_empty(struct idr *idr)
+{
+	return !idr_for_each(idr, idr_has_entry, NULL);
+}
+#endif
+
 #ifndef COMPAT_HAVE_PRANDOM_U32
 static inline u32 prandom_u32(void)
 {
