@@ -2167,7 +2167,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			mdf &= ~MDF_AL_CLEAN;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
-			if (device->resource->role[NEW] == R_PRIMARY)
+			if (device->resource->role[NEW] == R_PRIMARY && disk_state[NEW] != D_DETACHING)
 				mdf |= MDF_PRIMARY_IND;
 			/* Do not touch MDF_CONSISTENT if we are D_FAILED */
 			if (disk_state[NEW] >= D_INCONSISTENT) {
