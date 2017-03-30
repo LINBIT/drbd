@@ -3012,8 +3012,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
 			/* Outdated myself, or became D_UP_TO_DATE tell peers */
-			if (disk_state[OLD] >= D_OUTDATED && disk_state[NEW] >= D_OUTDATED &&
-			    disk_state[NEW] != disk_state[OLD] && repl_state[NEW] >= L_ESTABLISHED)
+			if (disk_state[NEW] >= D_INCONSISTENT && disk_state[NEW] != disk_state[OLD] &&
+			    repl_state[OLD] >= L_ESTABLISHED && repl_state[OLD] >= L_ESTABLISHED)
 				send_state = true;
 
 			/* Skipped resync with peer_device, tell others... */
