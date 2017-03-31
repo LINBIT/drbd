@@ -3453,15 +3453,15 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 		return NULL;
 	}
 
-	init_timer(&peer_device->start_resync_timer);
-	peer_device->start_resync_timer.function = start_resync_timer_fn;
-	peer_device->start_resync_timer.data = (unsigned long) peer_device;
+	setup_timer(&peer_device->start_resync_timer,
+			start_resync_timer_fn,
+			(unsigned long) peer_device);
 
 	INIT_LIST_HEAD(&peer_device->resync_work.list);
 	peer_device->resync_work.cb  = w_resync_timer;
-	init_timer(&peer_device->resync_timer);
-	peer_device->resync_timer.function = resync_timer_fn;
-	peer_device->resync_timer.data = (unsigned long) peer_device;
+	setup_timer(&peer_device->resync_timer,
+			resync_timer_fn,
+			(unsigned long) peer_device);
 
 	INIT_LIST_HEAD(&peer_device->propagate_uuids_work.list);
 	peer_device->propagate_uuids_work.cb = w_send_uuids;
@@ -3556,12 +3556,12 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	spin_lock_init(&device->pending_bitmap_work.q_lock);
 	INIT_LIST_HEAD(&device->pending_bitmap_work.q);
 
-	init_timer(&device->md_sync_timer);
-	init_timer(&device->request_timer);
-	device->md_sync_timer.function = md_sync_timer_fn;
-	device->md_sync_timer.data = (unsigned long) device;
-	device->request_timer.function = request_timer_fn;
-	device->request_timer.data = (unsigned long) device;
+	setup_timer(&device->md_sync_timer,
+			md_sync_timer_fn,
+			(unsigned long) device);
+	setup_timer(&device->request_timer,
+			request_timer_fn,
+			(unsigned long) device);
 
 	init_waitqueue_head(&device->misc_wait);
 	init_waitqueue_head(&device->al_wait);
