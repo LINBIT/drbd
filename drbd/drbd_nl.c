@@ -1761,7 +1761,7 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 	struct drbd_connection *connection;
 	unsigned int s = DRBD_MAX_BBIO_SECTORS;
 
-	/* when we introduced REQ_WRITE_SAME support, we also bumped
+	/* when we introduced WRITE_SAME support, we also bumped
 	 * our maximum supported batch bio size used for discards. */
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
@@ -1828,7 +1828,7 @@ static void decide_on_write_same_support(struct drbd_device *device,
 			struct request_queue *b, struct o_qlim *o,
 			bool disable_write_same)
 {
-#ifndef REQ_WRITE_SAME
+#ifndef COMPAT_WRITE_SAME_CAPABLE
 	drbd_dbg(device, "This kernel is too old, no WRITE_SAME support.\n");
 #else
 	bool can_do = b ? b->limits.max_write_same_sectors : true;
