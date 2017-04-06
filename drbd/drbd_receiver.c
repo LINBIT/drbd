@@ -6967,6 +6967,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 			drbd_warn(peer_device, "received new current UUID: %016llX "
 				  "weak_nodes=%016llX\n", current_uuid, weak_nodes);
 			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
+			drbd_md_sync_if_dirty(device);
 		}
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {

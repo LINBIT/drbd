@@ -4330,6 +4330,7 @@ u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(lo
 
 static void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
+	drbd_md_mark_dirty(device);
 	if (device->resource->role[NOW] == R_PRIMARY)
 		val |= UUID_PRIMARY;
 	else
