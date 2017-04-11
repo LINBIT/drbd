@@ -4803,7 +4803,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 		struct drbd_resource *resource = device->resource;
 
 		spin_lock_irq(&resource->req_lock);
-		if (resource->state_change_flags) {
+		if (resource->remote_state_change) {
 			drbd_info(peer_device, "Delaying update of exposed data uuid\n");
 			device->next_exposed_data_uuid = peer_device->current_uuid;
 		} else
@@ -6101,21 +6101,9 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_md_sync_if_dirty(peer_device->device);
 
 		if (rv >= SS_SUCCESS && !(flags & CS_ABORT)) {
-			struct drbd_device *device;
-			int vnr;
-
 			if (affected_connection &&
 			    mask.conn == conn_MASK && val.conn == C_CONNECTED)
 				conn_connect2(connection);
-
-			idr_for_each_entry(&resource->devices, device, vnr) {
-				u64 nedu = device->next_exposed_data_uuid;
-				if (!nedu)
-					continue;
-				if (device->disk_state[NOW] < D_INCONSISTENT)
-					drbd_set_exposed_data_uuid(device, nedu);
-				device->next_exposed_data_uuid = 0;
-			}
 		}
 	}
 

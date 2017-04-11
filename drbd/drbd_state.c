@@ -530,7 +530,31 @@ static enum drbd_state_rv try_state_change(struct drbd_resource *resource)
 	return rv;
 }
 
-static void __clear_remote_state_change(struct drbd_resource *resource) {
+static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		u64 nedu = device->next_exposed_data_uuid;
+		int changed = 0;
+
+		if (!nedu)
+			continue;
+		if (device->disk_state[NOW] < D_INCONSISTENT)
+			changed = drbd_set_exposed_data_uuid(device, nedu);
+
+		device->next_exposed_data_uuid = 0;
+		if (changed)
+			drbd_info(device, "Executing delayed exposed data uuid update: %016llX\n",
+				  (unsigned long long)device->exposed_data_uuid);
+		else
+			drbd_info(device, "Cancelling delayed exposed data uuid update\n");
+	}
+}
+
+static void __clear_remote_state_change(struct drbd_resource *resource)
+{
 	struct drbd_connection *connection, *tmp;
 
 	resource->remote_state_change = false;
@@ -545,6 +569,9 @@ static void __clear_remote_state_change(struct drbd_resource *resource) {
 
 	wake_up(&resource->twopc_wait);
 	queue_queued_twopc(resource);
+
+	/* Do things that where postponed to after two-phase commits finished */
+	apply_update_to_exposed_data_uuid(resource);
 }
 
 static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
