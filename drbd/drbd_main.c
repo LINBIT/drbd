@@ -1431,7 +1431,7 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 			  (unsigned long long)drbd_history_uuid(device, 1));
 		put_ldev(device);
 	} else {
-		drbd_info(device, "%s effective data uuid: %016llX\n",
+		drbd_info(device, "%s exposed data uuid: %016llX\n",
 			  text,
 			  (unsigned long long)device->exposed_data_uuid);
 	}
