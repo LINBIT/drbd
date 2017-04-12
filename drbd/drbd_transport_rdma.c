@@ -279,6 +279,7 @@ struct drbd_rdma_transport {
 	struct drbd_transport transport;
 	struct dtr_stream stream[2];
 	int rx_allocation_size;
+	int sges_max;
 	bool active; /* connect() returned no error. I.e. C_CONNECTING or C_CONNECTED */
 
 	/* per transport rate limit state for diagnostic messages.
@@ -455,6 +456,7 @@ static int dtr_init(struct drbd_transport *transport)
 
 	rdma_transport->rx_allocation_size = allocation_size;
 	rdma_transport->active = false;
+	rdma_transport->sges_max = DTR_MAX_TX_SGES;
 
 	ratelimit_state_init(&rdma_transport->rate_limit, 5*HZ, 4);
 
@@ -1633,7 +1635,7 @@ static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_m
 		.cap.max_send_wr = tx_descs_max,
 		.cap.max_recv_wr = rx_descs_max,
 		.cap.max_recv_sge = 1, /* We only receive into single pages */
-		.cap.max_send_sge = DTR_MAX_TX_SGES,
+		.cap.max_send_sge = path->rdma_transport->sges_max,
 		.qp_type = IB_QPT_RC,
 		.send_cq = path->send_cq,
 		.recv_cq = path->recv_cq,
@@ -2101,6 +2103,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 	if (IS_ERR(path->dma_mr)) {
 		*cause = IB_GET_DMA_MR;
 		err = PTR_ERR(path->dma_mr);
+		path->dma_mr = NULL;
 		goto dma_failed;
 	}
 
@@ -2155,6 +2158,8 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 		return err;
 	}
 
+	if (path->rdma_transport->sges_max > dev_attr.max_sge)
+		path->rdma_transport->sges_max = dev_attr.max_sge;
 
 	hca_max = min(dev_attr.max_qp_wr, dev_attr.max_cqe);
 
@@ -2736,7 +2741,10 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 {
 #if SENDER_COMPACTS_BVECS
+	struct drbd_rdma_transport *rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
 	int start = 0, sges = 0, size_tx_desc = 0, remaining = 0, err;
+	int sges_max = rdma_transport->sges_max;
 #endif
 	int err = -EINVAL;
 	DRBD_BIO_VEC_TYPE bvec;
@@ -2756,7 +2764,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 			size_tx_desc = DRBD_SOCKET_BUFFER_SIZE;
 		}
 		sges++;
-		if (size_tx_desc == DRBD_SOCKET_BUFFER_SIZE || sges == DTR_MAX_TX_SGES) {
+		if (size_tx_desc == DRBD_SOCKET_BUFFER_SIZE || sges >= sges_max) {
 			err = dtr_send_bio_part(rdma_transport, bio, start, size_tx_desc, sges);
 			if (err)
 				goto out;
