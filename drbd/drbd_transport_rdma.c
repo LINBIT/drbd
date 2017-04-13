@@ -240,7 +240,9 @@ struct dtr_path {
 	struct ib_pd *pd;
 	struct ib_qp *qp;
 
+#ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	struct ib_mr *dma_mr;
+#endif
 
 	struct drbd_rdma_transport *rdma_transport;
 	struct dtr_flow flow[2];
@@ -446,6 +448,22 @@ __next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* tran
 	return path;
 }
 
+/*
+Upstream ib_get_dma_mr() was removed with
+5ef990f06bd7e3cf521b5705d898d8e43d04ea90
+
+mr->lkey gets replaced with pd->local_dma_lkey, an example:
+2f31fa881fbe70808b945a6d23cae1ca8eadf1b3
+*/
+static u32 dtr_path_to_lkey(struct dtr_path *path)
+{
+#ifdef COMPAT_HAVE_IB_GET_DMA_MR
+	return path->dma_mr->lkey;
+#else
+	return path->pd->local_dma_lkey;
+#endif
+}
+
 static int dtr_init(struct drbd_transport *transport)
 {
 	struct drbd_rdma_transport *rdma_transport =
@@ -527,7 +545,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->data = send_buffer;
 	tx_desc->nr_sges = 1;
 	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
-	tx_desc->sge[0].lkey = path->dma_mr->lkey;
+	tx_desc->sge[0].lkey = dtr_path_to_lkey(path);
 	tx_desc->sge[0].length = size;
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
@@ -1728,7 +1746,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	rx_desc->path = path;
 	rx_desc->page = page;
 	rx_desc->size = 0;
-	rx_desc->sge.lkey = path->dma_mr->lkey;
+	rx_desc->sge.lkey = dtr_path_to_lkey(path);
 	rx_desc->sge.addr = ib_dma_map_single(device, page_address(page), alloc_size,
 					      DMA_FROM_DEVICE);
 	rx_desc->sge.length = alloc_size;
@@ -1784,7 +1802,7 @@ static int dtr_repost_rx_desc(struct dtr_path *path,
 			       struct drbd_rdma_rx_desc *rx_desc)
 {
 	rx_desc->size = 0;
-	rx_desc->sge.lkey = path->dma_mr->lkey;
+	rx_desc->sge.lkey = dtr_path_to_lkey(path);
 	/* rx_desc->sge.addr = rx_desc->dma_addr;
 	   rx_desc->sge.length = rx_desc->alloc_size; */
 
@@ -1931,7 +1949,7 @@ retry:
 		offset = tx_desc->sge[0].lkey;
 		tx_desc->sge[0].addr = ib_dma_map_page(device, tx_desc->page, offset,
 						      tx_desc->sge[0].length, DMA_TO_DEVICE);
-		tx_desc->sge[0].lkey = path->dma_mr->lkey;
+		tx_desc->sge[0].lkey = dtr_path_to_lkey(path);
 		break;
 	case SEND_MSG:
 	case SEND_BIO:
@@ -2095,8 +2113,9 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 		goto createqp_failed;
 	}
 
+#ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	/* create RDMA memory region (MR) */
-	path->dma_mr = path->pd->device->get_dma_mr(path->pd,
+	path->dma_mr = ib_get_dma_mr(path->pd,
 			IB_ACCESS_LOCAL_WRITE |
 			IB_ACCESS_REMOTE_READ |
 			IB_ACCESS_REMOTE_WRITE);
@@ -2106,6 +2125,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 		path->dma_mr = NULL;
 		goto dma_failed;
 	}
+#endif
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_create_rx_desc(&path->flow[i]);
@@ -2346,10 +2366,12 @@ static void dtr_path_put_cm(struct dtr_path *path)
 
 static void __dtr_uninit_path(struct dtr_path *path)
 {
+#ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	if (path->dma_mr) {
 		ib_dereg_mr(path->dma_mr);
 		path->dma_mr = NULL;
 	}
+#endif
 	if (path->qp) {
 		ib_destroy_qp(path->qp);
 		path->qp = NULL;
@@ -2714,7 +2736,7 @@ static int dtr_send_bio_part(struct drbd_rdma_transport *rdma_transport,
 		//	i, offset, size);
 
 		tx_desc->sge[i].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
-		tx_desc->sge[i].lkey = rdma_stream->dma_mr->lkey;
+		tx_desc->sge[i].lkey = dtr_path_to_lkey(path);
 		tx_desc->sge[i].length = size;
 		done += size;
 		i++;
