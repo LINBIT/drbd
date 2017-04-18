@@ -949,7 +949,7 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 
 /**
  * conn_prepare_command() - Allocate a send buffer for a packet/command
- * @conneciton:	the connections the packet will be sent through
+ * @connection:	the connections the packet will be sent through
  * @size:	number of bytes to allocate
  * @stream:	DATA_STREAM or CONTROL_STREAM
  *
@@ -973,7 +973,7 @@ void *conn_prepare_command(struct drbd_connection *connection, int size,
 
 /**
  * drbd_prepare_command() - Allocate a send buffer for a packet/command
- * @conneciton:	the connections the packet will be sent through
+ * @connection:	the connections the packet will be sent through
  * @size:	number of bytes to allocate
  * @stream:	DATA_STREAM or CONTROL_STREAM
  *

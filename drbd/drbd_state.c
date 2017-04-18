@@ -132,7 +132,7 @@ static bool may_be_up_to_date(struct drbd_device *device) __must_hold(local)
 		case D_CONSISTENT:
 		case D_UP_TO_DATE:
 			/* These states imply that there is a connection. If there is
-			   a conneciton we do not need to insist that the peer was
+			   a connection we do not need to insist that the peer was
 			   outdated. */
 			continue;
 		case D_MASK: ;
@@ -1776,7 +1776,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				++good_data_count[NEW];
 
-			/* Pause a SyncSource until it finishes resync as target on other connecitons */
+			/* Pause a SyncSource until it finishes resync as target on other connections */
 			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
 			    is_sync_target_other_c(peer_device))
 				peer_device->resync_susp_other_c[NEW] = true;
