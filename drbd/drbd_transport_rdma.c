@@ -2369,32 +2369,27 @@ static void dtr_path_put_cm(struct dtr_path *path)
 
 static void __dtr_uninit_path(struct dtr_path *path)
 {
+	struct ib_qp *qp = xchg(&path->qp, NULL);
+	struct ib_cq *send_cq = xchg(&path->send_cq, NULL);
+	struct ib_cq *recv_cq = xchg(&path->recv_cq, NULL);
+	struct ib_pd *pd = xchg(&path->pd, NULL);
+	bool have_cm_ref = xchg(&path->have_cm_ref, false);
+
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
-	if (path->dma_mr) {
-		ib_dereg_mr(path->dma_mr);
-		path->dma_mr = NULL;
-	}
+	struct ib_mr *dma_mr = xchg(&path->dma_mr, NULL);
+	if (dma_mr)
+		ib_dereg_mr(dma_mr);
 #endif
-	if (path->qp) {
-		ib_destroy_qp(path->qp);
-		path->qp = NULL;
-	}
-	if (path->send_cq) {
-		ib_destroy_cq(path->send_cq);
-		path->send_cq = NULL;
-	}
-	if (path->recv_cq) {
-		ib_destroy_cq(path->recv_cq);
-		path->recv_cq = NULL;
-	}
-	if (path->pd) {
-		ib_dealloc_pd(path->pd);
-		path->pd = NULL;
-	}
-	if (path->have_cm_ref) {
+	if (qp)
+		ib_destroy_qp(qp);
+	if (send_cq)
+		ib_destroy_cq(send_cq);
+	if (recv_cq)
+		ib_destroy_cq(recv_cq);
+	if (pd)
+		ib_dealloc_pd(pd);
+	if (have_cm_ref)
 		dtr_path_put_cm(path);
-		path->have_cm_ref = 0;
-	}
 }
 
 static void dtr_disconnect_path(struct dtr_path *path)
