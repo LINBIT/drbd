@@ -2153,7 +2153,10 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 		*cause = IB_GET_DMA_MR;
 		err = PTR_ERR(path->dma_mr);
 		path->dma_mr = NULL;
-		goto dma_failed;
+
+		ib_destroy_qp(path->qp);
+		path->qp = NULL;
+		goto createqp_failed;
 	}
 #endif
 
@@ -2162,9 +2165,6 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 
 	return 0;
 
-dma_failed:
-	ib_destroy_qp(path->qp);
-	path->qp = NULL;
 createqp_failed:
 notify_failed:
 	ib_destroy_cq(path->send_cq);
