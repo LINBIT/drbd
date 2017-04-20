@@ -298,7 +298,7 @@ struct dtr_cm {
 	struct rdma_cm_id *id;
 	enum drbd_rdma_state state;
 	wait_queue_head_t state_wq;
-	struct dtr_path *path; /* only set on the active side! */
+	struct dtr_path *path;
 };
 
 struct dtr_listener {
@@ -753,6 +753,20 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 }
 
+/* The following functions (at least)
+   dtr_path_established_work_fn(), dtr_path_established(),
+   dtr_cma_accept_work_fn(), dtr_cma_accept(),
+   dtr_cma_retry_connect_work_fn1(), dtr_cma_retry_connect_work_fn2(),
+   dtr_cma_retry_connect(),
+   dtr_cma_connect_fail_work_fn(), dtr_cma_connect(),
+   dtr_cma_disconnect_work_fn(), dtr_cma_disconnect(),
+   dtr_cma_event_handler()
+
+   are called from worker context or are callbacks from rdma_cm's context.
+
+   We need to make sure the path does not go away in the meantime.
+ */
+
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
 	int i, err = -ENOENT;
@@ -878,6 +892,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 		return;
 	}
 
+	kref_get(&path->path.kref);
 	cm->path = path;
 
 	err = rdma_accept(new_cm_id, &dtr_conn_param);
@@ -949,6 +964,7 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 	if (!cm)
 		goto out;
 
+	kref_get(&path->path.kref);
 	cm->path = path;
 
 	err = dtr_create_cm_id(cm);
@@ -965,6 +981,7 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 		goto out;
 	}
 
+	/* Expecting RDMA_CM_EVENT_ADDR_RESOLVED */
 	return 0;
 out:
 	if (cm)
@@ -1094,8 +1111,18 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	if (path->nr != -1 && path->rdma_transport->active == true) {
 		int err;
 
+		/* in dtr_disconnect_path() -> __dtr_uninit_path() we free the previous
+		   cm. That causes the reference on the path to be dropped.
+		   In dtr_activeate_path() -> dtr_start_try_connect() we allocate a new
+		   cm, that holds a reference on the path again.
+
+		   Bridge the gap with a reference here!
+		*/
+		kref_get(&path->path.kref);
 		dtr_disconnect_path(path);
 		err = dtr_activate_path(path);
+		kref_put(&path->path.kref, drbd_destroy_path);
+
 		if (err)
 			tr_err(transport, "dtr_activate_path() = %d\n", err);
 	}
@@ -2338,6 +2365,10 @@ static void dtr_free_cm(struct dtr_cm *cm)
 		rdma_destroy_id(cm->id);
 		cm->id = NULL;
 	}
+	if (cm->path) {
+		kref_put(&cm->path->path.kref, drbd_destroy_path);
+		cm->path = NULL;
+	}
 
 	kfree(cm);
 }
@@ -2349,7 +2380,7 @@ static bool dtr_path_set_cm(struct dtr_path *path, struct dtr_cm *cm)
 	if (cm2)
 		return false;
 
-	path->have_cm_ref = 1;
+	path->have_cm_ref = true;
 	atomic_set(&path->cm_refs, 1);
 	return true;
 }
