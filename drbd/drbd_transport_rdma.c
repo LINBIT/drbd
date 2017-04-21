@@ -524,6 +524,9 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		struct drbd_rdma_rx_desc *rx_desc, *tmp;
 		LIST_HEAD(rx_descs);
 
+		dtr_free_rx_desc(NULL, rdma_stream->current_rx.desc);
+		rdma_stream->current_rx.desc = NULL;
+
 		spin_lock_irq(&rdma_stream->rx_descs_lock);
 		list_splice_init(&rdma_stream->rx_descs, &rx_descs);
 		spin_unlock_irq(&rdma_stream->rx_descs_lock);
