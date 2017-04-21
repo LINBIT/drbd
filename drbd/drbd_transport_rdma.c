@@ -1506,6 +1506,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 			}
 		}
 
+		dtr_free_rx_desc(NULL, rx_desc);
 		path->cm->state = ERROR;
 
 		return 0;
