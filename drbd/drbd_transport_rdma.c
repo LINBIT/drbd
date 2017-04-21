@@ -466,10 +466,45 @@ static u32 dtr_path_to_lkey(struct dtr_path *path)
 #endif
 }
 
+static void dtr_re_init_stream(struct dtr_stream *rdma_stream)
+{
+	struct drbd_transport *transport = &rdma_stream->rdma_transport->transport;
+
+	rdma_stream->current_rx.pos = NULL;
+	rdma_stream->current_rx.bytes_left = 0;
+
+	rdma_stream->tx_sequence = 1;
+	rdma_stream->rx_sequence = 1;
+	rdma_stream->unread = 0;
+
+	TR_ASSERT(transport, list_empty(&rdma_stream->rx_descs));
+	TR_ASSERT(transport, rdma_stream->current_rx.desc == NULL);
+}
+
+static void dtr_init_stream(struct dtr_stream *rdma_stream,
+			    struct drbd_transport *transport)
+{
+	rdma_stream->current_rx.desc = NULL;
+
+	rdma_stream->recv_timeout = MAX_SCHEDULE_TIMEOUT;
+	rdma_stream->send_timeout = MAX_SCHEDULE_TIMEOUT;
+
+	init_waitqueue_head(&rdma_stream->recv_wq);
+	init_waitqueue_head(&rdma_stream->send_wq);
+	rdma_stream->rdma_transport =
+		container_of(transport, struct drbd_rdma_transport, transport);
+
+	INIT_LIST_HEAD(&rdma_stream->rx_descs);
+	spin_lock_init(&rdma_stream->rx_descs_lock);
+
+	dtr_re_init_stream(rdma_stream);
+}
+
 static int dtr_init(struct drbd_transport *transport)
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
+	int i;
 
 	transport->ops = &dtr_ops;
 	transport->class = &rdma_transport_class;
@@ -479,6 +514,9 @@ static int dtr_init(struct drbd_transport *transport)
 	rdma_transport->sges_max = DTR_MAX_TX_SGES;
 
 	ratelimit_state_init(&rdma_transport->rate_limit, 5*HZ, 4);
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		dtr_init_stream(&rdma_transport->stream[i], transport);
 
 	return 0;
 }
@@ -2086,30 +2124,6 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	return err;
 }
 
-/* allocate rdma specific resources for the stream */
-static void dtr_init_stream(struct dtr_stream *rdma_stream,
-			    struct drbd_transport *transport)
-{
-	rdma_stream->current_rx.desc = NULL;
-	rdma_stream->current_rx.pos = NULL;
-	rdma_stream->current_rx.bytes_left = 0;
-
-	rdma_stream->recv_timeout = MAX_SCHEDULE_TIMEOUT;
-	rdma_stream->send_timeout = MAX_SCHEDULE_TIMEOUT;
-
-	init_waitqueue_head(&rdma_stream->recv_wq);
-	init_waitqueue_head(&rdma_stream->send_wq);
-	rdma_stream->rdma_transport =
-		container_of(transport, struct drbd_rdma_transport, transport);
-	rdma_stream->tx_sequence = 1;
-	rdma_stream->rx_sequence = 1;
-
-	rdma_stream->unread = 0;
-
-	INIT_LIST_HEAD(&rdma_stream->rx_descs);
-	spin_lock_init(&rdma_stream->rx_descs_lock);
-}
-
 static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_res_causes *cause)
 {
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
@@ -2569,10 +2583,10 @@ static int dtr_connect(struct drbd_transport *transport)
 		return -EDESTADDRREQ;
 
 	data_stream = &rdma_transport->stream[DATA_STREAM];
-	dtr_init_stream(data_stream, transport);
+	dtr_re_init_stream(data_stream);
 
 	control_stream = &rdma_transport->stream[CONTROL_STREAM];
-	dtr_init_stream(control_stream, transport);
+	dtr_re_init_stream(control_stream);
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
