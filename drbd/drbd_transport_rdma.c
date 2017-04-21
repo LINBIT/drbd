@@ -489,6 +489,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		container_of(transport, struct drbd_rdma_transport, transport);
 	struct dtr_path *path;
 	u32 im;
+	int i;
 
 	rdma_transport->active = false;
 
@@ -515,6 +516,20 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		/* The transport object itself is embedded into a conneciton.
 		   Do not free it here! The function should better be called
 		   uninit. */
+	}
+
+	/* Free the rx_descs that where received and not consumed. */
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct dtr_stream *rdma_stream = &rdma_transport->stream[i];
+		struct drbd_rdma_rx_desc *rx_desc, *tmp;
+		LIST_HEAD(rx_descs);
+
+		spin_lock_irq(&rdma_stream->rx_descs_lock);
+		list_splice_init(&rdma_stream->rx_descs, &rx_descs);
+		spin_unlock_irq(&rdma_stream->rx_descs_lock);
+
+		list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
+			dtr_free_rx_desc(NULL, rx_desc);
 	}
 }
 
