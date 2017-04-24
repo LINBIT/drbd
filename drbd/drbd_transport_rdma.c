@@ -2561,6 +2561,10 @@ static int dtr_activate_path(struct dtr_path *path)
 	atomic_set(&cs->passive_state, PCS_CONNECTING);
 	atomic_set(&cs->active_state, PCS_CONNECTING);
 
+	if (path->path.listener) {
+		tr_warn(transport, "ASSERTION FAILED: in dtr_activate_path() found listener, dropping it\n");
+		drbd_put_listener(&path->path);
+	}
 	err = drbd_get_listener(transport, &path->path, dtr_create_listener);
 	if (err)
 		goto out_no_put;
