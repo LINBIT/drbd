@@ -1156,30 +1156,43 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct drbd_path *drbd_path = &path->path;
+	int err;
 
 	if (drbd_path->established) {
 		drbd_path->established = false;
 		drbd_path_event(transport, drbd_path);
 	}
 
-	if (path->nr != -1 && path->rdma_transport->active == true) {
-		int err;
+	if (path->nr == -1 || path->rdma_transport->active == false)
+		return;
 
-		/* in dtr_disconnect_path() -> __dtr_uninit_path() we free the previous
-		   cm. That causes the reference on the path to be dropped.
-		   In dtr_activeate_path() -> dtr_start_try_connect() we allocate a new
-		   cm, that holds a reference on the path again.
+	/* in dtr_disconnect_path() -> __dtr_uninit_path() we free the previous
+	   cm. That causes the reference on the path to be dropped.
+	   In dtr_activeate_path() -> dtr_start_try_connect() we allocate a new
+	   cm, that holds a reference on the path again.
 
-		   Bridge the gap with a reference here!
-		*/
-		kref_get(&path->path.kref);
-		dtr_disconnect_path(path);
-		err = dtr_activate_path(path);
-		kref_put(&path->path.kref, drbd_destroy_path);
+	   Bridge the gap with a reference here!
+	*/
 
-		if (err)
-			tr_err(transport, "dtr_activate_path() = %d\n", err);
+	kref_get(&path->path.kref);
+	dtr_disconnect_path(path);
+
+	/* dtr_disconnect_path() may take time, recheck here... */
+	if (path->nr == -1 || path->rdma_transport->active == false)
+		goto abort;
+
+	if (!dtr_transport_ok(transport)) {
+		/* If there is no other connected path mark the connection as
+		   no longer active. Do not try to re-establish this path!! */
+		path->rdma_transport->active = false;
+		goto abort;
 	}
+
+	err = dtr_activate_path(path);
+	if (err)
+		tr_err(transport, "dtr_activate_path() = %d\n", err);
+abort:
+	kref_put(&path->path.kref, drbd_destroy_path);
 }
 
 static void dtr_cma_disconnect(struct dtr_path *path)
