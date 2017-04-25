@@ -2012,13 +2012,15 @@ static struct dtr_path *dtr_select_path_for_tx(struct drbd_rdma_transport *rdma_
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
 			      struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct dtr_path *path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
-	int err;
+	struct dtr_path *path;
+	int err = -ECONNRESET;
 
-	if (path)
+	do {
+		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
+		if (!path)
+			break;
 		err = __dtr_post_tx_desc(path, tx_desc);
-	else
-		err = -ECONNRESET;
+	} while (err);
 
 	return err;
 }
