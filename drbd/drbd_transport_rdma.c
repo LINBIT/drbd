@@ -2946,7 +2946,7 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
 
 static void dtr_debugfs_show_flow(struct dtr_flow *flow, const char *name, struct seq_file *m)
 {
-	seq_printf(m,    "%-7s  field:  posted\t alloc\tdesired\t  max\n", name);
+	seq_printf(m,    " %-7s field:  posted\t alloc\tdesired\t  max\n", name);
 	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&flow->tx_descs_posted), flow->tx_descs_max);
 	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&flow->peer_rx_descs));
 	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", atomic_read(&flow->rx_descs_posted),
@@ -2961,16 +2961,35 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 		[ST_DATA] = "data",
 		[ST_CONTROL] = "control",
 	};
+	static const char *state_names[] = {
+		[0] = "(out of bounds)",
+		[IDLE] = "IDLE",
+		[CONNECT_REQUEST] = "CONNECT_REQUEST",
+		[ADDR_RESOLVED] = "ADDR_RESOLVED",
+		[ROUTE_RESOLVED] = "ROUTE_RESOLVED",
+		[CONNECTED] = "CONNECTED",
+		[DISCONNECTED] = "DISCONNECTED",
+		[ERROR] = "ERROR",
+	};
+
 	enum drbd_stream i;
 
 	seq_printf(m, "%pI4 - %pI4:\n", &((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
 		   &((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
 
+	if (dtr_path_get_cm(path)) {
+		enum drbd_rdma_state s = path->cm->state;
+		if (s < 0 || s > ERROR)
+			s = 0; /* out of bounds */
+		seq_printf(m, " cm->state = %s\n", state_names[s]);
+		dtr_path_put_cm(path);
+	} else {
+		seq_printf(m, " not connected\n");
+	}
+
 	if (dtr_path_ok(path)) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 			dtr_debugfs_show_flow(&path->flow[i], stream_names[i], m);
-	} else {
-		seq_printf(m, " not connected\n");
 	}
 }
 
