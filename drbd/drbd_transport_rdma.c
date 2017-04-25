@@ -970,15 +970,24 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	spin_unlock(&listener->listener.waiters_lock);
 
 	if (!drbd_path) {
-		struct sockaddr_in *from_sin, *to_sin;
+		struct sockaddr_in6 *from_sin6;
+		struct sockaddr_in *from_sin;
 
-		from_sin = (struct sockaddr_in *)&peer_addr;
-		to_sin = (struct sockaddr_in *)&listener->listener.listen_addr;
-
-		pr_warn("Closing unexpected connection from "
-			"%pI4 to port %u\n",
-			&from_sin->sin_addr,
-			be16_to_cpu(to_sin->sin_port));
+		switch (peer_addr->ss_family) {
+		case AF_INET6:
+			from_sin6 = (struct sockaddr_in6 *)peer_addr;
+			pr_warn("Closing unexpected connection from "
+			       "%pI6\n", &from_sin6->sin6_addr);
+			break;
+		case AF_INET:
+			from_sin = (struct sockaddr_in *)peer_addr;
+			pr_warn("Closing unexpected connection from "
+				"%pI4\n", &from_sin->sin_addr);
+			break;
+		default:
+			pr_warn("Closing unexpected connection family = %d\n",
+				peer_addr->ss_family);
+		}
 
 		rdma_reject(new_cm_id, NULL, 0);
 		return 0;
