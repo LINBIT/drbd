@@ -360,7 +360,6 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
-static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void __dtr_uninit_path(struct dtr_path *path);
 static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
@@ -2465,19 +2464,6 @@ static void dtr_destroy_cm(struct kref *kref)
 	}
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
-}
-
-static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
-{
-	struct dtr_cm *cm;
-	bool got_it;
-
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (cm)
-		got_it = kref_get_unless_zero(&cm->kref);
-	rcu_read_unlock();
-	return got_it ? cm : NULL;
 }
 
 static void __dtr_uninit_path(struct dtr_path *path)
