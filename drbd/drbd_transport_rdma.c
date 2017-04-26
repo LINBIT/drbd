@@ -1111,9 +1111,8 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 	schedule_delayed_work(&cs->work, connect_int);
 }
 
-static void dtr_cma_retry_connect(struct dtr_cm *cm)
+static void dtr_cma_retry_connect(struct dtr_path *path)
 {
-	struct dtr_path *path = cm->path;
 	struct dtr_connect_state *cs = &path->cs;
 
 	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
@@ -1175,7 +1174,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 
 	return;
 out:
-	dtr_cma_retry_connect(cm);
+	dtr_cma_retry_connect(path);
 }
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
@@ -1242,6 +1241,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	/* context comes from rdma_create_id() */
 	struct dtr_cm *cm = cm_id->context;
 	struct dtr_listener *listener;
+	struct dtr_path *path;
 
 	if (!cm) {
 		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
@@ -1296,7 +1296,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		/* This is called for active and passive connections */
 
-		dtr_path_established(cm->path);
+		path = READ_ONCE(cm->path);
+		if (path)
+			dtr_path_established(path);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -1312,16 +1314,18 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm->state = ERROR;
 
-		if (cm->path)
-			dtr_cma_retry_connect(cm);
+		path = READ_ONCE(cm->path);
+		if (path)
+			dtr_cma_retry_connect(path);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
 		cm->state = DISCONNECTED;
 
-		if (cm->path)
-			dtr_cma_disconnect(cm->path);
+		path = READ_ONCE(cm->path);
+		if (path)
+			dtr_cma_disconnect(path);
 
 		kref_get(&cm->kref); /* offset the put at the end of the function */
 		break;
