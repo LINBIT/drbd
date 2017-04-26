@@ -236,7 +236,6 @@ struct dtr_path {
 	struct ib_cq *recv_cq;
 	struct ib_cq *send_cq;
 	struct ib_pd *pd;
-	struct ib_qp *qp;
 
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	struct ib_mr *dma_mr;
@@ -843,6 +842,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 			TR_ASSERT(transport, path2 == path);
 			kref_put(&path2->path.kref, drbd_destroy_path);
 		}
+		/* Need to destroy the qp in cm2 here? */
 		kref_put(&cm2->kref, dtr_destroy_cm);
 	}
 
@@ -1801,11 +1801,8 @@ static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_m
 	};
 
 	err = rdma_create_qp(path->cm->id, path->pd, &init_attr);
-	if (err)
-		return err;
 
-	path->qp = path->cm->id->qp;
-	return 0;
+	return err;
 }
 
 static int dtr_post_rx_desc(struct dtr_path *path,
@@ -1813,8 +1810,9 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct ib_recv_wr recv_wr, *recv_wr_failed;
+	struct dtr_cm *cm;
 	unsigned long flags;
-	int err;
+	int err = -EIO;
 
 	recv_wr.next = NULL;
 	recv_wr.wr_id = (unsigned long)rx_desc;
@@ -1824,7 +1822,11 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	ib_dma_sync_single_for_device(path->ib_device,
 			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 
-	err = ib_post_recv(path->qp, &recv_wr, &recv_wr_failed);
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (cm)
+		err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
+	rcu_read_unlock();
 	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
 		goto out;
@@ -1991,7 +1993,8 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 	struct ib_send_wr send_wr, *send_wr_failed;
 	enum dtr_stream_nr stream_nr = tx_desc->stream_nr;
 	union dtr_immediate immediate;
-	int i, err;
+	struct dtr_cm *cm;
+	int i, err = -EIO;
 
 	immediate.stream = stream_nr;
 	immediate.sequence = stream_nr == ST_FLOW_CTRL ? 0 :
@@ -2008,8 +2011,11 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 	for (i = 0; i < tx_desc->nr_sges; i++)
 		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
-
-	err = ib_post_send(path->qp, &send_wr, &send_wr_failed);
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (cm)
+		err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
+	rcu_read_unlock();
 	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 
@@ -2246,8 +2252,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 		err = PTR_ERR(path->dma_mr);
 		path->dma_mr = NULL;
 
-		ib_destroy_qp(path->qp);
-		path->qp = NULL;
+		rdma_destroy_qp(path->cm->id);
 		goto createqp_failed;
 	}
 #endif
@@ -2456,6 +2461,8 @@ static void dtr_destroy_cm(struct kref *kref)
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
 
 	if (cm->id) {
+		if (cm->id->qp)
+			rdma_destroy_qp(cm->id);
 		/* Just in case some callback is still triggered
 		 * after we kfree'd path. */
 		cm->id->context = NULL;
@@ -2473,7 +2480,6 @@ static void dtr_destroy_cm(struct kref *kref)
 static void __dtr_uninit_path(struct dtr_path *path)
 {
 	LIST_HEAD(posted_rx_descs);
-	struct ib_qp *qp = xchg(&path->qp, NULL);
 	struct ib_cq *send_cq = xchg(&path->send_cq, NULL);
 	struct ib_cq *recv_cq = xchg(&path->recv_cq, NULL);
 	struct ib_pd *pd = xchg(&path->pd, NULL);
@@ -2485,8 +2491,11 @@ static void __dtr_uninit_path(struct dtr_path *path)
 	if (dma_mr)
 		ib_dereg_mr(dma_mr);
 #endif
-	if (qp)
-		ib_destroy_qp(qp);
+	if (cm) {
+		rdma_destroy_qp(cm->id);
+		cm->id->qp = NULL;
+	}
+
 	if (send_cq)
 		ib_destroy_cq(send_cq);
 	if (recv_cq)
