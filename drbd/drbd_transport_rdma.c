@@ -360,7 +360,6 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
-static void dtr_path_set_cm(struct dtr_path *path, struct dtr_cm *cm);
 static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void __dtr_uninit_path(struct dtr_path *path);
@@ -822,10 +821,17 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
-	int i, err = -ENOENT;
 	struct ib_device *device = cm->id->device;
+	int i, err = -ENOENT;
+	struct dtr_cm *cm2;
 
-	dtr_path_set_cm(path, cm);
+	cm2 = xchg(&path->cm, cm); // RCU xchg
+	if (cm2) {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
+
+		tr_info(transport, "info: dropping ref to a previous cm !\n");
+		kref_put(&cm2->kref, dtr_destroy_cm);
+	}
 
 	path->cs.active = active;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
@@ -2433,18 +2439,6 @@ static void dtr_destroy_cm(struct kref *kref)
 	}
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
-}
-
-static void dtr_path_set_cm(struct dtr_path *path, struct dtr_cm *cm)
-{
-	struct dtr_cm *cm2;
-	cm2 = xchg(&path->cm, cm); // RCU xchg
-	if (cm2) {
-		struct drbd_transport *transport = &path->rdma_transport->transport;
-
-		tr_info(transport, "info: dropping ref to a previous cm !\n");
-		kref_put(&cm2->kref, dtr_destroy_cm);
-	}
 }
 
 static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
