@@ -1536,8 +1536,7 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
 }
 
-static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path,
-				  struct dtr_cm *cm)
+static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_rx_desc *rx_desc;
@@ -1556,6 +1555,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path,
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
+		struct dtr_cm *cm;
 
 		switch (wc.status) {
 		case IB_WC_WR_FLUSH_ERR:
@@ -1581,7 +1581,13 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path,
 		}
 
 		dtr_free_rx_desc(NULL, rx_desc);
-		cm->state = ERROR;
+
+		rcu_read_lock();
+		cm = rcu_dereference(path->cm);
+		if (cm) {
+			cm->state = ERROR;
+		}
+		rcu_read_unlock();
 
 		return 0;
 	}
@@ -1618,29 +1624,21 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path,
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_path *path = ctx;
-	struct dtr_cm *cm;
 	int err;
 
-	cm = dtr_path_get_cm(path);
-	if (cm) {
+	do {
 		do {
-			do {
-				err = dtr_handle_rx_cq_event(cq, path, cm);
-			} while (!err);
-
-			err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-			if (err) {
-				struct drbd_transport *transport = &path->rdma_transport->transport;
-				tr_err(transport, "ib_req_notify_cq failed %d\n", err);
-			}
-
-			err = dtr_handle_rx_cq_event(cq, path, cm);
+			err = dtr_handle_rx_cq_event(cq, path);
 		} while (!err);
-		kref_put(&cm->kref, dtr_destroy_cm);
-	} else {
-		dtr_drain_cq(path, cq,
-			     (void (*)(struct dtr_path *, void *)) dtr_free_rx_desc);
-	}
+
+		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+		if (err) {
+			struct drbd_transport *transport = &path->rdma_transport->transport;
+			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+		}
+
+		err = dtr_handle_rx_cq_event(cq, path);
+	} while (!err);
 }
 
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
@@ -1674,8 +1672,7 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 	kfree(tx_desc);
 }
 
-static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path,
-				  struct dtr_cm *cm)
+static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_tx_desc *tx_desc;
@@ -1692,6 +1689,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path,
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
+		struct dtr_cm *cm;
 		int err;
 
 		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
@@ -1704,7 +1702,12 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path,
 			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 		}
 
-		cm->state = ERROR;
+		rcu_read_lock();
+		cm = rcu_dereference(path->cm);
+		if (cm) {
+			cm->state = ERROR;
+		}
+		rcu_read_unlock();
 
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
@@ -1732,29 +1735,21 @@ out:
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_path *path = ctx;
-	struct dtr_cm *cm;
 	int err;
 
-	cm = dtr_path_get_cm(path);
-	if (cm) {
+	do {
 		do {
-			do {
-				err = dtr_handle_tx_cq_event(cq, path, cm);
-			} while (!err);
-
-			err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-			if (err) {
-				struct drbd_transport *transport = &path->rdma_transport->transport;
-				tr_err(transport, "ib_req_notify_cq failed %d\n", err);
-			}
-
-			err = dtr_handle_tx_cq_event(cq, path, cm);
+			err = dtr_handle_tx_cq_event(cq, path);
 		} while (!err);
-		kref_put(&cm->kref, dtr_destroy_cm);
-	} else {
-		dtr_drain_cq(path, cq,
-			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
-	}
+
+		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
+		if (err) {
+			struct drbd_transport *transport = &path->rdma_transport->transport;
+			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+		}
+
+		err = dtr_handle_tx_cq_event(cq, path);
+	} while (!err);
 }
 
 static int dtr_create_qp(struct dtr_path *path, int rx_descs_max, int tx_descs_max)
