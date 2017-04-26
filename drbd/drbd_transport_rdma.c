@@ -933,10 +933,16 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	new_cm_id->context = cm;
 	cm->id = new_cm_id;
 
+	/* Expecting RDMA_CM_EVENT_ESTABLISHED, after rdma_accept(). Get
+	   the ref before dtr_path_prepare(), since that exposes the cm
+	   to the path, and the path might get destroyed, and with that
+           going to put the cm */
+	kref_get(&cm->kref);
+
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
 		rdma_reject(new_cm_id, NULL, 0);
-		kref_put(&cm->kref, dtr_destroy_cm);
+		kref_sub(&cm->kref, 2, dtr_destroy_cm);
 		return;
 	}
 
@@ -944,8 +950,10 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	cm->path = path;
 
 	err = rdma_accept(new_cm_id, &dtr_conn_param);
-	if (err)
+	if (err) {
+		kref_put(&cm->kref, dtr_destroy_cm);
 		dtr_unprepare_path(path);
+	}
 }
 
 
@@ -1031,15 +1039,16 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 		goto out;
 	}
 
+	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ADDR_RESOLVED */
 	err = rdma_resolve_addr(cm->id, NULL,
 				(struct sockaddr *)&path->path.peer_addr,
 				2000);
 	if (err) {
+		kref_put(&cm->kref, dtr_destroy_cm);
 		tr_err(transport, "rdma_resolve_addr error %d\n", err);
 		goto out;
 	}
 
-	/* Expecting RDMA_CM_EVENT_ADDR_RESOLVED */
 	return 0;
 out:
 	if (cm)
@@ -1143,8 +1152,10 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 		return;
 	}
 
+	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ESTABLISHED */
 	err = rdma_connect(cm->id, &dtr_conn_param);
 	if (err) {
+		kref_put(&cm->kref, dtr_destroy_cm);
 		tr_err(transport, "rdma_connect error %d\n", err);
 		goto out;
 	}
@@ -1216,118 +1227,124 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 {
 	int err;
 	/* context comes from rdma_create_id() */
-	struct dtr_cm *cm_context = cm_id->context;
+	struct dtr_cm *cm = cm_id->context;
 	struct dtr_listener *listener;
 
-	if (!cm_context) {
+	if (!cm) {
 		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
 		return 0;
 	}
 
 	switch (event->event) {
 	case RDMA_CM_EVENT_ADDR_RESOLVED:
-		// pr_info("%s: RDMA_CM_EVENT_ADDR_RESOLVED\n", cm_context->name);
-		cm_context->state = ADDR_RESOLVED;
+		// pr_info("%s: RDMA_CM_EVENT_ADDR_RESOLVED\n", cm->name);
+		cm->state = ADDR_RESOLVED;
+		kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ROUTE_RESOLVED */
 		err = rdma_resolve_route(cm_id, 2000);
-		if (err)
+		if (err) {
+			kref_put(&cm->kref, dtr_destroy_cm);
 			pr_err("rdma_resolve_route error %d\n", err);
+		}
 		break;
 
 	case RDMA_CM_EVENT_ROUTE_RESOLVED:
-		// pr_info("%s: RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm_context->name);
-		cm_context->state = ROUTE_RESOLVED;
+		// pr_info("%s: RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm->name);
+		cm->state = ROUTE_RESOLVED;
 
-		dtr_cma_connect(cm_context);
+		dtr_cma_connect(cm);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
-		// pr_info("%s: RDMA_CM_EVENT_CONNECT_REQUEST\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_REQUEST\n", cm->name);
 		/* for listener */
-		cm_context->state = CONNECT_REQUEST;
+		cm->state = CONNECT_REQUEST;
 
-		listener = container_of(cm_context, struct dtr_listener, cm);
+		listener = container_of(cm, struct dtr_listener, cm);
 		dtr_cma_accept(listener, cm_id);
 
 		/* I found this a bit confusing. When a new connection comes in, the callback
 		   gets called with a new rdma_cm_id. The new rdma_cm_id inherits its context
 		   pointer from the listening rdma_cm_id. We will create a new context later */
 
-		/* set cm_id to the listener */
-		cm_id = cm_context->id;
-		break;
+		/* return instead of break. Do not put the reference on
+		   the listening cm! Wakeup not necessary! */
+		return 0;
 
 	case RDMA_CM_EVENT_CONNECT_RESPONSE:
-		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm_context->name);
-		/*cm_context->state = CONNECTED;
-		  cm_context->path->cm = cm_context;
-		  dtr_path_established(cm_context->path); */
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm->name);
+		/*cm->state = CONNECTED;
+		  cm->path->cm = cm;
+		  dtr_path_established(cm->path); */
 		break;
 
 	case RDMA_CM_EVENT_ESTABLISHED:
-		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm_context->name);
-		/* cm_context->state = CONNECTED; is set later in the work item */
+		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm->name);
+		/* cm->state = CONNECTED; is set later in the work item */
 
 		/* This is called for active and passive connections */
 
-		dtr_path_established(cm_context->path);
+		dtr_path_established(cm->path);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
-		// pr_info("%s: RDMA_CM_EVENT_ADDR_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ADDR_ERROR\n", cm->name);
 	case RDMA_CM_EVENT_ROUTE_ERROR:
-		// pr_info("%s: RDMA_CM_EVENT_ROUTE_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_ROUTE_ERROR\n", cm->name);
 	case RDMA_CM_EVENT_CONNECT_ERROR:
-		// pr_info("%s: RDMA_CM_EVENT_CONNECT_ERROR\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_CONNECT_ERROR\n", cm->name);
 	case RDMA_CM_EVENT_UNREACHABLE:
-		// pr_info("%s: RDMA_CM_EVENT_UNREACHABLE\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_UNREACHABLE\n", cm->name);
 	case RDMA_CM_EVENT_REJECTED:
-		// pr_info("%s: RDMA_CM_EVENT_REJECTED\n", cm_context->name);
+		// pr_info("%s: RDMA_CM_EVENT_REJECTED\n", cm->name);
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
-		cm_context->state = ERROR;
+		cm->state = ERROR;
 
-		if (cm_context->path)
-			dtr_cma_retry_connect(cm_context);
+		if (cm->path)
+			dtr_cma_retry_connect(cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
-		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm_context->name);
-		cm_context->state = DISCONNECTED;
+		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
+		cm->state = DISCONNECTED;
 
-		if (cm_context->path)
-			dtr_cma_disconnect(cm_context->path);
+		if (cm->path)
+			dtr_cma_disconnect(cm->path);
+
+		kref_get(&cm->kref); /* offset the put at the end of the function */
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
-		// pr_info("%s: RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm_context->name);
-		break;
+		// pr_info("%s: RDMA_CM_EVENT_DEVICE_REMOVAL\n", cm->name);
+		return 0;
 
 	case RDMA_CM_EVENT_TIMEWAIT_EXIT:
-		break;
+		return 0;
 
 	default:
 		pr_warn("id %p context %p unexpected event %d!\n",
-				cm_id, cm_context, event->event);
-		break;
+				cm_id, cm, event->event);
+		return 0;
 	}
-	wake_up_interruptible(&cm_context->state_wq);
+	wake_up_interruptible(&cm->state_wq);
+	kref_put(&cm->kref, dtr_destroy_cm);
 	return 0;
 }
 
-static int dtr_create_cm_id(struct dtr_cm *cm_context)
+static int dtr_create_cm_id(struct dtr_cm *cm)
 {
 	struct rdma_cm_id *id;
 
-	cm_context->state = IDLE;
-	init_waitqueue_head(&cm_context->state_wq);
+	cm->state = IDLE;
+	init_waitqueue_head(&cm->state_wq);
 
-	id = rdma_create_id(&init_net, dtr_cma_event_handler, cm_context, RDMA_PS_TCP, IB_QPT_RC);
+	id = rdma_create_id(&init_net, dtr_cma_event_handler, cm, RDMA_PS_TCP, IB_QPT_RC);
 	if (IS_ERR(id)) {
-		cm_context->id = NULL;
-		cm_context->state = ERROR;
+		cm->id = NULL;
+		cm->state = ERROR;
 		return PTR_ERR(id);
 	}
 
-	cm_context->id = id;
+	cm->id = id;
 	return 0;
 }
 
