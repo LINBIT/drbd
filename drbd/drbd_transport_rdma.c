@@ -1600,12 +1600,12 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
 }
 
-static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
+static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 {
+	struct dtr_path *path = cm->path;
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_rx_desc *rx_desc;
 	union dtr_immediate immediate;
-	struct dtr_cm *cm;
 	struct ib_wc wc;
 	int ret;
 
@@ -1614,11 +1614,6 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		return -EAGAIN;
 
 	rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
-
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (!cm)
-		BUG();
 
 	spin_lock(&cm->posted_rx_descs_lock);
 	list_del(&rx_desc->list); /* from  &path->posted_rx_descs */
@@ -1654,7 +1649,6 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 
 		cm->state = ERROR;
 
-		rcu_read_unlock();
 		return 0;
 	}
 
@@ -1684,27 +1678,26 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		wake_up_interruptible(&rdma_stream->recv_wq);
 	}
 
-	rcu_read_unlock();
 	return 0;
 }
 
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
-	struct dtr_path *path = ctx;
+	struct dtr_cm *cm = ctx;
 	int err;
 
 	do {
 		do {
-			err = dtr_handle_rx_cq_event(cq, path);
+			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
 		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 		if (err) {
-			struct drbd_transport *transport = &path->rdma_transport->transport;
+			struct drbd_transport *transport = &cm->path->rdma_transport->transport;
 			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
 		}
 
-		err = dtr_handle_rx_cq_event(cq, path);
+		err = dtr_handle_rx_cq_event(cq, cm);
 	} while (!err);
 }
 
@@ -1747,8 +1740,9 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 	kfree(tx_desc);
 }
 
-static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
+static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 {
+	struct dtr_path *path = cm->path;
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct ib_wc wc;
@@ -1764,7 +1758,6 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
-		struct dtr_cm *cm;
 		int err;
 
 		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
@@ -1777,12 +1770,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
 		}
 
-		rcu_read_lock();
-		cm = rcu_dereference(path->cm);
-		if (cm) {
-			cm->state = ERROR;
-		}
-		rcu_read_unlock();
+		cm->state = ERROR;
 
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
@@ -1809,21 +1797,21 @@ out:
 
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
-	struct dtr_path *path = ctx;
+	struct dtr_cm *cm = ctx;
 	int err;
 
 	do {
 		do {
-			err = dtr_handle_tx_cq_event(cq, path);
+			err = dtr_handle_tx_cq_event(cq, cm);
 		} while (!err);
 
 		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
 		if (err) {
-			struct drbd_transport *transport = &path->rdma_transport->transport;
+			struct drbd_transport *transport = &cm->path->rdma_transport->transport;
 			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
 		}
 
-		err = dtr_handle_tx_cq_event(cq, path);
+		err = dtr_handle_tx_cq_event(cq, cm);
 	} while (!err);
 }
 
@@ -2277,7 +2265,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path,
 	/* create recv completion queue (CQ) */
 	cq_attr.cqe = rx_descs_max;
 	cm->recv_cq = ib_create_cq(cm->id->device,
-			dtr_rx_cq_event_handler, NULL, path,
+			dtr_rx_cq_event_handler, NULL, cm,
 			&cq_attr);
 	if (IS_ERR(cm->recv_cq)) {
 		*cause = IB_CREATE_CQ_RX;
@@ -2288,7 +2276,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path,
 	/* create send completion queue (CQ) */
 	cq_attr.cqe = tx_descs_max;
 	cm->send_cq = ib_create_cq(cm->id->device,
-			dtr_tx_cq_event_handler, NULL, path,
+			dtr_tx_cq_event_handler, NULL, cm,
 			&cq_attr);
 	if (IS_ERR(cm->send_cq)) {
 		*cause = IB_CREATE_CQ_TX;
