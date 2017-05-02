@@ -343,7 +343,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *,
 			    struct dtr_path **);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
-static int dtr_repost_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
+static int dtr_repost_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct drbd_rdma_transport *, enum drbd_stream,
 				struct drbd_rdma_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
@@ -1660,7 +1660,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		rx_desc_stolen_from = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
-		err = dtr_repost_rx_desc(path, rx_desc);
+		err = dtr_repost_rx_desc(cm, rx_desc);
 		if (err)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
 		dtr_maybe_trigger_flow_control_msg(path, rx_desc_stolen_from);
@@ -1987,18 +1987,9 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	}
 }
 
-static int dtr_repost_rx_desc(struct dtr_path *path,
-			       struct drbd_rdma_rx_desc *rx_desc)
+static int dtr_repost_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc)
 {
-	struct dtr_cm *cm;
 	int err;
-
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (!cm) {
-		rcu_read_unlock();
-		return -ECONNRESET;
-	}
 
 	rx_desc->size = 0;
 	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
@@ -2006,7 +1997,6 @@ static int dtr_repost_rx_desc(struct dtr_path *path,
 	   rx_desc->sge.length = rx_desc->alloc_size; */
 
 	err = dtr_post_rx_desc(cm, rx_desc);
-	rcu_read_unlock();
 	return err;
 }
 
@@ -2015,9 +2005,10 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				struct drbd_rdma_rx_desc **pp_rx_desc)
 {
 	struct drbd_rdma_rx_desc *rx_desc = *pp_rx_desc;
+	struct dtr_cm *cm;
 	struct dtr_path *path;
 	struct dtr_flow *flow;
-	int err;
+	int err = -ECONNRESET;
 
 	if (!rx_desc)
 		return;
@@ -2025,7 +2016,12 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 	path = rx_desc->path;
 	flow = &path->flow[stream];
 
-	err = dtr_repost_rx_desc(path, rx_desc);
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (cm)
+		err = dtr_repost_rx_desc(cm, rx_desc);
+	rcu_read_unlock();
+
 	if (err) {
 		dtr_free_rx_desc(NULL, rx_desc);
 	} else {
