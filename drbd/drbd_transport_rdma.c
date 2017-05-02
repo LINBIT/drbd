@@ -235,8 +235,6 @@ struct dtr_path {
 	struct dtr_flow flow[2];
 	int nr;
 	spinlock_t send_flow_control_lock;
-	struct list_head posted_rx_descs;
-	spinlock_t posted_rx_descs_lock;
 };
 
 struct dtr_stream {
@@ -295,6 +293,8 @@ struct dtr_cm {
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	struct ib_mr *dma_mr;
 #endif
+	struct list_head posted_rx_descs;
+	spinlock_t posted_rx_descs_lock;
 
 	enum drbd_rdma_state state;
 	wait_queue_head_t state_wq;
@@ -941,6 +941,21 @@ static void dtr_unprepare_path(struct dtr_path *path)
 	__dtr_uninit_path(path);
 }
 
+static struct dtr_cm *dtr_alloc_cm(void)
+{
+	struct dtr_cm *cm;
+
+	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
+	if (!cm)
+		return NULL;
+
+	kref_init(&cm->kref);
+	INIT_LIST_HEAD(&cm->posted_rx_descs);
+	spin_lock_init(&cm->posted_rx_descs_lock);
+
+	return cm;
+}
+
 static void dtr_cma_accept_work_fn(struct work_struct *work)
 {
 	struct dtr_accept_data *ad = container_of(work, struct dtr_accept_data, work);
@@ -953,14 +968,13 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 
 	kfree(ad);
 
-	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
+	cm = dtr_alloc_cm();
 	if (!cm) {
 		tr_err(transport, "rejecting connecting since -ENOMEM for cm\n");
 		rdma_reject(new_cm_id, NULL, 0);
 		return;
 	}
 
-	kref_init(&cm->kref);
 	cm->state = IDLE;
 	init_waitqueue_head(&cm->state_wq);
 	new_cm_id->context = cm;
@@ -1059,11 +1073,10 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 	struct dtr_cm *cm;
 	int err = -ENOMEM;
 
-	cm = kzalloc(sizeof(*cm), GFP_KERNEL);
+	cm = dtr_alloc_cm();
 	if (!cm)
 		goto out;
 
-	kref_init(&cm->kref);
 	kref_get(&path->path.kref);
 	cm->path = path;
 
@@ -1602,6 +1615,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
 	struct drbd_rdma_rx_desc *rx_desc;
 	union dtr_immediate immediate;
+	struct dtr_cm *cm;
 	struct ib_wc wc;
 	int ret;
 
@@ -1610,13 +1624,18 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		return -EAGAIN;
 
 	rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
-	spin_lock(&path->posted_rx_descs_lock);
+
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (!cm)
+		BUG();
+
+	spin_lock(&cm->posted_rx_descs_lock);
 	list_del(&rx_desc->list); /* from  &path->posted_rx_descs */
-	spin_unlock(&path->posted_rx_descs_lock);
+	spin_unlock(&cm->posted_rx_descs_lock);
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
-		struct dtr_cm *cm;
 
 		switch (wc.status) {
 		case IB_WC_WR_FLUSH_ERR:
@@ -1643,12 +1662,9 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 
 		dtr_free_rx_desc(NULL, rx_desc);
 
-		rcu_read_lock();
-		cm = rcu_dereference(path->cm);
-		if (cm)
-			cm->state = ERROR;
-		rcu_read_unlock();
+		cm->state = ERROR;
 
+		rcu_read_unlock();
 		return 0;
 	}
 
@@ -1656,14 +1672,9 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	immediate.i = be32_to_cpu(wc.ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
 		int err, rx_desc_stolen_from;
-		struct dtr_cm *cm;
 
-		rcu_read_lock();
-		cm = rcu_dereference(path->cm);
-		if (cm)
-			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		rcu_read_unlock();
+		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		rx_desc_stolen_from = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 		err = dtr_repost_rx_desc(path, rx_desc);
 		if (err)
@@ -1683,6 +1694,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 		wake_up_interruptible(&rdma_stream->recv_wq);
 	}
 
+	rcu_read_unlock();
 	return 0;
 }
 
@@ -1864,17 +1876,17 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 		ib_dma_sync_single_for_device(cm->id->device,
 			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
+		if (!err) {
+			spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+			list_add(&rx_desc->list, &cm->posted_rx_descs);
+			spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+		}
+
 	}
 	rcu_read_unlock();
-	if (err) {
+	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
-		goto out;
-	}
 
-	spin_lock_irqsave(&path->posted_rx_descs_lock, flags);
-	list_add(&rx_desc->list, &path->posted_rx_descs);
-	spin_unlock_irqrestore(&path->posted_rx_descs_lock, flags);
-out:
 	return err;
 }
 
@@ -1888,13 +1900,16 @@ static void dtr_free_rx_desc(struct dtr_path *on_path_posted, struct drbd_rdma_r
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
+	rcu_read_lock();
 	if (on_path_posted) {
-		spin_lock(&on_path_posted->posted_rx_descs_lock);
+		cm = rcu_dereference(on_path_posted->cm);
+		if (!cm)
+			BUG();
+		spin_lock(&cm->posted_rx_descs_lock);
 		list_del(&rx_desc->list); /* from  &on_path_posted->posted_rx_descs */
-		spin_unlock(&on_path_posted->posted_rx_descs_lock);
+		spin_unlock(&cm->posted_rx_descs_lock);
 	}
 	path = rx_desc->path;
-	rcu_read_lock();
 	cm = rcu_dereference(path->cm);
 	if (!cm)
 		BUG();
@@ -2532,6 +2547,9 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 static void dtr_destroy_cm(struct kref *kref)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
+	struct drbd_rdma_rx_desc *rx_desc, *tmp;
+	LIST_HEAD(posted_rx_descs);
+	unsigned long flags;
 
 
 	if (cm->send_cq && cm->path)
@@ -2578,20 +2596,18 @@ static void dtr_destroy_cm(struct kref *kref)
 		cm->path = NULL;
 	}
 
+	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
+	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+
+	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
+		dtr_free_rx_desc(NULL, rx_desc);
+
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
 }
 
 static void __dtr_uninit_path(struct dtr_path *path)
 {
-	LIST_HEAD(posted_rx_descs);
-	struct drbd_rdma_rx_desc *rx_desc, *tmp;
-
-	spin_lock_irq(&path->posted_rx_descs_lock);
-	list_splice_init(&path->posted_rx_descs, &posted_rx_descs);
-	spin_unlock_irq(&path->posted_rx_descs_lock);
-
-	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
-		dtr_free_rx_desc(NULL, rx_desc);
 }
 
 static void dtr_disconnect_path(struct dtr_path *path)
@@ -3136,8 +3152,6 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 	spin_lock_init(&path->send_flow_control_lock);
-	INIT_LIST_HEAD(&path->posted_rx_descs);
-	spin_lock_init(&path->posted_rx_descs_lock);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
