@@ -359,7 +359,6 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
-static void __dtr_uninit_path(struct dtr_path *path);
 static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_path *, void *));
 static int dtr_activate_path(struct dtr_path *path);
@@ -936,11 +935,6 @@ static void dtr_path_established(struct dtr_path *path)
 	schedule_work(&cs->work.work);
 }
 
-static void dtr_unprepare_path(struct dtr_path *path)
-{
-	__dtr_uninit_path(path);
-}
-
 static struct dtr_cm *dtr_alloc_cm(void)
 {
 	struct dtr_cm *cm;
@@ -998,10 +992,8 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	}
 
 	err = rdma_accept(new_cm_id, &dtr_conn_param);
-	if (err) {
+	if (err)
 		kref_put(&cm->kref, dtr_destroy_cm);
-		dtr_unprepare_path(path);
-	}
 }
 
 
@@ -1132,8 +1124,6 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct net_conf *nc;
 	long connect_int = 10 * HZ;
-
-	dtr_unprepare_path(path);
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -2606,18 +2596,12 @@ static void dtr_destroy_cm(struct kref *kref)
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
 }
 
-static void __dtr_uninit_path(struct dtr_path *path)
-{
-}
-
 static void dtr_disconnect_path(struct dtr_path *path)
 {
 	if (!path)
 		return;
 
 	__dtr_disconnect_path(path);
-
-	__dtr_uninit_path(path);
 }
 
 static void dtr_destroy_listener(struct drbd_listener *generic_listener)
