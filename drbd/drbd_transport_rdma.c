@@ -1846,12 +1846,10 @@ static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
 	return err;
 }
 
-static int dtr_post_rx_desc(struct dtr_path *path,
-		struct drbd_rdma_rx_desc *rx_desc)
+static int dtr_post_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc)
 {
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_rdma_transport *rdma_transport = cm->path->rdma_transport;
 	struct ib_recv_wr recv_wr, *recv_wr_failed;
-	struct dtr_cm *cm;
 	unsigned long flags;
 	int err = -EIO;
 
@@ -1860,22 +1858,16 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (cm) {
-		ib_dma_sync_single_for_device(cm->id->device,
-			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
-		if (!err) {
-			spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-			list_add(&rx_desc->list, &cm->posted_rx_descs);
-			spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-		}
-
-	}
-	rcu_read_unlock();
-	if (err)
+	ib_dma_sync_single_for_device(cm->id->device,
+				      rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
+	if (!err) {
+		spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+		list_add(&rx_desc->list, &cm->posted_rx_descs);
+		spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+	} else {
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
+	}
 
 	return err;
 }
@@ -1959,7 +1951,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 					      DMA_FROM_DEVICE);
 	rx_desc->sge.length = alloc_size;
 
-	err = dtr_post_rx_desc(path, rx_desc);
+	err = dtr_post_rx_desc(cm, rx_desc);
 	rcu_read_unlock();
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
@@ -2025,7 +2017,7 @@ static int dtr_repost_rx_desc(struct dtr_path *path,
 	/* rx_desc->sge.addr = rx_desc->dma_addr;
 	   rx_desc->sge.length = rx_desc->alloc_size; */
 
-	err = dtr_post_rx_desc(path, rx_desc);
+	err = dtr_post_rx_desc(cm, rx_desc);
 	rcu_read_unlock();
 	return err;
 }
