@@ -174,7 +174,7 @@ struct drbd_rdma_rx_desc {
 	struct list_head list;
 	int size;
 	unsigned int sequence;
-	struct dtr_path *path;
+	struct dtr_cm *cm;
 	struct ib_sge sge;
 };
 
@@ -340,8 +340,7 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct drbd_rdma_tx_desc *);
-static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *,
-			    struct dtr_path **);
+static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct drbd_rdma_transport *, enum drbd_stream,
@@ -351,16 +350,16 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				struct drbd_rdma_rx_desc **pp_rx_desc);
 static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
-static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc);
-static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
+static void dtr_free_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_desc);
+static void dtr_free_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
-static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
-			 void (*free_desc)(struct dtr_path *, void *));
+static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
+			 void (*free_desc)(struct dtr_cm *, void *));
 static int dtr_activate_path(struct dtr_path *path);
 
 static struct drbd_transport_class rdma_transport_class = {
@@ -679,7 +678,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		set_page_chain_offset(page, 0);
 		set_page_chain_size(page, rx_desc->size);
 
-		rx_desc->path->flow[DATA_STREAM].rx_descs_allocated--;
+		rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated--;
 		dtr_free_rx_desc(NULL, rx_desc);
 
 		i++;
@@ -1426,18 +1425,12 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	spin_unlock_irq(&rdma_stream->rx_descs_lock);
 
 	if (rx_desc) {
-		struct dtr_path *path = rx_desc->path;
-		struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-		struct dtr_cm *cm;
+		struct dtr_cm *cm = rx_desc->cm;
+		struct drbd_rdma_transport *rdma_transport = cm->path->rdma_transport;
 
 		INIT_LIST_HEAD(&rx_desc->list);
-		rcu_read_lock();
-		cm = rcu_dereference(path->cm);
-		if (cm) {
-			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		}
-		rcu_read_unlock();
+		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
 	} else {
@@ -1701,19 +1694,12 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	} while (!err);
 }
 
-static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
+static void dtr_free_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct ib_device *device;
-	struct dtr_cm *cm;
+	struct ib_device *device = cm->id->device;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 	int i, nr_sges;
-
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (!cm)
-		BUG();
-	device = cm->id->device;
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -1736,7 +1722,6 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 		}
 		break;
 	}
-	rcu_read_unlock();
 	kfree(tx_desc);
 }
 
@@ -1790,7 +1775,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	}
 
 out:
-	dtr_free_tx_desc(path, tx_desc);
+	dtr_free_tx_desc(cm, tx_desc);
 
 	return 0;
 }
@@ -1860,7 +1845,7 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc
 	return err;
 }
 
-static void dtr_free_rx_desc(struct dtr_path *on_path_posted, struct drbd_rdma_rx_desc *rx_desc)
+static void dtr_free_rx_desc(struct dtr_cm *on_cm_posted, struct drbd_rdma_rx_desc *rx_desc)
 {
 	struct dtr_path *path;
 	struct ib_device *device;
@@ -1870,23 +1855,16 @@ static void dtr_free_rx_desc(struct dtr_path *on_path_posted, struct drbd_rdma_r
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
-	rcu_read_lock();
-	if (on_path_posted) {
-		cm = rcu_dereference(on_path_posted->cm);
-		if (!cm)
-			BUG();
-		spin_lock(&cm->posted_rx_descs_lock);
+	if (on_cm_posted) {
+		spin_lock(&on_cm_posted->posted_rx_descs_lock);
 		list_del(&rx_desc->list); /* from  &on_path_posted->posted_rx_descs */
-		spin_unlock(&cm->posted_rx_descs_lock);
+		spin_unlock(&on_cm_posted->posted_rx_descs_lock);
 	}
-	path = rx_desc->path;
-	cm = rcu_dereference(path->cm);
-	if (!cm)
-		BUG();
+	cm = rx_desc->cm;
 	device = cm->id->device;
+	path = cm->path;
 	alloc_size = path->rdma_transport->rx_allocation_size;
 	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
-	rcu_read_unlock();
 
 	if (rx_desc->page) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -1931,7 +1909,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 		drbd_free_pages(transport, page, 0);
 		return -ECONNRESET;
 	}
-	rx_desc->path = path;
+	rx_desc->cm = cm;
 	rx_desc->page = page;
 	rx_desc->size = 0;
 	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
@@ -2008,19 +1986,16 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 	struct dtr_cm *cm;
 	struct dtr_path *path;
 	struct dtr_flow *flow;
-	int err = -ECONNRESET;
+	int err;
 
 	if (!rx_desc)
 		return;
 
-	path = rx_desc->path;
+	cm = rx_desc->cm;
+	path = cm->path;
 	flow = &path->flow[stream];
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (cm)
-		err = dtr_repost_rx_desc(cm, rx_desc);
-	rcu_read_unlock();
+	err = dtr_repost_rx_desc(cm, rx_desc);
 
 	if (err) {
 		dtr_free_rx_desc(NULL, rx_desc);
@@ -2116,8 +2091,7 @@ static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
 }
 
 static int dtr_post_tx_desc(struct drbd_rdma_transport *rdma_transport,
-			    struct drbd_rdma_tx_desc *tx_desc,
-			    struct dtr_path **ret_path)
+			    struct drbd_rdma_tx_desc *tx_desc)
 {
 	enum drbd_stream stream = tx_desc->stream_nr;
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
@@ -2167,10 +2141,13 @@ retry:
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
 
-	atomic_inc(&flow->tx_descs_posted);
+	if (!err) {
+		atomic_inc(&flow->tx_descs_posted);
+	} else {
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+	}
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
-	*ret_path = path;
 out_unlock:
 	rcu_read_unlock();
 	return err;
@@ -2428,15 +2405,15 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm)
 	return err;
 }
 
-static void dtr_drain_cq(struct dtr_path *path, struct ib_cq *cq,
-			 void (*free_desc)(struct dtr_path *, void *))
+static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
+			 void (*free_desc)(struct dtr_cm *, void *))
 {
 	struct ib_wc wc;
 	void *desc;
 
 	while (ib_poll_cq(cq, 1, &wc) == 1) {
 		desc = (void *) (unsigned long) wc.wr_id;
-		free_desc(path, desc);
+		free_desc(cm, desc);
 	}
 }
 
@@ -2520,8 +2497,8 @@ static void dtr_destroy_cm(struct kref *kref)
 
 
 	if (cm->send_cq && cm->path)
-		dtr_drain_cq(cm->path, cm->send_cq,
-			     (void (*)(struct dtr_path *, void *)) dtr_free_tx_desc);
+		dtr_drain_cq(cm, cm->send_cq,
+			     (void (*)(struct dtr_cm *, void *)) dtr_free_tx_desc);
 
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	if (cm->dma_mr) {
@@ -2828,7 +2805,6 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 {
 	struct drbd_rdma_transport *rdma_transport =
 		container_of(transport, struct drbd_rdma_transport, transport);
-	struct dtr_path *path = NULL;
 	struct drbd_rdma_tx_desc *tx_desc;
 	int err;
 
@@ -2849,15 +2825,10 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].length = size;
 	tx_desc->sge[0].lkey = offset; /* abusing lkey fild. See dtr_post_tx_desc() */
 
-	err = dtr_post_tx_desc(rdma_transport, tx_desc, &path);
+	err = dtr_post_tx_desc(rdma_transport, tx_desc);
 	if (err) {
-		if (path) {
-			dtr_free_tx_desc(path, tx_desc);
-		} else {
-			put_page(page);
-			kfree(tx_desc);
-		}
-		tx_desc = NULL;
+		put_page(page);
+		kfree(tx_desc);
 	}
 
 	if (stream == DATA_STREAM)
