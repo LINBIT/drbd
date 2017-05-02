@@ -339,7 +339,7 @@ static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_create_cm_id(struct dtr_cm *cm_context);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
-static int __dtr_post_tx_desc(struct dtr_path *, struct drbd_rdma_tx_desc *);
+static int __dtr_post_tx_desc(struct dtr_cm *, struct drbd_rdma_tx_desc *);
 static int dtr_post_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *,
 			    struct dtr_path **);
 static int dtr_repost_tx_desc(struct drbd_rdma_transport *, struct drbd_rdma_tx_desc *);
@@ -606,7 +606,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->sge[0].length = size;
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
-	err = __dtr_post_tx_desc(path, tx_desc);
+	err = __dtr_post_tx_desc(cm, tx_desc);
 out_unlock:
 	rcu_read_unlock();
 out:
@@ -2048,14 +2048,13 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 	*pp_rx_desc = NULL;
 }
 
-static int __dtr_post_tx_desc(struct dtr_path *path,
-			      struct drbd_rdma_tx_desc *tx_desc)
+static int __dtr_post_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+	struct drbd_rdma_transport *rdma_transport = cm->path->rdma_transport;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	enum dtr_stream_nr stream_nr = tx_desc->stream_nr;
+	struct ib_device *device = cm->id->device;
 	union dtr_immediate immediate;
-	struct dtr_cm *cm;
 	int i, err = -EIO;
 
 	immediate.stream = stream_nr;
@@ -2070,16 +2069,10 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (cm) {
-		struct ib_device *device = cm->id->device;
-		for (i = 0; i < tx_desc->nr_sges; i++)
-			ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
-						      tx_desc->sge[i].length, DMA_TO_DEVICE);
-		err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
-	}
-	rcu_read_unlock();
+	for (i = 0; i < tx_desc->nr_sges; i++)
+		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
+					      tx_desc->sge[i].length, DMA_TO_DEVICE);
+	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
 	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 
@@ -2118,13 +2111,21 @@ static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
 			      struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct dtr_path *path;
+	struct dtr_cm *cm;
 	int err = -ECONNRESET;
 
 	do {
 		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
 		if (!path)
 			break;
-		err = __dtr_post_tx_desc(path, tx_desc);
+		rcu_read_lock();
+		cm = rcu_dereference(path->cm);
+		if (!cm) {
+			rcu_read_unlock();
+			break;
+		}
+		err = __dtr_post_tx_desc(cm, tx_desc);
+		rcu_read_unlock();
 	} while (err);
 
 	return err;
@@ -2180,7 +2181,7 @@ retry:
 		BUG();
 	}
 
-	err = __dtr_post_tx_desc(path, tx_desc);
+	err = __dtr_post_tx_desc(cm, tx_desc);
 
 	atomic_inc(&flow->tx_descs_posted);
 
