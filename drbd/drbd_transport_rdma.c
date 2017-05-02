@@ -354,7 +354,7 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_des
 static void dtr_free_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
-static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm);
+static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
@@ -829,7 +829,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	int i, err = -ENOENT;
 	struct dtr_cm *cm2;
 
-	kref_get(&cm->kref); /* hold it for dtr_path_alloc_rdma_res()... */
+	kref_get(&cm->kref); /* hold it for dtr_cm_alloc_rdma_res()... */
 	cm2 = xchg(&path->cm, cm); // RCU xchg
 	if (cm2) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -859,7 +859,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(path, i);
 
-	err = dtr_path_alloc_rdma_res(path, cm);
+	err = dtr_cm_alloc_rdma_res(cm);
 	kref_put(&cm->kref, dtr_destroy_cm);
 
 	return err;
@@ -2210,12 +2210,12 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	return err;
 }
 
-static int _dtr_path_alloc_rdma_res(struct dtr_path *path,
-				    struct dtr_cm *cm,
+static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 				    enum dtr_alloc_rdma_res_causes *cause)
 {
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
 	struct ib_cq_init_attr cq_attr = {};
+	struct dtr_path *path = cm->path;
 
 	/* Each path might be the sole path, therefore it must be able to
 	   support both streams */
@@ -2313,8 +2313,9 @@ pd_failed:
 }
 
 
-static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm)
+static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 {
+	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	enum dtr_alloc_rdma_res_causes cause;
 	struct ib_device_attr dev_attr;
@@ -2369,7 +2370,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm)
 	}
 
 	for (;;) {
-		err = _dtr_path_alloc_rdma_res(path, cm, &cause);
+		err = _dtr_cm_alloc_rdma_res(cm, &cause);
 
 		if (err == 0 || cause != RDMA_CREATE_QP || err != -ENOMEM)
 			break;
