@@ -231,8 +231,6 @@ struct dtr_path {
 
 	struct dtr_cm *cm; /* RCU'd and kref in cm */
 
-	struct ib_device *ib_device; /* cache of  path->cm->id->device */
-
 	struct ib_cq *recv_cq;
 	struct ib_cq *send_cq;
 	struct ib_pd *pd;
@@ -356,7 +354,7 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 static void dtr_free_rx_desc(struct dtr_path *path, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
-static int dtr_path_alloc_rdma_res(struct dtr_path *path);
+static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
@@ -575,6 +573,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 {
 	struct ib_device *device;
 	struct drbd_rdma_tx_desc *tx_desc;
+	struct dtr_cm *cm;
 	void *send_buffer;
 	int err = -ENOMEM;
 
@@ -591,7 +590,14 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	}
 	memcpy(send_buffer, buf, size);
 
-	device = path->ib_device;
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (!cm) {
+		err = -ECONNRESET;
+		goto out_unlock;
+	}
+
+	device = cm->id->device;
 	tx_desc->type = SEND_MSG;
 	tx_desc->data = send_buffer;
 	tx_desc->nr_sges = 1;
@@ -601,6 +607,8 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
 	err = __dtr_post_tx_desc(path, tx_desc);
+out_unlock:
+	rcu_read_unlock();
 out:
 	return err;
 }
@@ -819,10 +827,10 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
-	struct ib_device *device = cm->id->device;
 	int i, err = -ENOENT;
 	struct dtr_cm *cm2;
 
+	kref_get(&cm->kref); /* hold it for dtr_path_alloc_rdma_res()... */
 	cm2 = xchg(&path->cm, cm); // RCU xchg
 	if (cm2) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -830,8 +838,10 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 
 		/* err out if called form dtr_cma_connect(), since the new cm
 		   is not connectet yet. */
-		if (active)
+		if (active) {
+			kref_put(&cm->kref, dtr_destroy_cm);
 			return -ENOENT;
+		}
 
 		/* When called from dtr_cma_accept_work_fn() prefer the new
 		   cm since that is already an established connection */
@@ -850,10 +860,22 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(path, i);
 
-	path->ib_device = device;
-	err = dtr_path_alloc_rdma_res(path);
+	err = dtr_path_alloc_rdma_res(path, cm);
+	kref_put(&cm->kref, dtr_destroy_cm);
 
 	return err;
+}
+
+static struct dtr_cm * dtr_path_get_cm(struct dtr_path *path)
+{
+	struct dtr_cm *cm;
+
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (cm)
+		kref_get(&cm->kref);
+	rcu_read_unlock();
+	return cm;
 }
 
 static void dtr_path_established_work_fn(struct work_struct *work)
@@ -861,6 +883,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct dtr_cm *cm;
 	int i, p, err;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
@@ -1404,10 +1427,16 @@ static bool dtr_receive_rx_desc(struct drbd_rdma_transport *rdma_transport,
 	if (rx_desc) {
 		struct dtr_path *path = rx_desc->path;
 		struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
+		struct dtr_cm *cm;
 
 		INIT_LIST_HEAD(&rx_desc->list);
-		ib_dma_sync_single_for_cpu(rx_desc->path->ib_device, rx_desc->sge.addr,
-					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+		rcu_read_lock();
+		cm = rcu_dereference(path->cm);
+		if (cm) {
+			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+		}
+		rcu_read_unlock();
 		*ptr_rx_desc = rx_desc;
 		return true;
 	} else {
@@ -1618,9 +1647,8 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 
 		rcu_read_lock();
 		cm = rcu_dereference(path->cm);
-		if (cm) {
+		if (cm)
 			cm->state = ERROR;
-		}
 		rcu_read_unlock();
 
 		return 0;
@@ -1630,9 +1658,14 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_path *path)
 	immediate.i = be32_to_cpu(wc.ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
 		int err, rx_desc_stolen_from;
+		struct dtr_cm *cm;
 
-		ib_dma_sync_single_for_cpu(path->ib_device, rx_desc->sge.addr,
-					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+		rcu_read_lock();
+		cm = rcu_dereference(path->cm);
+		if (cm)
+			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+						   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+		rcu_read_unlock();
 		rx_desc_stolen_from = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 		err = dtr_repost_rx_desc(path, rx_desc);
 		if (err)
@@ -1677,10 +1710,17 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx_desc)
 {
-	struct ib_device *device = path->ib_device;
+	struct ib_device *device;
+	struct dtr_cm *cm;
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
 	int i, nr_sges;
+
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (!cm)
+		BUG();
+	device = cm->id->device;
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -1703,6 +1743,7 @@ static void dtr_free_tx_desc(struct dtr_path *path, struct drbd_rdma_tx_desc *tx
 		}
 		break;
 	}
+	rcu_read_unlock();
 	kfree(tx_desc);
 }
 
@@ -1819,13 +1860,13 @@ static int dtr_post_rx_desc(struct dtr_path *path,
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
-	ib_dma_sync_single_for_device(path->ib_device,
-			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-
 	rcu_read_lock();
 	cm = rcu_dereference(path->cm);
-	if (cm)
+	if (cm) {
+		ib_dma_sync_single_for_device(cm->id->device,
+			rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
+	}
 	rcu_read_unlock();
 	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
@@ -1843,6 +1884,7 @@ static void dtr_free_rx_desc(struct dtr_path *on_path_posted, struct drbd_rdma_r
 {
 	struct dtr_path *path;
 	struct ib_device *device;
+	struct dtr_cm *cm;
 	int alloc_size;
 
 	if (!rx_desc)
@@ -1854,9 +1896,14 @@ static void dtr_free_rx_desc(struct dtr_path *on_path_posted, struct drbd_rdma_r
 		spin_unlock(&on_path_posted->posted_rx_descs_lock);
 	}
 	path = rx_desc->path;
-	device = path->ib_device;
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (!cm)
+		BUG();
+	device = cm->id->device;
 	alloc_size = path->rdma_transport->rx_allocation_size;
 	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
+	rcu_read_unlock();
 
 	if (rx_desc->page) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -1989,7 +2036,6 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 			      struct drbd_rdma_tx_desc *tx_desc)
 {
 	struct drbd_rdma_transport *rdma_transport = path->rdma_transport;
-	struct ib_device *device = path->cm->id->device;
 	struct ib_send_wr send_wr, *send_wr_failed;
 	enum dtr_stream_nr stream_nr = tx_desc->stream_nr;
 	union dtr_immediate immediate;
@@ -2008,13 +2054,15 @@ static int __dtr_post_tx_desc(struct dtr_path *path,
 	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
-	for (i = 0; i < tx_desc->nr_sges; i++)
-		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
-					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 	rcu_read_lock();
 	cm = rcu_dereference(path->cm);
-	if (cm)
+	if (cm) {
+		struct ib_device *device = cm->id->device;
+		for (i = 0; i < tx_desc->nr_sges; i++)
+			ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
+						      tx_desc->sge[i].length, DMA_TO_DEVICE);
 		err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
+	}
 	rcu_read_unlock();
 	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
@@ -2075,6 +2123,7 @@ static int dtr_post_tx_desc(struct drbd_rdma_transport *rdma_transport,
 	struct ib_device *device;
 	struct dtr_path *path;
 	struct dtr_flow *flow;
+	struct dtr_cm *cm;
 	int offset, err;
 	long t;
 
@@ -2096,7 +2145,13 @@ retry:
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
 		goto retry;
 
-	device = path->ib_device;
+	rcu_read_lock();
+	cm = rcu_dereference(path->cm);
+	if (!cm) {
+		err = -ECONNRESET;
+		goto out_unlock;
+	}
+	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
 		offset = tx_desc->sge[0].lkey;
@@ -2115,7 +2170,8 @@ retry:
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 	*ret_path = path;
-
+out_unlock:
+	rcu_read_unlock();
 	return err;
 }
 
@@ -2176,7 +2232,9 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	return err;
 }
 
-static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_res_causes *cause)
+static int _dtr_path_alloc_rdma_res(struct dtr_path *path,
+				    struct dtr_cm *cm,
+				    enum dtr_alloc_rdma_res_causes *cause)
 {
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
 	struct ib_cq_init_attr cq_attr = {};
@@ -2192,7 +2250,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 	/* in 4.9 ib_alloc_pd got the ability to specify flags as second param */
 	/* so far we don't use flags, but if we start using them, we have to be
 	 * aware that the compat layer removes this parameter for old kernels */
-	path->pd = ib_alloc_pd(path->ib_device, 0);
+	path->pd = ib_alloc_pd(cm->id->device, 0);
 	if (IS_ERR(path->pd)) {
 		*cause = IB_ALLOC_PD;
 		err = PTR_ERR(path->pd);
@@ -2201,7 +2259,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 
 	/* create recv completion queue (CQ) */
 	cq_attr.cqe = rx_descs_max;
-	path->recv_cq = ib_create_cq(path->ib_device,
+	path->recv_cq = ib_create_cq(cm->id->device,
 			dtr_rx_cq_event_handler, NULL, path,
 			&cq_attr);
 	if (IS_ERR(path->recv_cq)) {
@@ -2212,7 +2270,7 @@ static int _dtr_path_alloc_rdma_res(struct dtr_path *path, enum dtr_alloc_rdma_r
 
 	/* create send completion queue (CQ) */
 	cq_attr.cqe = tx_descs_max;
-	path->send_cq = ib_create_cq(path->ib_device,
+	path->send_cq = ib_create_cq(cm->id->device,
 			dtr_tx_cq_event_handler, NULL, path,
 			&cq_attr);
 	if (IS_ERR(path->send_cq)) {
@@ -2277,13 +2335,13 @@ pd_failed:
 }
 
 
-static int dtr_path_alloc_rdma_res(struct dtr_path *path)
+static int dtr_path_alloc_rdma_res(struct dtr_path *path, struct dtr_cm *cm)
 {
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	enum dtr_alloc_rdma_res_causes cause;
 	struct ib_device_attr dev_attr;
 	struct ib_udata uhw = {.outlen = 0, .inlen = 0};
-	struct ib_device *device = path->ib_device;
+	struct ib_device *device = cm->id->device;
 	int rx_descs_max = 0, tx_descs_max = 0;
 	bool reduced = false;
 	int i, hca_max, err;
@@ -2333,7 +2391,7 @@ static int dtr_path_alloc_rdma_res(struct dtr_path *path)
 	}
 
 	for (;;) {
-		err = _dtr_path_alloc_rdma_res(path, &cause);
+		err = _dtr_path_alloc_rdma_res(path, cm, &cause);
 
 		if (err == 0 || cause != RDMA_CREATE_QP || err != -ENOMEM)
 			break;
