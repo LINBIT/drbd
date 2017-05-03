@@ -1324,7 +1324,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		/* This is called for active and passive connections */
 
-		path = READ_ONCE(cm->path);
+		path = cm->path;
 		if (path)
 			dtr_path_established(path);
 		break;
@@ -1342,7 +1342,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm->state = ERROR;
 
-		path = READ_ONCE(cm->path);
+		path = cm->path;
 		if (path)
 			dtr_cma_retry_connect(path, cm);
 		break;
@@ -1351,7 +1351,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
 		cm->state = DISCONNECTED;
 
-		path = READ_ONCE(cm->path);
+		path = cm->path;
 		if (path)
 			dtr_cma_disconnect(path);
 
