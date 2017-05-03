@@ -1134,9 +1134,14 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 	schedule_delayed_work(&cs->work, connect_int);
 }
 
-static void dtr_cma_retry_connect(struct dtr_path *path)
+static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm)
 {
 	struct dtr_connect_state *cs = &path->cs;
+	struct dtr_cm *cm;
+
+	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
+	if (cm)
+		kref_put(&cm->kref, dtr_destroy_cm);
 
 	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
 	schedule_work(&cs->work.work);
@@ -1197,7 +1202,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 
 	return;
 out:
-	dtr_cma_retry_connect(path);
+	dtr_cma_retry_connect(path, cm);
 }
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
@@ -1339,7 +1344,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		path = READ_ONCE(cm->path);
 		if (path)
-			dtr_cma_retry_connect(path);
+			dtr_cma_retry_connect(path, cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
@@ -2553,10 +2558,16 @@ static void dtr_destroy_cm(struct kref *kref)
 
 static void dtr_disconnect_path(struct dtr_path *path)
 {
+	struct dtr_cm *cm;
+
 	if (!path)
 		return;
 
 	__dtr_disconnect_path(path);
+
+	cm = xchg(&path->cm, NULL); // RCU xchg
+	if (cm)
+		kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void dtr_destroy_listener(struct drbd_listener *generic_listener)
