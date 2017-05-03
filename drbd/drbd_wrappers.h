@@ -1450,20 +1450,6 @@ static inline struct kobject *drbd_kobj_of_disk(struct gendisk *disk)
 #define SK_CAN_REUSE   1
 #endif
 
-#ifndef COMPAT_HAVE_KREF_SUB
-static inline int kref_sub(struct kref *kref, unsigned int count,
-	     void (*release)(struct kref *kref))
-{
-	WARN_ON(release == NULL);
-
-	if (atomic_sub_and_test((int) count, &kref->refcount)) {
-		release(kref);
-		return 1;
-	}
-	return 0;
-}
-#endif
-
 #ifndef COMPAT_HAVE_KREF_GET_UNLESS_ZERO
 static inline int __must_check kref_get_unless_zero(struct kref *kref)
 {
