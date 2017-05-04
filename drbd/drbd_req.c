@@ -1639,13 +1639,37 @@ void do_submit(struct work_struct *ws)
 	drbd_kick_lo(device);
 }
 
+/* 54efd50 block: make generic_make_request handle arbitrarily sized bios
+ * introduced blk_queue_split(), which is supposed to split (and put on the
+ * current->bio_list bio chain) any bio that is violating the queue limits.
+ * Before that, any user was supposed to go through bio_add_page(), which
+ * would call our merge bvec function, and that should already be sufficient
+ * to not violate queue limits.
+ *
+ * The way blk_queue_split() was implemented, together with the recursion-to-
+ * iteration loop in generic_make_request(), introduced a possible deadlock,
+ * which we worked around with drbd out-of-tree commit
+ * ab6ab5061f6d drbd: fix for possible deadlock in kernel >= 4.3
+ *
+ * Upstream 4.11 finally took and improved our suggested fix with:
+ * 79bd99596b73 blk: improve order of bio handling in generic_make_request()
+ * f5fe1b51905d blk: Ensure users for current->bio_list can see the full list.
+ */
+#undef COMPAT_NEED_MAKE_REQUEST_RECURSION
+#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
+# if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
+#  define COMPAT_NEED_MAKE_REQUEST_RECURSION
+# endif
+#else
+# define blk_queue_split(q,b,l) do { } while (0)
+#endif
+
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	unsigned long start_jif;
-#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
-	struct bio_list *current_bio_list = NULL;
-	struct bio_list my_on_stack_bl;
+#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
+	struct bio_list *current_bio_list;
 #endif
 
 	/* We never supported BIO_RW_BARRIER.
@@ -1657,20 +1681,10 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
-/* 54efd50 block: make generic_make_request handle arbitrarily sized bios
- * introduced blk_queue_split(), which is supposed to split (and put on the
- * current->bio_list bio chain) any bio that is violating the queue limits.
- * Before that, any user was supposed to go through bio_add_page(), which
- * would call our merge bvec function, and that should already be sufficient
- * to not violate queue limits.
- */
 	blk_queue_split(q, &bio, q->bio_split);
-	if (current->bio_list && !bio_list_empty(current->bio_list)) {
-		bio_list_init(&my_on_stack_bl);
-		current_bio_list = current->bio_list;
-		current->bio_list = &my_on_stack_bl;
-	}
+#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
+	current_bio_list = current->bio_list;
+	current->bio_list = NULL;
 #endif
 
 	start_jif = jiffies;
@@ -1678,14 +1692,8 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	inc_ap_bio(device);
 	__drbd_make_request(device, bio, start_jif);
 
-#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
-	if (current_bio_list) {
-		/* REAL RECURSION */
-		current->bio_list = NULL;
-		while ((bio = bio_list_pop(&my_on_stack_bl)))
-			generic_make_request(bio);
-		current->bio_list = current_bio_list;
-	}
+#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
+	current->bio_list = current_bio_list;
 #endif
 
 	MAKE_REQUEST_RETURN;
