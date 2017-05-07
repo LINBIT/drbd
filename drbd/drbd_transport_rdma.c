@@ -837,7 +837,6 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	cm2 = xchg(&path->cm, cm); // RCU xchg
 	if (cm2) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
-		struct dtr_path *path2;
 
 		/* err out if called form dtr_cma_connect(), since the new cm
 		   is not connectet yet. */
@@ -850,12 +849,8 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 		   cm since that is already an established connection */
 
 		tr_info(transport, "info: dropping ref to a previous cm !\n");
-		path2 = xchg(&cm2->path, NULL);
-		if (path2) {
-			TR_ASSERT(transport, path2 == path);
-			kref_put(&path2->path.kref, drbd_destroy_path);
-		}
-		/* Need to destroy the qp in cm2 here? */
+
+		pr_err("%p dropping ref\n", cm2);
 		kref_put(&cm2->kref, dtr_destroy_cm);
 	}
 
@@ -1303,7 +1298,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		/* This is called for active and passive connections */
 
-		dtr_path_established(cm->path);
+		if (cm->path->cm == cm)
+			dtr_path_established(cm->path);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
