@@ -353,6 +353,7 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
 static void dtr_disconnect_path(struct dtr_path *path);
+static void __dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
@@ -526,7 +527,32 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	rdma_transport->active = false;
 
 	for_each_path_ref(path, im, transport)
-		dtr_disconnect_path(path);
+		__dtr_disconnect_path(path);
+
+	/* Free the rx_descs that where received and not consumed. */
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct dtr_stream *rdma_stream = &rdma_transport->stream[i];
+		struct drbd_rdma_rx_desc *rx_desc, *tmp;
+		LIST_HEAD(rx_descs);
+
+		dtr_free_rx_desc(NULL, rdma_stream->current_rx.desc);
+		rdma_stream->current_rx.desc = NULL;
+
+		spin_lock_irq(&rdma_stream->rx_descs_lock);
+		list_splice_init(&rdma_stream->rx_descs, &rx_descs);
+		spin_unlock_irq(&rdma_stream->rx_descs_lock);
+
+		list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
+			dtr_free_rx_desc(NULL, rx_desc);
+	}
+
+	for_each_path_ref(path, im, transport) {
+		struct dtr_cm *cm;
+
+		cm = xchg(&path->cm, NULL); // RCU xchg
+		if (cm)
+			kref_put(&cm->kref, dtr_destroy_cm);
+	}
 
 	if (free_op == DESTROY_TRANSPORT) {
 		LIST_HEAD(work_list);
@@ -548,23 +574,6 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		/* The transport object itself is embedded into a conneciton.
 		   Do not free it here! The function should better be called
 		   uninit. */
-	}
-
-	/* Free the rx_descs that where received and not consumed. */
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
-		struct dtr_stream *rdma_stream = &rdma_transport->stream[i];
-		struct drbd_rdma_rx_desc *rx_desc, *tmp;
-		LIST_HEAD(rx_descs);
-
-		dtr_free_rx_desc(NULL, rdma_stream->current_rx.desc);
-		rdma_stream->current_rx.desc = NULL;
-
-		spin_lock_irq(&rdma_stream->rx_descs_lock);
-		list_splice_init(&rdma_stream->rx_descs, &rx_descs);
-		spin_unlock_irq(&rdma_stream->rx_descs_lock);
-
-		list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
-			dtr_free_rx_desc(NULL, rx_desc);
 	}
 }
 
