@@ -358,6 +358,7 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
+static void dtr_destroy_cm_keep_id(struct kref *kref);
 static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_cm *, void *));
 static int dtr_activate_path(struct dtr_path *path);
@@ -1371,8 +1372,10 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		return 0;
 	}
 	wake_up_interruptible(&cm->state_wq);
-	kref_put(&cm->kref, dtr_destroy_cm);
-	return 0;
+
+	/* by returning 1 we instruct the caller to destroy the cm_id. We
+	   are not allowed to free it within the callback, since that deadlocks! */
+	return kref_put(&cm->kref, dtr_destroy_cm_keep_id);
 }
 
 static int dtr_create_cm_id(struct dtr_cm *cm)
@@ -2494,7 +2497,7 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 	kfree(cm);
 }
 
-static void dtr_destroy_cm(struct kref *kref)
+static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
 	struct drbd_rdma_rx_desc *rx_desc, *tmp;
@@ -2538,7 +2541,8 @@ static void dtr_destroy_cm(struct kref *kref)
 		/* Just in case some callback is still triggered
 		 * after we kfree'd path. */
 		cm->id->context = NULL;
-		rdma_destroy_id(cm->id);
+		if (destroy_id)
+			rdma_destroy_id(cm->id);
 		cm->id = NULL;
 	}
 	if (cm->path) {
@@ -2554,6 +2558,16 @@ static void dtr_destroy_cm(struct kref *kref)
 		dtr_free_rx_desc(NULL, rx_desc);
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
+}
+
+static void dtr_destroy_cm(struct kref *kref)
+{
+	__dtr_destroy_cm(kref, true);
+}
+
+static void dtr_destroy_cm_keep_id(struct kref *kref)
+{
+	__dtr_destroy_cm(kref, false);
 }
 
 static void dtr_disconnect_path(struct dtr_path *path)
