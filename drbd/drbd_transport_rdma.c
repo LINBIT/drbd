@@ -313,12 +313,6 @@ struct dtr_accept_data {
 	struct dtr_path *path;
 };
 
-struct dtr_connect_data {
-	struct work_struct work;
-	struct dtr_cm *cm;
-	struct dtr_path *path;
-};
-
 static int dtr_init(struct drbd_transport *transport);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
@@ -1158,20 +1152,6 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	schedule_work(&cs->work.work);
 }
 
-static void dtr_cma_connect_fail_work_fn(struct work_struct *work)
-{
-	struct dtr_connect_data *cd = container_of(work, struct dtr_connect_data, work);
-	struct dtr_cm *cm = cd->cm;
-	struct dtr_path *path = cd->path;
-
-	kfree(cd);
-
-	atomic_set(&path->cs.active_state, PCS_INACTIVE);
-	wake_up(&path->cs.wq);
-
-	kref_put(&cm->kref, dtr_destroy_cm);
-}
-
 static void dtr_cma_connect(struct dtr_cm *cm)
 {
 	struct dtr_path *path = cm->path;
@@ -1188,32 +1168,20 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 	kref_get(&cm->kref); /* For path->cm */
 	err = dtr_path_prepare(path, cm, true);
 	if (err) {
-		struct dtr_connect_data *cd;
-
-		cd = kmalloc(sizeof(*cd), GFP_KERNEL);
-		if (!cd) {
-			tr_err(transport, "leaking a cm because -ENOMEM for a cd\n");
-			return;
-		}
-
-		INIT_WORK(&cd->work, dtr_cma_connect_fail_work_fn);
-		cd->cm = cm;
-		cd->path = path;
-
-		schedule_work(&cd->work);
-		return;
+		tr_err(transport, "dtr_path_prepared() = %d\n", err);
+		goto out;
 	}
 
 	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ESTABLISHED */
 	err = rdma_connect(cm->id, &dtr_conn_param);
 	if (err) {
-		kref_put(&cm->kref, dtr_destroy_cm);
 		tr_err(transport, "rdma_connect error %d\n", err);
 		goto out;
 	}
 
 	return;
 out:
+	kref_put(&cm->kref, dtr_destroy_cm);
 	dtr_cma_retry_connect(path, cm);
 }
 
