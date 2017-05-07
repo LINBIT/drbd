@@ -2537,6 +2537,13 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 		cm->pd = NULL;
 	}
 
+	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
+	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+
+	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
+		dtr_free_rx_desc(NULL, rx_desc);
+
 	if (cm->id) {
 		/* Just in case some callback is still triggered
 		 * after we kfree'd path. */
@@ -2549,13 +2556,6 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 		kref_put(&cm->path->path.kref, drbd_destroy_path);
 		cm->path = NULL;
 	}
-
-	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
-	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
-	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
-		dtr_free_rx_desc(NULL, rx_desc);
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
 }
