@@ -1279,7 +1279,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	/* context comes from rdma_create_id() */
 	struct dtr_cm *cm = cm_id->context;
 	struct dtr_listener *listener;
-	struct dtr_path *path;
 
 	if (!cm) {
 		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
@@ -1334,9 +1333,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		/* This is called for active and passive connections */
 
-		path = cm->path;
-		if (path)
-			dtr_path_established(path);
+		dtr_path_established(cm->path);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -1352,18 +1349,14 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		cm->state = ERROR;
 
-		path = cm->path;
-		if (path)
-			dtr_cma_retry_connect(path, cm);
+		dtr_cma_retry_connect(cm->path, cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
 		cm->state = DISCONNECTED;
 
-		path = cm->path;
-		if (path)
-			dtr_cma_disconnect(path);
+		dtr_cma_disconnect(cm->path);
 
 		kref_get(&cm->kref); /* offset the put at the end of the function */
 		break;
