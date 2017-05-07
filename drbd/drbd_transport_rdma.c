@@ -992,6 +992,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	kref_get(&path->path.kref);
 	cm->path = path;
 
+	/* The initial reference is gifted to the path */
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
 		rdma_reject(new_cm_id, NULL, 0);
@@ -1087,7 +1088,7 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 		goto out;
 	}
 
-	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ADDR_RESOLVED */
+	/* Holding the initial reference on cm, expecting RDMA_CM_EVENT_ADDR_RESOLVED */
 	err = rdma_resolve_addr(cm->id, NULL,
 				(struct sockaddr *)&path->path.peer_addr,
 				2000);
@@ -1184,6 +1185,7 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 		return;
 	}
 
+	kref_get(&cm->kref); /* For path->cm */
 	err = dtr_path_prepare(path, cm, true);
 	if (err) {
 		struct dtr_connect_data *cd;
