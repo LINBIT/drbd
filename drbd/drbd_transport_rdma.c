@@ -2438,6 +2438,7 @@ static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
 	enum connect_state_enum a, p;
+	struct dtr_cm *cm;
 	long t;
 	int err;
 
@@ -2475,28 +2476,27 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		break;
 	}
 
-	if (!path->cm || !path->cm->id)
+	cm = dtr_path_get_cm(path);
+	if (!cm)
 		return;
 
-	err = rdma_disconnect(path->cm->id);
+	err = rdma_disconnect(cm->id);
 	if (err) {
 		pr_warn("failed to disconnect, id %p context %p err %d\n",
-			path->cm->id, path->cm->id->context, err);
+			cm->id, cm->id->context, err);
 		/* We are ignoring errors here on purpose */
 	}
 
 	/* There might be a signal pending here. Not incorruptible! */
-	wait_event_timeout(path->cm->state_wq,
-			   path->cm->state >= DISCONNECTED,
+	wait_event_timeout(cm->state_wq,
+			   cm->state >= DISCONNECTED,
 			   HZ);
 
-	/*
-	   rx_descs_allocated = 0;
-	*/
-
-	if (path->cm->state < DISCONNECTED)
+	if (cm->state < DISCONNECTED)
 		/* rdma_stream->rdma_transport might still be NULL here. */
 		pr_warn("WARN: not properly disconnected\n");
+
+	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void dtr_reclaim_cm(struct rcu_head *rcu_head)
