@@ -834,13 +834,17 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	struct dtr_cm *cm2;
 
 	kref_get(&cm->kref); /* hold it for dtr_cm_alloc_rdma_res()... */
-	cm2 = xchg(&path->cm, cm); // RCU xchg
+	if (active)
+		cm2 = cmpxchg(&path->cm, NULL, cm); // RCU xchg
+	else
+		cm2 = xchg(&path->cm, cm); // RCU xchg
 	if (cm2) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		/* err out if called form dtr_cma_connect(), since the new cm
 		   is not connectet yet. */
 		if (active) {
+			/* Due to the cmpxchg() path->cm was not changed! */
 			kref_put(&cm->kref, dtr_destroy_cm);
 			return -ENOENT;
 		}
