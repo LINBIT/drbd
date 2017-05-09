@@ -352,6 +352,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path);
+static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
@@ -593,11 +594,10 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	}
 	memcpy(send_buffer, buf, size);
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
+	cm = dtr_path_get_cm(path);
 	if (!cm) {
 		err = -ECONNRESET;
-		goto out_unlock;
+		goto out_put;
 	}
 
 	device = cm->id->device;
@@ -610,8 +610,8 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->stream_nr = ST_FLOW_CTRL;
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
-out_unlock:
-	rcu_read_unlock();
+out_put:
+	kref_put(&cm->kref, dtr_destroy_cm);
 out:
 	return err;
 }
@@ -868,14 +868,14 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	return err;
 }
 
-static struct dtr_cm * dtr_path_get_cm(struct dtr_path *path)
+static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
 {
 	struct dtr_cm *cm;
 
 	rcu_read_lock();
 	cm = rcu_dereference(path->cm);
-	if (cm)
-		kref_get(&cm->kref);
+	if (cm && !kref_get_unless_zero(&cm->kref))
+		cm = NULL;
 	rcu_read_unlock();
 	return cm;
 }
@@ -1881,10 +1881,8 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	}
 	BUG_ON(PageHighMem(page));
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
+	cm = dtr_path_get_cm(path);
 	if (!cm) {
-		rcu_read_unlock();
 		kfree(rx_desc);
 		drbd_free_pages(transport, page, 0);
 		return -ECONNRESET;
@@ -1898,7 +1896,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	rx_desc->sge.length = alloc_size;
 
 	err = dtr_post_rx_desc(cm, rx_desc);
-	rcu_read_unlock();
+	kref_put(&cm->kref, dtr_destroy_cm);
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
 		dtr_free_rx_desc(NULL, rx_desc);
@@ -2057,14 +2055,12 @@ static int dtr_repost_tx_desc(struct drbd_rdma_transport *rdma_transport,
 		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
 		if (!path)
 			break;
-		rcu_read_lock();
-		cm = rcu_dereference(path->cm);
+		cm = dtr_path_get_cm(path);
 		if (!cm) {
-			rcu_read_unlock();
 			break;
 		}
 		err = __dtr_post_tx_desc(cm, tx_desc);
-		rcu_read_unlock();
+		kref_put(&cm->kref, dtr_destroy_cm);
 	} while (err);
 
 	return err;
@@ -2100,11 +2096,10 @@ retry:
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
 		goto retry;
 
-	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
+	cm = dtr_path_get_cm(path);
 	if (!cm) {
 		err = -ECONNRESET;
-		goto out_unlock;
+		goto out_put;
 	}
 	device = cm->id->device;
 	switch (tx_desc->type) {
@@ -2128,8 +2123,8 @@ retry:
 	}
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
-out_unlock:
-	rcu_read_unlock();
+out_put:
+	kref_put(&cm->kref, dtr_destroy_cm);
 	return err;
 }
 
