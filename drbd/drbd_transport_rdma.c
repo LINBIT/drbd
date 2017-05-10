@@ -579,26 +579,25 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	struct drbd_rdma_tx_desc *tx_desc;
 	struct dtr_cm *cm;
 	void *send_buffer;
-	int err = -ENOMEM;
+	int err = -ECONNRESET;
 
 	// pr_info("%s: dtr_send() size = %d data[0]:%lx\n", rdma_stream->name, (int)size, *(unsigned long*)buf);
 
+	cm = dtr_path_get_cm(path);
+	if (!cm)
+		goto out;
+
+	err = -ENOMEM;
 	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
 	if (!tx_desc)
-		goto out;
+		goto out_put;
 
 	send_buffer = kmalloc(size, GFP_NOIO);
 	if (!send_buffer) {
 		kfree(tx_desc);
-		goto out;
-	}
-	memcpy(send_buffer, buf, size);
-
-	cm = dtr_path_get_cm(path);
-	if (!cm) {
-		err = -ECONNRESET;
 		goto out_put;
 	}
+	memcpy(send_buffer, buf, size);
 
 	device = cm->id->device;
 	tx_desc->type = SEND_MSG;
