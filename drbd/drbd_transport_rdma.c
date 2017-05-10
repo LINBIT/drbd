@@ -1827,6 +1827,7 @@ static void dtr_free_rx_desc(struct dtr_cm *on_cm_posted, struct drbd_rdma_rx_de
 	path = cm->path;
 	alloc_size = path->rdma_transport->rx_allocation_size;
 	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
+	kref_put(&cm->kref, dtr_destroy_cm);
 
 	if (rx_desc->page) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
@@ -1878,7 +1879,6 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	rx_desc->sge.length = alloc_size;
 
 	err = dtr_post_rx_desc(cm, rx_desc);
-	kref_put(&cm->kref, dtr_destroy_cm);
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
 		dtr_free_rx_desc(NULL, rx_desc);
@@ -2377,7 +2377,10 @@ static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
+	struct drbd_rdma_rx_desc *rx_desc, *tmp;
 	enum connect_state_enum a, p;
+	LIST_HEAD(posted_rx_descs);
+	unsigned long flags;
 	struct dtr_cm *cm;
 	long t;
 	int err;
@@ -2436,6 +2439,13 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		/* rdma_stream->rdma_transport might still be NULL here. */
 		pr_warn("WARN: not properly disconnected\n");
 
+	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
+	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+
+	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
+		dtr_free_rx_desc(NULL, rx_desc);
+
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
@@ -2449,9 +2459,6 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
-	struct drbd_rdma_rx_desc *rx_desc, *tmp;
-	LIST_HEAD(posted_rx_descs);
-	unsigned long flags;
 
 
 	if (cm->send_cq && cm->path)
@@ -2485,13 +2492,6 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 		ib_dealloc_pd(cm->pd);
 		cm->pd = NULL;
 	}
-
-	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
-	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
-	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
-		dtr_free_rx_desc(NULL, rx_desc);
 
 	if (cm->id) {
 		/* Just in case some callback is still triggered
