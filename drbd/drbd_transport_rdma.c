@@ -1281,8 +1281,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_ESTABLISHED:
 		// pr_info("%s: RDMA_CM_EVENT_ESTABLISHED\n", cm->name);
 		/* cm->state = CONNECTED; is set later in the work item */
-
 		/* This is called for active and passive connections */
+
+		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 
 		if (cm->path->cm == cm)
 			dtr_path_established(cm->path);
@@ -1310,7 +1311,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		dtr_cma_disconnect(cm->path);
 
-		kref_get(&cm->kref); /* offset the put at the end of the function */
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
