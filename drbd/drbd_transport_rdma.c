@@ -1830,6 +1830,7 @@ static void dtr_free_rx_desc(struct dtr_cm *on_cm_posted, struct drbd_rdma_rx_de
 {
 	struct dtr_path *path;
 	struct ib_device *device;
+	unsigned long flags;
 	struct dtr_cm *cm;
 	int alloc_size;
 
@@ -1837,9 +1838,9 @@ static void dtr_free_rx_desc(struct dtr_cm *on_cm_posted, struct drbd_rdma_rx_de
 		return; /* Allow call with NULL */
 
 	if (on_cm_posted) {
-		spin_lock(&on_cm_posted->posted_rx_descs_lock);
+		spin_lock_irqsave(&on_cm_posted->posted_rx_descs_lock, flags);
 		list_del(&rx_desc->list); /* from  &on_path_posted->posted_rx_descs */
-		spin_unlock(&on_cm_posted->posted_rx_descs_lock);
+		spin_unlock_irqrestore(&on_cm_posted->posted_rx_descs_lock, flags);
 	}
 	cm = rx_desc->cm;
 	device = cm->id->device;
