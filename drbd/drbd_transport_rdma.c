@@ -1570,10 +1570,6 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 	rx_desc = (struct drbd_rdma_rx_desc *) (unsigned long) wc.wr_id;
 
-	spin_lock(&cm->posted_rx_descs_lock);
-	list_del(&rx_desc->list); /* from  &path->posted_rx_descs */
-	spin_unlock(&cm->posted_rx_descs_lock);
-
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
@@ -1600,12 +1596,23 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			}
 		}
 
-		dtr_free_rx_desc(NULL, rx_desc);
+		/* dtr_free_rx_desc(NULL, rx_desc);
+		   dtr_free_rx_desc() will call drbd_free_page(), and that function
+		   should not be called from IRQ context. This callback executes
+		   in the context of the timer interrupt.
+
+		   We simply leave it on the posted_rx_descs_list, it will taken
+		   and freed from there by __dtr_disconnect_path()
+		 */
 
 		cm->state = ERROR;
 
 		return 0;
 	}
+
+	spin_lock(&cm->posted_rx_descs_lock);
+	list_del(&rx_desc->list); /* from  &path->posted_rx_descs */
+	spin_unlock(&cm->posted_rx_descs_lock);
 
 	rx_desc->size = wc.byte_len;
 	immediate.i = be32_to_cpu(wc.ex.imm_data);
