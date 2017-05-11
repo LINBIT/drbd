@@ -983,7 +983,6 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	if (err) {
 		rdma_reject(new_cm_id, NULL, 0);
 		kref_sub(&cm->kref, 2, dtr_destroy_cm);
-		kref_put(&path->path.kref, drbd_destroy_path);
 		return;
 	}
 
