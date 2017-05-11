@@ -872,8 +872,13 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	int i, p, err;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
-	if (p < PCS_CONNECTING)
+	if (p < PCS_CONNECTING) {
+		if (path->cs.active) {
+			atomic_set(&cs->active_state, PCS_INACTIVE);
+			wake_up(&cs->wq);
+		}
 		return;
+	}
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		__dtr_refill_rx_desc(path, i);
@@ -909,8 +914,13 @@ static void dtr_path_established(struct dtr_path *path)
 {
 	struct dtr_connect_state *cs = &path->cs;
 
-	if (atomic_read(&cs->passive_state) < PCS_CONNECTING)
+	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
+		if (path->cs.active) {
+			atomic_set(&cs->active_state, PCS_INACTIVE);
+			wake_up(&cs->wq);
+		}
 		return;
+	}
 
 	/* In case we came here, since a passive side was established, we
 	   might need to cancel the delayed work for the active connect tries */
