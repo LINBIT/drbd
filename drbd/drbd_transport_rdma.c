@@ -1814,12 +1814,17 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc
 
 	ib_dma_sync_single_for_device(cm->id->device,
 				      rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+
+	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+	list_add(&rx_desc->list, &cm->posted_rx_descs);
+	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+
 	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
-	if (!err) {
+	if (err) {
 		spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-		list_add(&rx_desc->list, &cm->posted_rx_descs);
+		list_del(&rx_desc->list);
 		spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-	} else {
+
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
 	}
 
