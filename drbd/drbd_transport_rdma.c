@@ -358,6 +358,7 @@ static void dtr_destroy_cm_keep_id(struct kref *kref);
 static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_cm *, void *));
 static int dtr_activate_path(struct dtr_path *path);
+static void dtr_free_posted_rx_desc(struct dtr_cm *cm);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -1126,8 +1127,10 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct dtr_cm *cm;
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
-	if (cm)
+	if (cm) {
+		dtr_free_posted_rx_desc(cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
+	}
 
 	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
 	schedule_work(&cs->work.work);
@@ -2382,12 +2385,23 @@ static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 	}
 }
 
-static void __dtr_disconnect_path(struct dtr_path *path)
+static void dtr_free_posted_rx_desc(struct dtr_cm *cm)
 {
 	struct drbd_rdma_rx_desc *rx_desc, *tmp;
-	enum connect_state_enum a, p;
 	LIST_HEAD(posted_rx_descs);
 	unsigned long flags;
+
+	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
+	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
+	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
+
+	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
+		dtr_free_rx_desc(NULL, rx_desc);
+}
+
+static void __dtr_disconnect_path(struct dtr_path *path)
+{
+	enum connect_state_enum a, p;
 	struct dtr_cm *cm;
 	long t;
 	int err;
@@ -2446,13 +2460,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		/* rdma_stream->rdma_transport might still be NULL here. */
 		pr_warn("WARN: not properly disconnected\n");
 
-	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
-	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
-	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
-		dtr_free_rx_desc(NULL, rx_desc);
-
+	dtr_free_posted_rx_desc(cm);
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
