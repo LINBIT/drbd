@@ -218,8 +218,6 @@ enum connect_state_enum {
 
 struct dtr_connect_state {
 	struct delayed_work retry_connect_work;
-	struct work_struct establish_work;
-	struct work_struct disconnect_work;
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
 	wait_queue_head_t wq;
@@ -297,6 +295,9 @@ struct dtr_cm {
 #endif
 	struct list_head posted_rx_descs;
 	spinlock_t posted_rx_descs_lock;
+
+	struct work_struct establish_work;
+	struct work_struct disconnect_work;
 
 	enum drbd_rdma_state state;
 	wait_queue_head_t state_wq;
@@ -867,10 +868,10 @@ static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
 
 static void dtr_path_established_work_fn(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, establish_work);
-	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, establish_work);
+	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
-	struct dtr_cm *cm;
+	struct dtr_connect_state *cs = &path->cs;
 	int i, p, err;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
@@ -912,8 +913,9 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	wake_up(&cs->wq);
 }
 
-static void dtr_path_established(struct dtr_path *path)
+static void dtr_path_established(struct dtr_cm *cm)
 {
+	struct dtr_path *path = cm->path;
 	struct dtr_connect_state *cs = &path->cs;
 
 	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
@@ -924,8 +926,8 @@ static void dtr_path_established(struct dtr_path *path)
 		return;
 	}
 
-	INIT_WORK(&cs->establish_work, dtr_path_established_work_fn);
-	schedule_work(&cs->establish_work);
+	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
+	schedule_work(&cm->establish_work);
 }
 
 static struct dtr_cm *dtr_alloc_cm(void)
@@ -1179,8 +1181,8 @@ out:
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, disconnect_work);
-	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, disconnect_work);
+	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct drbd_path *drbd_path = &path->path;
 	int err;
@@ -1222,12 +1224,10 @@ abort:
 	kref_put(&path->path.kref, drbd_destroy_path);
 }
 
-static void dtr_cma_disconnect(struct dtr_path *path)
+static void dtr_cma_disconnect(struct dtr_cm *cm)
 {
-	struct dtr_connect_state *cs = &path->cs;
-
-	INIT_WORK(&cs->disconnect_work, dtr_cma_disconnect_work_fn);
-	schedule_work(&cs->disconnect_work);
+	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
+	schedule_work(&cm->disconnect_work);
 }
 
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
@@ -1291,8 +1291,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 
-		if (cm->path->cm == cm)
-			dtr_path_established(cm->path);
+		dtr_path_established(cm);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -1315,7 +1314,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
 		cm->state = DISCONNECTED;
 
-		dtr_cma_disconnect(cm->path);
+		dtr_cma_disconnect(cm);
 
 		break;
 
