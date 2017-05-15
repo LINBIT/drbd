@@ -874,6 +874,12 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = &path->cs;
 	int i, p, err;
 
+
+	err = cm != path->cm;
+	kref_put(&cm->kref, dtr_destroy_cm);
+	if (err)
+		return;
+
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
 	if (p < PCS_CONNECTING) {
 		if (path->cs.active) {
@@ -926,6 +932,7 @@ static void dtr_path_established(struct dtr_cm *cm)
 		return;
 	}
 
+	kref_get(&cm->kref);
 	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
 	schedule_work(&cm->establish_work);
 }
@@ -1187,6 +1194,11 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	struct drbd_path *drbd_path = &path->path;
 	int err;
 
+	err = cm != path->cm;
+	kref_put(&cm->kref, dtr_destroy_cm);
+	if (err)
+		return;
+
 	if (drbd_path->established) {
 		drbd_path->established = false;
 		drbd_path_event(transport, drbd_path);
@@ -1226,6 +1238,7 @@ abort:
 
 static void dtr_cma_disconnect(struct dtr_cm *cm)
 {
+	kref_get(&cm->kref);
 	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 	schedule_work(&cm->disconnect_work);
 }
