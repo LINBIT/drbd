@@ -821,7 +821,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 /* The following functions (at least)
    dtr_path_established_work_fn(), dtr_path_established(),
    dtr_cma_accept_work_fn(), dtr_cma_accept(),
-   dtr_cma_retry_connect_work_fn1(), dtr_cma_retry_connect_work_fn2(),
+   dtr_cma_retry_connect_work_fn(),
    dtr_cma_retry_connect(),
    dtr_cma_connect_fail_work_fn(), dtr_cma_connect(),
    dtr_cma_disconnect_work_fn(), dtr_cma_disconnect(),
@@ -1099,7 +1099,7 @@ out:
 	return err;
 }
 
-static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
+static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 {
 	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, retry_connect_work.work);
 	enum connect_state_enum p;
@@ -1117,32 +1117,17 @@ static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "dtr_start_try_connect failed  %d\n", err);
-		INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn2);
+		INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn);
 		schedule_delayed_work(&cs->retry_connect_work, HZ);
 	}
 }
 
-static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
-{
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, retry_connect_work.work);
-	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
-	struct drbd_transport *transport = &path->rdma_transport->transport;
-	struct net_conf *nc;
-	long connect_int = 10 * HZ;
-
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-	if (nc)
-		connect_int = nc->connect_int * HZ;
-	rcu_read_unlock();
-
-	INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn2);
-	schedule_delayed_work(&cs->retry_connect_work, connect_int);
-}
-
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm)
 {
+	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct dtr_connect_state *cs = &path->cs;
+	long connect_int = 10 * HZ;
+	struct net_conf *nc;
 	struct dtr_cm *cm;
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
@@ -1151,8 +1136,14 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
 
-	INIT_WORK(&cs->retry_connect_work.work, dtr_cma_retry_connect_work_fn1);
-	schedule_work(&cs->retry_connect_work.work);
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc)
+		connect_int = nc->connect_int * HZ;
+	rcu_read_unlock();
+
+	INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn);
+	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
 static void dtr_cma_connect(struct dtr_cm *cm)
