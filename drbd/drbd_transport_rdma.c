@@ -2450,7 +2450,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	switch (a) {
 	case PCS_CONNECTING:
 		if (delayed_work_pending(&path->cs.retry_connect_work))
-			mod_timer_pending(&path->cs.retry_connect_work.timer, 1);
+			flush_delayed_work(&path->cs.retry_connect_work);
 	case PCS_REQUEST_ABORT:
 		t = wait_event_timeout(path->cs.wq,
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
