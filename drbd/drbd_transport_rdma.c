@@ -1117,7 +1117,6 @@ static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "dtr_start_try_connect failed  %d\n", err);
-		INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn);
 		schedule_delayed_work(&cs->retry_connect_work, HZ);
 	}
 }
@@ -1142,7 +1141,6 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 		connect_int = nc->connect_int * HZ;
 	rcu_read_unlock();
 
-	INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn);
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
@@ -3086,6 +3084,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 	spin_lock_init(&path->send_flow_control_lock);
+	INIT_DELAYED_WORK(&path->cs.retry_connect_work, dtr_cma_retry_connect_work_fn);
 
 	if (rdma_transport->active) {
 		err = dtr_activate_path(path);
