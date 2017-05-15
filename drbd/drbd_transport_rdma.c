@@ -217,7 +217,9 @@ enum connect_state_enum {
 };
 
 struct dtr_connect_state {
-	struct delayed_work work;
+	struct delayed_work retry_connect_work;
+	struct work_struct establish_work;
+	struct work_struct disconnect_work;
 	atomic_t active_state; /* trying to establish a connection*/
 	atomic_t passive_state; /* listening for a connection */
 	wait_queue_head_t wq;
@@ -865,7 +867,7 @@ static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
 
 static void dtr_path_established_work_fn(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, establish_work);
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct dtr_cm *cm;
@@ -922,12 +924,8 @@ static void dtr_path_established(struct dtr_path *path)
 		return;
 	}
 
-	/* In case we came here, since a passive side was established, we
-	   might need to cancel the delayed work for the active connect tries */
-	cancel_delayed_work(&cs->work);
-
-	INIT_WORK(&cs->work.work, dtr_path_established_work_fn);
-	schedule_work(&cs->work.work);
+	INIT_WORK(&cs->establish_work, dtr_path_established_work_fn);
+	schedule_work(&cs->establish_work);
 }
 
 static struct dtr_cm *dtr_alloc_cm(void)
@@ -1092,7 +1090,7 @@ out:
 
 static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, retry_connect_work.work);
 	enum connect_state_enum p;
 	int err;
 
@@ -1108,13 +1106,14 @@ static void dtr_cma_retry_connect_work_fn2(struct work_struct *work)
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 
 		tr_err(transport, "dtr_start_try_connect failed  %d\n", err);
-		schedule_delayed_work(&cs->work, HZ);
+		INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn2);
+		schedule_delayed_work(&cs->retry_connect_work, HZ);
 	}
 }
 
 static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, retry_connect_work.work);
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct net_conf *nc;
@@ -1126,8 +1125,8 @@ static void dtr_cma_retry_connect_work_fn1(struct work_struct *work)
 		connect_int = nc->connect_int * HZ;
 	rcu_read_unlock();
 
-	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
-	schedule_delayed_work(&cs->work, connect_int);
+	INIT_DELAYED_WORK(&cs->retry_connect_work, dtr_cma_retry_connect_work_fn2);
+	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm)
@@ -1141,8 +1140,8 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
 
-	INIT_WORK(&cs->work.work, dtr_cma_retry_connect_work_fn1);
-	schedule_work(&cs->work.work);
+	INIT_WORK(&cs->retry_connect_work.work, dtr_cma_retry_connect_work_fn1);
+	schedule_work(&cs->retry_connect_work.work);
 }
 
 static void dtr_cma_connect(struct dtr_cm *cm)
@@ -1180,7 +1179,7 @@ out:
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, work.work);
+	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, disconnect_work);
 	struct dtr_path *path = container_of(cs, struct dtr_path, cs);
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct drbd_path *drbd_path = &path->path;
@@ -1227,13 +1226,8 @@ static void dtr_cma_disconnect(struct dtr_path *path)
 {
 	struct dtr_connect_state *cs = &path->cs;
 
-	if (!delayed_work_pending(&cs->work)) {
-		INIT_WORK(&cs->work.work, dtr_cma_disconnect_work_fn);
-		schedule_work(&cs->work.work);
-	} else {
-		struct drbd_transport *transport = &path->rdma_transport->transport;
-		tr_warn(transport, "not generating disconnect drbd event\n");
-	}
+	INIT_WORK(&cs->disconnect_work, dtr_cma_disconnect_work_fn);
+	schedule_work(&cs->disconnect_work);
 }
 
 static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event *event)
@@ -2443,8 +2437,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	switch (a) {
 	case PCS_CONNECTING:
-		if (delayed_work_pending(&path->cs.work))
-			mod_timer_pending(&path->cs.work.timer, 1);
+		if (delayed_work_pending(&path->cs.retry_connect_work))
+			mod_timer_pending(&path->cs.retry_connect_work.timer, 1);
 	case PCS_REQUEST_ABORT:
 		t = wait_event_timeout(path->cs.wq,
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
@@ -2622,7 +2616,6 @@ static int dtr_activate_path(struct dtr_path *path)
 	cs = &path->cs;
 
 	init_waitqueue_head(&cs->wq);
-	INIT_DELAYED_WORK(&cs->work, dtr_cma_retry_connect_work_fn2);
 
 	atomic_set(&cs->passive_state, PCS_CONNECTING);
 	atomic_set(&cs->active_state, PCS_CONNECTING);
