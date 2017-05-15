@@ -349,6 +349,7 @@ static void dtr_refill_rx_desc(struct drbd_rdma_transport *rdma_transport,
 			       enum drbd_stream stream);
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct drbd_rdma_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_cm *cm, struct drbd_rdma_rx_desc *rx_desc);
+static void dtr_cma_disconnect_work_fn(struct work_struct *work);
 static void dtr_disconnect_path(struct dtr_path *path);
 static void __dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
@@ -933,7 +934,6 @@ static void dtr_path_established(struct dtr_cm *cm)
 	}
 
 	kref_get(&cm->kref);
-	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
 	schedule_work(&cm->establish_work);
 }
 
@@ -948,6 +948,8 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	kref_init(&cm->kref);
 	INIT_LIST_HEAD(&cm->posted_rx_descs);
 	spin_lock_init(&cm->posted_rx_descs_lock);
+	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
+	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 
 	return cm;
 }
@@ -1239,7 +1241,6 @@ abort:
 static void dtr_cma_disconnect(struct dtr_cm *cm)
 {
 	kref_get(&cm->kref);
-	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 	schedule_work(&cm->disconnect_work);
 }
 
