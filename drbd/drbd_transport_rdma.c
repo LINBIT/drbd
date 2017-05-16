@@ -368,6 +368,7 @@ static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
 	.instance_size = sizeof(struct dtr_transport),
 	.path_instance_size = sizeof(struct dtr_path),
+	.listener_instance_size = sizeof(struct dtr_listener),
 	.module = THIS_MODULE,
 	.init = dtr_init,
 	.list = LIST_HEAD_INIT(rdma_transport_class.list),
@@ -2568,16 +2569,13 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtr_create_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct drbd_listener **ret_listener)
+static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct drbd_listener *drbd_listener)
 {
-	struct dtr_listener *listener = NULL;
+	struct dtr_listener *listener = container_of(drbd_listener, struct dtr_listener, listener);
 	struct sockaddr_storage my_addr;
 	int err = -ENOMEM;
 
 	my_addr = *(struct sockaddr_storage *)addr;
-	listener = kzalloc(sizeof(*listener), GFP_KERNEL);
-	if (!listener)
-		goto out;
 
 	err = dtr_create_cm_id(&listener->cm);
 	if (err) {
@@ -2600,12 +2598,11 @@ static int dtr_create_listener(struct drbd_transport *transport, const struct so
 	listener->listener.listen_addr = *(struct sockaddr_storage *)addr;
 	listener->listener.destroy = dtr_destroy_listener;
 
-	*ret_listener = &listener->listener;
 	return 0;
 out:
-	if (listener && listener->cm.id)
+	if (listener->cm.id)
 		rdma_destroy_id(listener->cm.id);
-	kfree(listener);
+
 	return err;
 }
 
@@ -2626,7 +2623,7 @@ static int dtr_activate_path(struct dtr_path *path)
 		tr_warn(transport, "ASSERTION FAILED: in dtr_activate_path() found listener, dropping it\n");
 		drbd_put_listener(&path->path);
 	}
-	err = drbd_get_listener(transport, &path->path, dtr_create_listener);
+	err = drbd_get_listener(transport, &path->path, dtr_init_listener);
 	if (err)
 		goto out_no_put;
 
