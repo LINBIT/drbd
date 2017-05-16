@@ -164,7 +164,7 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 }
 
 int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
-		      int (*create_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener **))
+		      int (*init_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener *))
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
@@ -193,20 +193,25 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		if (listener)
 			return 0;
 
-		err = create_listener(transport, addr, &new_listener);
-		if (err) {
-			if (err == -EADDRINUSE && ++tries < 3) {
-				schedule_timeout_uninterruptible(HZ / 20);
-				continue;
-			}
-			return err;
-		}
+		new_listener = kmalloc(transport->class->listener_instance_size, GFP_KERNEL);
+		if (!new_listener)
+			return -ENOMEM;
 
 		kref_init(&new_listener->kref);
 		INIT_LIST_HEAD(&new_listener->waiters);
 		new_listener->resource = resource;
 		new_listener->pending_accepts = 0;
 		spin_lock_init(&new_listener->waiters_lock);
+
+		err = init_listener(transport, addr, new_listener);
+		if (err) {
+			kfree(new_listener);
+			if (err == -EADDRINUSE && ++tries < 3) {
+				schedule_timeout_uninterruptible(HZ / 20);
+				continue;
+			}
+			return err;
+		}
 	}
 }
 

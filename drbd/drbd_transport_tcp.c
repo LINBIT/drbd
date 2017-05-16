@@ -101,6 +101,7 @@ static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
 	.instance_size = sizeof(struct drbd_tcp_transport),
 	.path_instance_size = sizeof(struct dtt_path),
+	.listener_instance_size = sizeof(struct dtt_listener),
 	.module = THIS_MODULE,
 	.init = dtt_init,
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
@@ -757,13 +758,13 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtt_create_listener(struct drbd_transport *transport,
-			       const struct sockaddr *addr,
-			       struct drbd_listener **ret_listener)
+static int dtt_init_listener(struct drbd_transport *transport,
+			     const struct sockaddr *addr,
+			     struct drbd_listener *drbd_listener)
 {
 	int err, sndbuf_size, rcvbuf_size, addr_len;
 	struct sockaddr_storage my_addr;
-	struct dtt_listener *listener = NULL;
+	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what;
@@ -800,11 +801,6 @@ static int dtt_create_listener(struct drbd_transport *transport,
 		goto out;
 
 	what = "kmalloc";
-	listener = kmalloc(sizeof(*listener), GFP_KERNEL);
-	if (!listener) {
-		err = -ENOMEM;
-		goto out;
-	}
 
 	listener->s_listen = s_listen;
 	write_lock_bh(&s_listen->sk->sk_callback_lock);
@@ -822,7 +818,6 @@ static int dtt_create_listener(struct drbd_transport *transport,
 	listener->listener.destroy = dtt_destroy_listener;
 	init_waitqueue_head(&listener->wait);
 
-	*ret_listener = &listener->listener;
 	return 0;
 out:
 	if (s_listen)
@@ -831,8 +826,6 @@ out:
 	if (err < 0 &&
 	    err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS && err != -EADDRINUSE)
 		tr_err(transport, "%s failed, err = %d\n", what, err);
-
-	kfree(listener);
 
 	return err;
 }
@@ -917,7 +910,7 @@ static int dtt_connect(struct drbd_transport *transport)
 		if (!drbd_path->listener) {
 			kref_get(&drbd_path->kref);
 			spin_unlock(&tcp_transport->paths_lock);
-			err = drbd_get_listener(transport, drbd_path, dtt_create_listener);
+			err = drbd_get_listener(transport, drbd_path, dtt_init_listener);
 			kref_put(&drbd_path->kref, drbd_destroy_path);
 			if (err)
 				goto out;
@@ -1296,7 +1289,7 @@ retry:
 		drbd_put_listener(drbd_path);
 
 	if (active && !drbd_path->listener) {
-		int err = drbd_get_listener(transport, drbd_path, dtt_create_listener);
+		int err = drbd_get_listener(transport, drbd_path, dtt_init_listener);
 		if (err)
 			return err;
 	}
