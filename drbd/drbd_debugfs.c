@@ -1067,6 +1067,40 @@ static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+#define show_per_peer(M)						\
+	seq_printf(m, "%-16s", #M ":");					\
+	for_each_peer_device(peer_device, device)			\
+		seq_printf(m, " %12lld", ktime_to_ns(peer_device->M)); \
+	seq_printf(m, "\n")
+
+#define PRId64 "lld"
+
+static int device_req_timing_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	struct drbd_peer_device *peer_device;
+
+	seq_printf(m,
+		   "requests:        %12lu (all times in nanoseconds) \n"
+		   "in_actlog:       %12" PRId64 "\n"
+		   "pre_submit:      %12" PRId64 "\n",
+		   device->reqs,
+		   ktime_to_ns(device->in_actlog_kt),
+		   ktime_to_ns(device->pre_submit_kt));
+
+	seq_puts(m, "\npeer:           ");
+	for_each_peer_device(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+		seq_printf(m, " %12.12s", rcu_dereference(connection->transport.net_conf)->name);
+	}
+	seq_puts(m, "\n");
+	show_per_peer(pre_send_kt);
+	show_per_peer(acked_kt);
+	show_per_peer(net_done_kt);
+
+	return 0;
+}
+
 static int device_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_device *device = inode->i_private;
@@ -1095,6 +1129,7 @@ drbd_debugfs_device_attr(act_log_histogram)
 drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
+drbd_debugfs_device_attr(req_timing)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -1133,6 +1168,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(data_gen_id);
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
+	vol_dcf(req_timing);
 
 	/* Caller holds conf_update */
 	for_each_peer_device(peer_device, device) {
@@ -1156,6 +1192,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_data_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
+	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
 	drbd_debugfs_remove(&device->debugfs_vol);
 }
 

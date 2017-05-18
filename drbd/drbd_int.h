@@ -1164,6 +1164,10 @@ struct drbd_peer_device {
 	struct dentry *debugfs_peer_dev_resync_extents;
 	struct dentry *debugfs_peer_dev_proc_drbd;
 #endif
+	ktime_t pre_send_kt;
+	ktime_t acked_kt;
+	ktime_t net_done_kt;
+
 	struct {/* sender todo per peer_device */
 		bool was_ahead;
 	} todo;
@@ -1196,6 +1200,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_data_gen_id;
 	struct dentry *debugfs_vol_io_frozen;
 	struct dentry *debugfs_vol_ed_gen_id;
+	struct dentry *debugfs_vol_req_timing;
 #endif
 
 	unsigned int vnr;	/* volume number within the connection */
@@ -1276,6 +1281,11 @@ struct drbd_device {
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
+
+	spinlock_t timing_lock;
+	unsigned long reqs;
+	ktime_t in_actlog_kt;
+	ktime_t pre_submit_kt;
 };
 
 struct drbd_bm_aio_ctx {
@@ -2788,5 +2798,9 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
+
+#define ktime_aggregate_delta(D, ST, M) D->M = ktime_add(D->M, ktime_sub(ktime_get(), ST))
+#define ktime_aggregate(D, R, M) D->M = ktime_add(D->M, ktime_sub(R->M, R->start_kt))
+#define ktime_aggregate_pd(P, N, R, M) P->M = ktime_add(P->M, ktime_sub(R->M[N], R->start_kt))
 
 #endif

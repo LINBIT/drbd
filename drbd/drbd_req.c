@@ -196,6 +196,25 @@ void drbd_req_destroy(struct kref *kref)
 	s = req->rq_state[0];
 	destroy_next = req->destroy_next;
 
+	if (s & RQ_WRITE) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&device->timing_lock, flags);
+		device->reqs++;
+		ktime_aggregate(device, req, in_actlog_kt);
+		ktime_aggregate(device, req, pre_submit_kt);
+		for_each_peer_device(peer_device, device) {
+			int node_id = peer_device->node_id;
+			unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
+			if (!(ns & RQ_NET_MASK))
+				continue;
+			ktime_aggregate_pd(peer_device, node_id, req, pre_send_kt);
+			ktime_aggregate_pd(peer_device, node_id, req, acked_kt);
+			ktime_aggregate_pd(peer_device, node_id, req, net_done_kt);
+		}
+		spin_unlock_irqrestore(&device->timing_lock, flags);
+	}
+
 	/* paranoia */
 	for_each_peer_device(peer_device, device) {
 		unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
