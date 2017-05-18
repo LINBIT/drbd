@@ -34,6 +34,14 @@
 
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
+static inline unsigned long ktime_to_jiffies(ktime_t kt)
+{
+	/* ktime_t starts 1st of jan 1970, 00:00 Uhr UTC,
+	   while jiffies start a system boot. */
+	ktime_t o = ktime_sub(ktime_get(), kt);
+	return jiffies - nsecs_to_jiffies(ktime_to_ns(o));
+}
+
 #ifndef __disk_stat_inc
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
@@ -46,7 +54,8 @@ static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request 
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
 	generic_end_io_acct(bio_data_dir(req->master_bio),
-			    &device->vdisk->part0, req->start_jif);
+			    &device->vdisk->part0,
+			    ktime_to_jiffies(req->start_kt));
 }
 #else
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
@@ -685,7 +694,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if ((old_net & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
 		dec_ap_pending(peer_device);
 		++c_put;
-		req->acked_jif[peer_device->node_id] = jiffies;
+		req->acked_kt[peer_device->node_id] = ktime_get();
 		advance_conn_req_ack_pending(peer_device, req);
 	}
 
@@ -699,7 +708,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			atomic_sub(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
 			kref_put(&req->kref, drbd_req_destroy);
-		req->net_done_jif[peer_device->node_id] = jiffies;
+		req->net_done_kt[peer_device->node_id] = ktime_get();
 
 		/* in ahead/behind mode, or just in case,
 		 * before we finally destroy this request,
@@ -1467,7 +1476,7 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
  * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
  */
 static struct drbd_request *
-drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long start_jif)
+drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_kt)
 {
 	const int rw = bio_data_dir(bio);
 	struct drbd_request *req;
@@ -1482,7 +1491,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 		bio_endio(bio, -ENOMEM);
 		return ERR_PTR(-ENOMEM);
 	}
-	req->start_jif = start_jif;
+	req->start_kt = start_kt;
 
 	if (!get_ldev(device)) {
 		bio_put(req->private_bio);
@@ -1506,7 +1515,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, unsigned long 
 			if (!drbd_al_begin_io_fastpath(device, &req->i))
 				goto queue_for_submitter_thread;
 			req->rq_state[0] |= RQ_IN_ACT_LOG;
-			req->in_actlog_jif = jiffies;
+			req->in_actlog_kt = ktime_get();
 		}
 	}
 	return req;
@@ -1710,7 +1719,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			&device->pending_master_completion[rw == WRITE]);
 	if (req->private_bio) {
 		/* needs to be marked within the same spinlock */
-		req->pre_submit_jif = jiffies;
+		req->pre_submit_kt = ktime_get();
 		list_add_tail(&req->req_pending_local,
 			&device->pending_completion[rw == WRITE]);
 		_req_mod(req, TO_BE_SUBMITTED, NULL);
@@ -1746,9 +1755,9 @@ out:
 		complete_master_bio(device, &m);
 }
 
-void __drbd_make_request(struct drbd_device *device, struct bio *bio, unsigned long start_jif)
+void __drbd_make_request(struct drbd_device *device, struct bio *bio, ktime_t start_kt)
 {
-	struct drbd_request *req = drbd_request_prepare(device, bio, start_jif);
+	struct drbd_request *req = drbd_request_prepare(device, bio, start_kt);
 	if (IS_ERR_OR_NULL(req))
 		return;
 	drbd_send_and_submit(device, req);
@@ -1840,7 +1849,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 				continue;
 
 			req->rq_state[0] |= RQ_IN_ACT_LOG;
-			req->in_actlog_jif = jiffies;
+			req->in_actlog_kt = ktime_get();
 			atomic_dec(&device->ap_actlog_cnt);
 		}
 
@@ -1924,7 +1933,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 	}
 	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, tl_requests) {
 		req->rq_state[0] |= RQ_IN_ACT_LOG;
-		req->in_actlog_jif = jiffies;
+		req->in_actlog_kt = ktime_get();
 		atomic_dec(&device->ap_actlog_cnt);
 		list_del_init(&req->tl_requests);
 		drbd_send_and_submit(device, req);
@@ -2110,7 +2119,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	struct drbd_resource *resource = device->resource;
-	unsigned long start_jif;
+	ktime_t start_kt;
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
 	struct bio_list *current_bio_list;
 #endif
@@ -2135,10 +2144,10 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-	start_jif = jiffies;
+	start_kt = ktime_get();
 
 	inc_ap_bio(device, bio_data_dir(bio));
-	__drbd_make_request(device, bio, start_jif);
+	__drbd_make_request(device, bio, start_kt);
 
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
 	current->bio_list = current_bio_list;
@@ -2200,8 +2209,9 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	struct drbd_device *device = net_req->device;
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 	int peer_node_id = peer_device->node_id;
+	unsigned long pre_send_jif = ktime_to_jiffies(net_req->pre_send_kt[peer_node_id]);
 
-	if (!time_after(now, net_req->pre_send_jif[peer_node_id] + ent))
+	if (!time_after(now, pre_send_jif + ent))
 		return false;
 
 	if (time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent))
@@ -2209,7 +2219,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 
 	if (net_req->rq_state[1 + peer_node_id] & RQ_NET_PENDING) {
 		drbd_warn(device, "Remote failed to finish a request within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
-			jiffies_to_msecs(now - net_req->pre_send_jif[peer_node_id]), ko_count, timeout);
+			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
 		return true;
 	}
 
@@ -2220,7 +2230,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	if (net_req->epoch == connection->send.current_epoch_nr) {
 		drbd_warn(device,
 			"We did not send a P_BARRIER for %ums > ko-count (%u) * timeout (%u * 0.1s); drbd kernel thread blocked?\n",
-			jiffies_to_msecs(now - net_req->pre_send_jif[peer_node_id]), ko_count, timeout);
+			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
 		return false;
 	}
 
@@ -2288,15 +2298,18 @@ void request_timer_fn(unsigned long data)
 	/* FIXME right now, this basically does a full transfer log walk *every time* */
 	spin_lock_irq(&device->resource->req_lock);
 	if (dt) {
+		unsigned long write_pre_submit_jif, read_pre_submit_jif;
 		req_read = list_first_entry_or_null(&device->pending_completion[0], struct drbd_request, req_pending_local);
 		req_write = list_first_entry_or_null(&device->pending_completion[1], struct drbd_request, req_pending_local);
 
+		write_pre_submit_jif = ktime_to_jiffies(req_write->pre_submit_kt);
+		read_pre_submit_jif = ktime_to_jiffies(req_read->pre_submit_kt);
 		oldest_submit_jif =
 			(req_write && req_read)
-			? ( time_before(req_write->pre_submit_jif, req_read->pre_submit_jif)
-			  ? req_write->pre_submit_jif : req_read->pre_submit_jif )
-			: req_write ? req_write->pre_submit_jif
-			: req_read ? req_read->pre_submit_jif : now;
+			? ( time_before(write_pre_submit_jif, read_pre_submit_jif)
+			  ? write_pre_submit_jif : read_pre_submit_jif )
+			: req_write ? write_pre_submit_jif
+			: req_read ? read_pre_submit_jif : now;
 
 		if (device->disk_state[NOW] > D_FAILED) {
 			et = min_not_zero(et, dt);
@@ -2354,7 +2367,7 @@ void request_timer_fn(unsigned long data)
 		if (!timeout)
 			continue;
 
-		pre_send_jif = req->pre_send_jif[connection->peer_node_id];
+		pre_send_jif = ktime_to_jiffies(req->pre_send_kt[connection->peer_node_id]);
 
 		ent = timeout * HZ/10 * ko_count;
 		et = min_not_zero(et, ent);

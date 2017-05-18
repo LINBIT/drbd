@@ -316,7 +316,7 @@ struct drbd_request {
 	struct list_head req_pending_local;
 
 	/* for generic IO accounting */
-	unsigned long start_jif;
+	ktime_t start_kt;
 
 	/* for DRBD internal statistics */
 
@@ -326,15 +326,15 @@ struct drbd_request {
 	 */
 
 	/* before actual request processing */
-	unsigned long in_actlog_jif;
+	ktime_t in_actlog_kt;
 
 	/* local disk */
-	unsigned long pre_submit_jif;
+	ktime_t pre_submit_kt;
 
 	/* per connection */
-	unsigned long pre_send_jif[DRBD_PEERS_MAX];
-	unsigned long acked_jif[DRBD_PEERS_MAX];
-	unsigned long net_done_jif[DRBD_PEERS_MAX];
+	ktime_t pre_send_kt[DRBD_PEERS_MAX];
+	ktime_t acked_kt[DRBD_PEERS_MAX];
+	ktime_t net_done_kt[DRBD_PEERS_MAX];
 
 	/* Possibly even more detail to track each phase:
 	 *  master_completion_jif
@@ -1769,7 +1769,7 @@ extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */
 extern void do_submit(struct work_struct *ws);
-extern void __drbd_make_request(struct drbd_device *, struct bio *, unsigned long);
+extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
 #ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);

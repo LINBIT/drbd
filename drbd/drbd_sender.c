@@ -2568,7 +2568,7 @@ static int process_one_request(struct drbd_connection *connection)
 	int err;
 	enum drbd_req_event what;
 
-	req->pre_send_jif[peer_device->node_id] = jiffies;
+	req->pre_send_kt[peer_device->node_id] = ktime_get();
 	if (drbd_req_is_write(req)) {
 		/* If a WRITE does not expect a barrier ack,
 		 * we are supposed to only send an "out of sync" info packet */

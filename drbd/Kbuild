@@ -38,6 +38,11 @@ else
 compat_objs += drbd-kernel-compat/blkdev_issue_zeroout.o
 endif
 
+ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
+		   $(objtree)/Module.symvers | wc -l),1)
+compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
+endif
+
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
