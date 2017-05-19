@@ -914,11 +914,15 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->rq_state[idx] & RQ_NET_PENDING);
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
 
-		/* close the epoch, in case it outgrew the limit */
-		rcu_read_lock();
-		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		p = nc->max_epoch_size;
-		rcu_read_unlock();
+		/* close the epoch, in case it outgrew the limit,
+		 * or this is a "batch bio" */
+		if (!(req->rq_state[0] & (RQ_UNMAP|RQ_WSAME))) {
+			rcu_read_lock();
+			nc = rcu_dereference(peer_device->connection->transport.net_conf);
+			p = nc->max_epoch_size;
+			rcu_read_unlock();
+		} else
+			p = 1;
 		if (device->resource->current_tle_writes >= p)
 			start_new_tl_epoch(device->resource);
 		break;
