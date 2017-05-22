@@ -622,8 +622,8 @@ static const struct file_operations resource_ ## name ## _fops = {	\
 drbd_debugfs_resource_attr(in_flight_summary)
 drbd_debugfs_resource_attr(state_twopc)
 
-#define drbd_dcf(top, obj, attr) do {		\
-	dentry = debugfs_create_file(#attr, S_IRUSR|S_IRUSR,	\
+#define drbd_dcf(top, obj, attr, perm) do {			\
+	dentry = debugfs_create_file(#attr, perm,		\
 			top, obj, &obj ## _ ## attr ## _fops);	\
 	if (IS_ERR_OR_NULL(dentry))				\
 		goto fail;					\
@@ -631,16 +631,16 @@ drbd_debugfs_resource_attr(state_twopc)
 	} while (0)
 
 #define res_dcf(attr) \
-	drbd_dcf(resource->debugfs_res, resource, attr)
+	drbd_dcf(resource->debugfs_res, resource, attr, S_IRUSR)
 
 #define conn_dcf(attr) \
-	drbd_dcf(connection->debugfs_conn, connection, attr)
+	drbd_dcf(connection->debugfs_conn, connection, attr, S_IRUSR)
 
 #define vol_dcf(attr) \
-	drbd_dcf(device->debugfs_vol, device, attr)
+	drbd_dcf(device->debugfs_vol, device, attr, S_IRUSR)
 
 #define peer_dev_dcf(attr) \
-	drbd_dcf(peer_device->debugfs_peer_dev, peer_device, attr)
+	drbd_dcf(peer_device->debugfs_peer_dev, peer_device, attr, S_IRUSR)
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource)
 {
@@ -1081,7 +1081,8 @@ static int device_req_timing_show(struct seq_file *m, void *ignored)
 	struct drbd_peer_device *peer_device;
 
 	seq_printf(m,
-		   "requests:        %12lu (all times in nanoseconds) \n"
+		   "timing values are nanoseconds; write an 'r' to reset all to 0\n\n"
+		   "requests:        %12lu\n"
 		   "in_actlog:       %12" PRId64 "\n"
 		   "pre_submit:      %12" PRId64 "\n",
 		   device->reqs,
@@ -1101,6 +1102,36 @@ static int device_req_timing_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static ssize_t device_req_timing_write(struct file *file, const char __user *ubuf,
+				       size_t cnt, loff_t *ppos)
+{
+	struct drbd_device *device = file_inode(file)->i_private;
+	char buffer;
+
+	if (copy_from_user(&buffer, ubuf, 1))
+		return -EFAULT;
+
+	if (buffer == 'r' || buffer == 'R') {
+		struct drbd_peer_device *peer_device;
+		unsigned long flags;
+
+		spin_lock_irqsave(&device->timing_lock, flags);
+		device->reqs = 0;
+		device->in_actlog_kt = ns_to_ktime(0);
+		device->pre_submit_kt = ns_to_ktime(0);
+
+		for_each_peer_device(peer_device, device) {
+			peer_device->pre_send_kt = ns_to_ktime(0);
+			peer_device->acked_kt = ns_to_ktime(0);
+			peer_device->net_done_kt = ns_to_ktime(0);
+		}
+		spin_unlock_irqrestore(&device->timing_lock, flags);
+	}
+
+	*ppos += cnt;
+	return cnt;
+}
+
 static int device_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_device *device = inode->i_private;
@@ -1108,7 +1139,7 @@ static int device_attr_release(struct inode *inode, struct file *file)
 	return single_release(inode, file);
 }
 
-#define drbd_debugfs_device_attr(name)						\
+#define __drbd_debugfs_device_attr(name, write_fn)				\
 static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 {										\
 	struct drbd_device *device = inode->i_private;				\
@@ -1118,10 +1149,12 @@ static int device_ ## name ## _open(struct inode *inode, struct file *file)	\
 static const struct file_operations device_ ## name ## _fops = {		\
 	.owner		= THIS_MODULE,						\
 	.open		= device_ ## name ## _open,				\
+	.write          = write_fn,						\
 	.read		= seq_read,						\
 	.llseek		= seq_lseek,						\
 	.release	= device_attr_release,					\
 };
+#define drbd_debugfs_device_attr(name) __drbd_debugfs_device_attr(name, NULL)
 
 drbd_debugfs_device_attr(oldest_requests)
 drbd_debugfs_device_attr(act_log_extents)
@@ -1129,7 +1162,7 @@ drbd_debugfs_device_attr(act_log_histogram)
 drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
-drbd_debugfs_device_attr(req_timing)
+__drbd_debugfs_device_attr(req_timing, device_req_timing_write)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -1168,7 +1201,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(data_gen_id);
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
-	vol_dcf(req_timing);
+	drbd_dcf(device->debugfs_vol, device, req_timing, S_IRUSR | S_IWUSR);
 
 	/* Caller holds conf_update */
 	for_each_peer_device(peer_device, device) {
