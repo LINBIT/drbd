@@ -800,8 +800,6 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	if (err < 0)
 		goto out;
 
-	what = "kmalloc";
-
 	listener->s_listen = s_listen;
 	write_lock_bh(&s_listen->sk->sk_callback_lock);
 	listener->original_sk_state_change = s_listen->sk->sk_state_change;
