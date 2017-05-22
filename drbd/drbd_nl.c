@@ -1332,12 +1332,12 @@ static bool effective_disk_size_determined(struct drbd_device *device)
 
 	if (device->ldev->md.effective_size != 0)
 		return true;
-	if (device->disk_state[NEW] == D_UP_TO_DATE)
+	if (device->disk_state[NOW] == D_UP_TO_DATE)
 		return true;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->disk_state[NEW] == D_UP_TO_DATE) {
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
 			rv = true;
 			break;
 		}
@@ -3300,7 +3300,7 @@ static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_d
 		if (p == peer_device)
 			continue;
 
-		if (p->repl_state[NEW] == L_SYNC_TARGET)
+		if (p->repl_state[NOW] == L_SYNC_TARGET)
 			return true;
 	}
 
