@@ -5321,7 +5321,7 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 	int vnr = resource->twopc_reply.vnr;
 
 	if (mask.i == 0 && val.i == 0 &&
-	    resource->role[NEW] == R_PRIMARY && vnr == -1) {
+	    resource->role[NOW] == R_PRIMARY && vnr == -1) {
 		/* A node far away test if there are primaries. I am the guy he
 		   is concerned about... He learned about me in the CS_PREPARE phase.
 		   Since he is commiting it I know that he is outdated now... */
@@ -5341,7 +5341,7 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 		}
 	}
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
-	    resource->role[NEW] == R_PRIMARY) {
+	    resource->role[NOW] == R_PRIMARY) {
 		struct net_conf *nc;
 
 		nc = rcu_dereference(connection->transport.net_conf);
