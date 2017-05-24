@@ -8559,7 +8559,7 @@ void drbd_send_acks_wf(struct work_struct *ws)
 		drbd_uncork(connection, CONTROL_STREAM);
 
 	if (err)
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
 void drbd_send_peer_ack_wf(struct work_struct *ws)
@@ -8568,7 +8568,7 @@ void drbd_send_peer_ack_wf(struct work_struct *ws)
 		container_of(ws, struct drbd_connection, peer_ack_work);
 
 	if (process_peer_ack_list(connection))
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
