@@ -767,7 +767,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
 	struct socket *s_listen;
 	struct net_conf *nc;
-	const char *what;
+	const char *what = "";
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -781,24 +781,24 @@ static int dtt_init_listener(struct drbd_transport *transport,
 
 	my_addr = *(struct sockaddr_storage *)addr;
 
-	what = "sock_create_kern";
 	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
+		what = "sock_create_kern";
 		goto out;
 	}
 
 	s_listen->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
-	what = "bind before listen";
-
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
 		: sizeof(struct sockaddr_in);
 
 	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, addr_len);
-	if (err < 0)
+	if (err < 0) {
+		what = "bind before listen";
 		goto out;
+	}
 
 	listener->s_listen = s_listen;
 	write_lock_bh(&s_listen->sk->sk_callback_lock);
@@ -807,10 +807,11 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	s_listen->sk->sk_user_data = listener;
 	write_unlock_bh(&s_listen->sk->sk_callback_lock);
 
-	what = "listen";
 	err = s_listen->ops->listen(s_listen, DRBD_PEERS_MAX * 2);
-	if (err < 0)
+	if (err < 0) {
+		what = "listen";
 		goto out;
+	}
 
 	listener->listener.listen_addr = my_addr;
 	listener->listener.destroy = dtt_destroy_listener;
