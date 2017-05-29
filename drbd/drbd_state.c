@@ -196,6 +196,9 @@ bool is_suspended_quorum(struct drbd_resource *resource, enum which_state which)
 	bool rv = false;
 	int vnr;
 
+	if (resource->res_opts.on_no_quorum != ONQ_SUSPEND_IO)
+		return false;
+
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (!device->have_quorum[which]) {
@@ -2375,7 +2378,11 @@ static inline bool state_change_is_susp_fen(struct drbd_state_change *state_chan
 static inline bool state_change_is_susp_quorum(struct drbd_state_change *state_change,
 					       enum which_state which)
 {
+	struct drbd_resource *resource = state_change->resource[0].resource;
 	int n_device;
+
+	if (resource->res_opts.on_no_quorum != ONQ_SUSPEND_IO)
+		return false;
 
 	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
 		struct drbd_device_state_change *device_state_change =

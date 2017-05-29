@@ -2107,6 +2107,7 @@ void do_submit(struct work_struct *ws)
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
+	struct drbd_resource *resource = device->resource;
 	unsigned long start_jif;
 #ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
 	struct bio_list *current_bio_list = NULL;
@@ -2137,6 +2138,11 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		current->bio_list = &my_on_stack_bl;
 	}
 #endif
+
+	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
+		bio_endio(bio, -EIO);
+		MAKE_REQUEST_RETURN;
+	}
 
 	start_jif = jiffies;
 

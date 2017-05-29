@@ -4506,7 +4506,10 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	__change_io_susp_no_data(resource, false);
 	for_each_connection(connection, resource)
 		__change_io_susp_fencing(connection, false);
-	__change_have_quorum(device, true);
+
+	if (resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO)
+		__change_have_quorum(device, true);
+
 	/* TODO: Throw away queued IO requests... */
 	retcode = end_state_change(resource, &irq_flags);
 	if (retcode == SS_SUCCESS) {
