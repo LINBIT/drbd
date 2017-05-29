@@ -3038,9 +3038,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (disk_state[OLD] < D_UP_TO_DATE && repl_state[OLD] >= L_SYNC_SOURCE && repl_state[NEW] == L_ESTABLISHED)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 
-			/* Outdated myself, or became D_UP_TO_DATE tell peers */
-			if (disk_state[NEW] >= D_INCONSISTENT && disk_state[NEW] != disk_state[OLD] &&
-			    repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
+			/* Outdated myself, or became D_UP_TO_DATE tell peers
+			 * Do not do it, when the local node was forced from R_SECONDARY to R_PRIMARY,
+			 * because that is part of the 2-phase-commit and that is necessary to trigger
+			 * the initial resync. */
+			if ((disk_state[NEW] >= D_INCONSISTENT && disk_state[NEW] != disk_state[OLD] &&
+			     repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED) &&
+			    !(role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY))
 				send_state = true;
 
 			/* Skipped resync with peer_device, tell others... */
