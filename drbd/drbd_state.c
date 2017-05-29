@@ -198,7 +198,7 @@ bool is_suspended_quorum(struct drbd_resource *resource, enum which_state which)
 
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (device->susp_quorum[which]) {
+		if (!device->have_quorum[which]) {
 			rv = true;
 			break;
 		}
@@ -302,8 +302,8 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 		device_state_change->device = device;
 		memcpy(device_state_change->disk_state,
 		       device->disk_state, sizeof(device->disk_state));
-		memcpy(device_state_change->susp_quorum,
-		       device->susp_quorum, sizeof(device->susp_quorum));
+		memcpy(device_state_change->have_quorum,
+		       device->have_quorum, sizeof(device->have_quorum));
 		if (test_and_clear_bit(HAVE_LDEV, &device->flags))
 			device_state_change->have_ldev = true;
 
@@ -378,7 +378,7 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 			&state_change->devices[n_device];
 
 		OLD_TO_NEW(device_state_change->disk_state);
-		OLD_TO_NEW(device_state_change->susp_quorum);
+		OLD_TO_NEW(device_state_change->have_quorum);
 	}
 
 	n_peer_devices = state_change->n_devices * state_change->n_connections;
@@ -453,7 +453,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 		struct drbd_peer_device *peer_device;
 
 		if (device->disk_state[OLD] != device->disk_state[NEW] ||
-		    device->susp_quorum[OLD] != device->susp_quorum[NEW])
+		    device->have_quorum[OLD] != device->have_quorum[NEW])
 			return true;
 
 		for_each_peer_device(peer_device, device) {
@@ -494,7 +494,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NEW] = device->disk_state[NOW];
-		device->susp_quorum[NEW] = device->susp_quorum[NOW];
+		device->have_quorum[NEW] = device->have_quorum[NOW];
 
 		for_each_peer_device(peer_device, device) {
 			peer_device->disk_state[NEW] = peer_device->disk_state[NOW];
@@ -618,7 +618,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NOW] = device->disk_state[NEW];
-		device->susp_quorum[NOW] = device->susp_quorum[NEW];
+		device->have_quorum[NOW] = device->have_quorum[NEW];
 
 		for_each_peer_device(peer_device, device) {
 			peer_device->disk_state[NOW] = peer_device->disk_state[NEW];
@@ -1837,7 +1837,7 @@ static void sanitize_state(struct drbd_resource *resource)
 					bool have_quorum = calc_quorum(device, NEW, NULL);
 
 					if (had_quorum && !have_quorum)
-						device->susp_quorum[NEW] = true;
+						device->have_quorum[NEW] = false;
 				}
 				put_ldev(device);
 			}
@@ -2381,7 +2381,7 @@ static inline bool state_change_is_susp_quorum(struct drbd_state_change *state_c
 		struct drbd_device_state_change *device_state_change =
 				&state_change->devices[n_device];
 
-		if (device_state_change->susp_quorum[which])
+		if (!device_state_change->have_quorum[which])
 			return true;
 	}
 
@@ -2800,7 +2800,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
 		struct drbd_device *device = device_state_change->device;
 		enum drbd_disk_state *disk_state = device_state_change->disk_state;
-		bool *susp_quorum = device_state_change->susp_quorum;
+		bool *have_quorum = device_state_change->have_quorum;
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
 		bool device_stable[2];
@@ -3120,7 +3120,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_uuid_new_current(device, false);
 			}
 
-			if (device->susp_quorum[NEW] && got_contact_to_peer_data(peer_disk_state) &&
+			if (!device->have_quorum[NEW] && got_contact_to_peer_data(peer_disk_state) &&
 			    get_ldev(device)) {
 				bool have_quorum = calc_quorum(device, NEW, NULL);
 				if (have_quorum) {
@@ -3130,7 +3130,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
 					_tl_restart(connection, RESEND);
-					__change_io_susp_quorum(device, false);
+					__change_have_quorum(device, true);
 					end_state_change(resource, &irq_flags);
 				}
 				put_ldev(device);
@@ -3241,7 +3241,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		drbd_md_sync_if_dirty(device);
 
-		if (!susp_quorum[OLD] && susp_quorum[NEW])
+		if (have_quorum[OLD] && !have_quorum[NEW])
 			drbd_khelper(device, NULL, "quorum-lost");
 	}
 
@@ -4168,7 +4168,7 @@ static void __change_role(struct change_role_context *role_context)
 				role_context->context.val.disk |= D_UP_TO_DATE;
 			}
 		} else if (role == R_SECONDARY) {
-			device->susp_quorum[NEW] = false;
+			device->have_quorum[NEW] = true;
 		}
 	}
 	rcu_read_unlock();
@@ -4250,9 +4250,9 @@ void __change_io_susp_fencing(struct drbd_connection *connection, bool value)
 	connection->susp_fen[NEW] = value;
 }
 
-void __change_io_susp_quorum(struct drbd_device *device, bool value)
+void __change_have_quorum(struct drbd_device *device, bool value)
 {
-	device->susp_quorum[NEW] = value;
+	device->have_quorum[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)
