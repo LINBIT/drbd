@@ -246,7 +246,7 @@ endif
 
 ifdef DEBBUILD
 .PHONY: km-deb
-km-deb: distclean drbd/.drbd_git_revision
+km-deb: check-submods distclean drbd/.drbd_git_revision
 	$(DEBBUILD) -i -us -uc -b
 endif
 
