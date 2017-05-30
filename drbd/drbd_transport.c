@@ -206,6 +206,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		err = init_listener(transport, addr, new_listener);
 		if (err) {
 			kfree(new_listener);
+			new_listener = NULL;
 			if (err == -EADDRINUSE && ++tries < 3) {
 				schedule_timeout_uninterruptible(HZ / 20);
 				continue;
