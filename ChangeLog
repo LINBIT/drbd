@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, visit http://git.linbit.com/drbd-8.4.git
 
+8.4.10-1 (api:genl1/proto:86-101)
+-------
+ * fix a race condition between attaching and writing meta-data. The impact
+   of the bug was destructing an object to early which leads to a crash
+ * fix cleanup of debugfs at rmmod time
+ * fix potential deadlock when trying to detach during handshake
+ * fix race between handshake and admin disconnect/down
+ * new config option "disable-write-same". That helps with backing devices that
+   claim to support write-same, but fail every write-same request
+ * compatibility with Linux kernels up to 4.12
+
 8.4.9-2 (api:genl1/proto:86-101)
 -------
  * Fix kernel_sendmsg() usage - potential NULL deref

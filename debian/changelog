@@ -1,3 +1,9 @@
+drbd8 (2:8.4.10-1) unstable; urgency=medium
+
+  * 8.4.10, New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Thu,  1 Jun 2017 11:11:49 +0200
+
 drbd8 (2:8.4.9-2) unstable; urgency=medium
 
   * Fix kernel_sendmsg() usage - potential NULL deref
