@@ -494,23 +494,31 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 }
 
 /* still holds resource->req_lock */
-static int drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_error *m, int put)
+static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_error *m, int put)
 {
 	D_ASSERT(req->device, m || (req->rq_state[0] & RQ_POSTPONED));
 
+	if (!put)
+		return;
+
 	if (!atomic_sub_and_test(put, &req->completion_ref))
-		return 0;
+		return;
 
 	drbd_req_complete(req, m);
+
+	/* local completion may still come in later,
+	 * we need to keep the req object around. */
+	if (req->rq_state[0] & RQ_LOCAL_ABORTED)
+		return;
 
 	if (req->rq_state[0] & RQ_POSTPONED) {
 		/* don't destroy the req object just yet,
 		 * but queue it for retry */
 		drbd_restart_request(req);
-		return 0;
+		return;
 	}
 
-	return 1;
+	kref_put(&req->kref, drbd_req_destroy);
 }
 
 static void set_if_null_req_next(struct drbd_peer_device *peer_device, struct drbd_request *req)
@@ -602,7 +610,6 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	unsigned set_local = set & RQ_STATE_0_MASK;
 	unsigned clear_local = clear & RQ_STATE_0_MASK;
 	int c_put = 0;
-	int k_put = 0;
 	const int idx = peer_device ? 1 + peer_device->node_id : 0;
 
 	/* FIXME n_connections, when this request was created/scheduled. */
@@ -638,6 +645,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		return;
 
 	/* intent: get references */
+
+	kref_get(&req->kref);
 
 	if (!(old_local & RQ_LOCAL_PENDING) && (set_local & RQ_LOCAL_PENDING))
 		atomic_inc(&req->completion_ref);
@@ -675,15 +684,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (!(old_local & RQ_LOCAL_ABORTED) && (set_local & RQ_LOCAL_ABORTED)) {
 		D_ASSERT(req->device, req->rq_state[0] & RQ_LOCAL_PENDING);
-		/* local completion may still come in later,
-		 * we need to keep the req object around. */
-		kref_get(&req->kref);
 		++c_put;
 	}
 
 	if ((old_local & RQ_LOCAL_PENDING) && (clear_local & RQ_LOCAL_PENDING)) {
 		if (req->rq_state[0] & RQ_LOCAL_ABORTED)
-			++k_put;
+			kref_put(&req->kref, drbd_req_destroy);
 		else
 			++c_put;
 		list_del_init(&req->req_pending_local);
@@ -705,7 +711,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		if (old_net & RQ_NET_SENT)
 			atomic_sub(req->i.size >> 9, &peer_device->connection->ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
-			++k_put;
+			kref_put(&req->kref, drbd_req_destroy);
 		req->net_done_jif[peer_device->node_id] = jiffies;
 
 		/* in ahead/behind mode, or just in case,
@@ -718,27 +724,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	/* potentially complete and destroy */
 
-	if (k_put || c_put) {
-		/* Completion does it's own kref_put.  If we are going to
-		 * kref_sub below, we need req to be still around then. */
-		int at_least = k_put + !!c_put;
-		int refcount = refcount_read(&req->kref.refcount);
-		if (refcount < at_least)
-			drbd_err(req->device,
-				"mod_rq_state: Logic BUG: 0: %x -> %x, %d: %x -> %x: refcount = %d, should be >= %d\n",
-				old_local, req->rq_state[0],
-				idx, old_net, req->rq_state[idx],
-				refcount, at_least);
-	}
-
 	/* If we made progress, retry conflicting peer requests, if any. */
 	if (req->i.waiting)
 		wake_up(&req->device->misc_wait);
 
-	if (c_put)
-		k_put += drbd_req_put_completion_ref(req, m, c_put);
-	if (k_put)
-		kref_sub(&req->kref, k_put, drbd_req_destroy);
+	drbd_req_put_completion_ref(req, m, c_put);
+	kref_put(&req->kref, drbd_req_destroy);
 }
 
 static void drbd_report_io_error(struct drbd_device *device, struct drbd_request *req)
@@ -1748,8 +1739,7 @@ nodata:
 	}
 
 out:
-	if (drbd_req_put_completion_ref(req, &m, 1))
-		kref_put(&req->kref, drbd_req_destroy);
+	drbd_req_put_completion_ref(req, &m, 1);
 	spin_unlock_irq(&resource->req_lock);
 
 	/* Even though above is a kref_put(), this is safe.
