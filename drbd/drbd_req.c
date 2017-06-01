@@ -179,22 +179,10 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_request *destroy_next;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
-	unsigned int s, device_refs = 0;
+	unsigned int s;
 	bool was_last_ref = false;
 
  tail_recursion:
-	if (device_refs > 0 && device != req->device) {
-		/* We accumulate device refs to put, it is very likely that we
-		 * destroy a number of requests for the same volume in a row.
-		 * But if the tail-recursed request happens to be for a
-		 * different volume, we need to put the accumulated device refs
-		 * now, while we still know the corresponding device,
-		 * and start accumulating for the other device.
-		 */
-		kref_debug_sub(&device->kref_debug, device_refs, 6);
-		kref_sub(&device->kref, device_refs, drbd_destroy_device);
-		device_refs = 0;
-	}
 	device = req->device;
 	s = req->rq_state[0];
 	destroy_next = req->destroy_next;
@@ -210,7 +198,7 @@ void drbd_req_destroy(struct kref *kref)
 		drbd_err(device,
 			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
 			s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
-		goto out;
+		return;
 	}
 
 	/* more paranoia */
@@ -218,7 +206,7 @@ void drbd_req_destroy(struct kref *kref)
 		atomic_read(&req->completion_ref) || (s & RQ_LOCAL_PENDING)) {
 		drbd_err(device, "drbd_req_destroy: Logic BUG rq_state: %x, completion_ref = %d\n",
 				s, atomic_read(&req->completion_ref));
-		goto out;
+		return;
 	}
 
 	list_del_init(&req->tl_requests);
@@ -293,7 +281,6 @@ void drbd_req_destroy(struct kref *kref)
 		}
 	}
 
-	device_refs++; /* In both branches of the if the reference to device gets released */
 	if (s & RQ_WRITE && req->i.size) {
 		struct drbd_resource *resource = device->resource;
 		struct drbd_request *peer_ack_req = resource->peer_ack_req;
@@ -317,6 +304,10 @@ void drbd_req_destroy(struct kref *kref)
 	} else
 		mempool_free(req, drbd_request_mempool);
 
+	/* In both branches of the if above, the reference to device gets released */
+	kref_debug_put(&device->kref_debug, 6);
+	kref_put(&device->kref, drbd_destroy_device);
+
 	/*
 	 * Do the equivalent of:
 	 *   kref_put(&req->kref, drbd_req_destroy)
@@ -327,10 +318,6 @@ void drbd_req_destroy(struct kref *kref)
 		if (refcount_dec_and_test(&req->kref.refcount))
 			goto tail_recursion;
 	}
-
-out:
-	kref_debug_sub(&device->kref_debug, device_refs, 6);
-	kref_sub(&device->kref, device_refs, drbd_destroy_device);
 }
 
 static void wake_all_senders(struct drbd_resource *resource) {

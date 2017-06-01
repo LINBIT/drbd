@@ -3762,17 +3762,21 @@ void drbd_unregister_device(struct drbd_device *device)
 void drbd_put_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
-	int refs = 3;
+	int i;
 
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
 	del_timer_sync(&device->request_timer);
 
-	for_each_peer_device(peer_device, device)
-		refs++;
+	for_each_peer_device(peer_device, device) {
+		kref_debug_put(&device->kref_debug, 1);
+		kref_put(&device->kref, drbd_destroy_device);
+	}
 
-	kref_debug_sub(&device->kref_debug, refs, 1);
-	kref_sub(&device->kref, refs, drbd_destroy_device);
+	for (i = 0; i < 3; i++) {
+		kref_debug_put(&device->kref_debug, 1);
+		kref_put(&device->kref, drbd_destroy_device);
+	}
 }
 
 /**
@@ -3814,11 +3818,9 @@ void del_connect_timer(struct drbd_connection *connection)
 void drbd_put_connection(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
-	int vnr, rr, refs = 1;
+	int vnr, rr;
 
 	del_connect_timer(connection);
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		refs++;
 
 	rr = drbd_free_peer_reqs(connection->resource, &connection->done_ee, false);
 	if (rr)
@@ -3830,9 +3832,12 @@ void drbd_put_connection(struct drbd_connection *connection)
 
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 
-	kref_debug_sub(&connection->kref_debug, refs - 1, 3);
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		kref_debug_put(&connection->kref_debug, 3);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
 	kref_debug_put(&connection->kref_debug, 10);
-	kref_sub(&connection->kref, refs, drbd_destroy_connection);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 static int __init drbd_init(void)
