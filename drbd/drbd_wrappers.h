@@ -1283,6 +1283,18 @@ static inline struct nlmsghdr *nlmsg_hdr(const struct sk_buff *skb)
 #endif
 
 /*
+ * v4.12 fceb6435e852 netlink: pass extended ACK struct to parsing functions
+ * and some preparation commits introduce a new "netlink extended ack" error
+ * reporting mechanism. For now, only work around that here.  As trigger, use
+ * NETLINK_MAX_COOKIE_LEN introduced somewhere in the middle of that patchset.
+ */
+#ifndef NETLINK_MAX_COOKIE_LEN
+#include <net/netlink.h>
+#define nla_parse_nested(tb, maxtype, nla, policy, extack) \
+	nla_parse_nested(tb, maxtype, nla, policy)
+#endif
+
+/*
  * genlmsg_reply() was added to <net/genetlink.h> in mainline commit 81878d27
  * (v2.6.20-rc2).
  */
