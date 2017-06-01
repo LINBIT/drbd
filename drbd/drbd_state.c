@@ -64,6 +64,11 @@ enum change_phase {
 	PH_COMMIT,
 };
 
+struct change_disk_state_context {
+	struct change_context context;
+	struct drbd_device *device;
+};
+
 static bool lost_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool got_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
@@ -3906,6 +3911,13 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 
 	if (have_peers && context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
+
+	if (context->flags & CS_INHIBIT_MD_IO) {
+		struct drbd_device *device =
+			container_of(context, struct change_disk_state_context, context)->device;
+		drbd_md_get_buffer(device, __func__);
+	}
+
 	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 	if (rv >= SS_SUCCESS) {
 		change(context, PH_COMMIT);
@@ -3920,6 +3932,13 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	} else {
 		abort_state_change(resource, &irq_flags);
 	}
+
+	if (context->flags & CS_INHIBIT_MD_IO) {
+		struct drbd_device *device =
+			container_of(context, struct change_disk_state_context, context)->device;
+		drbd_md_put_buffer(device);
+	}
+
 	if (have_peers && !context->change_local_state_last)
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 
@@ -4379,11 +4398,6 @@ enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
 	return change_cluster_wide_state(do_change_from_consistent, &context);
 }
 
-struct change_disk_state_context {
-	struct change_context context;
-	struct drbd_device *device;
-};
-
 static bool do_change_disk_state(struct change_context *context, enum change_phase phase)
 {
 	struct drbd_device *device =
@@ -4429,6 +4443,10 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 		},
 		.device = device,
 	};
+
+	if (disk_state == D_DETACHING && !(flags & CS_HARD))
+		disk_state_context.context.flags |= CS_INHIBIT_MD_IO;
+
 	return change_cluster_wide_state(do_change_disk_state,
 					 &disk_state_context.context);
 }

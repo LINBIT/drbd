@@ -38,6 +38,10 @@ enum chg_state_flags {
 	CS_TWOPC	 = 1 << 9,
 	CS_IGN_OUTD_FAIL = 1 << 10,
 	CS_DONT_RETRY    = 1 << 11, /* Disable internal retry. Caller has a retry loop */
+
+	/* Make sure no meta data IO is in flight, by calling
+         * drbd_md_get_buffer().  Used for graceful detach. */
+	CS_INHIBIT_MD_IO = 1 << 12,
 };
 
 extern void drbd_resume_al(struct drbd_device *device);
