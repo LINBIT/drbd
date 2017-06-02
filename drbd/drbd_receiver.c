@@ -1287,7 +1287,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		tmp = start + granularity - sector_div(tmp, granularity);
 
 		nr = tmp - start;
-		err |= blkdev_issue_zeroout(bdev, start, nr, GFP_NOIO, 0);
+		err |= blkdev_issue_zeroout(bdev, start, nr, GFP_NOIO, BLKDEV_ZERO_NOUNMAP);
 		nr_sectors -= nr;
 		start = tmp;
 	}
@@ -1299,7 +1299,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	}
  zero_out:
 	if (nr_sectors) {
-		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0);
+		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, BLKDEV_ZERO_NOUNMAP);
 	}
 	return err != 0;
 }
