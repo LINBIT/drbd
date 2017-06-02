@@ -28,15 +28,14 @@ static void bio_batch_end_io(struct bio *bio, int error)
  * @sector:	start sector
  * @nr_sects:	number of sectors to write
  * @gfp_mask:	memory allocation flags (for bio_alloc)
- * @discard:    whether to discard the block range.
- *              IGNORED in this compat implementation.
+ * @flags:      controls detailed behavior (ignored)
  *
  * Description:
  *  Generate and issue number of bios with zerofiled pages.
  */
 
 int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-			 sector_t nr_sects, gfp_t gfp_mask, bool discard)
+			 sector_t nr_sects, gfp_t gfp_mask, unsigned int flags)
 {
 	int ret;
 	struct bio *bio;

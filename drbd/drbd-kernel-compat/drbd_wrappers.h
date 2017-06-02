@@ -1463,13 +1463,22 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
 #ifndef BLKDEV_ISSUE_ZEROOUT_EXPORTED
 /* Was introduced with 2.6.34 */
 extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-				sector_t nr_sects, gfp_t gfp_mask, bool discard);
+				sector_t nr_sects, gfp_t gfp_mask, unsigned flags);
 #else
 /* synopsis changed a few times, though */
-#ifdef COMPAT_BLKDEV_ISSUE_ZEROOUT_BLKDEV_IFL_WAIT
-#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
+#if  defined(BLKDEV_ZERO_NOUNMAP)
+/* >= v4.12 */
+/* use blkdev_issue_zeroout() as written out in the actual source code.
+ * right now, we only use it with flags = BLKDEV_ZERO_NOUNMAP */
+#elif defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_BLKDEV_IFL_WAIT)
+/* cannot yet tell it to use (or not use) discard,
+ * but must tell it to be synchronous */
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP, BLKDEV_IFL_WAIT)
-#elif !defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD)
+#elif  defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD)
+/* no BLKDEV_ZERO_NOUNMAP as last parameter, but a bool discard instead */
+#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags /* = NOUNMAP */) \
+       blkdev_issue_zeroout(BDEV, SS, NS, GFP, false /* bool discard */)
+#else /* !defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD) */
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
 #endif
