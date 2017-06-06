@@ -2127,8 +2127,8 @@ static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 		if (!i->local)
 			continue;
 		req = container_of(i, struct drbd_request, i);
-		if ((req->rq_state[0] & RQ_LOCAL_PENDING) ||
-		   !(req->rq_state[0] & RQ_POSTPONED))
+		if ((req->local_rq_state & RQ_LOCAL_PENDING) ||
+		   !(req->local_rq_state & RQ_POSTPONED))
 			continue;
 		/* as it is RQ_POSTPONED, this will cause it to
 		 * be queued on the retry workqueue. */
@@ -2390,9 +2390,9 @@ static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 		if (!i->local)
 			continue;
 		req = container_of(i, struct drbd_request, i);
-		if (!(req->rq_state[0] & RQ_POSTPONED))
+		if (!(req->local_rq_state & RQ_POSTPONED))
 			continue;
-		req->rq_state[0] &= ~RQ_POSTPONED;
+		req->local_rq_state &= ~RQ_POSTPONED;
 		__req_mod(req, NEG_ACKED, peer_req->peer_device, &m);
 		spin_unlock_irq(&device->resource->req_lock);
 		if (m.bio)
@@ -2477,8 +2477,8 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 					  (unsigned long long)i->sector, i->size,
 					  (unsigned long long)sector, size);
 
-			if (req->rq_state[0] & RQ_LOCAL_PENDING ||
-			    !(req->rq_state[0] & RQ_POSTPONED)) {
+			if (req->local_rq_state & RQ_LOCAL_PENDING ||
+			    !(req->local_rq_state & RQ_POSTPONED)) {
 				/*
 				 * Wait for the node with the discard flag to
 				 * decide if this request will be discarded or
@@ -7676,16 +7676,16 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 	unsigned int idx;
 	int err = 0;
 
-	idx = 1 + connection->peer_node_id;
+	idx = connection->peer_node_id;
 
 	spin_lock_irq(&resource->req_lock);
 	req = list_first_entry(&resource->peer_ack_list, struct drbd_request, tl_requests);
 	while (&req->tl_requests != &resource->peer_ack_list) {
-		if (!(req->rq_state[idx] & RQ_PEER_ACK)) {
+		if (!(req->net_rq_state[idx] & RQ_PEER_ACK)) {
 			req = list_next_entry(req, tl_requests);
 			continue;
 		}
-		req->rq_state[idx] &= ~RQ_PEER_ACK;
+		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
 		spin_unlock_irq(&resource->req_lock);
 
 		err = drbd_send_peer_ack(connection, req);
@@ -8321,11 +8321,11 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	int idx;
 
 	spin_lock_irq(&resource->req_lock);
-	idx = 1 + connection->peer_node_id;
+	idx = connection->peer_node_id;
 	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
-		if (!(req->rq_state[idx] & RQ_PEER_ACK))
+		if (!(req->net_rq_state[idx] & RQ_PEER_ACK))
 			continue;
-		req->rq_state[idx] &= ~RQ_PEER_ACK;
+		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
 		kref_put(&req->kref, destroy_request);
 	}
 	spin_unlock_irq(&resource->req_lock);

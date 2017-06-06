@@ -281,7 +281,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	 * We assume that a delayed *error* completion is OK,
 	 * though we still will complain noisily about it.
 	 */
-	if (unlikely(req->rq_state[0] & RQ_LOCAL_ABORTED)) {
+	if (unlikely(req->local_rq_state & RQ_LOCAL_ABORTED)) {
 		if (drbd_ratelimit())
 			drbd_emerg(device, "delayed completion of aborted local request; disk-timeout may be too aggressive\n");
 
@@ -2564,7 +2564,7 @@ static int process_one_request(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device =
 			conn_peer_device(connection, device->vnr);
 	unsigned s = drbd_req_state_by_peer_device(req, peer_device);
-	bool do_send_unplug = req->rq_state[0] & RQ_UNPLUG;
+	bool do_send_unplug = req->local_rq_state & RQ_UNPLUG;
 	int err;
 	enum drbd_req_event what;
 

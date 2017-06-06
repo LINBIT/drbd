@@ -382,17 +382,16 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
-		struct drbd_peer_device *peer_device;
-		int idx;
-		peer_device = conn_peer_device(connection, r->device->vnr);
-		idx = 1 + peer_device->node_id;
+		struct drbd_peer_device *peer_device =
+			conn_peer_device(connection, r->device->vnr);
+		const int idx = peer_device->node_id;
 
 		if (!req) {
-			if (!(r->rq_state[0] & RQ_WRITE))
+			if (!(r->local_rq_state & RQ_WRITE))
 				continue;
-			if (!(r->rq_state[idx] & RQ_NET_MASK))
+			if (!(r->net_rq_state[idx] & RQ_NET_MASK))
 				continue;
-			if (r->rq_state[idx] & RQ_NET_DONE)
+			if (r->net_rq_state[idx] & RQ_NET_DONE)
 				continue;
 			req = r;
 			expect_epoch = req->epoch;
@@ -400,7 +399,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		} else {
 			if (r->epoch != expect_epoch)
 				break;
-			if (!(r->rq_state[0] & RQ_WRITE))
+			if (!(r->local_rq_state & RQ_WRITE))
 				continue;
 			/* if (s & RQ_DONE): not expected */
 			/* if (!(s & RQ_NET_MASK)): not expected */
@@ -513,7 +512,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 
         spin_lock_irq(&resource->req_lock);
         tl_for_each_req_ref(req, r, &resource->transfer_log) {
-                if (!(req->rq_state[0] & RQ_LOCAL_PENDING))
+                if (!(req->local_rq_state & RQ_LOCAL_PENDING))
                         continue;
                 if (req->device != device)
                         continue;
@@ -1136,15 +1135,14 @@ int drbd_send_peer_ack(struct drbd_connection *connection,
 	struct p_peer_ack *p;
 	u64 mask = 0;
 
-	if (req->rq_state[0] & RQ_LOCAL_OK)
+	if (req->local_rq_state & RQ_LOCAL_OK)
 		mask |= NODE_MASK(resource->res_opts.node_id);
 
 	rcu_read_lock();
 	for_each_connection_rcu(c, resource) {
 		int node_id = c->peer_node_id;
-		int idx = 1 + node_id;
 
-		if (req->rq_state[idx] & RQ_NET_OK)
+		if (req->net_rq_state[node_id] & RQ_NET_OK)
 			mask |= NODE_MASK(node_id);
 	}
 	rcu_read_unlock();
@@ -2902,14 +2900,14 @@ static void do_retry(struct work_struct *ws)
 
 		expected =
 			expect(device, atomic_read(&req->completion_ref) == 0) &&
-			expect(device, req->rq_state[0] & RQ_POSTPONED) &&
-			expect(device, (req->rq_state[0] & RQ_LOCAL_PENDING) == 0 ||
-			       (req->rq_state[0] & RQ_LOCAL_ABORTED) != 0);
+			expect(device, req->local_rq_state & RQ_POSTPONED) &&
+			expect(device, (req->local_rq_state & RQ_LOCAL_PENDING) == 0 ||
+			       (req->local_rq_state & RQ_LOCAL_ABORTED) != 0);
 
 		if (!expected)
 			drbd_err(device, "req=%p completion_ref=%d rq_state=%x\n",
 				req, atomic_read(&req->completion_ref),
-				req->rq_state[0]);
+				req->local_rq_state);
 
 		/* We still need to put one kref associated with the
 		 * "completion_ref" going zero in the code path that queued it

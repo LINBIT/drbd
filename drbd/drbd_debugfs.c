@@ -56,7 +56,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 {
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device;
-	unsigned int s = req->rq_state[0];
+	unsigned int s = req->local_rq_state;
 	char sep = ' ';
 	seq_printf(m, "\t0x%08x", s);
 	seq_printf(m, "\tmaster: %s", req->master_bio ? "pending" : "completed");
@@ -75,7 +75,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		seq_puts(m, " -");
 
 	for_each_peer_device(peer_device, device) {
-		s = req->rq_state[1 + peer_device->node_id];
+		s = req->net_rq_state[peer_device->node_id];
 		seq_printf(m, "\tnet[%d]:", peer_device->node_id);
 		sep = ' ';
 		seq_print_rq_state_bit(m, s & RQ_NET_PENDING, &sep, "pending");
@@ -108,7 +108,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
-		unsigned int s = req->rq_state[1 + peer_device->node_id];
+		unsigned int s = req->net_rq_state[peer_device->node_id];
 
 		if (s & set_mask && !(s & clear_mask)) {
 			ktime_t ktime = ktime_sub(now, memberat(req, ktime_t, offset));
@@ -122,7 +122,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, ktime_t now)
 {
 	/* change anything here, fixup header below! */
-	unsigned int s = req->rq_state[0];
+	unsigned int s = req->local_rq_state;
 
 #define RQ_HDR_1 "epoch\tsector\tsize\trw"
 	seq_printf(m, "0x%x\t%llu\t%u\t%s",
@@ -196,7 +196,7 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 				struct drbd_request, req_pending_master_completion);
 			/* if the oldest request does not wait for the activity log
 			 * it is not interesting for us here */
-			if (req && !(req->rq_state[0] & RQ_IN_ACT_LOG))
+			if (req && !(req->local_rq_state & RQ_IN_ACT_LOG))
 				ktime = req->start_kt;
 			else
 				req = NULL;
@@ -369,7 +369,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 				break;
 		}
 
-		s = req->rq_state[0];
+		s = req->local_rq_state;
 
 		/* This is meant to summarize timing issues, to be able to tell
 		 * local disk problems from network problems.
@@ -381,7 +381,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			tmp |= 2;
 
 		for_each_peer_device(peer_device, device) {
-			s = req->rq_state[1 + peer_device->node_id];
+			s = req->net_rq_state[peer_device->node_id];
 			if (s & RQ_NET_MASK) {
 				if (!(s & RQ_NET_SENT))
 					tmp |= 4;

@@ -377,9 +377,8 @@ struct drbd_request {
 	 * cause kref_put() on ->destroy_next. */
 	struct drbd_request *destroy_next;
 
-	/* rq_state[0] is for local disk,
-	 * rest is indexed by peer_device->bitmap_index + 1 */
-	unsigned rq_state[1 + DRBD_NODE_ID_MAX];
+	unsigned int local_rq_state;
+	u16 net_rq_state[DRBD_NODE_ID_MAX];
 };
 
 struct drbd_epoch {
@@ -1357,7 +1356,7 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 		/* WARN(1, "bitmap_index: %d", idx); */
 		return 0;
 	}
-	return req->rq_state[1 + idx];
+	return req->net_rq_state[idx];
 }
 
 #define for_each_resource(resource, _resources) \

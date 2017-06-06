@@ -130,21 +130,7 @@ enum drbd_req_event {
  * same time, so we should hold the request lock anyways.
  */
 enum drbd_req_state_bits {
-	/* 3210
-	 * 0000: no local possible
-	 * 0001: to be submitted
-	 *    UNUSED, we could map: 011: submitted, completion still pending
-	 * 0110: completed ok
-	 * 0010: completed with error
-	 * 1001: Aborted (before completion)
-	 * 1x10: Aborted and completed -> free
-	 */
-	__RQ_LOCAL_PENDING,
-	__RQ_LOCAL_COMPLETED,
-	__RQ_LOCAL_OK,
-	__RQ_LOCAL_ABORTED,
-
-	/* 87654
+	/* 43210
 	 * 00000: no network possible
 	 * 00001: to be send
 	 * 00011: to be send, on worker queue
@@ -204,6 +190,32 @@ enum drbd_req_state_bits {
 	/* keep this last, its for the RQ_NET_MASK */
 	__RQ_NET_MAX,
 
+	/* We expect a receive ACK (wire proto B) */
+	__RQ_EXP_RECEIVE_ACK,
+
+	/* We expect a write ACK (wite proto C) */
+	__RQ_EXP_WRITE_ACK,
+
+	/* waiting for a barrier ack, did an extra kref_get */
+	__RQ_EXP_BARR_ACK,
+
+	/* p_peer_ack packet needs to be sent */
+	__RQ_PEER_ACK,
+
+	/* 4321
+	 * 0000: no local possible
+	 * 0001: to be submitted
+	 *    UNUSED, we could map: 011: submitted, completion still pending
+	 * 0110: completed ok
+	 * 0010: completed with error
+	 * 1001: Aborted (before completion)
+	 * 1x10: Aborted and completed -> free
+	 */
+	__RQ_LOCAL_PENDING,
+	__RQ_LOCAL_COMPLETED,
+	__RQ_LOCAL_OK,
+	__RQ_LOCAL_ABORTED,
+
 	/* Set when this is a write, clear for a read */
 	__RQ_WRITE,
 	__RQ_WSAME,
@@ -224,26 +236,7 @@ enum drbd_req_state_bits {
 	 * but was not, because of drbd_suspended() */
 	__RQ_COMPLETION_SUSP,
 
-	/* We expect a receive ACK (wire proto B) */
-	__RQ_EXP_RECEIVE_ACK,
-
-	/* We expect a write ACK (wite proto C) */
-	__RQ_EXP_WRITE_ACK,
-
-	/* waiting for a barrier ack, did an extra kref_get */
-	__RQ_EXP_BARR_ACK,
-
-	/* p_peer_ack packet needs to be sent */
-	__RQ_PEER_ACK,
 };
-
-#define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
-#define RQ_LOCAL_COMPLETED (1UL << __RQ_LOCAL_COMPLETED)
-#define RQ_LOCAL_OK        (1UL << __RQ_LOCAL_OK)
-#define RQ_LOCAL_ABORTED   (1UL << __RQ_LOCAL_ABORTED)
-
-#define RQ_LOCAL_MASK      ((RQ_LOCAL_ABORTED << 1)-1)
-
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_QUEUED      (1UL << __RQ_NET_QUEUED)
 #define RQ_NET_SENT        (1UL << __RQ_NET_SENT)
@@ -253,6 +246,20 @@ enum drbd_req_state_bits {
 
 #define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK)
 
+#define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
+#define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
+#define RQ_EXP_BARR_ACK    (1UL << __RQ_EXP_BARR_ACK)
+
+#define RQ_PEER_ACK	   (1UL << __RQ_PEER_ACK)
+
+#define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
+#define RQ_LOCAL_COMPLETED (1UL << __RQ_LOCAL_COMPLETED)
+#define RQ_LOCAL_OK        (1UL << __RQ_LOCAL_OK)
+#define RQ_LOCAL_ABORTED   (1UL << __RQ_LOCAL_ABORTED)
+
+#define RQ_LOCAL_MASK      \
+	(RQ_LOCAL_ABORTED | RQ_LOCAL_OK | RQ_LOCAL_COMPLETED | RQ_LOCAL_PENDING)
+
 #define RQ_WRITE           (1UL << __RQ_WRITE)
 #define RQ_WSAME           (1UL << __RQ_WSAME)
 #define RQ_UNMAP           (1UL << __RQ_UNMAP)
@@ -260,16 +267,14 @@ enum drbd_req_state_bits {
 #define RQ_UNPLUG          (1UL << __RQ_UNPLUG)
 #define RQ_POSTPONED	   (1UL << __RQ_POSTPONED)
 #define RQ_COMPLETION_SUSP (1UL << __RQ_COMPLETION_SUSP)
-#define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
-#define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
-#define RQ_EXP_BARR_ACK    (1UL << __RQ_EXP_BARR_ACK)
-#define RQ_PEER_ACK	   (1UL << __RQ_PEER_ACK)
 
-/* these flags go into rq_state[0],
- * orhter flags go into their respective rq_state[idx] */
+
+/* these flags go into local_rq_state,
+ * orhter flags go into their respective net_rq_state[idx] */
 #define RQ_STATE_0_MASK	\
 	(RQ_LOCAL_MASK	|\
 	 RQ_WRITE	|\
+	 RQ_WSAME       |\
 	 RQ_IN_ACT_LOG	|\
 	 RQ_POSTPONED	|\
 	 RQ_UNPLUG	|\
@@ -294,7 +299,7 @@ static inline void drbd_req_make_private_bio(struct drbd_request *req, struct bi
 
 static inline bool drbd_req_is_write(struct drbd_request *req)
 {
-	return req->rq_state[0] & RQ_WRITE;
+	return req->local_rq_state & RQ_WRITE;
 }
 
 /* Short lived temporary struct on the stack.
