@@ -1540,6 +1540,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 	return req;
 
  queue_for_submitter_thread:
+	ktime_aggregate_delta(device, req->start_kt, before_queue_kt);
 	drbd_queue_write(device, req);
 	return NULL;
 }
@@ -1921,6 +1922,7 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 		}
 	}
 	while ((req = wfa_next_request(wfa))) {
+		ktime_aggregate_delta(device, req->start_kt, before_al_begin_io_kt);
 		err = drbd_al_begin_io_nonblock(device, &req->i);
 		if (err == -ENOBUFS)
 			break;

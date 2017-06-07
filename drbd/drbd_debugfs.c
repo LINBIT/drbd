@@ -1083,11 +1083,23 @@ static int device_req_timing_show(struct seq_file *m, void *ignored)
 	seq_printf(m,
 		   "timing values are nanoseconds; write an 'r' to reset all to 0\n\n"
 		   "requests:        %12lu\n"
+		   "before_queue:    %12" PRId64 "\n"
+		   "before_al_begin  %12" PRId64 "\n"
 		   "in_actlog:       %12" PRId64 "\n"
-		   "pre_submit:      %12" PRId64 "\n",
+		   "pre_submit:      %12" PRId64 "\n\n"
+		   "al_updates:      %12u\n"
+		   "before_bm_write  %12" PRId64 "\n"
+		   "mid              %12" PRId64 "\n"
+		   "after_sync_page  %12" PRId64 "\n",
 		   device->reqs,
+		   ktime_to_ns(device->before_queue_kt),
+		   ktime_to_ns(device->before_al_begin_io_kt),
 		   ktime_to_ns(device->in_actlog_kt),
-		   ktime_to_ns(device->pre_submit_kt));
+		   ktime_to_ns(device->pre_submit_kt),
+		   device->al_writ_cnt,
+		   ktime_to_ns(device->al_before_bm_write_hinted_kt),
+		   ktime_to_ns(device->al_mid_kt),
+		   ktime_to_ns(device->al_after_sync_page_kt));
 
 	seq_puts(m, "\npeer:           ");
 	for_each_peer_device(peer_device, device) {
@@ -1119,6 +1131,12 @@ static ssize_t device_req_timing_write(struct file *file, const char __user *ubu
 		device->reqs = 0;
 		device->in_actlog_kt = ns_to_ktime(0);
 		device->pre_submit_kt = ns_to_ktime(0);
+
+		device->before_queue_kt = ns_to_ktime(0);
+		device->before_al_begin_io_kt = ns_to_ktime(0);
+		device->al_writ_cnt = 0;
+		device->al_before_bm_write_hinted_kt = ns_to_ktime(0);
+		device->al_after_sync_page_kt = ns_to_ktime(0);
 
 		for_each_peer_device(peer_device, device) {
 			peer_device->pre_send_kt = ns_to_ktime(0);

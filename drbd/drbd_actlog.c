@@ -411,6 +411,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	unsigned extent_nr;
 	unsigned crc = 0;
 	int err = 0;
+	ktime_t start_kt = ktime_get();
 
 	memset(buffer, 0, sizeof(*buffer));
 	buffer->magic = cpu_to_be32(DRBD_AL_MAGIC);
@@ -472,6 +473,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	crc = crc32c(0, buffer, 4096);
 	buffer->crc32c = cpu_to_be32(crc);
 
+	ktime_aggregate_delta(device, start_kt, al_before_bm_write_hinted_kt);
 	if (drbd_bm_write_hinted(device))
 		err = -EIO;
 	else {
@@ -480,6 +482,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 		write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
 		rcu_read_unlock();
 		if (write_al_updates) {
+			ktime_aggregate_delta(device, start_kt, al_mid_kt);
 			if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
 				err = -EIO;
 				drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
@@ -490,6 +493,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 						device->act_log->pending_changes,
 						AL_UPDATES_PER_TRANSACTION)]++;
 			}
+			ktime_aggregate_delta(device, start_kt, al_after_sync_page_kt);
 		}
 	}
 

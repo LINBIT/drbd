@@ -1285,7 +1285,14 @@ struct drbd_device {
 	spinlock_t timing_lock;
 	unsigned long reqs;
 	ktime_t in_actlog_kt;
-	ktime_t pre_submit_kt;
+	ktime_t pre_submit_kt; /* sum over over all reqs */
+
+	ktime_t before_queue_kt; /* sum over all al_misses */
+	ktime_t before_al_begin_io_kt;
+
+	ktime_t al_before_bm_write_hinted_kt; /* sum over all al_writ_cnt */
+	ktime_t al_mid_kt;
+	ktime_t al_after_sync_page_kt;
 };
 
 struct drbd_bm_aio_ctx {
