@@ -43,6 +43,7 @@ void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *
 
 static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
+static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
 
 /* endio handlers:
@@ -2486,17 +2487,22 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 * from the epoch of the last request we communicated, it is
 		 * safe to send the epoch separating barrier now.
 		 */
-		send_barrier =
-			atomic_read(&connection->resource->current_tle_nr) !=
-			connection->send.current_epoch_nr;
+		send_barrier = should_send_barrier(connection,
+					atomic_read(&connection->resource->current_tle_nr));
 		spin_unlock_irq(&connection->resource->req_lock);
 
-		if (send_barrier)
+		if (send_barrier) {
+			finish_wait(&connection->sender_work.q_wait, &wait);
 			maybe_send_barrier(connection,
 					connection->send.current_epoch_nr + 1);
+			continue;
+		}
 
-		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags))
+		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags)) {
+			finish_wait(&connection->sender_work.q_wait, &wait);
 			maybe_send_state_afer_ahead(connection);
+			continue;
+		}
 
 		/* drbd_send() may have called flush_signals() */
 		if (get_t_state(&connection->sender) != RUNNING)
@@ -2533,12 +2539,16 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 	}
 }
 
+static bool should_send_barrier(struct drbd_connection *connection, unsigned int epoch)
+{
+	if (!connection->send.seen_any_write_yet)
+		return false;
+	return connection->send.current_epoch_nr != epoch;
+}
 static void maybe_send_barrier(struct drbd_connection *connection, unsigned int epoch)
 {
 	/* re-init if first write on this connection */
-	if (!connection->send.seen_any_write_yet)
-		return;
-	if (connection->send.current_epoch_nr != epoch) {
+	if (should_send_barrier(connection, epoch)) {
 		if (connection->send.current_epoch_writes)
 			drbd_send_barrier(connection);
 		connection->send.current_epoch_nr = epoch;
