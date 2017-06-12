@@ -1144,6 +1144,9 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 		return 0;
 	}
 
+	if (peer_device->bitmap_index == -1) /* no bitmap... */
+		return 0;
+
 	if (!get_ldev(device))
 		return 0; /* no disk, no metadata, no bitmap to manipulate bits in */
 
