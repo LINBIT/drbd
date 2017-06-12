@@ -2633,11 +2633,21 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 	}
 }
 
-static void notify_peers_lost_primary(struct drbd_connection *lost_peer)
+void drbd_notify_peers_lost_primary(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource = lost_peer->resource;
-	struct drbd_connection *connection;
+	struct drbd_connection *connection, *lost_peer;
 	u64 im;
+
+	rcu_read_lock();
+	for_each_connection_rcu(lost_peer, resource) {
+		if (test_and_clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &lost_peer->flags)) {
+			rcu_read_unlock();
+			goto found;
+		}
+	}
+	rcu_read_unlock();
+	return;
+found:
 
 	for_each_connection_ref(connection, im, resource) {
 		if (connection == lost_peer)
@@ -3277,7 +3287,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (peer_role[OLD] == R_PRIMARY &&
 		    cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
 			/* A connection to a primary went down, notify other peers about that */
-			notify_peers_lost_primary(connection);
+			set_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
 		}
 	}
 
@@ -3291,6 +3301,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 	if (try_become_up_to_date)
 		drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+	else
+		drbd_notify_peers_lost_primary(resource);
 
 	if (!still_connected)
 		mod_timer_pending(&resource->twopc_timer, jiffies);

@@ -748,6 +748,7 @@ enum {
 	RECONNECT,
 	CONN_DISCARD_MY_DATA,
 	SEND_STATE_AFTER_AHEAD_C,
+	NOTIFY_PEERS_LOST_PRIMARY,
 };
 
 /* flag bits per resource */

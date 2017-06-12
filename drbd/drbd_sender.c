@@ -2159,6 +2159,7 @@ static int try_become_up_to_date(struct drbd_resource *resource)
 		up(&resource->state_sem);
 		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG)
 			goto repost;
+		drbd_notify_peers_lost_primary(resource);
 	} else {
 	repost:
 		mod_timer(&resource->repost_up_to_date_timer, jiffies + HZ/10);

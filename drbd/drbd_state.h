@@ -139,4 +139,5 @@ extern enum determine_dev_size
 change_cluster_wide_device_size(struct drbd_device *, sector_t, uint64_t, enum dds_flags,
 				struct resize_parms *);
 
+extern void drbd_notify_peers_lost_primary(struct drbd_resource *resource);
 #endif
