@@ -2,6 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.8rc2-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * fix attach of first disk after resource had no disk at all
+ * fix a OOPS on a diskfull node when a request from a diskless
+   node cuases an error from the backend device. (This is a regression that
+   was introduced with the 9.0.7 release)
+ * Serialize reconciliation resync after the nodes found it if they
+   are UpToDate
+
 9.0.8rc1-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix an issue wiith current-uuid not getting written for 5 seconds. When a
