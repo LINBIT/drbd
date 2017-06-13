@@ -3385,6 +3385,33 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 			goto unlock_fail_free_connection;
 	}
 
+	/* Set bitmap_index if it was allocated previously */
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		unsigned int bitmap_index;
+
+		device = peer_device->device;
+		if (!get_ldev(device))
+			continue;
+
+		bitmap_index = device->ldev->md.peers[adm_ctx->peer_node_id].bitmap_index;
+		if (bitmap_index != -1)
+			peer_device->bitmap_index = bitmap_index;
+		put_ldev(device);
+	}
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
+		if (get_ldev_if_state(peer_device->device, D_NEGOTIATING)) {
+			err = drbd_attach_peer_device(peer_device);
+			put_ldev(peer_device->device);
+			if (err) {
+				retcode = ERR_NOMEM;
+				goto unlock_fail_free_connection;
+			}
+		}
+		peer_device->send_cnt = 0;
+		peer_device->recv_cnt = 0;
+	}
+
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
 		struct drbd_device *device = peer_device->device;
 
@@ -3422,20 +3449,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	if (connection->peer_node_id > adm_ctx->resource->max_node_id)
 		adm_ctx->resource->max_node_id = connection->peer_node_id;
 
-	/* Set bitmap_index if it was allocated previously */
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		unsigned int bitmap_index;
-
-		device = peer_device->device;
-		if (!get_ldev(device))
-			continue;
-
-		bitmap_index = device->ldev->md.peers[adm_ctx->peer_node_id].bitmap_index;
-		if (bitmap_index != -1)
-			peer_device->bitmap_index = bitmap_index;
-		put_ldev(device);
-	}
-
 	connection_to_info(&connection_info, connection);
 	flags = (peer_devices--) ? NOTIFY_CONTINUES : 0;
 	mutex_lock(&notification_mutex);
@@ -3449,18 +3462,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	}
 	mutex_unlock(&notification_mutex);
 
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		if (get_ldev_if_state(peer_device->device, D_NEGOTIATING)) {
-			err = drbd_attach_peer_device(peer_device);
-			put_ldev(peer_device->device);
-			if (err) {
-				retcode = ERR_NOMEM;
-				goto unlock_fail_free_connection;
-			}
-		}
-		peer_device->send_cnt = 0;
-		peer_device->recv_cnt = 0;
-	}
 	mutex_unlock(&adm_ctx->resource->conf_update);
 
 	drbd_debugfs_connection_add(connection); /* after ->net_conf was assigned */
