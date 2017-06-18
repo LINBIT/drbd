@@ -1768,6 +1768,9 @@ extern struct bio_set *drbd_md_io_bio_set;
 /* to allocate from that set */
 extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 
+/* And a bio_set for cloning */
+extern struct bio_set *drbd_io_bio_set;
+
 extern int conn_lowest_minor(struct drbd_connection *connection);
 extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);
 extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
