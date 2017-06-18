@@ -759,19 +759,19 @@ void drbd_thread_current_set_cpu(struct drbd_thread *thi)
 #define drbd_calc_cpu_mask(A) ({})
 #endif
 
-static bool drbd_all_neighbor_secondary(struct drbd_resource *resource, u64 *authoritative_ptr)
+static bool drbd_all_neighbor_secondary(struct drbd_device *device, u64 *authoritative_ptr)
 {
-	struct drbd_connection *connection;
+	struct drbd_peer_device *peer_device;
 	bool all_secondary = true;
 	u64 authoritative = 0;
 	int id;
 
 	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
-		if (connection->cstate[NOW] >= C_CONNECTED &&
-		    connection->peer_role[NOW] == R_PRIMARY) {
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+		    peer_device->connection->peer_role[NOW] == R_PRIMARY) {
 			all_secondary = false;
-			id = connection->peer_node_id;
+			id = peer_device->node_id;
 			authoritative |= NODE_MASK(id);
 		}
 	}
@@ -796,7 +796,7 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr)
 	if (resource->role[NOW] == R_PRIMARY)
 		return true;
 
-	if (!drbd_all_neighbor_secondary(resource, authoritative_ptr))
+	if (!drbd_all_neighbor_secondary(device, authoritative_ptr))
 		return false;
 
 	rcu_read_lock();
