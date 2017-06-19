@@ -2,30 +2,36 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-9.0.8rc2-1 (api:genl2/proto:86-112/transport:14)
+9.0.8-1 (api:genl2/proto:86-112/transport:14)
 --------
- * fix attach of first disk after resource had no disk at all
+ * fix a race condition between adding connections and receiving data
+   blocks; When you hit it caused an OOPS
  * fix a OOPS on a diskfull node when a request from a diskless
-   node cuases an error from the backend device. (This is a regression that
+   node causes an error from the back-end device. (This is a regression that
    was introduced with the 9.0.7 release)
- * Serialize reconciliation resync after the nodes found it if they
-   are UpToDate
-
-9.0.8rc1-1 (api:genl2/proto:86-112/transport:14)
---------
- * fix an issue wiith current-uuid not getting written for 5 seconds. When a
-   resources was down'd/up'd or the node rebooted, you got split brain
-   afterwards
- * fix an issue with diskless nodes adopting wrong current UUIDs
  * fix a distributed deadlock when doing a discard/write-same burst
+ * fix an issue with diskless nodes adopting wrong current UUIDs
  * fix wrongly rejected two-phase-state transactions; this issue was a
    cause for drbdmanage init failing for 3 nodes
+ * fix attach of first disk after resource had no disk at all
+ * fix to not clear bitmap content and UUIDs in case we ignored a
+   split-brain situation
+ * fix a possible OOPS, caused when the sender thread tries to send
+   something after the sockets where free()'ed
+ * fix ignoring split-brain situations to the rare cases it was
+   intended to in the first place
+ * fix an issue with current-uuid not getting written for 5 seconds. When a
+   resources was down'd/up'd or the node rebooted, you got split brain
+   afterwards
  * fix a race that caused DRBD to go StandAlone instead of Connecting
    after loosing a connection
+ * Serialize reconciliation resync after the nodes found it if they
+   are UpToDate
  * fix initial resync, triggered by "--force primary"; this is a fix
    for a regression introduced in 9.0.7
  * new configuration option that allows to report back IO errors instead
    of freezing IO in case a partition looses quorum
+ * Speed-up AL-updates with bio flags REQ_META and REQ_PRIO
  * merged changes from 8.4.10 and with that compatibility with Linux-4.12
 
 9.0.7-1 (api:genl2/proto:86-112/transport:14)
