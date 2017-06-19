@@ -159,6 +159,12 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 		op_flags |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
 	op_flags |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC | REQ_NOIDLE;
 
+#ifdef REQ_PRIO
+	op_flags |= REQ_PRIO;
+#endif
+#ifdef REQ_META
+	op_flags |= REQ_META;
+#endif
 #ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
 	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
  retry:
