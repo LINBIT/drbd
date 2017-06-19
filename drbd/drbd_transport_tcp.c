@@ -317,6 +317,9 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	void *buffer;
 	int rv;
 
+	if (!socket)
+		return -ENOTCONN;
+
 	if (flags & CALLER_BUFFER) {
 		buffer = *buf;
 		rv = dtt_recv_short(socket, buffer, size, flags & ~CALLER_BUFFER);
@@ -347,6 +350,9 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
 	struct page *page;
 	int err;
+
+	if (!socket)
+		return -ENOTCONN;
 
 	drbd_alloc_page_chain(transport, chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 	page = chain->head;
@@ -1091,8 +1097,10 @@ static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-
 	struct socket *socket = tcp_transport->stream[stream];
+
+	if (!socket)
+		return;
 
 	socket->sk->sk_rcvtimeo = timeout;
 }
@@ -1101,8 +1109,10 @@ static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-
 	struct socket *socket = tcp_transport->stream[stream];
+
+	if (!socket)
+		return -ENOTCONN;
 
 	return socket->sk->sk_rcvtimeo;
 }
@@ -1111,7 +1121,6 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
-
 	struct socket *socket = tcp_transport->stream[stream];
 
 	return socket && socket->sk;
@@ -1119,8 +1128,13 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 
 static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport)
 {
-	struct sock *sock = tcp_transport->stream[DATA_STREAM]->sk;
+	struct socket *socket = tcp_transport->stream[DATA_STREAM];
+	struct sock *sock;
 
+	if (!socket)
+		return;
+
+	sock = socket->sk;
 	if (sock->sk_wmem_queued > sock->sk_sndbuf * 4 / 5)
 		set_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 }
@@ -1131,10 +1145,12 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[stream];
-
 	mm_segment_t oldfs = get_fs();
 	int len = size;
 	int err = -EIO;
+
+	if (!socket)
+		return -ENOTCONN;
 
 	msg_flags |= MSG_NOSIGNAL;
 	dtt_update_congested(tcp_transport);
