@@ -1819,4 +1819,9 @@ drbd_ib_create_cq(struct ib_device *device,
 #endif
 #endif /* RDMA */
 
+#ifndef COMPAT_HAVE_NSECS_TO_JIFFIES
+u64 nsecs_to_jiffies64(u64 n);
+unsigned long nsecs_to_jiffies(u64 n);
+#endif
+
 #endif
