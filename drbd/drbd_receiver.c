@@ -1766,9 +1766,10 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 
 	if (!expect(peer_device, IS_ALIGNED(d->bi_size, 512)))
 		return NULL;
-	/* All "normal" requests should be smaller than DRBD_MAX_BIO_SIZE.
-	 * TRIM (does not carry any payload: d->length == 0) maybe be bigger. */
-	if (d->length && !expect(peer_device, d->bi_size <= DRBD_MAX_BIO_SIZE))
+	if (d->dp_flags & (DP_WSAME|DP_DISCARD)) {
+		if (!expect(peer_device, d->bi_size <= (DRBD_MAX_BBIO_SECTORS << 9)))
+			return NULL;
+	} else if (!expect(peer_device, d->bi_size <= DRBD_MAX_BIO_SIZE))
 		return NULL;
 
 	/* even though we trust our peer,
