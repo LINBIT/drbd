@@ -90,14 +90,14 @@ enum {
 #endif
 
 /* module parameter, defined in drbd_main.c */
-extern unsigned int minor_count;
-extern bool disable_sendpage;
-extern bool allow_oos;
+extern unsigned int drbd_minor_count;
+extern bool drbd_disable_sendpage;
+extern bool drbd_allow_oos;
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-extern int enable_faults;
-extern int fault_rate;
-extern int fault_devs;
+extern int drbd_enable_faults;
+extern int drbd_fault_rate;
+extern int drbd_fault_devs;
 #endif
 
 extern char drbd_usermode_helper[];
@@ -260,8 +260,8 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type);
 static inline int
 drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-	return fault_rate &&
-		(enable_faults & (1<<type)) &&
+	return drbd_fault_rate &&
+		(drbd_enable_faults & (1<<type)) &&
 		_drbd_insert_fault(device, type);
 #else
 	return 0;
@@ -1566,7 +1566,7 @@ extern struct drbd_resource *drbd_find_resource(const char *name);
 extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
 
-extern int proc_details;
+extern int drbd_proc_details;
 
 /* drbd_req */
 extern void do_submit(struct work_struct *ws);
