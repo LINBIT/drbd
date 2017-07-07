@@ -93,20 +93,14 @@ MODULE_PARM_DESC(minor_count, "Approximate number of drbd devices ("
 MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
-/* allow_open_on_secondary */
-MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
- * this becomes the boot parameter drbd.minor_count */
-module_param_named(minor_count, drbd_minor_count, uint, 0444);
-module_param_named(disable_sendpage, drbd_disable_sendpage ,bool, 0644);
-module_param_named(allow_oos, drbd_allow_oos, bool, 0);
-module_param_named(proc_details, drbd_proc_details, int, 0644);
+ * these become boot parameters (e.g., drbd.minor_count) */
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 int drbd_enable_faults;
 int drbd_fault_rate;
 static int drbd_fault_count;
-int drbd_fault_devs;
+static int drbd_fault_devs;
 /* bitmap of enabled faults */
 module_param_named(enable_faults, drbd_enable_faults, int, 0664);
 /* fault rate % value - applies to all enabled faults */
@@ -117,16 +111,22 @@ module_param_named(fault_count, drbd_fault_count, int, 0664);
 module_param_named(fault_devs, drbd_fault_devs, int, 0644);
 #endif
 
-/* module parameter, defined */
-unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
-bool drbd_disable_sendpage;
-bool drbd_allow_oos;
-int drbd_proc_details;       /* Detail level in proc drbd*/
+/* module parameters we can keep static */
+static bool drbd_allow_oos; /* allow_open_on_secondary */
+static bool drbd_disable_sendpage;
+MODULE_PARM_DESC(allow_oos, "DONT USE!");
+module_param_named(allow_oos, drbd_allow_oos, bool, 0);
+module_param_named(disable_sendpage, drbd_disable_sendpage, bool, 0644);
 
+/* module parameters we share */
+int drbd_proc_details; /* Detail level in proc drbd*/
+module_param_named(proc_details, drbd_proc_details, int, 0644);
+/* module parameters shared with defaults */
+unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
 char drbd_usermode_helper[80] = "/sbin/drbdadm";
-
+module_param_named(minor_count, drbd_minor_count, uint, 0444);
 module_param_string(usermode_helper, drbd_usermode_helper, sizeof(drbd_usermode_helper), 0644);
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks

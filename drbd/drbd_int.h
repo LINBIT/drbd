@@ -89,18 +89,14 @@ enum {
 };
 #endif
 
-/* module parameter, defined in drbd_main.c */
-extern unsigned int drbd_minor_count;
-extern bool drbd_disable_sendpage;
-extern bool drbd_allow_oos;
-
+/* shared module parameters, defined in drbd_main.c */
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int drbd_enable_faults;
 extern int drbd_fault_rate;
-extern int drbd_fault_devs;
 #endif
-
+extern unsigned int drbd_minor_count;
 extern char drbd_usermode_helper[];
+extern int drbd_proc_details;
 
 #ifndef DRBD_MAJOR
 # define DRBD_MAJOR 147
@@ -1565,8 +1561,6 @@ extern struct drbd_connection *conn_get_by_addrs(void *my_addr, int my_addr_len,
 extern struct drbd_resource *drbd_find_resource(const char *name);
 extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
-
-extern int drbd_proc_details;
 
 /* drbd_req */
 extern void do_submit(struct work_struct *ws);
