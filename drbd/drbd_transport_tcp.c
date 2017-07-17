@@ -29,6 +29,7 @@
 #include <linux/tcp.h>
 #include <linux/highmem.h>
 #include <linux/drbd_genl_api.h>
+#include <linux/drbd_config.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
 #include "drbd_wrappers.h"
@@ -39,7 +40,7 @@ MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
 MODULE_DESCRIPTION("TCP (SDP, SSOCKS) transport layer for DRBD");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.0");
+MODULE_VERSION(REL_VERSION);
 
 struct buffer {
 	void *base;
