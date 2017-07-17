@@ -75,7 +75,7 @@ COMPAT_FORCE := FORCE
 endif
 
 ifneq ($(KBUILD_STAGE),modpost)
-TEST_C := $(wildcard $(src)/drbd-kernel-compat/tests/*.c)
+TEST_C := $(sort $(wildcard $(src)/drbd-kernel-compat/tests/*.c))
 TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj)/.compat_test.%.result)
 $(obj)/.compat_test.%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
 	$(call cmd,compat_test_result)
