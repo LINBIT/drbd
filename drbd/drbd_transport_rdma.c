@@ -1139,7 +1139,7 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct dtr_cm *cm;
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
-	if (cm) {
+	if (cm == failed_cm) {
 		dtr_free_posted_rx_desc(cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
