@@ -2665,8 +2665,10 @@ static int dtr_connect(struct drbd_transport *transport)
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
 	struct dtr_path *path;
 	struct net_conf *nc;
-	int timeout, err = -ENOMEM;
+	int i, timeout, err = -ENOMEM;
 	u32 im;
+
+	flush_signals(current);
 
 	if (!list_first_or_null_rcu(&transport->paths, struct drbd_path, list))
 		return -EDESTADDRREQ;
@@ -2701,32 +2703,31 @@ static int dtr_connect(struct drbd_transport *transport)
 
 	err = wait_for_completion_interruptible(&rdma_transport->connected);
 	if (err) {
-		tr_err(transport, "wait_for_completion_int() = %d", err);
+		flush_signals(current);
+		goto abort;
 	}
 
 	err = atomic_read(&rdma_transport->first_path_connect_err);
-	if (err == 1) {
-		flush_signals(current);
+	if (err == 1)
 		err = -EAGAIN;
+	if (err)
 		goto abort;
-	}
-	else if (err) {
+
+
+	/* Make sure at least one path has rx_descs... */
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		dtr_refill_rx_desc(rdma_transport, i);
+
+	/* make sure the other side had time to create rx_descs */
+	schedule_timeout(HZ / 4);
+
+	return 0;
+
 abort:
-		rdma_transport->active = false;
+	rdma_transport->active = false;
 
-		for_each_path_ref(path, im, transport)
-			dtr_disconnect_path(path);
-	} else {
-		int i;
-
-		/* Make sure at least one path has rx_descs... */
-		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-			dtr_refill_rx_desc(rdma_transport, i);
-
-		/* make sure the other side had time to create rx_descs */
-		schedule_timeout(HZ / 4);
-	}
-
+	for_each_path_ref(path, im, transport)
+		dtr_disconnect_path(path);
 	return err;
 }
 
