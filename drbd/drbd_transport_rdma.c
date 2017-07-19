@@ -364,6 +364,7 @@ static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
 			 void (*free_desc)(struct dtr_cm *, void *));
 static int dtr_activate_path(struct dtr_path *path);
 static void dtr_free_posted_rx_desc(struct dtr_cm *cm);
+static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -900,6 +901,14 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (err)
 		tr_err(transport, "sending first flow_control_msg() failed\n");
 
+	path->cm->state = CONNECTED;
+	schedule_timeout(HZ / 4);
+	if (!dtr_path_ok(path)) {
+		if (path->cs.active)
+			dtr_cma_retry_connect(path, path->cm);
+		return;
+	}
+
 	p = atomic_cmpxchg(&path->rdma_transport->first_path_connect_err, 1, err);
 	if (p == 1) {
 		if (cs->active)
@@ -911,8 +920,6 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 
 	path->path.established = true;
 	drbd_path_event(transport, &path->path);
-
-	path->cm->state = CONNECTED;
 
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
