@@ -1335,7 +1335,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 				cm_id, cm, event->event);
 		return 0;
 	}
-	wake_up_interruptible(&cm->state_wq);
+	wake_up(&cm->state_wq);
 
 	/* by returning 1 we instruct the caller to destroy the cm_id. We
 	   are not allowed to free it within the callback, since that deadlocks! */
@@ -2462,17 +2462,19 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		pr_warn("failed to disconnect, id %p context %p err %d\n",
 			cm->id, cm->id->context, err);
 		/* We are ignoring errors here on purpose */
+		goto out;
 	}
 
 	/* There might be a signal pending here. Not incorruptible! */
 	wait_event_timeout(cm->state_wq,
-			   cm->state >= DISCONNECTED,
+			   cm->state == DISCONNECTED,
 			   HZ);
 
-	if (cm->state < DISCONNECTED)
+	if (cm->state != DISCONNECTED)
 		/* rdma_stream->rdma_transport might still be NULL here. */
 		pr_warn("WARN: not properly disconnected\n");
 
+ out:
 	dtr_free_posted_rx_desc(cm);
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
