@@ -2457,6 +2457,9 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	if (!cm)
 		return;
 
+	if (cm->state != CONNECTED && cm->state != ERROR)
+		goto out;
+
 	err = rdma_disconnect(cm->id);
 	if (err) {
 		pr_warn("failed to disconnect, id %p context %p err %d\n",
@@ -2472,7 +2475,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	if (cm->state != DISCONNECTED)
 		/* rdma_stream->rdma_transport might still be NULL here. */
-		pr_warn("WARN: not properly disconnected\n");
+		pr_warn("WARN: not properly disconnected, state = %d\n",
+			cm->state);
 
  out:
 	dtr_free_posted_rx_desc(cm);
