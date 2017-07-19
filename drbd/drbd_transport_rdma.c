@@ -2596,7 +2596,7 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 		goto out;
 	}
 
-	err = rdma_listen(listener->cm.id, 3);
+	err = rdma_listen(listener->cm.id, 1);
 	if (err) {
 		tr_err(transport, "rdma_listen error %d\n", err);
 		goto out;
