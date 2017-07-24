@@ -8145,17 +8145,20 @@ static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 	return 0;
 }
 
+static u64 node_id_to_mask(struct drbd_peer_md *peer_md, int node_id) __must_hold(local)
+{
+	int bitmap_bit = peer_md[node_id].bitmap_index;
+	return (bitmap_bit >= 0) ? NODE_MASK(bitmap_bit) : 0;
+}
+
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_hold(local)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 bitmap_bits = 0;
 	int node_id;
 
-	for_each_set_bit(node_id, (unsigned long *)&node_ids, DRBD_NODE_ID_MAX) {
-		int bitmap_bit = peer_md[node_id].bitmap_index;
-		if (bitmap_bit >= 0)
-			bitmap_bits |= NODE_MASK(bitmap_bit);
-	}
+	for_each_set_bit(node_id, (unsigned long *)&node_ids, DRBD_NODE_ID_MAX)
+		bitmap_bits |= node_id_to_mask(peer_md, node_id);
 	return bitmap_bits;
 }
 
@@ -8247,13 +8250,15 @@ found:
 	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
 		struct drbd_device *device = peer_device->device;
-		u64 in_sync_b;
+		u64 in_sync_b, mask;
 
 		if (get_ldev(device)) {
 			in_sync_b = node_ids_to_bitmap(device, in_sync);
+			mask = ~node_id_to_mask(device->ldev->md.peers,
+						connection->peer_node_id);
 
 			drbd_set_sync(device, peer_req->i.sector,
-				      peer_req->i.size, ~in_sync_b, -1);
+				      peer_req->i.size, ~in_sync_b, mask);
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
