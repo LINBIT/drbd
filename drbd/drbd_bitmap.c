@@ -114,7 +114,7 @@ static void __bm_print_lock_info(struct drbd_device *device, const char *func)
 	drbd_err(device, "FIXME %s[%d] in %s, bitmap locked for '%s' by %s[%d]\n",
 		 current->comm, task_pid_nr(current),
 		 func, b->bm_why ?: "?",
-		 b->bm_task->comm, task_pid_nr(b->bm_task));
+		 b->bm_task_comm, b->bm_task_pid);
 }
 
 /* drbd_bm_lock() was introduced before drbd-9.0 to ensure that access to
@@ -153,7 +153,7 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_peer_device *peer_device,
 		drbd_warn(device, "%s[%d] going to '%s' but bitmap already locked for '%s' by %s[%d]\n",
 			  current->comm, task_pid_nr(current),
 			  why, b->bm_why ?: "?",
-			  b->bm_task->comm, task_pid_nr(b->bm_task));
+			  b->bm_task_comm, b->bm_task_pid);
 		mutex_lock(&b->bm_change);
 	}
 	if (b->bm_flags & BM_LOCK_ALL)
@@ -161,7 +161,8 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_peer_device *peer_device,
 	b->bm_flags |= flags & BM_LOCK_ALL;
 
 	b->bm_why  = why;
-	b->bm_task = current;
+	strcpy(b->bm_task_comm, current->comm);
+	b->bm_task_pid = task_pid_nr(current);
 	b->bm_locked_peer = peer_device;
 }
 
@@ -188,7 +189,8 @@ void drbd_bm_unlock(struct drbd_device *device)
 
 	b->bm_flags &= ~BM_LOCK_ALL;
 	b->bm_why  = NULL;
-	b->bm_task = NULL;
+	b->bm_task_comm[0] = 0;
+	b->bm_task_pid = 0;
 	b->bm_locked_peer = NULL;
 	mutex_unlock(&b->bm_change);
 }
@@ -705,7 +707,7 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 	if (!bitmap->bm_bits)
 		return 0;
 
-	if (bitmap->bm_task != current) {
+	if (bitmap->bm_task_pid != task_pid_nr(current)) {
 		switch(op) {
 		case BM_OP_CLEAR:
 			if (bitmap->bm_flags & BM_LOCK_CLEAR)

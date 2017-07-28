@@ -645,7 +645,8 @@ struct drbd_bitmap {
 
 	/* debugging aid, in case we are still racy somewhere */
 	char          *bm_why;
-	struct task_struct *bm_task;
+	char          bm_task_comm[TASK_COMM_LEN];
+	pid_t         bm_task_pid;
 	struct drbd_peer_device *bm_locked_peer;
 };
 
