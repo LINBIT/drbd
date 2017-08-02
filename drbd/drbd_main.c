@@ -4617,7 +4617,9 @@ static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __m
 	int node_id;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (peer_device->bitmap_uuids[node_id])
+		u64 bitmap_uuid = peer_device->bitmap_uuids[node_id];
+
+		if (bitmap_uuid != 0 && bitmap_uuid != -1)
 			set_bitmap_slots |= NODE_MASK(node_id);
 	}
 
