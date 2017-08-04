@@ -2,6 +2,29 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.9rc1-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * fix occasionally forgotten resyncs in installations where
+   diskless primaries are present. The bug tigers when a storage
+   node is re-integrated, and it happens to connect to the diskless
+   primary first; This bug is severe, since it might cause inconsistent
+   data read back on the diskless primary!
+ * fix a possible OOPS when in a debug message regarding bitmap
+   locking
+ * fix discard bigger than 1MiB; The bug causes disconnect with
+   bigger discard requests
+ * fix an issue that causes unexpected split-brain situations upon
+   connect. This issue triggers only when one of the node has a
+   node_id bigger than 3.
+ * fix left over bits in bitmap on SyncSource after resync; the
+   issue was triggered by write requests that come in while the
+   resync starts
+ * fix peers becoming unexpectedly displayed as D_OUTDATED at the
+   end of a resync; While the disk state on the node stays D_UP_TO_DATE
+ * fix a race between auto promote and auto demote of multiple volumes
+   in a single resource; The symptom was that the a process opening
+   the /dev/drbdX for read-write gets an -EROFS errno
+
 9.0.8-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix a race condition between adding connections and receiving data
