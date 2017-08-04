@@ -2481,11 +2481,17 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
 	struct drbd_resource *resource = device->resource;
-	unsigned long flags;
 	int rv = 0;
 
 	kref_get(&device->kref);
-	kref_debug_get(&device->kref_debug, 9);
+	kref_debug_get(&device->kref_debug, 3);
+
+	mutex_lock(&resource->open_release);
+
+	if (mode & FMODE_WRITE)
+		device->open_rw_cnt++;
+	else
+		device->open_ro_cnt++;
 
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
@@ -2510,13 +2516,6 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		goto out;
 	}
 
-
-	down(&resource->state_sem);
-	/* drbd_set_role() should be able to rely on nobody increasing rw_cnt */
-
-	spin_lock_irqsave(&resource->req_lock, flags);
-	/* to have a stable role and no race with updating open_cnt */
-
 	if (test_bit(UNREGISTERED, &device->flags))
 		rv = -ENODEV;
 
@@ -2530,20 +2529,10 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		     !allow_oos))
 			rv = -EMEDIUMTYPE;
 	}
-
-	if (!rv) {
-		kref_get(&device->kref);
-		kref_debug_get(&device->kref_debug, 3);
-		if (mode & FMODE_WRITE)
-			device->open_rw_cnt++;
-		else
-			device->open_ro_cnt++;
-	}
-	spin_unlock_irqrestore(&resource->req_lock, flags);
-	up(&resource->state_sem);
 out:
-	kref_debug_put(&device->kref_debug, 9);
-	kref_put(&device->kref, drbd_destroy_device);
+	mutex_unlock(&resource->open_release);
+	if (rv)
+		drbd_release(bdev->bd_disk, mode);
 	return rv;
 }
 
@@ -2564,17 +2553,15 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
-	unsigned long flags;
 	int open_rw_cnt, open_ro_cnt;
 
-	spin_lock_irqsave(&resource->req_lock, flags);
+	mutex_lock(&resource->open_release);
 	if (mode & FMODE_WRITE)
 		device->open_rw_cnt--;
 	else
 		device->open_ro_cnt--;
 
 	open_counts(resource, &open_rw_cnt, &open_ro_cnt);
-	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
@@ -2582,7 +2569,8 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
 
-		if (open_rw_cnt == 0 &&
+		if (mode & FMODE_WRITE &&
+		    open_rw_cnt == 0 &&
 		    resource->role[NOW] == R_PRIMARY &&
 		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
 			rv = drbd_set_role(resource, R_SECONDARY, false, NULL);
@@ -2591,6 +2579,8 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 					  drbd_set_st_err_str(rv));
 		}
 	}
+	mutex_unlock(&resource->open_release);
+
 	kref_debug_put(&device->kref_debug, 3);
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
 #ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
@@ -3266,6 +3256,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	resource->twopc_reply.initiator_node_id = -1;
 	mutex_init(&resource->conf_update);
 	mutex_init(&resource->adm_mutex);
+	mutex_init(&resource->open_release);
 	spin_lock_init(&resource->req_lock);
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
