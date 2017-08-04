@@ -130,7 +130,7 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 		    connection->cstate[NOW] != C_CONNECTED ||
 		    !(req->net_rq_state[node_id] & RQ_NET_SENT))
 			continue;
-		refcount_inc(&req->kref.refcount); /* was 0, instead of kref_get() */
+		refcount_set(&req->kref.refcount, 1); /* was 0, instead of kref_get() */
 		req->net_rq_state[node_id] |= RQ_PEER_ACK;
 		if (!queued) {
 			list_add_tail(&req->tl_requests, &resource->peer_ack_list);
