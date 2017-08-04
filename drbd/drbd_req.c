@@ -617,7 +617,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		struct drbd_peer_device *peer_device,
 		int clear, int set)
 {
-	unsigned old_net;
+	unsigned old_net = 0;
 	unsigned old_local = req->local_rq_state;
 	unsigned set_local = set & RQ_STATE_0_MASK;
 	unsigned clear_local = clear & RQ_STATE_0_MASK;
