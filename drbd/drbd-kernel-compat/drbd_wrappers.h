@@ -1825,4 +1825,11 @@ u64 nsecs_to_jiffies64(u64 n);
 unsigned long nsecs_to_jiffies(u64 n);
 #endif
 
+#ifndef COMPAT_HAVE_FILE_INODE
+static inline struct inode *file_inode(const struct file *file)
+{
+	return file->f_dentry->d_inode;
+}
+#endif
+
 #endif
