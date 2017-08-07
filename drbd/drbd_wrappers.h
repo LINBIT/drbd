@@ -1882,4 +1882,8 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 #endif
 #endif
 
+#ifndef COMPAT_HAVE_KMALLOC_ARRAY
+#define kmalloc_array(a, b, c) kmalloc((a) * (b), (c))
+#endif
+
 #endif
