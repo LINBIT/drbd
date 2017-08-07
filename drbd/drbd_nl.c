@@ -925,6 +925,9 @@ retry:
 			request_ping(connection);
 		rcu_read_unlock();
 	} else /* (role == R_SECONDARY) */ {
+		idr_for_each_entry(&resource->devices, device, vnr)
+			flush_workqueue(device->submit.wq);
+
 		if (start_new_tl_epoch(resource)) {
 			struct drbd_connection *connection;
 			u64 im;
