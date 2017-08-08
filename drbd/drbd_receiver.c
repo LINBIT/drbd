@@ -6957,7 +6957,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 
-	if (get_ldev_if_state(device, D_UP_TO_DATE) && test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
+	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	    get_ldev_if_state(device, D_UP_TO_DATE)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_warn(peer_device, "received new current UUID: %016llX "
 				  "weak_nodes=%016llX\n", current_uuid, weak_nodes);
