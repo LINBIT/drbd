@@ -4802,7 +4802,10 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 
 		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
-	} else if (device->disk_state[NOW] < D_INCONSISTENT && !bad_server &&
+	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
+		   repl_state >= L_ESTABLISHED &&
+		   device->resource->role[NOW] == R_SECONDARY &&
+		   peer_device->connection->peer_role[NOW] == R_PRIMARY &&
 		   peer_device->current_uuid != device->exposed_data_uuid) {
 		struct drbd_resource *resource = device->resource;
 
