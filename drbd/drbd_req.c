@@ -118,11 +118,18 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	return req;
 }
 
+static void req_destroy_no_send_peer_ack(struct kref *kref)
+{
+	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+	mempool_free(req, drbd_request_mempool);
+}
+
 void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
 {
 	struct drbd_connection *connection;
 	bool queued = false;
 
+	refcount_set(&req->kref.refcount, 1); /* was 0, instead of kref_get() */
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
@@ -130,7 +137,7 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 		    connection->cstate[NOW] != C_CONNECTED ||
 		    !(req->net_rq_state[node_id] & RQ_NET_SENT))
 			continue;
-		refcount_set(&req->kref.refcount, 1); /* was 0, instead of kref_get() */
+		kref_get(&req->kref);
 		req->net_rq_state[node_id] |= RQ_PEER_ACK;
 		if (!queued) {
 			list_add_tail(&req->tl_requests, &resource->peer_ack_list);
@@ -140,8 +147,7 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 	}
 	rcu_read_unlock();
 
-	if (!queued)
-		mempool_free(req, drbd_request_mempool);
+	kref_put(&req->kref, req_destroy_no_send_peer_ack);
 }
 
 static bool peer_ack_differs(struct drbd_request *req1, struct drbd_request *req2)
