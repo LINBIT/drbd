@@ -824,7 +824,10 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * bi_opf (some kernel version) -> data packet flags -> bi_opf (other kernel version)
  */
 
-#ifdef COMPAT_HAVE_BIO_SET_OP_ATTRS
+#if defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) && \
+	!(defined(RHEL_RELEASE_CODE /* 7.4 broke our compat detection here */) && \
+			LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0))
+
 /* Linux 4.8 split bio OPs and FLAGs {{{2 */
 
 #define DRBD_REQ_PREFLUSH	REQ_PREFLUSH
@@ -995,9 +998,16 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #endif
 
 
-#ifndef COMPAT_HAVE_BIO_SET_OP_ATTRS /* compat for Linux before 4.8 {{{2 */
-
-#define bi_opf bi_rw
+#if defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) /* compat for Linux before 4.8 {{{2 */
+#if (defined(RHEL_RELEASE_CODE /* 7.4 broke our compat detection here */) && \
+			LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0))
+/* Thank you RHEL 7.4 for backporting just enough to break existing compat code,
+ * but not enough to make it work for us without additional compat code.
+ */
+#define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
+#endif
+#else /* !defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) */
+#define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
 
 #ifndef REQ_WRITE
 /* before 2.6.36 */
@@ -1048,7 +1058,13 @@ static inline int op_from_rq_bits(u64 flags)
 	else
 		return REQ_OP_READ;
 }
+#endif
+
+#ifdef COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES
+#define bi_opf bi_rw
 #define submit_bio(__bio)	submit_bio(__bio->bi_rw, __bio)
+/* see comment in above compat enum req_op */
+#define REQ_OP_FLUSH		REQ_OP_WRITE
 #endif
 /* }}}1 bio -> bi_rw/bi_opf REQ_* and BIO_RW_* REQ_OP_* compat stuff */
 
