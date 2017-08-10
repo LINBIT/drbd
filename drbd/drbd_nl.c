@@ -1557,7 +1557,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 		struct drbd_peer_device *peer_device;
 
 		if (device->ldev->md.node_id == node_id) {
-			drbd_info(device, "my node_id: %u\n", node_id);
+			dynamic_drbd_dbg(device, "my node_id: %u\n", node_id);
 			continue; /* skip myself... */
 		}
 		/* Have we met this peer node id before? */
@@ -1566,7 +1566,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
-			drbd_info(peer_device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x max_size: %llu (%s)\n",
+			dynamic_drbd_dbg(peer_device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x max_size: %llu (%s)\n",
 					node_id,
 					peer_md->bitmap_index,
 					peer_md->bitmap_uuid,
@@ -1589,7 +1589,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 				continue;
 			}
 		} else {
-			drbd_info(device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x (not currently reachable)\n",
+			dynamic_drbd_dbg(device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x (not currently reachable)\n",
 					node_id,
 					peer_md->bitmap_index,
 					peer_md->bitmap_uuid,

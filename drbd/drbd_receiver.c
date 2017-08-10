@@ -4469,8 +4469,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		peer_device->max_size = p_size;
 
 	cur_size = drbd_get_capacity(device->this_bdev);
-	drbd_info(device, "current_size: %llu\n", (unsigned long long)cur_size);
-	drbd_info(peer_device, "c_size: %llu u_size: %llu d_size: %llu max_size: %llu\n",
+	dynamic_drbd_dbg(device, "current_size: %llu\n", (unsigned long long)cur_size);
+	dynamic_drbd_dbg(peer_device, "c_size: %llu u_size: %llu d_size: %llu max_size: %llu\n",
 			(unsigned long long)p_csize,
 			(unsigned long long)p_usize,
 			(unsigned long long)p_size,
@@ -4503,7 +4503,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		rcu_read_unlock();
 
 		my_max_size = drbd_get_max_capacity(device->ldev);
-		drbd_info(peer_device, "la_size: %llu my_usize: %llu my_max_size: %llu\n",
+		dynamic_drbd_dbg(peer_device, "la_size: %llu my_usize: %llu my_max_size: %llu\n",
 			(unsigned long long)device->ldev->md.effective_size,
 			(unsigned long long)my_usize,
 			(unsigned long long)my_max_size);
@@ -4574,7 +4574,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
 	if (have_ldev) {
 		drbd_reconsider_queue_parameters(device, device->ldev, o);
-		drbd_info(peer_device, "calling drbd_determine_dev_size()\n");
 		dd = drbd_determine_dev_size(device, p_csize, ddsf, NULL);
 
 		if (dd == DS_GREW || dd == DS_SHRUNK)
