@@ -47,6 +47,7 @@
 	rcu_read_unlock();					\
 
 void drbd_printk_with_wrong_object_type(void);
+void drbd_dyn_dbg_with_wrong_object_type(void);
 
 #define __drbd_printk_choose_cond(obj, struct_name) \
 	(__builtin_types_compatible_p(typeof(obj), struct struct_name *) || \
@@ -71,10 +72,7 @@ void drbd_printk_with_wrong_object_type(void);
 		__drbd_printk_if_same_type(obj, drbd_peer_device, level, fmt, ## args), \
 	        drbd_printk_with_wrong_object_type()))))
 
-#if defined(disk_to_dev)
-#define drbd_dbg(device, fmt, args...) \
-	dev_dbg(disk_to_dev(device->vdisk), fmt, ## args)
-#elif defined(DEBUG)
+#if defined(DEBUG)
 #define drbd_dbg(device, fmt, args...) \
 	drbd_printk(KERN_DEBUG, device, fmt, ## args)
 #else
@@ -82,10 +80,42 @@ void drbd_printk_with_wrong_object_type(void);
 	do { if (0) drbd_printk(KERN_DEBUG, device, fmt, ## args); } while (0)
 #endif
 
-#if defined(dynamic_dev_dbg) && defined(disk_to_dev)
+#if defined(CONFIG_DYNAMIC_DEBUG) && defined(dynamic_pr_debug)
+
+#if !defined(DEFINE_DYNAMIC_DEBUG_METADATA)
+#warning "dynamic_pr_debug() defined, but some related macro found undefined"
 #define dynamic_drbd_dbg(device, fmt, args...) \
-	dynamic_dev_dbg(disk_to_dev(device->vdisk), fmt, ## args)
+	drbd_dbg(device, fmt, ## args)
 #else
+#if !defined(DYNAMIC_DEBUG_BRANCH)
+#define DYNAMIC_DEBUG_BRANCH(descriptor) \
+	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
+#endif
+
+#define __drbd_dyn_dbg_if_same_type(obj, struct_name, fmt, args...) \
+	__drbd_printk_choose_cond(obj, struct_name), \
+({ \
+	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);		\
+	if (DYNAMIC_DEBUG_BRANCH(descriptor)) {			\
+		__drbd_printk_ ## struct_name ## _prep((const struct struct_name *)(obj)) \
+		__dynamic_pr_debug(&descriptor, __drbd_printk_ ## struct_name ## _fmt(fmt), \
+			__drbd_printk_ ## struct_name ## _args(), ## args); \
+		__drbd_printk_ ## struct_name ## _unprep()	\
+	}							\
+})
+
+#define dynamic_drbd_dbg(obj, fmt, args...) \
+	__builtin_choose_expr( \
+	  __drbd_dyn_dbg_if_same_type(obj, drbd_device, fmt, ## args), \
+	  __builtin_choose_expr( \
+	    __drbd_dyn_dbg_if_same_type(obj, drbd_resource, fmt, ## args), \
+	    __builtin_choose_expr( \
+	      __drbd_dyn_dbg_if_same_type(obj, drbd_connection, fmt, ## args), \
+	      __builtin_choose_expr( \
+		__drbd_dyn_dbg_if_same_type(obj, drbd_peer_device, fmt, ## args), \
+	        drbd_dyn_dbg_with_wrong_object_type()))))
+#endif /* related macros */
+#else /* CONFIG_DYNAMIC_DEBUG && dynamic_pr_debug */
 #define dynamic_drbd_dbg(device, fmt, args...) \
 	drbd_dbg(device, fmt, ## args)
 #endif
