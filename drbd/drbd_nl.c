@@ -550,11 +550,11 @@ static char **make_envp(struct env *env)
 /* Macro refers to local variables peer_device, device and connection! */
 #define magic_printk(level, fmt, args...)				\
 	if (peer_device)						\
-		__drbd_printk_peer_device(level, peer_device, fmt, args); \
+		drbd_printk(level, peer_device, fmt, args);		\
 	else if (device)						\
-		__drbd_printk_device(level, device, fmt, args);		\
+		drbd_printk(level, device, fmt, args);			\
 	else								\
-		__drbd_printk_connection(level, connection, fmt, args);
+		drbd_printk(level, connection, fmt, args);
 
 int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
 {
