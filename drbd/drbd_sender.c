@@ -959,13 +959,40 @@ static bool was_resync_stable(struct drbd_peer_device *peer_device)
 	return true;
 }
 
-static void __cancel_other_resyncs(struct drbd_device *device)
+static u64 __cancel_other_resyncs(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 target_m = 0;
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T) {
+			target_m |= NODE_MASK(peer_device->node_id);
+			__change_repl_state(peer_device, L_ESTABLISHED);
+		}
+	}
+
+	return target_m;
+}
+
+static void resync_again(struct drbd_device *device, u64 source_m, u64 target_m)
 {
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T)
-			__change_repl_state(peer_device, L_ESTABLISHED);
+		if (peer_device->resync_again) {
+			u64 m = NODE_MASK(peer_device->node_id);
+			enum drbd_repl_state new_repl_state =
+				source_m & m ? L_WF_BITMAP_S :
+				target_m & m ? L_WF_BITMAP_T :
+				L_ESTABLISHED;
+
+			if (new_repl_state != L_ESTABLISHED) {
+				peer_device->resync_again--;
+				begin_state_change_locked(device->resource, CS_VERBOSE);
+				__change_repl_state(peer_device, new_repl_state);
+				end_state_change_locked(device->resource);
+			}
+		}
 	}
 }
 
@@ -995,6 +1022,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	enum drbd_repl_state old_repl_state = L_ESTABLISHED;
+	u64 source_m = 0, target_m = 0;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
 	char *khelper_cmd = NULL;
@@ -1113,7 +1141,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 				__change_disk_state(device, peer_device->disk_state[NOW]);
 
 			if (device->disk_state[NEW] == D_UP_TO_DATE)
-				__cancel_other_resyncs(device);
+				target_m = __cancel_other_resyncs(device);
 
 			if (stable_resync &&
 			    !test_bit(RECONCILIATION_RESYNC, &peer_device->flags) &&
@@ -1160,20 +1188,12 @@ out_unlock:
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
 
-	if (peer_device->resync_again) {
-		enum drbd_repl_state new_repl_state =
-			old_repl_state == L_SYNC_TARGET || old_repl_state == L_PAUSED_SYNC_T ?
-			L_WF_BITMAP_T :
-			old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S ?
-			L_WF_BITMAP_S : L_ESTABLISHED;
+	if (old_repl_state == L_SYNC_TARGET || old_repl_state == L_PAUSED_SYNC_T)
+		target_m |= NODE_MASK(peer_device->node_id);
+	else if (old_repl_state == L_SYNC_SOURCE || old_repl_state == L_PAUSED_SYNC_S)
+		source_m |= NODE_MASK(peer_device->node_id);
 
-		if (new_repl_state != L_ESTABLISHED) {
-			peer_device->resync_again--;
-			begin_state_change_locked(device->resource, CS_VERBOSE);
-			__change_repl_state(peer_device, new_repl_state);
-			end_state_change_locked(device->resource);
-		}
-	}
+	resync_again(device, source_m, target_m);
 	spin_unlock_irq(&device->resource->req_lock);
 
 out:
