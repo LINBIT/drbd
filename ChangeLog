@@ -2,6 +2,18 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.9rc2-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * in a cluster with a diskless primary, when a server goes away,
+   and is not outdated, outdate it upon reconnect. This gets done
+   when it's current UUID does not match the diskless primaries
+   exposed data UUID; with this bug present it can lead to
+   inconsistent data presented on the diskless primary node to
+   readers
+*  fix update of exposed data UUID on diskless primaries. It could
+   lead to false reject of futher diskfull secondaries that
+   want to join
+
 9.0.9rc1-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix occasionally forgotten resyncs in installations where
