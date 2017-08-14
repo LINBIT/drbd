@@ -6347,15 +6347,35 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	} else if (peer_state.role == R_PRIMARY &&
 		   peer_device->disk_state[NOW] == D_UNKNOWN && peer_state.disk == D_DISKLESS &&
-		   device->disk_state[NOW] >= D_NEGOTIATING && device->disk_state[NOW] < D_UP_TO_DATE) {
+		   device->disk_state[NOW] >= D_NEGOTIATING) {
 		/* I got connected to a diskless primary */
 		if (peer_device->current_uuid == drbd_current_uuid(device)) {
-			drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
-			new_disk_state = D_UP_TO_DATE;
+			if (device->disk_state[NOW] < D_UP_TO_DATE) {
+				drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
+				new_disk_state = D_UP_TO_DATE;
+			}
 		} else {
 			/* Try to get a resync from some other node that is D_UP_TO_DATE. */
 			try_to_get_resync = true;
+
+			if (device->disk_state[NOW] >= D_CONSISTENT) {
+				drbd_info(peer_device, "Downgrading local disk to D_OUTDATED since current UUID differs.\n");
+				new_disk_state = D_OUTDATED;
+				/* This is a "safety net"; it can only happen if fencing and quorum
+				   are both disabled. This alone would be racy, look for
+				   "Do not trust this guy!" */
+			}
 		}
+	} else if (resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] == D_DISKLESS &&
+		   peer_disk_state >= D_CONSISTENT &&
+		   peer_device->current_uuid != device->exposed_data_uuid) {
+		/* Do not trust this guy!
+		   He pretents to be D_UP_TO_DATE, but has a different current UUID. Do not
+		   accept him as D_UP_TO_DATE but downgrade that to D_OUTDATED here. He will
+		   do the same. We need to do it here to avoid that the peer is visible as
+		   D_UP_TO_DATE at all. Otherwise we could ship read requests to it!
+		 */
+		peer_disk_state = D_OUTDATED;
 	}
 
 	spin_lock_irq(&resource->req_lock);
