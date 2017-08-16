@@ -1832,4 +1832,8 @@ static inline struct inode *file_inode(const struct file *file)
 }
 #endif
 
+#ifndef COMPAT_HAVE_KMALLOC_ARRAY
+#define kmalloc_array(a, b, c) kmalloc((a) * (b), (c))
+#endif
+
 #endif
