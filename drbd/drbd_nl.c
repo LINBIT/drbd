@@ -3477,7 +3477,6 @@ unlock_fail_free_connection:
 fail_free_connection:
 	if (!list_empty(&connection->connections)) {
 		drbd_unregister_connection(connection);
-		synchronize_rcu();
 	}
 	drbd_put_connection(connection);
 fail_put_transport:
@@ -3739,9 +3738,6 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		if (err)
 			break;
 
-		synchronize_rcu();
-		/* Transport modules might use RCU on the path list.
-		   We do the synchronize_rcu() here in the generic code */
 		INIT_LIST_HEAD(&path->list);
 		notify_path(connection, path, NOTIFY_DESTROY);
 		kref_put(&path->kref, drbd_destroy_path);
@@ -3891,7 +3887,6 @@ static void del_connection(struct drbd_connection *connection)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	synchronize_rcu();
 	drbd_put_connection(connection);
 }
 
@@ -5473,7 +5468,6 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	synchronize_rcu();
 	drbd_put_device(device);
 
 	return ret;
@@ -5517,7 +5511,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 
 	list_del_rcu(&resource->resources);
 	drbd_debugfs_resource_cleanup(resource);
-	synchronize_rcu();
 	drbd_free_resource(resource);
 
 	mutex_unlock(&resources_mutex);

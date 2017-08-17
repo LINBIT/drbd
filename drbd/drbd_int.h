@@ -901,6 +901,7 @@ struct drbd_resource {
 	unsigned int w_cb_nr; /* keeps counting up */
 	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
 	wait_queue_head_t barrier_wait;  /* upon each state change. */
+	struct rcu_head rcu;
 };
 
 struct drbd_connection {
@@ -1049,6 +1050,8 @@ struct drbd_connection {
 
 	unsigned int peer_node_id;
 	struct list_head twopc_parent_list;
+	struct rcu_head rcu;
+
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
 					    implementation might have more members than the
 					    abstract one. */
@@ -1294,6 +1297,8 @@ struct drbd_device {
 	ktime_t al_before_bm_write_hinted_kt; /* sum over all al_writ_cnt */
 	ktime_t al_mid_kt;
 	ktime_t al_after_sync_page_kt;
+
+	struct rcu_head rcu;
 };
 
 struct drbd_bm_aio_ctx {

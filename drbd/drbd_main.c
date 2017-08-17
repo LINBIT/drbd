@@ -2771,6 +2771,12 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 	kfree(peer_device);
 }
 
+static void drbd_reclaim_device(struct rcu_head *rp)
+{
+	struct drbd_device *device = container_of(rp, struct drbd_device, rcu);
+	kfree(device);
+}
+
 /* caution. no locking. */
 void drbd_destroy_device(struct kref *kref)
 {
@@ -2803,10 +2809,17 @@ void drbd_destroy_device(struct kref *kref)
 	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
 
-	kfree(device);
+	call_rcu(&device->rcu, drbd_reclaim_device);
 
 	kref_debug_put(&resource->kref_debug, 4);
 	kref_put(&resource->kref, drbd_destroy_resource);
+}
+
+static void drbd_reclaim_resource(struct rcu_head *rp)
+{
+	struct drbd_resource *resource = container_of(rp, struct drbd_resource, rcu);
+
+	kfree(resource);
 }
 
 void drbd_destroy_resource(struct kref *kref)
@@ -2817,7 +2830,7 @@ void drbd_destroy_resource(struct kref *kref)
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
 	kref_debug_destroy(&resource->kref_debug);
-	kfree(resource);
+	call_rcu(&resource->rcu, drbd_reclaim_resource);
 	module_put(THIS_MODULE);
 }
 
@@ -3386,11 +3399,27 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 }
 
+static void drbd_reclaim_path(struct rcu_head *rp)
+{
+	struct drbd_path *path = container_of(rp, struct drbd_path, rcu);
+
+	INIT_LIST_HEAD(&path->list);
+	kfree(path);
+}
+
 void drbd_destroy_path(struct kref *kref)
 {
 	struct drbd_path *path = container_of(kref, struct drbd_path, kref);
 
-	kfree(path);
+	call_rcu(&path->rcu, drbd_reclaim_path);
+}
+
+static void drbd_reclaim_connection(struct rcu_head *rp)
+{
+	struct drbd_connection *connection =
+		container_of(rp, struct drbd_connection, rcu);
+
+	kfree(connection);
 }
 
 void drbd_destroy_connection(struct kref *kref)
@@ -3415,7 +3444,7 @@ void drbd_destroy_connection(struct kref *kref)
 	drbd_put_send_buffers(connection);
 	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
-	kfree(connection);
+	call_rcu(&connection->rcu, drbd_reclaim_connection);
 	kref_debug_put(&resource->kref_debug, 3);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
