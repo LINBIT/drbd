@@ -2780,6 +2780,9 @@ int drbd_worker(struct drbd_thread *thi)
 	struct drbd_resource *resource = thi->resource;
 	struct drbd_work *w;
 
+	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 10);
+
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
@@ -2853,6 +2856,9 @@ int drbd_worker(struct drbd_thread *thi)
 	} while (!list_empty(&work_list) ||
 		 test_bit(DEVICE_WORK_PENDING, &resource->flags) ||
 		 test_bit(PEER_DEVICE_WORK_PENDING, &resource->flags));
+
+	kref_debug_put(&resource->kref_debug, 10);
+	kref_put(&resource->kref, drbd_destroy_resource);
 
 	return 0;
 }

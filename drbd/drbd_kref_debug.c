@@ -46,6 +46,7 @@ struct kref_debug_class kref_class_resource = {
 		[7] = "drbd_adm_dump_devices()",
 		[8] = "free",
 		[9] = "drbd_adm_dump_peer_devices()",
+		[10] = "drbd_worker",
 	}
 };
 

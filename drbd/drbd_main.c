@@ -2836,7 +2836,7 @@ void drbd_free_resource(struct drbd_resource *resource)
 	}
 	spin_unlock_irq(&resource->queued_twopc_lock);
 
-	drbd_thread_stop(&resource->worker);
+	drbd_thread_stop_nowait(&resource->worker);
 
 	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
 		kref_debug_put(&connection->kref_debug, 9);
