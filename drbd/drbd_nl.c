@@ -3479,7 +3479,7 @@ fail_free_connection:
 		drbd_unregister_connection(connection);
 		synchronize_rcu();
 	}
-	drbd_put_connection(connection);
+	drbd_reclaim_connection(&connection->rcu);
 fail_put_transport:
 	drbd_put_transport_class(tr_class);
 fail:
@@ -3891,8 +3891,7 @@ static void del_connection(struct drbd_connection *connection)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	synchronize_rcu();
-	drbd_put_connection(connection);
+	call_rcu(&connection->rcu, drbd_reclaim_connection);
 }
 
 static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)

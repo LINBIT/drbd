@@ -1049,6 +1049,8 @@ struct drbd_connection {
 
 	unsigned int peer_node_id;
 	struct list_head twopc_parent_list;
+	struct rcu_head rcu;
+
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
 					    implementation might have more members than the
 					    abstract one. */
@@ -1771,7 +1773,7 @@ extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx
 extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_reclaim_device(struct rcu_head *);
 extern void drbd_unregister_connection(struct drbd_connection *);
-extern void drbd_put_connection(struct drbd_connection *);
+extern void drbd_reclaim_connection(struct rcu_head *);
 void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);

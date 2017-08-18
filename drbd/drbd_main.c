@@ -3422,8 +3422,6 @@ void drbd_destroy_connection(struct kref *kref)
 	idr_destroy(&connection->peer_devices);
 
 	kfree(connection->transport.net_conf);
-	drbd_put_send_buffers(connection);
-	conn_free_crypto(connection);
 	kref_debug_destroy(&connection->kref_debug);
 	kfree(connection);
 	kref_debug_put(&resource->kref_debug, 3);
@@ -3783,14 +3781,14 @@ void drbd_reclaim_device(struct rcu_head *rp)
  * drbd_unregister_connection()  -  make a connection "invisible"
  *
  * Remove the connection from the drbd object model.  Keep reference counts on
- * connection->kref; they are dropped in drbd_put_connection().
+ * connection->kref; they are dropped in drbd_reclaim_connection().
  */
 void drbd_unregister_connection(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	LIST_HEAD(work_list);
-	int vnr;
+	int vnr, rr;
 
 	spin_lock_irq(&resource->req_lock);
 	set_bit(C_UNREGISTERED, &connection->flags);
@@ -3805,20 +3803,6 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	list_for_each_entry(peer_device, &work_list, peer_devices)
 		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_connection_cleanup(connection);
-}
-
-void del_connect_timer(struct drbd_connection *connection)
-{
-	if (del_timer_sync(&connection->connect_timer)) {
-		kref_debug_put(&connection->kref_debug, 11);
-		kref_put(&connection->kref, drbd_destroy_connection);
-	}
-}
-
-void drbd_put_connection(struct drbd_connection *connection)
-{
-	struct drbd_peer_device *peer_device;
-	int vnr, rr;
 
 	del_connect_timer(connection);
 
@@ -3831,6 +3815,24 @@ void drbd_put_connection(struct drbd_connection *connection)
 		drbd_err(connection, "%d EEs in net list found!\n", rr);
 
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
+	drbd_put_send_buffers(connection);
+	conn_free_crypto(connection);
+}
+
+void del_connect_timer(struct drbd_connection *connection)
+{
+	if (del_timer_sync(&connection->connect_timer)) {
+		kref_debug_put(&connection->kref_debug, 11);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
+void drbd_reclaim_connection(struct rcu_head *rp)
+{
+	struct drbd_connection *connection =
+		container_of(rp, struct drbd_connection, rcu);
+	struct drbd_peer_device *peer_device;
+	int vnr;
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		kref_debug_put(&connection->kref_debug, 3);
