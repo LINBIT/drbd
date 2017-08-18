@@ -5473,8 +5473,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	synchronize_rcu();
-	drbd_put_device(device);
+	call_rcu(&device->rcu, drbd_reclaim_device);
 
 	return ret;
 }

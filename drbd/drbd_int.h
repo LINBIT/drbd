@@ -1294,6 +1294,9 @@ struct drbd_device {
 	ktime_t al_before_bm_write_hinted_kt; /* sum over all al_writ_cnt */
 	ktime_t al_mid_kt;
 	ktime_t al_after_sync_page_kt;
+
+	struct rcu_head rcu;
+	struct work_struct finalize_work;
 };
 
 struct drbd_bm_aio_ctx {
@@ -1766,7 +1769,7 @@ extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct 
 extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
 					     struct device_conf *device_conf, struct drbd_device **p_device);
 extern void drbd_unregister_device(struct drbd_device *);
-extern void drbd_put_device(struct drbd_device *);
+extern void drbd_reclaim_device(struct rcu_head *);
 extern void drbd_unregister_connection(struct drbd_connection *);
 extern void drbd_put_connection(struct drbd_connection *);
 void del_connect_timer(struct drbd_connection *connection);

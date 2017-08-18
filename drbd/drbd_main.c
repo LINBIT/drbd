@@ -2771,21 +2771,39 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 	kfree(peer_device);
 }
 
-/* caution. no locking. */
-void drbd_destroy_device(struct kref *kref)
+static void drbd_device_finalize_work_fn(struct work_struct *work)
 {
-	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
+	struct drbd_device *device = container_of(work, struct drbd_device, finalize_work);
 	struct drbd_resource *resource = device->resource;
-	struct drbd_peer_device *peer_device, *tmp;
-
-	/* cleanup stuff that may have been allocated during
-	 * device (re-)configuration or state changes */
-
+	
 	if (device->this_bdev)
 		bdput(device->this_bdev);
 
 	drbd_backing_dev_free(device, device->ldev);
 	device->ldev = NULL;
+
+	if (device->bitmap) {
+		drbd_bm_free(device->bitmap);
+		device->bitmap = NULL;
+	}
+
+	put_disk(device->vdisk);
+	blk_cleanup_queue(device->rq_queue);
+
+	kfree(device);
+
+	kref_debug_put(&resource->kref_debug, 4);
+	kref_put(&resource->kref, drbd_destroy_resource);
+}
+
+/* may not sleep, called from call_rcu. */
+void drbd_destroy_device(struct kref *kref)
+{
+	struct drbd_device *device = container_of(kref, struct drbd_device, kref);
+	struct drbd_peer_device *peer_device, *tmp;
+
+	/* cleanup stuff that may have been allocated during
+	 * device (re-)configuration or state changes */
 
 	lc_destroy(device->act_log);
 	for_each_peer_device_safe(peer_device, tmp, device) {
@@ -2794,19 +2812,11 @@ void drbd_destroy_device(struct kref *kref)
 		free_peer_device(peer_device);
 	}
 
-	if (device->bitmap) { /* should no longer be there. */
-		drbd_bm_free(device->bitmap);
-		device->bitmap = NULL;
-	}
 	__free_page(device->md_io.page);
-	put_disk(device->vdisk);
-	blk_cleanup_queue(device->rq_queue);
 	kref_debug_destroy(&device->kref_debug);
 
-	kfree(device);
-
-	kref_debug_put(&resource->kref_debug, 4);
-	kref_put(&resource->kref, drbd_destroy_resource);
+	INIT_WORK(&device->finalize_work, drbd_device_finalize_work_fn);
+	schedule_work(&device->finalize_work);
 }
 
 void drbd_destroy_resource(struct kref *kref)
@@ -3726,7 +3736,7 @@ out_no_q:
  *
  * Remove the device from the drbd object model and unregister it in the
  * kernel.  Keep reference counts on device->kref; they are dropped in
- * drbd_put_device().
+ * drbd_reclaim_device().
  */
 void drbd_unregister_device(struct drbd_device *device)
 {
@@ -3746,16 +3756,17 @@ void drbd_unregister_device(struct drbd_device *device)
 		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_device_cleanup(device);
 	del_gendisk(device->vdisk);
-}
-
-void drbd_put_device(struct drbd_device *device)
-{
-	struct drbd_peer_device *peer_device;
-	int i;
 
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
 	del_timer_sync(&device->request_timer);
+}
+
+void drbd_reclaim_device(struct rcu_head *rp)
+{
+	struct drbd_device *device = container_of(rp, struct drbd_device, rcu);
+	struct drbd_peer_device *peer_device;
+	int i;
 
 	for_each_peer_device(peer_device, device) {
 		kref_debug_put(&device->kref_debug, 1);
