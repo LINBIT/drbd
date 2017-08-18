@@ -3700,6 +3700,14 @@ int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static void reclaim_path(struct rcu_head *rp)
+{
+	struct drbd_path *path = container_of(rp, struct drbd_path, rcu);
+
+	INIT_LIST_HEAD(&path->list);
+	kref_put(&path->kref, drbd_destroy_path);
+}
+
 static enum drbd_ret_code
 adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
@@ -3739,12 +3747,10 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		if (err)
 			break;
 
-		synchronize_rcu();
-		/* Transport modules might use RCU on the path list.
-		   We do the synchronize_rcu() here in the generic code */
-		INIT_LIST_HEAD(&path->list);
 		notify_path(connection, path, NOTIFY_DESTROY);
-		kref_put(&path->kref, drbd_destroy_path);
+		/* Transport modules might use RCU on the path list. */
+		call_rcu(&path->rcu, reclaim_path);
+
 		return NO_ERROR;
 	}
 
