@@ -901,6 +901,7 @@ struct drbd_resource {
 	unsigned int w_cb_nr; /* keeps counting up */
 	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
 	wait_queue_head_t barrier_wait;  /* upon each state change. */
+	struct rcu_head rcu;
 };
 
 struct drbd_connection {
@@ -1777,7 +1778,9 @@ extern void drbd_reclaim_connection(struct rcu_head *);
 void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
-extern void drbd_free_resource(struct drbd_resource *resource);
+extern void drbd_reclaim_resource(struct rcu_head *rp);
+extern struct drbd_resource *drbd_find_resource(const char *name);
+extern void drbd_destroy_resource(struct kref *kref);
 
 extern void drbd_destroy_device(struct kref *kref);
 
@@ -1786,8 +1789,6 @@ extern struct drbd_connection *drbd_create_connection(struct drbd_resource *reso
 						      struct drbd_transport_class *tc);
 extern void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op);
 extern void drbd_destroy_connection(struct kref *kref);
-extern struct drbd_resource *drbd_find_resource(const char *name);
-extern void drbd_destroy_resource(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */

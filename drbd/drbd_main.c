@@ -2831,12 +2831,11 @@ void drbd_destroy_resource(struct kref *kref)
 	module_put(THIS_MODULE);
 }
 
-void drbd_free_resource(struct drbd_resource *resource)
+void drbd_reclaim_resource(struct rcu_head *rp)
 {
+	struct drbd_resource *resource = container_of(rp, struct drbd_resource, rcu);
 	struct queued_twopc *q, *q1;
 	struct drbd_connection *connection, *tmp;
-
-	del_timer_sync(&resource->queued_twopc_timer);
 
 	spin_lock_irq(&resource->queued_twopc_lock);
 	list_for_each_entry_safe(q, q1, &resource->queued_twopc, w.list) {
@@ -2853,9 +2852,6 @@ void drbd_free_resource(struct drbd_resource *resource)
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 	mempool_free(resource->peer_ack_req, drbd_request_mempool);
-	del_timer_sync(&resource->twopc_timer);
-	del_timer_sync(&resource->peer_ack_timer);
-	del_timer_sync(&resource->repost_up_to_date_timer);
 	kref_debug_put(&resource->kref_debug, 8);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }

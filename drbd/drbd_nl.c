@@ -5515,15 +5515,23 @@ static int adm_del_resource(struct drbd_resource *resource)
 
 	list_del_rcu(&resource->resources);
 	drbd_debugfs_resource_cleanup(resource);
-	synchronize_rcu();
-	drbd_free_resource(resource);
-
 	mutex_unlock(&resources_mutex);
+
+	del_timer_sync(&resource->queued_twopc_timer);
+	del_timer_sync(&resource->twopc_timer);
+	del_timer_sync(&resource->peer_ack_timer);
+	del_timer_sync(&resource->repost_up_to_date_timer);
+	call_rcu(&resource->rcu, drbd_reclaim_resource);
 
 	mutex_lock(&notification_mutex);
 	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 
+	/* When the last resource was removed do an explicit synchronize RCU.
+	   Without this a immediately following rmmod would fail, since the
+	   resource's worker thread still has a reference count to the module. */
+	if (list_empty(&drbd_resources))
+		synchronize_rcu();
 	return NO_ERROR;
 out:
 	mutex_unlock(&resources_mutex);
