@@ -3860,6 +3860,9 @@ static void del_connection(struct drbd_connection *connection)
 	enum drbd_state_rv rv2;
 	int vnr;
 
+	if (test_bit(C_UNREGISTERED, &connection->flags))
+		return;
+
 	/* No one else can reconfigure the network while I am here.
 	 * The state handling only uses drbd_thread_stop_nowait(),
 	 * we want to really wait here until the receiver is no more.
@@ -5446,6 +5449,9 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	enum drbd_ret_code ret;
 	u64 im;
 
+	if (test_bit(UNREGISTERED, &device->flags))
+		return ERR_MINOR_INVALID;
+
 	spin_lock_irq(&resource->req_lock);
 	if (device->disk_state[NOW] == D_DISKLESS &&
 	    device->open_ro_cnt == 0 && device->open_rw_cnt == 0) {
@@ -5512,6 +5518,9 @@ static int adm_del_resource(struct drbd_resource *resource)
 	drbd_flush_workqueue(&resource->work);
 
 	mutex_lock(&resources_mutex);
+	err = ERR_RES_NOT_KNOWN;
+	if (test_bit(R_UNREGISTERED, &resource->flags))
+		goto out;
 	err = ERR_NET_CONFIGURED;
 	if (!list_empty(&resource->connections))
 		goto out;
@@ -5519,6 +5528,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	if (!idr_is_empty(&resource->devices))
 		goto out;
 
+	set_bit(R_UNREGISTERED, &resource->flags);
 	list_del_rcu(&resource->resources);
 	drbd_debugfs_resource_cleanup(resource);
 	mutex_unlock(&resources_mutex);

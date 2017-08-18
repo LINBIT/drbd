@@ -769,6 +769,7 @@ enum {
 
         /* to be used in drbd_post_work() */
 	TRY_BECOME_UP_TO_DATE,  /* try to become D_UP_TO_DATE */
+	R_UNREGISTERED,
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
