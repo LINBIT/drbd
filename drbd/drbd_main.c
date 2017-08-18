@@ -529,6 +529,10 @@ static int drbd_thread_setup(void *arg)
 	unsigned long flags;
 	int retval;
 
+	if (connection)
+		kref_get(&connection->kref);
+	else
+		kref_get(&resource->kref);
 restart:
 	retval = thi->function(thi);
 
@@ -565,6 +569,11 @@ restart:
 
 	complete(&thi->stop);
 	spin_unlock_irqrestore(&thi->t_lock, flags);
+
+	if (connection)
+		kref_put(&connection->kref, drbd_destroy_connection);
+	else
+		kref_put(&resource->kref, drbd_destroy_resource);
 
 	return retval;
 }
