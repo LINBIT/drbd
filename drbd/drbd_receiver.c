@@ -761,7 +761,8 @@ start:
 #endif
 	if (!connection->ack_sender) {
 		drbd_err(connection, "Failed to create workqueue ack_sender\n");
-		goto abort;
+		schedule_timeout_uninterruptible(HZ);
+		goto retry;
 	}
 
 	if (connection->agreed_pro_version >= 110) {
