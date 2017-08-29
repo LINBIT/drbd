@@ -1041,12 +1041,14 @@ static inline int op_from_rq_bits(u64 flags)
 #endif
 
 #ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
-/* see comments in compat/tests/have_bioset_create_front_pad.c */
-#ifdef COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
-#define bioset_create(pool_size, front_pad)	bioset_create(pool_size, pool_size, 1)
+# ifndef COMPAT_HAVE_BIOSET_NEED_BVECS
+#  bioset_create(A, B, C) bioset_create(A, B)
+#  define BIOSET_NEED_BVECS 0
+#  define BIOSET_NEED_RESCUER 0
+# endif
 #else
-#define bioset_create(pool_size, front_pad)	bioset_create(pool_size, 1)
-#endif
+/* see comments in compat/tests/have_bioset_create_front_pad.c */
+# define bioset_create(pool_size, front_pad, C)	bioset_create(pool_size, 1)
 #endif
 
 
