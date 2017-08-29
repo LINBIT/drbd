@@ -2,32 +2,29 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-9.0.9rc2-1 (api:genl2/proto:86-112/transport:14)
---------
- * in a cluster with a diskless primary, when a server goes away,
-   and is not outdated, outdate it upon reconnect. This gets done
-   when it's current UUID does not match the diskless primaries
-   exposed data UUID; with this bug present it can lead to
-   inconsistent data presented on the diskless primary node to
-   readers
-*  fix update of exposed data UUID on diskless primaries. It could
-   lead to false reject of futher diskfull secondaries that
-   want to join
-
-9.0.9rc1-1 (api:genl2/proto:86-112/transport:14)
+9.0.9-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix occasionally forgotten resyncs in installations where
    diskless primaries are present. The bug tigers when a storage
    node is re-integrated, and it happens to connect to the diskless
    primary first; This bug is severe, since it might cause inconsistent
    data read back on the diskless primary!
+ * fix an issue that causes unexpected split-brain situations upon
+   connect. This issue triggers only when one of the node has a
+   node_id bigger than 3
+ * in a cluster with a diskless primary, when a server goes away,
+   and is not outdated, outdate it upon reconnect. This gets done
+   when it's current UUID does not match the diskless primaries
+   exposed data UUID; with this bug present it can lead to
+   inconsistent data presented on the diskless primary node to
+   readers
+ * fix update of exposed data UUID on diskless primaries. It could
+   lead to false reject of further diskfull secondaries that
+   want to join
  * fix a possible OOPS when in a debug message regarding bitmap
    locking
  * fix discard bigger than 1MiB; The bug causes disconnect with
    bigger discard requests
- * fix an issue that causes unexpected split-brain situations upon
-   connect. This issue triggers only when one of the node has a
-   node_id bigger than 3.
  * fix left over bits in bitmap on SyncSource after resync; the
    issue was triggered by write requests that come in while the
    resync starts
@@ -36,6 +33,9 @@ Latest:
  * fix a race between auto promote and auto demote of multiple volumes
    in a single resource; The symptom was that the a process opening
    the /dev/drbdX for read-write gets an -EROFS errno
+ * Speed up down of many resources by using call_rcu() instead
+   of synchronize_rcu()
+ * Make it compatible with the soon to be released 4.13 kernel
 
 9.0.8-1 (api:genl2/proto:86-112/transport:14)
 --------
