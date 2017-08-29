@@ -232,22 +232,66 @@ static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
 
 #define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
 
-#ifdef COMPAT_HAVE_BIO_BI_ERROR
-#define BIO_ENDIO_TYPE void
-#define BIO_ENDIO_ARGS(b,e) (b)
-#define BIO_ENDIO_FN_START int error = bio->bi_error
-#define BIO_ENDIO_FN_RETURN return
+#ifdef COMPAT_HAVE_BIO_BI_STATUS
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio->bi_status = status;
+	bio_endio(bio);
+}
 #else
-#define BIO_ENDIO_TYPE void
-#define BIO_ENDIO_ARGS(b,e) (b,e)
-#define BIO_ENDIO_FN_START do {} while (0)
-#define BIO_ENDIO_FN_RETURN return
+typedef u8 __bitwise blk_status_t;
+#define	BLK_STS_OK 0
+#define BLK_STS_NOTSUPP		((__force blk_status_t)1)
+#define BLK_STS_MEDIUM		((__force blk_status_t)7)
+#define BLK_STS_RESOURCE	((__force blk_status_t)9)
+#define BLK_STS_IOERR		((__force blk_status_t)10)
+static int blk_status_to_errno(blk_status_t status)
+{
+	return  status == BLK_STS_OK ? 0 :
+		status == BLK_STS_RESOURCE ? -ENOMEM :
+		status == BLK_STS_NOTSUPP ? -EOPNOTSUPP :
+		-EIO;
+}
+static inline blk_status_t errno_to_blk_status(int errno)
+{
+	blk_status_t status =
+		errno == 0 ? BLK_STS_OK :
+		errno == -ENOMEM ? BLK_STS_RESOURCE :
+		errno == -EOPNOTSUPP ? BLK_STS_NOTSUPP :
+		BLK_STS_IOERR;
+
+	return status;
+}
+#ifdef COMPAT_HAVE_BIO_BI_ERROR
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio->bi_error = blk_status_to_errno(status);
+	bio_endio(bio);
+}
+#else
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio_endio(bio, blk_status_to_errno(status));
+}
+#endif
+#endif
+
+#if defined(COMPAT_HAVE_BIO_BI_ERROR) || defined(COMPAT_HAVE_BIO_BI_STATUS)
+#define BIO_ENDIO_ARGS(b,e) (b)
+#ifdef COMPAT_HAVE_BIO_BI_STATUS
+#define BIO_ENDIO_FN_START blk_status_t status = bio->bi_status
+#else
+#define BIO_ENDIO_FN_START blk_status_t status = errno_to_blk_status(bio->bi_error)
+#endif
+#else
+#define BIO_ENDIO_ARGS(b,e) (b, int error)
+#define BIO_ENDIO_FN_START blk_status_t status = errno_to_blk_status(error)
 #endif
 
 /* bi_end_io handlers */
-extern BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
+extern void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
+extern void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
 
 #ifdef COMPAT_HAVE_BIO_BI_ERROR
 #define bio_endio(B,E) do { (B)->bi_error = E; bio_endio(B); } while (0)
