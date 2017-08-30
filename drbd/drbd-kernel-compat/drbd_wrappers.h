@@ -1633,14 +1633,18 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 })
 #endif
 
-#ifndef COMPAT_HAVE_GENERIC_START_IO_ACCT
+#ifdef COMPAT_HAVE_GENERIC_START_IO_ACCT
+#define generic_start_io_acct(Q, RW, S, P)  (void) Q; generic_start_io_acct(RW, S, P)
+#define generic_end_io_acct(Q, RW, P, J)  (void) Q; generic_end_io_acct(RW, P, J)
+#elif !defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_W_QUEUE)
 #ifndef __disk_stat_inc
-static inline void generic_start_io_acct(int rw, unsigned long sectors,
+static inline void generic_start_io_acct(struct request_queue *q, int rw, unsigned long sectors,
 					 struct hd_struct *part)
 {
 	int cpu;
 	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0]));
 
+	(void) q; /* no warning about unused variable */
 	cpu = part_stat_lock();
 	part_round_stats(cpu, part);
 	part_stat_inc(cpu, part, ios[rw]);
@@ -1652,12 +1656,13 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 	part_stat_unlock();
 }
 
-static inline void generic_end_io_acct(int rw, struct hd_struct *part,
-				  unsigned long start_time)
+static inline void generic_end_io_acct(struct request_queue *q, int rw, struct hd_struct *part,
+				       unsigned long start_time)
 {
 	unsigned long duration = jiffies - start_time;
 	int cpu;
 
+	(void) q; /* no warning about unused variable */
 	cpu = part_stat_lock();
 	part_stat_add(cpu, part, ticks[rw], duration);
 	part_round_stats(cpu, part);
