@@ -379,7 +379,7 @@ void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
 	int rw = bio_data_dir(m->bio);
-	bio_endio(m->bio, m->error);
+	drbd_bio_endio(m->bio, errno_to_blk_status(m->error));
 	dec_ap_bio(device, rw);
 }
 
@@ -1441,7 +1441,7 @@ static void drbd_process_discard_req(struct drbd_request *req)
 {
 	int err = drbd_issue_discard_or_zero_out(req->device,
 				req->i.sector, req->i.size >> 9, true);
-	bio_endio(req->private_bio, err ? -EIO : 0);
+	drbd_bio_endio(req->private_bio, err ? BLK_STS_IOERR : BLK_STS_OK);
 }
 
 static void
@@ -1467,14 +1467,14 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	 * this bio. */
 	if (get_ldev(device)) {
 		if (drbd_insert_fault(device, type))
-			bio_endio(bio, -EIO);
+			drbd_bio_endio(bio, BLK_STS_IOERR);
 		else if (bio_op(bio) == REQ_OP_DISCARD)
 			drbd_process_discard_req(req);
 		else
 			generic_make_request(bio);
 		put_ldev(device);
 	} else
-		bio_endio(bio, -EIO);
+		drbd_bio_endio(bio, BLK_STS_IOERR);
 }
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
@@ -1508,7 +1508,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
-		bio_endio(bio, -ENOMEM);
+		drbd_bio_endio(bio, BLK_STS_RESOURCE);
 		return ERR_PTR(-ENOMEM);
 	}
 	req->start_kt = start_kt;
@@ -2151,7 +2151,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
 	 * by the block layer. */
 	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
-		bio_endio(bio, -EOPNOTSUPP);
+		drbd_bio_endio(bio, BLK_STS_NOTSUPP);
 		MAKE_REQUEST_RETURN;
 	}
 
@@ -2162,7 +2162,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 #endif
 
 	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
-		bio_endio(bio, -EIO);
+		drbd_bio_endio(bio, BLK_STS_IOERR);
 		MAKE_REQUEST_RETURN;
 	}
 

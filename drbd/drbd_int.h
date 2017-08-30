@@ -2014,12 +2014,12 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 	__release(local);
 	if (!bio->bi_bdev) {
 		drbd_err(device, "drbd_generic_make_request: bio->bi_bdev == NULL\n");
-		bio_endio(bio, -ENODEV);
+		drbd_bio_endio(bio, BLK_STS_IOERR);
 		return;
 	}
 
 	if (drbd_insert_fault(device, fault_type))
-		bio_endio(bio, -EIO);
+		drbd_bio_endio(bio, BLK_STS_IOERR);
 	else
 		generic_make_request(bio);
 }

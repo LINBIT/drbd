@@ -64,14 +64,14 @@ struct mutex resources_mutex;
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
-BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 {
 	struct drbd_device *device;
 
 	BIO_ENDIO_FN_START;
 
 	device = bio->bi_private;
-	device->md_io.error = error;
+	device->md_io.error = blk_status_to_errno(status);
 
 	/* special case: drbd_md_read() during drbd_adm_attach() */
 	if (device->ldev)
@@ -92,8 +92,6 @@ BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	drbd_md_put_buffer(device);
 	device->md_io.done = 1;
 	wake_up(&device->misc_wait);
-
-	BIO_ENDIO_FN_RETURN;
 }
 
 /* reads on behalf of the partner,
@@ -206,7 +204,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
 {
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
@@ -214,13 +212,13 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 	bool is_discard = bio_op(bio) == REQ_OP_DISCARD;
 
 	BIO_ENDIO_FN_START;
-	if (error && drbd_ratelimit())
+	if (status && drbd_ratelimit())
 		drbd_warn(device, "%s: error=%d s=%llus\n",
 				is_write ? (is_discard ? "discard" : "write")
-					: "read", error,
+					: "read", status,
 				(unsigned long long)peer_req->i.sector);
 
-	if (error)
+	if (status)
 		set_bit(__EE_WAS_ERROR, &peer_req->flags);
 
 	bio_put(bio); /* no need for the bio anymore */
@@ -230,7 +228,6 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 		else
 			drbd_endio_read_sec_final(peer_req);
 	}
-	BIO_ENDIO_FN_RETURN;
 }
 
 /* Not static to increase the likelyhood that it will show up in a stack trace */
@@ -243,7 +240,7 @@ void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *
 
 /* read, readA or write requests on R_PRIMARY coming from drbd_make_request
  */
-BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
 {
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
@@ -285,15 +282,15 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 		if (drbd_ratelimit())
 			drbd_emerg(device, "delayed completion of aborted local request; disk-timeout may be too aggressive\n");
 
-		if (!error)
+		if (!status)
 			drbd_panic_after_delayed_completion_of_aborted_request(device);
 	}
 
 	/* to avoid recursion in __req_mod */
-	if (unlikely(error)) {
+	if (unlikely(status)) {
 		switch (bio_op(bio)) {
 		case REQ_OP_DISCARD:
-			if (error == -EOPNOTSUPP)
+			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;
 			else
 				what = DISCARD_COMPLETED_WITH_ERROR;
@@ -313,7 +310,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	}
 
 	bio_put(req->private_bio);
-	req->private_bio = ERR_PTR(error);
+	req->private_bio = ERR_PTR(blk_status_to_errno(status));
 
 	/* not req_mod(), we need irqsave here! */
 	spin_lock_irqsave(&device->resource->req_lock, flags);
@@ -323,7 +320,6 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	if (m.bio)
 		complete_master_bio(device, &m);
-	BIO_ENDIO_FN_RETURN;
 }
 
 void drbd_csum_pages(struct crypto_ahash *tfm, struct page *page, void *digest)

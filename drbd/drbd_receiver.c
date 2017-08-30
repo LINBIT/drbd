@@ -933,7 +933,7 @@ struct one_flush_context {
 	struct issue_flush_context *ctx;
 };
 
-static BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+static void one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
 {
 	struct one_flush_context *octx = bio->bi_private;
 	struct drbd_device *device = octx->device;
@@ -941,9 +941,9 @@ static BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	BIO_ENDIO_FN_START;
 
-	if (error) {
-		ctx->error = error;
-		drbd_info(device, "local disk FLUSH FAILED with status %d\n", error);
+	if (status) {
+		ctx->error = blk_status_to_errno(status);
+		drbd_info(device, "local disk FLUSH FAILED with status %d\n", status);
 	}
 	kfree(octx);
 	bio_put(bio);
@@ -955,8 +955,6 @@ static BIO_ENDIO_TYPE one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 
 	if (atomic_dec_and_test(&ctx->pending))
 		complete(&ctx->done);
-
-	BIO_ENDIO_FN_RETURN;
 }
 
 static void submit_one_flush(struct drbd_device *device, struct issue_flush_context *ctx)
