@@ -1907,4 +1907,8 @@ static inline struct inode *file_inode(const struct file *file)
 #define bio_clone_fast(bio, gfp, bio_set) bio_clone(bio, gfp)
 #endif
 
+#ifdef COMPAT_HAVE_BIO_BI_BDEV
+#define bio_set_dev(bio, bdev) (bio)->bi_bdev = bdev
+#endif
+
 #endif
