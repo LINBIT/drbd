@@ -3077,7 +3077,7 @@ static int __init drbd_init(void)
 #ifdef MODULE
 		return -EINVAL;
 #else
-		minor_count = DRBD_MINOR_COUNT_DEF;
+		drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 #endif
 	}
 
