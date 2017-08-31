@@ -1854,4 +1854,8 @@ static inline struct inode *file_inode(const struct file *file)
 #define kmalloc_array(a, b, c) kmalloc((a) * (b), (c))
 #endif
 
+#ifndef COMPAT_HAVE_BIO_CLONE_FAST
+#define bio_clone_fast(bio, gfp, bio_set) bio_clone(bio, gfp)
+#endif
+
 #endif
