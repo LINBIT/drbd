@@ -1,11 +1,11 @@
 =======================================================================
   With DRBD module version 8.4.5, we split out the management tools
-  into their own repository at http://git.linbit.com/drbd-utils.git
-  (tarball at http://oss.linbit.com/drbd)
+  into their own repository at https://github.com/LINBIT/drbd-utils
+  (tarball at http://links.linbit.com/drbd-download)
 
   That started out as "drbd-utils version 8.9.0",
   and provides compatible drbdadm, drbdsetup and drbdmeta tools
-  for DRBD module versions 8.3, 8.4 and 9 (prereleases as of now).
+  for DRBD module versions 8.3, 8.4 and 9.
 
   Again: to manage DRBD 8.4.5 kernel modules and above,
   you want drbd-utils >= 8.9.0 from above url.
