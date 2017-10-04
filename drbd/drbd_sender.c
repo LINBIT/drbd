@@ -64,7 +64,7 @@ struct mutex resources_mutex;
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
-void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
+void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
 {
 	struct drbd_device *device;
 
