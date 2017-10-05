@@ -2439,13 +2439,15 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 	return ret;
 }
 
-static int try_to_promote(struct drbd_device *device)
+static int try_to_promote(struct drbd_device *device, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
 	do {
 		rv = drbd_set_role(resource, R_PRIMARY, false, NULL);
+		if (ndelay)
+			break;
 		if (rv >= SS_SUCCESS || timeout == 0) {
 			return rv;
 		} else if (rv == SS_CW_FAILED_BY_PEER) {
@@ -2511,12 +2513,12 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 
 		if (mode & FMODE_WRITE) {
 			if (resource->role[NOW] == R_SECONDARY) {
-				rv = try_to_promote(device);
+				rv = try_to_promote(device, (mode & FMODE_NDELAY));
 				if (rv < SS_SUCCESS)
 					drbd_info(resource, "Auto-promote failed: %s\n",
 						  drbd_set_st_err_str(rv));
 			}
-		} else /* READ access only */ {
+		} else if ((mode & FMODE_NDELAY) == 0) {
 			wait_event_interruptible_timeout(resource->state_wait,
 				ro_open_cond(device) != -EAGAIN,
 				resource->res_opts.auto_promote_timeout * HZ / 10);
@@ -2533,16 +2535,15 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		if (resource->role[NOW] != R_PRIMARY)
 			rv = -EROFS;
 	} else /* READ access only */ {
-		if (!any_disk_is_uptodate(device) ||
-		    (resource->role[NOW] != R_PRIMARY &&
-		     primary_peer_present(resource) &&
-		     !allow_oos))
-			rv = -EMEDIUMTYPE;
+		rv = ro_open_cond(device);
 	}
 out:
 	mutex_unlock(&resource->open_release);
-	if (rv)
+	if (rv) {
 		drbd_release(bdev->bd_disk, mode);
+		if (rv == -EAGAIN && !(mode & FMODE_NDELAY))
+			rv = -EMEDIUMTYPE;
+	}
 	return rv;
 }
 
