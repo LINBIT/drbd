@@ -3740,6 +3740,7 @@ out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
 	kref_put(&resource->kref, drbd_destroy_resource);
+	kref_debug_destroy(&device->kref_debug);
 	kfree(device);
 	return err;
 }
