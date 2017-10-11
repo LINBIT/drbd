@@ -851,11 +851,6 @@ union drbd_state drbd_get_connection_state(struct drbd_connection *connection, e
 	return rv;
 }
 
-static inline bool is_susp(union drbd_state s)
-{
-        return s.susp || s.susp_nod || s.susp_fen;
-}
-
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 {
 	enum drbd_disk_state disk_state = D_DISKLESS;
@@ -2364,7 +2359,7 @@ int drbd_bitmap_io_from_worker(struct drbd_device *device,
 	return rv;
 }
 
-static inline bool state_change_is_susp_fen(struct drbd_state_change *state_change,
+static bool state_change_is_susp_fen(struct drbd_state_change *state_change,
 					    enum which_state which)
 {
 	int n_connection;
@@ -2380,7 +2375,7 @@ static inline bool state_change_is_susp_fen(struct drbd_state_change *state_chan
 	return false;
 }
 
-static inline bool state_change_is_susp_quorum(struct drbd_state_change *state_change,
+static bool state_change_is_susp_quorum(struct drbd_state_change *state_change,
 					       enum which_state which)
 {
 	struct drbd_resource *resource = state_change->resource[0].resource;
@@ -3315,7 +3310,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	return 0;
 }
 
-static inline bool local_state_change(enum chg_state_flags flags)
+static bool local_state_change(enum chg_state_flags flags)
 {
 	return flags & (CS_HARD | CS_LOCAL_ONLY);
 }
