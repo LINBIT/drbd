@@ -5364,6 +5364,7 @@ void device_to_info(struct device_info *info,
 {
 	info->dev_disk_state = device->disk_state[NOW];
 	info->is_intentional_diskless = device->device_conf.intentional_diskless;
+	info->dev_has_quorum = device->have_quorum[NOW];
 }
 
 int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
