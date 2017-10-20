@@ -1092,7 +1092,7 @@ static inline int op_from_rq_bits(u64 flags)
 # endif
 #else
 /* see comments in compat/tests/have_bioset_create_front_pad.c */
-# define bioset_create(pool_size, front_pad, C)	bioset_create(pool_size, 1)
+# define bioset_create(pool_size, front_pad, C)	bioset_create(pool_size, front_pad)
 #endif
 
 
