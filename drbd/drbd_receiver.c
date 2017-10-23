@@ -69,6 +69,7 @@ enum resync_reason {
 
 int drbd_do_features(struct drbd_connection *connection);
 int drbd_do_auth(struct drbd_connection *connection);
+void conn_disconnect(struct drbd_connection *connection);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 static int e_end_block(struct drbd_work *, int);
@@ -627,18 +628,31 @@ static void conn_connect2(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
-void conn_disconnect(struct drbd_connection *connection);
-
 static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
 		container_of(work, struct drbd_connection, connect_timer_work);
+	struct drbd_resource *resource = connection->resource;
 	enum drbd_state_rv rv;
+	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
 
-	rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE | CS_DONT_RETRY);
+	do {
+		rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE | CS_DONT_RETRY);
+		if (rv != SS_PRIMARY_READER)
+			break;
+
+		/* We have a connection established, peer is primary. On my side is a
+		   read-only opener, probably udev or some other scanning after device creating.
+		   This short lived read-only open prevents now that we can continue.
+		   Better retry after the read-only opener goes away. */
+
+		t = wait_event_interruptible_timeout(resource->state_wait,
+						     !drbd_open_ro_count(resource),
+						     t);
+	} while (t > 0);
 
 	if (rv >= SS_SUCCESS) {
 		conn_connect2(connection);
@@ -5089,11 +5103,12 @@ change_connection_state(struct drbd_connection *connection,
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 	int vnr;
+	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 
 	mask = convert_state(mask);
 	val = convert_state(val);
 retry:
-	begin_state_change(resource, &irq_flags, flags);
+	begin_state_change(resource, &irq_flags, flags & ~CS_VERBOSE);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		rv = __change_peer_device_state(peer_device, mask, val);
 		if (rv < SS_SUCCESS)
@@ -5114,16 +5129,19 @@ retry:
 	rv = end_state_change(resource, &irq_flags);
 out:
 
-	if (rv == SS_NO_UP_TO_DATE_DISK && resource->role[NOW] != R_PRIMARY) {
-		long t;
+	if ((rv == SS_NO_UP_TO_DATE_DISK && resource->role[NOW] != R_PRIMARY) ||
+	    rv == SS_PRIMARY_READER) {
 		/* Most probably udev opened it read-only. That might happen
 		   if it was demoted very recently. Wait up to one second. */
 		t = wait_event_interruptible_timeout(resource->state_wait,
 						     drbd_open_ro_count(resource) == 0,
-						     HZ);
+						     t);
 		if (t > 0)
 			goto retry;
 	}
+
+	if (rv < SS_SUCCESS)
+		drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
 
 	return rv;
 fail:
