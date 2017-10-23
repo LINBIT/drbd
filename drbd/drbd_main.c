@@ -3016,6 +3016,9 @@ out_idr_remove_vol:
 	idr_remove(&connection->peer_devices, vnr);
 out_idr_remove_from_resource:
 	for_each_connection(connection, resource) {
+		/* idr_remove() used to be void.  Since 4.10 (d3e709e),
+		 * idr_remove() returns the element (void*).  For backward
+		 * compatibility, We cannot make use of that here.  */
 		peer_device = idr_find(&connection->peer_devices, vnr);
 		if (peer_device) {
 			idr_remove(&connection->peer_devices, vnr);
