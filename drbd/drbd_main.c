@@ -3404,6 +3404,9 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
+	flush_send_buffer(connection, DATA_STREAM);
+	flush_send_buffer(connection, CONTROL_STREAM);
+
 	connection->transport.ops->free(&connection->transport, op);
 	if (op == DESTROY_TRANSPORT)
 		drbd_put_transport_class(connection->transport.class);
