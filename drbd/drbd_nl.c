@@ -1256,10 +1256,16 @@ static void decide_on_discard_support(struct drbd_device *device,
 		blk_queue_discard_granularity(q, 512);
 		q->limits.max_discard_sectors = drbd_max_discard_sectors(connection);
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+		q->limits.max_write_zeroes_sectors = drbd_max_discard_sectors(connection);
+#endif
 	} else {
 		queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
 		blk_queue_discard_granularity(q, 0);
 		q->limits.max_discard_sectors = 0;
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+		q->limits.max_write_zeroes_sectors = 0;
+#endif
 	}
 }
 

@@ -210,7 +210,8 @@ BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
 	bool is_write = bio_data_dir(bio) == WRITE;
-	bool is_discard = bio_op(bio) == REQ_OP_DISCARD;
+	bool is_discard = bio_op(bio) == REQ_OP_WRITE_ZEROES ||
+			  bio_op(bio) == REQ_OP_DISCARD;
 
 	BIO_ENDIO_FN_START;
 	if (error && DRBD_ratelimit(5*HZ, 5))
@@ -289,6 +290,7 @@ BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error)
 	/* to avoid recursion in __req_mod */
 	if (unlikely(error)) {
 		switch (bio_op(bio)) {
+		case REQ_OP_WRITE_ZEROES:
 		case REQ_OP_DISCARD:
 			if (error == -EOPNOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;

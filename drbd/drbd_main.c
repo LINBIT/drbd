@@ -1706,7 +1706,8 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 			(bio->bi_opf & DRBD_REQ_FUA ? DP_FUA : 0) |
 			(bio->bi_opf & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
-			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0);
+			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
+			(bio_op(bio) == REQ_OP_WRITE_ZEROES ? DP_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
 	return bio->bi_opf & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
