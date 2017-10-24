@@ -1588,7 +1588,6 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 		    int offset, size_t size, unsigned msg_flags)
 {
 	struct socket *socket = peer_device->connection->data.socket;
-	mm_segment_t oldfs = get_fs();
 	int len = size;
 	int err = -EIO;
 
@@ -1603,7 +1602,6 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 
 	msg_flags |= MSG_NOSIGNAL;
 	drbd_update_congested(peer_device->connection);
-	set_fs(KERNEL_DS);
 	do {
 		int sent;
 
@@ -1623,7 +1621,6 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 		len    -= sent;
 		offset += sent;
 	} while (len > 0 /* THINK && device->cstate >= C_CONNECTED*/);
-	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &peer_device->connection->flags);
 
 	if (len == 0) {
