@@ -2439,10 +2439,9 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 	return ret;
 }
 
-static int try_to_promote(struct drbd_device *device, bool ndelay)
+static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
-	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
 	do {
 		rv = drbd_set_role(resource, R_PRIMARY, false, NULL);
@@ -2489,10 +2488,36 @@ static int ro_open_cond(struct drbd_device *device)
 		return -EAGAIN;
 }
 
+enum ioc_rv {
+	IOC_SLEEP = 0,
+	IOC_OK = 1,
+	IOC_ABORT = 2,
+};
+
+static bool inc_open_count(struct drbd_device *device, fmode_t mode)
+{
+	struct drbd_resource *resource = device->resource;
+	enum ioc_rv r = mode & FMODE_NDELAY ? IOC_ABORT : IOC_SLEEP;
+
+	spin_lock_irq(&resource->req_lock);
+	if (!resource->remote_state_change) {
+		r = IOC_OK;
+		if (mode & FMODE_WRITE)
+			device->open_rw_cnt++;
+		else
+			device->open_ro_cnt++;
+	}
+	spin_unlock_irq(&resource->req_lock);
+
+	return r;
+}
+
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
 	struct drbd_resource *resource = device->resource;
+	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	enum ioc_rv r;
 	int rv = 0;
 
 	kref_get(&device->kref);
@@ -2500,10 +2525,13 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 
 	mutex_lock(&resource->open_release);
 
-	if (mode & FMODE_WRITE)
-		device->open_rw_cnt++;
-	else
-		device->open_ro_cnt++;
+	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
+						   r = inc_open_count(device, mode),
+						   timeout);
+	if (r == IOC_ABORT || timeout <= 0) {
+		mutex_unlock(&resource->open_release);
+		return -EAGAIN;
+	}
 
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
@@ -2513,7 +2541,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 
 		if (mode & FMODE_WRITE) {
 			if (resource->role[NOW] == R_SECONDARY) {
-				rv = try_to_promote(device, (mode & FMODE_NDELAY));
+				rv = try_to_promote(device, timeout, (mode & FMODE_NDELAY));
 				if (rv < SS_SUCCESS)
 					drbd_info(resource, "Auto-promote failed: %s\n",
 						  drbd_set_st_err_str(rv));
