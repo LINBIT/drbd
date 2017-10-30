@@ -3941,6 +3941,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 			__change_peer_role(target_connection, target_role);
 		}
 		rv = end_state_change(resource, &irq_flags);
+		if (rv < SS_SUCCESS)
+			drbd_err(resource, "FATAL: Local commit of allready commited %u failed! \n",
+				 be32_to_cpu(request.tid));
 	} else {
 		abort_state_change(resource, &irq_flags);
 	}

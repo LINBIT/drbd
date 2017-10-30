@@ -6084,8 +6084,13 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_send_twopc_reply(connection, cmd, reply);
 		}
 	} else {
-		if (flags & CS_PREPARED)
+		if (flags & CS_PREPARED) {
+			if (rv < SS_SUCCESS)
+				drbd_err(resource, "FATAL: Local commit of prepared %u failed! \n",
+					 reply->tid);
+
 			del_timer(&resource->twopc_timer);
+		}
 
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 
