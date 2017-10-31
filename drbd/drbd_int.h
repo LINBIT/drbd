@@ -1529,6 +1529,7 @@ extern void drbd_flush_peer_acks(struct drbd_resource *resource);
 extern void drbd_drop_unsent(struct drbd_connection* connection);
 extern void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
 extern void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream);
+extern void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro_count_ptr);
 
 extern struct drbd_connection *
 __drbd_next_connection_ref(u64 *, struct drbd_connection *, struct drbd_resource *);

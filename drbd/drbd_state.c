@@ -3605,6 +3605,35 @@ check_primaries_distances(struct drbd_resource *resource)
 	}
 	return SS_WEAKLY_CONNECTED;
 }
+
+static enum drbd_state_rv
+check_ro_cnt_and_primary(struct drbd_resource *resource)
+{
+	struct twopc_reply *reply = &resource->twopc_reply;
+	struct drbd_connection *connection;
+	enum drbd_state_rv rv = SS_SUCCESS;
+	int rw_count, ro_count;
+	struct net_conf *nc;
+
+	drbd_open_counts(resource, &rw_count, &ro_count);
+
+	if (!rw_count && !ro_count)
+		return rv;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (!nc->two_primaries &&
+		    NODE_MASK(connection->peer_node_id) & reply->primary_nodes) {
+			rv = SS_PRIMARY_READER;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 {
 	struct drbd_connection *connection;
@@ -3861,9 +3890,14 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				  (unsigned long)reply->weak_nodes);
 			if (context->mask.role == role_MASK && context->val.role == R_PRIMARY)
 				rv = primary_nodes_allowed(resource);
-			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
-			    (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED))
+			if (rv >= SS_SUCCESS &&
+			    ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
+			     (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED)))
 				rv = check_primaries_distances(resource);
+
+			if (rv >= SS_SUCCESS &&
+			    context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED)
+				rv = check_ro_cnt_and_primary(resource);
 
 			if (!(context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) ||
 			    (reply->reachable_nodes & reply->target_reachable_nodes)) {

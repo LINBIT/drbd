@@ -2575,7 +2575,7 @@ out:
 	return rv;
 }
 
-static void open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro_count_ptr)
+void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro_count_ptr)
 {
 	struct drbd_device *device;
 	int vnr, rw_count = 0, ro_count = 0;
@@ -2600,7 +2600,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 	else
 		device->open_ro_cnt--;
 
-	open_counts(resource, &open_rw_cnt, &open_ro_cnt);
+	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
