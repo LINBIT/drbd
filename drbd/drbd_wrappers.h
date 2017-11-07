@@ -272,11 +272,6 @@ extern BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
 extern BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
 extern BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-#define part_inc_in_flight(A, B) part_inc_in_flight(A)
-#define part_dec_in_flight(A, B) part_dec_in_flight(A)
-#endif
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 /* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
    ctor and a dtor */
@@ -1746,12 +1741,21 @@ do {								\
 #endif
 
 #ifndef COMPAT_HAVE_GENERIC_START_IO_ACCT
-#ifndef __disk_stat_inc
+
+#ifdef __disk_stat_inc
+/* too old, we don't care */
+#warning "io accounting disabled"
+#else
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+#define part_inc_in_flight(A, B) part_inc_in_flight(A)
+#define part_dec_in_flight(A, B) part_dec_in_flight(A)
+#endif
+
 static inline void generic_start_io_acct(int rw, unsigned long sectors,
 					 struct hd_struct *part)
 {
 	int cpu;
-	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0]));
 
 	cpu = part_stat_lock();
 	part_round_stats(cpu, part);
@@ -1760,7 +1764,13 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
 		       the compiler warning about cpu only assigned but never used... */
 	/* part_inc_in_flight(part, rw); */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight)); }
+	atomic_inc((atomic_t*)&part->in_flight);
+#else
+	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0])); }
 	atomic_inc((atomic_t*)&part->in_flight[rw]);
+#endif
 	part_stat_unlock();
 }
 
@@ -1774,7 +1784,11 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 	part_stat_add(cpu, part, ticks[rw], duration);
 	part_round_stats(cpu, part);
 	/* part_dec_in_flight(part, rw); */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+	atomic_dec((atomic_t*)&part->in_flight);
+#else
 	atomic_dec((atomic_t*)&part->in_flight[rw]);
+#endif
 	part_stat_unlock();
 }
 #endif /* __disk_stat_inc */
