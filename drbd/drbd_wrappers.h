@@ -772,8 +772,8 @@ static inline void blk_queue_max_segments(struct request_queue *q, unsigned shor
 #ifndef COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE
 static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua)
 {
-#ifdef REQ_FLUSH
-/* Linux version 2.6.36 up to 4.7
+#if defined(REQ_FLUSH) && !defined(REQ_HARDBARRIER)
+/* Linux version 2.6.37 up to 4.7
  * needs blk_queue_flush() to announce driver support */
 	blk_queue_flush(q, (enabled ? REQ_FLUSH : 0) | (fua ? REQ_FUA : 0));
 #else
