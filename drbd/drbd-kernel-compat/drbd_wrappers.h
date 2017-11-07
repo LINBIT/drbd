@@ -1837,14 +1837,10 @@ static inline void ratelimit_state_init(struct ratelimit_state *rs,
 #endif
 
 #ifndef COMPAT_HAVE_IDR_IS_EMPTY
-static int idr_has_entry(int id, void *p, void *data)
-{
-	return 1;
-}
-
 static inline bool idr_is_empty(struct idr *idr)
 {
-	return !idr_for_each(idr, idr_has_entry, NULL);
+	int id = 0;
+	return idr_get_next(idr, &id) == NULL;
 }
 #endif
 
