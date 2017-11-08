@@ -553,6 +553,7 @@ enum {
 	HAVE_LDEV,
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
 	READ_BALANCE_RR,
+	PRIMARY_LOST_QUORUM,
 };
 
 /* flag bits per peer device */

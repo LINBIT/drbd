@@ -3509,6 +3509,19 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 				return rv;
 		}
 
+		*rule_nr = 39;
+		if (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM &&
+		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+			return -1;
+
+		if (!(peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM) &&
+		    test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+			return 1;
+
+		if (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM &&
+		    test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+			return test_bit(RESOLVE_CONFLICTS, &connection->transport.flags) ? 1 : -1;
+
 		*rule_nr = 38;
 		/* This is a safety net for the following two clauses */
 		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&

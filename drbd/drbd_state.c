@@ -1977,6 +1977,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	print_state_change(resource, "");
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		bool *have_quorum = device->have_quorum;
 		struct drbd_peer_device *peer_device;
 
 		for_each_peer_device(peer_device, device) {
@@ -1992,6 +1993,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			    is_sync_state(peer_device, NEW))
 				clear_bit(RS_DONE, &peer_device->flags);
 		}
+
+		if (role[NEW] == R_PRIMARY && !have_quorum[NEW])
+			set_bit(PRIMARY_LOST_QUORUM, &device->flags);
 	}
 	if (start_new_epoch)
 		start_new_tl_epoch(resource);
@@ -2197,8 +2201,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			mdf &= ~MDF_AL_CLEAN;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
-			if (device->resource->role[NEW] == R_PRIMARY && disk_state[NEW] != D_DETACHING)
+			if (role[NEW] == R_PRIMARY && disk_state[NEW] != D_DETACHING)
 				mdf |= MDF_PRIMARY_IND;
+			if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+				mdf |= MDF_PRIMARY_LOST_QUORUM;
 			/* Do not touch MDF_CONSISTENT if we are D_FAILED */
 			if (disk_state[NEW] >= D_INCONSISTENT) {
 				mdf &= ~(MDF_CONSISTENT | MDF_WAS_UP_TO_DATE);
@@ -3140,16 +3146,24 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (!device->have_quorum[NEW] && got_contact_to_peer_data(peer_disk_state) &&
 			    get_ldev(device)) {
 				bool have_quorum = calc_quorum(device, NEW, NULL);
+
 				if (have_quorum) {
+					enum drbd_on_no_quorum policy = resource->res_opts.on_no_quorum;
 					unsigned long irq_flags;
 
-					clear_bit(NEW_CUR_UUID, &device->flags);
+					if (policy == ONQ_IO_ERROR) {
+						clear_bit(NEW_CUR_UUID, &device->flags);
+						drbd_uuid_new_current(device, false);
+					}
 
 					begin_state_change(resource, &irq_flags, CS_VERBOSE);
-					_tl_restart(connection, RESEND);
 					__change_have_quorum(device, true);
+					clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
+					if (policy == ONQ_SUSPEND_IO)
+						clear_bit(NEW_CUR_UUID, &device->flags);
 					end_state_change(resource, &irq_flags);
 				}
+
 				put_ldev(device);
 			}
 		}

@@ -2694,6 +2694,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	    !device->exposed_data_uuid && !test_bit(NEW_CUR_UUID, &device->flags))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 
+	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_LOST_QUORUM))
+		set_bit(PRIMARY_LOST_QUORUM, &device->flags);
+
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
