@@ -495,7 +495,12 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		req->local_rq_state |= RQ_POSTPONED;
 
 	if (!(req->local_rq_state & RQ_POSTPONED)) {
-		m->error = ok ? 0 : (error ?: -EIO);
+		struct drbd_resource *resource = device->resource;
+		bool quorum =
+			resource->res_opts.on_no_quorum == ONQ_IO_ERROR ?
+			device->have_quorum[NOW] : true;
+
+		m->error = ok && quorum ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
 		/* We leave it in the tree, to be able to verify later
