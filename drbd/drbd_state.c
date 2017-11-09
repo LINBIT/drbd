@@ -1151,13 +1151,14 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 	struct drbd_resource *resource = device->resource;
 	const int my_node_id = resource->res_opts.node_id;
 	int node_id, voters, votes = 0, outdated = 0, unknown = 0, quorum_at;
-	enum drbd_disk_state disk_state;
 	bool have_quorum;
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 		struct drbd_peer_device *peer_device;
+		enum drbd_disk_state disk_state;
+		enum drbd_repl_state repl_state;
 
 		if (node_id == my_node_id) {
 			votes++;
@@ -1168,13 +1169,19 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
+		repl_state = peer_device ? peer_device->repl_state[which] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[which] : D_UNKNOWN;
-		if (disk_state == D_OUTDATED)
-			outdated++;
-		else if (disk_state == D_UNKNOWN || disk_state <= D_FAILED)
-			unknown++;
-		else /* D_NEGOTIATING, D_INCONSISTENT, D_CONSISTENT, D_UP_TO_DATE */
+
+		if (repl_state == L_OFF) {
+			if (disk_state <= D_OUTDATED)
+				outdated++;
+			else
+				unknown++;
+		} else {
+			/* D_NEGOTIATING, D_INCONSISTENT, D_CONSISTENT, D_UP_TO_DATE
+			and D_OUTDATED if connected */
 			votes++;
+		}
 	}
 	rcu_read_unlock();
 
