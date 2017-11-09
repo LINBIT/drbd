@@ -1161,16 +1161,23 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 		enum drbd_repl_state repl_state;
 
 		if (node_id == my_node_id) {
-			votes++;
+			if (device->disk_state[which] > D_DISKLESS)
+				votes++;
 			continue;
 		}
 
 		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS))
 			continue;
 
+		if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN))
+			continue;
+
 		peer_device = peer_device_by_node_id(device, node_id);
 		repl_state = peer_device ? peer_device->repl_state[which] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[which] : D_UNKNOWN;
+
+		if (disk_state == D_DISKLESS)
+			continue;
 
 		if (repl_state == L_OFF) {
 			if (disk_state <= D_OUTDATED)
