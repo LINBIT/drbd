@@ -1369,19 +1369,16 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (disk_state[NEW] == D_NEGOTIATING)
 			nr_negotiating++;
 
-		if (role[NEW] == R_PRIMARY &&
-		    resource->res_opts.quorum != QOU_OFF && get_ldev(device)) {
+		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && !device->have_quorum[NEW] &&
+		    get_ldev(device)) {
 			struct quorum_info qi;
-			bool had_quorum = role[OLD] == R_PRIMARY ? calc_quorum(device, OLD, NULL) : true;
-			bool have_quorum = calc_quorum(device, NEW, &qi);
 
+			calc_quorum(device, NEW, &qi);
 			put_ldev(device);
 
-			if (had_quorum && !have_quorum) {
-				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
-					       qi.votes, qi.voters, qi.quorum_at);
-				return SS_NO_QUORUM;
-			}
+			drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
+				       qi.votes, qi.voters, qi.quorum_at);
+			return SS_NO_QUORUM;
 		}
 
 		for_each_peer_device(peer_device, device) {
@@ -1852,19 +1849,18 @@ static void sanitize_state(struct drbd_resource *resource)
 				disk_state[NEW] = D_UP_TO_DATE;
 
 			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
-
-			if (resource->res_opts.quorum != QOU_OFF && role[NEW] == R_PRIMARY &&
-			    get_ldev(device)) {
-				if (lost_contact_to_peer_data(peer_disk_state)) {
-					bool had_quorum = calc_quorum(device, OLD, NULL);
-					bool have_quorum = calc_quorum(device, NEW, NULL);
-
-					if (had_quorum && !have_quorum)
-						device->have_quorum[NEW] = false;
-				}
-				put_ldev(device);
-			}
 		}
+
+		if (resource->res_opts.quorum != QOU_OFF) {
+			if (disk_state[NEW] > D_ATTACHING &&
+			    get_ldev_if_state(device, D_ATTACHING)) {
+				device->have_quorum[NEW] = calc_quorum(device, NEW, NULL);
+				put_ldev(device);
+			} /* else diskless unhandled as of now ... */
+		} else {
+			device->have_quorum[NEW] = true;
+		}
+
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
 		if (disk_state[NEW] == D_UP_TO_DATE)
@@ -3163,28 +3159,22 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_uuid_new_current(device, false);
 			}
 
-			if (!device->have_quorum[NEW] && got_contact_to_peer_data(peer_disk_state) &&
-			    get_ldev(device)) {
-				bool have_quorum = calc_quorum(device, NEW, NULL);
+			if (!device->have_quorum[OLD] && device->have_quorum[NEW] &&
+			    got_contact_to_peer_data(peer_disk_state)) {
+				enum drbd_on_no_quorum policy = resource->res_opts.on_no_quorum;
+				unsigned long irq_flags;
 
-				if (have_quorum) {
-					enum drbd_on_no_quorum policy = resource->res_opts.on_no_quorum;
-					unsigned long irq_flags;
-
-					if (policy == ONQ_IO_ERROR) {
-						clear_bit(NEW_CUR_UUID, &device->flags);
-						drbd_uuid_new_current(device, false);
-					}
-
-					begin_state_change(resource, &irq_flags, CS_VERBOSE);
-					__change_have_quorum(device, true);
-					clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
-					if (policy == ONQ_SUSPEND_IO)
-						clear_bit(NEW_CUR_UUID, &device->flags);
-					end_state_change(resource, &irq_flags);
+				if (policy == ONQ_IO_ERROR) {
+					clear_bit(NEW_CUR_UUID, &device->flags);
+					drbd_uuid_new_current(device, false);
 				}
 
-				put_ldev(device);
+				begin_state_change(resource, &irq_flags, CS_VERBOSE);
+				__change_have_quorum(device, true);
+				clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
+				if (policy == ONQ_SUSPEND_IO)
+					clear_bit(NEW_CUR_UUID, &device->flags);
+				end_state_change(resource, &irq_flags);
 			}
 		}
 
@@ -3292,7 +3282,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		drbd_md_sync_if_dirty(device);
 
-		if (have_quorum[OLD] && !have_quorum[NEW])
+		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
 			drbd_khelper(device, NULL, "quorum-lost");
 	}
 
@@ -4271,8 +4261,6 @@ static void __change_role(struct change_role_context *role_context)
 				role_context->context.mask.disk |= disk_MASK;
 				role_context->context.val.disk |= D_UP_TO_DATE;
 			}
-		} else if (role == R_SECONDARY) {
-			device->have_quorum[NEW] = true;
 		}
 	}
 	rcu_read_unlock();
