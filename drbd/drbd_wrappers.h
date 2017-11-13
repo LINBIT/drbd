@@ -238,39 +238,92 @@ static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
 #define blkdev_put(b, m)	drbd_blkdev_put(b, m)
 #endif
 
-#define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
+#ifdef COMPAT_HAVE_BIO_BI_STATUS
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio->bi_status = status;
+	bio_endio(bio);
+}
+#define BIO_ENDIO_TYPE void
+#define BIO_ENDIO_ARGS(b) (b)
+#define BIO_ENDIO_FN_START	\
+	blk_status_t status = bio->bi_status
+#define BIO_ENDIO_FN_RETURN return
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+#else
+
+typedef u8 __bitwise blk_status_t;
+#define	BLK_STS_OK 0
+#define BLK_STS_NOTSUPP		((__force blk_status_t)1)
+#define BLK_STS_MEDIUM		((__force blk_status_t)7)
+#define BLK_STS_RESOURCE	((__force blk_status_t)9)
+#define BLK_STS_IOERR		((__force blk_status_t)10)
+static int blk_status_to_errno(blk_status_t status)
+{
+	return  status == BLK_STS_OK ? 0 :
+		status == BLK_STS_RESOURCE ? -ENOMEM :
+		status == BLK_STS_NOTSUPP ? -EOPNOTSUPP :
+		-EIO;
+}
+static inline blk_status_t errno_to_blk_status(int errno)
+{
+	blk_status_t status =
+		errno == 0 ? BLK_STS_OK :
+		errno == -ENOMEM ? BLK_STS_RESOURCE :
+		errno == -EOPNOTSUPP ? BLK_STS_NOTSUPP :
+		BLK_STS_IOERR;
+
+	return status;
+}
+
+#ifdef COMPAT_HAVE_BIO_BI_ERROR
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio->bi_error = blk_status_to_errno(status);
+	bio_endio(bio);
+}
+#define BIO_ENDIO_TYPE void
+#define BIO_ENDIO_ARGS(b) (b)
+#define BIO_ENDIO_FN_START	\
+	blk_status_t status = errno_to_blk_status(bio->bi_error)
+#define BIO_ENDIO_FN_RETURN return
+
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
 /* Before Linux-2.6.24 bio_endio() had the size of the bio as second argument.
    See 6712ecf8f648118c3363c142196418f89a510b90 */
-#define bio_endio(B,E) bio_endio(B, (B)->bi_size, E)
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio_endio(bio, bio->bi_size, blk_status_to_errno(status));
+}
 #define BIO_ENDIO_TYPE int
-#define BIO_ENDIO_ARGS(b,e) (b, unsigned int bytes_done, e)
+#define BIO_ENDIO_ARGS(b) (b, unsigned int bytes_done, int error)
 #define BIO_ENDIO_FN_START	\
+	int status = errno_to_blk_status(error); \
 	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
-	if (!error && !uptodate) error = -EIO; \
+	if (!error && !uptodate) { error = -EIO; status = BLK_STS_IOERR; } \
 	if (bio->bi_size) return 1
 #define BIO_ENDIO_FN_RETURN return 0
-#elif !defined(COMPAT_HAVE_BIO_BI_ERROR)
-#define BIO_ENDIO_TYPE void
-#define BIO_ENDIO_ARGS(b,e) (b,e)
-#define BIO_ENDIO_FN_START	\
-	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
-	if (!error && !uptodate) error = -EIO
-#define BIO_ENDIO_FN_RETURN return
+
 #else
-#define bio_endio(B,E) do { (B)->bi_error = E; bio_endio(B); } while (0)
+static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
+{
+	bio_endio(bio, blk_status_to_errno(status));
+}
 #define BIO_ENDIO_TYPE void
-#define BIO_ENDIO_ARGS(b,e) (b)
+#define BIO_ENDIO_ARGS(b) (b, int error)
 #define BIO_ENDIO_FN_START	\
-	int error = bio->bi_error
+	int status = errno_to_blk_status(error); \
+	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
+	if (!error && !uptodate) { error = -EIO; status = BLK_STS_IOERR; }
 #define BIO_ENDIO_FN_RETURN return
+
+#endif
 #endif
 
 /* bi_end_io handlers */
-extern BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
-extern BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, int error);
+extern BIO_ENDIO_TYPE drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio);
+extern BIO_ENDIO_TYPE drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio);
+extern BIO_ENDIO_TYPE drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 /* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a

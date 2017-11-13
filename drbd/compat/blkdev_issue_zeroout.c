@@ -12,7 +12,7 @@ struct bio_batch {
 	struct completion	*wait;
 };
 
-BIO_ENDIO_TYPE bio_batch_end_io BIO_ENDIO_ARGS(struct bio *bio, int error)
+BIO_ENDIO_TYPE bio_batch_end_io BIO_ENDIO_ARGS(struct bio *bio)
 {
 	struct bio_batch *bb = bio->bi_private;
 
