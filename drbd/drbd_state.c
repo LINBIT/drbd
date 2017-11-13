@@ -1066,12 +1066,21 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
+		bool *have_quorum = device->have_quorum;
 
+		b = buffer;
 		if (disk_state[OLD] != disk_state[NEW])
-			drbd_info(device, "%sdisk( %s -> %s )\n",
-				  prefix,
-				  drbd_disk_str(disk_state[OLD]),
-				  drbd_disk_str(disk_state[NEW]));
+			b += scnprintf(b, end - b, "disk( %s -> %s ) ",
+				       drbd_disk_str(disk_state[OLD]),
+				       drbd_disk_str(disk_state[NEW]));
+		if (have_quorum[OLD] != have_quorum[NEW])
+			b += scnprintf(b, end - b, "quorum( %s -> %s ) ",
+				       have_quorum[OLD] ? "yes" : "no",
+				       have_quorum[NEW] ? "yes" : "no");
+		if (b != buffer) {
+			*(b-1) = 0;
+			drbd_info(device, "%s%s\n", prefix, buffer);
+		}
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
