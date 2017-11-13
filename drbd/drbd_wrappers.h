@@ -1163,17 +1163,16 @@ static inline int op_from_rq_bits(u64 flags)
  *
  * bioset_create(pool_size, front_pad, flags);
  */
-#else
-#ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
+#elif defined(COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD)
 /* see comments in compat/tests/have_bioset_create_front_pad.c */
-#ifdef COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
+/* struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad) */
+#define bioset_create(pool_size, front_pad, flags)	bioset_create(pool_size, front_pad)
+#elif defined(COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS)
 /* struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size, int scale) */
 #define bioset_create(pool_size, front_pad, flags)	bioset_create(pool_size, pool_size, 1)
 #else
 /* struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size) */
 #define bioset_create(pool_size, front_pad, flags)	bioset_create(pool_size, 1)
-#endif
-#endif
 #endif
 
 
@@ -1978,6 +1977,10 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 
 #ifndef COMPAT_HAVE_KMALLOC_ARRAY
 #define kmalloc_array(a, b, c) kmalloc((a) * (b), (c))
+#endif
+
+#ifndef COMPAT_HAVE_BIO_CLONE_FAST
+#define bio_clone_fast(bio, gfp, bio_set) bio_clone(bio, gfp)
 #endif
 
 #endif
