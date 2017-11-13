@@ -1157,12 +1157,22 @@ static inline int op_from_rq_bits(u64 flags)
 #define bio_split(bi, first_sectors) bio_split(bi, bio_split_pool, first_sectors)
 #endif
 
+#ifdef COMPAT_HAVE_BIOSET_NEED_BVECS
+/* upstream commit
+ * 011067b05668 blk: replace bioset_create_nobvec() with a flags arg to bioset_create()
+ *
+ * bioset_create(pool_size, front_pad, flags);
+ */
+#else
 #ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
 /* see comments in compat/tests/have_bioset_create_front_pad.c */
 #ifdef COMPAT_BIOSET_CREATE_HAS_THREE_PARAMETERS
-#define bioset_create(pool_size, front_pad)	bioset_create(pool_size, pool_size, 1)
+/* struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size, int scale) */
+#define bioset_create(pool_size, front_pad, flags)	bioset_create(pool_size, pool_size, 1)
 #else
-#define bioset_create(pool_size, front_pad)	bioset_create(pool_size, 1)
+/* struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size) */
+#define bioset_create(pool_size, front_pad, flags)	bioset_create(pool_size, 1)
+#endif
 #endif
 #endif
 
