@@ -2482,7 +2482,9 @@ static int ro_open_cond(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
-	if (resource->role[NOW] != R_PRIMARY && primary_peer_present(resource) && !allow_oos)
+	if (!device->have_quorum[NOW])
+		return -ENODATA;
+	else if (resource->role[NOW] != R_PRIMARY && primary_peer_present(resource) && !allow_oos)
 		return -EMEDIUMTYPE;
 	else if (any_disk_is_uptodate(device))
 		return 0;
