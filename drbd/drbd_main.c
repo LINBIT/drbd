@@ -3725,8 +3725,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	}
 
 	add_disk(disk);
-	device->have_quorum[OLD] = true;
-	device->have_quorum[NEW] = true;
+	device->have_quorum[OLD] =
+	device->have_quorum[NEW] =
+		(resource->res_opts.quorum == QOU_OFF);
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;

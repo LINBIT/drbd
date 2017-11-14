@@ -48,6 +48,13 @@ struct quorum_info {
 	int min_redundancy_at;
 };
 
+struct quorum_detail {
+	int up_to_date;
+	int present;
+	int outdated;
+	int unknown;
+};
+
 struct change_context {
 	struct drbd_resource *resource;
 	int vnr;
@@ -1175,14 +1182,10 @@ static int calc_quorum_at(s32 setting, int voters)
 	return quorum_at;
 }
 
-
-static bool calc_quorum(struct drbd_device *device, enum which_state which, struct quorum_info *qi)
+static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
-	struct drbd_resource *resource = device->resource;
-	const int my_node_id = resource->res_opts.node_id;
-	int node_id, voters, up_to_date = 0, present = 0, outdated = 0, unknown = 0;
-	int quorum_at, min_redundancy_at;
-	bool have_quorum;
+	const int my_node_id = device->resource->res_opts.node_id;
+	int node_id, up_to_date = 0, present = 0, outdated = 0, unknown = 0;
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -1192,7 +1195,7 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 		enum drbd_repl_state repl_state;
 
 		if (node_id == my_node_id) {
-			disk_state = device->disk_state[which];
+			disk_state = device->disk_state[NEW];
 			if (disk_state > D_DISKLESS) {
 				if (disk_state == D_UP_TO_DATE)
 					up_to_date++;
@@ -1209,8 +1212,8 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
-		repl_state = peer_device ? peer_device->repl_state[which] : L_OFF;
-		disk_state = peer_device ? peer_device->disk_state[which] : D_UNKNOWN;
+		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
+		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
 
 		if (disk_state == D_DISKLESS)
 			continue;
@@ -1229,26 +1232,83 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 	}
 	rcu_read_unlock();
 
+	qd->up_to_date = up_to_date;
+	qd->present = present;
+	qd->outdated = outdated;
+	qd->unknown = unknown;
+}
+
+static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_detail *qd)
+{
+	int up_to_date = 0, present = 0, outdated = 0, unknown = 0;
+	struct drbd_peer_device *peer_device;
+
+	rcu_read_lock();
+	for_each_peer_device(peer_device, device) {
+		enum drbd_disk_state disk_state;
+		enum drbd_repl_state repl_state;
+
+		repl_state = peer_device->repl_state[NEW];
+		disk_state = peer_device->disk_state[NEW];
+
+		if (disk_state == D_DISKLESS)
+			continue;
+
+		if (repl_state == L_OFF) {
+			if (disk_state <= D_OUTDATED)
+				outdated++;
+			else
+				unknown++;
+		} else {
+			if (disk_state == D_UP_TO_DATE)
+				up_to_date++;
+			else
+				present++;
+		}
+
+	}
+	rcu_read_unlock();
+
+	qd->up_to_date = up_to_date;
+	qd->present = present;
+	qd->outdated = outdated;
+	qd->unknown = unknown;
+}
+
+static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
+{
+	struct drbd_resource *resource = device->resource;
+	int voters, quorum_at, min_redundancy_at;
+	struct quorum_detail qd = {};
+	bool have_quorum;
+
+	if (device->disk_state[NEW] > D_ATTACHING && get_ldev_if_state(device, D_ATTACHING)) {
+		__calc_quorum_with_disk(device, &qd);
+		put_ldev(device);
+	} else {
+		__calc_quorum_no_disk(device, &qd);
+	}
+
 	/* When all the absent nodes are D_OUTDATED (no one D_UNKNOWN), we can be
 	   sure that the other partition is not able to promote. ->
 	   We remove them from the voters. -> We have quorum */
-	if (unknown)
-		voters = outdated + unknown + up_to_date + present;
+	if (qd.unknown)
+		voters = qd.outdated + qd.unknown + qd.up_to_date + qd.present;
 	else
-		voters = up_to_date + present;
+		voters = qd.up_to_date + qd.present;
 
 	quorum_at = calc_quorum_at(resource->res_opts.quorum, voters);
 	min_redundancy_at = calc_quorum_at(resource->res_opts.quorum_min_redundancy, voters);
 
 	if (qi) {
 		qi->voters = voters;
-		qi->up_to_date = up_to_date;
-		qi->present = present;
+		qi->up_to_date = qd.up_to_date;
+		qi->present = qd.present;
 		qi->quorum_at = quorum_at;
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
-	have_quorum = (up_to_date + present) >= quorum_at && up_to_date >= min_redundancy_at;
+	have_quorum = (qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at;
 
 	return have_quorum;
 }
@@ -1401,12 +1461,10 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		if (disk_state[NEW] == D_NEGOTIATING)
 			nr_negotiating++;
 
-		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && !device->have_quorum[NEW] &&
-		    get_ldev(device)) {
+		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && !device->have_quorum[NEW]) {
 			struct quorum_info qi;
 
-			calc_quorum(device, NEW, &qi);
-			put_ldev(device);
+			calc_quorum(device, &qi);
 
 			if (qi.up_to_date + qi.present < qi.quorum_at)
 				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
@@ -1888,15 +1946,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
 		}
 
-		if (resource->res_opts.quorum != QOU_OFF) {
-			if (disk_state[NEW] > D_ATTACHING &&
-			    get_ldev_if_state(device, D_ATTACHING)) {
-				device->have_quorum[NEW] = calc_quorum(device, NEW, NULL);
-				put_ldev(device);
-			} /* else diskless unhandled as of now ... */
-		} else {
+		if (resource->res_opts.quorum != QOU_OFF)
+			device->have_quorum[NEW] = calc_quorum(device, NULL);
+		else
 			device->have_quorum[NEW] = true;
-		}
 
 		if (disk_state[OLD] == D_UP_TO_DATE)
 			++good_data_count[OLD];
