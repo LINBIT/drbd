@@ -41,9 +41,11 @@ struct after_state_change_work {
 };
 
 struct quorum_info {
-	int votes;
+	int up_to_date;
+	int present;
 	int voters;
 	int quorum_at;
+	int min_redundancy_at;
 };
 
 struct change_context {
@@ -1155,11 +1157,31 @@ have_primary_neighbor:
 	return false;
 }
 
+static int calc_quorum_at(s32 setting, int voters)
+{
+	int quorum_at;
+
+	switch (setting) {
+	case QOU_MAJORITY:
+		quorum_at = voters / 2 + 1;
+		break;
+	case QOU_ALL:
+		quorum_at = voters;
+		break;
+	default:
+		quorum_at = setting;
+	}
+
+	return quorum_at;
+}
+
+
 static bool calc_quorum(struct drbd_device *device, enum which_state which, struct quorum_info *qi)
 {
 	struct drbd_resource *resource = device->resource;
 	const int my_node_id = resource->res_opts.node_id;
-	int node_id, voters, votes = 0, outdated = 0, unknown = 0, quorum_at;
+	int node_id, voters, up_to_date = 0, present = 0, outdated = 0, unknown = 0;
+	int quorum_at, min_redundancy_at;
 	bool have_quorum;
 
 	rcu_read_lock();
@@ -1170,8 +1192,13 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 		enum drbd_repl_state repl_state;
 
 		if (node_id == my_node_id) {
-			if (device->disk_state[which] > D_DISKLESS)
-				votes++;
+			disk_state = device->disk_state[which];
+			if (disk_state > D_DISKLESS) {
+				if (disk_state == D_UP_TO_DATE)
+					up_to_date++;
+				else
+					present++;
+			}
 			continue;
 		}
 
@@ -1194,9 +1221,10 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 			else
 				unknown++;
 		} else {
-			/* D_NEGOTIATING, D_INCONSISTENT, D_CONSISTENT, D_UP_TO_DATE
-			and D_OUTDATED if connected */
-			votes++;
+			if (disk_state == D_UP_TO_DATE)
+				up_to_date++;
+			else
+				present++;
 		}
 	}
 	rcu_read_unlock();
@@ -1205,28 +1233,23 @@ static bool calc_quorum(struct drbd_device *device, enum which_state which, stru
 	   sure that the other partition is not able to promote. ->
 	   We remove them from the voters. -> We have quorum */
 	if (unknown)
-		voters = outdated + unknown + votes;
+		voters = outdated + unknown + up_to_date + present;
 	else
-		voters = votes;
+		voters = up_to_date + present;
 
-	switch (resource->res_opts.quorum) {
-	case QOU_MAJORITY:
-		quorum_at = voters / 2 + 1;
-		break;
-	case QOU_ALL:
-		quorum_at = voters;
-		break;
-	default:
-		quorum_at = resource->res_opts.quorum;
-	}
+	quorum_at = calc_quorum_at(resource->res_opts.quorum, voters);
+	min_redundancy_at = calc_quorum_at(resource->res_opts.quorum_min_redundancy, voters);
 
 	if (qi) {
 		qi->voters = voters;
-		qi->votes = votes;
+		qi->up_to_date = up_to_date;
+		qi->present = present;
 		qi->quorum_at = quorum_at;
+		qi->min_redundancy_at = min_redundancy_at;
 	}
 
-	have_quorum = votes >= quorum_at;
+	have_quorum = (up_to_date + present) >= quorum_at && up_to_date >= min_redundancy_at;
+
 	return have_quorum;
 }
 
@@ -1385,8 +1408,13 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			calc_quorum(device, NEW, &qi);
 			put_ldev(device);
 
-			drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
-				       qi.votes, qi.voters, qi.quorum_at);
+			if (qi.up_to_date + qi.present < qi.quorum_at)
+				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
+					       qi.up_to_date + qi.present, qi.voters, qi.quorum_at);
+			else if (qi.up_to_date < qi.min_redundancy_at)
+				drbd_state_err(resource, "%d of %d nodes up_to_date, need %d for "
+					       "quorum-minimum-redundancy",
+					       qi.up_to_date, qi.voters, qi.min_redundancy_at);
 			return SS_NO_QUORUM;
 		}
 
