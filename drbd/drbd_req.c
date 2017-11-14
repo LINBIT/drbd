@@ -29,6 +29,7 @@
 #include <linux/drbd.h>
 #include "drbd_int.h"
 #include "drbd_req.h"
+#include "drbd_wrappers.h"
 
 
 
@@ -38,14 +39,14 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	generic_start_io_acct(bio_data_dir(req->master_bio), req->i.size >> 9,
+	generic_start_io_acct(device->rq_queue, bio_data_dir(req->master_bio), req->i.size >> 9,
 			      &device->vdisk->part0);
 }
 
 /* Update disk stats when completing request upwards */
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	generic_end_io_acct(bio_data_dir(req->master_bio),
+	generic_end_io_acct(device->rq_queue, bio_data_dir(req->master_bio),
 			    &device->vdisk->part0, req->start_jif);
 }
 #else

@@ -1802,9 +1802,16 @@ do {								\
 } while (0)
 #endif
 
-#ifndef COMPAT_HAVE_GENERIC_START_IO_ACCT
+#if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
+/* void generic_start_io_acct(struct request_queue *q,
+ *		int rw, unsigned long sectors, struct hd_struct *part); */
+#elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
+/* void generic_start_io_acct(
+ *		int rw, unsigned long sectors, struct hd_struct *part); */
+#define generic_start_io_acct(q, rw, sect, part) generic_start_io_acct(rw, sect, part)
+#define generic_end_io_acct(q, rw, part, start) generic_end_io_acct(rw, part, start)
 
-#ifdef __disk_stat_inc
+#elif defined(__disk_stat_inc)
 /* too old, we don't care */
 #warning "io accounting disabled"
 #else
@@ -1814,8 +1821,8 @@ do {								\
 #define part_dec_in_flight(A, B) part_dec_in_flight(A)
 #endif
 
-static inline void generic_start_io_acct(int rw, unsigned long sectors,
-					 struct hd_struct *part)
+static inline void generic_start_io_acct(struct request_queue *q,
+		int rw, unsigned long sectors, struct hd_struct *part)
 {
 	int cpu;
 
@@ -1836,8 +1843,8 @@ static inline void generic_start_io_acct(int rw, unsigned long sectors,
 	part_stat_unlock();
 }
 
-static inline void generic_end_io_acct(int rw, struct hd_struct *part,
-				  unsigned long start_time)
+static inline void generic_end_io_acct(struct request_queue *q,
+		int rw, struct hd_struct *part, unsigned long start_time)
 {
 	unsigned long duration = jiffies - start_time;
 	int cpu;
@@ -1853,8 +1860,7 @@ static inline void generic_end_io_acct(int rw, struct hd_struct *part,
 #endif
 	part_stat_unlock();
 }
-#endif /* __disk_stat_inc */
-#endif /* COMPAT_HAVE_GENERIC_START_IO_ACCT */
+#endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
 
 
 #ifndef COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS
