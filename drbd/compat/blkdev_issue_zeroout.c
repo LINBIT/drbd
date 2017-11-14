@@ -68,7 +68,7 @@ int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 		}
 
 		bio->bi_sector = sector;
-		bio->bi_bdev   = bdev;
+		bio_set_dev(bio, bdev);
 		bio->bi_end_io = bio_batch_end_io;
 		bio->bi_private = &bb;
 

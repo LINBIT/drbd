@@ -1750,12 +1750,6 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 					     int fault_type, struct bio *bio)
 {
 	__release(local);
-	if (!bio->bi_bdev) {
-		drbd_err(device, "drbd_generic_make_request: bio->bi_bdev == NULL\n");
-		drbd_bio_endio(bio, BLK_STS_IOERR);
-		return;
-	}
-
 	if (drbd_insert_fault(device, fault_type))
 		drbd_bio_endio(bio, BLK_STS_IOERR);
 	else

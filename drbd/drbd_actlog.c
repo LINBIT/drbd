@@ -157,7 +157,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	device->md_io.error = -ENODEV;
 
 	bio = bio_alloc_drbd(GFP_NOIO);
-	bio->bi_bdev = bdev->md_bdev;
+	bio_set_dev(bio, bdev->md_bdev);
 	DRBD_BIO_BI_SECTOR(bio) = sector;
 	err = -EIO;
 	if (bio_add_page(bio, device->md_io.page, size, 0) != size)

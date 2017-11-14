@@ -1989,4 +1989,8 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 #define bio_clone_fast(bio, gfp, bio_set) bio_clone(bio, gfp)
 #endif
 
+#ifndef bio_set_dev
+#define bio_set_dev(bio, bdev) (bio)->bi_bdev = (bdev)
+#endif
+
 #endif
