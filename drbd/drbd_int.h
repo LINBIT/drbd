@@ -96,7 +96,7 @@ extern int fault_devs;
 extern int two_phase_commit_fail;
 #endif
 
-extern char usermode_helper[];
+extern char drbd_usermode_helper[];
 
 #ifndef DRBD_MAJOR
 # define DRBD_MAJOR 147
