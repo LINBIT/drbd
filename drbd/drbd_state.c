@@ -2660,7 +2660,8 @@ static void notify_state_change(struct drbd_state_change *state_change)
 		struct drbd_device_state_change *device_state_change =
 			&state_change->devices[n_device];
 
-		if (HAS_CHANGED(device_state_change->disk_state))
+		if (HAS_CHANGED(device_state_change->disk_state) ||
+		    HAS_CHANGED(device_state_change->have_quorum))
 			REMEMBER_STATE_CHANGE(notify_device_state_change,
 					      device_state_change, NOTIFY_CHANGE);
 	}
