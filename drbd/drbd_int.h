@@ -86,14 +86,10 @@
 
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
-extern bool drbd_disable_sendpage;
-extern bool drbd_allow_oos;
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int drbd_enable_faults;
 extern int drbd_fault_rate;
-extern int drbd_fault_devs;
-extern int drbd_two_phase_commit_fail;
 #endif
 
 extern char drbd_usermode_helper[];
