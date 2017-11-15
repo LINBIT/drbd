@@ -767,7 +767,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 	!(defined(RHEL_RELEASE_CODE /* 7.4 broke our compat detection here */) && \
 			LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0))
 
-/* Linux 4.8 split bio OPs and FLAGs {{{2 */
+/* [4.8 ... ] Linux 4.8 split bio OPs and FLAGs {{{2 */
 
 #define DRBD_REQ_PREFLUSH	REQ_PREFLUSH
 #define DRBD_REQ_FUA		REQ_FUA
@@ -788,8 +788,12 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 
 #define COMPAT_WRITE_SAME_CAPABLE
 
+#ifndef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+#define REQ_OP_WRITE_ZEROES (-3u)
+#endif
+
 #elif defined(BIO_FLUSH)
-/* RHEL 6.1 backported FLUSH/FUA as BIO_RW_FLUSH/FUA {{{2
+/* RHEL 6.1 ("not quite 2.6.32") backported FLUSH/FUA as BIO_RW_FLUSH/FUA {{{2
  * and at that time also introduced the defines BIO_FLUSH/FUA.
  * There is also REQ_FLUSH/FUA, but these do NOT share
  * the same value space as the bio rw flags, yet.
@@ -804,7 +808,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 
 #define REQ_RAHEAD		(1UL << BIO_RW_AHEAD)
 
-#elif defined(REQ_FLUSH)	/* introduced in 2.6.36, {{{2
+#elif defined(REQ_FLUSH)	/* [2.6.36 .. 4.7] introduced in 2.6.36, {{{2
 				 * now equivalent to bi_rw */
 
 #define DRBD_REQ_SYNC		REQ_SYNC
@@ -835,7 +839,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define COMPAT_WRITE_SAME_CAPABLE
 #endif
 
-#else				/* "older", and hopefully not
+#else				/* [<=2.6.35] "older", and hopefully not {{{2
 				 * "partially backported" kernel */
 
 #define REQ_RAHEAD             (1UL << BIO_RW_AHEAD)
@@ -1013,6 +1017,7 @@ enum req_op {
 	 */
        REQ_OP_DISCARD		= DRBD_REQ_DISCARD ?: -1,
        REQ_OP_WRITE_SAME	= DRBD_REQ_WSAME   ?: -2,
+       REQ_OP_WRITE_ZEROES	= -3,
 };
 #define bio_op(bio)                            (op_from_rq_bits((bio)->bi_rw))
 
