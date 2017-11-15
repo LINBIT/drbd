@@ -364,7 +364,7 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is
 	if (page == NULL)
 		return;
 
-	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count)
+	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count)
 		i = page_chain_free(page);
 	else {
 		struct page *tmp;

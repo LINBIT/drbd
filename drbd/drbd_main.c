@@ -94,32 +94,32 @@ MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 MODULE_PARM_DESC(allow_oos, "DONT USE!");
 /* thanks to these macros, if compiled into the kernel (not-module),
  * this becomes the boot parameter drbd.minor_count */
-module_param(minor_count, uint, 0444);
-module_param(disable_sendpage, bool, 0644);
-module_param(allow_oos, bool, 0);
+module_param_named(minor_count, drbd_minor_count, uint, 0444);
+module_param_named(disable_sendpage, drbd_disable_sendpage, bool, 0644);
+module_param_named(allow_oos, drbd_allow_oos, bool, 0);
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-int enable_faults;
-int fault_rate;
-static int fault_count;
-int fault_devs;
-int two_phase_commit_fail;
+int drbd_enable_faults;
+int drbd_fault_rate;
+static int drbd_fault_count;
+int drbd_fault_devs;
+int drbd_two_phase_commit_fail;
 
 /* bitmap of enabled faults */
-module_param(enable_faults, int, 0664);
+module_param_named(enable_faults, drbd_enable_faults, int, 0664);
 /* fault rate % value - applies to all enabled faults */
-module_param(fault_rate, int, 0664);
+module_param_named(fault_rate, drbd_fault_rate, int, 0664);
 /* count of faults inserted */
-module_param(fault_count, int, 0664);
+module_param_named(fault_count, drbd_fault_count, int, 0664);
 /* bitmap of devices to insert faults on */
-module_param(fault_devs, int, 0644);
-module_param(two_phase_commit_fail, int, 0644);
+module_param_named(fault_devs, drbd_fault_devs, int, 0644);
+module_param_named(two_phase_commit_fail, drbd_two_phase_commit_fail, int, 0644);
 #endif
 
 /* module parameter, defined */
-unsigned int minor_count = DRBD_MINOR_COUNT_DEF;
-bool disable_sendpage;
-bool allow_oos;
+unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
+bool drbd_disable_sendpage;
+bool drbd_allow_oos;
 
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
@@ -2150,7 +2150,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 {
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
-	bool no_zc = disable_sendpage;
+	bool no_zc = drbd_disable_sendpage;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
@@ -2484,7 +2484,8 @@ static int ro_open_cond(struct drbd_device *device)
 
 	if (!device->have_quorum[NOW])
 		return -ENODATA;
-	else if (resource->role[NOW] != R_PRIMARY && primary_peer_present(resource) && !allow_oos)
+	else if (resource->role[NOW] != R_PRIMARY &&
+		primary_peer_present(resource) && !drbd_allow_oos)
 		return -EMEDIUMTYPE;
 	else if (any_disk_is_uptodate(device))
 		return 0;
@@ -2555,7 +2556,8 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 				ro_open_cond(device) != -EAGAIN,
 				resource->res_opts.auto_promote_timeout * HZ / 10);
 		}
-	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos) {
+	} else if (resource->role[NOW] != R_PRIMARY &&
+			!(mode & FMODE_WRITE) && !drbd_allow_oos) {
 		rv = -EMEDIUMTYPE;
 		goto out;
 	}
@@ -2739,7 +2741,7 @@ static void drbd_destroy_mempools(void)
 static int drbd_create_mempools(void)
 {
 	struct page *page;
-	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count;
+	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count;
 	int i;
 
 	/* prepare our caches and mempools */
@@ -3900,12 +3902,13 @@ static int __init drbd_init(void)
 
 	initialize_kref_debugging();
 
-	if (minor_count < DRBD_MINOR_COUNT_MIN || minor_count > DRBD_MINOR_COUNT_MAX) {
-		pr_err("invalid minor_count (%d)\n", minor_count);
+	if (drbd_minor_count < DRBD_MINOR_COUNT_MIN
+	||  drbd_minor_count > DRBD_MINOR_COUNT_MAX) {
+		pr_err("invalid minor_count (%d)\n", drbd_minor_count);
 #ifdef MODULE
 		return -EINVAL;
 #else
-		minor_count = DRBD_MINOR_COUNT_DEF;
+		drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 #endif
 	}
 
@@ -5330,12 +5333,12 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 	static struct fault_random_state rrs = {0, 0};
 
 	unsigned int ret = (
-		(fault_devs == 0 ||
-			((1 << device_to_minor(device)) & fault_devs) != 0) &&
-		(((_drbd_fault_random(&rrs) % 100) + 1) <= fault_rate));
+		(drbd_fault_devs == 0 ||
+			((1 << device_to_minor(device)) & drbd_fault_devs) != 0) &&
+		(((_drbd_fault_random(&rrs) % 100) + 1) <= drbd_fault_rate));
 
 	if (ret) {
-		fault_count++;
+		drbd_fault_count++;
 
 		if (drbd_ratelimit())
 			drbd_warn(device, "***Simulating %s failure\n",

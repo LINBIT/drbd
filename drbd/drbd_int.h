@@ -85,15 +85,15 @@
 #endif
 
 /* module parameter, defined in drbd_main.c */
-extern unsigned int minor_count;
-extern bool disable_sendpage;
-extern bool allow_oos;
+extern unsigned int drbd_minor_count;
+extern bool drbd_disable_sendpage;
+extern bool drbd_allow_oos;
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-extern int enable_faults;
-extern int fault_rate;
-extern int fault_devs;
-extern int two_phase_commit_fail;
+extern int drbd_enable_faults;
+extern int drbd_fault_rate;
+extern int drbd_fault_devs;
+extern int drbd_two_phase_commit_fail;
 #endif
 
 extern char drbd_usermode_helper[];
@@ -145,8 +145,8 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type);
 static inline int
 drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-	return fault_rate &&
-		(enable_faults & (1<<type)) &&
+	return drbd_fault_rate &&
+		(drbd_enable_faults & (1<<type)) &&
 		_drbd_insert_fault(device, type);
 #else
 	return 0;
