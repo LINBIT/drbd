@@ -139,5 +139,10 @@ $(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
 		echo >&2 "Your DRBD source tree is broken. Unpack again.";      \
 		exit 1;								\
 	fi ;									\
-	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-	mv -f $@.new $@
+	if [ -z "${WANT_DRBD_REPRODUCIBLE_BUILD}" ] || [ -z "${SOURCE_DATE_EPOCH}" ] ; then	\
+		buildinfo="build by $$USER@$$HOSTNAME, `date "+%F %T"`" ;			\
+	else 											\
+		buildinfo="reproducible build, `date -u -d@${SOURCE_DATE_EPOCH} "+%F %T"`" ; 	\
+	fi ; 											\
+	echo -e "\t\t\" $$buildinfo\";\n}";							\
+	mv --force $@.new $@
