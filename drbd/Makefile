@@ -42,6 +42,7 @@ MAKEFLAGS += -rR --no-print-directory
 # Lets test on PATCHLEVEL, that won't change too soon...
 
 ifneq ($(PATCHLEVEL),)
+ # suffifiently new kernel will include Kbuild directly
  ifneq ($(VERSION),3)
   ifneq ($(VERSION),2)
     $(error "won't compile with this kernel version")
@@ -125,7 +126,7 @@ else
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
-	rm -f .compat_test.*
+	rm -rf .compat_test.*
 
   distclean: clean
 	@if git show HEAD:drbd/linux/drbd_config.h > linux/drbd_config.h.tmp \
@@ -134,7 +135,7 @@ else
 	else \
 		rm -f linux/drbd_config.h.tmp ; \
 	fi
-	rm -f drbd_buildtag.c compat.h
+	rm -f drbd_buildtag.c .config*.timestamp compat*.h
 
   tags:
 	( git ls-files ;						\
