@@ -3744,11 +3744,11 @@ out_remove_peer_device:
 	list_for_each_entry_safe(peer_device, tmp_peer_device, &tmp, peer_devices) {
 		struct drbd_connection *connection = peer_device->connection;
 
-		kref_debug_put(&connection->kref_debug, 3);
-		kref_put(&connection->kref, drbd_destroy_connection);
 		idr_remove(&connection->peer_devices, device->vnr);
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
+		kref_debug_put(&connection->kref_debug, 3);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 
 out_idr_remove_minor:
