@@ -1265,6 +1265,14 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backin
  *
  * At least for LVM/DM thin, the result is effectively "discard_zeroes_data=1".
  */
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
+{
+	/* Trust it to UNMAP if possible, and to zero-out the rest */
+	struct block_device *bdev = device->ldev->backing_bdev;
+	return blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0) != 0;
+}
+#else
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
 {
 	struct block_device *bdev = device->ldev->backing_bdev;
@@ -1316,6 +1324,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	}
 	return err != 0;
 }
+#endif
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
@@ -1471,7 +1480,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	 * generated bio, but a bio allocated on behalf of the peer.
 	 */
 next_bio:
-	/* REQ_OP_WRITE_SAME and REQ_OP_DISCARD handled above.
+	/* REQ_OP_WRITE_SAME, _DISCARD, _WRITE_ZEROES handled above.
 	 * REQ_OP_FLUSH (empty flush) not expected,
 	 * should have been mapped to a "drbd protocol barrier".
 	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
@@ -2384,7 +2393,9 @@ static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection,
 static unsigned long wire_flags_to_bio_op(u32 dpf)
 {
 	if (dpf & DP_DISCARD)
-		return REQ_OP_DISCARD;
+		return REQ_OP_WRITE_ZEROES;
+	if (dpf & DP_WSAME)
+		return REQ_OP_WRITE_SAME;
 	else
 		return REQ_OP_WRITE;
 }
@@ -2601,8 +2612,13 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
 		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
 		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
+	} else if (pi->cmd == P_WSAME) {
+		D_ASSERT(peer_device, peer_req->i.size > 0);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE_SAME);
+		D_ASSERT(peer_device, peer_req->page_chain.head != NULL);
 	} else if (peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
 		 * "empty" flushes are mapped to P_BARRIER,
@@ -2610,6 +2626,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		 * Compat with old DRBD? */
 		D_ASSERT(device, peer_req->i.size == 0);
 		D_ASSERT(device, d.dp_flags & DP_FLUSH);
+	} else {
+		D_ASSERT(peer_device, peer_req->i.size > 0);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE);
 	}
 
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
@@ -7069,7 +7088,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&device->resource->req_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(device, peer_req, REQ_OP_DISCARD,
+		err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE_ZEROES,
 				0, DRBD_FAULT_RS_WR);
 
 		if (err) {

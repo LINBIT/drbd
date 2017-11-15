@@ -209,7 +209,8 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
 	bool is_write = bio_data_dir(bio) == WRITE;
-	bool is_discard = bio_op(bio) == REQ_OP_DISCARD;
+	bool is_discard = bio_op(bio) == REQ_OP_WRITE_ZEROES ||
+			  bio_op(bio) == REQ_OP_DISCARD;
 
 	BIO_ENDIO_FN_START;
 	if (status && drbd_ratelimit())
@@ -290,6 +291,7 @@ void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
 	if (unlikely(status)) {
 		switch (bio_op(bio)) {
 		case REQ_OP_DISCARD:
+		case REQ_OP_WRITE_ZEROES:
 			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;
 			else

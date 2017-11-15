@@ -1771,6 +1771,7 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 		if (!(connection->agreed_features & DRBD_FF_WSAME)) {
 			/* before, with DRBD <= 8.4.6, we only allowed up to one AL_EXTENT_SIZE. */
 			s = AL_EXTENT_SIZE >> 9;
+			break;
 		}
 	}
 	rcu_read_unlock();
@@ -1807,10 +1808,16 @@ static void decide_on_discard_support(struct drbd_device *device,
 		blk_queue_discard_granularity(q, 512);
 		q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, q);
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+		q->limits.max_write_zeroes_sectors = drbd_max_discard_sectors(device->resource);
+#endif
 	} else {
 		queue_flag_clear_unlocked(QUEUE_FLAG_DISCARD, q);
 		blk_queue_discard_granularity(q, 0);
 		q->limits.max_discard_sectors = 0;
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+		q->limits.max_write_zeroes_sectors = 0;
+#endif
 	}
 }
 
