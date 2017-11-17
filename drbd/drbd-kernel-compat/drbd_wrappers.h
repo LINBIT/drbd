@@ -1531,7 +1531,9 @@ static inline int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_
 #ifndef BLKDEV_ISSUE_ZEROOUT_EXPORTED
 /* Was introduced with 2.6.34 */
 extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-				sector_t nr_sects, gfp_t gfp_mask, unsigned flags);
+				sector_t nr_sects, gfp_t gfp_mask);
+#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags /* = NOUNMAP */) \
+	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
 #else
 /* synopsis changed a few times, though */
 #if  defined(BLKDEV_ZERO_NOUNMAP)
@@ -1541,11 +1543,12 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #elif defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_BLKDEV_IFL_WAIT)
 /* cannot yet tell it to use (or not use) discard,
  * but must tell it to be synchronous */
+#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP, BLKDEV_IFL_WAIT)
 #elif  defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD)
 /* no BLKDEV_ZERO_NOUNMAP as last parameter, but a bool discard instead */
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags /* = NOUNMAP */) \
-       blkdev_issue_zeroout(BDEV, SS, NS, GFP, false /* bool discard */)
+	blkdev_issue_zeroout(BDEV, SS, NS, GFP, false /* bool discard */)
 #else /* !defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD) */
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
@@ -1638,18 +1641,30 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 })
 #endif
 
-#ifdef COMPAT_HAVE_GENERIC_START_IO_ACCT
-#define generic_start_io_acct(Q, RW, S, P)  (void) Q; generic_start_io_acct(RW, S, P)
-#define generic_end_io_acct(Q, RW, P, J)  (void) Q; generic_end_io_acct(RW, P, J)
-#elif !defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_W_QUEUE)
-#ifndef __disk_stat_inc
-static inline void generic_start_io_acct(struct request_queue *q, int rw, unsigned long sectors,
-					 struct hd_struct *part)
+#if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
+/* void generic_start_io_acct(struct request_queue *q,
+ *		int rw, unsigned long sectors, struct hd_struct *part); */
+#elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
+/* void generic_start_io_acct(
+ *		int rw, unsigned long sectors, struct hd_struct *part); */
+#define generic_start_io_acct(q, rw, sect, part) generic_start_io_acct(rw, sect, part)
+#define generic_end_io_acct(q, rw, part, start) generic_end_io_acct(rw, part, start)
+
+#elif defined(__disk_stat_inc)
+/* too old, we don't care */
+#warning "io accounting disabled"
+#else
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+#define part_inc_in_flight(A, B) part_inc_in_flight(A)
+#define part_dec_in_flight(A, B) part_dec_in_flight(A)
+#endif
+
+static inline void generic_start_io_acct(struct request_queue *q,
+		int rw, unsigned long sectors, struct hd_struct *part)
 {
 	int cpu;
-	BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0]));
 
-	(void) q; /* no warning about unused variable */
 	cpu = part_stat_lock();
 	part_round_stats(cpu, part);
 	part_stat_inc(cpu, part, ios[rw]);
@@ -1657,26 +1672,34 @@ static inline void generic_start_io_acct(struct request_queue *q, int rw, unsign
 	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
 		       the compiler warning about cpu only assigned but never used... */
 	/* part_inc_in_flight(part, rw); */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight)); }
+	atomic_inc((atomic_t*)&part->in_flight);
+#else
+	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0])); }
 	atomic_inc((atomic_t*)&part->in_flight[rw]);
+#endif
 	part_stat_unlock();
 }
 
-static inline void generic_end_io_acct(struct request_queue *q, int rw, struct hd_struct *part,
-				       unsigned long start_time)
+static inline void generic_end_io_acct(struct request_queue *q,
+		int rw, struct hd_struct *part, unsigned long start_time)
 {
 	unsigned long duration = jiffies - start_time;
 	int cpu;
 
-	(void) q; /* no warning about unused variable */
 	cpu = part_stat_lock();
 	part_stat_add(cpu, part, ticks[rw], duration);
 	part_round_stats(cpu, part);
 	/* part_dec_in_flight(part, rw); */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
+	atomic_dec((atomic_t*)&part->in_flight);
+#else
 	atomic_dec((atomic_t*)&part->in_flight[rw]);
+#endif
 	part_stat_unlock();
 }
-#endif /* __disk_stat_inc */
-#endif /* COMPAT_HAVE_GENERIC_START_IO_ACCT */
+#endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
 
 
 #ifndef COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS
@@ -1719,7 +1742,6 @@ static inline void kvfree(void /* intentionally discarded const */ *addr)
 }
 #endif
 
-
 #ifdef blk_queue_plugged
 /* pre 7eaceac block: remove per-queue plugging
  * Code has been converted over to the new explicit on-stack plugging ...
@@ -1732,7 +1754,7 @@ struct blk_plug { };
 static void blk_start_plug(struct blk_plug *plug) {};
 static void blk_finish_plug(struct blk_plug *plug) {};
 #else
-#define blk_start_plug(plug) do { } while (0)
+#define blk_start_plug(plug) do { (void)plug; } while (0)
 #define blk_finish_plug(plug) do { } while (0)
 #endif
 #endif

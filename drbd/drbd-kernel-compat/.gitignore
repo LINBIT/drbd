@@ -3,3 +3,6 @@ idr.o
 
 .blkdev_issue_zeroout.o.cmd
 blkdev_issue_zeroout.o
+
+.nsecs_to_jiffies.o.cmd
+nsecs_to_jiffies.o

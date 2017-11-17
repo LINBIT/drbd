@@ -35,7 +35,7 @@ static void bio_batch_end_io(struct bio *bio, int error)
  */
 
 int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-			 sector_t nr_sects, gfp_t gfp_mask, unsigned int flags)
+			 sector_t nr_sects, gfp_t gfp_mask)
 {
 	int ret;
 	struct bio *bio;
@@ -71,8 +71,15 @@ int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 		}
 		ret = 0;
 		atomic_inc(&bb.done);
+#if 0
+/* This file is only compiled for old kernels not exporting blkdev_issue_zeroout().
+ * Avoid to include "drbd_wrappers.h", use the old sumit_bio() directly
+ * without macro-indirection magic */
 		bio_set_op_attrs(bio, REQ_OP_WRITE, 0);
 		submit_bio(bio);
+#else
+		submit_bio(WRITE, bio);
+#endif
 	}
 
 	/* Wait for bios in-flight */
