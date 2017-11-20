@@ -2527,7 +2527,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	mutex_lock(&resource->open_release);
 
 	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
-						   r = inc_open_count(device, mode),
+						   (r = inc_open_count(device, mode)),
 						   timeout);
 	if (r == IOC_ABORT || timeout <= 0) {
 		mutex_unlock(&resource->open_release);
