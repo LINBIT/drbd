@@ -364,7 +364,7 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is
 	if (page == NULL)
 		return;
 
-	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count)
+	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count)
 		i = page_chain_free(page);
 	else {
 		struct page *tmp;
@@ -947,7 +947,7 @@ struct one_flush_context {
 	struct issue_flush_context *ctx;
 };
 
-static void one_flush_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
+static void one_flush_endio BIO_ENDIO_ARGS(struct bio *bio)
 {
 	struct one_flush_context *octx = bio->bi_private;
 	struct drbd_device *device = octx->device;
@@ -1265,6 +1265,14 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backin
  *
  * At least for LVM/DM thin, the result is effectively "discard_zeroes_data=1".
  */
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
+{
+	/* Trust it to UNMAP if possible, and to zero-out the rest */
+	struct block_device *bdev = device->ldev->backing_bdev;
+	return blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0) != 0;
+}
+#else
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
 {
 	struct block_device *bdev = device->ldev->backing_bdev;
@@ -1279,9 +1287,15 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	if (!discard)
 		goto zero_out;
 
+#ifdef QUEUE_FLAG_DISCARD
 	/* Zero-sector (unknown) and one-sector granularities are the same.  */
+#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
+#else
+	granularity = 1;
+	alignment = 0;
+#endif
 
 	max_discard_sectors = min(q->limits.max_discard_sectors, (1U << 22));
 	max_discard_sectors -= max_discard_sectors % granularity;
@@ -1310,12 +1324,14 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		nr_sectors -= nr;
 		start += nr;
 	}
+#endif
  zero_out:
 	if (nr_sectors) {
 		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, BLKDEV_ZERO_NOUNMAP);
 	}
 	return err != 0;
 }
+#endif
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
@@ -1471,7 +1487,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	 * generated bio, but a bio allocated on behalf of the peer.
 	 */
 next_bio:
-	/* REQ_OP_WRITE_SAME and REQ_OP_DISCARD handled above.
+	/* REQ_OP_WRITE_SAME, _DISCARD, _WRITE_ZEROES handled above.
 	 * REQ_OP_FLUSH (empty flush) not expected,
 	 * should have been mapped to a "drbd protocol barrier".
 	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
@@ -2384,7 +2400,9 @@ static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection,
 static unsigned long wire_flags_to_bio_op(u32 dpf)
 {
 	if (dpf & DP_DISCARD)
-		return REQ_OP_DISCARD;
+		return REQ_OP_WRITE_ZEROES;
+	if (dpf & DP_WSAME)
+		return REQ_OP_WRITE_SAME;
 	else
 		return REQ_OP_WRITE;
 }
@@ -2601,8 +2619,13 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
 		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
 		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
+	} else if (pi->cmd == P_WSAME) {
+		D_ASSERT(peer_device, peer_req->i.size > 0);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE_SAME);
+		D_ASSERT(peer_device, peer_req->page_chain.head != NULL);
 	} else if (peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
 		 * "empty" flushes are mapped to P_BARRIER,
@@ -2610,6 +2633,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		 * Compat with old DRBD? */
 		D_ASSERT(device, peer_req->i.size == 0);
 		D_ASSERT(device, d.dp_flags & DP_FLUSH);
+	} else {
+		D_ASSERT(peer_device, peer_req->i.size > 0);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE);
 	}
 
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
@@ -3840,7 +3866,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
-	int hg, rule_nr, rr_conflict, peer_node_id = 0, r;
+	int hg, rule_nr, rr_conflict, always_asbp, peer_node_id = 0, r;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, true);
 
@@ -3869,8 +3895,11 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
+	always_asbp = nc->always_asbp;
+	rr_conflict = nc->rr_conflict;
+	rcu_read_unlock();
 
-	if (hg == 100 || (hg == -100 && nc->always_asbp)) {
+	if (hg == 100 || (hg == -100 && always_asbp)) {
 		int pcount = (device->resource->role[NOW] == R_PRIMARY)
 			   + (peer_role == R_PRIMARY);
 		int forced = (hg == -100);
@@ -3911,8 +3940,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			     "Sync from %s node\n",
 			     (hg < 0) ? "peer" : "this");
 	}
-	rr_conflict = nc->rr_conflict;
-	rcu_read_unlock();
 
 	if (hg == -100) {
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
@@ -7068,7 +7095,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&device->resource->req_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(device, peer_req, REQ_OP_DISCARD,
+		err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE_ZEROES,
 				0, DRBD_FAULT_RS_WR);
 
 		if (err) {

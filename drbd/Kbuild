@@ -1,6 +1,6 @@
 obj-m := drbd.o drbd_transport_tcp.o
 
-clean-files := compat.h .config.timestamp
+clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
 LINUXINCLUDE := -I$(src) -I$(src)/../drbd-headers $(LINUXINCLUDE)
 
@@ -70,33 +70,38 @@ KBUILD_STAGE ?= $(if $(filter      scripts/Makefile.modpost \
 			$(srctree)/scripts/Makefile.modpost,\
 			$(MAKEFILE_LIST)),modpost)
 
-ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.timestamp 2> /dev/null))
+ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.$(KERNELVERSION).timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
 endif
 
 ifneq ($(KBUILD_STAGE),modpost)
 TEST_C := $(sort $(wildcard $(src)/drbd-kernel-compat/tests/*.c))
-TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj)/.compat_test.%.result)
-$(obj)/.compat_test.%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
+TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj)/.compat_test.$(KERNELVERSION)/%.result)
+$(obj)/.compat_test.$(KERNELVERSION)/%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
 	$(call cmd,compat_test_result)
 
 quiet_cmd_compat_test_result = COMPAT  $*
       cmd_compat_test_result = \
+	mkdir -p $(@D)/ ; \
 	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
-	if $(CC) $(c_flags) $(COMPAT_CFLAGS) -c -o $(@D)/.compat_test.$*.o $<	\
-		-D"KBUILD_MODNAME=\"compat_dummy\""				\
-		> $(@D)/.compat_test.$*.stdout 2> $(@D)/.compat_test.$*.stderr; \
+	if $(CC) $(c_flags) -Werror-implicit-function-declaration $(COMPAT_CFLAGS) \
+		-c -o $(@D)/.$*.o $< > $(@D)/$*.stdout 2> $(@D)/$*.stderr	\
+		-D"KBUILD_MODNAME=\"compat_dummy\"" ;				\
 	then									\
 		echo "\#define $$var" ;						\
 	else									\
 		echo "/* \#undef $$var */" ;					\
 	fi > $@
 
-filechk_compat.h = cat $(TEST_R)
+filechk_compat.$(KERNELVERSION).h = cat $(TEST_R)
+filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 
-$(obj)/compat.h: $(TEST_R) $(COMPAT_FORCE)
+$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(COMPAT_FORCE)
+	$(call filechk,compat.$(KERNELVERSION).h)
+
+$(obj)/compat.h: $(obj)/compat.$(KERNELVERSION).h FORCE
 	$(call filechk,compat.h)
-	$(Q)touch -r $(objtree)/.config $(obj)/.config.timestamp
+	$(Q)touch -r $(objtree)/.config $(obj)/.config.$(KERNELVERSION).timestamp
 else
 # remember KERNELRELEASE for install target
 # .kernelversion can be included in Makefile as well as
@@ -139,5 +144,10 @@ $(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
 		echo >&2 "Your DRBD source tree is broken. Unpack again.";      \
 		exit 1;								\
 	fi ;									\
-	echo -e "\t\t\" build by $$USER@$$HOSTNAME, `date "+%F %T"`\";\n}";	\
-	mv -f $@.new $@
+	if [ -z "${WANT_DRBD_REPRODUCIBLE_BUILD}" ] || [ -z "${SOURCE_DATE_EPOCH}" ] ; then	\
+		buildinfo="build by $$USER@$$HOSTNAME, `date "+%F %T"`" ;			\
+	else 											\
+		buildinfo="reproducible build, `date -u -d@${SOURCE_DATE_EPOCH} "+%F %T"`" ; 	\
+	fi ; 											\
+	echo -e "\t\t\" $$buildinfo\";\n}";							\
+	mv --force $@.new $@

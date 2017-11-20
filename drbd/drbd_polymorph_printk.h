@@ -41,8 +41,8 @@
 	__cn = rcu_dereference(__c->transport.net_conf)->name;
 #define __drbd_printk_drbd_connection_fmt(fmt)			\
 	"drbd %s %s: " fmt
-#define __drbd_printk_drbd_connection_args()				\
-	__r->name, rcu_dereference(__c->transport.net_conf)->name
+#define __drbd_printk_drbd_connection_args()			\
+	__r->name, __cn
 #define __drbd_printk_drbd_connection_unprep()			\
 	rcu_read_unlock();					\
 

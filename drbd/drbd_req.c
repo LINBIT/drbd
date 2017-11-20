@@ -46,18 +46,14 @@ static inline unsigned long ktime_to_jiffies(ktime_t kt)
 /* Update disk stats at start of I/O request */
 static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	struct request_queue *q = device->rq_queue;
-
-	generic_start_io_acct(q, bio_data_dir(req->master_bio), req->i.size >> 9,
+	generic_start_io_acct(device->rq_queue, bio_data_dir(req->master_bio), req->i.size >> 9,
 			      &device->vdisk->part0);
 }
 
 /* Update disk stats when completing request upwards */
 static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
 {
-	struct request_queue *q = device->rq_queue;
-
-	generic_end_io_acct(q, bio_data_dir(req->master_bio),
+	generic_end_io_acct(device->rq_queue, bio_data_dir(req->master_bio),
 			    &device->vdisk->part0,
 			    ktime_to_jiffies(req->start_kt));
 }
@@ -117,6 +113,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 
 	req->local_rq_state = (bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0)
 	              | (bio_op(bio_src) == REQ_OP_WRITE_SAME ? RQ_WSAME : 0)
+	              | (bio_op(bio_src) == REQ_OP_WRITE_ZEROES ? RQ_UNMAP : 0)
 	              | (bio_op(bio_src) == REQ_OP_DISCARD ? RQ_UNMAP : 0);
 
 	return req;
@@ -1477,7 +1474,8 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	if (get_ldev(device)) {
 		if (drbd_insert_fault(device, type))
 			drbd_bio_endio(bio, BLK_STS_IOERR);
-		else if (bio_op(bio) == REQ_OP_DISCARD)
+		else if (bio_op(bio) == REQ_OP_WRITE_ZEROES ||
+			 bio_op(bio) == REQ_OP_DISCARD)
 			drbd_process_discard_req(req);
 		else
 			generic_make_request(bio);
@@ -1531,7 +1529,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 	_drbd_start_io_acct(device, req);
 
 	/* process discards always from our submitter thread */
-	if (bio_op(bio) == REQ_OP_DISCARD)
+	if ((bio_op(bio) == REQ_OP_WRITE_ZEROES) ||
+	    (bio_op(bio) == REQ_OP_DISCARD))
 		goto queue_for_submitter_thread;
 
 	if (rw == WRITE && req->i.size) {
@@ -2138,12 +2137,15 @@ void do_submit(struct work_struct *ws)
  * f5fe1b51905d blk: Ensure users for current->bio_list can see the full list.
  */
 #undef COMPAT_NEED_MAKE_REQUEST_RECURSION
-#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
+#ifndef COMPAT_HAVE_BLK_QUEUE_SPLIT_QUEUE_BIO
+#if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_QUEUE_BIO_BIOSET)
+#define blk_queue_split(q,b) blk_queue_split(q,b,q->bio_split)
 # if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
 #  define COMPAT_NEED_MAKE_REQUEST_RECURSION
 # endif
 #else
-# define blk_queue_split(q,b,l) do { } while (0)
+# define blk_queue_split(q,b) do { } while (0)
+#endif
 #endif
 
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
@@ -2164,7 +2166,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-	blk_queue_split(q, &bio, q->bio_split);
+	blk_queue_split(q, &bio);
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
 	current_bio_list = current->bio_list;
 	current->bio_list = NULL;

@@ -90,42 +90,37 @@ MODULE_PARM_DESC(minor_count, "Approximate number of drbd devices ("
 MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
 
 #include <linux/moduleparam.h>
-/* allow_open_on_secondary */
-MODULE_PARM_DESC(allow_oos, "DONT USE!");
-/* thanks to these macros, if compiled into the kernel (not-module),
- * this becomes the boot parameter drbd.minor_count */
-module_param(minor_count, uint, 0444);
-module_param(disable_sendpage, bool, 0644);
-module_param(allow_oos, bool, 0);
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
-int enable_faults;
-int fault_rate;
-static int fault_count;
-int fault_devs;
-int two_phase_commit_fail;
+int drbd_enable_faults;
+int drbd_fault_rate;
+static int drbd_fault_count;
+static int drbd_fault_devs;
 
 /* bitmap of enabled faults */
-module_param(enable_faults, int, 0664);
+module_param_named(enable_faults, drbd_enable_faults, int, 0664);
 /* fault rate % value - applies to all enabled faults */
-module_param(fault_rate, int, 0664);
+module_param_named(fault_rate, drbd_fault_rate, int, 0664);
 /* count of faults inserted */
-module_param(fault_count, int, 0664);
+module_param_named(fault_count, drbd_fault_count, int, 0664);
 /* bitmap of devices to insert faults on */
-module_param(fault_devs, int, 0644);
-module_param(two_phase_commit_fail, int, 0644);
+module_param_named(fault_devs, drbd_fault_devs, int, 0644);
 #endif
 
-/* module parameter, defined */
-unsigned int minor_count = DRBD_MINOR_COUNT_DEF;
-bool disable_sendpage;
-bool allow_oos;
+/* module parameters we can keep static */
+static bool drbd_disable_sendpage;
+static bool drbd_allow_oos; /* allow_open_on_secondary */
+MODULE_PARM_DESC(allow_oos, "DONT USE!");
+module_param_named(disable_sendpage, drbd_disable_sendpage, bool, 0644);
+module_param_named(allow_oos, drbd_allow_oos, bool, 0);
 
+/* module parameters shared with defaults */
+unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
-char usermode_helper[80] = "/sbin/drbdadm";
-
-module_param_string(usermode_helper, usermode_helper, sizeof(usermode_helper), 0644);
+char drbd_usermode_helper[80] = "/sbin/drbdadm";
+module_param_named(minor_count, drbd_minor_count, uint, 0444);
+module_param_string(usermode_helper, drbd_usermode_helper, sizeof(drbd_usermode_helper), 0644);
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
@@ -2150,7 +2145,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 {
 	DRBD_BIO_VEC_TYPE bvec;
 	DRBD_ITER_TYPE iter;
-	bool no_zc = disable_sendpage;
+	bool no_zc = drbd_disable_sendpage;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
 	 * page_count of 0 and/or have PageSlab() set.
@@ -2223,7 +2218,8 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 			(bio->bi_opf & DRBD_REQ_FUA ? DP_FUA : 0) |
 			(bio->bi_opf & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
-			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0);
+			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
+			(bio_op(bio) == REQ_OP_WRITE_ZEROES ? DP_DISCARD : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
 	return bio->bi_opf & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
@@ -2484,7 +2480,8 @@ static int ro_open_cond(struct drbd_device *device)
 
 	if (!device->have_quorum[NOW])
 		return -ENODATA;
-	else if (resource->role[NOW] != R_PRIMARY && primary_peer_present(resource) && !allow_oos)
+	else if (resource->role[NOW] != R_PRIMARY &&
+		primary_peer_present(resource) && !drbd_allow_oos)
 		return -EMEDIUMTYPE;
 	else if (any_disk_is_uptodate(device))
 		return 0;
@@ -2530,7 +2527,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	mutex_lock(&resource->open_release);
 
 	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
-						   r = inc_open_count(device, mode),
+						   (r = inc_open_count(device, mode)),
 						   timeout);
 	if (r == IOC_ABORT || timeout <= 0) {
 		mutex_unlock(&resource->open_release);
@@ -2555,7 +2552,8 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 				ro_open_cond(device) != -EAGAIN,
 				resource->res_opts.auto_promote_timeout * HZ / 10);
 		}
-	} else if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !allow_oos) {
+	} else if (resource->role[NOW] != R_PRIMARY &&
+			!(mode & FMODE_WRITE) && !drbd_allow_oos) {
 		rv = -EMEDIUMTYPE;
 		goto out;
 	}
@@ -2739,7 +2737,7 @@ static void drbd_destroy_mempools(void)
 static int drbd_create_mempools(void)
 {
 	struct page *page;
-	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * minor_count;
+	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count;
 	int i;
 
 	/* prepare our caches and mempools */
@@ -3643,7 +3641,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_write_cache(q, true, true);
-	blk_queue_bounce_limit(q, BLK_BOUNCE_ANY);
 #ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 #endif
@@ -3748,11 +3745,11 @@ out_remove_peer_device:
 	list_for_each_entry_safe(peer_device, tmp_peer_device, &tmp, peer_devices) {
 		struct drbd_connection *connection = peer_device->connection;
 
-		kref_debug_put(&connection->kref_debug, 3);
-		kref_put(&connection->kref, drbd_destroy_connection);
 		idr_remove(&connection->peer_devices, device->vnr);
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
+		kref_debug_put(&connection->kref_debug, 3);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 
 out_idr_remove_minor:
@@ -3901,12 +3898,13 @@ static int __init drbd_init(void)
 
 	initialize_kref_debugging();
 
-	if (minor_count < DRBD_MINOR_COUNT_MIN || minor_count > DRBD_MINOR_COUNT_MAX) {
-		pr_err("invalid minor_count (%d)\n", minor_count);
+	if (drbd_minor_count < DRBD_MINOR_COUNT_MIN
+	||  drbd_minor_count > DRBD_MINOR_COUNT_MAX) {
+		pr_err("invalid minor_count (%d)\n", drbd_minor_count);
 #ifdef MODULE
 		return -EINVAL;
 #else
-		minor_count = DRBD_MINOR_COUNT_DEF;
+		drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 #endif
 	}
 
@@ -5331,12 +5329,12 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 	static struct fault_random_state rrs = {0, 0};
 
 	unsigned int ret = (
-		(fault_devs == 0 ||
-			((1 << device_to_minor(device)) & fault_devs) != 0) &&
-		(((_drbd_fault_random(&rrs) % 100) + 1) <= fault_rate));
+		(drbd_fault_devs == 0 ||
+			((1 << device_to_minor(device)) & drbd_fault_devs) != 0) &&
+		(((_drbd_fault_random(&rrs) % 100) + 1) <= drbd_fault_rate));
 
 	if (ret) {
-		fault_count++;
+		drbd_fault_count++;
 
 		if (drbd_ratelimit())
 			drbd_warn(device, "***Simulating %s failure\n",
