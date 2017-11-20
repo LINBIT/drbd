@@ -230,15 +230,19 @@ static inline int drbd_blkdev_put(struct block_device *bdev, fmode_t mode)
 #define blkdev_put(b, m)	drbd_blkdev_put(b, m)
 #endif
 
-#define drbd_bio_uptodate(bio) bio_flagged(bio, BIO_UPTODATE)
-
 #ifdef COMPAT_HAVE_BIO_BI_STATUS
 static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 {
 	bio->bi_status = status;
 	bio_endio(bio);
 }
+#define BIO_ENDIO_ARGS(b) (b)
+#define BIO_ENDIO_FN_START	\
+	blk_status_t status = bio->bi_status
+#define BIO_ENDIO_FN_RETURN return
+
 #else
+
 typedef u8 __bitwise blk_status_t;
 #define	BLK_STS_OK 0
 #define BLK_STS_NOTSUPP		((__force blk_status_t)1)
@@ -262,45 +266,41 @@ static inline blk_status_t errno_to_blk_status(int errno)
 
 	return status;
 }
+
 #ifdef COMPAT_HAVE_BIO_BI_ERROR
 static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 {
 	bio->bi_error = blk_status_to_errno(status);
 	bio_endio(bio);
 }
+#define BIO_ENDIO_ARGS(b) (b)
+#define BIO_ENDIO_FN_START	\
+	blk_status_t status = errno_to_blk_status(bio->bi_error)
+#define BIO_ENDIO_FN_RETURN return
+
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
+/* Before Linux-2.6.24 bio_endio() had the size of the bio as second argument.
+   See 6712ecf8f648118c3363c142196418f89a510b90 */
+#error "Kernel too old"
 #else
 static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 {
 	bio_endio(bio, blk_status_to_errno(status));
 }
-#endif
-#endif
+#define BIO_ENDIO_ARGS(b) (b, int error)
+#define BIO_ENDIO_FN_START	\
+	int status = errno_to_blk_status(error); \
+	int uptodate = bio_flagged(bio, BIO_UPTODATE); \
+	if (!error && !uptodate) { error = -EIO; status = BLK_STS_IOERR; }
+#define BIO_ENDIO_FN_RETURN return
 
-#if defined(COMPAT_HAVE_BIO_BI_ERROR) || defined(COMPAT_HAVE_BIO_BI_STATUS)
-#define BIO_ENDIO_ARGS(b,e) (b)
-#ifdef COMPAT_HAVE_BIO_BI_STATUS
-#define BIO_ENDIO_FN_START blk_status_t status = bio->bi_status
-#else
-#define BIO_ENDIO_FN_START blk_status_t status = errno_to_blk_status(bio->bi_error)
 #endif
-#else
-#define BIO_ENDIO_ARGS(b,e) (b, int error)
-#define BIO_ENDIO_FN_START blk_status_t status = errno_to_blk_status(error)
 #endif
 
 /* bi_end_io handlers */
-extern void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
-extern void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
-extern void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status);
-
-#ifdef COMPAT_HAVE_BIO_BI_ERROR
-#define bio_endio(B,E) do { (B)->bi_error = E; bio_endio(B); } while (0)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-#define part_inc_in_flight(A, B) part_inc_in_flight(A)
-#define part_dec_in_flight(A, B) part_dec_in_flight(A)
-#endif
+extern void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio);
+extern void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio);
+extern void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
 /* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
