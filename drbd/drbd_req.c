@@ -2141,12 +2141,15 @@ void do_submit(struct work_struct *ws)
  * f5fe1b51905d blk: Ensure users for current->bio_list can see the full list.
  */
 #undef COMPAT_NEED_MAKE_REQUEST_RECURSION
-#ifdef COMPAT_HAVE_BLK_QUEUE_SPLIT
+#ifndef COMPAT_HAVE_BLK_QUEUE_SPLIT_QUEUE_BIO
+#if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_QUEUE_BIO_BIOSET)
+#define blk_queue_split(q,b) blk_queue_split(q,b,q->bio_split)
 # if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
 #  define COMPAT_NEED_MAKE_REQUEST_RECURSION
 # endif
 #else
-# define blk_queue_split(q,b,l) do { } while (0)
+# define blk_queue_split(q,b) do { } while (0)
+#endif
 #endif
 
 MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
@@ -2167,7 +2170,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		MAKE_REQUEST_RETURN;
 	}
 
-	blk_queue_split(q, &bio, q->bio_split);
+	blk_queue_split(q, &bio);
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
 	current_bio_list = current->bio_list;
 	current->bio_list = NULL;
