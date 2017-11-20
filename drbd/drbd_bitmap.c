@@ -1040,7 +1040,7 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 }
 
 /* bv_page may be a copy, or may be the original */
-static void drbd_bm_endio BIO_ENDIO_ARGS(struct bio *bio, blk_status_t status)
+static void drbd_bm_endio BIO_ENDIO_ARGS(struct bio *bio)
 {
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
