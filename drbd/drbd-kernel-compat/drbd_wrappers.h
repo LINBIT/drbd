@@ -1089,15 +1089,35 @@ static inline int op_from_rq_bits(u64 flags)
 #define bio_split(bi, first_sectors) bio_split(bi, bio_split_pool, first_sectors)
 #endif
 
-#ifndef COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD
-# ifndef COMPAT_HAVE_BIOSET_NEED_BVECS
-#  bioset_create(A, B, C) bioset_create(A, B)
-#  define BIOSET_NEED_BVECS 0
-#  define BIOSET_NEED_RESCUER 0
-# endif
+/* history of bioset_create():
+ *  v4.13  011067b  blk: replace bioset_create_nobvec() with a flags arg to bioset_create()
+ *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad, int flags)
+ *
+ *  v3.18  d8f429e  block: add bioset_create_nobvec()
+ *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
+ *  +struct bio_set *bioset_create_nobvec(unsigned int pool_size, unsigned int front_pad)
+ *
+ *  v3.16  f9c78b2  block: move bio.c and bio-integrity.c from fs/ to block/
+ *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
+ *
+ *  --- we don't care for older than 2.3.32 ---
+ *  v2.6.29  bb799ca  bio: allow individual slabs in the bio_set
+ *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
+ *
+ *  v2.6.22  5972511  [BLOCK] Don't pin lots of memory in mempools
+ *  +struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size)
+ *
+ *  v2.6.12  63858f8  [PATCH] add local bio pool support and modify dm
+ *  +struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size, int scale)
+ */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,29)
+#error "Kernel too old"
+#elif defined(COMPAT_HAVE_BIOSET_NEED_BVECS)
+/* all good, "modern" kernel */
+#elif defined(COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD)
+# define bioset_create(pool_size, front_pad, flags) bioset_create(pool_size, front_pad)
 #else
-/* see comments in compat/tests/have_bioset_create_front_pad.c */
-# define bioset_create(pool_size, front_pad, C)	bioset_create(pool_size, front_pad)
+# error "drbd compat layer broken"
 #endif
 
 
