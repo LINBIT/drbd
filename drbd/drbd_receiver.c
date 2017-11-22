@@ -7288,8 +7288,23 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 
 	peer_device->uuids_received = false;
 
-	if (!drbd_suspended(device))
+	if (!drbd_suspended(device)) {
+		struct drbd_resource *resource = device->resource;
+
+		/* We need to create the new UUID immediately when we finish
+		   requests that did not reach the lost peer.
+		   But when we lost quorum we are going to finish those
+		   requests with error, therefore do not create the new UUID
+		   immediately! */
+		if (!list_empty(&resource->transfer_log) &&
+		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+			mutex_lock(&resource->conf_update);
+			drbd_uuid_new_current(device, false);
+			mutex_unlock(&resource->conf_update);
+		}
 		tl_clear(peer_device->connection);
+	}
 
 	drbd_md_sync(device);
 
