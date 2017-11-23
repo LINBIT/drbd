@@ -992,6 +992,11 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
  * but not enough to make it work for us without additional compat code.
  */
 #define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
+# ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+#  error "unexpectedly defined REQ_OP_WRITE_ZEROES, double check compat wrappers!"
+# else
+#  define  REQ_OP_WRITE_ZEROES (-3u)
+# endif
 #endif
 #else /* !defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) */
 #define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
