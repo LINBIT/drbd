@@ -2529,8 +2529,12 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
 						   (r = inc_open_count(device, mode)),
 						   timeout);
-	if (r == IOC_ABORT || timeout <= 0) {
+
+	if (r == IOC_ABORT || (r == IOC_SLEEP && timeout <= 0)) {
 		mutex_unlock(&resource->open_release);
+
+		kref_debug_put(&device->kref_debug, 3);
+		kref_put(&device->kref, drbd_destroy_device);
 		return -EAGAIN;
 	}
 
