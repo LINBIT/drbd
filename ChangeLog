@@ -2,6 +2,26 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.10rc1-1 (api:genl2/proto:86-112/transport:14)
+--------
+ * Fix resync of two secondary nodes in the presence of a 3rd node that is
+   primary (maybe with disk or diskless); Fixed the race condition that
+   caused the resync to sometimes not terminate
+ * Improve connection behavior with autopromote enable one node Primary and
+   udev present. The problem was that if udev opens the device on the
+   Secondary side "in the right moment" the connection attempt was
+   aborted. Fixed that by waiting until udev closes the device
+   again. Improves connect speed!
+ * Fix in memory alignment of DRBD's struct bio. Got offseted by one due to a
+   buggy compat code. Only affects architectures that choke on unaligned
+   word accesses. I.e. Power and ARM not x86_64.
+ * Improve the quorum implementation, so that is works nicely with for the
+   purpose of replacing fencing with quorum in a Pacemaker setup. Quorum
+   lost affects the completion status of writes in flight; Quorum state is
+   visible to user-space; a new meta-data flags quorum-lost to handle a
+   corner case
+ * Ensure compatibility with upstream Linux kernel 4.14
+
 9.0.9-1 (api:genl2/proto:86-112/transport:14)
 --------
  * fix occasionally forgotten resyncs in installations where
