@@ -2239,8 +2239,9 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	int digest_size = 0;
 	int err;
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+	const int op = bio_op(req->master_bio);
 
-	if (bio_op(req->master_bio) == REQ_OP_DISCARD) {
+	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);
 		if (!trim)
 			return -EIO;
@@ -2250,7 +2251,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		if (peer_device->connection->integrity_tfm)
 			digest_size = crypto_ahash_digestsize(peer_device->connection->integrity_tfm);
 
-		if (bio_op(req->master_bio) == REQ_OP_WRITE_SAME) {
+		if (op == REQ_OP_WRITE_SAME) {
 			wsame = drbd_prepare_command(peer_device, sizeof(*wsame) + digest_size, DATA_STREAM);
 			if (!wsame)
 				return -EIO;
