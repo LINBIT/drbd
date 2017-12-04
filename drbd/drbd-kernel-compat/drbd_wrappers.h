@@ -1848,7 +1848,7 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 #endif
 #endif
 
-#ifndef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE
+#if !defined(COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_LINUX) && !defined(COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_ASM)
 static inline int atomic_dec_if_positive(atomic_t *v)
 {
         int c, old, dec;
@@ -1864,6 +1864,14 @@ static inline int atomic_dec_if_positive(atomic_t *v)
         }
         return dec;
 }
+#else
+#ifdef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_LINUX
+#include <linux/atomic.h>
+#endif
+
+#ifdef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_ASM
+#include <asm/atomic.h>
+#endif
 #endif
 
 #ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
