@@ -378,6 +378,14 @@ struct drbd_request {
 
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
+
+	/* personality */
+	/* bitmap to signal which output blocks got altered */
+	u64 pers_out_bm;
+	struct bio_vec *pers_plain; /* plain text buffer as far as we know it, uses in_bm */
+	struct bio_vec *pers_scratch_code; /* used to eg generate missing plain text from old code */
+	struct bio_vec *pers_new_code; /* generated code blocks, uses pers_out_bm */
+
 };
 
 struct drbd_epoch {

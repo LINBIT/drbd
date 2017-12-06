@@ -149,7 +149,7 @@ else
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .drbd_kernelrelease
-    MODOBJS := drbd.ko drbd_transport_tcp.ko
+    MODOBJS := drbd.ko drbd_transport_tcp.ko drbd_personality_mirror.ko
     MODSUBDIR := updates
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
 

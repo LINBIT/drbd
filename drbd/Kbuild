@@ -1,4 +1,4 @@
-obj-m := drbd.o drbd_transport_tcp.o
+obj-m := drbd.o drbd_transport_tcp.o drbd_personality_mirror.o
 
 clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
@@ -48,7 +48,7 @@ drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
 drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
 drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
-drbd-y += drbd_nla.o drbd_transport.o
+drbd-y += drbd_nla.o drbd_transport.o drbd_personality.o
 
 ifndef DISABLE_KREF_DEBUGGING_HERE
       override EXTRA_CFLAGS += -DCONFIG_KREF_DEBUG
@@ -57,6 +57,7 @@ endif
 
 $(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h
 $(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h
+$(patsubst %,$(obj)/%,drbd_personality_mirror.o): $(obj)/compat.h
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
