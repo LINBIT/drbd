@@ -169,7 +169,7 @@ static void dtt_nodelay(struct socket *socket)
 	(void) kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
 }
 
-int dtt_init(struct drbd_transport *transport)
+static int dtt_init(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
