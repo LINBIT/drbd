@@ -79,6 +79,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
+static int decode_header(struct drbd_connection *, void *, struct packet_info *);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -569,8 +570,6 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void **buf, si
 	return err;
 }
 
-static int decode_header(struct drbd_connection *, void *, struct packet_info *);
-
 /* Gets called if a connection is established, or if a new minor gets created
    in a connection */
 int drbd_connected(struct drbd_peer_device *peer_device)
@@ -814,7 +813,7 @@ abort:
 	return false;
 }
 
-int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
+static int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
 {
 	unsigned int header_size = drbd_header_size(connection);
 
