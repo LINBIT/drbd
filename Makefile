@@ -72,7 +72,7 @@ all: module tools
 tools: | $(if $(filter module all,$(if $(MAKECMDGOALS),,all)),module)
 	@cat README.drbd-utils
 doc:
-	@echo "Man page sources moved to http://git.linbit.com/drbd-utils.git"
+	@echo "Man page sources moved to https://github.com/LINBIT/drbd-utils/"
 
 # we cannot use 'git submodule foreach':
 # foreach only works if submodule already checked out
