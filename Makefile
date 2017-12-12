@@ -75,7 +75,7 @@ all: tools module
 tools:
 	@cat README.drbd-utils
 doc:
-	@echo "Man page sources moved to http://git.linbit.com/drbd-utils.git"
+	@echo "Man page sources moved to https://github.com/LINBIT/drbd-utils/"
 
 .PHONY: check-kdir
 check-kdir:
