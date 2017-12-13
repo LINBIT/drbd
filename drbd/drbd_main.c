@@ -4453,8 +4453,13 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
 	int node_id;
-	u64 bm_uuid, got_new_bitmap_uuid = 0;
+	u64 bm_uuid, got_new_bitmap_uuid = 0, prev_c_uuid;
 	bool do_it;
+
+	if (device->ldev->md.current_uuid != UUID_JUST_CREATED)
+		prev_c_uuid = device->ldev->md.current_uuid;
+	else
+		get_random_bytes(&prev_c_uuid, sizeof(u64));
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -4481,11 +4486,8 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			do_it = true;
 		}
 		if (do_it) {
-			peer_md[node_id].bitmap_uuid =
-				device->ldev->md.current_uuid != UUID_JUST_CREATED ?
-				device->ldev->md.current_uuid : 0;
-			if (peer_md[node_id].bitmap_uuid)
-				peer_md[node_id].bitmap_dagtag = dagtag;
+			peer_md[node_id].bitmap_uuid = prev_c_uuid;
+			peer_md[node_id].bitmap_dagtag = dagtag;
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
