@@ -123,6 +123,7 @@ check check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.};	\
 	dver=$${dver_re%[-~]*}; 						\
 	drel="$${dver_re#"$$dver"}"; drel="$${drel#[-~]}"; 			\
+	drel="$${drel#0}"; 							\
 	test -z "$$drel" && drel=1 && dver_re=$$dver_re"\(-1\| \|$$\)"; 	\
 	echo "checking for presence of $$dver_re in various changelog files"; 	\
 	for f in drbd-kernel.spec ; do 						\

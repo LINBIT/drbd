@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-9.0.10rc1-1 (api:genl2/proto:86-112/transport:14)
+9.0.10-0rc2 (api:genl2/proto:86-112/transport:14)
 --------
  * Fix resync of two secondary nodes in the presence of a 3rd node that is
    primary (maybe with disk or diskless); Fixed the race condition that
