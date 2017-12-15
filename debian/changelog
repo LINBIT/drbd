@@ -1,3 +1,9 @@
+drbd8 (2:8.4.11~0rc1-1) unstable; urgency=medium
+
+  * 8.4.11, New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Thu, 15 Dec 2017 11:10:07 +0200
+
 drbd8 (2:8.4.10-1) unstable; urgency=medium
 
   * 8.4.10, New upstream release

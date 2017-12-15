@@ -1,6 +1,10 @@
 Latest:
 ------
- For even more detail, visit http://git.linbit.com/drbd-8.4.git
+ For even more detail, visit https://github.com/LINBIT/drbd-8.4/commits/master
+
+8.4.11-0rc1 (api:genl1/proto:86-101)
+-------
+ * compatibility with Linux kernels up to 4.14
 
 8.4.10-1 (api:genl1/proto:86-101)
 -------
