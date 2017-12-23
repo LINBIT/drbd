@@ -3901,6 +3901,7 @@ static int __init drbd_init(void)
 {
 	int err;
 
+	BUG();
 	initialize_kref_debugging();
 
 	if (drbd_minor_count < DRBD_MINOR_COUNT_MIN
