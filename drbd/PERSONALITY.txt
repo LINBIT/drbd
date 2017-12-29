@@ -1,0 +1,78 @@
+Overview
+========
+For a long time DRBD was limited to one personality, the "mirror" personality. By splitting the DRBD core from
+the actual personality, it is possible to implement a variety of other personalities (e.g., striping, various
+erasure coding schemes).
+
+The goal is to provide a simple API that can be used to implement a personality without any deeper knowledge
+of the DRBD core itself.
+
+API
+===
+
+personality.[c|h] implement the infrastructure for all personalities. This includes for example registering a
+personality with its name and important parameters like the blocksize the personality operates on.
+
+An actual personality is implemented as its own kernel module that implements a set of predefined functions.
+The mirror personality (drbd_personality_mirror.c) can be used as a template. When we refer to a concrete
+implementation of functions, we use the names used for the mirror personality.
+
+All starts by defining a "struct drbd_personality_class", the important struct field is called ".init", which
+points to an init function.
+
+Functions to implement
+======================
+Here we only describe the most important functions a personality developer has to implement, we don't discuss
+obvious boilerplate code like __init/__exit.
+
+init (e.g., dmp_init)
+----
+This is the part where important configurations parameters are set. This includes the parameters "n" and "k",
+which set that this personality needs data from at least "k" nodes out of "n" to operate. TODO: we might have
+"special" n, where the personality does not have to care, maybe 0, -1, what ever.
+
+Additionally the block size this personality operates on is defined here. Also vital is to set the ".ops"
+field which is then used to call all the to implement functions.
+
+encode/decode
+-------------
+These are the most important ones and have the same interface, so they are discussed in one section.  The
+first parameter ("struct drbd_personality *personality") is used to map back (i.e., container_of) the
+personality to a concrete type (see drbd_transport_tcp.c).
+
+The important parameter is a pointer to a "struct drbd_request". This struct contains the following
+important information the encode/decode functions operate on:
+- The bio to operate on.
+- struct bio_vec *pers_plain: A pre-allocated buffer of size "n", containing plain text data from at least "k"
+	peers. Valid "slots" are flagged via the function parameter in_bm. For example if there are 5 nodes, and we
+	 can provide data from nodes 0,2,3, the bm_in would be set to b1101.
+- struct bio_vec *pers_new_code: This is the pre-allocated buffer where DRBD core expects that new code blocks
+	are generated. Blocks that got generated are flagged in pers_out_bm (part of the drbd_request, with the
+	same semantic as in_bm).
+- struct bio_vec *pers_scratch_code: Can be NULL, otherwise pre-allocated, Used to generate missing plain text
+	from old code. TODO: more explanation
+- u64 pers_out_bm: As described for pers_new_code.
+
+Encoding and decoding is asynchronous. After the operation is finished, these functions call back to the
+functions TODO in DRBD core to signal that they processed (and set up the pers_new_code buffer and the
+pers_out_bm).
+
+TODO: define return codes. Do the have one or do they set a field in the request, or has the callback a
+parameter?
+
+stats
+-----
+TODO: outputs some statistics.
+
+reshape
+-------
+TODO: not in the first iterations, will be used to reshape the storage (e.g., striping from 4 to 5 nodes).
+
+DRBD core Functionality
+=======================
+
+Stripe Cache
+------------
+TODO
+
+# vim: spell spelllang=en_us:tw=110
