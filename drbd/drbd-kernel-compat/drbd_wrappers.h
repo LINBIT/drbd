@@ -1242,7 +1242,6 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 	} while (0)
 #endif
 
-/* #ifndef COMPAT_HAVE_LIST_ENTRY_RCU */
 #ifndef list_entry_rcu
 #ifndef rcu_dereference_raw
 /* see c26d34a rcu: Add lockdep-enabled variants of rcu_dereference() */
@@ -1809,12 +1808,12 @@ static inline void inode_unlock(struct inode *inode)
 }
 #endif
 
-#if !(defined(COMPAT_HAVE_AHASH_REQEUST_ON_STACK) && \
+#if !(defined(COMPAT_HAVE_AHASH_REQUEST_ON_STACK) && \
       defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
       defined COMPAT_HAVE_SHASH_DESC_ZERO)
 #include <crypto/hash.h>
 
-#ifndef COMPAT_HAVE_AHASH_REQEUST_ON_STACK
+#ifndef COMPAT_HAVE_AHASH_REQUEST_ON_STACK
 #define AHASH_REQUEST_ON_STACK(name, ahash)			   \
 	char __##name##_desc[sizeof(struct ahash_request) +	   \
 		crypto_ahash_reqsize(ahash)] CRYPTO_MINALIGN_ATTR; \
