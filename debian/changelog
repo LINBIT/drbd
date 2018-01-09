@@ -1,3 +1,9 @@
+drbd (9.0.11-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Roland Kammerer <roland.kammerer@linbit.com>  Tue, 09 Jan 2018 13:13:07 +0100
+
 drbd (9.0.10-1) unstable; urgency=low
 
   * New upstream release.
