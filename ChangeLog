@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, visit https://github.com/LINBIT/drbd-8.4/commits/master
 
+8.4.11-0rc2 (api:genl1/proto:86-101)
+-------
+ * Fix bug in compat code: Without this fix large bios are not split.
+   The user visible behavior is then a hanging DRBD.
+
 8.4.11-0rc1 (api:genl1/proto:86-101)
 -------
  * compatibility with Linux kernels up to 4.14
