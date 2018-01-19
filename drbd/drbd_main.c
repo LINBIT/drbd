@@ -2496,7 +2496,7 @@ enum ioc_rv {
 	IOC_ABORT = 2,
 };
 
-static bool inc_open_count(struct drbd_device *device, fmode_t mode)
+static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 {
 	struct drbd_resource *resource = device->resource;
 	enum ioc_rv r = mode & FMODE_NDELAY ? IOC_ABORT : IOC_SLEEP;
