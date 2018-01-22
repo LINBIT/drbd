@@ -5585,6 +5585,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.resource;
 	mutex_lock(&resource->adm_mutex);
+	set_bit(DOWN_IN_PROGRESS, &resource->flags);
 	/* demote */
 	retcode = drbd_set_role(resource, R_SECONDARY, false, adm_ctx.reply_skb);
 	if (retcode < SS_SUCCESS) {
@@ -5633,6 +5634,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* holding a reference to resource in adm_crx until drbd_adm_finish() */
 	mutex_unlock(&resource->conf_update);
 out:
+	clear_bit(DOWN_IN_PROGRESS, &resource->flags);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;

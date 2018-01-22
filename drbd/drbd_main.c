@@ -2501,6 +2501,9 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	struct drbd_resource *resource = device->resource;
 	enum ioc_rv r = mode & FMODE_NDELAY ? IOC_ABORT : IOC_SLEEP;
 
+	if (test_bit(DOWN_IN_PROGRESS, &device->resource->flags))
+		return IOC_ABORT;
+
 	spin_lock_irq(&resource->req_lock);
 	if (!resource->remote_state_change) {
 		r = IOC_OK;
@@ -2563,10 +2566,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		goto out;
 	}
 
-	if (test_bit(UNREGISTERED, &device->flags))
+	if (test_bit(UNREGISTERED, &device->flags)) {
 		rv = -ENODEV;
-
-	if (mode & FMODE_WRITE) {
+	} else if (mode & FMODE_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
 			rv = -EROFS;
 	} else /* READ access only */ {
