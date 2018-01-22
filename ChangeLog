@@ -2,6 +2,13 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.12-1 (api:genl2/proto:86-112/transport:14)
+--------
+* Fix a race condition in the device_open code path that can cause an
+  internal counter to go negative; It only triggered on Ubuntu/Debian
+  systems since the udev there uses FMODE_NDELAY when opening the
+  devices; The effect was that such a device fails attempts to remove it
+
 9.0.11-1 (api:genl2/proto:86-112/transport:14)
 --------
  * Fix bug in compat code: Without this fix large bios are not split.
