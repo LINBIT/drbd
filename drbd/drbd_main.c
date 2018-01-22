@@ -2501,7 +2501,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	struct drbd_resource *resource = device->resource;
 	enum ioc_rv r = mode & FMODE_NDELAY ? IOC_ABORT : IOC_SLEEP;
 
-	if (test_bit(DOWN_IN_PROGRESS, &device->resource->flags))
+	if (test_bit(DOWN_IN_PROGRESS, &resource->flags))
 		return IOC_ABORT;
 
 	spin_lock_irq(&resource->req_lock);
