@@ -6902,8 +6902,17 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 			device->bm_resync_fo = bit;
 		break;
 	default:
+#if 0
+		/* Used to be correct.
+		 * But nowadays, we may receive "out-of-sync" information indirectly,
+		 * if we are not directly connected to a secondary, but connected to
+		 * some other node to which is.
+		 * If we want to keep asserting something,
+		 * we need to add in the global connection status somehow. */
 		drbd_err(device, "ASSERT FAILED cstate = %s, expected: WFSyncUUID|WFBitMapT|Behind\n",
-				drbd_repl_str(peer_device->repl_state[NOW]));
+				drbd_repl_str(peer_device->repl_state[NOW]))
+#endif
+		;
 	}
 
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));
