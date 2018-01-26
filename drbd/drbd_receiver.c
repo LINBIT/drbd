@@ -6253,6 +6253,13 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
         }
 
 	peer_disk_state = peer_state.disk;
+
+	if (peer_disk_state > D_DISKLESS && peer_device->bitmap_index == -1) {
+		drbd_warn(device, "The peer is configured to be diskless but presents %s\n",
+			  drbd_disk_str(peer_disk_state));
+		goto fail;
+	}
+
 	if (peer_state.disk == D_NEGOTIATING) {
 		peer_disk_state = peer_device->uuid_flags & UUID_FLAG_INCONSISTENT ?
 			D_INCONSISTENT : D_CONSISTENT;
