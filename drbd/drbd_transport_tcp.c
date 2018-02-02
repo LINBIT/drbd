@@ -891,6 +891,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	int timeout, err;
+	int one = 1;
 	bool ok;
 
 	dsocket = NULL;
@@ -1073,6 +1074,10 @@ randomize:
 
 	dsocket->sk->sk_sndtimeo = timeout;
 	csocket->sk->sk_sndtimeo = timeout;
+
+	err = kernel_setsockopt(dsocket, SOL_SOCKET, SO_KEEPALIVE, (char *)&one, sizeof(one));
+	if (err)
+		tr_warn(transport, "Failed to enable SO_KEEPALIVE %d\n", err);
 
 	return 0;
 
