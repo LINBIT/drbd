@@ -3241,6 +3241,25 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail_ret_set;
 	}
 
+	if (!old_peer_device_conf->bitmap && new_peer_device_conf->bitmap &&
+	    peer_device->bitmap_index == -1) {
+		struct drbd_device *device = peer_device->device;
+		if (get_ldev(device)) {
+			err = allocate_bitmap_index(peer_device, device->ldev);
+			put_ldev(device);
+			if (err) {
+				drbd_msg_put_info(adm_ctx.reply_skb,
+						  "No bitmap slot available in meta-data");
+				retcode = ERR_INVALID_REQUEST;
+				goto fail_ret_set;
+			}
+			drbd_info(peer_device,
+				  "Former intentional diskless peer got bitmap slot %d\n",
+				  peer_device->bitmap_index);
+			drbd_md_sync(device);
+		}
+	}
+
 	if (!expect(peer_device, new_peer_device_conf->resync_rate >= 1))
 		new_peer_device_conf->resync_rate = 1;
 
