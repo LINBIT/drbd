@@ -6254,7 +6254,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	peer_disk_state = peer_state.disk;
 
-	if (peer_disk_state > D_DISKLESS && peer_device->bitmap_index == -1) {
+	if (peer_disk_state > D_DISKLESS && !want_bitmap(peer_device)) {
 		drbd_warn(device, "The peer is configured to be diskless but presents %s\n",
 			  drbd_disk_str(peer_disk_state));
 		goto fail;
