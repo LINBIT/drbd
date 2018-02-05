@@ -1551,6 +1551,10 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			if ((repl_state[NEW] == L_SYNC_TARGET || repl_state[NEW] == L_SYNC_SOURCE)
 			    && repl_state[OLD] < L_OFF)
 				return SS_NEED_CONNECTION; /* No NetworkFailure -> SyncTarget etc... */
+
+			if ((peer_disk_state[NEW] > D_DISKLESS && peer_disk_state[NEW] != D_UNKNOWN) &&
+			    peer_disk_state[OLD] == D_DISKLESS && !want_bitmap(peer_device))
+				return SS_ATTACH_NO_BITMAP;  /* peer with --bitmap=no wannts to attach ??? */
 		}
 	}
 

@@ -2780,8 +2780,15 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	rv = stable_state_change(resource,
 		change_disk_state(device, D_NEGOTIATING, CS_VERBOSE | CS_SERIALIZE, NULL));
 
-	if (rv < SS_SUCCESS)
+	if (rv < SS_SUCCESS) {
+		if (rv == SS_CW_FAILED_BY_PEER)
+			drbd_msg_put_info(adm_ctx.reply_skb,
+				"Probably this node is marked as intentional diskless on a peer");
+		retcode = rv;
 		goto force_diskless_dec;
+	}
+
+	device->device_conf.intentional_diskless = false; /* just in case... */
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
