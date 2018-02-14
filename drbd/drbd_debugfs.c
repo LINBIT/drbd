@@ -1136,6 +1136,7 @@ static ssize_t device_req_timing_write(struct file *file, const char __user *ubu
 		device->before_al_begin_io_kt = ns_to_ktime(0);
 		device->al_writ_cnt = 0;
 		device->al_before_bm_write_hinted_kt = ns_to_ktime(0);
+		device->al_mid_kt = ns_to_ktime(0);
 		device->al_after_sync_page_kt = ns_to_ktime(0);
 
 		for_each_peer_device(peer_device, device) {
