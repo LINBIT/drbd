@@ -6366,6 +6366,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		bool consider_resync;
 
+		/* cleare CONN_DISCARD_MY_DATA so late, to not loose it if connection
+		   gets aborted before we are able to do the resync handshake. */
+		clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
+
 		/* if we established a new connection */
 		consider_resync = (old_peer_state.conn < L_ESTABLISHED);
 		/* if we have both been inconsistent, and the peer has been
@@ -7339,7 +7343,6 @@ void conn_disconnect(struct drbd_connection *connection)
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
-	clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;
