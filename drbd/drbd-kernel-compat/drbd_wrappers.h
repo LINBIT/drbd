@@ -22,6 +22,7 @@
 #include <linux/completion.h>
 #include <linux/proc_fs.h>
 #include <linux/blkdev.h>
+#include <linux/backing-dev.h>
 #include <linux/kernel.h>
 
 #ifndef pr_fmt
@@ -961,6 +962,7 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #ifdef BDI_CAP_STABLE_WRITES /* >= v3.9 */
 #define set_bdi_cap_stable_writes(cap)	do { (cap) |= BDI_CAP_STABLE_WRITES; } while (0)
 #else /* < v3.9 */
+#warning "BDI_CAP_STABLE_WRITES not available"
 #define set_bdi_cap_stable_writes(cap)	do { } while (0)
 #endif
 
