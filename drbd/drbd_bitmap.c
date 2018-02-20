@@ -105,15 +105,37 @@
  *  And we need the kmap_atomic.
  */
 
-#define bm_print_lock_info(m) __bm_print_lock_info(m, __func__)
-static void __bm_print_lock_info(struct drbd_device *device, const char *func)
+enum bitmap_operations {
+	BM_OP_CLEAR,
+	BM_OP_SET,
+	BM_OP_TEST,
+	BM_OP_COUNT,
+	BM_OP_MERGE,
+	BM_OP_EXTRACT,
+	BM_OP_FIND_BIT,
+	BM_OP_FIND_ZERO_BIT,
+};
+
+static void
+bm_print_lock_info(struct drbd_device *device, unsigned int bitmap_index, enum bitmap_operations op)
 {
+	static const char *op_names[] = {
+		[BM_OP_CLEAR] = "clear",
+		[BM_OP_SET] = "set",
+		[BM_OP_TEST] = "test",
+		[BM_OP_COUNT] = "count",
+		[BM_OP_MERGE] = "merge",
+		[BM_OP_EXTRACT] = "extract",
+		[BM_OP_FIND_BIT] = "find_bit",
+		[BM_OP_FIND_ZERO_BIT] = "find_zero_bit",
+	};
+
 	struct drbd_bitmap *b = device->bitmap;
 	if (!drbd_ratelimit())
 		return;
-	drbd_err(device, "FIXME %s[%d] in %s, bitmap locked for '%s' by %s[%d]\n",
+	drbd_err(device, "FIXME %s[%d] op %s, bitmap locked for '%s' by %s[%d]\n",
 		 current->comm, task_pid_nr(current),
-		 func, b->bm_why ?: "?",
+		 op_names[op], b->bm_why ?: "?",
 		 b->bm_task_comm, b->bm_task_pid);
 }
 
@@ -414,17 +436,6 @@ void drbd_bm_free(struct drbd_bitmap *bitmap)
 	kfree(bitmap);
 }
 
-enum bitmap_operations {
-	BM_OP_CLEAR,
-	BM_OP_SET,
-	BM_OP_TEST,
-	BM_OP_COUNT,
-	BM_OP_MERGE,
-	BM_OP_EXTRACT,
-	BM_OP_FIND_BIT,
-	BM_OP_FIND_ZERO_BIT,
-};
-
 static inline unsigned long interleaved_word32(struct drbd_bitmap *bitmap,
 					       unsigned int bitmap_index,
 					       unsigned long bit)
@@ -711,12 +722,12 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 		switch(op) {
 		case BM_OP_CLEAR:
 			if (bitmap->bm_flags & BM_LOCK_CLEAR)
-				bm_print_lock_info(device);
+				bm_print_lock_info(device, bitmap_index, op);
 			break;
 		case BM_OP_SET:
 		case BM_OP_MERGE:
 			if (bitmap->bm_flags & BM_LOCK_SET)
-				bm_print_lock_info(device);
+				bm_print_lock_info(device, bitmap_index, op);
 			break;
 		case BM_OP_TEST:
 		case BM_OP_COUNT:
@@ -724,7 +735,7 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 		case BM_OP_FIND_BIT:
 		case BM_OP_FIND_ZERO_BIT:
 			if (bitmap->bm_flags & BM_LOCK_TEST)
-				bm_print_lock_info(device);
+				bm_print_lock_info(device, bitmap_index, op);
 			break;
 		}
 	}
