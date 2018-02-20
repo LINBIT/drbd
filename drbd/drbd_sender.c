@@ -1025,6 +1025,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	unsigned long n_oos;
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
+	bool aborted = false;
 
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
@@ -1089,9 +1090,12 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		goto out_unlock;
 	__change_repl_state(peer_device, L_ESTABLISHED);
 
-	drbd_info(peer_device, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
-	     verify_done ? "Online verify" : "Resync",
-	     dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
+	aborted = device->disk_state[NOW] == D_OUTDATED && new_peer_disk_state == D_INCONSISTENT;
+
+	drbd_info(peer_device, "%s %s (total %lu sec; paused %lu sec; %lu K/sec)\n",
+		  verify_done ? "Online verify" : "Resync",
+		  aborted ? "aborted" : "done",
+		  dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
 
 	n_oos = drbd_bm_total_weight(peer_device);
 
@@ -1102,7 +1106,8 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			khelper_cmd = "out-of-sync";
 		}
 	} else {
-		D_ASSERT(peer_device, (n_oos - peer_device->rs_failed) == 0);
+		if (!aborted)
+			D_ASSERT(peer_device, (n_oos - peer_device->rs_failed) == 0);
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
@@ -1817,10 +1822,13 @@ void start_resync_timer_fn(unsigned long data)
 
 bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device, enum which_state which)
 {
-	u64 authoritative_nodes = except_peer_device->uuid_authoritative_nodes;
 	struct drbd_device *device = except_peer_device->device;
 	struct drbd_peer_device *peer_device;
+	u64 authoritative_nodes = 0;
 	bool rv = false;
+
+	if (!(except_peer_device->uuid_flags & UUID_FLAG_STABLE))
+		authoritative_nodes = except_peer_device->uuid_node_mask;
 
 	/* If a peer considers himself as unstable and sees me as an authoritative
 	   node, then we have a stable resync source! */

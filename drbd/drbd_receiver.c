@@ -80,6 +80,7 @@ static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct 
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
+static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -575,16 +576,20 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void **buf, si
 int drbd_connected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	u64 weak_nodes = 0;
 	int err;
 
 	atomic_set(&peer_device->packet_seq, 0);
 	peer_device->peer_seq = 0;
 
+	if (device->resource->role[NOW] == R_PRIMARY)
+		weak_nodes = drbd_weak_nodes_device(device);
+
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)
-		err = drbd_send_uuids(peer_device, 0, 0);
+		err = drbd_send_uuids(peer_device, 0, weak_nodes);
 	if (!err) {
 		set_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		err = drbd_send_current_state(peer_device);
@@ -4874,8 +4879,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	if (updated_uuids)
 		drbd_print_uuids(peer_device, "receiver updated UUIDs to");
 
-	peer_device->uuid_authoritative_nodes =
-		peer_device->uuid_flags & UUID_FLAG_STABLE ? 0 : node_mask;
+	peer_device->uuid_node_mask = node_mask;
 
 	if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
 	    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
@@ -4917,7 +4921,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
 	int bitmap_uuids, history_uuids, rest, i, pos, err;
-	u64 bitmap_uuids_mask;
+	u64 bitmap_uuids_mask, node_mask;
 	struct drbd_peer_md *peer_md = NULL;
 	struct drbd_device *device;
 
@@ -4978,7 +4982,14 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
 
-	err = __receive_uuids(peer_device, be64_to_cpu(p->node_mask));
+	node_mask = be64_to_cpu(p->node_mask);
+
+	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	    peer_device->connection->peer_role[NOW] == R_PRIMARY &&
+	    peer_device->uuid_flags & UUID_FLAG_STABLE)
+		check_resync_source(device, node_mask);
+
+	err = __receive_uuids(peer_device, node_mask);
 
 	if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
 		struct drbd_device *device = peer_device->device;
@@ -5000,6 +5011,48 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	}
 
 	return err;
+}
+
+
+/* If a primary looses connection to a SYNC_SOURCE node from us, then we
+ * need to abort that resync. Why?
+ *
+ * When the primary sends a write we get that and write that as well. With
+ * the peer_ack packet we will set that as out-of-sync towards the sync
+ * source node.
+ * When the resync process finds such bits we will request outdated
+ * data from the sync source!
+ *
+ * -> better stop a resync from such a source.
+ */
+static void check_resync_source(struct drbd_device *device, u64 weak_nodes)
+{
+	struct drbd_peer_device *peer_device;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+		    NODE_MASK(peer_device->node_id) & weak_nodes) {
+			rcu_read_unlock();
+			goto abort;
+		}
+	}
+	rcu_read_unlock();
+	return;
+abort:
+	drbd_info(peer_device, "My sync source became a weak node, aborting resync!\n");
+	change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE);
+	drbd_flush_workqueue(&device->resource->work);
+
+	wait_event_interruptible(device->misc_wait,
+				 peer_device->repl_state[NOW] <= L_ESTABLISHED  ||
+				 atomic_read(&peer_device->rs_pending_cnt) == 0);
+
+	drbd_rs_del_all(peer_device);
+	peer_device->rs_total  = 0;
+	peer_device->rs_failed = 0;
+	peer_device->rs_paused = 0;
 }
 
 /**
@@ -6277,6 +6330,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
+	if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	    peer_state.role == R_PRIMARY && peer_device->uuid_flags & UUID_FLAG_STABLE)
+		check_resync_source(device, peer_device->uuid_node_mask);
+
 	peer_was_resync_target =
 		connection->agreed_pro_version >= 110 ?
 		peer_device->last_repl_state == L_SYNC_TARGET ||
@@ -6317,11 +6374,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 			if (finish_now || old_peer_state.conn == L_SYNC_SOURCE ||
 			    old_peer_state.conn == L_PAUSED_SYNC_S) {
-				/* TODO: Since DRBD9 we experience that SyncSource still has
-				   bits set... NEED TO UNDERSTAND AND FIX! */
-				if (drbd_bm_total_weight(peer_device) > peer_device->rs_failed)
-					drbd_warn(peer_device, "SyncSource still sees bits set!! FIXME\n");
-
 				drbd_resync_finished(peer_device, peer_state.disk);
 				peer_device->last_repl_state = peer_state.conn;
 			}
@@ -7052,6 +7104,10 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	current_uuid = be64_to_cpu(p->uuid);
 	weak_nodes = be64_to_cpu(p->weak_nodes);
 	peer_device->current_uuid = current_uuid;
+
+	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	    connection->peer_role[NOW] == R_PRIMARY)
+		check_resync_source(device, weak_nodes);
 
 	if (connection->peer_role[NOW] == R_UNKNOWN)
 		return 0;
