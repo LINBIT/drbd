@@ -6084,11 +6084,7 @@ static int process_twopc(struct drbd_connection *connection,
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
-		drbd_info(connection, "Preparing remote state change %u "
-			  "(primary_nodes=%lX, weak_nodes=%lX)\n",
-			  reply->tid,
-			  (unsigned long)reply->primary_nodes,
-			  (unsigned long)reply->weak_nodes);
+		drbd_info(connection, "Preparing remote state change %u ", reply->tid);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_PREP_RSZ:
@@ -6103,8 +6099,8 @@ static int process_twopc(struct drbd_connection *connection,
 		flags |= CS_ABORT;
 		break;
 	case P_TWOPC_COMMIT:
-		drbd_info(connection, "Committing remote state change %u\n",
-			  reply->tid);
+		drbd_info(connection, "Committing remote state change %u (primary_nodes=%llX)\n",
+			  reply->tid, be64_to_cpu(p->primary_nodes));
 		break;
 	default:
 		BUG();
