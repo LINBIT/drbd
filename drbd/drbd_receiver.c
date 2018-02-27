@@ -6056,9 +6056,9 @@ static int process_twopc(struct drbd_connection *connection,
 	}
 
 	if (pi->cmd == P_TWOPC_PREPARE) {
-		if ((mask.peer == role_MASK && val.peer == R_PRIMARY) ||
-		    (mask.peer != role_MASK && resource->role[NOW] == R_PRIMARY)) {
-			reply->primary_nodes = NODE_MASK(resource->res_opts.node_id);
+		reply->primary_nodes = be64_to_cpu(p->primary_nodes);
+		if (resource->role[NOW] == R_PRIMARY) {
+			reply->primary_nodes |= NODE_MASK(resource->res_opts.node_id);
 			reply->weak_nodes = ~reply->reachable_nodes;
 		}
 	}
