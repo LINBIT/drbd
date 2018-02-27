@@ -5348,7 +5348,10 @@ static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
 					  struct twopc_reply *reply,
 					  enum chg_state_flags flags)
 {
-	if (reply->primary_nodes & ~reply->reachable_nodes) {
+	u64 directly_reachable = directly_connected_nodes(resource, NOW) |
+		NODE_MASK(resource->res_opts.node_id);
+
+	if (reply->primary_nodes & ~directly_reachable) {
 		unsigned long irq_flags;
 
 		begin_state_change(resource, &irq_flags, flags);
