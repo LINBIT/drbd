@@ -4725,6 +4725,17 @@ disconnect:
 	goto out;
 }
 
+static int resolve_splitbrain_from_disk_states(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+	enum drbd_disk_state disk_state = device->disk_state[NOW];
+
+	return  disk_state <= D_UP_TO_DATE && peer_disk_state == D_UP_TO_DATE ? -2 :
+		disk_state == D_UP_TO_DATE && peer_disk_state <= D_UP_TO_DATE ? 2 :
+		100;
+}
+
 static void drbd_resync(struct drbd_peer_device *peer_device,
 			enum resync_reason reason) __must_hold(local)
 {
@@ -4735,6 +4746,8 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	enum drbd_state_rv rv;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, reason == DISKLESS_PRIMARY);
+	if (hg == 100 && reason == AFTER_UNSTABLE)
+		hg = resolve_splitbrain_from_disk_states(peer_device);
 	new_repl_state = hg < -4 || hg > 4 ? -1 : goodness_to_repl_state(peer_device, peer_role, hg);
 
 	if (new_repl_state == -1) {
