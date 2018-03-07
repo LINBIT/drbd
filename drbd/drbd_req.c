@@ -730,11 +730,21 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	}
 
 	if (!(old_net & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
+		atomic_t *ap_in_flight = &peer_device->connection->ap_in_flight;
+
 		if (old_net & RQ_NET_SENT)
-			atomic_sub(req->i.size >> 9, &peer_device->connection->ap_in_flight);
+			atomic_sub(req->i.size >> 9, ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
 			kref_put(&req->kref, drbd_req_destroy);
 		req->net_done_kt[peer_device->node_id] = ktime_get();
+
+		if (peer_device->repl_state[NOW] == L_AHEAD &&
+		    atomic_read(ap_in_flight) == 0 &&
+		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->device->flags)) {
+			peer_device->start_resync_side = L_SYNC_SOURCE;
+			peer_device->start_resync_timer.expires = jiffies + HZ;
+			add_timer(&peer_device->start_resync_timer);
+		}
 
 		/* in ahead/behind mode, or just in case,
 		 * before we finally destroy this request,

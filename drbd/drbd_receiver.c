@@ -8256,24 +8256,9 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 
 static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_peer_device *peer_device;
 	struct p_barrier_ack *p = pi->data;
-	int vnr;
 
 	tl_release(connection, p->barrier, be32_to_cpu(p->set_size));
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		if (peer_device->repl_state[NOW] == L_AHEAD &&
-		    atomic_read(&connection->ap_in_flight) == 0 &&
-		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &device->flags)) {
-			peer_device->start_resync_side = L_SYNC_SOURCE;
-			peer_device->start_resync_timer.expires = jiffies + HZ;
-			add_timer(&peer_device->start_resync_timer);
-		}
-	}
-	rcu_read_unlock();
 
 	return 0;
 }
