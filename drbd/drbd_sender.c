@@ -1872,8 +1872,6 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 
 static void do_start_resync(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
-
 	if (atomic_read(&peer_device->unacked_cnt) ||
 	    atomic_read(&peer_device->rs_pending_cnt)) {
 		drbd_warn(peer_device, "postponing start_resync ...\n");
@@ -1883,7 +1881,7 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 	}
 
 	drbd_start_resync(peer_device, peer_device->start_resync_side);
-	clear_bit(AHEAD_TO_SYNC_SOURCE, &device->flags);
+	clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
 }
 
 static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)

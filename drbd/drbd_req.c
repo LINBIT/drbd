@@ -740,7 +740,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
 		    atomic_read(ap_in_flight) == 0 &&
-		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->device->flags)) {
+		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags)) {
 			peer_device->start_resync_side = L_SYNC_SOURCE;
 			peer_device->start_resync_timer.expires = jiffies + HZ;
 			add_timer(&peer_device->start_resync_timer);

@@ -533,7 +533,6 @@ enum {
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
 	__NEW_CUR_UUID,		/* Set NEW_CUR_UUID as soon as state change visible */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
-	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	UNREGISTERED,
 	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
 				 * from drbd_flush_after_epoch() */
@@ -571,6 +570,7 @@ enum {
 	SEND_STATE_AFTER_AHEAD,
 	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
 				   D_UP_TO_DATE before becoming secondary! */
+	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 };
 
 /* We could make these currently hardcoded constants configurable
