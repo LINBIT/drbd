@@ -2,12 +2,29 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+in progress
+--------
+ * correctly handle when a node that was marked as intentional diskless
+   should get a disk; allocate bitmap slots when the --bitmap=no flag
+   gets removed; reject peers to attach if they are marked with --bitmap=no
+ * Set the SO_KEEPALIVE socket option on data sockets. Can be important
+   if long lived DRBD connections go through a firewall with connection
+   tracking
+ * fix outdating of weakly connected nodes; It was broken when an already
+   primary node joins the cluster at the other end
+ * abort a resync if a resync source becomes weakly and the sync target
+   is a neighbour of the primary; the lack of doing so was a possible
+   source of data corruption
+ * Made returning from Ahead to SyncSource more reliable; the old code
+   may have missed the event if the write to the local backend was still
+   pending when the barrier-ack comes in
+
 9.0.12-1 (api:genl2/proto:86-112/transport:14)
 --------
-* Fix a race condition in the device_open code path that can cause an
-  internal counter to go negative; It only triggered on Ubuntu/Debian
-  systems since the udev there uses FMODE_NDELAY when opening the
-  devices; The effect was that such a device fails attempts to remove it
+ * Fix a race condition in the device_open code path that can cause an
+   internal counter to go negative; It only triggered on Ubuntu/Debian
+   systems since the udev there uses FMODE_NDELAY when opening the
+   devices; The effect was that such a device fails attempts to remove it
 
 9.0.11-1 (api:genl2/proto:86-112/transport:14)
 --------
