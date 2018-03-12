@@ -830,6 +830,7 @@ union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_st
 	union drbd_state rv = drbd_get_resource_state(device->resource, which);
 
 	rv.disk = device->disk_state[which];
+	rv.quorum = device->have_quorum[which];
 
 	return rv;
 }
@@ -2532,6 +2533,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	state.susp = resource_state_change->susp[which] || state_change_is_susp_quorum(state_change, which);
 	state.susp_nod = resource_state_change->susp_nod[which];
 	state.susp_fen = state_change_is_susp_fen(state_change, which);
+	state.quorum = device_state_change->have_quorum[which];
 	state.disk = device_state_change->disk_state[which];
 	if (n_connection != -1) {
 		struct drbd_connection_state_change *connection_state_change =

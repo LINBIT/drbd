@@ -3863,14 +3863,15 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
  * on failure.
  */
 static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
-						enum drbd_role peer_role,
-						enum drbd_disk_state peer_disk_state) __must_hold(local)
+						union drbd_state peer_state) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
 	int hg, rule_nr, rr_conflict, always_asbp, peer_node_id = 0, r;
+	enum drbd_role peer_role = peer_state.role;
+	enum drbd_disk_state peer_disk_state = peer_state.disk;
 
 	hg = drbd_handshake(peer_device, &rule_nr, &peer_node_id, true);
 
@@ -3908,16 +3909,25 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			   + (peer_role == R_PRIMARY);
 		int forced = (hg == -100);
 
-		switch (pcount) {
-		case 0:
-			hg = drbd_asb_recover_0p(peer_device);
-			break;
-		case 1:
-			hg = drbd_asb_recover_1p(peer_device);
-			break;
-		case 2:
-			hg = drbd_asb_recover_2p(peer_device);
-			break;
+		if (device->resource->res_opts.quorum != QOU_OFF &&
+		    connection->agreed_pro_version >= 113) {
+			if (device->have_quorum[NOW] && !peer_state.quorum)
+				hg = 2;
+			else if (!device->have_quorum[NOW] && peer_state.quorum)
+				hg = -2;
+		}
+		if (hg > 2 && hg < -2) {
+			switch (pcount) {
+			case 0:
+				hg = drbd_asb_recover_0p(peer_device);
+				break;
+			case 1:
+				hg = drbd_asb_recover_1p(peer_device);
+				break;
+			case 2:
+				hg = drbd_asb_recover_2p(peer_device);
+				break;
+			}
 		}
 		if (abs(hg) < 100) {
 			drbd_warn(device, "Split-Brain detected, %d primaries, "
@@ -6446,7 +6456,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				     peer_state.conn == L_STARTING_SYNC_T));
 
 		if (consider_resync) {
-			new_repl_state = drbd_sync_handshake(peer_device, peer_state.role, peer_disk_state);
+			new_repl_state = drbd_sync_handshake(peer_device, peer_state);
 		} else if (old_peer_state.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_peer_state.disk == D_NEGOTIATING)) {
