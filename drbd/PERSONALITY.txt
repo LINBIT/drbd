@@ -36,7 +36,7 @@ field which is then used to call all the to implement functions.
 
 encode/decode
 -------------
-These are the most important ones and have the same interface, so they are discussed in one section.  The
+These are the most important ones and have a very similar interface, so they are discussed in one section.  The
 first parameter ("struct drbd_personality *personality") is used to map back (i.e., container_of) the
 personality to a concrete type (see drbd_transport_tcp.c).
 
@@ -52,6 +52,13 @@ important information the encode/decode functions operate on:
 - struct bio_vec *pers_scratch_code: Can be NULL, otherwise pre-allocated, Used to generate missing plain text
 	from old code. TODO: more explanation
 - u64 pers_out_bm: As described for pers_new_code.
+
+The parameter "bm_zero" to encode is also a bitmap that flags which pers_plain slots are zero. The API
+guarantees that pages linked in that slot are indeed zero (reads return 0). This is used for two purposes:
+a) This knowledge can be helpful for the personality to speed up calculations
+b) "xor-ing" data, feeding that data, and setting the rest to zero allows us to generate a "diff".
+The personality does not know the difference between "normal operation" and "diff generation", it just
+calculates results.
 
 Encoding and decoding is asynchronous. After the operation is finished, these functions call back to the
 functions TODO in DRBD core to signal that they processed (and set up the pers_new_code buffer and the
