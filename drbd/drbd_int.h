@@ -1338,6 +1338,11 @@ struct drbd_device {
 	ktime_t al_after_sync_page_kt;
 #endif
 
+	/* a pointer that can be used by a personality */
+	/* e.g., to store a pointer to inverted matrices for fast lookup */
+	/* the personality is responsible to cast that pointer to e.g. a struct and validate validity */
+	void *personality_data;
+
 	struct rcu_head rcu;
 	struct work_struct finalize_work;
 };

@@ -59,7 +59,7 @@ struct drbd_personality_stats {
 };
 
 struct drbd_personality_ops {
-	int (*encode)(struct drbd_personality *, struct drbd_request *req, u64 in_bm);
+	int (*encode)(struct drbd_personality *, struct drbd_request *req, u64 in_bm, u64 zero_bm);
 	int (*decode)(struct drbd_personality *, struct drbd_request *req, u64 in_bm);
 	/*
 	int (*reshape)(struct drbd_personality *);

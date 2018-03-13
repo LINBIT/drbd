@@ -49,7 +49,7 @@ struct drbd_mirror_personality {
 };
 
 static int dmp_init(struct drbd_personality *personality);
-static int dmp_encode(struct drbd_personality *personality, struct drbd_request *req, u64 in_bm);
+static int dmp_encode(struct drbd_personality *personality, struct drbd_request *req, u64 in_bm, u64 zero_bm);
 static int dmp_decode(struct drbd_personality *personality, struct drbd_request *req, u64 in_bm);
 static void dmp_stats(struct drbd_personality *personality, struct drbd_personality_stats *stats);
 
@@ -83,7 +83,7 @@ static int dmp_init(struct drbd_personality *personality)
 	return 0;
 }
 
-static int dmp_encode(struct drbd_personality *personality, struct drbd_request *req, u64 in_bm)
+static int dmp_encode(struct drbd_personality *personality, struct drbd_request *req, u64 in_bm, u64 zero_bm)
 {
 	return 0;
 }
