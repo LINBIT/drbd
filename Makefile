@@ -32,7 +32,7 @@ ifndef KVER
 KVER = `uname -r`
 KDIR = /lib/modules/$(KVER)/build
  else
-KVER := $(shell make -s -C $(KDIR) kernelrelease)
+KVER := $(shell make -s -C $(KDIR) kernelrelease 2>/dev/null | tail -n1)
  endif
 endif
 KDIR ?= /lib/modules/$(KVER)/build
