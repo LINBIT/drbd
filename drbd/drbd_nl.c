@@ -1350,6 +1350,15 @@ static bool effective_disk_size_determined(struct drbd_device *device)
 	return rv;
 }
 
+void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
+{
+	char ppb[10];
+	set_capacity(device->vdisk, size);
+	device->this_bdev->bd_inode->i_size = (loff_t)size << 9;
+	drbd_info(device, "size = %s (%llu KB)\n",
+		ppsize(ppb, size>>1), (unsigned long long)size>>1);
+}
+
 /**
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.

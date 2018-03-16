@@ -4668,11 +4668,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		size = min_not_zero(size, p_size);
 
 		if (size != drbd_get_capacity(device->this_bdev)) {
-			char ppb[10];
 			should_send_sizes = true;
 			drbd_set_my_capacity(device, size);
-			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
-			     (unsigned long long)size >> 1);
 		}
 	}
 
@@ -5799,11 +5796,7 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 	uint64_t my_usize;
 
 	if (!get_ldev(device)) {
-		char ppb[10];
-
 		drbd_set_my_capacity(device, tr->new_size);
-		drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, tr->new_size >> 1),
-			  (unsigned long long)tr->new_size >> 1);
 		return DS_UNCHANGED; /* Not entirely true, but we are diskless... */
 	}
 
