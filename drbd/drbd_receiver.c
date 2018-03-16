@@ -4652,7 +4652,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 		drbd_md_sync_if_dirty(device);
 	} else {
-		uint64_t size = 0;
+		uint64_t new_size = 0;
 
 		drbd_reconsider_queue_parameters(device, NULL, o);
 		/* In case I am diskless, need to accept the peer's *current* size.
@@ -4662,14 +4662,44 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		 * So if his c_size is less than his d_size, the most likely
 		 * reason is that *my* d_size was smaller last time we checked,
 		 * or some other peer does not (yet) have enough room.
+		 *
+		 * Unless of course he does not have a disk himself.
+		 * In which case we ignore this completely.
 		 */
-		size = p_csize;
-		size = min_not_zero(size, p_usize);
-		size = min_not_zero(size, p_size);
+		new_size = p_csize;
+		new_size = min_not_zero(new_size, p_usize);
+		new_size = min_not_zero(new_size, p_size);
 
-		if (size != drbd_get_capacity(device->this_bdev)) {
+		if (new_size == 0) {
+			/* Ignore, peer does not know nothing. */
+		} else if (new_size == cur_size) {
+			/* nothing to do */
+		} else if (cur_size != 0 && p_size == 0) {
+			dynamic_drbd_dbg(peer_device,
+					"Ignored diskless peer device size (peer:%llu != me:%llu sectors)!\n",
+					(unsigned long long)new_size, (unsigned long long)cur_size);
+		} else if (new_size < cur_size && device->resource->role[NOW] == R_PRIMARY) {
+			drbd_err(peer_device,
+				"The peer's device size is too small! (%llu < %llu sectors); demote me first!\n",
+				(unsigned long long)new_size, (unsigned long long)cur_size);
+			goto disconnect;
+
+/* FIXME for each peer device: can I currently see any peer with attached disk
+ * with a current size smaller than what that guy advertises? Then I better not
+ * believe him.
+ */
+		} else {
+			/* I believe the peer, if
+			 *  - I don't have a current size myself
+			 *  - we agree on the size anyways
+			 *  - I do have a current size, am Secondary,
+			 *    and he has the only disk
+			 *  - I do have a current size, am Primary,
+			 *    and he has the only disk,
+			 *    which is larger than my current size
+			 */
 			should_send_sizes = true;
-			drbd_set_my_capacity(device, size);
+			drbd_set_my_capacity(device, new_size);
 		}
 	}
 
