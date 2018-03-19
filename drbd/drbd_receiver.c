@@ -7144,7 +7144,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
-		return -EIO;
+		return config_unknown_volume(connection, pi);
 	device = peer_device->device;
 
 	current_uuid = be64_to_cpu(p->uuid);
