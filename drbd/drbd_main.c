@@ -4610,8 +4610,11 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (!(nodes & NODE_MASK(peer_device->node_id)))
+		if (!(nodes & NODE_MASK(peer_device->node_id) ||
+		      (peer_device->disk_state[NOW] == D_DISKLESS &&
+		       peer_device->current_uuid != drbd_current_uuid(device))))
 			continue;
+
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
 			continue;
 
