@@ -1320,6 +1320,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	int err;
 
@@ -1339,10 +1340,12 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
 			inc_rs_pending(peer_device);
-			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req))
+			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 				err = drbd_send_rs_deallocated(peer_device, peer_req);
-			else
+			} else {
+				atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+			}
 		} else {
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "Not sending RSDataReply, "

@@ -1271,7 +1271,8 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 		return;
 
 	if (nc->cong_fill &&
-	    atomic_read(&connection->ap_in_flight) >= nc->cong_fill) {
+	    atomic_read(&connection->ap_in_flight) +
+	    atomic_read(&connection->rs_in_flight) >= nc->cong_fill) {
 		drbd_info(device, "Congestion-fill threshold reached\n");
 		congested = true;
 	}

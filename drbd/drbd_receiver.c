@@ -618,6 +618,7 @@ static void conn_connect2(struct drbd_connection *connection)
 	int vnr;
 
 	atomic_set(&connection->ap_in_flight, 0);
+	atomic_set(&connection->rs_in_flight, 0);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -8154,6 +8155,7 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	if (p->block_id == ID_SYNCER) {
 		drbd_set_in_sync(peer_device, sector, blksize);
 		dec_rs_pending(peer_device);
+		atomic_sub(blksize >> 9, &connection->rs_in_flight);
 		return 0;
 	}
 	switch (pi->cmd) {

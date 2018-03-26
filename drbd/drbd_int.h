@@ -930,6 +930,7 @@ struct drbd_connection {
 	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
+	atomic_t rs_in_flight; /* Resync sectors in flight */
 
 	struct drbd_work connect_timer_work;
 	struct timer_list connect_timer;

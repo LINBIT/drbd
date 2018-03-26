@@ -807,6 +807,7 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	unsigned long flags = connection->flags;
 	unsigned int u1, u2;
 	unsigned long long ull1, ull2;
+	int in_flight;
 	char sep = ' ';
 
 	seq_puts(m, "content and format of this will change without notice\n");
@@ -845,6 +846,12 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	seq_printf(m, " send.current_dagtag_sec: %llu (%lld)\n", ull2, (long long)(ull2 - ull1));
 	ull2 = connection->last_dagtag_sector;
 	seq_printf(m, "      last_dagtag_sector: %llu\n", ull2);
+
+	in_flight = atomic_read(&connection->ap_in_flight);
+	seq_printf(m, "            ap_in_flight: %d KiB (%d sectors)\n", in_flight / 2, in_flight);
+
+	in_flight = atomic_read(&connection->rs_in_flight);
+	seq_printf(m, "            rs_in_flight: %d KiB (%d sectors)\n", in_flight / 2, in_flight);
 
 	return 0;
 }
