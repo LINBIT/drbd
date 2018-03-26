@@ -2,11 +2,8 @@
 #define _DRBD_WRAPPERS_H
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
-# error "At least kernel version 2.6.18 (with patches) required"
-#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-# warning "Kernels <2.6.32 likely have compat issues we did not cover here"
+# error "At least kernel 2.6.32 (with patches) required"
 #endif
 
 #include "compat.h"
@@ -29,56 +26,6 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 #endif
 
-/* {{{ pr_* macros */
-/* some very old kernels don't have them, or at least not all of them */
-#ifndef pr_emerg
-#define pr_emerg(fmt, ...) \
-		printk(KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_alert
-#define pr_alert(fmt, ...) \
-		printk(KERN_ALERT pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_crit
-#define pr_crit(fmt, ...) \
-		printk(KERN_CRIT pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_err
-#define pr_err(fmt, ...) \
-		printk(KERN_ERR pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_warning
-#define pr_warning(fmt, ...) \
-		printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_warn
-#define pr_warn pr_warning
-#endif
-#ifndef pr_notice
-#define pr_notice(fmt, ...) \
-		printk(KERN_NOTICE pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_info
-#define pr_info(fmt, ...) \
-		printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#ifndef pr_cont
-#define pr_cont(fmt, ...) \
-		printk(KERN_CONT fmt, ##__VA_ARGS__)
-#endif
-
-/* pr_devel() should produce zero code unless DEBUG is defined */
-#ifndef pr_devel
-#ifdef DEBUG
-#define pr_devel(fmt, ...) \
-		printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__)
-#else
-#define pr_devel(fmt, ...) \
-		no_printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__)
-#endif
-#endif
-/* }}} pr_* macros */
-
 #ifndef U32_MAX
 #define U32_MAX ((u32)~0U)
 #endif
@@ -90,56 +37,6 @@
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-static inline unsigned short queue_logical_block_size(struct request_queue *q)
-{
-	int retval = 512;
-	if (q && q->hardsect_size)
-		retval = q->hardsect_size;
-	return retval;
-}
-
-/* we only have hardsect_size yet */
-static inline unsigned short queue_physical_block_size(struct request_queue *q)
-{
-	return queue_logical_block_size(q);
-}
-
-static inline unsigned short bdev_logical_block_size(struct block_device *bdev)
-{
-	return queue_logical_block_size(bdev_get_queue(bdev));
-}
-
-static inline unsigned int queue_io_min(struct request_queue *q)
-{
-	return queue_logical_block_size(q);
-}
-
-static inline unsigned int queue_io_opt(struct request_queue *q)
-{
-	return queue_logical_block_size(q);
-}
-
-static inline int queue_alignment_offset(struct request_queue *q)
-{
-	return 0;
-}
-
-static inline unsigned int queue_max_hw_sectors(struct request_queue *q)
-{
-	return q->max_hw_sectors;
-}
-
-static inline unsigned int queue_max_sectors(struct request_queue *q)
-{
-	return q->max_sectors;
-}
-
-static inline void blk_queue_logical_block_size(struct request_queue *q, unsigned short size)
-{
-	q->hardsect_size = size;
-}
-#endif
 #ifndef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
 static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 {
@@ -279,10 +176,6 @@ static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 	blk_status_t status = errno_to_blk_status(bio->bi_error)
 #define BIO_ENDIO_FN_RETURN return
 
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-/* Before Linux-2.6.24 bio_endio() had the size of the bio as second argument.
-   See 6712ecf8f648118c3363c142196418f89a510b90 */
-#error "Kernel too old"
 #else
 static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 {
@@ -302,25 +195,6 @@ static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 extern void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio);
 extern void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio);
 extern void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-/* Before 2.6.23 (with 20c2df83d25c6a95affe6157a4c9cac4cf5ffaac) kmem_cache_create had a
-   ctor and a dtor */
-#define kmem_cache_create(N,S,A,F,C) kmem_cache_create(N,S,A,F,C,NULL)
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-static inline void sg_set_page(struct scatterlist *sg, struct page *page,
-			       unsigned int len, unsigned int offset)
-{
-	sg->page   = page;
-	sg->offset = offset;
-	sg->length = len;
-}
-
-#define sg_init_table(S,N) ({})
-
-#endif
 
 /* how to get to the kobj of a gendisk.
  * see also upstream commits
@@ -383,17 +257,6 @@ static inline int kernel_sock_shutdown(struct socket *sock, enum sock_shutdown_c
 {
 	return sock->ops->shutdown(sock, how);
 }
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-static inline void drbd_unregister_blkdev(unsigned int major, const char *name)
-{
-	int ret = unregister_blkdev(major, name);
-	if (ret)
-		pr_err("unregister of device failed\n");
-}
-#else
-#define drbd_unregister_blkdev unregister_blkdev
 #endif
 
 #if !defined(CRYPTO_ALG_ASYNC)
@@ -532,158 +395,6 @@ static inline void *vzalloc(unsigned long size)
  * UMH_WAIT_PROC was added as an enum value of 1.
  * On Mar 23 2012 with commit 9d944ef3 that got changed to a define of 2. */
 #define UMH_WAIT_PROC 1
-#endif
-
-/* see upstream commit 2d3854a37e8b767a51aba38ed6d22817b0631e33 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-#ifndef cpumask_bits
-#define nr_cpu_ids NR_CPUS
-#define nr_cpumask_bits nr_cpu_ids
-
-typedef cpumask_t cpumask_var_t[1];
-#define cpumask_bits(maskp) ((unsigned long*)(maskp))
-#define cpu_online_mask &(cpu_online_map)
-
-static inline void cpumask_clear(cpumask_t *dstp)
-{
-	bitmap_zero(cpumask_bits(dstp), NR_CPUS);
-}
-
-static inline int cpumask_equal(const cpumask_t *src1p,
-				const cpumask_t *src2p)
-{
-	return bitmap_equal(cpumask_bits(src1p), cpumask_bits(src2p),
-						 nr_cpumask_bits);
-}
-
-static inline void cpumask_copy(cpumask_t *dstp,
-				cpumask_t *srcp)
-{
-	bitmap_copy(cpumask_bits(dstp), cpumask_bits(srcp), nr_cpumask_bits);
-}
-
-static inline unsigned int cpumask_weight(const cpumask_t *srcp)
-{
-	return bitmap_weight(cpumask_bits(srcp), nr_cpumask_bits);
-}
-
-static inline void cpumask_set_cpu(unsigned int cpu, cpumask_t *dstp)
-{
-	set_bit(cpu, cpumask_bits(dstp));
-}
-
-static inline void cpumask_setall(cpumask_t *dstp)
-{
-	bitmap_fill(cpumask_bits(dstp), nr_cpumask_bits);
-}
-
-static inline void free_cpumask_var(cpumask_var_t mask)
-{
-}
-#endif
-/* see upstream commit 0281b5dc0350cbf6dd21ed558a33cccce77abc02 */
-#ifdef CONFIG_CPUMASK_OFFSTACK
-static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
-{
-	return alloc_cpumask_var(mask, flags | __GFP_ZERO);
-}
-#else
-static inline int zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
-{
-	cpumask_clear(*mask);
-	return 1;
-}
-#endif
-/* see upstream commit cd8ba7cd9be0192348c2836cb6645d9b2cd2bfd2 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
-/* As macro because RH has it in 2.6.18-128.4.1.el5, but not exported to modules !?!? */
-#define set_cpus_allowed_ptr(P, NM) set_cpus_allowed(P, *NM)
-#endif
-#endif
-
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-#define __bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK) \
-	backport_bitmap_parse(BUF, BUFLEN, ISUSR, MASKP, NMASK)
-
-#define CHUNKSZ                         32
-#define nbits_to_hold_value(val)        fls(val)
-#define unhex(c)                        (isdigit(c) ? (c - '0') : (toupper(c) - 'A' + 10))
-
-static inline int backport_bitmap_parse(const char *buf, unsigned int buflen,
-		int is_user, unsigned long *maskp,
-		int nmaskbits)
-{
-	int c, old_c, totaldigits, ndigits, nchunks, nbits;
-	u32 chunk;
-	const char __user *ubuf = buf;
-
-	bitmap_zero(maskp, nmaskbits);
-
-	nchunks = nbits = totaldigits = c = 0;
-	do {
-		chunk = ndigits = 0;
-
-		/* Get the next chunk of the bitmap */
-		while (buflen) {
-			old_c = c;
-			if (is_user) {
-				if (__get_user(c, ubuf++))
-					return -EFAULT;
-			}
-			else
-				c = *buf++;
-			buflen--;
-			if (isspace(c))
-				continue;
-
-			/*
-			 * If the last character was a space and the current
-			 * character isn't '\0', we've got embedded whitespace.
-			 * This is a no-no, so throw an error.
-			 */
-			if (totaldigits && c && isspace(old_c))
-				return -EINVAL;
-
-			/* A '\0' or a ',' signal the end of the chunk */
-			if (c == '\0' || c == ',')
-				break;
-
-			if (!isxdigit(c))
-				return -EINVAL;
-
-			/*
-			 * Make sure there are at least 4 free bits in 'chunk'.
-			 * If not, this hexdigit will overflow 'chunk', so
-			 * throw an error.
-			 */
-			if (chunk & ~((1UL << (CHUNKSZ - 4)) - 1))
-				return -EOVERFLOW;
-
-			chunk = (chunk << 4) | unhex(c);
-			ndigits++; totaldigits++;
-		}
-		if (ndigits == 0)
-			return -EINVAL;
-		if (nchunks == 0 && chunk == 0)
-			continue;
-
-		bitmap_shift_left(maskp, maskp, CHUNKSZ, nmaskbits);
-		*maskp |= chunk;
-		nchunks++;
-		nbits += (nchunks == 1) ? nbits_to_hold_value(chunk) : CHUNKSZ;
-		if (nbits > nmaskbits)
-			return -EOVERFLOW;
-	} while (buflen && c == ',');
-
-	return 0;
-}
-#endif
-
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-#define BDI_async_congested BDI_write_congested
-#define BDI_sync_congested  BDI_read_congested
 #endif
 
 /* see upstream commits
@@ -1108,18 +819,8 @@ static inline int op_from_rq_bits(u64 flags)
  *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
  *
  *  --- we don't care for older than 2.3.32 ---
- *  v2.6.29  bb799ca  bio: allow individual slabs in the bio_set
- *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad)
- *
- *  v2.6.22  5972511  [BLOCK] Don't pin lots of memory in mempools
- *  +struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size)
- *
- *  v2.6.12  63858f8  [PATCH] add local bio pool support and modify dm
- *  +struct bio_set *bioset_create(int bio_pool_size, int bvec_pool_size, int scale)
  */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,29)
-#error "Kernel too old"
-#elif defined(COMPAT_HAVE_BIOSET_NEED_BVECS)
+#if defined(COMPAT_HAVE_BIOSET_NEED_BVECS)
 /* all good, "modern" kernel */
 #elif defined(COMPAT_HAVE_BIOSET_CREATE_FRONT_PAD)
 # define bioset_create(pool_size, front_pad, flags) bioset_create(pool_size, front_pad)
@@ -1681,11 +1382,6 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 #warning "io accounting disabled"
 #else
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-#define part_inc_in_flight(A, B) part_inc_in_flight(A)
-#define part_dec_in_flight(A, B) part_dec_in_flight(A)
-#endif
-
 static inline void generic_start_io_acct(struct request_queue *q,
 		int rw, unsigned long sectors, struct hd_struct *part)
 {
@@ -1698,13 +1394,8 @@ static inline void generic_start_io_acct(struct request_queue *q,
 	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
 		       the compiler warning about cpu only assigned but never used... */
 	/* part_inc_in_flight(part, rw); */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight)); }
-	atomic_inc((atomic_t*)&part->in_flight);
-#else
 	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0])); }
 	atomic_inc((atomic_t*)&part->in_flight[rw]);
-#endif
 	part_stat_unlock();
 }
 
@@ -1718,11 +1409,7 @@ static inline void generic_end_io_acct(struct request_queue *q,
 	part_stat_add(cpu, part, ticks[rw], duration);
 	part_round_stats(cpu, part);
 	/* part_dec_in_flight(part, rw); */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-	atomic_dec((atomic_t*)&part->in_flight);
-#else
 	atomic_dec((atomic_t*)&part->in_flight[rw]);
-#endif
 	part_stat_unlock();
 }
 #endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
