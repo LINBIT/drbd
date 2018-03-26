@@ -3024,7 +3024,7 @@ static void drbd_cleanup(void)
 	drbd_debugfs_cleanup();
 
 	drbd_destroy_mempools();
-	drbd_unregister_blkdev(DRBD_MAJOR, "drbd");
+	unregister_blkdev(DRBD_MAJOR, "drbd");
 
 	idr_destroy(&drbd_devices);
 
