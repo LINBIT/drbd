@@ -84,7 +84,7 @@ else
     endif
   endif
 
-  .PHONY: drbd.o default all greeting clean kbuild install dep tags
+  .PHONY: drbd.o default all greeting clean kbuild install dep tags unpatch
 
   drbd.o: greeting kbuild
   default: drbd.o
@@ -99,6 +99,16 @@ else
 		echo -e "    SORRY, kernel makefile not found. You need to tell me a correct KDIR!\n" ;\
 		false;\
 	fi
+
+  unpatch:
+	@echo "Removing compat patches"
+	$(eval PATCHES := $(shell \
+		test -e .compat_patches_applied && \
+		cat .compat_patches_applied || \
+		echo ""))
+	$(eval patch_with_path := $(patsubst %,drbd-kernel-compat/patches/%.patch,$(PATCHES)))
+	@$(foreach patch, $(patch_with_path), patch -R $(src) -p0 < $(patch);)
+	@rm -f .compat_patches_applied
 
   kbuild:
 	@rm -f .drbd_kernelrelease*

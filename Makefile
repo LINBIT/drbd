@@ -121,6 +121,8 @@ module: check-kdir check-submods
 install:
 	$(MAKE) -C drbd install
 
+unpatch:
+	$(MAKE) -C drbd unpatch
 
 clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done

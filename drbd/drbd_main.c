@@ -66,15 +66,9 @@
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
 
-#ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
-#define DRBD_RELEASE_RETURN void
-#else
-#define DRBD_RELEASE_RETURN int
-#endif
-
 static int drbd_open(struct block_device *bdev, fmode_t mode);
-static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
-static void md_sync_timer_fn(DRBD_TIMER_FN_ARG);
+static void drbd_release(struct gendisk *gd, fmode_t mode);
+static void md_sync_timer_fn(unsigned long data);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
 
@@ -2706,7 +2700,7 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 	*ro_count_ptr = ro_count;
 }
 
-static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
+static void drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
@@ -2750,10 +2744,6 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 
 	kref_debug_put(&device->kref_debug, 3);
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
-
-#ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
-	return 0;
-#endif
 }
 
 /* need to hold resource->req_lock */

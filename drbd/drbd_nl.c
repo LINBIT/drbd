@@ -2593,11 +2593,7 @@ static struct block_device *open_backing_dev(struct drbd_device *device,
 	if (!do_bd_link)
 		return bdev;
 
-#if   defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER)
 	err = bd_link_disk_holder(bdev, device->vdisk);
-#elif defined(COMPAT_HAVE_BD_CLAIM_BY_DISK)
-	err = bd_claim_by_disk(bdev, claim_ptr, device->vdisk);
-#endif
 	if (err) {
 		blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 		drbd_err(device, "bd_link_disk_holder(\"%s\", ...) failed with %d\n",
@@ -2645,13 +2641,8 @@ static void close_backing_dev(struct drbd_device *device, struct block_device *b
 {
 	if (!bdev)
 		return;
-	if (do_bd_unlink) {
-#if   defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER)
+	if (do_bd_unlink)
 		bd_unlink_disk_holder(bdev, device->vdisk);
-#elif defined(COMPAT_HAVE_BD_CLAIM_BY_DISK)
-		bd_release_from_disk(bdev, device->vdisk);
-#endif
-	}
 	blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
 }
 

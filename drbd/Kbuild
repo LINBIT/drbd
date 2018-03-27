@@ -65,8 +65,22 @@ ifndef DISABLE_KREF_DEBUGGING_HERE
       drbd-y += kref_debug.o drbd_kref_debug.o
 endif
 
-$(addprefix $(obj)/,$(drbd-y)): $(obj)/compat.h
-$(obj)/drbd_transport_tcp.o: $(obj)/compat.h
+HOST_EXTRACFLAGS += -I$(src) -std=c11 $(EXTRA_CFLAGS)
+hostprogs-y := drbd-kernel-compat/gen_patch_names
+headers-to-apply-compat := drbd_int.h drbd_req.h drbd_interval.h
+
+$(src)/.compat_patches_applied: $(obj)/drbd-kernel-compat/gen_patch_names
+	$(eval APPLY_PATCHES := $(shell $(obj)/drbd-kernel-compat/gen_patch_names))
+	@$(kecho) '  APPLY_PATCHES: $(APPLY_PATCHES)'
+	echo $(APPLY_PATCHES) > $(src)/.compat_patches_applied
+	$(eval patch_with_path := $(patsubst %,$(src)/drbd-kernel-compat/patches/%.patch,$(APPLY_PATCHES)))
+	$(foreach patch, $(patch_with_path), patch -d $(src) -p0 < $(patch);)
+
+$(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h $(src)/.compat_patches_applied
+$(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h
+$(obj)/gen_patch_names: $(src)/drbd-kernel-compat/gen_patch_names.c $(obj)/compat.h
+
+obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
 # ======================================================================
 
@@ -104,7 +118,13 @@ quiet_cmd_compat_test_result = COMPAT  $*
 filechk_compat.$(KERNELVERSION).h = cat $(TEST_R)
 filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 
-$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(COMPAT_FORCE)
+COCCIES := $(sort $(wildcard $(src)/drbd-kernel-compat/cocci/*.cocci))
+PATCHES := $(COCCIES:$(src)/drbd-kernel-compat/cocci/%.cocci=$(src)/drbd-kernel-compat/patches/%.patch)
+$(src)/drbd-kernel-compat/patches/%.patch: $(src)/drbd-kernel-compat/cocci/%.cocci
+	@$(kecho) '  SPATCH     $@ $(echo-why)'
+	@(cd $(src); spatch --sp-file $< $(drbd-y:%.o=%.c) $(headers-to-apply-compat) > $@)
+
+$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(PATCHES) $(COMPAT_FORCE)
 	$(call filechk,compat.$(KERNELVERSION).h)
 
 $(obj)/compat.h: $(obj)/compat.$(KERNELVERSION).h FORCE
