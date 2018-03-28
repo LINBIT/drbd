@@ -88,6 +88,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_BD_CLAIM_BY_DISK, "claim");
 #endif */
 
+	patch(1, "timer_setup", true, false,
+	      COMPAT_HAVE_TIMER_SETUP, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
