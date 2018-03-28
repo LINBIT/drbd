@@ -2420,9 +2420,9 @@ static bool net_timeout_reached(struct drbd_request *net_req,
  * to expire twice (worst case) to become effective. Good enough.
  */
 
-void request_timer_fn(DRBD_TIMER_FN_ARG)
+void request_timer_fn(struct timer_list *t)
 {
-	struct drbd_device *device = DRBD_TIMER_ARG2OBJ(device, request_timer);
+	struct drbd_device *device = from_timer(device, t, request_timer);
 	struct drbd_connection *connection;
 	struct drbd_request *req_read, *req_write;
 	unsigned long oldest_submit_jif;

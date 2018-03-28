@@ -622,9 +622,9 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
-void connect_timer_fn(DRBD_TIMER_FN_ARG)
+void connect_timer_fn(struct timer_list *t)
 {
-	struct drbd_connection *connection = DRBD_TIMER_ARG2OBJ(connection, connect_timer);
+	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
 	struct drbd_resource *resource = connection->resource;
 	unsigned long irq_flags;
 
@@ -5744,9 +5744,9 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 	return 0;
 }
 
-void twopc_timer_fn(DRBD_TIMER_FN_ARG)
+void twopc_timer_fn(struct timer_list *t)
 {
-	struct drbd_resource *resource = DRBD_TIMER_ARG2OBJ(resource, twopc_timer);
+	struct drbd_resource *resource = from_timer(resource, t, twopc_timer);
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&resource->req_lock, irq_flags);
@@ -6002,17 +6002,17 @@ static int queued_twopc_work(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-void queued_twopc_timer_fn(DRBD_TIMER_FN_ARG)
+void queued_twopc_timer_fn(struct timer_list *t)
 {
-	struct drbd_resource *resource = DRBD_TIMER_ARG2OBJ(resource, queued_twopc_timer);
+	struct drbd_resource *resource = from_timer(resource, t, queued_twopc_timer);
 	struct queued_twopc *q;
 	unsigned long irq_flags;
-	unsigned long timeo = twopc_timeout(resource) / 4;
+	unsigned long time = twopc_timeout(resource) / 4;
 
 	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
 	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
 	if (q) {
-		if (jiffies - q->start_jif >= timeo) {
+		if (jiffies - q->start_jif >= time) {
 			resource->starting_queued_twopc = q;
 			list_del(&q->w.list);
 		}
@@ -7679,7 +7679,7 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 	wake_up(&peer_device->device->misc_wait);
 
 	del_timer_sync(&peer_device->resync_timer);
-	resync_timer_fn(DRBD_TIMER_CALL_ARG(peer_device, resync_timer));
+	resync_timer_fn(&peer_device->resync_timer);
 	del_timer_sync(&peer_device->start_resync_timer);
 }
 
