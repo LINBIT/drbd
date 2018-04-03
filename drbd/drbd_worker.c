@@ -487,9 +487,9 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-void resync_timer_fn(unsigned long data)
+void resync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_device *device = DRBD_TIMER_ARG2OBJ(device, resync_timer);
 
 	drbd_queue_work_if_unqueued(
 		&first_peer_device(device)->connection->sender_work,
@@ -1736,9 +1736,9 @@ void drbd_rs_controller_reset(struct drbd_device *device)
 	rcu_read_unlock();
 }
 
-void start_resync_timer_fn(unsigned long data)
+void start_resync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_device *device = DRBD_TIMER_ARG2OBJ(device, start_resync_timer);
 	drbd_device_post_work(device, RS_START);
 }
 

@@ -81,7 +81,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
 static int drbd_open(struct inode *inode, struct file *file);
 static DRBD_RELEASE_RETURN drbd_release(struct inode *inode, struct file *file);
 #endif
-static void md_sync_timer_fn(unsigned long data);
+static void md_sync_timer_fn(DRBD_TIMER_FN_ARG);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
@@ -2114,14 +2114,10 @@ void drbd_init_set_defaults(struct drbd_device *device)
 	device->unplug_work.cb  = w_send_write_hint;
 	device->bm_io_work.w.cb = w_bitmap_io;
 
-	setup_timer(&device->resync_timer, resync_timer_fn,
-			(unsigned long)device);
-	setup_timer(&device->md_sync_timer, md_sync_timer_fn,
-			(unsigned long)device);
-	setup_timer(&device->start_resync_timer, start_resync_timer_fn,
-			(unsigned long)device);
-	setup_timer(&device->request_timer, request_timer_fn,
-			(unsigned long)device);
+	drbd_timer_setup(device, resync_timer, resync_timer_fn);
+	drbd_timer_setup(device, md_sync_timer, md_sync_timer_fn);
+	drbd_timer_setup(device, start_resync_timer, start_resync_timer_fn);
+	drbd_timer_setup(device, request_timer, request_timer_fn);
 
 	init_waitqueue_head(&device->misc_wait);
 	init_waitqueue_head(&device->state_wait);
@@ -3869,9 +3865,9 @@ int drbd_md_test_flag(struct drbd_backing_dev *bdev, int flag)
 	return (bdev->md.flags & flag) != 0;
 }
 
-static void md_sync_timer_fn(unsigned long data)
+static void md_sync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_device *device = DRBD_TIMER_ARG2OBJ(device, md_sync_timer);
 	drbd_device_post_work(device, MD_SYNC);
 }
 
