@@ -1859,7 +1859,7 @@ extern void wait_until_done_or_force_detached(struct drbd_device *device,
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
-extern void repost_up_to_date_fn(unsigned long data);
+extern void repost_up_to_date_fn(DRBD_TIMER_FN_ARG);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {
@@ -1889,8 +1889,8 @@ extern int w_restart_disk_io(struct drbd_work *, int);
 extern int w_start_resync(struct drbd_work *, int);
 extern int w_send_uuids(struct drbd_work *, int);
 
-extern void resync_timer_fn(unsigned long data);
-extern void start_resync_timer_fn(unsigned long data);
+extern void resync_timer_fn(DRBD_TIMER_FN_ARG);
+extern void start_resync_timer_fn(DRBD_TIMER_FN_ARG);
 
 extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
 
@@ -1973,7 +1973,7 @@ extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
 extern void queue_queued_twopc(struct drbd_resource *resource);
-extern void queued_twopc_timer_fn(unsigned long data);
+extern void queued_twopc_timer_fn(DRBD_TIMER_FN_ARG);
 extern bool drbd_have_local_disk(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 extern enum determine_dev_size
@@ -2014,8 +2014,8 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,
 			      enum write_ordering_e wo);
 
-extern void twopc_timer_fn(unsigned long);
-extern void connect_timer_fn(unsigned long);
+extern void twopc_timer_fn(DRBD_TIMER_FN_ARG);
+extern void connect_timer_fn(DRBD_TIMER_FN_ARG);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;

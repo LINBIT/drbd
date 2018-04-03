@@ -76,7 +76,7 @@
 
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode);
-static void md_sync_timer_fn(unsigned long data);
+static void md_sync_timer_fn(DRBD_TIMER_FN_ARG);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
 
@@ -3192,9 +3192,9 @@ void drbd_flush_peer_acks(struct drbd_resource *resource)
 	spin_unlock_irq(&resource->req_lock);
 }
 
-static void peer_ack_timer_fn(unsigned long data)
+static void peer_ack_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_resource *resource = (struct drbd_resource *) data;
+	struct drbd_resource *resource = DRBD_TIMER_ARG2OBJ(resource, peer_ack_timer);
 
 	drbd_flush_peer_acks(resource);
 }
@@ -3309,8 +3309,8 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->connections);
 	INIT_LIST_HEAD(&resource->transfer_log);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
-	setup_timer(&resource->peer_ack_timer, peer_ack_timer_fn, (unsigned long) resource);
-	setup_timer(&resource->repost_up_to_date_timer, repost_up_to_date_fn, (unsigned long) resource);
+	drbd_timer_setup(resource, peer_ack_timer, peer_ack_timer_fn);
+	drbd_timer_setup(resource, repost_up_to_date_timer, repost_up_to_date_fn);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	if (set_resource_options(resource, res_opts))
@@ -3327,11 +3327,11 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	init_waitqueue_head(&resource->twopc_wait);
 	init_waitqueue_head(&resource->barrier_wait);
 	INIT_LIST_HEAD(&resource->twopc_parents);
-	setup_timer(&resource->twopc_timer, twopc_timer_fn, (unsigned long) resource);
+	drbd_timer_setup(resource, twopc_timer, twopc_timer_fn);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
 	INIT_LIST_HEAD(&resource->queued_twopc);
 	spin_lock_init(&resource->queued_twopc_lock);
-	setup_timer(&resource->queued_twopc_timer, queued_twopc_timer_fn, (unsigned long) resource);
+	drbd_timer_setup(resource, queued_twopc_timer, queued_twopc_timer_fn);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
@@ -3392,9 +3392,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	mutex_init(&connection->mutex[CONTROL_STREAM]);
 
 	INIT_LIST_HEAD(&connection->connect_timer_work.list);
-	setup_timer(&connection->connect_timer,
-		    connect_timer_fn,
-		    (unsigned long) connection);
+	drbd_timer_setup(connection, connect_timer, connect_timer_fn);
 
 	drbd_thread_init(resource, &connection->receiver, drbd_receiver, "receiver");
 	connection->receiver.connection = connection;
@@ -3506,15 +3504,12 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 		return NULL;
 	}
 
-	setup_timer(&peer_device->start_resync_timer,
-			start_resync_timer_fn,
-			(unsigned long) peer_device);
+	drbd_timer_setup(peer_device, start_resync_timer,
+			 start_resync_timer_fn);
 
 	INIT_LIST_HEAD(&peer_device->resync_work.list);
 	peer_device->resync_work.cb  = w_resync_timer;
-	setup_timer(&peer_device->resync_timer,
-			resync_timer_fn,
-			(unsigned long) peer_device);
+	drbd_timer_setup(peer_device, resync_timer, resync_timer_fn);
 
 	INIT_LIST_HEAD(&peer_device->propagate_uuids_work.list);
 	peer_device->propagate_uuids_work.cb = w_send_uuids;
@@ -3610,12 +3605,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	spin_lock_init(&device->pending_bitmap_work.q_lock);
 	INIT_LIST_HEAD(&device->pending_bitmap_work.q);
 
-	setup_timer(&device->md_sync_timer,
-			md_sync_timer_fn,
-			(unsigned long) device);
-	setup_timer(&device->request_timer,
-			request_timer_fn,
-			(unsigned long) device);
+	drbd_timer_setup(device, md_sync_timer, md_sync_timer_fn);
+	drbd_timer_setup(device, request_timer, request_timer_fn);
 
 	init_waitqueue_head(&device->misc_wait);
 	init_waitqueue_head(&device->al_wait);
@@ -5195,9 +5186,9 @@ bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_
 	return md->peers[peer_device->node_id].flags & flag;
 }
 
-static void md_sync_timer_fn(unsigned long data)
+static void md_sync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_device *device = (struct drbd_device *) data;
+	struct drbd_device *device = DRBD_TIMER_ARG2OBJ(device, md_sync_timer);
 	drbd_device_post_work(device, MD_SYNC);
 }
 

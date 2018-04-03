@@ -498,9 +498,9 @@ int w_send_uuids(struct drbd_work *w, int cancel)
 	return 0;
 }
 
-void resync_timer_fn(unsigned long data)
+void resync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
+	struct drbd_peer_device *peer_device = DRBD_TIMER_ARG2OBJ(peer_device, resync_timer);
 
 	drbd_queue_work_if_unqueued(
 		&peer_device->connection->sender_work,
@@ -1817,9 +1817,9 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	rcu_read_unlock();
 }
 
-void start_resync_timer_fn(unsigned long data)
+void start_resync_timer_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_peer_device *peer_device = (struct drbd_peer_device *) data;
+	struct drbd_peer_device *peer_device = DRBD_TIMER_ARG2OBJ(peer_device, start_resync_timer);
 	drbd_peer_device_post_work(peer_device, RS_START);
 }
 
@@ -2162,9 +2162,9 @@ static int do_md_sync(struct drbd_device *device)
 	return 0;
 }
 
-void repost_up_to_date_fn(unsigned long data)
+void repost_up_to_date_fn(DRBD_TIMER_FN_ARG)
 {
-	struct drbd_resource *resource = (struct drbd_resource *) data;
+	struct drbd_resource *resource = DRBD_TIMER_ARG2OBJ(resource, repost_up_to_date_timer);
 	drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
 }
 

@@ -319,7 +319,7 @@ extern int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m);
 extern void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m);
-extern void request_timer_fn(unsigned long data);
+extern void request_timer_fn(DRBD_TIMER_FN_ARG);
 extern void tl_restart(struct drbd_connection *connection, enum drbd_req_event what);
 extern void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what);
 extern void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req);
