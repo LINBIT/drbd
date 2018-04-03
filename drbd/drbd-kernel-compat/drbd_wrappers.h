@@ -44,22 +44,6 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 }
 #endif
 
-#ifndef COMPAT_HAVE_BDEV_DISCARD_ALIGNMENT
-static inline int bdev_discard_alignment(struct block_device *bdev)
-{
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)
-	return 0;
-#else
-	struct request_queue *q = bdev_get_queue(bdev);
-
-	if (bdev != bdev->bd_contains)
-		return bdev->bd_part->discard_alignment;
-
-	return q->limits.discard_alignment;
-#endif
-}
-#endif
-
 static	inline int drbd_always_getpeername(struct socket *sock, struct sockaddr *uaddr)
 {
 #ifdef COMPAT_SOCK_OPS_RETURNS_ADDR_LEN
@@ -86,10 +70,6 @@ static	inline int drbd_always_getpeername(struct socket *sock, struct sockaddr *
 #define MAKE_REQUEST_TYPE int
 #define MAKE_REQUEST_RETURN return 0
 #endif
-#endif
-
-#ifndef COMPAT_HAVE_FMODE_T
-typedef unsigned __bitwise__ fmode_t;
 #endif
 
 #ifndef COMPAT_HAVE_BLKDEV_GET_BY_PATH
@@ -257,19 +237,6 @@ static inline int drbd_backing_bdev_events(struct gendisk *disk)
 #endif
 }
 
-#ifndef COMPAT_HAVE_SOCK_SHUTDOWN
-#define COMPAT_HAVE_SOCK_SHUTDOWN 1
-enum sock_shutdown_cmd {
-	SHUT_RD = 0,
-	SHUT_WR = 1,
-	SHUT_RDWR = 2,
-};
-static inline int kernel_sock_shutdown(struct socket *sock, enum sock_shutdown_cmd how)
-{
-	return sock->ops->shutdown(sock, how);
-}
-#endif
-
 #if !defined(CRYPTO_ALG_ASYNC)
 /* With Linux-2.6.19 the crypto API changed! */
 /* This is not a generic backport of the new api, it just implements
@@ -388,77 +355,6 @@ static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
 	return 0;
 }
 
-#endif
-
-#ifndef COMPAT_HAVE_VZALLOC
-static inline void *vzalloc(unsigned long size)
-{
-	void *rv = vmalloc(size);
-	if (rv)
-		memset(rv, 0, size);
-
-	return rv;
-}
-#endif
-
-#ifndef COMPAT_HAVE_UMH_WAIT_PROC
-/* On Jul 17 2007 with commit 86313c4 usermodehelper: Tidy up waiting,
- * UMH_WAIT_PROC was added as an enum value of 1.
- * On Mar 23 2012 with commit 9d944ef3 that got changed to a define of 2. */
-#define UMH_WAIT_PROC 1
-#endif
-
-/* see upstream commits
- * 2d3a4e3666325a9709cc8ea2e88151394e8f20fc (in 2.6.25-rc1)
- * 59b7435149eab2dd06dd678742faff6049cb655f (in 2.6.26-rc1)
- * this "backport" does not close the race that lead to the API change,
- * but only provides an equivalent function call.
- */
-#ifndef COMPAT_HAVE_PROC_CREATE_DATA
-static inline struct proc_dir_entry *proc_create_data(const char *name,
-	mode_t mode, struct proc_dir_entry *parent,
-	struct file_operations *proc_fops, void *data)
-{
-	struct proc_dir_entry *pde = create_proc_entry(name, mode, parent);
-	if (pde) {
-		pde->proc_fops = proc_fops;
-		pde->data = data;
-	}
-	return pde;
-}
-
-#endif
-
-#ifndef COMPAT_HAVE_BLK_QUEUE_MAX_HW_SECTORS
-static inline void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max)
-{
-	blk_queue_max_sectors(q, max);
-}
-#elif defined(COMPAT_USE_BLK_QUEUE_MAX_SECTORS_ANYWAYS)
-	/* For kernel versions 2.6.31 to 2.6.33 inclusive, even though
-	 * blk_queue_max_hw_sectors is present, we actually need to use
-	 * blk_queue_max_sectors to set max_hw_sectors. :-(
-	 * RHEL6 2.6.32 chose to be different and already has eliminated
-	 * blk_queue_max_sectors as upstream 2.6.34 did.
-	 */
-#define blk_queue_max_hw_sectors(q, max)	blk_queue_max_sectors(q, max)
-#endif
-
-#ifndef COMPAT_HAVE_BLK_QUEUE_MAX_SEGMENTS
-static inline void blk_queue_max_segments(struct request_queue *q, unsigned short max_segments)
-{
-	blk_queue_max_phys_segments(q, max_segments);
-	blk_queue_max_hw_segments(q, max_segments);
-#define BLK_MAX_SEGMENTS MAX_HW_SEGMENTS /* or max MAX_PHYS_SEGMENTS. Probably does not matter */
-}
-#endif
-
-#ifndef COMPAT_HAVE_BOOL_TYPE
-typedef _Bool                   bool;
-enum {
-	false = 0,
-	true = 1
-};
 #endif
 
 /* How do we tell the block layer to pass down flush/fua? */
@@ -820,10 +716,6 @@ static inline int op_from_rq_bits(u64 flags)
 	 time_before_eq(a,c))
 #endif
 
-#ifdef COMPAT_BIO_SPLIT_HAS_BIO_SPLIT_POOL_PARAMETER
-#define bio_split(bi, first_sectors) bio_split(bi, bio_split_pool, first_sectors)
-#endif
-
 /* history of bioset_create():
  *  v4.13  011067b  blk: replace bioset_create_nobvec() with a flags arg to bioset_create()
  *  +struct bio_set *bioset_create(unsigned int pool_size, unsigned int front_pad, int flags)
@@ -930,23 +822,6 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 }
 #endif
 
-/*
- * In commit c4945b9e (v2.6.39-rc1), the little-endian bit operations have been
- * renamed to be less weird.
- */
-#ifndef COMPAT_HAVE_FIND_NEXT_ZERO_BIT_LE
-#define find_next_zero_bit_le(addr, size, offset) \
-	generic_find_next_zero_le_bit(addr, size, offset)
-#define find_next_bit_le(addr, size, offset) \
-	generic_find_next_le_bit(addr, size, offset)
-#define test_bit_le(nr, addr) \
-	generic_test_le_bit(nr, addr)
-#define __test_and_set_bit_le(nr, addr) \
-	generic___test_and_set_le_bit(nr, addr)
-#define __test_and_clear_bit_le(nr, addr) \
-	generic___test_and_clear_le_bit(nr, addr)
-#endif
-
 #ifndef IDR_GET_NEXT_EXPORTED
 /* Body in compat/idr.c */
 extern void *idr_get_next(struct idr *idp, int *nextidp);
@@ -1011,18 +886,6 @@ static inline int nla_type(const struct nlattr *nla)
 #endif
 
 /*
- * nlmsg_hdr was added to <linux/netlink.h> in mainline commit b529ccf2
- * (v2.6.22-rc1).
- */
-
-#ifndef COMPAT_HAVE_NLMSG_HDR
-static inline struct nlmsghdr *nlmsg_hdr(const struct sk_buff *skb)
-{
-	return (struct nlmsghdr *)skb->data;
-}
-#endif
-
-/*
  * v4.12 fceb6435e852 netlink: pass extended ACK struct to parsing functions
  * and some preparation commits introduce a new "netlink extended ack" error
  * reporting mechanism. For now, only work around that here.  As trigger, use
@@ -1032,142 +895,6 @@ static inline struct nlmsghdr *nlmsg_hdr(const struct sk_buff *skb)
 #include <net/netlink.h>
 #define nla_parse_nested(tb, maxtype, nla, policy, extack) \
        nla_parse_nested(tb, maxtype, nla, policy)
-#endif
-
-/*
- * genlmsg_reply() was added to <net/genetlink.h> in mainline commit 81878d27
- * (v2.6.20-rc2).
- */
-
-#ifndef COMPAT_HAVE_GENLMSG_REPLY
-#include <net/genetlink.h>
-
-static inline int genlmsg_reply(struct sk_buff *skb, struct genl_info *info)
-{
-	return genlmsg_unicast(skb, info->snd_pid);
-}
-#endif
-
-/*
- * genlmsg_msg_size() and genlmsg_total_size() were added to <net/genetlink.h>
- * in mainline commit 17db952c (v2.6.19-rc1).
- */
-
-#ifndef COMPAT_HAVE_GENLMSG_MSG_SIZE
-#include <linux/netlink.h>
-#include <linux/genetlink.h>
-
-static inline int genlmsg_msg_size(int payload)
-{
-	return GENL_HDRLEN + payload;
-}
-
-static inline int genlmsg_total_size(int payload)
-{
-	return NLMSG_ALIGN(genlmsg_msg_size(payload));
-}
-#endif
-
-/*
- * genlmsg_new() was added to <net/genetlink.h> in mainline commit 3dabc715
- * (v2.6.20-rc2).
- */
-
-#ifndef COMPAT_HAVE_GENLMSG_NEW
-#include <net/genetlink.h>
-
-static inline struct sk_buff *genlmsg_new(size_t payload, gfp_t flags)
-{
-	return nlmsg_new(genlmsg_total_size(payload), flags);
-}
-#endif
-
-/*
- * genlmsg_put() was introduced in mainline commit 482a8524 (v2.6.15-rc1) and
- * changed in 17c157c8 (v2.6.20-rc2).  genlmsg_put_reply() was introduced in
- * 17c157c8.  We replace the compat_genlmsg_put() from 482a8524.
- */
-
-#ifndef COMPAT_HAVE_GENLMSG_PUT_REPLY
-#include <net/genetlink.h>
-
-static inline void *compat_genlmsg_put(struct sk_buff *skb, u32 pid, u32 seq,
-				       struct genl_family *family, int flags,
-				       u8 cmd)
-{
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *hdr;
-
-	nlh = nlmsg_put(skb, pid, seq, family->id, GENL_HDRLEN +
-			family->hdrsize, flags);
-	if (nlh == NULL)
-		return NULL;
-
-	hdr = nlmsg_data(nlh);
-	hdr->cmd = cmd;
-	hdr->version = family->version;
-	hdr->reserved = 0;
-
-	return (char *) hdr + GENL_HDRLEN;
-}
-
-#define genlmsg_put compat_genlmsg_put
-
-static inline void *genlmsg_put_reply(struct sk_buff *skb,
-                                      struct genl_info *info,
-                                      struct genl_family *family,
-                                      int flags, u8 cmd)
-{
-	return genlmsg_put(skb, info->snd_pid, info->snd_seq, family,
-			   flags, cmd);
-}
-#endif
-
-/*
- * compat_genlmsg_multicast() got a gfp_t parameter in mainline commit d387f6ad
- * (v2.6.19-rc1).
- */
-
-#ifdef COMPAT_NEED_GENLMSG_MULTICAST_WRAPPER
-#include <net/genetlink.h>
-
-static inline int compat_genlmsg_multicast(struct sk_buff *skb, u32 pid,
-					   unsigned int group, gfp_t flags)
-{
-	return genlmsg_multicast(skb, pid, group);
-}
-
-#define genlmsg_multicast compat_genlmsg_multicast
-
-#endif
-
-/*
- * Dynamic generic netlink multicast groups were introduced in mainline commit
- * 2dbba6f7 (v2.6.23-rc1).  Before that, netlink had a fixed number of 32
- * multicast groups.  Use an arbitrary hard-coded group number for that case.
- */
-
-#ifndef COMPAT_HAVE_CTRL_ATTR_MCAST_GROUPS
-
-struct genl_multicast_group {
-	struct genl_family	*family;	/* private */
-        struct list_head	list;		/* private */
-        char			name[GENL_NAMSIZ];
-	u32			id;
-};
-
-static inline int genl_register_mc_group(struct genl_family *family,
-					 struct genl_multicast_group *grp)
-{
-	grp->id = 1;
-	return 0;
-}
-
-static inline void genl_unregister_mc_group(struct genl_family *family,
-					    struct genl_multicast_group *grp)
-{
-}
-
 #endif
 
 /*
@@ -1182,25 +909,11 @@ static inline void genl_unregister_mc_group(struct genl_family *family,
 
 #endif
 
-#ifndef COMPAT_HAVE_IS_ERR_OR_NULL
-static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
-{
-	return !ptr || IS_ERR_VALUE((unsigned long)ptr);
-}
-#endif
-
 #ifndef SK_CAN_REUSE
 /* This constant was introduced by Pavel Emelyanov <xemul@parallels.com> on
    Thu Apr 19 03:39:36 2012 +0000. Before the release of linux-3.5
    commit 4a17fd52 sock: Introduce named constants for sk_reuse */
 #define SK_CAN_REUSE   1
-#endif
-
-#ifndef COMPAT_HAVE_KREF_GET_UNLESS_ZERO
-static inline int __must_check kref_get_unless_zero(struct kref *kref)
-{
-	return atomic_add_unless(&kref->refcount, 1, 0);
-}
 #endif
 
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
@@ -1284,11 +997,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 /* >= v4.12 */
 /* use blkdev_issue_zeroout() as written out in the actual source code.
  * right now, we only use it with flags = BLKDEV_ZERO_NOUNMAP */
-#elif defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_BLKDEV_IFL_WAIT)
-/* cannot yet tell it to use (or not use) discard,
- * but must tell it to be synchronous */
-#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags) \
-	blkdev_issue_zeroout(BDEV, SS, NS, GFP, BLKDEV_IFL_WAIT)
 #elif  defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD)
 /* no BLKDEV_ZERO_NOUNMAP as last parameter, but a bool discard instead */
 /* still need to define BLKDEV_ZERO_NOUNMAP, to compare against 0 */
@@ -1299,12 +1007,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
 #endif
-#endif
-
-
-#ifndef COMPAT_HAVE_GENL_LOCK
-static inline void genl_lock(void)  { }
-static inline void genl_unlock(void)  { }
 #endif
 
 
@@ -1332,15 +1034,6 @@ static inline void genl_unlock(void)  { }
 # endif
 #endif
 
-#ifndef COMPAT_HAVE_BLK_SET_STACKING_LIMITS
-static inline void blk_set_stacking_limits(struct queue_limits *lim)
-{
-# ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
-	lim->discard_zeroes_data = 1;
-# endif
-}
-#endif
-
 #ifdef COMPAT_HAVE_STRUCT_BVEC_ITER
 /* since Linux 3.14 we have a new way to iterate a bio
    Mainline commits:
@@ -1362,16 +1055,6 @@ static inline void blk_set_stacking_limits(struct queue_limits *lim)
 /* Attention: The backward comp version of this macro accesses bio from
    calling namespace */
 #define bio_iter_last(BVEC, ITER) ((ITER) == bio->bi_vcnt - 1)
-#endif
-
-#ifndef COMPAT_HAVE_RCU_DEREFERENCE_PROTECTED
-#define rcu_dereference_protected(p, c) (p)
-#endif
-
-#ifndef COMPAT_HAVE_F_PATH_DENTRY
-#error "won't compile with this kernel version (f_path.dentry vs f_dentry)"
-/* change all occurences of f_path.dentry to f_dentry, and conditionally
- * #define f_dentry to f_path.dentry */
 #endif
 
 #ifndef list_next_rcu
@@ -1448,18 +1131,6 @@ static inline void generic_end_io_acct(struct request_queue *q,
 static inline int simple_positive(struct dentry *dentry)
 {
         return dentry->d_inode && !d_unhashed(dentry);
-}
-#endif
-
-#ifndef COMPAT_HAVE_IS_VMALLOC_ADDR
-static inline int is_vmalloc_addr(const void *x)
-{
-#ifdef CONFIG_MMU
-	unsigned long addr = (unsigned long)x;
-	return addr >= VMALLOC_START && addr < VMALLOC_END;
-#else
-	return 0;
-#endif
 }
 #endif
 
@@ -1555,7 +1226,9 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 #endif
 #endif
 
-#if !defined(COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_LINUX) && !defined(COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_ASM)
+#ifdef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_LINUX
+#include <linux/atomic.h>
+#else
 static inline int atomic_dec_if_positive(atomic_t *v)
 {
         int c, old, dec;
@@ -1571,21 +1244,9 @@ static inline int atomic_dec_if_positive(atomic_t *v)
         }
         return dec;
 }
-#else
-#ifdef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_LINUX
-#include <linux/atomic.h>
-#endif
-
-#ifdef COMPAT_HAVE_ATOMIC_DEC_IF_POSITIVE_ASM
-#include <asm/atomic.h>
-#endif
 #endif
 
 #ifndef COMPAT_HAVE_RATELIMIT_STATE_INIT
-# ifdef COMPAT_HAVE_RATELIMIT_STATE_INIT_3PARAMS
-/* SLES12 kernel has an aditional flags parameter */
-# define ratelimit_state_init(RS, I, B) ratelimit_state_init(RS, I, B, 0)
-# else
 static inline void ratelimit_state_init(struct ratelimit_state *rs,
                                         int interval, int burst)
 {
@@ -1595,7 +1256,6 @@ static inline void ratelimit_state_init(struct ratelimit_state *rs,
 	rs->missed = 0;
 	rs->begin = 0;
 }
-# endif
 #endif
 
 #ifndef COMPAT_HAVE_IDR_IS_EMPTY
@@ -1607,7 +1267,6 @@ static inline bool idr_is_empty(struct idr *idr)
 #endif
 
 /* RDMA related */
-#ifdef COMPAT_HAVE_IB_VERBS_H
 #ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
 #include <rdma/ib_verbs.h>
 
@@ -1648,12 +1307,7 @@ drbd_ib_create_cq(struct ib_device *device,
 #ifndef COMPAT_IB_ALLOC_PD_HAS_2_PARAMS
 #define ib_alloc_pd(dev, flags) ib_alloc_pd(dev)
 #endif
-#endif /* RDMA */
-
-#ifndef COMPAT_HAVE_NSECS_TO_JIFFIES
-u64 nsecs_to_jiffies64(u64 n);
-unsigned long nsecs_to_jiffies(u64 n);
-#endif
+/* RDMA */
 
 #ifndef COMPAT_HAVE_FILE_INODE
 static inline struct inode *file_inode(const struct file *file)
