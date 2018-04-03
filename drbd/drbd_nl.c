@@ -1833,9 +1833,7 @@ static u32 common_connection_features(struct drbd_resource *resource)
 
 static void blk_queue_discard_granularity(struct request_queue *q, unsigned int granularity)
 {
-#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
 	q->limits.discard_granularity = granularity;
-#endif
 }
 
 static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
@@ -2162,7 +2160,6 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 		}
 	}
 
-#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
 	if (disk_conf->rs_discard_granularity) {
 		int orig_value = disk_conf->rs_discard_granularity;
 		int remainder;
@@ -2180,7 +2177,6 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 			drbd_info(device, "rs_discard_granularity changed to %d\n",
 				  disk_conf->rs_discard_granularity);
 	}
-#endif
 }
 
 static int disk_opts_check_al_size(struct drbd_device *device, struct disk_conf *dc)

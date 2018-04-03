@@ -34,25 +34,6 @@
 
 /* Compatibility code */
 #include "compat.h"
-#ifndef COMPAT_HAVE_CLEAR_BIT_UNLOCK
-static inline void clear_bit_unlock(unsigned nr, volatile unsigned long *addr)
-{
-#if defined(__x86_64__) ||  defined(__i386__) || defined(__arch_um__)
-	barrier();
-#else
-	smp_mb(); /* Be on the save side for alpha, and others */
-#endif
-        clear_bit(nr, addr);
-}
-#endif
-#ifndef COMPAT_HAVE_BOOL_TYPE
-typedef _Bool                   bool;
-enum {
-	false = 0,
-	true = 1
-};
-#define COMPAT_HAVE_BOOL_TYPE
-#endif
 
 #ifndef COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS
 #define hlist_entry_safe(ptr, type, member) \

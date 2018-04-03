@@ -54,6 +54,7 @@
 #include <linux/vmalloc.h>
 #include <linux/device.h>
 #include <linux/dynamic_debug.h>
+#include <linux/swab.h>
 
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
@@ -62,12 +63,6 @@
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
-
-#ifdef COMPAT_HAVE_LINUX_BYTEORDER_SWABB_H
-#include <linux/byteorder/swabb.h>
-#else
-#include <linux/swab.h>
-#endif
 
 #ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
 #define DRBD_RELEASE_RETURN void

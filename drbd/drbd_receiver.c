@@ -1306,13 +1306,8 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 
 #ifdef QUEUE_FLAG_DISCARD
 	/* Zero-sector (unknown) and one-sector granularities are the same.  */
-#ifdef COMPAT_QUEUE_LIMITS_HAS_DISCARD_GRANULARITY
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
-#else
-	granularity = 1;
-	alignment = 0;
-#endif
 
 	max_discard_sectors = min(q->limits.max_discard_sectors, (1U << 22));
 	max_discard_sectors -= max_discard_sectors % granularity;
