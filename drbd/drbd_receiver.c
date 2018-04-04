@@ -1396,25 +1396,24 @@ static void drbd_issue_peer_wsame(struct drbd_device *device,
 #endif
 }
 
-static void __conn_wait_ee_empty(struct drbd_connection *connection, struct list_head *head)
+static bool conn_wait_ee_cond(struct drbd_connection *connection, struct list_head *head)
 {
-	DEFINE_WAIT(wait);
+	struct drbd_resource *resource = connection->resource;
+	bool done;
 
-	while (!list_empty(head)) {
-		prepare_to_wait(&connection->ee_wait, &wait, TASK_UNINTERRUPTIBLE);
-		spin_unlock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
+	done = list_empty(head);
+	spin_unlock_irq(&resource->req_lock);
+
+	if (!done)
 		drbd_unplug_all_devices(connection);
-		schedule();
-		finish_wait(&connection->ee_wait, &wait);
-		spin_lock_irq(&connection->resource->req_lock);
-	}
+
+	return done;
 }
 
 static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_head *head)
 {
-	spin_lock_irq(&connection->resource->req_lock);
-	__conn_wait_ee_empty(connection, head);
-	spin_unlock_irq(&connection->resource->req_lock);
+	wait_event(connection->ee_wait, conn_wait_ee_cond(connection, head));
 }
 
 /**
@@ -7379,10 +7378,8 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	/* verify or resync related peer requests are read_ee or sync_ee,
 	 * drain them first */
 
-	spin_lock_irq(&connection->resource->req_lock);
-	__conn_wait_ee_empty(connection, &connection->read_ee);
-	__conn_wait_ee_empty(connection, &connection->sync_ee);
-	spin_unlock_irq(&connection->resource->req_lock);
+	conn_wait_ee_empty(connection, &connection->read_ee);
+	conn_wait_ee_empty(connection, &connection->sync_ee);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
