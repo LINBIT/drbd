@@ -91,20 +91,20 @@ static void sanitize_state(struct drbd_resource *resource);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 
-static bool only_diskless_peers(struct drbd_device *device)
+static bool only_diskless_peers(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
-		enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+		enum drbd_disk_state peer_disk_state = peer_device->disk_state[which];
 
 		if (peer_disk_state >= D_INCONSISTENT && peer_disk_state != D_UNKNOWN)
 			return false;
 	}
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->disk_state[NOW] != D_DISKLESS ||
-		    peer_device->connection->peer_role[NOW] != R_PRIMARY)
+		if (peer_device->disk_state[which] != D_DISKLESS ||
+		    peer_device->connection->peer_role[which] != R_PRIMARY)
 			continue;
 
 		if (peer_device->current_uuid != device->ldev->md.current_uuid) {
@@ -123,12 +123,12 @@ static bool only_diskless_peers(struct drbd_device *device)
  * When fencing is enabled, it may only transition from D_CONSISTENT to D_UP_TO_DATE
  * when ether all peers are connected, or outdated.
  */
-static bool may_be_up_to_date(struct drbd_device *device) __must_hold(local)
+static bool may_be_up_to_date(struct drbd_device *device, enum which_state which) __must_hold(local)
 {
 	bool all_peers_outdated = true;
 	int node_id;
 
-	if (only_diskless_peers(device)) /* and one primary peer */
+	if (only_diskless_peers(device, which)) /* and one primary peer */
 		return false;
 
 	rcu_read_lock();
@@ -211,7 +211,7 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(
 	else if (!drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE))
 		disk_state = D_OUTDATED;
 	else
-		disk_state = may_be_up_to_date(device) ? D_UP_TO_DATE : D_CONSISTENT;
+		disk_state = may_be_up_to_date(device, NOW) ? D_UP_TO_DATE : D_CONSISTENT;
 
 	return disk_state;
 }
@@ -1969,7 +1969,7 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			/* clause intentional here, the D_CONSISTENT form above might trigger this */
 			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED &&
-			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device))
+			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device, NEW))
 				disk_state[NEW] = D_UP_TO_DATE;
 
 			/* Follow a neighbout that goes from D_CONSISTENT TO D_UP_TO_DATE */
@@ -3405,7 +3405,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT)
+		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
+		    may_be_up_to_date(device, NOW))
 			try_become_up_to_date = true;
 
 		drbd_md_sync_if_dirty(device);
