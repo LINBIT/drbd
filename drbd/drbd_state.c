@@ -91,6 +91,32 @@ static void sanitize_state(struct drbd_resource *resource);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 
+static bool only_diskless_peers(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device) {
+		enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+
+		if (peer_disk_state >= D_INCONSISTENT && peer_disk_state != D_UNKNOWN)
+			return false;
+	}
+
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->disk_state[NOW] != D_DISKLESS ||
+		    peer_device->connection->peer_role[NOW] != R_PRIMARY)
+			continue;
+
+		if (peer_device->current_uuid != device->ldev->md.current_uuid) {
+			/* Limit disk state get to D_CONSISTENT at max.
+			   That has the effect that the diskless peer can
+			   not read/write from/to this node. */
+			return true;
+		}
+	}
+	return false;
+}
+
 /**
  * may_be_up_to_date()  -  check if transition from D_CONSISTENT to D_UP_TO_DATE is allowed
  *
@@ -101,6 +127,9 @@ static bool may_be_up_to_date(struct drbd_device *device) __must_hold(local)
 {
 	bool all_peers_outdated = true;
 	int node_id;
+
+	if (only_diskless_peers(device)) /* and one primary peer */
+		return false;
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
