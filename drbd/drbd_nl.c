@@ -139,6 +139,35 @@ static int drbd_adm_finish(struct drbd_config_context *, struct genl_info *, int
 
 extern struct genl_ops drbd_genl_ops[];
 
+__printf(2, 3)
+static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
+{
+	va_list args;
+	struct nlattr *nla, *txt;
+	int err = -EMSGSIZE;
+	int len;
+
+	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	if (!nla)
+		return err;
+
+	txt = nla_reserve(skb, T_info_text, 256);
+	if (!txt) {
+		nla_nest_cancel(skb, nla);
+		return err;
+	}
+	va_start(args, fmt);
+	len = vscnprintf(nla_data(txt), 256, fmt, args);
+	va_end(args);
+
+	/* maybe: retry with larger reserve, if truncated */
+	txt->nla_len = nla_attr_size(len+1);
+	nlmsg_trim(skb, (char*)txt + NLA_ALIGN(txt->nla_len));
+	nla_nest_end(skb, nla);
+
+	return 0;
+}
+
 #ifdef COMPAT_HAVE_SECURITY_NETLINK_RECV
 #define drbd_security_netlink_recv(skb, cap) \
 	security_netlink_recv(skb, cap)
@@ -2696,11 +2725,16 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	unsigned long long nsz = drbd_new_dev_size(device, 0, device->ldev->disk_conf->disk_size, 0);
 	unsigned long long eff = device->ldev->md.effective_size;
 	if (drbd_md_test_flag(device->ldev, MDF_CONSISTENT) && nsz < eff) {
-		drbd_warn(device,
-			"refusing to truncate a consistent device (%llu < %llu)\n",
-			nsz, eff);
-		retcode = ERR_DISK_TOO_SMALL;
-		goto force_diskless_dec;
+		if (nsz == device->ldev->disk_conf->disk_size) {
+			drbd_warn(device, "truncating a consistent device during attach (%llu < %llu)\n", nsz, eff);
+		} else {
+			drbd_warn(device, "refusing to truncate a consistent device (%llu < %llu)\n", nsz, eff);
+			drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				"To-be-attached device has last effective > current size, and is consistent\n"
+				"(%llu > %llu sectors). Refusing to attach.", eff, nsz);
+			retcode = ERR_IMPLICIT_SHRINK;
+			goto force_diskless_dec;
+		}
 	}
 	}
 
