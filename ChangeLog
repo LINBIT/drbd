@@ -2,22 +2,41 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
-in progress
+9.0.13-0rc1 (api:genl2/proto:86-113/transport:14)
 --------
+ * abort a resync if a resync source becomes weakly and the sync target
+   is a neighbor of the primary; the lack of doing so was a possible
+   source of data corruption
+ * fix UUID handling with multiple diskless nodes; If the primary role
+   is moved between them, and no write happens before the the storage
+   nodes are disconnect; before this fix the storage nodes would outdate
+   themselves upon reconnect
+ * When a data-set gets into contact (attach or connect) with an all
+   diskless cluster with a primary and the exposed UUID does not match
+   the arriving data-set, make sure to either set it to "Consistent"
+   or to reject the attach
  * correctly handle when a node that was marked as intentional diskless
    should get a disk; allocate bitmap slots when the --bitmap=no flag
    gets removed; reject peers to attach if they are marked with --bitmap=no
+ * fix outdating of weakly connected nodes; It was broken when an already
+   primary node joins the cluster at the other end
+ * made returning from Ahead to SyncSource more reliable; the old code
+   may have missed the event if the write to the local backend was still
+   pending when the barrier-ack comes in
+ * fix a hard to trigger deadlock in the receiver; it triggered sometimes
+   on the Secondary if a resync was going on and writes on the primary
+   happen to the same area while the connection is interrupted; it caused
+   the device to be stuck in "NetworkFailure" state
+ * fix online resize in the presence of two or more diskless nodes
+ * fix online add of volumes to diskless nodes when it already has
+   established connections
  * Set the SO_KEEPALIVE socket option on data sockets. Can be important
    if long lived DRBD connections go through a firewall with connection
    tracking
- * fix outdating of weakly connected nodes; It was broken when an already
-   primary node joins the cluster at the other end
- * abort a resync if a resync source becomes weakly and the sync target
-   is a neighbour of the primary; the lack of doing so was a possible
-   source of data corruption
- * Made returning from Ahead to SyncSource more reliable; the old code
-   may have missed the event if the write to the local backend was still
-   pending when the barrier-ack comes in
+ * automatically solve a specific split brain when quorum is enabled
+   and a node does no IO between loosing connections to other nodes
+ * Compat: Drop support for kernels older 2.6.32 and distros older than
+   RHEL6; Added support for kernels up to v4.15.x
 
 9.0.12-1 (api:genl2/proto:86-112/transport:14)
 --------
