@@ -2112,6 +2112,30 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 #endif
 }
 
+static int disk_opts_check_al_size(struct drbd_device *device, struct disk_conf *dc)
+{
+	int err = -EBUSY;
+
+	if (device->act_log &&
+	    device->act_log->nr_elements == dc->al_extents)
+		return 0;
+
+	drbd_suspend_io(device, READ_AND_WRITE);
+	/* If IO completion is currently blocked, we would likely wait
+	 * "forever" for the activity log to become unused. So we don't. */
+	if (atomic_read(&device->ap_bio_cnt[WRITE]) || atomic_read(&device->ap_bio_cnt[READ]))
+		goto out;
+
+	wait_event(device->al_wait, drbd_al_try_lock(device));
+	drbd_al_shrink(device);
+	err = drbd_check_al_size(device, dc);
+	lc_unlock(device->act_log);
+	wake_up(&device->al_wait);
+out:
+	drbd_resume_io(device);
+	return err;
+}
+
 int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -2158,15 +2182,12 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	sanitize_disk_conf(device, new_disk_conf, device->ldev);
 
-	drbd_suspend_io(device, READ_AND_WRITE);
-	wait_event(device->al_wait, drbd_al_try_lock(device));
-	drbd_al_shrink(device);
-	err = drbd_check_al_size(device, new_disk_conf);
-	lc_unlock(device->act_log);
-	wake_up(&device->al_wait);
-	drbd_resume_io(device);
-
+	err = disk_opts_check_al_size(device, new_disk_conf);
 	if (err) {
+		/* Could be just "busy". Ignore?
+		 * Introduce dedicated error code? */
+		drbd_msg_put_info(adm_ctx.reply_skb,
+			"Try again without changing current al-extents setting");
 		retcode = ERR_NOMEM;
 		goto fail_unlock;
 	}
