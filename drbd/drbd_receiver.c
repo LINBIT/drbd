@@ -4600,11 +4600,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 		new_size = drbd_new_dev_size(device, p_csize, p_usize, ddsf);
 
-		/* Never shrink a device with usable data during connect.
-		   But allow online shrinking if we are connected. */
+		/* Never shrink a device with usable data during connect,
+		 * or "attach" on the peer.
+		 * But allow online shrinking if we are connected. */
 		if (new_size < cur_size &&
 		    device->disk_state[NOW] >= D_OUTDATED &&
-		    peer_device->repl_state[NOW] < L_ESTABLISHED) {
+		    (peer_device->repl_state[NOW] < L_ESTABLISHED || peer_device->disk_state[NOW] == D_DISKLESS)) {
 			drbd_err(peer_device, "The peer's disk size is too small! (%llu < %llu sectors)\n",
 					(unsigned long long)new_size, (unsigned long long)cur_size);
 			goto disconnect;
@@ -4635,8 +4636,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			synchronize_rcu();
 			kfree(old_disk_conf);
 
-			drbd_info(peer_device, "Peer sets u_size to %llu sectors\n",
-				 (unsigned long long)p_usize);
+			drbd_info(peer_device, "Peer sets u_size to %llu sectors (old: %llu)\n",
+				 (unsigned long long)p_usize, (unsigned long long)my_usize);
 			/* Do not set should_send_sizes here. That might cause packet storms */
 		}
 	}
