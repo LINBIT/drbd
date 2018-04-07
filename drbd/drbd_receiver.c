@@ -48,7 +48,7 @@
 #include "drbd_vli.h"
 #include <linux/scatterlist.h>
 
-#define PRO_FEATURES (DRBD_FF_TRIM|DRBD_FF_THIN_RESYNC|DRBD_FF_WSAME)
+#define PRO_FEATURES (DRBD_FF_TRIM|DRBD_FF_THIN_RESYNC|DRBD_FF_WSAME|DRBD_FF_WZEROES)
 
 struct flush_work {
 	struct drbd_work w;
@@ -1760,7 +1760,7 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection);
 /*
  * We *may* ignore the discard-zeroes-data setting, if so configured.
  *
- * Assumption is that it "discard_zeroes_data=0" is only because the backend
+ * Assumption is that this "discard_zeroes_data=0" is only because the backend
  * may ignore partial unaligned discards.
  *
  * LVM/DM thin as of at least
@@ -1773,17 +1773,29 @@ void conn_wait_active_ee_empty(struct drbd_connection *connection);
  * we zero-out the initial (and/or) trailing unaligned partial chunks,
  * but discard all the aligned full chunks.
  *
- * At least for LVM/DM thin, the result is effectively "discard_zeroes_data=1".
+ * At least for LVM/DM thin, with skip_block_zeroing=false,
+ * the result is effectively "discard_zeroes_data=1".
  */
-#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
+#if 0 && defined(COMPAT_HAVE_REQ_OP_WRITE_ZEROES)
+int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, int flags)
 {
 	/* Trust it to UNMAP if possible, and to zero-out the rest */
+	/* :-( that trust was based on a misunderstanding, though:
+	 * drivers have to "announce" q->limits.max_write_zeroes_sectors, or it
+	 * will directly go to fallback mode, submitting normal writes, and
+	 * never even try to UNMAP.
+	 *
+	 * And dm-thin does not do this (yet), mostly because in general it has
+	 * to assume that "skip_block_zeroing" is set.  See also:
+	 * https://www.mail-archive.com/dm-devel%40redhat.com/msg07965.html
+	 * https://www.redhat.com/archives/dm-devel/2018-January/msg00271.html
+	 */
 	struct block_device *bdev = device->ldev->backing_bdev;
 	return blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0) != 0;
 }
 #else
-int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, bool discard)
+/* flags: EE_TRIM|EE_ZEROOUT */
+int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, int flags)
 {
 	struct block_device *bdev = device->ldev->backing_bdev;
 #ifdef QUEUE_FLAG_DISCARD
@@ -1794,7 +1806,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 #endif
 	int err = 0;
 
-	if (!discard)
+	if ((flags & EE_ZEROOUT) || !(flags & EE_TRIM))
 		goto zero_out;
 
 #ifdef QUEUE_FLAG_DISCARD
@@ -1824,20 +1836,35 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		tmp = start + granularity - sector_div(tmp, granularity);
 
 		nr = tmp - start;
-		err |= blkdev_issue_zeroout(bdev, start, nr, GFP_NOIO, BLKDEV_ZERO_NOUNMAP);
+		/* don't flag BLKDEV_ZERO_NOUNMAP, we don't know how many
+		 * layers are below us, some may have smaller granularity */
+		err |= blkdev_issue_zeroout(bdev, start, nr, GFP_NOIO, 0);
 		nr_sectors -= nr;
 		start = tmp;
 	}
-	while (nr_sectors >= granularity) {
-		nr = min_t(sector_t, nr_sectors, max_discard_sectors);
-		err |= blkdev_issue_discard(bdev, start, nr, GFP_NOIO, 0);
-		nr_sectors -= nr;
-		start += nr;
+	while (nr_sectors >= max_discard_sectors) {
+		err |= blkdev_issue_discard(bdev, start, max_discard_sectors, GFP_NOIO, 0);
+		nr_sectors -= max_discard_sectors;
+		start += max_discard_sectors;
+	}
+	if (nr_sectors) {
+		/* max_discard_sectors is unsigned int (and a multiple of
+		 * granularity, we made sure of that above already);
+		 * nr is < max_discard_sectors;
+		 * I don't need sector_div here, even though nr is sector_t */
+		nr = nr_sectors;
+		nr -= (unsigned int)nr % granularity;
+		if (nr) {
+			err |= blkdev_issue_discard(bdev, start, nr, GFP_NOIO, 0);
+			nr_sectors -= nr;
+			start += nr;
+		}
 	}
 #endif
  zero_out:
 	if (nr_sectors) {
-		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, BLKDEV_ZERO_NOUNMAP);
+		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO,
+				(flags & EE_TRIM) ? 0 : BLKDEV_ZERO_NOUNMAP);
 	}
 	return err != 0;
 }
@@ -1866,17 +1893,17 @@ static bool can_do_reliable_discards(struct drbd_device *device)
 #endif
 }
 
-static void drbd_issue_peer_discard(struct drbd_device *device, struct drbd_peer_request *peer_req)
+static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	/* If the backend cannot discard, or does not guarantee
 	 * read-back zeroes in discarded ranges, we fall back to
 	 * zero-out.  Unless configuration specifically requested
 	 * otherwise. */
 	if (!can_do_reliable_discards(device))
-		peer_req->flags |= EE_IS_TRIM_USE_ZEROOUT;
+		peer_req->flags |= EE_ZEROOUT;
 
 	if (drbd_issue_discard_or_zero_out(device, peer_req->i.sector,
-	    peer_req->i.size >> 9, !(peer_req->flags & EE_IS_TRIM_USE_ZEROOUT)))
+	    peer_req->i.size >> 9, peer_req->flags & (EE_ZEROOUT|EE_TRIM)))
 		peer_req->flags |= EE_WAS_ERROR;
 	drbd_endio_write_sec_final(peer_req);
 }
@@ -1940,10 +1967,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	 * Correctness first, performance later.  Next step is to code an
 	 * asynchronous variant of the same.
 	 */
-	if (peer_req->flags & (EE_IS_TRIM|EE_WRITE_SAME)) {
-		/* wait for all pending IO completions, before we start
-		 * zeroing things out. */
-		conn_wait_active_ee_empty(peer_req->peer_device->connection);
+	if (peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) {
 		/* add it to the active list now,
 		 * so we can find it to present it in debugfs */
 		peer_req->submit_jif = jiffies;
@@ -1957,8 +1981,8 @@ int drbd_submit_peer_request(struct drbd_device *device,
 			spin_unlock_irq(&device->resource->req_lock);
 		}
 
-		if (peer_req->flags & EE_IS_TRIM)
-			drbd_issue_peer_discard(device, peer_req);
+		if (peer_req->flags & (EE_TRIM|EE_ZEROOUT))
+			drbd_issue_peer_discard_or_zero_out(device, peer_req);
 		else /* EE_WRITE_SAME */
 			drbd_issue_peer_wsame(device, peer_req);
 		return 0;
@@ -2278,6 +2302,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	unsigned long *data;
 	struct p_trim *trim = (pi->cmd == P_TRIM) ? pi->data : NULL;
+	struct p_trim *zeroes = (pi->cmd == P_ZEROES) ? pi->data : NULL;
 	struct p_trim *wsame = (pi->cmd == P_WSAME) ? pi->data : NULL;
 
 	digest_size = 0;
@@ -2299,6 +2324,10 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 		if (!expect(data_size == 0))
 			return NULL;
 		ds = be32_to_cpu(trim->size);
+	} else if (zeroes) {
+		if (!expect(data_size == 0))
+			return NULL;
+		ds = be32_to_cpu(zeroes->size);
 	} else if (wsame) {
 		if (data_size != queue_logical_block_size(device->rq_queue)) {
 			drbd_err(peer_device, "data size (%u) != drbd logical block size (%u)\n",
@@ -2315,7 +2344,7 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 
 	if (!expect(IS_ALIGNED(ds, 512)))
 		return NULL;
-	if (trim || wsame) {
+	if (trim || wsame || zeroes) {
 		if (!expect(ds <= (DRBD_MAX_BBIO_SECTORS << 9)))
 			return NULL;
 	} else if (!expect(ds <= DRBD_MAX_BIO_SIZE))
@@ -2340,7 +2369,11 @@ read_in_block(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
 
 	peer_req->flags |= EE_WRITE;
 	if (trim) {
-		peer_req->flags |= EE_IS_TRIM;
+		peer_req->flags |= EE_TRIM;
+		return peer_req;
+	}
+	if (zeroes) {
+		peer_req->flags |= EE_ZEROOUT;
 		return peer_req;
 	}
 	if (wsame)
@@ -2851,8 +2884,10 @@ static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection,
 
 static unsigned long wire_flags_to_bio_op(u32 dpf)
 {
-	if (dpf & DP_DISCARD)
+	if (dpf & DP_ZEROES)
 		return REQ_OP_WRITE_ZEROES;
+	if (dpf & DP_DISCARD)
+		return REQ_OP_DISCARD;
 	if (dpf & DP_WSAME)
 		return REQ_OP_WRITE_SAME;
 	else
@@ -3045,8 +3080,15 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	op_flags = wire_flags_to_bio_flags(connection, dp_flags);
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
-		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
+		D_ASSERT(peer_device, op == REQ_OP_DISCARD);
 		D_ASSERT(peer_device, peer_req->pages == NULL);
+	} else if (pi->cmd == P_ZEROES) {
+		D_ASSERT(peer_device, peer_req->i.size > 0);
+		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
+		D_ASSERT(peer_device, peer_req->pages != NULL);
+		/* Do (not) pass down BLKDEV_ZERO_NOUNMAP? */
+		if (dp_flags & DP_DISCARD)
+			peer_req->flags |= EE_TRIM;
 	} else if (pi->cmd == P_WSAME) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, op == REQ_OP_WRITE_SAME);
@@ -3154,7 +3196,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * we wait for all pending requests, respectively wait for
 	 * active_ee to become empty in drbd_submit_peer_request();
 	 * better not add ourselves here. */
-	if ((peer_req->flags & (EE_IS_TRIM|EE_WRITE_SAME)) == 0)
+	if ((peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) == 0)
 		list_add_tail(&peer_req->w.list, &device->active_ee);
 	spin_unlock_irq(&device->resource->req_lock);
 
@@ -5464,7 +5506,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 
 		peer_req->w.cb = e_end_resync_block;
 		peer_req->submit_jif = jiffies;
-		peer_req->flags |= EE_IS_TRIM;
+		peer_req->flags |= EE_TRIM;
 
 		spin_lock_irq(&device->resource->req_lock);
 		list_add_tail(&peer_req->w.list, &device->sync_ee);
@@ -5823,6 +5865,7 @@ static int drbd_do_features(struct drbd_connection *connection)
 		  connection->agreed_features & DRBD_FF_TRIM ? " TRIM" : "",
 		  connection->agreed_features & DRBD_FF_THIN_RESYNC ? " THIN_RESYNC" : "",
 		  connection->agreed_features & DRBD_FF_WSAME ? " WRITE_SAME" :
+		  connection->agreed_features & DRBD_FF_WZEROES ? " WRITE_ZEROES" :
 		  connection->agreed_features ? "" : " none");
 
 	return 1;

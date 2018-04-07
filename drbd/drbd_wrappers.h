@@ -979,6 +979,12 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define DRBD_REQ_DISCARD	0
 #endif
 
+#ifdef REQ_NOUNMAP
+#define DRBD_REQ_NOUNMAP REQ_NOUNMAP
+#else
+#define DRBD_REQ_NOUNMAP	0
+#endif
+
 /* this results in:
 	bi_opf  -> dp_flags
 
@@ -1097,7 +1103,7 @@ enum req_op {
 static inline void bio_set_op_attrs(struct bio *bio, const int op, const long flags)
 {
 	/* If we explicitly issue discards or write_same, we use
-	 * blkdev_isse_discard() and blkdev_issue_write_same() helpers.
+	 * blkdev_issue_discard() and blkdev_issue_write_same() helpers.
 	 * If we implicitly submit them, we just pass on a cloned bio to
 	 * generic_make_request().  We expect to use bio_set_op_attrs() with
 	 * REQ_OP_READ or REQ_OP_WRITE only. */
@@ -1721,8 +1727,10 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP, BLKDEV_IFL_WAIT)
 #elif  defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD)
 /* no BLKDEV_ZERO_NOUNMAP as last parameter, but a bool discard instead */
+/* still need to define BLKDEV_ZERO_NOUNMAP, to compare against 0 */
+#define BLKDEV_ZERO_NOUNMAP 1
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags /* = NOUNMAP */) \
-	blkdev_issue_zeroout(BDEV, SS, NS, GFP, false /* bool discard */)
+	blkdev_issue_zeroout(BDEV, SS, NS, GFP, (flags) == 0 /* bool discard */)
 #else /* !defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD) */
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
