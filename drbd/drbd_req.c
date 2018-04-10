@@ -1250,11 +1250,18 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	struct net_conf *nc;
 	bool congested = false;
 	enum drbd_on_congestion on_congestion;
+	u32 cong_fill, cong_extents;
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
-	on_congestion = nc ? nc->on_congestion : OC_BLOCK;
+	if (nc) {
+		on_congestion = nc->on_congestion;
+		cong_fill = nc->cong_fill;
+		cong_extents = nc->cong_extents;
+	} else {
+		on_congestion = OC_BLOCK;
+	}
 	rcu_read_unlock();
 	if (on_congestion == OC_BLOCK ||
 	    connection->agreed_pro_version < 96)
@@ -1270,14 +1277,14 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (!get_ldev_if_state(device, D_UP_TO_DATE))
 		return;
 
-	if (nc->cong_fill &&
+	if (cong_fill &&
 	    atomic_read(&connection->ap_in_flight) +
-	    atomic_read(&connection->rs_in_flight) >= nc->cong_fill) {
+	    atomic_read(&connection->rs_in_flight) >= cong_fill) {
 		drbd_info(device, "Congestion-fill threshold reached\n");
 		congested = true;
 	}
 
-	if (device->act_log->used >= nc->cong_extents) {
+	if (device->act_log->used >= cong_extents) {
 		drbd_info(device, "Congestion-extents threshold reached\n");
 		congested = true;
 	}
