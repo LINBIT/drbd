@@ -2015,6 +2015,8 @@ void do_submit(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, submit.worker);
 	struct waiting_for_act_log wfa;
+	bool made_progress;
+
 	wfa_init(&wfa);
 
 	grab_new_incoming_requests(device, &wfa, false);
@@ -2059,8 +2061,8 @@ void do_submit(struct work_struct *ws)
 			prepare_to_wait(&device->al_wait, &wait, TASK_UNINTERRUPTIBLE);
 
 			wfa_splice_init(&wfa, later, incoming);
-			prepare_al_transaction_nonblock(device, &wfa);
-			if (!wfa_lists_empty(&wfa, pending))
+			made_progress = prepare_al_transaction_nonblock(device, &wfa);
+			if (made_progress)
 				break;
 
 			drbd_kick_lo(device);
@@ -2104,8 +2106,6 @@ void do_submit(struct work_struct *ws)
 		 */
 
 		while (wfa_lists_empty(&wfa, incoming)) {
-			bool made_progress;
-
 			/* It is ok to look outside the lock,
 			 * it's only an optimization anyways */
 			if (list_empty(&device->submit.writes) &&
