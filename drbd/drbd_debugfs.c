@@ -264,9 +264,8 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
 	seq_print_rq_state_bit(m, f & EE_MAY_SET_IN_SYNC, &sep, "set-in-sync");
 	seq_print_rq_state_bit(m, (f & (EE_IN_ACTLOG|EE_WRITE)) == EE_WRITE, &sep, "blocked-on-al");
-
-	if (f & EE_IS_TRIM)
-		__seq_print_rq_state_bit(m, f & EE_IS_TRIM_USE_ZEROOUT, &sep, "zero-out", "trim");
+	seq_print_rq_state_bit(m, f & EE_TRIM, &sep, "trim");
+	seq_print_rq_state_bit(m, f & EE_ZEROOUT, &sep, "zero-out");
 	seq_print_rq_state_bit(m, f & EE_WRITE_SAME, &sep, "write-same");
 	seq_putc(m, '\n');
 }

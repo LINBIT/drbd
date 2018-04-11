@@ -455,10 +455,11 @@ enum {
 	__EE_IS_BARRIER,
 
 	/* is this a TRIM aka REQ_DISCARD? */
-	__EE_IS_TRIM,
-	/* our lower level cannot handle trim,
+	__EE_TRIM,
+	/* explicit zero-out requested, or
+	 * our lower level cannot handle trim,
 	 * and we want to fall back to zeroout instead */
-	__EE_IS_TRIM_USE_ZEROOUT,
+	__EE_ZEROOUT,
 
 	/* In case a barrier failed,
 	 * we need to resubmit without the barrier flag. */
@@ -503,8 +504,8 @@ enum {
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_IS_BARRIER          (1<<__EE_IS_BARRIER)
-#define EE_IS_TRIM             (1<<__EE_IS_TRIM)
-#define EE_IS_TRIM_USE_ZEROOUT (1<<__EE_IS_TRIM_USE_ZEROOUT)
+#define EE_TRIM                (1<<__EE_TRIM)
+#define EE_ZEROOUT             (1<<__EE_ZEROOUT)
 #define EE_RESUBMITTED         (1<<__EE_RESUBMITTED)
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
@@ -1944,7 +1945,7 @@ struct queued_twopc {
 };
 
 extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
-		sector_t start, unsigned int nr_sectors, bool discard);
+		sector_t start, unsigned int nr_sectors, int flags);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
 extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,

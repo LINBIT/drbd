@@ -2219,7 +2219,11 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 			(bio->bi_opf & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
 			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
-			(bio_op(bio) == REQ_OP_WRITE_ZEROES ? DP_DISCARD : 0);
+			(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
+			  ((connection->agreed_features & DRBD_FF_WZEROES) ?
+			   (DP_ZEROES |(!(bio->bi_opf & DRBD_REQ_NOUNMAP) ? DP_DISCARD : 0))
+			   : DP_DISCARD)
+			: 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
 	return bio->bi_opf & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
@@ -2281,7 +2285,8 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	p->dp_flags = cpu_to_be32(dp_flags);
 
 	if (trim) {
-		err = __send_command(peer_device->connection, device->vnr, P_TRIM, DATA_STREAM);
+		err = __send_command(peer_device->connection, device->vnr,
+				(dp_flags & DP_ZEROES) ? P_ZEROES : P_TRIM, DATA_STREAM);
 		goto out;
 	}
 

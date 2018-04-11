@@ -119,7 +119,7 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __rele
 
 static int is_failed_barrier(int ee_flags)
 {
-	return (ee_flags & (EE_IS_BARRIER|EE_WAS_ERROR|EE_RESUBMITTED|EE_IS_TRIM))
+	return (ee_flags & (EE_IS_BARRIER|EE_WAS_ERROR|EE_RESUBMITTED|EE_TRIM|EE_ZEROOUT))
 		== (EE_IS_BARRIER|EE_WAS_ERROR);
 }
 
@@ -184,7 +184,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		do_wake = list_empty(&connection->active_ee);
 
 	/* FIXME do we want to detach for failed REQ_DISCARD?
-	 * ((peer_req->flags & (EE_WAS_ERROR|EE_IS_TRIM)) == EE_WAS_ERROR) */
+	 * ((peer_req->flags & (EE_WAS_ERROR|EE_TRIM)) == EE_WAS_ERROR) */
 	if (peer_req->flags & EE_WAS_ERROR)
 		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
 
