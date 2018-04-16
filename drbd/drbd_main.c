@@ -29,6 +29,7 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/vermagic.h>
 #include <linux/jiffies.h>
 #include <linux/drbd.h>
 #include <linux/uaccess.h>
@@ -3098,9 +3099,37 @@ void drbd_delete_device(struct drbd_device *device)
 	kref_put(&device->kref, drbd_destroy_device);
 }
 
+static int __init double_check_for_kabi_breakage(void)
+{
+#ifdef RHEL_RELEASE_CODE
+	/* RHEL 7.5 chose to change sizeof(struct nla_policy), and to
+	 * lie about that, which makes the module version magic believe
+	 * it was compatible, while it is not.  To avoid "surprises" in
+	 * nla_parse() later, we ask the running kernel about its
+	 * opinion about the nla_policy_len() of this dummy nla_policy,
+	 * and if it does not agree, we fail on module load already. */
+	static struct nla_policy dummy[] = {
+		[0] = { .type = NLA_UNSPEC, .len =   8, },
+		[1] = { .type = NLA_UNSPEC, .len =  80, },
+		[2] = { .type = NLA_UNSPEC, .len = 800, },
+		[9] = { .type = NLA_UNSPEC, },
+	};
+	int len = nla_policy_len(dummy, 3);
+	if (len != 900) {
+		pr_notice("kernel disagrees about the layout of struct nla_policy (%d)\n", len);
+		pr_err("kABI breakage detected! module compiled for: " UTS_RELEASE "\n");
+		return -EINVAL;
+	}
+#endif
+	return 0;
+}
+
 static int __init drbd_init(void)
 {
 	int err;
+
+	if (double_check_for_kabi_breakage())
+		return -EINVAL;
 
 	if (drbd_minor_count < DRBD_MINOR_COUNT_MIN || drbd_minor_count > DRBD_MINOR_COUNT_MAX) {
 		pr_err("invalid minor_count (%d)\n", drbd_minor_count);
