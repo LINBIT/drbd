@@ -3082,6 +3082,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, op == REQ_OP_DISCARD);
 		D_ASSERT(peer_device, peer_req->pages == NULL);
+		/* need to play safe: an older DRBD sender
+		 * may mean zero-out while sending P_TRIM. */
+		if (0 == (connection->agreed_features & DRBD_FF_WZEROES))
+			peer_req->flags |= EE_ZEROOUT;
 	} else if (pi->cmd == P_ZEROES) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
