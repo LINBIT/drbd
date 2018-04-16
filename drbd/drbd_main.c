@@ -3101,7 +3101,7 @@ void drbd_delete_device(struct drbd_device *device)
 
 static int __init double_check_for_kabi_breakage(void)
 {
-#ifdef RHEL_RELEASE_CODE
+#if defined(RHEL_RELEASE_CODE) && ((RHEL_RELEASE_CODE & 0xff00) == 0x700)
 	/* RHEL 7.5 chose to change sizeof(struct nla_policy), and to
 	 * lie about that, which makes the module version magic believe
 	 * it was compatible, while it is not.  To avoid "surprises" in
