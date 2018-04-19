@@ -928,6 +928,29 @@ restart:
 	rcu_read_unlock();
 }
 
+bool wait_up_to_date(struct drbd_resource *resource)
+{
+	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (device->disk_state[NOW] == D_CONSISTENT)
+			break;
+	}
+	rcu_read_unlock();
+
+	if (!device)
+		return false;
+
+	timeout = wait_event_interruptible_timeout(resource->state_wait,
+						   device->disk_state[NOW] != D_CONSISTENT,
+						   timeout);
+	return device->disk_state[NOW] == D_UP_TO_DATE;
+}
+
+
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, struct sk_buff *reply_skb)
 {
@@ -1015,6 +1038,13 @@ retry:
 			with_force = true;
 			forced = 1;
 			continue;
+		}
+
+		if (rv == SS_NO_UP_TO_DATE_DISK) {
+			bool a_disk_became_up_to_date = wait_up_to_date(resource);
+
+			if (a_disk_became_up_to_date)
+				continue;
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && !with_force) {
