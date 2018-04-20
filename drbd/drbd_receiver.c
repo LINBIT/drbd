@@ -3963,7 +3963,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			else if (!device->have_quorum[NOW] && peer_state.quorum)
 				hg = -2;
 		}
-		if (hg > 2 && hg < -2) {
+		if (abs(hg) > 2) {
 			switch (pcount) {
 			case 0:
 				hg = drbd_asb_recover_0p(peer_device);
