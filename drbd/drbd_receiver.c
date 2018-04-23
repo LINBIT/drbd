@@ -1786,7 +1786,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 		struct drbd_peer_request_details *d, struct packet_info *pi)
 {
 	struct p_trim *p = pi->data;
-	bool is_trim_or_wsame = pi->cmd == P_TRIM || pi->cmd == P_WSAME;
+	bool is_trim_or_wsame = pi->cmd == P_TRIM || pi->cmd == P_WSAME || pi->cmd == P_ZEROES;
 	unsigned int digest_size =
 		pi->cmd != P_TRIM && connection->peer_integrity_tfm ?
 		crypto_ahash_digestsize(connection->peer_integrity_tfm) : 0;
@@ -7336,6 +7336,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_TRIM]	    = { 0, sizeof(struct p_trim), receive_Data },
 	[P_RS_DEALLOCATED]  = { 0, sizeof(struct p_block_desc), receive_rs_deallocated },
 	[P_WSAME]	    = { 1, sizeof(struct p_wsame), receive_Data },
+	[P_ZEROES]	    = { 0, sizeof(struct p_trim), receive_Data },
 };
 
 static void drbdd(struct drbd_connection *connection)
