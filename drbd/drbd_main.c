@@ -4654,7 +4654,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 va
 {
 	struct drbd_device *device = peer_device->device;
 	u64 dagtag = peer_device->connection->last_dagtag_sector;
-	u64 got_new_bitmap_uuid = 0;
+	u64 receipients = 0;
 	bool set_current = true;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
@@ -4665,16 +4665,21 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 va
 			peer_device->current_uuid = val;
 			set_current = false;
 		}
+		if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
+			receipients |= NODE_MASK(peer_device->node_id);
+
 	}
 
 	if (set_current) {
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
-			got_new_bitmap_uuid = rotate_current_into_bitmap(device, weak_nodes, dagtag);
+			receipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);
 		__drbd_uuid_set_current(device, val);
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
-	drbd_propagate_uuids(device, got_new_bitmap_uuid);
+	if (set_current)
+		drbd_propagate_uuids(device, receipients);
 }
 
 static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local)
