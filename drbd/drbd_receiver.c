@@ -6580,7 +6580,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				new_disk_state = D_CONSISTENT;
 				/* This is a "safety net"; it can only happen if fencing and quorum
 				   are both disabled. This alone would be racy, look for
-				   "Do not trust this guy!" */
+				   "Do not trust this guy!" (see also may_return_to_up_to_date()) */
 			}
 		}
 	} else if (resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] == D_DISKLESS &&

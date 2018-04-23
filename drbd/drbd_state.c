@@ -91,30 +91,27 @@ static void sanitize_state(struct drbd_resource *resource);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 
-static bool only_diskless_peers(struct drbd_device *device, enum which_state which)
+/* We need to stay consistent if we are neighbour of a diskless primary with
+   different UUID. This function should be used if the device was D_UP_TO_DATE
+   before.
+ */
+static bool may_return_to_up_to_date(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
+	bool rv = true;
 
-	for_each_peer_device(peer_device, device) {
-		enum drbd_disk_state peer_disk_state = peer_device->disk_state[which];
-
-		if (peer_disk_state >= D_INCONSISTENT && peer_disk_state != D_UNKNOWN)
-			return false;
-	}
-
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->disk_state[which] != D_DISKLESS ||
-		    peer_device->connection->peer_role[which] != R_PRIMARY)
-			continue;
-
-		if (peer_device->current_uuid != device->ldev->md.current_uuid) {
-			/* Limit disk state get to D_CONSISTENT at max.
-			   That has the effect that the diskless peer can
-			   not read/write from/to this node. */
-			return true;
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[which] == D_DISKLESS &&
+		    peer_device->connection->peer_role[which] == R_PRIMARY &&
+		    peer_device->current_uuid != drbd_current_uuid(device)) {
+			rv = false;
+			break;
 		}
 	}
-	return false;
+	rcu_read_unlock();
+
+	return rv;
 }
 
 /**
@@ -128,7 +125,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 	bool all_peers_outdated = true;
 	int node_id;
 
-	if (only_diskless_peers(device, which)) /* and one primary peer */
+	if (!may_return_to_up_to_date(device, which))
 		return false;
 
 	rcu_read_lock();
@@ -3406,7 +3403,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
-		    may_be_up_to_date(device, NOW))
+		    may_return_to_up_to_date(device, NOW))
 			try_become_up_to_date = true;
 
 		drbd_md_sync_if_dirty(device);
@@ -4566,7 +4563,8 @@ static bool do_change_from_consistent(struct change_context *context, enum chang
 		int vnr;
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (device->disk_state[NOW] == D_CONSISTENT)
+			if (device->disk_state[NOW] == D_CONSISTENT &&
+			    may_return_to_up_to_date(device, NOW))
 				__change_disk_state(device, D_UP_TO_DATE);
 		}
 	}
