@@ -5586,8 +5586,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		return ERR_MINOR_INVALID;
 
 	spin_lock_irq(&resource->req_lock);
-	if (device->disk_state[NOW] == D_DISKLESS &&
-	    device->open_ro_cnt == 0 && device->open_rw_cnt == 0) {
+	if (device->disk_state[NOW] == D_DISKLESS) {
 		set_bit(UNREGISTERED, &device->flags);
 		ret = NO_ERROR;
 	} else {
@@ -5617,7 +5616,10 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 					 NOTIFY_DESTROY | NOTIFY_CONTINUES);
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
-	call_rcu(&device->rcu, drbd_reclaim_device);
+
+	if (device->open_ro_cnt == 0 && device->open_rw_cnt == 0 &&
+	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
+		call_rcu(&device->rcu, drbd_reclaim_device);
 
 	return ret;
 }

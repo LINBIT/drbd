@@ -2511,7 +2511,9 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 		return IOC_ABORT;
 
 	spin_lock_irq(&resource->req_lock);
-	if (!resource->remote_state_change) {
+	if (test_bit(UNREGISTERED, &device->flags))
+		r = IOC_ABORT;
+	else if (!resource->remote_state_change) {
 		r = IOC_OK;
 		if (mode & FMODE_WRITE)
 			device->open_rw_cnt++;
@@ -2619,6 +2621,11 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
+
+	if (test_bit(UNREGISTERED, &device->flags) &&
+	    device->open_rw_cnt == 0 && device->open_ro_cnt == 0 &&
+	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
+		call_rcu(&device->rcu, drbd_reclaim_device);
 
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
