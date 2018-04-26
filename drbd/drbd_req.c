@@ -623,6 +623,21 @@ static void advance_conn_req_not_net_done(struct drbd_peer_device *peer_device, 
 	connection->req_not_net_done = req;
 }
 
+/* for wsame, discard, and zero-out requests, the payload (amount of data we
+ * need to send) is much smaller than the number of storage sectors affected */
+static unsigned int req_payload_sectors(struct drbd_request *req)
+{
+	/* actually: physical_block_size,
+	 * but lets just hardcode 4k in sectors: */
+	if (unlikely(req->local_rq_state & RQ_WSAME))
+		return 8;
+	/* really only a few bytes, but let's pretend one sector */
+	if (unlikely(req->local_rq_state & (RQ_UNMAP|RQ_ZEROES)))
+		return 1;
+	/* other have all the data as payload on the wire */
+	return req->i.size >> 9;
+}
+
 /* I'd like this to be the only place that manipulates
  * req->completion_ref and req->kref. */
 static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
@@ -689,7 +704,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
 		/* potentially already completed in the ack_receiver thread */
 		if (!(old_net & RQ_NET_DONE)) {
-			atomic_add(req->i.size >> 9, &peer_device->connection->ap_in_flight);
+			atomic_add(req_payload_sectors(req), &peer_device->connection->ap_in_flight);
 			set_if_null_req_not_net_done(peer_device, req);
 		}
 		if (req->net_rq_state[idx] & RQ_NET_PENDING)
@@ -733,7 +748,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_t *ap_in_flight = &peer_device->connection->ap_in_flight;
 
 		if (old_net & RQ_NET_SENT)
-			atomic_sub(req->i.size >> 9, ap_in_flight);
+			atomic_sub(req_payload_sectors(req), ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
 			kref_put(&req->kref, drbd_req_destroy);
 		req->net_done_kt[peer_device->node_id] = ktime_get();
