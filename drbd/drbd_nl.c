@@ -1898,16 +1898,10 @@ static void decide_on_discard_support(struct drbd_device *device,
 		blk_queue_discard_granularity(q, 512);
 		q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
 		blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
-#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-		q->limits.max_write_zeroes_sectors = drbd_max_discard_sectors(device->resource);
-#endif
 	} else {
 		blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
 		blk_queue_discard_granularity(q, 0);
 		q->limits.max_discard_sectors = 0;
-#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-		q->limits.max_write_zeroes_sectors = 0;
-#endif
 	}
 }
 
@@ -1921,6 +1915,23 @@ static void fixup_discard_if_not_supported(struct request_queue *q)
 		blk_queue_max_discard_sectors(q, 0);
 		blk_queue_discard_granularity(q, 0);
 	}
+}
+
+static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
+{
+#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+	/* Fixup max_write_zeroes_sectors after blk_queue_stack_limits():
+	 * if we can handle "zeroes" efficiently on the protocol,
+	 * we want to do that, even if our backend does not announce
+	 * max_write_zeroes_sectors itself. */
+
+	/* If all peers announce WZEROES support, use it.  Otherwise, rather
+	 * send explicit zeroes than rely on some discard-zeroes-data magic. */
+	if (common_connection_features(device->resource) & DRBD_FF_WZEROES)
+		q->limits.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
+	else
+		q->limits.max_write_zeroes_sectors = 0;
+#endif
 }
 
 static void decide_on_write_same_support(struct drbd_device *device,
@@ -2024,6 +2035,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		adjust_ra_pages(q, b);
 	}
 	fixup_discard_if_not_supported(q);
+	fixup_write_zeroes(device, q);
 }
 
 void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev, struct o_qlim *o)
