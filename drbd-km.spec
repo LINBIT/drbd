@@ -18,7 +18,7 @@
 Name: drbd-km
 Summary: DRBD driver for Linux
 Version: 8.4.11
-Release: 0rc2
+Release: 1
 Source: http://oss.linbit.com/%{name}/8.4/drbd-%{version}-%{release}.tar.gz
 License: GPLv2+
 ExclusiveOS: linux
@@ -98,29 +98,26 @@ uname -r | grep BOOT ||
 
 
 %changelog
-* Tue Jan 09 2018  Roland Kammerer <rck@linbit.com> - 8.4.11-0rc2
+* Thu Apr 26 2018 Lars Ellenberg <lars@linbit.com> - 8.4.11-1
 - New upstream release.
 
-* Fri Dec 15 2017  Philipp Reisner <phil@linbit.com> - 8.4.11-0rc1
+* Thu Jun  1 2017 Philipp Reisner <phil@linbit.com> - 8.4.10-1
 - New upstream release.
 
-* Thu Jun  1 2017  Philipp Reisner <phil@linbit.com> - 8.4.10-1
-- New upstream release.
-
-* Thu Nov 10 2016  Lars Ellenberg <lars@linbit.com> - 8.4.9-2
+* Thu Nov 10 2016 Lars Ellenberg <lars@linbit.com> - 8.4.9-2
 - Fix kernel_sendmsg() usage - potential NULL deref
   Relevant for kernel >= 4.0
 
-* Fri Oct 21 2016  Philipp Reisner <phil@linbit.com> - 8.4.9-1
+* Fri Oct 21 2016 Philipp Reisner <phil@linbit.com> - 8.4.9-1
 - New upstream release.
 
-* Mon Jul 18 2016  Lars Ellenberg <lars@linbit.com> - 8.4.8-1
+* Mon Jul 18 2016 Lars Ellenberg <lars@linbit.com> - 8.4.8-1
 - New upstream release.
 
-* Wed Dec 16 2015  Philipp Reisner <phil@linbit.com> - 8.4.7-1
+* Wed Dec 16 2015 Philipp Reisner <phil@linbit.com> - 8.4.7-1
 - New upstream release.
 
-* Wed Sep 16 2015  Lars Ellenberg <lars@linbit.com> - 8.4.6-5
+* Wed Sep 16 2015 Lars Ellenberg <lars@linbit.com> - 8.4.6-5
 - New upstream release.
 
 * Thu Jul 30 2015 Lars Ellenberg <lars@linbit.com> - 8.4.6-4

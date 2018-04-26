@@ -2,14 +2,19 @@ Latest:
 ------
  For even more detail, visit https://github.com/LINBIT/drbd-8.4/commits/master
 
-8.4.11-0rc2 (api:genl1/proto:86-101)
+8.4.11-1 (api:genl1/proto:86-101)
 -------
+ * New efficient ZEROES command on the wire,
+   to clearly distinguish zero-out from trim/discard/unmap.
+ * compatibility with Linux kernels up to 4.17 (and RHEL up to 7.5)
+ * runtime sanity check for silent RHEL 7.5 kABI breakage 
  * Fix bug in compat code: Without this fix large bios are not split.
    The user visible behavior is then a hanging DRBD.
-
-8.4.11-0rc1 (api:genl1/proto:86-101)
--------
- * compatibility with Linux kernels up to 4.14
+ * skip spurious timeout (ping-timeo) when failing promote
+ * don't retry connection if peers do not agree on "authentication" settings
+ * avoid spurious self-outdating with concurrent disconnect / down
+ * do not block when adjusting "disk-options" while IO is frozen
+ * fix various corner cases when recovering from multiple failure cases
 
 8.4.10-1 (api:genl1/proto:86-101)
 -------

@@ -1,14 +1,8 @@
-drbd8 (2:8.4.11~0rc2-1) unstable; urgency=medium
-
-  * 8.4.11rc2, New upstream release
-
- -- Roland Kammerer <roland.kammerer@linbit.com>  Tue, 09 Jan 2018 16:52:53 +0100
-
-drbd8 (2:8.4.11~0rc1-1) unstable; urgency=medium
+drbd8 (2:8.4.11-1) unstable; urgency=medium
 
   * 8.4.11, New upstream release
 
- -- Philipp Reisner <phil@linbit.com>  Thu, 15 Dec 2017 11:10:07 +0200
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Thu, 26 Apr 2018 11:50:25 +0200
 
 drbd8 (2:8.4.10-1) unstable; urgency=medium
 
