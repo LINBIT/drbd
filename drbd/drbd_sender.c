@@ -1340,10 +1340,15 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
 			inc_rs_pending(peer_device);
+			/* If we send back as P_RS_DATA_REPLY,
+			 * this is overestimating "in-flight" accounting.
+			 * But needed to be properly balanced with
+			 * the atomic_sub() in got_BlockAck.
+			 * TODO: to fix that, we'd need a protocol bump. */
+			atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 				err = drbd_send_rs_deallocated(peer_device, peer_req);
 			} else {
-				atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 			}
 		} else {
