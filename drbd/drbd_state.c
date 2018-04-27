@@ -2037,6 +2037,7 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 		peer_device->ov_position = peer_device->ov_start_sector;
 	}
 	peer_device->ov_left = peer_device->rs_total;
+	peer_device->ov_skipped = 0;
 }
 
 static void queue_after_state_change_work(struct drbd_resource *resource,
@@ -2249,6 +2250,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				peer_device->rs_last_sect_ev = 0;
 				peer_device->ov_last_oos_size = 0;
 				peer_device->ov_last_oos_start = 0;
+				peer_device->ov_last_skipped_size = 0;
+				peer_device->ov_last_skipped_start = 0;
 
 				for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 					peer_device->rs_mark_left[i] = peer_device->ov_left;

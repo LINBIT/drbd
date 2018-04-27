@@ -873,18 +873,6 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	return 1;
 }
 
-int w_ov_finished(struct drbd_work *w, int cancel)
-{
-	struct drbd_peer_device_work *dw =
-		container_of(w, struct drbd_peer_device_work, w);
-	struct drbd_peer_device *peer_device = dw->peer_device;
-	kfree(dw);
-	ov_out_of_sync_print(peer_device);
-	drbd_resync_finished(peer_device, D_MASK);
-
-	return 0;
-}
-
 struct resync_finished_work {
 	struct drbd_peer_device_work pdw;
 	enum drbd_disk_state new_peer_disk_state;
@@ -1091,17 +1079,22 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	__change_repl_state(peer_device, L_ESTABLISHED);
 
 	aborted = device->disk_state[NOW] == D_OUTDATED && new_peer_disk_state == D_INCONSISTENT;
-
-	drbd_info(peer_device, "%s %s (total %lu sec; paused %lu sec; %lu K/sec)\n",
+	{
+	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
+	if (verify_done && peer_device->ov_skipped)
+		snprintf(tmp, sizeof(tmp), " but %lu %dk blocks skipped",
+			peer_device->ov_skipped, Bit2KB(1));
+	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
-		  aborted ? "aborted" : "done",
+		  aborted ? "aborted" : "done", tmp,
 		  dt + peer_device->rs_paused, peer_device->rs_paused, dbdt);
+	}
 
 	n_oos = drbd_bm_total_weight(peer_device);
 
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T) {
 		if (n_oos) {
-			drbd_alert(peer_device, "Online verify found %lu %dk block out of sync!\n",
+			drbd_alert(peer_device, "Online verify found %lu %dk blocks out of sync!\n",
 			      n_oos, Bit2KB(1));
 			khelper_cmd = "out-of-sync";
 		}
@@ -1490,10 +1483,29 @@ void drbd_ov_out_of_sync_found(struct drbd_peer_device *peer_device, sector_t se
 	if (peer_device->ov_last_oos_start + peer_device->ov_last_oos_size == sector) {
 		peer_device->ov_last_oos_size += size>>9;
 	} else {
+		ov_out_of_sync_print(peer_device);
 		peer_device->ov_last_oos_start = sector;
 		peer_device->ov_last_oos_size = size>>9;
 	}
 	drbd_set_out_of_sync(peer_device, sector, size);
+}
+
+void verify_progress(struct drbd_peer_device *peer_device,
+		const sector_t sector, const unsigned int size)
+{
+	bool stop_sector_reached =
+		(peer_device->repl_state[NOW] == L_VERIFY_S) &&
+		verify_can_do_stop_sector(peer_device) &&
+		(sector + (size>>9)) >= peer_device->ov_stop_sector;
+
+	--peer_device->ov_left;
+
+	/* let's advance progress step marks only for every other megabyte */
+	if ((peer_device->ov_left & 0x1ff) == 0)
+		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
+
+	if (peer_device->ov_left == 0 || stop_sector_reached)
+		drbd_peer_device_post_work(peer_device, RS_DONE);
 }
 
 int w_e_end_ov_reply(struct drbd_work *w, int cancel)
@@ -1507,7 +1519,6 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	unsigned int size = peer_req->i.size;
 	int digest_size;
 	int err, eq = 0;
-	bool stop_sector_reached = false;
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
@@ -1552,19 +1563,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 
 	dec_unacked(peer_device);
 
-	--peer_device->ov_left;
-
-	/* let's advance progress step marks only for every other megabyte */
-	if ((peer_device->ov_left & 0x200) == 0x200)
-		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
-
-	stop_sector_reached = verify_can_do_stop_sector(peer_device) &&
-		(sector + (size>>9)) >= peer_device->ov_stop_sector;
-
-	if (peer_device->ov_left == 0 || stop_sector_reached) {
-		ov_out_of_sync_print(peer_device);
-		drbd_resync_finished(peer_device, D_MASK);
-	}
+	verify_progress(peer_device, sector, size);
 
 	return err;
 }
@@ -2085,7 +2084,15 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 
 	drbd_bm_write_lazy(device, 0);
 
-	if (resync_done && is_sync_state(peer_device, NOW))
+	if (resync_done) {
+		if (is_verify_state(peer_device, NOW)) {
+			ov_out_of_sync_print(peer_device);
+			ov_skipped_print(peer_device);
+		} else
+			resync_done = is_sync_state(peer_device, NOW);
+	}
+
+	if (resync_done)
 		drbd_resync_finished(peer_device, D_MASK);
 
 	/* update timestamp, in case it took a while to write out stuff */

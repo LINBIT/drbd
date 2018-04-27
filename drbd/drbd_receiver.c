@@ -2944,6 +2944,20 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 	return false;
 }
 
+static void verify_skipped_block(struct drbd_peer_device *peer_device,
+		const sector_t sector, const unsigned int size)
+{
+	++peer_device->ov_skipped;
+	if (peer_device->ov_last_skipped_start + peer_device->ov_last_skipped_size == sector) {
+		peer_device->ov_last_skipped_size += size>>9;
+	} else {
+		ov_skipped_print(peer_device);
+		peer_device->ov_last_skipped_start = sector;
+		peer_device->ov_last_skipped_size = size>>9;
+	}
+	verify_progress(peer_device, sector, size);
+}
+
 static int receive_DataRequest(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -2985,10 +2999,11 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		case P_DATA_REQUEST:
 			drbd_send_ack_rp(peer_device, P_NEG_DREPLY, p);
 			break;
+		case P_OV_REQUEST:
+			verify_skipped_block(peer_device, sector, size);
 		case P_RS_THIN_REQ:
 		case P_RS_DATA_REQUEST:
 		case P_CSUM_RS_REQUEST:
-		case P_OV_REQUEST:
 			drbd_send_ack_rp(peer_device, P_NEG_RS_DREPLY , p);
 			break;
 		case P_OV_REPLY:
@@ -3084,6 +3099,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			peer_device->ov_start_sector = sector;
 			peer_device->ov_position = sector;
 			peer_device->ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
+			peer_device->ov_skipped = 0;
 			peer_device->rs_total = peer_device->ov_left;
 			for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 				peer_device->rs_mark_left[i] = peer_device->ov_left;
@@ -3141,6 +3157,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		   Instruct the SyncSource to retry */
 		err = drbd_try_rs_begin_io(peer_device, sector, false);
 		if (err) {
+			if (pi->cmd == P_OV_REQUEST)
+				verify_skipped_block(peer_device, sector, size);
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 			/* If err is set, we will drop the connection... */
 			goto fail3;
@@ -8320,10 +8338,14 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 			drbd_rs_failed_io(peer_device, sector, size);
 			break;
 		case P_RS_CANCEL:
-			bit = BM_SECT_TO_BIT(sector);
-			mutex_lock(&device->bm_resync_fo_mutex);
-			device->bm_resync_fo = min(device->bm_resync_fo, bit);
-			mutex_unlock(&device->bm_resync_fo_mutex);
+			if (peer_device->repl_state[NOW] == L_VERIFY_S) {
+				verify_skipped_block(peer_device, sector, size);
+			} else {
+				bit = BM_SECT_TO_BIT(sector);
+				mutex_lock(&device->bm_resync_fo_mutex);
+				device->bm_resync_fo = min(device->bm_resync_fo, bit);
+				mutex_unlock(&device->bm_resync_fo_mutex);
+			}
 
 			atomic_add(size >> 9, &peer_device->rs_sect_in);
 			mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
@@ -8375,24 +8397,8 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	drbd_rs_complete_io(peer_device, sector);
 	dec_rs_pending(peer_device);
 
-	--peer_device->ov_left;
+	verify_progress(peer_device, sector, size);
 
-	/* let's advance progress step marks only for every other megabyte */
-	if ((peer_device->ov_left & 0x200) == 0x200)
-		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
-
-	if (peer_device->ov_left == 0) {
-		struct drbd_peer_device_work *dw = kmalloc(sizeof(*dw), GFP_NOIO);
-		if (dw) {
-			dw->w.cb = w_ov_finished;
-			dw->peer_device = peer_device;
-			drbd_queue_work(&connection->sender_work, &dw->w);
-		} else {
-			drbd_err(device, "kmalloc(dw) failed.");
-			ov_out_of_sync_print(peer_device);
-			drbd_resync_finished(peer_device, D_MASK);
-		}
-	}
 	put_ldev(device);
 	return 0;
 }

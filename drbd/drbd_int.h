@@ -1144,6 +1144,10 @@ struct drbd_peer_device {
 	sector_t ov_last_oos_start;
 	/* size of out-of-sync range in sectors. */
 	sector_t ov_last_oos_size;
+	/* Start sector of skipped range (to merge printk reporting). */
+	sector_t ov_last_skipped_start;
+	/* size of skipped range in sectors. */
+	sector_t ov_last_skipped_size;
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
@@ -1152,6 +1156,7 @@ struct drbd_peer_device {
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	unsigned long ov_left; /* in bits */
+	unsigned long ov_skipped; /* in bits */
 
 	u64 current_uuid;
 	u64 bitmap_uuids[DRBD_PEERS_MAX];
@@ -1850,6 +1855,8 @@ extern void drbd_start_resync(struct drbd_peer_device *, enum drbd_repl_state);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
 extern int drbd_resync_finished(struct drbd_peer_device *, enum drbd_disk_state);
+extern void verify_progress(struct drbd_peer_device *peer_device,
+		const sector_t sector, const unsigned int size);
 /* maybe rather drbd_main.c ? */
 extern void *drbd_md_get_buffer(struct drbd_device *device, const char *intent);
 extern void drbd_md_put_buffer(struct drbd_device *device);
@@ -1873,6 +1880,15 @@ static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 	peer_device->ov_last_oos_size = 0;
 }
 
+static inline void ov_skipped_print(struct drbd_peer_device *peer_device)
+{
+	if (peer_device->ov_last_skipped_size) {
+		drbd_info(peer_device, "Skipped verify, too busy: start=%llu, size=%lu (sectors)\n",
+		     (unsigned long long)peer_device->ov_last_skipped_start,
+		     (unsigned long)peer_device->ov_last_skipped_size);
+	}
+	peer_device->ov_last_skipped_size = 0;
+}
 
 extern void drbd_csum_bio(struct crypto_ahash *, struct bio *, void *);
 extern void drbd_csum_pages(struct crypto_ahash *, struct page *, void *);
@@ -1882,7 +1898,6 @@ extern int w_e_end_rsdata_req(struct drbd_work *, int);
 extern int w_e_end_csum_rs_req(struct drbd_work *, int);
 extern int w_e_end_ov_reply(struct drbd_work *, int);
 extern int w_e_end_ov_req(struct drbd_work *, int);
-extern int w_ov_finished(struct drbd_work *, int);
 extern int w_resync_timer(struct drbd_work *, int);
 extern int w_send_dblock(struct drbd_work *, int);
 extern int w_send_read_req(struct drbd_work *, int);
@@ -2490,6 +2505,13 @@ static inline bool is_sync_state(struct drbd_peer_device *peer_device,
 {
 	return is_sync_source_state(peer_device, which) ||
 		is_sync_target_state(peer_device, which);
+}
+
+static inline bool is_verify_state(struct drbd_peer_device *peer_device,
+				   enum which_state which)
+{
+	enum drbd_repl_state repl_state = peer_device->repl_state[which];
+	return repl_state == L_VERIFY_S || repl_state == L_VERIFY_T;
 }
 
 /**
