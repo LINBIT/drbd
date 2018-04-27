@@ -5013,6 +5013,13 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
+static void connection_to_statistics(struct connection_statistics *s, struct drbd_connection *connection)
+{
+	s->conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
+	s->ap_in_flight = atomic_read(&connection->ap_in_flight);
+	s->rs_in_flight = atomic_read(&connection->rs_in_flight);
+}
+
 enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
 
 int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
@@ -5118,7 +5125,7 @@ put_result:
 		err = connection_info_to_skb(skb, &connection_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
-		connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
+		connection_to_statistics(&connection_statistics, connection);
 		err = connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -5137,21 +5144,65 @@ out:
 }
 
 static void peer_device_to_statistics(struct peer_device_statistics *s,
-				      struct drbd_peer_device *peer_device)
+				      struct drbd_peer_device *pd)
 {
-	struct drbd_device *device = peer_device->device;
+	struct drbd_device *device = pd->device;
+	unsigned long now = jiffies;
+	unsigned long rs_left = 0;
+	int i;
+
+	/* userspace should get "future proof" units,
+	 * convert to sectors or milli seconds as appropriate */
 
 	memset(s, 0, sizeof(*s));
-	s->peer_dev_received = peer_device->recv_cnt;
-	s->peer_dev_sent = peer_device->send_cnt;
-	s->peer_dev_pending = atomic_read(&peer_device->ap_pending_cnt) +
-			      atomic_read(&peer_device->rs_pending_cnt);
-	s->peer_dev_unacked = atomic_read(&peer_device->unacked_cnt);
-	s->peer_dev_out_of_sync = drbd_bm_total_weight(peer_device) << (BM_BLOCK_SHIFT - 9);
-	s->peer_dev_resync_failed = peer_device->rs_failed << (BM_BLOCK_SHIFT - 9);
+	s->peer_dev_received = pd->recv_cnt;
+	s->peer_dev_sent = pd->send_cnt;
+	s->peer_dev_pending = atomic_read(&pd->ap_pending_cnt) +
+			      atomic_read(&pd->rs_pending_cnt);
+	s->peer_dev_unacked = atomic_read(&pd->unacked_cnt);
+	s->peer_dev_out_of_sync = BM_BIT_TO_SECT(drbd_bm_total_weight(pd));
+
+	if (is_verify_state(pd, NOW)) {
+		rs_left = BM_BIT_TO_SECT(pd->ov_left);
+		s->peer_dev_ov_start_sector = pd->ov_start_sector;
+		s->peer_dev_ov_stop_sector = pd->ov_stop_sector;
+		s->peer_dev_ov_position = pd->ov_position;
+		s->peer_dev_ov_left = BM_BIT_TO_SECT(pd->ov_left);
+		s->peer_dev_ov_skipped = BM_BIT_TO_SECT(pd->ov_skipped);
+	} else if (is_sync_state(pd, NOW)) {
+		rs_left = s->peer_dev_out_of_sync - BM_BIT_TO_SECT(pd->rs_failed);
+		s->peer_dev_resync_failed = BM_BIT_TO_SECT(pd->rs_failed);
+		s->peer_dev_rs_same_csum = BM_BIT_TO_SECT(pd->rs_same_csum);
+	}
+
+	if (rs_left) {
+		enum drbd_repl_state repl_state = pd->repl_state[NOW];
+		if (repl_state == L_SYNC_TARGET || repl_state == L_VERIFY_S)
+			s->peer_dev_rs_c_sync_rate = pd->c_sync_rate;
+
+		s->peer_dev_rs_total = BM_BIT_TO_SECT(pd->rs_total);
+
+		s->peer_dev_rs_dt_start_ms = jiffies_to_msecs(now - pd->rs_start);
+		s->peer_dev_rs_paused_ms = jiffies_to_msecs(pd->rs_paused);
+
+		i = (pd->rs_last_mark + 2) % DRBD_SYNC_MARKS;
+		s->peer_dev_rs_dt0_ms = jiffies_to_msecs(now - pd->rs_mark_time[i]);
+		s->peer_dev_rs_db0_sectors = BM_BIT_TO_SECT(pd->rs_mark_left[i]) - rs_left;
+
+		i = (pd->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
+		s->peer_dev_rs_dt1_ms = jiffies_to_msecs(now - pd->rs_mark_time[i]);
+		s->peer_dev_rs_db1_sectors = BM_BIT_TO_SECT(pd->rs_mark_left[i]) - rs_left;
+
+		/* long term average:
+		 * dt = rs_dt_start_ms - rs_paused_ms;
+		 * db = rs_total - rs_left, which is
+		 *   rs_total - (ov_left? ov_left : out_of_sync - rs_failed)
+		 */
+	}
+
 	if (get_ldev(device)) {
 		struct drbd_md *md = &device->ldev->md;
-		struct drbd_peer_md *peer_md = &md->peers[peer_device->node_id];
+		struct drbd_peer_md *peer_md = &md->peers[pd->node_id];
 
 		spin_lock_irq(&md->uuid_lock);
 		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
@@ -5954,7 +6005,7 @@ void notify_connection_state(struct sk_buff *skb,
 	     connection_info_to_skb(skb, connection_info, true)))
 		goto nla_put_failure;
 	connection_paths_to_skb(skb, connection);
-	connection_statistics.conn_congested = test_bit(NET_CONGESTED, &connection->transport.flags);
+	connection_to_statistics(&connection_statistics, connection);
 	connection_statistics_to_skb(skb, &connection_statistics, !capable(CAP_SYS_ADMIN));
 	genlmsg_end(skb, dh);
 	if (multicast) {
