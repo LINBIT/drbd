@@ -1097,6 +1097,10 @@ retry:
 			struct net_conf *nc;
 			int timeout = 0;
 
+			if (try >= max_tries)
+				break;
+			try = max_tries - 1;
+
 			/*
 			 * Catch the case where we discover that the other
 			 * primary has died soon after the state change
@@ -1115,8 +1119,6 @@ retry:
 				timeout = 1;
 
 			schedule_timeout_interruptible(timeout);
-			if (try < max_tries)
-				try = max_tries - 1;
 			continue;
 		}
 
