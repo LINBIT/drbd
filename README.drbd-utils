@@ -4,9 +4,10 @@
   (tarball at http://links.linbit.com/drbd-download)
 
   That started out as "drbd-utils version 8.9.0",
+  has a different release cycle,
   and provides compatible drbdadm, drbdsetup and drbdmeta tools
   for DRBD module versions 8.3, 8.4 and 9.
 
   Again: to manage DRBD 9 kernel modules and above,
-  you want drbd-utils >= 8.9.11 from above url.
+  you want drbd-utils >= 9.3 from above url.
 =======================================================================
