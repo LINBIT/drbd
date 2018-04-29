@@ -928,7 +928,7 @@ restart:
 	rcu_read_unlock();
 }
 
-bool wait_up_to_date(struct drbd_resource *resource)
+static bool wait_up_to_date(struct drbd_resource *resource)
 {
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	struct drbd_device *device;
@@ -959,6 +959,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	int try = 0;
+	bool retried_ss_two_primaries = false;
 	int forced = 0;
 	bool with_force = false;
 	const char *err_str = NULL;
@@ -1041,10 +1042,16 @@ retry:
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK) {
-			bool a_disk_became_up_to_date = wait_up_to_date(resource);
+			bool a_disk_became_up_to_date;
 
+			/* need to give up state_sem, see try_become_up_to_date(); */
+			up(&resource->state_sem);
+			drbd_flush_workqueue(&resource->work);
+			a_disk_became_up_to_date = wait_up_to_date(resource);
+			down(&resource->state_sem);
 			if (a_disk_became_up_to_date)
 				continue;
+			/* fall through into possible fence-peer or even force cases */
 		}
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && !with_force) {
@@ -1097,9 +1104,9 @@ retry:
 			struct net_conf *nc;
 			int timeout = 0;
 
-			if (try >= max_tries)
+			if (try >= max_tries || retried_ss_two_primaries)
 				break;
-			try = max_tries - 1;
+			retried_ss_two_primaries = true;
 
 			/*
 			 * Catch the case where we discover that the other
