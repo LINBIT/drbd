@@ -607,7 +607,7 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 {
 	struct dtt_socket_container *socket_c;
 	struct sockaddr_storage peer_addr;
-	int connect_int, peer_addr_len, err = 0;
+	int connect_int, err = 0;
 	long timeo;
 	struct socket *s_estab = NULL;
 	struct net_conf *nc;
@@ -653,7 +653,8 @@ retry:
 		   from the listening socket. */
 		unregister_state_change(s_estab->sk, listener);
 
-		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, &peer_addr_len, 2);
+
+		drbd_always_getpeername(s_estab, (struct sockaddr *)&peer_addr);
 
 		spin_lock_bh(&listener->listener.waiters_lock);
 		drbd_path2 = drbd_find_path_by_addr(&listener->listener, &peer_addr);
