@@ -2,6 +2,25 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.14-1 (api:genl2/proto:86-113/transport:14)
+ * fix regression in 9.0.13: call after-split-brain-recovery handlers
+   no auto-recovery strategies (not even the default: disconnect) would be
+   applied, nodes would stay connected and all nodes would try to become the
+   source of the resync.
+ * fix spurious temporary promotion failure: if after Primary loss
+   failover happened too quickly, transparently retry internally.
+ * fixup recently introduced P_ZEROES to actually work as intended
+ * fix online-verify to account for skipped blocks; otherwise, it won't
+   notice that it has finished, apparently being stuck near "100% done"
+ * expose more resync and online-verify statistics and details
+ * improve accounting of "in-flight" data and resync requests
+ * allow taking down an already useless minor device during "down",
+   even if it is (temporarily) opened by for example udev scanning
+ * fix for a node staying "only" Consistent and not returning to UpToDate
+   in certain scenarios when fencing is enabled
+ * fix data generation UUID propagate during resync
+ * compat for upstream kernels up to v4.17
+
 9.0.13-1 (api:genl2/proto:86-113/transport:14)
 --------
  * abort a resync if a resync source becomes weakly connected and the
