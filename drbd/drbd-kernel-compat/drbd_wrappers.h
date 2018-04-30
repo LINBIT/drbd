@@ -60,6 +60,17 @@ static inline int bdev_discard_alignment(struct block_device *bdev)
 }
 #endif
 
+static	inline int drbd_always_getpeername(struct socket *sock, struct sockaddr *uaddr)
+{
+#ifdef COMPAT_SOCK_OPS_RETURNS_ADDR_LEN
+	return sock->ops->getname(sock, uaddr, 2);
+#else
+	int len = 0;
+	int err = sock->ops->getname(sock, uaddr, &len, 2);
+	return err ?: len;
+#endif
+}
+
 #ifdef COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST
 /* in Commit dece16353ef47d8d33f5302bc158072a9d65e26f
  * make_request() becomes type blk_qc_t. */
