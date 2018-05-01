@@ -31,7 +31,6 @@
 #include "drbd_req.h"
 
 
-
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
 #ifndef __disk_stat_inc
@@ -179,6 +178,7 @@ static void drbd_remove_request_interval(struct rb_root *root,
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+	struct drbd_resource *resource = req->device->resource;
 	struct drbd_request *destroy_next;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
@@ -189,7 +189,6 @@ void drbd_req_destroy(struct kref *kref)
 	was_last_ref = false;
 	device = req->device;
 	s = req->local_rq_state;
-	destroy_next = req->destroy_next;
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	if (s & RQ_WRITE) {
@@ -234,7 +233,10 @@ void drbd_req_destroy(struct kref *kref)
 		return;
 	}
 
+	destroy_next = req->destroy_next;
 	list_del_init(&req->tl_requests);
+	if (resource->tl_previous_write == req)
+		resource->tl_previous_write = NULL;
 
 	/* finally remove the request from the conflict detection
 	 * respective block_id verification interval tree. */
@@ -1772,18 +1774,16 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	 * they are mapped to drbd barriers already. */
 	if (likely(req->i.size != 0)) {
 		if (rw == WRITE) {
-			struct drbd_request *req2;
+			struct drbd_request *prev_write;
 
 			resource->current_tle_writes++;
-			list_for_each_entry_reverse(req2, &resource->transfer_log, tl_requests) {
-				if (req2->local_rq_state & RQ_WRITE) {
-					/* Make the new write request depend on
-					 * the previous one. */
-					BUG_ON(req2->destroy_next);
-					req2->destroy_next = req;
-					kref_get(&req->kref);
-					break;
-				}
+
+			prev_write = resource->tl_previous_write;
+			resource->tl_previous_write = req;
+
+			if (prev_write) {
+				kref_get(&req->kref);
+				prev_write->destroy_next = req;
 			}
 		}
 		list_add_tail(&req->tl_requests, &resource->transfer_log);

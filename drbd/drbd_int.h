@@ -867,6 +867,7 @@ struct drbd_resource {
 	unsigned long flags;
 
 	struct list_head transfer_log;	/* all requests not yet fully processed */
+	struct drbd_request *tl_previous_write;
 
 	struct list_head peer_ack_list;  /* requests to send peer acks for */
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
