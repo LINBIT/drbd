@@ -404,12 +404,22 @@ void tl_release(struct drbd_connection *connection,
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
+		struct drbd_peer_device *peer_device =
+			conn_peer_device(connection, r->device->vnr);
+		const int idx = peer_device->node_id;
+		unsigned int local_rq_state, net_rq_state;
+
+		spin_lock(&r->rq_lock); /* local irq already disabled */
+		local_rq_state = r->local_rq_state;
+		net_rq_state = r->net_rq_state[idx];
+		spin_unlock(&r->rq_lock);
+
 		if (!req) {
-			if (!(r->local_rq_state & RQ_WRITE))
+			if (!(local_rq_state & RQ_WRITE))
 				continue;
-			if (!(r->net_rq_state[idx] & RQ_NET_MASK))
+			if (!(net_rq_state & RQ_NET_MASK))
 				continue;
-			if (r->net_rq_state[idx] & RQ_NET_DONE)
+			if (net_rq_state & RQ_NET_DONE)
 				continue;
 			req = r;
 			expect_epoch = req->epoch;
@@ -418,7 +428,7 @@ void tl_release(struct drbd_connection *connection,
 			const u16 s = r->net_rq_state[idx];
 			if (r->epoch != expect_epoch)
 				break;
-			if (!(r->local_rq_state & RQ_WRITE))
+			if (!(local_rq_state & RQ_WRITE))
 				continue;
 			/* probably a "send_out_of_sync", during Ahead/Behind mode,
 			 * while at least one volume already started to resync again.
@@ -585,7 +595,7 @@ void tl_abort_disk_io(struct drbd_device *device)
 
         spin_lock_irq(&resource->req_lock);
         tl_for_each_req_ref(req, r, &resource->transfer_log) {
-                if (!(req->local_rq_state & RQ_LOCAL_PENDING))
+                if (!(READ_ONCE(req->local_rq_state) & RQ_LOCAL_PENDING))
                         continue;
                 if (req->device != device)
                         continue;
@@ -1182,6 +1192,9 @@ int drbd_send_peer_ack(struct drbd_connection *connection,
 	struct p_peer_ack *p;
 	u64 mask = 0;
 
+	/* no locking when accssing local_rq_state & net_rq_state, since
+	   this request no longer changes, since it is already used for
+	   peer_acks. */
 	if (req->local_rq_state & RQ_LOCAL_OK)
 		mask |= NODE_MASK(resource->res_opts.node_id);
 
@@ -3026,6 +3039,8 @@ static void do_retry(struct work_struct *ws)
 		ktime_get_accounting_assign(ktime_t start_kt, req->start_kt);
 
 
+		/* no locking when accssing local_rq_state & net_rq_state, since
+		   this request are not active at the moment */
 		expected =
 			expect(device, atomic_read(&req->completion_ref) == 0) &&
 			expect(device, req->local_rq_state & RQ_POSTPONED) &&

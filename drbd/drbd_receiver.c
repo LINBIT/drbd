@@ -2278,11 +2278,14 @@ static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 	const unsigned int size = peer_req->i.size;
 
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+		unsigned int local_rq_state;
+
 		if (!i->local)
 			continue;
 		req = container_of(i, struct drbd_request, i);
-		if ((req->local_rq_state & RQ_LOCAL_PENDING) ||
-		   !(req->local_rq_state & RQ_POSTPONED))
+		local_rq_state = READ_ONCE(req->local_rq_state);
+		if ((local_rq_state & RQ_LOCAL_PENDING) ||
+		   !(local_rq_state & RQ_POSTPONED))
 			continue;
 		/* as it is RQ_POSTPONED, this will cause it to
 		 * be queued on the retry workqueue. */
@@ -2625,8 +2628,9 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			err = -ENOENT;
 			goto out;
 		} else {
-			struct drbd_request *req =
-				container_of(i, struct drbd_request, i);
+			struct drbd_request *req = container_of(i, struct drbd_request, i);
+			unsigned int local_rq_state;
+
 
 			if (!equal)
 				drbd_alert(device, "Concurrent writes detected: "
@@ -2634,8 +2638,9 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 					  (unsigned long long)i->sector, i->size,
 					  (unsigned long long)sector, size);
 
-			if (req->local_rq_state & RQ_LOCAL_PENDING ||
-			    !(req->local_rq_state & RQ_POSTPONED)) {
+			local_rq_state = READ_ONCE(req->local_rq_state);
+			if (local_rq_state & RQ_LOCAL_PENDING ||
+			    !(local_rq_state & RQ_POSTPONED)) {
 				/*
 				 * Wait for the node with the discard flag to
 				 * decide if this request will be discarded or

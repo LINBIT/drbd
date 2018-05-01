@@ -99,6 +99,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	atomic_set(&req->completion_ref, 1);
 	/* one kref as long as completion_ref > 0 */
 	kref_init(&req->kref);
+	spin_lock_init(&req->rq_lock);
 
 	req->local_rq_state = (bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0)
 	              | (bio_op(bio_src) == REQ_OP_WRITE_SAME ? RQ_WSAME : 0)
@@ -640,12 +641,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		struct drbd_peer_device *peer_device,
 		int clear, int set)
 {
-	unsigned old_net = 0;
-	unsigned old_local = req->local_rq_state;
+	unsigned old_local, old_net = 0;
 	unsigned set_local = set & RQ_STATE_0_MASK;
 	unsigned clear_local = clear & RQ_STATE_0_MASK;
 	int c_put = 0;
 	const int idx = peer_device ? peer_device->node_id : -1;
+	bool unchanged;
 
 	set &= ~RQ_STATE_0_MASK;
 	clear &= ~RQ_STATE_0_MASK;
@@ -657,10 +658,12 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		BUG_ON(clear);
 	}
 
+	/* apply */
+	spin_lock(&req->rq_lock); /* local IRQ already disabled */
+
+	old_local = req->local_rq_state;
 	if (drbd_suspended(req->device) && !((old_local | clear_local) & RQ_COMPLETION_SUSP))
 		set_local |= RQ_COMPLETION_SUSP;
-
-	/* apply */
 
 	req->local_rq_state &= ~clear_local;
 	req->local_rq_state |= set_local;
@@ -671,10 +674,13 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		req->net_rq_state[idx] |= set;
 	}
 
-
 	/* no change? */
-	if (req->local_rq_state == old_local &&
-	    (idx == -1 || req->net_rq_state[idx] == old_net))
+	unchanged = req->local_rq_state == old_local &&
+	  (idx == -1 || req->net_rq_state[idx] == old_net);
+
+	spin_unlock(&req->rq_lock);
+
+	if (unchanged)
 		return;
 
 	/* intent: get references */
@@ -835,6 +841,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 {
 	struct drbd_device *device = req->device;
 	struct net_conf *nc;
+	unsigned long flags;
 	int p;
 	int idx;
 
@@ -862,9 +869,13 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		p = nc->wire_protocol;
 		rcu_read_unlock();
-		req->net_rq_state[idx] |=
-			p == DRBD_PROT_C ? RQ_EXP_WRITE_ACK :
-			p == DRBD_PROT_B ? RQ_EXP_RECEIVE_ACK : 0;
+		if (p != DRBD_PROT_A) {
+			spin_lock(&req->rq_lock); /* local irq already disabled */
+			req->net_rq_state[idx] |=
+				p == DRBD_PROT_C ? RQ_EXP_WRITE_ACK :
+				p == DRBD_PROT_B ? RQ_EXP_RECEIVE_ACK : 0;
+			spin_unlock(&req->rq_lock);
+		}
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING);
 		break;
 
@@ -1035,7 +1046,9 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case WRITE_ACKED_BY_PEER_AND_SIS:
+		spin_lock_irqsave(&req->rq_lock, flags);
 		req->net_rq_state[idx] |= RQ_NET_SIS;
+		spin_unlock_irqrestore(&req->rq_lock, flags);
 	case WRITE_ACKED_BY_PEER:
 		/* Normal operation protocol C: successfully written on peer.
 		 * During resync, even in protocol != C,
@@ -1684,7 +1697,9 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 	spin_lock_irq(&resource->req_lock);
 	/* In case the sender did not process it yet, raise the flag to
 	 * have it followed with P_UNPLUG_REMOTE just after. */
+	spin_lock(&req->rq_lock);
 	req->local_rq_state |= RQ_UNPLUG;
+	spin_unlock(&req->rq_lock);
 	/* but also queue a generic unplug */
 	drbd_queue_unplug(req->device);
 	kref_put(&req->kref, drbd_req_destroy);

@@ -379,6 +379,7 @@ struct drbd_request {
 	 * cause kref_put() on ->destroy_next. */
 	struct drbd_request *destroy_next;
 
+	spinlock_t rq_lock;
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
 };
