@@ -3087,15 +3087,16 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		break;
 
 	case P_OV_REQUEST:
+		peer_device->ov_position = sector;
 		if (peer_device->ov_start_sector == ~(sector_t)0 &&
 		    connection->agreed_pro_version >= 90) {
 			unsigned long now = jiffies;
 			int i;
 			peer_device->ov_start_sector = sector;
-			peer_device->ov_position = sector;
 			peer_device->ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
 			peer_device->ov_skipped = 0;
 			peer_device->rs_total = peer_device->ov_left;
+			peer_device->rs_last_writeout = now;
 			for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 				peer_device->rs_mark_left[i] = peer_device->ov_left;
 				peer_device->rs_mark_time[i] = now;

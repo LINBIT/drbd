@@ -561,6 +561,7 @@ enum {
 				 * the peer, if it changed there as well. */
 	RS_START,		/* tell worker to start resync/OV */
 	RS_PROGRESS,		/* tell worker that resync made significant progress */
+	RS_LAZY_BM_WRITE,	/*  -"- and bitmap writeout should be efficient now */
 	RS_DONE,		/* tell worker that resync is done */
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
@@ -2097,6 +2098,7 @@ extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 			  struct drbd_connection *, const char *, int);
 extern void notify_path(struct drbd_connection *, struct drbd_path *,
 			enum drbd_notification_type);
+extern void drbd_broadcast_sync_progress(struct drbd_peer_device *);
 
 extern sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
 extern int drbd_open_ro_count(struct drbd_resource *resource);

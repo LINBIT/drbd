@@ -6145,6 +6145,16 @@ failed:
 		 err, seq);
 }
 
+void drbd_broadcast_sync_progress(struct drbd_peer_device *peer_device)
+{
+	struct peer_device_info peer_device_info;
+	mutex_lock(&notification_mutex);
+	peer_device_to_info(&peer_device_info, peer_device);
+	/* XXX maybe we want a .nh_type = NOTIFY_RESYNC_PROGRESS or something? */
+	notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CHANGE);
+	mutex_unlock(&notification_mutex);
+}
+
 void notify_path(struct drbd_connection *connection, struct drbd_path *path,
 		 enum drbd_notification_type type)
 {

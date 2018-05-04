@@ -976,6 +976,7 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 			peer_device->rs_mark_left[next] = still_to_go;
 			peer_device->rs_last_mark = next;
 		}
+		drbd_peer_device_post_work(peer_device, RS_PROGRESS);
 	}
 }
 
@@ -1001,7 +1002,7 @@ static void maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_d
 	} else if (!lazy_bitmap_update_due(peer_device))
 		return;
 
-	drbd_peer_device_post_work(peer_device, RS_PROGRESS);
+	drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
 }
 
 

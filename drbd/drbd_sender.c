@@ -2091,7 +2091,6 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 		} else
 			resync_done = is_sync_state(peer_device, NOW);
 	}
-
 	if (resync_done)
 		drbd_resync_finished(peer_device, D_MASK);
 
@@ -2242,8 +2241,10 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
 {
+	if (test_bit(RS_PROGRESS, &todo))
+		drbd_broadcast_sync_progress(peer_device);
 	if (test_bit(RS_DONE, &todo) ||
-	    test_bit(RS_PROGRESS, &todo))
+	    test_bit(RS_LAZY_BM_WRITE, &todo))
 		update_on_disk_bitmap(peer_device, test_bit(RS_DONE, &todo));
 	if (test_bit(RS_START, &todo))
 		do_start_resync(peer_device);
@@ -2260,6 +2261,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\
 	((1UL << RS_START)		\
+	|(1UL << RS_LAZY_BM_WRITE)	\
 	|(1UL << RS_PROGRESS)		\
 	|(1UL << RS_DONE)		\
 	)

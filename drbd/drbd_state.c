@@ -2074,6 +2074,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_last_sect_ev = 0;
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
+	peer_device->rs_last_writeout = now;
 	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 		peer_device->rs_mark_left[i] = tw;
 		peer_device->rs_mark_time[i] = now;
@@ -2252,7 +2253,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				peer_device->ov_last_oos_start = 0;
 				peer_device->ov_last_skipped_size = 0;
 				peer_device->ov_last_skipped_start = 0;
-
+				peer_device->rs_last_writeout = now;
 				for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 					peer_device->rs_mark_left[i] = peer_device->ov_left;
 					peer_device->rs_mark_time[i] = now;
