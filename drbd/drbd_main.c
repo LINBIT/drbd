@@ -309,21 +309,21 @@ struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
    list_for_each_entry_safe() element gets destroyed! -- With holding a
    reference that destroy gets delayed as necessary */
 
-#define tl_for_each_req_ref_from(req, next, tl)		\
-	for (req = __tl_first_req_ref(&next, req, tl);	\
-	     req;					\
+#define tl_for_each_req_ref_continue(req, next, tl)		\
+	for (req = __tl_first_req_ref_continue(&next, req, tl);	\
+	     req;						\
 	     req = __tl_next_req_ref(&next, req, tl))
 
 #define tl_for_each_req_ref(req, next, tl)				\
-	for (req = __tl_first_req_ref(&next,				\
+	for (req = __tl_first_req_ref_continue(&next,			\
 	list_first_entry_or_null(tl, struct drbd_request, tl_requests), \
 				      tl);				\
 	     req;							\
 	     req = __tl_next_req_ref(&next, req, tl))
 
-static struct drbd_request *__tl_first_req_ref(struct drbd_request **pnext,
-					       struct drbd_request *req,
-					       struct list_head *transfer_log)
+static struct drbd_request *__tl_first_req_ref_continue(struct drbd_request **pnext,
+							struct drbd_request *req,
+							struct list_head *transfer_log)
 {
 	if (req) {
 		struct drbd_request *next = list_next_entry(req, tl_requests);
@@ -516,7 +516,7 @@ void tl_release(struct drbd_connection *connection,
 	list_for_each_entry(req, &resource->transfer_log, tl_requests)
 		if (req->epoch == expect_epoch)
 			break;
-	tl_for_each_req_ref_from(req, r, &resource->transfer_log) {
+	tl_for_each_req_ref_continue(req, r, &resource->transfer_log) {
 		struct drbd_peer_device *peer_device;
 		if (req->epoch != expect_epoch) {
 			tl_abort_for_each_req_ref(r, &resource->transfer_log);
