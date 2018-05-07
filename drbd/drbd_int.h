@@ -1064,7 +1064,7 @@ struct drbd_connection {
 
 	/* cached pointers,
 	 * so we can look up the oldest pending requests more quickly.
-	 * protected by resource->req_lock */
+	 * TODO: RCU */
 	struct drbd_request *req_ack_pending;
 	struct drbd_request *req_not_net_done;
 

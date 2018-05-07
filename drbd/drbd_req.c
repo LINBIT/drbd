@@ -556,26 +556,6 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	connection->todo.req_next = req;
 }
 
-static void set_if_null_req_ack_pending(struct drbd_connection *connection, struct drbd_request *req)
-{
-	if (connection->req_ack_pending == NULL)
-		connection->req_ack_pending = req;
-}
-
-static void advance_conn_req_ack_pending(struct drbd_connection *connection, struct drbd_request *req)
-{
-	if (connection->req_ack_pending != req)
-		return;
-	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = req->net_rq_state[connection->peer_node_id];
-		if ((s & RQ_NET_SENT) && (s & RQ_NET_PENDING))
-			break;
-	}
-	if (&req->tl_requests == &connection->resource->transfer_log)
-		req = NULL;
-	connection->req_ack_pending = req;
-}
-
 static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
 {
 	struct drbd_request *prev_req, *old_req = NULL;
@@ -705,7 +685,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			set_cache_ptr_if_null(&connection->req_not_net_done, req);
 		}
 		if (req->net_rq_state[idx] & RQ_NET_PENDING)
-			set_if_null_req_ack_pending(connection, req);
+			set_cache_ptr_if_null(&connection->req_ack_pending, req);
 	}
 
 	if (!(old_local & RQ_COMPLETION_SUSP) && (set_local & RQ_COMPLETION_SUSP))
@@ -733,7 +713,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		dec_ap_pending(peer_device);
 		++c_put;
 		ktime_get_accounting(req->acked_kt[peer_device->node_id]);
-		advance_conn_req_ack_pending(connection, req);
+		advance_cache_ptr(connection, &connection->req_ack_pending,
+				  req, RQ_NET_SENT | RQ_NET_DONE, 0);
 	}
 
 	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
@@ -773,7 +754,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		 * before we finally destroy this request,
 		 * the caching pointers must not reference it anymore */
 		advance_conn_req_next(connection, req);
-		advance_conn_req_ack_pending(connection, req);
+		advance_cache_ptr(connection, &connection->req_ack_pending,
+				  req, RQ_NET_SENT | RQ_NET_DONE, 0);
 		advance_cache_ptr(connection, &connection->req_not_net_done,
 				  req, RQ_NET_SENT, RQ_NET_DONE);
 	}
