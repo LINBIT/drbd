@@ -30,7 +30,6 @@
 #include "drbd_int.h"
 #include "drbd_req.h"
 
-
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
 #ifndef __disk_stat_inc
@@ -109,10 +108,16 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	return req;
 }
 
+void drbd_reclaim_req(struct rcu_head *rp)
+{
+	struct drbd_request *req = container_of(rp, struct drbd_request, rcu);
+	mempool_free(req, &drbd_request_mempool);
+}
+
 static void req_destroy_no_send_peer_ack(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	mempool_free(req, &drbd_request_mempool);
+	call_rcu(&req->rcu, drbd_reclaim_req);
 }
 
 void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
@@ -193,9 +198,8 @@ void drbd_req_destroy(struct kref *kref)
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	if (s & RQ_WRITE) {
-		unsigned long flags;
 
-		spin_lock_irqsave(&device->timing_lock, flags);
+		spin_lock(&device->timing_lock); /* local irq already disabled */
 		device->reqs++;
 		ktime_aggregate(device, req, in_actlog_kt);
 		ktime_aggregate(device, req, pre_submit_kt);
@@ -208,7 +212,7 @@ void drbd_req_destroy(struct kref *kref)
 			ktime_aggregate_pd(peer_device, node_id, req, acked_kt);
 			ktime_aggregate_pd(peer_device, node_id, req, net_done_kt);
 		}
-		spin_unlock_irqrestore(&device->timing_lock, flags);
+		spin_unlock(&device->timing_lock);
 	}
 #endif
 
@@ -234,10 +238,12 @@ void drbd_req_destroy(struct kref *kref)
 		return;
 	}
 
+	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 	destroy_next = req->destroy_next;
-	list_del_init(&req->tl_requests);
+	list_del_rcu(&req->tl_requests);
 	if (resource->tl_previous_write == req)
 		resource->tl_previous_write = NULL;
+	spin_unlock(&resource->tl_update_lock);
 
 	/* finally remove the request from the conflict detection
 	 * respective block_id verification interval tree. */
@@ -320,7 +326,7 @@ void drbd_req_destroy(struct kref *kref)
 				drbd_queue_peer_ack(resource, peer_ack_req);
 				peer_ack_req = NULL;
 			} else
-				mempool_free(peer_ack_req, &drbd_request_mempool);
+				call_rcu(&peer_ack_req->rcu, drbd_reclaim_req);
 		}
 		req->device = NULL;
 		resource->peer_ack_req = req;
@@ -330,7 +336,7 @@ void drbd_req_destroy(struct kref *kref)
 		if (!peer_ack_req)
 			resource->last_peer_acked_dagtag = req->dagtag_sector;
 	} else
-		mempool_free(req, &drbd_request_mempool);
+		call_rcu(&req->rcu, drbd_reclaim_req);
 
 	/* In both branches of the if above, the reference to device gets released */
 	kref_debug_put(&device->kref_debug, 6);
@@ -546,11 +552,13 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 {
 	if (connection->todo.req_next != req)
 		return;
-	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
+	rcu_read_lock();
+	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		if (s & RQ_NET_QUEUED)
 			break;
 	}
+	rcu_read_unlock();
 	if (&req->tl_requests == &connection->resource->transfer_log)
 		req = NULL;
 	connection->todo.req_next = req;
@@ -583,7 +591,7 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 		rcu_read_unlock();
 		return;
 	}
-	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
+	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
 		if ((s & is_set) && !(s & is_clear))
 			break;
@@ -1766,6 +1774,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
 	if (likely(req->i.size != 0)) {
+		spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 		if (rw == WRITE) {
 			struct drbd_request *prev_write;
 
@@ -1779,7 +1788,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				prev_write->destroy_next = req;
 			}
 		}
-		list_add_tail(&req->tl_requests, &resource->transfer_log);
+		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
+		spin_unlock(&resource->tl_update_lock);
 	}
 
 	if (rw == WRITE) {

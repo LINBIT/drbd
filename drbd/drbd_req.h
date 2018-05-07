@@ -315,6 +315,7 @@ extern void __tl_walk(struct drbd_resource *const resource,
 		const enum drbd_req_event what);
 extern void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req);
 extern bool drbd_should_do_remote(struct drbd_peer_device *, enum which_state);
+extern void drbd_reclaim_req(struct rcu_head *rp);
 
 /* this is in drbd_main.c */
 extern void drbd_restart_request(struct drbd_request *req);

@@ -8846,7 +8846,7 @@ static void destroy_peer_ack_req(struct kref *kref)
 		container_of(kref, struct drbd_request, kref);
 
 	list_del(&req->tl_requests);
-	mempool_free(req, &drbd_request_mempool);
+	call_rcu(&req->rcu, drbd_reclaim_req);
 }
 
 static void cleanup_peer_ack_list(struct drbd_connection *connection)

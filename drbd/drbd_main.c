@@ -315,9 +315,7 @@ struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
 	     req = __tl_next_req_ref(&next, req, tl))
 
 #define tl_for_each_req_ref(req, next, tl)				\
-	for (req = __tl_first_req_ref_continue(&next,			\
-	list_first_entry_or_null(tl, struct drbd_request, tl_requests), \
-				      tl);				\
+	for (req = __tl_first_req_ref(&next, tl);			\
 	     req;							\
 	     req = __tl_next_req_ref(&next, req, tl))
 
@@ -326,11 +324,29 @@ static struct drbd_request *__tl_first_req_ref_continue(struct drbd_request **pn
 							struct list_head *transfer_log)
 {
 	if (req) {
-		struct drbd_request *next = list_next_entry(req, tl_requests);
-		if (&next->tl_requests != transfer_log)
+		struct list_head *next_head;
+		struct drbd_request *next;
+
+		rcu_read_lock();
+		next_head = list_next_rcu(&req->tl_requests);
+		next = list_entry_rcu(next_head, struct drbd_request, tl_requests);
+		if (next_head != transfer_log)
 			kref_get(&next->kref);
+		rcu_read_unlock();
 		*pnext = next;
 	}
+	return req;
+}
+
+static struct drbd_request *__tl_first_req_ref(struct drbd_request **pnext,
+					       struct list_head *transfer_log)
+{
+	struct drbd_request *req;
+	rcu_read_lock();
+	req = __tl_first_req_ref_continue(pnext,
+		list_first_or_null_rcu(transfer_log, struct drbd_request, tl_requests),
+		transfer_log);
+	rcu_read_unlock();
 	return req;
 }
 
@@ -338,18 +354,24 @@ static struct drbd_request *__tl_next_req_ref(struct drbd_request **pnext,
 					      struct drbd_request *req,
 					      struct list_head *transfer_log)
 {
+	struct list_head *next_head;
 	struct drbd_request *next = *pnext;
 	bool next_is_head = (&next->tl_requests == transfer_log);
 
+	rcu_read_lock();
 	do {
-		if (next_is_head)
+		if (next_is_head) {
+			rcu_read_unlock();
 			return NULL;
+		}
 		req = next;
-		next = list_next_entry(req, tl_requests);
-		next_is_head = (&next->tl_requests == transfer_log);
+		next_head = list_next_rcu(&req->tl_requests);
+		next_is_head = (next_head == transfer_log);
+		next = list_entry_rcu(next_head, struct drbd_request, tl_requests);
 		if (!next_is_head)
 			kref_get(&next->kref);
 	} while (kref_put(&req->kref, drbd_req_destroy));
+	rcu_read_unlock();
 	*pnext = next;
 	return req;
 }
@@ -397,13 +419,12 @@ void tl_release(struct drbd_connection *connection,
 	struct drbd_request *req_y = NULL;
 	int expect_epoch = 0;
 	int expect_size = 0;
-	const int idx = connection->peer_node_id;
 
-	spin_lock_irq(&resource->req_lock);
-
+	spin_lock_irq(&connection->resource->req_lock);
+	rcu_read_lock();
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
-	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
+	list_for_each_entry_rcu(r, &resource->transfer_log, tl_requests) {
 		struct drbd_peer_device *peer_device =
 			conn_peer_device(connection, r->device->vnr);
 		const int idx = peer_device->node_id;
@@ -513,7 +534,7 @@ void tl_release(struct drbd_connection *connection,
 	/* this extra list walk restart is paranoia,
 	 * to catch requests being barrier-acked "unexpectedly".
 	 * It usually should find the same req again, or some READ preceding it. */
-	list_for_each_entry(req, &resource->transfer_log, tl_requests)
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests)
 		if (req->epoch == expect_epoch)
 			break;
 	tl_for_each_req_ref_continue(req, r, &resource->transfer_log) {
@@ -529,7 +550,8 @@ void tl_release(struct drbd_connection *connection,
 			break;
 		}
 	}
-	spin_unlock_irq(&resource->req_lock);
+	rcu_read_unlock();
+	spin_unlock_irq(&connection->resource->req_lock);
 
 	/* urgently flush out peer acks for P_CONFIRM_STABLE */
 	if (req_y) {
@@ -542,7 +564,8 @@ void tl_release(struct drbd_connection *connection,
 	return;
 
 bail:
-	spin_unlock_irq(&resource->req_lock);
+	rcu_read_unlock();
+	spin_unlock_irq(&connection->resource->req_lock);
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
@@ -3419,6 +3442,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	kref_debug_init(&resource->kref_debug, &resource->kref, &kref_class_resource);
 	idr_init(&resource->devices);
 	INIT_LIST_HEAD(&resource->connections);
+	spin_lock_init(&resource->tl_update_lock);
 	INIT_LIST_HEAD(&resource->transfer_log);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);

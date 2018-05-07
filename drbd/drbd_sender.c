@@ -2472,7 +2472,7 @@ static struct drbd_request *__next_request_for_connection(
 {
 	struct drbd_request *req;
 
-	list_for_each_entry(req, &connection->resource->transfer_log, tl_requests) {
+	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		unsigned s = req->net_rq_state[connection->peer_node_id];
 		if (!(s & RQ_NET_QUEUED))
 			continue;
@@ -2502,7 +2502,7 @@ static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connect
 	 */
 restart:
 	req = list_prepare_entry(tmp, &connection->resource->transfer_log, tl_requests);
-	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
+	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		/* potentially needed in complete_master_bio below */
 		device = req->device;
 		peer_device = conn_peer_device(connection, device->vnr);
@@ -2544,11 +2544,13 @@ restart:
 		 * RESEND actually caused this request to be finished off, we
 		 * complete the master bio, outside of the lock. */
 		if (m.bio || need_resched()) {
+			rcu_read_unlock();
 			spin_unlock_irq(&connection->resource->req_lock);
 			if (m.bio)
 				complete_master_bio(device, &m);
 			cond_resched();
 			spin_lock_irq(&connection->resource->req_lock);
+			rcu_read_lock();
 			goto restart;
 		}
 		if (!req_oldest)
@@ -2597,6 +2599,7 @@ static void maybe_send_state_afer_ahead(struct drbd_connection *connection)
  */
 static bool check_sender_todo(struct drbd_connection *connection)
 {
+	rcu_read_lock();
 	tl_next_request_for_connection(connection);
 
 	/* we did lock_irq above already. */
@@ -2604,6 +2607,7 @@ static bool check_sender_todo(struct drbd_connection *connection)
 	spin_lock(&connection->sender_work.q_lock);
 	list_splice_tail_init(&connection->sender_work.q, &connection->todo.work_list);
 	spin_unlock(&connection->sender_work.q_lock);
+	rcu_read_unlock();
 
 	return connection->todo.req
 		|| need_unplug(connection)

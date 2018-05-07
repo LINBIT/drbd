@@ -382,6 +382,7 @@ struct drbd_request {
 	spinlock_t rq_lock;
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
+	struct rcu_head rcu;
 };
 
 struct drbd_epoch {
@@ -867,6 +868,7 @@ struct drbd_resource {
 					 * &drbd_request */
 	unsigned long flags;
 
+	spinlock_t tl_update_lock; /* this lock for updating, RCU ...*/
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 	struct drbd_request *tl_previous_write;
 

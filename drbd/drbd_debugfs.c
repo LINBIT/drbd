@@ -359,25 +359,29 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 
 	seq_puts(m, "n\tdevice\tvnr\t" RQ_HDR);
 	spin_lock_irq(&resource->req_lock);
-	list_for_each_entry(req, &resource->transfer_log, tl_requests) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
 		struct drbd_device *device = req->device;
 		struct drbd_peer_device *peer_device;
 		unsigned int tmp = 0;
 		unsigned int s;
 		++count;
 
-		/* don't disable irq "forever" */
+		/* don't disable preemption "forever" */
 		if (!(count & 0x1ff)) {
-			struct drbd_request *req_next;
+			struct list_head *next_hdr;
 			kref_get(&req->kref);
-			spin_unlock_irq(&resource->req_lock);
+			rcu_read_unlock();
 			cond_resched();
-			spin_lock_irq(&resource->req_lock);
-			req_next = list_next_entry(req, tl_requests);
-			if (kref_put(&req->kref, drbd_req_destroy))
-				req = req_next;
-			if (&req->tl_requests == &resource->transfer_log)
-				break;
+			rcu_read_lock();
+			next_hdr = list_next_rcu(&req->tl_requests);
+			if (kref_put(&req->kref, drbd_req_destroy)) {
+				if (next_hdr == &resource->transfer_log)
+					break;
+				req = list_entry_rcu(next_hdr,
+						     struct drbd_request,
+						     tl_requests);
+			}
 		}
 
 		s = req->local_rq_state;
@@ -392,7 +396,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			tmp |= 2;
 
 		for_each_peer_device(peer_device, device) {
-			s = req->net_rq_state[peer_device->node_id];
+			s = READ_ONCE(req->net_rq_state[peer_device->node_id]);
 			if (s & RQ_NET_MASK) {
 				if (!(s & RQ_NET_SENT))
 					tmp |= 4;
@@ -410,6 +414,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		if (show_state == 0x1f)
 			break;
 	}
+	rcu_read_unlock();
 	spin_unlock_irq(&resource->req_lock);
 }
 
