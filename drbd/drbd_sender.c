@@ -2470,15 +2470,13 @@ static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *
 static struct drbd_request *__next_request_for_connection(
 		struct drbd_connection *connection)
 {
-	struct drbd_request *r;
+	struct drbd_request *req;
 
-	list_for_each_entry(r, &connection->resource->transfer_log, tl_requests) {
-		int vnr = r->device->vnr;
-		struct drbd_peer_device *peer_device = conn_peer_device(connection, vnr);
-		unsigned s = drbd_req_state_by_peer_device(r, peer_device);
+	list_for_each_entry(req, &connection->resource->transfer_log, tl_requests) {
+		unsigned s = req->net_rq_state[connection->peer_node_id];
 		if (!(s & RQ_NET_QUEUED))
 			continue;
-		return r;
+		return req;
 	}
 	return NULL;
 }
@@ -2508,7 +2506,7 @@ restart:
 		/* potentially needed in complete_master_bio below */
 		device = req->device;
 		peer_device = conn_peer_device(connection, device->vnr);
-		s = drbd_req_state_by_peer_device(req, peer_device);
+		s = req->net_rq_state[peer_device->node_id];
 
 		if (!(s & RQ_NET_MASK))
 			continue;
@@ -2535,7 +2533,7 @@ restart:
 
 		/* If this is now RQ_NET_PENDING (it should), it won't
 		 * disappear, even if we give up the spinlock below. */
-		if (drbd_req_state_by_peer_device(req, peer_device) & RQ_NET_PENDING)
+		if (req->net_rq_state[peer_device->node_id] & RQ_NET_PENDING)
 			tmp = req;
 
 		/* We crunch through a potentially very long list, so be nice
@@ -2767,7 +2765,7 @@ static int process_one_request(struct drbd_connection *connection)
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device =
 			conn_peer_device(connection, device->vnr);
-	unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+	unsigned s = req->net_rq_state[peer_device->node_id];
 	bool do_send_unplug = req->local_rq_state & RQ_UNPLUG;
 	int err = 0;
 	enum drbd_req_event what;

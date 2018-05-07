@@ -1425,18 +1425,6 @@ conn_peer_device(struct drbd_connection *connection, int volume_number)
 	return idr_find(&connection->peer_devices, volume_number);
 }
 
-static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
-		struct drbd_peer_device *peer_device)
-{
-	int idx = peer_device->node_id;
-	if (idx < 0 || idx >= DRBD_NODE_ID_MAX) {
-		drbd_warn(peer_device, "FIXME: node_id: %d\n", idx);
-		/* WARN(1, "bitmap_index: %d", idx); */
-		return 0;
-	}
-	return req->net_rq_state[idx];
-}
-
 #define for_each_resource(resource, _resources) \
 	list_for_each_entry(resource, _resources, resources)
 

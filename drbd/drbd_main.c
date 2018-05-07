@@ -2285,7 +2285,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	unsigned int dp_flags = 0;
 	int digest_size = 0;
 	int err;
-	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+	const unsigned s = req->net_rq_state[peer_device->node_id];
 	const int op = bio_op(req->master_bio);
 
 	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {

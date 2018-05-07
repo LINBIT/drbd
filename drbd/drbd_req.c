@@ -201,7 +201,7 @@ void drbd_req_destroy(struct kref *kref)
 		ktime_aggregate(device, req, pre_submit_kt);
 		for_each_peer_device(peer_device, device) {
 			int node_id = peer_device->node_id;
-			unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
+			unsigned ns = req->net_rq_state[node_id];
 			if (!(ns & RQ_NET_MASK))
 				continue;
 			ktime_aggregate_pd(peer_device, node_id, req, pre_send_kt);
@@ -214,7 +214,7 @@ void drbd_req_destroy(struct kref *kref)
 
 	/* paranoia */
 	for_each_peer_device(peer_device, device) {
-		unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
+		unsigned ns = req->net_rq_state[peer_device->node_id];
 		if (!(ns & RQ_NET_MASK))
 			continue;
 		if (ns & RQ_NET_DONE)
@@ -414,7 +414,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	error = PTR_ERR(req->private_bio);
 
 	for_each_peer_device(peer_device, device) {
-		unsigned ns = drbd_req_state_by_peer_device(req, peer_device);
+		unsigned ns = req->net_rq_state[peer_device->node_id];
 		/* any net ok ok local ok is good enough to complete this bio as OK */
 		if (ns & RQ_NET_OK)
 			++ok;
@@ -550,7 +550,7 @@ static void advance_conn_req_next(struct drbd_peer_device *peer_device, struct d
 	if (connection->todo.req_next != req)
 		return;
 	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		if (s & RQ_NET_QUEUED)
 			break;
 	}
@@ -576,7 +576,7 @@ static void advance_conn_req_ack_pending(struct drbd_peer_device *peer_device, s
 	if (connection->req_ack_pending != req)
 		return;
 	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		if ((s & RQ_NET_SENT) && (s & RQ_NET_PENDING))
 			break;
 	}
@@ -602,7 +602,7 @@ static void advance_conn_req_not_net_done(struct drbd_peer_device *peer_device, 
 	if (connection->req_not_net_done != req)
 		return;
 	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
+		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		if ((s & RQ_NET_SENT) && !(s & RQ_NET_DONE))
 			break;
 	}
