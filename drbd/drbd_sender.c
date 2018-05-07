@@ -2468,10 +2468,11 @@ static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *
 }
 
 static struct drbd_request *__next_request_for_connection(
-		struct drbd_connection *connection, struct drbd_request *r)
+		struct drbd_connection *connection)
 {
-	r = list_prepare_entry(r, &connection->resource->transfer_log, tl_requests);
-	list_for_each_entry_continue(r, &connection->resource->transfer_log, tl_requests) {
+	struct drbd_request *r;
+
+	list_for_each_entry(r, &connection->resource->transfer_log, tl_requests) {
 		int vnr = r->device->vnr;
 		struct drbd_peer_device *peer_device = conn_peer_device(connection, vnr);
 		unsigned s = drbd_req_state_by_peer_device(r, peer_device);
@@ -2564,7 +2565,7 @@ static struct drbd_request *tl_next_request_for_connection(struct drbd_connectio
 		connection->todo.req_next = tl_mark_for_resend_by_connection(connection);
 
 	else if (connection->todo.req_next == NULL)
-		connection->todo.req_next = __next_request_for_connection(connection, NULL);
+		connection->todo.req_next = __next_request_for_connection(connection);
 
 	connection->todo.req = connection->todo.req_next;
 

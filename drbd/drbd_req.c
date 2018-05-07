@@ -542,15 +542,6 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 	kref_put(&req->kref, drbd_req_destroy);
 }
 
-static void set_if_null_req_next(struct drbd_peer_device *peer_device, struct drbd_request *req)
-{
-	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
-	if (!connection)
-		return;
-	if (connection->todo.req_next == NULL)
-		connection->todo.req_next = req;
-}
-
 static void advance_conn_req_next(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
 	struct drbd_connection *connection = peer_device ? peer_device->connection : NULL;
@@ -695,10 +686,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_inc(&req->completion_ref);
 	}
 
-	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
+	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED))
 		atomic_inc(&req->completion_ref);
-		set_if_null_req_next(peer_device, req);
-	}
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		kref_get(&req->kref); /* wait for the DONE */
