@@ -81,6 +81,7 @@ static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_ho
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
+static void destroy_peer_ack_req(struct kref *kref);
 
 static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, struct drbd_epoch *epoch)
 {
@@ -8121,13 +8122,6 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
-static void req_destroy_after_send_peer_ack(struct kref *kref)
-{
-	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	list_del(&req->tl_requests);
-	mempool_free(req, drbd_request_mempool);
-}
-
 static int process_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -8151,7 +8145,7 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 
 		spin_lock_irq(&resource->req_lock);
 		tmp = list_next_entry(req, tl_requests);
-		kref_put(&req->kref, req_destroy_after_send_peer_ack);
+		kref_put(&req->kref, destroy_peer_ack_req);
 		if (err)
 			break;
 		req = tmp;
@@ -8757,7 +8751,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 	}
 }
 
-static void destroy_request(struct kref *kref)
+static void destroy_peer_ack_req(struct kref *kref)
 {
 	struct drbd_request *req =
 		container_of(kref, struct drbd_request, kref);
@@ -8777,7 +8771,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 		if (!(req->net_rq_state[idx] & RQ_PEER_ACK))
 			continue;
 		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
-		kref_put(&req->kref, destroy_request);
+		kref_put(&req->kref, destroy_peer_ack_req);
 	}
 	req = resource->peer_ack_req;
 	if (req)
