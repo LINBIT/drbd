@@ -576,40 +576,42 @@ static void advance_conn_req_ack_pending(struct drbd_connection *connection, str
 	connection->req_ack_pending = req;
 }
 
-static void set_if_null_req_not_net_done(struct drbd_connection *connection, struct drbd_request *req)
+static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
 {
 	struct drbd_request *prev_req, *old_req = NULL;
 
 	rcu_read_lock();
-	prev_req = cmpxchg(&connection->req_not_net_done, old_req, req);
+	prev_req = cmpxchg(cache_ptr, old_req, req);
 	while (prev_req != old_req) {
 		if (req->dagtag_sector > prev_req->dagtag_sector)
 			break;
 		old_req = prev_req;
-		prev_req = cmpxchg(&connection->req_not_net_done, old_req, req);
+		prev_req = cmpxchg(cache_ptr, old_req, req);
 	}
 	rcu_read_unlock();
 }
 
-static void advance_conn_req_not_net_done(struct drbd_connection *connection, struct drbd_request *req)
+static void advance_cache_ptr(struct drbd_connection *connection,
+			      struct drbd_request **cache_ptr, struct drbd_request *req,
+			      unsigned int is_set, unsigned int is_clear)
 {
 	struct drbd_request *old_req;
 
 	rcu_read_lock();
-	old_req = rcu_dereference(connection->req_not_net_done);
+	old_req = rcu_dereference(*cache_ptr);
 	if (old_req != req) {
 		rcu_read_unlock();
 		return;
 	}
 	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = req->net_rq_state[connection->peer_node_id];
-		if ((s & RQ_NET_SENT) && !(s & RQ_NET_DONE))
+		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
+		if ((s & is_set) && !(s & is_clear))
 			break;
 	}
 	if (&req->tl_requests == &connection->resource->transfer_log)
 		req = NULL;
 
-	cmpxchg(&connection->req_not_net_done, old_req, req);
+	cmpxchg(cache_ptr, old_req, req);
 	rcu_read_unlock();
 }
 
@@ -700,7 +702,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		/* potentially already completed in the ack_receiver thread */
 		if (!(old_net & RQ_NET_DONE)) {
 			atomic_add(req_payload_sectors(req), &peer_device->connection->ap_in_flight);
-			set_if_null_req_not_net_done(connection, req);
+			set_cache_ptr_if_null(&connection->req_not_net_done, req);
 		}
 		if (req->net_rq_state[idx] & RQ_NET_PENDING)
 			set_if_null_req_ack_pending(connection, req);
@@ -772,7 +774,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		 * the caching pointers must not reference it anymore */
 		advance_conn_req_next(connection, req);
 		advance_conn_req_ack_pending(connection, req);
-		advance_conn_req_not_net_done(connection, req);
+		advance_cache_ptr(connection, &connection->req_not_net_done,
+				  req, RQ_NET_SENT, RQ_NET_DONE);
 	}
 
 	/* potentially complete and destroy */
