@@ -578,14 +578,29 @@ static void advance_conn_req_ack_pending(struct drbd_connection *connection, str
 
 static void set_if_null_req_not_net_done(struct drbd_connection *connection, struct drbd_request *req)
 {
-	if (connection->req_not_net_done == NULL)
-		connection->req_not_net_done = req;
+	struct drbd_request *prev_req, *old_req = NULL;
+
+	rcu_read_lock();
+	prev_req = cmpxchg(&connection->req_not_net_done, old_req, req);
+	while (prev_req != old_req) {
+		if (req->dagtag_sector > prev_req->dagtag_sector)
+			break;
+		old_req = prev_req;
+		prev_req = cmpxchg(&connection->req_not_net_done, old_req, req);
+	}
+	rcu_read_unlock();
 }
 
 static void advance_conn_req_not_net_done(struct drbd_connection *connection, struct drbd_request *req)
 {
-	if (connection->req_not_net_done != req)
+	struct drbd_request *old_req;
+
+	rcu_read_lock();
+	old_req = rcu_dereference(connection->req_not_net_done);
+	if (old_req != req) {
+		rcu_read_unlock();
 		return;
+	}
 	list_for_each_entry_continue(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		if ((s & RQ_NET_SENT) && !(s & RQ_NET_DONE))
@@ -593,7 +608,9 @@ static void advance_conn_req_not_net_done(struct drbd_connection *connection, st
 	}
 	if (&req->tl_requests == &connection->resource->transfer_log)
 		req = NULL;
-	connection->req_not_net_done = req;
+
+	cmpxchg(&connection->req_not_net_done, old_req, req);
+	rcu_read_unlock();
 }
 
 /* for wsame, discard, and zero-out requests, the payload (amount of data we
