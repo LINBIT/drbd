@@ -2963,7 +2963,7 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 	return disk_state;
 }
 
-static int adm_detach(struct drbd_device *device, int force, struct sk_buff *reply_skb)
+static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, struct sk_buff *reply_skb)
 {
 	enum drbd_state_rv retcode;
 	const char *err_str = NULL;
@@ -3024,7 +3024,7 @@ int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
-	retcode = adm_detach(adm_ctx.device, parms.force_detach, adm_ctx.reply_skb);
+	retcode = (enum drbd_ret_code)adm_detach(adm_ctx.device, parms.force_detach, adm_ctx.reply_skb);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
