@@ -1265,7 +1265,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	struct net_conf *nc;
 	bool congested = false;
 	enum drbd_on_congestion on_congestion;
-	u32 cong_fill, cong_extents;
+	u32 cong_fill = 0, cong_extents = 0;
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
 	rcu_read_lock();
