@@ -3732,6 +3732,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 #endif
 	spin_lock_init(&device->al_lock);
 
+	spin_lock_init(&device->pending_completion_lock);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);
 	INIT_LIST_HEAD(&device->pending_completion[0]);

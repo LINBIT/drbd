@@ -404,6 +404,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	const unsigned s = req->local_rq_state;
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device;
+	unsigned long flags;
 	int error, ok = 0;
 
 	/*
@@ -521,7 +522,9 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	 * or we will restart this request.
 	 * In either case, the request object will be destroyed soon,
 	 * so better remove it from all lists. */
+	spin_lock_irqsave(&device->pending_completion_lock, flags);
 	list_del_init(&req->req_pending_master_completion);
+	spin_unlock_irqrestore(&device->pending_completion_lock, flags);
 }
 
 /* still holds resource->req_lock */
@@ -715,11 +718,15 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	}
 
 	if ((old_local & RQ_LOCAL_PENDING) && (clear_local & RQ_LOCAL_PENDING)) {
+		struct drbd_device *device = req->device;
+
 		if (req->local_rq_state & RQ_LOCAL_ABORTED)
 			kref_put(&req->kref, drbd_req_destroy);
 		else
 			++c_put;
+		spin_lock(&device->pending_completion_lock); /* local irq already disabled */
 		list_del_init(&req->req_pending_local);
+		spin_unlock(&device->pending_completion_lock);
 	}
 
 	if ((old_net & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
@@ -1550,8 +1557,10 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 	spin_lock(&device->submit.lock);
 	list_add_tail(&req->tl_requests, &device->submit.writes);
 	spin_unlock(&device->submit.lock);
+	spin_lock_irq(&device->pending_completion_lock);
 	list_add_tail(&req->req_pending_master_completion,
 			&device->pending_master_completion[1 /* WRITE */]);
+	spin_unlock_irq(&device->pending_completion_lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
@@ -1834,6 +1843,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 
 	/* If it took the fast path in drbd_request_prepare, add it here.
 	 * The slow path has added it already. */
+	spin_lock(&device->pending_completion_lock); /* local irq already disabled */
 	if (list_empty(&req->req_pending_master_completion))
 		list_add_tail(&req->req_pending_master_completion,
 			&device->pending_master_completion[rw == WRITE]);
@@ -1847,13 +1857,17 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		/* needs to be marked within the same spinlock
 		 * but we need to give up the spinlock to submit */
 		submit_private_bio = true;
-	} else if (no_remote) {
+		spin_unlock(&device->pending_completion_lock);
+	} else {
+		spin_unlock(&device->pending_completion_lock);
+		if (no_remote) {
 nodata:
-		if (drbd_ratelimit())
-			drbd_err(req->device, "IO ERROR: neither local nor remote data, sector %llu+%u\n",
-					(unsigned long long)req->i.sector, req->i.size >> 9);
-		/* A write may have been queued for send_oos, however.
-		 * So we can not simply free it, we must go through drbd_req_put_completion_ref() */
+			if (drbd_ratelimit())
+				drbd_err(req->device, "IO ERROR: neither local nor remote data, sector %llu+%u\n",
+					 (unsigned long long)req->i.sector, req->i.size >> 9);
+			/* A write may have been queued for send_oos, however.
+			 * So we can not simply free it, we must go through drbd_req_put_completion_ref() */
+		}
 	}
 
 out:
@@ -2458,9 +2472,12 @@ void request_timer_fn(struct timer_list *t)
 
 	spin_lock_irq(&device->resource->req_lock);
 	if (dt) {
-		unsigned long write_pre_submit_jif = now, read_pre_submit_jif = now;
+		unsigned long write_pre_submit_jif, read_pre_submit_jif;
+
+		spin_lock(&device->pending_completion_lock); /* local irq already disabled */
 		req_read = list_first_entry_or_null(&device->pending_completion[0], struct drbd_request, req_pending_local);
 		req_write = list_first_entry_or_null(&device->pending_completion[1], struct drbd_request, req_pending_local);
+		spin_unlock(&device->pending_completion_lock);
 
 		if (req_write)
 			write_pre_submit_jif = req_write->pre_submit_jif;

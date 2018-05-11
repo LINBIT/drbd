@@ -1322,6 +1322,7 @@ struct drbd_device {
 
 	/* for statistics and timeouts */
 	/* [0] read, [1] write */
+	spinlock_t pending_completion_lock;
 	struct list_head pending_master_completion[2];
 	struct list_head pending_completion[2];
 

@@ -203,14 +203,14 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 		struct drbd_request *req;
 		int n = atomic_read(&device->ap_actlog_cnt);
 		if (n) {
-			spin_lock_irq(&device->resource->req_lock);
+			spin_lock_irq(&device->pending_completion_lock);
 			req = list_first_entry_or_null(&device->pending_master_completion[1],
 				struct drbd_request, req_pending_master_completion);
 			/* if the oldest request does not wait for the activity log
 			 * it is not interesting for us here */
 			if (req && (req->local_rq_state & RQ_IN_ACT_LOG))
 				req = NULL;
-			spin_unlock_irq(&device->resource->req_lock);
+			spin_unlock_irq(&device->pending_completion_lock);
 		}
 		if (n) {
 			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
@@ -1019,7 +1019,6 @@ static int device_act_log_extents_show(struct seq_file *m, void *ignored)
 static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
-	struct drbd_resource *resource = device->resource;
 	ktime_t now = ktime_get();
 	unsigned long jif = jiffies;
 	struct drbd_request *r1, *r2;
@@ -1029,7 +1028,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "v: %u\n\n", 0);
 
 	seq_puts(m, RQ_HDR);
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&device->pending_completion_lock);
 	/* WRITE, then READ */
 	for (i = 1; i >= 0; --i) {
 		r1 = list_first_entry_or_null(&device->pending_master_completion[i],
@@ -1041,7 +1040,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 		if (r2 && r2 != r1)
 			seq_print_one_request(m, r2, now, jif);
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&device->pending_completion_lock);
 	return 0;
 }
 
