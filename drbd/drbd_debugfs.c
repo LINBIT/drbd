@@ -358,7 +358,6 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	unsigned int show_state = 0;
 
 	seq_puts(m, "n\tdevice\tvnr\t" RQ_HDR);
-	spin_lock_irq(&resource->req_lock);
 	rcu_read_lock();
 	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
 		struct drbd_device *device = req->device;
@@ -384,6 +383,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			}
 		}
 
+		spin_lock_irq(&req->rq_lock);
 		s = req->local_rq_state;
 
 		/* This is meant to summarize timing issues, to be able to tell
@@ -406,6 +406,8 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 					tmp |= 16;
 			}
 		}
+		spin_unlock_irq(&req->rq_lock);
+
 		if ((tmp & show_state) == tmp)
 			continue;
 		show_state |= tmp;
@@ -415,7 +417,6 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			break;
 	}
 	rcu_read_unlock();
-	spin_unlock_irq(&resource->req_lock);
 }
 
 /* TODO: transfer_log and friends should be moved to resource */
