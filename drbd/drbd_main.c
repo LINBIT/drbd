@@ -3291,13 +3291,13 @@ static int drbd_alloc_send_buffers(struct drbd_connection *connection)
 
 void drbd_flush_peer_acks(struct drbd_resource *resource)
 {
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&resource->peer_ack_lock);
 	if (resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
 		drbd_queue_peer_ack(resource, resource->peer_ack_req);
 		resource->peer_ack_req = NULL;
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&resource->peer_ack_lock);
 }
 
 static void peer_ack_timer_fn(struct timer_list *t)
@@ -3439,6 +3439,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->connections);
 	spin_lock_init(&resource->tl_update_lock);
 	INIT_LIST_HEAD(&resource->transfer_log);
+	spin_lock_init(&resource->peer_ack_lock);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);
 	timer_setup(&resource->repost_up_to_date_timer, repost_up_to_date_fn, 0);

@@ -872,6 +872,7 @@ struct drbd_resource {
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 	struct drbd_request *tl_previous_write;
 
+	spinlock_t peer_ack_lock;
 	struct list_head peer_ack_list;  /* requests to send peer acks for */
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
 	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */

@@ -8216,7 +8216,7 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 
 	idx = connection->peer_node_id;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&resource->peer_ack_lock);
 	req = list_first_entry(&resource->peer_ack_list, struct drbd_request, tl_requests);
 	while (&req->tl_requests != &resource->peer_ack_list) {
 		if (!(req->net_rq_state[idx] & RQ_PEER_ACK)) {
@@ -8224,18 +8224,18 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 			continue;
 		}
 		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irq(&resource->peer_ack_lock);
 
 		err = drbd_send_peer_ack(connection, req);
 
-		spin_lock_irq(&resource->req_lock);
+		spin_lock_irq(&resource->peer_ack_lock);
 		tmp = list_next_entry(req, tl_requests);
 		kref_put(&req->kref, destroy_peer_ack_req);
 		if (err)
 			break;
 		req = tmp;
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&resource->peer_ack_lock);
 	return err;
 }
 
@@ -8855,7 +8855,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	struct drbd_request *req, *tmp;
 	int idx = connection->peer_node_id;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&resource->peer_ack_lock);
 	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
 		if (!(req->net_rq_state[idx] & RQ_PEER_ACK))
 			continue;
@@ -8865,7 +8865,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 	req = resource->peer_ack_req;
 	if (req)
 		req->net_rq_state[idx] &= ~RQ_NET_SENT;
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&resource->peer_ack_lock);
 }
 
 struct meta_sock_cmd {

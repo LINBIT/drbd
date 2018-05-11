@@ -317,8 +317,10 @@ void drbd_req_destroy(struct kref *kref)
 
 	if (s & RQ_WRITE && req->i.size) {
 		struct drbd_resource *resource = device->resource;
-		struct drbd_request *peer_ack_req = resource->peer_ack_req;
+		struct drbd_request *peer_ack_req;
 
+		spin_lock(&resource->peer_ack_lock); /* local irq already disabled */
+		peer_ack_req = resource->peer_ack_req;
 		if (peer_ack_req) {
 			if (peer_ack_differs(req, peer_ack_req) ||
 			    (was_last_ref && atomic_read(&device->ap_actlog_cnt)) ||
@@ -330,11 +332,13 @@ void drbd_req_destroy(struct kref *kref)
 		}
 		req->device = NULL;
 		resource->peer_ack_req = req;
-		mod_timer(&resource->peer_ack_timer,
-			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
 
 		if (!peer_ack_req)
 			resource->last_peer_acked_dagtag = req->dagtag_sector;
+		spin_unlock(&resource->peer_ack_lock);
+
+		mod_timer(&resource->peer_ack_timer,
+			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
 	} else
 		call_rcu(&req->rcu, drbd_reclaim_req);
 
