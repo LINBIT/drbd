@@ -3674,6 +3674,7 @@ static int init_submitter(struct drbd_device *device)
 	INIT_WORK(&device->submit.worker, do_submit);
 	INIT_LIST_HEAD(&device->submit.writes);
 	INIT_LIST_HEAD(&device->submit.peer_writes);
+	spin_lock_init(&device->submit.lock);
 	return 0;
 }
 

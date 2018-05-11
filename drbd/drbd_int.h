@@ -1235,7 +1235,7 @@ struct submit_worker {
 	struct workqueue_struct *wq;
 	struct work_struct worker;
 
-	/* protected by ..->resource->req_lock */
+	spinlock_t lock;
 	struct list_head writes;
 	struct list_head peer_writes;
 };

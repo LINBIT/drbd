@@ -1547,11 +1547,11 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 {
 	if (req->private_bio)
 		atomic_inc(&device->ap_actlog_cnt);
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock(&device->submit.lock);
 	list_add_tail(&req->tl_requests, &device->submit.writes);
+	spin_unlock(&device->submit.lock);
 	list_add_tail(&req->req_pending_master_completion,
 			&device->pending_master_completion[1 /* WRITE */]);
-	spin_unlock_irq(&device->resource->req_lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
@@ -2115,12 +2115,12 @@ static bool grab_new_incoming_requests(struct drbd_device *device, struct waitin
 	struct list_head *peer_reqs = more ? &wfa->peer_requests.more_incoming : &wfa->peer_requests.incoming;
 	bool found_new = false;
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock(&device->submit.lock);
 	found_new = !list_empty(&device->submit.writes);
 	list_splice_tail_init(&device->submit.writes, reqs);
 	found_new |= !list_empty(&device->submit.peer_writes);
 	list_splice_tail_init(&device->submit.peer_writes, peer_reqs);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock(&device->submit.lock);
 
 	return found_new;
 }

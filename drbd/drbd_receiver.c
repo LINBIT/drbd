@@ -2679,9 +2679,9 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	atomic_inc(&device->wait_for_actlog);
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock(&device->submit.lock);
 	list_add_tail(&peer_req->wait_for_actlog, &device->submit.peer_writes);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock(&device->submit.lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
