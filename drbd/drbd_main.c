@@ -3794,6 +3794,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->bitmap = drbd_bm_alloc();
 	if (!device->bitmap)
 		goto out_no_bitmap;
+	spin_lock_init(&device->interval_lock);
 	device->read_requests = RB_ROOT;
 	device->write_requests = RB_ROOT;
 

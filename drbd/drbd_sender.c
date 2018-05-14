@@ -2737,6 +2737,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 	}
 
 	spin_lock_irq(&device->resource->req_lock);
+	spin_lock(&device->interval_lock);
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		if (i == in)
 			continue;
@@ -2753,6 +2754,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 		in_flight = true;
 		break;
 	}
+	spin_unlock(&device->interval_lock);
 	spin_unlock_irq(&device->resource->req_lock);
 	return in_flight;
 }

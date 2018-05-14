@@ -173,7 +173,9 @@ static void drbd_remove_request_interval(struct rb_root *root,
 	struct drbd_device *device = req->device;
 	struct drbd_interval *i = &req->i;
 
+	spin_lock(&device->interval_lock); /* local irq already disabled */
 	drbd_remove_interval(root, i);
+	spin_unlock(&device->interval_lock);
 
 	/* Wake up any processes waiting for this request to complete.  */
 	if (i->waiting)
@@ -932,7 +934,9 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * Corresponding drbd_remove_request_interval is in
 		 * drbd_req_complete() */
 		D_ASSERT(device, drbd_interval_empty(&req->i));
+		spin_lock_irqsave(&device->interval_lock, flags);
 		drbd_insert_interval(&device->read_requests, &req->i);
+		spin_unlock_irqrestore(&device->interval_lock, flags);
 
 		set_bit(UNPLUG_REMOTE, &device->flags);
 
@@ -1267,9 +1271,9 @@ static void complete_conflicting_writes(struct drbd_request *req)
 		/* Indicate to wake up device->misc_wait on progress.  */
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i->waiting = true;
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irq(&device->interval_lock);
 		schedule();
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irq(&device->interval_lock);
 	}
 	finish_wait(&device->misc_wait, &wait);
 }
@@ -1472,7 +1476,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device;
-	bool in_tree = false;
 	int remote, send_oos;
 	int count = 0;
 
@@ -1488,12 +1491,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 		if (remote) {
 			++count;
 			_req_mod(req, TO_BE_SENT, peer_device);
-			if (!in_tree) {
-				/* Corresponding drbd_remove_request_interval is in
-				 * drbd_req_complete() */
-				drbd_insert_interval(&device->write_requests, &req->i);
-				in_tree = true;
-			}
 			_req_mod(req, QUEUE_FOR_NET_WRITE, peer_device);
 		} else
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
@@ -1736,6 +1733,23 @@ static void * drbd_check_plugged(struct drbd_resource *resource) { return NULL; 
 static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req) { };
 #endif
 
+static void put_req_interval_into_tree(struct drbd_device *device, struct drbd_request *req)
+{
+	struct drbd_peer_device *peer_device;
+	bool remote;
+
+	for_each_peer_device(peer_device, device) {
+		remote = drbd_should_do_remote(peer_device, NOW);
+		if (!remote)
+			continue;
+		drbd_insert_interval(&device->write_requests, &req->i);
+
+		/* Corresponding drbd_remove_request_interval is in
+		 * drbd_req_complete() */
+		break;
+	}
+}
+
 static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
 {
 	struct drbd_resource *resource = device->resource;
@@ -1747,15 +1761,18 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 
 	spin_lock_irq(&resource->req_lock);
 	if (rw == WRITE) {
-		/* This may temporarily give up the req_lock,
-		 * but will re-acquire it before it returns here.
-		 * Needs to be before the check on drbd_suspended() */
-		complete_conflicting_writes(req);
-		/* no more giving up req_lock from now on! */
-
 		/* check for congestion, and potentially stop sending
 		 * full data updates, but start sending "dirty bits" only. */
 		maybe_pull_ahead(device);
+
+		/* This may temporarily give up the req_lock,
+		 * but will re-acquire it before it returns here.
+		 * Needs to be before the check on drbd_suspended() */
+		spin_lock(&device->interval_lock);
+		complete_conflicting_writes(req);
+		/* no more giving up req_lock from now on! */
+		put_req_interval_into_tree(device, req);
+		spin_unlock(&device->interval_lock);
 	}
 
 

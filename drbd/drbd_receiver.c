@@ -1756,7 +1756,9 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		 * and cause a "Network failure" */
 		spin_lock_irq(&device->resource->req_lock);
 		list_del(&peer_req->w.list);
+		spin_lock(&device->interval_lock);
 		drbd_remove_peer_req_interval(device, peer_req);
+		spin_unlock(&device->interval_lock);
 		spin_unlock_irq(&device->resource->req_lock);
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
@@ -2151,9 +2153,9 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 
 	sector = be64_to_cpu(p->sector);
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->interval_lock);
 	req = find_request(device, &device->read_requests, p->block_id, sector, false, __func__);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->interval_lock);
 	if (unlikely(!req))
 		return -EIO;
 
@@ -2332,10 +2334,12 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
 	if (peer_req->flags & EE_IN_INTERVAL_TREE) {
 		spin_lock_irq(&device->resource->req_lock);
+		spin_lock(&device->interval_lock);
 		D_ASSERT(device, !drbd_interval_empty(&peer_req->i));
 		drbd_remove_peer_req_interval(device, peer_req);
 		if (peer_req->flags & EE_RESTART_REQUESTS)
 			restart_conflicting_writes(peer_req);
+		spin_unlock(&device->interval_lock);
 		spin_unlock_irq(&device->resource->req_lock);
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
@@ -2545,7 +2549,6 @@ static void fail_postponed_requests(struct drbd_peer_request *peer_req)
     repeat:
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		struct drbd_request *req;
-		struct bio_and_error m;
 
 		if (!i->local)
 			continue;
@@ -2553,11 +2556,9 @@ static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 		if (!(req->local_rq_state & RQ_POSTPONED))
 			continue;
 		req->local_rq_state &= ~RQ_POSTPONED;
-		__req_mod(req, NEG_ACKED, peer_req->peer_device, &m);
-		spin_unlock_irq(&device->resource->req_lock);
-		if (m.bio)
-			complete_master_bio(device, &m);
-		spin_lock_irq(&device->resource->req_lock);
+		spin_unlock_irq(&device->interval_lock);
+		req_mod(req, NEG_ACKED, peer_req->peer_device);
+		spin_lock_irq(&device->interval_lock);
 		goto repeat;
 	}
 }
@@ -2593,10 +2594,10 @@ static int wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_d
 	/* Indicate to wake up device->misc_wait on progress.  */
 	i->waiting = true;
 	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->interval_lock);
 	timeout = schedule_timeout(timeout);
 	finish_wait(&device->misc_wait, &wait);
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->interval_lock);
 	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
 		return -ETIMEDOUT;
 	if (signal_pending(current))
@@ -2616,6 +2617,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	bool equal;
 	int err;
 
+	spin_lock_irq(&device->interval_lock);
 	/*
 	 * Inserting the peer request into the write_requests tree will prevent
 	 * new conflicting local requests from being added.
@@ -2664,7 +2666,9 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			atomic_inc(&connection->done_ee_cnt);
+			spin_lock_irq(&device->resource->req_lock);
 			list_add_tail(&peer_req->w.list, &connection->done_ee);
+			spin_unlock_irq(&device->resource->req_lock);
 			queue_work(connection->ack_sender, &connection->send_acks_work);
 
 			err = -ENOENT;
@@ -2695,9 +2699,6 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 				 */
 				err = wait_misc(device, NULL, &req->i);
 				if (err) {
-					begin_state_change_locked(connection->resource, CS_HARD);
-					__change_cstate(connection, C_TIMEOUT);
-					end_state_change_locked(connection->resource);
 					fail_postponed_requests(peer_req);
 					goto out;
 				}
@@ -2715,6 +2716,8 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
     out:
 	if (err)
 		drbd_remove_peer_req_interval(device, peer_req);
+
+	spin_unlock_irq(&device->interval_lock);
 	return err;
 }
 
@@ -2973,10 +2976,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		err = wait_for_and_update_peer_seq(peer_device, d.peer_seq);
 		if (err)
 			goto out_interrupted;
-		spin_lock_irq(&device->resource->req_lock);
 		err = handle_write_conflicts(peer_req);
 		if (err) {
-			spin_unlock_irq(&device->resource->req_lock);
+			change_cstate(connection, C_TIMEOUT, CS_HARD);
+
 			if (err == -ENOENT) {
 				put_ldev(device);
 				return 0;
@@ -2985,13 +2988,13 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		}
 	} else {
 		update_peer_seq(peer_device, d.peer_seq);
-		spin_lock_irq(&device->resource->req_lock);
 	}
 	/* Added to list here already, so debugfs can find it.
 	 * NOTE: active_ee_cnt is only increased *after* we checked we won't
 	 * need to wait for current activity to drain in prepare_activity_log()
 	 */
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
+	spin_lock_irq(&device->resource->req_lock);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -3047,7 +3050,9 @@ disconnect_during_al_begin_io:
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
+	spin_lock(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
+	spin_unlock(&device->interval_lock);
 	spin_unlock_irq(&device->resource->req_lock);
 
 out_interrupted:
@@ -3076,7 +3081,9 @@ void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *pee
 	spin_lock_irq(&device->resource->req_lock);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
+	spin_lock(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
+	spin_unlock(&device->interval_lock);
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
@@ -8477,19 +8484,14 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_request *req;
-	struct bio_and_error m;
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->interval_lock);
 	req = find_request(device, root, id, sector, missing_ok, func);
-	if (unlikely(!req)) {
-		spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->interval_lock);
+	if (unlikely(!req))
 		return -EIO;
-	}
-	__req_mod(req, what, peer_device, &m);
-	spin_unlock_irq(&device->resource->req_lock);
+	req_mod(req, what, peer_device);
 
-	if (m.bio)
-		complete_master_bio(device, &m);
 	return 0;
 }
 

@@ -1317,6 +1317,7 @@ struct drbd_device {
 	atomic_t suspend_cnt;	/* recursive suspend counter, if non-zero, IO will be blocked. */
 
 	/* Interval trees of pending local requests */
+	spinlock_t interval_lock;
 	struct rb_root read_requests;
 	struct rb_root write_requests;
 
