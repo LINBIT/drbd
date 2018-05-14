@@ -3816,6 +3816,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	*/
 
 	INIT_LIST_HEAD(&device->peer_devices);
+	spin_lock_init(&device->pending_bmio_lock);
 	INIT_LIST_HEAD(&device->pending_bitmap_io);
 
 	locked = true;

@@ -1091,9 +1091,9 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 	struct drbd_bm_aio_ctx *ctx = container_of(kref, struct drbd_bm_aio_ctx, kref);
 	unsigned long flags;
 
-	spin_lock_irqsave(&ctx->device->resource->req_lock, flags);
+	spin_lock_irqsave(&ctx->device->pending_bmio_lock, flags);
 	list_del(&ctx->list);
-	spin_unlock_irqrestore(&ctx->device->resource->req_lock, flags);
+	spin_unlock_irqrestore(&ctx->device->pending_bmio_lock, flags);
 	put_ldev(ctx->device);
 	kfree(ctx);
 }
@@ -1267,9 +1267,9 @@ static int bm_rw_range(struct drbd_device *device,
 	if (end_page >= b->bm_number_of_pages)
 		end_page = b->bm_number_of_pages -1;
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->pending_bmio_lock);
 	list_add_tail(&ctx->list, &device->pending_bitmap_io);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->pending_bmio_lock);
 
 	now = jiffies;
 

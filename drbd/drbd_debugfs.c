@@ -234,7 +234,7 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 	unsigned long start_jif;
 	unsigned int in_flight;
 	unsigned int flags;
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&device->pending_bmio_lock);
 	ctx = list_first_entry_or_null(&device->pending_bitmap_io, struct drbd_bm_aio_ctx, list);
 	if (ctx && ctx->done)
 		ctx = NULL;
@@ -243,7 +243,7 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 		in_flight = atomic_read(&ctx->in_flight);
 		flags = ctx->flags;
 	}
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->pending_bmio_lock);
 	if (ctx) {
 		seq_printf(m, "%u\t%u\t%c\t%u\t%u\n",
 			device->minor, device->vnr,

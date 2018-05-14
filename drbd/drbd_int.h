@@ -1253,6 +1253,8 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
+
+	spinlock_t pending_bmio_lock;
 	struct list_head pending_bitmap_io;
 
 	struct opener openers;
