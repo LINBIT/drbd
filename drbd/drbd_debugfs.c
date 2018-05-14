@@ -128,7 +128,9 @@ static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, 
 {
 	/* change anything here, fixup header below! */
 	unsigned int s = req->local_rq_state;
+	unsigned long flags;
 
+	spin_lock_irqsave(&req->rq_lock, flags);
 #define RQ_HDR_1 "epoch\tsector\tsize\trw"
 	seq_printf(m, "0x%x\t%llu\t%u\t%s",
 		req->epoch,
@@ -152,6 +154,7 @@ static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, 
 #endif
 #define RQ_HDR_4 "\tstate\n"
 	seq_print_request_state(m, req);
+	spin_unlock_irqrestore(&req->rq_lock, flags);
 }
 #define RQ_HDR RQ_HDR_1 RQ_HDR_2 RQ_HDR_3 RQ_HDR_4
 
@@ -778,19 +781,19 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	/* BUMP me if you change the file format/content/presentation */
 	seq_printf(m, "v: %u\n\n", 0);
 
-	spin_lock_irq(&connection->resource->req_lock);
-	r1 = connection->todo.req_next;
+	rcu_read_lock();
+	r1 = READ_ONCE(connection->todo.req_next);
 	if (r1)
 		seq_print_minor_vnr_req(m, r1, now, jif);
-	r2 = connection->req_ack_pending;
+	r2 = READ_ONCE(connection->req_ack_pending);
 	if (r2 && r2 != r1) {
 		r1 = r2;
 		seq_print_minor_vnr_req(m, r1, now, jif);
 	}
-	r2 = connection->req_not_net_done;
+	r2 = READ_ONCE(connection->req_not_net_done);
 	if (r2 && r2 != r1)
 		seq_print_minor_vnr_req(m, r2, now, jif);
-	spin_unlock_irq(&connection->resource->req_lock);
+	rcu_read_unlock();
 	return 0;
 }
 
