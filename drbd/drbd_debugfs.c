@@ -490,12 +490,12 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	unsigned long jif;
 	struct queued_twopc *q;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	if (resource->remote_state_change) {
 		twopc = resource->twopc_reply;
 		active = true;
 	}
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	seq_printf(m, "v: %u\n\n", 1);
 	if (active) {
@@ -512,13 +512,13 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 			u64 parents = 0;
 
 			seq_puts(m, "  parent list: ");
-			spin_lock_irq(&resource->req_lock);
+			write_lock_irq(&resource->state_rwlock);
 			list_for_each_entry(connection, &resource->twopc_parents, twopc_parent_list) {
 				char *name = rcu_dereference((connection)->transport.net_conf)->name;
 				seq_printf(m, "%s, ", name);
 				parents |= NODE_MASK(connection->peer_node_id);
 			}
-			spin_unlock_irq(&resource->req_lock);
+			write_unlock_irq(&resource->state_rwlock);
 			seq_puts(m, "\n");
 			seq_puts(m, "  parent node mask: ");
 			rcu_read_lock();

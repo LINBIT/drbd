@@ -1756,7 +1756,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	bool no_remote = false;
 	bool submit_private_bio = false;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	if (rw == WRITE) {
 		/* check for congestion, and potentially stop sending
 		 * full data updates, but start sending "dirty bits" only. */
@@ -1771,7 +1771,6 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		put_req_interval_into_tree(device, req);
 		spin_unlock(&device->interval_lock);
 	}
-
 
 	if (drbd_suspended(device)) {
 		/* push back and retry: */
@@ -1886,7 +1885,7 @@ nodata:
 
 out:
 	drbd_req_put_completion_ref(req, &m, 1);
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	/* Even though above is a kref_put(), this is safe.
 	 * As long as we still need to submit our private bio,
@@ -1917,12 +1916,12 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 		return false;
 	}
 
-	spin_lock_irq(&device->resource->req_lock);
+	write_lock_irq(&device->resource->state_rwlock);
 	nr_requests = device->resource->res_opts.nr_requests;
 	rv = may_inc_ap_bio(device) && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
 	if (rv)
 		atomic_inc(&device->ap_bio_cnt[rw]);
-	spin_unlock_irq(&device->resource->req_lock);
+	write_unlock_irq(&device->resource->state_rwlock);
 
 	return rv;
 }
@@ -2484,7 +2483,8 @@ void request_timer_fn(struct timer_list *t)
 	}
 	rcu_read_unlock();
 
-	spin_lock_irq(&device->resource->req_lock);
+	/* FIXME right now, this basically does a full transfer log walk *every time* */
+	write_lock_irq(&device->resource->state_rwlock);
 	if (dt) {
 		unsigned long write_pre_submit_jif, read_pre_submit_jif;
 
@@ -2574,7 +2574,7 @@ void request_timer_fn(struct timer_list *t)
 			end_state_change_locked(device->resource);
 		}
 	}
-	spin_unlock_irq(&device->resource->req_lock);
+	write_unlock_irq(&device->resource->state_rwlock);
 
 	if (restart_timer) {
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);

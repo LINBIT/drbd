@@ -599,9 +599,9 @@ void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	_tl_walk(connection, what);
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 }
 
 /**
@@ -2568,7 +2568,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	if (test_bit(DOWN_IN_PROGRESS, &resource->flags))
 		return IOC_ABORT;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	if (test_bit(UNREGISTERED, &device->flags))
 		r = IOC_ABORT;
 	else if (!resource->remote_state_change) {
@@ -2578,7 +2578,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 		else
 			device->open_ro_cnt++;
 	}
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	return r;
 }
@@ -3034,9 +3034,9 @@ static void drbd_req_destroy_lock(struct kref *kref)
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	struct drbd_resource *resource = req->device->resource;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	drbd_req_destroy(kref);
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 }
 
 static void do_retry(struct work_struct *ws)
@@ -3452,7 +3452,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	mutex_init(&resource->conf_update);
 	mutex_init(&resource->adm_mutex);
 	mutex_init(&resource->open_release);
-	spin_lock_init(&resource->req_lock);
+	rwlock_init(&resource->state_rwlock);
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
 	init_waitqueue_head(&resource->state_wait);
@@ -3784,7 +3784,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 #endif
 
 #ifdef blk_queue_plugged
-	q->queue_lock = &resource->req_lock; /* needed since we use */
 	/* plugging on a queue, that actually has no requests! */
 	q->unplug_fn = drbd_unplug_fn;
 #endif
@@ -3822,7 +3821,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_bitmap_io);
 
 	locked = true;
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_NOWAIT);
 	if (id < 0) {
 		if (id == -ENOSPC)
@@ -3854,7 +3853,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 	}
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 	locked = false;
 
 	if (init_submitter(device)) {
@@ -3901,7 +3900,7 @@ out_idr_remove_minor:
 	kref_debug_put(&device->kref_debug, 1);
 out_no_minor_idr:
 	if (locked)
-		spin_unlock_irq(&resource->req_lock);
+		write_unlock_irq(&resource->state_rwlock);
 	synchronize_rcu();
 
 out_no_peer_device:
@@ -3940,13 +3939,13 @@ void drbd_unregister_device(struct drbd_device *device)
 	struct drbd_connection *connection;
 	struct drbd_peer_device *peer_device;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	for_each_connection(connection, resource) {
 		idr_remove(&connection->peer_devices, device->vnr);
 	}
 	idr_remove(&resource->devices, device->vnr);
 	idr_remove(&drbd_devices, device_to_minor(device));
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	for_each_peer_device(peer_device, device)
 		drbd_debugfs_peer_device_cleanup(peer_device);
@@ -3988,7 +3987,7 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	LIST_HEAD(work_list);
 	int vnr, rr;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	set_bit(C_UNREGISTERED, &connection->flags);
 	smp_wmb();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -3996,7 +3995,7 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 		list_add(&peer_device->peer_devices, &work_list);
 	}
 	list_del_rcu(&connection->connections);
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	list_for_each_entry(peer_device, &work_list, peer_devices)
 		drbd_debugfs_peer_device_cleanup(peer_device);
@@ -5479,7 +5478,7 @@ void lock_all_resources(void)
 	mutex_lock(&resources_mutex);
 	local_irq_disable();
 	for_each_resource(resource, &drbd_resources)
-		spin_lock_nested(&resource->req_lock, i++);
+		write_lock(&resource->state_rwlock);
 }
 
 void unlock_all_resources(void)
@@ -5487,7 +5486,7 @@ void unlock_all_resources(void)
 	struct drbd_resource *resource;
 
 	for_each_resource(resource, &drbd_resources)
-		spin_unlock(&resource->req_lock);
+		write_unlock(&resource->state_rwlock);
 	local_irq_enable();
 	mutex_unlock(&resources_mutex);
 }

@@ -787,7 +787,7 @@ void state_change_lock(struct drbd_resource *resource, unsigned long *irq_flags,
 			"worker should not initiate state changes with CS_SERIALIZE\n");
 		down(&resource->state_sem);
 	}
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	write_lock_irqsave(&resource->state_rwlock, *irq_flags);
 	resource->state_change_flags = flags;
 }
 
@@ -796,7 +796,7 @@ static void __state_change_unlock(struct drbd_resource *resource, unsigned long 
 	enum chg_state_flags flags = resource->state_change_flags;
 
 	resource->state_change_flags = 0;
-	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	write_unlock_irqrestore(&resource->state_rwlock, *irq_flags);
 	if (done && expect(resource, current != resource->worker.task))
 		wait_for_completion(done);
 	if ((flags & CS_SERIALIZE) && !(flags & (CS_ALREADY_SERIALIZED | CS_PREPARE)))
@@ -891,7 +891,7 @@ void abort_state_change_locked(struct drbd_resource *resource)
 static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
 	rcu_read_unlock();
-	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	write_unlock_irqrestore(&resource->state_rwlock, *irq_flags);
 }
 
 static void __end_remote_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
@@ -903,16 +903,16 @@ static void __end_remote_state_change(struct drbd_resource *resource, enum chg_s
 
 static void end_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags, enum chg_state_flags flags)
 {
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	write_lock_irqsave(&resource->state_rwlock, *irq_flags);
 	__end_remote_state_change(resource, flags);
 }
 
 void clear_remote_state_change(struct drbd_resource *resource) {
 	unsigned long irq_flags;
 
-	spin_lock_irqsave(&resource->req_lock, irq_flags);
+	write_lock_irqsave(&resource->state_rwlock, irq_flags);
 	__clear_remote_state_change(resource);
-	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
+	write_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 }
 
 static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, enum which_state which)
@@ -3678,10 +3678,10 @@ static enum drbd_state_rv __peer_reply(struct drbd_connection *connection)
 static bool when_done_lock(struct drbd_resource *resource,
 			   unsigned long *irq_flags)
 {
-	spin_lock_irqsave(&resource->req_lock, *irq_flags);
+	write_lock_irqsave(&resource->state_rwlock, *irq_flags);
 	if (!resource->remote_state_change && resource->twopc_work.cb == NULL)
 		return true;
-	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
+	write_unlock_irqrestore(&resource->state_rwlock, *irq_flags);
 	return false;
 }
 
@@ -4459,7 +4459,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	struct twopc_reply twopc_reply;
 	LIST_HEAD(parents);
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	twopc_reply = resource->twopc_reply;
 	if (twopc_reply.tid) {
 		resource->twopc_prepare_reply_cmd = cmd;
@@ -4467,7 +4467,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	}
 	if (as_work)
 		resource->twopc_work.cb = NULL;
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	if (!twopc_reply.tid)
 		return;
@@ -4511,12 +4511,12 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 	enum drbd_state_rv rv;
 	u64 nodes_to_reach, reach_immediately;
 
-	spin_lock_irq(&resource->req_lock);
+	write_lock_irq(&resource->state_rwlock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
 	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
-	spin_unlock_irq(&resource->req_lock);
+	write_unlock_irq(&resource->state_rwlock);
 
 	rv = __cluster_wide_request(resource, vnr, cmd, request, reach_immediately);
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {

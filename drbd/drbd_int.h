@@ -862,7 +862,7 @@ struct drbd_resource {
 					   and devices, connection and peer_devices lists */
 	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
 	struct mutex open_release;	/* serialize open/release */
-	spinlock_t req_lock;
+	rwlock_t state_rwlock;
 	u64 dagtag_sector;		/* Protected by req_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
@@ -2290,9 +2290,10 @@ static inline void drbd_chk_io_error_(struct drbd_device *device,
 {
 	if (error) {
 		unsigned long flags;
-		spin_lock_irqsave(&device->resource->req_lock, flags);
+		write_lock_irqsave(&device->resource->state_rwlock, flags);
 		__drbd_chk_io_error_(device, forcedetach, where);
-		spin_unlock_irqrestore(&device->resource->req_lock, flags);
+		write_unlock_irqrestore(&device->resource->state_rwlock,
+					flags);
 	}
 }
 

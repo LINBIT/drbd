@@ -319,9 +319,9 @@ void drbd_request_endio(struct bio *bio)
 	req->private_bio = ERR_PTR(blk_status_to_errno(status));
 
 	/* not req_mod(), we need irqsave here! */
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+	write_lock_irqsave(&device->resource->state_rwlock, flags);
 	__req_mod(req, what, NULL, &m);
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	write_unlock_irqrestore(&device->resource->state_rwlock, flags);
 	put_ldev(device);
 
 	if (m.bio)
@@ -1120,7 +1120,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	drbd_ping_peer(connection);
 
-	spin_lock_irq(&device->resource->req_lock);
+	write_lock_irq(&device->resource->state_rwlock);
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	old_repl_state = repl_state[NOW];
 
@@ -1246,7 +1246,7 @@ out_unlock:
 		source_m |= NODE_MASK(peer_device->node_id);
 
 	resync_again(device, source_m, target_m);
-	spin_unlock_irq(&device->resource->req_lock);
+	write_unlock_irq(&device->resource->state_rwlock);
 
 out:
 	/* reset start sector, if we reached end of device */
@@ -1984,9 +1984,9 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 	enum drbd_repl_state repl_state;
 	int r;
 
-	spin_lock_irq(&device->resource->req_lock);
+	write_lock_irq(&device->resource->state_rwlock);
 	repl_state = peer_device->repl_state[NOW];
-	spin_unlock_irq(&device->resource->req_lock);
+	write_unlock_irq(&device->resource->state_rwlock);
 	if (repl_state < L_ESTABLISHED) {
 		/* Connection closed meanwhile. */
 		return;
@@ -2530,9 +2530,9 @@ restart:
 		if (drbd_req_is_write(req))
 			expect(peer_device, s & RQ_EXP_BARR_ACK);
 
-		spin_lock_irq(&connection->resource->req_lock);
+		write_lock_irq(&connection->resource->state_rwlock);
 		__req_mod(req, RESEND, peer_device, &m);
-		spin_unlock_irq(&connection->resource->req_lock);
+		write_unlock_irq(&connection->resource->state_rwlock);
 
 		/* If this is now RQ_NET_PENDING (it should), it won't
 		 * disappear, even if we give up the spinlock below. */
@@ -2737,7 +2737,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 		return false;
 	}
 
-	spin_lock_irq(&device->resource->req_lock);
+	write_lock_irq(&device->resource->state_rwlock);
 	spin_lock(&device->interval_lock);
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		if (i == in)
@@ -2756,7 +2756,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 		break;
 	}
 	spin_unlock(&device->interval_lock);
-	spin_unlock_irq(&device->resource->req_lock);
+	write_unlock_irq(&device->resource->state_rwlock);
 	return in_flight;
 }
 
@@ -2854,9 +2854,9 @@ static int process_one_request(struct drbd_connection *connection)
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 	}
 
-	spin_lock_irq(&connection->resource->req_lock);
+	write_lock_irq(&connection->resource->state_rwlock);
 	__req_mod(req, what, peer_device, &m);
-	spin_unlock_irq(&connection->resource->req_lock);
+	write_unlock_irq(&connection->resource->state_rwlock);
 
 	check_sender_todo(connection);
 
@@ -2969,9 +2969,9 @@ int drbd_sender(struct drbd_thread *thi)
 		struct drbd_device *device = req->device;
 		peer_device = conn_peer_device(connection, device->vnr);
 
-		spin_lock_irq(&connection->resource->req_lock);
+		write_lock_irq(&connection->resource->state_rwlock);
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
-		spin_unlock_irq(&connection->resource->req_lock);
+		write_unlock_irq(&connection->resource->state_rwlock);
 		if (m.bio)
 			complete_master_bio(device, &m);
 
