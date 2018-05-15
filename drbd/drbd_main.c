@@ -462,16 +462,23 @@ bail:
  * RESTART_FROZEN_DISK_IO, COMPLETION_RESUMED.
  */
 /* must hold resource->req_lock */
-void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
+void __tl_walk(struct drbd_resource *const resource,
+		struct drbd_connection *const connection,
+		const enum drbd_req_event what)
 {
-	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	struct drbd_request *req, *r;
 
 	tl_for_each_req_ref(req, r, &resource->transfer_log) {
-		peer_device = conn_peer_device(connection, req->device->vnr);
+		peer_device = connection == NULL ? NULL :
+			conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, what, peer_device);
 	}
+}
+
+void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
+{
+	__tl_walk(connection->resource, connection, what);
 }
 
 void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)

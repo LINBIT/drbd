@@ -1057,6 +1057,10 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, RQ_NET_OK|RQ_NET_PENDING, RQ_NET_DONE);
 		break;
 
+	case COMPLETION_RESUMED:
+		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+		break;
+
 	case FAIL_FROZEN_DISK_IO:
 		if (!(req->local_rq_state & RQ_LOCAL_COMPLETED))
 			break;

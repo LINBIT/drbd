@@ -4698,6 +4698,10 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	if (retcode == SS_SUCCESS) {
 		struct drbd_peer_device *peer_device;
 
+		/* All the tl_walk() below should probably be moved
+		 * to an "after state change work"? */
+		__tl_walk(resource, NULL, COMPLETION_RESUMED);
+
 		for_each_peer_device(peer_device, device) {
 			struct drbd_connection *connection = peer_device->connection;
 
