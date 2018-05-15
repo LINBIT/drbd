@@ -613,15 +613,13 @@ void tl_abort_disk_io(struct drbd_device *device)
         struct drbd_resource *resource = device->resource;
         struct drbd_request *req, *r;
 
-        spin_lock_irq(&resource->req_lock);
         tl_for_each_req_ref(req, r, &resource->transfer_log) {
                 if (!(READ_ONCE(req->local_rq_state) & RQ_LOCAL_PENDING))
                         continue;
                 if (req->device != device)
                         continue;
-                _req_mod(req, ABORT_DISK_IO, NULL);
+                req_mod(req, ABORT_DISK_IO, NULL);
         }
-        spin_unlock_irq(&resource->req_lock);
 }
 
 static int drbd_thread_setup(void *arg)
