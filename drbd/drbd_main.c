@@ -420,7 +420,6 @@ void tl_release(struct drbd_connection *connection,
 	int expect_epoch = 0;
 	int expect_size = 0;
 
-	spin_lock_irq(&connection->resource->req_lock);
 	rcu_read_lock();
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
@@ -430,10 +429,10 @@ void tl_release(struct drbd_connection *connection,
 		const int idx = peer_device->node_id;
 		unsigned int local_rq_state, net_rq_state;
 
-		spin_lock(&r->rq_lock); /* local irq already disabled */
+		spin_lock_irq(&r->rq_lock);
 		local_rq_state = r->local_rq_state;
 		net_rq_state = r->net_rq_state[idx];
-		spin_unlock(&r->rq_lock);
+		spin_unlock_irq(&r->rq_lock);
 
 		if (!req) {
 			if (!(local_rq_state & RQ_WRITE))
@@ -544,14 +543,13 @@ void tl_release(struct drbd_connection *connection,
 			break;
 		}
 		peer_device = conn_peer_device(connection, req->device->vnr);
-		_req_mod(req, BARRIER_ACKED, peer_device);
+		req_mod(req, BARRIER_ACKED, peer_device);
 		if (req == req_y) {
 			tl_abort_for_each_req_ref(r, &resource->transfer_log);
 			break;
 		}
 	}
 	rcu_read_unlock();
-	spin_unlock_irq(&connection->resource->req_lock);
 
 	/* urgently flush out peer acks for P_CONFIRM_STABLE */
 	if (req_y) {
@@ -565,7 +563,6 @@ void tl_release(struct drbd_connection *connection,
 
 bail:
 	rcu_read_unlock();
-	spin_unlock_irq(&connection->resource->req_lock);
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
