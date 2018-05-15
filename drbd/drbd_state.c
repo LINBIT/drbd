@@ -2923,7 +2923,7 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		}
 		mutex_unlock(&resource->conf_update);
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
+		_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		__change_io_susp_fencing(connection, false);
 		end_state_change(resource, &irq_flags);
 	}
@@ -2936,7 +2936,7 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		_tl_restart(connection, RESEND);
+		_tl_walk(connection, RESEND);
 		__change_io_susp_fencing(connection, false);
 		end_state_change(resource, &irq_flags);
 	}

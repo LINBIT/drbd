@@ -1442,7 +1442,6 @@ extern void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 #endif
 extern void tl_release(struct drbd_connection *, unsigned int barrier_nr,
 		       unsigned int set_size);
-extern void tl_clear(struct drbd_connection *);
 extern void drbd_free_sock(struct drbd_connection *connection);
 
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);

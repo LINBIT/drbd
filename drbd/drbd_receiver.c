@@ -6645,7 +6645,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		spin_unlock_irq(&resource->req_lock);
 
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		tl_clear(connection);
+		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		mutex_lock(&resource->conf_update);
 		drbd_uuid_new_current(device, false);
 		mutex_unlock(&resource->conf_update);
@@ -7489,7 +7489,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 			drbd_uuid_new_current(device, false);
 			mutex_unlock(&resource->conf_update);
 		}
-		tl_clear(peer_device->connection);
+		tl_walk(peer_device->connection, CONNECTION_LOST_WHILE_PENDING);
 	}
 
 	drbd_md_sync(device);

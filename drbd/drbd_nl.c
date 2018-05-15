@@ -781,7 +781,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		 * We may still be suspended due to the on-no-data-accessible policy.
 		 * If that was OND_IO_ERROR, fail pending requests. */
 		if (!resource_is_suspended(resource, NOW))
-			_tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
+			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		end_state_change_locked(resource);
 		spin_unlock_irq(&resource->req_lock);
 		return false;
@@ -4694,8 +4694,6 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 
 	if (resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO)
 		__change_have_quorum(device, true);
-
-	/* TODO: Throw away queued IO requests... */
 	retcode = end_state_change(resource, &irq_flags);
 	if (retcode == SS_SUCCESS) {
 		struct drbd_peer_device *peer_device;
@@ -4704,11 +4702,11 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 			struct drbd_connection *connection = peer_device->connection;
 
 			if (peer_device->repl_state[NOW] < L_ESTABLISHED)
-				tl_clear(connection);
+				tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 			if (device->disk_state[NOW] == D_DISKLESS ||
 			    device->disk_state[NOW] == D_FAILED ||
 			    device->disk_state[NOW] == D_DETACHING)
-				tl_restart(connection, FAIL_FROZEN_DISK_IO);
+				tl_walk(connection, FAIL_FROZEN_DISK_IO);
 		}
 	}
 	drbd_resume_io(device);

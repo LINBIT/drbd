@@ -58,7 +58,7 @@
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
-#include "drbd_req.h" /* only for _req_mod in tl_release and tl_clear */
+#include "drbd_req.h" /* only for _req_mod in tl_release */
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
@@ -454,15 +454,15 @@ bail:
 
 
 /**
- * _tl_restart() - Walks the transfer log, and applies an action to all requests
+ * _tl_walk() - Walks the transfer log, and applies an action to all requests
  * @connection:	DRBD connection to operate on.
  * @what:       The action/event to perform with all request objects
  *
  * @what might be one of CONNECTION_LOST_WHILE_PENDING, RESEND, FAIL_FROZEN_DISK_IO,
- * RESTART_FROZEN_DISK_IO.
+ * RESTART_FROZEN_DISK_IO, COMPLETION_RESUMED.
  */
 /* must hold resource->req_lock */
-void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
+void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
@@ -474,28 +474,14 @@ void _tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
 	}
 }
 
-void tl_restart(struct drbd_connection *connection, enum drbd_req_event what)
+void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
 	del_timer_sync(&resource->peer_ack_timer);
 	spin_lock_irq(&resource->req_lock);
-	_tl_restart(connection, what);
+	_tl_walk(connection, what);
 	spin_unlock_irq(&resource->req_lock);
-}
-
-
-/**
- * tl_clear() - Clears all requests and &struct drbd_tl_epoch objects out of the TL
- * @device:	DRBD device.
- *
- * This is called after the connection to the peer was lost. The storage covered
- * by the requests on the transfer gets marked as our of sync. Called from the
- * receiver thread and the sender thread.
- */
-void tl_clear(struct drbd_connection *connection)
-{
-	tl_restart(connection, CONNECTION_LOST_WHILE_PENDING);
 }
 
 /**
