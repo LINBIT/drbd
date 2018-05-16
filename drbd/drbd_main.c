@@ -2568,7 +2568,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	if (test_bit(DOWN_IN_PROGRESS, &resource->flags))
 		return IOC_ABORT;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	if (test_bit(UNREGISTERED, &device->flags))
 		r = IOC_ABORT;
 	else if (!resource->remote_state_change) {
@@ -2578,7 +2578,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 		else
 			device->open_ro_cnt++;
 	}
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	return r;
 }
