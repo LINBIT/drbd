@@ -5878,16 +5878,11 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	enum drbd_ret_code ret;
 	u64 im;
 
-	if (test_bit(UNREGISTERED, &device->flags))
-		return ERR_MINOR_INVALID;
-
 	spin_lock_irq(&resource->req_lock);
-	if (device->disk_state[NOW] == D_DISKLESS) {
-		set_bit(UNREGISTERED, &device->flags);
-		ret = NO_ERROR;
-	} else {
+	if (device->disk_state[NOW] == D_DISKLESS)
+		ret = test_and_set_bit(UNREGISTERED, &device->flags) ? ERR_MINOR_INVALID : NO_ERROR;
+	else
 		ret = ERR_MINOR_CONFIGURED;
-	}
 	spin_unlock_irq(&resource->req_lock);
 
 	if (ret != NO_ERROR)
