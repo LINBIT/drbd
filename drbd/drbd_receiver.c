@@ -279,11 +279,10 @@ static void drbd_reclaim_net_peer_reqs(struct drbd_connection *connection)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
-	struct drbd_resource *resource = connection->resource;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	reclaim_finished_net_peer_reqs(connection, &reclaimed);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
@@ -460,15 +459,17 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	mempool_free(peer_req, &drbd_ee_mempool);
 }
 
-int drbd_free_peer_reqs(struct drbd_resource *resource, struct list_head *list, bool is_net_ee)
+int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *list, bool is_net_ee)
 {
 	LIST_HEAD(work_list);
 	struct drbd_peer_request *peer_req, *t;
 	int count = 0;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&connection->resource->req_lock); /* TODO: Remove me later */
+	spin_lock(&connection->peer_reqs_lock);
 	list_splice_init(list, &work_list);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock(&connection->peer_reqs_lock);
+	spin_unlock_irq(&connection->resource->req_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
 		__drbd_free_peer_req(peer_req, is_net_ee);
@@ -7869,16 +7870,16 @@ void conn_disconnect(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 
-	i = drbd_free_peer_reqs(resource, &connection->read_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->read_ee, true);
 	if (i)
 		drbd_info(connection, "read_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(resource, &connection->active_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->active_ee, true);
 	if (i)
 		drbd_info(connection, "active_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(resource, &connection->sync_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->sync_ee, true);
 	if (i)
 		drbd_info(connection, "sync_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(resource, &connection->net_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->net_ee, true);
 	if (i)
 		drbd_info(connection, "net_ee not empty, killed %u entries\n", i);
 

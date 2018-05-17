@@ -999,11 +999,11 @@ struct drbd_connection {
 	struct drbd_thread ack_receiver;
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
-
-	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
 	atomic_t active_ee_cnt;
+	spinlock_t peer_reqs_lock;
+	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
 	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
 	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
@@ -2056,7 +2056,7 @@ extern int drbd_submit_peer_request(struct drbd_device *,
 				    const unsigned, const int);
 extern void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
-extern int drbd_free_peer_reqs(struct drbd_resource *, struct list_head *, bool is_net_ee);
+extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)

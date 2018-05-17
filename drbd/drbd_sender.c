@@ -1291,9 +1291,9 @@ static void move_to_net_ee_or_free(struct drbd_connection *connection, struct dr
 		int i = DIV_ROUND_UP(peer_req->i.size, PAGE_SIZE);
 		atomic_add(i, &connection->pp_in_use_by_net);
 		atomic_sub(i, &connection->pp_in_use);
-		spin_lock_irq(&connection->resource->req_lock);
+		spin_lock_irq(&connection->peer_reqs_lock);
 		list_add_tail(&peer_req->w.list, &peer_req->peer_device->connection->net_ee);
-		spin_unlock_irq(&connection->resource->req_lock);
+		spin_unlock_irq(&connection->peer_reqs_lock);
 		wake_up(&drbd_pp_wait);
 	} else
 		drbd_free_peer_req(peer_req);

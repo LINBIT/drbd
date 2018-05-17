@@ -3532,6 +3532,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->sender.connection = connection;
 	drbd_thread_init(resource, &connection->ack_receiver, drbd_ack_receiver, "ack_recv");
 	connection->ack_receiver.connection = connection;
+	spin_lock_init(&connection->peer_reqs_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->connections);
 	INIT_LIST_HEAD(&connection->active_ee);
@@ -4002,11 +4003,11 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 
 	del_connect_timer(connection);
 
-	rr = drbd_free_peer_reqs(connection->resource, &connection->done_ee, false);
+	rr = drbd_free_peer_reqs(connection, &connection->done_ee, false);
 	if (rr)
 		drbd_err(connection, "%d EEs in done list found!\n", rr);
 
-	rr = drbd_free_peer_reqs(connection->resource, &connection->net_ee, true);
+	rr = drbd_free_peer_reqs(connection, &connection->net_ee, true);
 	if (rr)
 		drbd_err(connection, "%d EEs in net list found!\n", rr);
 
