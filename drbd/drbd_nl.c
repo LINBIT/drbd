@@ -779,10 +779,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	int r;
 	unsigned long irq_flags;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
-		write_unlock_irq(&resource->state_rwlock);
+		read_unlock_irq(&resource->state_rwlock);
 		return false;
 	}
 
@@ -799,10 +799,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		if (!resource_is_suspended(resource, NOW))
 			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		end_state_change_locked(resource);
-		write_unlock_irq(&resource->state_rwlock);
+		read_unlock_irq(&resource->state_rwlock);
 		return false;
 	}
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	fencing_policy = connection->fencing_policy;
 	if (fencing_policy == FP_DONT_CARE)
@@ -2125,12 +2125,12 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 			queue_max_hw_sectors(bdev->backing_bdev->bd_disk->queue) << 9);
 	}
 
-	write_lock_irq(&device->resource->state_rwlock);
+	read_lock_irq(&device->resource->state_rwlock);
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			max_bio_size = min(max_bio_size, peer_device->max_bio_size);
 	}
-	write_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irq(&device->resource->state_rwlock);
 
 	drbd_setup_queue_param(device, bdev, max_bio_size, o);
 }
@@ -2154,7 +2154,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 	}
 
 	drbd_al_shrink(device);
-	write_lock_irq(&device->resource->state_rwlock);
+	read_lock_irq(&device->resource->state_rwlock);
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
 			suspend = false;
@@ -2163,7 +2163,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 	}
 	if (suspend)
 		suspend = !test_and_set_bit(AL_SUSPENDED, &device->flags);
-	write_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irq(&device->resource->state_rwlock);
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
 
@@ -3134,9 +3134,9 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	enum drbd_disk_state disk_state;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	disk_state = device->disk_state[NOW];
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 	return disk_state;
 }
 
@@ -4158,10 +4158,10 @@ int drbd_open_ro_count(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr, open_ro_cnt = 0;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	idr_for_each_entry(&resource->devices, device, vnr)
 		open_ro_cnt += device->open_ro_cnt;
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	return open_ro_cnt;
 }
@@ -4180,9 +4180,9 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	rv = change_cstate_es(connection, C_DISCONNECTING, flags, &err_str);
 	switch (rv) {
 	case SS_CW_FAILED_BY_PEER:
-		write_lock_irq(&resource->state_rwlock);
+		read_lock_irq(&resource->state_rwlock);
 		cstate = connection->cstate[NOW];
-		write_unlock_irq(&resource->state_rwlock);
+		read_unlock_irq(&resource->state_rwlock);
 		if (cstate < C_CONNECTED)
 			goto repeat;
 		break;
