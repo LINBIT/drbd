@@ -1165,7 +1165,9 @@ static void drbd_send_confirm_stable(struct drbd_peer_request *peer_req)
 	 * this code path is .prev, and the youngest that now should be on
 	 * stable storage is .prev->prev */
 	spin_lock_irq(&resource->req_lock);
+	spin_lock(&connection->peer_reqs_lock);
 	youngest = list_entry(peer_req->recv_order.prev, struct drbd_peer_request, recv_order);
+	spin_unlock(&connection->peer_reqs_lock);
 	spin_unlock_irq(&resource->req_lock);
 
 	count = atomic_read(&epoch->epoch_size) - atomic_read(&epoch->confirmed) - 1;
@@ -3054,13 +3056,11 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 disconnect_during_al_begin_io:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-	spin_lock_irq(&device->resource->req_lock);
 	list_del_init(&peer_req->recv_order);
+	spin_unlock(&connection->peer_reqs_lock);
 	spin_lock(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
-	spin_unlock(&device->interval_lock);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->interval_lock);
 
 out_interrupted:
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
@@ -8799,7 +8799,6 @@ static void notify_sync_targets_or_free(struct drbd_peer_request *peer_req, u64 
 
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_resource *resource = connection->resource;
 	struct p_peer_ack *p = pi->data;
 	u64 dagtag, in_sync;
 	struct drbd_peer_request *peer_req, *tmp;
@@ -8808,19 +8807,19 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 	dagtag = be64_to_cpu(p->dagtag);
 	in_sync = be64_to_cpu(p->mask);
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
 		if (dagtag == peer_req->dagtag_sector)
 			goto found;
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_err(connection, "peer request with dagtag %llu not found\n", dagtag);
 	return -EIO;
 
 found:
 	list_cut_position(&work_list, &connection->peer_requests, &peer_req->recv_order);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -8866,13 +8865,12 @@ void apply_unacked_peer_requests(struct drbd_connection *connection)
 
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 {
-	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_request *peer_req, *tmp;
 	LIST_HEAD(work_list);
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_splice_init(&connection->peer_requests, &work_list);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &work_list, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
