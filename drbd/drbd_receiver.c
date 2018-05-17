@@ -1516,7 +1516,9 @@ static bool conn_wait_ee_cond(struct drbd_connection *connection, struct list_he
 	bool done;
 
 	spin_lock_irq(&resource->req_lock);
+	spin_lock(&connection->peer_reqs_lock);
 	done = list_empty(head);
+	spin_unlock(&connection->peer_reqs_lock);
 	spin_unlock_irq(&resource->req_lock);
 
 	if (!done)
@@ -1720,6 +1722,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	int err;
 	/* We leave DE_CONTAINS_A_BARRIER and EE_IS_BARRIER in place,
@@ -1732,7 +1735,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	   that will never trigger. If it is reported late, we will just
 	   print that warning and continue correctly for all future requests
 	   with WO_BDEV_FLUSH */
-	if (previous_epoch(peer_device->connection, peer_req->epoch))
+	if (previous_epoch(connection, peer_req->epoch))
 		drbd_warn(device, "Write ordering was not enforced (one time event)\n");
 
 	/* we still have a local reference,
@@ -1743,7 +1746,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
-		drbd_queue_work(&peer_device->connection->sender_work,
+		drbd_queue_work(&connection->sender_work,
 				&peer_req->w);
 		/* retry later; fall through */
 	case 0:
@@ -1755,14 +1758,14 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	default:
 		/* forget the object,
 		 * and cause a "Network failure" */
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irq(&connection->peer_reqs_lock);
 		list_del(&peer_req->w.list);
+		spin_unlock(&connection->peer_reqs_lock);
 		spin_lock(&device->interval_lock);
 		drbd_remove_peer_req_interval(device, peer_req);
-		spin_unlock(&device->interval_lock);
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irq(&device->interval_lock);
 		drbd_al_complete_io(device, &peer_req->i);
-		drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
+		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
 		drbd_free_peer_req(peer_req);
 		drbd_err(device, "submit failed, triggering re-connect\n");
 		return err;
@@ -2667,9 +2670,9 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			peer_req->w.cb = discard ? e_send_discard_write :
 						   e_send_retry_write;
 			atomic_inc(&connection->done_ee_cnt);
-			spin_lock_irq(&device->resource->req_lock);
+			spin_lock(&connection->peer_reqs_lock);
 			list_add_tail(&peer_req->w.list, &connection->done_ee);
-			spin_unlock_irq(&device->resource->req_lock);
+			spin_unlock(&connection->peer_reqs_lock);
 			queue_work(connection->ack_sender, &connection->send_acks_work);
 
 			err = -ENOENT;
@@ -2990,15 +2993,15 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	} else {
 		update_peer_seq(peer_device, d.peer_seq);
 	}
+	spin_lock_irq(&connection->peer_reqs_lock);
 	/* Added to list here already, so debugfs can find it.
 	 * NOTE: active_ee_cnt is only increased *after* we checked we won't
 	 * need to wait for current activity to drain in prepare_activity_log()
 	 */
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
-	spin_lock_irq(&device->resource->req_lock);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (connection->agreed_pro_version < 110) {
 		/* If the peer is DRBD 8, a sync target may need to drain
@@ -3048,8 +3051,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	drbd_al_complete_io(device, &peer_req->i);
 
 disconnect_during_al_begin_io:
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+	spin_lock_irq(&device->resource->req_lock);
 	list_del_init(&peer_req->recv_order);
 	spin_lock(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
@@ -3467,9 +3472,9 @@ submit:
 	err = -EIO;
 
 fail3:
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
 fail2:
 	drbd_free_peer_req(peer_req);
