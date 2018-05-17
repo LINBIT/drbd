@@ -140,15 +140,13 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	 * and schedule for resubmission */
 	if (is_failed_barrier(peer_req->flags)) {
 		drbd_bump_write_ordering(device->resource, device->ldev, WO_BDEV_FLUSH);
-		spin_lock_irqsave(&device->resource->req_lock, flags);
-		spin_lock(&connection->peer_reqs_lock);
+		spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 		list_del(&peer_req->w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
 		peer_req->w.cb = w_e_reissue;
 		/* put_ldev actually happens below, once we come here again. */
 		__release(local);
-		spin_unlock(&connection->peer_reqs_lock);
-		spin_unlock_irqrestore(&device->resource->req_lock, flags);
+		spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 		drbd_queue_work(&connection->sender_work, &peer_req->w);
 		if (atomic_dec_and_test(&connection->active_ee_cnt))
 			wake_up(&connection->ee_wait);
@@ -170,8 +168,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
                 drbd_set_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
         }
 
-	spin_lock_irqsave(&device->resource->req_lock, flags);
-	spin_lock(&connection->peer_reqs_lock);
+	spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 	device->writ_cnt += peer_req->i.size >> 9;
 	atomic_inc(&connection->done_ee_cnt);
 	list_move_tail(&peer_req->w.list, &connection->done_ee);
@@ -196,8 +193,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 
 	if (connection->cstate[NOW] == C_CONNECTED)
 		queue_work(connection->ack_sender, &connection->send_acks_work);
-	spin_unlock(&connection->peer_reqs_lock);
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
 	if (block_id == ID_SYNCER)
 		drbd_rs_complete_io(peer_device, sector);

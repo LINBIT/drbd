@@ -2071,6 +2071,7 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 static int recv_resync_read(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request_details *d) __releases(local)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
 	int err;
@@ -2092,9 +2093,9 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	peer_req->w.cb = e_end_resync_block;
 	peer_req->submit_jif = jiffies;
 
-	spin_lock_irq(&device->resource->req_lock);
-	list_add_tail(&peer_req->w.list, &peer_device->connection->sync_ee);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_add_tail(&peer_req->w.list, &connection->sync_ee);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	atomic_add(d->bi_size >> 9, &device->rs_sect_ev);
 
@@ -2116,9 +2117,9 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 out:
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_free_peer_req(peer_req);
 	return err;
@@ -2432,7 +2433,7 @@ static bool overlapping_resync_write(struct drbd_connection *connection, struct 
 	 * resync and application activity on a particular region using
 	 * device->act_log and peer_device->resync_lru.
 	 */
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_for_each_entry(rs_req, &connection->sync_ee, w.list) {
 		if (rs_req->peer_device != peer_req->peer_device)
 			continue;
@@ -2442,7 +2443,7 @@ static bool overlapping_resync_write(struct drbd_connection *connection, struct 
 			break;
 		}
 	}
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	return rv;
 }
@@ -7583,18 +7584,18 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		peer_req->submit_jif = jiffies;
 		peer_req->flags |= EE_TRIM;
 
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irq(&connection->peer_reqs_lock);
 		list_add_tail(&peer_req->w.list, &connection->sync_ee);
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irq(&connection->peer_reqs_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
 		err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE_ZEROES,
 				0, DRBD_FAULT_RS_WR);
 
 		if (err) {
-			spin_lock_irq(&device->resource->req_lock);
+			spin_lock_irq(&connection->peer_reqs_lock);
 			list_del(&peer_req->w.list);
-			spin_unlock_irq(&device->resource->req_lock);
+			spin_unlock_irq(&connection->peer_reqs_lock);
 
 			drbd_free_peer_req(peer_req);
 			put_ldev(device);
