@@ -1290,7 +1290,6 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (connection->agreed_pro_version < 96)
 		return;
 
-	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
 	if (nc) {
 		on_congestion = nc->on_congestion;
@@ -1299,7 +1298,6 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	} else {
 		on_congestion = OC_BLOCK;
 	}
-	rcu_read_unlock();
 	if (on_congestion == OC_BLOCK)
 		return;
 
@@ -1333,30 +1331,32 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 
 	if (congested) {
 		struct drbd_resource *resource = device->resource;
+		unsigned long irq_flags;
 
 		set_bit(CONN_CONGESTED, &connection->flags);
 
 		/* start a new epoch for non-mirrored writes */
 		start_new_tl_epoch(resource);
 
-		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
+		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
 		if (on_congestion == OC_PULL_AHEAD)
 			__change_repl_state(peer_device, L_AHEAD);
 		else			/* on_congestion == OC_DISCONNECT */
 			__change_cstate(peer_device->connection, C_DISCONNECTING);
-		end_state_change_locked(resource);
+		end_state_change(resource, &irq_flags);
 	}
 	put_ldev(device);
 }
 
-/* called within req_lock */
 static void maybe_pull_ahead(struct drbd_device *device)
 {
 	struct drbd_connection *connection;
 
-	for_each_connection(connection, device->resource)
+	rcu_read_lock();
+	for_each_connection_rcu(connection, device->resource)
 		if (connection->cstate[NOW] == C_CONNECTED)
 			__maybe_pull_ahead(device, connection);
+	rcu_read_unlock();
 }
 
 bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_state which)
@@ -1756,12 +1756,9 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	bool no_remote = false;
 	bool submit_private_bio = false;
 
-	write_lock_irq(&resource->state_rwlock);
-	if (rw == WRITE) {
-		/* check for congestion, and potentially stop sending
-		 * full data updates, but start sending "dirty bits" only. */
-		maybe_pull_ahead(device);
+	read_lock_irq(&resource->state_rwlock);
 
+	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-acquire it before it returns here.
 		 * Needs to be before the check on drbd_suspended() */
@@ -1770,6 +1767,10 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		/* no more giving up req_lock from now on! */
 		put_req_interval_into_tree(device, req);
 		spin_unlock(&device->interval_lock);
+
+		/* check for congestion, and potentially stop sending
+		 * full data updates, but start sending "dirty bits" only. */
+		maybe_pull_ahead(device);
 	}
 
 	if (drbd_suspended(device)) {
@@ -1795,13 +1796,13 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	/* which transfer log epoch does this belong to? */
 	req->epoch = atomic_read(&resource->current_tle_nr);
 
+	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 	if (rw == WRITE)
 		resource->dagtag_sector += req->i.size >> 9;
 	req->dagtag_sector = resource->dagtag_sector;
 	/* no point in adding empty flushes to the transfer log,
 	 * they are mapped to drbd barriers already. */
 	if (likely(req->i.size != 0)) {
-		spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 		if (rw == WRITE) {
 			struct drbd_request *prev_write;
 
@@ -1816,8 +1817,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			}
 		}
 		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
-		spin_unlock(&resource->tl_update_lock);
 	}
+	spin_unlock(&resource->tl_update_lock);
 
 	if (rw == WRITE) {
 		if (req->private_bio && !may_do_writes(device)) {
@@ -1885,7 +1886,7 @@ nodata:
 
 out:
 	drbd_req_put_completion_ref(req, &m, 1);
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	/* Even though above is a kref_put(), this is safe.
 	 * As long as we still need to submit our private bio,
@@ -2484,7 +2485,7 @@ void request_timer_fn(struct timer_list *t)
 	rcu_read_unlock();
 
 	/* FIXME right now, this basically does a full transfer log walk *every time* */
-	write_lock_irq(&device->resource->state_rwlock);
+	read_lock_irq(&device->resource->state_rwlock);
 	if (dt) {
 		unsigned long write_pre_submit_jif, read_pre_submit_jif;
 
@@ -2574,7 +2575,7 @@ void request_timer_fn(struct timer_list *t)
 			end_state_change_locked(device->resource);
 		}
 	}
-	write_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irq(&device->resource->state_rwlock);
 
 	if (restart_timer) {
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);

@@ -344,9 +344,9 @@ static inline void req_mod(struct drbd_request *req,
 	struct drbd_device *device = req->device;
 	struct bio_and_error m;
 
-	write_lock_irq(&device->resource->state_rwlock);
+	read_lock_irq(&device->resource->state_rwlock);
 	__req_mod(req, what, peer_device, &m);
-	write_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irq(&device->resource->state_rwlock);
 
 	if (m.bio)
 		complete_master_bio(device, &m);

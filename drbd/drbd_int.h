@@ -306,7 +306,8 @@ struct drbd_request {
 	 * Assigned from device->resource->dagtag_sector.
 	 *
 	 * Given that some IO backends write several GB per second meanwhile,
-	 * lets just use a 64bit sequence space. */
+	 * lets just use a 64bit sequence space.
+	 * Currently updates are protocted by tl_update_lock */
 	u64 dagtag_sector;
 
 	struct list_head tl_requests; /* ring list in the transfer log */
