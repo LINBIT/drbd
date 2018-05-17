@@ -489,10 +489,10 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 	int err = 0;
 	int n = 0;
 
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	reclaim_finished_net_peer_reqs(connection, &reclaimed);
 	list_splice_init(&connection->done_ee, &work_list);
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
