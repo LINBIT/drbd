@@ -3756,6 +3756,7 @@ out_remove_peer_device:
 		kref_debug_put(&connection->kref_debug, 3);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
+	idr_remove(&resource->devices, vnr);
 
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
