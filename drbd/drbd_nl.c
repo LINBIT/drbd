@@ -1589,6 +1589,9 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		if (rs)
 			drbd_info(device, "Changed AL layout to al-stripes = %d, al-stripe-size-kB = %d\n",
 				 md->al_stripes, md->al_stripe_size_4k * 4);
+
+		lc_unlock(device->act_log);
+		wake_up(&device->al_wait);
 	}
 
 	if (size > prev.effective_size)
@@ -1608,8 +1611,6 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		md->al_stripe_size_4k = prev.al_stripe_size_4k;
 		md->al_size_4k = (u64)prev.al_stripes * prev.al_stripe_size_4k;
 	}
-	lc_unlock(device->act_log);
-	wake_up(&device->al_wait);
 	drbd_md_put_buffer(device);
 	drbd_resume_io(device);
 
@@ -2095,6 +2096,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 		suspend = !test_and_set_bit(AL_SUSPENDED, &device->flags);
 	spin_unlock_irq(&device->resource->req_lock);
 	lc_unlock(device->act_log);
+	wake_up(&device->al_wait);
 
 	if (suspend)
 		drbd_info(device, "Suspended AL updates\n");
