@@ -2872,6 +2872,32 @@ void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *pee
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 
+/* Possibly "cancel" and forget about all peer_requests that had still been
+ * waiting for the activity log (wfa) when the connection to their peer failed,
+ * and pretend we never received them.
+ */
+void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup)
+{
+	struct drbd_peer_request *peer_req, *pr_tmp;
+
+	spin_lock_irq(&device->resource->req_lock);
+	list_for_each_entry(peer_req, cleanup, wait_for_actlog) {
+		list_del(&peer_req->w.list); /* should be on the "->active_ee" list */
+		list_del_init(&peer_req->recv_order);
+		drbd_remove_peer_req_interval(device, peer_req);
+	}
+	spin_unlock_irq(&device->resource->req_lock);
+
+	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, wait_for_actlog) {
+		atomic_dec(&peer_req->peer_device->wait_for_actlog);
+		dec_unacked(peer_req->peer_device);
+		list_del_init(&peer_req->wait_for_actlog);
+		drbd_may_finish_epoch(peer_req->peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
+		drbd_free_peer_req(peer_req);
+		put_ldev(device);
+	}
+}
+
 /* We may throttle resync, if the lower device seems to be busy,
  * and current sync rate is above c_min_rate.
  *
@@ -8512,8 +8538,13 @@ found:
 		struct drbd_device *device = peer_device->device;
 		u64 in_sync_b, mask;
 
+		D_ASSERT(peer_device, peer_req->flags & EE_IN_ACTLOG);
+
 		if (get_ldev(device)) {
-			in_sync_b = node_ids_to_bitmap(device, in_sync);
+			if ((peer_req->flags & EE_WAS_ERROR) == 0)
+				in_sync_b = node_ids_to_bitmap(device, in_sync);
+			else
+				in_sync_b = 0;
 			mask = ~node_id_to_mask(device->ldev->md.peers,
 						connection->peer_node_id);
 

@@ -1843,6 +1843,8 @@ struct incoming_pending_later {
 	struct list_head pending;
 	/* currently blocked e.g. by concurrent resync requests */
 	struct list_head later;
+	/* need cleanup */
+	struct list_head cleanup;
 };
 
 struct waiting_for_act_log {
@@ -1856,6 +1858,7 @@ static void ipb_init(struct incoming_pending_later *ipb)
 	INIT_LIST_HEAD(&ipb->more_incoming);
 	INIT_LIST_HEAD(&ipb->pending);
 	INIT_LIST_HEAD(&ipb->later);
+	INIT_LIST_HEAD(&ipb->cleanup);
 }
 
 static void wfa_init(struct waiting_for_act_log *wfa)
@@ -1958,6 +1961,11 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 		goto out;
 
 	while ((peer_req = wfa_next_peer_request(wfa))) {
+		if (peer_req->peer_device->connection->cstate[NOW] < C_CONNECTED) {
+			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.cleanup);
+			made_progress = true;
+			continue;
+		}
 		err = drbd_al_begin_io_nonblock(device, &peer_req->i);
 		if (err == -ENOBUFS)
 			break;
@@ -2150,6 +2158,8 @@ void do_submit(struct work_struct *ws)
 			if (!made_progress)
 				break;
 		}
+		if (!list_empty(&wfa.peer_requests.cleanup))
+			drbd_cleanup_peer_requests_wfa(device, &wfa.peer_requests.cleanup);
 
 		drbd_al_begin_io_commit(device);
 

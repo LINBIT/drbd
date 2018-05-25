@@ -1989,6 +1989,7 @@ extern int drbd_submit_peer_request(struct drbd_device *,
 				    struct drbd_peer_request *, const unsigned,
 				    const unsigned, const int);
 extern void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *peer_req);
+extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
 extern int drbd_free_peer_reqs(struct drbd_resource *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
