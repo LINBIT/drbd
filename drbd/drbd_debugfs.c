@@ -317,11 +317,11 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 	struct drbd_connection *connection, unsigned long jif)
 {
 	seq_puts(m, "minor\tvnr\tsector\tsize\trw\tage\tflags\n");
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	seq_print_peer_request(m, connection, &connection->active_ee, jif);
 	seq_print_peer_request(m, connection, &connection->read_ee, jif);
 	seq_print_peer_request(m, connection, &connection->sync_ee, jif);
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 }
 
 static void seq_print_device_peer_flushes(struct seq_file *m,

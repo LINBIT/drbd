@@ -402,20 +402,6 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is
 	wake_up(&drbd_pp_wait);
 }
 
-/*
-You need to hold the req_lock:
- _drbd_wait_ee_list_empty()
-
-You must not have the req_lock:
- drbd_free_peer_req()
- drbd_alloc_peer_req()
- drbd_free_peer_reqs()
- drbd_ee_fix_bhs()
- drbd_finish_peer_reqs()
- drbd_clear_done_ee()
- drbd_wait_ee_list_empty()
-*/
-
 /* normal: payload_size == request size (bi_size)
  * w_same: payload_size == logical_block_size
  * trim: payload_size == 0 */
@@ -465,11 +451,9 @@ int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *li
 	struct drbd_peer_request *peer_req, *t;
 	int count = 0;
 
-	spin_lock_irq(&connection->resource->req_lock); /* TODO: Remove me later */
-	spin_lock(&connection->peer_reqs_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_splice_init(list, &work_list);
-	spin_unlock(&connection->peer_reqs_lock);
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
 		__drbd_free_peer_req(peer_req, is_net_ee);
@@ -1140,7 +1124,6 @@ static void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, 
 static void drbd_send_confirm_stable(struct drbd_peer_request *peer_req)
 {
 	struct drbd_connection *connection = peer_req->peer_device->connection;
-	struct drbd_resource *resource = connection->resource;
 	struct drbd_epoch *epoch = peer_req->epoch;
 	struct drbd_peer_request *oldest, *youngest;
 	struct p_confirm_stable *p;
@@ -1164,11 +1147,9 @@ static void drbd_send_confirm_stable(struct drbd_peer_request *peer_req)
 	 * means the oldest is .next, the currently blocked one that triggered
 	 * this code path is .prev, and the youngest that now should be on
 	 * stable storage is .prev->prev */
-	spin_lock_irq(&resource->req_lock);
-	spin_lock(&connection->peer_reqs_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	youngest = list_entry(peer_req->recv_order.prev, struct drbd_peer_request, recv_order);
-	spin_unlock(&connection->peer_reqs_lock);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	count = atomic_read(&epoch->epoch_size) - atomic_read(&epoch->confirmed) - 1;
 	atomic_add(count, &epoch->confirmed);
@@ -1514,14 +1495,11 @@ static void drbd_issue_peer_wsame(struct drbd_device *device,
 
 static bool conn_wait_ee_cond(struct drbd_connection *connection, struct list_head *head)
 {
-	struct drbd_resource *resource = connection->resource;
 	bool done;
 
-	spin_lock_irq(&resource->req_lock);
-	spin_lock(&connection->peer_reqs_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	done = list_empty(head);
-	spin_unlock(&connection->peer_reqs_lock);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (!done)
 		drbd_unplug_all_devices(connection);
@@ -3085,13 +3063,13 @@ void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *pee
 
 	drbd_al_complete_io(device, &peer_req->i);
 
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
+	spin_unlock(&connection->peer_reqs_lock);
 	spin_lock(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
-	spin_unlock(&device->interval_lock);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irq(&device->interval_lock);
 
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
