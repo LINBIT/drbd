@@ -610,12 +610,8 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 void connect_timer_fn(struct timer_list *t)
 {
 	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
-	struct drbd_resource *resource = connection->resource;
-	unsigned long irq_flags;
 
-	spin_lock_irqsave(&resource->req_lock, irq_flags);
 	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
-	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
 static void conn_connect2(struct drbd_connection *connection)
