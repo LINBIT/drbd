@@ -550,6 +550,7 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 
 static void advance_conn_req_next(struct drbd_connection *connection, struct drbd_request *req)
 {
+	/* Only the sender thread comes here. No other caller context of req_mod() ever arrives here */
 	if (connection->todo.req_next != req)
 		return;
 	rcu_read_lock();

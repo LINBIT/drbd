@@ -2529,7 +2529,9 @@ restart:
 		if (drbd_req_is_write(req))
 			expect(peer_device, s & RQ_EXP_BARR_ACK);
 
+		spin_lock_irq(&connection->resource->req_lock);
 		__req_mod(req, RESEND, peer_device, &m);
+		spin_unlock_irq(&connection->resource->req_lock);
 
 		/* If this is now RQ_NET_PENDING (it should), it won't
 		 * disappear, even if we give up the spinlock below. */
@@ -2545,11 +2547,9 @@ restart:
 		 * complete the master bio, outside of the lock. */
 		if (m.bio || need_resched()) {
 			rcu_read_unlock();
-			spin_unlock_irq(&connection->resource->req_lock);
 			if (m.bio)
 				complete_master_bio(device, &m);
 			cond_resched();
-			spin_lock_irq(&connection->resource->req_lock);
 			rcu_read_lock();
 			goto restart;
 		}
@@ -2621,9 +2621,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	int uncork, cork;
 	bool got_something = 0;
 
-	spin_lock_irq(&connection->resource->req_lock);
 	got_something = check_sender_todo(connection);
-	spin_unlock_irq(&connection->resource->req_lock);
 	if (got_something)
 		return;
 
@@ -2964,9 +2962,9 @@ int drbd_sender(struct drbd_thread *thi)
 
 	/* cleanup all currently unprocessed requests */
 	if (!connection->todo.req) {
-		spin_lock_irq(&connection->resource->req_lock);
+		rcu_read_lock();
 		tl_next_request_for_connection(connection);
-		spin_unlock_irq(&connection->resource->req_lock);
+		rcu_read_unlock();
 	}
 	while (connection->todo.req) {
 		struct bio_and_error m;
@@ -2976,10 +2974,13 @@ int drbd_sender(struct drbd_thread *thi)
 
 		spin_lock_irq(&connection->resource->req_lock);
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
-		tl_next_request_for_connection(connection);
 		spin_unlock_irq(&connection->resource->req_lock);
 		if (m.bio)
 			complete_master_bio(device, &m);
+
+		rcu_read_lock();
+		tl_next_request_for_connection(connection);
+		rcu_read_unlock();
 	}
 
 	/* cancel all still pending works */
