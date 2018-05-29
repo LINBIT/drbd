@@ -2642,9 +2642,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		int send_barrier;
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
-		spin_lock_irq(&connection->resource->req_lock);
 		if (check_sender_todo(connection) || signal_pending(current)) {
-			spin_unlock_irq(&connection->resource->req_lock);
 			break;
 		}
 
@@ -2657,7 +2655,6 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 */
 		send_barrier = should_send_barrier(connection,
 					atomic_read(&connection->resource->current_tle_nr));
-		spin_unlock_irq(&connection->resource->req_lock);
 
 		if (send_barrier) {
 			finish_wait(&connection->sender_work.q_wait, &wait);
@@ -2856,12 +2853,9 @@ static int process_one_request(struct drbd_connection *connection)
 
 	spin_lock_irq(&connection->resource->req_lock);
 	__req_mod(req, what, peer_device, &m);
-
-	/* As we hold the request lock anyways here,
-	 * this is a convenient place to check for new things to do. */
-	check_sender_todo(connection);
-
 	spin_unlock_irq(&connection->resource->req_lock);
+
+	check_sender_todo(connection);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
