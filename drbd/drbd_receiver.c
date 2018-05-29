@@ -2562,6 +2562,48 @@ static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 	}
 }
 
+/**
+ * wait_misc  -  wait for a request or peer request to make progress
+ * @device:	device associated with the request or peer request
+ * @peer_device: NULL when waiting for a request; the peer device of the peer
+ *		 request when waiting for a peer request
+ * @i:		the struct drbd_interval embedded in struct drbd_request or
+ *		struct drbd_peer_request
+ */
+static int wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_device, struct drbd_interval *i)
+{
+	DEFINE_WAIT(wait);
+	long timeout;
+
+	rcu_read_lock();
+	if (peer_device) {
+		struct net_conf *net_conf = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (!net_conf) {
+			rcu_read_unlock();
+			return -ETIMEDOUT;
+		}
+		timeout = net_conf->ko_count ? net_conf->timeout * HZ / 10 * net_conf->ko_count :
+					       MAX_SCHEDULE_TIMEOUT;
+	} else {
+		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
+		timeout = disk_conf->disk_timeout * HZ / 10;
+	}
+	rcu_read_unlock();
+
+	/* Indicate to wake up device->misc_wait on progress.  */
+	i->waiting = true;
+	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
+	spin_unlock_irq(&device->resource->req_lock);
+	timeout = schedule_timeout(timeout);
+	finish_wait(&device->misc_wait, &wait);
+	spin_lock_irq(&device->resource->req_lock);
+	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
+		return -ETIMEDOUT;
+	if (signal_pending(current))
+		return -ERESTARTSYS;
+	return 0;
+}
+
 static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -2594,7 +2636,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			 * should not happen in a two-node setup.  Wait for the
 			 * earlier peer request to complete.
 			 */
-			err = drbd_wait_misc(device, peer_device, i);
+			err = wait_misc(device, peer_device, i);
 			if (err)
 				goto out;
 			goto repeat;
@@ -2651,7 +2693,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 				 * request to finish locally before submitting
 				 * the conflicting peer request.
 				 */
-				err = drbd_wait_misc(device, NULL, &req->i);
+				err = wait_misc(device, NULL, &req->i);
 				if (err) {
 					begin_state_change_locked(connection->resource, CS_HARD);
 					__change_cstate(connection, C_TIMEOUT);

@@ -5463,47 +5463,6 @@ static void md_sync_timer_fn(struct timer_list *t)
 	drbd_device_post_work(device, MD_SYNC);
 }
 
-/**
- * drbd_wait_misc  -  wait for a request or peer request to make progress
- * @device:	device associated with the request or peer request
- * @peer_device: NULL when waiting for a request; the peer device of the peer
- *		 request when waiting for a peer request
- * @i:		the struct drbd_interval embedded in struct drbd_request or
- *		struct drbd_peer_request
- */
-int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_device, struct drbd_interval *i)
-{
-	DEFINE_WAIT(wait);
-	long timeout;
-
-	rcu_read_lock();
-	if (peer_device) {
-		struct net_conf *net_conf = rcu_dereference(peer_device->connection->transport.net_conf);
-		if (!net_conf) {
-			rcu_read_unlock();
-			return -ETIMEDOUT;
-		}
-		timeout = net_conf->ko_count ? net_conf->timeout * HZ / 10 * net_conf->ko_count :
-					       MAX_SCHEDULE_TIMEOUT;
-	} else {
-		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
-		timeout = disk_conf->disk_timeout * HZ / 10;
-	}
-	rcu_read_unlock();
-
-	/* Indicate to wake up device->misc_wait on progress.  */
-	i->waiting = true;
-	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&device->resource->req_lock);
-	timeout = schedule_timeout(timeout);
-	finish_wait(&device->misc_wait, &wait);
-	spin_lock_irq(&device->resource->req_lock);
-	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
-		return -ETIMEDOUT;
-	if (signal_pending(current))
-		return -ERESTARTSYS;
-	return 0;
-}
 
 #ifndef __maybe_unused
 #define __maybe_unused                  __attribute__((unused))
