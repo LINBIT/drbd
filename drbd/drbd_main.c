@@ -599,9 +599,9 @@ void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	_tl_walk(connection, what);
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 }
 
 /**
@@ -3034,9 +3034,9 @@ static void drbd_req_destroy_lock(struct kref *kref)
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	struct drbd_resource *resource = req->device->resource;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	drbd_req_destroy(kref);
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 }
 
 static void do_retry(struct work_struct *ws)
@@ -5478,7 +5478,7 @@ void lock_all_resources(void)
 	mutex_lock(&resources_mutex);
 	local_irq_disable();
 	for_each_resource(resource, &drbd_resources)
-		write_lock(&resource->state_rwlock);
+		read_lock(&resource->state_rwlock);
 }
 
 void unlock_all_resources(void)
@@ -5486,7 +5486,7 @@ void unlock_all_resources(void)
 	struct drbd_resource *resource;
 
 	for_each_resource(resource, &drbd_resources)
-		write_unlock(&resource->state_rwlock);
+		read_unlock(&resource->state_rwlock);
 	local_irq_enable();
 	mutex_unlock(&resources_mutex);
 }
