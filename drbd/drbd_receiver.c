@@ -6147,12 +6147,12 @@ static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drb
 	struct drbd_connection *connection;
 	u64 nodes_to_reach, reach_immediately, im;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
 	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	for_each_connection_ref(connection, im, resource) {
 		u64 mask = NODE_MASK(connection->peer_node_id);
@@ -6714,9 +6714,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
  retry:
 	new_repl_state = max_t(enum drbd_repl_state, old_peer_state.conn, L_OFF);
 
@@ -6760,12 +6760,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			bool finish_now = false;
 
 			if (old_peer_state.conn == L_WF_BITMAP_S) {
-				write_lock_irq(&resource->state_rwlock);
+				read_lock_irq(&resource->state_rwlock);
 				if (peer_device->repl_state[NOW] == L_WF_BITMAP_S)
 					peer_device->resync_finished_pdsk = peer_state.disk;
 				else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE)
 					finish_now = true;
-				write_unlock_irq(&resource->state_rwlock);
+				read_unlock_irq(&resource->state_rwlock);
 			}
 
 			if (finish_now || old_peer_state.conn == L_SYNC_SOURCE ||
@@ -7198,9 +7198,9 @@ static enum drbd_disk_state read_disk_state(struct drbd_device *device)
 	struct drbd_resource *resource = device->resource;
 	enum drbd_disk_state disk_state;
 
-	write_lock_irq(&resource->state_rwlock);
+	read_lock_irq(&resource->state_rwlock);
 	disk_state = device->disk_state[NOW];
-	write_unlock_irq(&resource->state_rwlock);
+	read_unlock_irq(&resource->state_rwlock);
 
 	return disk_state;
 }
