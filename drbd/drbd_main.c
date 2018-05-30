@@ -3755,11 +3755,14 @@ out_remove_peer_device:
 		kfree(peer_device);
 		kref_debug_put(&connection->kref_debug, 3);
 		kref_put(&connection->kref, drbd_destroy_connection);
+		kref_debug_put(&device->kref_debug, 1);
 	}
 	idr_remove(&resource->devices, vnr);
+	kref_debug_put(&device->kref_debug, 1);
 
 out_idr_remove_minor:
 	idr_remove(&drbd_devices, minor);
+	kref_debug_put(&device->kref_debug, 1);
 out_no_minor_idr:
 	if (locked)
 		spin_unlock_irq(&resource->req_lock);
@@ -3780,6 +3783,9 @@ out_no_disk:
 	blk_cleanup_queue(q);
 out_no_q:
 	kref_put(&resource->kref, drbd_destroy_resource);
+	kref_debug_put(&resource->kref_debug, 4);
+		/* kref debugging wants an extra put, see has_refs() */
+	kref_debug_put(&device->kref_debug, 4);
 	kref_debug_destroy(&device->kref_debug);
 	kfree(device);
 	return err;
