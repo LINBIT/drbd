@@ -222,7 +222,7 @@ void drbd_req_destroy(struct kref *kref)
 
 		drbd_err(device,
 			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
-			s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
+			s, peer_device->node_id, ns, atomic_read(&req->completion_ref));
 		return;
 	}
 
@@ -437,7 +437,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 
 		drbd_err(device,
 			"drbd_req_complete: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
-			 s, 1 + peer_device->node_id, ns, atomic_read(&req->completion_ref));
+			 s, peer_device->node_id, ns, atomic_read(&req->completion_ref));
 		return;
 	}
 
