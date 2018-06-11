@@ -4609,7 +4609,10 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
 		get_random_bytes(&current_uuid, sizeof(u64));
-		current_uuid &= ~UUID_PRIMARY;
+		if (device->resource->role[NOW] == R_PRIMARY)
+			current_uuid |= UUID_PRIMARY;
+		else
+			current_uuid &= ~UUID_PRIMARY;
 		drbd_set_exposed_data_uuid(device, current_uuid);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
 
