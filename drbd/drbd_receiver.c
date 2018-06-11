@@ -6584,7 +6584,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		   peer_device->disk_state[NOW] == D_UNKNOWN && peer_state.disk == D_DISKLESS &&
 		   device->disk_state[NOW] >= D_NEGOTIATING) {
 		/* I got connected to a diskless primary */
-		if (peer_device->current_uuid == drbd_current_uuid(device)) {
+		if ((peer_device->current_uuid & ~UUID_PRIMARY) ==
+		    (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
 			if (device->disk_state[NOW] < D_UP_TO_DATE) {
 				drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
 				new_disk_state = D_UP_TO_DATE;
@@ -6603,7 +6604,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	} else if (resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] == D_DISKLESS &&
 		   peer_disk_state == D_UP_TO_DATE &&
-		   peer_device->current_uuid != device->exposed_data_uuid) {
+		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
+		   (device->exposed_data_uuid & ~UUID_PRIMARY)) {
 		/* Do not trust this guy!
 		   He pretents to be D_UP_TO_DATE, but has a different current UUID. Do not
 		   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
