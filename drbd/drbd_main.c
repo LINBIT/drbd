@@ -4638,9 +4638,7 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (!(nodes & NODE_MASK(peer_device->node_id) ||
-		      (peer_device->disk_state[NOW] == D_DISKLESS &&
-		       peer_device->current_uuid != drbd_current_uuid(device))))
+		if (!(nodes & NODE_MASK(peer_device->node_id)))
 			continue;
 
 		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
@@ -4653,10 +4651,11 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 	rcu_read_unlock();
 }
 
-void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 val, u64 weak_nodes) __must_hold(local)
+void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u64 weak_nodes) __must_hold(local)
 {
-	struct drbd_device *device = peer_device->device;
-	u64 dagtag = peer_device->connection->last_dagtag_sector;
+	struct drbd_device *device = from_pd->device;
+	u64 dagtag = from_pd->connection->last_dagtag_sector;
+	struct drbd_peer_device *peer_device;
 	u64 receipients = 0;
 	bool set_current = true;
 
@@ -4672,6 +4671,10 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *peer_device, u64 va
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
 			receipients |= NODE_MASK(peer_device->node_id);
 
+		if (peer_device != from_pd &&
+		    peer_device->disk_state[NOW] == D_DISKLESS &&
+		    peer_device->current_uuid != drbd_current_uuid(device))
+			receipients |= NODE_MASK(peer_device->node_id);
 	}
 
 	if (set_current) {
