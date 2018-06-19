@@ -2762,7 +2762,6 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
 }
 
-/* need to hold resource->req_lock */
 void drbd_queue_unplug(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
@@ -2771,28 +2770,29 @@ void drbd_queue_unplug(struct drbd_device *device)
 
 	dagtag_sector = resource->dagtag_sector;
 
-	for_each_connection(connection, resource) {
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
 		/* use the "next" slot */
 		unsigned int i = !connection->todo.unplug_slot;
 		connection->todo.unplug_dagtag_sector[i] = dagtag_sector;
 		wake_up(&connection->sender_work.q_wait);
 	}
+	rcu_read_unlock();
 }
 
 #ifdef blk_queue_plugged
 static void drbd_unplug_fn(struct request_queue *q)
 {
 	struct drbd_device *device = q->queuedata;
-	struct drbd_resource *resource = device->resource;
 
 	/* unplug FIRST */
 	/* note: q->queue_lock == resource->req_lock */
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irq(q->queue_lock);
 	blk_remove_plug(q);
+	spin_unlock_irq(q->queue_lock);
 
 	/* only if connected */
 	drbd_queue_unplug(device);
-	spin_unlock_irq(&resource->req_lock);
 
 	drbd_kick_lo(device);
 }
@@ -3782,6 +3782,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 #ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 	blk_queue_merge_bvec(q, drbd_merge_bvec);
 #endif
+
 #ifdef blk_queue_plugged
 	q->queue_lock = &resource->req_lock; /* needed since we use */
 	/* plugging on a queue, that actually has no requests! */

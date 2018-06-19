@@ -1684,23 +1684,20 @@ struct drbd_plug_cb {
 static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct drbd_plug_cb *plug = container_of(cb, struct drbd_plug_cb, cb);
-	struct drbd_resource *resource = plug->cb.data;
 	struct drbd_request *req = plug->most_recent_req;
 
 	kfree(cb);
 	if (!req)
 		return;
 
-	spin_lock_irq(&resource->req_lock);
 	/* In case the sender did not process it yet, raise the flag to
 	 * have it followed with P_UNPLUG_REMOTE just after. */
-	spin_lock(&req->rq_lock);
+	spin_lock_irq(&req->rq_lock);
 	req->local_rq_state |= RQ_UNPLUG;
-	spin_unlock(&req->rq_lock);
+	spin_unlock_irq(&req->rq_lock);
 	/* but also queue a generic unplug */
 	drbd_queue_unplug(req->device);
 	kref_put(&req->kref, drbd_req_destroy);
-	spin_unlock_irq(&resource->req_lock);
 }
 
 static struct drbd_plug_cb* drbd_check_plugged(struct drbd_resource *resource)
