@@ -2576,7 +2576,12 @@ out:
 		drbd_release(bdev->bd_disk, mode);
 		if (rv == -EAGAIN && !(mode & FMODE_NDELAY))
 			rv = -EMEDIUMTYPE;
+	} else {
+		char comm[TASK_COMM_LEN];
+		drbd_info(device, "open by: %s(%d)\n",
+				get_task_comm(comm, current), task_pid_nr(current));
 	}
+
 	return rv;
 }
 
@@ -2597,6 +2602,7 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
+	char comm[TASK_COMM_LEN];
 	int open_rw_cnt, open_ro_cnt;
 
 	mutex_lock(&resource->open_release);
@@ -2632,6 +2638,8 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 
 	kref_debug_put(&device->kref_debug, 3);
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
+	drbd_info(device, "close by: %s(%d)\n",
+			get_task_comm(comm, current), task_pid_nr(current));
 #ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
 #endif
