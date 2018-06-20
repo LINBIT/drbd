@@ -2959,12 +2959,13 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 	return disk_state;
 }
 
-static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, struct sk_buff *reply_skb)
+static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, bool intentional_diskless, struct sk_buff *reply_skb)
 {
 	enum drbd_state_rv retcode;
 	const char *err_str = NULL;
 	int ret;
 
+	device->device_conf.intentional_diskless = intentional_diskless;
 	if (force) {
 		set_bit(FORCE_DETACH, &device->flags);
 		change_disk_state(device, D_DETACHING, CS_HARD, NULL);
@@ -2982,6 +2983,8 @@ static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, str
 			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS)
 		drbd_cleanup_device(device);
+	else
+		device->device_conf.intentional_diskless = false;
 	if (retcode == SS_IS_DISKLESS)
 		retcode = SS_NOTHING_TO_DO;
 	if (ret)
@@ -3020,8 +3023,10 @@ int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
-	retcode = (enum drbd_ret_code)adm_detach(adm_ctx.device, parms.force_detach, adm_ctx.reply_skb);
+	retcode = (enum drbd_ret_code)adm_detach(adm_ctx.device, parms.force_detach,
+			parms.intentional_diskless_detach, adm_ctx.reply_skb);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
@@ -5823,7 +5828,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	idr_for_each_entry(&resource->devices, device, i) {
 		kref_get(&device->kref);
 		rcu_read_unlock();
-		retcode = adm_detach(device, 0, adm_ctx.reply_skb);
+		retcode = adm_detach(device, 0, 0, adm_ctx.reply_skb);
 		mutex_lock(&resource->conf_update);
 		ret = adm_del_minor(device);
 		mutex_unlock(&resource->conf_update);
