@@ -2392,6 +2392,30 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	return -ENOSPC;
 }
 
+static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 md_flags)
+{
+	struct drbd_peer_md *peer_md;
+
+	if (!get_ldev(device))
+		return -ENODEV;
+
+	peer_md = &device->ldev->md.peers[peer_node_id];
+
+	if (peer_md->bitmap_index == -1) {
+		put_ldev(device);
+		return -ENOENT;
+	}
+
+	peer_md->bitmap_uuid = 0;
+	peer_md->flags = md_flags;
+	peer_md->bitmap_index = -1;
+
+	drbd_md_sync(device);
+	put_ldev(device);
+
+	return 0;
+}
+
 bool want_bitmap(struct drbd_peer_device *peer_device)
 {
 	struct peer_device_conf *pdc;
@@ -3357,6 +3381,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	struct peer_device_conf *old_peer_device_conf, *new_peer_device_conf = NULL;
 	struct fifo_buffer *old_plan = NULL;
+	struct drbd_device *device;
 	int err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_DEVICE);
@@ -3364,6 +3389,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 		return retcode;
 
 	peer_device = adm_ctx.peer_device;
+	device = peer_device->device;
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 	mutex_lock(&adm_ctx.resource->conf_update);
@@ -3386,7 +3412,6 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 
 	if (!old_peer_device_conf->bitmap && new_peer_device_conf->bitmap &&
 	    peer_device->bitmap_index == -1) {
-		struct drbd_device *device = peer_device->device;
 		if (get_ldev(device)) {
 			err = allocate_bitmap_index(peer_device, device->ldev);
 			put_ldev(device);
@@ -3401,6 +3426,12 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 				  peer_device->bitmap_index);
 			drbd_md_sync(device);
 		}
+	}
+
+	if (old_peer_device_conf->bitmap && !new_peer_device_conf->bitmap) {
+		err = free_bitmap_index(device, peer_device->node_id, MDF_NODE_EXISTS);
+		if (!err)
+			peer_device->bitmap_index = -1;
 	}
 
 	if (!expect(peer_device, new_peer_device_conf->resync_rate >= 1))
@@ -6366,24 +6397,13 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		struct drbd_peer_md *peer_md;
-
-		if (!get_ldev(device))
+		err = free_bitmap_index(device, peer_node_id, 0);
+		if (err == -ENODEV) {
 			continue;
-
-		peer_md = &device->ldev->md.peers[peer_node_id];
-		if (peer_md->bitmap_index == -1) {
-			put_ldev(device);
+		} else if (err == -ENOENT) {
 			retcode = ERR_INVALID_PEER_NODE_ID;
 			break;
 		}
-
-		peer_md->bitmap_uuid = 0;
-		peer_md->flags = 0;
-		peer_md->bitmap_index = -1;
-
-		drbd_md_sync(device);
-		put_ldev(device);
 	}
 out:
 	mutex_unlock(&resource->adm_mutex);
