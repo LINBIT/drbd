@@ -1699,6 +1699,7 @@ extern int drbd_bm_count_bits(struct drbd_device *, unsigned int, unsigned long,
 extern void drbd_bm_set_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
 extern void drbd_bm_clear_many_bits(struct drbd_peer_device *, unsigned long, unsigned long);
 extern void _drbd_bm_clear_many_bits(struct drbd_device *, int, unsigned long, unsigned long);
+extern void _drbd_bm_set_many_bits(struct drbd_device *, int, unsigned long, unsigned long);
 extern int drbd_bm_test_bit(struct drbd_peer_device *, unsigned long);
 extern int  drbd_bm_read(struct drbd_device *, struct drbd_peer_device *) __must_hold(local);
 extern void drbd_bm_reset_al_hints(struct drbd_device *device) __must_hold(local);

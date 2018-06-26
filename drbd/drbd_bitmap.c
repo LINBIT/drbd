@@ -1501,6 +1501,12 @@ _drbd_bm_clear_many_bits(struct drbd_device *device, int bitmap_index, unsigned 
 	__bm_many_bits_op(device, bitmap_index, start, end, BM_OP_CLEAR);
 }
 
+void
+_drbd_bm_set_many_bits(struct drbd_device *device, int bitmap_index, unsigned long start, unsigned long end)
+{
+	__bm_many_bits_op(device, bitmap_index, start, end, BM_OP_SET);
+}
+
 /* set all bits in the bitmap */
 void drbd_bm_set_all(struct drbd_device *device)
 {
