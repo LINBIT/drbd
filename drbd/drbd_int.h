@@ -1192,6 +1192,13 @@ struct submit_worker {
 	struct list_head peer_writes;
 };
 
+struct opener {
+	struct list_head list;
+	char comm[TASK_COMM_LEN];
+	pid_t pid;
+	ktime_t opened;
+};
+
 struct drbd_device {
 #ifdef PARANOIA
 	long magic;
@@ -1199,6 +1206,8 @@ struct drbd_device {
 	struct drbd_resource *resource;
 	struct list_head peer_devices;
 	struct list_head pending_bitmap_io;
+
+	struct opener openers;
 
 	unsigned long flush_jif;
 #ifdef CONFIG_DEBUG_FS
@@ -1210,6 +1219,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_data_gen_id;
 	struct dentry *debugfs_vol_io_frozen;
 	struct dentry *debugfs_vol_ed_gen_id;
+	struct dentry *debugfs_vol_openers;
 	struct dentry *debugfs_vol_req_timing;
 #endif
 

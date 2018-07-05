@@ -1017,6 +1017,22 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_openers_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+	struct drbd_resource *resource = device->resource;
+	ktime_t now = ktime_get();
+	struct opener *tmp;
+
+	mutex_lock(&resource->open_release);
+	list_for_each_entry(tmp, &device->openers.list, list)
+		seq_printf(m, "%s\t%d\t%lld\n", tmp->comm, tmp->pid,
+			ktime_to_ms(ktime_sub(now, tmp->opened)));
+	mutex_unlock(&resource->open_release);
+
+	return 0;
+}
+
 static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -1189,6 +1205,7 @@ drbd_debugfs_device_attr(act_log_histogram)
 drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
+drbd_debugfs_device_attr(openers)
 __drbd_debugfs_device_attr(req_timing, device_req_timing_write)
 
 void drbd_debugfs_device_add(struct drbd_device *device)
@@ -1228,6 +1245,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(data_gen_id);
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
+	vol_dcf(openers);
 	drbd_dcf(device->debugfs_vol, device, req_timing, S_IRUSR | S_IWUSR);
 
 	/* Caller holds conf_update */
@@ -1252,6 +1270,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_data_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
+	drbd_debugfs_remove(&device->debugfs_vol_openers);
 	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
 	drbd_debugfs_remove(&device->debugfs_vol);
 }

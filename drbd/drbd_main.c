@@ -2513,6 +2513,54 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	return r;
 }
 
+static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
+{
+	struct opener *pos, *tmp;
+
+	list_for_each_entry_safe(pos, tmp, &device->openers.list, list) {
+		// if pid == 0, i.e., counts were 0, delete all entries, else the matching one
+		if (pid == 0 || pid == pos->pid) {
+			dynamic_drbd_dbg(device, "%sopeners del: %s(%d)\n", pid == 0 ? "" : "all ",
+					pos->comm, pos->pid);
+			list_del(&pos->list);
+			kfree(pos);
+
+			/* in case we remove a real process, stopp here, there might be multiple openers with the same pid */
+			/* this assumes that the oldest opener with the same pid releases first. "as good as it gets" */
+			if (pid != 0)
+				return;
+		}
+	}
+}
+
+static void free_openers(struct drbd_device *device) {
+	__prune_or_free_openers(device, 0);
+}
+
+/* caller needs to hold the the open_release_lock */
+static void add_opener(struct drbd_device *device)
+{
+	struct opener *opener;
+	int len = 0;
+
+	list_for_each_entry(opener, &device->openers.list, list)
+		if (++len > 100) { /* 100 ought to be enough for everybody */
+			dynamic_drbd_dbg(device, "openers: list full, do not add new opener\n");
+			return;
+		}
+
+	opener = kmalloc(sizeof(*opener), GFP_NOIO);
+	if (!opener) {
+		return;
+	}
+
+	get_task_comm(opener->comm, current);
+	opener->pid = task_pid_nr(current);
+	opener->opened = ktime_get();
+	list_add(&opener->list, &device->openers.list);
+	dynamic_drbd_dbg(device, "openers add: %s(%d)\n", opener->comm, opener->pid);
+}
+
 static int drbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct drbd_device *device = bdev->bd_disk->private_data;
@@ -2571,15 +2619,15 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		rv = ro_open_cond(device);
 	}
 out:
+	/* still keep mutex, but release ASAP */
+	if (!rv)
+		add_opener(device);
+
 	mutex_unlock(&resource->open_release);
 	if (rv) {
 		drbd_release(bdev->bd_disk, mode);
 		if (rv == -EAGAIN && !(mode & FMODE_NDELAY))
 			rv = -EMEDIUMTYPE;
-	} else {
-		char comm[TASK_COMM_LEN];
-		drbd_info(device, "open by: %s(%d)\n",
-				get_task_comm(comm, current), task_pid_nr(current));
 	}
 
 	return rv;
@@ -2602,7 +2650,6 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
-	char comm[TASK_COMM_LEN];
 	int open_rw_cnt, open_ro_cnt;
 
 	mutex_lock(&resource->open_release);
@@ -2634,12 +2681,16 @@ static DRBD_RELEASE_RETURN drbd_release(struct gendisk *gd, fmode_t mode)
 					  drbd_set_st_err_str(rv));
 		}
 	}
+
+	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */
+	__prune_or_free_openers(device,
+			(open_ro_cnt == 0 && open_rw_cnt == 0) ? 0 : task_pid_nr(current));
+
 	mutex_unlock(&resource->open_release);
 
 	kref_debug_put(&device->kref_debug, 3);
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
-	drbd_info(device, "close by: %s(%d)\n",
-			get_task_comm(comm, current), task_pid_nr(current));
+
 #ifndef COMPAT_DRBD_RELEASE_RETURNS_VOID
 	return 0;
 #endif
@@ -2870,6 +2921,8 @@ void drbd_destroy_device(struct kref *kref)
 
 	/* cleanup stuff that may have been allocated during
 	 * device (re-)configuration or state changes */
+
+	free_openers(device);
 
 	lc_destroy(device->act_log);
 	for_each_peer_device_safe(peer_device, tmp, device) {
@@ -3609,6 +3662,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);
 	INIT_LIST_HEAD(&device->pending_completion[0]);
 	INIT_LIST_HEAD(&device->pending_completion[1]);
+	INIT_LIST_HEAD(&device->openers.list);
 
 	atomic_set(&device->pending_bitmap_work.n, 0);
 	spin_lock_init(&device->pending_bitmap_work.q_lock);
