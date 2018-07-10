@@ -1302,6 +1302,7 @@ struct drbd_device {
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
+	bool cached_state_unstable; /* updates with each state change */
 
 	spinlock_t timing_lock;
 	unsigned long reqs;
@@ -2585,72 +2586,6 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 extern int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins);
 #endif
 
-static inline bool drbd_state_is_stable(struct drbd_device *device)
-{
-	struct drbd_peer_device *peer_device;
-	bool stable = true;
-
-	/* DO NOT add a default clause, we want the compiler to warn us
-	 * for any newly introduced state we may have forgotten to add here */
-
-	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, device) {
-		switch (peer_device->repl_state[NOW]) {
-		/* New io is only accepted when the peer device is unknown or there is
-		 * a well-established connection. */
-		case L_OFF:
-		case L_ESTABLISHED:
-		case L_SYNC_SOURCE:
-		case L_SYNC_TARGET:
-		case L_VERIFY_S:
-		case L_VERIFY_T:
-		case L_PAUSED_SYNC_S:
-		case L_PAUSED_SYNC_T:
-		case L_AHEAD:
-		case L_BEHIND:
-		case L_STARTING_SYNC_S:
-		case L_STARTING_SYNC_T:
-			break;
-
-			/* Allow IO in BM exchange states with new protocols */
-		case L_WF_BITMAP_S:
-			if (peer_device->connection->agreed_pro_version < 96)
-				stable = false;
-			break;
-
-			/* no new io accepted in these states */
-		case L_WF_BITMAP_T:
-		case L_WF_SYNC_UUID:
-			stable = false;
-			break;
-		}
-		if (!stable)
-			break;
-	}
-	rcu_read_unlock();
-
-	switch (device->disk_state[NOW]) {
-	case D_DISKLESS:
-	case D_INCONSISTENT:
-	case D_OUTDATED:
-	case D_CONSISTENT:
-	case D_UP_TO_DATE:
-	case D_FAILED:
-	case D_DETACHING:
-		/* disk state is stable as well. */
-		break;
-
-	/* no new io accepted during transitional states */
-	case D_ATTACHING:
-	case D_NEGOTIATING:
-	case D_UNKNOWN:
-	case D_MASK:
-		stable = false;
-	}
-
-	return stable;
-}
-
 extern void drbd_queue_pending_bitmap_work(struct drbd_device *);
 
 /* rw = READ or WRITE (0 or 1); nothing else. */
@@ -2691,7 +2626,7 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	 * to start during "stable" states. */
 
 	/* no new io accepted when attaching or detaching the disk */
-	if (!drbd_state_is_stable(device))
+	if (device->cached_state_unstable)
 		return false;
 
 	if (atomic_read(&device->pending_bitmap_work.n))

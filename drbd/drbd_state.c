@@ -617,6 +617,72 @@ static void __clear_remote_state_change(struct drbd_resource *resource)
 	apply_update_to_exposed_data_uuid(resource);
 }
 
+static bool state_is_stable(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool stable = true;
+
+	/* DO NOT add a default clause, we want the compiler to warn us
+	 * for any newly introduced state we may have forgotten to add here */
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		switch (peer_device->repl_state[NOW]) {
+		/* New io is only accepted when the peer device is unknown or there is
+		 * a well-established connection. */
+		case L_OFF:
+		case L_ESTABLISHED:
+		case L_SYNC_SOURCE:
+		case L_SYNC_TARGET:
+		case L_VERIFY_S:
+		case L_VERIFY_T:
+		case L_PAUSED_SYNC_S:
+		case L_PAUSED_SYNC_T:
+		case L_AHEAD:
+		case L_BEHIND:
+		case L_STARTING_SYNC_S:
+		case L_STARTING_SYNC_T:
+			break;
+
+			/* Allow IO in BM exchange states with new protocols */
+		case L_WF_BITMAP_S:
+			if (peer_device->connection->agreed_pro_version < 96)
+				stable = false;
+			break;
+
+			/* no new io accepted in these states */
+		case L_WF_BITMAP_T:
+		case L_WF_SYNC_UUID:
+			stable = false;
+			break;
+		}
+		if (!stable)
+			break;
+	}
+	rcu_read_unlock();
+
+	switch (device->disk_state[NOW]) {
+	case D_DISKLESS:
+	case D_INCONSISTENT:
+	case D_OUTDATED:
+	case D_CONSISTENT:
+	case D_UP_TO_DATE:
+	case D_FAILED:
+	case D_DETACHING:
+		/* disk state is stable as well. */
+		break;
+
+	/* no new io accepted during transitional states */
+	case D_ATTACHING:
+	case D_NEGOTIATING:
+	case D_UNKNOWN:
+	case D_MASK:
+		stable = false;
+	}
+
+	return stable;
+}
+
 static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, struct completion *done,
 					      enum drbd_state_rv rv)
 {
@@ -677,6 +743,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 			peer_device->resync_susp_other_c[NOW] =
 				peer_device->resync_susp_other_c[NEW];
 		}
+		device->cached_state_unstable = !state_is_stable(device);
 	}
 	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
 

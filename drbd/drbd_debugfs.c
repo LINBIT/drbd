@@ -1074,7 +1074,7 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 
 	seq_printf(m, "drbd_suspended(): %d\n", drbd_suspended(device));
 	seq_printf(m, "suspend_cnt: %d\n", atomic_read(&device->suspend_cnt));
-	seq_printf(m, "!drbd_state_is_stable(): %d\n", !drbd_state_is_stable(device));
+	seq_printf(m, "!drbd_state_is_stable(): %d\n", device->cached_state_unstable);
 	seq_printf(m, "ap_bio_cnt[READ]: %d\n", atomic_read(&device->ap_bio_cnt[READ]));
 	seq_printf(m, "ap_bio_cnt[WRITE]: %d\n", atomic_read(&device->ap_bio_cnt[WRITE]));
 	seq_printf(m, "device->pending_bitmap_work.n: %d\n", atomic_read(&device->pending_bitmap_work.n));
