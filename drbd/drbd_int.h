@@ -879,6 +879,7 @@ struct drbd_resource {
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
+	bool cached_susp;		/* cached result of looking at all different suspend bits */
 
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
@@ -2675,7 +2676,7 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 
 static inline bool drbd_suspended(struct drbd_device *device)
 {
-	return resource_is_suspended(device->resource, NOW);
+	return device->resource->cached_susp;
 }
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)

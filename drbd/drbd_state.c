@@ -648,6 +648,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->role[NOW] = resource->role[NEW];
 	resource->susp_user[NOW] = resource->susp_user[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
+	resource->cached_susp = resource_is_suspended(resource, NEW);
 
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
