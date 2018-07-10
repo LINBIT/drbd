@@ -253,7 +253,7 @@ bool is_suspended_quorum(struct drbd_resource *resource, enum which_state which)
 
 bool resource_is_suspended(struct drbd_resource *resource, enum which_state which)
 {
-	bool rv = resource->susp[which] || resource->susp_nod[which];
+	bool rv = resource->susp_user[which] || resource->susp_nod[which];
 
 	if (rv)
 		return rv;
@@ -331,7 +331,7 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	memcpy(state_change->resource->role,
 	       resource->role, sizeof(resource->role));
 	memcpy(state_change->resource->susp,
-	       resource->susp, sizeof(resource->susp));
+	       resource->susp_user, sizeof(resource->susp_user));
 	memcpy(state_change->resource->susp_nod,
 	       resource->susp_nod, sizeof(resource->susp_nod));
 
@@ -481,7 +481,7 @@ static bool state_has_changed(struct drbd_resource *resource)
 		return true;
 
 	if (resource->role[OLD] != resource->role[NEW] ||
-	    resource->susp[OLD] != resource->susp[NEW] ||
+	    resource->susp_user[OLD] != resource->susp_user[NEW] ||
 	    resource->susp_nod[OLD] != resource->susp_nod[NEW])
 		return true;
 
@@ -524,7 +524,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	int vnr;
 
 	resource->role[NEW] = resource->role[NOW];
-	resource->susp[NEW] = resource->susp[NOW];
+	resource->susp_user[NEW] = resource->susp_user[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
 
 	for_each_connection(connection, resource) {
@@ -646,7 +646,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	 * depending on that change happens. */
 	smp_wmb();
 	resource->role[NOW] = resource->role[NEW];
-	resource->susp[NOW] = resource->susp[NEW];
+	resource->susp_user[NOW] = resource->susp_user[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
 
 	for_each_connection(connection, resource) {
@@ -843,7 +843,7 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.disk = D_UNKNOWN,  /* really: undefined */
 		.role = resource->role[which],
 		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp[which] || is_suspended_quorum(resource, which),
+		.susp = resource->susp_user[which] || is_suspended_quorum(resource, which),
 		.susp_nod = resource->susp_nod[which],
 		.susp_fen = is_suspended_fen(resource, which),
 		.pdsk = D_UNKNOWN,  /* really: undefined */
@@ -1042,7 +1042,7 @@ static int scnprintf_io_suspend_flags(char *buffer, size_t size,
 	if (!resource_is_suspended(resource, which))
 		return scnprintf(buffer, size, "no");
 
-	if (resource->susp[which])
+	if (resource->susp_user[which])
 		b += scnprintf(b, end - b, "user,");
 	if (resource->susp_nod[which])
 		b += scnprintf(b, end - b, "no-disk,");
@@ -4448,7 +4448,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 
 void __change_io_susp_user(struct drbd_resource *resource, bool value)
 {
-	resource->susp[NEW] = value;
+	resource->susp_user[NEW] = value;
 }
 
 enum drbd_state_rv change_io_susp_user(struct drbd_resource *resource,

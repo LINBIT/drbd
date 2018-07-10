@@ -5582,7 +5582,7 @@ static void resource_to_info(struct resource_info *info,
 			     struct drbd_resource *resource)
 {
 	info->res_role = resource->role[NOW];
-	info->res_susp = resource->susp[NOW];
+	info->res_susp = resource->susp_user[NOW];
 	info->res_susp_nod = resource->susp_nod[NOW];
 	info->res_susp_fen = is_suspended_fen(resource, NOW);
 	info->res_susp_quorum = is_suspended_quorum(resource, NOW);

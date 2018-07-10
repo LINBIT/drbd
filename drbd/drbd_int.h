@@ -877,7 +877,7 @@ struct drbd_resource {
 	struct queued_twopc *starting_queued_twopc;
 
 	enum drbd_role role[2];
-	bool susp[2];			/* IO suspended by user */
+	bool susp_user[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
 
 	enum write_ordering_e write_ordering;
