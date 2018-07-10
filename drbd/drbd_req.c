@@ -87,8 +87,6 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 
 	memset(req, 0, sizeof(*req));
 
-	drbd_req_make_private_bio(req, bio_src);
-
 	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 6);
 
@@ -1537,6 +1535,18 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 	wake_up(&device->al_wait);
 }
 
+static void req_make_private_bio(struct drbd_request *req, struct bio *bio_src)
+{
+	struct bio *bio;
+	bio = bio_clone_fast(bio_src, GFP_NOIO, drbd_io_bio_set);
+
+	req->private_bio = bio;
+
+	bio->bi_private  = req;
+	bio->bi_end_io   = drbd_request_endio;
+	bio->bi_next     = NULL;
+}
+
 /* returns the new drbd_request pointer, if the caller is expected to
  * drbd_send_and_submit() it (to save latency), or NULL if we queued the
  * request on the submitter thread.
@@ -1558,12 +1568,10 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 		drbd_bio_endio(bio, BLK_STS_RESOURCE);
 		return ERR_PTR(-ENOMEM);
 	}
-	req->start_kt = start_kt;
+	if (get_ldev(device))
+		req_make_private_bio(req, bio);
 
-	if (!get_ldev(device)) {
-		bio_put(req->private_bio);
-		req->private_bio = NULL;
-	}
+	req->start_kt = start_kt;
 
 	/* Update disk stats */
 	_drbd_start_io_acct(device, req);
