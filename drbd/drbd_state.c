@@ -2397,6 +2397,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				    disk_state[NEW] == D_UP_TO_DATE)
 					create_new_uuid = true;
 			}
+
+			if (peer_disk_state[NEW] < D_UP_TO_DATE && test_bit(GOT_NEG_ACK, &peer_device->flags))
+				clear_bit(GOT_NEG_ACK, &peer_device->flags);
 		}
 
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
