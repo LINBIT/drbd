@@ -23,6 +23,7 @@ static struct dentry *drbd_debugfs_refcounts;
 static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 static void seq_print_age_or_dash(struct seq_file *m, bool valid, ktime_t dt)
 {
 	if (valid)
@@ -30,6 +31,7 @@ static void seq_print_age_or_dash(struct seq_file *m, bool valid, ktime_t dt)
 	else
 		seq_puts(m, "\t-");
 }
+#endif
 
 static void __seq_print_rq_state_bit(struct seq_file *m,
 	bool is_set, char *sep, const char *set_name, const char *unset_name)
@@ -100,6 +102,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 
 #define memberat(PTR, TYPE, OFFSET) (*(TYPE *)((char *)PTR + OFFSET))
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 				  unsigned int set_mask, unsigned int clear_mask,
 				  ktime_t now, size_t offset)
@@ -118,6 +121,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 	}
 	seq_puts(m, "\t-");
 }
+#endif
 
 static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, ktime_t now)
 {
@@ -131,15 +135,16 @@ static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, 
 		(s & RQ_WRITE) ? "W" : "R");
 
 #define RQ_HDR_2 "\tstart\tin AL\tsubmit"
+#define RQ_HDR_3 "\tsent\tacked\tdone"
 	seq_printf(m, "\t%d", (int)ktime_to_ms(ktime_sub(now, req->start_kt)));
+#ifdef CONFIG_DRBD_TIMING_STATS
 	seq_print_age_or_dash(m, s & RQ_IN_ACT_LOG, ktime_sub(now, req->in_actlog_kt));
 	seq_print_age_or_dash(m, s & RQ_LOCAL_PENDING, ktime_sub(now, req->pre_submit_kt));
 
-#define RQ_HDR_3 "\tsent\tacked\tdone"
 	print_one_age_or_dash(m, req, RQ_NET_SENT, 0, now, offsetof(typeof(*req), pre_send_kt));
 	print_one_age_or_dash(m, req, RQ_NET_SENT, RQ_NET_PENDING, now, offsetof(typeof(*req), acked_kt));
 	print_one_age_or_dash(m, req, RQ_NET_DONE, 0, now, offsetof(typeof(*req), net_done_kt));
-
+#endif
 #define RQ_HDR_4 "\tstate\n"
 	seq_print_request_state(m, req);
 }
@@ -1099,6 +1104,7 @@ static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
 
 #define PRId64 "lld"
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 static int device_req_timing_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -1174,6 +1180,7 @@ static ssize_t device_req_timing_write(struct file *file, const char __user *ubu
 	*ppos += cnt;
 	return cnt;
 }
+#endif
 
 static int device_attr_release(struct inode *inode, struct file *file)
 {
@@ -1206,7 +1213,9 @@ drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
 drbd_debugfs_device_attr(openers)
+#ifdef CONFIG_DRBD_TIMING_STATS
 __drbd_debugfs_device_attr(req_timing, device_req_timing_write)
+#endif
 
 void drbd_debugfs_device_add(struct drbd_device *device)
 {
@@ -1246,7 +1255,9 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
 	vol_dcf(openers);
+#ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_dcf(device->debugfs_vol, device, req_timing, S_IRUSR | S_IWUSR);
+#endif
 
 	/* Caller holds conf_update */
 	for_each_peer_device(peer_device, device) {
@@ -1271,7 +1282,9 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_openers);
+#ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
+#endif
 	drbd_debugfs_remove(&device->debugfs_vol);
 }
 

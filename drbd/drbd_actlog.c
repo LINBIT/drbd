@@ -351,7 +351,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	unsigned extent_nr;
 	unsigned crc = 0;
 	int err = 0;
-	ktime_t start_kt = ktime_get();
+	ktime_var_for_accounting(start_kt);
 
 	memset(buffer, 0, sizeof(*buffer));
 	buffer->magic = cpu_to_be32(DRBD_AL_MAGIC);

@@ -198,6 +198,7 @@ void drbd_req_destroy(struct kref *kref)
 	s = req->local_rq_state;
 	destroy_next = req->destroy_next;
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 	if (s & RQ_WRITE) {
 		unsigned long flags;
 
@@ -216,6 +217,7 @@ void drbd_req_destroy(struct kref *kref)
 		}
 		spin_unlock_irqrestore(&device->timing_lock, flags);
 	}
+#endif
 
 	/* paranoia */
 	for_each_peer_device(peer_device, device) {
@@ -733,7 +735,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if ((old_net & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
 		dec_ap_pending(peer_device);
 		++c_put;
-		req->acked_kt[peer_device->node_id] = ktime_get();
+		ktime_get_accounting(req->acked_kt[peer_device->node_id]);
 		advance_conn_req_ack_pending(peer_device, req);
 	}
 
@@ -749,7 +751,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			atomic_sub(req_payload_sectors(req), ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
 			kref_put(&req->kref, drbd_req_destroy);
-		req->net_done_kt[peer_device->node_id] = ktime_get();
+		ktime_get_accounting(req->net_done_kt[peer_device->node_id]);
 
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
 		    atomic_read(ap_in_flight) == 0 &&
@@ -1591,7 +1593,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 			if (!drbd_al_begin_io_fastpath(device, &req->i))
 				goto queue_for_submitter_thread;
 			req->local_rq_state |= RQ_IN_ACT_LOG;
-			req->in_actlog_kt = ktime_get();
+			ktime_get_accounting(req->in_actlog_kt);
 		}
 	}
 	return req;
@@ -1796,7 +1798,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			&device->pending_master_completion[rw == WRITE]);
 	if (req->private_bio) {
 		/* needs to be marked within the same spinlock */
-		req->pre_submit_kt = ktime_get();
+		ktime_get_accounting(req->pre_submit_kt);
 		list_add_tail(&req->req_pending_local,
 			&device->pending_completion[rw == WRITE]);
 		_req_mod(req, TO_BE_SUBMITTED, NULL);
@@ -1929,7 +1931,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 				continue;
 
 			req->local_rq_state |= RQ_IN_ACT_LOG;
-			req->in_actlog_kt = ktime_get();
+			ktime_get_accounting(req->in_actlog_kt);
 			atomic_dec(&device->ap_actlog_cnt);
 		}
 
@@ -2019,7 +2021,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 	}
 	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, tl_requests) {
 		req->local_rq_state |= RQ_IN_ACT_LOG;
-		req->in_actlog_kt = ktime_get();
+		ktime_get_accounting(req->in_actlog_kt);
 		atomic_dec(&device->ap_actlog_cnt);
 		list_del_init(&req->tl_requests);
 		drbd_send_and_submit(device, req);

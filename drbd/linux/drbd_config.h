@@ -54,6 +54,8 @@ extern const char *drbd_buildtag(void);
 
 /* CONFIG_KREF_DEBUG has to be enabled in Kbuild */
 
+/* Do not enable CONFIG_DRBD_TIMING_STATS */
+
 #ifdef __KERNEL__
 #include "compat.h"
 #endif

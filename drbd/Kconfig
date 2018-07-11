@@ -71,3 +71,14 @@ config DRBD_FAULT_INJECTION
 		echo 5 > /sys/module/drbd/parameters/fault_rate
 
 	  If unsure, say N.
+
+config DRBD_TIMING_STATS
+	bool "Enable additional timing collection"
+	depends on BLK_DEV_DRBD
+	help
+
+	  this option enables a virtual file in debug-fs
+	  /sys/kernel/debug/drbd/resources/<res>/volumes/<vol_nr>/req_timing
+
+	  that unveiles the culmative time consumed by requests in various
+	  stages of the request processing

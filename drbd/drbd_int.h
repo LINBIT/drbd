@@ -315,23 +315,26 @@ struct drbd_request {
 	ktime_t start_kt;
 
 	/* for DRBD internal statistics */
+	ktime_t pre_submit_kt;
+
+	/* per connection */
+	ktime_t pre_send_kt[DRBD_PEERS_MAX];
 
 	/* Minimal set of time stamps to determine if we wait for activity log
 	 * transactions, local disk or peer.  32 bit "jiffies" are good enough,
 	 * we don't expect a DRBD request to be stalled for several month.
 	 */
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 	/* before actual request processing */
 	ktime_t in_actlog_kt;
 
 	/* local disk */
-	ktime_t pre_submit_kt;
 
 	/* per connection */
-	ktime_t pre_send_kt[DRBD_PEERS_MAX];
 	ktime_t acked_kt[DRBD_PEERS_MAX];
 	ktime_t net_done_kt[DRBD_PEERS_MAX];
-
+#endif
 	/* Possibly even more detail to track each phase:
 	 *  master_completion_jif
 	 *      how long did it take to complete the master bio
@@ -1221,7 +1224,9 @@ struct drbd_device {
 	struct dentry *debugfs_vol_io_frozen;
 	struct dentry *debugfs_vol_ed_gen_id;
 	struct dentry *debugfs_vol_openers;
+#ifdef CONFIG_DRBD_TIMING_STATS
 	struct dentry *debugfs_vol_req_timing;
+#endif
 #endif
 
 	unsigned int vnr;	/* volume number within the connection */
@@ -1304,6 +1309,7 @@ struct drbd_device {
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
 	bool cached_state_unstable; /* updates with each state change */
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 	spinlock_t timing_lock;
 	unsigned long reqs;
 	ktime_t in_actlog_kt;
@@ -1315,6 +1321,7 @@ struct drbd_device {
 	ktime_t al_before_bm_write_hinted_kt; /* sum over all al_writ_cnt */
 	ktime_t al_mid_kt;
 	ktime_t al_after_sync_page_kt;
+#endif
 
 	struct rcu_head rcu;
 	struct work_struct finalize_work;
@@ -2777,8 +2784,18 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 
 #define NODE_MASK(id) ((u64)1 << (id))
 
+#ifdef CONFIG_DRBD_TIMING_STATS
 #define ktime_aggregate_delta(D, ST, M) D->M = ktime_add(D->M, ktime_sub(ktime_get(), ST))
 #define ktime_aggregate(D, R, M) D->M = ktime_add(D->M, ktime_sub(R->M, R->start_kt))
 #define ktime_aggregate_pd(P, N, R, M) P->M = ktime_add(P->M, ktime_sub(R->M[N], R->start_kt))
+#define ktime_get_accounting(V) V = ktime_get()
+#define ktime_var_for_accounting(V) ktime_t V = ktime_get()
+#else
+#define ktime_aggregate_delta(D, ST, M)
+#define ktime_aggregate(D, R, M)
+#define ktime_aggregate_pd(P, N, R, M)
+#define ktime_get_accounting(V)
+#define ktime_var_for_accounting(V)
+#endif
 
 #endif
