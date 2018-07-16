@@ -8615,16 +8615,18 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_request *req, *tmp;
-	int idx;
+	int idx = connection->peer_node_id;
 
 	spin_lock_irq(&resource->req_lock);
-	idx = connection->peer_node_id;
 	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, tl_requests) {
 		if (!(req->net_rq_state[idx] & RQ_PEER_ACK))
 			continue;
 		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
 		kref_put(&req->kref, destroy_request);
 	}
+	req = resource->peer_ack_req;
+	if (req)
+		req->net_rq_state[idx] &= ~RQ_NET_SENT;
 	spin_unlock_irq(&resource->req_lock);
 }
 
