@@ -968,6 +968,7 @@ struct drbd_connection {
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
 	u64 last_dagtag_sector;
 
+	atomic_t active_ee_cnt;
 	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
 	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
 	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */

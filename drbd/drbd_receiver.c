@@ -1438,12 +1438,6 @@ static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_h
 	wait_event(connection->ee_wait, conn_wait_ee_cond(connection, head));
 }
 
-static void conn_wait_ee_empty_or_disconnect(struct drbd_connection *connection, struct list_head *head)
-{
-	wait_event(connection->ee_wait,
-		   conn_wait_ee_cond(connection, head) || connection->cstate[NOW] < C_CONNECTED);
-}
-
 /**
  * drbd_submit_peer_request()
  * @device:	DRBD device.
@@ -1486,19 +1480,8 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	 * asynchronous variant of the same.
 	 */
 	if (peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) {
-		struct drbd_connection *connection = peer_req->peer_device->connection;
-		/* add it to the active list now,
-		 * so we can find it to present it in debugfs */
 		peer_req->submit_jif = jiffies;
 		peer_req->flags |= EE_SUBMITTED;
-
-		/* If this was a resync request from receive_rs_deallocated(),
-		 * it is already on the sync_ee list */
-		if (list_empty(&peer_req->w.list)) {
-			spin_lock_irq(&device->resource->req_lock);
-			list_add_tail(&peer_req->w.list, &connection->active_ee);
-			spin_unlock_irq(&device->resource->req_lock);
-		}
 
 		if (peer_req->flags & (EE_TRIM|EE_ZEROOUT))
 			drbd_issue_peer_discard_or_zero_out(device, peer_req);
@@ -1693,6 +1676,18 @@ static void conn_wait_done_ee_empty(struct drbd_connection *connection)
 	wait_event(connection->ee_wait, atomic_read(&connection->done_ee_cnt) == 0);
 }
 
+static void conn_wait_active_ee_empty_or_disconnect(struct drbd_connection *connection)
+{
+	if (atomic_read(&connection->active_ee_cnt) == 0)
+		return;
+
+	drbd_unplug_all_devices(connection);
+
+	wait_event(connection->ee_wait,
+		atomic_read(&connection->active_ee_cnt) == 0
+		|| connection->cstate[NOW] < C_CONNECTED);
+}
+
 static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_transport_ops *tr_ops = connection->transport.ops;
@@ -1726,7 +1721,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	case WO_DRAIN_IO:
 		if (rv == FE_STILL_LIVE) {
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &connection->current_epoch->flags);
-			conn_wait_ee_empty_or_disconnect(connection, &connection->active_ee);
+			conn_wait_active_ee_empty_or_disconnect(connection);
 			rv = drbd_flush_after_epoch(connection, connection->current_epoch);
 		}
 		if (rv == FE_RECYCLED)
@@ -1744,7 +1739,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	if (!epoch) {
 		drbd_warn(connection, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &connection->current_epoch->flags);
-		conn_wait_ee_empty_or_disconnect(connection, &connection->active_ee);
+		conn_wait_active_ee_empty_or_disconnect(connection);
 		if (issue_flush) {
 			rv = drbd_flush_after_epoch(connection, connection->current_epoch);
 			if (rv == FE_RECYCLED)
@@ -2774,12 +2769,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		update_peer_seq(peer_device, d.peer_seq);
 		spin_lock_irq(&device->resource->req_lock);
 	}
-	/* TRIM and WRITE_SAME are processed synchronously,
-	 * we wait for all pending requests, respectively wait for
-	 * active_ee to become empty in drbd_submit_peer_request();
-	 * better not add ourselves here. */
-	if ((peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) == 0)
-		list_add_tail(&peer_req->w.list, &connection->active_ee);
+	/* Added to list here already, so debugfs can find it.
+	 */
+	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -2797,6 +2789,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * we may queue this request for the submitter workqueue.
 	 * Remember the op_flags. */
 	peer_req->op_flags = op_flags;
+
+	atomic_inc(&connection->active_ee_cnt);
 
 	/* In protocol < 110 (which is compat mode 8.4 <-> 9.0),
 	 * we must not block in the activity log here, that would
@@ -2885,6 +2879,7 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 	spin_lock_irq(&device->resource->req_lock);
 	list_for_each_entry(peer_req, cleanup, wait_for_actlog) {
 		list_del(&peer_req->w.list); /* should be on the "->active_ee" list */
+		atomic_dec(&peer_req->peer_device->connection->active_ee_cnt);
 		list_del_init(&peer_req->recv_order);
 		drbd_remove_peer_req_interval(device, peer_req);
 	}

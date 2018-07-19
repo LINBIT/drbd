@@ -147,6 +147,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		__release(local);
 		spin_unlock_irqrestore(&device->resource->req_lock, flags);
 		drbd_queue_work(&connection->sender_work, &peer_req->w);
+		if (atomic_dec_and_test(&connection->active_ee_cnt))
+			wake_up(&connection->ee_wait);
 		return;
 	}
 
@@ -181,7 +183,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	if (block_id == ID_SYNCER)
 		do_wake = list_empty(&connection->sync_ee);
 	else
-		do_wake = list_empty(&connection->active_ee);
+		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
 
 	/* FIXME do we want to detach for failed REQ_DISCARD?
 	 * ((peer_req->flags & (EE_WAS_ERROR|EE_TRIM)) == EE_WAS_ERROR) */

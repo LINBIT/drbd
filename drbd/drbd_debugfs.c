@@ -859,6 +859,10 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	in_flight = atomic_read(&connection->rs_in_flight);
 	seq_printf(m, "            rs_in_flight: %d KiB (%d sectors)\n", in_flight / 2, in_flight);
 
+	seq_printf(m, "             done_ee_cnt: %d\n"
+	              "           active_ee_cnt: %d\n",
+		atomic_read(&connection->done_ee_cnt),
+		atomic_read(&connection->active_ee_cnt));
 	return 0;
 }
 
