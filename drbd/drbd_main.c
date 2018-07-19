@@ -1968,21 +1968,6 @@ int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_d
 	return err;
 }
 
-void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size)
-{
-	struct p_barrier_ack *p;
-
-	if (connection->cstate[NOW] < C_CONNECTED)
-		return;
-
-	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
-	if (!p)
-		return;
-	p->barrier = barrier_nr;
-	p->set_size = cpu_to_be32(set_size);
-	send_command(connection, -1, P_BARRIER_ACK, CONTROL_STREAM);
-}
-
 int drbd_send_rs_deallocated(struct drbd_peer_device *peer_device,
 			     struct drbd_peer_request *peer_req)
 {

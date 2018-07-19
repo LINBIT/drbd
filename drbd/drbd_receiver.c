@@ -1070,6 +1070,21 @@ static int w_flush(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+static void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size)
+{
+	struct p_barrier_ack *p;
+
+	if (connection->cstate[NOW] < C_CONNECTED)
+		return;
+
+	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
+	if (!p)
+		return;
+	p->barrier = barrier_nr;
+	p->set_size = cpu_to_be32(set_size);
+	send_command(connection, -1, P_BARRIER_ACK, CONTROL_STREAM);
+}
+
 /**
  * drbd_may_finish_epoch() - Applies an epoch_event to the epoch's state, eventually finishes it.
  * @connection:	DRBD connection.

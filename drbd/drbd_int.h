@@ -1479,7 +1479,6 @@ extern int conn_send_state(struct drbd_connection *, union drbd_state);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state);
 extern int drbd_send_current_state(struct drbd_peer_device *);
 extern int drbd_send_sync_param(struct drbd_peer_device *);
-extern void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, u32 set_size);
 extern int drbd_send_out_of_sync(struct drbd_peer_device *, struct drbd_interval *);
 extern int drbd_send_block(struct drbd_peer_device *, enum drbd_packet,
 			   struct drbd_peer_request *);
