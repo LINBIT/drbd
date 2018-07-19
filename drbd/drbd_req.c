@@ -1549,6 +1549,12 @@ static void req_make_private_bio(struct drbd_request *req, struct bio *bio_src)
 	bio->bi_next     = NULL;
 }
 
+static void drbd_req_in_actlog(struct drbd_request *req)
+{
+	req->local_rq_state |= RQ_IN_ACT_LOG;
+	ktime_get_accounting(req->in_actlog_kt);
+}
+
 /* returns the new drbd_request pointer, if the caller is expected to
  * drbd_send_and_submit() it (to save latency), or NULL if we queued the
  * request on the submitter thread.
@@ -1578,23 +1584,23 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 	/* Update disk stats */
 	_drbd_start_io_acct(device, req);
 
+	if (rw != WRITE || req->i.size == 0)
+		return req;
+
 	/* process discards always from our submitter thread */
 	if ((bio_op(bio) == REQ_OP_WRITE_ZEROES) ||
 	    (bio_op(bio) == REQ_OP_DISCARD))
 		goto queue_for_submitter_thread;
 
-	if (rw == WRITE && req->i.size) {
-		/* Unconditionally defer to worker,
-		 * if we still need to bumpt our data generation id */
-		if (test_bit(NEW_CUR_UUID, &device->flags))
-			goto queue_for_submitter_thread;
+	/* Unconditionally defer to worker,
+	 * if we still need to bumpt our data generation id */
+	if (test_bit(NEW_CUR_UUID, &device->flags))
+		goto queue_for_submitter_thread;
 
-		if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
-			if (!drbd_al_begin_io_fastpath(device, &req->i))
-				goto queue_for_submitter_thread;
-			req->local_rq_state |= RQ_IN_ACT_LOG;
-			ktime_get_accounting(req->in_actlog_kt);
-		}
+	if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
+		if (!drbd_al_begin_io_fastpath(device, &req->i))
+			goto queue_for_submitter_thread;
+		drbd_req_in_actlog(req);
 	}
 	return req;
 
@@ -1930,8 +1936,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 			if (!drbd_al_begin_io_fastpath(device, &req->i))
 				continue;
 
-			req->local_rq_state |= RQ_IN_ACT_LOG;
-			ktime_get_accounting(req->in_actlog_kt);
+			drbd_req_in_actlog(req);
 			atomic_dec(&device->ap_actlog_cnt);
 		}
 
@@ -2020,8 +2025,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 		__drbd_submit_peer_request(pr);
 	}
 	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, tl_requests) {
-		req->local_rq_state |= RQ_IN_ACT_LOG;
-		ktime_get_accounting(req->in_actlog_kt);
+		drbd_req_in_actlog(req);
 		atomic_dec(&device->ap_actlog_cnt);
 		list_del_init(&req->tl_requests);
 		drbd_send_and_submit(device, req);
