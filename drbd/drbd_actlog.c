@@ -569,19 +569,41 @@ static bool put_actlog(struct drbd_device *device, unsigned int first, unsigned 
 int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;
 	bool need_transaction = false;
+	long timeout = MAX_SCHEDULE_TIMEOUT;
+
+	if (connection->agreed_pro_version < 114) {
+		struct net_conf *nc;
+		rcu_read_lock();
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (nc && nc->ko_count)
+			timeout = nc->ko_count * nc->timeout * HZ/10;
+		rcu_read_unlock();
+	}
 
 	D_ASSERT(peer_device, first <= last);
 	D_ASSERT(peer_device, atomic_read(&device->local_cnt) > 0);
 
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
-		wait_event(device->al_wait,
+		timeout = wait_event_timeout(device->al_wait,
 				(al_ext = _al_get(device, enr)) != NULL ||
-				peer_device->connection->cstate[NOW] < C_CONNECTED);
+				connection->cstate[NOW] < C_CONNECTED,
+				timeout);
+		/* If we ran into the timeout, we have been unresponsive to the
+		 * peer for so long. So in theory, it should already have
+		 * kicked us out.  But in case it did not, rather disconnect hard,
+		 * and try to re-establish the connection than block "forever",
+		 * in what is likely to be a distributed deadlock */
+		if (timeout == 0) {
+			drbd_err(connection, "Upgrade your peer(s) or increase al-extents or reduce max-epoch-size\n");
+			drbd_err(connection, "Breaking connection to avoid a distributed deadlock.\n");
+			change_cstate(connection, C_TIMEOUT, CS_HARD);
+		}
 		if (al_ext == NULL) {
 			if (enr > first)
 				put_actlog(device, first, enr-1);
