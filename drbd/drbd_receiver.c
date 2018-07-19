@@ -2579,7 +2579,8 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 
 static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
-	atomic_inc(&peer_req->peer_device->wait_for_actlog);
+	atomic_add(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
+	atomic_inc(&device->wait_for_actlog);
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&peer_req->wait_for_actlog, &device->submit.peer_writes);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -2878,6 +2879,7 @@ void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *pee
  */
 void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup)
 {
+	struct drbd_connection *connection;
 	struct drbd_peer_request *peer_req, *pr_tmp;
 
 	spin_lock_irq(&device->resource->req_lock);
@@ -2889,13 +2891,18 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 	spin_unlock_irq(&device->resource->req_lock);
 
 	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, wait_for_actlog) {
-		atomic_dec(&peer_req->peer_device->wait_for_actlog);
+		atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
+		atomic_dec(&device->wait_for_actlog);
 		dec_unacked(peer_req->peer_device);
 		list_del_init(&peer_req->wait_for_actlog);
 		drbd_may_finish_epoch(peer_req->peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
 		drbd_free_peer_req(peer_req);
 		put_ldev(device);
 	}
+	/* We changed (likely: cleared out) active_ee for "at least one" connection.
+	 * We should wake potential waiters, just in case. */
+	for_each_connection(connection, device->resource)
+		wake_up(&connection->ee_wait);
 }
 
 /* We may throttle resync, if the lower device seems to be busy,

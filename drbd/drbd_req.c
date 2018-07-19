@@ -1553,6 +1553,7 @@ static void drbd_req_in_actlog(struct drbd_request *req)
 {
 	req->local_rq_state |= RQ_IN_ACT_LOG;
 	ktime_get_accounting(req->in_actlog_kt);
+	atomic_sub(interval_to_al_extents(&req->i), &req->device->wait_for_actlog_ecnt);
 }
 
 /* returns the new drbd_request pointer, if the caller is expected to
@@ -1586,6 +1587,10 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 
 	if (rw != WRITE || req->i.size == 0)
 		return req;
+
+	/* Let the activity log know we are about to use it...
+	 */
+	atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);
 
 	/* process discards always from our submitter thread */
 	if ((bio_op(bio) == REQ_OP_WRITE_ZEROES) ||
@@ -1905,7 +1910,8 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 					EE_ZEROOUT|EE_WRITE_SAME)));
 
 	peer_req->flags |= EE_IN_ACTLOG;
-	atomic_dec(&peer_req->peer_device->wait_for_actlog);
+	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
+	atomic_dec(&device->wait_for_actlog);
 	list_del_init(&peer_req->wait_for_actlog);
 
 	err = drbd_submit_peer_request(device, peer_req,

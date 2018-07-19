@@ -3579,7 +3579,6 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	atomic_set(&peer_device->ap_pending_cnt, 0);
 	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);
-	atomic_set(&peer_device->wait_for_actlog, 0);
 	atomic_set(&peer_device->rs_sect_in, 0);
 
 	peer_device->bitmap_index = -1;
@@ -3650,6 +3649,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	atomic_set(&device->ap_bio_cnt[READ], 0);
 	atomic_set(&device->ap_bio_cnt[WRITE], 0);
 	atomic_set(&device->ap_actlog_cnt, 0);
+	atomic_set(&device->wait_for_actlog, 0);
+	atomic_set(&device->wait_for_actlog_ecnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->rs_sect_ev, 0);
 	atomic_set(&device->md_io.in_use, 0);

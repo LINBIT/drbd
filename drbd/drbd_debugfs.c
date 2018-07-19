@@ -1612,7 +1612,11 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 		put_ldev(device);
 	}
 
-	seq_printf(m, "\tblocked on activity log: %d\n", atomic_read(&device->ap_actlog_cnt));
+	seq_printf(m, "\tblocked on activity log: %d/%d/%d\n",
+		atomic_read(&device->ap_actlog_cnt),	/* requests */
+		atomic_read(&device->wait_for_actlog),	/* peer_requests */
+		/* nr extents needed to satisfy the above in the worst case */
+		atomic_read(&device->wait_for_actlog_ecnt));
 
 	rcu_read_unlock();
 

@@ -1116,7 +1116,6 @@ struct drbd_peer_device {
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
-	atomic_t wait_for_actlog;
 
 	/* use checksums for *this* resync */
 	bool use_csums;
@@ -1262,9 +1261,14 @@ struct drbd_device {
 	unsigned int al_writ_cnt;
 	unsigned int bm_writ_cnt;
 	atomic_t ap_bio_cnt[2];	 /* Requests we need to complete. [READ] and [WRITE] */
-	atomic_t ap_actlog_cnt;  /* Requests waiting for activity log */
 	atomic_t local_cnt;	 /* Waiting for local completion */
-	atomic_t suspend_cnt;
+	atomic_t ap_actlog_cnt;  /* Requests waiting for activity log */
+	atomic_t wait_for_actlog; /* Peer requests waiting for activity log */
+	/* worst case extent count needed to satisfy both requests and peer requests
+	 * currently waiting for the activity log */
+	atomic_t wait_for_actlog_ecnt;
+
+	atomic_t suspend_cnt;	/* recursive suspend counter, if non-zero, IO will be blocked. */
 
 	/* Interval trees of pending local requests */
 	struct rb_root read_requests;
@@ -1704,6 +1708,14 @@ extern void tl_abort_disk_io(struct drbd_device *device);
  * drbd_al_begin_io() to allow for even larger discard ranges */
 #define DRBD_MAX_BATCH_BIO_SIZE	 (AL_UPDATES_PER_TRANSACTION/2*AL_EXTENT_SIZE)
 #define DRBD_MAX_BBIO_SECTORS    (DRBD_MAX_BATCH_BIO_SIZE >> 9)
+
+/* how many activity log extents are touched by this interval? */
+static inline int interval_to_al_extents(struct drbd_interval *i)
+{
+	unsigned int first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned int last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	return 1 + last - first; /* worst case: all touched extends are cold. */
+}
 
 extern struct drbd_bitmap *drbd_bm_alloc(void);
 extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);
