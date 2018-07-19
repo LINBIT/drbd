@@ -382,10 +382,12 @@ struct drbd_request {
 
 struct drbd_epoch {
 	struct drbd_connection *connection;
+	struct drbd_peer_request *oldest_unconfirmed_peer_req;
 	struct list_head list;
 	unsigned int barrier_nr;
 	atomic_t epoch_size; /* increased on every request added. */
 	atomic_t active;     /* increased on every req. added, and dec on every finished. */
+	atomic_t confirmed;  /* adjusted for every P_CONFIRM_STABLE */
 	unsigned long flags;
 };
 
@@ -1465,8 +1467,11 @@ extern void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 #else
 #define drbd_thread_current_set_cpu(A) ({})
 #endif
-extern void tl_release(struct drbd_connection *, unsigned int barrier_nr,
-		       unsigned int set_size);
+extern void tl_release(struct drbd_connection *,
+			uint64_t o_block_id,
+			uint64_t y_block_id,
+			unsigned int barrier_nr,
+			unsigned int set_size);
 extern void drbd_free_sock(struct drbd_connection *connection);
 
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);

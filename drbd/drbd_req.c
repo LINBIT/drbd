@@ -191,9 +191,10 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	unsigned int s;
-	bool was_last_ref = false;
+	bool was_last_ref;
 
  tail_recursion:
+	was_last_ref = false;
 	device = req->device;
 	s = req->local_rq_state;
 	destroy_next = req->destroy_next;
@@ -954,7 +955,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* close the epoch, in case it outgrew the limit,
 		 * or this is a "batch bio" */
-		if (!(req->local_rq_state & (RQ_UNMAP|RQ_WSAME))) {
+		if (!(req->local_rq_state & (RQ_UNMAP|RQ_WSAME|RQ_ZEROES))) {
 			rcu_read_lock();
 			nc = rcu_dereference(peer_device->connection->transport.net_conf);
 			p = nc->max_epoch_size;
@@ -1589,6 +1590,11 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 		return req;
 
 	/* Let the activity log know we are about to use it...
+	 * FIXME
+	 * Needs to slow down to not congest on the activity log, in case we
+	 * have multiple primaries and the peer sends huge scattered epochs.
+	 * See also how peer_requests are handled
+	 * in receive_Data() { ... prepare_activity_log(); ... }
 	 */
 	atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);
 
@@ -1904,10 +1910,6 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	int err;
-
-	D_ASSERT(peer_device,
-		0 == (peer_req->flags & (EE_IS_BARRIER|EE_TRIM|
-					EE_ZEROOUT|EE_WRITE_SAME)));
 
 	peer_req->flags |= EE_IN_ACTLOG;
 	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);

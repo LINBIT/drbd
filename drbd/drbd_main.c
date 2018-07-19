@@ -59,7 +59,7 @@
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
-#include "drbd_req.h" /* only for _req_mod in tl_release */
+#include "drbd_req.h"
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
@@ -353,31 +353,47 @@ static void tl_abort_for_each_req_ref(struct drbd_request *next, struct list_hea
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
+ * @o_block_id: "block id" aka expected pointer address of the oldest request
+ * @y_block_id: "block id" aka expected pointer address of the youngest request
+ *		confirmed to be on stable storage.
  * @barrier_nr:	Expected identifier of the DRBD write barrier packet.
- * @set_size:	Expected number of requests before that barrier.
+ * @set_size:	Expected number of requests before that barrier, respectively
+ *		number of requests in the interval [o_block_id;y_block_id]
+ *
+ * Called for both P_BARRIER_ACK and P_CONFIRM_STABLE,
+ * which is similar to an unsolicited partial barrier ack.
+ *
+ * Either barrier_nr (for barrier acks) or both o_block_id and y_blockid (for
+ * confirm stable) are given.  For barrier acks, all requests in the epoch
+ * designated by "barrier_nr" are confirmed to be on stable storage.
+ *
+ * For confirm stable, both o_block_id and y_block_id are given, barrier_nr is
+ * ignored, and all requests from "o_block_id" up to and including y_block_id
+ * are confirmed to be on stable storage on the reporting peer.
  *
  * In case the passed barrier_nr or set_size does not match the oldest
  * epoch of not yet barrier-acked requests, this function will cause a
  * termination of the connection.
  */
-void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
+void tl_release(struct drbd_connection *connection,
+		uint64_t o_block_id,
+		uint64_t y_block_id,
+		unsigned int barrier_nr,
 		unsigned int set_size)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_request *r;
 	struct drbd_request *req = NULL;
+	struct drbd_request *req_y = NULL;
 	int expect_epoch = 0;
 	int expect_size = 0;
+	const int idx = connection->peer_node_id;
 
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irq(&resource->req_lock);
 
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
-		struct drbd_peer_device *peer_device =
-			conn_peer_device(connection, r->device->vnr);
-		const int idx = peer_device->node_id;
-
 		if (!req) {
 			if (!(r->local_rq_state & RQ_WRITE))
 				continue;
@@ -397,9 +413,35 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 			/* if (!(s & RQ_NET_MASK)): not expected */
 			expect_size++;
 		}
+		if (y_block_id && (struct drbd_request*)(unsigned long)y_block_id == r) {
+			req_y = r;
+			break;
+		}
 	}
 
 	/* first some paranoia code */
+	if (o_block_id) {
+		if ((struct drbd_request*)(unsigned long)o_block_id != req) {
+			drbd_err(connection, "BAD! ConfirmedStable: expected %p, found %p\n",
+				(struct drbd_request*)(unsigned long)o_block_id, req);
+			goto bail;
+		}
+		if (!req_y) {
+			drbd_err(connection, "BAD! ConfirmedStable: expected youngest request %p NOT found\n",
+				(struct drbd_req*)(unsigned long)y_block_id);
+			goto bail;
+		}
+		/* A P_CONFIRM_STABLE cannot tell me the to-be-expected barrier nr,
+		 * it does not know it yet. But we just confirmed it knew the
+		 * expected request, so just use that one. */
+		barrier_nr = expect_epoch;
+		/* Both requests referenced must be in the same epoch. */
+		if (req_y->epoch != expect_epoch) {
+			drbd_err(connection, "BAD! ConfirmedStable: reported requests not in the same epoch (%u != %u)\n",
+				req->epoch, req_y->epoch);
+			goto bail;
+		}
+	}
 	if (req == NULL) {
 		drbd_err(connection, "BAD! BarrierAck #%u received, but no epoch in tl!?\n",
 			 barrier_nr);
@@ -412,8 +454,12 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	}
 
 	if (expect_size != set_size) {
-		drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
-			 barrier_nr, set_size, expect_size);
+		if (!o_block_id)
+			drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
+				 barrier_nr, set_size, expect_size);
+		else
+			drbd_err(connection, "BAD! ConfirmedStable [%p,%p] received with n_writes=%u, expected n_writes=%u!\n",
+				 req, req_y, set_size, expect_size);
 		goto bail;
 	}
 
@@ -432,10 +478,17 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 		}
 		peer_device = conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, BARRIER_ACKED, peer_device);
+		if (req == req_y) {
+			tl_abort_for_each_req_ref(r, &resource->transfer_log);
+			break;
+		}
 	}
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&resource->req_lock);
 
-	if (barrier_nr == connection->send.last_sent_epoch_nr) {
+	/* urgently flush out peer acks for P_CONFIRM_STABLE */
+	if (req_y) {
+		drbd_flush_peer_acks(resource);
+	} else if (barrier_nr == connection->send.last_sent_epoch_nr) {
 		clear_bit(BARRIER_ACK_PENDING, &connection->flags);
 		wake_up(&resource->barrier_wait);
 	}
@@ -443,7 +496,7 @@ void tl_release(struct drbd_connection *connection, unsigned int barrier_nr,
 	return;
 
 bail:
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irq(&resource->req_lock);
 	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
 }
 

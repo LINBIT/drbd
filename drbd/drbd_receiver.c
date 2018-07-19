@@ -1050,6 +1050,10 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 		}
 	}
 
+	/* If called before sending P_CONFIRM_STABLE, we don't have the epoch
+	 * (and must not finish it yet, anyways) */
+	if (epoch == NULL)
+		return FE_STILL_LIVE;
 	return drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE);
 }
 
@@ -1083,6 +1087,52 @@ static void drbd_send_b_ack(struct drbd_connection *connection, u32 barrier_nr, 
 	p->barrier = barrier_nr;
 	p->set_size = cpu_to_be32(set_size);
 	send_command(connection, -1, P_BARRIER_ACK, CONTROL_STREAM);
+}
+
+static void drbd_send_confirm_stable(struct drbd_peer_request *peer_req)
+{
+	struct drbd_connection *connection = peer_req->peer_device->connection;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_epoch *epoch = peer_req->epoch;
+	struct drbd_peer_request *oldest, *youngest;
+	struct p_confirm_stable *p;
+	int count;
+
+	if (connection->cstate[NOW] < C_CONNECTED)
+		return;
+
+	/* peer_req is not on stable storage yet, but the only one in this epoch.
+	 * Nothing to confirm, just wait for the normal barrier_ack and peer_ack
+	 * to do their work. */
+	oldest = epoch->oldest_unconfirmed_peer_req;
+	if (oldest == peer_req)
+		return;
+
+	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
+	if (!p)
+		return;
+
+	/* receive_Data() does a list_add_tail() for every requests, which
+	 * means the oldest is .next, the currently blocked one that triggered
+	 * this code path is .prev, and the youngest that now should be on
+	 * stable storage is .prev->prev */
+	spin_lock_irq(&resource->req_lock);
+	youngest = list_entry(peer_req->recv_order.prev, struct drbd_peer_request, recv_order);
+	spin_unlock_irq(&resource->req_lock);
+
+	count = atomic_read(&epoch->epoch_size) - atomic_read(&epoch->confirmed) - 1;
+	atomic_add(count, &epoch->confirmed);
+	epoch->oldest_unconfirmed_peer_req = peer_req;
+
+	D_ASSERT(connection, oldest->epoch == youngest->epoch);
+	D_ASSERT(connection, count > 0);
+
+	p->oldest_block_id = oldest->block_id;
+	p->youngest_block_id = youngest->block_id;
+	p->set_size = cpu_to_be32(count);
+	p->pad = 0;
+
+	send_command(connection, -1, P_CONFIRM_STABLE, CONTROL_STREAM);
 }
 
 /**
@@ -1150,6 +1200,8 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 		}
 		if (finish) {
 			if (!(ev & EV_CLEANUP)) {
+				/* adjust for nr requests already confirmed via P_CONFIRM_STABLE, if any. */
+				epoch_size -= atomic_read(&epoch->confirmed);
 				spin_unlock(&connection->epoch_lock);
 				drbd_send_b_ack(epoch->connection, epoch->barrier_nr, epoch_size);
 				spin_lock(&connection->epoch_lock);
@@ -1171,8 +1223,10 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 				if (rv == FE_STILL_LIVE)
 					rv = FE_DESTROYED;
 			} else {
+				epoch->oldest_unconfirmed_peer_req = NULL;
 				epoch->flags = 0;
 				atomic_set(&epoch->epoch_size, 0);
+				atomic_set(&epoch->confirmed, 0);
 				/* atomic_set(&epoch->active, 0); is alrady zero */
 				if (rv == FE_STILL_LIVE)
 					rv = FE_RECYCLED;
@@ -1686,9 +1740,11 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	}
 }
 
-static void conn_wait_done_ee_empty(struct drbd_connection *connection)
+static void conn_wait_done_ee_empty_or_disconnect(struct drbd_connection *connection)
 {
-	wait_event(connection->ee_wait, atomic_read(&connection->done_ee_cnt) == 0);
+	wait_event(connection->ee_wait,
+		atomic_read(&connection->done_ee_cnt) == 0
+		|| connection->cstate[NOW] < C_CONNECTED);
 }
 
 static void conn_wait_active_ee_empty_or_disconnect(struct drbd_connection *connection)
@@ -1750,7 +1806,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 
 	/* receiver context, in the writeout path of the other node.
 	 * avoid potential distributed deadlock */
-	epoch = kmalloc(sizeof(struct drbd_epoch), GFP_NOIO);
+	epoch = kzalloc(sizeof(struct drbd_epoch), GFP_NOIO);
 	if (!epoch) {
 		drbd_warn(connection, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &connection->current_epoch->flags);
@@ -1761,14 +1817,10 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 				return 0;
 		}
 
-		conn_wait_done_ee_empty(connection);
+		conn_wait_done_ee_empty_or_disconnect(connection);
 
 		return 0;
 	}
-
-	epoch->flags = 0;
-	atomic_set(&epoch->epoch_size, 0);
-	atomic_set(&epoch->active, 0);
 
 	spin_lock(&connection->epoch_lock);
 	if (atomic_read(&connection->current_epoch->epoch_size)) {
@@ -2589,7 +2641,6 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 
 static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
-	atomic_add(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 	atomic_inc(&device->wait_for_actlog);
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&peer_req->wait_for_actlog, &device->submit.peer_writes);
@@ -2597,6 +2648,77 @@ static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
+}
+
+/* FIXME
+ * TODO grab the device->al_lock *once*, and check:
+ *     if possible, non-blocking get the reference(s),
+ *     if transaction is required, queue them up,
+ *        AND account for the queued up worst-case slot consumption
+ *     if available slots, corrected by other accounting, suggest
+ *        that we might block on this now or later,
+ *        *FIRST* drain, then flush, then send P_CONFIRM_STABLE,
+ *        then wait for available slots to be sufficient.
+ */
+static enum { DRBD_PAL_QUEUE, DRBD_PAL_DISCONNECTED, DRBD_PAL_SUBMIT }
+prepare_activity_log(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+
+	struct lru_cache *al;
+	int nr_al_extents = interval_to_al_extents(&peer_req->i);
+	int nr, used, ecnt;
+	int ret = DRBD_PAL_SUBMIT;
+
+	/* In protocol < 110 (which is compat mode 8.4 <-> 9.0),
+	 * we must not block in the activity log here, that would
+	 * deadlock during an ongoing resync with the drbd_rs_begin_io
+	 * we did when receiving the resync request.
+	 *
+	 * We still need to update the activity log, if ours is the
+	 * only remaining disk, in which case there cannot be a resync,
+	 * and the deadlock paths cannot be taken.
+	 */
+	if (connection->agreed_pro_version < 110 &&
+	    peer_device->disk_state[NOW] >= D_INCONSISTENT)
+		return DRBD_PAL_SUBMIT;
+
+	/* Let the activity log know we are about to use it.
+	 * See also drbd_request_prepare() for the "request" entry point. */
+	ecnt = atomic_add_return(nr_al_extents, &device->wait_for_actlog_ecnt);
+
+	spin_lock(&device->al_lock);
+	al = device->act_log;
+	nr = al->nr_elements;
+	used = al->used;
+	spin_unlock(&device->al_lock);
+
+	/* note: due to the slight delay between being accounted in "used" after
+	 * being committed to the activity log with drbd_al_begin_io_commit(),
+	 * and being subtracted from "wait_for_actlog_ecnt" in __drbd_submit_peer_request(),
+	 * this can err, but only on the conservative side (overestimating ecnt). */
+	if (ecnt > nr - used) {
+		conn_wait_active_ee_empty_or_disconnect(connection);
+		drbd_flush_after_epoch(connection, NULL);
+		conn_wait_done_ee_empty_or_disconnect(connection);
+
+		/* would this peer even understand me? */
+		if (connection->agreed_pro_version >= 114)
+			drbd_send_confirm_stable(peer_req);
+
+		if  (drbd_al_begin_io_for_peer(peer_device, &peer_req->i))
+			ret = DRBD_PAL_DISCONNECTED;
+	} else if (nr_al_extents != 1 || !drbd_al_begin_io_fastpath(device, &peer_req->i)) {
+		ret = DRBD_PAL_QUEUE;
+	}
+	if (ret == DRBD_PAL_SUBMIT)
+		peer_req->flags |= EE_IN_ACTLOG;
+	if (ret != DRBD_PAL_QUEUE)
+		atomic_sub(nr_al_extents, &device->wait_for_actlog_ecnt);
+
+	return ret;
 }
 
 /* mirrored write */
@@ -2712,6 +2834,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	peer_req->epoch = connection->current_epoch;
 	atomic_inc(&peer_req->epoch->epoch_size);
 	atomic_inc(&peer_req->epoch->active);
+	if (peer_req->epoch->oldest_unconfirmed_peer_req == NULL)
+		peer_req->epoch->oldest_unconfirmed_peer_req = peer_req;
 
 	if (connection->resource->write_ordering == WO_BIO_BARRIER &&
 	    atomic_read(&peer_req->epoch->epoch_size) == 1) {
@@ -2785,6 +2909,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		spin_lock_irq(&device->resource->req_lock);
 	}
 	/* Added to list here already, so debugfs can find it.
+	 * NOTE: active_ee_cnt is only increased *after* we checked we won't
+	 * need to wait for current activity to drain in prepare_activity_log()
 	 */
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
@@ -2805,34 +2931,18 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * Remember the op_flags. */
 	peer_req->op_flags = op_flags;
 
+	err = prepare_activity_log(peer_req);
+	if (err == DRBD_PAL_DISCONNECTED)
+		goto disconnect_during_al_begin_io;
+
 	atomic_inc(&connection->active_ee_cnt);
 
-	/* In protocol < 110 (which is compat mode 8.4 <-> 9.0),
-	 * we must not block in the activity log here, that would
-	 * deadlock during an ongoing resync with the drbd_rs_begin_io
-	 * we did when receiving the resync request.
-	 *
-	 * We still need to update the activity log, if ours is the
-	 * only remaining disk, in which case there cannot be a resync,
-	 * and the deadlock paths cannot be taken.
-	 */
-	if (connection->agreed_pro_version >= 110 ||
-	    peer_device->disk_state[NOW] < D_INCONSISTENT) {
-		/* For now, it is easier to still handle some "special" requests
-		 * "synchronously" from receiver context */
-		if (peer_req->flags & (EE_TRIM|EE_ZEROOUT|EE_WRITE_SAME|EE_IS_BARRIER)) {
-			err = drbd_al_begin_io_for_peer(peer_device, &peer_req->i);
-			if (err)
-				goto disconnect_during_al_begin_io;
-		} else if (!drbd_al_begin_io_fastpath(device, &peer_req->i)) {
-			drbd_queue_peer_request(device, peer_req);
-			return 0;
-		}
-		peer_req->flags |= EE_IN_ACTLOG;
+	if (err == DRBD_PAL_QUEUE) {
+		drbd_queue_peer_request(device, peer_req);
+		return 0;
 	}
 
-	err = drbd_submit_peer_request(device, peer_req, op, op_flags,
-				       DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(device, peer_req, op, op_flags, DRBD_FAULT_DT_WR);
 	if (!err)
 		return 0;
 
@@ -8403,7 +8513,16 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 {
 	struct p_barrier_ack *p = pi->data;
 
-	tl_release(connection, p->barrier, be32_to_cpu(p->set_size));
+	tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
+
+	return 0;
+}
+
+static int got_confirm_stable(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_confirm_stable *p = pi->data;
+
+	tl_release(connection, p->oldest_block_id, p->youngest_block_id, 0, be32_to_cpu(p->set_size));
 
 	return 0;
 }
@@ -8694,6 +8813,7 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_NEG_RS_DREPLY]   = { sizeof(struct p_block_ack), got_NegRSDReply },
 	[P_OV_RESULT]	    = { sizeof(struct p_block_ack), got_OVResult },
 	[P_BARRIER_ACK]	    = { sizeof(struct p_barrier_ack), got_BarrierAck },
+	[P_CONFIRM_STABLE]  = { sizeof(struct p_confirm_stable), got_confirm_stable },
 	[P_STATE_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
 	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
