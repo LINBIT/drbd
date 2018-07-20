@@ -699,8 +699,9 @@ start:
 		return false;
 	}
 
-	/* Assume that the peer only understands protocol 80 until we know better.  */
-	connection->agreed_pro_version = 80;
+	/* Assume that the peer only understands our minimum supported
+	 * protocol version; until we know better. */
+	connection->agreed_pro_version = drbd_protocol_version_min;
 
 	err = transport->ops->connect(transport);
 	if (err == -EAGAIN) {
@@ -7779,7 +7780,7 @@ static int drbd_send_features(struct drbd_connection *connection)
 	if (!p)
 		return -EIO;
 	memset(p, 0, sizeof(*p));
-	p->protocol_min = cpu_to_be32(PRO_VERSION_MIN);
+	p->protocol_min = cpu_to_be32(drbd_protocol_version_min);
 	p->protocol_max = cpu_to_be32(PRO_VERSION_MAX);
 	p->sender_node_id = cpu_to_be32(connection->resource->res_opts.node_id);
 	p->receiver_node_id = cpu_to_be32(connection->peer_node_id);
@@ -7836,10 +7837,10 @@ int drbd_do_features(struct drbd_connection *connection)
 		p->protocol_max = p->protocol_min;
 
 	if (PRO_VERSION_MAX < p->protocol_min ||
-	    PRO_VERSION_MIN > p->protocol_max) {
+	    drbd_protocol_version_min > p->protocol_max) {
 		drbd_err(connection, "incompatible DRBD dialects: "
 		    "I support %d-%d, peer supports %d-%d\n",
-		    PRO_VERSION_MIN, PRO_VERSION_MAX,
+		    drbd_protocol_version_min, PRO_VERSION_MAX,
 		    p->protocol_min, p->protocol_max);
 		return -1;
 	}

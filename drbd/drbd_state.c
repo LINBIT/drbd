@@ -689,6 +689,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	unsigned int pro_ver;
 	int vnr;
 
 	if (flags & CS_ABORT)
@@ -716,14 +717,19 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
 	resource->cached_susp = resource_is_suspended(resource, NEW);
 
+	pro_ver = PRO_VERSION_MAX;
 	for_each_connection(connection, resource) {
 		connection->cstate[NOW] = connection->cstate[NEW];
 		connection->peer_role[NOW] = connection->peer_role[NEW];
 		connection->susp_fen[NOW] = connection->susp_fen[NEW];
 
+		pro_ver = min_t(unsigned int, pro_ver,
+			connection->agreed_pro_version);
+
 		wake_up(&connection->ping_wait);
 		wake_up(&connection->ee_wait);
 	}
+	resource->cached_min_aggreed_protocol_version = pro_ver;
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;

@@ -86,6 +86,7 @@
 
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
+extern unsigned int drbd_protocol_version_min;
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int drbd_enable_faults;
@@ -889,6 +890,8 @@ struct drbd_resource {
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
 	unsigned current_tle_writes;	/* writes seen within this tl epoch */
+
+	unsigned cached_min_aggreed_protocol_version;
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)

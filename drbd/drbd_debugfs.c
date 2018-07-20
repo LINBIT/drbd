@@ -863,6 +863,7 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	              "           active_ee_cnt: %d\n",
 		atomic_read(&connection->done_ee_cnt),
 		atomic_read(&connection->active_ee_cnt));
+	seq_printf(m, "      agreed_pro_version: %d\n", connection->agreed_pro_version);
 	return 0;
 }
 

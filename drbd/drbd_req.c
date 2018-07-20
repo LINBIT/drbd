@@ -953,15 +953,24 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
 
-		/* close the epoch, in case it outgrew the limit,
-		 * or this is a "batch bio" */
-		if (!(req->local_rq_state & (RQ_UNMAP|RQ_WSAME|RQ_ZEROES))) {
+		/* Close the epoch, in case it outgrew the limit.
+		 * Or if this is a "batch bio", and some of our peers is "old",
+		 * because a batch bio "storm" (like, large scale discarding
+		 * during mkfs time) would be likely to starve out the peers
+		 * activity log, if it is smaller than ours (or we don't have
+		 * any).  And a fix for the resulting potential distributed
+		 * deadlock was only implemented with P_CONFIRM_STABLE with
+		 * protocol version 114.
+		 */
+		if (device->resource->cached_min_aggreed_protocol_version < 114 &&
+		    (req->local_rq_state & (RQ_UNMAP|RQ_WSAME|RQ_ZEROES)))
+			p = 1;
+		else {
 			rcu_read_lock();
 			nc = rcu_dereference(peer_device->connection->transport.net_conf);
 			p = nc->max_epoch_size;
 			rcu_read_unlock();
-		} else
-			p = 1;
+		}
 		if (device->resource->current_tle_writes >= p)
 			start_new_tl_epoch(device->resource);
 		break;

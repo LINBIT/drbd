@@ -118,6 +118,35 @@ char drbd_usermode_helper[80] = "/sbin/drbdadm";
 module_param_named(minor_count, drbd_minor_count, uint, 0444);
 module_param_string(usermode_helper, drbd_usermode_helper, sizeof(drbd_usermode_helper), 0644);
 
+static int param_set_drbd_protocol_version(const char *s, const struct kernel_param *kp)
+{
+	unsigned long long tmp;
+	unsigned int *res = kp->arg;
+	int rv;
+
+	rv = kstrtoull(s, 0, &tmp);
+	if (rv < 0)
+		return rv;
+	if (tmp < PRO_VERSION_MIN || tmp > PRO_VERSION_MAX)
+		return -ERANGE;
+	*res = tmp;
+	return 0;
+}
+
+#define param_check_drbd_protocol_version	param_check_uint
+#define param_get_drbd_protocol_version		param_get_uint
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
+/* 9bbb9e5a3310 param: use ops in struct kernel_param, rather than get and set fns directly */
+const struct kernel_param_ops param_ops_drbd_protocol_version = {
+	.set = param_set_drbd_protocol_version,
+	.get = param_get_drbd_protocol_version,
+};
+#endif
+
+unsigned int drbd_protocol_version_min = PRO_VERSION_MIN;
+module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
+
+
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */
@@ -3436,6 +3465,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	drbd_thread_start(&resource->worker);
 	drbd_debugfs_resource_add(resource);
+	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
