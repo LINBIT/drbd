@@ -2773,6 +2773,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		struct drbd_connection *connection = peer_device->connection;
 		int bitmap_index;
 
+		if (peer_device->bitmap_index != -1) {
+			drbd_err(peer_device,
+					"ASSERTION FAILED bitmap_index %d during attach, expected -1\n",
+					peer_device->bitmap_index);
+		}
+
 		bitmap_index = nbc->md.peers[connection->peer_node_id].bitmap_index;
 		if (bitmap_index != -1)
 			peer_device->bitmap_index = bitmap_index;

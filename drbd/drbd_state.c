@@ -2242,6 +2242,14 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			BUG_ON(test_and_set_bit(HAVE_LDEV, &device->flags));
 		}
 
+		if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS) {
+			/* who knows if we are ever going to be attached again,
+			 * and whether that will be the same device, or a newly
+			 * initialized one. */
+			for_each_peer_device(peer_device, device)
+				peer_device->bitmap_index = -1;
+		}
+
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
 			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.current_uuid);
 

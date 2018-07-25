@@ -1172,6 +1172,7 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 {
 	struct drbd_md *md = &device->ldev->md;
 	unsigned int node_id;
+	unsigned int n_checked = 0;
 
 	unsigned long sbnr, ebnr;
 	sector_t esector, nr_sectors;
@@ -1197,6 +1198,13 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 
 		if (drbd_bm_count_bits(device, peer_md->bitmap_index, sbnr, ebnr))
 			return false;
+		++n_checked;
+	}
+	if (n_checked == 0) {
+		if (drbd_ratelimit()) {
+			drbd_err(device, "No valid bitmap slots found to check!\n");
+		}
+		return false;
 	}
 	return true;
 }
