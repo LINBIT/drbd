@@ -453,7 +453,13 @@ struct drbd_peer_request {
  * non-atomic modification to ee->flags is ok.
  */
 enum {
+	/* If successfully written,
+	 * we may clear the corresponding out-of-sync bits */
 	__EE_MAY_SET_IN_SYNC,
+
+	/* Peer did not write this one, we must set-out-of-sync
+	 * before actually submitting ourselves */
+	__EE_SET_OUT_OF_SYNC,
 
 	/* This peer request closes an epoch using a barrier.
 	 * On successful completion, the epoch is released,
@@ -509,6 +515,7 @@ enum {
 	__EE_IN_ACTLOG,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
+#define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
 #define EE_IS_BARRIER          (1<<__EE_IS_BARRIER)
 #define EE_TRIM                (1<<__EE_TRIM)
 #define EE_ZEROOUT             (1<<__EE_ZEROOUT)

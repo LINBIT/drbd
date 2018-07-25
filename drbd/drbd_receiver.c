@@ -1543,6 +1543,10 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	unsigned nr_pages = peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
 
+	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
+		drbd_set_out_of_sync(peer_req->peer_device,
+				peer_req->i.sector, peer_req->i.size);
+
 	/* TRIM/DISCARD: for now, always use the helper function
 	 * blkdev_issue_zeroout(..., discard=true).
 	 * It's synchronous, but it does the right thing wrt. bio splitting.
@@ -2935,6 +2939,20 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	err = prepare_activity_log(peer_req);
 	if (err == DRBD_PAL_DISCONNECTED)
 		goto disconnect_during_al_begin_io;
+
+	/* Note: this now may or may not be "hot" in the activity log.
+	 * Still, it is the best time to record that we need to set the
+	 * out-of-sync bit, if we delay that until drbd_submit_peer_request(),
+	 * we may introduce a race with some re-attach on the peer.
+	 * Unless we want to guarantee that we drain all in-flight IO
+	 * whenever we receive a state change. Which I'm not sure about.
+	 * Use the EE_SET_OUT_OF_SYNC flag, to be acted on just before
+	 * the actual submit, when we can be sure it is "hot".
+	 */
+	if (peer_device->disk_state[NOW] < D_INCONSISTENT) {
+		peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
+		peer_req->flags |= EE_SET_OUT_OF_SYNC;
+	}
 
 	atomic_inc(&connection->active_ee_cnt);
 
