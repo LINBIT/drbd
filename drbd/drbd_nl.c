@@ -2424,15 +2424,11 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 		return -ENOENT;
 	}
 
-	peer_md->bitmap_uuid = 0;
-	peer_md->flags = md_flags;
 	freed_index = peer_md->bitmap_index;
-	peer_md->bitmap_index = -1;
 
 	/* unallocated slots are considere to track writes to the device since day 0.
 	   In order to keep that promise, copy the bitmap from an other unallocated slot
 	   to this one, or set it to all out-of-sync */
-	drbd_md_sync(device);
 
 	drbd_suspend_io(device, WRITE_ONLY);
 	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
@@ -2444,6 +2440,11 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 
 	drbd_bm_write(device, NULL);
 	drbd_bm_unlock(device);
+
+	peer_md->bitmap_uuid = 0;
+	peer_md->flags = md_flags;
+	peer_md->bitmap_index = -1;
+	drbd_md_sync(device);
 	drbd_resume_io(device);
 
 	put_ldev(device);
