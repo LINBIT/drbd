@@ -562,7 +562,6 @@ void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
-	del_timer_sync(&resource->peer_ack_timer);
 	spin_lock_irq(&resource->req_lock);
 	_tl_walk(connection, what);
 	spin_unlock_irq(&resource->req_lock);
