@@ -410,7 +410,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	if (drbd_insert_fault(device, DRBD_FAULT_AL_EE))
 		return NULL;
 
-	peer_req = mempool_alloc(drbd_ee_mempool, gfp_mask & ~__GFP_HIGHMEM);
+	peer_req = mempool_alloc(&drbd_ee_mempool, gfp_mask & ~__GFP_HIGHMEM);
 	if (!peer_req) {
 		if (!(gfp_mask & __GFP_NOWARN))
 			drbd_err(device, "%s: allocation failed\n", __func__);
@@ -438,7 +438,7 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
-	mempool_free(peer_req, drbd_ee_mempool);
+	mempool_free(peer_req, &drbd_ee_mempool);
 }
 
 int drbd_free_peer_reqs(struct drbd_resource *resource, struct list_head *list, bool is_net_ee)
@@ -8757,7 +8757,7 @@ static void destroy_peer_ack_req(struct kref *kref)
 		container_of(kref, struct drbd_request, kref);
 
 	list_del(&req->tl_requests);
-	mempool_free(req, drbd_request_mempool);
+	mempool_free(req, &drbd_request_mempool);
 }
 
 static void cleanup_peer_ack_list(struct drbd_connection *connection)

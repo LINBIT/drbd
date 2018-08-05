@@ -81,7 +81,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 {
 	struct drbd_request *req;
 
-	req = mempool_alloc(drbd_request_mempool, GFP_NOIO);
+	req = mempool_alloc(&drbd_request_mempool, GFP_NOIO);
 	if (!req)
 		return NULL;
 
@@ -120,7 +120,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 static void req_destroy_no_send_peer_ack(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	mempool_free(req, drbd_request_mempool);
+	mempool_free(req, &drbd_request_mempool);
 }
 
 void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
@@ -325,7 +325,7 @@ void drbd_req_destroy(struct kref *kref)
 				drbd_queue_peer_ack(resource, peer_ack_req);
 				peer_ack_req = NULL;
 			} else
-				mempool_free(peer_ack_req, drbd_request_mempool);
+				mempool_free(peer_ack_req, &drbd_request_mempool);
 		}
 		req->device = NULL;
 		resource->peer_ack_req = req;
@@ -335,7 +335,7 @@ void drbd_req_destroy(struct kref *kref)
 		if (!peer_ack_req)
 			resource->last_peer_acked_dagtag = req->dagtag_sector;
 	} else
-		mempool_free(req, drbd_request_mempool);
+		mempool_free(req, &drbd_request_mempool);
 
 	/* In both branches of the if above, the reference to device gets released */
 	kref_debug_put(&device->kref_debug, 6);
@@ -1558,7 +1558,7 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 static void req_make_private_bio(struct drbd_request *req, struct bio *bio_src)
 {
 	struct bio *bio;
-	bio = bio_clone_fast(bio_src, GFP_NOIO, drbd_io_bio_set);
+	bio = bio_clone_fast(bio_src, GFP_NOIO, &drbd_io_bio_set);
 
 	req->private_bio = bio;
 
