@@ -1342,4 +1342,11 @@ static inline struct inode *file_inode(const struct file *file)
 #define DRBD_TIMER_CALL_ARG(OBJ, MEMBER) (unsigned long) OBJ
 #endif
 
+
+#ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
+extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,
+		struct proc_dir_entry *parent,
+		int (*show)(struct seq_file *, void *));
+#endif
+
 #endif

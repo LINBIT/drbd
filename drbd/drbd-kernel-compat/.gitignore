@@ -6,3 +6,6 @@ blkdev_issue_zeroout.o
 
 .nsecs_to_jiffies.o.cmd
 nsecs_to_jiffies.o
+
+.drbd_wrappers.o.cmd
+drbd_wrappers.o
