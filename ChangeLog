@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit http://git.drbd.org/.
 
+9.0.15-0rc2 (api:genl2/proto:86-114/transport:14)
+--------
+ * fix tracking of changes (on a secondary) against the lost disk of a
+   primary and also fix re-attaching in case the disk is replaced (has
+   new meta-data)
+ * New module parameter to disable support for older protocol versions,
+   an in case you configured peers that are not expected to connect it
+   might have positive effects because then this node does not need to
+   assume that such peer is ancient
+ * compat for v4.18 kernel
+
 9.0.15-0rc1 (api:genl2/proto:86-114/transport:14)
 --------
  * fix live migrate of VMs on DRBD when migrated to/from diskless
