@@ -4084,7 +4084,7 @@ static int __init drbd_init(void)
 		goto fail;
 
 	err = -ENOMEM;
-	drbd_proc = proc_create_single("drbd", S_IFREG | S_IRUGO , NULL,
+	drbd_proc = proc_create_single("drbd", S_IFREG | 0444 , NULL,
 			drbd_seq_show);
 
 	if (!drbd_proc)	{

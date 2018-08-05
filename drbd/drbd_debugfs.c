@@ -636,16 +636,16 @@ drbd_debugfs_resource_attr(state_twopc)
 	} while (0)
 
 #define res_dcf(attr) \
-	drbd_dcf(resource->debugfs_res, resource, attr, S_IRUSR)
+	drbd_dcf(resource->debugfs_res, resource, attr, 0400)
 
 #define conn_dcf(attr) \
-	drbd_dcf(connection->debugfs_conn, connection, attr, S_IRUSR)
+	drbd_dcf(connection->debugfs_conn, connection, attr, 0400)
 
 #define vol_dcf(attr) \
-	drbd_dcf(device->debugfs_vol, device, attr, S_IRUSR)
+	drbd_dcf(device->debugfs_vol, device, attr, 0400)
 
 #define peer_dev_dcf(attr) \
-	drbd_dcf(peer_device->debugfs_peer_dev, peer_device, attr, S_IRUSR)
+	drbd_dcf(peer_device->debugfs_peer_dev, peer_device, attr, 0400)
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource)
 {
@@ -1262,7 +1262,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(ed_gen_id);
 	vol_dcf(openers);
 #ifdef CONFIG_DRBD_TIMING_STATS
-	drbd_dcf(device->debugfs_vol, device, req_timing, S_IRUSR | S_IWUSR);
+	drbd_dcf(device->debugfs_vol, device, req_timing, 0600);
 #endif
 
 	/* Caller holds conf_update */
