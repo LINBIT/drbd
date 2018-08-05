@@ -2084,7 +2084,7 @@ extern void connect_timer_fn(DRBD_TIMER_FN_ARG);
 
 /* drbd_proc.c */
 extern struct proc_dir_entry *drbd_proc;
-extern const struct file_operations drbd_proc_fops;
+int drbd_seq_show(struct seq_file *seq, void *v);
 
 /* drbd_actlog.c */
 extern bool drbd_al_try_lock(struct drbd_device *device);

@@ -42,6 +42,7 @@ ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
 compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
 endif
+compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
