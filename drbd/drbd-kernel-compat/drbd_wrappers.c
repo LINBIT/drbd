@@ -2,6 +2,7 @@
 
 #ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 /* This compat wrapper is not generic, only good enough for DRBD */
 extern int drbd_seq_show(struct seq_file *seq, void *v);
 
