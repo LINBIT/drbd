@@ -495,7 +495,7 @@ out:
 	if (err < 0) {
 		if (socket)
 			sock_release(socket);
-		if (err != -EAGAIN)
+		if (err != -EAGAIN && err != -EADDRNOTAVAIL)
 			tr_err(transport, "%s failed, err = %d\n", what, err);
 	} else {
 		*ret_socket = socket;
@@ -831,7 +831,8 @@ out:
 		sock_release(s_listen);
 
 	if (err < 0 &&
-	    err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS && err != -EADDRINUSE)
+	    err != -EAGAIN && err != -EINTR && err != -ERESTARTSYS && err != -EADDRINUSE &&
+	    err != -EADDRNOTAVAIL)
 		tr_err(transport, "%s failed, err = %d\n", what, err);
 
 	return err;

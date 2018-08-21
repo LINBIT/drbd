@@ -691,6 +691,7 @@ static bool conn_connect(struct drbd_connection *connection)
 	struct net_conf *nc;
 	bool discard_my_data;
 	bool have_mutex;
+	bool no_addr = false;
 
 start:
 	have_mutex = false;
@@ -709,6 +710,26 @@ start:
 		if (connection->cstate[NOW] == C_DISCONNECTING)
 			return false;
 		goto retry;
+	} else if (err == -EADDRNOTAVAIL) {
+		struct net_conf *nc;
+		int connect_int;
+
+		rcu_read_lock();
+		nc = rcu_dereference(transport->net_conf);
+		connect_int = nc ? nc->connect_int : 10;
+		rcu_read_unlock();
+
+		if (!no_addr) {
+			drbd_warn(connection,
+				  "Configured local address not found, retrying every %d sec, "
+				  "err=%d\n", connect_int, err);
+			no_addr = true;
+		}
+
+		schedule_timeout_interruptible(connect_int * HZ);
+		if (connection->cstate[NOW] == C_DISCONNECTING)
+			return false;
+		goto start;
 	} else if (err < 0) {
 		drbd_warn(connection, "Failed to initiate connection, err=%d\n", err);
 		goto abort;
