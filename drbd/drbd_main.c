@@ -4967,10 +4967,11 @@ static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must
 		if (node_connected(resource, node_id1))
 			continue;
 
-		peer_bm_uuid = peer_device->bitmap_uuids[node_id1] & ~UUID_PRIMARY;
-		if (!peer_bm_uuid)
+		peer_bm_uuid = peer_device->bitmap_uuids[node_id1];
+		if (peer_bm_uuid == 0 || peer_bm_uuid == -1ULL)
 			continue;
 
+		peer_bm_uuid &= ~UUID_PRIMARY;
 		for (node_id2 = node_id1 + 1; node_id2 < DRBD_NODE_ID_MAX; node_id2++) {
 			if (device->ldev->md.peers[node_id2].bitmap_index == -1)
 				continue;
