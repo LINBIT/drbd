@@ -645,7 +645,7 @@ retry:
 		spin_unlock_bh(&listener->listener.waiters_lock);
 
 		s_estab = NULL;
-		err = kernel_accept(listener->s_listen, &s_estab, 0);
+		err = kernel_accept(listener->s_listen, &s_estab, O_NONBLOCK);
 		if (err < 0)
 			return err;
 
@@ -694,6 +694,8 @@ retry:
 			wake_up(&listener->wait);
 			goto retry_locked;
 		}
+		if (s_estab->sk->sk_state != TCP_ESTABLISHED)
+			goto retry_locked;
 	}
 	spin_unlock_bh(&listener->listener.waiters_lock);
 	*socket = s_estab;
@@ -747,13 +749,12 @@ static void dtt_incoming_connection(struct sock *sock)
 	void (*state_change)(struct sock *sock);
 
 	state_change = listener->original_sk_state_change;
-	if (sock->sk_state == TCP_ESTABLISHED) {
-		spin_lock(&listener->listener.waiters_lock);
-		listener->listener.pending_accepts++;
-		spin_unlock(&listener->listener.waiters_lock);
-		wake_up(&listener->wait);
-	}
 	state_change(sock);
+
+	spin_lock(&listener->listener.waiters_lock);
+	listener->listener.pending_accepts++;
+	spin_unlock(&listener->listener.waiters_lock);
+	wake_up(&listener->wait);
 }
 
 static void dtt_destroy_listener(struct drbd_listener *generic_listener)
