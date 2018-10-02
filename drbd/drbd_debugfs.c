@@ -123,7 +123,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 }
 #endif
 
-static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, ktime_t now)
+static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, ktime_t now, unsigned long jif)
 {
 	/* change anything here, fixup header below! */
 	unsigned int s = req->local_rq_state;
@@ -134,26 +134,30 @@ static void seq_print_one_request(struct seq_file *m, struct drbd_request *req, 
 		(unsigned long long)req->i.sector, req->i.size >> 9,
 		(s & RQ_WRITE) ? "W" : "R");
 
-#define RQ_HDR_2 "\tstart\tin AL\tsubmit"
-#define RQ_HDR_3 "\tsent\tacked\tdone"
-	seq_printf(m, "\t%d", (int)ktime_to_ms(ktime_sub(now, req->start_kt)));
 #ifdef CONFIG_DRBD_TIMING_STATS
+#define RQ_HDR_2 "\tstart\tin AL\tsubmit"
+	seq_printf(m, "\t%d", (int)ktime_to_ms(ktime_sub(now, req->start_kt)));
 	seq_print_age_or_dash(m, s & RQ_IN_ACT_LOG, ktime_sub(now, req->in_actlog_kt));
 	seq_print_age_or_dash(m, s & RQ_LOCAL_PENDING, ktime_sub(now, req->pre_submit_kt));
 
+#define RQ_HDR_3 "\tsent\tacked\tdone"
 	print_one_age_or_dash(m, req, RQ_NET_SENT, 0, now, offsetof(typeof(*req), pre_send_kt));
 	print_one_age_or_dash(m, req, RQ_NET_SENT, RQ_NET_PENDING, now, offsetof(typeof(*req), acked_kt));
 	print_one_age_or_dash(m, req, RQ_NET_DONE, 0, now, offsetof(typeof(*req), net_done_kt));
+#else
+#define RQ_HDR_2 "\tstart"
+#define RQ_HDR_3 ""
+	seq_printf(m, "\t%d", (int)jiffies_to_msecs(jif - req->start_jif));
 #endif
 #define RQ_HDR_4 "\tstate\n"
 	seq_print_request_state(m, req);
 }
 #define RQ_HDR RQ_HDR_1 RQ_HDR_2 RQ_HDR_3 RQ_HDR_4
 
-static void seq_print_minor_vnr_req(struct seq_file *m, struct drbd_request *req, ktime_t now)
+static void seq_print_minor_vnr_req(struct seq_file *m, struct drbd_request *req, ktime_t now, unsigned long jif)
 {
 	seq_printf(m, "%u\t%u\t", req->device->minor, req->device->vnr);
-	seq_print_one_request(m, req, now);
+	seq_print_one_request(m, req, now, jif);
 }
 
 static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_resource *resource, unsigned long jif)
@@ -184,7 +188,7 @@ static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_r
 	rcu_read_unlock();
 }
 
-static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *resource, ktime_t now)
+static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *resource, ktime_t now, unsigned long jif)
 {
 	struct drbd_device *device;
 	int i;
@@ -192,7 +196,6 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 	seq_puts(m, "minor\tvnr\tage\t#waiting\n");
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, i) {
-		ktime_t ktime;
 		struct drbd_request *req;
 		int n = atomic_read(&device->ap_actlog_cnt);
 		if (n) {
@@ -201,17 +204,19 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 				struct drbd_request, req_pending_master_completion);
 			/* if the oldest request does not wait for the activity log
 			 * it is not interesting for us here */
-			if (req && !(req->local_rq_state & RQ_IN_ACT_LOG))
-				ktime = req->start_kt;
-			else
+			if (req && (req->local_rq_state & RQ_IN_ACT_LOG))
 				req = NULL;
 			spin_unlock_irq(&device->resource->req_lock);
 		}
 		if (n) {
 			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
-			if (req)
-				seq_printf(m, "%d\t", (int)ktime_to_ms(ktime_sub(now, ktime)));
-			else
+			if (req) {
+#ifdef CONFIG_DRBD_TIMING_STATS
+				seq_printf(m, "%d\t", (int)ktime_to_ms(ktime_sub(now, req->start_kt)));
+#else
+				seq_printf(m, "%d\t", (int)jiffies_to_msecs(jif - req->start_jif));
+#endif
+			} else
 				seq_puts(m, "-\t");
 			seq_printf(m, "%u\n", n);
 		}
@@ -345,7 +350,7 @@ static void seq_print_resource_pending_peer_requests(struct seq_file *m,
 static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	struct drbd_resource *resource,
 	struct drbd_connection *connection,
-	ktime_t now)
+	ktime_t now, unsigned long jif)
 {
 	struct drbd_request *req;
 	unsigned int count = 0;
@@ -400,7 +405,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			continue;
 		show_state |= tmp;
 		seq_printf(m, "%u\t", count);
-		seq_print_minor_vnr_req(m, req, now);
+		seq_print_minor_vnr_req(m, req, now, jif);
 		if (show_state == 0x1f)
 			break;
 	}
@@ -453,11 +458,11 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	seq_putc(m, '\n');
 
 	seq_puts(m, "application requests waiting for activity log\n");
-	seq_print_waiting_for_AL(m, resource, now);
+	seq_print_waiting_for_AL(m, resource, now, jif);
 	seq_putc(m, '\n');
 
 	seq_puts(m, "oldest application requests\n");
-	seq_print_resource_transfer_log_summary(m, resource, connection, now);
+	seq_print_resource_transfer_log_summary(m, resource, connection, now, jif);
 	seq_putc(m, '\n');
 
 	jif = jiffies - jif;
@@ -760,6 +765,7 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_connection *connection = m->private;
 	ktime_t now = ktime_get();
+	unsigned long jif = jiffies;
 	struct drbd_request *r1, *r2;
 
 	/* BUMP me if you change the file format/content/presentation */
@@ -768,15 +774,15 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	spin_lock_irq(&connection->resource->req_lock);
 	r1 = connection->todo.req_next;
 	if (r1)
-		seq_print_minor_vnr_req(m, r1, now);
+		seq_print_minor_vnr_req(m, r1, now, jif);
 	r2 = connection->req_ack_pending;
 	if (r2 && r2 != r1) {
 		r1 = r2;
-		seq_print_minor_vnr_req(m, r1, now);
+		seq_print_minor_vnr_req(m, r1, now, jif);
 	}
 	r2 = connection->req_not_net_done;
 	if (r2 && r2 != r1)
-		seq_print_minor_vnr_req(m, r2, now);
+		seq_print_minor_vnr_req(m, r2, now, jif);
 	spin_unlock_irq(&connection->resource->req_lock);
 	return 0;
 }
@@ -1005,6 +1011,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	struct drbd_device *device = m->private;
 	struct drbd_resource *resource = device->resource;
 	ktime_t now = ktime_get();
+	unsigned long jif = jiffies;
 	struct drbd_request *r1, *r2;
 	int i;
 
@@ -1020,9 +1027,9 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 		r2 = list_first_entry_or_null(&device->pending_completion[i],
 			struct drbd_request, req_pending_local);
 		if (r1)
-			seq_print_one_request(m, r1, now);
+			seq_print_one_request(m, r1, now, jif);
 		if (r2 && r2 != r1)
-			seq_print_one_request(m, r2, now);
+			seq_print_one_request(m, r2, now, jif);
 	}
 	spin_unlock_irq(&resource->req_lock);
 	return 0;

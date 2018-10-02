@@ -313,57 +313,55 @@ struct drbd_request {
 	struct list_head req_pending_local;
 
 	/* for generic IO accounting */
-	ktime_t start_kt;
+	unsigned long start_jif;
 
-	/* for DRBD internal statistics */
-	ktime_t pre_submit_kt;
-
-	/* per connection */
-	ktime_t pre_send_kt[DRBD_PEERS_MAX];
-
-	/* Minimal set of time stamps to determine if we wait for activity log
-	 * transactions, local disk or peer.  32 bit "jiffies" are good enough,
-	 * we don't expect a DRBD request to be stalled for several month.
-	 */
+	/* for request_timer_fn() */
+	unsigned long pre_submit_jif;
+	unsigned long pre_send_jif[DRBD_PEERS_MAX];
 
 #ifdef CONFIG_DRBD_TIMING_STATS
+	/* for DRBD internal statistics */
+	ktime_t start_kt;
+
 	/* before actual request processing */
 	ktime_t in_actlog_kt;
 
 	/* local disk */
+	ktime_t pre_submit_kt;
 
 	/* per connection */
+	ktime_t pre_send_kt[DRBD_PEERS_MAX];
 	ktime_t acked_kt[DRBD_PEERS_MAX];
 	ktime_t net_done_kt[DRBD_PEERS_MAX];
 #endif
 	/* Possibly even more detail to track each phase:
-	 *  master_completion_jif
+	 *  master_completion_kt
 	 *      how long did it take to complete the master bio
 	 *      (application visible latency)
-	 *  allocated_jif
+	 *  allocated_kt
 	 *      how long the master bio was blocked until we finally allocated
 	 *      a tracking struct
-	 *  in_actlog_jif
+	 *  in_actlog_kt
 	 *      how long did we wait for activity log transactions
 	 *
-	 *  net_queued_jif
+	 *  net_queued_kt
 	 *      when did we finally queue it for sending
-	 *  pre_send_jif
+	 *  pre_send_kt
 	 *      when did we start sending it
-	 *  post_send_jif
+	 *  post_send_kt
 	 *      how long did we block in the network stack trying to send it
-	 *  acked_jif
+	 *  acked_kt
 	 *      when did we receive (or fake, in protocol A) a remote ACK
-	 *  net_done_jif
+	 *  net_done_kt
 	 *      when did we receive final acknowledgement (P_BARRIER_ACK),
 	 *      or decide, e.g. on connection loss, that we do no longer expect
 	 *      anything from this peer for this request.
 	 *
-	 *  pre_submit_jif
-	 *  post_sub_jif
+	 *  pre_submit_kt
+	 *  post_sub_kt
 	 *      when did we start submiting to the lower level device,
 	 *      and how long did we block in that submit function
-	 *  local_completion_jif
+	 *  local_completion_kt
 	 *      how long did it take the lower level device to complete this request
 	 */
 
@@ -1849,7 +1847,10 @@ extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */
 extern void do_submit(struct work_struct *ws);
-extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t);
+#ifndef CONFIG_DRBD_TIMING_STATS
+#define __drbd_make_request(d,b,k,j) __drbd_make_request(d,b,j)
+#endif
+extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t, unsigned long);
 extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio);
 #ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
@@ -2816,12 +2817,14 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 #define ktime_aggregate(D, R, M) D->M = ktime_add(D->M, ktime_sub(R->M, R->start_kt))
 #define ktime_aggregate_pd(P, N, R, M) P->M = ktime_add(P->M, ktime_sub(R->M[N], R->start_kt))
 #define ktime_get_accounting(V) V = ktime_get()
+#define ktime_get_accounting_assign(V, T) V = T
 #define ktime_var_for_accounting(V) ktime_t V = ktime_get()
 #else
 #define ktime_aggregate_delta(D, ST, M)
 #define ktime_aggregate(D, R, M)
 #define ktime_aggregate_pd(P, N, R, M)
 #define ktime_get_accounting(V)
+#define ktime_get_accounting_assign(V, T)
 #define ktime_var_for_accounting(V)
 #endif
 
