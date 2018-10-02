@@ -1733,7 +1733,7 @@ static inline int interval_to_al_extents(struct drbd_interval *i)
 }
 
 extern struct drbd_bitmap *drbd_bm_alloc(void);
-extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, int set_new_bits);
+extern int  drbd_bm_resize(struct drbd_device *device, sector_t sectors, bool set_new_bits);
 void drbd_bm_free(struct drbd_bitmap *bitmap);
 extern void drbd_bm_set_all(struct drbd_device *device);
 extern void drbd_bm_clear_all(struct drbd_device *device);

@@ -4896,8 +4896,15 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	   drbd_reconsider_queue_parameters(), we can be sure that after
 	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
 	if (have_ldev) {
+		enum dds_flags local_ddsf = ddsf;
 		drbd_reconsider_queue_parameters(device, device->ldev, o);
-		dd = drbd_determine_dev_size(device, p_csize, ddsf, NULL);
+
+		/* To support thinly provisioned nodes (partial resync) joining later,
+		   clear all bitmap slots, including the unused ones. */
+		if (device->ldev->md.effective_size == 0)
+			local_ddsf |= DDSF_NO_RESYNC;
+
+		dd = drbd_determine_dev_size(device, p_csize, local_ddsf, NULL);
 
 		if (dd == DS_GREW || dd == DS_SHRUNK)
 			should_send_sizes = true;

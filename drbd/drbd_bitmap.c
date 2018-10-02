@@ -833,7 +833,7 @@ static u64 drbd_md_on_disk_bits(struct drbd_device *device)
  * In case this is actually a resize, we copy the old bitmap into the new one.
  * Otherwise, the bitmap is initialized to all bits set.
  */
-int drbd_bm_resize(struct drbd_device *device, sector_t capacity, int set_new_bits)
+int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_bits)
 {
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned long bits, words, obits;
