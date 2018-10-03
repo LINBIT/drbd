@@ -488,6 +488,10 @@ static int dtt_try_connect(struct drbd_transport *transport, struct dtt_path *pa
 		case -EHOSTDOWN:
 		case -EHOSTUNREACH:
 			err = -EAGAIN;
+			break;
+		case -EINVAL:
+			err = -EADDRNOTAVAIL;
+			break;
 		}
 	}
 
