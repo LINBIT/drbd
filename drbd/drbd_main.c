@@ -621,6 +621,7 @@ restart:
 			drbd_info(resource, "Restarting %s thread\n", thi->name);
 		thi->t_state = RUNNING;
 		spin_unlock_irqrestore(&thi->t_lock, flags);
+		flush_signals(current); /* likely it got a signal to look at t_state... */
 		goto restart;
 	}
 

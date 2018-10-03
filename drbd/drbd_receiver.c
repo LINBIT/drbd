@@ -713,6 +713,7 @@ start:
 	} else if (err == -EADDRNOTAVAIL) {
 		struct net_conf *nc;
 		int connect_int;
+		long t;
 
 		rcu_read_lock();
 		nc = rcu_dereference(transport->net_conf);
@@ -726,8 +727,8 @@ start:
 			no_addr = true;
 		}
 
-		schedule_timeout_interruptible(connect_int * HZ);
-		if (connection->cstate[NOW] == C_DISCONNECTING)
+		t = schedule_timeout_interruptible(connect_int * HZ);
+		if (t || connection->cstate[NOW] == C_DISCONNECTING)
 			return false;
 		goto start;
 	} else if (err < 0) {
