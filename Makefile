@@ -256,7 +256,10 @@ endif
 ifdef DEBBUILD
 .PHONY: km-deb
 km-deb: check-submods distclean drbd/.drbd_git_revision
-	$(DEBBUILD) -i -us -uc -b
+	D=$$(mktemp -p . -d); 					\
+	( git ls-files --recurse-submodules ;			\
+	  echo drbd/.drbd_git_revision ) | cpio -pvmd "$$D" ;	\
+	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"
 endif
 
 Makefile: ;
