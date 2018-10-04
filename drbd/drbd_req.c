@@ -1544,7 +1544,8 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
-	atomic_inc(&device->ap_actlog_cnt);
+	if (req->private_bio)
+		atomic_inc(&device->ap_actlog_cnt);
 	spin_lock_irq(&device->resource->req_lock);
 	list_add_tail(&req->tl_requests, &device->submit.writes);
 	list_add_tail(&req->req_pending_master_completion,
@@ -1613,7 +1614,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio, ktime_t start_
 	 * See also how peer_requests are handled
 	 * in receive_Data() { ... prepare_activity_log(); ... }
 	 */
-	atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);
+	if (req->private_bio)
+		atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);
 
 	/* process discards always from our submitter thread */
 	if ((bio_op(bio) == REQ_OP_WRITE_ZEROES) ||
