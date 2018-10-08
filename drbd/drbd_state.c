@@ -2185,6 +2185,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	bool starting_resync = false;
 	bool start_new_epoch = false;
 	bool lost_a_primary_peer = false;
+	bool some_peer_is_primary = false;
+	bool some_peer_request_in_flight = false;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -2415,6 +2417,37 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				clear_bit(GOT_NEG_ACK, &peer_device->flags);
 		}
 
+		for_each_connection(connection, resource) {
+			enum drbd_role *peer_role = connection->peer_role;
+			enum drbd_conn_state *cstate = connection->cstate;
+			if (peer_role[NEW] == R_PRIMARY)
+				some_peer_is_primary = true;
+			switch (cstate[NEW]) {
+			case C_CONNECTED:
+				if (connection->epochs != 1)
+					some_peer_request_in_flight = true;
+				else if (!some_peer_request_in_flight) {
+					spin_lock(&connection->epoch_lock);
+					if (connection->epochs != 1 ||
+					    atomic_read(&connection->current_epoch->epoch_size) != 0)
+						some_peer_request_in_flight = true;
+					spin_unlock(&connection->epoch_lock);
+				}
+				break;
+			case C_STANDALONE:
+			case C_UNCONNECTED:
+			case C_CONNECTING:
+				/* maybe others are safe as well? which ones? */
+				break;
+			default:
+				/* if we just now disconnected,
+				 * there may still be some request in flight. */
+				some_peer_request_in_flight = true;
+			}
+			if (some_peer_is_primary && some_peer_request_in_flight)
+				break;
+		}
+
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
 		    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
 			create_new_uuid = true;
@@ -2425,13 +2458,15 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if (create_new_uuid)
 			set_bit(__NEW_CUR_UUID, &device->flags);
 
-		if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
-			u32 mdf = device->ldev->md.flags & ~(MDF_PRIMARY_IND | MDF_CRASHED_PRIMARY);
+		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
+			u32 mdf = device->ldev->md.flags;
+			/* For now, always require a drbdmeta apply-al run,
+			 * even if that ends up only re-initializing the AL */
 			mdf &= ~MDF_AL_CLEAN;
+			/* reset some flags to what we know now */
+			mdf &= ~MDF_CRASHED_PRIMARY;
 			if (test_bit(CRASHED_PRIMARY, &device->flags))
 				mdf |= MDF_CRASHED_PRIMARY;
-			if (role[NEW] == R_PRIMARY && disk_state[NEW] != D_DETACHING)
-				mdf |= MDF_PRIMARY_IND;
 			if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
 				mdf |= MDF_PRIMARY_LOST_QUORUM;
 			/* Do not touch MDF_CONSISTENT if we are D_FAILED */
@@ -2445,10 +2480,42 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			} else if ((disk_state[NEW] == D_FAILED || disk_state[NEW] == D_DETACHING) &&
 				   mdf & MDF_WAS_UP_TO_DATE &&
 				   primary_and_data_present(device)) {
-				/* There are cases when we still can update meta-data event disk
+				/* There are cases when we still can update meta-data even if disk
 				   state is failed.... Clear MDF_WAS_UP_TO_DATE if appropriate */
 				mdf &= ~MDF_WAS_UP_TO_DATE;
 			}
+
+/*
+ * MDF_PRIMARY_IND  IS set: apply activity log after crash
+ * MDF_PRIMARY_IND NOT set: do not apply, forget and re-initialize activity log after crash.
+ * We want the MDF_PRIMARY_IND set *always* before our backend could possibly
+ * be target of write requests, whether we are Secondary or Primary ourselves.
+ *
+ * We want to avoid to clear that flag just because we lost the connection to a
+ * detached Primary, but before all in-flight IO was drained, because we may
+ * have some dirty bits not yet persisted.
+ *
+ * We want it cleared only once we are *certain* that we no longer see any Primary,
+ * are not Primary ourselves, AND all previously received WRITE (peer-) requests
+ * have been processed, NOTHING is in flight against our backend anymore,
+ * AND we have successfully written out any dirty bitmap pages.
+ */
+			/* set, if someone is/becomes primary */
+			if (role[NEW] == R_PRIMARY || some_peer_is_primary)
+				mdf |= MDF_PRIMARY_IND;
+			/* clear, if */
+			else if (/* NO peer requests in flight, AND */
+			    !some_peer_request_in_flight &&
+			    (   /* clean detach, */
+			     (disk_state[NEW] == D_DETACHING && !test_bit(FORCE_DETACH, &device->flags))
+			     || /* or everyone secondary ... */
+			     (role[NEW] == R_SECONDARY && !some_peer_is_primary &&
+			        /* ... and not detaching because of IO error. */
+			      disk_state[NEW] >= D_INCONSISTENT)))
+				mdf &= ~MDF_PRIMARY_IND;
+
+			/* apply changed flags to md.flags,
+			 * and "schedule" for write-out */
 			if (mdf != device->ldev->md.flags) {
 				device->ldev->md.flags = mdf;
 				drbd_md_mark_dirty(device);
@@ -3441,6 +3508,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				/* In case we want to get something to stable storage still,
 				 * this may be the last chance.
 				 * Following put_ldev may transition to D_DISKLESS. */
+				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+						"detach", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+						NULL);
 				drbd_md_sync_if_dirty(device);
 			}
 		}
