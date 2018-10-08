@@ -79,7 +79,6 @@ struct change_disk_state_context {
 };
 
 static bool lost_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
-static bool got_contact_to_peer_data(enum drbd_disk_state *peer_disk_state);
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
 				  enum drbd_disk_state os, enum drbd_disk_state ns);
 static void print_state_change(struct drbd_resource *resource, const char *prefix);
@@ -2462,6 +2461,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if ((disk_state[OLD] == D_ATTACHING || disk_state[OLD] == D_NEGOTIATING) &&
 		    disk_state[NEW] > D_NEGOTIATING)
 			device->last_reattach_jif = jiffies;
+
+		if (!device->have_quorum[OLD] && device->have_quorum[NEW]) {
+			clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
+			clear_bit(NEW_CUR_UUID, &device->flags);
+		}
 	}
 
 	for_each_connection(connection, resource) {
@@ -2944,15 +2948,6 @@ static bool lost_contact_to_peer_data(enum drbd_disk_state *peer_disk_state)
 		&& (ns < D_INCONSISTENT || ns == D_UNKNOWN || ns == D_OUTDATED);
 }
 
-static bool got_contact_to_peer_data(enum drbd_disk_state *peer_disk_state)
-{
-	enum drbd_disk_state os = peer_disk_state[OLD];
-	enum drbd_disk_state ns = peer_disk_state[NEW];
-
-	return (ns >= D_INCONSISTENT && ns != D_UNKNOWN && ns != D_OUTDATED)
-		&& (os < D_INCONSISTENT || os == D_UNKNOWN || os == D_OUTDATED);
-}
-
 static bool peer_returns_diskless(struct drbd_peer_device *peer_device,
 				  enum drbd_disk_state os, enum drbd_disk_state ns)
 {
@@ -3372,26 +3367,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				   the new UUID right now (not wait for the next write to come in) */
 				drbd_uuid_new_current(device, false);
 			}
-
-			if (!device->have_quorum[OLD] && device->have_quorum[NEW] &&
-			    got_contact_to_peer_data(peer_disk_state)) {
-				enum drbd_on_no_quorum policy = resource->res_opts.on_no_quorum;
-				unsigned long irq_flags;
-
-				if (policy == ONQ_IO_ERROR) {
-					clear_bit(NEW_CUR_UUID, &device->flags);
-					drbd_uuid_new_current(device, false);
-				}
-
-				begin_state_change(resource, &irq_flags, CS_VERBOSE);
-				__change_have_quorum(device, true);
-				clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
-				if (policy == ONQ_SUSPEND_IO)
-					clear_bit(NEW_CUR_UUID, &device->flags);
-				end_state_change(resource, &irq_flags);
-			}
 		}
-
 
 		/* Make sure the effective disk size is stored in the metadata
 		 * if a local disk is attached and either the local disk state
