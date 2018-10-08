@@ -156,7 +156,7 @@ static void seq_print_minor_vnr_req(struct seq_file *m, struct drbd_request *req
 	seq_print_one_request(m, req, now);
 }
 
-static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
+static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_resource *resource, unsigned long jif)
 {
 	struct drbd_device *device;
 	int i;
@@ -173,11 +173,11 @@ static void seq_print_resource_pending_meta_io(struct seq_file *m, struct drbd_r
 		if (atomic_read(&tmp.in_use)) {
 			seq_printf(m, "%u\t%u\t%d\t",
 				device->minor, device->vnr,
-				jiffies_to_msecs(now - tmp.start_jif));
+				jiffies_to_msecs(jif - tmp.start_jif));
 			if (time_before(tmp.submit_jif, tmp.start_jif))
 				seq_puts(m, "-\t");
 			else
-				seq_printf(m, "%d\t", jiffies_to_msecs(now - tmp.submit_jif));
+				seq_printf(m, "%d\t", jiffies_to_msecs(jif - tmp.submit_jif));
 			seq_printf(m, "%s\n", tmp.current_use);
 		}
 	}
@@ -219,7 +219,7 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 	rcu_read_unlock();
 }
 
-static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *device, unsigned long now)
+static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *device, unsigned long jif)
 {
 	struct drbd_bm_aio_ctx *ctx;
 	unsigned long start_jif;
@@ -239,12 +239,12 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 		seq_printf(m, "%u\t%u\t%c\t%u\t%u\n",
 			device->minor, device->vnr,
 			(flags & BM_AIO_READ) ? 'R' : 'W',
-			jiffies_to_msecs(now - start_jif),
+			jiffies_to_msecs(jif - start_jif),
 			in_flight);
 	}
 }
 
-static void seq_print_resource_pending_bitmap_io(struct seq_file *m, struct drbd_resource *resource, unsigned long now)
+static void seq_print_resource_pending_bitmap_io(struct seq_file *m, struct drbd_resource *resource, unsigned long jif)
 {
 	struct drbd_device *device;
 	int i;
@@ -252,7 +252,7 @@ static void seq_print_resource_pending_bitmap_io(struct seq_file *m, struct drbd
 	seq_puts(m, "minor\tvnr\trw\tage\t#in-flight\n");
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, i) {
-		seq_print_device_bitmap_io(m, device, now);
+		seq_print_device_bitmap_io(m, device, jif);
 	}
 	rcu_read_unlock();
 }
@@ -278,7 +278,7 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 
 static void seq_print_peer_request(struct seq_file *m,
 	struct drbd_connection *connection, struct list_head *lh,
-	unsigned long now)
+	unsigned long jif)
 {
 	bool reported_preparing = false;
 	struct drbd_peer_request *peer_req;
@@ -295,7 +295,7 @@ static void seq_print_peer_request(struct seq_file *m,
 		seq_printf(m, "%llu\t%u\t%c\t%u\t",
 			(unsigned long long)peer_req->i.sector, peer_req->i.size >> 9,
 			(peer_req->flags & EE_WRITE) ? 'W' : 'R',
-			jiffies_to_msecs(now - peer_req->submit_jif));
+			jiffies_to_msecs(jif - peer_req->submit_jif));
 		seq_print_peer_request_flags(m, peer_req);
 		if (peer_req->flags & EE_SUBMITTED)
 			break;
@@ -305,28 +305,28 @@ static void seq_print_peer_request(struct seq_file *m,
 }
 
 static void seq_print_connection_peer_requests(struct seq_file *m,
-	struct drbd_connection *connection, unsigned long now)
+	struct drbd_connection *connection, unsigned long jif)
 {
 	seq_puts(m, "minor\tvnr\tsector\tsize\trw\tage\tflags\n");
 	spin_lock_irq(&connection->resource->req_lock);
-	seq_print_peer_request(m, connection, &connection->active_ee, now);
-	seq_print_peer_request(m, connection, &connection->read_ee, now);
-	seq_print_peer_request(m, connection, &connection->sync_ee, now);
+	seq_print_peer_request(m, connection, &connection->active_ee, jif);
+	seq_print_peer_request(m, connection, &connection->read_ee, jif);
+	seq_print_peer_request(m, connection, &connection->sync_ee, jif);
 	spin_unlock_irq(&connection->resource->req_lock);
 }
 
 static void seq_print_device_peer_flushes(struct seq_file *m,
-	struct drbd_device *device, unsigned long now)
+	struct drbd_device *device, unsigned long jif)
 {
 	if (test_bit(FLUSH_PENDING, &device->flags)) {
 		seq_printf(m, "%u\t%u\t-\t-\tF\t%u\tflush\n",
 			device->minor, device->vnr,
-			jiffies_to_msecs(now - device->flush_jif));
+			jiffies_to_msecs(jif - device->flush_jif));
 	}
 }
 
 static void seq_print_resource_pending_peer_requests(struct seq_file *m,
-	struct drbd_resource *resource, unsigned long now)
+	struct drbd_resource *resource, unsigned long jif)
 {
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -334,10 +334,10 @@ static void seq_print_resource_pending_peer_requests(struct seq_file *m,
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		seq_print_connection_peer_requests(m, connection, now);
+		seq_print_connection_peer_requests(m, connection, jif);
 	}
 	idr_for_each_entry(&resource->devices, device, i) {
-		seq_print_device_peer_flushes(m, device, now);
+		seq_print_device_peer_flushes(m, device, jif);
 	}
 	rcu_read_unlock();
 }
@@ -704,7 +704,7 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 
 static void seq_print_one_timing_detail(struct seq_file *m,
 	const struct drbd_thread_timing_details *tdp,
-	unsigned long now)
+	unsigned long jif)
 {
 	struct drbd_thread_timing_details td;
 	/* No locking...
@@ -716,14 +716,14 @@ static void seq_print_one_timing_detail(struct seq_file *m,
 		return;
 	seq_printf(m, "%u\t%d\t%s:%u\t%ps\n",
 			td.cb_nr,
-			jiffies_to_msecs(now - td.start_jif),
+			jiffies_to_msecs(jif - td.start_jif),
 			td.caller_fn, td.line,
 			td.cb_addr);
 }
 
 static void seq_print_timing_details(struct seq_file *m,
 		const char *title,
-		unsigned int cb_nr, struct drbd_thread_timing_details *tdp, unsigned long now)
+		unsigned int cb_nr, struct drbd_thread_timing_details *tdp, unsigned long jif)
 {
 	unsigned int start_idx;
 	unsigned int i;
@@ -735,9 +735,9 @@ static void seq_print_timing_details(struct seq_file *m,
 	 */
 	start_idx = cb_nr % DRBD_THREAD_DETAILS_HIST;
 	for (i = start_idx; i < DRBD_THREAD_DETAILS_HIST; i++)
-		seq_print_one_timing_detail(m, tdp+i, now);
+		seq_print_one_timing_detail(m, tdp+i, jif);
 	for (i = 0; i < start_idx; i++)
-		seq_print_one_timing_detail(m, tdp+i, now);
+		seq_print_one_timing_detail(m, tdp+i, jif);
 }
 
 static int connection_callback_history_show(struct seq_file *m, void *ignored)
