@@ -1161,8 +1161,8 @@ retry:
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (forced) {
-				clear_bit(NEW_CUR_UUID, &device->flags);
 				drbd_uuid_new_current(device, true);
+				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
 		}
 	}

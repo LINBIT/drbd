@@ -45,6 +45,7 @@ static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
 static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
+static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags);
 
 /* endio handlers:
  *   drbd_md_endio (defined here)
@@ -2231,6 +2232,55 @@ void __update_timing_details(
 	++(*cb_nr);
 }
 
+static bool all_peers_responded(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
+	bool all_responded = true;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (!test_bit(CHECKING_PEER, &connection->flags))
+			continue;
+		if (connection->cstate[NOW] < C_CONNECTED) {
+			clear_bit(CHECKING_PEER, &connection->flags);
+			continue;
+		}
+		if (!test_bit(GOT_PING_ACK, &connection->flags)) {
+			all_responded = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return all_responded;
+}
+
+static void make_new_current_uuid(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
+	u64 im;
+
+	for_each_connection_ref(connection, im, resource) {
+		if (connection->cstate[NOW] < C_CONNECTED)
+			continue;
+		clear_bit(GOT_PING_ACK, &connection->flags);
+		set_bit(CHECKING_PEER, &connection->flags);
+		request_ping(connection);
+	}
+	wait_event(resource->state_wait, all_peers_responded(device));
+
+	if (device->have_quorum[NOW]) { /* or quorum not enabled is implicit */
+		mutex_lock(&resource->conf_update);
+		drbd_uuid_new_current(device, false);
+		mutex_unlock(&resource->conf_update);
+	}
+
+	get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID, &device->flags);
+	wake_up(&device->misc_wait);
+}
+
 static void do_device_work(struct drbd_device *device, const unsigned long todo)
 {
 	if (test_bit(MD_SYNC, &todo))
@@ -2239,6 +2289,8 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 		go_diskless(device);
 	if (test_bit(DESTROY_DISK, &todo))
 		drbd_ldev_destroy(device);
+	if (test_bit(MAKE_NEW_CUR_UUID, &todo))
+		make_new_current_uuid(device);
 }
 
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
@@ -2259,6 +2311,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	((1UL << GO_DISKLESS)	\
 	|(1UL << DESTROY_DISK)	\
 	|(1UL << MD_SYNC)	\
+	|(1UL << MAKE_NEW_CUR_UUID)\
 	)
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\

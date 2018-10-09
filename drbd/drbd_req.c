@@ -1620,11 +1620,6 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	    (bio_op(bio) == REQ_OP_DISCARD))
 		goto queue_for_submitter_thread;
 
-	/* Unconditionally defer to worker,
-	 * if we still need to bumpt our data generation id */
-	if (test_bit(NEW_CUR_UUID, &device->flags))
-		goto queue_for_submitter_thread;
-
 	if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
 		if (!drbd_al_begin_io_fastpath(device, &req->i))
 			goto queue_for_submitter_thread;
@@ -1875,6 +1870,13 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 	bool rv = false;
 	unsigned int nr_requests;
 
+	if (test_bit(NEW_CUR_UUID, &device->flags)) {
+		if (!test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags))
+			drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
+
+		return false;
+	}
+
 	spin_lock_irq(&device->resource->req_lock);
 	nr_requests = device->resource->res_opts.nr_requests;
 	rv = may_inc_ap_bio(device) && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
@@ -2093,17 +2095,6 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 	blk_finish_plug(&plug);
 }
 
-
-static void ensure_current_uuid(struct drbd_device *device)
-{
-	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-		struct drbd_resource *resource = device->resource;
-		mutex_lock(&resource->conf_update);
-		drbd_uuid_new_current(device, false);
-		mutex_unlock(&resource->conf_update);
-	}
-}
-
 /* more: for non-blocking fill-up # of updates in the transaction */
 static bool grab_new_incoming_requests(struct drbd_device *device, struct waiting_for_act_log *wfa, bool more)
 {
@@ -2134,8 +2125,6 @@ void do_submit(struct work_struct *ws)
 
 	for (;;) {
 		DEFINE_WAIT(wait);
-
-		ensure_current_uuid(device);
 
 		/* move used-to-be-postponed back to front of incoming */
 		wfa_splice_init(&wfa, later, incoming);
@@ -2236,8 +2225,6 @@ void do_submit(struct work_struct *ws)
 			drbd_cleanup_peer_requests_wfa(device, &wfa.peer_requests.cleanup);
 
 		drbd_al_begin_io_commit(device);
-
-		ensure_current_uuid(device);
 
 		send_and_submit_pending(device, &wfa);
 	}

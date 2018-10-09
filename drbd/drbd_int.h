@@ -544,6 +544,7 @@ enum {
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
 	__NEW_CUR_UUID,		/* Set NEW_CUR_UUID as soon as state change visible */
+	WRITING_NEW_CUR_UUID,	/* Set while the new current ID gets generated. */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	UNREGISTERED,
 	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
@@ -556,6 +557,7 @@ enum {
         GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
         DESTROY_DISK,           /* tell worker to close backing devices and destroy related structures. */
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
+	MAKE_NEW_CUR_UUID,	/* tell worker to ping peers and eventually write new current uuid */
 
 	HAVE_LDEV,
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
@@ -760,6 +762,7 @@ enum {
 	CONN_DISCARD_MY_DATA,
 	SEND_STATE_AFTER_AHEAD_C,
 	NOTIFY_PEERS_LOST_PRIMARY,
+	CHECKING_PEER,		/* used by make_new_urrent_uuid() to check liveliness */
 };
 
 /* flag bits per resource */
