@@ -2419,6 +2419,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
 			create_new_uuid = true;
 
+		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
+			create_new_uuid = true;
+
 		if (create_new_uuid)
 			set_bit(__NEW_CUR_UUID, &device->flags);
 

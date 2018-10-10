@@ -1160,10 +1160,10 @@ retry:
 		rcu_read_unlock();
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (forced)
+			if (forced) {
+				clear_bit(NEW_CUR_UUID, &device->flags);
 				drbd_uuid_new_current(device, true);
-			else
-				set_bit(NEW_CUR_UUID, &device->flags);
+			}
 		}
 	}
 
