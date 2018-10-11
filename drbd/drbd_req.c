@@ -1870,6 +1870,34 @@ out:
 		complete_master_bio(device, &m);
 }
 
+static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
+{
+	bool rv = false;
+	unsigned int nr_requests;
+
+	spin_lock_irq(&device->resource->req_lock);
+	nr_requests = device->resource->res_opts.nr_requests;
+	rv = may_inc_ap_bio(device) && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
+	if (rv)
+		atomic_inc(&device->ap_bio_cnt[rw]);
+	spin_unlock_irq(&device->resource->req_lock);
+
+	return rv;
+}
+
+static void inc_ap_bio(struct drbd_device *device, int rw)
+{
+	/* we wait here
+	 *    as long as the device is suspended
+	 *    until the bitmap is no longer on the fly during connection
+	 *    handshake as long as we would exceed the max_buffer limit.
+	 *
+	 * to avoid races with the reconnect code,
+	 * we need to atomic_inc within the spinlock. */
+
+	wait_event(device->misc_wait, inc_ap_bio_cond(device, rw));
+}
+
 void __drbd_make_request(struct drbd_device *device, struct bio *bio,
 		ktime_t start_kt,
 		unsigned long start_jif)
