@@ -743,7 +743,7 @@ extern struct fifo_buffer *fifo_alloc(int fifo_size);
 /* flag bits per connection */
 enum {
 	SEND_PING,
-	GOT_PING_ACK,		/* set when we receive a ping_ack packet, ping_wait gets woken */
+	GOT_PING_ACK,		/* set when we receive a ping_ack packet, state_wait gets woken */
 	TWOPC_PREPARED,
 	TWOPC_YES,
 	TWOPC_NO,
@@ -939,7 +939,6 @@ struct drbd_connection {
 
 	unsigned long flags;
 	enum drbd_fencing_policy fencing_policy;
-	wait_queue_head_t ping_wait;	/* Woken upon reception of a ping, and a state change */
 
 	struct drbd_send_buffer send_buffer[2];
 	struct mutex mutex[2]; /* Protect assembling of new packet until sending it (in send_buffer) */

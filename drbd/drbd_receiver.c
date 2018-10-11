@@ -519,7 +519,8 @@ static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size
 			t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
 			rcu_read_unlock();
 
-			t = wait_event_timeout(connection->ping_wait, connection->cstate[NOW] < C_CONNECTED, t);
+			t = wait_event_timeout(connection->resource->state_wait,
+					       connection->cstate[NOW] < C_CONNECTED, t);
 
 			if (t)
 				goto out;
@@ -8223,7 +8224,6 @@ static int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 	}
 
 	wake_up(&connection->resource->state_wait);
-	wake_up(&connection->ping_wait);
 
 	return 0;
 }
@@ -8334,8 +8334,10 @@ static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 
 static int got_PingAck(struct drbd_connection *connection, struct packet_info *pi)
 {
-	if (!test_and_set_bit(GOT_PING_ACK, &connection->flags))
-		wake_up(&connection->ping_wait);
+	if (!test_bit(GOT_PING_ACK, &connection->flags)) {
+		set_bit(GOT_PING_ACK, &connection->flags);
+		wake_up(&connection->resource->state_wait);
+	}
 
 	return 0;
 }
@@ -8893,7 +8895,8 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 
 		drbd_reclaim_net_peer_reqs(connection);
 
-		if (test_and_clear_bit(SEND_PING, &connection->flags)) {
+		if (test_bit(SEND_PING, &connection->flags)) {
+			clear_bit(SEND_PING, &connection->flags);
 			if (drbd_send_ping(connection)) {
 				drbd_err(connection, "drbd_send_ping has failed\n");
 				goto reconnect;
@@ -8928,7 +8931,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 				t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
 				rcu_read_unlock();
 
-				t = wait_event_timeout(connection->ping_wait,
+				t = wait_event_timeout(connection->resource->state_wait,
 						       connection->cstate[NOW] < C_CONNECTED,
 						       t);
 				if (t)

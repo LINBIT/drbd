@@ -725,7 +725,6 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		pro_ver = min_t(unsigned int, pro_ver,
 			connection->agreed_pro_version);
 
-		wake_up(&connection->ping_wait);
 		wake_up(&connection->ee_wait);
 	}
 	resource->cached_min_aggreed_protocol_version = pro_ver;

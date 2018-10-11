@@ -896,7 +896,7 @@ void drbd_ping_peer(struct drbd_connection *connection)
 {
 	clear_bit(GOT_PING_ACK, &connection->flags);
 	request_ping(connection);
-	wait_event(connection->ping_wait,
+	wait_event(connection->resource->state_wait,
 		   test_bit(GOT_PING_ACK, &connection->flags) ||
 		   connection->cstate[NOW] < C_CONNECTED);
 }

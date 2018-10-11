@@ -3495,7 +3495,6 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 
 	connection->cstate[NOW] = C_STANDALONE;
 	connection->peer_role[NOW] = R_UNKNOWN;
-	init_waitqueue_head(&connection->ping_wait);
 	idr_init(&connection->peer_devices);
 
 	drbd_init_workqueue(&connection->sender_work);
