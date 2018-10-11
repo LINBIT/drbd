@@ -1874,7 +1874,10 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio,
 		ktime_t start_kt,
 		unsigned long start_jif)
 {
-	struct drbd_request *req = drbd_request_prepare(device, bio, start_kt, start_jif);
+	struct drbd_request *req;
+
+	inc_ap_bio(device, bio_data_dir(bio));
+	req = drbd_request_prepare(device, bio, start_kt, start_jif);
 	if (IS_ERR_OR_NULL(req))
 		return;
 	drbd_send_and_submit(device, req);
@@ -2276,7 +2279,6 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	ktime_get_accounting(start_kt);
 	start_jif = jiffies;
 
-	inc_ap_bio(device, bio_data_dir(bio));
 	__drbd_make_request(device, bio, start_kt, start_jif);
 
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
