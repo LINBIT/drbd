@@ -5203,6 +5203,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	return err;
 }
 
+/* drbd 8.4 compat */
 static int receive_uuids(struct drbd_connection *connection, struct packet_info *pi)
 {
 	const int node_id = connection->resource->res_opts.node_id;

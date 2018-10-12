@@ -4598,8 +4598,12 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
 	int node_id;
-	u64 bm_uuid, got_new_bitmap_uuid = 0, prev_c_uuid;
-	bool do_it;
+	u64 bm_uuid, prev_c_uuid;
+	u64 node_mask = 0;  /* bit mask of node-ids processed */
+	u64 slot_mask = 0;  /* bit mask of on-disk bitmap slots processed */
+	/* return value, bit mask of node-ids for which we
+	 * actually set a new bitmap uuid */
+	u64 got_new_bitmap_uuid = 0;
 
 	if (device->ldev->md.current_uuid != UUID_JUST_CREATED)
 		prev_c_uuid = device->ldev->md.current_uuid;
@@ -4607,35 +4611,51 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		get_random_bytes(&prev_c_uuid, sizeof(u64));
 
 	rcu_read_lock();
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (node_id == device->ldev->md.node_id)
+	for_each_peer_device(peer_device, device) {
+		enum drbd_disk_state pdsk;
+		if (peer_device->bitmap_index == -1)
 			continue;
+		node_id = peer_device->node_id;
+		node_mask |= NODE_MASK(node_id);
+		__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
 		bm_uuid = peer_md[node_id].bitmap_uuid;
 		if (bm_uuid)
 			continue;
-		peer_device = peer_device_by_node_id(device, node_id);
-		if (peer_device) {
-			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 
-			if (peer_device->bitmap_index == -1) {
-				struct peer_device_conf *pdc;
-				pdc = rcu_dereference(peer_device->conf);
-				if (pdc && !pdc->bitmap)
-					continue;
-			}
-
-			do_it = (pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
-				(NODE_MASK(node_id) & weak_nodes);
-
-		} else {
-			do_it = true;
-		}
-		if (do_it) {
+		pdsk = peer_device->disk_state[NOW];
+		if ((pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
+		    (NODE_MASK(node_id) & weak_nodes)) {
 			peer_md[node_id].bitmap_uuid = prev_c_uuid;
 			peer_md[node_id].bitmap_dagtag = dagtag;
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
+	}
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		int slot_nr;
+		if (node_id == device->ldev->md.node_id)
+			continue;
+		if (node_mask & NODE_MASK(node_id))
+			continue;
+		slot_nr = peer_md[node_id].bitmap_index;
+		if (slot_nr != -1) {
+			if (test_bit(slot_nr, (unsigned long*)&slot_mask))
+				continue;
+			__set_bit(slot_nr, (unsigned long*)&slot_mask);
+		}
+		bm_uuid = peer_md[node_id].bitmap_uuid;
+		if (bm_uuid)
+			continue;
+		if (slot_nr == -1) {
+			slot_nr = find_first_zero_bit((unsigned long*)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
+			__set_bit(slot_nr, (unsigned long*)&slot_mask);
+		}
+		peer_md[node_id].bitmap_uuid = prev_c_uuid;
+		peer_md[node_id].bitmap_dagtag = dagtag;
+		drbd_md_mark_dirty(device);
+		/* count, but only if that bitmap index exists. */
+		if (slot_nr < device->bitmap->bm_max_peers)
+			got_new_bitmap_uuid |= NODE_MASK(node_id);
 	}
 	rcu_read_unlock();
 
@@ -4816,10 +4836,11 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 			continue;
 		if (!(do_nodes & NODE_MASK(node_id)))
 			continue;
-
+		if (peer_md[node_id].bitmap_index == -1)
+			continue;
 		if (peer_md[node_id].bitmap_uuid != bitmap_uuid) {
 			_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
-			/* drbd_info(device, "bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
+			/* drbd_info(device, "XXX bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
 			peer_md[node_id].bitmap_uuid = bitmap_uuid;
 			peer_md[node_id].bitmap_dagtag =
 				bitmap_uuid ? device->resource->dagtag_sector : 0;
