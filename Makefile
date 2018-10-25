@@ -196,9 +196,7 @@ tgz:
 	rm -f drbd-$(FDIST_VERSION)
 	$(LN_S) . drbd-$(FDIST_VERSION)
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
-	grep debian .filelist >/dev/null 2>&1 && _DEB=-debian || _DEB="" ; \
-	test -n "$$KEEPNAME" && _DEB="" || :; \
-	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION)$$_DEB.tar.gz
+	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION).tar.gz
 	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
@@ -214,10 +212,12 @@ check_all_committed:
 
 prepare_release:
 	$(MAKE) tarball
-	$(MAKE) tarball PRESERVE_DEBIAN=1
+
+release:
+	$(MAKE) tarball
 
 debrelease:
-	$(MAKE) tarball PRESERVE_DEBIAN=1 KEEPNAME=1
+	$(MAKE) tarball PRESERVE_DEBIAN=1
 
 tarball: check-submods check_all_committed distclean drbd/.drbd_git_revision .filelist
 	$(MAKE) tgz
