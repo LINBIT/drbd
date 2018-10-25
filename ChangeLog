@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.16-0rc1 (api:genl2/proto:86-114/transport:14)
+9.0.16-1 (api:genl2/proto:86-114/transport:14)
 --------
  * Fix regression (introduced with 9.0.15) in handling request timeouts;
    all pending requests always considered as overdue when the timer function
