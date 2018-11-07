@@ -1672,6 +1672,9 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
+		if (!(cm->state == CONNECTED || cm->state == CONNECT_REQUEST))
+			break;
+
 		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 		if (unlikely(rc < 0)) {
 			struct drbd_transport *transport = &cm->path->rdma_transport->transport;
@@ -1776,6 +1779,9 @@ static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 		do {
 			err = dtr_handle_tx_cq_event(cq, cm);
 		} while (!err);
+
+		if (cm->state != CONNECTED)
+			break;
 
 		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 		if (unlikely(rc < 0)) {
