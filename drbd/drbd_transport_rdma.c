@@ -1664,21 +1664,20 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_cm *cm = ctx;
-	int err;
+	int err, rc;
 
 	do {
 		do {
 			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
-		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-		if (err) {
+		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+		if (unlikely(rc < 0)) {
 			struct drbd_transport *transport = &cm->path->rdma_transport->transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
+			break;
 		}
-
-		err = dtr_handle_rx_cq_event(cq, cm);
-	} while (!err);
+	} while (rc);
 }
 
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
@@ -1770,21 +1769,20 @@ out:
 static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_cm *cm = ctx;
-	int err;
+	int err, rc;
 
 	do {
 		do {
 			err = dtr_handle_tx_cq_event(cq, cm);
 		} while (!err);
 
-		err = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-		if (err) {
+		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+		if (unlikely(rc < 0)) {
 			struct drbd_transport *transport = &cm->path->rdma_transport->transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", err);
+			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
+			break;
 		}
-
-		err = dtr_handle_tx_cq_event(cq, cm);
-	} while (!err);
+	} while (rc);
 }
 
 static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
