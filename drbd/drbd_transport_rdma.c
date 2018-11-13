@@ -152,6 +152,7 @@ union dtr_immediate {
 
 enum dtr_state {
 	IDLE = 1,
+	LISTENING,
 	CONNECT_REQUEST,
 	ADDR_RESOLVED,
 	ROUTE_RESOLVED,
@@ -2595,6 +2596,7 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 		tr_err(transport, "rdma_create_id() failed\n");
 		goto out;
 	}
+	listener->cm.state = LISTENING;
 
 	err = rdma_bind_addr(listener->cm.id, (struct sockaddr *)&my_addr);
 	if (err) {
@@ -3021,6 +3023,7 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 	static const char *state_names[] = {
 		[0] = "(out of bounds)",
 		[IDLE] = "IDLE",
+		[LISTENING] = "LISTENING",
 		[CONNECT_REQUEST] = "CONNECT_REQUEST",
 		[ADDR_RESOLVED] = "ADDR_RESOLVED",
 		[ROUTE_RESOLVED] = "ROUTE_RESOLVED",
