@@ -893,6 +893,8 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 		return;
 	}
 
+	path->cm->state = CONNECTED;
+
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		__dtr_refill_rx_desc(path, i);
 	err = dtr_send_flow_control_msg(path);
@@ -901,7 +903,6 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (err)
 		tr_err(transport, "sending first flow_control_msg() failed\n");
 
-	path->cm->state = CONNECTED;
 	schedule_timeout(HZ / 4);
 	if (!dtr_path_ok(path)) {
 		if (path->cs.active)
@@ -982,7 +983,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 		return;
 	}
 
-	cm->state = IDLE;
+	cm->state = CONNECT_REQUEST;
 	init_waitqueue_head(&cm->state_wq);
 	new_cm_id->context = cm;
 	cm->id = new_cm_id;
@@ -1277,7 +1278,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
 		// pr_info("%s: RDMA_CM_EVENT_CONNECT_REQUEST\n", cm->name);
 		/* for listener */
-		cm->state = CONNECT_REQUEST;
 
 		listener = container_of(cm, struct dtr_listener, cm);
 		dtr_cma_accept(listener, cm_id);
