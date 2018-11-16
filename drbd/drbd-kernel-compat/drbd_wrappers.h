@@ -1407,4 +1407,8 @@ bioset_initialized(struct bio_set **bs)
 #define DRBD_BIO_SET   bio_set
 #endif
 
+#if defined(COMPAT_BEFORE_4_13_KERNEL_READ)
+#define kernel_read(F, B, C, P) kernel_read(F, *(P), B, C)
+#endif
+
 #endif
