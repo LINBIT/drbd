@@ -1411,4 +1411,10 @@ bioset_initialized(struct bio_set **bs)
 #define kernel_read(F, B, C, P) kernel_read(F, *(P), B, C)
 #endif
 
+#ifdef COMPAT_HAVE_MAX_SEND_RECV_SGE
+#define MAX_SGE(ATTR) min((ATTR).max_send_sge, (ATTR).max_recv_sge)
+#else
+#define MAX_SGE(ATTR) (ATTR).max_sge
+#endif
+
 #endif
