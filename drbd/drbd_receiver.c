@@ -851,11 +851,14 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 	if (header_size == sizeof(struct p_header100) &&
 	    *(__be32 *)header == cpu_to_be32(DRBD_MAGIC_100)) {
 		struct p_header100 *h = header;
+		u16 vnr = be16_to_cpu(h->volume);
+
 		if (h->pad != 0) {
 			drbd_err(connection, "Header padding is not zero\n");
 			return -EINVAL;
 		}
-		pi->vnr = (s16)be16_to_cpu(h->volume);
+		pi->vnr = vnr == ((u16) 0xFFFF) ? -1 : vnr;
+
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be32_to_cpu(h->length);
 	} else if (header_size == sizeof(struct p_header95) &&
