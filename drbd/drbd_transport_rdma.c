@@ -350,7 +350,7 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 			       enum drbd_stream stream);
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc);
-static void dtr_free_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc);
+static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc);
 static void dtr_cma_disconnect_work_fn(struct work_struct *work);
 static void dtr_disconnect_path(struct dtr_path *path);
 static void __dtr_disconnect_path(struct dtr_path *path);
@@ -539,7 +539,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		struct dtr_rx_desc *rx_desc, *tmp;
 		LIST_HEAD(rx_descs);
 
-		dtr_free_rx_desc(NULL, rdma_stream->current_rx.desc);
+		dtr_free_rx_desc(rdma_stream->current_rx.desc);
 		rdma_stream->current_rx.desc = NULL;
 
 		spin_lock_irq(&rdma_stream->rx_descs_lock);
@@ -547,7 +547,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		spin_unlock_irq(&rdma_stream->rx_descs_lock);
 
 		list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
-			dtr_free_rx_desc(NULL, rx_desc);
+			dtr_free_rx_desc(rx_desc);
 	}
 
 	for_each_path_ref(path, im, transport) {
@@ -691,7 +691,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		set_page_chain_size(page, rx_desc->size);
 
 		rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated--;
-		dtr_free_rx_desc(NULL, rx_desc);
+		dtr_free_rx_desc(rx_desc);
 
 		i++;
 		dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
@@ -1815,7 +1815,6 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 {
 	struct dtr_transport *rdma_transport = cm->path->rdma_transport;
 	struct ib_recv_wr recv_wr, *recv_wr_failed;
-	unsigned long flags;
 	int err = -EIO;
 
 	recv_wr.next = NULL;
@@ -1842,22 +1841,16 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	return err;
 }
 
-static void dtr_free_rx_desc(struct dtr_cm *on_cm_posted, struct dtr_rx_desc *rx_desc)
+static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 {
 	struct dtr_path *path;
 	struct ib_device *device;
-	unsigned long flags;
 	struct dtr_cm *cm;
 	int alloc_size;
 
 	if (!rx_desc)
 		return; /* Allow call with NULL */
 
-	if (on_cm_posted) {
-		spin_lock_irqsave(&on_cm_posted->posted_rx_descs_lock, flags);
-		list_del(&rx_desc->list); /* from  &on_path_posted->posted_rx_descs */
-		spin_unlock_irqrestore(&on_cm_posted->posted_rx_descs_lock, flags);
-	}
 	cm = rx_desc->cm;
 	device = cm->id->device;
 	path = cm->path;
@@ -1917,7 +1910,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	err = dtr_post_rx_desc(cm, rx_desc);
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
-		dtr_free_rx_desc(NULL, rx_desc);
+		dtr_free_rx_desc(rx_desc);
 	} else {
 		flow->rx_descs_allocated++;
 		atomic_inc(&flow->rx_descs_posted);
@@ -1994,7 +1987,7 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 	err = dtr_repost_rx_desc(cm, rx_desc);
 
 	if (err) {
-		dtr_free_rx_desc(NULL, rx_desc);
+		dtr_free_rx_desc(rx_desc);
 	} else {
 		atomic_inc(&flow->rx_descs_posted);
 		dtr_flow_control(flow);
@@ -2422,7 +2415,7 @@ static void dtr_free_posted_rx_desc(struct dtr_cm *cm)
 	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
 
 	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
-		dtr_free_rx_desc(NULL, rx_desc);
+		dtr_free_rx_desc(rx_desc);
 }
 
 static void __dtr_disconnect_path(struct dtr_path *path)
