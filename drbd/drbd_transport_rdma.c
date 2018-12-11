@@ -295,11 +295,11 @@ struct dtr_cm {
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	struct ib_mr *dma_mr;
 #endif
-	struct list_head posted_rx_descs;
-	spinlock_t posted_rx_descs_lock;
-
 	struct work_struct establish_work;
 	struct work_struct disconnect_work;
+
+	struct list_head error_rx_descs;
+	struct work_struct end_rx_work;
 
 	enum dtr_state state;
 	wait_queue_head_t state_wq;
@@ -363,7 +363,7 @@ static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
 static void dtr_drain_posted_tx_desc(struct dtr_cm *cm);
-static void dtr_free_posted_rx_desc(struct dtr_cm *cm);
+static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 
 static struct drbd_transport_class rdma_transport_class = {
@@ -956,10 +956,10 @@ static struct dtr_cm *dtr_alloc_cm(void)
 		return NULL;
 
 	kref_init(&cm->kref);
-	INIT_LIST_HEAD(&cm->posted_rx_descs);
-	spin_lock_init(&cm->posted_rx_descs_lock);
 	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
 	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
+	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
+	INIT_LIST_HEAD(&cm->error_rx_descs);
 
 	return cm;
 }
@@ -1142,7 +1142,13 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
 	if (cm == failed_cm) {
-		dtr_free_posted_rx_desc(cm);
+		struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
+		int err;
+
+		err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
+		if (err)
+			tr_err(transport, "ib_modify_qp failed %d\n", err);
+
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
 
@@ -1573,6 +1579,14 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	spin_unlock_irqrestore(&rdma_stream->rx_descs_lock, flags);
 }
 
+static void dtr_dec_rx_descs(struct dtr_cm *cm)
+{
+	struct dtr_flow *flow = cm->path->flow;
+
+	if (atomic_dec_if_positive(&flow[DATA_STREAM].rx_descs_posted) < 0)
+		atomic_dec(&flow[CONTROL_STREAM].rx_descs_posted);
+}
+
 static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 {
 	struct dtr_path *path = cm->path;
@@ -1580,7 +1594,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	struct dtr_rx_desc *rx_desc;
 	union dtr_immediate immediate;
 	struct ib_wc wc;
-	int ret;
+	int ret, err;
 
 	ret = ib_poll_cq(cq, 1, &wc);
 	if (!ret)
@@ -1618,24 +1632,18 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		   dtr_free_rx_desc() will call drbd_free_page(), and that function
 		   should not be called from IRQ context. This callback executes
 		   in the context of the timer interrupt.
-
-		   We simply leave it on the posted_rx_descs_list, it will taken
-		   and freed from there by __dtr_disconnect_path()
 		 */
-
+		list_add_tail(&rx_desc->list, &cm->error_rx_descs);
+		dtr_dec_rx_descs(cm);
 		cm->state = ERROR;
 
 		return 0;
 	}
 
-	spin_lock(&cm->posted_rx_descs_lock);
-	list_del(&rx_desc->list); /* from  &path->posted_rx_descs */
-	spin_unlock(&cm->posted_rx_descs_lock);
-
 	rx_desc->size = wc.byte_len;
 	immediate.i = be32_to_cpu(wc.ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
-		int err, rx_desc_stolen_from;
+		int rx_desc_stolen_from;
 
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
@@ -1661,6 +1669,16 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	return 0;
 }
 
+static int dtr_cm_posted_rx_descs(struct dtr_cm *cm)
+{
+	int i, posted = 0;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		posted += atomic_read(&cm->path->flow[i].rx_descs_posted);
+
+	return posted;
+}
+
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_cm *cm = ctx;
@@ -1671,8 +1689,11 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
-		if (!(cm->state == CONNECTED || cm->state == CONNECT_REQUEST))
+		if (!(cm->state == CONNECTED || cm->state == CONNECT_REQUEST) &&
+		    dtr_cm_posted_rx_descs(cm) == 0) {
+			schedule_work(&cm->end_rx_work);
 			break;
+		}
 
 		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 		if (unlikely(rc < 0)) {
@@ -1818,18 +1839,9 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	ib_dma_sync_single_for_device(cm->id->device,
 				      rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 
-	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-	list_add(&rx_desc->list, &cm->posted_rx_descs);
-	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
 	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
-	if (err) {
-		spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-		list_del(&rx_desc->list);
-		spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
+	if (err)
 		tr_err(&rdma_transport->transport, "ib_post_recv error %d\n", err);
-	}
 
 	return err;
 }
@@ -2408,22 +2420,18 @@ static void dtr_drain_posted_tx_desc(struct dtr_cm *cm)
 	}
 }
 
-static void dtr_free_posted_rx_desc(struct dtr_cm *cm)
+static void dtr_end_rx_work_fn(struct work_struct *work)
 {
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, end_rx_work);
 	struct dtr_rx_desc *rx_desc, *tmp;
-	LIST_HEAD(posted_rx_descs);
-	unsigned long flags;
 
-	spin_lock_irqsave(&cm->posted_rx_descs_lock, flags);
-	list_splice_init(&cm->posted_rx_descs, &posted_rx_descs);
-	spin_unlock_irqrestore(&cm->posted_rx_descs_lock, flags);
-
-	list_for_each_entry_safe(rx_desc, tmp, &posted_rx_descs, list)
+	list_for_each_entry_safe(rx_desc, tmp, &cm->error_rx_descs, list)
 		dtr_free_rx_desc(rx_desc);
 }
 
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
+	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	enum connect_state_enum a, p;
 	struct dtr_cm *cm;
 	long t;
@@ -2489,7 +2497,12 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 			cm->state);
 
  out:
-	dtr_free_posted_rx_desc(cm);
+	/* With putting the QP into error state, it has to hand back
+	   all posted rx_descs */
+	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
+	if (err)
+		pr_err("ib_modify_qp failed %d\n", err);
+
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
