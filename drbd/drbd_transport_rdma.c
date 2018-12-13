@@ -361,9 +361,8 @@ static int dtr_send_flow_control_msg(struct dtr_path *path);
 static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
-static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
-			 void (*free_desc)(struct dtr_cm *, void *));
 static int dtr_activate_path(struct dtr_path *path);
+static void dtr_drain_posted_tx_desc(struct dtr_cm *cm);
 static void dtr_free_posted_rx_desc(struct dtr_cm *cm);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 
@@ -2392,15 +2391,26 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 	return err;
 }
 
-static void dtr_drain_cq(struct dtr_cm *cm, struct ib_cq *cq,
-			 void (*free_desc)(struct dtr_cm *, void *))
+static void dtr_drain_posted_tx_desc(struct dtr_cm *cm)
 {
+	struct dtr_tx_desc *tx_desc;
 	struct ib_wc wc;
-	void *desc;
+	int i, posted = 0, freed = 0;
 
-	while (ib_poll_cq(cq, 1, &wc) == 1) {
-		desc = (void *) (unsigned long) wc.wr_id;
-		free_desc(cm, desc);
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+		posted += atomic_read(&cm->path->flow[i].tx_descs_posted);
+
+	while (ib_poll_cq(cm->send_cq, 1, &wc) == 1) {
+		tx_desc = (struct dtr_tx_desc *) (unsigned long) wc.wr_id;
+		dtr_free_tx_desc(cm, tx_desc);
+		freed++;
+	}
+
+	if (freed != posted) {
+		struct drbd_transport *transport = &cm->path->rdma_transport->transport;
+
+		tr_err(transport, "dtr_drain_posted_tx_desc: posted = %d, freed = %d\n",
+		       posted, freed);
 	}
 }
 
@@ -2502,8 +2512,7 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 
 
 	if (cm->send_cq && cm->path)
-		dtr_drain_cq(cm, cm->send_cq,
-			     (void (*)(struct dtr_cm *, void *)) dtr_free_tx_desc);
+		dtr_drain_posted_tx_desc(cm);
 
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	if (cm->dma_mr) {
