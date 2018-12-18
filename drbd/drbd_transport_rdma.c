@@ -1746,12 +1746,6 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 		cm->state = ERROR;
 
-		if (stream_nr != ST_FLOW_CTRL) {
-			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
-			if (err)
-				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
-		}
-
 		goto out;
 	}
 
