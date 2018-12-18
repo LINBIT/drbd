@@ -300,6 +300,8 @@ struct dtr_cm {
 
 	struct list_head error_rx_descs;
 	struct work_struct end_rx_work;
+	struct work_struct end_tx_work;
+	atomic_t tx_descs_posted;
 
 	enum dtr_state state;
 	wait_queue_head_t state_wq;
@@ -340,7 +342,6 @@ static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
-static int dtr_repost_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_transport *, enum drbd_stream,
 				struct dtr_rx_desc **);
@@ -362,7 +363,7 @@ static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
-static void dtr_drain_posted_tx_desc(struct dtr_cm *cm);
+static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 
@@ -959,6 +960,7 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
 	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
+	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
 
 	return cm;
@@ -1753,13 +1755,12 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
-		int err;
 
 		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
 			struct dtr_flow *flow = &path->flow[stream_nr];
 			tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
 			tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
-		} else {
+		} else if (wc.status != IB_WC_WR_FLUSH_ERR) {
 			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
 			tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
 			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
@@ -1780,6 +1781,12 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 out:
 	dtr_free_tx_desc(cm, tx_desc);
+	if (atomic_dec_and_test(&cm->tx_descs_posted)) {
+		if (cm->state == CONNECTED)
+			kref_put(&cm->kref, dtr_destroy_cm); /* this is _not_ the last ref */
+		else
+			schedule_work(&cm->end_tx_work); /* the last ref might be put in this work */
+	}
 
 	return 0;
 }
@@ -2060,28 +2067,6 @@ static struct dtr_path *dtr_select_path_for_tx(struct dtr_transport *rdma_transp
 	return NULL;
 }
 
-static int dtr_repost_tx_desc(struct dtr_transport *rdma_transport,
-			      struct dtr_tx_desc *tx_desc)
-{
-	struct dtr_path *path;
-	struct dtr_cm *cm;
-	int err = -ECONNRESET;
-
-	do {
-		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
-		if (!path)
-			break;
-		cm = dtr_path_get_cm(path);
-		if (!cm) {
-			break;
-		}
-		err = __dtr_post_tx_desc(cm, tx_desc);
-		kref_put(&cm->kref, dtr_destroy_cm);
-	} while (err);
-
-	return err;
-}
-
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 			    struct dtr_tx_desc *tx_desc)
 {
@@ -2134,6 +2119,9 @@ retry:
 
 	if (!err) {
 		atomic_inc(&flow->tx_descs_posted);
+
+		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
+			return err; /* keep a reference on cm */
 	} else {
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
 	}
@@ -2397,29 +2385,6 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 	return err;
 }
 
-static void dtr_drain_posted_tx_desc(struct dtr_cm *cm)
-{
-	struct dtr_tx_desc *tx_desc;
-	struct ib_wc wc;
-	int i, posted = 0, freed = 0;
-
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		posted += atomic_read(&cm->path->flow[i].tx_descs_posted);
-
-	while (ib_poll_cq(cm->send_cq, 1, &wc) == 1) {
-		tx_desc = (struct dtr_tx_desc *) (unsigned long) wc.wr_id;
-		dtr_free_tx_desc(cm, tx_desc);
-		freed++;
-	}
-
-	if (freed != posted) {
-		struct drbd_transport *transport = &cm->path->rdma_transport->transport;
-
-		tr_err(transport, "dtr_drain_posted_tx_desc: posted = %d, freed = %d\n",
-		       posted, freed);
-	}
-}
-
 static void dtr_end_rx_work_fn(struct work_struct *work)
 {
 	struct dtr_cm *cm = container_of(work, struct dtr_cm, end_rx_work);
@@ -2427,6 +2392,13 @@ static void dtr_end_rx_work_fn(struct work_struct *work)
 
 	list_for_each_entry_safe(rx_desc, tmp, &cm->error_rx_descs, list)
 		dtr_free_rx_desc(rx_desc);
+}
+
+static void dtr_end_tx_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, end_tx_work);
+
+	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void __dtr_disconnect_path(struct dtr_path *path)
@@ -2517,9 +2489,6 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
 
-
-	if (cm->send_cq && cm->path)
-		dtr_drain_posted_tx_desc(cm);
 
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	if (cm->dma_mr) {
