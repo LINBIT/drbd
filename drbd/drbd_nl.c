@@ -2164,22 +2164,43 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 		}
 	}
 
+	/* To be effective, rs_discard_granularity must not be larger than the
+	 * maximum resync request size, and multiple of 4k
+	 * (preferably a power-of-two multiple 4k).
+	 * See also make_resync_request().
+	 * That also means that if q->limits.discard_granularity or
+	 * q->limits.discard_alignment are "odd", rs_discard_granularity won't
+	 * be particularly effective, or not effective at all.
+	 */
 	if (disk_conf->rs_discard_granularity) {
-		int orig_value = disk_conf->rs_discard_granularity;
-		int remainder;
+		unsigned int rs_dg = disk_conf->rs_discard_granularity;
+		unsigned int mds = q->limits.max_discard_sectors;
+		/* compat:
+		 * old kernel has 0 granularity means "unknown" means one sector.
+		 * current kernel has 0 granularity means "discard not supported".
+		 * Not supported is checked above already with !blk_queue_discard(q).
+		 */
+		unsigned int ql_dg = q->limits.discard_granularity ?: 512;
 
-		if (q->limits.discard_granularity > disk_conf->rs_discard_granularity)
-			disk_conf->rs_discard_granularity = q->limits.discard_granularity;
+		/* should be at least the discard_granularity of the q limit,
+		 * and preferably a multiple (or the backend won't be able to
+		 * discard some of the "cuttings").
+		 * This also sanitizes nonsensical settings like "77 byte".
+		 */
+		rs_dg = roundup(rs_dg, ql_dg);
 
-		remainder = disk_conf->rs_discard_granularity % q->limits.discard_granularity;
-		disk_conf->rs_discard_granularity += remainder;
+		/* more than the max resync request size won't work anyways */
+		mds = min_t(unsigned int, mds, DRBD_RS_DISCARD_GRANULARITY_MAX >> 9);
+		rs_dg = max(rs_dg, mds << 9);
 
-		if (disk_conf->rs_discard_granularity > q->limits.max_discard_sectors << 9)
-			disk_conf->rs_discard_granularity = q->limits.max_discard_sectors << 9;
+		/* less than the backend discard granularity does not work either */
+		if (rs_dg < ql_dg)
+			rs_dg = 0;
 
-		if (disk_conf->rs_discard_granularity != orig_value)
-			drbd_info(device, "rs_discard_granularity changed to %d\n",
-				  disk_conf->rs_discard_granularity);
+		if (disk_conf->rs_discard_granularity != rs_dg) {
+			drbd_info(device, "rs_discard_granularity changed to %d\n", rs_dg);
+			disk_conf->rs_discard_granularity = rs_dg;
+		}
 	}
 }
 
