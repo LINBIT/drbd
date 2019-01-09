@@ -1759,8 +1759,15 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 	if (resync_after < -1)
 		return ERR_RESYNC_AFTER;
 	other_device = minor_to_device(resync_after);
+
+	/* You are free to depend on diskless, non-existing,
+	 * or not yet/no longer existing minors.
+	 * We only reject dependency loops.
+	 * We cannot follow the dependency chain beyond a detached or
+	 * missing minor.
+	 */
 	if (!other_device)
-		return ERR_RESYNC_AFTER;
+		return NO_ERROR;
 
 	/* check for loops */
 	rcu_read_lock();
@@ -1770,12 +1777,6 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 			break;
 		}
 
-		/* You are free to depend on diskless, non-existing,
-		 * or not yet/no longer existing minors.
-		 * We only reject dependency loops.
-		 * We cannot follow the dependency chain beyond a detached or
-		 * missing minor.
-		 */
 		if (!other_device)
 			break;
 
