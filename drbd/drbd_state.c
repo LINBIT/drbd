@@ -5062,3 +5062,23 @@ void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
 {
 	peer_device->resync_susp_dependency[NEW] = value;
 }
+
+bool drbd_data_accessible(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool data_accessible = false;
+
+	if (device->disk_state[NOW] == D_UP_TO_DATE)
+		return true;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+			data_accessible = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return data_accessible;
+}

@@ -7686,6 +7686,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		   requests with error, therefore do not create the new UUID
 		   immediately! */
 		if (!list_empty(&resource->transfer_log) &&
+		    drbd_data_accessible(device) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
 		    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
 			mutex_lock(&resource->conf_update);

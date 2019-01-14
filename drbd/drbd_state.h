@@ -140,4 +140,5 @@ change_cluster_wide_device_size(struct drbd_device *, sector_t, uint64_t, enum d
 				struct resize_parms *);
 
 extern void drbd_notify_peers_lost_primary(struct drbd_resource *resource);
+extern bool drbd_data_accessible(struct drbd_device *device);
 #endif

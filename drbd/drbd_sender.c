@@ -2272,7 +2272,7 @@ static void make_new_current_uuid(struct drbd_device *device)
 	}
 	wait_event(resource->state_wait, all_peers_responded(device));
 
-	if (device->have_quorum[NOW]) { /* or quorum not enabled is implicit */
+	if (device->have_quorum[NOW] && drbd_data_accessible(device)) {
 		mutex_lock(&resource->conf_update);
 		drbd_uuid_new_current(device, false);
 		mutex_unlock(&resource->conf_update);
