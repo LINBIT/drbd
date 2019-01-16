@@ -1054,6 +1054,9 @@ static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool v
 
 			if (start && p->disk_state[NEW] >= D_INCONSISTENT && r == L_ESTABLISHED)
 				p->repl_state[NEW] = L_PAUSED_SYNC_T;
+
+			if (r == L_SYNC_SOURCE)
+				p->repl_state[NEW] = L_PAUSED_SYNC_S;
 		}
 	} else {
 		for_each_peer_device(p, device) {
