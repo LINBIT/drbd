@@ -1076,8 +1076,13 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 			drbd_advance_rs_marks(peer_device, still_to_go);
 			if (cleared || rs_is_done)
 				maybe_schedule_on_disk_bitmap_update(peer_device, rs_is_done);
-		} else if (mode == RECORD_RS_FAILED)
+		} else if (mode == RECORD_RS_FAILED) {
 			peer_device->rs_failed += count;
+		} else /* if (mode == SET_OUT_OF_SYNC) */ {
+			enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+			if (repl_state >= L_SYNC_SOURCE && repl_state <= L_PAUSED_SYNC_T)
+				peer_device->rs_total += count;
+		}
 		wake_up(&device->al_wait);
 	}
 	return count;
