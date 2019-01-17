@@ -2073,6 +2073,8 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
+	int err;
+	u64 im;
 
 	peer_req = read_in_block(peer_device, d);
 	if (!peer_req)
@@ -2101,9 +2103,17 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
 	drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
 
-	if (drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_RS_WR) == 0)
-		return 0;
+	err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_RS_WR);
+	if (err)
+		goto out;
 
+	for_each_peer_device_ref(peer_device, im, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if (repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
+			drbd_send_out_of_sync(peer_device, &peer_req->i);
+	}
+	return 0;
+out:
 	/* don't care for the reason here */
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&device->resource->req_lock);
@@ -2111,7 +2121,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	spin_unlock_irq(&device->resource->req_lock);
 
 	drbd_free_peer_req(peer_req);
-	return -EIO;
+	return err;
 }
 
 static struct drbd_request *
