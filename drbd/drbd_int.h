@@ -115,6 +115,13 @@ extern char drbd_usermode_helper[];
 
 #define UUID_NEW_BM_OFFSET ((u64)0x0001000000000000ULL)
 
+/* Ensure bios are never split over more than 2 chunks */
+/* TODO: Could allow smaller chunks without needs multiple accesses from one disk when we have more than 2 disks */
+/* TODO: Allow configuration of chunk size and change max bio size to match */
+#define CHUNK_SIZE DRBD_MAX_BIO_SIZE
+#define CHUNK_SECTORS (CHUNK_SIZE >> 9)
+#define DISK_COUNT 2
+
 struct drbd_device;
 struct drbd_connection;
 
@@ -165,6 +172,12 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
 extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
 extern struct list_head drbd_resources; /* RCU, updates: resources_mutex */
 extern struct mutex resources_mutex;
+
+struct req_interval {
+	sector_t target_sector;
+	sector_t target_size_sectors;
+	unsigned int input_offset;
+};
 
 /* for sending/receiving the bitmap,
  * possibly in some encoding scheme */
@@ -304,6 +317,7 @@ struct drbd_request {
 	 *
 	 * Given that some IO backends write several GB per second meanwhile,
 	 * lets just use a 64bit sequence space. */
+	/* TODO: Maybe use this for local dagtag and add a separate dagtag to drbd_peer_request */
 	u64 dagtag_sector;
 
 	struct list_head tl_requests; /* ring list in the transfer log */
@@ -1133,7 +1147,7 @@ struct drbd_peer_device {
 	uint64_t d_size;  /* size of disk */
 	uint64_t u_size;  /* user requested size */
 	uint64_t c_size;  /* current exported size */
-	uint64_t max_size;
+	uint64_t max_size;  /* == d_size apart from when resize has been triggered */
 	int bitmap_index;
 	int node_id;
 

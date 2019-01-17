@@ -1493,6 +1493,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
+	/* size to export */
 	size = drbd_new_dev_size(device, peer_current_size, u_size, flags);
 
 	if (size < prev.effective_size) {
@@ -1511,9 +1512,9 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	}
 
 	if (drbd_get_capacity(device->this_bdev) != size ||
-	    drbd_bm_capacity(device) != size) {
+	    drbd_bm_capacity(device) != size / DISK_COUNT) {
 		int err;
-		err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
+		err = drbd_bm_resize(device, size / DISK_COUNT, !(flags & DDSF_NO_RESYNC));
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(device);
@@ -1529,7 +1530,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
 		if (effective_disk_size_determined(device)) {
-			md->effective_size = size;
+			md->effective_size = size / DISK_COUNT;
 			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
 			     (unsigned long long)size >> 1);
 		}
@@ -1624,6 +1625,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
  *
  * Check if all peer devices that have bitmap slots assigned in the metadata
  * are connected.
+ *
+ * Set max to the maximum of the connected peers' disk sizes.
  */
 static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __must_hold(local)
 {
@@ -1691,7 +1694,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 	return all_known;
 }
 
-#if 0
+#if 1
 #define DDUMP_LLU(d, x) do { drbd_info(d, "%u: " #x ": %llu\n", __LINE__, (unsigned long long)x); } while (0)
 #else
 #define DDUMP_LLU(d, x) do { } while (0)
@@ -1708,6 +1711,7 @@ drbd_new_dev_size(struct drbd_device *device,
 	uint64_t p_size = 0;
 	uint64_t la_size = device->ldev->md.effective_size; /* last agreed size */
 	uint64_t m_size; /* my size */
+	uint64_t common_d_size;
 	uint64_t size = 0;
 	bool all_known_connected;
 
@@ -1743,7 +1747,9 @@ drbd_new_dev_size(struct drbd_device *device,
 
 	DDUMP_LLU(device, p_size);
 	DDUMP_LLU(device, m_size);
-	size = min_not_zero(p_size, m_size);
+	common_d_size = min_not_zero(p_size, m_size);
+	DDUMP_LLU(device, common_d_size);
+	size = round_down(common_d_size, CHUNK_SECTORS) * DISK_COUNT;
 	DDUMP_LLU(device, size);
 	if (size == 0)
 		drbd_err(device, "All nodes diskless!\n");

@@ -423,6 +423,10 @@ void tl_release(struct drbd_connection *connection,
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
+		struct req_interval interval = calculate_req_interval(r->i.sector, r->i.size, connection->peer_node_id);
+		if (!interval.target_size_sectors)
+			continue;
+
 		if (!req) {
 			if (!(r->local_rq_state & RQ_WRITE))
 				continue;
@@ -2147,73 +2151,77 @@ static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 	return err;
 }
 
-static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
+static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio, struct bvec_iter *iter, unsigned int size)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	unsigned int sent = 0;
+
+	drbd_info(peer_device->device, "## _drbd_send_bio peer: %d, sector: %lld, bi_size: %u, idx: %u, done: %u, size: %u\n",
+			peer_device->node_id, (long long int) iter->bi_sector, iter->bi_size, iter->bi_idx, iter->bi_bvec_done, size);
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */
 	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
 	connection->send_buffer[DATA_STREAM].allocated_size = 0;
 
 	/* hint all but last page with MSG_MORE */
-	bio_for_each_segment(bvec, bio, iter) {
+	__bio_for_each_segment(bvec, bio, *iter, *iter) {
+		int segment_send = min(bvec BVD bv_len, size - sent);
 		int err;
 
 		err = _drbd_no_send_page(peer_device, bvec BVD bv_page,
-					 bvec BVD bv_offset, bvec BVD bv_len,
-					 bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
+					 bvec BVD bv_offset, segment_send,
+					 bio_iter_last(bvec, *iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
 		/* WRITE_SAME has only one segment */
 		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 
-		peer_device->send_cnt += (bvec BVD bv_len) >> 9;
+		sent += segment_send;
+		peer_device->send_cnt += segment_send >> 9;
 	}
 	return 0;
 }
 
-static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio)
-{
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
-	bool no_zc = drbd_disable_sendpage;
-
-	/* e.g. XFS meta- & log-data is in slab pages, which have a
-	 * page_count of 0 and/or have PageSlab() set.
-	 * we cannot use send_page for those, as that does get_page();
-	 * put_page(); and would cause either a VM_BUG directly, or
-	 * __page_cache_release a page that would actually still be referenced
-	 * by someone, leading to some obscure delayed Oops somewhere else. */
-	if (!no_zc)
-		bio_for_each_segment(bvec, bio, iter) {
-			struct page *page = bvec BVD bv_page;
-
-			if (page_count(page) < 1 || PageSlab(page)) {
-				no_zc = true;
-				break;
-			}
-		}
-
-	if (no_zc) {
-		return _drbd_send_bio(peer_device, bio);
-	} else {
-		struct drbd_connection *connection = peer_device->connection;
-		struct drbd_transport *transport = &connection->transport;
-		struct drbd_transport_ops *tr_ops = transport->ops;
-		int err;
-
-		flush_send_buffer(connection, DATA_STREAM);
-
-		err = tr_ops->send_zc_bio(transport, bio);
-		if (!err)
-			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
-
-		return err;
-	}
-}
+//static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio, struct bvec_iter *iter)
+//{
+//	DRBD_BIO_VEC_TYPE bvec;
+//	bool no_zc = drbd_disable_sendpage;
+//
+//	/* e.g. XFS meta- & log-data is in slab pages, which have a
+//	 * page_count of 0 and/or have PageSlab() set.
+//	 * we cannot use send_page for those, as that does get_page();
+//	 * put_page(); and would cause either a VM_BUG directly, or
+//	 * __page_cache_release a page that would actually still be referenced
+//	 * by someone, leading to some obscure delayed Oops somewhere else. */
+//	if (!no_zc)
+//		bio_for_each_segment(bvec, bio, *iter) {
+//			struct page *page = bvec BVD bv_page;
+//
+//			if (page_count(page) < 1 || PageSlab(page)) {
+//				no_zc = true;
+//				break;
+//			}
+//		}
+//
+//	if (no_zc) {
+//		return _drbd_send_bio(peer_device, bio, iter);
+//	} else {
+//		struct drbd_connection *connection = peer_device->connection;
+//		struct drbd_transport *transport = &connection->transport;
+//		struct drbd_transport_ops *tr_ops = transport->ops;
+//		int err;
+//
+//		flush_send_buffer(connection, DATA_STREAM);
+//
+//		err = tr_ops->send_zc_bio(transport, bio);
+//		if (!err)
+//			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
+//
+//		return err;
+//	}
+//}
 
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
@@ -2279,6 +2287,16 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 	const int op = bio_op(req->master_bio);
 
+	struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+	// if nothing to send, error out
+	if (!interval.target_size_sectors) {
+		/* TODO: bail out better */
+		drbd_err(device, "## drbd_send_dblock nothing to send\n");
+		err = 0;
+		goto out;
+	}
+	drbd_info(device, "## send, peer %d, sector %llu, size %llu, input_offset %u\n", peer_device->node_id, (long long unsigned) interval.target_sector, (long long unsigned) interval.target_size_sectors, interval.input_offset);
+
 	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);
 		if (!trim)
@@ -2304,7 +2322,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		}
 	}
 
-	p->sector = cpu_to_be64(req->i.sector);
+	p->sector = cpu_to_be64(interval.target_sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio);
@@ -2332,7 +2350,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 					bio_iovec(req->master_bio) BVD bv_len);
 		err = __send_command(peer_device->connection, device->vnr, P_WSAME, DATA_STREAM);
 	} else {
-		additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
+		additional_size_command(peer_device->connection, DATA_STREAM, interval.target_size_sectors << 9);
 		err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
 	}
 	if (!err) {
@@ -2347,10 +2365,13 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size)
-			err = _drbd_send_bio(peer_device, req->master_bio);
-		else
-			err = _drbd_send_zc_bio(peer_device, req->master_bio);
+		/* TODO (striping experiment): only send the relevant data for the peer */
+		struct bvec_iter iter = req->master_bio->bi_iter;
+		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, interval.input_offset << 9);
+//		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size)
+		err = _drbd_send_bio(peer_device, req->master_bio, &iter, interval.target_size_sectors << 9);
+//		else
+//			err = _drbd_send_zc_bio(peer_device, req->master_bio, &iter);
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0 && digest_size <= 64) {

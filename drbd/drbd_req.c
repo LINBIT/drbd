@@ -32,7 +32,7 @@
 
 
 
-static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
+//static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
 #ifndef __disk_stat_inc
 /* Update disk stats at start of I/O request */
@@ -905,12 +905,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* from __drbd_make_request
 		 * or from bio_endio during read io-error recovery */
 
-		/* So we can verify the handle in the answer packet.
-		 * Corresponding drbd_remove_request_interval is in
-		 * drbd_req_complete() */
-		D_ASSERT(device, drbd_interval_empty(&req->i));
-		drbd_insert_interval(&device->read_requests, &req->i);
-
 		set_bit(UNPLUG_REMOTE, &device->flags);
 
 		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
@@ -1153,87 +1147,87 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	return rv;
 }
 
-/* we may do a local read if:
- * - we are consistent (of course),
- * - or we are generally inconsistent,
- *   BUT we are still/already IN SYNC with all peers for this area.
- *   since size may be bigger than BM_BLOCK_SIZE,
- *   we may need to check several bits.
- */
-static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
-{
-	struct drbd_md *md = &device->ldev->md;
-	unsigned int node_id;
-	unsigned int n_checked = 0;
+///* we may do a local read if:
+// * - we are consistent (of course),
+// * - or we are generally inconsistent,
+// *   BUT we are still/already IN SYNC with all peers for this area.
+// *   since size may be bigger than BM_BLOCK_SIZE,
+// *   we may need to check several bits.
+// */
+//static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
+//{
+//	struct drbd_md *md = &device->ldev->md;
+//	unsigned int node_id;
+//	unsigned int n_checked = 0;
+//
+//	unsigned long sbnr, ebnr;
+//	sector_t esector, nr_sectors;
+//
+//	if (device->disk_state[NOW] == D_UP_TO_DATE)
+//		return true;
+//	if (device->disk_state[NOW] != D_INCONSISTENT)
+//		return false;
+//	esector = sector + (size >> 9) - 1;
+//	nr_sectors = drbd_get_capacity(device->this_bdev);
+//	D_ASSERT(device, sector  < nr_sectors);
+//	D_ASSERT(device, esector < nr_sectors);
+//
+//	sbnr = BM_SECT_TO_BIT(sector);
+//	ebnr = BM_SECT_TO_BIT(esector);
+//
+//	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+//		struct drbd_peer_md *peer_md = &md->peers[node_id];
+//
+//		/* Skip bitmap indexes which are not assigned to a peer. */
+//		if (peer_md->bitmap_index == -1)
+//			continue;
+//
+//		if (drbd_bm_count_bits(device, peer_md->bitmap_index, sbnr, ebnr))
+//			return false;
+//		++n_checked;
+//	}
+//	if (n_checked == 0) {
+//		if (drbd_ratelimit()) {
+//			drbd_err(device, "No valid bitmap slots found to check!\n");
+//		}
+//		return false;
+//	}
+//	return true;
+//}
 
-	unsigned long sbnr, ebnr;
-	sector_t esector, nr_sectors;
-
-	if (device->disk_state[NOW] == D_UP_TO_DATE)
-		return true;
-	if (device->disk_state[NOW] != D_INCONSISTENT)
-		return false;
-	esector = sector + (size >> 9) - 1;
-	nr_sectors = drbd_get_capacity(device->this_bdev);
-	D_ASSERT(device, sector  < nr_sectors);
-	D_ASSERT(device, esector < nr_sectors);
-
-	sbnr = BM_SECT_TO_BIT(sector);
-	ebnr = BM_SECT_TO_BIT(esector);
-
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		struct drbd_peer_md *peer_md = &md->peers[node_id];
-
-		/* Skip bitmap indexes which are not assigned to a peer. */
-		if (peer_md->bitmap_index == -1)
-			continue;
-
-		if (drbd_bm_count_bits(device, peer_md->bitmap_index, sbnr, ebnr))
-			return false;
-		++n_checked;
-	}
-	if (n_checked == 0) {
-		if (drbd_ratelimit()) {
-			drbd_err(device, "No valid bitmap slots found to check!\n");
-		}
-		return false;
-	}
-	return true;
-}
-
-/* TODO improve for more than one peer.
- * also take into account the drbd protocol. */
-static bool remote_due_to_read_balancing(struct drbd_device *device,
-		struct drbd_peer_device *peer_device, sector_t sector,
-		enum drbd_read_balancing rbm)
-{
-	struct backing_dev_info *bdi;
-	int stripe_shift;
-
-	switch (rbm) {
-	case RB_CONGESTED_REMOTE:
-		bdi = bdi_from_device(device);
-		return bdi_read_congested(bdi);
-	case RB_LEAST_PENDING:
-		return atomic_read(&device->local_cnt) >
-			atomic_read(&peer_device->ap_pending_cnt) + atomic_read(&peer_device->rs_pending_cnt);
-	case RB_32K_STRIPING:  /* stripe_shift = 15 */
-	case RB_64K_STRIPING:
-	case RB_128K_STRIPING:
-	case RB_256K_STRIPING:
-	case RB_512K_STRIPING:
-	case RB_1M_STRIPING:   /* stripe_shift = 20 */
-		stripe_shift = (rbm - RB_32K_STRIPING + 15);
-		return (sector >> (stripe_shift - 9)) & 1;
-	case RB_ROUND_ROBIN:
-		return test_and_change_bit(READ_BALANCE_RR, &device->flags);
-	case RB_PREFER_REMOTE:
-		return true;
-	case RB_PREFER_LOCAL:
-	default:
-		return false;
-	}
-}
+///* TODO improve for more than one peer.
+// * also take into account the drbd protocol. */
+//static bool remote_due_to_read_balancing(struct drbd_device *device,
+//		struct drbd_peer_device *peer_device, sector_t sector,
+//		enum drbd_read_balancing rbm)
+//{
+//	struct backing_dev_info *bdi;
+//	int stripe_shift;
+//
+//	switch (rbm) {
+//	case RB_CONGESTED_REMOTE:
+//		bdi = bdi_from_device(device);
+//		return bdi_read_congested(bdi);
+//	case RB_LEAST_PENDING:
+//		return atomic_read(&device->local_cnt) >
+//			atomic_read(&peer_device->ap_pending_cnt) + atomic_read(&peer_device->rs_pending_cnt);
+//	case RB_32K_STRIPING:  /* stripe_shift = 15 */
+//	case RB_64K_STRIPING:
+//	case RB_128K_STRIPING:
+//	case RB_256K_STRIPING:
+//	case RB_512K_STRIPING:
+//	case RB_1M_STRIPING:   /* stripe_shift = 20 */
+//		stripe_shift = (rbm - RB_32K_STRIPING + 15);
+//		return (sector >> (stripe_shift - 9)) & 1;
+//	case RB_ROUND_ROBIN:
+//		return test_and_change_bit(READ_BALANCE_RR, &device->flags);
+//	case RB_PREFER_REMOTE:
+//		return true;
+//	case RB_PREFER_LOCAL:
+//	default:
+//		return false;
+//	}
+//}
 
 /*
  * complete_conflicting_writes  -  wait for any conflicting write requests
@@ -1365,95 +1359,95 @@ static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 	   since we enter state L_AHEAD only if proto >= 96 */
 }
 
-/* Prefer to read from protcol C peers, then B, last A */
-static u64 calc_nodes_to_read_from(struct drbd_device *device)
-{
-	struct drbd_peer_device *peer_device;
-	u64 candidates[DRBD_PROT_C] = {};
-	int wp;
+///* Prefer to read from protcol C peers, then B, last A */
+//static u64 calc_nodes_to_read_from(struct drbd_device *device)
+//{
+//	struct drbd_peer_device *peer_device;
+//	u64 candidates[DRBD_PROT_C] = {};
+//	int wp;
+//
+//	rcu_read_lock();
+//	for_each_peer_device(peer_device, device) {
+//		struct net_conf *nc;
+//
+//		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+//			continue;
+//		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+//		if (!nc)
+//			continue;
+//		wp = nc->wire_protocol;
+//		candidates[wp - 1] |= NODE_MASK(peer_device->node_id);
+//	}
+//	rcu_read_unlock();
+//
+//	for (wp = DRBD_PROT_C; wp >= DRBD_PROT_A; wp--) {
+//		if (candidates[wp - 1])
+//			return candidates[wp - 1];
+//	}
+//	return 0;
+//}
 
-	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
-		struct net_conf *nc;
-
-		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
-			continue;
-		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		if (!nc)
-			continue;
-		wp = nc->wire_protocol;
-		candidates[wp - 1] |= NODE_MASK(peer_device->node_id);
-	}
-	rcu_read_unlock();
-
-	for (wp = DRBD_PROT_C; wp >= DRBD_PROT_A; wp--) {
-		if (candidates[wp - 1])
-			return candidates[wp - 1];
-	}
-	return 0;
-}
-
-/* If this returns NULL, and req->private_bio is still set,
- * the request should be submitted locally.
- *
- * If it returns NULL, but req->private_bio is not set,
- * we do not have access to good data :(
- *
- * Otherwise, this destroys req->private_bio, if any,
- * and returns the peer device which should be asked for data.
- */
-static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *req)
-{
-	struct drbd_peer_device *peer_device;
-	struct drbd_device *device = req->device;
-	enum drbd_read_balancing rbm = RB_PREFER_REMOTE;
-
-	if (req->private_bio) {
-		if (!drbd_may_do_local_read(device,
-					req->i.sector, req->i.size)) {
-			bio_put(req->private_bio);
-			req->private_bio = NULL;
-			put_ldev(device);
-		}
-	}
-
-	if (device->disk_state[NOW] > D_DISKLESS) {
-		rcu_read_lock();
-		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
-		rcu_read_unlock();
-		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
-			return NULL; /* submit locally */
-		}
-	}
-
-	/* TODO: improve read balancing decisions, allow user to configure node weights */
-	while (true) {
-		if (!device->read_nodes)
-			device->read_nodes = calc_nodes_to_read_from(device);
-		if (device->read_nodes) {
-			int peer_node_id = __ffs64(device->read_nodes);
-			device->read_nodes &= ~NODE_MASK(peer_node_id);
-			peer_device = peer_device_by_node_id(device, peer_node_id);
-			if (!peer_device)
-				continue;
-			if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
-				continue;
-			if (req->private_bio &&
-			    !remote_due_to_read_balancing(device, peer_device, req->i.sector, rbm))
-				peer_device = NULL;
-		} else {
-			peer_device = NULL;
-		}
-		break;
-	}
-
-	if (peer_device && req->private_bio) {
-		bio_put(req->private_bio);
-		req->private_bio = NULL;
-		put_ldev(device);
-	}
-	return peer_device;
-}
+///* If this returns NULL, and req->private_bio is still set,
+// * the request should be submitted locally.
+// *
+// * If it returns NULL, but req->private_bio is not set,
+// * we do not have access to good data :(
+// *
+// * Otherwise, this destroys req->private_bio, if any,
+// * and returns the peer device which should be asked for data.
+// */
+//static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *req)
+//{
+//	struct drbd_peer_device *peer_device;
+//	struct drbd_device *device = req->device;
+//	enum drbd_read_balancing rbm = RB_PREFER_REMOTE;
+//
+//	if (req->private_bio) {
+//		if (!drbd_may_do_local_read(device,
+//					req->i.sector, req->i.size)) {
+//			bio_put(req->private_bio);
+//			req->private_bio = NULL;
+//			put_ldev(device);
+//		}
+//	}
+//
+//	if (device->disk_state[NOW] > D_DISKLESS) {
+//		rcu_read_lock();
+//		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
+//		rcu_read_unlock();
+//		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
+//			return NULL; /* submit locally */
+//		}
+//	}
+//
+//	/* TODO: improve read balancing decisions, allow user to configure node weights */
+//	while (true) {
+//		if (!device->read_nodes)
+//			device->read_nodes = calc_nodes_to_read_from(device);
+//		if (device->read_nodes) {
+//			int peer_node_id = __ffs64(device->read_nodes);
+//			device->read_nodes &= ~NODE_MASK(peer_node_id);
+//			peer_device = peer_device_by_node_id(device, peer_node_id);
+//			if (!peer_device)
+//				continue;
+//			if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+//				continue;
+//			if (req->private_bio &&
+//			    !remote_due_to_read_balancing(device, peer_device, req->i.sector, rbm))
+//				peer_device = NULL;
+//		} else {
+//			peer_device = NULL;
+//		}
+//		break;
+//	}
+//
+//	if (peer_device && req->private_bio) {
+//		bio_put(req->private_bio);
+//		req->private_bio = NULL;
+//		put_ldev(device);
+//	}
+//	return peer_device;
+//}
 
 /* returns the number of connections expected to actually write this data,
  * which does NOT include those that we are L_AHEAD for. */
@@ -1466,6 +1460,11 @@ static int drbd_process_write_request(struct drbd_request *req)
 	int count = 0;
 
 	for_each_peer_device(peer_device, device) {
+		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+
+		if (!interval.target_size_sectors)
+			continue;
+
 		remote = drbd_should_do_remote(peer_device, NOW);
 		send_oos = drbd_should_send_out_of_sync(peer_device);
 
@@ -1486,6 +1485,41 @@ static int drbd_process_write_request(struct drbd_request *req)
 			_req_mod(req, QUEUE_FOR_NET_WRITE, peer_device);
 		} else if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size))
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
+	}
+
+	return count;
+}
+
+/* returns the number of connections expected to actually read this data */
+static int drbd_process_read_request(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device;
+	bool in_tree = false;
+	int remote;
+	int count = 0;
+
+	for_each_peer_device(peer_device, device) {
+		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+
+		if (!interval.target_size_sectors)
+			continue;
+
+		remote = peer_device->disk_state[NOW] == D_UP_TO_DATE;
+
+		if (!remote)
+			continue;
+
+		++count;
+		_req_mod(req, TO_BE_SENT, peer_device);
+		if (!in_tree) {
+			/* So we can verify the handle in the answer packet.
+			 * Corresponding drbd_remove_request_interval is in
+			 * drbd_req_complete() */
+			drbd_insert_interval(&device->read_requests, &req->i);
+			in_tree = true;
+		}
+		_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
 	}
 
 	return count;
@@ -1718,13 +1752,27 @@ static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req
 static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
 {
 	struct drbd_resource *resource = device->resource;
-	struct drbd_peer_device *peer_device = NULL; /* for read */
+//	struct drbd_peer_device *peer_device = NULL; /* for read */
 	const int rw = bio_data_dir(req->master_bio);
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
 	bool submit_private_bio = false;
+	struct bvec_iter *bi_iter = NULL;
+	unsigned short bi_vcnt;
 
 	spin_lock_irq(&resource->req_lock);
+
+	bi_iter = &req->master_bio->bi_iter;
+	bi_vcnt = req->master_bio->bi_vcnt;
+	drbd_info(device, "## drbd_send_and_submit rw: %d, sector: %lld, size: %u, idx: %u, done: %u, bi_vcnt: %u\n",
+			rw, (long long int) bi_iter->bi_sector, bi_iter->bi_size, bi_iter->bi_idx, bi_iter->bi_bvec_done, bi_vcnt);
+	if (bi_vcnt > 0) {
+		struct bio_vec *bi_io_vec = req->master_bio->bi_io_vec;
+		void *address = page_address(bi_io_vec->bv_page);
+		drbd_info(device, "## drbd_send_and_submit page: %p, len: %u, offset: %u, address: %p, %02hhx%02hhx\n",
+				bi_io_vec->bv_page, bi_io_vec->bv_len, bi_io_vec->bv_offset, address, ((unsigned char*) address)[0], ((unsigned char*) address)[1]);
+	}
+
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-aquire it before it returns here.
@@ -1749,19 +1797,20 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		goto out;
 	}
 
-	/* We fail READ early, if we can not serve it.
-	 * We must do this before req is registered on any lists.
-	 * Otherwise, drbd_req_complete() will queue failed READ for retry. */
-	if (rw != WRITE) {
-		peer_device = find_peer_device_for_read(req);
-		if (!peer_device && !req->private_bio)
-			goto nodata;
-	}
+//	/* We fail READ early, if we can not serve it.
+//	 * We must do this before req is registered on any lists.
+//	 * Otherwise, drbd_req_complete() will queue failed READ for retry. */
+//	if (rw != WRITE) {
+//		peer_device = find_peer_device_for_read(req);
+//		if (!peer_device && !req->private_bio)
+//			goto nodata;
+//	}
 
 	/* which transfer log epoch does this belong to? */
 	req->epoch = atomic_read(&resource->current_tle_nr);
 
 	if (rw == WRITE)
+		// TODO?
 		resource->dagtag_sector += req->i.size >> 9;
 	req->dagtag_sector = resource->dagtag_sector;
 	/* no point in adding empty flushes to the transfer log,
@@ -1804,14 +1853,13 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 		} else if (!drbd_process_write_request(req))
 			no_remote = true;
+		/* TODO: Fail request if we can't write to a sufficient number of peers */
 		wake_all_senders(resource);
 	} else {
-		if (peer_device) {
-			_req_mod(req, TO_BE_SENT, peer_device);
-			_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
-			wake_up(&peer_device->connection->sender_work.q_wait);
-		} else
+		if (!drbd_process_read_request(req))
 			no_remote = true;
+		/* TODO: Fail request if we can't read from a sufficient number of peers */
+		wake_all_senders(resource);
 	}
 
 	if (no_remote == false) {
@@ -2534,4 +2582,52 @@ void request_timer_fn(DRBD_TIMER_FN_ARG)
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
 		mod_timer(&device->request_timer, next_trigger_time);
 	}
+}
+
+struct req_interval calculate_req_interval(const sector_t sector, const unsigned int size, const int node_id) {
+	/* TODO (striping experiment): calculate location respecting striping */
+	// int peer_device->node_id; <- determine which node we are sending to
+	// use fixed stripe/chunk size of (1 << 20) to avoid possible multi-splits
+	// if this write does not intersect any of this node's chunks, need to fake success
+	// can use similar to raid0.c:
+	// sector = bio->bi_iter.bi_sector;
+	// sectors = chunk_sects - (sector & (chunk_sects-1)); // remaining sectors in the chunk where the bio lands
+	// if (sectors < bio_sectors(bio)) { } // need to split
+	//
+	// determine which node to target:
+	// int chunksect_bits = ffz(~chunk_sects);
+	// /* find the sector offset inside the chunk */
+	// sect_in_chunk = sector & (chunk_sects - 1);
+	// chunk = sector >> chunksect_bits;
+	// nb_dev = 2;
+	// dev = chunk % nb_dev;
+	// chunk_on_dev = chunk / nb_dev;
+	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
+	// TODO: Might be able to use round_up/round_down to simplify this a little
+	const sector_t size_sectors = size >> 9;
+	const int chunksect_bits = ffz(~CHUNK_SECTORS);
+	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
+	const int nb_dev = DISK_COUNT;
+	const int start_node_id = chunk % nb_dev;
+	const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
+	const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
+
+	struct req_interval interval;
+
+	if (node_id == start_node_id) {
+		/* bio starts in one of our chunks */
+		interval.target_sector = ((chunk / nb_dev) << chunksect_bits) + sector_in_chunk;
+		interval.target_size_sectors = min(remaining_in_chunk, size_sectors);
+		interval.input_offset = 0;
+	} else if (size_sectors > remaining_in_chunk) {
+		/* bio overflows into one of our chunks */
+		interval.target_sector = ((chunk + 1) / nb_dev) << chunksect_bits;
+		interval.target_size_sectors = size_sectors - remaining_in_chunk;
+		interval.input_offset = remaining_in_chunk;
+	} else {
+		/* no need to write */
+		interval.target_size_sectors = 0;
+	}
+
+	return interval;
 }

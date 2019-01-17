@@ -2663,6 +2663,7 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 		connection->send.current_epoch_writes = 0;
 		connection->send.last_sent_barrier_jif = jiffies;
 		connection->send.current_dagtag_sector =
+			// TODO?
 			connection->resource->dagtag_sector - ((BIO_MAX_PAGES << PAGE_SHIFT) >> 9) - 1;
 	}
 }
@@ -2702,6 +2703,7 @@ static int process_one_request(struct drbd_connection *connection)
 		 * we are supposed to only send an "out of sync" info packet */
 		if (!(s & RQ_OOS)) {
 			u64 current_dagtag_sector =
+				// TODO?
 				req->dagtag_sector - (req->i.size >> 9);
 
 			re_init_if_first_write(connection, req->epoch);
@@ -2737,9 +2739,10 @@ static int process_one_request(struct drbd_connection *connection)
 			what = OOS_HANDED_TO_NETWORK;
 		}
 	} else {
+		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
 		maybe_send_barrier(connection, req->epoch);
 		err = drbd_send_drequest(peer_device, P_DATA_REQUEST,
-				req->i.sector, req->i.size, (unsigned long)req);
+				interval.target_sector, interval.target_size_sectors << 9, (unsigned long)req);
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 	}
 

@@ -1248,13 +1248,14 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 			break;
 		}
 
-		if (epoch_size != 0 &&
+		if (/*epoch_size != 0 &&*/
 		    atomic_read(&epoch->active) == 0 &&
 		    (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags) || ev & EV_CLEANUP) &&
 		    epoch->list.prev == &connection->current_epoch->list &&
 		    !test_bit(DE_IS_FINISHING, &epoch->flags)) {
 			/* Nearly all conditions are met to finish that epoch... */
-			if (test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
+			if (epoch_size == 0 ||
+			    test_bit(DE_BARRIER_IN_NEXT_EPOCH_DONE, &epoch->flags) ||
 			    resource->write_ordering == WO_NONE ||
 			    (epoch_size == 1 && test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) ||
 			    ev & EV_CLEANUP) {
@@ -2230,6 +2231,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	int digest_size, err, expect;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
+	struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
 
 	digest_size = 0;
 	if (peer_device->connection->peer_integrity_tfm) {
@@ -2245,9 +2247,13 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	peer_device->recv_cnt += data_size >> 9;
 
 	bio = req->master_bio;
+	/* TODO: Replace with input validation that respects interval re-mapping
 	D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
+	 */
 
-	bio_for_each_segment(bvec, bio, iter) {
+	iter = bio->bi_iter;
+	bvec_iter_advance(req->master_bio->bi_io_vec, &iter, interval.input_offset << 9);
+	__bio_for_each_segment(bvec, bio, iter, iter) {
 		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
 		expect = min_t(int, data_size, bvec BVD bv_len);
 		err = drbd_recv_into(peer_device->connection, mapped, expect);
@@ -2255,6 +2261,8 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 		if (err)
 			return err;
 		data_size -= expect;
+		if (!data_size)
+			break;
 	}
 
 	if (digest_size) {
@@ -2362,13 +2370,14 @@ find_request(struct drbd_device *device, struct rb_root *root, u64 id,
 
 	/* Request object according to our peer */
 	req = (struct drbd_request *)(unsigned long)id;
-	if (drbd_contains_interval(root, sector, &req->i) && req->i.local)
-		return req;
-	if (!missing_ok) {
-		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
-			(unsigned long)id, (unsigned long long)sector);
-	}
-	return NULL;
+	// TODO Need to differentiate between source interval and interval for peers; validate based on interval for peers
+//	if (drbd_contains_interval(root, sector, &req->i) && req->i.local)
+	return req;
+//	if (!missing_ok) {
+//		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
+//			(unsigned long)id, (unsigned long long)sector);
+//	}
+//	return NULL;
 }
 
 static int receive_DataReply(struct drbd_connection *connection, struct packet_info *pi)
@@ -2396,6 +2405,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	/* drbd_remove_request_interval() is done in _req_may_be_done, to avoid
 	 * special casing it there for the various failure cases.
 	 * still no race with drbd_fail_pending_reads */
+	/* TODO: What happens if pi->size != req->i.size in the normal case?? */
 	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
@@ -3046,6 +3056,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	else if (pi->cmd == P_WSAME)
 		peer_req->flags |= EE_WRITE_SAME;
 
+	// TODO dagtag_sector based on data size... need to respect difference in data size between input and output
 	peer_req->dagtag_sector = connection->last_dagtag_sector + (peer_req->i.size >> 9);
 	connection->last_dagtag_sector = peer_req->dagtag_sector;
 
@@ -5052,10 +5063,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			(unsigned long long)p_size,
 			(unsigned long long)peer_device->max_size);
 
-	if ((p_size && p_csize > p_size) || (p_usize && p_csize > p_usize)) {
-		drbd_warn(peer_device, "Peer sent bogus sizes, disconnecting\n");
-		goto disconnect;
-	}
+//	if ((p_size && p_csize > p_size) || (p_usize && p_csize > p_usize)) {
+//		drbd_warn(peer_device, "Peer sent bogus sizes, disconnecting\n");
+//		goto disconnect;
+//	}
 
 	/* The protocol version limits how big requests can be.  In addition,
 	 * peers before protocol version 94 cannot split large requests into
@@ -5114,12 +5125,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			goto disconnect;
 		}
 
-		/* Disconnect, if we cannot grow to the peer's current size */
-		if (my_max_size < p_csize && !is_handshake) {
-			drbd_err(peer_device, "Peer's size larger than my maximum capacity (%llu < %llu sectors)\n",
-					(unsigned long long)my_max_size, (unsigned long long)p_csize);
-			goto disconnect;
-		}
+//		/* Disconnect, if we cannot grow to the peer's current size */
+//		if (my_max_size < p_csize && !is_handshake) {
+//			drbd_err(peer_device, "Peer's size larger than my maximum capacity (%llu < %llu sectors)\n",
+//					(unsigned long long)my_max_size, (unsigned long long)p_csize);
+//			goto disconnect;
+//		}
 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
@@ -5185,7 +5196,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		 */
 		new_size = p_csize;
 		new_size = min_not_zero(new_size, p_usize);
-		new_size = min_not_zero(new_size, p_size);
+//		new_size = min_not_zero(new_size, p_size);
 
 		if (new_size == 0) {
 			/* Ignore, peer does not know nothing. */
