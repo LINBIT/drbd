@@ -342,6 +342,7 @@ static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
+static int dtr_repost_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_transport *, enum drbd_stream,
 				struct dtr_rx_desc **);
@@ -1744,7 +1745,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	struct dtr_tx_desc *tx_desc;
 	struct ib_wc wc;
 	enum dtr_stream_nr stream_nr;
-	int ret;
+	int ret, err;
 
 	ret = ib_poll_cq(cq, 1, &wc);
 	if (!ret)
@@ -1768,6 +1769,13 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 		cm->state = ERROR;
 
+		if (stream_nr != ST_FLOW_CTRL) {
+			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
+			if (!err)
+				return 0; /* Not freeing it */
+
+			tr_warn(transport, "repost of tx_desc failed! %d\n", err);
+		}
 		goto out;
 	}
 
@@ -2069,6 +2077,28 @@ static struct dtr_path *dtr_select_path_for_tx(struct dtr_transport *rdma_transp
 	rcu_read_unlock();
 
 	return NULL;
+}
+
+static int dtr_repost_tx_desc(struct dtr_transport *rdma_transport,
+			      struct dtr_tx_desc *tx_desc)
+{
+	struct dtr_path *path;
+	struct dtr_cm *cm;
+	int err = -ECONNRESET;
+
+	do {
+		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
+		if (!path)
+			break;
+		cm = dtr_path_get_cm(path);
+		if (!cm) {
+			break;
+		}
+		err = __dtr_post_tx_desc(cm, tx_desc);
+		kref_put(&cm->kref, dtr_destroy_cm);
+	} while (err);
+
+	return err;
 }
 
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
