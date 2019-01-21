@@ -863,9 +863,6 @@ static bool drbd_all_neighbor_secondary(struct drbd_device *device, u64 *authori
 bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr)
 {
 	struct drbd_resource *resource = device->resource;
-	struct drbd_connection *connection;
-	struct drbd_peer_device *peer_device;
-	u64 authoritative = 0;
 	bool device_stable = true;
 
 	if (resource->role[NOW] == R_PRIMARY)
@@ -874,25 +871,6 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr)
 	if (!drbd_all_neighbor_secondary(device, authoritative_ptr))
 		return false;
 
-	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
-		peer_device = conn_peer_device(connection, device->vnr);
-		switch (peer_device->repl_state[NOW]) {
-		case L_WF_BITMAP_T:
-		case L_SYNC_TARGET:
-		case L_PAUSED_SYNC_T:
-			device_stable = false;
-			authoritative |= NODE_MASK(peer_device->node_id);
-			goto out;
-		default:
-			continue;
-		}
-	}
-
-out:
-	rcu_read_unlock();
-	if (authoritative_ptr)
-		*authoritative_ptr = authoritative;
 	return device_stable;
 }
 

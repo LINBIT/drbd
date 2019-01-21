@@ -2990,24 +2990,34 @@ static bool calc_device_stable(struct drbd_state_change *state_change, int n_dev
 		struct drbd_connection_state_change *connection_state_change =
 			&state_change->connections[n_connection];
 		enum drbd_role *peer_role = connection_state_change->peer_role;
-		struct drbd_peer_device_state_change *peer_device_state_change =
-			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
-		enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
 
 		if (peer_role[which] == R_PRIMARY)
 			return false;
+	}
+
+	return true;
+}
+
+static bool calc_resync_target(struct drbd_state_change *state_change, int n_device, enum which_state which)
+{
+	int n_connection;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+		enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
 
 		switch (repl_state[which]) {
 		case L_WF_BITMAP_T:
 		case L_SYNC_TARGET:
 		case L_PAUSED_SYNC_T:
-			return false;
+			return true;
 		default:
 			continue;
 		}
 	}
 
-	return true;
+	return false;
 }
 
 /* takes old and new peer disk state */
@@ -3123,11 +3133,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool *have_quorum = device_state_change->have_quorum;
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
-		bool device_stable[2];
+		bool device_stable[2], resync_target[2];
 		enum which_state which;
 
-		for (which = OLD; which <= NEW; which++)
+		for (which = OLD; which <= NEW; which++) {
 			device_stable[which] = calc_device_stable(state_change, n_device, which);
+			resync_target[which] = calc_resync_target(state_change, n_device, which);
+		}
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
 			effective_disk_size_determined = true;
@@ -3417,7 +3429,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (send_state)
 				drbd_send_state(peer_device, new_state);
 
-			if (!device_stable[OLD] && device_stable[NEW] &&
+			if (((!device_stable[OLD] && device_stable[NEW]) ||
+			     (resync_target[OLD] && !resync_target[NEW] && device_stable[NEW])) &&
 			    !(repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    !(peer_role[OLD] == R_PRIMARY) && disk_state[NEW] >= D_OUTDATED &&
 			    repl_state[NEW] >= L_ESTABLISHED &&
