@@ -860,14 +860,22 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	return err;
 }
 
+static struct dtr_cm *__dtr_path_get_cm(struct dtr_path *path)
+{
+	struct dtr_cm *cm;
+
+	cm = rcu_dereference(path->cm);
+	if (cm && !kref_get_unless_zero(&cm->kref))
+		cm = NULL;
+	return cm;
+}
+
 static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
 {
 	struct dtr_cm *cm;
 
 	rcu_read_lock();
-	cm = rcu_dereference(path->cm);
-	if (cm && !kref_get_unless_zero(&cm->kref))
-		cm = NULL;
+	cm = __dtr_path_get_cm(path);
 	rcu_read_unlock();
 	return cm;
 }
@@ -2051,11 +2059,12 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	return err;
 }
 
-static struct dtr_path *dtr_select_path_for_tx(struct dtr_transport *rdma_transport,
-					       enum drbd_stream stream)
+static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_transport,
+						     enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &rdma_transport->transport;
 	struct dtr_path *path;
+	struct dtr_cm *cm;
 
 	/* TOOD: Could try to balance along the paths in a more clever way */
 
@@ -2070,8 +2079,9 @@ static struct dtr_path *dtr_select_path_for_tx(struct dtr_transport *rdma_transp
 		   the last one is reserved for flow-control messages. */
 		if (atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
 		    atomic_read(&flow->peer_rx_descs) > 1) {
+			cm = __dtr_path_get_cm(path);
 			rcu_read_unlock();
-			return path;
+			return cm;
 		}
 	}
 	rcu_read_unlock();
@@ -2082,15 +2092,11 @@ static struct dtr_path *dtr_select_path_for_tx(struct dtr_transport *rdma_transp
 static int dtr_repost_tx_desc(struct dtr_transport *rdma_transport,
 			      struct dtr_tx_desc *tx_desc)
 {
-	struct dtr_path *path;
 	struct dtr_cm *cm;
 	int err = -ECONNRESET;
 
 	do {
-		path = dtr_select_path_for_tx(rdma_transport, tx_desc->stream_nr);
-		if (!path)
-			break;
-		cm = dtr_path_get_cm(path);
+		cm = dtr_select_and_get_cm_for_tx(rdma_transport, tx_desc->stream_nr);
 		if (!cm) {
 			break;
 		}
@@ -2107,7 +2113,6 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	enum drbd_stream stream = tx_desc->stream_nr;
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct ib_device *device;
-	struct dtr_path *path;
 	struct dtr_flow *flow;
 	struct dtr_cm *cm;
 	int offset, err;
@@ -2115,7 +2120,7 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 
 retry:
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			(path = dtr_select_path_for_tx(rdma_transport, stream)),
+			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream)),
 			rdma_stream->send_timeout);
 
 	if (t == 0) {
@@ -2127,15 +2132,10 @@ retry:
 	} else if (t < 0)
 		return -EINTR;
 
-	flow = &path->flow[stream];
+	flow = &cm->path->flow[stream];
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
 		goto retry;
 
-	cm = dtr_path_get_cm(path);
-	if (!cm) {
-		err = -ECONNRESET;
-		goto out_put;
-	}
 	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -2156,7 +2156,6 @@ retry:
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
-out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);
 	return err;
 }
