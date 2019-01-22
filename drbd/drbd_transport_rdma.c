@@ -295,6 +295,10 @@ struct dtr_cm {
 #ifdef COMPAT_HAVE_IB_GET_DMA_MR
 	struct ib_mr *dma_mr;
 #endif
+	enum dtr_state state;
+	wait_queue_head_t state_wq;
+	unsigned long last_sent_jif;
+
 	struct work_struct establish_work;
 	struct work_struct disconnect_work;
 
@@ -303,8 +307,6 @@ struct dtr_cm {
 	struct work_struct end_tx_work;
 	atomic_t tx_descs_posted;
 
-	enum dtr_state state;
-	wait_queue_head_t state_wq;
 	struct rcu_head rcu;
 };
 
@@ -2063,30 +2065,48 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 						     enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &rdma_transport->transport;
-	struct dtr_path *path;
+	struct dtr_path *path, *candidate = NULL;
+	unsigned long last_sent_jif = -1UL;
 	struct dtr_cm *cm;
 
-	/* TOOD: Could try to balance along the paths in a more clever way */
+	/* Within in 16 jiffy use one path, in case we switch to an other one,
+	   use that that was used longest ago */
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[stream];
+		unsigned long ls;
 
-		if (!dtr_path_ok(path))
+		cm = rcu_dereference(path->cm);
+		if (!cm || cm->state != CONNECTED)
 			continue;
 
 		/* Normal packets are not allowed to consume all of the peer's rx_descs,
 		   the last one is reserved for flow-control messages. */
-		if (atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
-		    atomic_read(&flow->peer_rx_descs) > 1) {
-			cm = __dtr_path_get_cm(path);
+		if (atomic_read(&flow->tx_descs_posted) >= flow->tx_descs_max ||
+		    atomic_read(&flow->peer_rx_descs) <= 1)
+			continue;
+
+		ls = cm->last_sent_jif;
+		if ((ls & ~0xfUL) == (jiffies & ~0xfUL) && kref_get_unless_zero(&cm->kref)) {
 			rcu_read_unlock();
 			return cm;
 		}
+		if (ls < last_sent_jif) {
+			last_sent_jif = ls;
+			candidate = path;
+		}
+	}
+
+	if (candidate) {
+		cm = __dtr_path_get_cm(candidate);
+		cm->last_sent_jif = jiffies;
+	} else {
+		cm = NULL;
 	}
 	rcu_read_unlock();
 
-	return NULL;
+	return cm;
 }
 
 static int dtr_repost_tx_desc(struct dtr_transport *rdma_transport,
