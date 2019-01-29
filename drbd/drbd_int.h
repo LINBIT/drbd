@@ -1172,7 +1172,7 @@ struct drbd_peer_device {
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
-	unsigned long rs_last_mk_req_jif;
+	ktime_t rs_last_mk_req_kt;
 	unsigned long ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
 
