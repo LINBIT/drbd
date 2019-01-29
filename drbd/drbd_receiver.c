@@ -218,6 +218,17 @@ static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
 	return NULL;
 }
 
+static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
+{
+	int rs_sect_in = atomic_add_return(size >> 9, &peer_device->rs_sect_in);
+
+	/* In case resync runs faster than anticipated, run the resync_work early */
+	if (rs_sect_in >= peer_device->rs_in_flight)
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
+}
+
 /* kick lower level device, if we have more than (arbitrary number)
  * reference counts on it, which typically are locally submitted io
  * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
@@ -2273,7 +2284,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		drbd_send_ack_dp(peer_device, P_NEG_ACK, &d);
 	}
 
-	atomic_add(d.bi_size >> 9, &peer_device->rs_sect_in);
+	rs_sectors_came_in(peer_device, d.bi_size);
 
 	return err;
 }
@@ -3286,7 +3297,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			peer_device->use_csums = true;
 		} else if (pi->cmd == P_OV_REPLY) {
 			/* track progress, we may need to throttle */
-			atomic_add(size >> 9, &peer_device->rs_sect_in);
+			rs_sectors_came_in(peer_device, size);
 			peer_req->w.cb = w_e_end_ov_reply;
 			dec_rs_pending(peer_device);
 			/* drbd_rs_begin_io done when we sent this request,
@@ -7520,7 +7531,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		drbd_send_ack_ex(peer_device, P_NEG_ACK, sector, size, ID_SYNCER);
 	}
 
-	atomic_add(size >> 9, &peer_device->rs_sect_in);
+	rs_sectors_came_in(peer_device, size);
 
 	return err;
 }
@@ -8382,7 +8393,7 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 		put_ldev(device);
 	}
 	dec_rs_pending(peer_device);
-	atomic_add(blksize >> 9, &peer_device->rs_sect_in);
+	rs_sectors_came_in(peer_device, blksize);
 
 	return 0;
 }
@@ -8555,7 +8566,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 				mutex_unlock(&device->bm_resync_fo_mutex);
 			}
 
-			atomic_add(size >> 9, &peer_device->rs_sect_in);
+			rs_sectors_came_in(peer_device, size);
 			mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 			break;
 		default:
