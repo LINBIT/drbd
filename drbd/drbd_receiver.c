@@ -4595,7 +4595,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			new_peer_device_conf->c_fill_target = be32_to_cpu(p->c_fill_target);
 			new_peer_device_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
 
-			fifo_size = (new_peer_device_conf->c_plan_ahead * 10 * SLEEP_TIME) / HZ;
+			fifo_size = (new_peer_device_conf->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ;
 			old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
 				lockdep_is_held(&resource->conf_update));
 			if (!old_plan || fifo_size != old_plan->size) {
@@ -8556,7 +8556,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 			}
 
 			atomic_add(size >> 9, &peer_device->rs_sect_in);
-			mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
+			mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 			break;
 		default:
 			BUG();
