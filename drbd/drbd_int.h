@@ -1623,7 +1623,7 @@ extern void tl_abort_disk_io(struct drbd_device *device);
  * Bit 1 ==> local node thinks this block needs to be synced.
  */
 
-#define SLEEP_TIME (HZ/10)
+#define RS_MAKE_REQS_INTV (HZ/10)
 
 /* We do bitmap IO in units of 4k blocks.
  * We also still have a hardcoded 4k per bit relation. */

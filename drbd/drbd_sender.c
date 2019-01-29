@@ -569,13 +569,13 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	pdc = rcu_dereference(peer_device->conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
 
-	steps = plan->size; /* (pdc->c_plan_ahead * 10 * SLEEP_TIME) / HZ; */
+	steps = plan->size; /* (pdc->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ; */
 
 	if (peer_device->rs_in_flight + sect_in == 0) { /* At start of resync */
-		want = ((pdc->resync_rate * 2 * SLEEP_TIME) / HZ) * steps;
+		want = ((pdc->resync_rate * 2 * RS_MAKE_REQS_INTV) / HZ) * steps;
 	} else { /* normal path */
 		want = pdc->c_fill_target ? pdc->c_fill_target :
-			sect_in * pdc->c_delay_target * HZ / (SLEEP_TIME * 10);
+			sect_in * pdc->c_delay_target * HZ / (RS_MAKE_REQS_INTV * 10);
 	}
 
 	correction = want - peer_device->rs_in_flight - plan->total;
@@ -593,7 +593,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	if (req_sect < 0)
 		req_sect = 0;
 
-	max_sect = (pdc->c_max_rate * 2 * SLEEP_TIME) / HZ;
+	max_sect = (pdc->c_max_rate * 2 * RS_MAKE_REQS_INTV) / HZ;
 	if (req_sect > max_sect)
 		req_sect = max_sect;
 
@@ -620,10 +620,10 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in) >> (BM_BLOCK_SHIFT - 9);
-		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / SLEEP_TIME;
+		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / RS_MAKE_REQS_INTV;
 	} else {
 		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
-		number = SLEEP_TIME * peer_device->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
+		number = RS_MAKE_REQS_INTV * peer_device->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
 	}
 	rcu_read_unlock();
 
@@ -818,7 +818,7 @@ next_sector:
 
  requeue:
 	peer_device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
+	mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 	put_ldev(device);
 	return 0;
 }
@@ -872,7 +872,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
  requeue:
 	peer_device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
 	if (i == 0 || !stop_sector_reached)
-		mod_timer(&peer_device->resync_timer, jiffies + SLEEP_TIME);
+		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 	return 1;
 }
 

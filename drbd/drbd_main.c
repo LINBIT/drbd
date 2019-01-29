@@ -1538,7 +1538,7 @@ int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(lo
 	pdc = rcu_dereference_protected(peer_device->conf,
 		lockdep_is_held(&peer_device->device->resource->conf_update));
 
-	resync_plan = fifo_alloc((pdc->c_plan_ahead * 10 * SLEEP_TIME) / HZ);
+	resync_plan = fifo_alloc((pdc->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ);
 	if (!resync_plan)
 		goto out;
 	resync_lru = lc_create("resync", drbd_bm_ext_cache,
