@@ -941,6 +941,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	connect_to_path = container_of(drbd_path, struct dtt_path, path);
 	spin_unlock(&tcp_transport->paths_lock);
 
+	ok = false;
 	do {
 		struct socket *s = NULL;
 
