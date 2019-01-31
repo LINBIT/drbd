@@ -1335,7 +1335,7 @@ static inline struct inode *file_inode(const struct file *file)
 #else
 /* timer interface before v4.16 */
 #define DRBD_TIMER_FN_ARG unsigned long data
-#define DRBD_TIMER_ARG2OBJ(OBJ, MEMBER) (struct drbd_##OBJ *) data
+#define DRBD_TIMER_ARG2OBJ(OBJ, MEMBER) (typeof(OBJ)) data
 #define drbd_timer_setup(OBJ, MEMBER, TIMER_FN) setup_timer(&OBJ->MEMBER, TIMER_FN, (unsigned long)OBJ)
 #define DRBD_TIMER_CALL_ARG(OBJ, MEMBER) (unsigned long) OBJ
 #endif
