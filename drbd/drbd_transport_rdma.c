@@ -298,14 +298,16 @@ struct dtr_cm {
 	enum dtr_state state;
 	wait_queue_head_t state_wq;
 	unsigned long last_sent_jif;
+	atomic_t tx_descs_posted;
+	struct timer_list tx_timeout;
 
+	struct work_struct tx_timeout_work;
 	struct work_struct establish_work;
 	struct work_struct disconnect_work;
 
 	struct list_head error_rx_descs;
 	struct work_struct end_rx_work;
 	struct work_struct end_tx_work;
-	atomic_t tx_descs_posted;
 
 	struct rcu_head rcu;
 };
@@ -369,6 +371,8 @@ static int dtr_activate_path(struct dtr_path *path);
 static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
+static void dtr_tx_timeout_fn(DRBD_TIMER_FN_ARG);
+static void dtr_tx_timeout_work_fn(struct work_struct *work);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -972,7 +976,9 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
 	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
+	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
+	drbd_timer_setup(cm, tx_timeout, dtr_tx_timeout_fn);
 
 	return cm;
 }
@@ -1553,6 +1559,38 @@ static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_des
 	}
 }
 
+static void dtr_tx_timeout_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, tx_timeout_work);
+	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
+	struct drbd_transport *transport;
+	struct dtr_path *path = cm->path;
+	int err;
+
+	if (cm->state != CONNECTED || !path)
+		goto out;
+
+	transport = &path->rdma_transport->transport;
+	tr_warn(transport, "%pI4 - %pI4: tx timeout\n",
+		&((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
+		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
+
+	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
+	if (err)
+		pr_err("ib_modify_qp failed %d\n", err);
+
+out:
+	kref_put(&cm->kref, dtr_destroy_cm);
+}
+
+static void dtr_tx_timeout_fn(DRBD_TIMER_FN_ARG)
+{
+	struct dtr_cm *cm = DRBD_TIMER_ARG2OBJ(cm, tx_timeout);
+
+	kref_get(&cm->kref);
+	schedule_work(&cm->tx_timeout_work);
+}
+
 static bool higher_in_sequence(unsigned int higher, unsigned int base)
 {
 	/*
@@ -1800,6 +1838,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 out:
 	dtr_free_tx_desc(cm, tx_desc);
 	if (atomic_dec_and_test(&cm->tx_descs_posted)) {
+		del_timer(&cm->tx_timeout);
 		if (cm->state == CONNECTED)
 			kref_put(&cm->kref, dtr_destroy_cm); /* this is _not_ the last ref */
 		else
@@ -2052,8 +2091,18 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
 	if (!err) {
+		struct drbd_transport *transport = &rdma_transport->transport;
+		unsigned long timeout;
+		struct net_conf *nc;
+
 		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
 			kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
+
+		rcu_read_lock();
+		nc = rcu_dereference(transport->net_conf);
+		timeout = nc->ping_timeo;
+		rcu_read_unlock();
+		mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
 	} else {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 	}
