@@ -2033,8 +2033,12 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
-	if (err)
+	if (!err) {
+		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
+			kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
+	} else {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
+	}
 
 	return err;
 }
@@ -2116,15 +2120,10 @@ retry:
 	}
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
-
-	if (!err) {
+	if (!err)
 		atomic_inc(&flow->tx_descs_posted);
-
-		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
-			return err; /* keep a reference on cm */
-	} else {
+	else
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
-	}
 
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 out_put:
