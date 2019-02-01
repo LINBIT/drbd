@@ -346,7 +346,7 @@ static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
-static int dtr_repost_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
+static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc);
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_transport *, enum drbd_stream,
 				struct dtr_rx_desc **);
@@ -1818,7 +1818,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		cm->state = ERROR;
 
 		if (stream_nr != ST_FLOW_CTRL) {
-			err = dtr_repost_tx_desc(rdma_transport, tx_desc);
+			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
 				return 0; /* Not freeing it */
 
@@ -2158,17 +2158,61 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 	return cm;
 }
 
-static int dtr_repost_tx_desc(struct dtr_transport *rdma_transport,
+static void dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 			      struct dtr_tx_desc *tx_desc)
 {
+	struct ib_device *device = old_cm->id->device;
+	int i, nr_sges;
+	dma_addr_t a = 0;
+
+	switch (tx_desc->type) {
+	case SEND_PAGE:
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		break;
+	case SEND_MSG:
+		ib_dma_unmap_single(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		break;
+	case SEND_BIO:
+		nr_sges = tx_desc->nr_sges;
+		for (i = 0; i < nr_sges; i++)
+			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
+					  DMA_TO_DEVICE);
+		break;
+	}
+
+	device = cm->id->device;
+	switch (tx_desc->type) {
+	case SEND_PAGE:
+		a = ib_dma_map_page(device, tx_desc->page, tx_desc->sge[0].addr & ~PAGE_MASK,
+				    tx_desc->sge[0].length, DMA_TO_DEVICE);
+		break;
+	case SEND_MSG:
+		a = ib_dma_map_single(device, tx_desc->data, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		break;
+	case SEND_BIO:
+#if SENDER_COMPACTS_BVECS
+		#error implement me
+#endif
+		break;
+	}
+
+	tx_desc->sge[0].addr = a;
+	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
+}
+
+
+static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc)
+{
+	struct dtr_transport *rdma_transport = old_cm->path->rdma_transport;
 	struct dtr_cm *cm;
-	int err = -ECONNRESET;
+	int err;
 
 	do {
 		cm = dtr_select_and_get_cm_for_tx(rdma_transport, tx_desc->stream_nr);
-		if (!cm) {
-			break;
-		}
+		if (!cm)
+			return -ECONNRESET;
+
+		dtr_remap_tx_desc(old_cm, cm, tx_desc);
 		err = __dtr_post_tx_desc(cm, tx_desc);
 		kref_put(&cm->kref, dtr_destroy_cm);
 	} while (err);
