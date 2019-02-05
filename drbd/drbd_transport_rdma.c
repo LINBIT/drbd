@@ -192,7 +192,7 @@ struct dtr_tx_desc {
 		SEND_BIO,
 	} type;
 	int nr_sges;
-	enum dtr_stream_nr stream_nr;
+	union dtr_immediate imm;
 	struct ib_sge sge[0]; /* must be last! */
 };
 
@@ -622,7 +622,8 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
 	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 	tx_desc->sge[0].length = size;
-	tx_desc->stream_nr = ST_FLOW_CTRL;
+	tx_desc->imm = (union dtr_immediate)
+		{ .stream = ST_FLOW_CTRL, .sequence = 0 };
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
 out_put:
@@ -1800,7 +1801,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		return -EAGAIN;
 
 	tx_desc = (struct dtr_tx_desc *) (unsigned long) wc.wr_id;
-	stream_nr = tx_desc->stream_nr;
+	stream_nr = tx_desc->imm.stream;
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
@@ -2069,20 +2070,14 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport = cm->path->rdma_transport;
 	struct ib_send_wr send_wr, *send_wr_failed;
-	enum dtr_stream_nr stream_nr = tx_desc->stream_nr;
 	struct ib_device *device = cm->id->device;
-	union dtr_immediate immediate;
 	int i, err = -EIO;
-
-	immediate.stream = stream_nr;
-	immediate.sequence = stream_nr == ST_FLOW_CTRL ? 0 :
-		             rdma_transport->stream[stream_nr].tx_sequence++;
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
 	send_wr.sg_list = tx_desc->sge;
 	send_wr.num_sge = tx_desc->nr_sges;
-	send_wr.ex.imm_data = cpu_to_be32(immediate.i);
+	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm.i);
 	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
@@ -2208,7 +2203,7 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 	int err;
 
 	do {
-		cm = dtr_select_and_get_cm_for_tx(rdma_transport, tx_desc->stream_nr);
+		cm = dtr_select_and_get_cm_for_tx(rdma_transport, tx_desc->imm.stream);
 		if (!cm)
 			return -ECONNRESET;
 
@@ -2223,7 +2218,7 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 			    struct dtr_tx_desc *tx_desc)
 {
-	enum drbd_stream stream = tx_desc->stream_nr;
+	enum drbd_stream stream = tx_desc->imm.stream;
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct ib_device *device;
 	struct dtr_flow *flow;
@@ -2959,7 +2954,10 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
-	tx_desc->stream_nr = stream;
+	tx_desc->imm = (union dtr_immediate)
+		{ .stream = stream,
+		  .sequence = rdma_transport->stream[stream].tx_sequence++
+		};
 	tx_desc->sge[0].length = size;
 	tx_desc->sge[0].lkey = offset; /* abusing lkey fild. See dtr_post_tx_desc() */
 
@@ -3037,7 +3035,10 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 	}
 
 	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
-	tx_desc->stream_nr = ST_DATA;
+	tx_desc->imm = (union dtr_immediate)
+		{ .stream = ST_DATA,
+		  .sequence = rdma_transport->stream[ST_DATA].tx_sequence++
+		};
 
 	err = dtr_post_tx_desc(rdma_stream, tx_desc, &path);
 	if (err) {
