@@ -1152,16 +1152,13 @@ static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 	}
 }
 
-static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm)
+static void dtr_remove_cm_from_path(struct dtr_path *path, struct dtr_cm *failed_cm)
 {
-	struct drbd_transport *transport = &path->rdma_transport->transport;
-	struct dtr_connect_state *cs = &path->cs;
-	long connect_int = 10 * HZ;
-	struct net_conf *nc;
 	struct dtr_cm *cm;
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
 	if (cm == failed_cm) {
+		struct drbd_transport *transport = &path->rdma_transport->transport;
 		struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 		int err;
 
@@ -1171,6 +1168,16 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
+}
+
+static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm)
+{
+	struct drbd_transport *transport = &path->rdma_transport->transport;
+	struct dtr_connect_state *cs = &path->cs;
+	long connect_int = 10 * HZ;
+	struct net_conf *nc;
+
+	dtr_remove_cm_from_path(path, failed_cm);
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -1563,10 +1570,8 @@ static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_des
 static void dtr_tx_timeout_work_fn(struct work_struct *work)
 {
 	struct dtr_cm *cm = container_of(work, struct dtr_cm, tx_timeout_work);
-	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	struct drbd_transport *transport;
 	struct dtr_path *path = cm->path;
-	int err;
 
 	if (cm->state != CONNECTED || !path)
 		goto out;
@@ -1576,10 +1581,11 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 		&((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
 		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
 
-	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
-	if (err)
-		pr_err("ib_modify_qp failed %d\n", err);
-
+	dtr_remove_cm_from_path(path, cm);
+	path->path.established = false;
+	drbd_path_event(transport, &path->path);
+	kref_put(&cm->kref, dtr_destroy_cm); /* not expecting a disconnect */
+	dtr_activate_path(path);
 out:
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
