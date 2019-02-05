@@ -1821,11 +1821,10 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
-				return 0; /* Not freeing it */
-
-			tr_warn(transport, "repost of tx_desc failed! %d\n", err);
+				tx_desc = NULL; /* it is in the air again! Fly! */
+			else
+				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
 		}
-		goto out;
 	}
 
 	if (stream_nr != ST_FLOW_CTRL) {
@@ -1836,8 +1835,8 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		wake_up_interruptible(&rdma_stream->send_wq);
 	}
 
-out:
-	dtr_free_tx_desc(cm, tx_desc);
+	if (tx_desc)
+		dtr_free_tx_desc(cm, tx_desc);
 	if (atomic_dec_and_test(&cm->tx_descs_posted)) {
 		del_timer(&cm->tx_timeout);
 		if (cm->state == CONNECTED)
@@ -2199,16 +2198,21 @@ static void dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport = old_cm->path->rdma_transport;
+	enum drbd_stream stream = tx_desc->imm.stream;
 	struct dtr_cm *cm;
 	int err;
 
 	do {
-		cm = dtr_select_and_get_cm_for_tx(rdma_transport, tx_desc->imm.stream);
+		cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream);
 		if (!cm)
 			return -ECONNRESET;
 
 		dtr_remap_tx_desc(old_cm, cm, tx_desc);
 		err = __dtr_post_tx_desc(cm, tx_desc);
+		if (!err) {
+			struct dtr_flow *flow = &cm->path->flow[stream];
+			atomic_inc(&flow->tx_descs_posted);
+		}
 		kref_put(&cm->kref, dtr_destroy_cm);
 	} while (err);
 
