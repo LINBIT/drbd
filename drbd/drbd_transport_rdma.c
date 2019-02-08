@@ -3157,7 +3157,7 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 		[ST_CONTROL] = "control",
 	};
 	static const char *state_names[] = {
-		[0] = "(out of bounds)",
+		[0] = "not connected",
 		[IDLE] = "IDLE",
 		[LISTENING] = "LISTENING",
 		[CONNECT_REQUEST] = "CONNECT_REQUEST",
@@ -3172,22 +3172,16 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 	enum dtr_state s = 0;
 	struct dtr_cm *cm;
 
-	seq_printf(m, "%pI4 - %pI4:\n", &((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
-		   &((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
-
 	rcu_read_lock();
 	cm = rcu_dereference(path->cm);
 	if (cm)
 		s = cm->state;
 	rcu_read_unlock();
 
-	if (cm) {
-		if (s < 0 || s > ERROR)
-			s = 0; /* out of bounds */
-		seq_printf(m, " cm->state = %s\n", state_names[s]);
-	} else {
-		seq_printf(m, " not connected\n");
-	}
+	seq_printf(m, "%pI4 - %pI4: %s\n",
+		   &((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
+		   &((struct sockaddr_in *)&path->path.peer_addr)->sin_addr,
+		   state_names[s]);
 
 	if (dtr_path_ok(path)) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
