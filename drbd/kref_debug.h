@@ -7,9 +7,6 @@
 
 #define KREF_DEBUG_HOLDER_MAX 20
 
-extern struct list_head kref_debug_objects;
-extern spinlock_t kref_debug_lock;
-
 struct kref_debug_info;
 
 struct kref_debug_class {

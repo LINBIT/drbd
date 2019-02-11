@@ -7,8 +7,8 @@
 #include "drbd_wrappers.h"
 #include "kref_debug.h"
 
-struct list_head kref_debug_objects;
-spinlock_t kref_debug_lock;
+static struct list_head kref_debug_objects;
+static spinlock_t kref_debug_lock;
 
 void initialize_kref_debugging(void)
 {
