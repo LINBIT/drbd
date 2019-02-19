@@ -173,7 +173,7 @@ extern struct idr drbd_devices; /* RCU, updates: genl_lock() */
 extern struct list_head drbd_resources; /* RCU, updates: resources_mutex */
 extern struct mutex resources_mutex;
 
-struct req_interval {
+struct request_operation {
 	sector_t target_sector;
 	sector_t target_size_sectors;
 	unsigned int input_offset;
@@ -392,6 +392,9 @@ struct drbd_request {
 
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
+
+	/* TODO: might hurt performance to allocate this extra data for every request */
+	struct request_operation operation[DRBD_NODE_ID_MAX];
 };
 
 struct drbd_epoch {

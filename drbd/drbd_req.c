@@ -69,6 +69,54 @@ static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *r
 }
 #endif
 
+static void calculate_request_operation(const sector_t sector, const unsigned int size, struct request_operation *operation) {
+	/* TODO (striping experiment): calculate location respecting striping */
+	// int peer_device->node_id; <- determine which node we are sending to
+	// use fixed stripe/chunk size of (1 << 20) to avoid possible multi-splits
+	// if this write does not intersect any of this node's chunks, need to fake success
+	// can use similar to raid0.c:
+	// sector = bio->bi_iter.bi_sector;
+	// sectors = chunk_sects - (sector & (chunk_sects-1)); // remaining sectors in the chunk where the bio lands
+	// if (sectors < bio_sectors(bio)) { } // need to split
+	//
+	// determine which node to target:
+	// int chunksect_bits = ffz(~chunk_sects);
+	// /* find the sector offset inside the chunk */
+	// sect_in_chunk = sector & (chunk_sects - 1);
+	// chunk = sector >> chunksect_bits;
+	// nb_dev = 2;
+	// dev = chunk % nb_dev;
+	// chunk_on_dev = chunk / nb_dev;
+	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
+	// TODO: Might be able to use round_up/round_down to simplify this a little
+	const sector_t size_sectors = size >> 9;
+	const int chunksect_bits = ffz(~CHUNK_SECTORS);
+	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
+	const int nb_dev = DISK_COUNT;
+	const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
+	const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
+
+	/* bio starts in chunk on this node */
+	const int start_node_id = chunk % nb_dev;
+	struct request_operation *start_operation = &operation[start_node_id];
+
+	start_operation->target_sector = ((chunk / nb_dev) << chunksect_bits) + sector_in_chunk;
+	start_operation->target_size_sectors = min(remaining_in_chunk, size_sectors);
+	start_operation->input_offset = 0;
+	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", start_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
+
+	if (size_sectors > remaining_in_chunk) {
+		/* bio overflows into chunk on next node */
+		const int overflow_node_id = (start_node_id + 1) % nb_dev;
+		struct request_operation *overflow_operation = &operation[overflow_node_id];
+
+		overflow_operation->target_sector = ((chunk + 1) / nb_dev) << chunksect_bits;
+		overflow_operation->target_size_sectors = size_sectors - remaining_in_chunk;
+		overflow_operation->input_offset = remaining_in_chunk;
+		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
+	}
+}
+
 static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio *bio_src)
 {
 	struct drbd_request *req;
@@ -1460,9 +1508,9 @@ static int drbd_process_write_request(struct drbd_request *req)
 	int count = 0;
 
 	for_each_peer_device(peer_device, device) {
-		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+		struct request_operation *operation = &req->operation[peer_device->node_id];
 
-		if (!interval.target_size_sectors)
+		if (!operation->target_size_sectors)
 			continue;
 
 		remote = drbd_should_do_remote(peer_device, NOW);
@@ -1500,9 +1548,9 @@ static int drbd_process_read_request(struct drbd_request *req)
 	int count = 0;
 
 	for_each_peer_device(peer_device, device) {
-		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+		struct request_operation *operation = &req->operation[peer_device->node_id];
 
-		if (!interval.target_size_sectors)
+		if (!operation->target_size_sectors)
 			continue;
 
 		remote = peer_device->disk_state[NOW] == D_UP_TO_DATE;
@@ -1772,6 +1820,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		drbd_info(device, "## drbd_send_and_submit page: %p, len: %u, offset: %u, address: %p, %02hhx%02hhx\n",
 				bi_io_vec->bv_page, bi_io_vec->bv_len, bi_io_vec->bv_offset, address, ((unsigned char*) address)[0], ((unsigned char*) address)[1]);
 	}
+
+	calculate_request_operation(bi_iter->bi_sector, bi_iter->bi_size, req->operation);
 
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
@@ -2582,52 +2632,4 @@ void request_timer_fn(DRBD_TIMER_FN_ARG)
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
 		mod_timer(&device->request_timer, next_trigger_time);
 	}
-}
-
-struct req_interval calculate_req_interval(const sector_t sector, const unsigned int size, const int node_id) {
-	/* TODO (striping experiment): calculate location respecting striping */
-	// int peer_device->node_id; <- determine which node we are sending to
-	// use fixed stripe/chunk size of (1 << 20) to avoid possible multi-splits
-	// if this write does not intersect any of this node's chunks, need to fake success
-	// can use similar to raid0.c:
-	// sector = bio->bi_iter.bi_sector;
-	// sectors = chunk_sects - (sector & (chunk_sects-1)); // remaining sectors in the chunk where the bio lands
-	// if (sectors < bio_sectors(bio)) { } // need to split
-	//
-	// determine which node to target:
-	// int chunksect_bits = ffz(~chunk_sects);
-	// /* find the sector offset inside the chunk */
-	// sect_in_chunk = sector & (chunk_sects - 1);
-	// chunk = sector >> chunksect_bits;
-	// nb_dev = 2;
-	// dev = chunk % nb_dev;
-	// chunk_on_dev = chunk / nb_dev;
-	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
-	// TODO: Might be able to use round_up/round_down to simplify this a little
-	const sector_t size_sectors = size >> 9;
-	const int chunksect_bits = ffz(~CHUNK_SECTORS);
-	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
-	const int nb_dev = DISK_COUNT;
-	const int start_node_id = chunk % nb_dev;
-	const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
-	const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
-
-	struct req_interval interval;
-
-	if (node_id == start_node_id) {
-		/* bio starts in one of our chunks */
-		interval.target_sector = ((chunk / nb_dev) << chunksect_bits) + sector_in_chunk;
-		interval.target_size_sectors = min(remaining_in_chunk, size_sectors);
-		interval.input_offset = 0;
-	} else if (size_sectors > remaining_in_chunk) {
-		/* bio overflows into one of our chunks */
-		interval.target_sector = ((chunk + 1) / nb_dev) << chunksect_bits;
-		interval.target_size_sectors = size_sectors - remaining_in_chunk;
-		interval.input_offset = remaining_in_chunk;
-	} else {
-		/* no need to write */
-		interval.target_size_sectors = 0;
-	}
-
-	return interval;
 }

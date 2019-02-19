@@ -324,8 +324,6 @@ extern void __tl_walk(struct drbd_resource *const resource,
 extern void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req);
 extern bool drbd_should_do_remote(struct drbd_peer_device *, enum which_state);
 
-extern struct req_interval calculate_req_interval(const sector_t sector, const unsigned int size, const int node_id);
-
 /* this is in drbd_main.c */
 extern void drbd_restart_request(struct drbd_request *req);
 

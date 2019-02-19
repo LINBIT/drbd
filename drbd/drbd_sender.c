@@ -2739,10 +2739,10 @@ static int process_one_request(struct drbd_connection *connection)
 			what = OOS_HANDED_TO_NETWORK;
 		}
 	} else {
-		struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+		struct request_operation *operation = &req->operation[peer_device->node_id];
 		maybe_send_barrier(connection, req->epoch);
 		err = drbd_send_drequest(peer_device, P_DATA_REQUEST,
-				interval.target_sector, interval.target_size_sectors << 9, (unsigned long)req);
+				operation->target_sector, operation->target_size_sectors << 9, (unsigned long)req);
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 	}
 

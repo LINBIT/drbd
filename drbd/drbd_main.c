@@ -423,8 +423,8 @@ void tl_release(struct drbd_connection *connection,
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry(r, &resource->transfer_log, tl_requests) {
-		struct req_interval interval = calculate_req_interval(r->i.sector, r->i.size, connection->peer_node_id);
-		if (!interval.target_size_sectors)
+		struct request_operation *operation = &r->operation[connection->peer_node_id];
+		if (!operation->target_size_sectors)
 			continue;
 
 		if (!req) {
@@ -2287,15 +2287,15 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	const unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 	const int op = bio_op(req->master_bio);
 
-	struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+	struct request_operation *operation = &req->operation[peer_device->node_id];
 	// if nothing to send, error out
-	if (!interval.target_size_sectors) {
+	if (!operation->target_size_sectors) {
 		/* TODO: bail out better */
 		drbd_err(device, "## drbd_send_dblock nothing to send\n");
 		err = 0;
 		goto out;
 	}
-	drbd_info(device, "## send, peer %d, sector %llu, size %llu, input_offset %u\n", peer_device->node_id, (long long unsigned) interval.target_sector, (long long unsigned) interval.target_size_sectors, interval.input_offset);
+	drbd_info(device, "## send, peer %d, sector %llu, size %llu, input_offset %u\n", peer_device->node_id, (long long unsigned) operation->target_sector, (long long unsigned) operation->target_size_sectors, operation->input_offset);
 
 	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);
@@ -2322,7 +2322,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		}
 	}
 
-	p->sector = cpu_to_be64(interval.target_sector);
+	p->sector = cpu_to_be64(operation->target_sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio);
@@ -2350,7 +2350,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 					bio_iovec(req->master_bio) BVD bv_len);
 		err = __send_command(peer_device->connection, device->vnr, P_WSAME, DATA_STREAM);
 	} else {
-		additional_size_command(peer_device->connection, DATA_STREAM, interval.target_size_sectors << 9);
+		additional_size_command(peer_device->connection, DATA_STREAM, operation->target_size_sectors << 9);
 		err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
 	}
 	if (!err) {
@@ -2367,9 +2367,9 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 */
 		/* TODO (striping experiment): only send the relevant data for the peer */
 		struct bvec_iter iter = req->master_bio->bi_iter;
-		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, interval.input_offset << 9);
+		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
 //		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size)
-		err = _drbd_send_bio(peer_device, req->master_bio, &iter, interval.target_size_sectors << 9);
+		err = _drbd_send_bio(peer_device, req->master_bio, &iter, operation->target_size_sectors << 9);
 //		else
 //			err = _drbd_send_zc_bio(peer_device, req->master_bio, &iter);
 

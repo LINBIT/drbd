@@ -2231,7 +2231,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	int digest_size, err, expect;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
-	struct req_interval interval = calculate_req_interval(req->i.sector, req->i.size, peer_device->node_id);
+	struct request_operation *operation = &req->operation[peer_device->node_id];
 
 	digest_size = 0;
 	if (peer_device->connection->peer_integrity_tfm) {
@@ -2252,7 +2252,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	 */
 
 	iter = bio->bi_iter;
-	bvec_iter_advance(req->master_bio->bi_io_vec, &iter, interval.input_offset << 9);
+	bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
 	__bio_for_each_segment(bvec, bio, iter, iter) {
 		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
 		expect = min_t(int, data_size, bvec BVD bv_len);
