@@ -2038,6 +2038,9 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	bool discard_zeroes_if_aligned = true;
 	bool disable_write_same = false;
 
+	drbd_info(device, "## drbd_setup_queue_param");
+	blk_queue_logical_block_size(q, 1 << 12);
+	blk_queue_physical_block_size(q, 1 << 12);
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
 
