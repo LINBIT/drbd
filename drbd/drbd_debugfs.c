@@ -1039,7 +1039,7 @@ static int device_openers_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
 	struct drbd_resource *resource = device->resource;
-	ktime_t now = ktime_get();
+	ktime_t now = ktime_get_real();
 	struct opener *tmp;
 
 	mutex_lock(&resource->open_release);

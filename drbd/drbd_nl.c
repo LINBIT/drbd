@@ -1203,6 +1203,49 @@ out:
 	return rv;
 }
 
+static void opener_info(struct drbd_resource *resource,
+			struct sk_buff *reply_skb,
+			enum drbd_state_rv rv)
+{
+	struct drbd_device *device;
+	struct opener *o;
+	int i;
+
+	if (rv != SS_DEVICE_IN_USE) {
+		drbd_msg_put_info(reply_skb, "failed to demote");
+		return;
+	}
+
+	mutex_lock(&resource->open_release);
+
+	idr_for_each_entry(&resource->devices, device, i) {
+		struct timespec64 ts;
+		struct tm tm;
+
+		o = list_first_entry_or_null(&device->openers.list, struct opener, list);
+		if (!o)
+			continue;
+
+		ts = ktime_to_timespec64(o->opened);
+		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
+
+		drbd_msg_sprintf_info(reply_skb,
+				      "/dev/drbd%d opened by %s (pid %d) "
+				      "at %04ld-%02d-%02d %02d:%02d:%02d.%03ld",
+				      device->minor,
+				      o->comm, o->pid,
+				      tm.tm_year + 1900,
+				      tm.tm_mon + 1,
+				      tm.tm_mday,
+				      tm.tm_hour,
+				      tm.tm_min,
+				      tm.tm_sec,
+				      ts.tv_nsec / NSEC_PER_MSEC);
+		break;
+	}
+	mutex_unlock(&resource->open_release);
+}
+
 static const char *from_attrs_err_to_txt(int err)
 {
 	return	err == -ENOMSG ? "required attribute missing" :
@@ -1242,6 +1285,8 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
+		else
+			opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
 	}
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
@@ -5901,7 +5946,7 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* demote */
 	retcode = drbd_set_role(resource, R_SECONDARY, false, adm_ctx.reply_skb);
 	if (retcode < SS_SUCCESS) {
-		drbd_msg_put_info(adm_ctx.reply_skb, "failed to demote");
+		opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
 		goto out;
 	}
 

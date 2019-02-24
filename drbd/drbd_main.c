@@ -2601,7 +2601,7 @@ static void add_opener(struct drbd_device *device)
 
 	get_task_comm(opener->comm, current);
 	opener->pid = task_pid_nr(current);
-	opener->opened = ktime_get();
+	opener->opened = ktime_get_real();
 	list_add(&opener->list, &device->openers.list);
 	dynamic_drbd_dbg(device, "openers add: %s(%d)\n", opener->comm, opener->pid);
 }
