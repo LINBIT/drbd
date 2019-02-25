@@ -50,6 +50,7 @@ drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
 drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
 drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
 drbd-y += drbd_nla.o drbd_transport.o
+drbd-y += drbd_journal.o
 
 ifndef DISABLE_KREF_DEBUGGING_HERE
       override EXTRA_CFLAGS += -DCONFIG_KREF_DEBUG
