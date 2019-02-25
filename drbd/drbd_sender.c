@@ -183,6 +183,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 
 	if (block_id == ID_SYNCER)
 		do_wake = list_empty(&connection->sync_ee);
+	else if (device->use_journal)
+		do_wake = false;
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
 

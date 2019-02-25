@@ -100,7 +100,7 @@ void drbd_journal_close(struct drbd_backing_dev *bdev)
 int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
-	struct journal_entry_on_disk *entry = (struct journal_entry_on_disk *) journal->live_end;
+	struct journal_entry_on_disk *entry = journal->live_end;
 	void *next_entry = ((char *) entry->data) + peer_req->data_size;
 	u64 next_entry_offset = ((char *) next_entry) - ((char *) journal->entry_start);
 
@@ -123,12 +123,15 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
-	struct journal_header_on_disk *header = (struct journal_header_on_disk *) journal->memory_map;
-	struct journal_entry_on_disk *entry = (struct journal_entry_on_disk *) journal->live_end;
+	struct journal_header_on_disk *header = journal->memory_map;
+	struct journal_entry_on_disk *entry = journal->live_end;
+	void *next_entry = ((char *) entry->data) + peer_req->data_size;
 
 	/* ensure entry and data are persisted */
 	wmb();
 
 	/* commit by updating header */
 	memcpy_flushcache(&header->live_end, &entry->next, sizeof(header->live_end));
+
+	journal->live_end = next_entry;
 }
