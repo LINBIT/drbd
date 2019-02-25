@@ -1955,9 +1955,24 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (d->length == 0)
 		return peer_req;
 
-	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length - d->digest_size);
-	if (err)
-		goto fail;
+	peer_req->data_size = d->length - d->digest_size;
+	if (device->use_journal) {
+		err = drbd_journal_next(device, peer_req);
+		if (err)
+			goto fail;
+
+		drbd_info(device, "## read_in_block receiving into %p\n", peer_req->data);
+		err = tr_ops->recv(transport, DATA_STREAM, &peer_req->data, peer_req->data_size, CALLER_BUFFER);
+		drbd_info(device, "## read_in_block tr_ops->recv %d\n", err);
+		if (err != peer_req->data_size)
+			goto fail;
+
+		drbd_journal_commit(device, peer_req);
+	} else {
+		err = tr_ops->recv_pages(transport, &peer_req->page_chain, peer_req->data_size);
+		if (err)
+			goto fail;
+	}
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 		struct page *page;
@@ -1982,6 +1997,7 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	return peer_req;
 
 fail:
+	drbd_info(device, "## read_in_block fail");
 	drbd_free_peer_req(peer_req);
 	return NULL;
 }
@@ -2858,7 +2874,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, op == REQ_OP_WRITE_SAME);
 		D_ASSERT(peer_device, peer_req->page_chain.head != NULL);
-	} else if (peer_req->page_chain.head == NULL) {
+	} else if (!device->use_journal && peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
 		 * "empty" flushes are mapped to P_BARRIER,
 		 * and should never end up here.
@@ -2984,38 +3000,41 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * Remember the op_flags. */
 	peer_req->op_flags = op_flags;
 
-	err = prepare_activity_log(peer_req);
-	if (err == DRBD_PAL_DISCONNECTED)
-		goto disconnect_during_al_begin_io;
+	if (!device->use_journal) {
+		err = prepare_activity_log(peer_req);
+		if (err == DRBD_PAL_DISCONNECTED)
+			goto disconnect_during_al_begin_io;
 
-	/* Note: this now may or may not be "hot" in the activity log.
-	 * Still, it is the best time to record that we need to set the
-	 * out-of-sync bit, if we delay that until drbd_submit_peer_request(),
-	 * we may introduce a race with some re-attach on the peer.
-	 * Unless we want to guarantee that we drain all in-flight IO
-	 * whenever we receive a state change. Which I'm not sure about.
-	 * Use the EE_SET_OUT_OF_SYNC flag, to be acted on just before
-	 * the actual submit, when we can be sure it is "hot".
-	 */
-	if (peer_device->disk_state[NOW] < D_INCONSISTENT) {
-		peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
-		peer_req->flags |= EE_SET_OUT_OF_SYNC;
+		/* Note: this now may or may not be "hot" in the activity log.
+		 * Still, it is the best time to record that we need to set the
+		 * out-of-sync bit, if we delay that until drbd_submit_peer_request(),
+		 * we may introduce a race with some re-attach on the peer.
+		 * Unless we want to guarantee that we drain all in-flight IO
+		 * whenever we receive a state change. Which I'm not sure about.
+		 * Use the EE_SET_OUT_OF_SYNC flag, to be acted on just before
+		 * the actual submit, when we can be sure it is "hot".
+		 */
+		if (peer_device->disk_state[NOW] < D_INCONSISTENT) {
+			peer_req->flags &= ~EE_MAY_SET_IN_SYNC;
+			peer_req->flags |= EE_SET_OUT_OF_SYNC;
+		}
+
+		atomic_inc(&connection->active_ee_cnt);
+
+		if (err == DRBD_PAL_QUEUE) {
+			drbd_queue_peer_request(device, peer_req);
+			return 0;
+		}
+
+		err = drbd_submit_peer_request(device, peer_req, op, op_flags, DRBD_FAULT_DT_WR);
+		if (!err)
+			return 0;
+
+		drbd_al_complete_io(device, &peer_req->i);
 	}
-
-	atomic_inc(&connection->active_ee_cnt);
-
-	if (err == DRBD_PAL_QUEUE) {
-		drbd_queue_peer_request(device, peer_req);
-		return 0;
-	}
-
-	err = drbd_submit_peer_request(device, peer_req, op, op_flags, DRBD_FAULT_DT_WR);
-	if (!err)
-		return 0;
 
 	/* don't care for the reason here */
 	drbd_err(peer_device, "submit failed, triggering re-connect\n");
-	drbd_al_complete_io(device, &peer_req->i);
 
 disconnect_during_al_begin_io:
 	spin_lock_irq(&device->resource->req_lock);

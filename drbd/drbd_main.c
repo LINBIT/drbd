@@ -3662,6 +3662,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 4);
 	device->resource = resource;
+	device->use_journal = true;
 	device->minor = minor;
 	device->vnr = vnr;
 	device->device_conf = *device_conf;

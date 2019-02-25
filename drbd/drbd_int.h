@@ -41,6 +41,7 @@
 #include <linux/blkdev.h>
 #include <linux/backing-dev.h>
 #include <linux/genhd.h>
+#include <linux/dax.h>
 #include <linux/idr.h>
 #include <linux/lru_cache.h>
 #include <linux/prefetch.h>
@@ -420,7 +421,9 @@ struct drbd_peer_request {
 	 * FIXME merge with rcv_order or w.list? */
 	struct list_head wait_for_actlog;
 
-	struct drbd_page_chain_head page_chain;
+	struct drbd_page_chain_head page_chain; /* when not using pmem journal */
+	size_t data_size;
+	void *data; /* when using pmem journal */
 	unsigned int op_flags; /* to be used as bi_op_flags */
 	atomic_t pending_bios;
 	struct drbd_interval i;
@@ -702,10 +705,20 @@ struct drbd_md {
 	u32 al_size_4k; /* cached product of the above */
 };
 
+struct drbd_journal {
+	void *memory_map;
+	void *entry_start;
+	void *cache_start;
+	void *live_start;
+	void *live_end;
+};
+
 struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
+	struct dax_device *journal_dev;
 	struct drbd_md md;
+	struct drbd_journal journal;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
 };
@@ -1221,6 +1234,7 @@ struct drbd_device {
 	long magic;
 #endif
 	struct drbd_resource *resource;
+	bool use_journal;
 	struct list_head peer_devices;
 	struct list_head pending_bitmap_io;
 
@@ -2119,6 +2133,12 @@ extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sec
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_al_initialize(struct drbd_device *, void *);
+
+/* drbd_journal.c */
+extern int drbd_journal_open(struct drbd_backing_dev *bdev);
+extern void drbd_journal_close(struct drbd_backing_dev *bdev);
+extern int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req);
+extern void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req);
 
 /* drbd_nl.c */
 

@@ -2523,6 +2523,7 @@ static int open_backing_devices(struct drbd_device *device,
 		struct drbd_backing_dev *nbc)
 {
 	struct block_device *bdev;
+	int r;
 
 	bdev = open_backing_dev(device, new_disk_conf->backing_dev, device, true);
 	if (IS_ERR(bdev))
@@ -2548,6 +2549,13 @@ static int open_backing_devices(struct drbd_device *device,
 	if (IS_ERR(bdev))
 		return ERR_OPEN_MD_DISK;
 	nbc->md_bdev = bdev;
+
+	if (device->use_journal) {
+		r = drbd_journal_open(nbc);
+		if (r)
+			return r;
+	}
+
 	return NO_ERROR;
 }
 
@@ -2570,6 +2578,10 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 {
 	if (ldev == NULL)
 		return;
+
+	if (device->use_journal) {
+		drbd_journal_close(ldev);
+	}
 
 	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
 	close_backing_dev(device, ldev->backing_bdev, true);
