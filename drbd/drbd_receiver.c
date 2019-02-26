@@ -433,6 +433,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	drbd_clear_interval(&peer_req->i);
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	INIT_LIST_HEAD(&peer_req->wait_for_actlog);
+	INIT_LIST_HEAD(&peer_req->journal_order);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
@@ -3024,6 +3025,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
+	if (device->use_journal) {
+		list_add_tail(&peer_req->journal_order, &device->ldev->journal.live_entries);
+	}
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (connection->agreed_pro_version < 110) {
@@ -3041,8 +3045,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	peer_req->op_flags = op_flags;
 
 	if (device->use_journal) {
-		/* TODO: trigger writing out at some point */
-//		e_end_block(&peer_req->w, 0);
+		/* TODO: WARNING: this appears to move peer_req to done_ee leading to it possibly being freed... */
 		drbd_endio_write_sec_final(peer_req);
 		return 0;
 	} else {
@@ -8815,7 +8818,6 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		u64 in_sync_b, mask;
 
 		if (device->use_journal) {
-			/* TODO */
 			drbd_info(peer_device, "## write out from journal");
 			/* TODO: store and retrieve op and op_flags (as wire flags) */
 			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);

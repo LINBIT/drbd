@@ -421,6 +421,8 @@ struct drbd_peer_request {
 	 * FIXME merge with rcv_order or w.list? */
 	struct list_head wait_for_actlog;
 
+	struct list_head journal_order;
+
 	struct drbd_page_chain_head page_chain; /* when not using pmem journal */
 	size_t data_size;
 	void *data; /* when using pmem journal */
@@ -514,6 +516,9 @@ enum {
 
 	/* Hold reference in activity log */
 	__EE_IN_ACTLOG,
+
+	/* Request completed by backing device */
+	__EE_COMPLETE,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -532,6 +537,7 @@ enum {
 #define EE_APPLICATION		(1<<__EE_APPLICATION)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
+#define EE_COMPLETE		(1<<__EE_COMPLETE)
 
 /* flag bits per device */
 enum {
@@ -711,6 +717,7 @@ struct drbd_journal {
 	void *cache_start;
 	void *live_start;
 	void *live_end;
+	struct list_head live_entries;
 };
 
 struct drbd_backing_dev {
@@ -2139,6 +2146,7 @@ extern int drbd_journal_open(struct drbd_backing_dev *bdev);
 extern void drbd_journal_close(struct drbd_backing_dev *bdev);
 extern int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req);
 extern void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req);
+extern void drbd_journal_drop_until(struct drbd_device *device, struct drbd_peer_request *peer_req);
 
 /* drbd_nl.c */
 

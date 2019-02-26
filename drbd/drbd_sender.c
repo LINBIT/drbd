@@ -212,7 +212,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 {
 	struct drbd_peer_request *peer_req = bio->bi_private;
-	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 	bool is_write = bio_data_dir(bio) == WRITE;
 	bool is_discard = bio_op(bio) == REQ_OP_WRITE_ZEROES ||
 			  bio_op(bio) == REQ_OP_DISCARD;
@@ -229,9 +230,29 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
+		peer_req->flags |= EE_COMPLETE;
 		if (device->use_journal) {
-			/* TODO: Can drop from journal */
-			drbd_info(peer_req->peer_device, "## drbd_peer_request_endio with journal\n");
+			unsigned long flags = 0;
+			struct drbd_peer_request *tmp, *drop_until_peer_request = NULL;
+			drbd_info(peer_device, "## drbd_peer_request_endio with journal\n");
+
+			spin_lock_irqsave(&device->resource->req_lock, flags);
+			list_for_each_entry_safe(peer_req, tmp, &device->ldev->journal.live_entries, journal_order) {
+				drbd_info(peer_device, "## drbd_peer_request_endio consider removing from journal peer request at sector %llu\n", (unsigned long long) peer_req->i.sector);
+				if (peer_req->flags & EE_COMPLETE) {
+					list_del(&peer_req->journal_order);
+					drop_until_peer_request = peer_req;
+				} else {
+					break;
+				}
+			}
+			if (drop_until_peer_request) {
+				drbd_info(peer_device, "## drbd_peer_request_endio remove from journal peer requests up to %llu\n", (unsigned long long) drop_until_peer_request->i.sector);
+				drbd_journal_drop_until(device, drop_until_peer_request);
+			} else {
+				drbd_info(peer_device, "## drbd_peer_request_endio not removing from journal\n");
+			}
+			spin_unlock_irqrestore(&device->resource->req_lock, flags);
 			return;
 		}
 

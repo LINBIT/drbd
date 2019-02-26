@@ -135,3 +135,17 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 
 	journal->live_end = next_entry;
 }
+
+/**
+ * Drop entries up to and including the given request.
+ */
+void drbd_journal_drop_until(struct drbd_device *device, struct drbd_peer_request *peer_req)
+{
+	struct drbd_journal *journal = &device->ldev->journal;
+	struct journal_header_on_disk *header = journal->memory_map;
+	struct journal_entry_on_disk *entry = container_of(peer_req->data, struct journal_entry_on_disk, data);
+
+	memcpy_flushcache(&header->live_start, &entry->next, sizeof(header->live_start));
+
+	journal->live_start = peer_req;
+}

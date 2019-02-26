@@ -2633,6 +2633,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+	INIT_LIST_HEAD(&nbc->journal.live_entries);
 	spin_lock_init(&nbc->md.uuid_lock);
 
 	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
