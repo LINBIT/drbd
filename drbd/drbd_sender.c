@@ -229,6 +229,12 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
+		if (device->use_journal) {
+			/* TODO: Can drop from journal */
+			drbd_info(peer_req->peer_device, "## drbd_peer_request_endio with journal\n");
+			return;
+		}
+
 		if (is_write)
 			drbd_endio_write_sec_final(peer_req);
 		else

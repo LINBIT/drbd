@@ -1555,6 +1555,17 @@ static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_h
 	wait_event(connection->ee_wait, conn_wait_ee_cond(connection, head));
 }
 
+static struct page *persistent_memory_page(void *addr)
+{
+	/* TODO: if (is_vmalloc_addr(addr)) return vmalloc_to_page(addr); */
+	return virt_to_page(addr);
+}
+
+static unsigned persistent_memory_page_offset(void *addr)
+{
+	return (unsigned long)addr & (PAGE_SIZE - 1);
+}
+
 /**
  * drbd_submit_peer_request()
  * @device:	DRBD device.
@@ -1583,11 +1594,10 @@ int drbd_submit_peer_request(struct drbd_device *device,
 {
 	struct bio *bios = NULL;
 	struct bio *bio;
-	struct page *page = peer_req->page_chain.head;
 	sector_t sector = peer_req->i.sector;
 	unsigned data_size = peer_req->i.size;
 	unsigned n_bios = 0;
-	unsigned nr_pages = peer_req->page_chain.nr_pages;
+	unsigned nr_pages = device->use_journal ? 1 : peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
@@ -1649,45 +1659,62 @@ next_bio:
 	bios = bio;
 	++n_bios;
 
-	page_chain_for_each(page) {
-		unsigned off, len;
+	if (device->use_journal) {
+		struct page *page = persistent_memory_page(peer_req->data);
+		unsigned off = persistent_memory_page_offset(peer_req->data);
+		unsigned len = peer_req->data_size;
 		int res;
-
-		if (op == REQ_OP_READ) {
-			set_page_chain_offset(page, 0);
-			set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
-		}
-		off = page_chain_offset(page);
-		len = page_chain_size(page);
-
-		if (off > PAGE_SIZE || len > PAGE_SIZE - off || len > data_size || len == 0) {
-			drbd_err(device, "invalid page chain: offset %u size %u remaining data_size %u\n",
-					off, len, data_size);
-			err = -EINVAL;
-			goto fail;
-		}
-
 		res = bio_add_page(bio, page, len, off);
 		if (res <= 0) {
-			/* A single page must always be possible!
-			 * But in case it fails anyways,
-			 * we deal with it, and complain (below). */
-			if (bio->bi_vcnt == 0) {
-				drbd_err(device,
-					"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
-					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
-					 (unsigned long)bio->bi_flags);
-				err = -ENOSPC;
+			drbd_err(device,
+				"journal bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
+				bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
+				 (unsigned long)bio->bi_flags);
+			err = -ENOSPC;
+			goto fail;
+		}
+	} else {
+		struct page *page = peer_req->page_chain.head;
+		page_chain_for_each(page) {
+			unsigned off, len;
+			int res;
+
+			if (op == REQ_OP_READ) {
+				set_page_chain_offset(page, 0);
+				set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
+			}
+			off = page_chain_offset(page);
+			len = page_chain_size(page);
+
+			if (off > PAGE_SIZE || len > PAGE_SIZE - off || len > data_size || len == 0) {
+				drbd_err(device, "invalid page chain: offset %u size %u remaining data_size %u\n",
+						off, len, data_size);
+				err = -EINVAL;
 				goto fail;
 			}
-			goto next_bio;
+
+			res = bio_add_page(bio, page, len, off);
+			if (res <= 0) {
+				/* A single page must always be possible!
+				 * But in case it fails anyways,
+				 * we deal with it, and complain (below). */
+				if (bio->bi_vcnt == 0) {
+					drbd_err(device,
+						"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
+						bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
+						 (unsigned long)bio->bi_flags);
+					err = -ENOSPC;
+					goto fail;
+				}
+				goto next_bio;
+			}
+			data_size -= len;
+			sector += len >> 9;
+			--nr_pages;
 		}
-		data_size -= len;
-		sector += len >> 9;
-		--nr_pages;
+		D_ASSERT(device, data_size == 0);
+		D_ASSERT(device, page == NULL);
 	}
-	D_ASSERT(device, data_size == 0);
-	D_ASSERT(device, page == NULL);
 
 	atomic_set(&peer_req->pending_bios, n_bios);
 	/* for debugfs: update timestamp, mark as submitted */
@@ -8757,6 +8784,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 	u64 dagtag, in_sync;
 	struct drbd_peer_request *peer_req, *tmp, *furthest_peer_req = NULL;
 	struct list_head work_list;
+	int err;
 
 	dagtag = be64_to_cpu(p->dagtag);
 	in_sync = be64_to_cpu(p->mask);
@@ -8773,10 +8801,11 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		spin_unlock_irq(&resource->req_lock);
 
 		/* TODO: this may be normal in erasure coding world */
-		drbd_err(connection, "peer request with dagtag %llu not found\n", dagtag);
+		drbd_err(connection, "peer request with dagtag <= %llu not found\n", dagtag);
 		return -EIO;
 	}
 
+	/* TODO: need to keep list of peer requests that are in journal until writing out done */
 	list_cut_position(&work_list, &connection->peer_requests, &furthest_peer_req->recv_order);
 	spin_unlock_irq(&resource->req_lock);
 
@@ -8787,7 +8816,11 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 
 		if (device->use_journal) {
 			/* TODO */
-			drbd_info(peer_device, "## need to write out from journal");
+			drbd_info(peer_device, "## write out from journal");
+			/* TODO: store and retrieve op and op_flags (as wire flags) */
+			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);
+			if (err)
+				return err;
 			continue;
 		}
 
