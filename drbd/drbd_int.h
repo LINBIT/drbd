@@ -715,7 +715,6 @@ struct drbd_journal {
 	void *memory_map;
 	void *entry_start;
 	void *cache_start;
-	void *live_start;
 	void *live_end;
 	struct list_head live_entries;
 };
@@ -2146,7 +2145,7 @@ extern int drbd_journal_open(struct drbd_backing_dev *bdev);
 extern void drbd_journal_close(struct drbd_backing_dev *bdev);
 extern int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req);
 extern void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req);
-extern void drbd_journal_drop_until(struct drbd_device *device, struct drbd_peer_request *peer_req);
+extern void drbd_journal_drop_until(struct drbd_device *device, void *peer_req_data);
 
 /* drbd_nl.c */
 

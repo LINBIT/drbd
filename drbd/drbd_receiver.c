@@ -437,12 +437,16 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
+	drbd_info(peer_device, "## %s %p", __FUNCTION__, peer_req);
+
 	return peer_req;
 }
 
 void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+
+	drbd_info(peer_device, "## %s %p %s", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
@@ -451,6 +455,8 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
 	mempool_free(peer_req, &drbd_ee_mempool);
+
+	drbd_info(peer_device, "## %s %p %s done", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 }
 
 int drbd_free_peer_reqs(struct drbd_resource *resource, struct list_head *list, bool is_net_ee)
@@ -8782,6 +8788,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 
 	spin_lock_irq(&resource->req_lock);
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
+		drbd_info(peer_req->peer_device, "## got_peer_ack check req with dagtag %llu\n", peer_req->dagtag_sector);
 		if (dagtag <= peer_req->dagtag_sector)
 			furthest_peer_req = peer_req;
 		else
@@ -8811,26 +8818,26 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);
 			if (err)
 				return err;
-			continue;
+			list_del(&peer_req->recv_order);
+		} else {
+			D_ASSERT(peer_device, peer_req->flags & EE_IN_ACTLOG);
+
+			if (get_ldev(device)) {
+				if ((peer_req->flags & EE_WAS_ERROR) == 0)
+					in_sync_b = node_ids_to_bitmap(device, in_sync);
+				else
+					in_sync_b = 0;
+				mask = ~node_id_to_mask(device->ldev->md.peers,
+							connection->peer_node_id);
+
+				drbd_set_sync(device, peer_req->i.sector,
+					      peer_req->i.size, ~in_sync_b, mask);
+				drbd_al_complete_io(device, &peer_req->i);
+				put_ldev(device);
+			}
+			list_del(&peer_req->recv_order);
+			notify_sync_targets_or_free(peer_req, in_sync);
 		}
-
-		D_ASSERT(peer_device, peer_req->flags & EE_IN_ACTLOG);
-
-		if (get_ldev(device)) {
-			if ((peer_req->flags & EE_WAS_ERROR) == 0)
-				in_sync_b = node_ids_to_bitmap(device, in_sync);
-			else
-				in_sync_b = 0;
-			mask = ~node_id_to_mask(device->ldev->md.peers,
-						connection->peer_node_id);
-
-			drbd_set_sync(device, peer_req->i.sector,
-				      peer_req->i.size, ~in_sync_b, mask);
-			drbd_al_complete_io(device, &peer_req->i);
-			put_ldev(device);
-		}
-		list_del(&peer_req->recv_order);
-		notify_sync_targets_or_free(peer_req, in_sync);
 	}
 	return 0;
 }

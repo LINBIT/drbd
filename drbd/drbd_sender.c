@@ -233,7 +233,7 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 		peer_req->flags |= EE_COMPLETE;
 		if (device->use_journal) {
 			unsigned long flags = 0;
-			struct drbd_peer_request *tmp, *drop_until_peer_request = NULL;
+			struct drbd_peer_request *tmp, *drop_until_data = NULL;
 			drbd_info(peer_device, "## drbd_peer_request_endio with journal\n");
 
 			spin_lock_irqsave(&device->resource->req_lock, flags);
@@ -241,14 +241,15 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 				drbd_info(peer_device, "## drbd_peer_request_endio consider removing from journal peer request at sector %llu\n", (unsigned long long) peer_req->i.sector);
 				if (peer_req->flags & EE_COMPLETE) {
 					list_del(&peer_req->journal_order);
-					drop_until_peer_request = peer_req;
+					drbd_free_peer_req(peer_req);
+					drop_until_data = peer_req->data;
 				} else {
 					break;
 				}
 			}
-			if (drop_until_peer_request) {
-				drbd_info(peer_device, "## drbd_peer_request_endio remove from journal peer requests up to %llu\n", (unsigned long long) drop_until_peer_request->i.sector);
-				drbd_journal_drop_until(device, drop_until_peer_request);
+			if (drop_until_data) {
+				drbd_info(peer_device, "## drbd_peer_request_endio remove from journal peer requests\n");
+				drbd_journal_drop_until(device, drop_until_data);
 			} else {
 				drbd_info(peer_device, "## drbd_peer_request_endio not removing from journal\n");
 			}
@@ -2687,14 +2688,13 @@ static bool should_send_barrier(struct drbd_connection *connection, unsigned int
 {
 	if (!connection->send.seen_any_write_yet)
 		return false;
-	return connection->send.current_epoch_nr != epoch;
+	return connection->send.current_epoch_writes && connection->send.current_epoch_nr != epoch;
 }
 static void maybe_send_barrier(struct drbd_connection *connection, unsigned int epoch)
 {
 	/* re-init if first write on this connection */
 	if (should_send_barrier(connection, epoch)) {
-		if (connection->send.current_epoch_writes)
-			drbd_send_barrier(connection);
+		drbd_send_barrier(connection);
 		connection->send.current_epoch_nr = epoch;
 	}
 }
@@ -2717,16 +2717,18 @@ static int process_one_request(struct drbd_connection *connection)
 	if (drbd_req_is_write(req)) {
 		/* If a WRITE does not expect a barrier ack,
 		 * we are supposed to only send an "out of sync" info packet */
-		if (s & RQ_EXP_BARR_ACK) {
+		if (!(s & RQ_OOS)) {
 			u64 current_dagtag_sector =
 				req->dagtag_sector - (req->i.size >> 9);
 
 			re_init_if_first_write(connection, req->epoch);
-			maybe_send_barrier(connection, req->epoch);
+			if (s & RQ_EXP_BARR_ACK) {
+				maybe_send_barrier(connection, req->epoch);
+				connection->send.current_epoch_writes++;
+			}
 			if (current_dagtag_sector != connection->send.current_dagtag_sector)
 				drbd_send_dagtag(connection, current_dagtag_sector);
 
-			connection->send.current_epoch_writes++;
 			connection->send.current_dagtag_sector = req->dagtag_sector;
 
 			if (peer_device->todo.was_ahead) {
@@ -2737,7 +2739,7 @@ static int process_one_request(struct drbd_connection *connection)
 
 			err = drbd_send_dblock(peer_device, req);
 			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
-		} else if (s & RQ_OOS) {
+		} else {
 			/* this time, no connection->send.current_epoch_writes++;
 			 * If it was sent, it was the closing barrier for the last
 			 * replicated epoch, before we went into AHEAD mode.
@@ -2750,17 +2752,6 @@ static int process_one_request(struct drbd_connection *connection)
 			}
 			err = drbd_send_out_of_sync(peer_device, &req->i);
 			what = OOS_HANDED_TO_NETWORK;
-		} else {
-			connection->send.current_dagtag_sector = req->dagtag_sector;
-
-			if (peer_device->todo.was_ahead) {
-				clear_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags);
-				peer_device->todo.was_ahead = false;
-				drbd_send_current_state(peer_device);
-			}
-
-			err = drbd_send_dblock(peer_device, req);
-			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 		}
 	} else {
 		maybe_send_barrier(connection, req->epoch);

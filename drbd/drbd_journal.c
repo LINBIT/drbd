@@ -72,7 +72,6 @@ int drbd_journal_open(struct drbd_backing_dev *bdev)
 	bdev->journal.entry_start = ((struct journal_header_on_disk *) bdev->journal.memory_map)->entry_start;
 	/* TODO: read from journal */
 	bdev->journal.cache_start = bdev->journal.entry_start;
-	bdev->journal.live_start = bdev->journal.entry_start;
 	bdev->journal.live_end = bdev->journal.entry_start;
 
 	return 0;
@@ -139,13 +138,11 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 /**
  * Drop entries up to and including the given request.
  */
-void drbd_journal_drop_until(struct drbd_device *device, struct drbd_peer_request *peer_req)
+void drbd_journal_drop_until(struct drbd_device *device, void *peer_req_data)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct journal_header_on_disk *header = journal->memory_map;
-	struct journal_entry_on_disk *entry = container_of(peer_req->data, struct journal_entry_on_disk, data);
+	struct journal_entry_on_disk *entry = container_of(peer_req_data, struct journal_entry_on_disk, data);
 
 	memcpy_flushcache(&header->live_start, &entry->next, sizeof(header->live_start));
-
-	journal->live_start = peer_req;
 }
