@@ -1000,8 +1000,6 @@ static void one_flush_endio BIO_ENDIO_ARGS(struct bio *bio)
 
 	BIO_ENDIO_FN_START;
 
-	drbd_info(device, "## one_flush_endio\n");
-
 	if (status) {
 		ctx->error = blk_status_to_errno(status);
 		drbd_info(device, "local disk FLUSH FAILED with status %d\n", status);
@@ -1055,7 +1053,6 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 {
 	struct drbd_resource *resource = connection->resource;
 
-	drbd_info(connection, "## drbd_flush_after_epoch epoch %p\n", epoch);
 	if (resource->write_ordering >= WO_BDEV_FLUSH) {
 		struct drbd_device *device;
 		struct issue_flush_context ctx;
@@ -1073,7 +1070,6 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 			kref_debug_get(&device->kref_debug, 7);
 			rcu_read_unlock();
 
-			drbd_info(device, "## drbd_flush_after_epoch submit_one_flush\n");
 			submit_one_flush(device, &ctx);
 
 			rcu_read_lock();
@@ -1084,7 +1080,6 @@ static enum finish_epoch drbd_flush_after_epoch(struct drbd_connection *connecti
 		 * if disk-timeout is set? */
 		if (!atomic_dec_and_test(&ctx.pending))
 			wait_for_completion(&ctx.done);
-		drbd_info(connection, "## drbd_flush_after_epoch wait_for_completion done\n");
 
 		if (ctx.error) {
 			/* would rather check on EOPNOTSUPP, but that is not reliable.
@@ -1243,10 +1238,6 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 				schedule_flush = 1;
 			}
 		}
-		drbd_info(connection, "## drbd_may_finish_epoch %s %s list prev %p list current %p size %d active %d flags %llx\n",
-				finish ? "finish" : "do-not-finish", schedule_flush ? "schedule_flush" : "do-not-schedule_flush",
-				epoch->list.prev, &connection->current_epoch->list,
-				epoch_size, atomic_read(&epoch->active), (unsigned long long) epoch->flags);
 		if (finish) {
 			if (!(ev & EV_CLEANUP)) {
 				/* adjust for nr requests already confirmed via P_CONFIRM_STABLE, if any. */
@@ -1855,7 +1846,6 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	connection->current_epoch->barrier_nr = p->barrier;
 	connection->current_epoch->connection = connection;
 	rv = drbd_may_finish_epoch(connection, connection->current_epoch, EV_GOT_BARRIER_NR);
-	drbd_info(connection, "## receive_Barrier rv %d write_ordering %d\n", rv, connection->resource->write_ordering);
 
 	/* P_BARRIER_ACK may imply that the corresponding extent is dropped from
 	 * the activity log, which means it would not be resynced in case the
@@ -1873,9 +1863,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 	case WO_DRAIN_IO:
 		if (rv == FE_STILL_LIVE) {
 			set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &connection->current_epoch->flags);
-			drbd_info(connection, "## receive_Barrier conn_wait_active_ee_empty_or_disconnect\n");
 			conn_wait_active_ee_empty_or_disconnect(connection);
-			drbd_info(connection, "## receive_Barrier conn_wait_active_ee_empty_or_disconnect done\n");
 			rv = drbd_flush_after_epoch(connection, connection->current_epoch);
 		}
 		if (rv == FE_RECYCLED)

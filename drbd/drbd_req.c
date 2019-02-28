@@ -943,7 +943,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		/* queue work item to send data */
 		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
+		mod_rq_state(req, m, peer_device, 0, device->use_journal ? RQ_NET_QUEUED : RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
 
 		/* Close the epoch, in case it outgrew the limit.
 		 * Or if this is a "batch bio", and some of our peers is "old",
@@ -968,7 +968,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case QUEUE_FOR_SEND_OOS:
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_OOS);
 		break;
 
 	case READ_RETRY_REMOTE_CANCELED:
@@ -1037,7 +1037,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * see also notes above in HANDED_OVER_TO_NETWORK about
 		 * protocol != C */
 	ack_common:
-		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
+		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, device->use_journal ? RQ_NET_OK|RQ_NET_DONE : RQ_NET_OK);
 		break;
 
 	case POSTPONE_WRITE:

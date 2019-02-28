@@ -191,6 +191,9 @@ enum drbd_req_state_bits {
 	/* keep this last, its for the RQ_NET_MASK */
 	__RQ_NET_MAX,
 
+	/* Send out-of-sync */
+	__RQ_OOS,
+
 	/* We expect a receive ACK (wire proto B) */
 	__RQ_EXP_RECEIVE_ACK,
 
@@ -247,6 +250,8 @@ enum drbd_req_state_bits {
 #define RQ_NET_SIS         (1UL << __RQ_NET_SIS)
 
 #define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK)
+
+#define RQ_OOS             (1UL << __RQ_OOS)
 
 #define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
 #define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)

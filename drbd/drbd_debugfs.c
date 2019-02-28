@@ -94,6 +94,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		seq_print_rq_state_bit(m, s & RQ_EXP_RECEIVE_ACK, &sep, "B");
 		seq_print_rq_state_bit(m, s & RQ_EXP_WRITE_ACK, &sep, "C");
 		seq_print_rq_state_bit(m, s & RQ_EXP_BARR_ACK, &sep, "barr");
+		seq_print_rq_state_bit(m, s & RQ_OOS, &sep, "OOS");
 		if (sep == ' ')
 			seq_puts(m, " -");
 	}

@@ -2737,7 +2737,7 @@ static int process_one_request(struct drbd_connection *connection)
 
 			err = drbd_send_dblock(peer_device, req);
 			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
-		} else {
+		} else if (s & RQ_OOS) {
 			/* this time, no connection->send.current_epoch_writes++;
 			 * If it was sent, it was the closing barrier for the last
 			 * replicated epoch, before we went into AHEAD mode.
@@ -2750,6 +2750,17 @@ static int process_one_request(struct drbd_connection *connection)
 			}
 			err = drbd_send_out_of_sync(peer_device, &req->i);
 			what = OOS_HANDED_TO_NETWORK;
+		} else {
+			connection->send.current_dagtag_sector = req->dagtag_sector;
+
+			if (peer_device->todo.was_ahead) {
+				clear_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags);
+				peer_device->todo.was_ahead = false;
+				drbd_send_current_state(peer_device);
+			}
+
+			err = drbd_send_dblock(peer_device, req);
+			what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 		}
 	} else {
 		maybe_send_barrier(connection, req->epoch);
