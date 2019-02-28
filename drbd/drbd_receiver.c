@@ -8789,7 +8789,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 	spin_lock_irq(&resource->req_lock);
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
 		drbd_info(peer_req->peer_device, "## got_peer_ack check req with dagtag %llu\n", peer_req->dagtag_sector);
-		if (dagtag <= peer_req->dagtag_sector)
+		if (peer_req->dagtag_sector <= dagtag)
 			furthest_peer_req = peer_req;
 		else
 			break;
