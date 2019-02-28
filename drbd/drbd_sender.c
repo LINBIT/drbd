@@ -1650,16 +1650,18 @@ static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 		other_device = minor_to_device(resync_after);
 		if (!other_device)
 			break;
-		other_peer_device = conn_peer_device(peer_device->connection, other_device->vnr);
-		if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
-		     other_peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
-		    other_peer_device->resync_susp_dependency[NOW] ||
-		    other_peer_device->resync_susp_peer[NOW] ||
-		    other_peer_device->resync_susp_user[NOW]) {
-			ret = false;
-			break;
+		for_each_peer_device(other_peer_device, other_device) {
+			if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
+			     other_peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
+			    other_peer_device->resync_susp_dependency[NOW] ||
+			    other_peer_device->resync_susp_peer[NOW] ||
+			    other_peer_device->resync_susp_user[NOW]) {
+				ret = false;
+				goto break_unlock;
+			}
 		}
 	}
+break_unlock:
 	rcu_read_unlock();
 
 	return ret;
@@ -1677,6 +1679,8 @@ static bool drbd_pause_after(struct drbd_device *device)
 	bool changed = false;
 	int vnr;
 
+	/* FIXME seriously inefficient with many devices,
+	 * while also ignoring the input "device" argument :-( */
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, other_device, vnr) {
 		struct drbd_peer_device *other_peer_device;
@@ -1711,6 +1715,8 @@ static bool drbd_resume_next(struct drbd_device *device)
 	bool changed = false;
 	int vnr;
 
+	/* FIXME seriously inefficient with many devices,
+	 * while also ignoring the input "device" argument :-( */
 	rcu_read_lock();
 	idr_for_each_entry(&drbd_devices, other_device, vnr) {
 		struct drbd_peer_device *other_peer_device;
