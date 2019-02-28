@@ -36,16 +36,14 @@ int drbd_journal_open(struct drbd_backing_dev *bdev)
 	long nr_pages_request;
 	long nr_pages_alloc;
 	pfn_t pfn;
-//	char dest[20];
 
-	/* TODO: make configurable */
-	bdev->journal_dev = dax_get_by_host("pmem0");
+	bdev->journal_dax_dev = dax_get_by_host(bdev->journal_bdev->bd_disk->disk_name);
+	bdev->journal.known_size = i_size_read(bdev->journal_bdev->bd_inode) >> 9;
 
 	id = dax_read_lock();
 
-	// TODO: page count?
-	nr_pages_request = 1040384 >> 3;
-	nr_pages_alloc = dax_direct_access(bdev->journal_dev, 0, nr_pages_request, &bdev->journal.memory_map, &pfn);
+	nr_pages_request = bdev->journal.known_size >> (PAGE_SHIFT - SECTOR_SHIFT);
+	nr_pages_alloc = dax_direct_access(bdev->journal_dax_dev, 0, nr_pages_request, &bdev->journal.memory_map, &pfn);
 	printk("## dax_direct_access alloc: %ld %p %llx\n", nr_pages_alloc, bdev->journal.memory_map, pfn.val);
 
 	if (nr_pages_alloc < 0) {
@@ -85,7 +83,7 @@ err:
 
 void drbd_journal_close(struct drbd_backing_dev *bdev)
 {
-	put_dax(bdev->journal_dev);
+	put_dax(bdev->journal_dax_dev);
 }
 
 /**

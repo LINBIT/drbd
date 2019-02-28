@@ -2551,6 +2551,12 @@ static int open_backing_devices(struct drbd_device *device,
 	nbc->md_bdev = bdev;
 
 	if (device->use_journal) {
+		/* TODO: make configurable */
+		bdev = open_backing_dev(device, "/dev/pmem0", device, true);
+		if (IS_ERR(bdev))
+			return ERR_OPEN_DISK;
+		nbc->journal_bdev = bdev;
+
 		r = drbd_journal_open(nbc);
 		if (r)
 			return r;
@@ -2581,6 +2587,7 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 
 	if (device->use_journal) {
 		drbd_journal_close(ldev);
+		close_backing_dev(device, ldev->journal_bdev, true);
 	}
 
 	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);

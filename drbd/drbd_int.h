@@ -712,6 +712,7 @@ struct drbd_md {
 };
 
 struct drbd_journal {
+	sector_t known_size;
 	void *memory_map;
 	void *entry_start;
 	void *cache_start;
@@ -722,7 +723,8 @@ struct drbd_journal {
 struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
-	struct dax_device *journal_dev;
+	struct block_device *journal_bdev;
+	struct dax_device *journal_dax_dev;
 	struct drbd_md md;
 	struct drbd_journal journal;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
