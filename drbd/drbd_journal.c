@@ -46,6 +46,14 @@ static u64 entry_capacity(const struct drbd_journal *journal) {
 	return (journal->known_size << SECTOR_SHIFT) - JOURNAL_HEADER_SIZE;
 }
 
+#define SIGNUM(x, y) ((x > y) - (x < y))
+
+static bool circular_in_order(u64 live_start, u64 live_end, u64 next_entry)
+{
+	return live_start == live_end ||
+		SIGNUM(live_start, live_end) * SIGNUM(live_end, next_entry) * SIGNUM(next_entry, live_start) > 0;
+}
+
 int drbd_journal_open(struct drbd_backing_dev *bdev)
 {
 	int r;
@@ -85,6 +93,7 @@ int drbd_journal_open(struct drbd_backing_dev *bdev)
 	dax_read_unlock(id);
 
 	/* TODO: read from journal */
+	atomic64_set(&bdev->journal.live_start, 0);
 	bdev->journal.live_end = 0;
 
 	return 0;
@@ -99,6 +108,11 @@ err:
 void drbd_journal_close(struct drbd_backing_dev *bdev)
 {
 	put_dax(bdev->journal_dax_dev);
+
+	bdev->journal_dax_dev = NULL;
+	bdev->journal.memory_map = NULL;
+	printk("## wake journal wait; closing\n");
+	wake_up(&bdev->journal.journal_wait);
 }
 
 /**
@@ -107,24 +121,40 @@ void drbd_journal_close(struct drbd_backing_dev *bdev)
  * May block waiting for space to become free if the journal has insufficient
  * space.
  *
+ * drbd_journal_next and drbd_journal_commit require external synchronization
+ * for a given device.
+ *
  * The data location to write to is set on peer_req.
  */
 int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
+	struct drbd_connection *connection = peer_req->peer_device->connection;
 	struct journal_entry_on_disk *entry;
-	u64 next_entry_offset;
 
 	if (journal->live_end + entry_with_data_size(peer_req) > entry_capacity(journal)) {
 		journal->live_end = 0;
 	}
 
 	entry = entry_from_offset(journal, journal->live_end);
-	next_entry_offset = journal->live_end + entry_with_data_size(peer_req);
+	peer_req->next_entry_offset = journal->live_end + entry_with_data_size(peer_req);
+
+	/* wait until there is sufficient space */
+	drbd_info(device, "## journal wait; start %lld, need space from %llu to %llu\n",
+		atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset);
+	wait_event(journal->journal_wait,
+		circular_in_order(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset)
+			|| !journal->memory_map
+			|| connection->cstate[NOW] < C_CONNECTED);
+	if (journal->memory_map && connection->cstate[NOW] >= C_CONNECTED) {
+		drbd_info(device, "## journal wait done\n");
+	} else {
+		drbd_info(device, "## journal wait canceled\n");
+		return -ECANCELED;
+	}
 
 	memset(entry, 0, sizeof(*entry));
-	/* TODO: wait if insufficient space */
-	entry->next = cpu_to_be64(next_entry_offset);
+	entry->next = cpu_to_be64(peer_req->next_entry_offset);
 	entry->dagtag_sector = cpu_to_be64(peer_req->dagtag_sector);
 	entry->sector = cpu_to_be64(peer_req->i.sector);
 	entry->size = cpu_to_be64(peer_req->i.size);
@@ -141,26 +171,30 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 {
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct journal_header_on_disk *header = journal->memory_map;
-	struct journal_entry_on_disk *entry = entry_from_offset(journal, journal->live_end);
+	__be64 new_live_end = cpu_to_be64(peer_req->next_entry_offset);
 
 	/* ensure entry and data are persisted */
 	wmb();
 
 	/* commit by updating header */
-	memcpy_flushcache(&header->live_end, &entry->next, sizeof(header->live_end));
+	memcpy_flushcache(&header->live_end, &new_live_end, sizeof(header->live_end));
 
-	journal->live_end += entry_with_data_size(peer_req);
+	journal->live_end = peer_req->next_entry_offset;
 }
 
 /**
  * Drop entries up to and including the given request.
  */
-void drbd_journal_drop_until(struct drbd_device *device, void *peer_req_data)
+void drbd_journal_drop_until(struct drbd_device *device, u64 next_entry_offset)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct journal_header_on_disk *header = journal->memory_map;
-	struct journal_entry_on_disk *entry =
-		(struct journal_entry_on_disk *) (((char *) peer_req_data) - JOURNAL_ENTRY_SIZE);
+	__be64 new_live_start = cpu_to_be64(next_entry_offset);
 
-	memcpy_flushcache(&header->live_start, &entry->next, sizeof(header->live_start));
+	memcpy_flushcache(&header->live_start, &new_live_start, sizeof(header->live_start));
+
+	atomic64_set(&journal->live_start, next_entry_offset);
+
+	drbd_info(device, "## wake journal wait; new start %lld\n", next_entry_offset);
+	wake_up(&journal->journal_wait);
 }

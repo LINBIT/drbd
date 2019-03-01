@@ -233,7 +233,9 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 		peer_req->flags |= EE_COMPLETE;
 		if (device->use_journal) {
 			unsigned long flags = 0;
-			struct drbd_peer_request *tmp, *drop_until_data = NULL;
+			struct drbd_peer_request *tmp;
+			bool removed_entries = false;
+			u64 next_entry_offset;
 			drbd_info(peer_device, "## drbd_peer_request_endio with journal\n");
 
 			spin_lock_irqsave(&device->resource->req_lock, flags);
@@ -242,14 +244,15 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 				if (peer_req->flags & EE_COMPLETE) {
 					list_del(&peer_req->journal_order);
 					drbd_free_peer_req(peer_req);
-					drop_until_data = peer_req->data;
+					next_entry_offset = peer_req->next_entry_offset;
+					removed_entries = true;
 				} else {
 					break;
 				}
 			}
-			if (drop_until_data) {
+			if (removed_entries) {
 				drbd_info(peer_device, "## drbd_peer_request_endio remove from journal peer requests\n");
-				drbd_journal_drop_until(device, drop_until_data);
+				drbd_journal_drop_until(device, next_entry_offset);
 			} else {
 				drbd_info(peer_device, "## drbd_peer_request_endio not removing from journal\n");
 			}

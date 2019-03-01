@@ -426,6 +426,7 @@ struct drbd_peer_request {
 	struct drbd_page_chain_head page_chain; /* when not using pmem journal */
 	size_t data_size;
 	void *data; /* when using pmem journal */
+	u64 next_entry_offset; /* when using pmem journal */
 	unsigned int op_flags; /* to be used as bi_op_flags */
 	atomic_t pending_bios;
 	struct drbd_interval i;
@@ -714,8 +715,10 @@ struct drbd_md {
 struct drbd_journal {
 	sector_t known_size;
 	void *memory_map;
+	atomic64_t live_start; /* offset relative to end of header */
 	u64 live_end; /* offset relative to end of header */
 	struct list_head live_entries;
+	wait_queue_head_t journal_wait;
 };
 
 struct drbd_backing_dev {
@@ -2145,7 +2148,7 @@ extern int drbd_journal_open(struct drbd_backing_dev *bdev);
 extern void drbd_journal_close(struct drbd_backing_dev *bdev);
 extern int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req);
 extern void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req);
-extern void drbd_journal_drop_until(struct drbd_device *device, void *peer_req_data);
+extern void drbd_journal_drop_until(struct drbd_device *device, u64 next_entry_offset);
 
 /* drbd_nl.c */
 

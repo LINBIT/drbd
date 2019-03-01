@@ -7783,6 +7783,10 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	if (get_ldev(device)) {
 		drbd_bitmap_io(device, &drbd_bm_write_copy_pages, "write from disconnected",
 				BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT, peer_device);
+		if (device->use_journal) {
+			printk("## wake journal wait; peer_device_disconnected\n");
+			wake_up(&device->ldev->journal.journal_wait);
+		}
 		put_ldev(device);
 	}
 }
