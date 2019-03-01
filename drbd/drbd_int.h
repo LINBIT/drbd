@@ -714,9 +714,7 @@ struct drbd_md {
 struct drbd_journal {
 	sector_t known_size;
 	void *memory_map;
-	void *entry_start;
-	void *cache_start;
-	void *live_end;
+	u64 live_end; /* offset relative to end of header */
 	struct list_head live_entries;
 };
 

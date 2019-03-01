@@ -29,6 +29,23 @@
 #include "drbd_int.h"
 #include "drbd_meta_data.h"
 
+#define JOURNAL_HEADER_SIZE (sizeof(struct journal_header_on_disk))
+#define JOURNAL_ENTRY_SIZE (sizeof(struct journal_entry_on_disk))
+
+static struct journal_entry_on_disk *entry_from_offset(struct drbd_journal *journal, u64 offset)
+{
+	return (struct journal_entry_on_disk *) (((char *) journal->memory_map) + JOURNAL_HEADER_SIZE + offset);
+}
+
+static u64 entry_with_data_size(struct drbd_peer_request *peer_req)
+{
+	return JOURNAL_ENTRY_SIZE + peer_req->data_size;
+}
+
+static u64 entry_capacity(const struct drbd_journal *journal) {
+	return (journal->known_size << SECTOR_SHIFT) - JOURNAL_HEADER_SIZE;
+}
+
 int drbd_journal_open(struct drbd_backing_dev *bdev)
 {
 	int r;
@@ -67,10 +84,8 @@ int drbd_journal_open(struct drbd_backing_dev *bdev)
 
 	dax_read_unlock(id);
 
-	bdev->journal.entry_start = ((struct journal_header_on_disk *) bdev->journal.memory_map)->entry_start;
 	/* TODO: read from journal */
-	bdev->journal.cache_start = bdev->journal.entry_start;
-	bdev->journal.live_end = bdev->journal.entry_start;
+	bdev->journal.live_end = 0;
 
 	return 0;
 
@@ -97,12 +112,15 @@ void drbd_journal_close(struct drbd_backing_dev *bdev)
 int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
-	struct journal_entry_on_disk *entry = journal->live_end;
-	void *next_entry = ((char *) entry->data) + peer_req->data_size;
-	/* TODO: Do arithmetic with offsets instead of messing around with pointers */
-	u64 next_entry_offset = ((char *) next_entry) - ((char *) journal->memory_map) > journal->known_size << SECTOR_SHIFT ?
-		0 :
-		((char *) next_entry) - ((char *) journal->entry_start);
+	struct journal_entry_on_disk *entry;
+	u64 next_entry_offset;
+
+	if (journal->live_end + entry_with_data_size(peer_req) > entry_capacity(journal)) {
+		journal->live_end = 0;
+	}
+
+	entry = entry_from_offset(journal, journal->live_end);
+	next_entry_offset = journal->live_end + entry_with_data_size(peer_req);
 
 	memset(entry, 0, sizeof(*entry));
 	/* TODO: wait if insufficient space */
@@ -112,7 +130,7 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 	entry->size = cpu_to_be64(peer_req->i.size);
 	entry->data_size = cpu_to_be64(peer_req->data_size);
 
-	peer_req->data = entry->data;
+	peer_req->data = ((char *) entry) + JOURNAL_ENTRY_SIZE;
 	return 0;
 }
 
@@ -123,11 +141,7 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 {
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct journal_header_on_disk *header = journal->memory_map;
-	struct journal_entry_on_disk *entry = journal->live_end;
-	void *next_entry = ((char *) entry->data) + peer_req->data_size;
-	u64 next_entry_offset = ((char *) next_entry) - ((char *) journal->memory_map) > journal->known_size << SECTOR_SHIFT ?
-				0 :
-				((char *) next_entry) - ((char *) journal->entry_start);
+	struct journal_entry_on_disk *entry = entry_from_offset(journal, journal->live_end);
 
 	/* ensure entry and data are persisted */
 	wmb();
@@ -135,7 +149,7 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 	/* commit by updating header */
 	memcpy_flushcache(&header->live_end, &entry->next, sizeof(header->live_end));
 
-	journal->live_end = ((char *) journal->entry_start) + next_entry_offset;
+	journal->live_end += entry_with_data_size(peer_req);
 }
 
 /**
@@ -145,7 +159,8 @@ void drbd_journal_drop_until(struct drbd_device *device, void *peer_req_data)
 {
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct journal_header_on_disk *header = journal->memory_map;
-	struct journal_entry_on_disk *entry = container_of(peer_req_data, struct journal_entry_on_disk, data);
+	struct journal_entry_on_disk *entry =
+		(struct journal_entry_on_disk *) (((char *) peer_req_data) - JOURNAL_ENTRY_SIZE);
 
 	memcpy_flushcache(&header->live_start, &entry->next, sizeof(header->live_start));
 }
