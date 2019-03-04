@@ -434,6 +434,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	INIT_LIST_HEAD(&peer_req->wait_for_actlog);
 	INIT_LIST_HEAD(&peer_req->journal_order);
+	INIT_LIST_HEAD(&peer_req->journal_intervals);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
@@ -1657,7 +1658,7 @@ next_bio:
 	bios = bio;
 	++n_bios;
 
-	if (device->use_journal) {
+	if (device->use_journal && op != REQ_OP_READ) {
 		struct page *page = persistent_memory_page(peer_req->data);
 		unsigned off = persistent_memory_page_offset(peer_req->data);
 		unsigned len = peer_req->data_size;
@@ -1672,6 +1673,8 @@ next_bio:
 			goto fail;
 		}
 	} else {
+		/* TODO: fill in data from journal when we have it; only create bios for the gaps */
+		/* TODO: warning - journal may contain multiple entries for the same location */
 		struct page *page = peer_req->page_chain.head;
 		page_chain_for_each(page) {
 			unsigned off, len;
@@ -3019,9 +3022,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
-	if (device->use_journal) {
-		list_add_tail(&peer_req->journal_order, &device->ldev->journal.live_entries);
-	}
 	spin_unlock_irq(&device->resource->req_lock);
 
 	if (connection->agreed_pro_version < 110) {
@@ -3039,7 +3039,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	peer_req->op_flags = op_flags;
 
 	if (device->use_journal) {
-		/* TODO: WARNING: this appears to move peer_req to done_ee leading to it possibly being freed... */
 		drbd_endio_write_sec_final(peer_req);
 		return 0;
 	} else {
@@ -3086,6 +3085,7 @@ disconnect_during_al_begin_io:
 	spin_unlock_irq(&device->resource->req_lock);
 
 out_interrupted:
+	/* TODO: remove from journal? */
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
 	drbd_free_peer_req(peer_req);

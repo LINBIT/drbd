@@ -413,6 +413,12 @@ struct digest_info {
 	void *digest;
 };
 
+/* segment of backing data currently contained in the journal */
+struct drbd_journal_interval {
+	struct list_head list;
+	struct drbd_interval i;
+};
+
 struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
@@ -423,13 +429,14 @@ struct drbd_peer_request {
 
 	struct list_head journal_order;
 
-	struct drbd_page_chain_head page_chain; /* when not using pmem journal */
+	struct drbd_page_chain_head page_chain; /* for reads or when not using pmem journal */
 	size_t data_size;
-	void *data; /* when using pmem journal */
+	void *data; /* for writes using pmem journal */
 	u64 next_entry_offset; /* when using pmem journal */
 	unsigned int op_flags; /* to be used as bi_op_flags */
 	atomic_t pending_bios;
 	struct drbd_interval i;
+	struct list_head journal_intervals;
 	unsigned long flags;	/* see comments on ee flag bits below */
 	union {
 		struct { /* regular peer_request */
@@ -718,6 +725,7 @@ struct drbd_journal {
 	atomic64_t live_start; /* offset relative to end of header */
 	u64 live_end; /* offset relative to end of header */
 	struct list_head live_entries;
+	struct rb_root intervals;
 	wait_queue_head_t journal_wait;
 };
 
