@@ -1890,6 +1890,11 @@ static void decide_on_discard_support(struct drbd_device *device,
 	 */
 	bool can_do = b ? blk_queue_discard(b) : true;
 
+	if (can_do && device->use_journal) {
+		can_do = false;
+		drbd_info(device, "using journal: disabling discards (not yet supported)\n");
+	}
+
 	if (can_do && b && !queue_discard_zeroes_data(b) && !discard_zeroes_if_aligned) {
 		can_do = false;
 		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
@@ -1937,7 +1942,8 @@ static void fixup_write_zeroes(struct drbd_device *device, struct request_queue 
 
 	/* If all peers announce WZEROES support, use it.  Otherwise, rather
 	 * send explicit zeroes than rely on some discard-zeroes-data magic. */
-	if (common_connection_features(device->resource) & DRBD_FF_WZEROES)
+	/* Write-zeroes is not yet supported when using a journal. */
+	if (common_connection_features(device->resource) & DRBD_FF_WZEROES && !device->use_journal)
 		q->limits.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
 	else
 		q->limits.max_write_zeroes_sectors = 0;
@@ -1957,6 +1963,11 @@ static void decide_on_write_same_support(struct drbd_device *device,
 	if (can_do && disable_write_same) {
 		can_do = false;
 		drbd_info(device, "WRITE_SAME disabled by config\n");
+	}
+
+	if (can_do && device->use_journal) {
+		can_do = false;
+		drbd_info(device, "WRITE_SAME disabled because journal is in use (not yet supported)\n");
 	}
 
 	if (can_do && !(common_connection_features(device->resource) & DRBD_FF_WSAME)) {
