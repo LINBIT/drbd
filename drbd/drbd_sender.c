@@ -231,7 +231,7 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
 		peer_req->flags |= EE_COMPLETE;
-		if (device->use_journal) {
+		if (is_write && device->use_journal) {
 			unsigned long flags = 0;
 			struct drbd_peer_request *tmp;
 			bool removed_entries = false;

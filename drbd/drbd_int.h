@@ -427,6 +427,7 @@ struct drbd_peer_request {
 	 * FIXME merge with rcv_order or w.list? */
 	struct list_head wait_for_actlog;
 
+	/* TODO: combine with recv_order? */
 	struct list_head journal_order;
 
 	struct drbd_page_chain_head page_chain; /* for reads or when not using pmem journal */

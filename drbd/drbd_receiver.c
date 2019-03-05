@@ -1596,8 +1596,11 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	sector_t sector = peer_req->i.sector;
 	unsigned data_size = peer_req->i.size;
 	unsigned n_bios = 0;
-	unsigned nr_pages = device->use_journal ? 1 : peer_req->page_chain.nr_pages;
+	unsigned nr_pages = device->use_journal && op == REQ_OP_WRITE ? 1 : peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
+
+	/* TODO: iterate over journal content with drbd_for_each_overlap; separate out functionality for requesting
+	 * a contiguous range and call it from here for each gap in the data from the journal */
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
 		drbd_set_out_of_sync(peer_req->peer_device,
@@ -1658,7 +1661,7 @@ next_bio:
 	bios = bio;
 	++n_bios;
 
-	if (device->use_journal && op != REQ_OP_READ) {
+	if (device->use_journal && op == REQ_OP_WRITE) {
 		struct page *page = persistent_memory_page(peer_req->data);
 		unsigned off = persistent_memory_page_offset(peer_req->data);
 		unsigned len = peer_req->data_size;
@@ -1673,8 +1676,15 @@ next_bio:
 			goto fail;
 		}
 	} else {
+		struct drbd_interval *existing_interval;
 		/* TODO: fill in data from journal when we have it; only create bios for the gaps */
-		/* TODO: warning - journal may contain multiple entries for the same location */
+		drbd_info(device, "## drbd_submit_peer_request journal interval tree overlaps:\n");
+		drbd_for_each_overlap(existing_interval, &device->ldev->journal.intervals, sector, data_size) {
+			drbd_info(device, "## drbd_submit_peer_request sector %llu size %llu\n",
+				  (unsigned long long) existing_interval->sector,
+				  (unsigned long long) existing_interval->size);
+		}
+
 		struct page *page = peer_req->page_chain.head;
 		page_chain_for_each(page) {
 			unsigned off, len;
