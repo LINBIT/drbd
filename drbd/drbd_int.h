@@ -94,6 +94,10 @@ extern int drbd_fault_rate;
 #endif
 
 extern char drbd_usermode_helper[];
+enum {
+	/* drbd_khelper returns >= 0, we can use negative values as flags for drbd_maybe_khelper */
+	DRBD_UMH_DISABLED = INT_MIN,
+};
 
 #ifndef DRBD_MAJOR
 # define DRBD_MAJOR 147
@@ -1893,7 +1897,7 @@ extern void drbd_reconsider_queue_parameters(struct drbd_device *device,
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool, struct sk_buff *);
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
-extern int drbd_khelper(struct drbd_device *, struct drbd_connection *, char *);
+extern int drbd_maybe_khelper(struct drbd_device *, struct drbd_connection *, char *);
 extern int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device);
 
 /* drbd_sender.c */

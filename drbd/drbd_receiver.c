@@ -3540,7 +3540,7 @@ static int drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, false, NULL);
 			if (rv2 != SS_SUCCESS) {
-				drbd_khelper(device, connection, "pri-lost-after-sb");
+				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
 				drbd_warn(device, "Successfully gave up primary role.\n");
 				rv = hg;
@@ -3591,7 +3591,7 @@ static int drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold
 			  * we do not need to wait for the after state change work either. */
 			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, false, NULL);
 			if (rv2 != SS_SUCCESS) {
-				drbd_khelper(device, connection, "pri-lost-after-sb");
+				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
 				drbd_warn(device, "Successfully gave up primary role.\n");
 				rv = hg;
@@ -4177,7 +4177,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	}
 
 	if (abs(hg) == 100)
-		drbd_khelper(device, connection, "initial-split-brain");
+		drbd_maybe_khelper(device, connection, "initial-split-brain");
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
@@ -4238,7 +4238,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	if (hg == -100) {
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
-		drbd_khelper(device, connection, "split-brain");
+		drbd_maybe_khelper(device, connection, "split-brain");
 		return -1;
 	}
 
@@ -4246,7 +4246,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT) {
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
-			drbd_khelper(device, connection, "pri-lost");
+			drbd_maybe_khelper(device, connection, "pri-lost");
 			/* fall through */
 		case ASB_DISCONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");

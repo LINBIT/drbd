@@ -1219,7 +1219,7 @@ out:
 	drbd_md_sync_if_dirty(device);
 
 	if (khelper_cmd)
-		drbd_khelper(device, connection, khelper_cmd);
+		drbd_maybe_khelper(device, connection, khelper_cmd);
 
 	/* If we have been sync source, and have an effective fencing-policy,
 	 * once *all* volumes are back in sync, call "unfence". */
@@ -1241,7 +1241,7 @@ out:
 		}
 		rcu_read_unlock();
 		if (disk_state == D_UP_TO_DATE && pdsk_state == D_UP_TO_DATE)
-			drbd_khelper(NULL, connection, "unfence-peer");
+			drbd_maybe_khelper(NULL, connection, "unfence-peer");
 	}
 
 	return 1;
@@ -1962,7 +1962,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 			/* Since application IO was locked out during L_WF_BITMAP_T and
 			   L_WF_SYNC_UUID we are still unmodified. Before going to L_SYNC_TARGET
 			   we check that we might make the data inconsistent. */
-			r = drbd_khelper(device, connection, "before-resync-target");
+			r = drbd_maybe_khelper(device, connection, "before-resync-target");
+			if (r == DRBD_UMH_DISABLED)
+				goto skip_helper;
+
 			r = (r >> 8) & 0xff;
 			if (r > 0) {
 				drbd_info(device, "before-resync-target handler returned %d, "
@@ -1971,7 +1974,10 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 				return;
 			}
 		} else /* L_SYNC_SOURCE */ {
-			r = drbd_khelper(device, connection, "before-resync-source");
+			r = drbd_maybe_khelper(device, connection, "before-resync-source");
+			if (r == DRBD_UMH_DISABLED)
+				goto skip_helper;
+
 			r = (r >> 8) & 0xff;
 			if (r > 0) {
 				if (r == 3) {
@@ -1986,6 +1992,8 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 			}
 		}
 	}
+
+skip_helper:
 
 	if (down_trylock(&device->resource->state_sem)) {
 		/* Retry later and let the worker make progress in the

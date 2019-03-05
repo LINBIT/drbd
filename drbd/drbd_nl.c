@@ -585,7 +585,7 @@ static char **make_envp(struct env *env)
 	else								\
 		drbd_printk(level, connection, fmt, args);
 
-int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
+static int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
 {
 	struct drbd_resource *resource = device ? device->resource : connection->resource;
 	char *argv[] = { drbd_usermode_helper, cmd, resource->name, NULL };
@@ -717,6 +717,14 @@ int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection,
 
 #undef magic_printk
 
+int drbd_maybe_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
+{
+	if (strcmp(drbd_usermode_helper, "disabled") == 0)
+		return DRBD_UMH_DISABLED;
+
+	return drbd_khelper(device, connection, cmd);
+}
+
 static bool initial_states_pending(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -792,7 +800,9 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	if (fencing_policy == FP_DONT_CARE)
 		return true;
 
-	r = drbd_khelper(NULL, connection, "fence-peer");
+	r = drbd_maybe_khelper(NULL, connection, "fence-peer");
+	if (r == DRBD_UMH_DISABLED)
+		return true;
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 	switch ((r>>8) & 0xff) {

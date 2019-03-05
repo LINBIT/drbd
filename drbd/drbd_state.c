@@ -3206,7 +3206,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
 			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]) &&
 			    !test_bit(UNREGISTERED, &device->flags))
-				drbd_khelper(device, connection, "pri-on-incon-degr");
+				drbd_maybe_khelper(device, connection, "pri-on-incon-degr");
 
 			if (susp_nod[NEW]) {
 				enum drbd_req_event what = NOTHING;
@@ -3492,7 +3492,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * People may chose to hard-reset the box from this handler.
 				 * It is useful if this looks like a "regular node crash". */
 				if (was_io_error && eh == EP_CALL_HELPER)
-					drbd_khelper(device, NULL, "local-io-error");
+					drbd_maybe_khelper(device, NULL, "local-io-error");
 
 				/* Immediately allow completion of all application IO,
 				 * that waits for completion from the local disk,
@@ -3562,7 +3562,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		drbd_md_sync_if_dirty(device);
 
 		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
-			drbd_khelper(device, NULL, "quorum-lost");
+			drbd_maybe_khelper(device, NULL, "quorum-lost");
 	}
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
