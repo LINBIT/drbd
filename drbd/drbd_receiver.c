@@ -8807,7 +8807,6 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 	}
 
-	/* TODO: need to keep list of peer requests that are in journal until writing out done */
 	list_cut_position(&work_list, &connection->peer_requests, &furthest_peer_req->recv_order);
 	spin_unlock_irq(&resource->req_lock);
 

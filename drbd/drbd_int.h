@@ -2156,6 +2156,7 @@ extern int drbd_journal_open(struct drbd_backing_dev *bdev);
 extern void drbd_journal_close(struct drbd_backing_dev *bdev);
 extern int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer_req);
 extern void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *peer_req);
+extern void drbd_journal_remove_intervals(struct drbd_device *device, struct drbd_peer_request *peer_req);
 extern void drbd_journal_drop_until(struct drbd_device *device, u64 next_entry_offset);
 
 /* drbd_nl.c */

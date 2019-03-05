@@ -187,12 +187,9 @@ static void replace_interval(struct drbd_journal *journal, struct drbd_interval 
 	drbd_insert_interval(&journal->intervals, existing_interval);
 }
 
-static void remove_interval(struct drbd_journal *journal, struct drbd_interval *existing_interval)
+static void remove_interval(struct drbd_journal *journal, struct drbd_journal_interval *existing_journal_interval)
 {
-	struct drbd_journal_interval *existing_journal_interval =
-		container_of(existing_interval, struct drbd_journal_interval, i);
-	drbd_remove_interval(&journal->intervals, existing_interval);
-	drbd_clear_interval(existing_interval);
+	drbd_remove_interval(&journal->intervals, &existing_journal_interval->i);
 	list_del(&existing_journal_interval->list);
 	kfree(existing_journal_interval);
 }
@@ -242,7 +239,10 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 		} else {
 			if (existing_interval_end <= peer_req_end) {
 				/* new interval overlaps entire existing interval, remove existing interval */
-				remove_interval(journal, existing_interval);
+				struct drbd_journal_interval *existing_journal_interval =
+					container_of(existing_interval, struct drbd_journal_interval, i);
+
+				remove_interval(journal, existing_journal_interval);
 			} else {
 				/* new interval overlaps start of existing interval, shift start of existing interval */
 				replace_interval(journal, existing_interval, peer_req_end, existing_interval_end);
@@ -257,6 +257,25 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 		drbd_info(device, "## drbd_journal_commit sector %llu size %llu\n",
 			(unsigned long long) existing_interval->sector,
 			(unsigned long long) existing_interval->size);
+	}
+}
+
+void drbd_journal_remove_intervals(struct drbd_device *device, struct drbd_peer_request *peer_req)
+{
+	struct drbd_journal *journal = &device->ldev->journal;
+	struct drbd_journal_interval *journal_interval, *tmp_interval;
+	struct drbd_interval *existing_interval;
+
+	/* TODO: locking */
+	list_for_each_entry_safe(journal_interval, tmp_interval, &peer_req->journal_intervals, list) {
+		remove_interval(journal, journal_interval);
+	}
+
+	drbd_info(device, "## drbd_journal_remove_intervals journal interval tree now contains:\n");
+	drbd_for_each_overlap(existing_interval, &journal->intervals, 0, 1 << 30) {
+		drbd_info(device, "## drbd_journal_remove_intervals sector %llu size %llu\n",
+			  (unsigned long long) existing_interval->sector,
+			  (unsigned long long) existing_interval->size);
 	}
 }
 

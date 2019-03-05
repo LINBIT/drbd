@@ -243,6 +243,7 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 				drbd_info(peer_device, "## drbd_peer_request_endio consider removing from journal peer request at sector %llu\n", (unsigned long long) peer_req->i.sector);
 				if (peer_req->flags & EE_COMPLETE) {
 					list_del(&peer_req->journal_order);
+					drbd_journal_remove_intervals(device, peer_req);
 					drbd_free_peer_req(peer_req);
 					next_entry_offset = peer_req->next_entry_offset;
 					removed_entries = true;
