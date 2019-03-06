@@ -2226,11 +2226,11 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 	/* hint all but last page with MSG_MORE */
 	page_chain_for_each(page) {
 		unsigned l = min_t(unsigned, len, PAGE_SIZE);
-		if (page_chain_offset(page) != 0 ||
-		    page_chain_size(page) != l) {
-			drbd_err(peer_device, "FIXME page %p offset %u len %u\n",
-				page, page_chain_offset(page), page_chain_size(page));
-		}
+//		if (page_chain_offset(page) != 0 ||
+//		    page_chain_size(page) != l) {
+//			drbd_err(peer_device, "FIXME page %p offset %u len %u\n",
+//				page, page_chain_offset(page), page_chain_size(page));
+//		}
 
 		err = _drbd_send_page(peer_device, page, 0, l,
 				      page_chain_next(page) ? MSG_MORE : 0);

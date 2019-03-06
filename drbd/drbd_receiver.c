@@ -1586,15 +1586,17 @@ static unsigned persistent_memory_page_offset(void *addr)
  *  reference is released when the request completes.
  */
 /* TODO allocate from our own bio_set. */
-int drbd_submit_peer_request(struct drbd_device *device,
-			     struct drbd_peer_request *peer_req,
-			     const unsigned op, const unsigned op_flags,
-			     const int fault_type)
+static int drbd_submit_peer_request_interval(struct drbd_device *device,
+					     struct drbd_peer_request *peer_req,
+					     const unsigned op, const unsigned op_flags,
+					     const int fault_type,
+					     struct page **ppage,
+					     sector_t sector,
+					     unsigned data_size)
 {
 	struct bio *bios = NULL;
 	struct bio *bio;
-	sector_t sector = peer_req->i.sector;
-	unsigned data_size = peer_req->i.size;
+	sector_t req_sector = peer_req->i.sector;
 	unsigned n_bios = 0;
 	unsigned nr_pages = device->use_journal && op == REQ_OP_WRITE ? 1 : peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
@@ -1676,23 +1678,15 @@ next_bio:
 			goto fail;
 		}
 	} else {
-		struct drbd_interval *existing_interval;
-		/* TODO: fill in data from journal when we have it; only create bios for the gaps */
-		drbd_info(device, "## drbd_submit_peer_request journal interval tree overlaps:\n");
-		drbd_for_each_overlap(existing_interval, &device->ldev->journal.intervals, sector, data_size) {
-			drbd_info(device, "## drbd_submit_peer_request sector %llu size %llu\n",
-				  (unsigned long long) existing_interval->sector,
-				  (unsigned long long) existing_interval->size);
-		}
-
-		struct page *page = peer_req->page_chain.head;
-		page_chain_for_each(page) {
+		page_chain_for_each(*ppage) {
+			struct page *page = *ppage;
 			unsigned off, len;
 			int res;
 
 			if (op == REQ_OP_READ) {
-				set_page_chain_offset(page, 0);
-				set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
+				unsigned offset_in_page = ((sector - req_sector) << SECTOR_SHIFT) & (PAGE_SIZE - 1);
+				set_page_chain_offset(page, offset_in_page);
+				set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE - offset_in_page));
 			}
 			off = page_chain_offset(page);
 			len = page_chain_size(page);
@@ -1722,12 +1716,16 @@ next_bio:
 			data_size -= len;
 			sector += len >> 9;
 			--nr_pages;
+			if (!data_size) {
+				if (len + off == PAGE_SIZE) {
+					*ppage = page_chain_next(*ppage);
+				}
+				break;
+			}
 		}
-		D_ASSERT(device, data_size == 0);
-		D_ASSERT(device, page == NULL);
 	}
 
-	atomic_set(&peer_req->pending_bios, n_bios);
+	atomic_add(n_bios, &peer_req->pending_bios);
 	/* for debugfs: update timestamp, mark as submitted */
 	peer_req->submit_jif = jiffies;
 	peer_req->flags |= EE_SUBMITTED;
@@ -1755,6 +1753,90 @@ fail:
 		bios = bios->bi_next;
 		bio_put(bio);
 	}
+	return err;
+}
+
+int drbd_submit_peer_request(struct drbd_device *device,
+			     struct drbd_peer_request *peer_req,
+			     const unsigned op, const unsigned op_flags,
+			     const int fault_type)
+{
+	sector_t sector = peer_req->i.sector;
+	unsigned data_size = peer_req->i.size;
+	sector_t end_sector = sector + (data_size >> SECTOR_SHIFT);
+	struct page *page = peer_req->page_chain.head;
+	int err = 0;
+
+	if (device->use_journal && op == REQ_OP_READ) {
+		struct drbd_interval *existing_interval;
+
+		drbd_info(device, "## drbd_submit_peer_request journal interval tree overlaps:\n");
+		drbd_for_each_overlap(existing_interval, &device->ldev->journal.intervals, sector, data_size) {
+			struct drbd_journal_interval *existing_journal_interval =
+				container_of(existing_interval, struct drbd_journal_interval, i);
+			sector_t interval_end_sector;
+
+			drbd_info(device, "## drbd_submit_peer_request sector %llu size %llu\n",
+				  (unsigned long long) existing_interval->sector,
+				  (unsigned long long) existing_interval->size);
+
+			if (existing_interval->sector > sector) {
+				sector_t interval_sectors = existing_interval->sector - sector;
+				/* gap in journal before this interval; read from backing device */
+				drbd_info(device, "## drbd_submit_peer_request read from backing disk sector %llu size %llu\n",
+					  (unsigned long long) sector,
+					  (unsigned long long) interval_sectors << SECTOR_SHIFT);
+				err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
+								  &page, sector,
+								  interval_sectors << SECTOR_SHIFT);
+				if (err) {
+					break;
+				}
+				sector += interval_sectors;
+			}
+
+			/* read from this journal interval */
+			interval_end_sector = min(existing_interval->sector + (existing_interval->size >> SECTOR_SHIFT), end_sector);
+			page_chain_for_each(page) {
+				unsigned off, len;
+
+				off = ((sector - peer_req->i.sector) << SECTOR_SHIFT) & (PAGE_SIZE - 1);
+				len = min_t(unsigned, (interval_end_sector - sector) << SECTOR_SHIFT, PAGE_SIZE - off);
+
+				drbd_info(device, "## drbd_submit_peer_request read from journal sector %llu size %llu\n",
+					  (unsigned long long) sector,
+					  (unsigned long long) len);
+				memcpy((char *) page_address(page) + off, (char *) existing_journal_interval->data + ((sector - existing_journal_interval->i.sector) << SECTOR_SHIFT), len);
+
+				sector += len >> SECTOR_SHIFT;
+				if (sector >= interval_end_sector) {
+					if (len + off == PAGE_SIZE) {
+						page = page_chain_next(page);
+					}
+					break;
+				}
+			}
+		}
+
+		/* gap after journal intervals; read from backing device */
+		if (!err && end_sector > sector) {
+			/* gap in journal before this interval; read from backing device */
+			drbd_info(device, "## drbd_submit_peer_request final read from backing disk sector %llu size %llu\n",
+				  (unsigned long long) sector,
+				  (unsigned long long) (end_sector - sector) << SECTOR_SHIFT);
+			err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
+							  &page, sector,
+							  (end_sector - sector) << SECTOR_SHIFT);
+		}
+
+		if (!atomic_read(&peer_req->pending_bios)) {
+			drbd_endio_read_sec_final(peer_req);
+		}
+	} else {
+		err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
+			&page, sector, data_size);
+	}
+
 	return err;
 }
 

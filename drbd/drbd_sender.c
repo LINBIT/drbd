@@ -98,7 +98,7 @@ void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;

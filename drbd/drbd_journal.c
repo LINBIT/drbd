@@ -164,7 +164,7 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 	return 0;
 }
 
-static void insert_interval(struct drbd_journal *journal, struct list_head *list, sector_t sector, sector_t end_sector)
+static void insert_interval(struct drbd_journal *journal, struct list_head *list, sector_t sector, sector_t end_sector, void *journal_data)
 {
 	struct drbd_journal_interval *journal_interval;
 
@@ -175,16 +175,18 @@ static void insert_interval(struct drbd_journal *journal, struct list_head *list
 	list_add_tail(&journal_interval->list, list);
 	journal_interval->i.sector = sector;
 	journal_interval->i.size = (end_sector - sector) << SECTOR_SHIFT;
+	journal_interval->data = journal_data;
 	drbd_insert_interval(&journal->intervals, &journal_interval->i);
 }
 
-static void replace_interval(struct drbd_journal *journal, struct drbd_interval *existing_interval, sector_t sector, sector_t end_sector)
+static void replace_interval(struct drbd_journal *journal, struct drbd_journal_interval *existing_journal_interval, sector_t sector, sector_t end_sector, void *journal_data)
 {
-	drbd_remove_interval(&journal->intervals, existing_interval);
-	drbd_clear_interval(existing_interval);
-	existing_interval->sector = sector;
-	existing_interval->size = (end_sector - sector) << SECTOR_SHIFT;
-	drbd_insert_interval(&journal->intervals, existing_interval);
+	drbd_remove_interval(&journal->intervals, &existing_journal_interval->i);
+	drbd_clear_interval(&existing_journal_interval->i);
+	existing_journal_interval->i.sector = sector;
+	existing_journal_interval->i.size = (end_sector - sector) << SECTOR_SHIFT;
+	existing_journal_interval->data = journal_data;
+	drbd_insert_interval(&journal->intervals, &existing_journal_interval->i);
 }
 
 static void remove_interval(struct drbd_journal *journal, struct drbd_journal_interval *existing_journal_interval)
@@ -218,39 +220,41 @@ void drbd_journal_commit(struct drbd_device *device, struct drbd_peer_request *p
 
 	/* adjust existing intervals to avoid overlaps */
 	while ((existing_interval = drbd_find_overlap(&journal->intervals, peer_req_sector, peer_req->i.size))) {
+		struct drbd_journal_interval *existing_journal_interval =
+			container_of(existing_interval, struct drbd_journal_interval, i);
 		sector_t existing_interval_sector = existing_interval->sector;
 		sector_t existing_interval_end = existing_interval_sector + (existing_interval->size >> SECTOR_SHIFT);
+
 		drbd_info(device, "## drbd_journal_commit new (%llu, %llu) existing (%llu, %llu)\n",
 			  (unsigned long long) peer_req_sector, (unsigned long long) peer_req->i.size,
 			  (unsigned long long) existing_interval_sector, (unsigned long long) existing_interval->size);
+
 		if (existing_interval_sector < peer_req_sector) {
 			if (existing_interval_end <= peer_req_end) {
 				/* new interval overlaps end of existing interval, shorten existing interval */
-				replace_interval(journal, existing_interval, existing_interval_sector, peer_req_sector);
+				replace_interval(journal, existing_journal_interval, existing_interval_sector, peer_req_sector,
+					existing_journal_interval->data);
 			} else {
 				/* new interval contained in existing interval, punch hole in existing interval */
-				struct drbd_journal_interval *existing_journal_interval =
-					container_of(existing_interval, struct drbd_journal_interval, i);
+				replace_interval(journal, existing_journal_interval, existing_interval_sector, peer_req_sector,
+					existing_journal_interval->data);
 
-				replace_interval(journal, existing_interval, existing_interval_sector, peer_req_sector);
-
-				insert_interval(journal, &existing_journal_interval->list, peer_req_end, existing_interval_end);
+				insert_interval(journal, &existing_journal_interval->list, peer_req_end, existing_interval_end,
+					(char *) existing_journal_interval->data + ((peer_req_end - existing_interval_sector) << SECTOR_SHIFT));
 			}
 		} else {
 			if (existing_interval_end <= peer_req_end) {
 				/* new interval overlaps entire existing interval, remove existing interval */
-				struct drbd_journal_interval *existing_journal_interval =
-					container_of(existing_interval, struct drbd_journal_interval, i);
-
 				remove_interval(journal, existing_journal_interval);
 			} else {
 				/* new interval overlaps start of existing interval, shift start of existing interval */
-				replace_interval(journal, existing_interval, peer_req_end, existing_interval_end);
+				replace_interval(journal, existing_journal_interval, peer_req_end, existing_interval_end,
+					(char *) existing_journal_interval->data + ((peer_req_end - existing_interval_sector) << SECTOR_SHIFT));
 			}
 		}
 	}
 
-	insert_interval(journal, &peer_req->journal_intervals, peer_req_sector, peer_req_end);
+	insert_interval(journal, &peer_req->journal_intervals, peer_req_sector, peer_req_end, peer_req->data);
 
 	drbd_info(device, "## drbd_journal_commit journal interval tree now contains:\n");
 	drbd_for_each_overlap(existing_interval, &journal->intervals, 0, 1 << 30) {
