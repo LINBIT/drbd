@@ -2269,6 +2269,8 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
 	struct drbd_device *device = peer_device->device;
+	char *const before = peer_device->connection->scratch_buffer.d.before;
+	char *const after = peer_device->connection->scratch_buffer.d.after;
 	struct p_trim *trim = NULL;
 	struct p_data *p;
 	struct p_wsame *wsame = NULL;
@@ -2324,8 +2326,11 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		goto out;
 	}
 
-	if (digest_size && digest_out)
-		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, digest_out);
+	if (digest_size && digest_out) {
+		BUG_ON(digest_size > sizeof(peer_device->connection->scratch_buffer.d.before));
+		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, before);
+		memcpy(digest_out, before, digest_size);
+	}
 
 	if (wsame) {
 		additional_size_command(peer_device->connection, DATA_STREAM,
@@ -2353,19 +2358,14 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 			err = _drbd_send_zc_bio(peer_device, req->master_bio);
 
 		/* double check digest, sometimes buffers have been modified in flight. */
-		if (digest_size > 0 && digest_size <= 64) {
-			/* 64 byte, 512 bit, is the largest digest size
-			 * currently supported in kernel crypto. */
-			unsigned char digest[64];
-			drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, digest);
-			if (memcmp(p + 1, digest, digest_size)) {
+		if (digest_size > 0) {
+			drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, after);
+			if (memcmp(before, after, digest_size)) {
 				drbd_warn(device,
 					"Digest mismatch, buffer modified by upper layers during write: %llus +%u\n",
 					(unsigned long long)req->i.sector, req->i.size);
 			}
-		} /* else if (digest_size > 64) {
-		     ... Be noisy about digest too large ...
-		} */
+		}
 	}
 out:
 	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);

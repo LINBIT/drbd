@@ -3317,6 +3317,7 @@ static enum drbd_ret_code
 alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf)
 {
 	char hmac_name[CRYPTO_MAX_ALG_NAME];
+	int digest_size = 0;
 	enum drbd_ret_code rv;
 
 	rv = alloc_ahash(&crypto->csums_tfm, new_net_conf->csums_alg,
@@ -3331,6 +3332,15 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf)
 			 ERR_INTEGRITY_ALG);
 	if (rv != NO_ERROR)
 		return rv;
+	if (crypto->integrity_tfm) {
+		const int max_digest_size = sizeof(((struct drbd_connection*)0)->scratch_buffer.d.before);
+		digest_size = crypto_ahash_digestsize(crypto->integrity_tfm);
+		if (digest_size > max_digest_size) {
+			pr_notice("we currently support only digest sizes <= %d bits, but digest size of %s is %d bits\n",
+				max_digest_size * 8, new_net_conf->integrity_alg, digest_size * 8);
+			return ERR_INTEGRITY_ALG;
+		}
+	}
 	if (new_net_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
 			 new_net_conf->cram_hmac_alg);

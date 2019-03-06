@@ -949,6 +949,17 @@ struct drbd_connection {
 
 	struct drbd_send_buffer send_buffer[2];
 	struct mutex mutex[2]; /* Protect assembling of new packet until sending it (in send_buffer) */
+	/* scratch buffers for use while "owning" the DATA_STREAM send_buffer,
+	 * to avoid larger on-stack temporary variables,
+	 * introduced for holding digests in drbd_send_dblock() */
+	union {
+		/* MAX_DIGEST_SIZE in the linux kernel at this point is 64 byte, afaik */
+		struct {
+			char before[64];
+			char after[64];
+		} d;
+	} scratch_buffer;
+
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */
