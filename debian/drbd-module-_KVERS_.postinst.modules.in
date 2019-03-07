@@ -8,7 +8,7 @@ then
     depmod -ae -F $SYSTEMMAP _KVERS_
 elif [ "`uname -r`" = "_KVERS_" ]
 then
-    depmod -a &
+    depmod -a
 fi
 
 #DEBHELPER#
