@@ -3495,6 +3495,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_LIST_HEAD(&connection->read_ee);
 	INIT_LIST_HEAD(&connection->net_ee);
 	INIT_LIST_HEAD(&connection->done_ee);
+	INIT_LIST_HEAD(&connection->journal_done_ee);
 	init_waitqueue_head(&connection->ee_wait);
 
 	kref_init(&connection->kref);

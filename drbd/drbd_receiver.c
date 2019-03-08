@@ -433,12 +433,11 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	drbd_clear_interval(&peer_req->i);
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	INIT_LIST_HEAD(&peer_req->wait_for_actlog);
-	INIT_LIST_HEAD(&peer_req->journal_order);
 	INIT_LIST_HEAD(&peer_req->journal_intervals);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
-	drbd_info(peer_device, "## %s %p", __FUNCTION__, peer_req);
+//	drbd_info(peer_device, "## %s %p", __FUNCTION__, peer_req);
 
 	return peer_req;
 }
@@ -447,7 +446,7 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 
-	drbd_info(peer_device, "## %s %p %s", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
+//	drbd_info(peer_device, "## %s %p %s", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
@@ -456,8 +455,6 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
 	mempool_free(peer_req, &drbd_ee_mempool);
-
-	drbd_info(peer_device, "## %s %p %s done", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 }
 
 int drbd_free_peer_reqs(struct drbd_resource *resource, struct list_head *list, bool is_net_ee)
@@ -484,14 +481,39 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 {
 	LIST_HEAD(work_list);
 	LIST_HEAD(reclaimed);
+	LIST_HEAD(journal_done);
 	struct drbd_peer_request *peer_req, *t;
 	int err = 0;
 	int n = 0;
 
+//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock LOCK\n");
 	spin_lock_irq(&connection->resource->req_lock);
+//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock LOCKED\n");
 	reclaim_finished_net_peer_reqs(connection, &reclaimed);
 	list_splice_init(&connection->done_ee, &work_list);
+
+	list_for_each_entry_safe(peer_req, t, &connection->journal_done_ee, w.list) {
+		if (peer_req->flags & EE_COMPLETE) {
+			struct drbd_device *device = peer_req->peer_device->device;
+//			drbd_info(device, "## drbd_finish_peer_reqs consider removing from journal peer request at sector %llu\n", (unsigned long long) peer_req->i.sector);
+			drbd_journal_remove_intervals(device, peer_req);
+			/* TODO: only do this once for each device */
+			drbd_journal_drop_until(device, peer_req->next_entry_offset);
+			list_move_tail(&peer_req->w.list, &journal_done);
+		} else {
+			break;
+		}
+	}
+//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock UNLOCK\n");
 	spin_unlock_irq(&connection->resource->req_lock);
+
+	list_for_each_entry_safe(peer_req, t, &journal_done, w.list) {
+		struct drbd_device *device = peer_req->peer_device->device;
+		drbd_free_peer_req(peer_req);
+//		drbd_info(device, "## wake journal wait\n");
+		/* TODO: only do this once for each device */
+		wake_up(&device->ldev->journal.journal_wait);
+	}
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
@@ -1645,6 +1667,7 @@ next_bio:
 		goto fail;
 	}
 
+	drbd_info(device, "## drbd_submit_peer_request bio_alloc\n");
 	bio = bio_alloc(GFP_NOIO, nr_pages);
 	if (!bio) {
 		drbd_err(device, "submit_ee: Allocation of a bio failed (nr_pages=%u)\n", nr_pages);
@@ -1668,6 +1691,7 @@ next_bio:
 		unsigned off = persistent_memory_page_offset(peer_req->data);
 		unsigned len = peer_req->data_size;
 		int res;
+		drbd_info(device, "## drbd_submit_peer_request bio_add_page\n");
 		res = bio_add_page(bio, page, len, off);
 		if (res <= 0) {
 			drbd_err(device,
@@ -1737,7 +1761,9 @@ next_bio:
 		/* strip off REQ_UNPLUG unless it is the last bio */
 		if (bios && DRBD_REQ_UNPLUG)
 			bio->bi_opf &= ~DRBD_REQ_UNPLUG;
+		drbd_info(device, "## drbd_submit_peer_request drbd_generic_make_request\n");
 		drbd_generic_make_request(device, fault_type, bio);
+		drbd_info(device, "## drbd_submit_peer_request drbd_generic_make_request done\n");
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
@@ -1767,66 +1793,100 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	struct page *page = peer_req->page_chain.head;
 	int err = 0;
 
+	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
+						  (unsigned long long) sector,
+						  (unsigned long long) data_size);
 	if (device->use_journal && op == REQ_OP_READ) {
 		struct drbd_interval *existing_interval;
 
-		drbd_info(device, "## drbd_submit_peer_request journal interval tree overlaps:\n");
-		drbd_for_each_overlap(existing_interval, &device->ldev->journal.intervals, sector, data_size) {
-			struct drbd_journal_interval *existing_journal_interval =
-				container_of(existing_interval, struct drbd_journal_interval, i);
-			sector_t interval_end_sector;
+		while (sector < end_sector) {
+			sector_t gap_end_sector;
+			sector_t next_sector;
+			struct page *next_page;
+//			drbd_info(device, "## drbd_submit_peer_request journal_lock LOCK\n");
+			spin_lock_irq(&device->resource->req_lock);
+//			drbd_info(device, "## drbd_submit_peer_request journal_lock LOCKED\n");
 
-			drbd_info(device, "## drbd_submit_peer_request sector %llu size %llu\n",
-				  (unsigned long long) existing_interval->sector,
-				  (unsigned long long) existing_interval->size);
+			existing_interval = drbd_find_overlap(&device->ldev->journal.intervals, sector, data_size - ((sector - peer_req->i.sector) << SECTOR_SHIFT));
 
-			if (existing_interval->sector > sector) {
-				sector_t interval_sectors = existing_interval->sector - sector;
-				/* gap in journal before this interval; read from backing device */
-				drbd_info(device, "## drbd_submit_peer_request read from backing disk sector %llu size %llu\n",
-					  (unsigned long long) sector,
-					  (unsigned long long) interval_sectors << SECTOR_SHIFT);
-				err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
-								  &page, sector,
-								  interval_sectors << SECTOR_SHIFT);
-				if (err) {
-					break;
-				}
-				sector += interval_sectors;
-			}
+			if (existing_interval) {
+				struct drbd_journal_interval *existing_journal_interval =
+					container_of(existing_interval, struct drbd_journal_interval, i);
+				sector_t gap_sector = sector;
+				struct page *gap_page = page;
+				sector_t interval_end_sector;
+				gap_end_sector = existing_interval->sector;
 
-			/* read from this journal interval */
-			interval_end_sector = min(existing_interval->sector + (existing_interval->size >> SECTOR_SHIFT), end_sector);
-			page_chain_for_each(page) {
-				unsigned off, len;
+				if (gap_end_sector > sector) {
+					/* fast-forward to journal interval */
+					page_chain_for_each(page) {
+						unsigned off, len;
 
-				off = ((sector - peer_req->i.sector) << SECTOR_SHIFT) & (PAGE_SIZE - 1);
-				len = min_t(unsigned, (interval_end_sector - sector) << SECTOR_SHIFT, PAGE_SIZE - off);
+						off = ((sector - peer_req->i.sector) << SECTOR_SHIFT) & (PAGE_SIZE - 1);
+						len = min_t(unsigned, (gap_end_sector - sector) << SECTOR_SHIFT, PAGE_SIZE - off);
 
-				drbd_info(device, "## drbd_submit_peer_request read from journal sector %llu size %llu\n",
-					  (unsigned long long) sector,
-					  (unsigned long long) len);
-				memcpy((char *) page_address(page) + off, (char *) existing_journal_interval->data + ((sector - existing_journal_interval->i.sector) << SECTOR_SHIFT), len);
-
-				sector += len >> SECTOR_SHIFT;
-				if (sector >= interval_end_sector) {
-					if (len + off == PAGE_SIZE) {
-						page = page_chain_next(page);
+						sector += len >> SECTOR_SHIFT;
+						if (sector == gap_end_sector) {
+							if (len + off == PAGE_SIZE) {
+								page = page_chain_next(page);
+							}
+							break;
+						}
 					}
-					break;
 				}
-			}
-		}
 
-		/* gap after journal intervals; read from backing device */
-		if (!err && end_sector > sector) {
-			/* gap in journal before this interval; read from backing device */
-			drbd_info(device, "## drbd_submit_peer_request final read from backing disk sector %llu size %llu\n",
-				  (unsigned long long) sector,
-				  (unsigned long long) (end_sector - sector) << SECTOR_SHIFT);
-			err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
-							  &page, sector,
-							  (end_sector - sector) << SECTOR_SHIFT);
+				/* read from this journal interval */
+				interval_end_sector = min(existing_interval->sector + (existing_interval->size >> SECTOR_SHIFT), end_sector);
+				page_chain_for_each(page) {
+					unsigned off, len;
+
+					off = ((sector - peer_req->i.sector) << SECTOR_SHIFT) & (PAGE_SIZE - 1);
+					len = min_t(unsigned, (interval_end_sector - sector) << SECTOR_SHIFT, PAGE_SIZE - off);
+
+//					drbd_info(device, "## drbd_submit_peer_request read from journal sector %llu size %llu\n",
+//						  (unsigned long long) sector,
+//						  (unsigned long long) len);
+					memcpy((char *) page_address(page) + off, (char *) existing_journal_interval->data + ((sector - existing_interval->sector) << SECTOR_SHIFT), len);
+
+					sector += len >> SECTOR_SHIFT;
+					if (sector == interval_end_sector) {
+						if (len + off == PAGE_SIZE) {
+							page = page_chain_next(page);
+						}
+						break;
+					}
+				}
+
+				/* store current location to jump back to */
+				next_sector = sector;
+				next_page = page;
+
+				/* rewind to start of journal gap */
+				sector = gap_sector;
+				page = gap_page;
+			} else {
+				gap_end_sector = end_sector;
+				next_sector = end_sector;
+				next_page = NULL;
+			}
+
+//			drbd_info(device, "## drbd_submit_peer_request journal_lock UNLOCK\n");
+			spin_unlock_irq(&device->resource->req_lock);
+
+			if (gap_end_sector > sector) {
+				sector_t interval_sectors = gap_end_sector - sector;
+				/* gap in journal before this interval; read from backing device */
+//				drbd_info(device, "## drbd_submit_peer_request read from backing disk sector %llu size %llu\n",
+//					  (unsigned long long) sector,
+//					  (unsigned long long) interval_sectors << SECTOR_SHIFT);
+				err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
+									&page, sector,
+									interval_sectors << SECTOR_SHIFT);
+			}
+
+			/* jump to after journal interval */
+			sector = next_sector;
+			page = next_page;
 		}
 
 		if (!atomic_read(&peer_req->pending_bios)) {
@@ -1836,6 +1896,7 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
 			&page, sector, data_size);
 	}
+	drbd_info(device, "## drbd_submit_peer_request done\n");
 
 	return err;
 }
@@ -2090,13 +2151,18 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 		if (err)
 			goto fail;
 
-		drbd_info(device, "## read_in_block receiving into %p\n", peer_req->data);
+//		drbd_info(device, "## read_in_block receiving into %p\n", peer_req->data);
 		err = tr_ops->recv(transport, DATA_STREAM, &peer_req->data, peer_req->data_size, CALLER_BUFFER);
-		drbd_info(device, "## read_in_block tr_ops->recv %d\n", err);
+//		drbd_info(device, "## read_in_block tr_ops->recv %d\n", err);
 		if (err != peer_req->data_size)
 			goto fail;
 
+//		drbd_info(device, "## drbd_submit_peer_request journal_lock LOCK\n");
+		spin_lock_irq(&device->resource->req_lock);
+//		drbd_info(device, "## drbd_submit_peer_request journal_lock LOCKED\n");
 		drbd_journal_commit(device, peer_req);
+//		drbd_info(device, "## drbd_submit_peer_request journal_lock UNLOCK\n");
+		spin_unlock_irq(&device->resource->req_lock);
 	} else {
 		err = tr_ops->recv_pages(transport, &peer_req->page_chain, peer_req->data_size);
 		if (err)
@@ -2468,7 +2534,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
 
-	drbd_info(device, "## e_end_block\n");
+//	drbd_info(device, "## e_end_block\n");
 	if (peer_req->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(peer_device->connection, peer_req->epoch);
 		if (epoch)
@@ -3111,7 +3177,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * NOTE: active_ee_cnt is only increased *after* we checked we won't
 	 * need to wait for current activity to drain in prepare_activity_log()
 	 */
-	list_add_tail(&peer_req->w.list, &connection->active_ee);
+	if (!device->use_journal)
+		list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&device->resource->req_lock);
@@ -8908,7 +8975,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		u64 in_sync_b, mask;
 
 		if (device->use_journal) {
-			drbd_info(peer_device, "## write out from journal");
+//			drbd_info(peer_device, "## write out from journal");
 			/* TODO: store and retrieve op and op_flags (as wire flags) */
 			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);
 			if (err)

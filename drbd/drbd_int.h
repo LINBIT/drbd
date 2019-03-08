@@ -428,9 +428,6 @@ struct drbd_peer_request {
 	 * FIXME merge with rcv_order or w.list? */
 	struct list_head wait_for_actlog;
 
-	/* TODO: combine with recv_order? */
-	struct list_head journal_order;
-
 	struct drbd_page_chain_head page_chain; /* for reads or when not using pmem journal */
 	size_t data_size;
 	void *data; /* for writes using pmem journal */
@@ -726,7 +723,6 @@ struct drbd_journal {
 	void *memory_map;
 	atomic64_t live_start; /* offset relative to end of header */
 	u64 live_end; /* offset relative to end of header */
-	struct list_head live_entries;
 	struct rb_root intervals;
 	wait_queue_head_t journal_wait;
 };
@@ -1018,6 +1014,7 @@ struct drbd_connection {
 	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
 	struct list_head net_ee;    /* zero-copy network send in progress */
 	struct list_head done_ee;   /* need to send P_WRITE_ACK */
+	struct list_head journal_done_ee;   /* need to remove from journal */
 	atomic_t done_ee_cnt;
 	struct work_struct send_acks_work;
 	wait_queue_head_t ee_wait;
