@@ -1620,8 +1620,9 @@ static int drbd_submit_peer_request_interval(struct drbd_device *device,
 	struct bio *bio;
 	sector_t req_sector = peer_req->i.sector;
 	unsigned n_bios = 0;
-	unsigned nr_pages = device->use_journal && op == REQ_OP_WRITE ? 1 : peer_req->page_chain.nr_pages;
+	unsigned nr_pages = device->use_journal ? (data_size / PAGE_SIZE) + 2 : peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
+	sector_t written = 0;
 
 	/* TODO: iterate over journal content with drbd_for_each_overlap; separate out functionality for requesting
 	 * a contiguous range and call it from here for each gap in the data from the journal */
@@ -1687,19 +1688,31 @@ next_bio:
 	++n_bios;
 
 	if (device->use_journal && op == REQ_OP_WRITE) {
-		struct page *page = persistent_memory_page(peer_req->data);
-		unsigned off = persistent_memory_page_offset(peer_req->data);
-		unsigned len = peer_req->data_size;
-		int res;
-		drbd_info(device, "## drbd_submit_peer_request bio_add_page\n");
-		res = bio_add_page(bio, page, len, off);
-		if (res <= 0) {
-			drbd_err(device,
-				"journal bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
-				bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
-				 (unsigned long)bio->bi_flags);
-			err = -ENOSPC;
-			goto fail;
+		while (data_size) {
+			int res;
+			void *data = (char *) peer_req->data + written;
+			struct page *page = persistent_memory_page(data);
+			unsigned off = persistent_memory_page_offset(data);
+			unsigned len = min_t(unsigned, data_size, PAGE_SIZE - off);
+
+			res = bio_add_page(bio, page, len, off);
+			if (res <= 0) {
+				/* A single page must always be possible!
+				 * But in case it fails anyways,
+				 * we deal with it, and complain (below). */
+				if (bio->bi_vcnt == 0) {
+					drbd_err(device,
+						 "bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
+						 bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
+						 (unsigned long)bio->bi_flags);
+					err = -ENOSPC;
+					goto fail;
+				}
+				goto next_bio;
+			}
+			data_size -= len;
+			written += len;
+			--nr_pages;
 		}
 	} else {
 		page_chain_for_each(*ppage) {
