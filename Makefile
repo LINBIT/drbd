@@ -26,6 +26,10 @@ LN_S = ln -s
 RPMBUILD = rpmbuild
 DEBBUILD = debuild
 
+DOCKERREGISTRY = drbd.io
+DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9:rhel7
+DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9:bionic
+
 # default for KDIR/KVER
 ifndef KVER
  ifndef KDIR
@@ -261,5 +265,18 @@ km-deb: check-submods distclean drbd/.drbd_git_revision
 	  echo drbd/.drbd_git_revision ) | cpio -pvmd "$$D" ;	\
 	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"
 endif
+
+.PHONY: dockerimage.rhel7 dockerimage.bionic dockerimage
+dockerimage.rhel7:
+	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7) .
+
+dockerimage.bionic:
+	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC) .
+
+dockerimage: dockerimage.rhel7 dockerimage.bionic
+
+# used for --sync in lbbuild to decide which containers to push to which registry
+dockerpath:
+	echo $(DOCKERREGPATH_BIONIC) $(DOCKERREGPATH_RHEL7)
 
 Makefile: ;
