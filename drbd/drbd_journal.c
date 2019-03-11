@@ -48,10 +48,9 @@ static u64 entry_capacity(const struct drbd_journal *journal) {
 
 #define SIGNUM(x, y) ((x > y) - (x < y))
 
-static bool circular_in_order(u64 live_start, u64 live_end, u64 next_entry)
+static bool circular_in_order(u64 a, u64 b, u64 c)
 {
-	return live_start == live_end ||
-		SIGNUM(live_start, live_end) * SIGNUM(live_end, next_entry) * SIGNUM(next_entry, live_start) > 0;
+	return SIGNUM(a, b) * SIGNUM(b, c) * SIGNUM(c, a) > 0;
 }
 
 int drbd_journal_open(struct drbd_backing_dev *bdev)
@@ -115,6 +114,12 @@ void drbd_journal_close(struct drbd_backing_dev *bdev)
 	wake_up(&bdev->journal.journal_wait);
 }
 
+static bool journal_has_space(u64 live_start, u64 live_end, u64 next_entry)
+{
+	return live_start == live_end ||
+	       circular_in_order(live_start, live_end, next_entry);
+}
+
 /**
  * Claim next journal entry.
  *
@@ -131,19 +136,18 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 	struct drbd_journal *journal = &device->ldev->journal;
 	struct drbd_connection *connection = peer_req->peer_device->connection;
 	struct journal_entry_on_disk *entry;
+	u64 entry_offset = journal->live_end + entry_with_data_size(peer_req) > entry_capacity(journal) ?
+		0 : journal->live_end;
 
-	if (journal->live_end + entry_with_data_size(peer_req) > entry_capacity(journal)) {
-		journal->live_end = 0;
-	}
-
-	entry = entry_from_offset(journal, journal->live_end);
-	peer_req->next_entry_offset = journal->live_end + entry_with_data_size(peer_req);
+	entry = entry_from_offset(journal, entry_offset);
+	peer_req->next_entry_offset = entry_offset + entry_with_data_size(peer_req);
 
 	/* wait until there is sufficient space */
-//	drbd_info(device, "## journal wait; start %lld, need space from %llu to %llu\n",
-//		atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset);
+	drbd_info(device, "## journal wait; start %lld, need space from %llu to %llu %s\n",
+		atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset,
+		journal_has_space(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset) ? "has_space" : "no_space");
 	wait_event(journal->journal_wait,
-		circular_in_order(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset)
+		journal_has_space(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset)
 			|| !journal->memory_map
 			|| connection->cstate[NOW] < C_CONNECTED);
 	if (journal->memory_map && connection->cstate[NOW] >= C_CONNECTED) {
@@ -152,6 +156,8 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 //		drbd_info(device, "## journal wait canceled\n");
 		return -ECANCELED;
 	}
+
+	journal->live_end = entry_offset;
 
 	memset(entry, 0, sizeof(*entry));
 	entry->next = cpu_to_be64(peer_req->next_entry_offset);
