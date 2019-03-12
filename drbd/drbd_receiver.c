@@ -526,6 +526,7 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 		int err2;
 
 		++n;
+		INIT_LIST_HEAD(&peer_req->w.list);
 		/* list_del not necessary, next/prev members not touched */
 		err2 = peer_req->w.cb(&peer_req->w, !!err);
 		if (!err)
