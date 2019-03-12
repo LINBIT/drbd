@@ -1669,7 +1669,6 @@ next_bio:
 		goto fail;
 	}
 
-	drbd_info(device, "## drbd_submit_peer_request bio_alloc\n");
 	bio = bio_alloc(GFP_NOIO, nr_pages);
 	if (!bio) {
 		drbd_err(device, "submit_ee: Allocation of a bio failed (nr_pages=%u)\n", nr_pages);
@@ -1775,9 +1774,7 @@ next_bio:
 		/* strip off REQ_UNPLUG unless it is the last bio */
 		if (bios && DRBD_REQ_UNPLUG)
 			bio->bi_opf &= ~DRBD_REQ_UNPLUG;
-		drbd_info(device, "## drbd_submit_peer_request drbd_generic_make_request\n");
 		drbd_generic_make_request(device, fault_type, bio);
-		drbd_info(device, "## drbd_submit_peer_request drbd_generic_make_request done\n");
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
@@ -1910,7 +1907,6 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
 			&page, sector, data_size);
 	}
-	drbd_info(device, "## drbd_submit_peer_request done\n");
 
 	return err;
 }

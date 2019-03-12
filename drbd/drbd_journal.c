@@ -175,8 +175,9 @@ static void insert_interval(struct drbd_journal *journal, struct list_head *list
 	struct drbd_journal_interval *journal_interval;
 
 	/* TODO: handle allocation failure */
+	/* TODO: allocate outside of locks and GFP_NOIO (need retry or extra allocations due to unknown memory requirement) */
 	/* TODO: use mempool */
-	journal_interval = kzalloc(sizeof(struct drbd_journal_interval), GFP_NOIO);
+	journal_interval = kzalloc(sizeof(struct drbd_journal_interval), GFP_ATOMIC);
 	drbd_clear_interval(&journal_interval->i);
 	list_add_tail(&journal_interval->list, list);
 	journal_interval->i.sector = sector;
