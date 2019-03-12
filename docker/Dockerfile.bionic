@@ -1,6 +1,6 @@
 FROM ubuntu:bionic
 
-COPY /pkgs /pkgs
+COPY /pkgs.bionic /pkgs
 RUN apt-get update && apt-get install -y kmod
 
 COPY /entry.sh /
