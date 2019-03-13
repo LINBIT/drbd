@@ -437,7 +437,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
-//	drbd_info(peer_device, "## %s %p", __FUNCTION__, peer_req);
+	drbd_info(peer_device, "## %s %p\n", __FUNCTION__, peer_req);
 
 	return peer_req;
 }
@@ -446,7 +446,7 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 
-//	drbd_info(peer_device, "## %s %p %s", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
+	drbd_info(peer_device, "## %s %p %s\n", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
@@ -486,34 +486,23 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 	int err = 0;
 	int n = 0;
 
-//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock LOCK\n");
 	spin_lock_irq(&connection->resource->req_lock);
-//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock LOCKED\n");
 	reclaim_finished_net_peer_reqs(connection, &reclaimed);
 	list_splice_init(&connection->done_ee, &work_list);
 
-	list_for_each_entry_safe(peer_req, t, &connection->journal_done_ee, w.list) {
+	list_for_each_entry_safe(peer_req, t, &connection->acked_peer_requests, recv_order) {
 		if (peer_req->flags & EE_COMPLETE) {
 			struct drbd_device *device = peer_req->peer_device->device;
-//			drbd_info(device, "## drbd_finish_peer_reqs consider removing from journal peer request at sector %llu\n", (unsigned long long) peer_req->i.sector);
+			drbd_info(device, "## drbd_finish_peer_reqs remove from journal peer request %p at sector %llu\n", peer_req, (unsigned long long) peer_req->i.sector);
 			drbd_journal_remove_intervals(device, peer_req);
 			/* TODO: only do this once for each device */
 			drbd_journal_drop_until(device, peer_req->next_entry_offset);
-			list_move_tail(&peer_req->w.list, &journal_done);
+			list_move_tail(&peer_req->recv_order, &journal_done);
 		} else {
 			break;
 		}
 	}
-//	drbd_info(connection, "## drbd_finish_peer_reqs journal_lock UNLOCK\n");
 	spin_unlock_irq(&connection->resource->req_lock);
-
-	list_for_each_entry_safe(peer_req, t, &journal_done, w.list) {
-		struct drbd_device *device = peer_req->peer_device->device;
-		drbd_free_peer_req(peer_req);
-//		drbd_info(device, "## wake journal wait\n");
-		/* TODO: only do this once for each device */
-		wake_up(&device->ldev->journal.journal_wait);
-	}
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
@@ -526,7 +515,6 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 		int err2;
 
 		++n;
-		INIT_LIST_HEAD(&peer_req->w.list);
 		/* list_del not necessary, next/prev members not touched */
 		err2 = peer_req->w.cb(&peer_req->w, !!err);
 		if (!err)
@@ -536,6 +524,16 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 		} else
 			drbd_free_peer_req(peer_req);
 	}
+
+	list_for_each_entry_safe(peer_req, t, &journal_done, recv_order) {
+		struct drbd_device *device;
+		device = peer_req->peer_device->device;
+		drbd_free_peer_req(peer_req);
+//		drbd_info(device, "## wake journal wait\n");
+		/* TODO: only do this once for each device */
+		wake_up(&device->ldev->journal.journal_wait);
+	}
+
 	if (atomic_sub_and_test(n, &connection->done_ee_cnt))
 		wake_up(&connection->ee_wait);
 
@@ -2544,7 +2542,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
 
-//	drbd_info(device, "## e_end_block\n");
+	drbd_info(peer_device, "## e_end_block %p\n", peer_req);
 	if (peer_req->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(peer_device->connection, peer_req->epoch);
 		if (epoch)
@@ -8985,12 +8983,12 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		u64 in_sync_b, mask;
 
 		if (device->use_journal) {
-//			drbd_info(peer_device, "## write out from journal");
+			drbd_info(peer_device, "## write out from journal %p\n", peer_req);
 			/* TODO: store and retrieve op and op_flags (as wire flags) */
 			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);
 			if (err)
 				return err;
-			list_del(&peer_req->recv_order);
+			list_move_tail(&peer_req->recv_order, &connection->acked_peer_requests);
 		} else {
 			D_ASSERT(peer_device, peer_req->flags & EE_IN_ACTLOG);
 

@@ -3489,13 +3489,13 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	drbd_thread_init(resource, &connection->ack_receiver, drbd_ack_receiver, "ack_recv");
 	connection->ack_receiver.connection = connection;
 	INIT_LIST_HEAD(&connection->peer_requests);
+	INIT_LIST_HEAD(&connection->acked_peer_requests);
 	INIT_LIST_HEAD(&connection->connections);
 	INIT_LIST_HEAD(&connection->active_ee);
 	INIT_LIST_HEAD(&connection->sync_ee);
 	INIT_LIST_HEAD(&connection->read_ee);
 	INIT_LIST_HEAD(&connection->net_ee);
 	INIT_LIST_HEAD(&connection->done_ee);
-	INIT_LIST_HEAD(&connection->journal_done_ee);
 	init_waitqueue_head(&connection->ee_wait);
 
 	kref_init(&connection->kref);

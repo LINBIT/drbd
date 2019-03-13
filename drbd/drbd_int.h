@@ -1006,6 +1006,7 @@ struct drbd_connection {
 	struct work_struct peer_ack_work;
 
 	struct list_head peer_requests; /* All peer requests in the order we received them.. */
+	struct list_head acked_peer_requests; /* Peer requests that have been peer acked but are still in the journal, in the order we received them. */
 	u64 last_dagtag_sector;
 
 	atomic_t active_ee_cnt;
@@ -1014,7 +1015,6 @@ struct drbd_connection {
 	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
 	struct list_head net_ee;    /* zero-copy network send in progress */
 	struct list_head done_ee;   /* need to send P_WRITE_ACK */
-	struct list_head journal_done_ee;   /* need to remove from journal */
 	atomic_t done_ee_cnt;
 	struct work_struct send_acks_work;
 	wait_queue_head_t ee_wait;

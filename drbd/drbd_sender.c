@@ -231,10 +231,10 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
+		drbd_info(device, "## drbd_peer_request_endio %p\n", peer_req);
 		peer_req->flags |= EE_COMPLETE;
 		if (is_write && device->use_journal) {
 			struct drbd_connection *connection = peer_device->connection;
-			list_move_tail(&peer_req->w.list, &connection->journal_done_ee);
 			if (connection->cstate[NOW] == C_CONNECTED)
 				queue_work(connection->ack_sender, &connection->send_acks_work);
 			return;
