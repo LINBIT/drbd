@@ -8982,7 +8982,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 
 		/* TODO: this may be normal in erasure coding world */
 		drbd_err(connection, "peer request with dagtag <= %llu not found\n", dagtag);
-		return -EIO;
+		return 0;
 	}
 
 	list_cut_position(&work_list, &connection->peer_requests, &furthest_peer_req->recv_order);
