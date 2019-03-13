@@ -1268,6 +1268,7 @@ struct drbd_device {
 #endif
 	struct drbd_resource *resource;
 	bool use_journal;
+	bool distribute_data;
 	struct list_head peer_devices;
 	struct list_head pending_bitmap_io;
 

@@ -1429,6 +1429,16 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 		ppsize(ppb, size>>1), (unsigned long long)size>>1);
 }
 
+static sector_t logical_to_disk_size(struct drbd_device *device, sector_t logical_size)
+{
+	return device->distribute_data ? logical_size / DISK_COUNT : logical_size;
+}
+
+static sector_t disk_to_logical_size(struct drbd_device *device, sector_t disk_size)
+{
+	return device->distribute_data ? round_down(disk_size, CHUNK_SECTORS) * DISK_COUNT : disk_size;
+}
+
 /**
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.
@@ -1512,9 +1522,9 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	}
 
 	if (drbd_get_capacity(device->this_bdev) != size ||
-	    drbd_bm_capacity(device) != size / DISK_COUNT) {
+	    drbd_bm_capacity(device) != logical_to_disk_size(device, size)) {
 		int err;
-		err = drbd_bm_resize(device, size / DISK_COUNT, !(flags & DDSF_NO_RESYNC));
+		err = drbd_bm_resize(device, logical_to_disk_size(device, size), !(flags & DDSF_NO_RESYNC));
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(device);
@@ -1530,7 +1540,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		/* racy, see comments above. */
 		drbd_set_my_capacity(device, size);
 		if (effective_disk_size_determined(device)) {
-			md->effective_size = size / DISK_COUNT;
+			md->effective_size = logical_to_disk_size(device, size);
 			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
 			     (unsigned long long)size >> 1);
 		}
@@ -1749,7 +1759,7 @@ drbd_new_dev_size(struct drbd_device *device,
 	DDUMP_LLU(device, m_size);
 	common_d_size = min_not_zero(p_size, m_size);
 	DDUMP_LLU(device, common_d_size);
-	size = round_down(common_d_size, CHUNK_SECTORS) * DISK_COUNT;
+	size = disk_to_logical_size(device, common_d_size);
 	DDUMP_LLU(device, size);
 	if (size == 0)
 		drbd_err(device, "All nodes diskless!\n");

@@ -2370,14 +2370,14 @@ find_request(struct drbd_device *device, struct rb_root *root, u64 id,
 
 	/* Request object according to our peer */
 	req = (struct drbd_request *)(unsigned long)id;
-	// TODO Need to differentiate between source interval and interval for peers; validate based on interval for peers
-//	if (drbd_contains_interval(root, sector, &req->i) && req->i.local)
-	return req;
-//	if (!missing_ok) {
-//		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
-//			(unsigned long)id, (unsigned long long)sector);
-//	}
-//	return NULL;
+	/* TODO Need to differentiate between source interval and interval for peers; validate based on interval for peers */
+	if (device->distribute_data || (drbd_contains_interval(root, sector, &req->i) && req->i.local))
+		return req;
+	if (!missing_ok) {
+		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
+			(unsigned long)id, (unsigned long long)sector);
+	}
+	return NULL;
 }
 
 static int receive_DataReply(struct drbd_connection *connection, struct packet_info *pi)
@@ -5063,10 +5063,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			(unsigned long long)p_size,
 			(unsigned long long)peer_device->max_size);
 
-//	if ((p_size && p_csize > p_size) || (p_usize && p_csize > p_usize)) {
-//		drbd_warn(peer_device, "Peer sent bogus sizes, disconnecting\n");
-//		goto disconnect;
-//	}
+	if (!device->distribute_data && ((p_size && p_csize > p_size) || (p_usize && p_csize > p_usize))) {
+		drbd_warn(peer_device, "Peer sent bogus sizes, disconnecting\n");
+		goto disconnect;
+	}
 
 	/* The protocol version limits how big requests can be.  In addition,
 	 * peers before protocol version 94 cannot split large requests into
@@ -5125,12 +5125,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			goto disconnect;
 		}
 
-//		/* Disconnect, if we cannot grow to the peer's current size */
-//		if (my_max_size < p_csize && !is_handshake) {
-//			drbd_err(peer_device, "Peer's size larger than my maximum capacity (%llu < %llu sectors)\n",
-//					(unsigned long long)my_max_size, (unsigned long long)p_csize);
-//			goto disconnect;
-//		}
+		/* Disconnect, if we cannot grow to the peer's current size */
+		if (!device->distribute_data && (my_max_size < p_csize && !is_handshake)) {
+			drbd_err(peer_device, "Peer's size larger than my maximum capacity (%llu < %llu sectors)\n",
+					(unsigned long long)my_max_size, (unsigned long long)p_csize);
+			goto disconnect;
+		}
 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
@@ -5196,7 +5196,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		 */
 		new_size = p_csize;
 		new_size = min_not_zero(new_size, p_usize);
-//		new_size = min_not_zero(new_size, p_size);
+		if (!device->distribute_data)
+			new_size = min_not_zero(new_size, p_size);
 
 		if (new_size == 0) {
 			/* Ignore, peer does not know nothing. */

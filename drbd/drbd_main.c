@@ -2184,44 +2184,46 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio,
 	return 0;
 }
 
-//static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio, struct bvec_iter *iter)
-//{
-//	DRBD_BIO_VEC_TYPE bvec;
-//	bool no_zc = drbd_disable_sendpage;
-//
-//	/* e.g. XFS meta- & log-data is in slab pages, which have a
-//	 * page_count of 0 and/or have PageSlab() set.
-//	 * we cannot use send_page for those, as that does get_page();
-//	 * put_page(); and would cause either a VM_BUG directly, or
-//	 * __page_cache_release a page that would actually still be referenced
-//	 * by someone, leading to some obscure delayed Oops somewhere else. */
-//	if (!no_zc)
-//		bio_for_each_segment(bvec, bio, *iter) {
-//			struct page *page = bvec BVD bv_page;
-//
-//			if (page_count(page) < 1 || PageSlab(page)) {
-//				no_zc = true;
-//				break;
-//			}
-//		}
-//
-//	if (no_zc) {
-//		return _drbd_send_bio(peer_device, bio, iter);
-//	} else {
-//		struct drbd_connection *connection = peer_device->connection;
-//		struct drbd_transport *transport = &connection->transport;
-//		struct drbd_transport_ops *tr_ops = transport->ops;
-//		int err;
-//
-//		flush_send_buffer(connection, DATA_STREAM);
-//
-//		err = tr_ops->send_zc_bio(transport, bio);
-//		if (!err)
-//			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
-//
-//		return err;
-//	}
-//}
+static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio)
+{
+	DRBD_BIO_VEC_TYPE bvec;
+	DRBD_ITER_TYPE iter;
+	bool no_zc = drbd_disable_sendpage;
+
+	/* e.g. XFS meta- & log-data is in slab pages, which have a
+	 * page_count of 0 and/or have PageSlab() set.
+	 * we cannot use send_page for those, as that does get_page();
+	 * put_page(); and would cause either a VM_BUG directly, or
+	 * __page_cache_release a page that would actually still be referenced
+	 * by someone, leading to some obscure delayed Oops somewhere else. */
+	if (!no_zc)
+		bio_for_each_segment(bvec, bio, iter) {
+			struct page *page = bvec BVD bv_page;
+
+			if (page_count(page) < 1 || PageSlab(page)) {
+				no_zc = true;
+				break;
+			}
+		}
+
+	if (no_zc) {
+		struct bvec_iter bi_iter = bio->bi_iter;
+		return _drbd_send_bio(peer_device, bio, &bi_iter, bi_iter.bi_size);
+	} else {
+		struct drbd_connection *connection = peer_device->connection;
+		struct drbd_transport *transport = &connection->transport;
+		struct drbd_transport_ops *tr_ops = transport->ops;
+		int err;
+
+		flush_send_buffer(connection, DATA_STREAM);
+
+		err = tr_ops->send_zc_bio(transport, bio);
+		if (!err)
+			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
+
+		return err;
+	}
+}
 
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
@@ -2365,13 +2367,12 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		/* TODO (striping experiment): only send the relevant data for the peer */
 		struct bvec_iter iter = req->master_bio->bi_iter;
 		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
-//		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size)
-		err = _drbd_send_bio(peer_device, req->master_bio, &iter, operation->target_size_sectors << 9);
-//		else
-//			err = _drbd_send_zc_bio(peer_device, req->master_bio, &iter);
+		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size || device->distribute_data)
+			err = _drbd_send_bio(peer_device, req->master_bio, &iter, operation->target_size_sectors << 9);
+		else
+			err = _drbd_send_zc_bio(peer_device, req->master_bio);
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0 && digest_size <= 64) {
@@ -3685,6 +3686,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	kref_debug_get(&resource->kref_debug, 4);
 	device->resource = resource;
 	device->use_journal = true;
+	device->distribute_data = true;
 	device->minor = minor;
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
