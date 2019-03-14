@@ -298,7 +298,11 @@ struct drbd_request {
 	 * see drbd_request_endio(). */
 	struct bio *private_bio;
 
+	/* TODO: This doesn't need to be an interval any more; just need sector and size */
 	struct drbd_interval i;
+
+	/* range of consistency stripes that this request belongs to */
+	struct drbd_interval stripe_interval;
 
 	/* epoch: used to check on "completion" whether this req was in
 	 * the current epoch, and we therefore have to close it,

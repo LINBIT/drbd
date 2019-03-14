@@ -140,6 +140,7 @@ drbd_find_overlap(struct rb_root *root, sector_t sector, unsigned int size)
 	struct drbd_interval *overlap = NULL;
 	sector_t end = sector + (size >> 9);
 
+	printk("## drbd_find_overlap sector %llu size %llu\n", (unsigned long long) sector, (unsigned long long) size);
 	BUG_ON(!IS_ALIGNED(size, 512));
 
 	while (node) {

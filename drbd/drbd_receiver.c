@@ -2371,7 +2371,7 @@ find_request(struct drbd_device *device, struct rb_root *root, u64 id,
 	/* Request object according to our peer */
 	req = (struct drbd_request *)(unsigned long)id;
 	/* TODO Need to differentiate between source interval and interval for peers; validate based on interval for peers */
-	if (device->distribute_data || (drbd_contains_interval(root, sector, &req->i) && req->i.local))
+	if (device->distribute_data || (drbd_contains_interval(root, sector, &req->stripe_interval) && req->stripe_interval.local))
 		return req;
 	if (!missing_ok) {
 		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
@@ -3175,6 +3175,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (tp) {
 		/* two primaries implies protocol C */
 		D_ASSERT(device, d.dp_flags & DP_SEND_WRITE_ACK);
+		/* two primaries is not supported with alternative personalities */
+		D_ASSERT(device, !device->distribute_data);
 		err = wait_for_and_update_peer_seq(peer_device, d.peer_seq);
 		if (err)
 			goto out_interrupted;
