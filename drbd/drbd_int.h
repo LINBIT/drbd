@@ -120,7 +120,8 @@ extern char drbd_usermode_helper[];
 /* TODO: Allow configuration of chunk size and change max bio size to match */
 #define CHUNK_SIZE DRBD_MAX_BIO_SIZE
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
-#define DISK_COUNT 2
+#define DISK_COUNT_DATA 2
+#define DISK_COUNT_TOTAL 3
 
 struct drbd_device;
 struct drbd_connection;

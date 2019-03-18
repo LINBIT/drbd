@@ -1431,12 +1431,12 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 
 static sector_t logical_to_disk_size(struct drbd_device *device, sector_t logical_size)
 {
-	return device->distribute_data ? logical_size / DISK_COUNT : logical_size;
+	return device->distribute_data ? logical_size / DISK_COUNT_DATA : logical_size;
 }
 
 static sector_t disk_to_logical_size(struct drbd_device *device, sector_t disk_size)
 {
-	return device->distribute_data ? round_down(disk_size, CHUNK_SECTORS) * DISK_COUNT : disk_size;
+	return device->distribute_data ? round_down(disk_size, CHUNK_SECTORS) * DISK_COUNT_DATA : disk_size;
 }
 
 /**

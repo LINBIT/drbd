@@ -82,14 +82,6 @@ static void distributed_request_operation(struct drbd_request *req)
 	// sectors = chunk_sects - (sector & (chunk_sects-1)); // remaining sectors in the chunk where the bio lands
 	// if (sectors < bio_sectors(bio)) { } // need to split
 	//
-	// determine which node to target:
-	// int chunksect_bits = ffz(~chunk_sects);
-	// /* find the sector offset inside the chunk */
-	// sect_in_chunk = sector & (chunk_sects - 1);
-	// chunk = sector >> chunksect_bits;
-	// nb_dev = 2;
-	// dev = chunk % nb_dev;
-	// chunk_on_dev = chunk / nb_dev;
 	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
 	// TODO: Might be able to use round_up/round_down to simplify this a little
 	const sector_t sector = req->i.sector;
@@ -97,25 +89,29 @@ static void distributed_request_operation(struct drbd_request *req)
 	const sector_t size_sectors = size >> 9;
 	const int chunksect_bits = ffz(~CHUNK_SECTORS);
 	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
-	const int nb_dev = DISK_COUNT;
+	const int data_disks = DISK_COUNT_DATA;
+	const int total_disks = DISK_COUNT_TOTAL;
+	const int data_disk_number = chunk % data_disks;
+	const int stripe = chunk / data_disks;
 	const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
 	const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
 
 	/* bio starts in chunk on this node */
-	const int start_node_id = chunk % nb_dev;
-	struct request_operation *start_operation = &req->operation[start_node_id];
+	const int parity_node_id = total_disks - 1 - (stripe % total_disks);
+	const int data_node_id = (parity_node_id + 1 + data_disk_number) % total_disks;
+	struct request_operation *start_operation = &req->operation[data_node_id];
 
-	start_operation->target_sector = ((chunk / nb_dev) << chunksect_bits) + sector_in_chunk;
+	start_operation->target_sector = (stripe << chunksect_bits) + sector_in_chunk;
 	start_operation->target_size_sectors = min(remaining_in_chunk, size_sectors);
 	start_operation->input_offset = 0;
-	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", start_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
+	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
 
 	if (size_sectors > remaining_in_chunk) {
 		/* bio overflows into chunk on next node */
-		const int overflow_node_id = (start_node_id + 1) % nb_dev;
+		const int overflow_node_id = (parity_node_id + 1 + data_disk_number + 1) % total_disks;
 		struct request_operation *overflow_operation = &req->operation[overflow_node_id];
 
-		overflow_operation->target_sector = ((chunk + 1) / nb_dev) << chunksect_bits;
+		overflow_operation->target_sector = ((chunk + 1) / data_disks) << chunksect_bits;
 		overflow_operation->target_size_sectors = size_sectors - remaining_in_chunk;
 		overflow_operation->input_offset = remaining_in_chunk;
 		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
