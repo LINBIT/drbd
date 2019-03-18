@@ -69,7 +69,8 @@ static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *r
 }
 #endif
 
-static void distributed_request_operation(struct drbd_request *req, const sector_t sector, const unsigned int size) {
+static void distributed_request_operation(struct drbd_request *req)
+{
 	// TODO: can simplify this by splitting requests earlier on so that there are no overflows over rotation boundaries and so that all disks are equally involved in request
 
 	/* TODO (striping experiment): calculate location respecting striping */
@@ -91,6 +92,8 @@ static void distributed_request_operation(struct drbd_request *req, const sector
 	// chunk_on_dev = chunk / nb_dev;
 	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
 	// TODO: Might be able to use round_up/round_down to simplify this a little
+	const sector_t sector = req->i.sector;
+	const unsigned int size = req->i.size;
 	const sector_t size_sectors = size >> 9;
 	const int chunksect_bits = ffz(~CHUNK_SECTORS);
 	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
@@ -128,7 +131,10 @@ static void distributed_request_operation(struct drbd_request *req, const sector
 	}
 }
 
-static void replicated_request_operation(struct drbd_device *device, struct drbd_request *req, const sector_t sector, const unsigned int size) {
+static void replicated_request_operation(struct drbd_device *device, struct drbd_request *req)
+{
+	const sector_t sector = req->i.sector;
+	const unsigned int size = req->i.size;
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
@@ -805,6 +811,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if ((old_net & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
 		dec_ap_pending(peer_device);
+		/* TODO: If pre-read, put a different counter */
 		++c_put;
 		ktime_get_accounting(req->acked_kt[peer_device->node_id]);
 		advance_conn_req_ack_pending(peer_device, req);
@@ -1545,6 +1552,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 		if (!operation->target_size_sectors)
 			continue;
 
+		/* TODO: Move this logic into initial operation decision making */
 		remote = drbd_should_do_remote(peer_device, NOW);
 		send_oos = drbd_should_send_out_of_sync(peer_device);
 
@@ -1586,6 +1594,7 @@ static int drbd_process_read_request(struct drbd_request *req)
 		if (!operation->target_size_sectors)
 			continue;
 
+		/* TODO: Move this logic into initial operation decision making */
 		remote = peer_device->disk_state[NOW] == D_UP_TO_DATE;
 
 		if (!remote)
@@ -1700,6 +1709,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	struct drbd_request *req;
 
 	/* allocate outside of all locks; */
+	/* TODO: allocate multiple requests, to ensure homogeneous data access */
 	req = drbd_req_new(device, bio);
 	if (!req) {
 		dec_ap_bio(device, rw);
@@ -1856,9 +1866,9 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	}
 
 	if (device->distribute_data)
-		distributed_request_operation(req, bi_iter->bi_sector, bi_iter->bi_size);
+		distributed_request_operation(req);
 	else
-		replicated_request_operation(device, req, bi_iter->bi_sector, bi_iter->bi_size);
+		replicated_request_operation(device, req);
 
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,

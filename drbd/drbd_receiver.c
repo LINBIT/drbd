@@ -2246,6 +2246,8 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	 * we disconnect anyways, and counters will be reset. */
 	peer_device->recv_cnt += data_size >> 9;
 
+	/* TODO: Determine if this is a pre-read; if so, allocate a page chain and recv into it */
+
 	bio = req->master_bio;
 	/* TODO: Replace with input validation that respects interval re-mapping
 	D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
@@ -2407,6 +2409,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	 * still no race with drbd_fail_pending_reads */
 	/* TODO: What happens if pi->size != req->i.size in the normal case?? */
 	err = recv_dless_read(peer_device, req, sector, pi->size);
+	/* TODO: Different behavior if this is a pre-read */
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
 	/* else: nothing. handled from drbd_disconnect...
