@@ -2157,8 +2157,8 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio,
 	DRBD_BIO_VEC_TYPE bvec;
 	unsigned int sent = 0;
 
-	drbd_info(peer_device->device, "## _drbd_send_bio peer: %d, sector: %lld, bi_size: %u, idx: %u, done: %u, size: %u\n",
-			peer_device->node_id, (long long int) iter->bi_sector, iter->bi_size, iter->bi_idx, iter->bi_bvec_done, size);
+//	drbd_info(peer_device->device, "## _drbd_send_bio peer: %d, sector: %lld, bi_size: %u, idx: %u, done: %u, size: %u\n",
+//			peer_device->node_id, (long long int) iter->bi_sector, iter->bi_size, iter->bi_idx, iter->bi_bvec_done, size);
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */
 	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
@@ -2297,7 +2297,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		err = 0;
 		goto out;
 	}
-	drbd_info(device, "## send, peer %d, sector %llu, size %llu, input_offset %u\n", peer_device->node_id, (long long unsigned) operation->target_sector, (long long unsigned) operation->target_size_sectors, operation->input_offset);
+//	drbd_info(device, "## send, peer %d, sector %llu, size %llu, input_offset %u\n", peer_device->node_id, (long long unsigned) operation->target_sector, (long long unsigned) operation->target_size_sectors, operation->input_offset);
 
 	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);

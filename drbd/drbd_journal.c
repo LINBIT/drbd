@@ -68,7 +68,6 @@ int drbd_journal_open(struct drbd_backing_dev *bdev)
 
 	nr_pages_request = bdev->journal.known_size >> (PAGE_SHIFT - SECTOR_SHIFT);
 	nr_pages_alloc = dax_direct_access(bdev->journal_dax_dev, 0, nr_pages_request, &bdev->journal.memory_map, &pfn);
-	printk("## dax_direct_access alloc: %ld %p %llx\n", nr_pages_alloc, bdev->journal.memory_map, pfn.val);
 
 	if (nr_pages_alloc < 0) {
 		bdev->journal.memory_map = NULL;
@@ -110,7 +109,6 @@ void drbd_journal_close(struct drbd_backing_dev *bdev)
 
 	bdev->journal_dax_dev = NULL;
 	bdev->journal.memory_map = NULL;
-	printk("## wake journal wait; closing\n");
 	wake_up(&bdev->journal.journal_wait);
 }
 
@@ -143,9 +141,9 @@ int drbd_journal_next(struct drbd_device *device, struct drbd_peer_request *peer
 	peer_req->next_entry_offset = entry_offset + entry_with_data_size(peer_req);
 
 	/* wait until there is sufficient space */
-	drbd_info(device, "## journal wait; start %lld, need space from %llu to %llu %s\n",
-		atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset,
-		journal_has_space(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset) ? "has_space" : "no_space");
+//	drbd_info(device, "## journal wait; start %lld, need space from %llu to %llu %s\n",
+//		atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset,
+//		journal_has_space(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset) ? "has_space" : "no_space");
 	wait_event(journal->journal_wait,
 		journal_has_space(atomic64_read(&journal->live_start), journal->live_end, peer_req->next_entry_offset)
 			|| !journal->memory_map

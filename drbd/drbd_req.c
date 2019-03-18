@@ -104,7 +104,7 @@ static void distributed_request_operation(struct drbd_request *req)
 	start_operation->target_sector = (stripe << chunksect_bits) + sector_in_chunk;
 	start_operation->target_size_sectors = min(remaining_in_chunk, size_sectors);
 	start_operation->input_offset = 0;
-	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
+//	 printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
 
 	if (size_sectors > remaining_in_chunk) {
 		/* bio overflows into chunk on next node */
@@ -114,7 +114,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		overflow_operation->target_sector = ((chunk + 1) / data_disks) << chunksect_bits;
 		overflow_operation->target_size_sectors = size_sectors - remaining_in_chunk;
 		overflow_operation->input_offset = remaining_in_chunk;
-		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
+//		 printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
 
 		req->stripe_interval.sector = min(start_operation->target_sector, overflow_operation->target_sector);
 		req->stripe_interval.size =
@@ -247,7 +247,6 @@ static void drbd_remove_request_interval(struct rb_root *root,
 	struct drbd_device *device = req->device;
 	struct drbd_interval *i = &req->stripe_interval;
 
-	drbd_info(device, "## drbd_remove_request_interval root %p interval %p", root, i);
 	drbd_remove_interval(root, i);
 
 	/* Wake up any processes waiting for this request to complete.  */
@@ -1339,8 +1338,8 @@ static void complete_conflicting_writes(struct drbd_request *req)
 		if (!i)	/* if any */
 			break;
 
-		drbd_info(device, "## complete_conflicting_writes wait for request at sector %llu size %llu\n",
-			  (unsigned long long) i->sector, (unsigned long long) i->size);
+//		drbd_info(device, "## complete_conflicting_writes wait for request at sector %llu size %llu\n",
+//			  (unsigned long long) i->sector, (unsigned long long) i->size);
 		/* Indicate to wake up device->misc_wait on progress.  */
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i->waiting = true;
@@ -1563,7 +1562,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 			if (!in_tree) {
 				/* Corresponding drbd_remove_request_interval is in
 				 * drbd_req_complete() */
-				drbd_info(device, "## drbd_process_write_request insert root %p interval %p", &device->write_requests, &req->stripe_interval);
 				drbd_insert_interval(&device->write_requests, &req->stripe_interval);
 				in_tree = true;
 			}
@@ -1602,7 +1600,6 @@ static int drbd_process_read_request(struct drbd_request *req)
 			/* So we can verify the handle in the answer packet.
 			 * Corresponding drbd_remove_request_interval is in
 			 * drbd_req_complete() */
-			drbd_info(device, "## drbd_process_read_request insert root %p interval %p", &device->read_requests, &req->stripe_interval);
 			drbd_insert_interval(&device->read_requests, &req->stripe_interval);
 			in_tree = true;
 		}
@@ -1845,21 +1842,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
 	bool submit_private_bio = false;
-	struct bvec_iter *bi_iter = NULL;
-	unsigned short bi_vcnt;
 
 	spin_lock_irq(&resource->req_lock);
-
-	bi_iter = &req->master_bio->bi_iter;
-	bi_vcnt = req->master_bio->bi_vcnt;
-	drbd_info(device, "## drbd_send_and_submit rw: %d, sector: %lld, size: %u, idx: %u, done: %u, bi_vcnt: %u\n",
-			rw, (long long int) bi_iter->bi_sector, bi_iter->bi_size, bi_iter->bi_idx, bi_iter->bi_bvec_done, bi_vcnt);
-	if (bi_vcnt > 0) {
-		struct bio_vec *bi_io_vec = req->master_bio->bi_io_vec;
-		void *address = page_address(bi_io_vec->bv_page);
-		drbd_info(device, "## drbd_send_and_submit page: %p, len: %u, offset: %u, address: %p, %02hhx%02hhx\n",
-				bi_io_vec->bv_page, bi_io_vec->bv_len, bi_io_vec->bv_offset, address, ((unsigned char*) address)[0], ((unsigned char*) address)[1]);
-	}
 
 	if (device->distribute_data)
 		distributed_request_operation(req);
@@ -1960,7 +1944,6 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				 * Corresponding drbd_remove_request_interval is in
 				 * drbd_req_complete() */
 				D_ASSERT(device, drbd_interval_empty(&req->i));
-				drbd_info(device, "## drbd_send_and_submit insert root %p interval %p", &device->read_requests, &req->stripe_interval);
 				drbd_insert_interval(&device->read_requests, &req->stripe_interval);
 
 				_req_mod(req, TO_BE_SENT, peer_device);

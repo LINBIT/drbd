@@ -437,16 +437,12 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
-	drbd_info(peer_device, "## %s %p\n", __FUNCTION__, peer_req);
-
 	return peer_req;
 }
 
 void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-
-	drbd_info(peer_device, "## %s %p %s\n", __FUNCTION__, peer_req, is_net ? "net" : "not_net");
 
 	might_sleep();
 	if (peer_req->flags & EE_HAS_DIGEST)
@@ -493,7 +489,7 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 	list_for_each_entry_safe(peer_req, t, &connection->acked_peer_requests, recv_order) {
 		if (peer_req->flags & EE_COMPLETE) {
 			struct drbd_device *device = peer_req->peer_device->device;
-			drbd_info(device, "## drbd_finish_peer_reqs remove from journal peer request %p at sector %llu\n", peer_req, (unsigned long long) peer_req->i.sector);
+//			drbd_info(device, "## drbd_finish_peer_reqs remove from journal peer request %p at sector %llu\n", peer_req, (unsigned long long) peer_req->i.sector);
 			drbd_journal_remove_intervals(device, peer_req);
 			/* TODO: only do this once for each device */
 			drbd_journal_drop_until(device, peer_req->next_entry_offset);
@@ -1803,9 +1799,9 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	struct page *page = peer_req->page_chain.head;
 	int err = 0;
 
-	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
-						  (unsigned long long) sector,
-						  (unsigned long long) data_size);
+//	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
+//						  (unsigned long long) sector,
+//						  (unsigned long long) data_size);
 	if (device->use_journal && op == REQ_OP_READ) {
 		struct drbd_interval *existing_interval;
 
@@ -2555,7 +2551,6 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
 
-	drbd_info(peer_device, "## e_end_block %p\n", peer_req);
 	if (peer_req->flags & EE_IS_BARRIER) {
 		epoch = previous_epoch(peer_device->connection, peer_req->epoch);
 		if (epoch)
@@ -7968,7 +7963,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		drbd_bitmap_io(device, &drbd_bm_write_copy_pages, "write from disconnected",
 				BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT, peer_device);
 		if (device->use_journal) {
-			printk("## wake journal wait; peer_device_disconnected\n");
 			wake_up(&device->ldev->journal.journal_wait);
 		}
 		put_ldev(device);
@@ -8976,7 +8970,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 
 	spin_lock_irq(&resource->req_lock);
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
-		drbd_info(peer_req->peer_device, "## got_peer_ack check req with dagtag %llu\n", peer_req->dagtag_sector);
+//		drbd_info(peer_req->peer_device, "## got_peer_ack check req with dagtag %llu\n", peer_req->dagtag_sector);
 		if (peer_req->dagtag_sector <= dagtag)
 			furthest_peer_req = peer_req;
 		else
@@ -9000,7 +8994,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 		u64 in_sync_b, mask;
 
 		if (device->use_journal) {
-			drbd_info(peer_device, "## write out from journal %p\n", peer_req);
+//			drbd_info(peer_device, "## write out from journal %p\n", peer_req);
 			/* TODO: store and retrieve op and op_flags (as wire flags) */
 			err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, DRBD_REQ_FUA, DRBD_FAULT_DT_WR);
 			if (err)
