@@ -122,6 +122,7 @@ extern char drbd_usermode_helper[];
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
 #define DISK_COUNT_DATA 2
 #define DISK_COUNT_TOTAL 3
+#define BIG_STRIPE_SECTORS (CHUNK_SECTORS * DISK_COUNT_DATA)
 
 struct drbd_device;
 struct drbd_connection;

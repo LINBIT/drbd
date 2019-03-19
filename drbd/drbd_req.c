@@ -1845,6 +1845,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 
 	spin_lock_irq(&resource->req_lock);
 
+	drbd_info(device, "## drbd_send_and_submit sector %lld, size %lld\n", (unsigned long long) req->i.sector, (unsigned long long) req->i.size);
+
 	if (device->distribute_data)
 		distributed_request_operation(req);
 	else
@@ -2403,6 +2405,8 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	struct drbd_resource *resource = device->resource;
+	sector_t sector;
+	unsigned int remaining;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	ktime_t start_kt;
 #endif
@@ -2434,7 +2438,26 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	ktime_get_accounting(start_kt);
 	start_jif = jiffies;
 
-	__drbd_make_request(device, bio, start_kt, start_jif);
+	sector = DRBD_BIO_BI_SECTOR(bio);
+	remaining = DRBD_BIO_BI_SIZE(bio);
+	do {
+		sector_t sector_in_stripe = sector % BIG_STRIPE_SECTORS;
+		sector_t sectors_remaining_in_stripe = BIG_STRIPE_SECTORS - sector_in_stripe;
+		unsigned int remaining_in_stripe = sectors_remaining_in_stripe << SECTOR_SHIFT;
+		struct bio *bio_to_submit;
+		if (remaining > remaining_in_stripe) {
+			bio_to_submit = bio_split(bio, sectors_remaining_in_stripe, GFP_NOIO, &drbd_io_bio_set);
+			sector += sectors_remaining_in_stripe;
+			remaining -= remaining_in_stripe;
+		} else {
+			bio_to_submit = bio;
+			sector += remaining >> SECTOR_SHIFT;
+			remaining = 0;
+		}
+		drbd_info(device, "## drbd_make_request sector %lld, size %lld\n", (unsigned long long) DRBD_BIO_BI_SECTOR(bio_to_submit), (unsigned long long) DRBD_BIO_BI_SIZE(bio_to_submit));
+		__drbd_make_request(device, bio_to_submit, start_kt, start_jif);
+	} while (remaining);
+	drbd_info(device, "## drbd_make_request done\n");
 
 #ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
 	current->bio_list = current_bio_list;
