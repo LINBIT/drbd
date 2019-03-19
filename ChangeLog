@@ -2,6 +2,30 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
+9.0.17-0rc1 (api:genl2/proto:86-114/transport:14)
+--------
+ * Fix UUID handling of a diskless primary that has not peer with
+   usable data may not touch the current UUID
+ * Fix resync-after dependencies; cross-resource dependencies
+   and missing resources
+ * Fix resync when the sync source suddenly connects to a more recent
+   data set via an other connection and becomes sync target on that
+   other connection; pause first resync; fix wrong display of negative
+   resync progress percentage in this case
+ * Fix volume numbers between 32767 and 65534
+ * Fix the data integrity implementation; it was broken since drbd-9.0
+   and reported only false positives
+ * Fix for a corner-case when a promote action happens concurrently with
+   a reconciliation resync
+ * Improve resync code to be able to fully utilize fast storage
+   backend devices and fast networks with resync traffic; as a side
+   effect the settling time of the resync controller got shorter in
+   for most cases
+ * Show in the user-visible message who the opener is if if demote/down
+   fails doe to someone holding a drbd device open
+ * docker file for a "load drbd module container" and allow to disable
+   user-mode-helpers, which is necessary for this container
+
 9.0.16-1 (api:genl2/proto:86-114/transport:14)
 --------
  * Fix regression (introduced with 9.0.15) in handling request timeouts;
