@@ -434,12 +434,23 @@ void tl_release(struct drbd_connection *connection,
 			expect_epoch = req->epoch;
 			expect_size ++;
 		} else {
+			const u16 s = r->net_rq_state[idx];
 			if (r->epoch != expect_epoch)
 				break;
 			if (!(r->local_rq_state & RQ_WRITE))
 				continue;
-			/* if (s & RQ_DONE): not expected */
-			/* if (!(s & RQ_NET_MASK)): not expected */
+			/* probably a "send_out_of_sync", during Ahead/Behind mode,
+			 * while at least one volume already started to resync again.
+			 * I'd very much prefer these to be in their own epoch,
+			 * or better yet, "simultaneously" go from Ahead/Behind -> SyncSource/SyncTarget
+			 * but that is currently not the case. FIXME.
+			 */
+			if ((s & RQ_NET_MASK) && !(s & RQ_EXP_BARR_ACK))
+				continue;
+			if (s & RQ_NET_DONE || (s & RQ_NET_MASK) == 0) {
+				drbd_warn(connection, "unexpected state flags: 0x%x during BarrierAck #%u\n",
+					s, barrier_nr);
+			}
 			expect_size++;
 		}
 		if (y_block_id && (struct drbd_request*)(unsigned long)y_block_id == r) {
@@ -483,10 +494,25 @@ void tl_release(struct drbd_connection *connection,
 	}
 
 	if (expect_size != set_size) {
-		if (!o_block_id)
+		if (!o_block_id) {
 			drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
 				 barrier_nr, set_size, expect_size);
-		else
+#if 0
+/* DEBUGGING AID */
+			list_for_each_entry(req, &resource->transfer_log, tl_requests)
+				if (req->epoch == expect_epoch)
+					break;
+			list_for_each_entry_from(req, &resource->transfer_log, tl_requests) {
+				if (req->epoch != expect_epoch)
+					break;
+				drbd_info(req->device, "XXX %u %llu+%u 0x%x 0x%x\n",
+					req->epoch,
+					(unsigned long long)req->i.sector, req->i.size >> 9,
+					req->local_rq_state, req->net_rq_state[idx]
+				);
+			}
+#endif
+		} else
 			drbd_err(connection, "BAD! ConfirmedStable [%p,%p] received with n_writes=%u, expected n_writes=%u!\n",
 				 req, req_y, set_size, expect_size);
 		goto bail;

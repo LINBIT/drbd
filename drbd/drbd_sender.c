@@ -2684,6 +2684,43 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 	}
 }
 
+static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd_interval *in)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_request *req;
+	struct drbd_interval *i;
+	sector_t sector = in->sector;
+	int size = in->size;
+	int idx = peer_device->node_id;
+	int s;
+	bool in_flight = false;
+
+	if (idx < 0 || idx >= DRBD_NODE_ID_MAX) {
+		drbd_warn(peer_device, "is_write_in_flight: BAD idx: %d\n", idx);
+		return false;
+	}
+
+	spin_lock_irq(&device->resource->req_lock);
+	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+		if (i == in)
+			continue;
+		if (!i->local)
+			continue;
+		/* don't care for i->completed, in DRBD_PROT_A we
+		 * are more interested in RQ_NET_DONE instead */
+		req = container_of(i, struct drbd_request, i);
+		s = req->net_rq_state[idx];
+		if ((s & RQ_NET_SENT) == 0) /* not even sent: ignore */
+			continue;
+		if ((s & RQ_NET_DONE) == RQ_NET_DONE) /* already done: ignore */
+			continue;
+		in_flight = true;
+		break;
+	}
+	spin_unlock_irq(&device->resource->req_lock);
+	return in_flight;
+}
+
 static int process_one_request(struct drbd_connection *connection)
 {
 	struct bio_and_error m;
@@ -2693,7 +2730,7 @@ static int process_one_request(struct drbd_connection *connection)
 			conn_peer_device(connection, device->vnr);
 	unsigned s = drbd_req_state_by_peer_device(req, peer_device);
 	bool do_send_unplug = req->local_rq_state & RQ_UNPLUG;
-	int err;
+	int err = 0;
 	enum drbd_req_event what;
 
 	/* pre_send_jif[] is used in net_timeout_reached() */
@@ -2729,12 +2766,47 @@ static int process_one_request(struct drbd_connection *connection)
 			 * No more barriers will be sent, until we leave AHEAD mode again. */
 			maybe_send_barrier(connection, req->epoch);
 
+			/* make sure the state change to L_AHEAD/L_BEHIND
+			 * arrives before the first set-out-of-sync information */
 			if (!peer_device->todo.was_ahead) {
 				peer_device->todo.was_ahead = true;
 				drbd_send_current_state(peer_device);
 			}
-			err = drbd_send_out_of_sync(peer_device, &req->i);
-			what = OOS_HANDED_TO_NETWORK;
+
+			/* Scenario:
+			 * L_ESTABLISHED -> L_AHEAD -> L_SYNC_SOURCE -> L_AHEAD
+			 *  a) during first L_AHEAD, we send, and set, out-of-sync,
+			 *  b) during L_SYNC_SOURCE, we send a normal write (above),
+			 *  c) during second L_AHEAD, we again send + set out-of-sync
+			 * all for the same block.
+			 * The "normal write during resync" may set the block
+			 * in-sync on completion/destruction.
+			 * We must make sure that won't race
+			 * race with the second set out-of-sync.
+			 *
+			 * In drbd_send_and_submit(), we introduce a dependency
+			 * via req->destroy_next, where the older (WRITE) requests
+			 * hold a kref on the younger ones, so we can be sure the
+			 * destructor is processed in oldest-to-youngest order.
+			 *
+			 * Even if the P_RS_WRITE_ACK for the write
+			 * during-resync (b) is received *after* the completion
+			 * of the second send+set out-of-sync (c), the ordering
+			 * of the destructors will only temporarily set
+			 * in-sync, then set out-of-sync again "soon enough",
+			 * at least on this node.
+			 *
+			 * As an optimization, if during L_AHEAD the same
+			 * block(s) are overwritten several times, we may skip
+			 * the send-out-of-sync, if we know we told the peer
+			 * before. But we must NOT skip, if there is still a
+			 * normal write in-flight to the peer (as per the
+			 * scenario above).  We check using our interval tree.
+			 */
+			if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size) ||
+			    is_write_in_flight(peer_device, &req->i))
+				err = drbd_send_out_of_sync(peer_device, &req->i);
+			what = OOS_HANDED_TO_NETWORK; /* Well, most of the time, anyways. */
 		}
 	} else {
 		maybe_send_barrier(connection, req->epoch);

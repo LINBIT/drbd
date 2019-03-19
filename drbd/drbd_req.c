@@ -747,11 +747,22 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		ktime_get_accounting(req->net_done_kt[peer_device->node_id]);
 
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
-		    atomic_read(ap_in_flight) == 0 &&
-		    !test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags)) {
-			peer_device->start_resync_side = L_SYNC_SOURCE;
-			peer_device->start_resync_timer.expires = jiffies + HZ;
-			add_timer(&peer_device->start_resync_timer);
+		    atomic_read(ap_in_flight) == 0) {
+			struct drbd_peer_device *pd;
+			int vnr;
+			/* The first peer device to notice that it is time to
+			 * go Ahead -> SyncSource tries to trigger that
+			 * transition for *all* peer devices currently in
+			 * L_AHEAD for this connection. */
+			idr_for_each_entry(&peer_device->connection->peer_devices, pd, vnr) {
+				if (pd->repl_state[NOW] != L_AHEAD)
+					continue;
+				if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &pd->flags))
+					continue; /* already done */
+				pd->start_resync_side = L_SYNC_SOURCE;
+				pd->start_resync_timer.expires = jiffies + HZ;
+				add_timer(&pd->start_resync_timer);
+			}
 		}
 
 		/* in ahead/behind mode, or just in case,
@@ -1283,6 +1294,9 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	u32 cong_fill = 0, cong_extents = 0;
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
+	if (connection->agreed_pro_version < 96)
+		return;
+
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
 	if (nc) {
@@ -1293,8 +1307,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 		on_congestion = OC_BLOCK;
 	}
 	rcu_read_unlock();
-	if (on_congestion == OC_BLOCK ||
-	    connection->agreed_pro_version < 96)
+	if (on_congestion == OC_BLOCK)
 		return;
 
 	if (on_congestion == OC_PULL_AHEAD && peer_device->repl_state[NOW] == L_AHEAD)
@@ -1307,20 +1320,28 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (!get_ldev_if_state(device, D_UP_TO_DATE))
 		return;
 
-	if (cong_fill &&
-	    atomic_read(&connection->ap_in_flight) +
-	    atomic_read(&connection->rs_in_flight) >= cong_fill) {
-		drbd_info(device, "Congestion-fill threshold reached\n");
-		congested = true;
+	/* if an other volume already found that we are congested, short circuit. */
+	congested = test_bit(CONN_CONGESTED, &connection->flags);
+
+	if (!congested && cong_fill) {
+		int n = atomic_read(&connection->ap_in_flight) +
+			atomic_read(&connection->rs_in_flight);
+		if (n >= cong_fill) {
+			drbd_info(device, "Congestion-fill threshold reached (%d >= %d)\n", n, cong_fill);
+			congested = true;
+		}
 	}
 
-	if (device->act_log->used >= cong_extents) {
-		drbd_info(device, "Congestion-extents threshold reached\n");
+	if (!congested && device->act_log->used >= cong_extents) {
+		drbd_info(device, "Congestion-extents threshold reached (%d >= %d)\n",
+			device->act_log->used, cong_extents);
 		congested = true;
 	}
 
 	if (congested) {
 		struct drbd_resource *resource = device->resource;
+
+		set_bit(CONN_CONGESTED, &connection->flags);
 
 		/* start a new epoch for non-mirrored writes */
 		start_new_tl_epoch(resource);
@@ -1484,7 +1505,7 @@ static int drbd_process_write_request(struct drbd_request *req)
 				in_tree = true;
 			}
 			_req_mod(req, QUEUE_FOR_NET_WRITE, peer_device);
-		} else if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size))
+		} else
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
 	}
 

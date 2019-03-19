@@ -7289,6 +7289,15 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 
 	sector = be64_to_cpu(p->sector);
 
+	/* see also process_one_request(), before drbd_send_out_of_sync().
+	 * Make sure any pending write requests that potentially may
+	 * set in-sync have drained, before setting it out-of-sync.
+	 * That should be implicit, because of the "epoch" and P_BARRIER logic,
+	 * But let's just double-check.
+	 */
+	conn_wait_active_ee_empty_or_disconnect(connection);
+	conn_wait_done_ee_empty_or_disconnect(connection);
+
 	mutex_lock(&device->bm_resync_fo_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_WF_SYNC_UUID:
@@ -7737,6 +7746,7 @@ void conn_disconnect(struct drbd_connection *connection)
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
+	clear_bit(CONN_CONGESTED, &connection->flags);
 
 	if (connection->cstate[NOW] == C_STANDALONE)
 		return;

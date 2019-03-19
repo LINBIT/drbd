@@ -767,6 +767,7 @@ enum {
 	SEND_STATE_AFTER_AHEAD_C,
 	NOTIFY_PEERS_LOST_PRIMARY,
 	CHECKING_PEER,		/* used by make_new_urrent_uuid() to check liveliness */
+	CONN_CONGESTED,
 };
 
 /* flag bits per resource */

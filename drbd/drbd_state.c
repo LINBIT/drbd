@@ -2396,8 +2396,15 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if (repl_state[OLD] == L_AHEAD && repl_state[NEW] == L_SYNC_SOURCE) {
 				set_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags);
 				set_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags);
+
+				clear_bit(CONN_CONGESTED, &connection->flags);
 				wake_up(&connection->sender_work.q_wait);
 			}
+
+			/* We start writing locally without replicating the changes,
+			 * better start a new data generation */
+			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
+				create_new_uuid = true;
 
 			if (lost_contact_to_peer_data(peer_disk_state)) {
 				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
