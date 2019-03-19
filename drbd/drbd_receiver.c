@@ -7407,6 +7407,8 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			__change_repl_state(peer_device, new_repl_state);
 			set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+			if (new_repl_state == L_WF_BITMAP_T && peer_device->disk_state[NOW] == D_CONSISTENT)
+				__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 		}
 		end_state_change(resource, &irq_flags);
 	} else {
