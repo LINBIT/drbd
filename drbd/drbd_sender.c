@@ -554,10 +554,10 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int sect_in, ktime_t duration)
+static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int sect_in, u64 duration_ns)
 {
-	const ktime_t rs_make_reqs_intv_kt = (ktime_t)NSEC_PER_SEC * RS_MAKE_REQS_INTV / HZ;
-	const ktime_t max_duration = rs_make_reqs_intv_kt * 10;
+	const u64 rs_make_reqs_intv_ns = NSEC_PER_SEC * RS_MAKE_REQS_INTV / HZ;
+	const u64 max_duration_ns = rs_make_reqs_intv_ns * 10;
 	struct peer_device_conf *pdc;
 	unsigned int want;     /* The number of sectors we want in-flight */
 	int req_sect; /* Number of sectors to request in this turn */
@@ -568,12 +568,12 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	int max_sect;
 	struct fifo_buffer *plan;
 
-	if (duration == 0)
-		duration = 1;
-	else if (duration > max_duration)
-		duration = max_duration;
+	if (duration_ns == 0)
+		duration_ns = 1;
+	else if (duration_ns > max_duration_ns)
+		duration_ns = max_duration_ns;
 
-	sect_in = (u64)sect_in * rs_make_reqs_intv_kt / duration;
+	sect_in = (u64)sect_in * rs_make_reqs_intv_ns / duration_ns;
 
 	pdc = rcu_dereference(peer_device->conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
@@ -584,7 +584,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 		want = ((pdc->resync_rate * 2 * RS_MAKE_REQS_INTV) / HZ) * steps;
 	} else { /* normal path */
 		want = pdc->c_fill_target ? pdc->c_fill_target :
-			(u64)sect_in * pdc->c_delay_target * NSEC_PER_SEC / (duration * 10);
+			(u64)sect_in * pdc->c_delay_target * NSEC_PER_SEC / (duration_ns * 10);
 	}
 
 	correction = want - peer_device->rs_in_flight - plan->total;
@@ -602,7 +602,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	if (req_sect < 0)
 		req_sect = 0;
 
-	max_sect = (u64)pdc->c_max_rate * 2 * duration / NSEC_PER_SEC;
+	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns / NSEC_PER_SEC;
 
 	/*
 	drbd_warn(peer_device, "dur=%lldus sect_in=%u in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d\n",
@@ -635,7 +635,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
-		number = drbd_rs_controller(peer_device, sect_in, duration) >> (BM_BLOCK_SHIFT - 9);
+		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration)) >> (BM_BLOCK_SHIFT - 9);
 		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / RS_MAKE_REQS_INTV;
 	} else {
 		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
