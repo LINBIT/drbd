@@ -1417,4 +1417,11 @@ bioset_initialized(struct bio_set **bs)
 #define MAX_SGE(ATTR) (ATTR).max_sge
 #endif
 
+#ifndef COMPAT_HAVE_TIME64_TO_TM
+static inline void time64_to_tm(time64_t totalsecs, int offset, struct tm *result)
+{
+	time_to_tm((time_t)totalsecs, offset, result);
+}
+#endif
+
 #endif
