@@ -2487,7 +2487,7 @@ restart:
 		 * Is it even possible to encounter those here?
 		 * It should not.
 		 */
-		if (drbd_req_is_write(req))
+		if (drbd_req_is_write(req, peer_device->node_id))
 			expect(peer_device, s & RQ_EXP_BARR_ACK);
 
 		__req_mod(req, RESEND, peer_device, &m);
@@ -2697,7 +2697,8 @@ static int process_one_request(struct drbd_connection *connection)
 	/* pre_send_jif[] is used in net_timeout_reached() */
 	req->pre_send_jif[peer_device->node_id] = jiffies;
 	ktime_get_accounting(req->pre_send_kt[peer_device->node_id]);
-	if (drbd_req_is_write(req)) {
+//	drbd_info(device, "## process_one_request node %d, req net state %x\n", peer_device->node_id, req->net_rq_state[peer_device->node_id]);
+	if (drbd_req_is_write(req, peer_device->node_id)) {
 		/* If a WRITE does not expect a barrier ack,
 		 * we are supposed to only send an "out of sync" info packet */
 		if (!(s & RQ_OOS)) {
@@ -2739,9 +2740,18 @@ static int process_one_request(struct drbd_connection *connection)
 		}
 	} else {
 		struct request_operation *operation = &req->operation[peer_device->node_id];
+		sector_t sector;
+		sector_t size_sectors;
 		maybe_send_barrier(connection, req->epoch);
+		if (req->net_rq_state[peer_device->node_id] & RQ_PRE_READ) {
+			sector = operation->pre_read_sector;
+			size_sectors = operation->pre_read_size_sectors;
+		} else {
+			sector = operation->target_sector;
+			size_sectors = operation->target_size_sectors;
+		}
 		err = drbd_send_drequest(peer_device, P_DATA_REQUEST,
-				operation->target_sector, operation->target_size_sectors << 9, (unsigned long)req);
+					 sector, size_sectors << 9, (unsigned long)req);
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 	}
 

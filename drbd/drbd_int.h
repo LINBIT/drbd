@@ -115,10 +115,8 @@ extern char drbd_usermode_helper[];
 
 #define UUID_NEW_BM_OFFSET ((u64)0x0001000000000000ULL)
 
-/* Ensure bios are never split over more than 2 chunks */
-/* TODO: Could allow smaller chunks without needs multiple accesses from one disk when we have more than 2 disks */
 /* TODO: Allow configuration of chunk size and change max bio size to match */
-#define CHUNK_SIZE DRBD_MAX_BIO_SIZE
+#define CHUNK_SIZE (1 << 13)
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
 #define DISK_COUNT_DATA 2
 #define DISK_COUNT_TOTAL 3
@@ -179,6 +177,8 @@ struct request_operation {
 	sector_t target_sector;
 	sector_t target_size_sectors;
 	unsigned int input_offset;
+	sector_t pre_read_sector;
+	sector_t pre_read_size_sectors;
 };
 
 /* for sending/receiving the bitmap,
@@ -392,6 +392,8 @@ struct drbd_request {
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
+	atomic_t pre_read_ref;
+
 	/* If not NULL, destruction of this drbd_request will
 	 * cause kref_put() on ->destroy_next. */
 	struct drbd_request *destroy_next;
@@ -401,6 +403,8 @@ struct drbd_request {
 
 	/* TODO: might hurt performance to allocate this extra data for every request */
 	struct request_operation operation[DRBD_NODE_ID_MAX];
+
+	void *pre_read_data[DRBD_NODE_ID_MAX];
 };
 
 struct drbd_epoch {
@@ -2666,6 +2670,15 @@ static inline void put_ldev(struct drbd_device *device)
 				drbd_device_post_work(device, GO_DISKLESS);
 		wake_up(&device->misc_wait);
 	}
+}
+
+static inline void drbd_free_request(struct drbd_request *req)
+{
+	int i;
+	for (i = 0; i < DRBD_NODE_ID_MAX; ++i) {
+		kfree(req->pre_read_data[i]);
+	}
+	mempool_free(req, &drbd_request_mempool);
 }
 
 #ifndef __CHECKER__

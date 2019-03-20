@@ -95,6 +95,8 @@ enum drbd_req_event {
 	 * only see an error if neither local nor remote data is reachable. */
 	QUEUE_AS_DRBD_BARRIER,
 
+	QUEUE_FOR_NET_PRE_READ,
+
 	SEND_CANCELED,
 	SEND_FAILED,
 	HANDED_OVER_TO_NETWORK,
@@ -194,6 +196,8 @@ enum drbd_req_state_bits {
 	/* Send out-of-sync */
 	__RQ_OOS,
 
+	__RQ_PRE_READ,
+
 	/* We expect a receive ACK (wire proto B) */
 	__RQ_EXP_RECEIVE_ACK,
 
@@ -252,6 +256,7 @@ enum drbd_req_state_bits {
 #define RQ_NET_MASK        (((1UL << __RQ_NET_MAX)-1) & ~RQ_LOCAL_MASK)
 
 #define RQ_OOS             (1UL << __RQ_OOS)
+#define RQ_PRE_READ        (1UL << __RQ_PRE_READ)
 
 #define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
 #define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
@@ -293,9 +298,9 @@ enum drbd_req_state_bits {
 #define MR_WRITE       1
 #define MR_READ        2
 
-static inline bool drbd_req_is_write(struct drbd_request *req)
+static inline bool drbd_req_is_write(struct drbd_request *req, int node_id)
 {
-	return req->local_rq_state & RQ_WRITE;
+	return req->local_rq_state & RQ_WRITE && !(req->net_rq_state[node_id] & RQ_PRE_READ);
 }
 
 /* Short lived temporary struct on the stack.
@@ -304,6 +309,7 @@ static inline bool drbd_req_is_write(struct drbd_request *req)
 struct bio_and_error {
 	struct bio *bio;
 	int error;
+	bool pre_read_done;
 };
 
 extern bool start_new_tl_epoch(struct drbd_resource *resource);
@@ -315,6 +321,7 @@ extern int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct bio_and_error *m);
 extern void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m);
+extern void pre_read_done(struct drbd_request *req);
 extern void request_timer_fn(DRBD_TIMER_FN_ARG);
 extern void tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
 extern void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
@@ -361,6 +368,9 @@ static inline int req_mod(struct drbd_request *req,
 
 	if (m.bio)
 		complete_master_bio(device, &m);
+
+	if (m.pre_read_done)
+		pre_read_done(req);
 
 	return rv;
 }

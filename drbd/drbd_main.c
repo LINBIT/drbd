@@ -3017,7 +3017,7 @@ void drbd_reclaim_resource(struct rcu_head *rp)
 		kref_debug_put(&connection->kref_debug, 9);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
-	mempool_free(resource->peer_ack_req, &drbd_request_mempool);
+	drbd_free_request(resource->peer_ack_req);
 	kref_debug_put(&resource->kref_debug, 8);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }

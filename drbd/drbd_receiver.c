@@ -2228,6 +2228,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	struct request_operation *operation = &req->operation[peer_device->node_id];
+	unsigned int idx = peer_device->connection->peer_node_id;
 
 	digest_size = 0;
 	if (peer_device->connection->peer_integrity_tfm) {
@@ -2243,31 +2244,44 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	peer_device->recv_cnt += data_size >> 9;
 
 	/* TODO: Determine if this is a pre-read; if so, allocate a page chain and recv into it */
+	if (req->net_rq_state[idx] & RQ_PRE_READ) {
+//		drbd_info(peer_device, "## recv_dless_read pre-read received from %u\n", idx);
 
-	bio = req->master_bio;
-	/* TODO: Replace with input validation that respects interval re-mapping
-	D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
-	 */
+		/* TODO: Better memory management */
+		req->pre_read_data[idx] = kmalloc(data_size, GFP_NOIO);
+		drbd_info(peer_device, "## recv_dless_read %p node %d pre_read_data %px\n", req, idx, req->pre_read_data[idx]);
+		if (!req->pre_read_data[idx]) {
+			return -ENOMEM;
+		}
+		drbd_recv_into(peer_device->connection, req->pre_read_data[idx], data_size);
+		data_size = 0;
+	} else {
+		bio = req->master_bio;
+		/* TODO: Replace with input validation that respects interval re-mapping
+		D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
+		 */
 
-	iter = bio->bi_iter;
-	bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
-	__bio_for_each_segment(bvec, bio, iter, iter) {
-		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
-		expect = min_t(int, data_size, bvec BVD bv_len);
-		err = drbd_recv_into(peer_device->connection, mapped, expect);
-		kunmap(bvec BVD bv_page);
-		if (err)
-			return err;
-		data_size -= expect;
-		if (!data_size)
-			break;
-	}
+		iter = bio->bi_iter;
+		drbd_info(peer_device, "## recv_dless_read normal read %p node %d offset %u\n", req, idx, operation->input_offset << 9);
+		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
+		__bio_for_each_segment(bvec, bio, iter, iter) {
+			void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
+			expect = min_t(int, data_size, bvec BVD bv_len);
+			err = drbd_recv_into(peer_device->connection, mapped, expect);
+			kunmap(bvec BVD bv_page);
+			if (err)
+				return err;
+			data_size -= expect;
+			if (!data_size)
+				break;
+		}
 
-	if (digest_size) {
-		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
-		if (memcmp(dig_in, dig_vv, digest_size)) {
-			drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
-			return -EINVAL;
+		if (digest_size) {
+			drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
+			if (memcmp(dig_in, dig_vv, digest_size)) {
+				drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
+				return -EINVAL;
+			}
 		}
 	}
 
@@ -2405,7 +2419,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	 * still no race with drbd_fail_pending_reads */
 	/* TODO: What happens if pi->size != req->i.size in the normal case?? */
 	err = recv_dless_read(peer_device, req, sector, pi->size);
-	/* TODO: Different behavior if this is a pre-read */
+	/* TODO: Remove from appropriate interval tree for pre-read */
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
 	/* else: nothing. handled from drbd_disconnect...
@@ -9073,7 +9087,7 @@ static void destroy_peer_ack_req(struct kref *kref)
 		container_of(kref, struct drbd_request, kref);
 
 	list_del(&req->tl_requests);
-	mempool_free(req, &drbd_request_mempool);
+	drbd_free_request(req);
 }
 
 static void cleanup_peer_ack_list(struct drbd_connection *connection)
