@@ -132,12 +132,14 @@ static inline void drbd_bio_endio(struct bio *bio, blk_status_t status)
 
 #else
 
+#ifndef BLK_STS_OK
 typedef u8 __bitwise blk_status_t;
-#define	BLK_STS_OK 0
+#define BLK_STS_OK 0
 #define BLK_STS_NOTSUPP		((__force blk_status_t)1)
 #define BLK_STS_MEDIUM		((__force blk_status_t)7)
 #define BLK_STS_RESOURCE	((__force blk_status_t)9)
 #define BLK_STS_IOERR		((__force blk_status_t)10)
+#endif
 static int blk_status_to_errno(blk_status_t status)
 {
 	return  status == BLK_STS_OK ? 0 :
