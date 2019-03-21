@@ -697,6 +697,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	max_bio_size = queue_max_hw_sectors(device->rq_queue) << 9;
 	number = drbd_rs_number_requests(peer_device);
+	/* don't let rs_sectors_came_in() re-schedule us "early"
+	 * just because the first reply came "fast", ... */
+	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 	if (number <= 0)
 		goto requeue;
 
@@ -833,8 +836,15 @@ next_sector:
 	}
 
  requeue:
-	peer_device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
+	/* ... but do a correction, in case we had to break/goto requeue; */
+	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
+	/* and in case that raced with the receiver, reschedule ourself right now */
+	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
+	else
+		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 	put_ldev(device);
 	return 0;
 }
@@ -851,11 +861,14 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		return 1;
 
 	number = drbd_rs_number_requests(peer_device);
-
 	sector = peer_device->ov_position;
+
+	/* don't let rs_sectors_came_in() re-schedule us "early"
+	 * just because the first reply came "fast", ... */
+	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 	for (i = 0; i < number; i++) {
 		if (sector >= capacity)
-			return 1;
+			break;
 
 		/* We check for "finished" only in the reply path:
 		 * w_e_end_ov_reply().
@@ -868,10 +881,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 		size = BM_BLOCK_SIZE;
 
-		if (drbd_try_rs_begin_io(peer_device, sector, true)) {
-			peer_device->ov_position = sector;
-			goto requeue;
-		}
+		if (drbd_try_rs_begin_io(peer_device, sector, true))
+			break;
 
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
@@ -883,11 +894,18 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		}
 		sector += BM_SECT_PER_BIT;
 	}
+	/* ... but do a correction, in case we had to break; ... */
+	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
 	peer_device->ov_position = sector;
-
- requeue:
-	peer_device->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	if (i == 0 || !stop_sector_reached)
+	if (stop_sector_reached)
+		return 1;
+	/* ... and in case that raced with the receiver,
+	 * reschedule ourself right now */
+	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
+	if (i == 0)
 		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 	return 1;
 }
