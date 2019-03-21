@@ -2169,6 +2169,7 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio,
 		int segment_send = min(bvec BVD bv_len, size - sent);
 		int err;
 
+		D_ASSERT(peer_device, segment_send > 0);
 		err = _drbd_no_send_page(peer_device, bvec BVD bv_page,
 					 bvec BVD bv_offset, segment_send,
 					 bio_iter_last(bvec, *iter) ? 0 : MSG_MORE);
@@ -2180,6 +2181,9 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio,
 
 		sent += segment_send;
 		peer_device->send_cnt += segment_send >> 9;
+
+		if (sent == size)
+			break;
 	}
 	return 0;
 }
@@ -2249,6 +2253,54 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 		len -= l;
 	}
 	return 0;
+}
+
+static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_request *req, struct request_operation *operation)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
+	int err;
+
+	size_t parity_size = operation->target_size_sectors << SECTOR_SHIFT;
+	int data_disk_0_index = operation->data_disk_index;
+	int data_disk_1_index = (operation->data_disk_index + 1) % DISK_COUNT_TOTAL;
+	long *input_data_0 = (long *) req->pre_read_data[data_disk_0_index];
+	long *input_data_1 = (long *) req->pre_read_data[data_disk_1_index];
+	unsigned int sent = 0;
+	int data_index = 0;
+
+	/* Flush send buffer and make sure PAGE_SIZE is available... */
+	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
+	sbuf->allocated_size = 0;
+
+	for (;;) {
+		int segment_send = min(parity_size - sent, PAGE_SIZE);
+		size_t segment_longs = segment_send >> ffz(~sizeof(long));
+		long *parity_buffer = (long *) alloc_send_buffer(connection, segment_send, DATA_STREAM);
+		int i;
+
+		drbd_info(peer_device, "## _drbd_send_parity req %p, disks %d %d, segment %llu (%llu longs of %lu bytes) current 0x%016lx 0x%016lx\n",
+			  req, data_disk_0_index, data_disk_1_index, (unsigned long long) segment_send, (unsigned long long) segment_longs, sizeof(long),
+			  input_data_0[data_index], input_data_1[data_index]);
+
+		for (i = 0; i < segment_longs; ++i) {
+			parity_buffer[i] = input_data_0[data_index] ^ input_data_1[data_index];
+			++data_index;
+		}
+
+		sent += segment_send;
+		if (sent < parity_size) {
+			sbuf->pos += sbuf->allocated_size;
+			sbuf->allocated_size = 0;
+			peer_device->send_cnt += segment_send >> SECTOR_SHIFT;
+		} else {
+			err = flush_send_buffer(connection, DATA_STREAM);
+			peer_device->send_cnt += segment_send >> SECTOR_SHIFT;
+			break;
+		}
+	}
+
+	return err;
 }
 
 /* see also wire_flags_to_bio()
@@ -2367,12 +2419,17 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		struct bvec_iter iter = req->master_bio->bi_iter;
-		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
-		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size || device->distribute_data)
-			err = _drbd_send_bio(peer_device, req->master_bio, &iter, operation->target_size_sectors << 9);
-		else
-			err = _drbd_send_zc_bio(peer_device, req->master_bio);
+		if (operation->data_disk_index == -1) {
+			struct bvec_iter iter = req->master_bio->bi_iter;
+			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
+			if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size || device->distribute_data)
+				err = _drbd_send_bio(peer_device, req->master_bio, &iter, operation->target_size_sectors << SECTOR_SHIFT);
+			else
+				err = _drbd_send_zc_bio(peer_device, req->master_bio);
+		} else {
+			/* TODO: Need to calculate parity from new data (where there is new data), not from old */
+			err = _drbd_send_parity(peer_device, req, operation);
+		}
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0 && digest_size <= 64) {

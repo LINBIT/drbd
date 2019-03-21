@@ -102,20 +102,29 @@ static void distributed_request_operation(struct drbd_request *req)
 	const int parity_node_id = total_disks - 1 - (stripe % total_disks);
 	const int data_node_id = (parity_node_id + 1 + data_disk_number) % total_disks;
 	struct request_operation *start_operation = &req->operation[data_node_id];
+	/* TODO: loop over all data and parity disk instead of assuming we have only 2 data and 1 parity */
+	struct request_operation *parity_operation = &req->operation[parity_node_id];
 
 	start_operation->target_sector = (stripe << chunksect_bits) + sector_in_chunk;
 	start_operation->target_size_sectors = min(remaining_in_chunk, size_sectors);
 	start_operation->input_offset = 0;
+	start_operation->data_disk_index = -1;
 //	 printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
+
+	/* TODO: don't necessary always need to recalculate entire parity chunk */
+	parity_operation->target_sector = stripe << chunksect_bits;
+	parity_operation->target_size_sectors = CHUNK_SECTORS;
+	parity_operation->data_disk_index = (parity_node_id + 1) % total_disks;
 
 	if (size_sectors > remaining_in_chunk) {
 		/* bio overflows into chunk on next node */
 		const int overflow_node_id = (parity_node_id + 1 + data_disk_number + 1) % total_disks;
 		struct request_operation *overflow_operation = &req->operation[overflow_node_id];
 
-		overflow_operation->target_sector = ((chunk + 1) / data_disks) << chunksect_bits;
+		overflow_operation->target_sector = stripe << chunksect_bits;
 		overflow_operation->target_size_sectors = size_sectors - remaining_in_chunk;
 		overflow_operation->input_offset = remaining_in_chunk;
+		overflow_operation->data_disk_index = -1;
 //		 printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
 	}
 	req->stripe_interval.sector = stripe * BIG_STRIPE_SECTORS;
@@ -139,6 +148,7 @@ static void replicated_request_operation(struct drbd_device *device, struct drbd
 		peer_operation->target_sector = sector;
 		peer_operation->target_size_sectors = size >> SECTOR_SHIFT;
 		peer_operation->input_offset = 0;
+		peer_operation->data_disk_index = -1;
 	}
 
 	req->stripe_interval.sector = sector;
@@ -1612,7 +1622,7 @@ static int drbd_process_read_request(struct drbd_request *req)
 	for_each_peer_device(peer_device, device) {
 		struct request_operation *operation = &req->operation[peer_device->node_id];
 
-		if (!operation->target_size_sectors)
+		if (!operation->target_size_sectors || operation->data_disk_index != -1)
 			continue;
 
 		/* TODO: Move this logic into initial operation decision making */
@@ -1917,7 +1927,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	bool no_remote = false;
 	bool submit_private_bio = false;
 
-	drbd_info(device, "## drbd_send_and_submit %p %s sector %lld, size %lld\n", req, rw == WRITE ? "write" : "read", (unsigned long long) req->i.sector, (unsigned long long) req->i.size);
+	drbd_info(device, "## drbd_send_and_submit %p %s sector %lld, size %lld (bi_vcnt %u)\n",
+		req, rw == WRITE ? "write" : "read", (unsigned long long) req->i.sector, (unsigned long long) req->i.size, req->master_bio->bi_vcnt);
 
 	spin_lock_irq(&resource->req_lock);
 
@@ -2093,6 +2104,49 @@ void pre_read_done(struct drbd_request *req)
 	spin_lock_irq(&resource->req_lock);
 
 	if (rw == WRITE) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device) {
+			struct request_operation *operation = &req->operation[peer_device->node_id];
+			struct bvec_iter iter;
+			DRBD_BIO_VEC_TYPE bvec;
+			unsigned int size;
+			unsigned int copied = 0;
+			unsigned int pre_read_data_offset;
+
+			if (!operation->target_size_sectors || operation->data_disk_index != -1)
+				continue;
+
+			iter = req->master_bio->bi_iter;
+			size = operation->target_size_sectors << SECTOR_SHIFT;
+			pre_read_data_offset = (operation->target_sector - operation->pre_read_sector) << SECTOR_SHIFT;
+
+			if (!size)
+				continue;
+
+			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
+			__bio_for_each_segment(bvec, req->master_bio, iter, iter) {
+				int segment_send = min(bvec BVD bv_len, size - copied);
+				struct page *page = bvec BVD bv_page;
+				unsigned int offset = bvec BVD bv_offset;
+				char *from_base;
+
+				D_ASSERT(peer_device, segment_send > 0);
+				from_base = drbd_kmap_atomic(page, KM_USER0);
+
+				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
+					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_send);
+
+				memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_send);
+				drbd_kunmap_atomic(from_base, KM_USER0);
+
+				copied += segment_send;
+
+				if (copied == size)
+					break;
+			}
+		}
+
 		if (!drbd_process_write_request(req, true))
 			no_remote = true;
 		/* TODO: Fail request if we can't write to a sufficient number of peers */

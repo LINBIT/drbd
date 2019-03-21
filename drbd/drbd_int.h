@@ -176,7 +176,8 @@ extern struct mutex resources_mutex;
 struct request_operation {
 	sector_t target_sector;
 	sector_t target_size_sectors;
-	unsigned int input_offset;
+	unsigned int input_offset; /* if operation corresponds to part of the master bio */
+	int data_disk_index; /* index of first data disk for parity calculation; -1 if not parity data */
 	sector_t pre_read_sector;
 	sector_t pre_read_size_sectors;
 };
