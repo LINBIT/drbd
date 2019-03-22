@@ -6718,7 +6718,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	/* explicit verify finished notification, stop sector reached. */
 	if (old_peer_state.conn == L_VERIFY_T && old_peer_state.disk == D_UP_TO_DATE &&
-	    peer_state.conn == C_CONNECTED && peer_disk_state == D_UP_TO_DATE) {
+	    peer_state.conn == L_ESTABLISHED && peer_disk_state == D_UP_TO_DATE) {
 		ov_out_of_sync_print(peer_device);
 		drbd_resync_finished(peer_device, D_MASK);
 		peer_device->last_repl_state = peer_state.conn;
