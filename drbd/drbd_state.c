@@ -2345,12 +2345,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				}
 
 				drbd_rs_controller_reset(peer_device);
-
-				if (repl_state[NEW] == L_VERIFY_S) {
-					drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
-							(unsigned long long)peer_device->ov_position);
-					mod_timer(&peer_device->resync_timer, jiffies);
-				}
 			} else if (!(repl_state[OLD] >= L_SYNC_SOURCE && repl_state[OLD] <= L_PAUSED_SYNC_T) &&
 				   (repl_state[NEW] >= L_SYNC_SOURCE && repl_state[NEW] <= L_PAUSED_SYNC_T)) {
 				initialize_resync(peer_device);
@@ -3458,6 +3452,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				   we know that a write failed on that node. Therefore we need to create
 				   the new UUID right now (not wait for the next write to come in) */
 				drbd_uuid_new_current(device, false);
+			}
+
+			if (repl_state[NEW] == L_VERIFY_S && get_ldev(device)) {
+				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
+						(unsigned long long)peer_device->ov_position);
+				mod_timer(&peer_device->resync_timer, jiffies);
+				put_ldev(device);
 			}
 		}
 
