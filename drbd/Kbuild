@@ -51,6 +51,10 @@ drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
 drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
 drbd-y += drbd_nla.o drbd_transport.o
 drbd-y += drbd_journal.o
+drbd-y += erasure_code_gf16.o
+
+# TODO: Only enable this for the optimized erasure coding personality code; generate non-optimized version too
+override EXTRA_CFLAGS += -mavx2
 
 ifndef DISABLE_KREF_DEBUGGING_HERE
       override EXTRA_CFLAGS += -DCONFIG_KREF_DEBUG
