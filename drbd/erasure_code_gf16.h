@@ -23,8 +23,26 @@
    the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+typedef unsigned char gf_t;
+typedef long long word_t  __attribute__ ((__vector_size__ (32)));
+
+#define GF_M 4
+#define GF_Q (1 << GF_M)
+
+#define NMAX GF_Q
+#define RMAX (NMAX / 2)
+
+#define BS 4096
+
+#define SS (BS / GF_M)
+#define WS sizeof(word_t)
+#define SLEN (SS / WS)
+
+typedef word_t slice_t[SLEN];
+typedef slice_t block_t[GF_M];
+
 extern void erasure_code_gf16_init(void);
 
-extern void erasure_code_gf16_encode(void);
+extern void erasure_code_gf16_encode(block_t **data_blocks, int block_index, int parity_number, block_t *parity_out);
 
 extern void erasure_code_gf16_decode(int plast, unsigned rm);

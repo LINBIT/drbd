@@ -63,6 +63,7 @@
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
+#include "erasure_code_gf16.h"
 
 #ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
 #define DRBD_RELEASE_RETURN void
@@ -2260,14 +2261,15 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
 	int err;
+	unsigned int sent = 0;
+	int data_index = 0;
 
 	size_t parity_size = operation->target_size_sectors << SECTOR_SHIFT;
 	int data_disk_0_index = operation->data_disk_index;
 	int data_disk_1_index = (operation->data_disk_index + 1) % DISK_COUNT_TOTAL;
-	long *input_data_0 = (long *) req->pre_read_data[data_disk_0_index];
-	long *input_data_1 = (long *) req->pre_read_data[data_disk_1_index];
-	unsigned int sent = 0;
-	int data_index = 0;
+	block_t *input_data[DISK_COUNT_DATA];
+	input_data[0] = (block_t *) req->pre_read_data[data_disk_0_index];
+	input_data[1] = (block_t *) req->pre_read_data[data_disk_1_index];
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */
 	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
@@ -2275,18 +2277,21 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 
 	for (;;) {
 		int segment_send = min(parity_size - sent, PAGE_SIZE);
-		size_t segment_longs = segment_send >> ffz(~sizeof(long));
-		long *parity_buffer = (long *) alloc_send_buffer(connection, segment_send, DATA_STREAM);
-		int i;
+		block_t *parity_buffer = (block_t *) alloc_send_buffer(connection, segment_send, DATA_STREAM);
 
-		drbd_info(peer_device, "## _drbd_send_parity req %p, disks %d %d, segment %llu (%llu longs of %lu bytes) current 0x%016lx 0x%016lx\n",
-			  req, data_disk_0_index, data_disk_1_index, (unsigned long long) segment_send, (unsigned long long) segment_longs, sizeof(long),
-			  input_data_0[data_index], input_data_1[data_index]);
+		memset(parity_buffer, '5', sizeof(block_t));
+		drbd_info(peer_device, "## _drbd_send_parity req %p, disks %d %d, segment %llu current 0x%016llx 0x%016llx\n",
+			  req, data_disk_0_index, data_disk_1_index, (unsigned long long) segment_send,
+			  *(unsigned long long *) input_data[0][data_index], *(unsigned long long *) input_data[1][data_index]);
 
-		for (i = 0; i < segment_longs; ++i) {
-			parity_buffer[i] = input_data_0[data_index] ^ input_data_1[data_index];
-			++data_index;
-		}
+		erasure_code_gf16_init();
+		BUG_ON(segment_send != BS);
+		erasure_code_gf16_encode(input_data, data_index, 0 /* TODO */, parity_buffer);
+		data_index++;
+
+		drbd_info(peer_device, "## _drbd_send_parity req %p, parity 0x%016llx\n",
+			  req,
+			  *(unsigned long long *) parity_buffer);
 
 		sent += segment_send;
 		if (sent < parity_size) {
@@ -2427,7 +2432,6 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 			else
 				err = _drbd_send_zc_bio(peer_device, req->master_bio);
 		} else {
-			/* TODO: Need to calculate parity from new data (where there is new data), not from old */
 			err = _drbd_send_parity(peer_device, req, operation);
 		}
 

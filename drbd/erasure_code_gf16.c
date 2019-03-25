@@ -16,24 +16,6 @@
 
 #include "erasure_code_gf16.h"
 
-typedef unsigned char gf_t;
-typedef long long word_t  __attribute__ ((__vector_size__ (32)));
-
-#define GF_M 4
-#define GF_Q (1 << GF_M)
-
-#define NMAX GF_Q
-#define RMAX (NMAX / 2)
-
-#define BS 4096
-
-#define SS (BS / GF_M)
-#define WS sizeof(word_t)
-#define SLEN (SS / WS)
-
-typedef word_t slice_t[SLEN];
-typedef slice_t block_t[GF_M];
-
 #define gfmul(x, y) gf_exp[gf_log[x] + gf_log[y]]
 #define gfdiv(x, y) gf_exp[GF_Q - 1 + gf_log[x] - gf_log[y]]
 #define gflog(x)    gf_log[x]
@@ -315,7 +297,7 @@ static int gf_check_mds(gf_t *v, int n, int k)
 	return 0;
 }
 
-int N = 0, K = 0;
+int N = 3, K = 2;
 
 gf_t G[NMAX * NMAX];              // generator matrix
 gf_t R[2 * RMAX * RMAX];          // repair matrix
@@ -412,21 +394,31 @@ void erasure_code_gf16_init(void)
 	m = gf_check_mds(G, N, K);
 	if (m)
 		panic("generated erasure code is not MDS for input mask 0x%x.\n", m);
+
+#if 0
+	{
+		int i, j;
+		printk("(%d,%d) code matrix:\n",N,K);
+		for(i=0;i<K;++i) {
+			for(j=0;j<N;++j) printk("%s%3d", j ? KERN_CONT : "", G[N*i+j]);
+			printk(KERN_CONT "\n");
+		}
+	}
+#endif
 }
 
-void erasure_code_gf16_encode(void)
+void erasure_code_gf16_encode(block_t **data_blocks, int block_index, int parity_number, block_t *parity_out)
 {
-	int i, j;
+	int i;
 
+	/* TODO: Do this once each time we need it rather than for each block */
 	/* Save user space vector registers */
 	kernel_fpu_begin();
 
-	for (j = K; j < N; ++j) {
-		mul_copy_block(buf[j], buf[0], G[j]);
+	mul_copy_block(*parity_out, data_blocks[0][block_index], G[K + parity_number]);
 
-		for (i = 1; i < K; ++i)
-			mul_xor_block(buf[j], buf[i], G[N * i + j]);
-	}
+	for (i = 1; i < K; ++i)
+		mul_xor_block(*parity_out, data_blocks[i][block_index], G[N * i + K + parity_number]);
 
 	kernel_fpu_end();
 }
