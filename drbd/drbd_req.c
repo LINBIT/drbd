@@ -87,6 +87,7 @@ static void distributed_request_operation(struct drbd_request *req)
 	//
 	// TODO: calculations might be simpler if we introduce a 'global_chunk = (sector >> chunksect_bits) / nb_dev' == target_chunk on any node
 	// TODO: Might be able to use round_up/round_down to simplify this a little
+	const int big_stripe_sectors = CHUNK_SIZE * ec->disk_count_data;
 	const sector_t sector = req->i.sector;
 	const unsigned int size = req->i.size;
 	const sector_t size_sectors = size >> 9;
@@ -134,8 +135,8 @@ static void distributed_request_operation(struct drbd_request *req)
 		overflow_operation->parity_number = -1;
 //		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
 	}
-	req->stripe_interval.sector = stripe * BIG_STRIPE_SECTORS;
-	req->stripe_interval.size = BIG_STRIPE_SECTORS << SECTOR_SHIFT;
+	req->stripe_interval.sector = stripe * big_stripe_sectors;
+	req->stripe_interval.size = big_stripe_sectors << SECTOR_SHIFT;
 
 	for_each_peer_device(peer_device, device) {
 		struct request_operation *operation = &req->operation[peer_device->node_id];
@@ -2575,6 +2576,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	struct drbd_resource *resource = device->resource;
 	sector_t sector;
 	unsigned int remaining;
+	int big_stripe_sectors = CHUNK_SIZE * device->erasure_code.disk_count_data;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	ktime_t start_kt;
 #endif
@@ -2609,8 +2611,8 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	sector = DRBD_BIO_BI_SECTOR(bio);
 	remaining = DRBD_BIO_BI_SIZE(bio);
 	do {
-		sector_t sector_in_stripe = sector % BIG_STRIPE_SECTORS;
-		sector_t sectors_remaining_in_stripe = BIG_STRIPE_SECTORS - sector_in_stripe;
+		sector_t sector_in_stripe = sector % big_stripe_sectors;
+		sector_t sectors_remaining_in_stripe = big_stripe_sectors - sector_in_stripe;
 		unsigned int remaining_in_stripe = sectors_remaining_in_stripe << SECTOR_SHIFT;
 		struct bio *bio_to_submit;
 		if (remaining > remaining_in_stripe) {

@@ -1431,12 +1431,12 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 
 static sector_t logical_to_disk_size(struct drbd_device *device, sector_t logical_size)
 {
-	return device->distribute_data ? logical_size / DISK_COUNT_DATA : logical_size;
+	return device->distribute_data ? logical_size / device->erasure_code.disk_count_data : logical_size;
 }
 
 static sector_t disk_to_logical_size(struct drbd_device *device, sector_t disk_size)
 {
-	return device->distribute_data ? round_down(disk_size, CHUNK_SECTORS) * DISK_COUNT_DATA : disk_size;
+	return device->distribute_data ? round_down(disk_size, CHUNK_SECTORS) * device->erasure_code.disk_count_data : disk_size;
 }
 
 /**
@@ -2050,8 +2050,8 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 
 	blk_queue_logical_block_size(q, 1 << 12);
 	blk_queue_physical_block_size(q, 1 << 12);
-	blk_queue_io_min(q, CHUNK_SIZE * DISK_COUNT_DATA);
-	blk_queue_io_opt(q, CHUNK_SIZE * DISK_COUNT_DATA);
+	blk_queue_io_min(q, CHUNK_SIZE * device->erasure_code.disk_count_data);
+	blk_queue_io_opt(q, CHUNK_SIZE * device->erasure_code.disk_count_data);
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
 

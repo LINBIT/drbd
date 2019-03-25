@@ -116,12 +116,9 @@ extern char drbd_usermode_helper[];
 
 #define UUID_NEW_BM_OFFSET ((u64)0x0001000000000000ULL)
 
-/* TODO: Allow configuration of chunk size and change max bio size to match */
+/* TODO: Allow configuration of chunk size */
 #define CHUNK_SIZE (1 << 13)
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
-#define DISK_COUNT_DATA 2
-#define DISK_COUNT_TOTAL 4
-#define BIG_STRIPE_SECTORS (CHUNK_SECTORS * DISK_COUNT_DATA)
 
 struct drbd_device;
 struct drbd_connection;

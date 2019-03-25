@@ -2266,8 +2266,8 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 
 	size_t parity_size = operation->target_size_sectors << SECTOR_SHIFT;
 	int data_disk_0_index = operation->data_disk_index;
-	int data_disk_1_index = (operation->data_disk_index + 1) % DISK_COUNT_TOTAL;
-	block_t *input_data[DISK_COUNT_DATA];
+	int data_disk_1_index = (operation->data_disk_index + 1) % device->erasure_code.disk_count_total;
+	block_t *input_data[NMAX];
 	input_data[0] = (block_t *) req->pre_read_data[data_disk_0_index];
 	input_data[1] = (block_t *) req->pre_read_data[data_disk_1_index];
 
@@ -3750,8 +3750,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
 
-	device->erasure_code.disk_count_total = DISK_COUNT_TOTAL;
-	device->erasure_code.disk_count_data = DISK_COUNT_DATA;
+	/* TODO: Make configurable */
+	device->erasure_code.disk_count_total = 4;
+	device->erasure_code.disk_count_data = 2;
 	erasure_code_gf16_init(&device->erasure_code);
 
 #ifdef PARANOIA
