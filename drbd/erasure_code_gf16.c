@@ -11,6 +11,9 @@
 #include <linux/string.h>
 #include <linux/bug.h>
 
+/* TODO: Non-portable, only include this in variant for x86 with AVX enabled */
+#include <asm/fpu/api.h>
+
 #include "erasure_code_gf16.h"
 
 typedef unsigned char gf_t;
@@ -415,12 +418,17 @@ void erasure_code_gf16_encode(void)
 {
 	int i, j;
 
+	/* Save user space vector registers */
+	kernel_fpu_begin();
+
 	for (j = K; j < N; ++j) {
 		mul_copy_block(buf[j], buf[0], G[j]);
 
 		for (i = 1; i < K; ++i)
 			mul_xor_block(buf[j], buf[i], G[N * i + j]);
 	}
+
+	kernel_fpu_end();
 }
 
 void erasure_code_gf16_decode(int plast, unsigned rm)
@@ -429,6 +437,9 @@ void erasure_code_gf16_decode(int plast, unsigned rm)
 
 	if (plast >= K) {                        /* do reconstruction proper */
 		int r = 0;
+
+		/* Save user space vector registers */
+		kernel_fpu_begin();
 
 		if (rm == rmask) {                        /* can use old matrix */
 			for (j = K; j <= plast; ++j) {
@@ -480,5 +491,7 @@ void erasure_code_gf16_decode(int plast, unsigned rm)
 			for (i = 1; i < r; ++i)
 				mul_xor_block(buf[dx[j]], buf[ex[i]], R[(2 * j + 1) * r + i]);
 		}
+
+		kernel_fpu_end();
 	}
 }
