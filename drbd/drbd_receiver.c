@@ -9141,7 +9141,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 			pi.data = buffer;
 			err = cmd->fn(connection, &pi);
 			if (err) {
-				drbd_err(connection, "%pf failed\n", cmd->fn);
+				drbd_err(connection, "%ps failed\n", cmd->fn);
 				goto reconnect;
 			}
 
