@@ -297,7 +297,7 @@ static int gf_check_mds(gf_t *v, int n, int k)
 	return 0;
 }
 
-int N = 3, K = 2;
+int N = 4, K = 2;
 
 gf_t G[NMAX * NMAX];              // generator matrix
 gf_t R[2 * RMAX * RMAX];          // repair matrix

@@ -2286,7 +2286,7 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 
 		erasure_code_gf16_init();
 		BUG_ON(segment_send != BS);
-		erasure_code_gf16_encode(input_data, data_index, 0 /* TODO */, parity_buffer);
+		erasure_code_gf16_encode(input_data, data_index, operation->parity_number, parity_buffer);
 		data_index++;
 
 		drbd_info(peer_device, "## _drbd_send_parity req %p, parity 0x%016llx\n",
@@ -2424,7 +2424,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		if (operation->data_disk_index == -1) {
+		if (operation->parity_number == -1) {
 			struct bvec_iter iter = req->master_bio->bi_iter;
 			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
 			if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size || device->distribute_data)

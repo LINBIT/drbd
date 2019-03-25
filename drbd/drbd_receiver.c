@@ -2243,7 +2243,6 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	 * we disconnect anyways, and counters will be reset. */
 	peer_device->recv_cnt += data_size >> 9;
 
-	/* TODO: Determine if this is a pre-read; if so, allocate a page chain and recv into it */
 	if (req->net_rq_state[idx] & RQ_PRE_READ) {
 //		drbd_info(peer_device, "## recv_dless_read pre-read received from %u\n", idx);
 

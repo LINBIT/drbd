@@ -119,7 +119,8 @@ extern char drbd_usermode_helper[];
 #define CHUNK_SIZE (1 << 13)
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
 #define DISK_COUNT_DATA 2
-#define DISK_COUNT_TOTAL 3
+#define DISK_COUNT_TOTAL 4
+#define DISK_COUNT_PARITY (DISK_COUNT_TOTAL - DISK_COUNT_DATA)
 #define BIG_STRIPE_SECTORS (CHUNK_SECTORS * DISK_COUNT_DATA)
 
 struct drbd_device;
@@ -177,7 +178,8 @@ struct request_operation {
 	sector_t target_sector;
 	sector_t target_size_sectors;
 	unsigned int input_offset; /* if operation corresponds to part of the master bio */
-	int data_disk_index; /* index of first data disk for parity calculation; -1 if not parity data */
+	int parity_number; /* which parity disk; -1 if not parity data */
+	int data_disk_index; /* index of first data disk for parity calculation */
 	sector_t pre_read_sector;
 	sector_t pre_read_size_sectors;
 };
