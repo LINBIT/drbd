@@ -554,10 +554,12 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int sect_in, u64 duration_ns)
+/* FIXME by chosing to calculate in nano seconds, we now have several do_div()
+ * in here, which I find very ugly.
+ */
+static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in, u64 duration_ns)
 {
-	const u64 rs_make_reqs_intv_ns = NSEC_PER_SEC * RS_MAKE_REQS_INTV / HZ;
-	const u64 max_duration_ns = rs_make_reqs_intv_ns * 10;
+	const u64 max_duration_ns = RS_MAKE_REQS_INTV_NS * 10;
 	struct peer_device_conf *pdc;
 	unsigned int want;     /* The number of sectors we want in-flight */
 	int req_sect; /* Number of sectors to request in this turn */
@@ -565,7 +567,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	int cps; /* correction per invocation of drbd_rs_controller() */
 	int steps; /* Number of time steps to plan ahead */
 	int curr_corr;
-	int max_sect;
+	u64 max_sect;
 	struct fifo_buffer *plan;
 
 	if (duration_ns == 0)
@@ -573,7 +575,8 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	else if (duration_ns > max_duration_ns)
 		duration_ns = max_duration_ns;
 
-	sect_in = (u64)sect_in * rs_make_reqs_intv_ns / duration_ns;
+	sect_in = sect_in * RS_MAKE_REQS_INTV_NS;
+	do_div(sect_in, duration_ns);
 
 	pdc = rcu_dereference(peer_device->conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
@@ -583,8 +586,13 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	if (peer_device->rs_in_flight + sect_in == 0) { /* At start of resync */
 		want = ((pdc->resync_rate * 2 * RS_MAKE_REQS_INTV) / HZ) * steps;
 	} else { /* normal path */
-		want = pdc->c_fill_target ? pdc->c_fill_target :
-			(u64)sect_in * pdc->c_delay_target * NSEC_PER_SEC / (duration_ns * 10);
+		if (pdc->c_fill_target) {
+			want = pdc->c_fill_target;
+		} else {
+			u64 tmp = sect_in * pdc->c_delay_target * NSEC_PER_SEC;
+			do_div(tmp, (duration_ns * 10));
+			want = tmp;
+		}
 	}
 
 	correction = want - peer_device->rs_in_flight - plan->total;
@@ -602,17 +610,17 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, unsigned int
 	if (req_sect < 0)
 		req_sect = 0;
 
-	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns / NSEC_PER_SEC;
+	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
+	do_div(max_sect, NSEC_PER_SEC);
 
-	/*
-	drbd_warn(peer_device, "dur=%lldus sect_in=%u in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d\n",
-		 ktime_to_us(duration), sect_in, peer_device->rs_in_flight, want, correction,
-		 steps, cps, curr_corr, req_sect);
-	*/
+#if 0
+	drbd_warn(peer_device, "dur=%lldns sect_in=%u in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
+		 duration_ns, sect_in, peer_device->rs_in_flight, want, correction,
+		 steps, cps, curr_corr, req_sect, max_sect);
+#endif
 
 	if (req_sect > max_sect)
 		req_sect = max_sect;
-
 
 	return req_sect;
 }
