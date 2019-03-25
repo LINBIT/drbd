@@ -57,6 +57,7 @@
 #include "drbd_kref_debug.h"
 #include "drbd_transport.h"
 #include "drbd_polymorph_printk.h"
+#include "erasure_code_gf16.h"
 
 #ifdef __CHECKER__
 # define __protected_by(x)       __attribute__((require_context(x,1,999,"rdwr")))
@@ -120,7 +121,6 @@ extern char drbd_usermode_helper[];
 #define CHUNK_SECTORS (CHUNK_SIZE >> 9)
 #define DISK_COUNT_DATA 2
 #define DISK_COUNT_TOTAL 4
-#define DISK_COUNT_PARITY (DISK_COUNT_TOTAL - DISK_COUNT_DATA)
 #define BIG_STRIPE_SECTORS (CHUNK_SECTORS * DISK_COUNT_DATA)
 
 struct drbd_device;
@@ -1282,6 +1282,7 @@ struct drbd_device {
 	struct drbd_resource *resource;
 	bool use_journal;
 	bool distribute_data;
+	struct erasure_code erasure_code;
 	struct list_head peer_devices;
 	struct list_head pending_bitmap_io;
 

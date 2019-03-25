@@ -72,6 +72,7 @@ static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *r
 static void distributed_request_operation(struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
+	struct erasure_code *ec = &device->erasure_code;
 	struct drbd_peer_device *peer_device;
 	// TODO: can simplify this by splitting requests earlier on so that there are no overflows over rotation boundaries and so that all disks are equally involved in request
 
@@ -91,17 +92,16 @@ static void distributed_request_operation(struct drbd_request *req)
 	const sector_t size_sectors = size >> 9;
 	const int chunksect_bits = ffz(~CHUNK_SECTORS);
 	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
-	const int data_disks = DISK_COUNT_DATA;
-	const int total_disks = DISK_COUNT_TOTAL;
-	const int data_disk_number = chunk % data_disks;
-	const int stripe = chunk / data_disks;
+	const int parity_disks = ec->disk_count_total - ec->disk_count_data;
+	const int data_disk_number = chunk % ec->disk_count_data;
+	const int stripe = chunk / ec->disk_count_data;
 	const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
 	const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
 
-	const int data_0_node_id = (total_disks - (stripe % total_disks)) % total_disks;
-	const int parity_0_node_id = (data_0_node_id + data_disks) % total_disks;
+	const int data_0_node_id = (ec->disk_count_total - (stripe % ec->disk_count_total)) % ec->disk_count_total;
+	const int parity_0_node_id = (data_0_node_id + ec->disk_count_data) % ec->disk_count_total;
 	/* bio starts in chunk on this node */
-	const int data_node_id = (data_0_node_id + data_disk_number) % total_disks;
+	const int data_node_id = (data_0_node_id + data_disk_number) % ec->disk_count_total;
 	struct request_operation *start_operation = &req->operation[data_node_id];
 	/* TODO: loop over all data and parity disk instead of assuming we have only 2 data and 1 parity */
 	int i;
@@ -112,8 +112,8 @@ static void distributed_request_operation(struct drbd_request *req)
 	start_operation->parity_number = -1;
 //	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
 
-	for (i = 0; i < DISK_COUNT_PARITY; ++i) {
-		const int parity_node_id = (parity_0_node_id + i) % total_disks;
+	for (i = 0; i < parity_disks; ++i) {
+		const int parity_node_id = (parity_0_node_id + i) % ec->disk_count_total;
 		struct request_operation *parity_operation = &req->operation[parity_node_id];
 		/* TODO: don't necessary always need to recalculate entire parity chunk */
 		parity_operation->target_sector = stripe << chunksect_bits;
@@ -125,7 +125,7 @@ static void distributed_request_operation(struct drbd_request *req)
 
 	if (size_sectors > remaining_in_chunk) {
 		/* bio overflows into chunk on next node */
-		const int overflow_node_id = (data_node_id + 1) % total_disks;
+		const int overflow_node_id = (data_node_id + 1) % ec->disk_count_total;
 		struct request_operation *overflow_operation = &req->operation[overflow_node_id];
 
 		overflow_operation->target_sector = stripe << chunksect_bits;

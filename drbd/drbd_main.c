@@ -63,7 +63,6 @@
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
-#include "erasure_code_gf16.h"
 
 #ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
 #define DRBD_RELEASE_RETURN void
@@ -2258,6 +2257,7 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 
 static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_request *req, struct request_operation *operation)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
 	int err;
@@ -2283,9 +2283,8 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 //			  req, data_disk_0_index, data_disk_1_index, (unsigned long long) segment_send,
 //			  *(unsigned long long *) input_data[0][data_index], *(unsigned long long *) input_data[1][data_index]);
 
-		erasure_code_gf16_init();
 		BUG_ON(segment_send != BS);
-		erasure_code_gf16_encode(input_data, data_index, operation->parity_number, parity_buffer);
+		erasure_code_gf16_encode(&device->erasure_code, input_data, data_index, operation->parity_number, parity_buffer);
 		data_index++;
 
 //		drbd_info(peer_device, "## _drbd_send_parity req %p, parity 0x%016llx\n",
@@ -3750,6 +3749,10 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->minor = minor;
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
+
+	device->erasure_code.disk_count_total = DISK_COUNT_TOTAL;
+	device->erasure_code.disk_count_data = DISK_COUNT_DATA;
+	erasure_code_gf16_init(&device->erasure_code);
 
 #ifdef PARANOIA
 	SET_MDEV_MAGIC(device);

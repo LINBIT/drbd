@@ -41,8 +41,14 @@ typedef long long word_t  __attribute__ ((__vector_size__ (32)));
 typedef word_t slice_t[SLEN];
 typedef slice_t block_t[GF_M];
 
-extern void erasure_code_gf16_init(void);
+struct erasure_code {
+	int disk_count_total;
+	int disk_count_data;
+	gf_t generator_matrix[NMAX * NMAX];
+};
 
-extern void erasure_code_gf16_encode(block_t **data_blocks, int block_index, int parity_number, block_t *parity_out);
+extern void erasure_code_gf16_init(struct erasure_code *ec);
+
+extern void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, int block_index, int parity_number, block_t *parity_out);
 
 extern void erasure_code_gf16_decode(int plast, unsigned rm);
