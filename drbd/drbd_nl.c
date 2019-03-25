@@ -2050,6 +2050,8 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 
 	blk_queue_logical_block_size(q, 1 << 12);
 	blk_queue_physical_block_size(q, 1 << 12);
+	blk_queue_io_min(q, CHUNK_SIZE * DISK_COUNT_DATA);
+	blk_queue_io_opt(q, CHUNK_SIZE * DISK_COUNT_DATA);
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
 
