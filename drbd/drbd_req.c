@@ -110,7 +110,7 @@ static void distributed_request_operation(struct drbd_request *req)
 	start_operation->target_size_sectors = min(remaining_in_chunk, size_sectors);
 	start_operation->input_offset = 0;
 	start_operation->parity_number = -1;
-	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
+//	printk("## start_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) start_operation->target_sector, (long long unsigned) start_operation->target_size_sectors, start_operation->input_offset);
 
 	for (i = 0; i < DISK_COUNT_PARITY; ++i) {
 		const int parity_node_id = (parity_0_node_id + i) % total_disks;
@@ -120,7 +120,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		parity_operation->target_size_sectors = CHUNK_SECTORS;
 		parity_operation->parity_number = i;
 		parity_operation->data_disk_index = data_0_node_id;
-		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
+//		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
 	}
 
 	if (size_sectors > remaining_in_chunk) {
@@ -132,7 +132,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		overflow_operation->target_size_sectors = size_sectors - remaining_in_chunk;
 		overflow_operation->input_offset = remaining_in_chunk;
 		overflow_operation->parity_number = -1;
-		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
+//		printk("## overflow_operation, peer %d, sector %llu, size %llu, input_offset %u\n", overflow_node_id, (long long unsigned) overflow_operation->target_sector, (long long unsigned) overflow_operation->target_size_sectors, overflow_operation->input_offset);
 	}
 	req->stripe_interval.sector = stripe * BIG_STRIPE_SECTORS;
 	req->stripe_interval.size = BIG_STRIPE_SECTORS << SECTOR_SHIFT;
@@ -265,7 +265,7 @@ static void drbd_remove_request_interval(struct rb_root *root,
 	struct drbd_device *device = req->device;
 	struct drbd_interval *i = &req->stripe_interval;
 
-	drbd_info(device, "## drbd_remove_request_interval, drbd_remove_interval sector %lld, size %lld\n", (unsigned long long) i->sector, (unsigned long long) i->size);
+//	drbd_info(device, "## drbd_remove_request_interval, drbd_remove_interval sector %lld, size %lld\n", (unsigned long long) i->sector, (unsigned long long) i->size);
 	drbd_remove_interval(root, i);
 
 	/* Wake up any processes waiting for this request to complete.  */
@@ -617,7 +617,7 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 		return;
 
 	if (pre_read_put && atomic_sub_and_test(pre_read_put, &req->pre_read_ref)) {
-		drbd_info(req->device, "## drbd_req_put_completion_ref pre-read complete\n");
+//		drbd_info(req->device, "## drbd_req_put_completion_ref pre-read complete\n");
 		m->pre_read_done = true;
 		/* completion_ref may drop to zero temporarily */
 		atomic_sub(put, &req->completion_ref);
@@ -1685,7 +1685,7 @@ static int drbd_process_pre_read(struct drbd_request *req)
 //					(unsigned long long) interval->sector,
 //					(unsigned long long) interval->size);
 //			}
-			drbd_info(device, "## drbd_process_pre_read, drbd_insert_interval sector %lld, size %lld\n", (unsigned long long) req->stripe_interval.sector, (unsigned long long) req->stripe_interval.size);
+//			drbd_info(device, "## drbd_process_pre_read, drbd_insert_interval sector %lld, size %lld\n", (unsigned long long) req->stripe_interval.sector, (unsigned long long) req->stripe_interval.size);
 			if (rw == WRITE) {
 				drbd_insert_interval(&device->write_requests, &req->stripe_interval);
 			} else {
@@ -2106,7 +2106,7 @@ void pre_read_done(struct drbd_request *req)
 	const int rw = bio_data_dir(req->master_bio);
 	bool no_remote = false;
 
-	drbd_info(device, "## pre_read_done req %p\n", req);
+//	drbd_info(device, "## pre_read_done req %p\n", req);
 
 	spin_lock_irq(&resource->req_lock);
 
@@ -2141,8 +2141,8 @@ void pre_read_done(struct drbd_request *req)
 				D_ASSERT(peer_device, segment_send > 0);
 				from_base = drbd_kmap_atomic(page, KM_USER0);
 
-				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
-					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_send);
+//				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
+//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_send);
 
 				memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_send);
 				drbd_kunmap_atomic(from_base, KM_USER0);

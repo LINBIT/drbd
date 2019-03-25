@@ -2248,7 +2248,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 
 		/* TODO: Better memory management */
 		req->pre_read_data[idx] = kmalloc(data_size, GFP_NOIO);
-		drbd_info(peer_device, "## recv_dless_read %p node %d pre_read_data %px\n", req, idx, req->pre_read_data[idx]);
+//		drbd_info(peer_device, "## recv_dless_read %p node %d pre_read_data %px\n", req, idx, req->pre_read_data[idx]);
 		if (!req->pre_read_data[idx]) {
 			return -ENOMEM;
 		}
@@ -2261,7 +2261,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 		 */
 
 		iter = bio->bi_iter;
-		drbd_info(peer_device, "## recv_dless_read normal read %p node %d offset %u\n", req, idx, operation->input_offset << 9);
+//		drbd_info(peer_device, "## recv_dless_read normal read %p node %d offset %u\n", req, idx, operation->input_offset << 9);
 		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
 		__bio_for_each_segment(bvec, bio, iter, iter) {
 			void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
