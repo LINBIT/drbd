@@ -111,6 +111,7 @@ enum drbd_req_event {
 	NEG_ACKED,
 	BARRIER_ACKED, /* in protocol A and B */
 	DATA_RECEIVED, /* (remote read) */
+	PRE_READ_PROCESSED,
 
 	COMPLETED_OK,
 	READ_COMPLETED_WITH_ERROR,
@@ -245,6 +246,8 @@ enum drbd_req_state_bits {
 	 * but was not, because of drbd_suspended() */
 	__RQ_COMPLETION_SUSP,
 
+	__RQ_PRE_READ_ACTIVE,
+
 };
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_QUEUED      (1UL << __RQ_NET_QUEUED)
@@ -280,6 +283,7 @@ enum drbd_req_state_bits {
 #define RQ_UNPLUG          (1UL << __RQ_UNPLUG)
 #define RQ_POSTPONED	   (1UL << __RQ_POSTPONED)
 #define RQ_COMPLETION_SUSP (1UL << __RQ_COMPLETION_SUSP)
+#define RQ_PRE_READ_ACTIVE (1UL << __RQ_PRE_READ_ACTIVE)
 
 
 /* these flags go into local_rq_state,
@@ -291,7 +295,8 @@ enum drbd_req_state_bits {
 	 RQ_IN_ACT_LOG	|\
 	 RQ_POSTPONED	|\
 	 RQ_UNPLUG	|\
-	 RQ_COMPLETION_SUSP)
+	 RQ_COMPLETION_SUSP |\
+	 RQ_PRE_READ_ACTIVE)
 
 /* For waking up the frozen transfer log mod_req() has to return if the request
    should be counted in the epoch object*/
@@ -369,6 +374,7 @@ static inline int req_mod(struct drbd_request *req,
 	if (m.bio)
 		complete_master_bio(device, &m);
 
+	/* TODO: should technically check this wherever __req_mod is called, or at least assert false */
 	if (m.pre_read_done)
 		pre_read_done(req);
 

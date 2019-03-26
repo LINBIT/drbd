@@ -102,7 +102,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		data_operation->target_size_sectors = sectors;
 		data_operation->input_offset = input_offset;
 		data_operation->parity_number = -1;
-		printk("## data_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) data_operation->target_sector, (long long unsigned) data_operation->target_size_sectors, data_operation->input_offset);
+//		printk("## data_operation, peer %d, sector %llu, size %llu, input_offset %u\n", data_node_id, (long long unsigned) data_operation->target_sector, (long long unsigned) data_operation->target_size_sectors, data_operation->input_offset);
 
 		sector += sectors;
 		size -= sectors << SECTOR_SHIFT;
@@ -110,7 +110,6 @@ static void distributed_request_operation(struct drbd_request *req)
 	}
 
 	for (i = 0; i < parity_disks; ++i) {
-
 		const int parity_node_id = (parity_0_node_id + i) % ec->disk_count_total;
 		struct request_operation *parity_operation = &req->operation[parity_node_id];
 		/* TODO: don't necessary always need to recalculate entire parity chunk */
@@ -118,7 +117,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		parity_operation->target_size_sectors = CHUNK_SECTORS;
 		parity_operation->parity_number = i;
 		parity_operation->data_disk_index = data_0_node_id;
-		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
+//		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
 	}
 
 	req->stripe_interval.sector = stripe * big_stripe_sectors;
@@ -152,6 +151,7 @@ static void replicated_request_operation(struct drbd_device *device, struct drbd
 static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio *bio_src)
 {
 	struct drbd_request *req;
+	int i;
 
 	req = mempool_alloc(&drbd_request_mempool, GFP_NOIO);
 	if (!req)
@@ -189,6 +189,14 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	              | (bio_op(bio_src) == REQ_OP_WRITE_SAME ? RQ_WSAME : 0)
 	              | (bio_op(bio_src) == REQ_OP_WRITE_ZEROES ? RQ_ZEROES : 0)
 	              | (bio_op(bio_src) == REQ_OP_DISCARD ? RQ_UNMAP : 0);
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; ++i) {
+		/* TODO: Better memory management */
+		req->pre_read_data[i] = kmalloc(CHUNK_SIZE, GFP_NOIO);
+		if (!req->pre_read_data[i]) {
+			return NULL;
+		}
+	}
 
 	return req;
 }
@@ -600,16 +608,13 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 {
 	D_ASSERT(req->device, m || (req->local_rq_state & RQ_POSTPONED));
 
-	if (!put)
-		return;
-
 	if (pre_read_put && atomic_sub_and_test(pre_read_put, &req->pre_read_ref)) {
 //		drbd_info(req->device, "## drbd_req_put_completion_ref pre-read complete\n");
 		m->pre_read_done = true;
-		/* completion_ref may drop to zero temporarily */
-		atomic_sub(put, &req->completion_ref);
-		return;
 	}
+
+	if (!put)
+		return;
 
 	if (!atomic_sub_and_test(put, &req->completion_ref))
 		return;
@@ -775,6 +780,9 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if (!(old_local & RQ_LOCAL_PENDING) && (set_local & RQ_LOCAL_PENDING))
 		atomic_inc(&req->completion_ref);
 
+	if (!(old_local & RQ_PRE_READ_ACTIVE) && (set_local & RQ_PRE_READ_ACTIVE))
+		atomic_inc(&req->completion_ref);
+
 	if (!(old_net & RQ_PRE_READ) && (set & RQ_PRE_READ))
 		atomic_inc(&req->pre_read_ref);
 
@@ -821,6 +829,9 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			++c_put;
 		list_del_init(&req->req_pending_local);
 	}
+
+	if ((old_local & RQ_PRE_READ_ACTIVE) && (clear_local & RQ_PRE_READ_ACTIVE))
+		++c_put;
 
 	if ((old_net & RQ_NET_PENDING) && (clear & RQ_NET_PENDING)) {
 		dec_ap_pending(peer_device);
@@ -1073,7 +1084,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
 		D_ASSERT(device, (req->local_rq_state & RQ_LOCAL_MASK) == 0);
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_PRE_READ);
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_PRE_READ|RQ_PRE_READ_ACTIVE);
 		break;
 
 	case READ_RETRY_REMOTE_CANCELED:
@@ -1252,6 +1263,10 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		start_new_tl_epoch(device->resource);
 		for_each_peer_device(peer_device, device)
 			mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
+		break;
+
+	case PRE_READ_PROCESSED:
+		mod_rq_state(req, m, peer_device, RQ_PRE_READ_ACTIVE, 0);
 		break;
 	};
 
@@ -1599,43 +1614,6 @@ static int drbd_process_write_request(struct drbd_request *req, bool in_tree)
 //			drbd_info(device, "## drbd_process_write_request queue request for peer %u\n", peer_device->node_id);
 		} else if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size))
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
-	}
-
-	return count;
-}
-
-/* returns the number of connections expected to actually read this data */
-static int drbd_process_read_request(struct drbd_request *req)
-{
-	struct drbd_device *device = req->device;
-	struct drbd_peer_device *peer_device;
-	bool in_tree = false;
-	int remote;
-	int count = 0;
-
-	for_each_peer_device(peer_device, device) {
-		struct request_operation *operation = &req->operation[peer_device->node_id];
-
-		if (!operation->target_size_sectors || operation->parity_number != -1)
-			continue;
-
-		/* TODO: Move this logic into initial operation decision making */
-		remote = peer_device->disk_state[NOW] == D_UP_TO_DATE;
-
-		if (!remote)
-			continue;
-
-		++count;
-		_req_mod(req, TO_BE_SENT, peer_device);
-		if (!in_tree) {
-			/* So we can verify the handle in the answer packet.
-			 * Corresponding drbd_remove_request_interval is in
-			 * drbd_req_complete() */
-			drbd_insert_interval(&device->read_requests, &req->stripe_interval);
-			in_tree = true;
-		}
-		_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
-//		drbd_info(device, "## drbd_process_read_request queue request for peer %u\n", peer_device->node_id);
 	}
 
 	return count;
@@ -2092,14 +2070,21 @@ void pre_read_done(struct drbd_request *req)
 	struct drbd_resource *resource = device->resource;
 	const int rw = bio_data_dir(req->master_bio);
 	bool no_remote = false;
+	int i;
 
 //	drbd_info(device, "## pre_read_done req %p\n", req);
 
 	spin_lock_irq(&resource->req_lock);
 
+	/* decode missing data blocks */
+	for (i = 0; i < CHUNK_SIZE / BS; ++i) {
+		erasure_code_gf16_decode(&device->erasure_code, (block_t **) req->pre_read_data, i, 2 /* TODO */, 0b1111 /* TODO */);
+	}
+
 	if (rw == WRITE) {
 		struct drbd_peer_device *peer_device;
 
+		/* overwrite pre-read data with new data from write request */
 		for_each_peer_device(peer_device, device) {
 			struct request_operation *operation = &req->operation[peer_device->node_id];
 			struct bvec_iter iter;
@@ -2118,23 +2103,23 @@ void pre_read_done(struct drbd_request *req)
 			if (!size)
 				continue;
 
-			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << 9);
+			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << SECTOR_SHIFT);
 			__bio_for_each_segment(bvec, req->master_bio, iter, iter) {
-				int segment_send = min(bvec BVD bv_len, size - copied);
+				int segment_copy = min(bvec BVD bv_len, size - copied);
 				struct page *page = bvec BVD bv_page;
 				unsigned int offset = bvec BVD bv_offset;
 				char *from_base;
 
-				D_ASSERT(peer_device, segment_send > 0);
+				D_ASSERT(peer_device, segment_copy > 0);
 				from_base = drbd_kmap_atomic(page, KM_USER0);
 
 //				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
-//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_send);
+//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
 
-				memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_send);
+				memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_copy);
 				drbd_kunmap_atomic(from_base, KM_USER0);
 
-				copied += segment_send;
+				copied += segment_copy;
 
 				if (copied == size)
 					break;
@@ -2146,11 +2131,52 @@ void pre_read_done(struct drbd_request *req)
 		/* TODO: Fail request if we can't write to a sufficient number of peers */
 		wake_all_senders(resource);
 	} else {
-		if (!drbd_process_read_request(req))
-			no_remote = true;
-		/* TODO: Fail request if we can't read from a sufficient number of peers */
-		wake_all_senders(resource);
+		struct drbd_peer_device *peer_device;
+
+		/* fill request data with data from pre-read */
+		for_each_peer_device(peer_device, device) {
+			struct request_operation *operation = &req->operation[peer_device->node_id];
+			struct bvec_iter iter;
+			DRBD_BIO_VEC_TYPE bvec;
+			unsigned int size;
+			unsigned int copied = 0;
+			unsigned int pre_read_data_offset;
+
+			if (!operation->target_size_sectors || operation->parity_number != -1)
+				continue;
+
+			iter = req->master_bio->bi_iter;
+			size = operation->target_size_sectors << SECTOR_SHIFT;
+			pre_read_data_offset = (operation->target_sector - operation->pre_read_sector) << SECTOR_SHIFT;
+
+			if (!size)
+				continue;
+
+			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << SECTOR_SHIFT);
+			__bio_for_each_segment(bvec, req->master_bio, iter, iter) {
+				int segment_copy = min(bvec BVD bv_len, size - copied);
+				struct page *page = bvec BVD bv_page;
+				unsigned int offset = bvec BVD bv_offset;
+				char *to_base;
+
+				D_ASSERT(peer_device, segment_copy > 0);
+				to_base = drbd_kmap_atomic(page, KM_USER0);
+
+				drbd_info(peer_device, "## pre_read_done req %p apply pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
+					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
+
+				memcpy(to_base + offset, (char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, segment_copy);
+				drbd_kunmap_atomic(to_base, KM_USER0);
+
+				copied += segment_copy;
+
+				if (copied == size)
+					break;
+			}
+		}
 	}
+
+	_req_mod(req, PRE_READ_PROCESSED, NULL);
 
 	spin_unlock_irq(&resource->req_lock);
 

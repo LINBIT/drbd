@@ -401,7 +401,7 @@ void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, in
 {
 	int i;
 
-	/* TODO: Do this once each time we need it rather than for each block */
+	/* TODO: Do this once each time we need it rather than for each block (but do not hold while sending...) */
 	/* Save user space vector registers */
 	kernel_fpu_begin();
 
@@ -413,54 +413,38 @@ void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, in
 	kernel_fpu_end();
 }
 
-int disk_count_total = 4, disk_count_data = 2;
-
-gf_t generator_matrix[NMAX * NMAX];
-gf_t repair_matrix[2 * RMAX * RMAX];
-int dx[RMAX], ex[RMAX];           // I/O mapping for repair matrix
-block_t buf[NMAX];                // part buffer
-unsigned rmask = 0;               // input mask for repair matrix
-
-void erasure_code_gf16_decode(int plast, unsigned rm)
+/**
+ *
+ * @param ec
+ * @param plast
+ * @param rmask input mask for decoding data; bit set for each disk that is present
+ */
+void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, int block_index, int plast, unsigned rmask)
 {
 	int i, j;
 
-	if (plast >= disk_count_data) {                        /* do reconstruction proper */
+	if (plast >= ec->disk_count_data) {                        /* do reconstruction proper */
 		int r = 0;
+		gf_t repair_matrix[2 * RMAX * RMAX];
+		int dx[RMAX]; /* which disks we need to reconstruct */
+		int ex[RMAX]; /* which parities we use to reconstruct */
 
-		/* Save user space vector registers */
-		kernel_fpu_begin();
-
-		if (rm == rmask) {                        /* can use old matrix */
-			for (j = disk_count_data; j <= plast; ++j) {
-				if (!(rmask & (1 << j)))
-					continue;
-
-				++r;
-
-				for (i = 0; i < disk_count_data; ++i) {
-					if (rmask & (1 << i))
-						mul_xor_block(buf[j], buf[i], generator_matrix[disk_count_total * i + j]);
-				}
-			}
-		} else {                        /* calculate repair matrix */
+//		if (rm != rmask)
+		{                        /* calculate repair matrix */
 			int s = 0, rs = 0;
-			rmask = rm;
 
-			for (i = 0; i < disk_count_data; ++i) {
+			for (i = 0; i < ec->disk_count_data; ++i) {
 				if (!(rmask & (1 << i)))
 					dx[r++] = i;
 			}
 
-			for (j = disk_count_data; j <= plast; ++j) {
+			for (j = ec->disk_count_data; j <= plast; ++j) {
 				if (!(rmask & (1 << j)))
 					continue;
 
-				for (i = 0; i < disk_count_data; ++i) {
+				for (i = 0; i < ec->disk_count_data; ++i) {
 					if (!(rmask & (1 << i)))
-						repair_matrix[rs++] = generator_matrix[disk_count_total * i + j];
-					else
-						mul_xor_block(buf[j], buf[i], generator_matrix[disk_count_total * i + j]);
+						repair_matrix[rs++] = ec->generator_matrix[ec->disk_count_total * i + j];
 				}
 
 				for (i = 0; i < r; ++i)
@@ -475,11 +459,28 @@ void erasure_code_gf16_decode(int plast, unsigned rm)
 				panic("singular %dx%d submatrix. code is not MDS.", r, r);
 		}
 
+		/* Save user space vector registers */
+		kernel_fpu_begin();
+
+		r = 0;
+		for (j = ec->disk_count_data; j <= plast; ++j) {
+			if (!(rmask & (1 << j)))
+				continue;
+
+			++r;
+
+			for (i = 0; i < ec->disk_count_data; ++i) {
+				if (rmask & (1 << i))
+					/* warning: this mutates the parity buffers; once be done precisely once */
+					mul_xor_block(data_blocks[j][block_index], data_blocks[i][block_index], ec->generator_matrix[ec->disk_count_total * i + j]);
+			}
+		}
+
 		for (j = 0; j < r; ++j) {
-			mul_copy_block(buf[dx[j]], buf[ex[0]], repair_matrix[(2 * j + 1) * r]);
+			mul_copy_block(data_blocks[dx[j]][block_index], data_blocks[ex[0]][block_index], repair_matrix[(2 * j + 1) * r]);
 
 			for (i = 1; i < r; ++i)
-				mul_xor_block(buf[dx[j]], buf[ex[i]], repair_matrix[(2 * j + 1) * r + i]);
+				mul_xor_block(data_blocks[dx[j]][block_index], data_blocks[ex[i]][block_index], repair_matrix[(2 * j + 1) * r + i]);
 		}
 
 		kernel_fpu_end();

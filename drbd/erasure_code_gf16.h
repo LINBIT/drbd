@@ -51,4 +51,4 @@ extern void erasure_code_gf16_init(struct erasure_code *ec);
 
 extern void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, int block_index, int parity_number, block_t *parity_out);
 
-extern void erasure_code_gf16_decode(int plast, unsigned rm);
+extern void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, int block_index, int plast, unsigned rmask);

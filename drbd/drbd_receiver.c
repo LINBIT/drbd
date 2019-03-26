@@ -2246,12 +2246,6 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	if (req->net_rq_state[idx] & RQ_PRE_READ) {
 //		drbd_info(peer_device, "## recv_dless_read pre-read received from %u\n", idx);
 
-		/* TODO: Better memory management */
-		req->pre_read_data[idx] = kmalloc(data_size, GFP_NOIO);
-//		drbd_info(peer_device, "## recv_dless_read %p node %d pre_read_data %px\n", req, idx, req->pre_read_data[idx]);
-		if (!req->pre_read_data[idx]) {
-			return -ENOMEM;
-		}
 		drbd_recv_into(peer_device->connection, req->pre_read_data[idx], data_size);
 		data_size = 0;
 	} else {
