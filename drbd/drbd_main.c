@@ -2260,16 +2260,17 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
+	struct erasure_code *ec = &device->erasure_code;
 	int err;
 	unsigned int sent = 0;
 	int data_index = 0;
+	int i;
 
 	size_t parity_size = operation->target_size_sectors << SECTOR_SHIFT;
-	int data_disk_0_index = operation->data_disk_index;
-	int data_disk_1_index = (operation->data_disk_index + 1) % device->erasure_code.disk_count_total;
 	block_t *input_data[NMAX];
-	input_data[0] = (block_t *) req->pre_read_data[data_disk_0_index];
-	input_data[1] = (block_t *) req->pre_read_data[data_disk_1_index];
+	for (i = 0; i < ec->disk_count_data; ++i) {
+		input_data[i] = (block_t *) req->pre_read_data[(operation->data_disk_index + i) % ec->disk_count_total];
+	}
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */
 	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
@@ -3752,7 +3753,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	/* TODO: Make configurable */
 	device->erasure_code.disk_count_total = 4;
-	device->erasure_code.disk_count_data = 2;
+	device->erasure_code.disk_count_data = 3;
 	erasure_code_gf16_init(&device->erasure_code);
 
 #ifdef PARANOIA
