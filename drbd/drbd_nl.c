@@ -2246,7 +2246,7 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 
 		/* more than the max resync request size won't work anyways */
 		mds = min_t(unsigned int, mds, DRBD_RS_DISCARD_GRANULARITY_MAX >> 9);
-		rs_dg = max(rs_dg, mds << 9);
+		rs_dg = min(rs_dg, mds << 9);
 
 		/* less than the backend discard granularity does not work either */
 		if (rs_dg < ql_dg)
