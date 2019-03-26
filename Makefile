@@ -277,6 +277,6 @@ dockerimage: dockerimage.rhel7 dockerimage.bionic
 
 # used for --sync in lbbuild to decide which containers to push to which registry
 dockerpath:
-	echo $(DOCKERREGPATH_BIONIC) $(DOCKERREGPATH_RHEL7)
+	@echo $(DOCKERREGPATH_BIONIC) $(DOCKERREGPATH_RHEL7)
 
 Makefile: ;
