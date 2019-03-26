@@ -2,9 +2,9 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.17-0rc1 (api:genl2/proto:86-114/transport:14)
+9.0.17-1 (api:genl2/proto:86-114/transport:14)
 --------
- * Fix UUID handling of a diskless primary that has not peer with
+ * Fix UUID handling of a diskless primary that has no peer with
    usable data may not touch the current UUID
  * Fix resync-after dependencies; cross-resource dependencies
    and missing resources
@@ -25,6 +25,7 @@ Latest:
    fails doe to someone holding a drbd device open
  * docker file for a "load drbd module container" and allow to disable
    user-mode-helpers, which is necessary for this container
+ * compat for v5.0 kernel
 
 9.0.16-1 (api:genl2/proto:86-114/transport:14)
 --------
