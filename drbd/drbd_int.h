@@ -2020,6 +2020,7 @@ extern void resync_timer_fn(DRBD_TIMER_FN_ARG);
 extern void start_resync_timer_fn(DRBD_TIMER_FN_ARG);
 
 extern void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req);
+extern void drbd_endio_journal_write_sec_final(struct drbd_peer_request *peer_req);
 extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
 
 void __update_timing_details(

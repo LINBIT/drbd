@@ -1618,7 +1618,7 @@ static int drbd_submit_peer_request_interval(struct drbd_device *device,
 	unsigned n_bios = 0;
 	unsigned nr_pages = device->use_journal ? (data_size / PAGE_SIZE) + 2 : peer_req->page_chain.nr_pages;
 	int err = -ENOMEM;
-	sector_t written = 0;
+	unsigned position_in_req = (sector - req_sector) << SECTOR_SHIFT;
 
 	/* TODO: iterate over journal content with drbd_for_each_overlap; separate out functionality for requesting
 	 * a contiguous range and call it from here for each gap in the data from the journal */
@@ -1685,11 +1685,13 @@ next_bio:
 	if (device->use_journal && op == REQ_OP_WRITE) {
 		while (data_size) {
 			int res;
-			void *data = (char *) peer_req->data + written;
+			void *data = (char *) peer_req->data + position_in_req;
 			struct page *page = persistent_memory_page(data);
 			unsigned off = persistent_memory_page_offset(data);
 			unsigned len = min_t(unsigned, data_size, PAGE_SIZE - off);
 
+			drbd_info(device, "## drbd_submit_peer_request_interval sector %llu, req_sector %llu, position_in_req %u, peer_req->data %px, data %px, off %u, len %u",
+				  (unsigned long long) sector, (unsigned long long) req_sector, position_in_req, peer_req->data, data, off, len);
 			res = bio_add_page(bio, page, len, off);
 			if (res <= 0) {
 				/* A single page must always be possible!
@@ -1706,7 +1708,7 @@ next_bio:
 				goto next_bio;
 			}
 			data_size -= len;
-			written += len;
+			position_in_req += len;
 			--nr_pages;
 		}
 	} else {
@@ -1799,12 +1801,23 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	struct page *page = peer_req->page_chain.head;
 	int err = 0;
 
-//	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
-//						  (unsigned long long) sector,
-//						  (unsigned long long) data_size);
+	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
+						  (unsigned long long) sector,
+						  (unsigned long long) data_size);
 	if (device->use_journal && op == REQ_OP_READ) {
 		struct drbd_interval *existing_interval;
 
+		/* We must hold req_lock while interacting with the journal, but must not hold it while submitting
+		 * backing disk requests.
+		 * Hence the journal content may change while submitting backing disk requests.
+		 * New data cannot enter the journal, because we are blocking the receiver thread.
+		 * However, when data has been written out, the journal entries may be removed.
+		 * We iterate over the data interval, looking for the next interval contained in the journal.
+		 * To avoid the need to build a list, we immediately process this journal interval.
+		 * This means we have to skip forward and read from it without releasing the req_lock,
+		 * because that could result in the journal interval no longer being valid.
+		 * We then skip back and submit a backing disk request for the gap before this journal interval.
+		 */
 		while (sector < end_sector) {
 			sector_t gap_end_sector;
 			sector_t next_sector;
@@ -1898,7 +1911,34 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		if (!atomic_read(&peer_req->pending_bios)) {
 			drbd_endio_read_sec_final(peer_req);
 		}
+	} else if (device->use_journal) {
+		/* write out from journal */
+		struct drbd_journal_interval *existing_journal_interval;
+
+		/* We only submit backing disk writes for intervals that haven't been overwritten by more recent
+		 * writes present in the journal. This prevents newer writes being overwritten by older ones when
+		 * they are concurrently submitted. It also helps performance.
+		 * The journal_intervals list will not be modified during this loop, as follows.
+		 * It cannot be modified due to new entries being added because we are blocking the receiver thread.
+		 * It cannot be modified due to the list being cleared because we hold a reference to pending_bios. */
+		atomic_inc(&peer_req->pending_bios);
+
+		list_for_each_entry(existing_journal_interval, &peer_req->journal_intervals, list) {
+			struct drbd_interval *existing_interval = &existing_journal_interval->i;
+
+			drbd_info(device,
+				  "## drbd_submit_peer_request write to backing disk sector %llu size %llu\n",
+				  (unsigned long long) existing_interval->sector,
+				  (unsigned long long) existing_interval->size);
+			err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
+								NULL, existing_interval->sector, existing_interval->size);
+		}
+
+		if (atomic_dec_and_test(&peer_req->pending_bios)) {
+			drbd_endio_journal_write_sec_final(peer_req);
+		}
 	} else {
+		/* no journal */
 		err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
 			&page, sector, data_size);
 	}

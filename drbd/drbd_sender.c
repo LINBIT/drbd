@@ -207,6 +207,19 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	put_ldev(device);
 }
 
+void drbd_endio_journal_write_sec_final(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+
+	/* TODO: should set this when completed in other cases too for completeness */
+	peer_req->flags |= EE_COMPLETE;
+	if (connection->cstate[NOW] == C_CONNECTED)
+		queue_work(connection->ack_sender, &connection->send_acks_work);
+
+	/* TODO: check ldev reference counting in journal case */
+}
+
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
@@ -231,11 +244,8 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
-		peer_req->flags |= EE_COMPLETE;
 		if (is_write && device->use_journal) {
-			struct drbd_connection *connection = peer_device->connection;
-			if (connection->cstate[NOW] == C_CONNECTED)
-				queue_work(connection->ack_sender, &connection->send_acks_work);
+			drbd_endio_journal_write_sec_final(peer_req);
 			return;
 		}
 
