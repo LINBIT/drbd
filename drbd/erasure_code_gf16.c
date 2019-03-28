@@ -410,6 +410,7 @@ void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, in
 	for (i = 1; i < ec->disk_count_data; ++i)
 		mul_xor_block(*parity_out, data_blocks[i][block_index], ec->generator_matrix[ec->disk_count_total * i + ec->disk_count_data + parity_number]);
 
+	asm volatile("sfence" : : : "memory");
 	kernel_fpu_end();
 }
 
@@ -419,9 +420,19 @@ void erasure_code_gf16_encode(struct erasure_code *ec, block_t **data_blocks, in
  * @param plast
  * @param rmask input mask for decoding data; bit set for each disk that is present
  */
-void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, int block_index, int plast, unsigned rmask)
+void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, int block_index, unsigned rmask)
 {
 	int i, j;
+	int plast = 0;
+	int block_count = 0;
+	for (i = 0; i < ec->disk_count_total && block_count < ec->disk_count_data; ++i) {
+		if (rmask & (1 << i)) {
+			plast = i;
+			++block_count;
+		}
+	}
+
+	printk("## erasure_code_gf16_decode rmask 0x%x plast %d\n", rmask, plast);
 
 	if (plast >= ec->disk_count_data) {                        /* do reconstruction proper */
 		int r = 0;
@@ -483,6 +494,7 @@ void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, in
 				mul_xor_block(data_blocks[dx[j]][block_index], data_blocks[ex[i]][block_index], repair_matrix[(2 * j + 1) * r + i]);
 		}
 
+		asm volatile("sfence" : : : "memory");
 		kernel_fpu_end();
 	}
 }

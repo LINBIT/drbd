@@ -176,7 +176,6 @@ struct request_operation {
 	sector_t target_size_sectors;
 	unsigned int input_offset; /* if operation corresponds to part of the master bio */
 	int parity_number; /* which parity disk; -1 if not parity data */
-	int data_disk_index; /* index of first data disk for parity calculation */
 	sector_t pre_read_sector;
 	sector_t pre_read_size_sectors;
 };
@@ -404,7 +403,9 @@ struct drbd_request {
 	/* TODO: might hurt performance to allocate this extra data for every request */
 	struct request_operation operation[DRBD_NODE_ID_MAX];
 
+	int data_disk_index; /* index of first data disk for parity calculation */
 	void *pre_read_data[DRBD_NODE_ID_MAX];
+	u64 pre_read_mask;
 };
 
 struct drbd_epoch {

@@ -2269,7 +2269,7 @@ static int _drbd_send_parity(struct drbd_peer_device *peer_device, struct drbd_r
 	size_t parity_size = operation->target_size_sectors << SECTOR_SHIFT;
 	block_t *input_data[NMAX];
 	for (i = 0; i < ec->disk_count_data; ++i) {
-		input_data[i] = (block_t *) req->pre_read_data[(operation->data_disk_index + i) % ec->disk_count_total];
+		input_data[i] = (block_t *) req->pre_read_data[(req->data_disk_index + i) % ec->disk_count_total];
 	}
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */

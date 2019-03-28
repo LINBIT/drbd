@@ -1801,9 +1801,9 @@ int drbd_submit_peer_request(struct drbd_device *device,
 	struct page *page = peer_req->page_chain.head;
 	int err = 0;
 
-	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
-						  (unsigned long long) sector,
-						  (unsigned long long) data_size);
+//	drbd_info(device, "## drbd_submit_peer_request op %d sector %llu size %llu\n", op,
+//						  (unsigned long long) sector,
+//						  (unsigned long long) data_size);
 	if (device->use_journal && op == REQ_OP_READ) {
 		struct drbd_interval *existing_interval;
 

@@ -84,14 +84,17 @@ static void distributed_request_operation(struct drbd_request *req)
 	const sector_t chunk = sector >> chunksect_bits; // division by power of 2
 	const int stripe = chunk / ec->disk_count_data;
 	const int data_disk_number = chunk % ec->disk_count_data;
-
-	const int data_0_node_id = (ec->disk_count_total - (stripe % ec->disk_count_total)) % ec->disk_count_total;
-	const int parity_0_node_id = (data_0_node_id + ec->disk_count_data) % ec->disk_count_total;
+	int parity_0_node_id;
 	int i;
-
 	unsigned int input_offset = 0;
+
+	req->data_disk_index = (ec->disk_count_total - (stripe % ec->disk_count_total)) % ec->disk_count_total;
+	parity_0_node_id = (req->data_disk_index + ec->disk_count_data) % ec->disk_count_total;
+
+	printk("## distributed_request_operation, sector %llu, size %llubytes, chunksect_bits %d, chunk %llu, stripe %d, data_disk_number %d, data_disk_index %d\n",
+		(long long unsigned) sector, (long long unsigned) size, chunksect_bits, (long long unsigned) chunk, stripe, data_disk_number, req->data_disk_index);
 	for (i = data_disk_number; i < ec->disk_count_data && size > 0; ++i) {
-		const int data_node_id = (data_0_node_id + i) % ec->disk_count_total;
+		const int data_node_id = (req->data_disk_index + i) % ec->disk_count_total;
 		struct request_operation *data_operation = &req->operation[data_node_id];
 		const sector_t sector_in_chunk = sector & (CHUNK_SECTORS - 1); // modulus with power of 2
 		const sector_t remaining_in_chunk = CHUNK_SECTORS - sector_in_chunk;
@@ -116,8 +119,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		parity_operation->target_sector = stripe << chunksect_bits;
 		parity_operation->target_size_sectors = CHUNK_SECTORS;
 		parity_operation->parity_number = i;
-		parity_operation->data_disk_index = data_0_node_id;
-//		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
+		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
 	}
 
 	req->stripe_interval.sector = stripe * big_stripe_sectors;
@@ -196,6 +198,7 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 		if (!req->pre_read_data[i]) {
 			return NULL;
 		}
+		memset(req->pre_read_data[i], 0, CHUNK_SIZE);
 	}
 
 	return req;
@@ -842,6 +845,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if ((old_net & RQ_PRE_READ) && (clear & RQ_PRE_READ)) {
 		++pre_read_put;
+		req->pre_read_mask |= NODE_MASK(idx);
 	}
 
 	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
@@ -1904,11 +1908,13 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 
 	spin_lock_irq(&resource->req_lock);
 
+	/* TODO: Only calculate stripe_interval here; choosing operation should occur after complete_conflicting_writes */
 	if (device->distribute_data)
 		distributed_request_operation(req);
 	else
 		replicated_request_operation(device, req);
 
+	/* TODO: Possibly do not allow reads and writes concurrently when distribute_data is set (might actually be OK because writes into journal are serialized) */
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-aquire it before it returns here.
@@ -2071,14 +2077,23 @@ void pre_read_done(struct drbd_request *req)
 	const int rw = bio_data_dir(req->master_bio);
 	bool no_remote = false;
 	int i;
+	void *pre_read_data_unrotated[DRBD_NODE_ID_MAX];
+	u64 pre_read_mask_unrotated = 0;
 
 //	drbd_info(device, "## pre_read_done req %p\n", req);
 
 	spin_lock_irq(&resource->req_lock);
 
+	for (i = 0; i < device->erasure_code.disk_count_total; ++i) {
+		int index_unrotated = (device->erasure_code.disk_count_total + i - req->data_disk_index) % device->erasure_code.disk_count_total;
+		pre_read_data_unrotated[index_unrotated] = req->pre_read_data[i];
+		if (req->pre_read_mask & NODE_MASK(i))
+			pre_read_mask_unrotated |= 1 << index_unrotated;
+	}
+
 	/* decode missing data blocks */
 	for (i = 0; i < CHUNK_SIZE / BS; ++i) {
-		erasure_code_gf16_decode(&device->erasure_code, (block_t **) req->pre_read_data, i, 2 /* TODO */, 0b1111 /* TODO */);
+		erasure_code_gf16_decode(&device->erasure_code, (block_t **) pre_read_data_unrotated, i, pre_read_mask_unrotated);
 	}
 
 	if (rw == WRITE) {
@@ -2162,8 +2177,8 @@ void pre_read_done(struct drbd_request *req)
 				D_ASSERT(peer_device, segment_copy > 0);
 				to_base = drbd_kmap_atomic(page, KM_USER0);
 
-				drbd_info(peer_device, "## pre_read_done req %p apply pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
-					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
+//				drbd_info(peer_device, "## pre_read_done req %p apply pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
+//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
 
 				memcpy(to_base + offset, (char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, segment_copy);
 				drbd_kunmap_atomic(to_base, KM_USER0);
