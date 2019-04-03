@@ -30,9 +30,11 @@
 #include <linux/drbd.h>
 #include <linux/slab.h>
 #include <linux/dynamic_debug.h>
+#include <linux/libnvdimm.h>
 #include <asm/kmap_types.h>
 
 #include "drbd_int.h"
+#include "drbd_dax_pmem.h"
 
 /* See the ifdefs and comments inside that header file.
  * On recent kernels this is not needed. */
@@ -289,9 +291,12 @@ static void bm_set_page_unchanged(struct page *page)
 	clear_bit(BM_PAGE_LAZY_WRITEOUT, &page_private(page));
 }
 
-static void bm_set_page_need_writeout(struct page *page)
+static void bm_set_page_need_writeout(struct drbd_bitmap *bitmap, unsigned int page_nr)
 {
-	set_bit(BM_PAGE_NEED_WRITEOUT, &page_private(page));
+	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM)) {
+		struct page *page = bitmap->bm_pages[page_nr];
+		set_bit(BM_PAGE_NEED_WRITEOUT, &page_private(page));
+	}
 }
 
 void drbd_bm_reset_al_hints(struct drbd_device *device)
@@ -315,9 +320,12 @@ static void bm_clear_page_io_err(struct page *page)
 	clear_bit(BM_PAGE_IO_ERROR, &page_private(page));
 }
 
-static void bm_set_page_lazy_writeout(struct page *page)
+static void bm_set_page_lazy_writeout(struct drbd_bitmap *bitmap, unsigned int page_nr)
 {
-	set_bit(BM_PAGE_LAZY_WRITEOUT, &page_private(page));
+	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM)) {
+		struct page *page = bitmap->bm_pages[page_nr];
+		set_bit(BM_PAGE_LAZY_WRITEOUT, &page_private(page));
+	}
 }
 
 static int bm_test_page_lazy_writeout(struct page *page)
@@ -431,6 +439,9 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 
 void drbd_bm_free(struct drbd_bitmap *bitmap)
 {
+	if (bitmap->bm_flags & BM_ON_DAX_PMEM)
+		return;
+
 	bm_free_pages(bitmap->bm_pages, bitmap->bm_number_of_pages);
 	kvfree(bitmap->bm_pages);
 	kfree(bitmap);
@@ -474,7 +485,10 @@ static inline unsigned long bit_to_page_interleaved(struct drbd_bitmap *bitmap,
 #endif
 static void *bm_map(struct drbd_bitmap *bitmap, unsigned int page, enum km_type km_type)
 {
-	return drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
+	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM))
+		return drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
+
+	return ((unsigned char *)bitmap->bm_on_pmem) + (unsigned long)page * PAGE_SIZE;
 }
 
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
@@ -482,7 +496,8 @@ static void *bm_map(struct drbd_bitmap *bitmap, unsigned int page, enum km_type 
 #endif
 static void bm_unmap(struct drbd_bitmap *bitmap, void *addr, enum km_type km_type)
 {
-	drbd_kunmap_atomic(addr, km_type);
+	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM))
+		drbd_kunmap_atomic(addr, km_type);
 }
 
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
@@ -679,14 +694,14 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		switch(op) {
 		case BM_OP_CLEAR:
 			if (count) {
-				bm_set_page_lazy_writeout(bitmap->bm_pages[page]);
+				bm_set_page_lazy_writeout(bitmap, page);
 				total += count;
 			}
 			break;
 		case BM_OP_SET:
 		case BM_OP_MERGE:
 			if (count) {
-				bm_set_page_need_writeout(bitmap->bm_pages[page]);
+				bm_set_page_need_writeout(bitmap, page);
 				total += count;
 			}
 			break;
@@ -854,7 +869,8 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned long bits, words, obits;
 	unsigned long want, have, onpages; /* number of pages */
-	struct page **npages, **opages = NULL;
+	struct page **npages = NULL, **opages = NULL;
+	void *bm_on_pmem = NULL;
 	int err = 0;
 	bool growing;
 
@@ -883,8 +899,10 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		b->bm_words = 0;
 		b->bm_dev_capacity = 0;
 		spin_unlock_irq(&b->bm_lock);
-		bm_free_pages(opages, onpages);
-		kvfree(opages);
+		if (!(b->bm_flags & BM_ON_DAX_PMEM)) {
+			bm_free_pages(opages, onpages);
+			kvfree(opages);
+		}
 		goto out;
 	}
 	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
@@ -903,28 +921,42 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 
 	want = ALIGN(words*sizeof(long), PAGE_SIZE) >> PAGE_SHIFT;
 	have = b->bm_number_of_pages;
-	if (want == have) {
-		D_ASSERT(device, b->bm_pages != NULL);
-		npages = b->bm_pages;
+	if (drbd_md_dax_active(device->ldev)) {
+		bm_on_pmem = drbd_dax_bitmap(device, want);
 	} else {
-		if (drbd_insert_fault(device, DRBD_FAULT_BM_ALLOC))
-			npages = NULL;
-		else
-			npages = bm_realloc_pages(b, want);
-	}
+		if (want == have) {
+			D_ASSERT(device, b->bm_pages != NULL);
+			npages = b->bm_pages;
+		} else {
+			if (drbd_insert_fault(device, DRBD_FAULT_BM_ALLOC))
+				npages = NULL;
+			else
+				npages = bm_realloc_pages(b, want);
+		}
 
-	if (!npages) {
-		err = -ENOMEM;
-		goto out;
+		if (!npages) {
+			err = -ENOMEM;
+			goto out;
+		}
 	}
 
 	spin_lock_irq(&b->bm_lock);
-	opages = b->bm_pages;
 	obits  = b->bm_bits;
 
 	growing = bits > obits;
 
-	b->bm_pages = npages;
+	if (bm_on_pmem) {
+		if (b->bm_on_pmem) {
+			void *src = b->bm_on_pmem;
+			memmove(bm_on_pmem, src, b->bm_words * sizeof(long));
+			arch_wb_cache_pmem(bm_on_pmem, b->bm_words * sizeof(long));
+		}
+		b->bm_on_pmem = bm_on_pmem;
+		b->bm_flags |= BM_ON_DAX_PMEM;
+	} else {
+		opages = b->bm_pages;
+		b->bm_pages = npages;
+	}
 	b->bm_number_of_pages = want;
 	b->bm_bits  = bits;
 	b->bm_words = words;
@@ -947,7 +979,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		}
 	}
 
-	if (want < have) {
+	if (want < have && !(b->bm_flags & BM_ON_DAX_PMEM)) {
 		/* implicit: (opages != NULL) && (opages != npages) */
 		bm_free_pages(opages + want, have - want);
 	}
@@ -1186,6 +1218,11 @@ static int bm_rw_range(struct drbd_device *device,
 	unsigned long now;
 	int err = 0;
 
+	if (b->bm_flags & BM_ON_DAX_PMEM) {
+		if (flags & (BM_AIO_WRITE_HINTED | BM_AIO_WRITE_ALL_PAGES | BM_AIO_WRITE_LAZY))
+			arch_wb_cache_pmem(b->bm_on_pmem, b->bm_words * sizeof(long));
+		return 0;
+	}
 	/*
 	 * We are protected against bitmap disappearing/resizing by holding an
 	 * ldev reference (caller must have called get_ldev()).
@@ -1366,6 +1403,9 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int page_nr, last_page;
 
+	if (bitmap->bm_flags & BM_ON_DAX_PMEM)
+		return;
+
 	if (end >= bitmap->bm_bits)
 		end = bitmap->bm_bits - 1;
 
@@ -1390,9 +1430,11 @@ int drbd_bm_write(struct drbd_device *device,
 
 /**
  * drbd_bm_write_all() - Write the whole bitmap to its on disk location.
- * @mdev:	DRBD device.
+ * @device:	 DRBD device.
+ * @peer_device: parameter ignored
  *
- * Will write all pages.
+ * Will write all pages. Is used for online resize operations. The
+ * whole bitmap should be written into its new position.
  */
 int drbd_bm_write_all(struct drbd_device *device,
 		      struct drbd_peer_device *peer_device) __must_hold(local)
@@ -1622,7 +1664,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		}
 
 		if (addr[word32_in_page(to_word_nr)] != data_word)
-			bm_set_page_need_writeout(bitmap->bm_pages[current_page_nr]);
+			bm_set_page_need_writeout(bitmap, current_page_nr);
 		addr[word32_in_page(to_word_nr)] = data_word;
 		bitmap->bm_set[to_index] += hweight32(data_word);
 	}

@@ -11,6 +11,7 @@ int drbd_dax_map(struct drbd_backing_dev *);
 void drbd_dax_al_update(struct drbd_device *device, struct lc_element *al_ext);
 void drbd_dax_al_begin_io_commit(struct drbd_device *);
 int drbd_dax_al_initialize(struct drbd_device *device);
+void *drbd_dax_bitmap(struct drbd_device *, unsigned long);
 
 static inline bool drbd_md_dax_active(struct drbd_backing_dev *bdev)
 {
@@ -27,6 +28,7 @@ static inline struct meta_data_on_disk_9 *drbd_dax_md_addr(struct drbd_backing_d
 #define drbd_dax_map(B) (-ENOTSUPP)
 #define drbd_dax_al_begin_io_commit(D) do { } while (0)
 #define drbd_dax_al_initialize(D) (-EIO)
+#define drbd_dax_bitmap(D, L) (NULL)
 #define drbd_md_dax_active(B) (false)
 #define drbd_dax_md_addr(B) (NULL)
 

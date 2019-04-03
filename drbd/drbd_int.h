@@ -631,10 +631,14 @@ enum bm_flag {
 	BM_LOCK_ALL = BM_LOCK_TEST | BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
 
 	BM_LOCK_SINGLE_SLOT = 0x10,
+	BM_ON_DAX_PMEM = 0x10000,
 };
 
 struct drbd_bitmap {
-	struct page **bm_pages;
+	union {
+		struct page **bm_pages;
+		void *bm_on_pmem;
+	};
 	spinlock_t bm_lock;
 
 	unsigned long bm_set[DRBD_PEERS_MAX]; /* number of bits set */

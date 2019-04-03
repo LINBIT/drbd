@@ -3039,9 +3039,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 	}
 
-	if (drbd_bitmap_io(device, &drbd_bm_read,
-		"read from attaching", BM_LOCK_ALL,
-		NULL)) {
+	err = drbd_bitmap_io(device, &drbd_bm_read,
+			     "read from attaching", BM_LOCK_ALL,
+			     NULL);
+	if (err) {
 		retcode = ERR_IO_MD_DISK;
 		goto force_diskless_dec;
 	}

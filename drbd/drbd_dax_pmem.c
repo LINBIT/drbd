@@ -165,3 +165,11 @@ int drbd_dax_al_initialize(struct drbd_device *device)
 
 	return 0;
 }
+
+void *drbd_dax_bitmap(struct drbd_device *device, unsigned long want)
+{
+	struct drbd_backing_dev *bdev = device->ldev;
+	unsigned char *md_on_pmem = (unsigned char *)bdev->md_on_pmem;
+
+	return md_on_pmem + (long)bdev->md.bm_offset * SECTOR_SIZE;
+}
