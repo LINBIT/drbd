@@ -2932,6 +2932,16 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	nbc = NULL;
 	new_disk_conf = NULL;
 
+	if (drbd_md_dax_active(device->ldev)) {
+		/* The on-disk activity log is always initialized with the
+		 * non-pmem format. We have now decided to access it using
+		 * dax, so re-initialize it appropriately. */
+		if (drbd_dax_al_initialize(device)) {
+			retcode = ERR_IO_MD_DISK;
+			goto force_diskless_dec;
+		}
+	}
+
 	for_each_peer_device(peer_device, device) {
 		err = drbd_attach_peer_device(peer_device);
 		if (err) {

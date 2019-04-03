@@ -31,6 +31,7 @@
 #include "drbd_int.h"
 #include "drbd_wrappers.h"
 #include "drbd_meta_data.h"
+#include "drbd_dax_pmem.h"
 
 struct update_peers_work {
        struct drbd_work w;
@@ -293,6 +294,50 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 	return __al_get(&al_ctx);
 }
 
+#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
+static bool
+drbd_dax_begin_io_fp(struct drbd_device *device, unsigned int first, unsigned int last)
+{
+	struct lc_element *al_ext;
+	unsigned long flags;
+	unsigned int enr;
+	bool wake = 0;
+
+	for (enr = first; enr <= last; enr++) {
+		al_ext = _al_get(device, enr);
+		if (!al_ext)
+			goto abort;
+
+		if (al_ext->lc_number != enr) {
+			spin_lock_irqsave(&device->al_lock, flags);
+			drbd_dax_al_update(device, al_ext);
+			lc_committed(device->act_log);
+			spin_unlock_irqrestore(&device->al_lock, flags);
+		}
+	}
+	return true;
+abort:
+	last = enr - 1;
+	if (last >= first) {
+		spin_lock_irqsave(&device->al_lock, flags);
+		for (enr = first; enr <= last; enr++) {
+			al_ext = lc_find(device->act_log, enr);
+			wake |= lc_put(device->act_log, al_ext) == 0;
+		}
+		spin_unlock_irqrestore(&device->al_lock, flags);
+		if (wake)
+			wake_up(&device->al_wait);
+	}
+	return false;
+}
+#else
+static bool
+drbd_dax_begin_io_fp(struct drbd_device *device, unsigned int first, unsigned int last)
+{
+	return false;
+}
+#endif
+
 bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
@@ -300,9 +345,11 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 
-
 	D_ASSERT(device, first <= last);
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
+
+	if (drbd_md_dax_active(device->ldev))
+		return drbd_dax_begin_io_fp(device, first, last);
 
 	/* FIXME figure out a fast path for bios crossing AL extent boundaries */
 	if (first != last)
@@ -503,6 +550,12 @@ bool drbd_al_try_lock_for_transaction(struct drbd_device *device)
 void drbd_al_begin_io_commit(struct drbd_device *device)
 {
 	bool locked = false;
+
+
+	if (drbd_md_dax_active(device->ldev)) {
+		drbd_dax_al_begin_io_commit(device);
+		return;
+	}
 
 	wait_event(device->al_wait,
 			device->act_log->pending_changes == 0 ||
@@ -790,6 +843,9 @@ int drbd_al_initialize(struct drbd_device *device, void *buffer)
 	struct drbd_md *md = &device->ldev->md;
 	int al_size_4k = md->al_stripes * md->al_stripe_size_4k;
 	int i;
+
+	if (drbd_md_dax_active(device->ldev))
+		return drbd_dax_al_initialize(device);
 
 	__al_write_transaction(device, al);
 	/* There may or may not have been a pending transaction. */
