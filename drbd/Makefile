@@ -102,9 +102,7 @@ else
 
   kbuild:
 	@rm -f .drbd_kernelrelease*
-    # previous to 2.6.6 (suse: 2.6.5-dunno), this should be:
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) SUBDIRS=$(DRBDSRC) $(ARCH_UM) modules
-# $(MAKE) -C $(KDIR) M=$(DRBDSRC) $(ARCH_UM) modules
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \

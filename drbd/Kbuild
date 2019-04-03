@@ -1,4 +1,5 @@
-obj-m := drbd.o drbd_transport_tcp.o
+obj-m += drbd.o drbd_transport_tcp.o
+# obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o drbd_transport_tcp.o
 
 clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
@@ -56,10 +57,8 @@ ifndef DISABLE_KREF_DEBUGGING_HERE
       drbd-y += kref_debug.o drbd_kref_debug.o
 endif
 
-$(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h
-$(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h
-
-obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
+$(addprefix $(obj)/,$(drbd-y)): $(obj)/compat.h
+$(obj)/drbd_transport_tcp.o: $(obj)/compat.h
 
 # ======================================================================
 
@@ -124,7 +123,7 @@ endif
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
 SHELL=/bin/bash
 
-$(obj)/drbd_buildtag.c: $(filter-out drbd_buildtag.o,$(drbd-y))
+$(obj)/drbd_buildtag.c: $(addprefix $(obj)/,$(filter-out drbd_buildtag.o,$(drbd-y)))
 	@$(kecho) '  GEN     $@ $(echo-why)'
 	@set -e; exec > $@.new;							\
 	echo -e "/* automatically generated. DO NOT EDIT. */";			\
