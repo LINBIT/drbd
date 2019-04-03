@@ -54,6 +54,7 @@
 #include <linux/vmalloc.h>
 #include <linux/device.h>
 #include <linux/dynamic_debug.h>
+#include <linux/libnvdimm.h>
 #include <linux/swab.h>
 
 #include <linux/drbd_limits.h>
@@ -63,6 +64,7 @@
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
+#include "drbd_dax_pmem.h"
 
 #ifdef COMPAT_DRBD_RELEASE_RETURNS_VOID
 #define DRBD_RELEASE_RETURN void
@@ -4124,13 +4126,10 @@ fail:
 
 /* meta data management */
 
-void drbd_md_write(struct drbd_device *device, void *b)
+static
+void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
 {
-	struct meta_data_on_disk_9 *buffer = b;
-	sector_t sector;
 	int i;
-
-	memset(buffer, 0, sizeof(*buffer));
 
 	buffer->effective_size = cpu_to_be64(device->ldev->md.effective_size);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
@@ -4161,6 +4160,22 @@ void drbd_md_write(struct drbd_device *device, void *b)
 
 	buffer->al_stripes = cpu_to_be32(device->ldev->md.al_stripes);
 	buffer->al_stripe_size_4k = cpu_to_be32(device->ldev->md.al_stripe_size_4k);
+}
+
+void drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
+{
+	sector_t sector;
+
+	if (drbd_md_dax_active(device->ldev)) {
+		drbd_md_encode(device, drbd_dax_md_addr(device->ldev));
+		arch_wb_cache_pmem(drbd_dax_md_addr(device->ldev),
+				   sizeof(struct meta_data_on_disk_9));
+		return;
+	}
+
+	memset(buffer, 0, sizeof(*buffer));
+
+	drbd_md_encode(device, buffer);
 
 	D_ASSERT(device, drbd_md_ss(device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
@@ -4355,50 +4370,15 @@ err:
 	return -EINVAL;
 }
 
-
-/**
- * drbd_md_read() - Reads in the meta data super block
- * @device:	DRBD device.
- * @bdev:	Device from which the meta data should be read in.
- *
- * Return NO_ERROR on success, and an enum drbd_ret_code in case
- * something goes wrong.
- *
- * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
- * even before @bdev is assigned to @device->ldev.
- */
-int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
+static
+int drbd_md_decode(struct drbd_device *device,
+		   struct drbd_backing_dev *bdev,
+		   struct meta_data_on_disk_9 *buffer)
 {
-	struct meta_data_on_disk_9 *buffer;
 	u32 magic, flags;
 	int i, rv = NO_ERROR;
 	int my_node_id = device->resource->res_opts.node_id;
 	u32 max_peers;
-
-	if (device->disk_state[NOW] != D_DISKLESS)
-		return ERR_DISK_CONFIGURED;
-
-	buffer = drbd_md_get_buffer(device, __func__);
-	if (!buffer)
-		return ERR_NOMEM;
-
-	/* First, figure out where our meta data superblock is located,
-	 * and read it. */
-	bdev->md.meta_dev_idx = bdev->disk_conf->meta_dev_idx;
-	bdev->md.md_offset = drbd_md_ss(bdev);
-	/* Even for (flexible or indexed) external meta data,
-	 * initially restrict us to the 4k superblock for now.
-	 * Affects the paranoia out-of-range access check in drbd_md_sync_page_io(). */
-	bdev->md.md_size_sect = 8;
-
-	if (drbd_md_sync_page_io(device, bdev, bdev->md.md_offset,
-				 REQ_OP_READ)) {
-		/* NOTE: can't do normal error processing here as this is
-		   called BEFORE disk is attached */
-		drbd_err(device, "Error while reading metadata.\n");
-		rv = ERR_IO_MD_DISK;
-		goto err;
-	}
 
 	magic = be32_to_cpu(buffer->magic);
 	flags = be32_to_cpu(buffer->flags);
@@ -4429,7 +4409,6 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		goto err;
 	if (check_offsets_and_sizes(device, buffer, bdev))
 		goto err;
-
 
 	bdev->md.effective_size = be64_to_cpu(buffer->effective_size);
 	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
@@ -4474,6 +4453,63 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 		bdev->md.history_uuids[i] = be64_to_cpu(buffer->history_uuids[i]);
 
 	rv = NO_ERROR;
+
+err:
+	return rv;
+}
+
+/**
+ * drbd_md_read() - Reads in the meta data super block
+ * @device:	DRBD device.
+ * @bdev:	Device from which the meta data should be read in.
+ *
+ * Return NO_ERROR on success, and an enum drbd_ret_code in case
+ * something goes wrong.
+ *
+ * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
+ * even before @bdev is assigned to @device->ldev.
+ */
+int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
+{
+	struct meta_data_on_disk_9 *buffer;
+	int rv;
+
+	if (device->disk_state[NOW] != D_DISKLESS)
+		return ERR_DISK_CONFIGURED;
+
+	/* First, figure out where our meta data superblock is located,
+	 * and read it. */
+	bdev->md.meta_dev_idx = bdev->disk_conf->meta_dev_idx;
+	bdev->md.md_offset = drbd_md_ss(bdev);
+	/* Even for (flexible or indexed) external meta data,
+	 * initially restrict us to the 4k superblock for now.
+	 * Affects the paranoia out-of-range access check in drbd_md_sync_page_io(). */
+	bdev->md.md_size_sect = 8;
+
+	drbd_dax_open(bdev);
+	if (drbd_md_dax_active(bdev)) {
+		rv = drbd_md_decode(device, bdev, drbd_dax_md_addr(bdev));
+		if (rv != NO_ERROR)
+			return rv;
+		if (drbd_dax_map(bdev))
+			return ERR_IO_MD_DISK;
+		return NO_ERROR;
+	}
+
+	buffer = drbd_md_get_buffer(device, __func__);
+	if (!buffer)
+		return ERR_NOMEM;
+
+	if (drbd_md_sync_page_io(device, bdev, bdev->md.md_offset,
+				 REQ_OP_READ)) {
+		/* NOTE: can't do normal error processing here as this is
+		   called BEFORE disk is attached */
+		drbd_err(device, "Error while reading metadata.\n");
+		rv = ERR_IO_MD_DISK;
+		goto err;
+	}
+
+	rv = drbd_md_decode(device, bdev, buffer);
  err:
 	drbd_md_put_buffer(device);
 

@@ -712,6 +712,11 @@ struct drbd_backing_dev {
 	struct drbd_md md;
 	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
+#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
+	struct dax_device *dax_dev;
+	struct meta_data_on_disk_9 *md_on_pmem; /* address of md_offset */
+	struct al_on_pmem *al_on_pmem;
+#endif
 };
 
 struct drbd_md_io {
@@ -1486,6 +1491,7 @@ enum dds_flags {
 	DDSF_IGNORE_PEER_CONSTRAINTS = 4,
 	DDSF_2PC = 8, /* local only, not on the wire */
 };
+struct meta_data_on_disk_9;
 
 extern int  drbd_thread_start(struct drbd_thread *thi);
 extern void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait);
@@ -1538,7 +1544,7 @@ extern void drbd_queue_unplug(struct drbd_device *device);
 extern u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers);
 extern void drbd_md_set_sector_offsets(struct drbd_device *device,
 				       struct drbd_backing_dev *bdev);
-extern void drbd_md_write(struct drbd_device *device, void *buffer);
+extern void drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer);
 extern void drbd_md_sync(struct drbd_device *device);
 extern void drbd_md_sync_if_dirty(struct drbd_device *device);
 extern int  drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev);

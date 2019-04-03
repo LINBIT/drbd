@@ -40,6 +40,7 @@
 #include "drbd_state_change.h"
 #include "drbd_debugfs.h"
 #include "drbd_transport.h"
+#include "drbd_dax_pmem.h"
 #include <asm/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
@@ -1613,6 +1614,14 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		 * or even "starving". */
 		wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
 
+		if (drbd_md_dax_active(device->ldev)) {
+			if (drbd_dax_map(device->ldev)) {
+				drbd_err(device, "Could not remap DAX; aborting resize\n");
+				lc_unlock(device->act_log);
+				goto err_out;
+			}
+		}
+
 		/* mark current on-disk bitmap and activity log as unreliable */
 		prev_al_disabled = !!(md->flags & MDF_AL_DISABLED);
 		md->flags |= MDF_AL_DISABLED;
@@ -2625,6 +2634,8 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 {
 	if (ldev == NULL)
 		return;
+
+	drbd_dax_close(ldev);
 
 	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
 	close_backing_dev(device, ldev->backing_bdev, true);
