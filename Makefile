@@ -41,7 +41,9 @@ KDIR = /lib/modules/$(KVER)/build
 # Try "kernelrelease" first, then try "kernelversion".
 # If the magic does not work out for you,
 # explicitly set both KVER and KDIR to matching values.
-KVER := $(shell (make -s -C $(KDIR) kernelrelease || make -s -C $(KDIR) kernelversion) | tail -n1)
+# M=... set to hopefully avoid write-permission problems
+# during cc-option test and similar
+KVER := $(shell (make -s -C $(KDIR) M=$(PWD)/drbd kernelrelease || make -s -C $(KDIR) M=$(PWD)/drbd kernelversion) | tail -n1)
 ifeq ($(KVER),)
 	$(error could not guess kernel version string from kernel sources at "$(KDIR)")
 endif
@@ -239,8 +241,11 @@ ifdef RPMBUILD
 .PHONY: kmp-rpm
 kmp-rpm: tgz drbd-kernel.spec
 	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
+	KVER=$(KVER); flavors=; \
+	case $$KVER in *.debug) flavors=debug; KVER=$${KVER%.debug};; esac; \
 	$(RPMBUILD) -bb \
-	    $(if $(filter file,$(origin KVER)), --define "kernel_version $(KVER)") \
+	    $(if $(filter file,$(origin KVER)), --define "kernel_version $$KVER") \
+	    $${flavors:+ --define "lb_flavors $$flavors"} \
 	    $(RPMOPT) \
 	    drbd-kernel.spec
 	@echo "You have now:" ; find `rpm -E "%_rpmdir"` -name *.rpm
