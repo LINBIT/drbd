@@ -1019,6 +1019,9 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 	struct drbd_transport *transport = &connection->transport;
 	int header_size;
 
+	if (connection->cstate[NOW] < C_CONNECTING)
+		return NULL;
+
 	if (!transport->ops->stream_ok(transport, drbd_stream))
 		return NULL;
 
@@ -1076,6 +1079,15 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
 	if (size == 0)
 		return 0;
+
+	if (connection->cstate[NOW] < C_CONNECTING) {
+		/* DROP UNSENT INSTEAD */
+		sbuf->unsent =
+		sbuf->pos = page_address(sbuf->page);
+		sbuf->allocated_size = 0;
+		sbuf->additional_size = 0;
+		return -EIO;
+	}
 
 	if (drbd_stream == DATA_STREAM) {
 		rcu_read_lock();
@@ -1135,22 +1147,6 @@ int __send_command(struct drbd_connection *connection, int vnr,
 	return err;
 }
 
-void drbd_drop_unsent(struct drbd_connection* connection)
-{
-	int i;
-
-	clear_bit(DATA_CORKED, &connection->flags);
-	clear_bit(CONTROL_CORKED, &connection->flags);
-
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
-		struct drbd_send_buffer *sbuf = &connection->send_buffer[i];
-		sbuf->unsent =
-		sbuf->pos = page_address(sbuf->page);
-		sbuf->allocated_size = 0;
-		sbuf->additional_size = 0;
-	}
-}
-
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &connection->transport;
@@ -1158,7 +1154,9 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 
 	mutex_lock(&connection->mutex[stream]);
 	set_bit(CORKED + stream, &connection->flags);
-	tr_ops->hint(transport, stream, CORK);
+	/* only call into transport, if we expect it to work */
+	if (connection->cstate[NOW] >= C_CONNECTING)
+		tr_ops->hint(transport, stream, CORK);
 	mutex_unlock(&connection->mutex[stream]);
 }
 
@@ -1172,7 +1170,9 @@ void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 	flush_send_buffer(connection, stream);
 
 	clear_bit(CORKED + stream, &connection->flags);
-	tr_ops->hint(transport, stream, UNCORK);
+	/* only call into transport, if we expect it to work */
+	if (connection->cstate[NOW] >= C_CONNECTING)
+		tr_ops->hint(transport, stream, UNCORK);
 	mutex_unlock(&connection->mutex[stream]);
 }
 

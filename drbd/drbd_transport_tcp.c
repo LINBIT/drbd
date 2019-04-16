@@ -259,15 +259,6 @@ static int _dtt_send(struct drbd_tcp_transport *tcp_transport, struct socket *so
 	msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
 
 	do {
-		/* STRANGE
-		 * tcp_sendmsg does _not_ use its size parameter at all ?
-		 *
-		 * -EAGAIN on timeout, -EINTR on signal.
-		 */
-/* THINK
- * do we need to block DRBD_SIG if sock == &meta.socket ??
- * otherwise wake_asender() might interrupt some send_*Ack !
- */
 		rv = kernel_sendmsg(socket, &msg, &iov, 1, iov.iov_len);
 		if (rv == -EAGAIN) {
 			struct drbd_transport *transport = &tcp_transport->transport;
@@ -1187,6 +1178,12 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		}
 		len    -= sent;
 		offset += sent;
+		/* NOTE: it may take up to twice the socket timeout to have it
+		 * return -EAGAIN, the first timeout will likely happen with a
+		 * partial send, masking the timeout.  Maybe we want to export
+		 * drbd_stream_should_continue_after_partial_send(transport, stream)
+		 * and add that to the while() condition below.
+		 */
 	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_ESTABLISHED */);
 	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &tcp_transport->transport.flags);

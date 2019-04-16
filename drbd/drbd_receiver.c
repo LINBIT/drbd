@@ -7767,8 +7767,11 @@ void conn_disconnect(struct drbd_connection *connection)
 		connection->ack_sender = NULL;
 	}
 
+	/* restart sender thread,
+	 * potentially get it out of blocking network operations */
+	drbd_thread_restart_nowait(&connection->sender);
+
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
-	drbd_drop_unsent(connection);
 
 	drain_resync_activity(connection);
 
