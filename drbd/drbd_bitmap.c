@@ -470,6 +470,22 @@ static inline unsigned long bit_to_page_interleaved(struct drbd_bitmap *bitmap,
 }
 
 #ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define bm_map(bitmap, page, km_type) bm_map(bitmap, page)
+#endif
+static void *bm_map(struct drbd_bitmap *bitmap, unsigned int page, enum km_type km_type)
+{
+	return drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
+}
+
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
+#define bm_unmap(bitmap, addr, km_type) bm_unmap(bitmap, addr)
+#endif
+static void bm_unmap(struct drbd_bitmap *bitmap, void *addr, enum km_type km_type)
+{
+	drbd_kunmap_atomic(addr, km_type);
+}
+
+#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
 #define ____bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
 	____bm_op(device, bitmap_index, start, end, op, buffer)
 #endif
@@ -494,7 +510,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		unsigned int count = 0;
 		void *addr;
 
-		addr = drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
+		addr = bm_map(bitmap, page, km_type);
 		if (((start & 31) && (start | 31) <= end) || op == BM_OP_TEST) {
 			unsigned int last = bit_in_page | 31;
 
@@ -516,7 +532,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 						break;
 					case BM_OP_TEST:
 						total = !!test_bit_le(bit_in_page, addr);
-						drbd_kunmap_atomic(addr, km_type);
+						bm_unmap(bitmap, addr, km_type);
 						return total;
 					default:
 						break;
@@ -658,7 +674,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		}
 
 	    next_page:
-		drbd_kunmap_atomic(addr, km_type);
+		bm_unmap(bitmap, addr, km_type);
 		bit_in_page -= BITS_PER_PAGE;
 		switch(op) {
 		case BM_OP_CLEAR:
@@ -680,7 +696,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		continue;
 
 	    found:
-		drbd_kunmap_atomic(addr, km_type);
+		bm_unmap(bitmap, addr, km_type);
 		return start + count - bit_in_page;
 	}
 	switch(op) {
@@ -1574,7 +1590,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 
 	bitmap->bm_set[to_index] = 0;
 	current_page_nr = 0;
-	addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_IRQ1);
+	addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
 	for (word_nr = 0; word_nr < bitmap->bm_words; word_nr += bitmap->bm_max_peers) {
 		from_word_nr = word_nr + from_index;
 		from_page_nr = word32_to_page(from_word_nr);
@@ -1582,14 +1598,14 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		to_page_nr = word32_to_page(to_word_nr);
 
 		if (current_page_nr != from_page_nr) {
-			drbd_kunmap_atomic(addr, KM_IRQ1);
+			bm_unmap(bitmap, addr, KM_IRQ1);
 			if (need_resched()) {
 				spin_unlock_irq(&bitmap->bm_lock);
 				cond_resched();
 				spin_lock_irq(&bitmap->bm_lock);
 			}
 			current_page_nr = from_page_nr;
-			addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_IRQ1);
+			addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
 		}
 		data_word = addr[word32_in_page(from_word_nr)];
 
@@ -1600,9 +1616,9 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		}
 
 		if (current_page_nr != to_page_nr) {
-			drbd_kunmap_atomic(addr, KM_IRQ1);
+			bm_unmap(bitmap, addr, KM_IRQ1);
 			current_page_nr = to_page_nr;
-			addr = drbd_kmap_atomic(bitmap->bm_pages[current_page_nr], KM_IRQ1);
+			addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
 		}
 
 		if (addr[word32_in_page(to_word_nr)] != data_word)
@@ -1610,7 +1626,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		addr[word32_in_page(to_word_nr)] = data_word;
 		bitmap->bm_set[to_index] += hweight32(data_word);
 	}
-	drbd_kunmap_atomic(addr, KM_IRQ1);
+	bm_unmap(bitmap, addr, KM_IRQ1);
 
 	spin_unlock_irq(&bitmap->bm_lock);
 }
