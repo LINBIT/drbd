@@ -966,7 +966,7 @@ static void new_or_recycle_send_buffer_page(struct drbd_send_buffer *sbuf)
 		if (count == 1)
 			goto have_page;
 
-		page = alloc_page(GFP_KERNEL);
+		page = alloc_page(GFP_NOIO | __GFP_NOWARN);
 		if (page) {
 			put_page(sbuf->page);
 			sbuf->page = page;
