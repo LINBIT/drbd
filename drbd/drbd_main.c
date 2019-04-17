@@ -4488,6 +4488,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 
 	drbd_dax_open(bdev);
 	if (drbd_md_dax_active(bdev)) {
+		drbd_info(device, "meta-data IO uses: dax-pmem\n");
 		rv = drbd_md_decode(device, bdev, drbd_dax_md_addr(bdev));
 		if (rv != NO_ERROR)
 			return rv;
@@ -4495,6 +4496,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 			return ERR_IO_MD_DISK;
 		return NO_ERROR;
 	}
+	drbd_info(device, "meta-data IO uses: blk-bio\n");
 
 	buffer = drbd_md_get_buffer(device, __func__);
 	if (!buffer)

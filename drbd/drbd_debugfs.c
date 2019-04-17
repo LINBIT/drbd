@@ -11,6 +11,7 @@
 #include "drbd_req.h"
 #include "drbd_debugfs.h"
 #include "drbd_transport.h"
+#include "drbd_dax_pmem.h"
 
 
 /**********************************************************************
@@ -1051,6 +1052,18 @@ static int device_openers_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_md_io_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+
+	if (get_ldev_if_state(device, D_FAILED)) {
+		seq_puts(m, drbd_md_dax_active(device->ldev) ? "dax-pmem\n" : "blk-bio\n");
+		put_ldev(device);
+	}
+
+	return 0;
+}
+
 static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -1226,6 +1239,7 @@ drbd_debugfs_device_attr(data_gen_id)
 drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
 drbd_debugfs_device_attr(openers)
+drbd_debugfs_device_attr(md_io)
 #ifdef CONFIG_DRBD_TIMING_STATS
 __drbd_debugfs_device_attr(req_timing, device_req_timing_write)
 #endif
@@ -1268,6 +1282,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(io_frozen);
 	vol_dcf(ed_gen_id);
 	vol_dcf(openers);
+	vol_dcf(md_io);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_dcf(device->debugfs_vol, device, req_timing, 0600);
 #endif
@@ -1295,6 +1310,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_io_frozen);
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_openers);
+	drbd_debugfs_remove(&device->debugfs_vol_md_io);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
 #endif

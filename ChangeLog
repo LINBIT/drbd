@@ -11,6 +11,8 @@ in progress
  * Fix potential spinlock deadlock in IRQ
  * our quorum feature can now use the connectivity to
    the majority of Diskless nodes as tiebreaker
+ * Access meta-data using DAX if it is on persistent memory
+   (NVDIMM or PMEM); For write intense workloads this is a x2 to x4 speedup!
 
 9.0.17-1 (api:genl2/proto:86-114/transport:14)
 --------
