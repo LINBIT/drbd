@@ -1430,4 +1430,11 @@ static inline void time64_to_tm(__s64 totalsecs, int offset, struct tm *result)
 #define timespec64 timespec
 #endif
 
+#ifndef SECTOR_SHIFT
+#define SECTOR_SHIFT 9
+#endif
+#ifndef SECTOR_SIZE
+#define SECTOR_SIZE (1 << SECTOR_SHIFT)
+#endif
+
 #endif
