@@ -2943,12 +2943,9 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 {
 	struct drbd_device *device = container_of(work, struct drbd_device, finalize_work);
 	struct drbd_resource *resource = device->resource;
-	
+
 	if (device->this_bdev)
 		bdput(device->this_bdev);
-
-	drbd_backing_dev_free(device, device->ldev);
-	device->ldev = NULL;
 
 	if (device->bitmap) {
 		drbd_bm_free(device->bitmap);

@@ -3124,8 +3124,11 @@ static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, boo
 	drbd_resume_io(device);
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_DETACHING);
-	if (retcode >= SS_SUCCESS)
+	if (retcode >= SS_SUCCESS) {
+		/* wait for completion of drbd_ldev_destroy() */
+		wait_event_interruptible(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
 		drbd_cleanup_device(device);
+	}
 	else
 		device->device_conf.intentional_diskless = false;
 	if (retcode == SS_IS_DISKLESS)
@@ -5856,6 +5859,9 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		stable_change_repl_state(peer_device, L_OFF,
 					 CS_VERBOSE | CS_WAIT_COMPLETE);
 
+	/* If the worker still has to find it to call drbd_ldev_destroy(),
+	 * we must not unregister the device yet. */
+	wait_event(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
 	/*
 	 * Flush the resource work queue to make sure that no more events like
 	 * state change notifications for this device are queued: we want the
