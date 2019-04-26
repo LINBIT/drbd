@@ -123,7 +123,7 @@ static int drbd_msg_put_info(struct sk_buff *skb, const char *info)
 	if (!info || !info[0])
 		return 0;
 
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
 		return err;
 
@@ -150,7 +150,7 @@ static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
 	int aligned_len;
 	char *msg_buf;
 
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
 		return err;
 
@@ -4932,7 +4932,7 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 				    struct drbd_path *path)
 {
 	struct nlattr *nla;
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_CONTEXT);
 	if (!nla)
 		goto nla_put_failure;
 	if (device)
@@ -5189,7 +5189,7 @@ int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 static int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *connection)
 {
 	struct drbd_path *path;
-	struct nlattr *tla = nla_nest_start(skb, DRBD_NLA_PATH_PARMS);
+	struct nlattr *tla = nla_nest_start_noflag(skb, DRBD_NLA_PATH_PARMS);
 	if (!tla)
 		goto nla_put_failure;
 
