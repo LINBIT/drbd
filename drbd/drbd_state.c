@@ -2427,15 +2427,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				some_peer_is_primary = true;
 			switch (cstate[NEW]) {
 			case C_CONNECTED:
-				if (connection->epochs != 1)
+				if (atomic_read(&connection->active_ee_cnt)
+				 || atomic_read(&connection->done_ee_cnt))
 					some_peer_request_in_flight = true;
-				else if (!some_peer_request_in_flight) {
-					spin_lock(&connection->epoch_lock);
-					if (connection->epochs != 1 ||
-					    atomic_read(&connection->current_epoch->epoch_size) != 0)
-						some_peer_request_in_flight = true;
-					spin_unlock(&connection->epoch_lock);
-				}
 				break;
 			case C_STANDALONE:
 			case C_UNCONNECTED:
@@ -2443,7 +2437,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				/* maybe others are safe as well? which ones? */
 				break;
 			default:
-				/* if we just now disconnected,
+				/* if we are connected, or just now disconnected,
 				 * there may still be some request in flight. */
 				some_peer_request_in_flight = true;
 			}
