@@ -45,6 +45,7 @@ struct quorum_info {
 	int present;
 	int voters;
 	int quorum_at;
+	int diskless_majority_at;
 	int min_redundancy_at;
 };
 
@@ -52,6 +53,8 @@ struct quorum_detail {
 	int up_to_date;
 	int present;
 	int outdated;
+	int diskless;
+	int missing_diskless;
 	int unknown;
 };
 
@@ -1288,7 +1291,8 @@ static int calc_quorum_at(s32 setting, int voters)
 static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
 	const int my_node_id = device->resource->res_opts.node_id;
-	int node_id, up_to_date = 0, present = 0, outdated = 0, unknown = 0;
+	int node_id, up_to_date = 0, present = 0, outdated = 0, diskless = 0;
+	int missing_diskless = 0, unknown = 0;
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -1296,6 +1300,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
+		bool is_intentional_diskless;
 
 		if (node_id == my_node_id) {
 			disk_state = device->disk_state[NEW];
@@ -1308,26 +1313,34 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			continue;
 		}
 
-		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS))
-			continue;
-
-		if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN))
-			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
+		is_intentional_diskless = peer_device && !want_bitmap(peer_device);
+
+		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS) &&
+		    !is_intentional_diskless) {
+			continue;
+		}
+
+		if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN) && !is_intentional_diskless)
+			continue;
+
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
 
-		if (disk_state == D_DISKLESS)
-			continue;
 
 		if (repl_state == L_OFF) {
-			if (disk_state <= D_OUTDATED)
+			if (is_intentional_diskless)
+				/* device should be diskless but is absent */
+				missing_diskless++;
+			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED)
 				outdated++;
 			else
 				unknown++;
 		} else {
-			if (disk_state == D_UP_TO_DATE)
+			if (disk_state == D_DISKLESS && is_intentional_diskless)
+				diskless++;
+			else if (disk_state == D_UP_TO_DATE)
 				up_to_date++;
 			else
 				present++;
@@ -1338,13 +1351,20 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 	qd->up_to_date = up_to_date;
 	qd->present = present;
 	qd->outdated = outdated;
+	qd->diskless = diskless;
+	qd->missing_diskless = missing_diskless;
 	qd->unknown = unknown;
 }
 
 static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
-	int up_to_date = 0, present = 0, outdated = 0, unknown = 0;
+	int up_to_date = 0, present = 0, outdated = 0, unknown = 0, diskless = 0;
+	int missing_diskless = 0;
+	bool is_intentional_diskless;
 	struct drbd_peer_device *peer_device;
+
+	if (device->disk_state[NEW] == D_DISKLESS)
+		diskless++;
 
 	rcu_read_lock();
 	for_each_peer_device(peer_device, device) {
@@ -1354,16 +1374,20 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 		repl_state = peer_device->repl_state[NEW];
 		disk_state = peer_device->disk_state[NEW];
 
-		if (disk_state == D_DISKLESS)
-			continue;
+		is_intentional_diskless = !want_bitmap(peer_device);
 
 		if (repl_state == L_OFF) {
-			if (disk_state <= D_OUTDATED)
+			if (is_intentional_diskless)
+				/* device should be diskless but is absent */
+				missing_diskless++;
+			else if (disk_state <= D_OUTDATED)
 				outdated++;
 			else
 				unknown++;
 		} else {
-			if (disk_state == D_UP_TO_DATE)
+			if (disk_state == D_DISKLESS && is_intentional_diskless)
+				diskless++;
+			else if (disk_state == D_UP_TO_DATE)
 				up_to_date++;
 			else
 				present++;
@@ -1375,13 +1399,15 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 	qd->up_to_date = up_to_date;
 	qd->present = present;
 	qd->outdated = outdated;
+	qd->diskless = diskless;
+	qd->missing_diskless = missing_diskless;
 	qd->unknown = unknown;
 }
 
 static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 {
 	struct drbd_resource *resource = device->resource;
-	int voters, quorum_at, min_redundancy_at;
+	int voters, quorum_at, diskless_majority_at, min_redundancy_at;
 	struct quorum_detail qd = {};
 	bool have_quorum;
 
@@ -1401,6 +1427,7 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		voters = qd.up_to_date + qd.present;
 
 	quorum_at = calc_quorum_at(resource->res_opts.quorum, voters);
+	diskless_majority_at = calc_quorum_at(resource->res_opts.quorum, qd.diskless + qd.missing_diskless);
 	min_redundancy_at = calc_quorum_at(resource->res_opts.quorum_min_redundancy, voters);
 
 	if (qi) {
@@ -1408,10 +1435,20 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		qi->up_to_date = qd.up_to_date;
 		qi->present = qd.present;
 		qi->quorum_at = quorum_at;
+		qi->diskless_majority_at = diskless_majority_at;
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
 	have_quorum = (qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at;
+
+	if (!have_quorum && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&
+		/* It is an even number of nodes (think 2) and we failed by one vote.
+		   Check if we have majority of the diskless nodes connected.
+		   Using the diskless nodes a tie-breaker! */
+	    qd.diskless >= diskless_majority_at && device->have_quorum[NOW]) {
+		drbd_info(device, "Would lose quorum, but using tiebreaker logic to keep\n");
+		have_quorum = true;
+	}
 
 	return have_quorum;
 }
