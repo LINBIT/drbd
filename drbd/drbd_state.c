@@ -2244,8 +2244,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				start_new_epoch = true;
 
 			if (!is_sync_state(peer_device, NOW) &&
-			    is_sync_state(peer_device, NEW))
+			    is_sync_state(peer_device, NEW)) {
 				clear_bit(RS_DONE, &peer_device->flags);
+				clear_bit(B_RS_H_DONE, &peer_device->flags);
+			}
 		}
 
 		if (role[NEW] == R_PRIMARY && !have_quorum[NEW])
@@ -2355,13 +2357,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
 				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 
-#if 0
-/* Why would I want to reset this?
- * It is useful to not accidentally resize beyond end of backend of peer.
- */
 			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED)
-				peer_device->max_size = 0;
-#endif
+				clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
 
 			if (repl_state[OLD] == L_ESTABLISHED &&
 			    (repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T)) {
