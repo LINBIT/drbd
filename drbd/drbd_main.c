@@ -4801,6 +4801,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
+		    peer_device->repl_state[NOW] == L_BEHIND      ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
 			peer_device->current_uuid = val;
 			set_current = false;
