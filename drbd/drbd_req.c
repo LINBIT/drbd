@@ -1362,7 +1362,8 @@ static void maybe_pull_ahead(struct drbd_device *device)
 	struct drbd_connection *connection;
 
 	for_each_connection(connection, device->resource)
-		__maybe_pull_ahead(device, connection);
+		if (connection->cstate[NOW] == C_CONNECTED)
+			__maybe_pull_ahead(device, connection);
 }
 
 bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_state which)
