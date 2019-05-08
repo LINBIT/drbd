@@ -2962,8 +2962,8 @@ int drbd_sender(struct drbd_thread *thi)
 		peer_device = conn_peer_device(connection, device->vnr);
 
 		spin_lock_irq(&connection->resource->req_lock);
-		tl_next_request_for_connection(connection);
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
+		tl_next_request_for_connection(connection);
 		spin_unlock_irq(&connection->resource->req_lock);
 		if (m.bio)
 			complete_master_bio(device, &m);
