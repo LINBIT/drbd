@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import json
 
 UNKNOWN, TOGGLED = range(2)
 UNDEFINED, DEFINED = 'undefined', 'defined'
@@ -29,6 +30,29 @@ for dirpath, _, fnames in os.walk('./all'):
                 elif current != result:
                     defines[what] = TOGGLED
 
+prefix = 'compat_'
 for k, v in defines.items():
     if v != TOGGLED:
-        print('{} is always {}'.format(k, v))
+        vers, commit = UNDEFINED, UNDEFINED
+        fname = k.lower()
+        if fname.startswith(prefix):
+            fname = fname[len(prefix):]
+        fname += '.c'
+        fname = os.path.join('..', 'tests', fname)
+        try:
+            with open(fname) as fp:
+                line = fp.readline().strip()
+                if line.startswith('/*') or line.startswith('//'):
+                    line = line[2:]
+                if line.endswith('*/'):
+                    line = line[:-2]
+                try:
+                    info = json.loads(line)
+                    vers = info.get('version', UNDEFINED)
+                    commit = info.get('commit', UNDEFINED)
+                except:
+                    pass
+        except IOError:
+            print('Could not open file {}'.format(fname))
+
+        print('{} is always {} (v:{}, c:{})'.format(k, v, vers, commit))
