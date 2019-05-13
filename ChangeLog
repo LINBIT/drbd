@@ -6,7 +6,11 @@ in progress
 --------
  * Fix an IO deadlock under memory pressure
  * Fix disconnect timing in case the network connection suddenly
-   dropy all packets
+   drops all packets
+ * Fix some misbehavior that surfaced with Ahead/Behind
+ * Fix potential spinlock deadlock in IRQ
+ * our quorum feature can now use the connectivity to
+   the majority of Diskless nodes as tiebreaker
 
 9.0.17-1 (api:genl2/proto:86-114/transport:14)
 --------
