@@ -1437,4 +1437,17 @@ static inline void time64_to_tm(__s64 totalsecs, int offset, struct tm *result)
 #define SECTOR_SIZE (1 << SECTOR_SHIFT)
 #endif
 
+/* The declaration of arch_wb_cache_pmem() is in upstream in
+   include/linux/libnvdimm.h. In RHEL7.6 it is in drivers/nvdimm/pmem.h.
+   The kernel-devel package does not ship drivers/nvdimm/pmem.h.
+   Therefore the declaration is here!
+   Upstream moved it from drivers/nvdimm/pmem.h to libnvdimm.h with 4.14 */
+#if defined(RHEL_MAJOR) && defined(RHEL_MINOR) && defined(CONFIG_ARCH_HAS_PMEM_API)
+# if RHEL_MAJOR == 7 && RHEL_MINOR >= 6
+void arch_wb_cache_pmem(void *addr, size_t size);
+# endif
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0) && defined(CONFIG_ARCH_HAS_PMEM_API)
+void arch_wb_cache_pmem(void *addr, size_t size);
+#endif
+
 #endif
