@@ -2742,11 +2742,11 @@ prepare_activity_log(struct drbd_peer_request *peer_req)
 	 * See also drbd_request_prepare() for the "request" entry point. */
 	ecnt = atomic_add_return(nr_al_extents, &device->wait_for_actlog_ecnt);
 
-	spin_lock(&device->al_lock);
+	spin_lock_irq(&device->al_lock);
 	al = device->act_log;
 	nr = al->nr_elements;
 	used = al->used;
-	spin_unlock(&device->al_lock);
+	spin_unlock_irq(&device->al_lock);
 
 	/* note: due to the slight delay between being accounted in "used" after
 	 * being committed to the activity log with drbd_al_begin_io_commit(),
