@@ -21,6 +21,7 @@
 #include <linux/blkdev.h>
 #include <linux/backing-dev.h>
 #include <linux/kernel.h>
+#include <linux/kconfig.h>
 
 #ifndef pr_fmt
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
