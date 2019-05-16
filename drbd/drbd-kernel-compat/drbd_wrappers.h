@@ -1321,10 +1321,6 @@ static inline struct inode *file_inode(const struct file *file)
 }
 #endif
 
-#ifdef COMPAT_HAVE_BIO_BI_BDEV
-#define bio_set_dev(bio, bdev) (bio)->bi_bdev = bdev
-#endif
-
 #ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
 extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,
 		struct proc_dir_entry *parent,

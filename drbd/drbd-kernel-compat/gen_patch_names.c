@@ -91,6 +91,9 @@ int main(int argc, char **argv)
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
 
+	patch(1, "bio_bi_bdev", false, true,
+	      COMPAT_HAVE_BIO_BI_BDEV, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
