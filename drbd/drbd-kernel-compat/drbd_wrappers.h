@@ -1321,10 +1321,6 @@ static inline struct inode *file_inode(const struct file *file)
 }
 #endif
 
-#ifndef COMPAT_HAVE_KMALLOC_ARRAY
-#define kmalloc_array(a, b, c) kmalloc((a) * (b), (c))
-#endif
-
 #ifdef COMPAT_HAVE_BIO_BI_BDEV
 #define bio_set_dev(bio, bdev) (bio)->bi_bdev = bdev
 #endif
