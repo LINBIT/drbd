@@ -1,3 +1,9 @@
+drbd (9.0.18~rc1-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Philipp Reisner <phil@linbit.com>  Fri, 17 May 2019 09:04:08 +0200
+
 drbd (9.0.17-1) unstable; urgency=medium
 
   * New upstream release.
