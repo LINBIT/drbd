@@ -122,7 +122,9 @@ COCCIES := $(sort $(wildcard $(src)/drbd-kernel-compat/cocci/*.cocci))
 PATCHES := $(COCCIES:$(src)/drbd-kernel-compat/cocci/%.cocci=$(src)/drbd-kernel-compat/patches/%.patch)
 $(src)/drbd-kernel-compat/patches/%.patch: $(src)/drbd-kernel-compat/cocci/%.cocci
 	@$(kecho) '  SPATCH     $@ $(echo-why)'
-	@(cd $(src); spatch --sp-file $< $(drbd-y:%.o=%.c) $(headers-to-apply-compat) > $@)
+	@(cd $(src); spatch --sp-file $< $(drbd-y:%.o=%.c)			  \
+			    --macro-file $(src)/drbd-kernel-compat/cocci_macros.h \
+			    $(headers-to-apply-compat) > $@)
 
 $(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(PATCHES) $(COMPAT_FORCE)
 	$(call filechk,compat.$(KERNELVERSION).h)
