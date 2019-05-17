@@ -943,12 +943,6 @@ static inline u32 prandom_u32(void)
 }
 #endif
 
-#ifdef COMPAT_HAVE_NETLINK_CB_PORTID
-#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).portid
-#else
-#define NETLINK_CB_PORTID(skb) NETLINK_CB(skb).pid
-#endif
-
 #ifndef list_first_entry
 #define list_first_entry(ptr, type, member) \
 	list_entry((ptr)->next, type, member)

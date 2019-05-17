@@ -97,6 +97,9 @@ int main(int argc, char **argv)
 	patch(1, "refcount_inc", true, false,
 	      COMPAT_HAVE_REFCOUNT_INC, "present");
 
+	patch(1, "netlink_cb_portid", true, false,
+	      COMPAT_HAVE_NETLINK_CB_PORTID, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
