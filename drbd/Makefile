@@ -133,7 +133,7 @@ else
   clean:
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
-	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
+	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd drbd-kernel-compat/patches/*
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
