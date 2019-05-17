@@ -94,6 +94,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_bi_bdev", false, true,
 	      COMPAT_HAVE_BIO_BI_BDEV, "present");
 
+	patch(1, "refcount_inc", true, false,
+	      COMPAT_HAVE_REFCOUNT_INC, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
