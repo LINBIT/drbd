@@ -936,13 +936,6 @@ static inline int nla_type(const struct nlattr *nla)
 	     pos = hlist_entry((pos)->member.next, typeof(*(pos)), member))
 #endif
 
-#ifndef COMPAT_HAVE_PRANDOM_U32
-static inline u32 prandom_u32(void)
-{
-	return random32();
-}
-#endif
-
 #ifndef list_first_entry
 #define list_first_entry(ptr, type, member) \
 	list_entry((ptr)->next, type, member)

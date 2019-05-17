@@ -100,6 +100,9 @@ int main(int argc, char **argv)
 	patch(1, "netlink_cb_portid", true, false,
 	      COMPAT_HAVE_NETLINK_CB_PORTID, "present");
 
+	patch(1, "prandom_u32", true, false,
+	      COMPAT_HAVE_PRANDOM_U32, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
