@@ -1196,14 +1196,14 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 
 static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 {
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 
 	bio_for_each_segment(bvec, bio, iter) {
 		int err;
 
-		err = dtt_send_page(transport, DATA_STREAM, bvec BVD bv_page,
-				      bvec BVD bv_offset, bvec BVD bv_len,
+		err = dtt_send_page(transport, DATA_STREAM, bvec.bv_page,
+				      bvec.bv_offset, bvec.bv_len,
 				      bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;

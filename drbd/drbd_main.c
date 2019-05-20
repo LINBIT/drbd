@@ -2159,8 +2159,8 @@ static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
 	struct drbd_connection *connection = peer_device->connection;
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 
 	/* Flush send buffer and make sure PAGE_SIZE is available... */
 	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
@@ -2170,8 +2170,8 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 	bio_for_each_segment(bvec, bio, iter) {
 		int err;
 
-		err = _drbd_no_send_page(peer_device, bvec BVD bv_page,
-					 bvec BVD bv_offset, bvec BVD bv_len,
+		err = _drbd_no_send_page(peer_device, bvec.bv_page,
+					 bvec.bv_offset, bvec.bv_len,
 					 bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
@@ -2179,15 +2179,15 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 
-		peer_device->send_cnt += (bvec BVD bv_len) >> 9;
+		peer_device->send_cnt += bvec.bv_len >> 9;
 	}
 	return 0;
 }
 
 static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 {
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 	bool no_zc = drbd_disable_sendpage;
 
 	/* e.g. XFS meta- & log-data is in slab pages, which have a
@@ -2198,7 +2198,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 	 * by someone, leading to some obscure delayed Oops somewhere else. */
 	if (!no_zc)
 		bio_for_each_segment(bvec, bio, iter) {
-			struct page *page = bvec BVD bv_page;
+			struct page *page = bvec.bv_page;
 
 			if (page_count(page) < 1 || PageSlab(page)) {
 				no_zc = true;
@@ -2218,7 +2218,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 
 		err = tr_ops->send_zc_bio(transport, bio);
 		if (!err)
-			peer_device->send_cnt += DRBD_BIO_BI_SIZE(bio) >> 9;
+			peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
 
 		return err;
 	}
@@ -2343,7 +2343,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 
 	if (wsame) {
 		additional_size_command(peer_device->connection, DATA_STREAM,
-					bio_iovec(req->master_bio) BVD bv_len);
+					bio_iovec(req->master_bio).bv_len);
 		err = __send_command(peer_device->connection, device->vnr, P_WSAME, DATA_STREAM);
 	} else {
 		additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);

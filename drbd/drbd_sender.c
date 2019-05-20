@@ -352,8 +352,8 @@ void drbd_csum_pages(struct crypto_ahash *tfm, struct page *page, void *digest)
 
 void drbd_csum_bio(struct crypto_ahash *tfm, struct bio *bio, void *digest)
 {
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 	AHASH_REQUEST_ON_STACK(req, tfm);
 	struct scatterlist sg;
 
@@ -364,7 +364,7 @@ void drbd_csum_bio(struct crypto_ahash *tfm, struct bio *bio, void *digest)
 	crypto_ahash_init(req);
 
 	bio_for_each_segment(bvec, bio, iter) {
-		sg_set_page(&sg, bvec BVD bv_page, bvec BVD bv_len, bvec BVD bv_offset);
+		sg_set_page(&sg, bvec.bv_page, bvec.bv_len, bvec.bv_offset);
 		ahash_request_set_crypt(req, &sg, NULL, sg.length);
 		crypto_ahash_update(req);
 		/* WRITE_SAME has only one segment,

@@ -1611,7 +1611,7 @@ next_bio:
 		goto fail;
 	}
 	/* > peer_req->i.sector, unless this is the first bio */
-	DRBD_BIO_BI_SECTOR(bio) = sector;
+	bio->bi_iter.bi_sector = sector;
 	bio_set_dev(bio, device->ldev->backing_bdev);
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_UNPLUG, REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
@@ -1649,7 +1649,7 @@ next_bio:
 			if (bio->bi_vcnt == 0) {
 				drbd_err(device,
 					"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
-					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)DRBD_BIO_BI_SECTOR(bio),
+					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)bio->bi_iter.bi_sector,
 					 (unsigned long)bio->bi_flags);
 				err = -ENOSPC;
 				goto fail;
@@ -1988,8 +1988,8 @@ static int ignore_remaining_packet(struct drbd_connection *connection, int size)
 static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_request *req,
 			   sector_t sector, int data_size)
 {
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 	struct bio *bio;
 	int digest_size, err, expect;
 	void *dig_in = peer_device->connection->int_dig_in;
@@ -2009,13 +2009,13 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	peer_device->recv_cnt += data_size >> 9;
 
 	bio = req->master_bio;
-	D_ASSERT(peer_device->device, sector == DRBD_BIO_BI_SECTOR(bio));
+	D_ASSERT(peer_device->device, sector == bio->bi_iter.bi_sector);
 
 	bio_for_each_segment(bvec, bio, iter) {
-		void *mapped = kmap(bvec BVD bv_page) + bvec BVD bv_offset;
-		expect = min_t(int, data_size, bvec BVD bv_len);
+		void *mapped = kmap(bvec.bv_page) + bvec.bv_offset;
+		expect = min_t(int, data_size, bvec.bv_len);
 		err = drbd_recv_into(peer_device->connection, mapped, expect);
-		kunmap(bvec BVD bv_page);
+		kunmap(bvec.bv_page);
 		if (err)
 			return err;
 		data_size -= expect;

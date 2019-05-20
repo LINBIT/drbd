@@ -87,8 +87,8 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	req->epoch = 0;
 
 	drbd_clear_interval(&req->i);
-	req->i.sector = DRBD_BIO_BI_SECTOR(bio_src);
-	req->i.size = DRBD_BIO_BI_SIZE(bio_src);
+	req->i.sector = bio_src->bi_iter.bi_sector;
+	req->i.size = bio_src->bi_iter.bi_size;
 	req->i.local = true;
 	req->i.waiting = false;
 
