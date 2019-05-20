@@ -103,6 +103,9 @@ int main(int argc, char **argv)
 	patch(1, "prandom_u32", true, false,
 	      COMPAT_HAVE_PRANDOM_U32, "present");
 
+	patch(1, "struct_bvec_iter", true, false,
+	      COMPAT_HAVE_STRUCT_BVEC_ITER, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
