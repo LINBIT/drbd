@@ -102,12 +102,7 @@ else
 
   unpatch:
 	@echo "Removing compat patches"
-	$(eval PATCHES := $(shell \
-		test -e .compat_patches_applied && \
-		cat .compat_patches_applied || \
-		echo ""))
-	$(eval patch_with_path := $(patsubst %,drbd-kernel-compat/patches/%.patch,$(PATCHES)))
-	@$(foreach patch, $(patch_with_path), patch -R $(src) -p0 < $(patch);)
+	@patch -R $(src) -p0 < drbd-kernel-compat/compat.patch
 	@rm -f .compat_patches_applied
 
   kbuild:
@@ -133,7 +128,8 @@ else
   clean:
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
-	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd drbd-kernel-compat/patches/*
+	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
+	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
