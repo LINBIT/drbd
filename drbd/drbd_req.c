@@ -2256,7 +2256,7 @@ void do_submit(struct work_struct *ws)
 #endif
 #endif
 
-MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
+blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 	struct drbd_resource *resource = device->resource;
@@ -2274,7 +2274,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * by the block layer. */
 	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
 		drbd_bio_endio(bio, BLK_STS_NOTSUPP);
-		MAKE_REQUEST_RETURN;
+		return BLK_QC_T_NONE;
 	}
 
 	blk_queue_split(q, &bio);
@@ -2285,7 +2285,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 
 	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
 		drbd_bio_endio(bio, BLK_STS_IOERR);
-		MAKE_REQUEST_RETURN;
+		return BLK_QC_T_NONE;
 	}
 
 	ktime_get_accounting(start_kt);
@@ -2297,7 +2297,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	current->bio_list = current_bio_list;
 #endif
 
-	MAKE_REQUEST_RETURN;
+	return BLK_QC_T_NONE;
 }
 
 /* This is called by bio_add_page().
