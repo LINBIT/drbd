@@ -121,6 +121,12 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_VOID_MAKE_REQUEST, "is_void");
 #endif
 
+	patch(1, "blkdev_get_by_path", true, false,
+	      COMPAT_HAVE_BLKDEV_GET_BY_PATH, "present");
+
+	patch(1, "open_bdev_exclusive", true, false,
+	      COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
