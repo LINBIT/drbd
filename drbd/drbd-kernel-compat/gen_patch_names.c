@@ -115,6 +115,12 @@ int main(int argc, char **argv)
 	patch(1, "ib_alloc_pd", true, false,
 	      COMPAT_IB_ALLOC_PD_HAS_2_PARAMS, "has_2_params");
 
+#ifndef COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST
+	patch(2, "make_request", false, false,
+	      COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST, "is_blk_qc_t",
+	      COMPAT_HAVE_VOID_MAKE_REQUEST, "is_void");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
