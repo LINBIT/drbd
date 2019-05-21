@@ -1249,13 +1249,6 @@ drbd_ib_create_cq(struct ib_device *device,
 	drbd_ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR)
 #endif
 
-#ifndef COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS
-/* Since linux v4.5 ib_query_device() is gone and device->query_device() is used
- * device->query_device() exists for all interesting kernel versions,
- * but the number of arguments got changed over time */
-#define query_device(D, A, U) query_device(D, A)
-#endif
-
 #ifndef COMPAT_IB_ALLOC_PD_HAS_2_PARAMS
 #define ib_alloc_pd(dev, flags) ib_alloc_pd(dev)
 #endif

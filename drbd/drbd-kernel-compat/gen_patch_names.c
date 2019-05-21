@@ -109,6 +109,9 @@ int main(int argc, char **argv)
 	patch(1, "rdma_create_id", true, false,
 	      COMPAT_RDMA_CREATE_ID_HAS_NET_NS, "has_net_ns");
 
+	patch(1, "ib_query_device", true, false,
+	      COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS, "has_3_params");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
