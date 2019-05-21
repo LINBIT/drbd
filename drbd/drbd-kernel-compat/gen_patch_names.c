@@ -106,6 +106,9 @@ int main(int argc, char **argv)
 	patch(1, "struct_bvec_iter", true, false,
 	      COMPAT_HAVE_STRUCT_BVEC_ITER, "present");
 
+	patch(1, "rdma_create_id", true, false,
+	      COMPAT_RDMA_CREATE_ID_HAS_NET_NS, "has_net_ns");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
