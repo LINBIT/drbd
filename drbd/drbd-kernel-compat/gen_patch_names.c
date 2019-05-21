@@ -112,6 +112,9 @@ int main(int argc, char **argv)
 	patch(1, "ib_query_device", true, false,
 	      COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS, "has_3_params");
 
+	patch(1, "ib_alloc_pd", true, false,
+	      COMPAT_IB_ALLOC_PD_HAS_2_PARAMS, "has_2_params");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

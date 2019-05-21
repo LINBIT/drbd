@@ -1248,10 +1248,6 @@ drbd_ib_create_cq(struct ib_device *device,
 #define ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR) \
 	drbd_ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR)
 #endif
-
-#ifndef COMPAT_IB_ALLOC_PD_HAS_2_PARAMS
-#define ib_alloc_pd(dev, flags) ib_alloc_pd(dev)
-#endif
 /* RDMA */
 
 #ifndef COMPAT_HAVE_FILE_INODE
