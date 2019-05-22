@@ -2493,9 +2493,24 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	return 0;
 }
 
+static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
+{
+	const int my_node_id = device->resource->res_opts.node_id;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == my_node_id)
+			continue;
+		if (peer_md[node_id].bitmap_index == -1)
+			return &peer_md[node_id];
+	}
+	return NULL;
+}
+
 static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 md_flags)
 {
-	struct drbd_peer_md *peer_md;
+	struct drbd_peer_md *peer_md, *day0_md;
 	int freed_index, from_index;
 
 	if (!get_ldev(device))
@@ -2526,7 +2541,14 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 	drbd_bm_write(device, NULL);
 	drbd_bm_unlock(device);
 
-	peer_md->bitmap_uuid = 0;
+	day0_md = day0_peer_md(device);
+	if (day0_md) {
+		peer_md->bitmap_uuid = day0_md->bitmap_uuid;
+		peer_md->bitmap_dagtag = day0_md->bitmap_dagtag;
+	} else {
+		peer_md->bitmap_uuid = 0;
+		peer_md->bitmap_dagtag = 0;
+	}
 	peer_md->flags = md_flags;
 	peer_md->bitmap_index = -1;
 	drbd_md_sync(device);
