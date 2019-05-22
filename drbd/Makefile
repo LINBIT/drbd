@@ -130,6 +130,7 @@ else
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
+	rm -f .compat_patches_applied
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
