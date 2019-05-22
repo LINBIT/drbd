@@ -1367,7 +1367,7 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 		diskless++;
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
 
@@ -1821,7 +1821,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	int vnr;
 
 	rcu_read_lock();
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 
 		if (cstate[NEW] < C_CONNECTED)

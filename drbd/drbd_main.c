@@ -4650,7 +4650,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		get_random_bytes(&prev_c_uuid, sizeof(u64));
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state pdsk;
 		if (peer_device->bitmap_index == -1)
 			continue;

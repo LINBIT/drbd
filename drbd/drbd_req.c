@@ -1395,7 +1395,7 @@ static u64 calc_nodes_to_read_from(struct drbd_device *device)
 	int wp;
 
 	rcu_read_lock();
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_rcu(peer_device, device) {
 		struct net_conf *nc;
 
 		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
