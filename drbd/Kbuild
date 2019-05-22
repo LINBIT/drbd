@@ -128,7 +128,7 @@ $(src)/drbd-kernel-compat/compat.patch: $(obj)/drbd-kernel-compat/gen_patch_name
 			    --macro-file $(src)/drbd-kernel-compat/cocci_macros.h \
 			    > $(src)/drbd-kernel-compat/compat.patch)
 
-$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(src)/drbd-kernel-compat/compat.patch $(COMPAT_FORCE)
+$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(COMPAT_FORCE)
 	$(call filechk,compat.$(KERNELVERSION).h)
 
 $(obj)/compat.h: $(obj)/compat.$(KERNELVERSION).h FORCE
