@@ -118,7 +118,7 @@ $(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
 $(src)/drbd-kernel-compat/compat.patch: $(obj)/drbd-kernel-compat/gen_patch_names
 	$(eval APPLY_PATCHES := $(shell $(obj)/drbd-kernel-compat/gen_patch_names))
 	@$(kecho) '  APPLY_PATCHES: $(APPLY_PATCHES)'
-	$(eval coccies_with_path := $(sort $(patsubst %,$(src)/drbd-kernel-compat/cocci/%.cocci,$(APPLY_PATCHES))))
+	$(eval coccies_with_path := $(patsubst %,$(src)/drbd-kernel-compat/cocci/%.cocci,$(APPLY_PATCHES)))
 	cat $(coccies_with_path) > $(src)/drbd-kernel-compat/.compat.cocci
 
 	@$(kecho) '  SPATCH         $(echo-why)'
