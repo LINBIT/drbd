@@ -139,6 +139,9 @@ int main(int argc, char **argv)
 	patch(1, "kernel_read", false, true,
 	      COMPAT_BEFORE_4_13_KERNEL_READ, "before_4_13");
 
+	patch(1, "sock_ops", true, false,
+	      COMPAT_SOCK_OPS_RETURNS_ADDR_LEN, "returns_addr_len");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
