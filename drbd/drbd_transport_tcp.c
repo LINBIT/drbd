@@ -648,8 +648,7 @@ retry:
 		   from the listening socket. */
 		unregister_state_change(s_estab->sk, listener);
 
-
-		drbd_always_getpeername(s_estab, (struct sockaddr *)&peer_addr);
+		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, 2);
 
 		spin_lock_bh(&listener->listener.waiters_lock);
 		drbd_path2 = drbd_find_path_by_addr(&listener->listener, &peer_addr);
