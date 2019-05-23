@@ -3252,6 +3252,38 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	/* no longer valid, about to call drbd_recv again for the digest... */
 	p = pi->data = NULL;
 
+
+	if (peer_device->repl_state[NOW] == L_AHEAD) {
+		if (pi->cmd == P_DATA_REQUEST) {
+			/* P_DATA_REQUEST originates from a Primary,
+			 * so if I am "Ahead", the Primary would be "Behind":
+			 * Can not happen. */
+			if (drbd_ratelimit())
+				drbd_err(peer_device, "received P_DATA_REQUEST while L_AHEAD\n");
+			err = -EINVAL;
+			goto fail2;
+		}
+		if (connection->agreed_pro_version >= 115) {
+			switch (pi->cmd) {
+			/* case P_DATA_REQUEST: see above, not based on protocol version */
+			case P_OV_REQUEST:
+				verify_skipped_block(peer_device, sector, size);
+				/* fall through */
+			case P_RS_DATA_REQUEST:
+			case P_RS_THIN_REQ:
+			case P_CSUM_RS_REQUEST:
+				err = drbd_send_ack(peer_device, P_RS_CANCEL_AHEAD, peer_req);
+				goto fail2;
+			case P_OV_REPLY:
+				/* FIXME how can we cancel these?
+				 * just ignore L_AHEAD for now */
+				break;
+			default:
+				BUG();
+			}
+		}
+	}
+
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_data_req;
@@ -8570,6 +8602,9 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 		case P_NEG_RS_DREPLY:
 			drbd_rs_failed_io(peer_device, sector, size);
 			break;
+		case P_RS_CANCEL_AHEAD:
+			set_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags);
+			/* fall through */
 		case P_RS_CANCEL:
 			if (peer_device->repl_state[NOW] == L_VERIFY_S) {
 				verify_skipped_block(peer_device, sector, size);
@@ -8901,6 +8936,7 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
 	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
 	[P_RS_CANCEL]       = { sizeof(struct p_block_ack), got_NegRSDReply },
+	[P_RS_CANCEL_AHEAD] = { sizeof(struct p_block_ack), got_NegRSDReply },
 	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_RqSReply },
 	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },

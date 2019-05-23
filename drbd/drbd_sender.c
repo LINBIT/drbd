@@ -471,6 +471,9 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_device, resync_work);
 	struct drbd_device *device = peer_device->device;
 
+	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
+		return 0;
+
 	mutex_lock(&device->bm_resync_fo_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
@@ -504,6 +507,9 @@ int w_send_uuids(struct drbd_work *w, int cancel)
 void resync_timer_fn(DRBD_TIMER_FN_ARG)
 {
 	struct drbd_peer_device *peer_device = DRBD_TIMER_ARG2OBJ(peer_device, resync_timer);
+
+	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
+		return;
 
 	drbd_queue_work_if_unqueued(
 		&peer_device->connection->sender_work,
@@ -685,6 +691,15 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	if (peer_device->rs_total == 0) {
 		/* empty resync? */
 		drbd_resync_finished(peer_device, D_MASK);
+		return 0;
+	}
+
+	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags)) {
+		/* If a P_RS_CANCEL_AHEAD on controll socket overtook the
+		 * already queued data and state change to Ahead/Behind,
+		 * don't add more resync requests, just wait it out. */
+		if (drbd_ratelimit())
+			drbd_info(peer_device, "peer pulled ahead during resync\n");
 		return 0;
 	}
 
@@ -2873,12 +2888,10 @@ static int process_sender_todo(struct drbd_connection *connection)
 	 *
 	 * Stop processing as soon as an error is encountered.
 	 */
-
 	if (!connection->todo.req) {
 		update_sender_timing_details(connection, maybe_send_unplug_remote);
 		maybe_send_unplug_remote(connection, false);
 	}
-
 	else if (list_empty(&connection->todo.work_list)) {
 		update_sender_timing_details(connection, process_one_request);
 		return process_one_request(connection);

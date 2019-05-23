@@ -591,6 +591,7 @@ enum {
 	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
 				   D_UP_TO_DATE before becoming secondary! */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
+	SYNC_TARGET_TO_BEHIND,  /* SyncTarget, wait for Behind */
 };
 
 /* We could make these currently hardcoded constants configurable

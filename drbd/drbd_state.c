@@ -2247,6 +2247,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			    is_sync_state(peer_device, NEW)) {
 				clear_bit(RS_DONE, &peer_device->flags);
 				clear_bit(B_RS_H_DONE, &peer_device->flags);
+				clear_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags);
 			}
 		}
 
