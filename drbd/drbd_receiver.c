@@ -2330,19 +2330,18 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	}
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
-		if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-			pcmd = (peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
-				peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T &&
-				peer_req->flags & EE_MAY_SET_IN_SYNC) ?
-				P_RS_WRITE_ACK : P_WRITE_ACK;
-			err = drbd_send_ack(peer_device, pcmd, peer_req);
-			if (pcmd == P_RS_WRITE_ACK)
-				drbd_set_in_sync(peer_device, sector, peer_req->i.size);
-		} else {
-			err = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
+		if (unlikely(peer_req->flags & EE_WAS_ERROR)) {
+			pcmd = P_NEG_ACK;
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
-		}
+		} else if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
+			   peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T &&
+			   peer_req->flags & EE_MAY_SET_IN_SYNC) {
+			pcmd = P_RS_WRITE_ACK;
+			drbd_set_in_sync(peer_device, sector, peer_req->i.size);
+		} else
+			pcmd = P_WRITE_ACK;
+		err = drbd_send_ack(peer_device, pcmd, peer_req);
 		dec_unacked(peer_device);
 	}
 
