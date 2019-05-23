@@ -1980,6 +1980,11 @@ extern void start_resync_timer_fn(struct timer_list *t);
 
 extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
 
+/* bi_end_io handlers */
+extern void drbd_md_endio(struct bio *bio);
+extern void drbd_peer_request_endio(struct bio *bio);
+extern void drbd_request_endio(struct bio *bio);
+
 void __update_timing_details(
 		struct drbd_thread_timing_details *tdp,
 		unsigned int *cb_nr,
@@ -2091,10 +2096,12 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 {
 	__release(local);
 
-	if (drbd_insert_fault(device, fault_type))
-		drbd_bio_endio(bio, BLK_STS_IOERR);
-	else
+	if (drbd_insert_fault(device, fault_type)) {
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
+	} else {
 		generic_make_request(bio);
+	}
 }
 
 void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,

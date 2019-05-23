@@ -999,13 +999,13 @@ struct one_flush_context {
 	struct issue_flush_context *ctx;
 };
 
-static void one_flush_endio BIO_ENDIO_ARGS(struct bio *bio)
+static void one_flush_endio(struct bio *bio)
 {
 	struct one_flush_context *octx = bio->bi_private;
 	struct drbd_device *device = octx->device;
 	struct issue_flush_context *ctx = octx->ctx;
 
-	BIO_ENDIO_FN_START;
+	blk_status_t status = bio->bi_status;
 
 	if (status) {
 		ctx->error = blk_status_to_errno(status);

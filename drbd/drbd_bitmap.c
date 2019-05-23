@@ -1099,14 +1099,14 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 }
 
 /* bv_page may be a copy, or may be the original */
-static void drbd_bm_endio BIO_ENDIO_ARGS(struct bio *bio)
+static void drbd_bm_endio(struct bio *bio)
 {
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned int idx = bm_page_to_idx(bio->bi_io_vec[0].bv_page);
 
-	BIO_ENDIO_FN_START;
+	blk_status_t status = bio->bi_status;
 
 	if ((ctx->flags & BM_AIO_COPY_PAGES) == 0 &&
 	    !bm_test_page_unchanged(b->bm_pages[idx]))
@@ -1183,7 +1183,8 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
 	bio_set_op_attrs(bio, op, 0);
 
 	if (drbd_insert_fault(device, (op == REQ_OP_WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD)) {
-		drbd_bio_endio(bio, BLK_STS_IOERR);
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
 	} else {
 		submit_bio(bio);
 		/* this should not count as user activity and cause the

@@ -373,7 +373,8 @@ void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
 	int rw = bio_data_dir(m->bio);
-	drbd_bio_endio(m->bio, errno_to_blk_status(m->error));
+	m->bio->bi_status = errno_to_blk_status(m->error);
+	bio_endio(m->bio);
 	dec_ap_bio(device, rw);
 }
 
@@ -1492,7 +1493,8 @@ static void drbd_process_discard_or_zeroes_req(struct drbd_request *req, int fla
 {
 	int err = drbd_issue_discard_or_zero_out(req->device,
 				req->i.sector, req->i.size >> 9, flags);
-	drbd_bio_endio(req->private_bio, err ? BLK_STS_IOERR : BLK_STS_OK);
+	req->private_bio->bi_status = err ? BLK_STS_IOERR : BLK_STS_OK;
+	bio_endio(req->private_bio);
 }
 
 static void
@@ -1517,19 +1519,23 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	 * stable storage, and this is a WRITE, we may not even submit
 	 * this bio. */
 	if (get_ldev(device)) {
-		if (drbd_insert_fault(device, type))
-			drbd_bio_endio(bio, BLK_STS_IOERR);
-		else if (bio_op(bio) == REQ_OP_WRITE_ZEROES)
+		if (drbd_insert_fault(device, type)) {
+			bio->bi_status = BLK_STS_IOERR;
+			bio_endio(bio);
+		} else if (bio_op(bio) == REQ_OP_WRITE_ZEROES) {
 			drbd_process_discard_or_zeroes_req(req, EE_ZEROOUT |
 			    ((bio->bi_opf & DRBD_REQ_NOUNMAP) ? 0 : EE_TRIM));
-		else if (bio_op(bio) == REQ_OP_DISCARD)
+		} else if (bio_op(bio) == REQ_OP_DISCARD) {
 			drbd_process_discard_or_zeroes_req(req, EE_TRIM);
-		else
+		} else {
 			generic_make_request(bio);
+		}
 		put_ldev(device);
-	} else
-		drbd_bio_endio(bio, BLK_STS_IOERR);
-}
+	} else {
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
+	}
+ }
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
@@ -1587,7 +1593,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 		/* only pass the error to the upper layers.
 		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
-		drbd_bio_endio(bio, BLK_STS_RESOURCE);
+		bio->bi_status = BLK_STS_RESOURCE;
+		bio_endio(bio);
 		return ERR_PTR(-ENOMEM);
 	}
 	if (get_ldev(device))
@@ -2273,7 +2280,8 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
 	 * by the block layer. */
 	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
-		drbd_bio_endio(bio, BLK_STS_NOTSUPP);
+		bio->bi_status = BLK_STS_NOTSUPP;
+		bio_endio(bio);
 		return BLK_QC_T_NONE;
 	}
 
@@ -2284,7 +2292,8 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 #endif
 
 	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
-		drbd_bio_endio(bio, BLK_STS_IOERR);
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
 		return BLK_QC_T_NONE;
 	}
 

@@ -65,11 +65,11 @@ struct mutex resources_mutex;
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
-void drbd_md_endio BIO_ENDIO_ARGS(struct bio *bio)
+void drbd_md_endio(struct bio *bio)
 {
 	struct drbd_device *device;
 
-	BIO_ENDIO_FN_START;
+	blk_status_t status = bio->bi_status;
 
 	device = bio->bi_private;
 	device->md_io.error = blk_status_to_errno(status);
@@ -207,7 +207,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver.
  */
-void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
+void drbd_peer_request_endio(struct bio *bio)
 {
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
@@ -215,7 +215,8 @@ void drbd_peer_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 	bool is_discard = bio_op(bio) == REQ_OP_WRITE_ZEROES ||
 			  bio_op(bio) == REQ_OP_DISCARD;
 
-	BIO_ENDIO_FN_START;
+	blk_status_t status = bio->bi_status;
+
 	if (status && drbd_ratelimit())
 		drbd_warn(device, "%s: error=%d s=%llus\n",
 				is_write ? (is_discard ? "discard" : "write")
@@ -244,7 +245,7 @@ void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *
 
 /* read, readA or write requests on R_PRIMARY coming from drbd_make_request
  */
-void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio)
+void drbd_request_endio(struct bio *bio)
 {
 	unsigned long flags;
 	struct drbd_request *req = bio->bi_private;
@@ -252,7 +253,7 @@ void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 	struct bio_and_error m;
 	enum drbd_req_event what;
 
-	BIO_ENDIO_FN_START;
+	blk_status_t status = bio->bi_status;
 
 	/* If this request was aborted locally before,
 	 * but now was completed "successfully",

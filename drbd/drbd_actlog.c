@@ -137,10 +137,12 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio_get(bio); /* one bio_put() is in the completion handler */
 	atomic_inc(&device->md_io.in_use); /* drbd_md_put_buffer() is in the completion handler */
 	device->md_io.submit_jif = jiffies;
-	if (drbd_insert_fault(device, (op == REQ_OP_WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
-		drbd_bio_endio(bio, BLK_STS_IOERR);
-	else
+	if (drbd_insert_fault(device, (op == REQ_OP_WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD)) {
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
+	} else {
 		submit_bio(bio);
+	}
 	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
 	err = device->md_io.error;
 
