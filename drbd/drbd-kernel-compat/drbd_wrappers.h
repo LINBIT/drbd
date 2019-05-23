@@ -787,14 +787,6 @@ static inline int nla_type(const struct nlattr *nla)
 #define for_each_set_bit(bit, addr, size) for_each_bit(bit, addr, size)
 #endif
 
-#ifndef COMPAT_HAVE_THREE_PARAMATER_HLIST_FOR_EACH_ENTRY
-#undef hlist_for_each_entry
-#define hlist_for_each_entry(pos, head, member)				\
-	for (pos = hlist_entry((head)->first, typeof(*(pos)), member);	\
-	     pos;							\
-	     pos = hlist_entry((pos)->member.next, typeof(*(pos)), member))
-#endif
-
 #ifndef list_first_entry
 #define list_first_entry(ptr, type, member) \
 	list_entry((ptr)->next, type, member)

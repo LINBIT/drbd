@@ -142,6 +142,9 @@ int main(int argc, char **argv)
 	patch(1, "sock_ops", true, false,
 	      COMPAT_SOCK_OPS_RETURNS_ADDR_LEN, "returns_addr_len");
 
+	patch(1, "hlist_for_each_entry", true, false,
+	      COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS, "has_three_parameters");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
