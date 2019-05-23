@@ -32,23 +32,6 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h>
 
-/* Compatibility code */
-#include "compat.h"
-
-#ifndef COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS
-#define hlist_entry_safe(ptr, type, member) \
-	(ptr) ? hlist_entry(ptr, type, member) : NULL
-#ifdef hlist_for_each_entry
-#undef hlist_for_each_entry
-#endif
-#define hlist_for_each_entry(pos, head, member)				\
-	for (pos = hlist_entry_safe((head)->first, typeof(*(pos)), member);\
-	     pos;							\
-	     pos = hlist_entry_safe((pos)->member.next, typeof(*(pos)), member))
-#define COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS
-#endif
-/* End of Compatibility code */
-
 /*
 This header file (and its .c file; kernel-doc of functions see there)
   define a helper framework to easily keep track of index:label associations,
