@@ -136,6 +136,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status");
 #endif
 
+	patch(1, "kernel_read", false, true,
+	      COMPAT_BEFORE_4_13_KERNEL_READ, "before_4_13");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
