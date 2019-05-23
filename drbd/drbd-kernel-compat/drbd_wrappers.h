@@ -1067,14 +1067,6 @@ static inline void ratelimit_state_init(struct ratelimit_state *rs,
 }
 #endif
 
-#ifndef COMPAT_HAVE_IDR_IS_EMPTY
-static inline bool idr_is_empty(struct idr *idr)
-{
-	int id = 0;
-	return idr_get_next(idr, &id) == NULL;
-}
-#endif
-
 /* RDMA related */
 #ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
 #include <rdma/ib_verbs.h>

@@ -145,6 +145,9 @@ int main(int argc, char **argv)
 	patch(1, "hlist_for_each_entry", true, false,
 	      COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS, "has_three_parameters");
 
+	patch(1, "idr_is_empty", true, false,
+	      COMPAT_HAVE_IDR_IS_EMPTY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
