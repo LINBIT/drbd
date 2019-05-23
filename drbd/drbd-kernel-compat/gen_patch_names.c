@@ -127,6 +127,15 @@ int main(int argc, char **argv)
 	patch(1, "open_bdev_exclusive", true, false,
 	      COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE, "present");
 
+#if !defined(COMPAT_HAVE_BIO_BI_STATUS)
+	patch(2, "bio", false, false,
+	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status",
+	      COMPAT_HAVE_BIO_BI_ERROR, "bi_error");
+
+	patch(1, "bio", false, false,
+	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
