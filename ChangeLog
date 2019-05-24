@@ -2,14 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.18-0rc1 (api:genl2/proto:86-114/transport:14)
+9.0.18-1 (api:genl2/proto:86-115/transport:14)
 --------
  * Fix an IO deadlock under memory pressure
  * Fix disconnect timing in case the network connection suddenly
    drops all packets
  * Fix some misbehavior that surfaced with Ahead/Behind
  * Fix potential spinlock deadlock in IRQ
- * our quorum feature can now use the connectivity to
+ * Minor fixes: forget-peer, _rcu iterators
+ * Quickly stop resync during AHEAD/BEHIND by introducing new
+   packet for that purpose.
+ * The quorum feature can now use the connectivity to
    the majority of Diskless nodes as tiebreaker
  * Access meta-data using DAX if it is on persistent memory
    (NVDIMM or PMEM); For write intense workloads this is a x2 to x4 speedup!
