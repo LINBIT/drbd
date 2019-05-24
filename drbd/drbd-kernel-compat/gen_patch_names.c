@@ -148,6 +148,9 @@ int main(int argc, char **argv)
 	patch(1, "idr_is_empty", true, false,
 	      COMPAT_HAVE_IDR_IS_EMPTY, "present");
 
+	patch(1, "sock_create_kern", true, false,
+	      COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS, "has_five_parameters");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

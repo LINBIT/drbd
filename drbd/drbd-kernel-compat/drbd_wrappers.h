@@ -925,11 +925,6 @@ static inline void generic_end_io_acct(struct request_queue *q,
 }
 #endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
 
-
-#ifndef COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS
-#define sock_create_kern(N,F,T,P,S) sock_create_kern(F,T,P,S)
-#endif
-
 #ifndef COMPAT_HAVE_WB_CONGESTED_ENUM
 #define WB_async_congested BDI_async_congested
 #define WB_sync_congested BDI_sync_congested
