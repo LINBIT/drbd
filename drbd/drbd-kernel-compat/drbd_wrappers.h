@@ -925,11 +925,6 @@ static inline void generic_end_io_acct(struct request_queue *q,
 }
 #endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
 
-#ifndef COMPAT_HAVE_WB_CONGESTED_ENUM
-#define WB_async_congested BDI_async_congested
-#define WB_sync_congested BDI_sync_congested
-#endif
-
 #ifndef COMPAT_HAVE_SIMPLE_POSITIVE
 #include <linux/dcache.h>
 static inline int simple_positive(struct dentry *dentry)

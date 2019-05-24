@@ -151,6 +151,9 @@ int main(int argc, char **argv)
 	patch(1, "sock_create_kern", true, false,
 	      COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS, "has_five_parameters");
 
+	patch(1, "wb_congested_enum", true, false,
+	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
