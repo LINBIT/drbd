@@ -1083,13 +1083,6 @@ drbd_ib_create_cq(struct ib_device *device,
 #endif
 /* RDMA */
 
-#ifndef COMPAT_HAVE_FILE_INODE
-static inline struct inode *file_inode(const struct file *file)
-{
-	return file->f_dentry->d_inode;
-}
-#endif
-
 #ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
 extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,
 		struct proc_dir_entry *parent,
