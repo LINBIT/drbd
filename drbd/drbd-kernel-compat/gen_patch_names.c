@@ -172,6 +172,19 @@ int main(int argc, char **argv)
 	patch(1, "ratelimit_state_init", true, false,
 	      COMPAT_HAVE_RATELIMIT_STATE_INIT, "present");
 
+#ifndef COMPAT_HAVE_BIOSET_INIT
+	patch(1, "bioset_init", true, false,
+	      COMPAT_HAVE_BIOSET_INIT, "present");
+
+	patch(2, "bioset_init", true, false,
+	      COMPAT_HAVE_BIOSET_INIT, "present",
+	      COMPAT_HAVE_BIO_CLONE_FAST, "bio_clone_fast");
+
+	patch(2, "bioset_init", true, false,
+	      COMPAT_HAVE_BIOSET_INIT, "present",
+	      COMPAT_HAVE_BIOSET_NEED_BVECS, "need_bvecs");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
