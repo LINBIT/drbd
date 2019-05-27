@@ -157,6 +157,9 @@ int main(int argc, char **argv)
 	patch(1, "time64_to_tm", true, false,
 	      COMPAT_HAVE_TIME64_TO_TM, "present");
 
+	patch(1, "ktime_to_timespec64", true, false,
+	      COMPAT_HAVE_KTIME_TO_TIMESPEC64, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

@@ -1162,11 +1162,6 @@ bioset_initialized(struct bio_set **bs)
 #define MAX_SGE(ATTR) (ATTR).max_sge
 #endif
 
-#ifndef ktime_to_timespec64
-#define ktime_to_timespec64(kt) ktime_to_timespec(kt)
-#define timespec64 timespec
-#endif
-
 #ifndef SECTOR_SHIFT
 #define SECTOR_SHIFT 9
 #endif
