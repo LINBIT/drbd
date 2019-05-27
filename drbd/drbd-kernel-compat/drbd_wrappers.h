@@ -961,23 +961,6 @@ static void blk_finish_plug(struct blk_plug *plug) {};
 #endif
 #endif
 
-#ifndef COMPAT_HAVE_INODE_LOCK
-/* up to kernel 2.6.38 inclusive, there was a
- * linux/writeback.h:extern spinlock_t inode_lock;
- * which was implicitly included.
- * avoid error: 'inode_lock' redeclared as different kind of symbol */
-#define inode_lock(i) drbd_inode_lock(i)
-static inline void inode_lock(struct inode *inode)
-{
-	mutex_lock(&inode->i_mutex);
-}
-
-static inline void inode_unlock(struct inode *inode)
-{
-	mutex_unlock(&inode->i_mutex);
-}
-#endif
-
 #if !(defined(COMPAT_HAVE_AHASH_REQUEST_ON_STACK) && \
       defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
       defined COMPAT_HAVE_SHASH_DESC_ZERO)
