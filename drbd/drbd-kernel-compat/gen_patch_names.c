@@ -169,6 +169,9 @@ int main(int argc, char **argv)
 	patch(1, "inode_lock", true, false,
 	      COMPAT_HAVE_INODE_LOCK, "present");
 
+	patch(1, "ratelimit_state_init", true, false,
+	      COMPAT_HAVE_RATELIMIT_STATE_INIT, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
