@@ -154,6 +154,9 @@ int main(int argc, char **argv)
 	patch(1, "wb_congested_enum", true, false,
 	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
 
+	patch(1, "time64_to_tm", true, false,
+	      COMPAT_HAVE_TIME64_TO_TM, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

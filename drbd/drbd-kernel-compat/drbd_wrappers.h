@@ -1162,12 +1162,6 @@ bioset_initialized(struct bio_set **bs)
 #define MAX_SGE(ATTR) (ATTR).max_sge
 #endif
 
-#ifndef COMPAT_HAVE_TIME64_TO_TM
-static inline void time64_to_tm(__s64 totalsecs, int offset, struct tm *result)
-{
-	time_to_tm((time_t)totalsecs, offset, result);
-}
-#endif
 #ifndef ktime_to_timespec64
 #define ktime_to_timespec64(kt) ktime_to_timespec(kt)
 #define timespec64 timespec
