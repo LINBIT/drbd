@@ -620,7 +620,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	do_div(max_sect, NSEC_PER_SEC);
 
 #if 0
-	drbd_warn(peer_device, "dur=%lldns sect_in=%u in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
+	drbd_warn(peer_device, "dur=%lluns sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
 		 duration_ns, sect_in, peer_device->rs_in_flight, want, correction,
 		 steps, cps, curr_corr, req_sect, max_sect);
 #endif
@@ -681,8 +681,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	const sector_t capacity = drbd_get_capacity(device->this_bdev);
 	int max_bio_size;
 	int number, rollback_i, size;
-	int align, requeue = 0;
-	int i = 0;
+	int align;
+	int i;
 	int discard_granularity = 0;
 
 	if (unlikely(cancel))
@@ -723,10 +723,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
-	if (number <= 0)
-		goto requeue;
 
 	for (i = 0; i < number; i++) {
+		bool send_buffer_ok = true;
 		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
 		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
@@ -737,14 +736,14 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			queued = transport_stats.send_buffer_used;
 			sndbuf = transport_stats.send_buffer_size;
 			if (queued > sndbuf / 2) {
-				requeue = 1;
+				send_buffer_ok = false;
 				transport->ops->hint(transport, DATA_STREAM, NOSPACE);
 			}
 		} else
-			requeue = 1;
+			send_buffer_ok = false;
 		mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
-		if (requeue)
-			goto requeue;
+		if (!send_buffer_ok)
+			goto request_done;
 
 next_sector:
 		size = BM_BLOCK_SIZE;
@@ -752,24 +751,22 @@ next_sector:
 
 		if (bit == DRBD_END_OF_BITMAP) {
 			device->bm_resync_fo = drbd_bm_bits(device);
-			put_ldev(device);
-			return 0;
+			goto request_done;
 		}
 
 		sector = BM_BIT_TO_SECT(bit);
 
 		if (drbd_try_rs_begin_io(peer_device, sector, true)) {
 			device->bm_resync_fo = bit;
-			goto requeue;
+			goto request_done;
 		}
-		device->bm_resync_fo = bit + 1;
 
 		if (unlikely(drbd_bm_test_bit(peer_device, bit) == 0)) {
+			device->bm_resync_fo = bit + 1;
 			drbd_rs_complete_io(peer_device, sector);
 			goto next_sector;
 		}
 
-#if DRBD_MAX_BIO_SIZE > BM_BLOCK_SIZE
 		/* try to find some adjacent bits.
 		 * we stop if we have already the maximum req size.
 		 *
@@ -778,7 +775,7 @@ next_sector:
 		 */
 		align = 1;
 		rollback_i = i;
-		while (i < number) {
+		while (i + 1 < number) {
 			if (size + BM_BLOCK_SIZE > max_bio_size)
 				break;
 
@@ -805,11 +802,8 @@ next_sector:
 				align++;
 			i++;
 		}
-		/* if we merged some,
-		 * reset the offset to start the next drbd_bm_find_next from */
-		if (size > BM_BLOCK_SIZE)
-			device->bm_resync_fo = bit + 1;
-#endif
+		/* set the offset to start the next drbd_bm_find_next from */
+		device->bm_resync_fo = bit + 1;
 
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
@@ -824,7 +818,7 @@ next_sector:
 				drbd_rs_complete_io(peer_device, sector);
 				device->bm_resync_fo = BM_SECT_TO_BIT(sector);
 				i = rollback_i;
-				goto requeue;
+				goto request_done;
 			case 0:
 				/* everything ok */
 				break;
@@ -847,6 +841,10 @@ next_sector:
 		}
 	}
 
+request_done:
+	/* ... but do a correction, in case we had to break/goto request_done; */
+	peer_device->rs_in_flight -= (number - i) * BM_SECT_PER_BIT;
+
 	if (device->bm_resync_fo >= drbd_bm_bits(device)) {
 		/* last syncer _request_ was sent,
 		 * but the P_RS_DATA_REPLY not yet received.  sync will end (and
@@ -858,9 +856,6 @@ next_sector:
 		return 0;
 	}
 
- requeue:
-	/* ... but do a correction, in case we had to break/goto requeue; */
-	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
 	/* and in case that raced with the receiver, reschedule ourself right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
 		drbd_queue_work_if_unqueued(
