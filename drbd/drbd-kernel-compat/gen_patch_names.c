@@ -163,6 +163,9 @@ int main(int argc, char **argv)
 	patch(1, "file_inode", true, false,
 	      COMPAT_HAVE_FILE_INODE, "present");
 
+	patch(1, "d_inode", true, false,
+	      COMPAT_HAVE_D_INODE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
