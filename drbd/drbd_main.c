@@ -153,11 +153,11 @@ struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
 struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
 struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
-DRBD_MEMPOOL_T drbd_request_mempool;
-DRBD_MEMPOOL_T drbd_ee_mempool;
-DRBD_MEMPOOL_T drbd_md_io_page_pool;
-struct DRBD_BIO_SET drbd_md_io_bio_set;
-struct DRBD_BIO_SET drbd_io_bio_set;
+mempool_t drbd_request_mempool;
+mempool_t drbd_ee_mempool;
+mempool_t drbd_md_io_page_pool;
+struct bio_set drbd_md_io_bio_set;
+struct bio_set drbd_io_bio_set;
 
 /* I do not use a standard mempool, because:
    1) I want to hand out the pre-allocated objects first.

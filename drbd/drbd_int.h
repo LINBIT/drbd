@@ -1806,8 +1806,8 @@ extern struct kmem_cache *drbd_request_cache;
 extern struct kmem_cache *drbd_ee_cache;	/* peer requests */
 extern struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
 extern struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
-extern DRBD_MEMPOOL_T drbd_request_mempool;
-extern DRBD_MEMPOOL_T drbd_ee_mempool;
+extern mempool_t drbd_request_mempool;
+extern mempool_t drbd_ee_mempool;
 
 /* drbd's page pool, used to buffer data received from the peer,
  * or data requested by the peer.
@@ -1833,16 +1833,16 @@ extern wait_queue_head_t drbd_pp_wait;
  * 128 should be plenty, currently we probably can get away with as few as 1.
  */
 #define DRBD_MIN_POOL_PAGES	128
-extern DRBD_MEMPOOL_T drbd_md_io_page_pool;
+extern mempool_t drbd_md_io_page_pool;
 
 /* We also need to make sure we get a bio
  * when we need it for housekeeping purposes */
-extern struct DRBD_BIO_SET drbd_md_io_bio_set;
+extern struct bio_set drbd_md_io_bio_set;
 /* to allocate from that set */
 extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 
 /* And a bio_set for cloning */
-extern struct DRBD_BIO_SET drbd_io_bio_set;
+extern struct bio_set drbd_io_bio_set;
 
 extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);
 extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
