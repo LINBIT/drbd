@@ -2464,15 +2464,16 @@ void request_timer_fn(DRBD_TIMER_FN_ARG)
 	}
 	rcu_read_unlock();
 
-	/* FIXME right now, this basically does a full transfer log walk *every time* */
 	spin_lock_irq(&device->resource->req_lock);
 	if (dt) {
-		unsigned long write_pre_submit_jif, read_pre_submit_jif;
+		unsigned long write_pre_submit_jif = now, read_pre_submit_jif = now;
 		req_read = list_first_entry_or_null(&device->pending_completion[0], struct drbd_request, req_pending_local);
 		req_write = list_first_entry_or_null(&device->pending_completion[1], struct drbd_request, req_pending_local);
 
-		write_pre_submit_jif = req_write->pre_submit_jif;
-		read_pre_submit_jif = req_read->pre_submit_jif;
+		if (req_write)
+			write_pre_submit_jif = req_write->pre_submit_jif;
+		if (req_read)
+			read_pre_submit_jif = req_read->pre_submit_jif;
 		oldest_submit_jif =
 			(req_write && req_read)
 			? ( time_before(write_pre_submit_jif, read_pre_submit_jif)
