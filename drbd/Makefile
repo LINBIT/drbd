@@ -101,9 +101,11 @@ else
 	fi
 
   unpatch:
-	@echo "Removing compat patches"
-	@patch -R $(src) -p0 < drbd-kernel-compat/compat.patch
-	@rm -f .compat_patches_applied
+	@if test -e .compat_patches_applied; then \
+	    echo "Removing compat patches"; \
+	    patch -R $(src) -p0 < .compat_patches_applied; \
+	    rm -f .compat_patches_applied; \
+	fi
 
   kbuild:
 	@rm -f .drbd_kernelrelease*
@@ -125,12 +127,11 @@ else
 	  cat $$config ; } | gzip > .kernel.config.gz
 	@echo "done."
 
-  clean:
+  clean: unpatch
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
-	rm -f .compat_patches_applied
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
@@ -150,6 +151,33 @@ else
 		-I __initdata,__exitdata,__acquires,__releases		\
 		-I __must_hold,__protected_by,__protected_read_by	\
 		-I __protected_write_by,BIO_ENDIO_ARGS
+
+  compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
+  compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
+  sources := $(filter-out drbd_strings.c drbd_buildtag.c,*.c)
+
+  $(compat_patches): $(sources)
+	$(eval incdir := $(subst /compat.patch,,$@))
+	$(eval chksum := $(subst drbd-kernel-compat/cocci_cache/,,$(incdir)))
+	@if test -e .compat_patches_applied; then \
+	    echo "Removing compat patches"; \
+	    patch -R $(src) -p0 < .compat_patches_applied; \
+	    rm -f .compat_patches_applied; \
+	fi
+	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
+	@gcc -I $(incdir) -o $(incdir)/gen_patch_names drbd-kernel-compat/gen_patch_names.c
+	@$(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt
+	@rm $(incdir)/gen_patch_names
+	@for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
+	   cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
+	done
+	@echo "  SPATCH   $(chksum)"
+	@spatch --sp-file $(incdir)/.compat.cocci \
+	    $(sources) \
+	    --macro-file drbd-kernel-compat/cocci_macros.h > $@ 2> $(incdir)/.spatch.stderr
+	@rm $(incdir)/.compat.cocci
+
+  compat: $(compat_patches)
 
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE

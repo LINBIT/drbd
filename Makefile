@@ -124,18 +124,18 @@ install:
 unpatch:
 	$(MAKE) -C drbd unpatch
 
-clean:
+clean: unpatch
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
 	rm -f *~
 
-distclean:
+distclean: unpatch
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
 
-.PHONY: check check_changelogs_up2date install uninstall distclean clean
+.PHONY: check check_changelogs_up2date install uninstall distclean clean unpatch
 check check_changelogs_up2date:
 	@ up2date=true; dver_re=$(DIST_VERSION); dver_re=$${dver_re//./\\.};	\
 	dver=$${dver_re%[-~]*}; 						\
@@ -196,6 +196,8 @@ endif
 	  grep -v "gitignore\|gitmodules" > .filelist
 	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' | \
 	  grep -v "gitignore\|gitmodules" >> .filelist
+	@for F in drbd/drbd-kernel-compat/cocci_cache/*/*; \
+		do echo drbd-$(DIST_VERSION)/$$F; done >> .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \

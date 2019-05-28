@@ -70,8 +70,8 @@ hostprogs-y := drbd-kernel-compat/gen_patch_names
 headers-to-apply-compat := drbd_int.h drbd_req.h drbd_interval.h
 
 $(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h $(src)/.compat_patches_applied
-$(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h
-$(obj)/gen_patch_names: $(src)/drbd-kernel-compat/gen_patch_names.c $(obj)/compat.h
+$(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h $(src)/.compat_patches_applied
+$(obj)/drbd-kernel-compat/gen_patch_names: $(src)/drbd-kernel-compat/gen_patch_names.c $(obj)/compat.h
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
@@ -112,21 +112,18 @@ filechk_compat.$(KERNELVERSION).h = cat $(TEST_R)
 filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 
 $(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
-	patch -d $(src) -p0 < $(src)/drbd-kernel-compat/compat.patch
-	echo $(APPLY_PATCHES) > $(src)/.compat_patches_applied
+	@$(kecho) '  PATCH'
+	@patch -d $(src) -p0 < $(src)/drbd-kernel-compat/compat.patch
+	@cp -d $(src)/drbd-kernel-compat/compat.patch $(src)/.compat_patches_applied
 
-$(src)/drbd-kernel-compat/compat.patch: $(obj)/drbd-kernel-compat/gen_patch_names
-	$(eval APPLY_PATCHES := $(shell $(obj)/drbd-kernel-compat/gen_patch_names))
-	@$(kecho) '  APPLY_PATCHES: $(APPLY_PATCHES)'
-	$(eval coccies_with_path := $(patsubst %,$(src)/drbd-kernel-compat/cocci/%.cocci,$(APPLY_PATCHES)))
-	cat $(coccies_with_path) > $(src)/drbd-kernel-compat/.compat.cocci
-
-	@$(kecho) '  SPATCH         $(echo-why)'
-	echo $(filter-out drbd_buildtag.o,$(drbd-y))
-	@(cd $(src); spatch --sp-file $(src)/drbd-kernel-compat/.compat.cocci     \
-			    $(filter-out drbd_buildtag.c,$(drbd-y:%.o=%.c)) drbd_transport_tcp.c                \
-			    --macro-file $(src)/drbd-kernel-compat/cocci_macros.h \
-			    > $(src)/drbd-kernel-compat/compat.patch)
+$(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
+	$(eval chksum := $(word 1, $(shell md5sum $(obj)/compat.h)))
+	$(eval dir := $(obj)/drbd-kernel-compat/cocci_cache/$(chksum))
+	@mkdir -p $(dir)
+	@test -e $(dir)/compat.h || cp -t $(dir) $(obj)/compat.h
+	@echo $(KERNELRELEASE) > $(dir)/kernelrelease.txt
+	@PATCHLEVEL="" $(MAKE) -C $(src) drbd-kernel-compat/cocci_cache/$(chksum)/compat.patch
+	@ln -f -s $(dir)/compat.patch $(src)/drbd-kernel-compat/compat.patch
 
 $(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(COMPAT_FORCE)
 	$(call filechk,compat.$(KERNELVERSION).h)
