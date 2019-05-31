@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
+9.0.18.1-1 (api:genl2/proto:86-115/transport:14)
+--------
+ * Fix resync stuck at near completion
+ * Fix NULL dereference with disk-timeout enabled
+
 9.0.18-1 (api:genl2/proto:86-115/transport:14)
 --------
  * Fix an IO deadlock under memory pressure

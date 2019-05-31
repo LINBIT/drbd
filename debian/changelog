@@ -1,3 +1,9 @@
+drbd (9.0.18.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Fri, 31 May 2019 11:37:53 +0200
+
 drbd (9.0.18-1) unstable; urgency=medium
 
   * New upstream release.
