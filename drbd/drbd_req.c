@@ -132,8 +132,7 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
-		if (connection->agreed_pro_version < 110 ||
-		    connection->cstate[NOW] != C_CONNECTED ||
+		if (connection->cstate[NOW] != C_CONNECTED ||
 		    !(req->net_rq_state[node_id] & RQ_NET_SENT))
 			continue;
 		kref_get(&req->kref);
@@ -1305,9 +1304,6 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 
 	lockdep_assert_held(&device->resource->state_rwlock);
-
-	if (connection->agreed_pro_version < 96)
-		return;
 
 	nc = rcu_dereference(connection->transport.net_conf);
 	if (nc) {

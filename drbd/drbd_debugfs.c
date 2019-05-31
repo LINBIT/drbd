@@ -1557,8 +1557,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		if (repl_state == L_VERIFY_S ||
 		    repl_state == L_VERIFY_T) {
 			bit_pos = bm_bits - pd->ov_left;
-			if (verify_can_do_stop_sector(pd))
-				stop_sector = pd->ov_stop_sector;
+			stop_sector = pd->ov_stop_sector;
 		} else
 			bit_pos = pd->resync_next_bit;
 		/* Total sectors may be slightly off for oddly

@@ -1548,7 +1548,6 @@ extern void drbd_free_sock(struct drbd_connection *connection);
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);
 extern int drbd_send_protocol(struct drbd_connection *connection);
 extern int drbd_send_uuids(struct drbd_peer_device *, u64 uuid_flags, u64 weak_nodes);
-extern void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *);
 extern int drbd_attach_peer_device(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, uint64_t u_size_diskless, enum dds_flags flags);
 extern int conn_send_state(struct drbd_connection *, union drbd_state);
@@ -1566,8 +1565,6 @@ extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int 
 
 extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
 extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
-extern void drbd_send_sr_reply(struct drbd_connection *connection, int vnr,
-			       enum drbd_state_rv retcode);
 extern int drbd_send_rs_deallocated(struct drbd_peer_device *, struct drbd_peer_request *);
 extern void drbd_send_twopc_reply(struct drbd_connection *connection,
 				  enum drbd_packet, struct twopc_reply *);
@@ -2758,12 +2755,6 @@ static inline u64 drbd_current_uuid(struct drbd_device *device)
 	if (!device->ldev)
 		return 0;
 	return device->ldev->md.current_uuid;
-}
-
-static inline bool verify_can_do_stop_sector(struct drbd_peer_device *peer_device)
-{
-	return peer_device->connection->agreed_pro_version >= 97 &&
-		peer_device->connection->agreed_pro_version != 100;
 }
 
 static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)

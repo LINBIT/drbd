@@ -3259,20 +3259,6 @@ static bool conn_ov_running(struct drbd_connection *connection)
 static enum drbd_ret_code
 _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_conf, struct net_conf *new_net_conf)
 {
-	if (old_net_conf && connection->cstate[NOW] == C_CONNECTED && connection->agreed_pro_version < 100) {
-		if (new_net_conf->wire_protocol != old_net_conf->wire_protocol)
-			return ERR_NEED_APV_100;
-
-		if (new_net_conf->two_primaries != old_net_conf->two_primaries)
-			return ERR_NEED_APV_100;
-
-		if (!new_net_conf->integrity_alg != !old_net_conf->integrity_alg)
-			return ERR_NEED_APV_100;
-
-		if (strcmp(new_net_conf->integrity_alg, old_net_conf->integrity_alg))
-			return ERR_NEED_APV_100;
-	}
-
 	if (!new_net_conf->two_primaries &&
 	    connection->resource->role[NOW] == R_PRIMARY &&
 	    connection->peer_role[NOW] == R_PRIMARY)
@@ -3486,7 +3472,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	crypto_free_ahash(connection->integrity_tfm);
 	connection->integrity_tfm = crypto.integrity_tfm;
-	if (connection->cstate[NOW] >= C_CONNECTED && connection->agreed_pro_version >= 100)
+	if (connection->cstate[NOW] >= C_CONNECTED)
 		/* Do this without trying to take connection->data.mutex again.  */
 		__drbd_send_protocol(connection, P_PROTOCOL_UPDATE);
 
@@ -4350,11 +4336,6 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 		sync_source = self_id < peer_id ? 1 : 0;
 	}
 
-	if (!sync_source && connection->agreed_pro_version < 110) {
-		stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
-					 CS_VERBOSE | CS_SERIALIZE);
-		return;
-	}
 	drbd_start_resync(peer_device, sync_source ? L_SYNC_SOURCE : L_SYNC_TARGET);
 }
 
@@ -4460,16 +4441,6 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		goto fail_ldev;
 	}
 
-	for_each_peer_device(peer_device, device) {
-		struct drbd_connection *connection = peer_device->connection;
-		if (rs.no_resync &&
-		    connection->cstate[NOW] == C_CONNECTED &&
-		    connection->agreed_pro_version < 93) {
-			retcode = ERR_NEED_APV_93;
-			goto fail_ldev;
-		}
-	}
-
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
@@ -4494,12 +4465,6 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_MD_LAYOUT_TOO_SMALL;
 			goto fail_ldev;
 		}
-
-		/* Removed this pre-condition while merging from 8.4 to 9.0
-		if (device->state.conn != C_CONNECTED && !rs.resize_force) {
-			retcode = ERR_MD_LAYOUT_CONNECTED;
-			goto fail_ldev;
-		} */
 
 		change_al_layout = true;
 	}
@@ -5608,7 +5573,6 @@ out:
 static bool should_skip_initial_sync(struct drbd_peer_device *peer_device)
 {
 	return peer_device->repl_state[NOW] == L_ESTABLISHED &&
-	       peer_device->connection->agreed_pro_version >= 90 &&
 	       drbd_current_uuid(peer_device->device) == UUID_JUST_CREATED;
 }
 

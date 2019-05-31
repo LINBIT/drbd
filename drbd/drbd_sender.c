@@ -891,7 +891,6 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		 * w_e_end_ov_reply().
 		 * We need to send at least one request out. */
 		stop_sector_reached = i > 0
-			&& verify_can_do_stop_sector(peer_device)
 			&& sector >= peer_device->ov_stop_sector;
 		if (stop_sector_reached)
 			break;
@@ -1224,10 +1223,6 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 			if (new_peer_disk_state != D_MASK)
 				__change_peer_disk_state(peer_device, new_peer_disk_state);
-			if (peer_device->connection->agreed_pro_version < 110) {
-				drbd_uuid_set_bitmap(peer_device, 0UL);
-				drbd_print_uuids(peer_device, "updated UUIDs");
-			}
 		}
 	}
 
@@ -1551,7 +1546,6 @@ void verify_progress(struct drbd_peer_device *peer_device,
 {
 	bool stop_sector_reached =
 		(peer_device->repl_state[NOW] == L_VERIFY_S) &&
-		verify_can_do_stop_sector(peer_device) &&
 		(sector + (size>>9)) >= peer_device->ov_stop_sector;
 
 	--peer_device->ov_left;
@@ -1990,8 +1984,7 @@ static bool use_checksum_based_resync(struct drbd_connection *connection, struct
 	rcu_read_lock();
 	csums_after_crash_only = rcu_dereference(connection->transport.net_conf)->csums_after_crash_only;
 	rcu_read_unlock();
-	return connection->agreed_pro_version >= 89 &&		/* supported? */
-		connection->csums_tfm &&			/* configured? */
+	return connection->csums_tfm &&				/* configured? */
 		(csums_after_crash_only == false		/* use for each resync? */
 		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
 }
@@ -2124,40 +2117,6 @@ skip_helper:
 		    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
 		    !drbd_stable_sync_source_present(peer_device, NOW))
 			set_bit(UNSTABLE_RESYNC, &peer_device->flags);
-
-		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
-		 * with w_send_oos, or the sync target will get confused as to
-		 * how much bits to resync.  We cannot do that always, because for an
-		 * empty resync and protocol < 95, we need to do it here, as we call
-		 * drbd_resync_finished from here in that case.
-		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
-		 * and from after_state_ch otherwise. */
-		if (side == L_SYNC_SOURCE && connection->agreed_pro_version < 96)
-			drbd_gen_and_send_sync_uuid(peer_device);
-
-		if (connection->agreed_pro_version < 95 && peer_device->rs_total == 0) {
-			/* This still has a race (about when exactly the peers
-			 * detect connection loss) that can lead to a full sync
-			 * on next handshake. In 8.3.9 we fixed this with explicit
-			 * resync-finished notifications, but the fix
-			 * introduces a protocol change.  Sleeping for some
-			 * time longer than the ping interval + timeout on the
-			 * SyncSource, to give the SyncTarget the chance to
-			 * detect connection loss, then waiting for a ping
-			 * response (implicit in drbd_resync_finished) reduces
-			 * the race considerably, but does not solve it. */
-			if (side == L_SYNC_SOURCE) {
-				struct net_conf *nc;
-				int timeo;
-
-				rcu_read_lock();
-				nc = rcu_dereference(connection->transport.net_conf);
-				timeo = nc->ping_int * HZ + nc->ping_timeo * HZ / 9;
-				rcu_read_unlock();
-				schedule_timeout_interruptible(timeo);
-			}
-			drbd_resync_finished(peer_device, D_MASK);
-		}
 
 		/* ns.conn may already be != peer_device->repl_state[NOW],
 		 * we may have been paused in between, or become paused until

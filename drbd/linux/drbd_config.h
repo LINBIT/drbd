@@ -33,8 +33,14 @@ extern const char *drbd_buildtag(void);
 /* End of external module for 2.6.33 stuff */
 
 #define REL_VERSION "9.0.19-1"
-#define PRO_VERSION_MIN 86
+#define PRO_VERSION_MIN 110
 #define PRO_VERSION_MAX 115
+
+/* Protocol version to use for initial version handshake.
+ * This may be lower than PRO_VERSION_MIN because we want to be able to connect
+ * to peers which require a lower protocol version for the handshake than the
+ * max protocol version that they actually support. */
+#define PRO_VERSION_HANDSHAKE 86
 
 #ifndef __CHECKER__   /* for a sparse run, we need all STATICs */
 #define DBG_ALL_SYMBOLS /* no static functs, improves quality of OOPS traces */

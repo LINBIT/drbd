@@ -820,9 +820,6 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 	struct drbd_peer_device *p;
 	int size_sect;
 
-	if (peer_device->connection->agreed_pro_version < 110)
-		return;
-
 	for_each_peer_device_ref(p, im, device) {
 		if (p == peer_device)
 			continue;
@@ -1070,8 +1067,7 @@ static void maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_d
 						 bool rs_done)
 {
 	if (rs_done) {
-		if (peer_device->connection->agreed_pro_version <= 95 ||
-		    is_sync_target_state(peer_device, NOW))
+		if (is_sync_target_state(peer_device, NOW))
 			set_bit(RS_DONE, &peer_device->flags);
 			/* and also set RS_PROGRESS below */
 
