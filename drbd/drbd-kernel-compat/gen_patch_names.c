@@ -185,6 +185,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_BIOSET_NEED_BVECS, "need_bvecs");
 #endif
 
+	patch(1, "kvfree", true, false,
+	      COMPAT_HAVE_KVFREE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

@@ -933,17 +933,6 @@ static inline int simple_positive(struct dentry *dentry)
 }
 #endif
 
-#ifndef COMPAT_HAVE_KVFREE
-#include <linux/mm.h>
-static inline void kvfree(void /* intentionally discarded const */ *addr)
-{
-	if (is_vmalloc_addr(addr))
-		vfree(addr);
-	else
-		kfree(addr);
-}
-#endif
-
 #ifdef blk_queue_plugged
 /* pre 7eaceac block: remove per-queue plugging
  * Code has been converted over to the new explicit on-stack plugging ...
