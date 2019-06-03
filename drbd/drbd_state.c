@@ -1427,7 +1427,7 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		voters = qd.up_to_date + qd.present;
 
 	quorum_at = calc_quorum_at(resource->res_opts.quorum, voters);
-	diskless_majority_at = calc_quorum_at(resource->res_opts.quorum, qd.diskless + qd.missing_diskless);
+	diskless_majority_at = calc_quorum_at(QOU_MAJORITY, qd.diskless + qd.missing_diskless);
 	min_redundancy_at = calc_quorum_at(resource->res_opts.quorum_min_redundancy, voters);
 
 	if (qi) {
