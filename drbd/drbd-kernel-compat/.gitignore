@@ -9,3 +9,8 @@ nsecs_to_jiffies.o
 
 .drbd_wrappers.o.cmd
 drbd_wrappers.o
+
+.gen_patch_names.cmd
+gen_patch_names
+
+patches/*
