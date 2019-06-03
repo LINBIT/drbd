@@ -535,7 +535,7 @@ enum {
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 
 /* flag bits per device */
-enum {
+enum device_flag {
 	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
 	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
 	MD_DIRTY,		/* current uuids and flags not yet on disk */
@@ -571,7 +571,7 @@ enum {
 };
 
 /* flag bits per peer device */
-enum {
+enum peer_device_flag {
 	CONSIDER_RESYNC,
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 	RESIZE_PENDING,		/* Size change detected locally, waiting for the response from
@@ -757,7 +757,7 @@ struct fifo_buffer {
 extern struct fifo_buffer *fifo_alloc(int fifo_size);
 
 /* flag bits per connection */
-enum {
+enum connection_flag {
 	SEND_PING,
 	GOT_PING_ACK,		/* set when we receive a ping_ack packet, state_wait gets woken */
 	TWOPC_PREPARED,
@@ -781,7 +781,7 @@ enum {
 };
 
 /* flag bits per resource */
-enum {
+enum resource_flag {
 	EXPLICIT_PRIMARY,
 	CALLBACK_PENDING,	/* Whether we have a call_usermodehelper(, UMH_WAIT_PROC)
 				 * pending, from drbd worker context.
