@@ -79,8 +79,8 @@ int main(int argc, char **argv)
 	/* 		COMPAT_HAVE_ATOMIC_IN_FLIGHT, "atomic_in_flight", */
 	/* 		COMPAT_HAVE_BD_CLAIM_BY_DISK, "bd_claim_by_disk"); */
 
-	/* patch(1, "block_device_operations_release", true, false,
-	   COMPAT_DRBD_RELEASE_RETURNS_VOID, "is_void"); */
+	patch(1, "block_device_operations_release", true, false,
+	      COMPAT_DRBD_RELEASE_RETURNS_VOID, "is_void");
 
 /* #if !defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER) || defined(COMPAT_HAVE_BD_CLAIM_BY)
 	patch(2, "claim_disk", true, false,
