@@ -2314,14 +2314,14 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	/* we delete from the conflict detection hash _after_ we sent out the
 	 * P_WRITE_ACK / P_NEG_ACK, to get the sequence number right.  */
 	if (peer_req->flags & EE_IN_INTERVAL_TREE) {
-		write_lock_irq(&device->resource->state_rwlock);
+		read_lock_irq(&device->resource->state_rwlock);
 		spin_lock(&device->interval_lock);
 		D_ASSERT(device, !drbd_interval_empty(&peer_req->i));
 		drbd_remove_peer_req_interval(device, peer_req);
 		if (peer_req->flags & EE_RESTART_REQUESTS)
 			restart_conflicting_writes(peer_req);
 		spin_unlock(&device->interval_lock);
-		write_unlock_irq(&device->resource->state_rwlock);
+		read_unlock_irq(&device->resource->state_rwlock);
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
 

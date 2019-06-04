@@ -1252,6 +1252,7 @@ static void complete_conflicting_writes(struct drbd_request *req)
 {
 	DEFINE_WAIT(wait);
 	struct drbd_device *device = req->device;
+	struct drbd_resource *resource = device->resource;
 	struct drbd_interval *i;
 	sector_t sector = req->i.sector;
 	int size = req->i.size;
@@ -1272,7 +1273,9 @@ static void complete_conflicting_writes(struct drbd_request *req)
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i->waiting = true;
 		spin_unlock_irq(&device->interval_lock);
+		read_unlock_irq(&resource->state_rwlock);
 		schedule();
+		read_lock_irq(&resource->state_rwlock);
 		spin_lock_irq(&device->interval_lock);
 	}
 	finish_wait(&device->misc_wait, &wait);
@@ -1759,12 +1762,12 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	read_lock_irq(&resource->state_rwlock);
 
 	if (rw == WRITE) {
-		/* This may temporarily give up the req_lock,
-		 * but will re-acquire it before it returns here.
-		 * Needs to be before the check on drbd_suspended() */
 		spin_lock(&device->interval_lock);
+		/* This may temporarily give up the state_rwlock and interval_lock,
+		 * but will re-acquire them before it returns here.
+		 * Needs to be before the check on drbd_suspended() */
 		complete_conflicting_writes(req);
-		/* no more giving up req_lock from now on! */
+		/* no more giving up state_rwlock from now on! */
 		put_req_interval_into_tree(device, req);
 		spin_unlock(&device->interval_lock);
 
