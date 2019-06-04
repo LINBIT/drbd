@@ -182,6 +182,14 @@ static inline bool drbd_security_netlink_recv(struct sk_buff *skb, int cap)
 }
 #endif
 
+static bool need_sys_admin(u8 cmd)
+{
+	int i;
+	for (i = 0; i < ARRAY_SIZE(drbd_genl_ops); i++)
+		if (drbd_genl_ops[i].cmd == cmd)
+			return 0 != (drbd_genl_ops[i].flags & GENL_ADMIN_PERM);
+	return true;
+}
 
 static struct drbd_path *first_path(struct drbd_connection *connection)
 {
@@ -217,8 +225,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	 * set have CAP_NET_ADMIN; we also require CAP_SYS_ADMIN for
 	 * administrative commands.
 	 */
-	if ((drbd_genl_ops[cmd].flags & GENL_ADMIN_PERM) &&
-	    drbd_security_netlink_recv(skb, CAP_SYS_ADMIN))
+	if (need_sys_admin(cmd) && drbd_security_netlink_recv(skb, CAP_SYS_ADMIN))
 		return -EPERM;
 
 	adm_ctx->reply_skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
