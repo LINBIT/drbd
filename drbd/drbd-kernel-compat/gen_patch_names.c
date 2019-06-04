@@ -208,6 +208,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_SHASH_DESC_ZERO, "present");
 #endif
 
+	patch(1, "bio_free", false, true,
+	      COMPAT_HAVE_BIO_FREE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
