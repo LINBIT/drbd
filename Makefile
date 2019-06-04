@@ -284,4 +284,14 @@ dockerimage: dockerimage.rhel7 dockerimage.bionic
 dockerpath:
 	@echo $(DOCKERREGPATH_BIONIC) $(DOCKERREGPATH_RHEL7)
 
+ifndef MODE
+MODE = report
+endif
+
+coccicheck: coccinelle/*.cocci
+	@for file in $^ ; do \
+		echo "  COCCICHECK $$(basename $${file} .cocci)"; \
+		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
+	done
+
 Makefile: ;
