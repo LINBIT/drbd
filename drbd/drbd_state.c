@@ -529,7 +529,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->susp_user[NEW] = resource->susp_user[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
 
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
 		connection->peer_role[NEW] = connection->peer_role[NOW];
 		connection->susp_fen[NEW] = connection->susp_fen[NOW];
@@ -541,7 +541,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 		device->disk_state[NEW] = device->disk_state[NOW];
 		device->have_quorum[NEW] = device->have_quorum[NOW];
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			peer_device->disk_state[NEW] = peer_device->disk_state[NOW];
 			peer_device->repl_state[NEW] = peer_device->repl_state[NOW];
 			peer_device->resync_susp_user[NEW] =
@@ -1496,7 +1496,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
-		for_each_connection(connection, resource) {
+		for_each_connection_rcu(connection, resource) {
 			struct net_conf *nc;
 
 			nc = rcu_dereference(connection->transport.net_conf);
@@ -1507,7 +1507,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		}
 	}
 
-	for_each_connection(connection, resource) {
+	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
 		struct net_conf *nc;
@@ -1566,7 +1566,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			   But we have to allow Inconsistent -> Outdated if a resync
 			   finishes over one connection, and is paused on other connections */
 
-			for_each_peer_device(peer_device, device) {
+			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_repl_state *repl_state = peer_device->repl_state;
 				if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] == L_ESTABLISHED)
 					goto allow;
@@ -1579,7 +1579,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			any_disk_up_to_date[which] = disk_state[which] == D_UP_TO_DATE;
 			if (any_disk_up_to_date[which])
 				continue;
-			for_each_peer_device(peer_device, device) {
+			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 
 				if (peer_disk_state[which] == D_UP_TO_DATE) {
@@ -1616,7 +1616,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			return SS_NO_QUORUM;
 		}
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 
@@ -1855,7 +1855,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			int all = 0, target = 0, no_result = 0;
 			bool up_to_date_neighbor = false;
 
-			for_each_peer_device(peer_device, device) {
+			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
 				enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
 
@@ -1885,7 +1885,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				disk_state[NEW] = up_to_date_neighbor ? D_UP_TO_DATE :
 					disk_state_from_md(device);
 
-			for_each_peer_device(peer_device, device) {
+			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
 
 				if (peer_device->connection->cstate[NEW] < C_CONNECTED ||
@@ -1908,7 +1908,7 @@ static void sanitize_state(struct drbd_resource *resource)
 		}
 	stay_negotiating:
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;

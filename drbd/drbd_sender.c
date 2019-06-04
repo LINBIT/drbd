@@ -1704,7 +1704,7 @@ static bool __drbd_may_sync_now(struct drbd_peer_device *peer_device)
 		other_device = minor_to_device(resync_after);
 		if (!other_device)
 			break;
-		for_each_peer_device(other_peer_device, other_device) {
+		for_each_peer_device_rcu(other_peer_device, other_device) {
 			if ((other_peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
 			     other_peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T) ||
 			    other_peer_device->resync_susp_dependency[NOW] ||
@@ -1744,7 +1744,7 @@ static bool drbd_pause_after(struct drbd_device *device)
 			abort_state_change_locked(other_device->resource);
 			continue;
 		}
-		for_each_peer_device(other_peer_device, other_device) {
+		for_each_peer_device_rcu(other_peer_device, other_device) {
 			if (other_peer_device->repl_state[NOW] == L_OFF)
 				continue;
 			if (!__drbd_may_sync_now(other_peer_device))
@@ -1780,7 +1780,7 @@ static bool drbd_resume_next(struct drbd_device *device)
 			abort_state_change_locked(other_device->resource);
 			continue;
 		}
-		for_each_peer_device(other_peer_device, other_device) {
+		for_each_peer_device_rcu(other_peer_device, other_device) {
 			if (other_peer_device->repl_state[NOW] == L_OFF)
 				continue;
 			if (other_peer_device->resync_susp_dependency[NOW] &&
