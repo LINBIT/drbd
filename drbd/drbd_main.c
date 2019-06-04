@@ -176,27 +176,12 @@ static const struct block_device_operations drbd_ops = {
 	.release = drbd_release,
 };
 
-#ifdef COMPAT_HAVE_BIO_FREE
-static void bio_destructor_drbd(struct bio *bio)
-{
-	bio_free(bio, drbd_md_io_bio_set);
-}
-#endif
-
 struct bio *bio_alloc_drbd(gfp_t gfp_mask)
 {
-	struct bio *bio;
-
 	if (!bioset_initialized(&drbd_md_io_bio_set))
 		return bio_alloc(gfp_mask, 1);
 
-	bio = bio_alloc_bioset(gfp_mask, 1, &drbd_md_io_bio_set);
-	if (!bio)
-		return NULL;
-#ifdef COMPAT_HAVE_BIO_FREE
-	bio->bi_destructor = bio_destructor_drbd;
-#endif
-	return bio;
+	return bio_alloc_bioset(gfp_mask, 1, &drbd_md_io_bio_set);
 }
 
 #ifdef __CHECKER__
