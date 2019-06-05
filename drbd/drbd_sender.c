@@ -2603,11 +2603,10 @@ static bool check_sender_todo(struct drbd_connection *connection)
 	rcu_read_lock();
 	tl_next_request_for_connection(connection);
 
-	/* we did lock_irq above already. */
 	/* FIXME can we get rid of this additional lock? */
-	spin_lock(&connection->sender_work.q_lock);
+	spin_lock_irq(&connection->sender_work.q_lock);
 	list_splice_tail_init(&connection->sender_work.q, &connection->todo.work_list);
-	spin_unlock(&connection->sender_work.q_lock);
+	spin_unlock_irq(&connection->sender_work.q_lock);
 	rcu_read_unlock();
 
 	return connection->todo.req
