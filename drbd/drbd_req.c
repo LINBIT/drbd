@@ -1401,7 +1401,7 @@ static u64 calc_nodes_to_read_from(struct drbd_device *device)
 		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
 			continue;
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		if (!nc)
+		if (!nc || !nc->allow_remote_read)
 			continue;
 		wp = nc->wire_protocol;
 		candidates[wp - 1] |= NODE_MASK(peer_device->node_id);
