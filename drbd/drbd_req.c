@@ -360,7 +360,7 @@ void drbd_req_destroy(struct kref *kref)
 	}
 }
 
-static void wake_all_senders(struct drbd_resource *resource) {
+void drbd_wake_all_senders(struct drbd_resource *resource) {
 	struct drbd_connection *connection;
 	/* We need make sure any update is visible before we wake up the
 	 * threads that may check the values in their wait_event() condition.
@@ -380,7 +380,7 @@ bool start_new_tl_epoch(struct drbd_resource *resource)
 
 	resource->current_tle_writes = 0;
 	atomic_inc(&resource->current_tle_nr);
-	wake_all_senders(resource);
+	drbd_wake_all_senders(resource);
 	return true;
 }
 
@@ -1842,7 +1842,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 		} else if (!drbd_process_write_request(req))
 			no_remote = true;
-		wake_all_senders(resource);
+		drbd_wake_all_senders(resource);
 	} else {
 		if (peer_device) {
 			_req_mod(req, TO_BE_SENT, peer_device);
