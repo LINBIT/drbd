@@ -42,6 +42,7 @@ enum chg_state_flags {
 	/* Make sure no meta data IO is in flight, by calling
          * drbd_md_get_buffer().  Used for graceful detach. */
 	CS_INHIBIT_MD_IO = 1 << 12,
+	CS_FORCE_RECALC  = 1 << 13, /* Force re-evaluation of state logic */
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

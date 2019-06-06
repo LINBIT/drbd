@@ -6638,6 +6638,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_disk_state peer_disk_state, new_disk_state = D_MASK;
 	enum drbd_repl_state new_repl_state;
 	bool peer_was_resync_target, try_to_get_resync = false;
+	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE;
 	int rv;
 
 	if (pi->vnr != -1) {
@@ -6831,7 +6832,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 
 		if (device->disk_state[NOW] == D_NEGOTIATING) {
-			set_bit(NEGOTIATION_RESULT_TOUCHED, &resource->flags);
+			begin_state_chg_flags |= CS_FORCE_RECALC;
 			peer_device->negotiation_result = new_repl_state;
 		}
 	} else if (peer_state.role == R_PRIMARY &&
@@ -6870,7 +6871,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	spin_lock_irq(&resource->req_lock);
-	begin_state_change_locked(resource, CS_VERBOSE);
+	begin_state_change_locked(resource, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
