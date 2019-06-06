@@ -1821,10 +1821,10 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		}
 		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
 	}
-	spin_unlock(&resource->tl_update_lock);
 
 	if (rw == WRITE) {
 		if (req->private_bio && !may_do_writes(device)) {
+			spin_unlock(&resource->tl_update_lock);
 			bio_put(req->private_bio);
 			req->private_bio = NULL;
 			put_ldev(device);
@@ -1851,6 +1851,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		} else
 			no_remote = true;
 	}
+	spin_unlock(&resource->tl_update_lock);
 
 	if (no_remote == false) {
 		struct drbd_plug_cb *plug = drbd_check_plugged(resource);
