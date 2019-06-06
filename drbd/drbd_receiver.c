@@ -3798,6 +3798,7 @@ static int uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, int *r
 }
 
 /*
+  200   retry connect; there was a race on current UUID
   100	after split brain try auto recover
     4   L_SYNC_SOURCE copy BitMap from
     3	L_SYNC_SOURCE set BitMap
@@ -3824,6 +3825,13 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
+
+	if (self != (peer_device->comm_current_uuid & ~UUID_PRIMARY)) {
+		*rule_nr = 9;
+		drbd_warn(peer_device, "My current UUID changed during "
+			  "handshake. Retry connecting.\n");
+		return 200;
+	}
 
 	/* Before DRBD 8.0.2 (from 2007), the uuid on sync targets was set to
 	 * zero during resyncs for no good reason. */
@@ -4191,13 +4199,16 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (disk_state == D_NEGOTIATING)
 		disk_state = disk_state_from_md(device);
 
+	if (hg == 200)
+		return -1; /* retry connect */
+
 	if (hg == -1000) {
 		drbd_alert(device, "Unrelated data, aborting!\n");
-		return -1;
+		return -2;
 	}
 	if (hg < -1000) {
 		drbd_alert(device, "To resolve this both sides have to support at least protocol %d\n", -hg - 1000);
-		return -1;
+		return -2;
 	}
 
 	disk_states_to_goodness(device, peer_disk_state, &hg, rule_nr);
@@ -4270,7 +4281,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (hg == -100) {
 		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_maybe_khelper(device, connection, "split-brain");
-		return -1;
+		return -2;
 	}
 
 	if (hg <= -2 && /* by intention we do not use disk_state here. */
@@ -4281,7 +4292,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			/* fall through */
 		case ASB_DISCONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
-			return -1;
+			return -2;
 		case ASB_VIOLENTLY:
 			drbd_warn(device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
@@ -4295,7 +4306,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			drbd_info(device, "dry-run connect: Would become %s, doing a %s resync.",
 				 drbd_repl_str(hg > 0 ? L_SYNC_SOURCE : L_SYNC_TARGET),
 				 abs(hg) >= 2 ? "full" : "bit-map based");
-		return -1;
+		return -2;
 	}
 
 	r = bitmap_mod_after_handshake(peer_device, hg, peer_node_id);
@@ -5195,6 +5206,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 					"clear_n_write from receive_uuids",
 					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
 			_drbd_uuid_set_current(device, peer_device->current_uuid);
+			peer_device->comm_current_uuid = peer_device->current_uuid;
 			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */
@@ -6810,7 +6822,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 
 		put_ldev(device);
-		if (new_repl_state == -1) {
+		if (new_repl_state == -1)
+			return -EIO; /* retry connect */
+		if (new_repl_state == -2) {
 			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				new_repl_state = L_NEG_NO_RESULT;

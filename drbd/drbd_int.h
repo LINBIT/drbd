@@ -1210,6 +1210,7 @@ struct drbd_peer_device {
 	bool uuids_received;
 
 	unsigned long comm_bm_set; /* communicated number of set bits. */
+	u64 comm_current_uuid;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_peer_dev;

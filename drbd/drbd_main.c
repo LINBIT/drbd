@@ -1446,7 +1446,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	}
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
+	peer_device->comm_current_uuid = drbd_current_uuid(device);
+	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		if (peer_md[i].bitmap_index != -1 || peer_md[i].flags & MDF_NODE_EXISTS) {
