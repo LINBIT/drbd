@@ -3347,6 +3347,8 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	cpumask_var_t new_cpu_mask;
 	int err;
 	bool wake_device_misc = false;
+	bool force_state_recalc = false;
+	unsigned long irq_flags;
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
@@ -3377,6 +3379,20 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	}
 	if (res_opts->nr_requests < DRBD_NR_REQUESTS_MIN)
 		res_opts->nr_requests = DRBD_NR_REQUESTS_MIN;
+
+	if (resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO &&
+	    res_opts->on_no_quorum == ONQ_IO_ERROR) {
+		/* when changing from suspend-io to io-error, we need
+		 * to wake all waitqueues which are blocking io. we also
+		 * need to cancel all pending requests with an io error. */
+		force_state_recalc = true;
+		wake_device_misc = true;
+
+		for_each_connection(connection, resource) {
+			tl_walk(connection, COMPLETION_RESUMED);
+		}
+	}
+
 	if (resource->res_opts.nr_requests < res_opts->nr_requests)
 		wake_device_misc = true;
 
@@ -3394,6 +3410,12 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		rcu_read_unlock();
 	}
 	err = 0;
+
+	if (force_state_recalc) {
+		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
+		end_state_change(resource, &irq_flags);
+	}
+
 	if (wake_device_misc)
 		wake_all_device_misc(resource);
 
