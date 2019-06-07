@@ -1797,10 +1797,11 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 			goto nodata;
 	}
 
+	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
+
 	/* which transfer log epoch does this belong to? */
 	req->epoch = atomic_read(&resource->current_tle_nr);
 
-	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 	if (rw == WRITE)
 		resource->dagtag_sector += req->i.size >> 9;
 	req->dagtag_sector = resource->dagtag_sector;
