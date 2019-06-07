@@ -311,6 +311,11 @@ struct drbd_request {
 	u64 dagtag_sector;
 
 	struct list_head tl_requests; /* ring list in the transfer log */
+
+	/* list entry in submitter lists, peer ack list, or retry lists;
+	 * protected by the locks for those lists */
+	struct list_head list;
+
 	struct bio *master_bio;       /* master bio pointer */
 
 	/* see struct drbd_device */

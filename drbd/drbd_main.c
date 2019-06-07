@@ -3049,7 +3049,7 @@ static void do_retry(struct work_struct *ws)
 	list_splice_init(&retry->writes, &writes);
 	spin_unlock_irq(&retry->lock);
 
-	list_for_each_entry_safe(req, tmp, &writes, tl_requests) {
+	list_for_each_entry_safe(req, tmp, &writes, list) {
 		struct drbd_device *device = req->device;
 		struct bio *bio = req->master_bio;
 		unsigned long start_jif = req->start_jif;
@@ -3100,7 +3100,7 @@ void drbd_restart_request(struct drbd_request *req)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&retry.lock, flags);
-	list_move_tail(&req->tl_requests, &retry.writes);
+	list_move_tail(&req->list, &retry.writes);
 	spin_unlock_irqrestore(&retry.lock, flags);
 
 	/* Drop the extra reference that would otherwise
