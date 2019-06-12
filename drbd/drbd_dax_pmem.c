@@ -45,7 +45,7 @@ static int map_superblock_for_dax(struct drbd_backing_dev *bdev, struct dax_devi
 	long want = 1;
 	pgoff_t pgoff = bdev->md.md_offset >> (PAGE_SHIFT - SECTOR_SHIFT);
 	void *kaddr;
-	unsigned long len;
+	long len;
 	pfn_t pfn_unused; /* before 4.18 it is required to pass in non-NULL */
 	int id;
 
@@ -106,7 +106,7 @@ int drbd_dax_map(struct drbd_backing_dev *bdev)
 	long md_offset_byte = (bdev->md.md_offset - first_sector) << SECTOR_SHIFT;
 	long al_offset_byte = (al_sector - first_sector) << SECTOR_SHIFT;
 	void *kaddr;
-	unsigned long len;
+	long len;
 	pfn_t pfn_unused; /* before 4.18 it is required to pass in non-NULL */
 	int id;
 
