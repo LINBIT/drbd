@@ -1788,10 +1788,19 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		goto out;
 	}
 
-	/* We fail READ early, if we can not serve it.
-	 * We must do this before req is registered on any lists.
-	 * Otherwise, drbd_req_complete() will queue failed READ for retry. */
-	if (rw != WRITE) {
+	if (rw == WRITE) {
+		if (!may_do_writes(device)) {
+			if (req->private_bio) {
+				bio_put(req->private_bio);
+				req->private_bio = NULL;
+				put_ldev(device);
+			}
+			goto nodata;
+		}
+	} else {
+		/* We fail READ early, if we can not serve it.
+		 * We must do this before req is registered on any lists.
+		 * Otherwise, drbd_req_complete() will queue failed READ for retry. */
 		peer_device = find_peer_device_for_read(req);
 		if (!peer_device && !req->private_bio)
 			goto nodata;
@@ -1805,58 +1814,47 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	if (rw == WRITE)
 		resource->dagtag_sector += req->i.size >> 9;
 	req->dagtag_sector = resource->dagtag_sector;
-	/* no point in adding empty flushes to the transfer log,
-	 * they are mapped to drbd barriers already. */
-	if (likely(req->i.size != 0)) {
+
+	/* A size==0 bio can only be an empty flush, which is mapped to a DRBD
+	 * P_BARRIER packet. */
+	if (unlikely(req->i.size == 0)) {
+		D_ASSERT(device, req->master_bio->bi_opf & DRBD_REQ_PREFLUSH);
+		_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
+	} else {
 		if (rw == WRITE) {
-			struct drbd_request *prev_write;
-
-			resource->current_tle_writes++;
-
-			prev_write = resource->tl_previous_write;
+			struct drbd_request *prev_write = resource->tl_previous_write;
 			resource->tl_previous_write = req;
 
 			if (prev_write) {
 				kref_get(&req->kref);
 				prev_write->destroy_next = req;
 			}
-		}
-		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
-	}
 
-	if (rw == WRITE) {
-		if (req->private_bio && !may_do_writes(device)) {
-			spin_unlock(&resource->tl_update_lock);
-			bio_put(req->private_bio);
-			req->private_bio = NULL;
-			put_ldev(device);
-			goto nodata;
+			resource->current_tle_writes++;
+
+			if (!drbd_process_write_request(req))
+				no_remote = true;
+		} else {
+			if (peer_device) {
+				_req_mod(req, TO_BE_SENT, peer_device);
+				_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
+			} else
+				no_remote = true;
 		}
-		/* Need to replicate writes.  Unless it is an empty flush,
-		 * which is better mapped to a DRBD P_BARRIER packet,
-		 * also for drbd wire protocol compatibility reasons.
-		 * If this was a flush, just start a new epoch.
-		 * Unless the current epoch was empty anyways, or we are not currently
-		 * replicating, in which case there is no point. */
-		if (unlikely(req->i.size == 0)) {
-			/* The only size==0 bios we expect are empty flushes. */
-			D_ASSERT(device, req->master_bio->bi_opf & DRBD_REQ_PREFLUSH);
-			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
-		} else if (!drbd_process_write_request(req))
-			no_remote = true;
-		drbd_wake_all_senders(resource);
-	} else {
-		if (peer_device) {
-			_req_mod(req, TO_BE_SENT, peer_device);
-			_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
-			wake_up(&peer_device->connection->sender_work.q_wait);
-		} else
-			no_remote = true;
+
+		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
 	}
 	spin_unlock(&resource->tl_update_lock);
 
 	if (no_remote == false) {
-		struct drbd_plug_cb *plug = drbd_check_plugged(resource);
+		struct drbd_plug_cb *plug;
+
+		if (rw == WRITE)
+			drbd_wake_all_senders(resource);
+		else if (peer_device)
+			wake_up(&peer_device->connection->sender_work.q_wait);
+
+		plug = drbd_check_plugged(resource);
 		if (plug)
 			drbd_update_plug(plug, req);
 	}
