@@ -267,10 +267,11 @@ static void count_objects(struct drbd_resource *resource,
 			  unsigned int *n_devices,
 			  unsigned int *n_connections)
 {
-	/* Caller holds req_lock */
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
+
+	lockdep_assert_held(&resource->state_rwlock);
 
 	*n_devices = 0;
 	*n_connections = 0;
@@ -310,7 +311,6 @@ static struct drbd_state_change *alloc_state_change(unsigned int n_devices, unsi
 
 struct drbd_state_change *remember_state_change(struct drbd_resource *resource, gfp_t gfp)
 {
-	/* Caller holds req_lock */
 	struct drbd_state_change *state_change;
 	struct drbd_device *device;
 	unsigned int n_devices;
@@ -321,6 +321,8 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	struct drbd_device_state_change *device_state_change;
 	struct drbd_peer_device_state_change *peer_device_state_change;
 	struct drbd_connection_state_change *connection_state_change;
+
+	lockdep_assert_held(&resource->state_rwlock);
 
 	count_objects(resource, &n_devices, &n_connections);
 	state_change = alloc_state_change(n_devices, n_connections, gfp);
@@ -2157,9 +2159,10 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 static void queue_after_state_change_work(struct drbd_resource *resource,
 					  struct completion *done)
 {
-	/* Caller holds req_lock */
 	struct after_state_change_work *work;
 	gfp_t gfp = GFP_ATOMIC;
+
+	lockdep_assert_held(&resource->state_rwlock);
 
 	work = kmalloc(sizeof(*work), gfp);
 	if (work)

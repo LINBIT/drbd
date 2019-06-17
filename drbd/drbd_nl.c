@@ -6514,7 +6514,9 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	for_each_resource(resource, &drbd_resources) {
 		struct drbd_state_change *state_change;
 
-		state_change = remember_state_change(resource, GFP_KERNEL);
+		read_lock_irq(&resource->state_rwlock);
+		state_change = remember_state_change(resource, GFP_ATOMIC);
+		read_unlock_irq(&resource->state_rwlock);
 		if (!state_change) {
 			if (!list_empty(&head))
 				free_state_changes(&head);
