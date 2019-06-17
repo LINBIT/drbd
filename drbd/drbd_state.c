@@ -4700,7 +4700,7 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 		if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
 			/* We expect to receive up-to-date UUIDs soon.
 			   To avoid a race in receive_state, "clear" uuids while
-			   holding req_lock. I.e. atomic with the state change */
+			   holding state_rwlock. I.e. atomic with the state change */
 			peer_device->uuids_received = false;
 			if (peer_device->disk_state[NOW] > D_DISKLESS &&
 			    peer_device->disk_state[NOW] != D_UNKNOWN)

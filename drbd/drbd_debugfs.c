@@ -377,7 +377,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			cond_resched();
 			rcu_read_lock();
 			next_hdr = list_next_rcu(&req->tl_requests);
-			if (kref_put(&req->kref, drbd_req_destroy)) {
+			if (kref_put(&req->kref, drbd_req_destroy_lock)) {
 				if (next_hdr == &resource->transfer_log)
 					break;
 				req = list_entry_rcu(next_hdr,

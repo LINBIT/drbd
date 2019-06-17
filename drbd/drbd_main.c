@@ -575,7 +575,6 @@ bail:
  * @what might be one of CONNECTION_LOST_WHILE_PENDING, RESEND, FAIL_FROZEN_DISK_IO,
  * COMPLETION_RESUMED.
  */
-/* must hold resource->req_lock */
 void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
 		const enum drbd_req_event what)
@@ -3029,7 +3028,7 @@ static struct retry_worker {
 	struct list_head writes;
 } retry;
 
-static void drbd_req_destroy_lock(struct kref *kref)
+void drbd_req_destroy_lock(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
 	struct drbd_resource *resource = req->device->resource;
@@ -3094,8 +3093,7 @@ static void do_retry(struct work_struct *ws)
 	}
 }
 
-/* called via drbd_req_put_completion_ref(),
- * holds resource->req_lock */
+/* called via drbd_req_put_completion_ref() */
 void drbd_restart_request(struct drbd_request *req)
 {
 	unsigned long flags;
@@ -3810,7 +3808,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		list_add(&peer_device->peer_devices, &peer_devices);
 	}
 
-	/* Insert the new device into all idrs under req_lock
+	/* Insert the new device into all idrs under state_rwlock write lock
 	   to guarantee a consistent object model. idr_preload() doesn't help
 	   because it can only guarantee that a single idr_alloc() will
 	   succeed. This fails (and will be retried) if no memory is

@@ -127,7 +127,7 @@ enum drbd_req_event {
 /* encoding of request states for now.  we don't actually need that many bits.
  * we don't need to do atomic bit operations either, since most of the time we
  * need to look at the connection state and/or manipulate some lists at the
- * same time, so we should hold the request lock anyways.
+ * same time, so we should hold the rq_lock anyways.
  */
 enum drbd_req_state_bits {
 	/* 43210

@@ -2482,7 +2482,7 @@ static struct drbd_request *__next_request_for_connection(
 	return NULL;
 }
 
-/* holds req_lock on entry, may give up and reacquire temporarily */
+/* holds rcu_read_lock on entry, may give up and reacquire temporarily */
 static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection)
 {
 	struct bio_and_error m;
@@ -2493,7 +2493,7 @@ static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connect
 	struct drbd_peer_device *peer_device;
 	unsigned s;
 
-	/* In the unlikely case that we need to give up the spinlock
+	/* In the unlikely case that we need to give up the rcu_read_lock
 	 * temporarily below, we need to restart the loop, as the request
 	 * pointer, or any next pointers, may become invalid meanwhile.
 	 *
@@ -2535,17 +2535,18 @@ restart:
 		read_unlock_irq(&connection->resource->state_rwlock);
 
 		/* If this is now RQ_NET_PENDING (it should), it won't
-		 * disappear, even if we give up the spinlock below. */
+		 * disappear, even if we give up the rcu_read_lock below. */
 		if (req->net_rq_state[peer_device->node_id] & RQ_NET_PENDING)
 			tmp = req;
 
 		/* We crunch through a potentially very long list, so be nice
-		 * and eventually temporarily give up the spinlock/re-enable
-		 * interrupts.
+		 * and eventually temporarily give up the rcu_read_lock/re-enable
+		 * preemption.
 		 *
 		 * Also, in the very unlikely case that trying to mark it for
 		 * RESEND actually caused this request to be finished off, we
-		 * complete the master bio, outside of the lock. */
+		 * complete the master bio, outside of the RCU critical
+		 * section. */
 		if (m.bio || need_resched()) {
 			rcu_read_unlock();
 			if (m.bio)

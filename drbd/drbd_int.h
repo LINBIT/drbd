@@ -1893,6 +1893,7 @@ void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
 extern void drbd_reclaim_resource(struct rcu_head *rp);
+extern void drbd_req_destroy_lock(struct kref *kref);
 extern struct drbd_resource *drbd_find_resource(const char *name);
 extern void drbd_destroy_resource(struct kref *kref);
 
@@ -2700,9 +2701,9 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 
 	if (ap_bio == 0 && rw == WRITE) {
 		/* Check for list_empty outside the lock is ok.  Worst case it queues
-		 * nothing because someone else just now did.  During list_add, both
-		 * resource->req_lock *and* a refcount on ap_bio_cnt[WRITE] are held,
-		 * a list_add cannot race with this code path.
+		 * nothing because someone else just now did.  During list_add, a
+		 * refcount on ap_bio_cnt[WRITE] is held, so the bitmap work will be
+		 * queued when that is released if we miss it here.
 		 * Checking pending_bitmap_work.n is not correct,
 		 * it has a different lifetime. */
 		if (!list_empty(&device->pending_bitmap_work.q))

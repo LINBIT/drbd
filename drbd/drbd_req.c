@@ -185,7 +185,6 @@ static void drbd_remove_request_interval(struct rb_root *root,
 		wake_up(&device->misc_wait);
 }
 
-/* must_hold resource->req_lock */
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
@@ -195,6 +194,8 @@ void drbd_req_destroy(struct kref *kref)
 	struct drbd_peer_device *peer_device;
 	unsigned int s;
 	bool was_last_ref;
+
+	lockdep_assert_held(&resource->state_rwlock);
 
  tail_recursion:
 	was_last_ref = false;
@@ -539,10 +540,11 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	spin_unlock_irqrestore(&device->pending_completion_lock, flags);
 }
 
-/* still holds resource->req_lock */
 static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_error *m, int put)
 {
 	D_ASSERT(req->device, m || (req->local_rq_state & RQ_POSTPONED));
+
+	lockdep_assert_held(&req->device->resource->state_rwlock);
 
 	if (!put)
 		return;
@@ -838,7 +840,7 @@ static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx
  * but having it this way
  *  enforces that it is all in this one place, where it is easier to audit,
  *  it makes it obvious that whatever "event" "happens" to a request should
- *  happen "atomically" within the req_lock,
+ *  happen with the state_rwlock read lock held,
  *  and it enforces that we have to think in a very structured manner
  *  about the "events" that may happen to a request during its life time ...
  *
@@ -854,6 +856,8 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	unsigned long flags;
 	int p;
 	int idx;
+
+	lockdep_assert_held(&device->resource->state_rwlock);
 
 	if (m)
 		m->bio = NULL;
@@ -1291,7 +1295,6 @@ static void complete_conflicting_writes(struct drbd_request *req)
 	finish_wait(&device->misc_wait, &wait);
 }
 
-/* called within req_lock and rcu_read_lock() */
 static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connection *connection)
 {
 	struct net_conf *nc;
@@ -1299,6 +1302,8 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	enum drbd_on_congestion on_congestion;
 	u32 cong_fill = 0, cong_extents = 0;
 	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
+
+	lockdep_assert_held(&device->resource->state_rwlock);
 
 	if (connection->agreed_pro_version < 96)
 		return;

@@ -372,7 +372,6 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 }
 
 /* Must not be used from irq, as that may deadlock: see drbd_alloc_pages.
- * Is also used from inside an other spin_lock_irq(&resource->req_lock);
  * Either links the page chain back to the global pool,
  * or returns all pages to the system. */
 void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is_net)
@@ -5229,7 +5228,6 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			peer_device->comm_current_uuid = peer_device->current_uuid;
 			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
-			/* FIXME: Note that req_lock was not taken here before! */
 			__change_disk_state(device, D_UP_TO_DATE);
 			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 			end_state_change(device->resource, &irq_flags);
@@ -6365,7 +6363,7 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 			return 0;
 		}
-		/* abort_local_transaction() returned with the req_lock */
+		/* abort_local_transaction() returned with the state_rwlock write lock */
 		if (reply->is_aborted) {
 			write_unlock_irq(&resource->state_rwlock);
 			return 0;
@@ -6462,7 +6460,7 @@ static int process_twopc(struct drbd_connection *connection,
 		 * have connection or peer device objects for this peer.
 		 */
 		for_each_connection(affected_connection, resource) {
-			/* for_each_connection() protected by holding req_lock here */
+			/* for_each_connection() protected by holding state_rwlock here */
 			if (reply->initiator_node_id ==
 			    affected_connection->peer_node_id)
 				goto directly_connected;
@@ -8823,7 +8821,6 @@ found:
 	return 0;
 }
 
-/* Caller has to hold resource->req_lock */
 void apply_unacked_peer_requests(struct drbd_connection *connection)
 {
 	struct drbd_peer_request *peer_req;
