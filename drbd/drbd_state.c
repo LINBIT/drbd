@@ -1301,6 +1301,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
 		bool is_intentional_diskless;
+		struct net_conf *nc;
 
 		if (node_id == my_node_id) {
 			disk_state = device->disk_state[NEW];
@@ -1313,9 +1314,17 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			continue;
 		}
 
-
 		peer_device = peer_device_by_node_id(device, node_id);
 		is_intentional_diskless = peer_device && !want_bitmap(peer_device);
+
+		if (peer_device) {
+			nc = rcu_dereference(peer_device->connection->transport.net_conf);
+			if (nc && !nc->allow_remote_read) {
+				dynamic_drbd_dbg(peer_device,
+						 "Excluding from quorum calculation because allow-remote-read = no\n");
+				continue;
+			}
+		}
 
 		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS) &&
 		    !is_intentional_diskless) {
@@ -1327,7 +1336,6 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
-
 
 		if (repl_state == L_OFF) {
 			if (is_intentional_diskless)
@@ -1370,11 +1378,18 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
+		struct net_conf *nc;
 
 		repl_state = peer_device->repl_state[NEW];
 		disk_state = peer_device->disk_state[NEW];
 
 		is_intentional_diskless = !want_bitmap(peer_device);
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (nc && !nc->allow_remote_read) {
+			dynamic_drbd_dbg(peer_device,
+					 "Excluding from quorum calculation because allow-remote-read = no\n");
+			continue;
+		}
 
 		if (repl_state == L_OFF) {
 			if (is_intentional_diskless)
