@@ -1441,7 +1441,7 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 
 	have_quorum = (qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at;
 
-	if (!have_quorum && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&
+	if (!have_quorum && voters != 0 && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&
 		/* It is an even number of nodes (think 2) and we failed by one vote.
 		   Check if we have majority of the diskless nodes connected.
 		   Using the diskless nodes a tie-breaker! */
