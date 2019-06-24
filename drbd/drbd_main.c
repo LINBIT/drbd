@@ -1533,33 +1533,19 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 }
 
 /* All callers hold resource->conf_update */
-int drbd_attach_peer_device(struct drbd_peer_device *peer_device) __must_hold(local)
+int drbd_attach_peer_device(struct drbd_peer_device *const peer_device) __must_hold(local)
 {
-	struct peer_device_conf *pdc;
-	struct fifo_buffer *resync_plan = NULL;
 	struct lru_cache *resync_lru = NULL;
 	int err = -ENOMEM;
 
-	pdc = rcu_dereference_protected(peer_device->conf,
-		lockdep_is_held(&peer_device->device->resource->conf_update));
-
-	resync_plan = fifo_alloc((pdc->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ);
-	if (!resync_plan)
-		goto out;
 	resync_lru = lc_create("resync", drbd_bm_ext_cache,
-			       1, 61, sizeof(struct bm_extent),
-			       offsetof(struct bm_extent, lce));
-	if (!resync_lru)
-		goto out;
-	rcu_assign_pointer(peer_device->rs_plan_s, resync_plan);
-	peer_device->resync_lru = resync_lru;
-	err = 0;
-
-out:
-	if (err) {
-		kfree(resync_lru);
-		kfree(resync_plan);
+	                       1, 61, sizeof(struct bm_extent),
+	                       offsetof(struct bm_extent, lce));
+	if (resync_lru != NULL) {
+		peer_device->resync_lru = resync_lru;
+		err = 0;
 	}
+
 	return err;
 }
 
