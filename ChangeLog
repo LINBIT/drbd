@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.19-0rc1 (api:genl2/proto:86-115/transport:14)
+9.0.19-0.1ibm2 (api:genl2/proto:86-115/transport:14)
 --------
  * Fix resync stuck at near completion
  * Fix NULL dereference with disk-timeout enabled
