@@ -6,44 +6,32 @@ die() {
 	exit 1
 }
 
-patch_weak_modules() {
-cat <<'EOF' >/sbin/weak-modules
-#!/bin/bash
-
-weak_modules() {
-	local IFS=$'\n'
-	modules=($(cat))
-
-	wmp=/lib/modules/$(uname -r)/weak-updates/drbd
-	rm -rf "$wmp"
-	mkdir -p "$wmp"
-	cd "$wmp"
-	for ((n = 0; n < ${#modules[@]}; n++)); do
-		ln -s ${modules[$n]} .
-	done
-}
-
-weak_modules
-depmod -a
-exit 0
-EOF
-
-chmod +x /sbin/weak-modules
-}
+pkgdir=/tmp/pkg
+kodir=/tmp/ko
+mkdir -p "$pkgdir" "$kodir"
 
 failed=no
 if [ -n "$(type -p dpkg)" ]; then
-	dpkg --ignore-depends=drbd-utils \
-		-i /pkgs/drbd-module-"$(uname -r)"*.deb || failed=yes
+	dpkg -x /pkgs/drbd-module-"$(uname -r)"*.deb "$pkgdir"
 else
-	patch_weak_modules
-	no_initramfs=1 rpm --nodeps \
-		-i /pkgs/kmod-drbd-9*_*"$(uname -r | cut -f2 -d'-' | cut -f1 -d '.')"*.rpm || failed=yes
+	find /pkgs -name "kmod-drbd-9*_*""$(uname -r | cut -f2 -d'-' | cut -f1 -d '.')""*.rpm" -exec cp {} "$pkgdir" \;
+	cd "$pkgdir" || failed=yes
+	rpm2cpio ./*.rpm | cpio -idmv 2>/dev/null
+fi
+
+find "$pkgdir"/lib/modules -name "*.ko" -exec cp {} "$kodir" \;
+cd "$kodir" || failed=yes
+
+# from here on we expect we are in a CWD that has the kos
+if [ ! -f drbd.ko ] || [ ! -f drbd_transport_tcp.ko ]; then
+	failed=yes
 fi
 [[ $failed == no ]] || die "No matching module package found"
 
-modprobe drbd usermode_helper=disabled
-modprobe drbd_transport_tcp
+# as we insmod, we need to load our dependencies; we assume /lib/modules to be bindmounted
+modprobe libcrc32c
+insmod ./drbd.ko usermode_helper=disabled
+insmod ./drbd_transport_tcp.ko
 modprobe drbd_transport_rdma 2>/dev/null || true
 if ! grep -q drbd_transport_tcp /proc/modules; then
         die "Could not load DRBD kernel modules"
