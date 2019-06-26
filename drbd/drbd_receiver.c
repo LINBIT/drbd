@@ -3826,7 +3826,9 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
 
-	if (self != (peer_device->comm_current_uuid & ~UUID_PRIMARY)) {
+	if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+			!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+			self != (peer_device->comm_current_uuid & ~UUID_PRIMARY)) {
 		*rule_nr = 9;
 		drbd_warn(peer_device, "My current UUID changed during "
 			  "handshake. Retry connecting.\n");
