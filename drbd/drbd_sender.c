@@ -1917,7 +1917,9 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 
 		repl_state = peer_device->repl_state[which];
 
-		if (repl_state >= L_ESTABLISHED && repl_state < L_AHEAD) {
+		if (repl_state == L_ESTABLISHED ||
+				repl_state == L_WF_BITMAP_S ||
+				(repl_state >= L_SYNC_SOURCE && repl_state < L_AHEAD)) {
 			if (authoritative_nodes & NODE_MASK(peer_device->node_id)) {
 				rv = true;
 				break;
