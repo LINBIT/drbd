@@ -99,7 +99,9 @@ if [ -n "$(type -p dpkg)" ]; then
 	chown _apt "$pkgdir"
 	cd "$pkgdir" || die "Could not cd to $pkgdir"
 	pkg=drbd-module-"$(uname -r)"
-	apt-get update -y && apt-get -y download "$pkg"
+	apt-get update -o Dir::Etc::sourcelist="sources.list.d/linbit.list" \
+		-o Dir::Etc::sourceparts="-" \
+		-o APT::Get::List-Cleanup="0" && apt-get -y download "$pkg"
 	dpkg -x ./"$pkg"*.deb "$pkgdir"
 else
 	rpm_repo "$dist" "$LB_HASH"
