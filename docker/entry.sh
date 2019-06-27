@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SIGN_KEY=https://packages.linbit.com/package-signing-pubkey.asc
+
 die() {
 	>&2 echo
 	>&2 echo "$1"
@@ -25,10 +27,9 @@ map_dist() {
 }
 
 signing_key() {
-	local key=https://packages.linbit.com/package-signing-pubkey.asc
 	case "$1" in
-		rpm) rpm --import $key ;;
-		deb) wget -qO - $key | apt-key add - ;;
+		rpm) rpm --import $SIGN_KEY ;;
+		deb) wget -qO - $SIGN_KEY | apt-key add - ;;
 		*) die "Unknown package format ($1)"
 	esac
 }
@@ -57,7 +58,7 @@ cat << EOF > $repo
 [drbd-9]
 name=DRBD9 - \$basearch
 baseurl=http://packages.linbit.com/${hash}/yum/${dist}/drbd-9.0/\$basearch
-gpgkey=$GPG_KEY
+gpgkey=$SIGN_KEY
 gpgcheck=1
 enabled=1
 EOF
