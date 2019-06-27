@@ -9,8 +9,7 @@ die() {
 }
 
 map_dist() {
-	local k=$1
-	[ -z "$k" ] && k=undef
+	local k=${1:-doesnotexist}
 	k=${k,,}
 	k="${k/centos/rhel}"
 
