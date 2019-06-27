@@ -2345,12 +2345,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				if (repl_state[NEW] == L_SYNC_TARGET)
 					mod_timer(&peer_device->resync_timer, jiffies);
-
-				device->bm_resync_fo &= ~BM_BLOCKS_PER_BM_EXT_MASK;
-				/* Setting the find_offset back is necessary when switching resync from
-				   one peer to the other. Since in the bitmap of the new peer, there
-				   might be bits before the current find_offset. Since the peer is
-				   notified about the resync progress in BM_EXT sized chunks. */
 			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&

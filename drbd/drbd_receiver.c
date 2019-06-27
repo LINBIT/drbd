@@ -7344,7 +7344,7 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	conn_wait_active_ee_empty_or_disconnect(connection);
 	conn_wait_done_ee_empty_or_disconnect(connection);
 
-	mutex_lock(&device->bm_resync_fo_mutex);
+	mutex_lock(&peer_device->resync_next_bit_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_WF_SYNC_UUID:
 	case L_WF_BITMAP_T:
@@ -7352,8 +7352,8 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 		break;
 	case L_SYNC_TARGET:
 		bit = BM_SECT_TO_BIT(sector);
-		if (bit < device->bm_resync_fo)
-			device->bm_resync_fo = bit;
+		if (bit < peer_device->resync_next_bit)
+			peer_device->resync_next_bit = bit;
 		break;
 	default:
 #if 0
@@ -7371,7 +7371,7 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));
 
-	mutex_unlock(&device->bm_resync_fo_mutex);
+	mutex_unlock(&peer_device->resync_next_bit_mutex);
 
 	return 0;
 }
@@ -8625,9 +8625,9 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 				verify_skipped_block(peer_device, sector, size);
 			} else {
 				bit = BM_SECT_TO_BIT(sector);
-				mutex_lock(&device->bm_resync_fo_mutex);
-				device->bm_resync_fo = min(device->bm_resync_fo, bit);
-				mutex_unlock(&device->bm_resync_fo_mutex);
+				mutex_lock(&peer_device->resync_next_bit_mutex);
+				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);
+				mutex_unlock(&peer_device->resync_next_bit_mutex);
 			}
 
 			rs_sectors_came_in(peer_device, size);

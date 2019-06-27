@@ -1552,7 +1552,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 			if (verify_can_do_stop_sector(pd))
 				stop_sector = pd->ov_stop_sector;
 		} else
-			bit_pos = pd->device->bm_resync_fo;
+			bit_pos = pd->resync_next_bit;
 		/* Total sectors may be slightly off for oddly
 		 * sized devices. So what. */
 		seq_printf(seq,

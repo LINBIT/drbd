@@ -1150,6 +1150,8 @@ struct drbd_peer_device {
 	unsigned int resync_wenr;
 	enum drbd_disk_state resync_finished_pdsk; /* Finished while starting resync */
 	int resync_again; /* decided to resync again while resync running */
+	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
+	struct mutex resync_next_bit_mutex;
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
@@ -1321,8 +1323,6 @@ struct drbd_device {
 	struct list_head pending_completion[2];
 
 	struct drbd_bitmap *bitmap;
-	unsigned long bm_resync_fo; /* bit offset for drbd_bm_find_next */
-	struct mutex bm_resync_fo_mutex;
 
 	int open_rw_cnt, open_ro_cnt;
 	/* FIXME clean comments, restructure so it is more obvious which

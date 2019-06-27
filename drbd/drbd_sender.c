@@ -469,12 +469,11 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, resync_work);
-	struct drbd_device *device = peer_device->device;
 
 	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
 		return 0;
 
-	mutex_lock(&device->bm_resync_fo_mutex);
+	mutex_lock(&peer_device->resync_next_bit_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
 		make_ov_request(peer_device, cancel);
@@ -485,7 +484,7 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	default:
 		break;
 	}
-	mutex_unlock(&device->bm_resync_fo_mutex);
+	mutex_unlock(&peer_device->resync_next_bit_mutex);
 
 	return 0;
 }
@@ -747,22 +746,22 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 next_sector:
 		size = BM_BLOCK_SIZE;
-		bit  = drbd_bm_find_next(peer_device, device->bm_resync_fo);
+		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
 
 		if (bit == DRBD_END_OF_BITMAP) {
-			device->bm_resync_fo = drbd_bm_bits(device);
+			peer_device->resync_next_bit = drbd_bm_bits(device);
 			goto request_done;
 		}
 
 		sector = BM_BIT_TO_SECT(bit);
 
 		if (drbd_try_rs_begin_io(peer_device, sector, true)) {
-			device->bm_resync_fo = bit;
+			peer_device->resync_next_bit = bit;
 			goto request_done;
 		}
 
 		if (unlikely(drbd_bm_test_bit(peer_device, bit) == 0)) {
-			device->bm_resync_fo = bit + 1;
+			peer_device->resync_next_bit = bit + 1;
 			drbd_rs_complete_io(peer_device, sector);
 			goto next_sector;
 		}
@@ -803,7 +802,7 @@ next_sector:
 			i++;
 		}
 		/* set the offset to start the next drbd_bm_find_next from */
-		device->bm_resync_fo = bit + 1;
+		peer_device->resync_next_bit = bit + 1;
 
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
@@ -816,7 +815,7 @@ next_sector:
 				return -EIO;
 			case -EAGAIN: /* allocation failed, or ldev busy */
 				drbd_rs_complete_io(peer_device, sector);
-				device->bm_resync_fo = BM_SECT_TO_BIT(sector);
+				peer_device->resync_next_bit = BM_SECT_TO_BIT(sector);
 				i = rollback_i;
 				goto request_done;
 			case 0:
@@ -845,7 +844,7 @@ request_done:
 	/* ... but do a correction, in case we had to break/goto request_done; */
 	peer_device->rs_in_flight -= (number - i) * BM_SECT_PER_BIT;
 
-	if (device->bm_resync_fo >= drbd_bm_bits(device)) {
+	if (peer_device->resync_next_bit >= drbd_bm_bits(device)) {
 		/* last syncer _request_ was sent,
 		 * but the P_RS_DATA_REPLY not yet received.  sync will end (and
 		 * next sync group will resume), as soon as we receive the last
@@ -2088,7 +2087,7 @@ skip_helper:
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
 		if (side == L_SYNC_TARGET) {
-			device->bm_resync_fo = 0;
+			peer_device->resync_next_bit = 0;
 			peer_device->use_csums = use_checksum_based_resync(connection, device);
 		} else {
 			peer_device->use_csums = false;
