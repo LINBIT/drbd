@@ -1117,7 +1117,7 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   During connection handshake, we ensure that the peer was not rebooted.
 
 		   Resending is only allowed on synchronous connections,
-		   where all requests not yet completed to upper layers whould
+		   where all requests not yet completed to upper layers would
 		   be in the same "reorder-domain", there can not possibly be
 		   any dependency between incomplete requests, and we are
 		   allowed to complete this one "out-of-sequence".
@@ -1749,7 +1749,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	spin_lock_irq(&resource->req_lock);
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
-		 * but will re-aquire it before it returns here.
+		 * but will re-acquire it before it returns here.
 		 * Needs to be before the check on drbd_suspended() */
 		complete_conflicting_writes(req);
 		/* no more giving up req_lock from now on! */
@@ -2437,7 +2437,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
  * - the connection was established (resp. disk was attached)
  *   for longer than the timeout already.
  * Note that for 32bit jiffies and very stable connections/disks,
- * we may have a wrap around, which is catched by
+ * we may have a wrap around, which is caught by
  *   !time_in_range(now, last_..._jif, last_..._jif + timeout).
  *
  * Side effect: once per 32bit wrap-around interval, which means every
@@ -2511,7 +2511,7 @@ void request_timer_fn(DRBD_TIMER_FN_ARG)
 		 * but which is still waiting for an ACK. */
 		req = connection->req_ack_pending;
 
-		/* if we don't have such request (e.g. protocoll A)
+		/* if we don't have such request (e.g. protocol A)
 		 * check the oldest requests which is still waiting on its epoch
 		 * closing barrier ack. */
 		if (!req)

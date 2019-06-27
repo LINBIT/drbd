@@ -536,7 +536,7 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 					   "else!?!");
 		}
 
-		seq_puts(m, "  received replys: ");
+		seq_puts(m, "  received replies: ");
 		rcu_read_lock();
 		for_each_connection_rcu(connection, resource) {
 			char *name = rcu_dereference((connection)->transport.net_conf)->name;

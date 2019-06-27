@@ -946,7 +946,7 @@ static int dtt_connect(struct drbd_transport *transport)
 			if (!first_path) {
 				first_path = connect_to_path;
 			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial pathes crossed A\n");
+				tr_warn(transport, "initial paths crossed A\n");
 				kernel_sock_shutdown(s, SHUT_RDWR);
 				sock_release(s);
 				connect_to_path = first_path;
@@ -991,7 +991,7 @@ retry:
 			if (!first_path) {
 				first_path = connect_to_path;
 			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial pathes crossed P\n");
+				tr_warn(transport, "initial paths crossed P\n");
 				kernel_sock_shutdown(s, SHUT_RDWR);
 				sock_release(s);
 				connect_to_path = first_path;

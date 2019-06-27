@@ -330,7 +330,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 		page = __drbd_alloc_pages(number, gfp_mask & ~__GFP_RECLAIM);
 
 	/* Try to keep the fast path fast, but occasionally we need
-	 * to reclaim the pages we lended to the network stack. */
+	 * to reclaim the pages we lent to the network stack. */
 	if (page && atomic_read(&connection->pp_in_use_by_net) > 512)
 		drbd_reclaim_net_peer_reqs(connection);
 
@@ -762,7 +762,7 @@ start:
 	drbd_uncork(connection, DATA_STREAM);
 
 	/* Make sure the handshake happens without interference from other threads,
-	 * or the challenge respons authentication could be garbled. */
+	 * or the challenge response authentication could be garbled. */
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	have_mutex = true;
 	transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
@@ -1511,7 +1511,7 @@ static void drbd_issue_peer_wsame(struct drbd_device *device,
 {
 #ifndef COMPAT_WRITE_SAME_CAPABLE
 	/* We should have never received this request!  At least not until we
-	 * implement an open-coded write-same equivalend submit loop, and tell
+	 * implement an open-coded write-same equivalent submit loop, and tell
 	 * our peer we were write_same_capable. */
 	drbd_err(device, "received unsupported WRITE_SAME request\n");
 	peer_req->flags |= EE_WAS_ERROR;
@@ -2109,7 +2109,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	atomic_add(d->bi_size >> 9, &device->rs_sect_ev);
 
-	/* Seting all peer out of sync here. Sync source peer will be set
+	/* Setting all peer out of sync here. Sync source peer will be set
 	   in sync when the write completes. Other peers will be set in
 	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
 	drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
@@ -5825,7 +5825,7 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 	    resource->role[NOW] == R_PRIMARY && vnr == -1) {
 		/* A node far away test if there are primaries. I am the guy he
 		   is concerned about... He learned about me in the CS_PREPARE phase.
-		   Since he is commiting it I know that he is outdated now... */
+		   Since he is committing it I know that he is outdated now... */
 		struct drbd_connection *affected_connection;
 		int initiator_node_id = resource->twopc_reply.initiator_node_id;
 
@@ -6200,7 +6200,7 @@ cont:
 				continue;
 
 			/* update cached sizes, relevant for the next handshake
-			 * of a currently unconnected peeer. */
+			 * of a currently unconnected peer. */
 			peer_device->c_size = tr->new_size;
 			peer_device->u_size = tr->user_size;
 			if (dd >= DS_GREW) {
@@ -6796,7 +6796,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		bool consider_resync;
 
-		/* cleare CONN_DISCARD_MY_DATA so late, to not loose it if connection
+		/* clear CONN_DISCARD_MY_DATA so late, to not lose it if peer
 		   gets aborted before we are able to do the resync handshake. */
 		clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
@@ -6876,7 +6876,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
 		   (device->exposed_data_uuid & ~UUID_PRIMARY)) {
 		/* Do not trust this guy!
-		   He pretents to be D_UP_TO_DATE, but has a different current UUID. Do not
+		   He pretends to be D_UP_TO_DATE, but has a different current UUID. Do not
 		   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
 		   do the same. We need to do it here to avoid that the peer is visible as
 		   D_UP_TO_DATE at all. Otherwise we could ship read requests to it!

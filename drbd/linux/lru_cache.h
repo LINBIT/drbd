@@ -292,7 +292,7 @@ extern void lc_seq_dump_details(struct seq_file *seq, struct lru_cache *lc, char
  *
  * Allows (expects) the set to be "dirty".  Note that the reference counts and
  * order on the active and lru lists may still change.  Used to serialize
- * changing transactions.  Returns true if we aquired the lock.
+ * changing transactions.  Returns true if we acquired the lock.
  */
 static inline int lc_try_lock_for_transaction(struct lru_cache *lc)
 {
@@ -304,7 +304,7 @@ static inline int lc_try_lock_for_transaction(struct lru_cache *lc)
  * @lc: the lru cache to operate on
  *
  * Note that the reference counts and order on the active and lru lists may
- * still change.  Only works on a "clean" set.  Returns true if we aquired the
+ * still change.  Only works on a "clean" set.  Returns true if we acquired the
  * lock, which means there are no pending changes, and any further attempt to
  * change the set will not succeed until the next lc_unlock().
  */

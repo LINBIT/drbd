@@ -93,7 +93,7 @@ static void sanitize_state(struct drbd_resource *resource);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 
-/* We need to stay consistent if we are neighbour of a diskless primary with
+/* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
    before.
  */
@@ -594,7 +594,7 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 			drbd_info(device, "Executing delayed exposed data uuid update: %016llX\n",
 				  (unsigned long long)device->exposed_data_uuid);
 		else
-			drbd_info(device, "Cancelling delayed exposed data uuid update\n");
+			drbd_info(device, "Canceling delayed exposed data uuid update\n");
 	}
 }
 
@@ -1654,13 +1654,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			     (repl_state[NEW] > L_ESTABLISHED && peer_disk_state[NEW] < D_INCONSISTENT))
 				return SS_NO_REMOTE_DISK;
 
-			/*
-			if (!(repl_state[OLD] > L_ESTABLISHED && disk_state[OLD] < D_OUTDATED && peer_disk_state[OLD] < D_OUTDATED) &&
-			     (repl_state[NEW] > L_ESTABLISHED && disk_state[NEW] < D_OUTDATED && peer_disk_state[NEW] < D_OUTDATED))
-				return SS_NO_UP_TO_DATE_DISK;
-			*/
-
-
 			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
 			    !local_disk_may_be_outdated(device, NEW))
 				return SS_CONNECTED_OUTDATES;
@@ -1688,9 +1681,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
 			    repl_state[OLD] > L_ESTABLISHED )
 				return SS_RESYNC_RUNNING;
-
-			/* if (repl_state[NEW] == repl_state[OLD] && repl_state[NEW] == L_OFF)
-				return SS_IN_TRANSIENT_STATE; */
 
 			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_ESTABLISHED)
 				return SS_NEED_CONNECTION;
@@ -2062,7 +2052,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			}
 
 			/* This needs to be after the previous block, since we should not set
-			   the bit if we are paused ourself */
+			   the bit if we are paused ourselves */
 			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
 				set_resync_susp_other_c(peer_device, true, false);
 			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
@@ -2080,7 +2070,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				peer_disk_state[NEW] = D_DISKLESS;
 
 			/* Upgrade myself from D_OUTDATED if..
-			   1) We connect to stable D_UP_TO_DATE(or D_CONSISTENT) peer without resnyc
+			   1) We connect to stable D_UP_TO_DATE(or D_CONSISTENT) peer without resync
 			   2) The peer just became stable
 			   3) the peer was stable and just became D_UP_TO_DATE */
 			if (repl_state[NEW] == L_ESTABLISHED && disk_state[NEW] == D_OUTDATED &&
@@ -2096,7 +2086,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device, NEW))
 				disk_state[NEW] = D_UP_TO_DATE;
 
-			/* Follow a neighbout that goes from D_CONSISTENT TO D_UP_TO_DATE */
+			/* Follow a neighbor that goes from D_CONSISTENT TO D_UP_TO_DATE */
 			if (disk_state[NEW] == D_CONSISTENT &&
 			    peer_disk_state[OLD] == D_CONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE &&
 			    peer_device->uuid_flags & UUID_FLAG_STABLE)
@@ -3920,8 +3910,8 @@ check_primaries_distances(struct drbd_resource *resource)
 	if (!(reply->primary_nodes & reply->weak_nodes))
 		return SS_SUCCESS;
 
-	/* For virtualisation setups with diskless hypervisors (R_PRIMARY) and one
-	   or multiple storage servers (R_SECONDAY) allow live-migration between the
+	/* For virtualization setups with diskless hypervisors (R_PRIMARY) and one
+	   or multiple storage servers (R_SECONDARY) allow live-migration between the
 	   hypervisors. */
 	common_server = ~reply->weak_nodes;
 	if (common_server) {
@@ -4326,7 +4316,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		}
 		rv = end_state_change(resource, &irq_flags);
 		if (rv < SS_SUCCESS)
-			drbd_err(resource, "FATAL: Local commit of allready commited %u failed! \n",
+			drbd_err(resource, "FATAL: Local commit of already committed %u failed! \n",
 				 be32_to_cpu(request.tid));
 	} else {
 		abort_state_change(resource, &irq_flags);

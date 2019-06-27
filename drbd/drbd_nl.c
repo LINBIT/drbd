@@ -1018,8 +1018,8 @@ retry:
 		   writes can come in. -> Flushing queued peer acks is
 		   necessary and sufficient.
 		   The cluster wide role change required packets to be
-		   received by the aserder. -> We can be sure that the
-		   peer_acks queued on asender's TODO list go out before
+		   received by the sender. -> We can be sure that the
+		   peer_acks queued on a sender's TODO list go out before
 		   we send the two phase commit packet.
 		*/
 		drbd_flush_peer_acks(resource);
@@ -2533,7 +2533,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 
 	freed_index = peer_md->bitmap_index;
 
-	/* unallocated slots are considere to track writes to the device since day 0.
+	/* unallocated slots are considered to track writes to the device since day 0.
 	   In order to keep that promise, copy the bitmap from an other unallocated slot
 	   to this one, or set it to all out-of-sync */
 
@@ -4078,7 +4078,7 @@ int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	/* remote transport endpoints need to be globaly unique */
+	/* remote transport endpoints need to be globally unique */
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	retcode = adm_add_path(&adm_ctx, info);
@@ -4239,8 +4239,8 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	return rv;
 }
 
-/* this cann only be called immediately after a successful
- * conn_try_disconnect, within the same resource->adm_mutex */
+/* this can only be called immediately after a successful
+ * peer_try_disconnect, within the same resource->adm_mutex */
 static void del_connection(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -6452,7 +6452,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	enum drbd_notification_type flags = 0;
 
 	/* There is no need for taking notification_mutex here: it doesn't
-	   matter if the initial state events mix with later state chage
+	   matter if the initial state events mix with later state change
 	   events; we can always tell the events apart by the NOTIFY_EXISTS
 	   flag. */
 

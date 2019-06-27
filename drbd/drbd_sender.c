@@ -264,7 +264,7 @@ void drbd_request_endio BIO_ENDIO_ARGS(struct bio *bio)
 	 * situation, usually a hard-reset and failover is the only way out.
 	 *
 	 * By "aborting", basically faking a local error-completion,
-	 * we allow for a more graceful swichover by cleanly migrating services.
+	 * we allow for a more graceful switchover by cleanly migrating services.
 	 * Still the affected node has to be rebooted "soon".
 	 *
 	 * By completing these requests, we allow the upper layers to re-use
@@ -560,7 +560,7 @@ struct fifo_buffer *fifo_alloc(int fifo_size)
 	return fb;
 }
 
-/* FIXME by chosing to calculate in nano seconds, we now have several do_div()
+/* FIXME by choosing to calculate in nano seconds, we now have several do_div()
  * in here, which I find very ugly.
  */
 static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in, u64 duration_ns)
@@ -695,7 +695,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	}
 
 	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags)) {
-		/* If a P_RS_CANCEL_AHEAD on controll socket overtook the
+		/* If a P_RS_CANCEL_AHEAD on control socket overtook the
 		 * already queued data and state change to Ahead/Behind,
 		 * don't add more resync requests, just wait it out. */
 		if (drbd_ratelimit())
@@ -856,7 +856,7 @@ request_done:
 		return 0;
 	}
 
-	/* and in case that raced with the receiver, reschedule ourself right now */
+	/* and in case that raced with the receiver, reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
 		drbd_queue_work_if_unqueued(
 			&peer_device->connection->sender_work,
@@ -918,7 +918,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	if (stop_sector_reached)
 		return 1;
 	/* ... and in case that raced with the receiver,
-	 * reschedule ourself right now */
+	 * reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
 		drbd_queue_work_if_unqueued(
 			&peer_device->connection->sender_work,
@@ -2482,7 +2482,7 @@ static struct drbd_request *__next_request_for_connection(
 	return NULL;
 }
 
-/* holds req_lock on entry, may give up and reaquire temporarily */
+/* holds req_lock on entry, may give up and reacquire temporarily */
 static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection)
 {
 	struct bio_and_error m;

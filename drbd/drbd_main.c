@@ -2599,7 +2599,7 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 			list_del(&pos->list);
 			kfree(pos);
 
-			/* in case we remove a real process, stopp here, there might be multiple openers with the same pid */
+			/* in case we remove a real process, stop here, there might be multiple openers with the same pid */
 			/* this assumes that the oldest opener with the same pid releases first. "as good as it gets" */
 			if (pid != 0)
 				return;
@@ -3121,7 +3121,7 @@ void drbd_restart_request(struct drbd_request *req)
 static void drbd_cleanup(void)
 {
 	/* first remove proc,
-	 * drbdsetup uses it's presence to detect
+	 * drbdsetup uses its presence to detect
 	 * whether DRBD is loaded.
 	 * If we would get stuck in proc removal,
 	 * but have netlink already deregistered,
@@ -5348,7 +5348,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	 *    device->pending_bitmap_work is non-empty, we immediately call
 	 *    dec_ap_bio().
 	 *
-	 * This ensures that whenver there is pending whole-bitmap I/O, we
+	 * This ensures that whenever there is pending whole-bitmap I/O, we
 	 * realize in dec_ap_bio().
 	 *
 	 */
