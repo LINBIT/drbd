@@ -78,7 +78,16 @@ deb http://packages.linbit.com/${hash}/ ${dist} drbd-9.0
 EOF
 }
 
+print_version_and_exit() {
+	echo
+	echo "DRBD version loaded:"
+	cat /proc/drbd
+	exit 0
+}
+
 ### main
+grep -q '^drbd' /proc/modules && echo "DRBD module is already loaded" && print_version_and_exit
+
 dist=$(map_dist "$LB_DIST")
 
 pkgdir=/tmp/pkg
@@ -110,10 +119,8 @@ modprobe libcrc32c
 insmod ./drbd.ko usermode_helper=disabled
 insmod ./drbd_transport_tcp.ko
 modprobe drbd_transport_rdma 2>/dev/null || true
-if ! grep -q drbd_transport_tcp /proc/modules; then
+if ! grep -q '^drbd_transport_tcp' /proc/modules; then
 	die "Could not load DRBD kernel modules"
 fi
+print_version_and_exit
 
-echo
-echo "DRBD modules successfully loaded"
-exit 0
