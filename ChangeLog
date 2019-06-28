@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
+9.0.19-0rc2 (api:genl2/proto:86-115/transport:14)
+--------
+ * quorum: no tie-breaker for 0 voters
+ * quorum: ignore node when also no-read node
+ * Fix detection of unstable resync
+ * Fix multiple sync
+ * Fix noisy UUID warnings when actually expected
+
 9.0.19-0rc1 (api:genl2/proto:86-115/transport:14)
 --------
  * Fix resync stuck at near completion
