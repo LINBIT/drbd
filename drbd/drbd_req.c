@@ -372,17 +372,24 @@ void drbd_wake_all_senders(struct drbd_resource *resource) {
 	rcu_read_unlock();
 }
 
-/* must hold resource->req_lock */
 bool start_new_tl_epoch(struct drbd_resource *resource)
 {
-	/* no point closing an epoch, if it is empty, anyways. */
-	if (resource->current_tle_writes == 0)
-		return false;
+	unsigned long flags;
+	bool new_epoch_started;
 
-	resource->current_tle_writes = 0;
-	atomic_inc(&resource->current_tle_nr);
-	drbd_wake_all_senders(resource);
-	return true;
+	spin_lock_irqsave(&resource->current_tle_lock, flags);
+	/* no point closing an epoch, if it is empty, anyways. */
+	if (resource->current_tle_writes == 0) {
+		new_epoch_started = false;
+	} else {
+		resource->current_tle_writes = 0;
+		atomic_inc(&resource->current_tle_nr);
+		drbd_wake_all_senders(resource);
+		new_epoch_started = true;
+	}
+	spin_unlock_irqrestore(&resource->current_tle_lock, flags);
+
+	return new_epoch_started;
 }
 
 void complete_master_bio(struct drbd_device *device,
@@ -470,10 +477,10 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 
 	/* Before we can signal completion to the upper layers,
 	 * we may need to close the current transfer log epoch.
-	 * We are within the request lock, so we can simply compare
-	 * the request epoch number with the current transfer log
-	 * epoch number.  If they match, increase the current_tle_nr,
-	 * and reset the transfer log epoch write_cnt.
+	 * We simply compare the request epoch number with the current
+	 * transfer log epoch number.
+	 * With very specific timing, this may cause unnecessary barriers
+	 * to be sent, but that is harmless.
 	 */
 	if (bio_data_dir(req->master_bio) == WRITE &&
 	    req->epoch == atomic_read(&device->resource->current_tle_nr))
@@ -1808,8 +1815,12 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 
 	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
 
+	spin_lock(&resource->current_tle_lock);
 	/* which transfer log epoch does this belong to? */
 	req->epoch = atomic_read(&resource->current_tle_nr);
+	if (rw == WRITE && likely(req->i.size != 0))
+		resource->current_tle_writes++;
+	spin_unlock(&resource->current_tle_lock);
 
 	if (rw == WRITE)
 		resource->dagtag_sector += req->i.size >> 9;
@@ -1829,8 +1840,6 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				kref_get(&req->kref);
 				prev_write->destroy_next = req;
 			}
-
-			resource->current_tle_writes++;
 
 			if (!drbd_process_write_request(req))
 				no_remote = true;

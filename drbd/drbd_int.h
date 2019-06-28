@@ -914,6 +914,9 @@ struct drbd_resource {
 	bool cached_all_devices_have_quorum;
 
 	enum write_ordering_e write_ordering;
+
+	/* Protects the current transfer log (tle) fields. */
+	spinlock_t current_tle_lock;
 	atomic_t current_tle_nr;	/* transfer log epoch number */
 	unsigned current_tle_writes;	/* writes seen within this tl epoch */
 
