@@ -975,7 +975,7 @@ static void new_or_recycle_send_buffer_page(struct drbd_send_buffer *sbuf)
 			goto have_page;
 		}
 
-		schedule_timeout(HZ / 10);
+		schedule_timeout_uninterruptible(HZ / 10);
 	}
 have_page:
 	sbuf->unsent =
