@@ -2101,6 +2101,7 @@ out:
 	return err;
 }
 
+/* caller must hold interval_lock */
 static struct drbd_request *
 find_request(struct drbd_device *device, struct rb_root *root, u64 id,
 	     sector_t sector, bool missing_ok, const char *func)
@@ -2252,6 +2253,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	return err;
 }
 
+/* caller must hold interval_lock */
 static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
 {
 	struct drbd_interval *i;
@@ -2520,6 +2522,7 @@ static unsigned long wire_flags_to_bio_op(u32 dpf)
 		return REQ_OP_WRITE;
 }
 
+/* caller must hold interval_lock */
 static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 {
 	struct drbd_device *device = peer_req->peer_device->device;

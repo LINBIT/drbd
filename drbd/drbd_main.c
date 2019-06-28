@@ -3696,6 +3696,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	enum drbd_ret_code err = ERR_NOMEM;
 	bool locked = false;
 
+	lockdep_assert_held(&resource->conf_update);
+
 	device = minor_to_device(minor);
 	if (device)
 		return ERR_MINOR_OR_VOLUME_EXISTS;
@@ -4862,7 +4864,8 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
-	for_each_peer_device(peer_device, device) {
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
 		if (peer_device->repl_state[NOW] == L_SYNC_TARGET ||
 		    peer_device->repl_state[NOW] == L_BEHIND      ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
@@ -4878,6 +4881,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		    peer_device->current_uuid != drbd_current_uuid(device))
 			receipients |= NODE_MASK(peer_device->node_id);
 	}
+	rcu_read_unlock();
 
 	if (set_current) {
 		if (device->disk_state[NOW] == D_UP_TO_DATE)

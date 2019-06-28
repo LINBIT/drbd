@@ -199,7 +199,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
  *
  * The caller either needs to have a get_ldev() reference, or need to call
  * this function only if disk_state[NOW] >= D_NEGOTIATING and holding the
- * req_lock
+ * state_rwlock.
  */
 enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(local)
 {

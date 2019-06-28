@@ -126,6 +126,8 @@ void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *re
 	struct drbd_connection *connection;
 	bool queued = false;
 
+	lockdep_assert_held(&resource->peer_ack_lock);
+
 	refcount_set(&req->kref.refcount, 1); /* was 0, instead of kref_get() */
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
@@ -1741,6 +1743,7 @@ static void * drbd_check_plugged(struct drbd_resource *resource) { return NULL; 
 static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req) { };
 #endif
 
+/* caller must hold interval_lock */
 static void put_req_interval_into_tree(struct drbd_device *device, struct drbd_request *req)
 {
 	struct drbd_peer_device *peer_device;
@@ -1851,6 +1854,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				no_remote = true;
 		}
 
+		/* req may now be accessed by other threads - do not modify
+		 * "immutable" fields after this point */
 		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
 	}
 	spin_unlock(&resource->tl_update_lock);

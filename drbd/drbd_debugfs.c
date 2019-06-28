@@ -398,7 +398,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		if ((s & RQ_LOCAL_MASK) && (s & RQ_LOCAL_PENDING))
 			tmp |= 2;
 
-		for_each_peer_device(peer_device, device) {
+		for_each_peer_device_rcu(peer_device, device) {
 			s = READ_ONCE(req->net_rq_state[peer_device->node_id]);
 			if (s & RQ_NET_MASK) {
 				if (!(s & RQ_NET_SENT))

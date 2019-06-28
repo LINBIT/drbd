@@ -156,7 +156,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	/* after we moved peer_req to done_ee,
 	 * we may no longer access it,
 	 * it may be freed/reused already!
-	 * (as soon as we release the req_lock) */
+	 * (as soon as we release the peer_reqs_lock) */
 	sector = peer_req->i.sector;
 	block_id = peer_req->block_id;
 
@@ -953,7 +953,7 @@ void drbd_ping_peer(struct drbd_connection *connection)
 		   connection->cstate[NOW] < C_CONNECTED);
 }
 
-/* caller needs to hold rcu_read_lock, req_lock, adm_mutex or conf_update */
+/* caller needs to hold rcu_read_lock, state_rwlock, adm_mutex or conf_update */
 struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device, int node_id)
 {
 	struct drbd_peer_device *peer_device;

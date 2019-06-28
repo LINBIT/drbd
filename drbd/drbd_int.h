@@ -279,15 +279,26 @@ extern u64 directly_connected_nodes(struct drbd_resource *, enum which_state);
 	 typecheck(u64, b) && \
 	((s64)(a) - (s64)(b) > 0))
 
+/* An application I/O request.
+ *
+ * Fields marked as "immutable" may only be modified when the request is
+ * exclusively owned, e.g. when the request is created or is being retried.
+ */
 struct drbd_request {
+	/* "immutable" */
 	struct drbd_device *device;
 
 	/* if local IO is not allowed, will be NULL.
 	 * if local IO _is_ allowed, holds the locally submitted bio clone,
 	 * or, after local IO completion, the ERR_PTR(error).
-	 * see drbd_request_endio(). */
+	 * see drbd_request_endio().
+	 *
+	 * Only accessed by app/submitter/endio - strictly sequential,
+	 * no serialization required. */
 	struct bio *private_bio;
 
+	/* Fields sector and size are "immutable". Otherwise protected by
+	 * interval_lock. */
 	struct drbd_interval i;
 
 	/* epoch: used to check on "completion" whether this req was in
@@ -297,6 +308,8 @@ struct drbd_request {
 	 * This corresponds to "barrier" in struct p_barrier[_ack],
 	 * and to "barrier_nr" in struct drbd_epoch (and various
 	 * comments/function parameters/local variable names).
+	 *
+	 * "immutable"
 	 */
 	unsigned int epoch;
 
@@ -307,22 +320,26 @@ struct drbd_request {
 	 *
 	 * Given that some IO backends write several GB per second meanwhile,
 	 * lets just use a 64bit sequence space.
-	 * Currently updates are protocted by tl_update_lock */
+	 *
+	 * "immutable"
+	 */
 	u64 dagtag_sector;
 
-	struct list_head tl_requests; /* ring list in the transfer log */
+	/* list entry in transfer log (protected by RCU) */
+	struct list_head tl_requests;
 
 	/* list entry in submitter lists, peer ack list, or retry lists;
 	 * protected by the locks for those lists */
 	struct list_head list;
 
-	struct bio *master_bio;       /* master bio pointer */
+	/* master bio pointer; "immutable" */
+	struct bio *master_bio;
 
 	/* see struct drbd_device */
 	struct list_head req_pending_master_completion;
 	struct list_head req_pending_local;
 
-	/* for generic IO accounting */
+	/* for generic IO accounting; "immutable" */
 	unsigned long start_jif;
 
 	/* for request_timer_fn() */
@@ -381,16 +398,25 @@ struct drbd_request {
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
-	/* If not NULL, destruction of this drbd_request will
-	 * cause kref_put() on ->destroy_next. */
+	/* Creates a dependency chain between writes so that we know that a
+	 * peer ack can be sent when kref reaches zero.
+	 *
+	 * If not NULL, destruction of this drbd_request will
+	 * cause kref_put() on ->destroy_next.
+	 *
+	 * "immutable" */
 	struct drbd_request *destroy_next;
 
+	/* lock to protect state flags */
 	spinlock_t rq_lock;
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
+
+	/* for reclaim from transfer log */
 	struct rcu_head rcu;
 };
 
+/* Tracks received writes grouped in epochs. Protected by epoch_lock. */
 struct drbd_epoch {
 	struct drbd_connection *connection;
 	struct drbd_peer_request *oldest_unconfirmed_peer_req;
@@ -859,22 +885,28 @@ struct drbd_resource {
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;
-	struct idr devices;		/* volume number to device mapping */
+
+	/* Volume number to device mapping. Updates protected by conf_update. */
+	struct idr devices;
+
+	/* RCU list. Updates protected by adm_mutex, conf_update and state_rwlock. */
 	struct list_head connections;
-	struct list_head resources;
+
+	struct list_head resources;     /* list entry in global resources list */
 	struct res_opts res_opts;
 	int max_node_id;
-	struct mutex conf_update;	/* for ready-copy-update of net_conf and disk_conf
+	struct mutex conf_update;	/* for read-copy-update of net_conf and disk_conf
 					   and devices, connection and peer_devices lists */
 	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
 	struct mutex open_release;	/* serialize open/release */
-	rwlock_t state_rwlock;
-	u64 dagtag_sector;		/* Protected by req_lock.
+	rwlock_t state_rwlock;          /* serialize state changes */
+	u64 dagtag_sector;		/* Protected by tl_update_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
 	unsigned long flags;
 
-	spinlock_t tl_update_lock; /* this lock for updating, RCU ...*/
+	/* Protects updates to the transfer log and related counters. */
+	spinlock_t tl_update_lock;
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 	struct drbd_request *tl_previous_write;
 
@@ -1261,6 +1293,8 @@ struct drbd_device {
 	long magic;
 #endif
 	struct drbd_resource *resource;
+
+	/* RCU list. Updates protected by adm_mutex, conf_update and state_rwlock. */
 	struct list_head peer_devices;
 
 	spinlock_t pending_bmio_lock;
@@ -1447,27 +1481,19 @@ conn_peer_device(struct drbd_connection *connection, int volume_number)
 #define for_each_resource_rcu(resource, _resources) \
 	list_for_each_entry_rcu(resource, _resources, resources)
 
-#define for_each_resource_safe(resource, tmp, _resources) \
-	list_for_each_entry_safe(resource, tmp, _resources, resources)
-
-/* Each caller of for_each_connect() must hold req_lock or adm_mutex or conf_update.
-   The update locations hold all three! */
+/* see drbd_resource.connections for locking requirements */
 #define for_each_connection(connection, resource) \
 	list_for_each_entry(connection, &resource->connections, connections)
 
 #define for_each_connection_rcu(connection, resource) \
 	list_for_each_entry_rcu(connection, &resource->connections, connections)
 
-#define for_each_connection_safe(connection, tmp, resource) \
-	list_for_each_entry_safe(connection, tmp, &resource->connections, connections)
-
 #define for_each_connection_ref(connection, m, resource)		\
 	for (connection = __drbd_next_connection_ref(&m, NULL, resource); \
 	     connection;						\
 	     connection = __drbd_next_connection_ref(&m, connection, resource))
 
-/* Each caller of for_each_peer_device() must hold req_lock or adm_mutex or conf_update.
-   The update locations hold all three! */
+/* see drbd_device.peer_devices for locking requirements */
 #define for_each_peer_device(peer_device, device) \
 	list_for_each_entry(peer_device, &device->peer_devices, peer_devices)
 
