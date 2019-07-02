@@ -4902,6 +4902,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 
 		/* All the tl_walk() below should probably be moved
 		 * to an "after state change work"? */
+		read_lock_irq(&resource->state_rwlock);
 		__tl_walk(resource, NULL, COMPLETION_RESUMED);
 
 		for_each_peer_device(peer_device, device) {
@@ -4914,6 +4915,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 			    device->disk_state[NOW] == D_DETACHING)
 				tl_walk(connection, FAIL_FROZEN_DISK_IO);
 		}
+		read_unlock_irq(&resource->state_rwlock);
 	}
 	drbd_resume_io(device);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
