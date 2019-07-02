@@ -302,86 +302,6 @@ struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
 	return peer_device;
 }
 
-/* This is a list walk that holds a reference on the next element! The
-   reason for that is that one of the requests might hold a reference to a
-   following request. A _req_mod() that destroys the current req might drop
-   the references on the next request as well! I.e. the "save" of a
-   list_for_each_entry_safe() element gets destroyed! -- With holding a
-   reference that destroy gets delayed as necessary */
-
-#define tl_for_each_req_ref_continue(req, next, tl)		\
-	for (req = __tl_first_req_ref_continue(&next, req, tl);	\
-	     req;						\
-	     req = __tl_next_req_ref(&next, req, tl))
-
-#define tl_for_each_req_ref(req, next, tl)				\
-	for (req = __tl_first_req_ref(&next, tl);			\
-	     req;							\
-	     req = __tl_next_req_ref(&next, req, tl))
-
-static struct drbd_request *__tl_first_req_ref_continue(struct drbd_request **pnext,
-							struct drbd_request *req,
-							struct list_head *transfer_log)
-{
-	if (req) {
-		struct list_head *next_head;
-		struct drbd_request *next;
-
-		rcu_read_lock();
-		next_head = list_next_rcu(&req->tl_requests);
-		next = list_entry_rcu(next_head, struct drbd_request, tl_requests);
-		if (next_head != transfer_log)
-			kref_get(&next->kref);
-		rcu_read_unlock();
-		*pnext = next;
-	}
-	return req;
-}
-
-static struct drbd_request *__tl_first_req_ref(struct drbd_request **pnext,
-					       struct list_head *transfer_log)
-{
-	struct drbd_request *req;
-	rcu_read_lock();
-	req = __tl_first_req_ref_continue(pnext,
-		list_first_or_null_rcu(transfer_log, struct drbd_request, tl_requests),
-		transfer_log);
-	rcu_read_unlock();
-	return req;
-}
-
-static struct drbd_request *__tl_next_req_ref(struct drbd_request **pnext,
-					      struct drbd_request *req,
-					      struct list_head *transfer_log)
-{
-	struct list_head *next_head;
-	struct drbd_request *next = *pnext;
-	bool next_is_head = (&next->tl_requests == transfer_log);
-
-	rcu_read_lock();
-	do {
-		if (next_is_head) {
-			rcu_read_unlock();
-			return NULL;
-		}
-		req = next;
-		next_head = list_next_rcu(&req->tl_requests);
-		next_is_head = (next_head == transfer_log);
-		next = list_entry_rcu(next_head, struct drbd_request, tl_requests);
-		if (!next_is_head)
-			kref_get(&next->kref);
-	} while (kref_put(&req->kref, drbd_req_destroy));
-	rcu_read_unlock();
-	*pnext = next;
-	return req;
-}
-
-static void tl_abort_for_each_req_ref(struct drbd_request *next, struct list_head *transfer_log)
-{
-	if (&next->tl_requests != transfer_log)
-		kref_put(&next->kref, drbd_req_destroy);
-}
-
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
@@ -419,6 +339,7 @@ void tl_release(struct drbd_connection *connection,
 	struct drbd_request *req_y = NULL;
 	int expect_epoch = 0;
 	int expect_size = 0;
+	bool found_epoch = false;
 
 	rcu_read_lock();
 	/* find oldest not yet barrier-acked write request,
@@ -530,23 +451,21 @@ void tl_release(struct drbd_connection *connection,
 	}
 
 	/* Clean up list of requests processed during current epoch. */
-	/* this extra list walk restart is paranoia,
+	/* Walking the list from the start is paranoia,
 	 * to catch requests being barrier-acked "unexpectedly".
 	 * It usually should find the same req again, or some READ preceding it. */
-	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests)
-		if (req->epoch == expect_epoch)
-			break;
-	tl_for_each_req_ref_continue(req, r, &resource->transfer_log) {
-		struct drbd_peer_device *peer_device;
-		if (req->epoch != expect_epoch) {
-			tl_abort_for_each_req_ref(r, &resource->transfer_log);
-			break;
-		}
-		peer_device = conn_peer_device(connection, req->device->vnr);
-		req_mod(req, BARRIER_ACKED, peer_device);
-		if (req == req_y) {
-			tl_abort_for_each_req_ref(r, &resource->transfer_log);
-			break;
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		if (!found_epoch && req->epoch == expect_epoch)
+			found_epoch = true;
+
+		if (found_epoch) {
+			struct drbd_peer_device *peer_device;
+			if (req->epoch != expect_epoch)
+				break;
+			peer_device = conn_peer_device(connection, req->device->vnr);
+			req_mod(req, BARRIER_ACKED, peer_device);
+			if (req == req_y)
+				break;
 		}
 	}
 	rcu_read_unlock();
@@ -580,13 +499,15 @@ void __tl_walk(struct drbd_resource *const resource,
 		const enum drbd_req_event what)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_request *req, *r;
+	struct drbd_request *req;
 
-	tl_for_each_req_ref(req, r, &resource->transfer_log) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
 		peer_device = connection == NULL ? NULL :
 			conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, what, peer_device);
 	}
+	rcu_read_unlock();
 }
 
 void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
@@ -610,15 +531,17 @@ void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 void tl_abort_disk_io(struct drbd_device *device)
 {
         struct drbd_resource *resource = device->resource;
-        struct drbd_request *req, *r;
+        struct drbd_request *req;
 
-        tl_for_each_req_ref(req, r, &resource->transfer_log) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
                 if (!(READ_ONCE(req->local_rq_state) & RQ_LOCAL_PENDING))
                         continue;
                 if (req->device != device)
                         continue;
                 req_mod(req, ABORT_DISK_IO, NULL);
         }
+	rcu_read_unlock();
 }
 
 static int drbd_thread_setup(void *arg)

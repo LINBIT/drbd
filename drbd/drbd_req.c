@@ -336,7 +336,6 @@ void drbd_req_destroy(struct kref *kref)
 			} else
 				call_rcu(&peer_ack_req->rcu, drbd_reclaim_req);
 		}
-		req->device = NULL;
 		resource->peer_ack_req = req;
 
 		if (!peer_ack_req)
