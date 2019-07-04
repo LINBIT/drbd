@@ -520,15 +520,17 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		m->error = ok && quorum ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
+
+		spin_lock_irqsave(&device->interval_lock, flags);
 		/* We leave it in the tree, to be able to verify later
 		 * write-acks in protocol != C during resync.
 		 * But we mark it as "complete", so it won't be counted as
 		 * conflict in a multi-primary setup. */
 		req->i.completed = true;
+		if (req->i.waiting)
+			wake_up(&device->misc_wait);
+		spin_unlock_irqrestore(&device->interval_lock, flags);
 	}
-
-	if (req->i.waiting)
-		wake_up(&device->misc_wait);
 
 	/* Either we are about to complete to upper layers,
 	 * or we will restart this request.
