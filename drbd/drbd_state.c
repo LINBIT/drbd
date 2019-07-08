@@ -979,22 +979,6 @@ enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 	return disk_state;
 }
 
-enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection)
-{
-	enum drbd_disk_state disk_state = D_MASK;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		struct drbd_device *device = peer_device->device;
-		disk_state = min_t(enum drbd_disk_state, disk_state, device->disk_state[NOW]);
-	}
-	rcu_read_unlock();
-
-	return disk_state;
-}
-
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 {
 	enum drbd_disk_state disk_state = D_DISKLESS;

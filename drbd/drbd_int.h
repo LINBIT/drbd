@@ -1852,7 +1852,6 @@ extern struct bio *bio_alloc_drbd(gfp_t gfp_mask);
 /* And a bio_set for cloning */
 extern struct DRBD_BIO_SET drbd_io_bio_set;
 
-extern int conn_lowest_minor(struct drbd_connection *connection);
 extern struct drbd_peer_device *create_peer_device(struct drbd_device *, struct drbd_connection *);
 extern enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
 					     struct device_conf *device_conf, struct drbd_device **p_device);
@@ -1886,7 +1885,6 @@ extern MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *
 #ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
 extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
 #endif
-extern int is_valid_ar_handle(struct drbd_request *, sector_t);
 
 
 /* drbd_nl.c */
@@ -2063,7 +2061,6 @@ extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, 
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
 #define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
-extern void drbd_set_recv_tcq(struct drbd_device *device, int tcq_enabled);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);

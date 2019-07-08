@@ -302,8 +302,6 @@ struct bio_and_error {
 
 extern bool start_new_tl_epoch(struct drbd_resource *resource);
 extern void drbd_req_destroy(struct kref *kref);
-extern void _req_may_be_done(struct drbd_request *req,
-		struct bio_and_error *m);
 extern int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct drbd_peer_device *peer_device,
 		struct bio_and_error *m);

@@ -48,7 +48,6 @@ enum chg_state_flags {
 extern void drbd_resume_al(struct drbd_device *device);
 
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection);
-enum drbd_disk_state conn_lowest_disk(struct drbd_connection *connection);
 enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection);
 
 extern void state_change_lock(struct drbd_resource *, unsigned long *, enum chg_state_flags);
