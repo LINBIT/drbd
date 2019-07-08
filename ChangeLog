@@ -2,25 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.19-0rc2 (api:genl2/proto:86-115/transport:14)
+9.0.19-1 (api:genl2/proto:86-115/transport:14)
 --------
- * quorum: no tie-breaker for 0 voters
- * quorum: ignore node when also no-read node
- * Fix detection of unstable resync
- * Fix multiple sync
- * Fix noisy UUID warnings when actually expected
-
-9.0.19-0rc1 (api:genl2/proto:86-115/transport:14)
---------
- * Fix resync stuck at near completion
- * Fix NULL dereference with disk-timeout enabled
- * Fix wrong state change when current UUID changes during UUID exchange
- * Fix check on CAP_SYS_ADMIN
- * Fix quorum tie-breaker diskless majority calculation
- * Fix dax_direct_access() error return check
+ * check on CAP_SYS_ADMIN instead of CAP_NET_ADMIN for certain operations
+ * fix detection of unstable resync
+ * fix possible stuck resync when resync started from an other secondary
+   and later continued from a primary
+ * fix NULL dereference with disk-timeout enabled; was introduced in 9.0.9
+ * retry connect when own current UUID changes during UUID exchange
+ * fix quorum tie-breaker diskless logic for settings other than "majority"
+ * disable quorum tie-breaker for 0 voters
+ * fix dax_direct_access() error return check
+ * fix resync stuck at near completion; bug was intorduces with 9.0.17
  * unblock IO when on-quorum-lost policy is changed (suspend -> io-error)
- * introduce allow-remote-read (disallow read from DR connections)
- * some build changes
+ * introduce allow-remote-read configuration option; set it to "no" for
+   DR links you only want to write, but never read
+ * only complain about UUID changes during initial handshake
 
 9.0.18-1 (api:genl2/proto:86-115/transport:14)
 --------
