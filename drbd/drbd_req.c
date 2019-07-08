@@ -1080,29 +1080,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
 		break;
 
-	case RESTART_FROZEN_DISK_IO:
-#if 0
-		/* FIXME; do we need a (temporary) dedicated thread for this? */
-		if (!(req->local_rq_state & RQ_LOCAL_COMPLETED))
-			break;
-
-		mod_rq_state(req, m, peer_device,
-				RQ_COMPLETION_SUSP|RQ_LOCAL_COMPLETED,
-				RQ_LOCAL_PENDING);
-
-		rv = MR_READ;
-		if (bio_data_dir(req->master_bio) == WRITE)
-			rv = MR_WRITE;
-
-		get_ldev(device); /* always succeeds in this call path */
-		req->w.cb = w_restart_disk_io;
-		drbd_queue_work(&device->resource->work, &req->w);
-		break;
-#else
-		BUG(); /* FIXME */
-		break;
-#endif
-
 	case RESEND:
 		/* Simply complete (local only) READs. */
 		if (!(req->local_rq_state & RQ_WRITE) && !(req->net_rq_state[idx] & RQ_NET_MASK)) {

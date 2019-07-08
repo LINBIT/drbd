@@ -564,7 +564,7 @@ bail:
  * @what:       The action/event to perform with all request objects
  *
  * @what might be one of CONNECTION_LOST_WHILE_PENDING, RESEND, FAIL_FROZEN_DISK_IO,
- * RESTART_FROZEN_DISK_IO, COMPLETION_RESUMED.
+ * COMPLETION_RESUMED.
  */
 /* must hold resource->req_lock */
 void __tl_walk(struct drbd_resource *const resource,

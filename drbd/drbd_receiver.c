@@ -1245,12 +1245,6 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 				drbd_send_b_ack(epoch->connection, epoch->barrier_nr, epoch_size);
 				spin_lock(&connection->epoch_lock);
 			}
-#if 0
-			/* FIXME: dec unacked on connection, once we have
-			 * something to count pending connection packets in. */
-			if (test_bit(DE_HAVE_BARRIER_NUMBER, &epoch->flags))
-				dec_unacked(epoch->connection);
-#endif
 
 			if (connection->current_epoch != epoch) {
 				next_epoch = list_entry(epoch->list.next, struct drbd_epoch, list);
@@ -1379,24 +1373,6 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backin
  * At least for LVM/DM thin, with skip_block_zeroing=false,
  * the result is effectively "discard_zeroes_data=1".
  */
-#if 0 && defined(COMPAT_HAVE_REQ_OP_WRITE_ZEROES)
-int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, int flags)
-{
-	/* Trust it to UNMAP if possible, and to zero-out the rest */
-	/* :-( that trust was based on a misunderstanding, though:
-	 * drivers have to "announce" q->limits.max_write_zeroes_sectors, or it
-	 * will directly go to fallback mode, submitting normal writes, and
-	 * never even try to UNMAP.
-	 *
-	 * And dm-thin does not do this (yet), mostly because in general it has
-	 * to assume that "skip_block_zeroing" is set.  See also:
-	 * https://www.mail-archive.com/dm-devel%40redhat.com/msg07965.html
-	 * https://www.redhat.com/archives/dm-devel/2018-January/msg00271.html
-	 */
-	struct block_device *bdev = device->ldev->backing_bdev;
-	return blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO, 0) != 0;
-}
-#else
 /* flags: EE_TRIM|EE_ZEROOUT */
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, int flags)
 {
@@ -1466,7 +1442,6 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	}
 	return err != 0;
 }
-#endif
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
@@ -7328,7 +7303,6 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	struct drbd_device *device;
 	struct p_block_desc *p = pi->data;
 	sector_t sector;
-	unsigned long bit;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -7347,28 +7321,11 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	conn_wait_done_ee_empty_or_disconnect(connection);
 
 	mutex_lock(&peer_device->resync_next_bit_mutex);
-	switch (peer_device->repl_state[NOW]) {
-	case L_WF_SYNC_UUID:
-	case L_WF_BITMAP_T:
-	case L_BEHIND:
-		break;
-	case L_SYNC_TARGET:
-		bit = BM_SECT_TO_BIT(sector);
+
+	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
+		unsigned long bit = BM_SECT_TO_BIT(sector);
 		if (bit < peer_device->resync_next_bit)
 			peer_device->resync_next_bit = bit;
-		break;
-	default:
-#if 0
-		/* Used to be correct.
-		 * But nowadays, we may receive "out-of-sync" information indirectly,
-		 * if we are not directly connected to a primary, but connected to
-		 * some other node which is.
-		 * If we want to keep asserting something,
-		 * we need to add in the global connection status somehow. */
-		drbd_err(device, "ASSERT FAILED cstate = %s, expected: WFSyncUUID|WFBitMapT|Behind\n",
-				drbd_repl_str(peer_device->repl_state[NOW]))
-#endif
-		;
 	}
 
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));

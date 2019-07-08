@@ -1484,15 +1484,6 @@ unsigned long drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned l
 		     BM_OP_FIND_BIT, NULL);
 }
 
-#if 0
-/* not yet needed for anything. */
-unsigned long drbd_bm_find_next_zero(struct drbd_peer_device *peer_device, unsigned long start)
-{
-	return bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
-		     BM_OP_FIND_ZERO_BIT, NULL);
-}
-#endif
-
 /* does not spin_lock_irqsave.
  * you must take drbd_bm_lock() first */
 unsigned long _drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned long start)
