@@ -1957,6 +1957,33 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
 }
 
+static void handle_congestion(struct drbd_peer_device *peer_device)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	unsigned long irq_flags;
+	struct net_conf *nc;
+	enum drbd_on_congestion on_congestion;
+
+	rcu_read_lock();
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
+	if (nc) {
+		on_congestion = nc->on_congestion;
+
+		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
+		/* congestion may have cleared since it was detected */
+		if (atomic_read(&peer_device->connection->ap_in_flight) > 0) {
+			if (on_congestion == OC_PULL_AHEAD)
+				__change_repl_state(peer_device, L_AHEAD);
+			else if (on_congestion == OC_DISCONNECT)
+				__change_cstate(peer_device->connection, C_DISCONNECTING);
+		}
+		end_state_change(resource, &irq_flags);
+	}
+	rcu_read_unlock();
+
+	clear_bit(HANDLING_CONGESTION, &peer_device->flags);
+}
+
 static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
 {
 	bool csums_after_crash_only;
@@ -2373,6 +2400,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 		update_on_disk_bitmap(peer_device, test_bit(RS_DONE, &todo));
 	if (test_bit(RS_START, &todo))
 		do_start_resync(peer_device);
+	if (test_bit(HANDLE_CONGESTION, &todo))
+		handle_congestion(peer_device);
 }
 
 #define DRBD_RESOURCE_WORK_MASK	\
@@ -2390,6 +2419,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << RS_LAZY_BM_WRITE)	\
 	|(1UL << RS_PROGRESS)		\
 	|(1UL << RS_DONE)		\
+	|(1UL << HANDLE_CONGESTION)     \
 	)
 
 static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags)

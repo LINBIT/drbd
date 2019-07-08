@@ -1330,6 +1330,9 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (!get_ldev_if_state(device, D_UP_TO_DATE))
 		return;
 
+	if (test_and_set_bit(HANDLING_CONGESTION, &peer_device->flags))
+		goto out;
+
 	/* if an other volume already found that we are congested, short circuit. */
 	congested = test_bit(CONN_CONGESTED, &connection->flags);
 
@@ -1349,21 +1352,12 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	}
 
 	if (congested) {
-		struct drbd_resource *resource = device->resource;
-		unsigned long irq_flags;
-
 		set_bit(CONN_CONGESTED, &connection->flags);
-
-		/* start a new epoch for non-mirrored writes */
-		start_new_tl_epoch(resource);
-
-		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
-		if (on_congestion == OC_PULL_AHEAD)
-			__change_repl_state(peer_device, L_AHEAD);
-		else			/* on_congestion == OC_DISCONNECT */
-			__change_cstate(peer_device->connection, C_DISCONNECTING);
-		end_state_change(resource, &irq_flags);
+		drbd_peer_device_post_work(peer_device, HANDLE_CONGESTION);
+	} else {
+		clear_bit(HANDLING_CONGESTION, &peer_device->flags);
 	}
+out:
 	put_ldev(device);
 }
 
@@ -1866,15 +1860,13 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	}
 	spin_unlock(&resource->tl_update_lock);
 
+	if (rw == WRITE)
+		drbd_wake_all_senders(resource);
+	else if (peer_device)
+		wake_up(&peer_device->connection->sender_work.q_wait);
+
 	if (no_remote == false) {
-		struct drbd_plug_cb *plug;
-
-		if (rw == WRITE)
-			drbd_wake_all_senders(resource);
-		else if (peer_device)
-			wake_up(&peer_device->connection->sender_work.q_wait);
-
-		plug = drbd_check_plugged(resource);
+		struct drbd_plug_cb *plug = drbd_check_plugged(resource);
 		if (plug)
 			drbd_update_plug(plug, req);
 	}

@@ -618,6 +618,8 @@ enum peer_device_flag {
 				   D_UP_TO_DATE before becoming secondary! */
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	SYNC_TARGET_TO_BEHIND,  /* SyncTarget, wait for Behind */
+	HANDLING_CONGESTION,    /* Set while testing for congestion and handling it */
+	HANDLE_CONGESTION,      /* tell worker to change state due to congestion */
 };
 
 /* We could make these currently hardcoded constants configurable
