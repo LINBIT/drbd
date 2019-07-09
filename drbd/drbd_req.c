@@ -826,13 +826,13 @@ static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx
  *
  * peer_device == NULL means local disk
  */
-int __req_mod(struct drbd_request *req, enum drbd_req_event what,
+void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		struct drbd_peer_device *peer_device,
 		struct bio_and_error *m)
 {
 	struct drbd_device *device = req->device;
 	struct net_conf *nc;
-	int p, rv = 0;
+	int p;
 	int idx;
 
 	if (m)
@@ -1137,8 +1137,6 @@ int __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
 		break;
 	};
-
-	return rv;
 }
 
 /* we may do a local read if:
