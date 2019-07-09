@@ -34,6 +34,10 @@
 #define S32_MAX ((s32)(U32_MAX>>1))
 #endif
 
+#ifndef READ_ONCE
+#define READ_ONCE ACCESS_ONCE
+#endif
+
 #ifndef __GFP_RECLAIM
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
