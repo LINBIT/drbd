@@ -618,11 +618,9 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
 	do_div(max_sect, NSEC_PER_SEC);
 
-#if 0
-	drbd_warn(peer_device, "dur=%lluns sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
+	dynamic_drbd_dbg(peer_device, "dur=%lluns sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
 		 duration_ns, sect_in, peer_device->rs_in_flight, want, correction,
 		 steps, cps, curr_corr, req_sect, max_sect);
-#endif
 
 	if (req_sect > max_sect)
 		req_sect = max_sect;

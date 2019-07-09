@@ -1762,11 +1762,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 	return all_known;
 }
 
-#if 0
-#define DDUMP_LLU(d, x) do { drbd_info(d, "%u: " #x ": %llu\n", __LINE__, (unsigned long long)x); } while (0)
-#else
-#define DDUMP_LLU(d, x) do { } while (0)
-#endif
+#define DDUMP_LLU(d, x) do { dynamic_drbd_dbg(d, "%u: " #x ": %llu\n", __LINE__, (unsigned long long)x); } while (0)
 
 /* MUST hold a reference on ldev. */
 sector_t
