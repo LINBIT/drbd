@@ -302,6 +302,27 @@ struct drbd_peer_device *__drbd_next_peer_device_ref(u64 *visited,
 	return peer_device;
 }
 
+static void dump_epoch(struct drbd_resource *resource, int node_id, int epoch)
+{
+	struct drbd_request *req;
+	bool found_epoch = false;
+
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		if (!found_epoch && req->epoch == epoch)
+			found_epoch = true;
+
+		if (found_epoch) {
+			if (req->epoch != epoch)
+				break;
+			drbd_info(req->device, "XXX %u %llu+%u 0x%x 0x%x\n",
+					req->epoch,
+					(unsigned long long)req->i.sector, req->i.size >> 9,
+					req->local_rq_state, req->net_rq_state[node_id]
+				 );
+		}
+	}
+}
+
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
  * @device:	DRBD device.
@@ -427,23 +448,13 @@ void tl_release(struct drbd_connection *connection,
 
 	if (expect_size != set_size) {
 		if (!o_block_id) {
+			DEFINE_DYNAMIC_DEBUG_METADATA(ddm, "Bad barrier ack dump");
+
 			drbd_err(connection, "BAD! BarrierAck #%u received with n_writes=%u, expected n_writes=%u!\n",
 				 barrier_nr, set_size, expect_size);
-#if 0
-/* DEBUGGING AID */
-			list_for_each_entry(req, &resource->transfer_log, tl_requests)
-				if (req->epoch == expect_epoch)
-					break;
-			list_for_each_entry_from(req, &resource->transfer_log, tl_requests) {
-				if (req->epoch != expect_epoch)
-					break;
-				drbd_info(req->device, "XXX %u %llu+%u 0x%x 0x%x\n",
-					req->epoch,
-					(unsigned long long)req->i.sector, req->i.size >> 9,
-					req->local_rq_state, req->net_rq_state[idx]
-				);
-			}
-#endif
+
+			if (DYNAMIC_DEBUG_BRANCH(ddm))
+				dump_epoch(resource, connection->peer_node_id, expect_epoch);
 		} else
 			drbd_err(connection, "BAD! ConfirmedStable [%p,%p] received with n_writes=%u, expected n_writes=%u!\n",
 				 req, req_y, set_size, expect_size);
