@@ -56,6 +56,14 @@ struct flush_work {
 	struct drbd_epoch *epoch;
 };
 
+enum epoch_event {
+	EV_PUT,
+	EV_GOT_BARRIER_NR,
+	EV_BARRIER_DONE,
+	EV_BECAME_LAST,
+	EV_CLEANUP = 32, /* used as flag */
+};
+
 enum finish_epoch {
 	FE_STILL_LIVE,
 	FE_DESTROYED,

@@ -403,14 +403,6 @@ enum {
 	DE_IS_FINISHING,
 };
 
-enum epoch_event {
-	EV_PUT,
-	EV_GOT_BARRIER_NR,
-	EV_BARRIER_DONE,
-	EV_BECAME_LAST,
-	EV_CLEANUP = 32, /* used as flag */
-};
-
 struct digest_info {
 	int digest_size;
 	void *digest;
