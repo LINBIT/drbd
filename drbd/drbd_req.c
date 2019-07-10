@@ -195,6 +195,7 @@ void drbd_req_destroy(struct kref *kref)
 	bool was_last_ref;
 
 	lockdep_assert_held(&resource->state_rwlock);
+	lockdep_assert_irqs_disabled();
 
  tail_recursion:
 	was_last_ref = false;
@@ -1694,19 +1695,22 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct drbd_plug_cb *plug = container_of(cb, struct drbd_plug_cb, cb);
 	struct drbd_request *req = plug->most_recent_req;
+	struct drbd_resource *resource = req->device->resource;
 
 	kfree(cb);
 	if (!req)
 		return;
 
+	read_lock_irq(&resource->state_rwlock);
 	/* In case the sender did not process it yet, raise the flag to
 	 * have it followed with P_UNPLUG_REMOTE just after. */
-	spin_lock_irq(&req->rq_lock);
+	spin_lock(&req->rq_lock);
 	req->local_rq_state |= RQ_UNPLUG;
-	spin_unlock_irq(&req->rq_lock);
+	spin_unlock(&req->rq_lock);
 	/* but also queue a generic unplug */
 	drbd_queue_unplug(req->device);
 	kref_put(&req->kref, drbd_req_destroy);
+	read_unlock_irq(&resource->state_rwlock);
 }
 
 static struct drbd_plug_cb* drbd_check_plugged(struct drbd_resource *resource)
