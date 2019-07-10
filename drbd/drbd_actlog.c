@@ -303,6 +303,7 @@ drbd_dax_begin_io_fp(struct drbd_device *device, unsigned int first, unsigned in
 	struct lc_element *al_ext;
 	unsigned long flags;
 	unsigned int enr;
+	unsigned int abort_enr;
 	bool wake = 0;
 
 	for (enr = first; enr <= last; enr++) {
@@ -319,17 +320,15 @@ drbd_dax_begin_io_fp(struct drbd_device *device, unsigned int first, unsigned in
 	}
 	return true;
 abort:
-	last = enr - 1;
-	if (last >= first) {
+	abort_enr = enr;
+	for (enr = first; enr < abort_enr; enr++) {
 		spin_lock_irqsave(&device->al_lock, flags);
-		for (enr = first; enr <= last; enr++) {
-			al_ext = lc_find(device->act_log, enr);
-			wake |= lc_put(device->act_log, al_ext) == 0;
-		}
+		al_ext = lc_find(device->act_log, enr);
+		wake |= lc_put(device->act_log, al_ext) == 0;
 		spin_unlock_irqrestore(&device->al_lock, flags);
-		if (wake)
-			wake_up(&device->al_wait);
 	}
+	if (wake)
+		wake_up(&device->al_wait);
 	return false;
 }
 #else
