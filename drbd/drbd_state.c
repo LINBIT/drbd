@@ -1355,8 +1355,16 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 	bool is_intentional_diskless;
 	struct drbd_peer_device *peer_device;
 
-	if (device->disk_state[NEW] == D_DISKLESS)
-		diskless++;
+	if (device->disk_state[NEW] == D_DISKLESS) {
+		/* We only want to consider ourselves as a diskless node when
+		 * we actually intended to be diskless in the config. Otherwise,
+		 * we shouldn't get a vote in the quorum process, so count
+		 * ourselves as unknown. */
+		if (device->device_conf.intentional_diskless)
+			diskless++;
+		else
+			unknown++;
+	}
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
