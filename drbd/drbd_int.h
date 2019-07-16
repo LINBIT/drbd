@@ -900,6 +900,7 @@ struct drbd_resource {
 	bool susp_user[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
 	bool cached_susp;		/* cached result of looking at all different suspend bits */
+	bool cached_all_devices_have_quorum;
 
 	enum write_ordering_e write_ordering;
 	atomic_t current_tle_nr;	/* transfer log epoch number */

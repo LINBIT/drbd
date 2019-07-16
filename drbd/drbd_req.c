@@ -489,7 +489,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		struct drbd_resource *resource = device->resource;
 		bool quorum =
 			resource->res_opts.on_no_quorum == ONQ_IO_ERROR ?
-			device->have_quorum[NOW] : true;
+			resource->cached_all_devices_have_quorum : true;
 
 		m->error = ok && quorum ? 0 : (error ?: -EIO);
 		m->bio = req->master_bio;

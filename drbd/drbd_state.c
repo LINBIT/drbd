@@ -693,6 +693,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	struct drbd_device *device;
 	unsigned int pro_ver;
 	int vnr;
+	bool all_devs_have_quorum = true;
 
 	if (flags & CS_ABORT)
 		goto out;
@@ -738,6 +739,9 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		device->disk_state[NOW] = device->disk_state[NEW];
 		device->have_quorum[NOW] = device->have_quorum[NEW];
 
+		if (!device->have_quorum[NOW])
+			all_devs_have_quorum = false;
+
 		for_each_peer_device(peer_device, device) {
 			peer_device->disk_state[NOW] = peer_device->disk_state[NEW];
 			peer_device->repl_state[NOW] = peer_device->repl_state[NEW];
@@ -752,6 +756,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		}
 		device->cached_state_unstable = !state_is_stable(device);
 	}
+	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
 	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
