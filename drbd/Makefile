@@ -165,7 +165,7 @@ else
 	    rm -f .compat_patches_applied; \
 	fi
 	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
-	@gcc -I $(incdir) -o $(incdir)/gen_patch_names drbd-kernel-compat/gen_patch_names.c
+	@gcc -I $(incdir) -o $(incdir)/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
 	@$(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt
 	@rm $(incdir)/gen_patch_names
 	@for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
