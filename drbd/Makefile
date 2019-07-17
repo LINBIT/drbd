@@ -113,6 +113,7 @@ else
   # has a dependency on our compat.h
   .PHONY: compat.h
   compat.h:
+	@touch dummy-for-compat-h.c
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) dummy-for-compat-h.o
 
   kbuild:
@@ -138,6 +139,7 @@ else
   clean: unpatch
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
+	rm -f dummy-for-compat-h.c
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
 	rm -rf .compat_test.* .cache.mk
