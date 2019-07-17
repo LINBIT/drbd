@@ -69,8 +69,9 @@ HOST_EXTRACFLAGS += -I$(src) -std=c11 $(EXTRA_CFLAGS)
 hostprogs-y := drbd-kernel-compat/gen_patch_names
 headers-to-apply-compat := drbd_int.h drbd_req.h drbd_interval.h
 
-$(patsubst %,$(obj)/%,$(drbd-y)): $(obj)/compat.h $(src)/.compat_patches_applied
-$(patsubst %,$(obj)/%,drbd_transport_tcp.o): $(obj)/compat.h $(src)/.compat_patches_applied
+$(obj)/dummy-for-compat-h.o: $(obj)/compat.h
+	@true
+$(addprefix $(obj)/,$(drbd-y) drbd_transport_tcp.o): $(obj)/compat.h $(src)/.compat_patches_applied
 $(obj)/drbd-kernel-compat/gen_patch_names: $(src)/drbd-kernel-compat/gen_patch_names.c $(obj)/compat.h
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o

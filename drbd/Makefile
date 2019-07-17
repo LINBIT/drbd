@@ -107,6 +107,14 @@ else
 	    rm -f .compat_patches_applied; \
 	fi
 
+  # compat.h is built by Kbuild; I think the most easy way to trigger that
+  # without trying to re-implement all the Kbuild magic badly, is to simply
+  # tell it to compile our smallest, least complex .c file which still
+  # has a dependency on our compat.h
+  .PHONY: compat.h
+  compat.h:
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) dummy-for-compat-h.o
+
   kbuild:
 	@rm -f .drbd_kernelrelease*
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
