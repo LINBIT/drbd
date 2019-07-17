@@ -174,7 +174,8 @@ else
 	@echo "  SPATCH   $(chksum)"
 	@spatch --sp-file $(incdir)/.compat.cocci \
 	    $(sources) \
-	    --macro-file drbd-kernel-compat/cocci_macros.h > $@ 2> $(incdir)/.spatch.stderr
+	    --macro-file drbd-kernel-compat/cocci_macros.h > $@.tmp 2> $(incdir)/.spatch.stderr
+	@mv $@.tmp $@
 	@rm $(incdir)/.compat.cocci
 
   compat: $(compat_patches)
