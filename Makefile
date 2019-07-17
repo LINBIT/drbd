@@ -159,6 +159,12 @@ check check_changelogs_up2date:
 	then 									\
 	   printf "\nChangeLog:3:\tneeds update\n"; 				\
 	   up2date=false; fi ; 							\
+	for df in 7 8 ; do							\
+	if ! grep "^ENV DRBD_VERSION $$dver" docker/Dockerfile.centos$$df ;	\
+	then 									\
+		printf "\nDockerfile.centos$$df: needs update\n"; 		\
+	   up2date=false; fi ; 							\
+	done ;									\
 	if test -e debian/changelog 						\
 	&& ! grep -H "^drbd ($$dver\(+linbit\)\?[-~]$$drel" debian/changelog; \
 	then 									\

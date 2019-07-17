@@ -1,4 +1,22 @@
-FROM centos:centos7
+FROM registry.access.redhat.com/ubi7/ubi
+MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
+
+ENV DRBD_VERSION 9.0.19-1
+
+ARG release=1
+LABEL name="DRBD Kernel module load container" \
+      vendor="LINBIT" \
+		version="$LINSTOR_VERSION" \
+		release="$release" \
+		summary="DRBD's kernel component" \
+		description="DRBD's kernel component"
+
+RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
+	yum install -y wget gcc make && yum clean all -y
+
+# one can not comment copy
+RUN wget https://www.linbit.com/downloads/drbd/9.0/drbd-${DRBD_VERSION}.tar.gz -O /drbd.tar.gz # !lbbuild
+# =lbbuild COPY /drbd.tar.gz /
 
 COPY /entry.sh /
 RUN chmod +x /entry.sh
