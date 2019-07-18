@@ -164,7 +164,7 @@ else
 
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
-  sources := $(filter-out drbd_strings.c drbd_buildtag.c,*.c)
+  sources := $(filter-out drbd_strings.c drbd_buildtag.c,$(wildcard *.c))
 
   $(compat_patches): $(sources)
 	$(eval incdir := $(subst /compat.patch,,$@))
