@@ -84,7 +84,7 @@ else
     endif
   endif
 
-  .PHONY: drbd.o default all greeting clean kbuild install dep tags unpatch
+  .PHONY: drbd.o default all greeting clean kbuild install dep tags unpatch compat
 
   drbd.o: greeting kbuild
   default: drbd.o

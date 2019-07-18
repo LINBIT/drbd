@@ -234,6 +234,8 @@ release:
 	$(MAKE) tarball
 
 debrelease:
+	cd drbd/drbd-kernel-compat && bash collect_compat_h.sh
+	$(MAKE) -C drbd compat
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
 tarball: check-submods check_all_committed distclean drbd/.drbd_git_revision .filelist
