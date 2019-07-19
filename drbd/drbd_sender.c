@@ -2326,7 +2326,7 @@ static bool all_peers_responded(struct drbd_device *device)
 	return all_responded;
 }
 
-static void make_new_current_uuid(struct drbd_device *device)
+void drbd_check_peers_new_current_uuid(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
@@ -2346,6 +2346,11 @@ static void make_new_current_uuid(struct drbd_device *device)
 		drbd_uuid_new_current(device, false);
 		mutex_unlock(&resource->conf_update);
 	}
+}
+
+static void make_new_current_uuid(struct drbd_device *device)
+{
+	drbd_check_peers_new_current_uuid(device);
 
 	get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID, &device->flags);
 	wake_up(&device->misc_wait);

@@ -7738,11 +7738,9 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-			mutex_lock(&resource->conf_update);
-			drbd_uuid_new_current(device, false);
-			mutex_unlock(&resource->conf_update);
-		}
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			drbd_check_peers_new_current_uuid(device);
+
 		tl_walk(peer_device->connection, CONNECTION_LOST_WHILE_PENDING);
 	}
 
