@@ -49,6 +49,10 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 #define FMODE_EXCL 0
 #endif
 
+#ifndef lockdep_assert_irqs_disabled
+#define lockdep_assert_irqs_disabled() do { } while (0)
+#endif
+
 /* how to get to the kobj of a gendisk.
  * see also upstream commits
  * edfaa7c36574f1bf09c65ad602412db9da5f96bf
