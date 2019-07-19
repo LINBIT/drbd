@@ -82,11 +82,11 @@ int main(int argc, char **argv)
 	patch(1, "block_device_operations_release", true, false,
 	      COMPAT_DRBD_RELEASE_RETURNS_VOID, "is_void");
 
-/* #if !defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER) || defined(COMPAT_HAVE_BD_CLAIM_BY)
+#if !defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER) || defined(COMPAT_HAVE_BD_CLAIM_BY)
 	patch(2, "claim_disk", true, false,
 	      COMPAT_HAVE_BD_UNLINK_DISK_HOLDER, "link",
 	      COMPAT_HAVE_BD_CLAIM_BY_DISK, "claim");
-#endif */
+#endif
 
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
