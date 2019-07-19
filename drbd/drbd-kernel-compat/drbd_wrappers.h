@@ -59,10 +59,11 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 
 #ifndef DEFINE_DYNAMIC_DEBUG_METADATA
 #define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while(0)
+#define __dynamic_pr_debug(D, F, ...) do { } while(0)
 #endif
 
 #ifndef DYNAMIC_DEBUG_BRANCH
-#define DYNAMIC_DEBUG_BRANCH() do { } while(0)
+#define DYNAMIC_DEBUG_BRANCH(D) false
 #endif
 
 /* how to get to the kobj of a gendisk.
