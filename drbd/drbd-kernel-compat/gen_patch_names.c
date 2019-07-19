@@ -53,9 +53,6 @@
 	}						\
 } while(0)
 
-/* This can be used to always unconditionally apply a patch. */
-#define YES
-
 int main(int argc, char **argv)
 {
 	/* shared buffer */
@@ -190,23 +187,6 @@ int main(int argc, char **argv)
 
 	patch(1, "kvfree", true, false,
 	      COMPAT_HAVE_KVFREE, "present");
-
-#if !(defined(COMPAT_HAVE_AHASH_REQUEST_ON_STACK) && \
-      defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
-      defined COMPAT_HAVE_SHASH_DESC_ZERO)
-
-	patch(1, "crypto_hash_h", false, false,
-	      YES, "need");
-
-	patch(1, "ahash_request_on_stack", true, false,
-	      COMPAT_HAVE_AHASH_REQUEST_ON_STACK, "present");
-
-	patch(1, "shash_desc_on_stack", true, false,
-	      COMPAT_HAVE_SHASH_DESC_ON_STACK, "present");
-
-	patch(1, "shash_desc_zero", true, false,
-	      COMPAT_HAVE_SHASH_DESC_ZERO, "present");
-#endif
 
 	patch(1, "bio_free", false, true,
 	      COMPAT_HAVE_BIO_FREE, "present");
