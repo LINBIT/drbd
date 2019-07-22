@@ -946,6 +946,29 @@ restart:
 	rcu_read_unlock();
 }
 
+
+static bool reconciliation_ongoing(struct drbd_resource *resource)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	bool rv = false;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		for_each_peer_device_rcu(peer_device, device) {
+			if (test_bit(RECONCILIATION_RESYNC, &peer_device->flags)) {
+				rv = true;
+				goto break_out;
+			}
+		}
+	}
+break_out:
+	rcu_read_unlock();
+
+	return rv;
+}
+
 static bool wait_up_to_date(struct drbd_resource *resource)
 {
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
@@ -984,7 +1007,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 
 retry:
-	down(&resource->state_sem);
 
 	if (role == R_PRIMARY) {
 		struct drbd_connection *connection;
@@ -995,7 +1017,12 @@ retry:
 		for_each_connection_rcu(connection, resource)
 			request_ping(connection);
 		rcu_read_unlock();
+
+		wait_event(resource->state_wait, !reconciliation_ongoing(resource));
+		wait_up_to_date(resource);
+		down(&resource->state_sem);
 	} else /* (role == R_SECONDARY) */ {
+		down(&resource->state_sem);
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			fsync_bdev(device->this_bdev);
 			flush_workqueue(device->submit.wq);
