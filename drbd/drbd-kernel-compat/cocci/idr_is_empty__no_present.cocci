@@ -8,7 +8,7 @@ struct idr *idr;
 idr << find_idr_is_empty.idr;
 x;
 @@
-coccinelle.x = "({ int id = 0; idr_get_next(" + idr + ", &id); })"
+coccinelle.x = "({ int id = 0; idr_get_next(" + idr + ", &id) == NULL; })"
 
 @@
 struct idr *find_idr_is_empty.idr;
