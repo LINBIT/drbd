@@ -191,6 +191,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_free", false, true,
 	      COMPAT_HAVE_BIO_FREE, "present");
 
+	patch(1, "genl_policy", false, true,
+	      COMPAT_GENL_POLICY_IN_OPS, "in_ops");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
