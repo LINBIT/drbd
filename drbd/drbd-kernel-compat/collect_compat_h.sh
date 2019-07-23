@@ -7,14 +7,12 @@
 N_CONFIGS=0
 N_UNIQUE=0
 
-DRBD_VER=9.0.19c1-1
-
 if [ "$(uname -n)" = "thank" ]; then
-	FILES=$((cd /home/lbbuild/lbbuild/localpkgs/drbd-$DRBD_VER; find . -name "compat.h*" \
+	FILES=$((cd /home/lbbuild/lbbuild/localpkgs/drbd-9-compat-latest; find . -name "compat.h*" \
 		| tar -T - -czf -) | tar xzvf -)
 elif ping -c1 thank > /dev/null 2>&1; then
 	FILES=$(ssh lbbuild@thank \
-		"cd /home/lbbuild/lbbuild/localpkgs/drbd-$DRBD_VER; find . -name "compat.h*" | tar -T - -czf -" \
+		"cd /home/lbbuild/lbbuild/localpkgs/drbd-9-compat-latest; find . -name "compat.h*" | tar -T - -czf -" \
 		| tar xzvf -)
 else
 	echo "ERROR: you don't seem to have access to LINBIT's internal network."
