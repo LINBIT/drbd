@@ -198,7 +198,7 @@ endif
 	@echo "  SPATCH   $(chksum)"
 	@cd ../; spatch --sp-file $(relincdir)/.compat.cocci \
 	    $(relsrcs) \
-	    --macro-file drbd-kernel-compat/cocci_macros.h > drbd/$@.tmp 2> $(relincdir)/.spatch.stderr
+	    --macro-file drbd/drbd-kernel-compat/cocci_macros.h > drbd/$@.tmp 2> $(relincdir)/.spatch.stderr
 	@if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
 	fi
