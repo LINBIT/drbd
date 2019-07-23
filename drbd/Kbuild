@@ -114,7 +114,7 @@ filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 
 $(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
 	@$(kecho) '  PATCH'
-	@patch -d $(src) -p0 < $(src)/drbd-kernel-compat/compat.patch
+	@patch -d $(src)/.. -p0 < $(src)/drbd-kernel-compat/compat.patch
 	@cp -d $(src)/drbd-kernel-compat/compat.patch $(src)/.compat_patches_applied
 
 $(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
