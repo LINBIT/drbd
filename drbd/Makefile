@@ -103,7 +103,7 @@ else
   unpatch:
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 < .compat_patches_applied; \
+	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 
@@ -181,7 +181,7 @@ endif
 	$(eval relsrcs := $(addprefix drbd/, $(sources)))
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 < .compat_patches_applied; \
+	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
