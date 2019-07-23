@@ -188,6 +188,8 @@ endif
 	@gcc -I $(incdir) -o $(incdir)/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
 	@$(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt
 	@rm $(incdir)/gen_patch_names
+	@rm -f $(incdir)/.compat.cocci
+	@rm -f $(incdir)/.compat.patch
 	@for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
 	    if [ -e drbd-kernel-compat/cocci/$$F.cocci ] ; then				\
 		cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
