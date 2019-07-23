@@ -599,13 +599,14 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 	}
 }
 
-static void __clear_remote_state_change(struct drbd_resource *resource)
+void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection, *tmp;
 
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
+	del_timer(&resource->queued_twopc_timer);
 
 	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
 		kref_debug_put(&connection->kref_debug, 9);
