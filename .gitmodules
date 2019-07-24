@@ -3,8 +3,8 @@
 	url = git://github.com/LINBIT/drbd-kernel-compat.git
 	update = rebase
 	fetchRecurseSubmodules = true
-[submodule "drbd-headers"]
-	path = drbd-headers
+[submodule "drbd/drbd-headers"]
+	path = drbd/drbd-headers
 	url = git://github.com/LINBIT/drbd-headers.git
 	update = rebase
 	fetchRecurseSubmodules = true

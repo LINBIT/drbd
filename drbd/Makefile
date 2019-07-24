@@ -103,7 +103,7 @@ else
   unpatch:
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
+	    patch -R -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 
@@ -169,7 +169,7 @@ else
 DRBD_BUILD_FROM_GIT := $(if $(wildcard ../.git),yes)
 ifeq ($(DRBD_BUILD_FROM_GIT),yes)
   sources := $(filter-out drbd_strings.c drbd_buildtag.c,$(wildcard *.c))
-  sources += $(wildcard ../drbd-headers/linux/*.h)
+  sources += $(wildcard drbd-headers/linux/*.h)
 else
   sources :=
 endif
@@ -177,11 +177,9 @@ endif
   $(compat_patches): $(sources)
 	$(eval incdir := $(subst /compat.patch,,$@))
 	$(eval chksum := $(subst drbd-kernel-compat/cocci_cache/,,$(incdir)))
-	$(eval relincdir := $(addprefix drbd/, $(subst /compat.patch,,$@)))
-	$(eval relsrcs := $(addprefix drbd/, $(sources)))
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
+	    patch -R -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
@@ -198,9 +196,9 @@ endif
 	    fi \
 	done
 	@echo "  SPATCH   $(chksum)"
-	@cd ../; spatch --sp-file $(relincdir)/.compat.cocci \
-	    $(relsrcs) \
-	    --macro-file drbd/drbd-kernel-compat/cocci_macros.h > drbd/$@.tmp 2> $(relincdir)/.spatch.stderr
+	@spatch --sp-file $(incdir)/.compat.cocci \
+	    $(sources) \
+	    --macro-file drbd-kernel-compat/cocci_macros.h > $@.tmp 2> $(incdir)/.spatch.stderr
 	@if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
 	fi
