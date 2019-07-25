@@ -237,27 +237,6 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 			&peer_device->resync_work);
 }
 
-/* kick lower level device, if we have more than (arbitrary number)
- * reference counts on it, which typically are locally submitted io
- * requests.  don't use unacked_cnt, so we speed up proto A and B, too. */
-static void maybe_kick_lo(struct drbd_device *device)
-{
-	struct disk_conf *dc;
-	unsigned int watermark = 1000000;
-
-	if (get_ldev(device)) {
-		rcu_read_lock();
-		dc = rcu_dereference(device->ldev->disk_conf);
-		if (dc)
-			min_not_zero(dc->unplug_watermark, watermark);
-		rcu_read_unlock();
-
-		if (atomic_read(&device->local_cnt) >= watermark)
-			drbd_kick_lo(device);
-		put_ldev(device);
-	}
-}
-
 static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
 					   struct list_head *to_be_freed)
 {
@@ -286,18 +265,6 @@ static void drbd_reclaim_net_peer_reqs(struct drbd_connection *connection)
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
-}
-
-static void conn_maybe_kick_lo(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct drbd_device *device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr)
-		maybe_kick_lo(device);
-	rcu_read_unlock();
 }
 
 /**
@@ -344,7 +311,6 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 	while (page == NULL) {
 		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
 
-		conn_maybe_kick_lo(connection);
 		drbd_reclaim_net_peer_reqs(connection);
 
 		if (atomic_read(&connection->pp_in_use) < mxb) {
@@ -873,24 +839,6 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 	return 0;
 }
 
-#ifdef blk_queue_plugged
-static void drbd_unplug_all_devices(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct drbd_device *device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		kref_get(&device->kref);
-		rcu_read_unlock();
-		drbd_kick_lo(device);
-		kref_put(&device->kref, drbd_destroy_device);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-}
-#else
 static void drbd_unplug_all_devices(struct drbd_connection *connection)
 {
 	if (current->plug == &connection->receiver_plug) {
@@ -898,7 +846,6 @@ static void drbd_unplug_all_devices(struct drbd_connection *connection)
 		blk_start_plug(&connection->receiver_plug);
 	} /* else: maybe just schedule() ?? */
 }
-#endif
 
 static int drbd_recv_header(struct drbd_connection *connection, struct packet_info *pi)
 {
@@ -1651,7 +1598,6 @@ next_bio:
 		if (bios && bios->bi_next)
 			bios->bi_opf &= ~DRBD_REQ_PREFLUSH;
 	} while (bios);
-	maybe_kick_lo(device);
 	return 0;
 
 fail:

@@ -1088,8 +1088,6 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
 		 * queue (or even the read operations for those packets
 		 * is not finished by now).   Retry in 100ms. */
-
-		drbd_kick_lo(device);
 		schedule_timeout_interruptible(HZ / 10);
 	queue_on_sender_workq:
 		rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
