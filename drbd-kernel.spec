@@ -60,7 +60,17 @@ ln -s ../drbd-headers obj/
 for flavor in %flavors_to_build; do
     cp -r drbd obj/$flavor
     #make -C %{kernel_source $flavor} M=$PWD/obj/$flavor
+    # Workaround: for the whole kernel compatibility patching concept to work,
+    # we need to be able to refer to the drbd sources as "drbd". We cannot
+    # change the target filenames of the patches, because they are pre-computed
+    # and shipped with the release tarball.
+    # As a "solution", create a symlink called "drbd" that points to the set of
+    # sources that are currently being built.
+    # Since we potentially have to build for multiple flavors, remove the link
+    # after each build and re-create it for the next one.
+    ln -s $flavor obj/drbd
     make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor}
+    rm obj/drbd
 done
 
 %install

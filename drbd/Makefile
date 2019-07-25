@@ -103,7 +103,7 @@ else
   unpatch:
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 < .compat_patches_applied; \
+	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 
@@ -181,13 +181,15 @@ endif
 	$(eval relsrcs := $(addprefix drbd/, $(sources)))
 	@if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
-	    patch -R -d .. -p0 < .compat_patches_applied; \
+	    patch -R -d .. -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
 	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
 	@gcc -I $(incdir) -o $(incdir)/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
 	@$(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt
 	@rm $(incdir)/gen_patch_names
+	@rm -f $(incdir)/.compat.cocci
+	@rm -f $(incdir)/.compat.patch
 	@for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
 	    if [ -e drbd-kernel-compat/cocci/$$F.cocci ] ; then				\
 		cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
@@ -198,7 +200,7 @@ endif
 	@echo "  SPATCH   $(chksum)"
 	@cd ../; spatch --sp-file $(relincdir)/.compat.cocci \
 	    $(relsrcs) \
-	    --macro-file drbd-kernel-compat/cocci_macros.h > drbd/$@.tmp 2> $(relincdir)/.spatch.stderr
+	    --macro-file drbd/drbd-kernel-compat/cocci_macros.h > drbd/$@.tmp 2> $(relincdir)/.spatch.stderr
 	@if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
 	fi
