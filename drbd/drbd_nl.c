@@ -894,7 +894,7 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection)
 
 	kref_get(&connection->kref);
 	kref_debug_get(&connection->kref_debug, 4);
-	/* We may just have force_sig()'ed this thread
+	/* We may have just sent a signal to this thread
 	 * to get it out of some blocking network function.
 	 * Clear signals; otherwise kthread_run(), which internally uses
 	 * wait_on_completion_killable(), will mistake our pending signal
