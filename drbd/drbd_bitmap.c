@@ -480,33 +480,23 @@ static inline unsigned long bit_to_page_interleaved(struct drbd_bitmap *bitmap,
 	return word32_to_page(interleaved_word32(bitmap, bitmap_index, bit));
 }
 
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-#define bm_map(bitmap, page, km_type) bm_map(bitmap, page)
-#endif
-static void *bm_map(struct drbd_bitmap *bitmap, unsigned int page, enum km_type km_type)
+static void *bm_map(struct drbd_bitmap *bitmap, unsigned int page)
 {
 	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM))
-		return drbd_kmap_atomic(bitmap->bm_pages[page], km_type);
+		return kmap_atomic(bitmap->bm_pages[page]);
 
 	return ((unsigned char *)bitmap->bm_on_pmem) + (unsigned long)page * PAGE_SIZE;
 }
 
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-#define bm_unmap(bitmap, addr, km_type) bm_unmap(bitmap, addr)
-#endif
-static void bm_unmap(struct drbd_bitmap *bitmap, void *addr, enum km_type km_type)
+static void bm_unmap(struct drbd_bitmap *bitmap, void *addr)
 {
 	if (!(bitmap->bm_flags & BM_ON_DAX_PMEM))
-		drbd_kunmap_atomic(addr, km_type);
+		kunmap_atomic(addr);
 }
 
-#ifdef COMPAT_KMAP_ATOMIC_PAGE_ONLY
-#define ____bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
-	____bm_op(device, bitmap_index, start, end, op, buffer)
-#endif
 static __always_inline unsigned long
 ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
-	 enum bitmap_operations op, __le32 *buffer, enum km_type km_type)
+	 enum bitmap_operations op, __le32 *buffer)
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned int word32_skip = 32 * bitmap->bm_max_peers;
@@ -525,7 +515,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		unsigned int count = 0;
 		void *addr;
 
-		addr = bm_map(bitmap, page, km_type);
+		addr = bm_map(bitmap, page);
 		if (((start & 31) && (start | 31) <= end) || op == BM_OP_TEST) {
 			unsigned int last = bit_in_page | 31;
 
@@ -547,7 +537,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 						break;
 					case BM_OP_TEST:
 						total = !!test_bit_le(bit_in_page, addr);
-						bm_unmap(bitmap, addr, km_type);
+						bm_unmap(bitmap, addr);
 						return total;
 					default:
 						break;
@@ -689,7 +679,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		}
 
 	    next_page:
-		bm_unmap(bitmap, addr, km_type);
+		bm_unmap(bitmap, addr);
 		bit_in_page -= BITS_PER_PAGE;
 		switch(op) {
 		case BM_OP_CLEAR:
@@ -711,7 +701,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		continue;
 
 	    found:
-		bm_unmap(bitmap, addr, km_type);
+		bm_unmap(bitmap, addr);
 		return start + count - bit_in_page;
 	}
 	switch(op) {
@@ -770,7 +760,7 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 			break;
 		}
 	}
-	return ____bm_op(device, bitmap_index, start, end, op, buffer, KM_IRQ1);
+	return ____bm_op(device, bitmap_index, start, end, op, buffer);
 }
 
 static __always_inline unsigned long
@@ -806,16 +796,16 @@ bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start
 #endif
 
 #ifdef BITMAP_DEBUG
-#define ___bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
+#define ___bm_op(device, bitmap_index, start, end, op, buffer) \
 	({ unsigned long ret; \
 	   drbd_info(device, "%s: ___bm_op(..., %u, %lu, %lu, %u, %p)\n", \
 		     __func__, bitmap_index, start, end, op, buffer); \
-	   ret = ____bm_op(device, bitmap_index, start, end, op, buffer, km_type); \
+	   ret = ____bm_op(device, bitmap_index, start, end, op, buffer); \
 	   drbd_info(device, "= %lu\n", ret); \
 	   ret; })
 #else
-#define ___bm_op(device, bitmap_index, start, end, op, buffer, km_type) \
-	____bm_op(device, bitmap_index, start, end, op, buffer, km_type)
+#define ___bm_op(device, bitmap_index, start, end, op, buffer) \
+	____bm_op(device, bitmap_index, start, end, op, buffer)
 #endif
 
 /* you better not modify the bitmap while this is running,
@@ -831,7 +821,7 @@ static void bm_count_bits(struct drbd_device *device)
 		while (bit < bitmap->bm_bits) {
 			unsigned long last_bit = last_bit_on_page(bitmap, bitmap_index, bit);
 
-			bits_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL, KM_USER0);
+			bits_set += ___bm_op(device, bitmap_index, bit, last_bit, BM_OP_COUNT, NULL);
 			bit = last_bit + 1;
 			cond_resched();
 		}
@@ -969,11 +959,11 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			unsigned long bm_set = b->bm_set[bitmap_index];
 
 			if (set_new_bits) {
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL, KM_IRQ1);
+				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
 				bm_set += bits - obits;
 			}
 			else
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL, KM_IRQ1);
+				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL);
 
 			b->bm_set[bitmap_index] = bm_set;
 		}
@@ -1490,14 +1480,14 @@ unsigned long _drbd_bm_find_next(struct drbd_peer_device *peer_device, unsigned 
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
 	return ____bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
-		    BM_OP_FIND_BIT, NULL, KM_USER0);
+		    BM_OP_FIND_BIT, NULL);
 }
 
 unsigned long _drbd_bm_find_next_zero(struct drbd_peer_device *peer_device, unsigned long start)
 {
 	/* WARN_ON(!(device->b->bm_flags & BM_LOCK_SET)); */
 	return ____bm_op(peer_device->device, peer_device->bitmap_index, start, -1UL,
-		    BM_OP_FIND_ZERO_BIT, NULL, KM_USER0);
+		    BM_OP_FIND_ZERO_BIT, NULL);
 }
 
 unsigned int drbd_bm_set_bits(struct drbd_device *device, unsigned int bitmap_index,
@@ -1623,7 +1613,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 
 	bitmap->bm_set[to_index] = 0;
 	current_page_nr = 0;
-	addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
+	addr = bm_map(bitmap, current_page_nr);
 	for (word_nr = 0; word_nr < bitmap->bm_words; word_nr += bitmap->bm_max_peers) {
 		from_word_nr = word_nr + from_index;
 		from_page_nr = word32_to_page(from_word_nr);
@@ -1631,14 +1621,14 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		to_page_nr = word32_to_page(to_word_nr);
 
 		if (current_page_nr != from_page_nr) {
-			bm_unmap(bitmap, addr, KM_IRQ1);
+			bm_unmap(bitmap, addr);
 			if (need_resched()) {
 				spin_unlock_irq(&bitmap->bm_lock);
 				cond_resched();
 				spin_lock_irq(&bitmap->bm_lock);
 			}
 			current_page_nr = from_page_nr;
-			addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
+			addr = bm_map(bitmap, current_page_nr);
 		}
 		data_word = addr[word32_in_page(from_word_nr)];
 
@@ -1649,9 +1639,9 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		}
 
 		if (current_page_nr != to_page_nr) {
-			bm_unmap(bitmap, addr, KM_IRQ1);
+			bm_unmap(bitmap, addr);
 			current_page_nr = to_page_nr;
-			addr = bm_map(bitmap, current_page_nr, KM_IRQ1);
+			addr = bm_map(bitmap, current_page_nr);
 		}
 
 		if (addr[word32_in_page(to_word_nr)] != data_word)
@@ -1659,7 +1649,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		addr[word32_in_page(to_word_nr)] = data_word;
 		bitmap->bm_set[to_index] += hweight32(data_word);
 	}
-	bm_unmap(bitmap, addr, KM_IRQ1);
+	bm_unmap(bitmap, addr);
 
 	spin_unlock_irq(&bitmap->bm_lock);
 }
