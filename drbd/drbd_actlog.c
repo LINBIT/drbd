@@ -98,7 +98,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 
 	if ((op == REQ_OP_WRITE) && !test_bit(MD_NO_FUA, &device->flags))
 		op_flags |= REQ_FUA | REQ_PREFLUSH;
-	op_flags |= REQ_SYNC | REQ_NOIDLE | REQ_PRIO;
+	op_flags |= REQ_SYNC | REQ_PRIO;
 
 	op_flags |= REQ_META;
 	device->md_io.done = 0;
