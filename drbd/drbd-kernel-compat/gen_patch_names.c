@@ -83,15 +83,6 @@ int main(int argc, char **argv)
 	/* 		COMPAT_HAVE_ATOMIC_IN_FLIGHT, "atomic_in_flight", */
 	/* 		COMPAT_HAVE_BD_CLAIM_BY_DISK, "bd_claim_by_disk"); */
 
-	patch(1, "block_device_operations_release", true, false,
-	      COMPAT_DRBD_RELEASE_RETURNS_VOID, "is_void");
-
-#if !defined(COMPAT_HAVE_BD_UNLINK_DISK_HOLDER) || defined(COMPAT_HAVE_BD_CLAIM_BY)
-	patch(2, "claim_disk", true, false,
-	      COMPAT_HAVE_BD_UNLINK_DISK_HOLDER, "link",
-	      COMPAT_HAVE_BD_CLAIM_BY_DISK, "claim");
-#endif
-
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
 
@@ -100,12 +91,6 @@ int main(int argc, char **argv)
 
 	patch(1, "refcount_inc", true, false,
 	      COMPAT_HAVE_REFCOUNT_INC, "present");
-
-	patch(1, "netlink_cb_portid", true, false,
-	      COMPAT_HAVE_NETLINK_CB_PORTID, "present");
-
-	patch(1, "prandom_u32", true, false,
-	      COMPAT_HAVE_PRANDOM_U32, "present");
 
 	patch(1, "struct_bvec_iter", true, false,
 	      COMPAT_HAVE_STRUCT_BVEC_ITER, "present");
@@ -128,12 +113,6 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_VOID_MAKE_REQUEST, "is_void");
 #endif
 
-	patch(1, "blkdev_get_by_path", true, false,
-	      COMPAT_HAVE_BLKDEV_GET_BY_PATH, "present");
-
-	patch(1, "open_bdev_exclusive", true, false,
-	      COMPAT_HAVE_OPEN_BDEV_EXCLUSIVE, "present");
-
 #if !defined(COMPAT_HAVE_BIO_BI_STATUS)
 	patch(2, "bio", false, false,
 	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status",
@@ -148,9 +127,6 @@ int main(int argc, char **argv)
 
 	patch(1, "sock_ops", true, false,
 	      COMPAT_SOCK_OPS_RETURNS_ADDR_LEN, "returns_addr_len");
-
-	patch(1, "hlist_for_each_entry", true, false,
-	      COMPAT_HLIST_FOR_EACH_ENTRY_HAS_THREE_PARAMETERS, "has_three_parameters");
 
 	patch(1, "idr_is_empty", true, false,
 	      COMPAT_HAVE_IDR_IS_EMPTY, "present");
@@ -167,17 +143,11 @@ int main(int argc, char **argv)
 	patch(1, "ktime_to_timespec64", true, false,
 	      COMPAT_HAVE_KTIME_TO_TIMESPEC64, "present");
 
-	patch(1, "file_inode", true, false,
-	      COMPAT_HAVE_FILE_INODE, "present");
-
 	patch(1, "d_inode", true, false,
 	      COMPAT_HAVE_D_INODE, "present");
 
 	patch(1, "inode_lock", true, false,
 	      COMPAT_HAVE_INODE_LOCK, "present");
-
-	patch(1, "ratelimit_state_init", true, false,
-	      COMPAT_HAVE_RATELIMIT_STATE_INIT, "present");
 
 #ifndef COMPAT_HAVE_BIOSET_INIT
 	patch(1, "bioset_init", true, false,
@@ -194,9 +164,6 @@ int main(int argc, char **argv)
 
 	patch(1, "kvfree", true, false,
 	      COMPAT_HAVE_KVFREE, "present");
-
-	patch(1, "bio_free", false, true,
-	      COMPAT_HAVE_BIO_FREE, "present");
 
 	patch(1, "genl_policy", false, true,
 	      COMPAT_GENL_POLICY_IN_OPS, "in_ops");
@@ -235,9 +202,6 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_check_plugged", true, false,
 	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
-
-	patch(1, "kmap_atomic", true, false,
-	      COMPAT_KMAP_ATOMIC_PAGE_ONLY, "page_only");
 
 	patch(1, "blk_queue_plugged", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_PLUGGED, "present");
