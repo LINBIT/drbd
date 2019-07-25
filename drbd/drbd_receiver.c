@@ -1744,7 +1744,8 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		peer_req->w.cb = w_e_reissue;
 		drbd_queue_work(&peer_device->connection->sender_work,
 				&peer_req->w);
-		/* retry later; fall through */
+		/* retry later */
+		/* Fall through */
 	case 0:
 		/* keep worker happy and connection up */
 		return 0;
@@ -3195,6 +3196,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			break;
 		case P_OV_REQUEST:
 			verify_skipped_block(peer_device, sector, size);
+		/* Fall through */
 		case P_RS_THIN_REQ:
 		case P_RS_DATA_REQUEST:
 		case P_CSUM_RS_REQUEST:
@@ -3278,6 +3280,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		   then we would do something smarter here than reading
 		   the block... */
 		peer_req->flags |= EE_RS_THIN_REQ;
+	/* Fall through */
 	case P_RS_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_rsdata_req;
 		fault_type = DRBD_FAULT_RS_RD;
@@ -3461,6 +3464,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 			break;
 		}
 		/* Else fall through to one of the other strategies... */
+	/* Fall through */
 	case ASB_DISCARD_OLDER_PRI:
 		if (self == 0 && peer == 1) {
 			rv = 2;
@@ -3473,6 +3477,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 		/* Else fall through to one of the other strategies... */
 		drbd_warn(peer_device, "Discard younger/older primary did not find a decision\n"
 			  "Using discard-least-changes instead\n");
+	/* Fall through */
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
 			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)
@@ -3484,6 +3489,7 @@ static int drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold
 		}
 		if (after_sb_0p == ASB_DISCARD_ZERO_CHG)
 			break;
+	/* Fall through */
 	case ASB_DISCARD_LEAST_CHG:
 		if	(ch_self < ch_peer)
 			rv = -2;

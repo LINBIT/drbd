@@ -158,6 +158,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 		case D_DISKLESS:
 			if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN))
 				continue;
+		/* Fall through */
 		case D_ATTACHING:
 		case D_DETACHING:
 		case D_FAILED:

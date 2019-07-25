@@ -1105,8 +1105,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 					RQ_NET_QUEUED|RQ_NET_PENDING);
 			break;
 		}
-		/* else, fall through to BARRIER_ACKED */
-
+	/* Fall through */
 	case BARRIER_ACKED:
 		/* barrier ack for READ requests does not make sense */
 		if (!(req->local_rq_state & RQ_WRITE))
