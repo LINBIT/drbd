@@ -55,7 +55,6 @@ installed kernel.
 %build
 rm -rf obj
 mkdir obj
-ln -s ../drbd-headers obj/
 
 for flavor in %flavors_to_build; do
     cp -r drbd obj/$flavor

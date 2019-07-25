@@ -3,7 +3,7 @@ obj-m += drbd.o drbd_transport_tcp.o
 
 clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
-LINUXINCLUDE := -I$(src) -I$(src)/../drbd-headers $(LINUXINCLUDE)
+LINUXINCLUDE := -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
 # in the drbd-kernel-compat directory.
@@ -114,7 +114,7 @@ filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 
 $(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
 	@$(kecho) '  PATCH'
-	@patch -d $(src)/.. -p0 --batch < $(src)/drbd-kernel-compat/compat.patch
+	@patch -d $(src) -p0 --batch < $(src)/drbd-kernel-compat/compat.patch
 	@cp -d $(src)/drbd-kernel-compat/compat.patch $(src)/.compat_patches_applied
 
 $(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
