@@ -16,22 +16,6 @@ LINUXINCLUDE := -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
 # command line or environment
 override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
 
-# The augmented rbtree helper functions are not exported at least until kernel
-# version 2.6.38-rc2.
-ifeq ($(shell grep -e '\<rb_augment_insert\>' \
-		   -e '\<rb_augment_erase_begin\>' \
-		   -e '\<rb_augment_erase_end\>' \
-		   $(objtree)/Module.symvers | wc -l),3)
-override EXTRA_CFLAGS += -DAUGMENTED_RBTREE_SYMBOLS_EXPORTED
-endif
-
-ifeq ($(shell grep -e '\<idr_get_next\>' \
-		   $(objtree)/Module.symvers | wc -l),1)
-override EXTRA_CFLAGS += -DIDR_GET_NEXT_EXPORTED
-else
-compat_objs += drbd-kernel-compat/idr.o
-endif
-
 ifeq ($(shell grep -e '\<blkdev_issue_zeroout\>' \
 		   $(objtree)/Module.symvers | wc -l),1)
 override EXTRA_CFLAGS += -DBLKDEV_ISSUE_ZEROOUT_EXPORTED
