@@ -27,6 +27,7 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 #endif
 
+/* introduced in v3.13-4220-g89a0714106aa */
 #ifndef U32_MAX
 #define U32_MAX ((u32)~0U)
 #endif
@@ -34,10 +35,12 @@
 #define S32_MAX ((s32)(U32_MAX>>1))
 #endif
 
+/* introduced in v3.18-rc3-2-g230fa253df63 */
 #ifndef READ_ONCE
 #define READ_ONCE ACCESS_ONCE
 #endif
 
+/* introduced in v4.3-8058-g71baba4b92dc */
 #ifndef __GFP_RECLAIM
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
@@ -53,18 +56,19 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 #define FMODE_EXCL 0
 #endif
 
+/* introduced in v4.14-rc8-66-gf54bb2ec02c8 */
 #ifndef lockdep_assert_irqs_disabled
 #define lockdep_assert_irqs_disabled() do { } while (0)
 #endif
 
-#if defined(CONFIG_DYNAMIC_DEBUG)
-#if !defined(dynamic_pr_debug) || !defined(DEFINE_DYNAMIC_DEBUG_METADATA)
-#warning "CONFIG_DYNAMIC_DEBUG is defined, but some related macro is not; disabling dynamic debug"
-#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while (0)
+/* introduced in v5.0-6417-g2bdde670beed */
+#ifndef DEFINE_DYNAMIC_DEBUG_METADATA
+#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while(0)
 #define __dynamic_pr_debug(D, F, ...) do { } while(0)
 #define DYNAMIC_DEBUG_BRANCH(D) false
 #endif
 
+/* introduced in v4.7-11559-g9049fc745300 */
 #ifndef DYNAMIC_DEBUG_BRANCH
 #define DYNAMIC_DEBUG_BRANCH(descriptor) \
 	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
@@ -285,6 +289,7 @@ static inline void generic_end_io_acct(struct request_queue *q,
 }
 #endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
 
+/* introduced in dc3f4198eac1 (v4.1-rc3-171) */
 #ifndef COMPAT_HAVE_SIMPLE_POSITIVE
 #include <linux/dcache.h>
 static inline int simple_positive(struct dentry *dentry)
@@ -298,6 +303,7 @@ static inline int simple_positive(struct dentry *dentry)
       defined COMPAT_HAVE_SHASH_DESC_ZERO)
 #include <crypto/hash.h>
 
+/* introduced in d4421c54c45f (v4.2-rc1-163) */
 #ifndef COMPAT_HAVE_AHASH_REQUEST_ON_STACK
 #define AHASH_REQUEST_ON_STACK(name, ahash)			   \
 	char __##name##_desc[sizeof(struct ahash_request) +	   \
@@ -305,6 +311,7 @@ static inline int simple_positive(struct dentry *dentry)
 	struct ahash_request *name = (void *)__##name##_desc
 #endif
 
+/* introduced in a0a77af14117 (v3.17-9284) */
 #ifndef COMPAT_HAVE_SHASH_DESC_ON_STACK
 #define SHASH_DESC_ON_STACK(shash, ctx)				  \
 	char __##shash##_desc[sizeof(struct shash_desc) +	  \
@@ -312,6 +319,7 @@ static inline int simple_positive(struct dentry *dentry)
 	struct shash_desc *shash = (struct shash_desc *)__##shash##_desc
 #endif
 
+/* introduced in e67ffe0af4d4 (v4.5-rc1-24) */
 #ifndef COMPAT_HAVE_SHASH_DESC_ZERO
 #ifndef barrier_data
 #define barrier_data(ptr) barrier()
