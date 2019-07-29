@@ -57,13 +57,19 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 #define lockdep_assert_irqs_disabled() do { } while (0)
 #endif
 
+#if defined(CONFIG_DYNAMIC_DEBUG)
+#if !defined(dynamic_pr_debug)
+#error "CONFIG_DYNAMIC_DEBUG is defined, but dynamic_pr_debug is not"
+#endif
+
 #ifndef DEFINE_DYNAMIC_DEBUG_METADATA
-#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while(0)
-#define __dynamic_pr_debug(D, F, ...) do { } while(0)
+#error "CONFIG_DYNAMIC_DEBUG is defined, but DEFINE_DYNAMIC_DEBUG_METADATA is not"
 #endif
 
 #ifndef DYNAMIC_DEBUG_BRANCH
-#define DYNAMIC_DEBUG_BRANCH(D) false
+#define DYNAMIC_DEBUG_BRANCH(descriptor) \
+	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
+#endif
 #endif
 
 /* how to get to the kobj of a gendisk.
