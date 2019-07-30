@@ -2,6 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
+HEAD
+--------
+ * check if we still have quorum by exchanging a drbd-ping with peers
+   before creating new current UUID after loosing one peer
+ * fix after weak handling to not interfere with reconciliation resyncs
+ * new kernel-backward-compatibility framework based on spatch/coccinelle,
+   replacing an unmaintainable moloch of C preprocessor hell
+ * compat with up to Linux-5.3-rc2
+
 9.0.19-1 (api:genl2/proto:86-115/transport:14)
 --------
  * check on CAP_SYS_ADMIN instead of CAP_NET_ADMIN for certain operations
