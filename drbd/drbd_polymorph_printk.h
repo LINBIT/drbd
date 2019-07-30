@@ -1,6 +1,12 @@
 #ifndef DRBD_POLYMORPH_PRINTK_H
 #define DRBD_POLYMORPH_PRINTK_H
 
+#if !defined(CONFIG_DYNAMIC_DEBUG)
+#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while(0)
+#define __dynamic_pr_debug(D, F, ...) do { } while(0)
+#define DYNAMIC_DEBUG_BRANCH(D) false
+#endif
+
 
 #define __drbd_printk_drbd_device_prep(device) \
 	const struct drbd_device *__d = (device);		\
@@ -80,18 +86,6 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 	do { if (0) drbd_printk(KERN_DEBUG, device, fmt, ## args); } while (0)
 #endif
 
-#if defined(CONFIG_DYNAMIC_DEBUG) && defined(dynamic_pr_debug)
-
-#if !defined(DEFINE_DYNAMIC_DEBUG_METADATA)
-#warning "dynamic_pr_debug() defined, but some related macro found undefined"
-#define dynamic_drbd_dbg(device, fmt, args...) \
-	drbd_dbg(device, fmt, ## args)
-#else
-#if !defined(DYNAMIC_DEBUG_BRANCH)
-#define DYNAMIC_DEBUG_BRANCH(descriptor) \
-	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
-#endif
-
 #define __drbd_dyn_dbg_if_same_type(obj, struct_name, fmt, args...) \
 	__drbd_printk_choose_cond(obj, struct_name), \
 ({ \
@@ -114,11 +108,6 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 	      __builtin_choose_expr( \
 		__drbd_dyn_dbg_if_same_type(obj, drbd_peer_device, fmt, ## args), \
 	        drbd_dyn_dbg_with_wrong_object_type()))))
-#endif /* related macros */
-#else /* CONFIG_DYNAMIC_DEBUG && dynamic_pr_debug */
-#define dynamic_drbd_dbg(device, fmt, args...) \
-	drbd_dbg(device, fmt, ## args)
-#endif
 
 #define drbd_emerg(device, fmt, args...) \
 	drbd_printk(KERN_EMERG, device, fmt, ## args)
