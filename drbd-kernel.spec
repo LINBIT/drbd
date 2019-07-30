@@ -6,12 +6,12 @@ Release: 1
 # always require a suitable userland
 Requires: drbd-utils >= 9.2.0
 
-%global tarball_version %(echo "%{version}-%{?release}" | sed -e "s,%{?dist}$,,")
+%global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
-BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-XXXXXX)
 %if ! %{defined suse_version}
 BuildRequires: redhat-rpm-config
 %endif
