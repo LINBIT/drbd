@@ -215,6 +215,9 @@ int main(int argc, char **argv)
 # endif
 #endif
 
+	patch(1, "security_netlink_recv", false, true,
+	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
