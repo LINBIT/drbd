@@ -132,7 +132,7 @@ mkdir -p "$pkgdir" "$kodir"
 
 fmt=rpm
 [ -n "$(type -p dpkg)" ] && fmt=deb
-repo=$(repo::$fmt::repofile)
+repo=$(repo::$fmt::getrepofile)
 
 how=$(how_to_load "$repo")
 
