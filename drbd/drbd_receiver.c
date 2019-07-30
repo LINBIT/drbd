@@ -5036,22 +5036,24 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	err = __receive_uuids(peer_device, node_mask);
 
-	if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
-		struct drbd_device *device = peer_device->device;
+	if (!test_bit(RECONCILIATION_RESYNC, &peer_device->flags)) {
+		if (peer_device->uuid_flags & UUID_FLAG_GOT_STABLE) {
+			struct drbd_device *device = peer_device->device;
 
-		if (peer_device->repl_state[NOW] == L_ESTABLISHED &&
-		    drbd_device_stable(device, NULL) && get_ldev(device)) {
-			drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
-			drbd_resync(peer_device, AFTER_UNSTABLE);
-			put_ldev(device);
+			if (peer_device->repl_state[NOW] == L_ESTABLISHED &&
+			    drbd_device_stable(device, NULL) && get_ldev(device)) {
+				drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
+				drbd_resync(peer_device, AFTER_UNSTABLE);
+				put_ldev(device);
+			}
 		}
-	}
 
-	if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
-		if (get_ldev(device)) {
-			bool dp = peer_device->uuid_flags & UUID_FLAG_DISKLESS_PRIMARY;
-			drbd_resync(peer_device, dp ? DISKLESS_PRIMARY : AFTER_UNSTABLE);
-			put_ldev(device);
+		if (peer_device->uuid_flags & UUID_FLAG_RESYNC) {
+			if (get_ldev(device)) {
+				bool dp = peer_device->uuid_flags & UUID_FLAG_DISKLESS_PRIMARY;
+				drbd_resync(peer_device, dp ? DISKLESS_PRIMARY : AFTER_UNSTABLE);
+				put_ldev(device);
+			}
 		}
 	}
 
