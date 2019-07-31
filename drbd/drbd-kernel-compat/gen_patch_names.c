@@ -53,6 +53,10 @@
 	}						\
 } while(0)
 
+/* This can be used to always unconditionally apply a patch. */
+#define YES
+/* #undef NO */
+
 int main(int argc, char **argv)
 {
 	/* shared buffer */
@@ -196,6 +200,20 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_queue_merge_bvec", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC, "present");
+
+#if !defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO)
+# if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
+	/* if _BIOSET is true, it's the variant with 3 arguments */
+	patch(1, "blk_queue_split", false, true,
+	      YES, "bioset");
+	patch(1, "make_request", false, true,
+	      COMPAT_NEED_MAKE_REQUEST_RECURSION, "need_recursion");
+# else
+	/* if _BIOSET is also false, it's not present at all */
+	patch(1, "blk_queue_split", true, false,
+	      NO, "present");
+# endif
+#endif
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
