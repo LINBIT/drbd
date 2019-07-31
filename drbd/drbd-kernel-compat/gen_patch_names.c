@@ -194,6 +194,9 @@ int main(int argc, char **argv)
 	patch(1, "genl_policy", false, true,
 	      COMPAT_GENL_POLICY_IN_OPS, "in_ops");
 
+	patch(1, "blk_queue_merge_bvec", false, true,
+	      COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
