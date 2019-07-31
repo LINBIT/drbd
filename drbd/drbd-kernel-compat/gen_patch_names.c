@@ -221,6 +221,9 @@ int main(int argc, char **argv)
 	patch(1, "req_op_write_zeroes", true, false,
 	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "present");
 
+	patch(1, "blk_queue_flag_set", true, false,
+	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
