@@ -3744,9 +3744,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_write_cache(q, true, true);
-#ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
-	blk_queue_merge_bvec(q, drbd_merge_bvec);
-#endif
 #ifdef blk_queue_plugged
 	q->queue_lock = &resource->req_lock; /* needed since we use */
 	/* plugging on a queue, that actually has no requests! */
