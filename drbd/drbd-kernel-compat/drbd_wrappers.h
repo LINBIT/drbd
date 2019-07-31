@@ -693,6 +693,29 @@ static inline void rb_augment_erase_end(struct rb_node *node, rb_augment_f func,
 extern void *idr_get_next(struct idr *idp, int *nextidp);
 #endif
 
+/**
+ * idr_for_each_entry - iterate over an idr's elements of a given type
+ * @idp:     idr handle
+ * @entry:   the type * to use as cursor
+ * @id:      id entry's key
+ */
+/* introduced in v3.1-rc1-39-g9749f30f1a38 */
+#ifndef idr_for_each_entry
+#define idr_for_each_entry(idp, entry, id)				\
+	for (id = 0, entry = (typeof(entry))idr_get_next((idp), &(id)); \
+	     entry != NULL;						\
+	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+#endif
+
+/* introduced in v4.4-rc2-61-ga55bbd375d18 */
+#ifndef idr_for_each_entry_continue
+#define idr_for_each_entry_continue(idp, entry, id)			\
+	for (entry = (typeof(entry))idr_get_next((idp), &(id));		\
+	     entry;							\
+	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
+#endif
+
+
 #ifndef RCU_INITIALIZER
 #define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)
 #endif
