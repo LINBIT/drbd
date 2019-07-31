@@ -1940,26 +1940,6 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 	return s;
 }
 
-#ifndef COMPAT_HAVE_BLK_QUEUE_FLAG_SET
-static void blk_queue_flag_set(unsigned int flag, struct request_queue *q)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(q->queue_lock, flags);
-	queue_flag_set(flag, q);
-	spin_unlock_irqrestore(q->queue_lock, flags);
-}
-
-static void blk_queue_flag_clear(unsigned int flag, struct request_queue *q)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(q->queue_lock, flags);
-	queue_flag_clear(flag, q);
-	spin_unlock_irqrestore(q->queue_lock, flags);
-}
-#endif
-
 static void decide_on_discard_support(struct drbd_device *device,
 			struct request_queue *q,
 			struct request_queue *b,
