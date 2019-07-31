@@ -169,19 +169,6 @@ static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
 	return 0;
 }
 
-#ifdef COMPAT_HAVE_SECURITY_NETLINK_RECV
-#define drbd_security_netlink_recv(skb, cap) \
-	security_netlink_recv(skb, cap)
-#else
-/* see
- * fd77846 security: remove the security_netlink_recv hook as it is equivalent to capable()
- */
-static inline bool drbd_security_netlink_recv(struct sk_buff *skb, int cap)
-{
-	return !capable(cap);
-}
-#endif
-
 static bool need_sys_admin(u8 cmd)
 {
 	int i;
@@ -225,7 +212,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	 * set have CAP_NET_ADMIN; we also require CAP_SYS_ADMIN for
 	 * administrative commands.
 	 */
-	if (need_sys_admin(cmd) && drbd_security_netlink_recv(skb, CAP_SYS_ADMIN))
+	if (need_sys_admin(cmd) && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	adm_ctx->reply_skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
