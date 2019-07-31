@@ -2312,6 +2312,12 @@ static inline void drbd_chk_io_error_(struct drbd_device *device,
 	}
 }
 
+static inline int drbd_backing_bdev_events(struct drbd_device *device)
+{
+	struct hd_struct *part = &device->ldev->backing_bdev->bd_contains->bd_disk->part0;
+	return (int)part_stat_read(part, sectors[0])
+	     + (int)part_stat_read(part, sectors[1]);
+}
 
 /**
  * drbd_md_first_sector() - Returns the first sector number of the meta data area

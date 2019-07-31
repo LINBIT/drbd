@@ -1864,7 +1864,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	peer_device->rs_last_mk_req_kt = ktime_get();
 	peer_device->rs_in_flight = 0;
 	peer_device->rs_last_events =
-		drbd_backing_bdev_events(peer_device->device->ldev->backing_bdev->bd_contains->bd_disk);
+		drbd_backing_bdev_events(peer_device->device);
 
 	/* Updating the RCU protected object in place is necessary since
 	   this function gets called from atomic context.
