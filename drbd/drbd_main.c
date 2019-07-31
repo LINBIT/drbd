@@ -5252,9 +5252,6 @@ static void md_sync_timer_fn(struct timer_list *t)
 }
 
 
-#ifndef __maybe_unused
-#define __maybe_unused                  __attribute__((unused))
-#endif
 void lock_all_resources(void)
 {
 	struct drbd_resource *resource;
