@@ -941,12 +941,7 @@ struct drbd_resource {
 
 	unsigned cached_min_aggreed_protocol_version;
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && !defined(cpumask_bits)
-	cpumask_t cpu_mask[1];
-#else
 	cpumask_var_t cpu_mask;
-#endif
 
 	struct drbd_work_queue work;
 	struct drbd_thread worker;
