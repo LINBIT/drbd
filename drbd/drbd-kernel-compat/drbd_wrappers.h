@@ -109,19 +109,6 @@ static inline void drbd_plug_device(struct request_queue *q)
 }
 #endif
 
-static inline int drbd_backing_bdev_events(struct gendisk *disk)
-{
-#if defined(__disk_stat_inc)
-	/* older kernel */
-	return (int)disk_stat_read(disk, sectors[0])
-	     + (int)disk_stat_read(disk, sectors[1]);
-#else
-	/* recent kernel */
-	return (int)part_stat_read(&disk->part0, sectors[0])
-	     + (int)part_stat_read(&disk->part0, sectors[1]);
-#endif
-}
-
 #if !defined(CRYPTO_ALG_ASYNC)
 /* With Linux-2.6.19 the crypto API changed! */
 /* This is not a generic backport of the new api, it just implements
