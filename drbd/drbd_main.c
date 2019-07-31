@@ -5468,9 +5468,6 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_dev
 	return 0;
 }
 
-#ifndef __maybe_unused
-#define __maybe_unused                  __attribute__((unused))
-#endif
 void lock_all_resources(void)
 {
 	struct drbd_resource *resource;
