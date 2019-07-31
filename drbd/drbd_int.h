@@ -1898,10 +1898,6 @@ extern void do_submit(struct work_struct *ws);
 #endif
 extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t, unsigned long);
 extern blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio);
-#ifdef COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC
-extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
-#endif
-
 
 /* drbd_nl.c */
 enum suspend_scope {
