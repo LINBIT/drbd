@@ -2289,34 +2289,6 @@ void do_submit(struct work_struct *ws)
 	}
 }
 
-/* 54efd50 block: make generic_make_request handle arbitrarily sized bios
- * introduced blk_queue_split(), which is supposed to split (and put on the
- * current->bio_list bio chain) any bio that is violating the queue limits.
- * Before that, any user was supposed to go through bio_add_page(), which
- * would call our merge bvec function, and that should already be sufficient
- * to not violate queue limits.
- *
- * The way blk_queue_split() was implemented, together with the recursion-to-
- * iteration loop in generic_make_request(), introduced a possible deadlock,
- * which we worked around with drbd out-of-tree commit
- * ab6ab5061f6d drbd: fix for possible deadlock in kernel >= 4.3
- *
- * Upstream 4.11 finally took and improved our suggested fix with:
- * 79bd99596b73 blk: improve order of bio handling in generic_make_request()
- * f5fe1b51905d blk: Ensure users for current->bio_list can see the full list.
- */
-#undef COMPAT_NEED_MAKE_REQUEST_RECURSION
-#ifndef COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO
-#if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
-#define blk_queue_split(q,b) blk_queue_split(q,b,q->bio_split)
-# if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
-#  define COMPAT_NEED_MAKE_REQUEST_RECURSION
-# endif
-#else
-# define blk_queue_split(q,b) do { } while (0)
-#endif
-#endif
-
 blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
@@ -2325,9 +2297,6 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	ktime_t start_kt;
 #endif
 	unsigned long start_jif;
-#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
-	struct bio_list *current_bio_list;
-#endif
 
 	/* We never supported BIO_RW_BARRIER.
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
@@ -2340,10 +2309,6 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	}
 
 	blk_queue_split(q, &bio);
-#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
-	current_bio_list = current->bio_list;
-	current->bio_list = NULL;
-#endif
 
 	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
 		bio->bi_status = BLK_STS_IOERR;
@@ -2355,10 +2320,6 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	start_jif = jiffies;
 
 	__drbd_make_request(device, bio, start_kt, start_jif);
-
-#ifdef COMPAT_NEED_MAKE_REQUEST_RECURSION
-	current->bio_list = current_bio_list;
-#endif
 
 	return BLK_QC_T_NONE;
 }
