@@ -58,12 +58,11 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 #endif
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
-#if !defined(dynamic_pr_debug)
-#error "CONFIG_DYNAMIC_DEBUG is defined, but dynamic_pr_debug is not"
-#endif
-
-#ifndef DEFINE_DYNAMIC_DEBUG_METADATA
-#error "CONFIG_DYNAMIC_DEBUG is defined, but DEFINE_DYNAMIC_DEBUG_METADATA is not"
+#if !defined(dynamic_pr_debug) || !defined(DEFINE_DYNAMIC_DEBUG_METADATA)
+#warning "CONFIG_DYNAMIC_DEBUG is defined, but some related macro is not; disabling dynamic debug"
+#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while (0)
+#define __dynamic_pr_debug(D, F, ...) do { } while(0)
+#define DYNAMIC_DEBUG_BRANCH(D) false
 #endif
 
 #ifndef DYNAMIC_DEBUG_BRANCH
