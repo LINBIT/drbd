@@ -2010,7 +2010,6 @@ static void fixup_discard_if_not_supported(struct request_queue *q)
 
 static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
 {
-#ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
 	/* Fixup max_write_zeroes_sectors after blk_queue_stack_limits():
 	 * if we can handle "zeroes" efficiently on the protocol,
 	 * we want to do that, even if our backend does not announce
@@ -2022,7 +2021,6 @@ static void fixup_write_zeroes(struct drbd_device *device, struct request_queue 
 		q->limits.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
 	else
 		q->limits.max_write_zeroes_sectors = 0;
-#endif
 }
 
 static void decide_on_write_same_support(struct drbd_device *device,
