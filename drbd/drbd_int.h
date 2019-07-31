@@ -2780,27 +2780,6 @@ struct bm_extent {
 #define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
 #define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
-/* should be moved to idr.h */
-/**
- * idr_for_each_entry - iterate over an idr's elements of a given type
- * @idp:     idr handle
- * @entry:   the type * to use as cursor
- * @id:      id entry's key
- */
-#ifndef idr_for_each_entry
-#define idr_for_each_entry(idp, entry, id)				\
-	for (id = 0, entry = (typeof(entry))idr_get_next((idp), &(id)); \
-	     entry != NULL;						\
-	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
-#endif
-
-#ifndef idr_for_each_entry_continue
-#define idr_for_each_entry_continue(idp, entry, id)			\
-	for (entry = (typeof(entry))idr_get_next((idp), &(id));		\
-	     entry;							\
-	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
-#endif
-
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {
 	return list_first_entry_or_null(&resource->connections,
