@@ -1661,7 +1661,6 @@ static bool may_do_writes(struct drbd_device *device)
 	return false;
 }
 
-#ifdef COMPAT_HAVE_BLK_CHECK_PLUGGED
 struct drbd_plug_cb {
 	struct blk_plug_cb cb;
 	struct drbd_request *most_recent_req;
@@ -1712,11 +1711,6 @@ static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req
 	if (tmp)
 		kref_put(&tmp->kref, drbd_req_destroy);
 }
-#else
-struct drbd_plug_cb { };
-static void * drbd_check_plugged(struct drbd_resource *resource) { return NULL; };
-static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req) { };
-#endif
 
 static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
 {
