@@ -276,8 +276,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define WRITE_SYNC REQ_SYNC
 #endif
 
-#define COMPAT_WRITE_SAME_CAPABLE
-
 #ifndef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
 #define REQ_OP_WRITE_ZEROES (-3u)
 #endif
@@ -326,7 +324,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 
 #ifdef REQ_WRITE_SAME
 #define DRBD_REQ_WSAME         REQ_WRITE_SAME
-#define COMPAT_WRITE_SAME_CAPABLE
 #endif
 
 #else				/* [<=2.6.35] "older", and hopefully not {{{2
