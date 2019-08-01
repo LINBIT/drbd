@@ -230,6 +230,9 @@ int main(int argc, char **argv)
 	      NO, "capable");
 #endif
 
+	patch(1, "blk_check_plugged", true, false,
+	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
