@@ -106,10 +106,6 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 #ifdef REQ_META
 	op_flags |= REQ_META;
 #endif
-#ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
-	/* < 2.6.36, "barrier" semantic may fail with EOPNOTSUPP */
- retry:
-#endif
 	device->md_io.done = 0;
 	device->md_io.error = -ENODEV;
 
@@ -145,20 +141,6 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	}
 	wait_until_done_or_force_detached(device, bdev, &device->md_io.done);
 	err = device->md_io.error;
-
-#ifdef COMPAT_MAYBE_RETRY_HARDBARRIER
-	/* check for unsupported barrier op.
-	 * would rather check on EOPNOTSUPP, but that is not reliable.
-	 * don't try again for ANY return value != 0 */
-	if (err && device->md_io.done && (bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
-		/* Try again with no barrier */
-		drbd_warn(device, "Barriers not supported on meta data device - disabling\n");
-		set_bit(MD_NO_FUA, &device->flags);
-		op_flags &= ~DRBD_REQ_HARDBARRIER;
-		bio_put(bio);
-		goto retry;
-	}
-#endif
  out:
 	bio_put(bio);
 	return err;
