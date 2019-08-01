@@ -1566,11 +1566,7 @@ static void assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p, s
 		p->qlim->io_opt = cpu_to_be32(queue_io_opt(q));
 		p->qlim->discard_enabled = blk_queue_discard(q);
 		p->qlim->discard_zeroes_data = queue_discard_zeroes_data(q);
-#ifdef COMPAT_WRITE_SAME_CAPABLE
 		p->qlim->write_same_capable = !!q->limits.max_write_same_sectors;
-#else
-		p->qlim->write_same_capable = 0;
-#endif
 	} else {
 		q = device->rq_queue;
 		p->qlim->physical_block_size = cpu_to_be32(queue_physical_block_size(q));

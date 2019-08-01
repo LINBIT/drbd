@@ -1492,21 +1492,12 @@ static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, stru
 static void drbd_issue_peer_wsame(struct drbd_device *device,
 				  struct drbd_peer_request *peer_req)
 {
-#ifndef COMPAT_WRITE_SAME_CAPABLE
-	/* We should have never received this request!  At least not until we
-	 * implement an open-coded write-same equivalent submit loop, and tell
-	 * our peer we were write_same_capable. */
-	drbd_err(device, "received unsupported WRITE_SAME request\n");
-	peer_req->flags |= EE_WAS_ERROR;
-	drbd_endio_write_sec_final(peer_req);
-#else
 	struct block_device *bdev = device->ldev->backing_bdev;
 	sector_t s = peer_req->i.sector;
 	sector_t nr = peer_req->i.size >> 9;
 	if (blkdev_issue_write_same(bdev, s, nr, GFP_NOIO, peer_req->page_chain.head))
 		peer_req->flags |= EE_WAS_ERROR;
 	drbd_endio_write_sec_final(peer_req);
-#endif
 }
 
 static bool conn_wait_ee_cond(struct drbd_connection *connection, struct list_head *head)

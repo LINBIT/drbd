@@ -2008,9 +2008,6 @@ static void decide_on_write_same_support(struct drbd_device *device,
 			struct request_queue *b, struct o_qlim *o,
 			bool disable_write_same)
 {
-#ifndef COMPAT_WRITE_SAME_CAPABLE
-	drbd_dbg(device, "This kernel is too old, no WRITE_SAME support.\n");
-#else
 	bool can_do = b ? b->limits.max_write_same_sectors : true;
 
 	if (can_do && disable_write_same) {
@@ -2067,7 +2064,6 @@ static void decide_on_write_same_support(struct drbd_device *device,
 	}
 
 	blk_queue_max_write_same_sectors(q, can_do ? DRBD_MAX_BBIO_SECTORS : 0);
-#endif
 }
 
 static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backing_dev *bdev,
