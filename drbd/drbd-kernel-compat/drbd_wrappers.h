@@ -353,8 +353,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
 #define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
 
-#define COMPAT_MAYBE_RETRY_HARDBARRIER
-
 /* we don't support DISCARDS yet, anyways.
  * cannot test on defined(BIO_RW_DISCARD), it may be an enum */
 #define DRBD_REQ_DISCARD	0
