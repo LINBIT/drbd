@@ -1336,6 +1336,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 }
 
 static bool all_zero(struct drbd_peer_request *peer_req)
+/* kmap compat: KM_USER1 */
 {
 	struct page *page = peer_req->page_chain.head;
 	unsigned int len = peer_req->i.size;
@@ -1345,14 +1346,14 @@ static bool all_zero(struct drbd_peer_request *peer_req)
 		unsigned int i, words = l / sizeof(long);
 		unsigned long *d;
 
-		d = drbd_kmap_atomic(page, KM_USER1);
+		d = kmap_atomic(page);
 		for (i = 0; i < words; i++) {
 			if (d[i]) {
-				drbd_kunmap_atomic(d, KM_USER1);
+				kunmap_atomic(d);
 				return false;
 			}
 		}
-		drbd_kunmap_atomic(d, KM_USER1);
+		kunmap_atomic(d);
 		len -= l;
 	}
 

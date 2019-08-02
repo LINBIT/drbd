@@ -2117,6 +2117,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 
 static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
 			      int offset, size_t size, unsigned msg_flags)
+/* kmap compat: KM_USER0 */
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
@@ -2125,9 +2126,9 @@ static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page 
 	int err;
 
 	buffer2 = alloc_send_buffer(connection, size, DATA_STREAM);
-	from_base = drbd_kmap_atomic(page, KM_USER0);
+	from_base = kmap_atomic(page);
 	memcpy(buffer2, from_base + offset, size);
-	drbd_kunmap_atomic(from_base, KM_USER0);
+	kunmap_atomic(from_base);
 
 	if (msg_flags & MSG_MORE) {
 		sbuf->pos += sbuf->allocated_size;
