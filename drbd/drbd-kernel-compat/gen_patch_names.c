@@ -233,6 +233,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_check_plugged", true, false,
 	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
 
+	patch(1, "kmap_atomic", true, false,
+	      COMPAT_KMAP_ATOMIC_PAGE_ONLY, "page_only");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
