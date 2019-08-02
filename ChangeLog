@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-HEAD
+10.0.0a1 (api:genl2/proto:110-115/transport:14)
 --------
  * check if we still have quorum by exchanging a drbd-ping with peers
    before creating new current UUID after loosing one peer
