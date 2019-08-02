@@ -1,11 +1,11 @@
-# DRBD9
+# DRBD
 
-This repository contains the Linux kernel code for DRBD9.
+DRBD, developed by [LINBIT](https://www.linbit.com), provides networked RAID 1 functionality for GNU/Linux.
+It is designed for high availability clusters and software defined storage.
+DRBD keeps disks on multiple nodes synchronized using TCP/IP or RDMA and makes the data available as a block device.
+This results in RAID 1 but without the use of uncommon hardware such as shared SCSI buses or Fibre Channel.
 
-DRBD, developed by [LINBIT](https://www.linbit.com), is a software that allows RAID 1 functionality over
-TCP/IP and RDMA for GNU/Linux. DRBD is a block device which is designed to build high availability clusters and
-software defined storage by providing a virtual shared device which keeps disks in nodes synchronised using
-TCP/IP or RDMA. This simulates RAID 1 but avoids the use of uncommon hardware (shared SCSI buses or Fibre Channel).
+This repository contains the Linux kernel code for DRBD version 9 and above.
 
 # Using DRBD
 Please read the user-guide provided at [docs.linbit.com](https://docs.linbit.com).
