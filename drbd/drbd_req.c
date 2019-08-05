@@ -2162,7 +2162,6 @@ void do_submit(struct work_struct *ws)
 			if (made_progress)
 				break;
 
-			drbd_kick_lo(device);
 			schedule();
 
 			/* If all currently "hot" activity log extents are kept busy by
@@ -2225,7 +2224,6 @@ void do_submit(struct work_struct *ws)
 
 		send_and_submit_pending(device, &wfa);
 	}
-	drbd_kick_lo(device);
 }
 
 blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)

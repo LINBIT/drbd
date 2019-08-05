@@ -1325,7 +1325,6 @@ static int bm_rw_range(struct drbd_device *device,
 	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight)) {
-		drbd_blk_run_queue(bdev_get_queue(device->ldev->md_bdev));
 		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
 	} else
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);

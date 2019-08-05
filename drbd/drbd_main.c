@@ -2748,25 +2748,6 @@ void drbd_queue_unplug(struct drbd_device *device)
 	}
 }
 
-#ifdef blk_queue_plugged
-static void drbd_unplug_fn(struct request_queue *q)
-{
-	struct drbd_device *device = q->queuedata;
-	struct drbd_resource *resource = device->resource;
-
-	/* unplug FIRST */
-	/* note: q->queue_lock == resource->req_lock */
-	spin_lock_irq(&resource->req_lock);
-	blk_remove_plug(q);
-
-	/* only if connected */
-	drbd_queue_unplug(device);
-	spin_unlock_irq(&resource->req_lock);
-
-	drbd_kick_lo(device);
-}
-#endif
-
 static void drbd_set_defaults(struct drbd_device *device)
 {
 	device->disk_state[NOW] = D_DISKLESS;
@@ -3741,11 +3722,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_write_cache(q, true, true);
-#ifdef blk_queue_plugged
-	q->queue_lock = &resource->req_lock; /* needed since we use */
-	/* plugging on a queue, that actually has no requests! */
-	q->unplug_fn = drbd_unplug_fn;
-#endif
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
 	if (!device->md_io.page)

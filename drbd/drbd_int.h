@@ -2731,29 +2731,6 @@ static inline int drbd_queue_order_type(struct drbd_device *device)
 	return QUEUE_ORDERED_NONE;
 }
 
-#ifdef blk_queue_plugged
-static inline void drbd_blk_run_queue(struct request_queue *q)
-{
-	if (q && q->unplug_fn)
-		q->unplug_fn(q);
-}
-
-static inline void drbd_kick_lo(struct drbd_device *device)
-{
-	if (get_ldev(device)) {
-		drbd_blk_run_queue(bdev_get_queue(device->ldev->backing_bdev));
-		put_ldev(device);
-	}
-}
-#else
-static inline void drbd_blk_run_queue(struct request_queue *q)
-{
-}
-static inline void drbd_kick_lo(struct drbd_device *device)
-{
-}
-#endif
-
 /* resync bitmap */
 /* 128MB sized 'bitmap extent' to track syncer usage */
 struct bm_extent {
