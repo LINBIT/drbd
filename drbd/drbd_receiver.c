@@ -1328,18 +1328,15 @@ void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backin
 int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, unsigned int nr_sectors, int flags)
 {
 	struct block_device *bdev = device->ldev->backing_bdev;
-#ifdef QUEUE_FLAG_DISCARD
 	struct request_queue *q = bdev_get_queue(bdev);
 	sector_t tmp, nr;
 	unsigned int max_discard_sectors, granularity;
 	int alignment;
-#endif
 	int err = 0;
 
 	if ((flags & EE_ZEROOUT) || !(flags & EE_TRIM))
 		goto zero_out;
 
-#ifdef QUEUE_FLAG_DISCARD
 	/* Zero-sector (unknown) and one-sector granularities are the same.  */
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
@@ -1385,7 +1382,6 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 			start += nr;
 		}
 	}
-#endif
  zero_out:
 	if (nr_sectors) {
 		err |= blkdev_issue_zeroout(bdev, start, nr_sectors, GFP_NOIO,
@@ -1396,7 +1392,6 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
-#ifdef QUEUE_FLAG_DISCARD
 	struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
 	struct disk_conf *dc;
 	bool can_do;
@@ -1412,9 +1407,6 @@ static bool can_do_reliable_discards(struct drbd_device *device)
 	can_do = dc->discard_zeroes_if_aligned;
 	rcu_read_unlock();
 	return can_do;
-#else
-	return false;
-#endif
 }
 
 static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, struct drbd_peer_request *peer_req)
