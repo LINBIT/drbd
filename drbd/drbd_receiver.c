@@ -4789,7 +4789,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		my_usize = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
 
-		my_max_size = drbd_get_max_capacity(device->ldev);
+		my_max_size = drbd_get_max_capacity(device, device->ldev, false);
 		dynamic_drbd_dbg(peer_device, "la_size: %llu my_usize: %llu my_max_size: %llu\n",
 			(unsigned long long)device->ldev->md.effective_size,
 			(unsigned long long)my_usize,
@@ -6402,7 +6402,7 @@ static int process_twopc(struct drbd_connection *connection,
 			reply->max_possible_size = drbd_local_max_size(device);
 			put_ldev(device);
 		} else {
-			reply->max_possible_size = DRBD_MAX_SECTORS_FLEX;
+			reply->max_possible_size = DRBD_MAX_SECTORS;
 			reply->diskful_primary_nodes = 0;
 		}
 		resource->twopc_resize.dds_flags = be16_to_cpu(p->dds_flags);

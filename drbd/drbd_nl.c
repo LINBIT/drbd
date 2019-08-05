@@ -1794,7 +1794,7 @@ drbd_new_dev_size(struct drbd_device *device,
 	if (flags & DDSF_2PC)
 		return resource->twopc_resize.new_size;
 
-	m_size = drbd_get_max_capacity(device->ldev);
+	m_size = drbd_get_max_capacity(device, device->ldev, false);
 	all_known_connected = get_max_agreeable_size(device, &p_size);
 
 	if (all_known_connected) {
@@ -2668,9 +2668,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	int err;
 	enum drbd_ret_code retcode;
 	enum determine_dev_size dd;
-	sector_t max_possible_sectors;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
+	sector_t backing_disk_max_sectors;
 	struct disk_conf *new_disk_conf = NULL;
 	enum drbd_state_rv rv;
 	struct drbd_peer_device *peer_device;
@@ -2768,20 +2768,19 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	discard_not_wanted_bitmap_uuids(device, nbc);
 	sanitize_disk_conf(device, new_disk_conf, nbc);
 
-	if (drbd_get_max_capacity(nbc) < new_disk_conf->disk_size) {
+	backing_disk_max_sectors = drbd_get_max_capacity(device, nbc, true);
+	if (backing_disk_max_sectors < new_disk_conf->disk_size) {
 		drbd_err(device, "max capacity %llu smaller than disk size %llu\n",
-			(unsigned long long) drbd_get_max_capacity(nbc),
+			(unsigned long long) backing_disk_max_sectors,
 			(unsigned long long) new_disk_conf->disk_size);
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail;
 	}
 
 	if (new_disk_conf->meta_dev_idx < 0) {
-		max_possible_sectors = DRBD_MAX_SECTORS_FLEX;
 		/* at least one MB, otherwise it does not make sense */
 		min_md_device_sectors = (2<<10);
 	} else {
-		max_possible_sectors = DRBD_MAX_SECTORS;
 		min_md_device_sectors = (128 << 20 >> 9) * (new_disk_conf->meta_dev_idx + 1);
 	}
 
@@ -2795,26 +2794,17 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Make sure the new disk is big enough
 	 * (we may currently be R_PRIMARY with no local disk...) */
-	if (drbd_get_max_capacity(nbc) <
+	if (backing_disk_max_sectors <
 	    drbd_get_capacity(device->this_bdev)) {
 		drbd_err(device,
 			"Current (diskless) capacity %llu, cannot attach smaller (%llu) disk\n",
 			(unsigned long long)drbd_get_capacity(device->this_bdev),
-			(unsigned long long)drbd_get_max_capacity(nbc));
+			(unsigned long long)backing_disk_max_sectors);
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail;
 	}
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
-
-	if (nbc->known_size > max_possible_sectors) {
-		drbd_warn(device, "==> truncating very big lower level device "
-			"to currently maximum possible %llu sectors <==\n",
-			(unsigned long long) max_possible_sectors);
-		if (new_disk_conf->meta_dev_idx >= 0)
-			drbd_warn(device, "==>> using internal or flexible "
-				      "meta data may help <<==\n");
-	}
 
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(resource->barrier_wait, !barrier_pending(resource));
@@ -4356,7 +4346,7 @@ sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local)
 
 	*tmp_bdev = *device->ldev;
 	drbd_md_set_sector_offsets(device, tmp_bdev);
-	s = drbd_get_max_capacity(tmp_bdev);
+	s = drbd_get_max_capacity(device, tmp_bdev, false);
 	kfree(tmp_bdev);
 
 	return s;

@@ -1599,7 +1599,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 	memset(p, 0, packet_size);
 	if (get_ldev_if_state(device, D_NEGOTIATING)) {
 		struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
-		d_size = drbd_get_max_capacity(device->ldev);
+		d_size = drbd_get_max_capacity(device, device->ldev, false);
 		rcu_read_lock();
 		u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		rcu_read_unlock();
@@ -5470,6 +5470,81 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 	rcu_read_unlock();
 
 	return directly_connected;
+}
+
+static sector_t bm_sect_to_max_capacity(unsigned int bm_max_peers, sector_t bm_sect)
+{
+	u64 bm_pages = bm_sect >> (PAGE_SHIFT - SECTOR_SHIFT);
+	u64 bm_bytes = bm_pages << PAGE_SHIFT;
+	u64 bm_bytes_per_peer = div_u64(bm_bytes, bm_max_peers);
+	u64 bm_bits_per_peer = bm_bytes_per_peer * BITS_PER_BYTE;
+	return BM_BIT_TO_SECT(bm_bits_per_peer);
+}
+
+/**
+ * drbd_get_max_capacity() - Returns the capacity we announce to out peer
+ * @device: The DRBD device.
+ * @bdev: Meta data block device.
+ * @warn: Whether to warn when size is clipped.
+ *
+ * returns the capacity we announce to out peer.  we clip ourselves at the
+ * various MAX_SECTORS, because if we don't, current implementation will
+ * oops sooner or later
+ */
+sector_t drbd_get_max_capacity(
+		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn)
+{
+	unsigned int bm_max_peers = device->bitmap->bm_max_peers;
+	sector_t backing_bdev_capacity = drbd_get_capacity(bdev->backing_bdev);
+	sector_t bm_sect;
+	sector_t backing_capacity_remaining;
+	sector_t metadata_limit;
+	sector_t max_capacity;
+
+	switch (bdev->md.meta_dev_idx) {
+	case DRBD_MD_INDEX_INTERNAL:
+	case DRBD_MD_INDEX_FLEX_INT:
+		bm_sect = bdev->md.al_offset - bdev->md.bm_offset;
+		backing_capacity_remaining = drbd_md_first_sector(bdev);
+		break;
+	case DRBD_MD_INDEX_FLEX_EXT:
+		bm_sect = bdev->md.md_size_sect - bdev->md.bm_offset;
+		backing_capacity_remaining = backing_bdev_capacity;
+		break;
+	default:
+		bm_sect = DRBD_BM_SECTORS_INDEXED;
+		backing_capacity_remaining = backing_bdev_capacity;
+	}
+
+	metadata_limit = bm_sect_to_max_capacity(bm_max_peers, bm_sect);
+
+	dynamic_drbd_dbg(device,
+			"Backing device capacity: %llus, remaining: %llus, bitmap sectors: %llus\n",
+			(unsigned long long) backing_bdev_capacity,
+			(unsigned long long) backing_capacity_remaining,
+			(unsigned long long) bm_sect);
+	dynamic_drbd_dbg(device,
+			"Max peers: %u, metadata limit: %llus, hard limit: %llus\n",
+			bm_max_peers,
+			(unsigned long long) metadata_limit,
+			(unsigned long long) DRBD_MAX_SECTORS);
+
+	max_capacity = backing_capacity_remaining;
+	if (max_capacity > DRBD_MAX_SECTORS) {
+		if (warn)
+			drbd_warn(device, "Device size clipped from %llus to %llus due to DRBD limitations\n",
+					(unsigned long long) max_capacity,
+					(unsigned long long) DRBD_MAX_SECTORS);
+		max_capacity = DRBD_MAX_SECTORS;
+	}
+	if (max_capacity > metadata_limit) {
+		if (warn)
+			drbd_warn(device, "Device size clipped from %llus to %llus due to metadata size\n",
+					(unsigned long long) max_capacity,
+					(unsigned long long) metadata_limit);
+		max_capacity = metadata_limit;
+	}
+	return max_capacity;
 }
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
