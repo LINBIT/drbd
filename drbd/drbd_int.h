@@ -1667,34 +1667,18 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SHIFT - AL_EXTENT_SHIFT))
 
-/* the extent in "PER_EXTENT" below is an activity log extent
- * we need that many (long words/bytes) to store the bitmap
- *		     of one AL_EXTENT_SIZE chunk of storage.
- * we can store the bitmap for that many AL_EXTENTS within
- * one sector of the _on_disk_ bitmap:
- * bit	 0	  bit 37   bit 38	     bit (512*8)-1
- *	     ...|........|........|.. // ..|........|
- * sect. 0	 `296	  `304			   ^(512*8*8)-1
- *
-#define BM_WORDS_PER_EXT    ( (AL_EXT_SIZE/BM_BLOCK_SIZE) / BITS_PER_LONG )
-#define BM_BYTES_PER_EXT    ( (AL_EXT_SIZE/BM_BLOCK_SIZE) / 8 )  // 128
-#define BM_EXT_PER_SECT	    ( 512 / BM_BYTES_PER_EXTENT )	 //   4
- */
-
 #define DRBD_MAX_SECTORS_32 (0xffffffffLU)
-/* we have a certain meta data variant that has a fixed on-disk size of 128
- * MiB, of which 4k are our "superblock", and 32k are the fixed size activity
- * log, leaving this many sectors for the bitmap.
- */
 
-#define DRBD_MAX_SECTORS_FIXED_BM \
-	  (((128 << 20 >> 9) - (32768 >> 9) - (4096 >> 9)) * (1LL<<(BM_EXT_SHIFT-9)))
 #if !defined(CONFIG_LBDAF) && !defined(CONFIG_LBD) && BITS_PER_LONG == 32
 #define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
 #define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
 #else
-#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_FIXED_BM
-/* 16 TB in units of sectors */
+/* we have a certain meta data variant that has a fixed on-disk size of 128
+ * MiB, of which 4k are our "superblock", and 32k are the fixed size activity
+ * log, leaving this many sectors covered by the bitmap.
+ */
+#define DRBD_MAX_SECTORS \
+	  BM_BIT_TO_SECT(((128 << 20) - (32 << 10) - (4 << 10)) * BITS_PER_BYTE)
 #if BITS_PER_LONG == 32
 /* adjust by one page worth of bitmap,
  * so we won't wrap around in drbd_bm_find_next_bit.
@@ -2339,8 +2323,8 @@ static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
 				drbd_get_capacity(bdev->backing_bdev));
 		/* clip at maximum size the meta device can support */
 		s = min_t(sector_t, s,
-			BM_EXT_TO_SECT(bdev->md.md_size_sect
-				     - bdev->md.bm_offset));
+			BM_BIT_TO_SECT((bdev->md.md_size_sect
+				     - bdev->md.bm_offset) * BITS_PER_BYTE));
 		break;
 	default:
 		s = min_t(sector_t, DRBD_MAX_SECTORS,
