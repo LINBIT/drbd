@@ -3450,11 +3450,7 @@ static int init_submitter(struct drbd_device *device)
 	/* opencoded create_singlethread_workqueue(),
 	 * to be able to use format string arguments */
 	device->submit.wq =
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 		alloc_ordered_workqueue("drbd%u_submit", WQ_MEM_RECLAIM, device->minor);
-#else
-		create_singlethread_workqueue("drbd_submit");
-#endif
 	if (!device->submit.wq)
 		return -ENOMEM;
 	INIT_WORK(&device->submit.worker, do_submit);

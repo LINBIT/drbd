@@ -763,11 +763,7 @@ start:
 
 	drbd_thread_start(&connection->ack_receiver);
 	connection->ack_sender =
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0)
 		alloc_ordered_workqueue("drbd_as_%s", WQ_MEM_RECLAIM, connection->resource->name);
-#else
-		create_singlethread_workqueue("drbd_ack_sender");
-#endif
 	if (!connection->ack_sender) {
 		drbd_err(connection, "Failed to create workqueue ack_sender\n");
 		schedule_timeout_uninterruptible(HZ);
