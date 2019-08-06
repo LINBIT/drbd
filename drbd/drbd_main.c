@@ -131,13 +131,11 @@ static int param_set_drbd_protocol_version(const char *s, const struct kernel_pa
 
 #define param_check_drbd_protocol_version	param_check_uint
 #define param_get_drbd_protocol_version		param_get_uint
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
-/* 9bbb9e5a3310 param: use ops in struct kernel_param, rather than get and set fns directly */
+
 const struct kernel_param_ops param_ops_drbd_protocol_version = {
 	.set = param_set_drbd_protocol_version,
 	.get = param_get_drbd_protocol_version,
 };
-#endif
 
 unsigned int drbd_protocol_version_min = PRO_VERSION_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
