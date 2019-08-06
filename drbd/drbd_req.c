@@ -1503,7 +1503,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 			bio_endio(bio);
 		} else if (bio_op(bio) == REQ_OP_WRITE_ZEROES) {
 			drbd_process_discard_or_zeroes_req(req, EE_ZEROOUT |
-			    ((bio->bi_opf & DRBD_REQ_NOUNMAP) ? 0 : EE_TRIM));
+			    ((bio->bi_opf & REQ_NOUNMAP) ? 0 : EE_TRIM));
 		} else if (bio_op(bio) == REQ_OP_DISCARD) {
 			drbd_process_discard_or_zeroes_req(req, EE_TRIM);
 		} else {
@@ -1777,7 +1777,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		 * replicating, in which case there is no point. */
 		if (unlikely(req->i.size == 0)) {
 			/* The only size==0 bios we expect are empty flushes. */
-			D_ASSERT(device, req->master_bio->bi_opf & DRBD_REQ_PREFLUSH);
+			D_ASSERT(device, req->master_bio->bi_opf & REQ_PREFLUSH);
 			_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 		} else if (!drbd_process_write_request(req))
 			no_remote = true;
@@ -2219,7 +2219,7 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
 	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
 	 * by the block layer. */
-	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
+	if (unlikely(bio->bi_opf & REQ_HARDBARRIER)) {
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
 		return BLK_QC_T_NONE;

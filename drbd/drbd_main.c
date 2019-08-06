@@ -2233,26 +2233,24 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 	return 0;
 }
 
-/* see also wire_flags_to_bio()
- * DRBD_REQ_*, because we need to semantically map the flags to data packet
- * flags and back. We may replicate to other kernel versions. */
+/* see also wire_flags_to_bio() */
 static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio)
 {
 	if (connection->agreed_pro_version >= 95)
-		return  (bio->bi_opf & DRBD_REQ_SYNC ? DP_RW_SYNC : 0) |
-			(bio->bi_opf & DRBD_REQ_UNPLUG ? DP_UNPLUG : 0) |
-			(bio->bi_opf & DRBD_REQ_FUA ? DP_FUA : 0) |
-			(bio->bi_opf & DRBD_REQ_PREFLUSH ? DP_FLUSH : 0) |
+		return  (bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0) |
+			(bio->bi_opf & REQ_UNPLUG ? DP_UNPLUG : 0) |
+			(bio->bi_opf & REQ_FUA ? DP_FUA : 0) |
+			(bio->bi_opf & REQ_PREFLUSH ? DP_FLUSH : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
 			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
 			  ((connection->agreed_features & DRBD_FF_WZEROES) ?
-			   (DP_ZEROES |(!(bio->bi_opf & DRBD_REQ_NOUNMAP) ? DP_DISCARD : 0))
+			   (DP_ZEROES |(!(bio->bi_opf & REQ_NOUNMAP) ? DP_DISCARD : 0))
 			   : DP_DISCARD)
 			: 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
-	return bio->bi_opf & (DRBD_REQ_SYNC | DRBD_REQ_UNPLUG) ? DP_RW_SYNC : 0;
+	return bio->bi_opf & (REQ_SYNC | REQ_UNPLUG) ? DP_RW_SYNC : 0;
 }
 
 /* Used to send write or TRIM aka REQ_DISCARD requests
