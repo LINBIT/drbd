@@ -242,6 +242,9 @@ int main(int argc, char **argv)
 	patch(1, "alloc_workqueue", true, false,
 	      COMPAT_ALLOC_WORKQUEUE_TAKES_FMT, "takes_fmt");
 
+	patch(1, "struct_kernel_param_ops", true, false,
+	      COMPAT_HAVE_STRUCT_KERNEL_PARAM_OPS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
