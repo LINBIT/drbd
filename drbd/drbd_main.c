@@ -3699,8 +3699,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_no_disk;
 	device->vdisk = disk;
 
-	set_disk_ro(disk, true);
-
 	disk->queue = q;
 	disk->major = DRBD_MAJOR;
 	disk->first_minor = minor;
