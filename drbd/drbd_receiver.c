@@ -1540,8 +1540,8 @@ next_bio:
 	bio->bi_iter.bi_sector = sector;
 	bio_set_dev(bio, device->ldev->backing_bdev);
 	/* we special case some flags in the multi-bio case, see below
-	 * (REQ_UNPLUG, REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio_set_op_attrs(bio, op, op_flags);
+	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
+	bio->bi_opf = op | op_flags;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
 
@@ -1598,9 +1598,6 @@ next_bio:
 		bios = bios->bi_next;
 		bio->bi_next = NULL;
 
-		/* strip off REQ_UNPLUG unless it is the last bio */
-		if (bios && REQ_UNPLUG)
-			bio->bi_opf &= ~REQ_UNPLUG;
 		drbd_generic_make_request(device, fault_type, bio);
 
 		/* strip off REQ_PREFLUSH,
@@ -2436,12 +2433,11 @@ static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection,
 {
 	if (connection->agreed_pro_version >= 95)
 		return  (dpf & DP_RW_SYNC ? REQ_SYNC : 0) |
-			(dpf & DP_UNPLUG ? REQ_UNPLUG : 0) |
 			(dpf & DP_FUA ? REQ_FUA : 0) |
 			(dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
 
 	/* else: we used to communicate one bit only in older DRBD */
-	return dpf & DP_RW_SYNC ? (REQ_SYNC | REQ_UNPLUG) : 0;
+	return dpf & DP_RW_SYNC ? REQ_SYNC : 0;
 }
 
 static unsigned long wire_flags_to_bio_op(u32 dpf)
