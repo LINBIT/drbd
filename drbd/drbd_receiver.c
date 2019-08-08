@@ -995,7 +995,7 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 	device->flush_jif = jiffies;
 	set_bit(FLUSH_PENDING, &device->flags);
 	atomic_inc(&ctx->pending);
-	bio_set_op_attrs(bio, REQ_OP_FLUSH, REQ_PREFLUSH);
+	bio->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
 	submit_bio(bio);
 }
 
@@ -1631,7 +1631,7 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 }
 
 /**
- * w_e_reissue() - Worker callback; Resubmit a bio, without REQ_HARDBARRIER set
+ * w_e_reissue() - Worker callback; Resubmit a bio
  * @device:	DRBD device.
  * @dw:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
@@ -2771,16 +2771,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
 		peer_req->flags |= EE_MAY_SET_IN_SYNC;
-
-	/* last "fixes" to rw flags.
-	 * Strip off BIO_RW_BARRIER unconditionally,
-	 * it is not supposed to be here anyways.
-	 * (Was FUA or FLUSH on the peer,
-	 * and got translated to BARRIER on this side).
-	 * Note that the epoch handling code below
-	 * may add it again, though.
-	 */
-	op_flags &= ~REQ_HARDBARRIER;
 
 	spin_lock(&connection->epoch_lock);
 	peer_req->epoch = connection->current_epoch;

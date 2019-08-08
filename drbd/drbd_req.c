@@ -2215,16 +2215,6 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 #endif
 	unsigned long start_jif;
 
-	/* We never supported BIO_RW_BARRIER.
-	 * We don't need to, anymore, either: starting with kernel 2.6.36,
-	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
-	 * by the block layer. */
-	if (unlikely(bio->bi_opf & REQ_HARDBARRIER)) {
-		bio->bi_status = BLK_STS_NOTSUPP;
-		bio_endio(bio);
-		return BLK_QC_T_NONE;
-	}
-
 	blk_queue_split(q, &bio);
 
 	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
