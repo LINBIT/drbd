@@ -885,7 +885,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case DISCARD_COMPLETED_NOTSUPP:
 	case DISCARD_COMPLETED_WITH_ERROR:
 		/* I'd rather not detach from local disk just because it
-		 * failed a REQ_DISCARD. */
+		 * failed a REQ_OP_DISCARD. */
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
 		break;
 

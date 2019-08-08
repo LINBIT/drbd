@@ -186,7 +186,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
 
-	/* FIXME do we want to detach for failed REQ_DISCARD?
+	/* FIXME do we want to detach for failed REQ_OP_DISCARD?
 	 * ((peer_req->flags & (EE_WAS_ERROR|EE_TRIM)) == EE_WAS_ERROR) */
 	if (peer_req->flags & EE_WAS_ERROR)
 		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);

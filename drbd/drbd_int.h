@@ -445,7 +445,7 @@ enum {
 	 * and the P_BARRIER_ACK send. */
 	__EE_IS_BARRIER,
 
-	/* is this a TRIM aka REQ_DISCARD? */
+	/* is this a TRIM aka REQ_OP_DISCARD? */
 	__EE_TRIM,
 	/* explicit zero-out requested, or
 	 * our lower level cannot handle trim,

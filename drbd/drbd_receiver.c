@@ -4869,7 +4869,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	/* Leave drbd_reconsider_queue_parameters() before drbd_determine_dev_size().
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_queue_parameters(), we can be sure that after
-	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
+	   drbd_determine_dev_size() no REQ_OP_DISCARDs are in the queue. */
 	if (have_ldev) {
 		enum dds_flags local_ddsf = ddsf;
 		drbd_reconsider_queue_parameters(device, device->ldev, o);
