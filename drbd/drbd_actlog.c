@@ -100,12 +100,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 		op_flags |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
 	op_flags |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC;
 
-#ifdef REQ_PRIO
-	op_flags |= REQ_PRIO;
-#endif
-#ifdef REQ_META
 	op_flags |= REQ_META;
-#endif
 	device->md_io.done = 0;
 	device->md_io.error = -ENODEV;
 
