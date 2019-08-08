@@ -1220,7 +1220,6 @@ retry:
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		drbd_md_sync_if_dirty(device);
-		set_disk_ro(device->vdisk, role == R_SECONDARY);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
 			drbd_kobject_uevent(device);
 	}
