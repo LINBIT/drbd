@@ -251,6 +251,9 @@ int main(int argc, char **argv)
 	patch(1, "req_prio", true, false,
 	      COMPAT_HAVE_REQ_PRIO, "present");
 
+	patch(1, "req_preflush", true, false,
+	      COMPAT_HAVE_REQ_PREFLUSH, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
