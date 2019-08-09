@@ -260,6 +260,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_flush", false, true,
 	      COMPAT_HAVE_BIO_FLUSH, "present");
 
+	patch(1, "req_noidle", false, true,
+	      COMPAT_HAVE_REQ_NOIDLE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
