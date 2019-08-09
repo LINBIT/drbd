@@ -22,3 +22,8 @@ fn(...)
 - return ret;
 + return;
 }
+
+@@
+@@
+- BLK_QC_T_NONE
++ 0
