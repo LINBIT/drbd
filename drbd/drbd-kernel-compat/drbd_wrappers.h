@@ -243,194 +243,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 }
 #endif
 
-/* bio -> bi_rw/bi_opf REQ_* and BIO_RW_* REQ_OP_* compat stuff {{{1 */
-/* REQ_* and BIO_RW_* flags have been moved around in the tree,
- * and have finally been "merged" with
- * 7b6d91daee5cac6402186ff224c3af39d79f4a0e and
- * 7cc015811ef8992dfcce314d0ed9642bc18143d1
- * We communicate between different systems,
- * so we have to somehow semantically map the bi_opf flags
- * bi_opf (some kernel version) -> data packet flags -> bi_opf (other kernel version)
- */
-
-#if defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) && \
-	!(defined(RHEL_RELEASE_CODE /* 7.4 broke our compat detection here */) && \
-			LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0))
-
-/* [4.8 ... ] Linux 4.8 split bio OPs and FLAGs {{{2 */
-
-#define DRBD_REQ_PREFLUSH	REQ_PREFLUSH
-#define DRBD_REQ_FUA		REQ_FUA
-#define DRBD_REQ_SYNC		REQ_SYNC
-
-	/* long gone */
-#define DRBD_REQ_HARDBARRIER	0
-#define DRBD_REQ_UNPLUG		0
-
-	/* became an op, no longer flag */
-#define DRBD_REQ_DISCARD	0
-#define DRBD_REQ_WSAME		0
-
-/* Gone in Linux 4.10 */
-#ifndef WRITE_SYNC
-#define WRITE_SYNC REQ_SYNC
-#endif
-
-#ifndef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-#define REQ_OP_WRITE_ZEROES (-3u)
-#endif
-
-#elif defined(BIO_FLUSH)
-/* RHEL 6.1 ("not quite 2.6.32") backported FLUSH/FUA as BIO_RW_FLUSH/FUA {{{2
- * and at that time also introduced the defines BIO_FLUSH/FUA.
- * There is also REQ_FLUSH/FUA, but these do NOT share
- * the same value space as the bio rw flags, yet.
- */
-
-#define DRBD_REQ_PREFLUSH	(1UL << BIO_RW_FLUSH)
-#define DRBD_REQ_FUA		(1UL << BIO_RW_FUA)
-#define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
-#define DRBD_REQ_DISCARD	(1UL << BIO_RW_DISCARD)
-#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
-
-#define REQ_RAHEAD		(1UL << BIO_RW_AHEAD)
-
-#elif defined(REQ_FLUSH)	/* [2.6.36 .. 4.7] introduced in 2.6.36, {{{2
-				 * now equivalent to bi_rw */
-
-#define DRBD_REQ_SYNC		REQ_SYNC
-#define DRBD_REQ_PREFLUSH	REQ_FLUSH
-#define DRBD_REQ_FUA		REQ_FUA
-#define DRBD_REQ_DISCARD	REQ_DISCARD
-/* REQ_HARDBARRIER has been around for a long time,
- * without being directly related to bi_rw.
- * so the ifdef is only usful inside the ifdef REQ_FLUSH!
- * commit 7cc0158 (v2.6.36-rc1) made it a bi_rw flag, ...  */
-#ifdef REQ_HARDBARRIER
-#define DRBD_REQ_HARDBARRIER	REQ_HARDBARRIER
-#else
-/* ... but REQ_HARDBARRIER was removed again in 02e031c (v2.6.37-rc4). */
-#define DRBD_REQ_HARDBARRIER	0
-#endif
-
-/* again: testing on this _inside_ the ifdef REQ_FLUSH,
- * see 721a960 block: kill off REQ_UNPLUG */
-#ifdef REQ_UNPLUG
-#define DRBD_REQ_UNPLUG		REQ_UNPLUG
-#else
-#define DRBD_REQ_UNPLUG		0
-#endif
-
-#ifdef REQ_WRITE_SAME
-#define DRBD_REQ_WSAME         REQ_WRITE_SAME
-#endif
-
-#else				/* [<=2.6.35] "older", and hopefully not {{{2
-				 * "partially backported" kernel */
-
-#define REQ_RAHEAD             (1UL << BIO_RW_AHEAD)
-
-#if defined(BIO_RW_SYNC)
-/* see upstream commits
- * 213d9417fec62ef4c3675621b9364a667954d4dd,
- * 93dbb393503d53cd226e5e1f0088fe8f4dbaa2b8
- * later, the defines even became an enum ;-) */
-#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNC)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_SYNC)
-#else
-/* cannot test on defined(BIO_RW_SYNCIO), it may be an enum */
-#define DRBD_REQ_SYNC		(1UL << BIO_RW_SYNCIO)
-#define DRBD_REQ_UNPLUG		(1UL << BIO_RW_UNPLUG)
-#endif
-
-#define DRBD_REQ_PREFLUSH	(1UL << BIO_RW_BARRIER)
-/* REQ_FUA has been around for a longer time,
- * without a direct equivalent in bi_rw. */
-#define DRBD_REQ_FUA		(1UL << BIO_RW_BARRIER)
-#define DRBD_REQ_HARDBARRIER	(1UL << BIO_RW_BARRIER)
-
-/* we don't support DISCARDS yet, anyways.
- * cannot test on defined(BIO_RW_DISCARD), it may be an enum */
-#define DRBD_REQ_DISCARD	0
-#endif
-
-#ifdef REQ_NOUNMAP
-#define DRBD_REQ_NOUNMAP REQ_NOUNMAP
-#else
-#define DRBD_REQ_NOUNMAP	0
-#endif
-
-/* this results in:
-	bi_opf   -> dp_flags
-
-< 2.6.28
-	SYNC	-> SYNC|UNPLUG
-	BARRIER	-> FUA|FLUSH
-	there is no DISCARD
-2.6.28
-	SYNC	-> SYNC|UNPLUG
-	BARRIER	-> FUA|FLUSH
-	DISCARD	-> DISCARD
-2.6.29
-	SYNCIO	-> SYNC
-	UNPLUG	-> UNPLUG
-	BARRIER	-> FUA|FLUSH
-	DISCARD	-> DISCARD
-2.6.36
-	SYNC	-> SYNC
-	UNPLUG	-> UNPLUG
-	FUA	-> FUA
-	FLUSH	-> FLUSH
-	DISCARD	-> DISCARD
---------------------------------------
-	dp_flags   -> bi_rw
-< 2.6.28
-	SYNC	-> SYNC (and unplug)
-	UNPLUG	-> SYNC (and unplug)
-	FUA	-> BARRIER
-	FLUSH	-> BARRIER
-	there is no DISCARD,
-	it will be silently ignored on the receiving side.
-2.6.28
-	SYNC	-> SYNC (and unplug)
-	UNPLUG	-> SYNC (and unplug)
-	FUA	-> BARRIER
-	FLUSH	-> BARRIER
-	DISCARD -> DISCARD
-	(if that fails, we handle it like any other IO error)
-2.6.29
-	SYNC	-> SYNCIO
-	UNPLUG	-> UNPLUG
-	FUA	-> BARRIER
-	FLUSH	-> BARRIER
-	DISCARD -> DISCARD
-2.6.36
-	SYNC	-> SYNC
-	UNPLUG	-> UNPLUG
-	FUA	-> FUA
-	FLUSH	-> FLUSH
-	DISCARD	-> DISCARD
-*/
-
-/* fallback defines for older kernels {{{2 */
-
-#ifndef DRBD_REQ_WSAME
-#define DRBD_REQ_WSAME		0
-#endif
-
-#ifndef WRITE_FLUSH
-#ifndef WRITE_SYNC
-#error  FIXME WRITE_SYNC undefined??
-#endif
-#define WRITE_FLUSH       (WRITE_SYNC | DRBD_REQ_PREFLUSH)
-#endif
-
-#ifndef REQ_NOIDLE
-/* introduced in aeb6faf (2.6.30), relevant for CFQ */
-#define REQ_NOIDLE 0
-#endif
-
 #ifndef KREF_INIT
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif
@@ -447,6 +259,18 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #else /* < v3.9 */
 #warning "BDI_CAP_STABLE_WRITES not available"
 #define set_bdi_cap_stable_writes(cap)	do { } while (0)
+#endif
+
+#ifndef REQ_NOUNMAP
+#define REQ_NOUNMAP 0
+#endif
+
+#ifndef REQ_DISCARD
+#define REQ_DISCARD 0
+#endif
+
+#ifndef REQ_WSAME
+#define REQ_WSAME 0
 #endif
 
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
@@ -483,6 +307,11 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #  define  REQ_OP_WRITE_ZEROES (-3u)
 # endif
 #endif
+
+#ifndef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
+#define REQ_OP_WRITE_ZEROES (-3u)
+#endif
+
 #else /* !defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) */
 #define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
 
@@ -505,28 +334,17 @@ enum req_op {
 	 * bio_op() aka. op_from_rq_bits() will never return these,
 	 * and we map the REQ_OP_* to something stupid.
 	 */
-       REQ_OP_DISCARD		= DRBD_REQ_DISCARD ?: -1,
-       REQ_OP_WRITE_SAME	= DRBD_REQ_WSAME   ?: -2,
-       REQ_OP_WRITE_ZEROES	= -3,
+	REQ_OP_DISCARD          = REQ_DISCARD ?: -1,
+	REQ_OP_WRITE_SAME       = REQ_WSAME   ?: -2,
+	REQ_OP_WRITE_ZEROES     = -3,
 };
 #define bio_op(bio)                            (op_from_rq_bits((bio)->bi_rw))
 
-static inline void bio_set_op_attrs(struct bio *bio, const int op, const long flags)
-{
-	/* If we explicitly issue discards or write_same, we use
-	 * blkdev_issue_discard() and blkdev_issue_write_same() helpers.
-	 * If we implicitly submit them, we just pass on a cloned bio to
-	 * generic_make_request().  We expect to use bio_set_op_attrs() with
-	 * REQ_OP_READ or REQ_OP_WRITE only. */
-	BUG_ON(!(op == REQ_OP_READ || op == REQ_OP_WRITE));
-	bio->bi_rw |= (op | flags);
-}
-
 static inline int op_from_rq_bits(u64 flags)
 {
-	if (flags & DRBD_REQ_DISCARD)
+	if (flags & REQ_DISCARD)
 		return REQ_OP_DISCARD;
-	else if (flags & DRBD_REQ_WSAME)
+	else if (flags & REQ_WSAME)
 		return REQ_OP_WRITE_SAME;
 	else if (flags & REQ_WRITE)
 		return REQ_OP_WRITE;
@@ -534,14 +352,6 @@ static inline int op_from_rq_bits(u64 flags)
 		return REQ_OP_READ;
 }
 #endif
-
-#ifdef COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES
-#define bi_opf bi_rw
-#define submit_bio(__bio)	submit_bio(__bio->bi_rw, __bio)
-/* see comment in above compat enum req_op */
-#define REQ_OP_FLUSH		REQ_OP_WRITE
-#endif
-/* }}}1 bio -> bi_rw/bi_opf REQ_* and BIO_RW_* REQ_OP_* compat stuff */
 
 #ifndef CONFIG_DYNAMIC_DEBUG
 /* At least in 2.6.34 the function macro dynamic_dev_dbg() is broken when compiling
