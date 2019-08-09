@@ -22,7 +22,7 @@ else
 	exit 1
 fi
 
-
+mkdir -p cocci_cache
 mkdir -p cocci_cache.previous
 for F in cocci_cache/*; do
     test -d $F && mv $F cocci_cache.previous/
