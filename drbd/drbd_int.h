@@ -1618,6 +1618,9 @@ __drbd_next_peer_device_ref(u64 *, struct drbd_peer_device *, struct drbd_device
 
 extern void tl_abort_disk_io(struct drbd_device *device);
 
+extern sector_t drbd_get_max_capacity(
+		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn);
+
 /* Meta data layout
  *
  * We currently have two possible layouts.
@@ -1703,28 +1706,26 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 /* in one sector of the bitmap, we have this many activity_log extents. */
 #define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SHIFT - AL_EXTENT_SHIFT))
 
-#define DRBD_MAX_SECTORS_32 (0xffffffffLU)
-
-#if !defined(CONFIG_LBDAF) && !defined(CONFIG_LBD) && BITS_PER_LONG == 32
-#define DRBD_MAX_SECTORS      DRBD_MAX_SECTORS_32
-#define DRBD_MAX_SECTORS_FLEX DRBD_MAX_SECTORS_32
-#else
-/* we have a certain meta data variant that has a fixed on-disk size of 128
- * MiB, of which 4k are our "superblock", and 32k are the fixed size activity
- * log, leaving this many sectors covered by the bitmap.
+/* Indexed external meta data has a fixed on-disk size of 128MiB, of which
+ * 4KiB are our "superblock", and 32KiB are the fixed size activity
+ * log, leaving this many sectors for the bitmap.
  */
-#define DRBD_MAX_SECTORS \
-	  BM_BIT_TO_SECT(((128 << 20) - (32 << 10) - (4 << 10)) * BITS_PER_BYTE)
+#define DRBD_BM_SECTORS_INDEXED \
+	  (((128 << 20) - (32 << 10) - (4 << 10)) >> SECTOR_SHIFT)
+
 #if BITS_PER_LONG == 32
-/* adjust by one page worth of bitmap,
- * so we won't wrap around in drbd_bm_find_next_bit.
- * you should use 64bit OS for that much storage, anyways. */
-#define DRBD_MAX_SECTORS_FLEX BM_BIT_TO_SECT(0xffff7fff)
+#if !defined(CONFIG_LBDAF) && !defined(CONFIG_LBD)
+#define DRBD_MAX_SECTORS (0xffffffffLU)
 #else
-/* we allow up to 1 PiB now on 64bit architecture with "flexible" meta data */
-#define DRBD_MAX_SECTORS_FLEX (1UL << 51)
-/* corresponds to (1UL << 38) bits right now. */
+/* With large block device support, the size is limited by the fact that we
+ * want to be able to address bitmap bits with a long. Additionally adjust by
+ * one page worth of bitmap, so we don't wrap around when iterating. */
+#define DRBD_MAX_SECTORS BM_BIT_TO_SECT(0xffff7fff)
 #endif
+#else
+/* We allow up to 1 PiB on 64 bit architectures as long as our meta data
+ * is large enough. */
+#define DRBD_MAX_SECTORS (1UL << (50 - SECTOR_SHIFT))
 #endif
 
 /* BIO_MAX_SIZE is 256 * PAGE_SIZE,
@@ -2331,41 +2332,6 @@ static inline sector_t drbd_md_last_sector(struct drbd_backing_dev *bdev)
 	default:
 		return bdev->md.md_offset + bdev->md.md_size_sect -1;
 	}
-}
-
-/**
- * drbd_get_max_capacity() - Returns the capacity we announce to out peer
- * @bdev:	Meta data block device.
- *
- * returns the capacity we announce to out peer.  we clip ourselves at the
- * various MAX_SECTORS, because if we don't, current implementation will
- * oops sooner or later
- */
-static inline sector_t drbd_get_max_capacity(struct drbd_backing_dev *bdev)
-{
-	sector_t s;
-
-	switch (bdev->md.meta_dev_idx) {
-	case DRBD_MD_INDEX_INTERNAL:
-	case DRBD_MD_INDEX_FLEX_INT:
-		s = drbd_get_capacity(bdev->backing_bdev)
-			? min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
-				drbd_md_first_sector(bdev))
-			: 0;
-		break;
-	case DRBD_MD_INDEX_FLEX_EXT:
-		s = min_t(sector_t, DRBD_MAX_SECTORS_FLEX,
-				drbd_get_capacity(bdev->backing_bdev));
-		/* clip at maximum size the meta device can support */
-		s = min_t(sector_t, s,
-			BM_BIT_TO_SECT((bdev->md.md_size_sect
-				     - bdev->md.bm_offset) * BITS_PER_BYTE));
-		break;
-	default:
-		s = min_t(sector_t, DRBD_MAX_SECTORS,
-				drbd_get_capacity(bdev->backing_bdev));
-	}
-	return s;
 }
 
 /**
