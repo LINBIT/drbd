@@ -257,6 +257,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_bi_opf", true, false,
 	      COMPAT_HAVE_BIO_BI_OPF, "present");
 
+	patch(1, "bio_flush", false, true,
+	      COMPAT_HAVE_BIO_FLUSH, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
