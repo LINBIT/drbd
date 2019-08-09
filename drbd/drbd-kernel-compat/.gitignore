@@ -1,0 +1,17 @@
+.idr.o.cmd
+idr.o
+
+.blkdev_issue_zeroout.o.cmd
+blkdev_issue_zeroout.o
+
+.nsecs_to_jiffies.o.cmd
+nsecs_to_jiffies.o
+
+.drbd_wrappers.o.cmd
+drbd_wrappers.o
+
+.gen_patch_names.cmd
+gen_patch_names
+
+cocci_cache/*
+compat.patch
