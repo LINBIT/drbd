@@ -913,7 +913,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case DISCARD_COMPLETED_NOTSUPP:
 	case DISCARD_COMPLETED_WITH_ERROR:
 		/* I'd rather not detach from local disk just because it
-		 * failed a REQ_DISCARD. */
+		 * failed a REQ_OP_DISCARD. */
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
 		break;
 
@@ -1523,7 +1523,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 			bio_endio(bio);
 		} else if (bio_op(bio) == REQ_OP_WRITE_ZEROES) {
 			drbd_process_discard_or_zeroes_req(req, EE_ZEROOUT |
-			    ((bio->bi_opf & DRBD_REQ_NOUNMAP) ? 0 : EE_TRIM));
+			    ((bio->bi_opf & REQ_NOUNMAP) ? 0 : EE_TRIM));
 		} else if (bio_op(bio) == REQ_OP_DISCARD) {
 			drbd_process_discard_or_zeroes_req(req, EE_TRIM);
 		} else {
@@ -1805,7 +1805,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	/* A size==0 bio can only be an empty flush, which is mapped to a DRBD
 	 * P_BARRIER packet. */
 	if (unlikely(req->i.size == 0)) {
-		D_ASSERT(device, req->master_bio->bi_opf & DRBD_REQ_PREFLUSH);
+		D_ASSERT(device, req->master_bio->bi_opf & REQ_PREFLUSH);
 		_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
 	} else {
 		if (rw == WRITE) {
@@ -2271,16 +2271,6 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	ktime_t start_kt;
 #endif
 	unsigned long start_jif;
-
-	/* We never supported BIO_RW_BARRIER.
-	 * We don't need to, anymore, either: starting with kernel 2.6.36,
-	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
-	 * by the block layer. */
-	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
-		bio->bi_status = BLK_STS_NOTSUPP;
-		bio_endio(bio);
-		return BLK_QC_T_NONE;
-	}
 
 	blk_queue_split(q, &bio);
 

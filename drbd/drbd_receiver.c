@@ -966,7 +966,7 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 	device->flush_jif = jiffies;
 	set_bit(FLUSH_PENDING, &device->flags);
 	atomic_inc(&ctx->pending);
-	bio_set_op_attrs(bio, REQ_OP_FLUSH, WRITE_FLUSH);
+	bio->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
 	submit_bio(bio);
 }
 
@@ -1509,8 +1509,8 @@ next_bio:
 	bio->bi_iter.bi_sector = sector;
 	bio_set_dev(bio, device->ldev->backing_bdev);
 	/* we special case some flags in the multi-bio case, see below
-	 * (REQ_UNPLUG, REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio_set_op_attrs(bio, op, op_flags);
+	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
+	bio->bi_opf = op | op_flags;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
 
@@ -1567,15 +1567,12 @@ next_bio:
 		bios = bios->bi_next;
 		bio->bi_next = NULL;
 
-		/* strip off REQ_UNPLUG unless it is the last bio */
-		if (bios && DRBD_REQ_UNPLUG)
-			bio->bi_opf &= ~DRBD_REQ_UNPLUG;
 		drbd_generic_make_request(device, fault_type, bio);
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
 		if (bios && bios->bi_next)
-			bios->bi_opf &= ~DRBD_REQ_PREFLUSH;
+			bios->bi_opf &= ~REQ_PREFLUSH;
 	} while (bios);
 	return 0;
 
@@ -1603,7 +1600,7 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 }
 
 /**
- * w_e_reissue() - Worker callback; Resubmit a bio, without REQ_HARDBARRIER set
+ * w_e_reissue() - Worker callback; Resubmit a bio
  * @device:	DRBD device.
  * @dw:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
@@ -2370,15 +2367,12 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	return ret;
 }
 
-/* see also bio_flags_to_wire()
- * DRBD_REQ_*, because we need to semantically map the flags to data packet
- * flags and back. We may replicate to other kernel versions. */
+/* see also bio_flags_to_wire() */
 static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection, u32 dpf)
 {
-	return  (dpf & DP_RW_SYNC ? DRBD_REQ_SYNC : 0) |
-		(dpf & DP_UNPLUG ? DRBD_REQ_UNPLUG : 0) |
-		(dpf & DP_FUA ? DRBD_REQ_FUA : 0) |
-		(dpf & DP_FLUSH ? DRBD_REQ_PREFLUSH : 0);
+	return  (dpf & DP_RW_SYNC ? REQ_SYNC : 0) |
+		(dpf & DP_FUA ? REQ_FUA : 0) |
+		(dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
 }
 
 static unsigned long wire_flags_to_bio_op(u32 dpf)
@@ -2744,16 +2738,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
 		peer_req->flags |= EE_MAY_SET_IN_SYNC;
 
-	/* last "fixes" to rw flags.
-	 * Strip off BIO_RW_BARRIER unconditionally,
-	 * it is not supposed to be here anyways.
-	 * (Was FUA or FLUSH on the peer,
-	 * and got translated to BARRIER on this side).
-	 * Note that the epoch handling code below
-	 * may add it again, though.
-	 */
-	op_flags &= ~DRBD_REQ_HARDBARRIER;
-
 	spin_lock(&connection->epoch_lock);
 	peer_req->epoch = connection->current_epoch;
 	atomic_inc(&peer_req->epoch->epoch_size);
@@ -2770,14 +2754,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		epoch = list_entry(peer_req->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == peer_req->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-			op_flags |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
+			op_flags |= REQ_PREFLUSH | REQ_FUA;
 			peer_req->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-				op_flags |= DRBD_REQ_PREFLUSH | DRBD_REQ_FUA;
+				op_flags |= REQ_PREFLUSH | REQ_FUA;
 				peer_req->flags |= EE_IS_BARRIER;
 			}
 		}
@@ -4604,7 +4588,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	/* Leave drbd_reconsider_queue_parameters() before drbd_determine_dev_size().
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_queue_parameters(), we can be sure that after
-	   drbd_determine_dev_size() no REQ_DISCARDs are in the queue. */
+	   drbd_determine_dev_size() no REQ_OP_DISCARDs are in the queue. */
 	if (have_ldev) {
 		enum dds_flags local_ddsf = ddsf;
 		drbd_reconsider_queue_parameters(device, device->ldev, o);

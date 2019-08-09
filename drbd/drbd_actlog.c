@@ -97,8 +97,8 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	int err, op_flags = 0;
 
 	if ((op == REQ_OP_WRITE) && !test_bit(MD_NO_FUA, &device->flags))
-		op_flags |= DRBD_REQ_FUA | DRBD_REQ_PREFLUSH;
-	op_flags |= DRBD_REQ_UNPLUG | DRBD_REQ_SYNC;
+		op_flags |= REQ_FUA | REQ_PREFLUSH;
+	op_flags |= REQ_SYNC;
 
 	op_flags |= REQ_META;
 	device->md_io.done = 0;
@@ -113,7 +113,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio->bi_private = device;
 	bio->bi_end_io = drbd_md_endio;
 
-	bio_set_op_attrs(bio, op, op_flags);
+	bio->bi_opf = op | op_flags;
 
 	if (op != REQ_OP_WRITE && device->disk_state[NOW] == D_DISKLESS && device->ldev == NULL)
 		/* special case, drbd_md_read() during drbd_adm_attach(): no get_ldev */
