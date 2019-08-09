@@ -328,54 +328,50 @@ void drbd_request_endio(struct bio *bio)
 		complete_master_bio(device, &m);
 }
 
-void drbd_csum_pages(struct crypto_ahash *tfm, struct page *page, void *digest)
+void drbd_csum_pages(struct crypto_shash *tfm, struct page *page, void *digest)
+/* kmap compat: KM_USER1 */
 {
-	AHASH_REQUEST_ON_STACK(req, tfm);
-	struct scatterlist sg;
+	SHASH_DESC_ON_STACK(desc, tfm);
 
-	ahash_request_set_tfm(req, tfm);
-	ahash_request_set_callback(req, 0, NULL, NULL);
+	desc->tfm = tfm;
 
-	sg_init_table(&sg, 1);
-	crypto_ahash_init(req);
+	crypto_shash_init(desc);
 
 	page_chain_for_each(page) {
 		unsigned off = page_chain_offset(page);
 		unsigned len = page_chain_size(page);
-		sg_set_page(&sg, page, len, off);
-		ahash_request_set_crypt(req, &sg, NULL, sg.length);
-		crypto_ahash_update(req);
+		u8 *src;
+		src = kmap_atomic(page);
+		crypto_shash_update(desc, src + off, len);
+		kunmap_atomic(src);
 	}
-	ahash_request_set_crypt(req, NULL, digest, 0);
-	crypto_ahash_final(req);
-	ahash_request_zero(req);
+	crypto_shash_final(desc, digest);
+	shash_desc_zero(desc);
 }
 
-void drbd_csum_bio(struct crypto_ahash *tfm, struct bio *bio, void *digest)
+void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest)
+/* kmap compat: KM_USER1 */
 {
 	struct bio_vec bvec;
 	struct bvec_iter iter;
-	AHASH_REQUEST_ON_STACK(req, tfm);
-	struct scatterlist sg;
+	SHASH_DESC_ON_STACK(desc, tfm);
 
-	ahash_request_set_tfm(req, tfm);
-	ahash_request_set_callback(req, 0, NULL, NULL);
+	desc->tfm = tfm;
 
-	sg_init_table(&sg, 1);
-	crypto_ahash_init(req);
+	crypto_shash_init(desc);
 
 	bio_for_each_segment(bvec, bio, iter) {
-		sg_set_page(&sg, bvec.bv_page, bvec.bv_len, bvec.bv_offset);
-		ahash_request_set_crypt(req, &sg, NULL, sg.length);
-		crypto_ahash_update(req);
+		u8 *src;
+		src = kmap_atomic(bvec.bv_page);
+		crypto_shash_update(desc, src + bvec.bv_offset, bvec.bv_len);
+		kunmap_atomic(src);
 		/* WRITE_SAME has only one segment,
 		 * checksum the payload only once. */
 		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}
-	ahash_request_set_crypt(req, NULL, digest, 0);
-	crypto_ahash_final(req);
-	ahash_request_zero(req);
+	crypto_shash_final(desc, digest);
+	shash_desc_zero(desc);
 }
 
 /* MAYBE merge common code with w_e_end_ov_req */
@@ -393,7 +389,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))
 		goto out;
 
-	digest_size = crypto_ahash_digestsize(peer_device->connection->csums_tfm);
+	digest_size = crypto_shash_digestsize(peer_device->connection->csums_tfm);
 	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (digest) {
 		drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
@@ -1453,7 +1449,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 		 * a real fix would be much more involved,
 		 * introducing more locking mechanisms */
 		if (peer_device->connection->csums_tfm) {
-			digest_size = crypto_ahash_digestsize(peer_device->connection->csums_tfm);
+			digest_size = crypto_shash_digestsize(peer_device->connection->csums_tfm);
 			D_ASSERT(device, digest_size == di->digest_size);
 			digest = kmalloc(digest_size, GFP_NOIO);
 			if (digest) {
@@ -1500,7 +1496,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	digest_size = crypto_ahash_digestsize(peer_device->connection->verify_tfm);
+	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
 	digest = drbd_prepare_drequest_csum(peer_req, digest_size);
 	if (!digest) {
@@ -1591,7 +1587,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	di = peer_req->digest;
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		digest_size = crypto_ahash_digestsize(peer_device->connection->verify_tfm);
+		digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 		digest = kmalloc(digest_size, GFP_NOIO);
 		if (digest) {
 			drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);

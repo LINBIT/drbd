@@ -953,10 +953,10 @@ struct drbd_connection {
 	struct timer_list connect_timer;
 
 	struct crypto_shash *cram_hmac_tfm;
-	struct crypto_ahash *integrity_tfm;  /* checksums we compute, updates protected by connection->mutex[DATA_STREAM] */
-	struct crypto_ahash *peer_integrity_tfm;  /* checksums we verify, only accessed from receiver thread  */
-	struct crypto_ahash *csums_tfm;
-	struct crypto_ahash *verify_tfm;
+	struct crypto_shash *integrity_tfm;  /* checksums we compute, updates protected by connection->mutex[DATA_STREAM] */
+	struct crypto_shash *peer_integrity_tfm;  /* checksums we verify, only accessed from receiver thread  */
+	struct crypto_shash *csums_tfm;
+	struct crypto_shash *verify_tfm;
 
 	void *int_dig_in;
 	void *int_dig_vv;
@@ -1922,8 +1922,8 @@ static inline void ov_skipped_print(struct drbd_peer_device *peer_device)
 	peer_device->ov_last_skipped_size = 0;
 }
 
-extern void drbd_csum_bio(struct crypto_ahash *, struct bio *, void *);
-extern void drbd_csum_pages(struct crypto_ahash *, struct page *, void *);
+extern void drbd_csum_bio(struct crypto_shash *, struct bio *, void *);
+extern void drbd_csum_pages(struct crypto_shash *, struct page *, void *);
 /* worker callbacks */
 extern int w_e_end_data_req(struct drbd_work *, int);
 extern int w_e_end_rsdata_req(struct drbd_work *, int);
