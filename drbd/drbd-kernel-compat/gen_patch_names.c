@@ -254,6 +254,9 @@ int main(int argc, char **argv)
 	patch(1, "req_preflush", true, false,
 	      COMPAT_HAVE_REQ_PREFLUSH, "present");
 
+	patch(1, "bio_bi_opf", true, false,
+	      COMPAT_HAVE_BIO_BI_OPF, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
