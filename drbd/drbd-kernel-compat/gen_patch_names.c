@@ -76,9 +76,6 @@ int main(int argc, char **argv)
 	/* 		COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD, "discard", */
 	/* 		COMPAT_BLKDEV_ISSUE_ZEROOUT_BLKDEV_IFL_WAIT, "ifl_wait"); */
 	/* #<{(| we have all of this, need none them |)}># */
-	/* patch(2, "all", false, false, */
-	/* 		COMPAT_DRBD_RELEASE_RETURNS_VOID, "returns_void", */
-	/* 		COMPAT_HAVE_AHASH_REQUEST_ON_STACK, "req_on_stack"); */
 	/* patch(2, "2nd_feature", false, false, */
 	/* 		COMPAT_HAVE_ATOMIC_IN_FLIGHT, "atomic_in_flight", */
 	/* 		COMPAT_HAVE_BD_CLAIM_BY_DISK, "bd_claim_by_disk"); */

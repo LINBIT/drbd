@@ -1,15 +1,4 @@
 @@
-expression req;
-@@
-- ahash_request_zero(req);
-+ memset(req, 0, sizeof(*req) + crypto_ahash_reqsize(crypto_ahash_reqtfm(req)));
-+ #ifdef barrier_data
-+	barrier_data(req);
-+ #else
-+	barrier();
-+ #endif
-
-@@
 expression desc;
 @@
 - shash_desc_zero(desc);

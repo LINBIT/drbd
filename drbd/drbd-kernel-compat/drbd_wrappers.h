@@ -298,18 +298,9 @@ static inline int simple_positive(struct dentry *dentry)
 }
 #endif
 
-#if !(defined(COMPAT_HAVE_AHASH_REQUEST_ON_STACK) && \
-      defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
+#if !(defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
       defined COMPAT_HAVE_SHASH_DESC_ZERO)
 #include <crypto/hash.h>
-
-/* introduced in d4421c54c45f (v4.2-rc1-163) */
-#ifndef COMPAT_HAVE_AHASH_REQUEST_ON_STACK
-#define AHASH_REQUEST_ON_STACK(name, ahash)			   \
-	char __##name##_desc[sizeof(struct ahash_request) +	   \
-		crypto_ahash_reqsize(ahash)] CRYPTO_MINALIGN_ATTR; \
-	struct ahash_request *name = (void *)__##name##_desc
-#endif
 
 /* introduced in a0a77af14117 (v3.17-9284) */
 #ifndef COMPAT_HAVE_SHASH_DESC_ON_STACK
@@ -324,13 +315,6 @@ static inline int simple_positive(struct dentry *dentry)
 #ifndef barrier_data
 #define barrier_data(ptr) barrier()
 #endif
-static inline void ahash_request_zero(struct ahash_request *req)
-{
-	/* memzero_explicit(...) */
-	memset(req, 0, sizeof(*req) + crypto_ahash_reqsize(crypto_ahash_reqtfm(req)));
-	barrier_data(req);
-}
-
 static inline void shash_desc_zero(struct shash_desc *desc)
 {
 	/* memzero_explicit(...) */
