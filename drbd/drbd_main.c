@@ -587,8 +587,8 @@ static int drbd_thread_setup(void *arg)
 	unsigned long flags;
 	int retval;
 
-	allow_signal(DRBD_SIGKILL);
-	allow_signal(SIGXCPU);
+	allow_kernel_signal(DRBD_SIGKILL);
+	allow_kernel_signal(SIGXCPU);
 
 	if (connection)
 		kref_get(&connection->kref);
