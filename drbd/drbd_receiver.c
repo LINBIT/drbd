@@ -3716,16 +3716,24 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
 	u64 self, peer;
+	u64 local_uuid_flags;
 	int i, j;
+	bool initial_handshake;
+	bool uuid_matches_initial;
 
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
+	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
 
-	if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
-			!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
-			self != (peer_device->comm_current_uuid & ~UUID_PRIMARY)) {
+	initial_handshake =
+		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	uuid_matches_initial =
+		self == (peer_device->comm_current_uuid & ~UUID_PRIMARY) &&
+		local_uuid_flags == peer_device->comm_uuid_flags;
+	if (initial_handshake && !uuid_matches_initial) {
 		*rule_nr = 9;
-		drbd_warn(peer_device, "My current UUID changed during "
+		drbd_warn(peer_device, "My current UUID/flags changed during "
 			  "handshake. Retry connecting.\n");
 		return 200;
 	}
@@ -3772,28 +3780,28 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 		*rule_nr = 38;
 		/* This is a safety net for the following two clauses */
 		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
-		    test_bit(RECONNECT, &peer_device->connection->flags))
+		    local_uuid_flags & UUID_FLAG_RECONNECT)
 			return 0;
 
 		/* Peer crashed as primary, I survived, resync from me */
 		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
-		    test_bit(RECONNECT, &peer_device->connection->flags))
+		    local_uuid_flags & UUID_FLAG_RECONNECT)
 			return 1;
 
 		/* I am a crashed primary, peer survived, resync to me */
-		if (test_bit(CRASHED_PRIMARY, &device->flags) &&
+		if (local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
 		    peer_device->uuid_flags & UUID_FLAG_RECONNECT)
 			return -1;
 
 		/* One of us had a connection to the other node before.
 		   i.e. this is not a common power failure. */
 		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT ||
-		    test_bit(RECONNECT, &peer_device->connection->flags))
+		    local_uuid_flags & UUID_FLAG_RECONNECT)
 			return 0;
 
 		/* Common power [off|failure]? */
 		*rule_nr = 40;
-		if (test_bit(CRASHED_PRIMARY, &device->flags)) {
+		if (local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY) {
 			if ((peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) &&
 			    test_bit(RESOLVE_CONFLICTS, &connection->transport.flags))
 				return -1;
@@ -3889,19 +3897,7 @@ static int drbd_uuid_compare(struct drbd_peer_device *peer_device,
 
 static void log_handshake(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
-	u64 uuid_flags = 0;
-
-	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
-		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
-	if (test_bit(CRASHED_PRIMARY, &device->flags))
-		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
-	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
-		uuid_flags |= UUID_FLAG_INCONSISTENT;
-	if (test_bit(RECONNECT, &peer_device->connection->flags))
-		uuid_flags |= UUID_FLAG_RECONNECT;
-	if (drbd_device_stable(device, NULL))
-		uuid_flags |= UUID_FLAG_STABLE;
+	u64 uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
 
 	drbd_info(peer_device, "drbd_sync_handshake:\n");
 	drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, uuid_flags);
@@ -5104,6 +5100,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 					BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
 			_drbd_uuid_set_current(device, peer_device->current_uuid);
 			peer_device->comm_current_uuid = peer_device->current_uuid;
+			peer_device->comm_uuid_flags = peer_device->uuid_flags;
 			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			/* FIXME: Note that req_lock was not taken here before! */

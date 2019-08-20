@@ -1388,6 +1388,25 @@ static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(lo
 	return bitmap_uuid;
 }
 
+u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *authoritative_mask)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 uuid_flags = 0;
+
+	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
+		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
+	if (test_bit(CRASHED_PRIMARY, &device->flags))
+		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		uuid_flags |= UUID_FLAG_INCONSISTENT;
+	if (test_bit(RECONNECT, &peer_device->connection->flags))
+		uuid_flags |= UUID_FLAG_RECONNECT;
+	if (drbd_device_stable(device, authoritative_mask))
+		uuid_flags |= UUID_FLAG_STABLE;
+
+	return uuid_flags;
+}
+
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1430,24 +1449,15 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
-	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
-		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
-	if (test_bit(CRASHED_PRIMARY, &device->flags))
-		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
-	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
-		uuid_flags |= UUID_FLAG_INCONSISTENT;
-	if (test_bit(RECONNECT, &peer_device->connection->flags))
-		uuid_flags |= UUID_FLAG_RECONNECT;
-	if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
-		uuid_flags |= UUID_FLAG_PRIMARY_LOST_QUORUM;
-	if (drbd_device_stable(device, &authoritative_mask)) {
-		uuid_flags |= UUID_FLAG_STABLE;
+	uuid_flags |= drbd_collect_local_uuid_flags(peer_device, &authoritative_mask);
+	if (uuid_flags & UUID_FLAG_STABLE) {
 		p->node_mask = cpu_to_be64(node_mask);
 	} else {
 		D_ASSERT(peer_device, node_mask == 0);
 		p->node_mask = cpu_to_be64(authoritative_mask);
 	}
 
+	peer_device->comm_uuid_flags = uuid_flags;
 	p->uuid_flags = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
