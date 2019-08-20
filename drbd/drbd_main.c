@@ -4728,6 +4728,51 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 	}
 }
 
+static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	const bool intentional_diskless = device->device_conf.intentional_diskless;
+	const int my_node_id = device->resource->res_opts.node_id;
+	int node_id;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == peer_device->node_id)
+			continue;
+		if (peer_device->bitmap_uuids[node_id] == 0) {
+			struct drbd_peer_device *p2;
+			p2 = peer_device_by_node_id(peer_device->device, node_id);
+			if (p2 && drbd_should_do_remote(p2, NOW))
+				continue;
+
+			if (node_id == my_node_id && intentional_diskless)
+				continue;
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (!drbd_should_do_remote(peer_device, NOW))
+			continue;
+		if (peer_can_fill_a_bitmap_slot(peer_device)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
  * @device:	DRBD device.
@@ -4741,7 +4786,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		__drbd_uuid_new_current(device, forced, true);
 		put_ldev(device);
-	} else {
+	} else if (diskfull_peers_need_new_cur_uuid(device)) {
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
