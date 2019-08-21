@@ -7233,6 +7233,47 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	}
 }
 
+static bool twopc_between_lost_node_and_me(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct twopc_reply *o = &resource->twopc_reply;
+
+	return (o->target_node_id == resource->res_opts.node_id &&
+		o->initiator_node_id == connection->peer_node_id) ||
+		(o->target_node_id == connection->peer_node_id &&
+		 o->initiator_node_id == resource->res_opts.node_id);
+}
+
+static bool any_connection_up(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection->cstate[NOW] == C_CONNECTED) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
+static void cleanup_remote_state_change(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+
+	write_lock_irq(&resource->state_rwlock);
+	if (twopc_between_lost_node_and_me(connection) || !any_connection_up(resource)) {
+		drbd_info(connection, "Aborting remote state change %u commit not possible\n",
+			  resource->twopc_reply.tid);
+		__clear_remote_state_change(resource);
+	}
+	write_unlock_irq(&resource->state_rwlock);
+}
+
 void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -7268,6 +7309,8 @@ void conn_disconnect(struct drbd_connection *connection)
 	drbd_thread_restart_nowait(&connection->sender);
 
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+
+	cleanup_remote_state_change(connection);
 
 	drain_resync_activity(connection);
 
