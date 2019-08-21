@@ -4608,9 +4608,14 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state pdsk;
-		if (peer_device->bitmap_index == -1)
-			continue;
 		node_id = peer_device->node_id;
+		if (peer_device->bitmap_index == -1) {
+			struct peer_device_conf *pdc;
+			pdc = rcu_dereference(peer_device->conf);
+			if (pdc && !pdc->bitmap)
+				node_mask |= NODE_MASK(node_id); /* ign intentional diskless */
+			continue;
+		}
 		node_mask |= NODE_MASK(node_id);
 		__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
 		bm_uuid = peer_md[node_id].bitmap_uuid;
