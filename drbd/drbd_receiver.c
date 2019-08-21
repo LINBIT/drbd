@@ -5360,7 +5360,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			if (peer_md && peer_md[i].bitmap_index == -1)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
 		} else {
-			bitmap_uuid = 0;
+			bitmap_uuid = -1;
 		}
 
 		update_bitmap_slot_of_peer(peer_device, i, bitmap_uuid);
