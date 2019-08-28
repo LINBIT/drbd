@@ -8,12 +8,18 @@ N_CONFIGS=0
 N_UNIQUE=0
 N_PRESERVED=0
 
+if [ -z "$LBBUILD_CI_BUILD" ]; then
+	COMPAT_HEADERS_PATH=/home/lbbuild/lbbuild/localpkgs/drbd-10-compat-latest
+else
+	COMPAT_HEADERS_PATH=/home/lbbuild/lbbuild/localpkgs/ci/drbd
+fi
+
 if [ "$(uname -n)" = "thank" ]; then
-	FILES=$((cd /home/lbbuild/lbbuild/localpkgs/drbd-10-compat-latest; find . -name "compat.h*" \
+	FILES=$((cd $COMPAT_HEADERS_PATH; find . -name "compat.h*" \
 		| tar -T - -czf -) | tar xzvf -)
 elif ping -c1 thank > /dev/null 2>&1; then
 	FILES=$(ssh lbbuild@thank \
-		"cd /home/lbbuild/lbbuild/localpkgs/drbd-10-compat-latest; find . -name "compat.h*" | tar -T - -czf -" \
+		"cd $COMPAT_HEADERS_PATH; find . -name "compat.h*" | tar -T - -czf -" \
 		| tar xzvf -)
 else
 	echo "ERROR: you don't seem to have access to LINBIT's internal network."
