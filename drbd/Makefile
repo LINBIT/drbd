@@ -195,7 +195,11 @@ endif
 		cat drbd-kernel-compat/patches/$$F.patch >> $(incdir)/.compat.patch; \
 	    fi \
 	done
-	@echo "  SPATCH   $(chksum)"
+	@if hash spatch; then \
+	    echo "  SPATCH   $(chksum)"; \
+	else \
+	    echo "  ERROR: spatch not found in \$$PATH. Install package 'coccinelle'!"; \
+	fi
 	@touch $@.tmp
 	@if [ -e $(incdir)/.compat.cocci ]; then \
 		spatch --sp-file $(incdir)/.compat.cocci \
