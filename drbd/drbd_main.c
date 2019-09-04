@@ -1435,7 +1435,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
-		if (peer_md[i].bitmap_index != -1 || peer_md[i].flags & MDF_NODE_EXISTS) {
+		if (peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS) {
 			bitmap_uuids_mask |= NODE_MASK(i);
 			p->other_uuids[pos++] = cpu_to_be64(__bitmap_uuid(device, i));
 		}
@@ -4093,7 +4093,7 @@ void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buff
 
 		buffer->peers[i].bitmap_uuid = cpu_to_be64(peer_md->bitmap_uuid);
 		buffer->peers[i].bitmap_dagtag = cpu_to_be64(peer_md->bitmap_dagtag);
-		buffer->peers[i].flags = cpu_to_be32(peer_md->flags);
+		buffer->peers[i].flags = cpu_to_be32(peer_md->flags & ~MDF_HAVE_BITMAP);
 		buffer->peers[i].bitmap_index = cpu_to_be32(peer_md->bitmap_index);
 	}
 	BUILD_BUG_ON(ARRAY_SIZE(device->ldev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
@@ -4377,6 +4377,7 @@ int drbd_md_decode(struct drbd_device *device,
 
 		if (peer_md->bitmap_index == -1)
 			continue;
+		peer_md->flags |= MDF_HAVE_BITMAP;
 		if (i == my_node_id) {
 			drbd_warn(device, "my own node id (%d) should not have a bitmap index (%d)\n",
 				my_node_id, peer_md->bitmap_index);
@@ -4868,7 +4869,7 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 			continue;
 		if (!(do_nodes & NODE_MASK(node_id)))
 			continue;
-		if (peer_md[node_id].bitmap_index == -1)
+		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP))
 			continue;
 		if (peer_md[node_id].bitmap_uuid != bitmap_uuid) {
 			_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
@@ -5005,7 +5006,7 @@ static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) 
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == bm_uuid &&
-		    peer_md[node_id].bitmap_index != -1)
+		    peer_md[node_id].flags & MDF_HAVE_BITMAP)
 			return node_id;
 	}
 
@@ -5080,7 +5081,7 @@ found:
 		return false;
 	}
 
-	if (peer_md[from_id].bitmap_index == -1)
+	if (!(peer_md[from_id].flags & MDF_HAVE_BITMAP))
 		return false;
 
 	if (from_id != node_id1 &&
@@ -5115,7 +5116,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 		if (node_id == device->ldev->md.node_id)
 			continue;
 
-		if (peer_md[node_id].bitmap_index == -1 && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
+		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP) && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
 			continue;
 
 		if (peer_device->bitmap_uuids[node_id] == 0 && peer_md[node_id].bitmap_uuid != 0) {
@@ -5127,7 +5128,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 				peer_md[node_id].bitmap_uuid = 0;
 				if (node_id == peer_device->node_id)
 					drbd_print_uuids(peer_device, "updated UUIDs");
-				else if (peer_md[node_id].bitmap_index != -1)
+				else if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
 					forget_bitmap(device, node_id);
 				else
 					drbd_info(device, "Clearing bitmap UUID for node %d\n",
@@ -5143,8 +5144,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
 				peer_md[node_id].bitmap_uuid = peer_md[from_node_id].bitmap_uuid;
 				peer_md[node_id].bitmap_dagtag = peer_md[from_node_id].bitmap_dagtag;
-				if (peer_md[node_id].bitmap_index != -1 &&
-				    peer_md[from_node_id].bitmap_index != -1)
+				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&
+				    peer_md[from_node_id].flags & MDF_HAVE_BITMAP)
 					copy_bitmap(device, from_node_id, node_id);
 				else
 					drbd_info(device, "Node %d synced up to node %d.\n",

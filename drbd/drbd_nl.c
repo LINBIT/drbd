@@ -1736,7 +1736,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 			continue; /* skip myself... */
 		}
 		/* Have we met this peer node id before? */
-		if (peer_md->bitmap_index == -1)
+		if (!(peer_md->flags & MDF_HAVE_BITMAP))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
@@ -2440,7 +2440,7 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[node_id];
 
-		if (peer_md->bitmap_index != -1)
+		if (peer_md->flags & MDF_HAVE_BITMAP)
 			used++;
 	}
 
@@ -2490,6 +2490,7 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	peer_md->bitmap_index = bitmap_index;
 	peer_device->bitmap_index = bitmap_index;
 	peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
+	peer_md->flags |= MDF_HAVE_BITMAP;
 
 	return 0;
 }
@@ -2520,7 +2521,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 	from_index = unallocated_index(device->ldev, device->bitmap->bm_max_peers);
 
 	peer_md = &device->ldev->md.peers[peer_node_id];
-	if (peer_md->bitmap_index == -1) {
+	if (!(peer_md->flags & MDF_HAVE_BITMAP)) {
 		put_ldev(device);
 		return -ENOENT;
 	}
@@ -2550,7 +2551,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 		peer_md->bitmap_uuid = 0;
 		peer_md->bitmap_dagtag = 0;
 	}
-	peer_md->flags = md_flags;
+	peer_md->flags = md_flags & ~MDF_HAVE_BITMAP;
 	peer_md->bitmap_index = -1;
 	drbd_md_sync(device);
 	drbd_resume_io(device);

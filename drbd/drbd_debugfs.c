@@ -1079,7 +1079,7 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "0x%016llX\n", drbd_current_uuid(device));
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (md->peers[node_id].bitmap_index == -1)
+		if (!(md->peers[node_id].flags & MDF_HAVE_BITMAP))
 			continue;
 		seq_printf(m, "%s[%d]0x%016llX", i++ ? " " : "", node_id,
 			   md->peers[node_id].bitmap_uuid);
