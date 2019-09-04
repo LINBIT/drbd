@@ -1523,11 +1523,15 @@ __bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigne
 
 void drbd_bm_set_many_bits(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end)
 {
+	if (peer_device->bitmap_index == -1)
+		return;
 	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_SET);
 }
 
 void drbd_bm_clear_many_bits(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end)
 {
+	if (peer_device->bitmap_index == -1)
+		return;
 	__bm_many_bits_op(peer_device->device, peer_device->bitmap_index, start, end, BM_OP_CLEAR);
 }
 

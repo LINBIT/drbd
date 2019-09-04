@@ -5037,7 +5037,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			if (peer_md && peer_md[i].bitmap_index == -1)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
 		} else {
-			bitmap_uuid = 0;
+			bitmap_uuid = -1;
 		}
 
 		update_bitmap_slot_of_peer(peer_device, i, bitmap_uuid);
@@ -6989,6 +6989,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	enum drbd_repl_state new_repl_state;
 	struct p_peer_dagtag *p = pi->data;
 	struct drbd_connection *lost_peer;
+	enum sync_strategy strategy = NO_SYNC;
 	s64 dagtag_offset;
 	int vnr = 0;
 
@@ -7005,10 +7006,32 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	}
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		enum sync_strategy ps;
+		int rule_nr, unused;
+
 		if (peer_device->repl_state[NOW] > L_ESTABLISHED)
 			goto out;
-		if (peer_device->current_uuid != drbd_current_uuid(peer_device->device))
+		if (!get_ldev(peer_device->device))
+			continue;
+		ps = drbd_uuid_compare(peer_device, &rule_nr, &unused);
+		put_ldev(peer_device->device);
+
+		if (strategy == NO_SYNC) {
+			strategy = ps;
+			if (strategy != NO_SYNC &&
+			    strategy != SYNC_SOURCE_USE_BITMAP &&
+			    strategy != SYNC_TARGET_USE_BITMAP) {
+				drbd_info(peer_device,
+					  "receive_peer_dagatg(): %s by rule %d\n",
+					  strategy_descriptor(strategy).name, rule_nr);
+				goto out;
+			}
+		} else if (ps != strategy) {
+			drbd_err(peer_device,
+				 "receive_peer_dagatg(): Inconsistent resync directions %s %s\n",
+				 strategy_descriptor(strategy).name, strategy_descriptor(ps).name);
 			goto out;
+		}
 	}
 
 	/* Need to wait until the other receiver thread has called the
@@ -7017,12 +7040,18 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_CONNECTING);
 
 	dagtag_offset = (s64)lost_peer->last_dagtag_sector - (s64)be64_to_cpu(p->dagtag);
-	if (dagtag_offset > 0)
+	if (strategy == SYNC_SOURCE_USE_BITMAP)  {
 		new_repl_state = L_WF_BITMAP_S;
-	else if (dagtag_offset < 0)
+	} else if (strategy == SYNC_TARGET_USE_BITMAP)  {
 		new_repl_state = L_WF_BITMAP_T;
-	else
-		new_repl_state = L_ESTABLISHED;
+	} else {
+		if (dagtag_offset > 0)
+			new_repl_state = L_WF_BITMAP_S;
+		else if (dagtag_offset < 0)
+			new_repl_state = L_WF_BITMAP_T;
+		else
+			new_repl_state = L_ESTABLISHED;
+	}
 
 	if (new_repl_state != L_ESTABLISHED) {
 		unsigned long irq_flags;
