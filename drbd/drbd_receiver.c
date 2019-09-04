@@ -3485,8 +3485,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 			rv = SYNC_SOURCE_USE_BITMAP;
 			break;
 		}
-		/* Else fall through to one of the other strategies... */
-	/* Fall through */
+		/* Else fall through - to one of the other strategies... */
 	case ASB_DISCARD_OLDER_PRI:
 		if (self == 0 && peer == 1) {
 			rv = SYNC_SOURCE_USE_BITMAP;
@@ -3496,7 +3495,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 			rv = SYNC_TARGET_USE_BITMAP;
 			break;
 		}
-		/* Else fall through to one of the other strategies... */
+		/* Else fall through - to one of the other strategies... */
 		drbd_warn(peer_device, "Discard younger/older primary did not find a decision\n"
 			  "Using discard-least-changes instead\n");
 	/* Fall through */
@@ -3511,7 +3510,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 		}
 		if (after_sb_0p == ASB_DISCARD_ZERO_CHG)
 			break;
-	/* Fall through */
+		/* else, fall through */
 	case ASB_DISCARD_LEAST_CHG:
 		if	(ch_self < ch_peer)
 			rv = SYNC_TARGET_USE_BITMAP;
