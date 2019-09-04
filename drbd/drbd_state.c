@@ -2350,6 +2350,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				peer_device->rs_paused += (long)jiffies
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				initialize_resync_progress_marks(peer_device);
+				peer_device->resync_next_bit = 0;
 				if (repl_state[NEW] == L_SYNC_TARGET)
 					mod_timer(&peer_device->resync_timer, jiffies);
 			}
