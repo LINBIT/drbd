@@ -36,10 +36,6 @@
 #include "drbd_int.h"
 #include "drbd_dax_pmem.h"
 
-/* See the ifdefs and comments inside that header file.
- * On recent kernels this is not needed. */
-#include "drbd-kernel-compat/bitops.h"
-
 #ifndef BITS_PER_PAGE
 #define BITS_PER_PAGE		(1UL << (PAGE_SHIFT + 3))
 #else
