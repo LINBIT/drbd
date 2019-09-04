@@ -147,6 +147,8 @@ static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
 	struct nlattr *nla, *txt;
 	int err = -EMSGSIZE;
 	int len;
+	int aligned_len;
+	char *msg_buf;
 
 	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
@@ -157,13 +159,22 @@ static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
 		nla_nest_cancel(skb, nla);
 		return err;
 	}
+	msg_buf = nla_data(txt);
 	va_start(args, fmt);
-	len = vscnprintf(nla_data(txt), 256, fmt, args);
+	len = vscnprintf(msg_buf, 256, fmt, args);
 	va_end(args);
 
 	/* maybe: retry with larger reserve, if truncated */
-	txt->nla_len = nla_attr_size(len+1);
-	nlmsg_trim(skb, (char*)txt + NLA_ALIGN(txt->nla_len));
+
+	/* zero-out padding bytes to avoid transmitting uninitialized bytes */
+	++len;
+	txt->nla_len = nla_attr_size(len);
+	aligned_len = NLA_ALIGN(len);
+	while (len < aligned_len) {
+		msg_buf[len] = '\0';
+		++len;
+	}
+	nlmsg_trim(skb, (char *) txt + NLA_ALIGN(txt->nla_len));
 	nla_nest_end(skb, nla);
 
 	return 0;
