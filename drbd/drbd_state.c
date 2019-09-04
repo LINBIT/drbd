@@ -140,7 +140,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 		if (node_id == device->ldev->md.node_id)
 			continue;
 
-		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS))
+		if (!(peer_md->flags & MDF_HAVE_BITMAP) && !(peer_md->flags & MDF_NODE_EXISTS))
 			continue;
 
 		if (!(peer_md->flags & MDF_PEER_FENCING))
@@ -1317,7 +1317,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			}
 		}
 
-		if (peer_md->bitmap_index == -1 && !(peer_md->flags & MDF_NODE_EXISTS) &&
+		if (!(peer_md->flags & MDF_HAVE_BITMAP) && !(peer_md->flags & MDF_NODE_EXISTS) &&
 		    !is_intentional_diskless) {
 			continue;
 		}
