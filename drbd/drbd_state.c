@@ -2178,11 +2178,22 @@ static void queue_after_state_change_work(struct drbd_resource *resource,
 	}
 }
 
-static void initialize_resync(struct drbd_peer_device *peer_device)
+static void initialize_resync_progress_marks(struct drbd_peer_device *peer_device)
 {
 	unsigned long tw = drbd_bm_total_weight(peer_device);
 	unsigned long now = jiffies;
 	int i;
+
+	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
+		peer_device->rs_mark_left[i] = tw;
+		peer_device->rs_mark_time[i] = now;
+	}
+}
+
+static void initialize_resync(struct drbd_peer_device *peer_device)
+{
+	unsigned long tw = drbd_bm_total_weight(peer_device);
+	unsigned long now = jiffies;
 
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
@@ -2191,11 +2202,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
 	peer_device->rs_last_writeout = now;
-	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-		peer_device->rs_mark_left[i] = tw;
-		peer_device->rs_mark_time[i] = now;
-	}
-
+	initialize_resync_progress_marks(peer_device);
 	drbd_rs_controller_reset(peer_device);
 }
 
@@ -2342,6 +2349,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				drbd_info(peer_device, "Syncer continues.\n");
 				peer_device->rs_paused += (long)jiffies
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
+				initialize_resync_progress_marks(peer_device);
 				if (repl_state[NEW] == L_SYNC_TARGET)
 					mod_timer(&peer_device->resync_timer, jiffies);
 			}
