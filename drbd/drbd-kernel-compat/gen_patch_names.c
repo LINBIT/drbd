@@ -260,6 +260,9 @@ int main(int argc, char **argv)
 	patch(1, "req_noidle", false, true,
 	      COMPAT_HAVE_REQ_NOIDLE, "present");
 
+	patch(1, "nla_nest_start_noflag", true, false,
+	      COMPAT_HAVE_NLA_NEST_START_NOFLAG, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
