@@ -371,14 +371,6 @@ static inline int op_from_rq_bits(u64 flags)
 	__x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
 #endif
 
-/* Introduced with 2.6.26. See include/linux/jiffies.h */
-#ifndef time_is_before_eq_jiffies
-#define time_is_before_jiffies(a) time_after(jiffies, a)
-#define time_is_after_jiffies(a) time_before(jiffies, a)
-#define time_is_before_eq_jiffies(a) time_after_eq(jiffies, a)
-#define time_is_after_eq_jiffies(a) time_before_eq(jiffies, a)
-#endif
-
 #ifndef time_in_range
 #define time_in_range(a,b,c) \
 	(time_after_eq(a,b) && \
@@ -548,36 +540,6 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
         list_entry((pos)->member.next, typeof(*(pos)), member)
 #endif
 
-/*
- * Introduced in 930631ed (v2.6.19-rc1).
- */
-#ifndef DIV_ROUND_UP
-#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
-#endif
-
-/*
- * IS_ALIGNED() was added to <linux/kernel.h> in mainline commit 0c0e6195 (and
- * improved in f10db627); 2.6.24-rc1.
- */
-#ifndef IS_ALIGNED
-#define IS_ALIGNED(x, a) (((x) & ((typeof(x))(a) - 1)) == 0)
-#endif
-
-/*
- * NLA_TYPE_MASK and nla_type() were added to <linux/netlink.h> in mainline
- * commit 8f4c1f9b; v2.6.24-rc1.  Before that, none of the nlattr->nla_type
- * flags had a special meaning.
- */
-
-#ifndef NLA_TYPE_MASK
-#define NLA_TYPE_MASK ~0
-
-static inline int nla_type(const struct nlattr *nla)
-{
-	return nla->nla_type & NLA_TYPE_MASK;
-}
-
-#endif
 
 /*
  * v4.12 fceb6435e852 netlink: pass extended ACK struct to parsing functions
