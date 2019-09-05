@@ -729,7 +729,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		++c_put;
 		ktime_get_accounting(req->acked_kt[peer_device->node_id]);
 		advance_cache_ptr(connection, &connection->req_ack_pending,
-				  req, RQ_NET_SENT | RQ_NET_DONE, 0);
+				  req, RQ_NET_SENT | RQ_NET_PENDING, 0);
 	}
 
 	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
@@ -770,7 +770,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		 * the caching pointers must not reference it anymore */
 		advance_conn_req_next(connection, req);
 		advance_cache_ptr(connection, &connection->req_ack_pending,
-				  req, RQ_NET_SENT | RQ_NET_DONE, 0);
+				  req, RQ_NET_SENT | RQ_NET_PENDING, 0);
 		advance_cache_ptr(connection, &connection->req_not_net_done,
 				  req, RQ_NET_SENT, RQ_NET_DONE);
 	}
@@ -2297,12 +2297,11 @@ static unsigned long time_min_in_future(unsigned long now,
 }
 
 static bool net_timeout_reached(struct drbd_request *net_req,
-		struct drbd_connection *connection,
+		struct drbd_peer_device *peer_device,
 		unsigned long now, unsigned long ent,
 		unsigned int ko_count, unsigned int timeout)
 {
-	struct drbd_device *device = net_req->device;
-	struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
+	struct drbd_connection *connection = peer_device->connection;
 	int peer_node_id = peer_device->node_id;
 	unsigned long pre_send_jif = net_req->pre_send_jif[peer_node_id];
 
@@ -2313,7 +2312,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 		return false;
 
 	if (net_req->net_rq_state[peer_node_id] & RQ_NET_PENDING) {
-		drbd_warn(device, "Remote failed to finish a request within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
+		drbd_warn(peer_device, "Remote failed to finish a request within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
 			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
 		return true;
 	}
@@ -2323,7 +2322,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	 * Check if we sent the barrier already.  We should not blame the peer
 	 * for being unresponsive, if we did not even ask it yet. */
 	if (net_req->epoch == connection->send.current_epoch_nr) {
-		drbd_warn(device,
+		drbd_warn(peer_device,
 			"We did not send a P_BARRIER for %ums > ko-count (%u) * timeout (%u * 0.1s); drbd kernel thread blocked?\n",
 			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
 		return false;
@@ -2346,7 +2345,7 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	 * barrier packet is relevant enough.
 	 */
 	if (time_after(now, connection->send.last_sent_barrier_jif + ent)) {
-		drbd_warn(device, "Remote failed to answer a P_BARRIER (sent at %lu jif; now=%lu jif) within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
+		drbd_warn(peer_device, "Remote failed to answer a P_BARRIER (sent at %lu jif; now=%lu jif) within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
 			connection->send.last_sent_barrier_jif, now,
 			jiffies_to_msecs(now - connection->send.last_sent_barrier_jif), ko_count, timeout);
 		return true;
@@ -2425,6 +2424,7 @@ void request_timer_fn(struct timer_list *t)
 		}
 	}
 	for_each_connection(connection, device->resource) {
+		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 		struct net_conf *nc;
 		struct drbd_request *req;
 		unsigned long ent = 0;
@@ -2475,7 +2475,10 @@ void request_timer_fn(struct timer_list *t)
 				next_trigger_time, pre_send_jif + ent);
 		restart_timer = true;
 
-		if (net_timeout_reached(req, connection, now, ent, ko_count, timeout)) {
+		if (net_timeout_reached(req, peer_device, now, ent, ko_count, timeout)) {
+			dynamic_drbd_dbg(peer_device, "Request at %llus+%u timed out\n",
+					(unsigned long long) req->i.sector,
+					req->i.size);
 			begin_state_change_locked(device->resource, CS_VERBOSE | CS_HARD);
 			__change_cstate(connection, C_TIMEOUT);
 			end_state_change_locked(device->resource);
