@@ -1053,7 +1053,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
 		break;
 
-	case READ_RETRY_REMOTE_CANCELED:
 	case SEND_CANCELED:
 	case SEND_FAILED:
 		/* Just update flags so it is no longer marked as on the sender
