@@ -512,9 +512,14 @@ void __tl_walk(struct drbd_resource *const resource,
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		/* Skip if the request has already been destroyed. */
+		if (!kref_get_unless_zero(&req->kref))
+			continue;
+
 		peer_device = connection == NULL ? NULL :
 			conn_peer_device(connection, req->device->vnr);
 		_req_mod(req, what, peer_device);
+		kref_put(&req->kref, drbd_req_destroy);
 	}
 	rcu_read_unlock();
 }
@@ -548,7 +553,12 @@ void tl_abort_disk_io(struct drbd_device *device)
                         continue;
                 if (req->device != device)
                         continue;
+		/* Skip if the request has already been destroyed. */
+		if (!kref_get_unless_zero(&req->kref))
+			continue;
+
                 req_mod(req, ABORT_DISK_IO, NULL);
+		kref_put(&req->kref, drbd_req_destroy);
         }
 	rcu_read_unlock();
 }

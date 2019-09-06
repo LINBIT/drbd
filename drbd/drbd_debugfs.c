@@ -367,12 +367,13 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		struct drbd_peer_device *peer_device;
 		unsigned int tmp = 0;
 		unsigned int s;
-		++count;
 
 		/* don't disable preemption "forever" */
-		if (!(count & 0x1ff)) {
+		if ((count & 0x1ff) == 0x1ff) {
 			struct list_head *next_hdr;
-			kref_get(&req->kref);
+			/* Only get if the request hasn't already been destroyed. */
+			if (!kref_get_unless_zero(&req->kref))
+				continue;
 			rcu_read_unlock();
 			cond_resched();
 			rcu_read_lock();
@@ -385,6 +386,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 						     tl_requests);
 			}
 		}
+		++count;
 
 		spin_lock_irq(&req->rq_lock);
 		s = req->local_rq_state;
