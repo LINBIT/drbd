@@ -199,9 +199,6 @@ enum drbd_req_state_bits {
 	/* waiting for a barrier ack, did an extra kref_get */
 	__RQ_EXP_BARR_ACK,
 
-	/* p_peer_ack packet needs to be sent */
-	__RQ_PEER_ACK,
-
 	/* 4321
 	 * 0000: no local possible
 	 * 0001: to be submitted
@@ -250,8 +247,6 @@ enum drbd_req_state_bits {
 #define RQ_EXP_RECEIVE_ACK (1UL << __RQ_EXP_RECEIVE_ACK)
 #define RQ_EXP_WRITE_ACK   (1UL << __RQ_EXP_WRITE_ACK)
 #define RQ_EXP_BARR_ACK    (1UL << __RQ_EXP_BARR_ACK)
-
-#define RQ_PEER_ACK	   (1UL << __RQ_PEER_ACK)
 
 #define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
 #define RQ_LOCAL_COMPLETED (1UL << __RQ_LOCAL_COMPLETED)
@@ -313,6 +308,8 @@ extern void _tl_walk(struct drbd_connection *connection, enum drbd_req_event wha
 extern void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
 		const enum drbd_req_event what);
+extern void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack);
+extern int w_queue_peer_ack(struct drbd_work *w, int cancel);
 extern void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req);
 extern bool drbd_should_do_remote(struct drbd_peer_device *, enum which_state);
 extern void drbd_reclaim_req(struct rcu_head *rp);

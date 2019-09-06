@@ -95,37 +95,97 @@ void drbd_reclaim_req(struct rcu_head *rp)
 	mempool_free(req, &drbd_request_mempool);
 }
 
-static void req_destroy_no_send_peer_ack(struct kref *kref)
+static u64 peer_ack_mask(struct drbd_request *req)
 {
-	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	call_rcu(&req->rcu, drbd_reclaim_req);
+	struct drbd_resource *resource = req->device->resource;
+	struct drbd_connection *connection;
+	u64 mask = 0;
+
+	spin_lock_irq(&req->rq_lock);
+	if (req->local_rq_state & RQ_LOCAL_OK)
+		mask |= NODE_MASK(resource->res_opts.node_id);
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		int node_id = connection->peer_node_id;
+
+		if (req->net_rq_state[node_id] & RQ_NET_OK)
+			mask |= NODE_MASK(node_id);
+	}
+	rcu_read_unlock();
+	spin_unlock_irq(&req->rq_lock);
+
+	return mask;
 }
 
-void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
+static void queue_peer_ack_send(struct drbd_resource *resource,
+		struct drbd_request *req, struct drbd_peer_ack *peer_ack)
 {
 	struct drbd_connection *connection;
-	bool queued = false;
 
-	lockdep_assert_held(&resource->peer_ack_lock);
-
-	refcount_set(&req->kref.refcount, 1); /* was 0, instead of kref_get() */
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
 		if (connection->cstate[NOW] != C_CONNECTED ||
-		    !(req->net_rq_state[node_id] & RQ_NET_SENT))
+				!(req->net_rq_state[node_id] & RQ_NET_SENT))
 			continue;
-		kref_get(&req->kref);
-		req->net_rq_state[node_id] |= RQ_PEER_ACK;
-		if (!queued) {
-			list_add_tail(&req->list, &resource->peer_ack_list);
-			queued = true;
-		}
+
+		peer_ack->pending_mask |= NODE_MASK(node_id);
 		queue_work(connection->ack_sender, &connection->peer_ack_work);
 	}
 	rcu_read_unlock();
+}
 
-	kref_put(&req->kref, req_destroy_no_send_peer_ack);
+void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack)
+{
+	struct drbd_resource *resource = peer_ack->resource;
+
+	lockdep_assert_held(&resource->peer_ack_lock);
+
+	if (peer_ack->pending_mask)
+		return;
+
+	list_del(&peer_ack->list);
+	kfree(peer_ack);
+}
+
+int w_queue_peer_ack(struct drbd_work *w, int cancel)
+{
+	struct drbd_resource *resource =
+		container_of(w, struct drbd_resource, peer_ack_work);
+	LIST_HEAD(work_list);
+	struct drbd_request *req, *tmp;
+
+	spin_lock_irq(&resource->peer_ack_lock);
+	list_splice_init(&resource->peer_ack_req_list, &work_list);
+	spin_unlock_irq(&resource->peer_ack_lock);
+
+	list_for_each_entry_safe(req, tmp, &work_list, list) {
+		struct drbd_peer_ack *peer_ack =
+			kzalloc(sizeof(struct drbd_peer_ack), GFP_KERNEL);
+
+		peer_ack->resource = resource;
+		INIT_LIST_HEAD(&peer_ack->list);
+		peer_ack->mask = peer_ack_mask(req);
+		peer_ack->dagtag_sector = req->dagtag_sector;
+
+		spin_lock_irq(&resource->peer_ack_lock);
+		list_add_tail(&peer_ack->list, &resource->peer_ack_list);
+		queue_peer_ack_send(resource, req, peer_ack);
+		drbd_destroy_peer_ack_if_done(peer_ack);
+		spin_unlock_irq(&resource->peer_ack_lock);
+
+		call_rcu(&req->rcu, drbd_reclaim_req);
+	}
+	return 0;
+}
+
+void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req)
+{
+	lockdep_assert_held(&resource->peer_ack_lock);
+
+	list_add_tail(&req->list, &resource->peer_ack_req_list);
+	drbd_queue_work_if_unqueued(&resource->work, &resource->peer_ack_work);
 }
 
 static bool peer_ack_differs(struct drbd_request *req1, struct drbd_request *req2)

@@ -1137,33 +1137,15 @@ int drbd_send_ping_ack(struct drbd_connection *connection)
 }
 
 int drbd_send_peer_ack(struct drbd_connection *connection,
-			      struct drbd_request *req)
+		struct drbd_peer_ack *peer_ack)
 {
-	struct drbd_resource *resource = connection->resource;
-	struct drbd_connection *c;
 	struct p_peer_ack *p;
-	u64 mask = 0;
-
-	/* no locking when accssing local_rq_state & net_rq_state, since
-	   this request no longer changes, since it is already used for
-	   peer_acks. */
-	if (req->local_rq_state & RQ_LOCAL_OK)
-		mask |= NODE_MASK(resource->res_opts.node_id);
-
-	rcu_read_lock();
-	for_each_connection_rcu(c, resource) {
-		int node_id = c->peer_node_id;
-
-		if (req->net_rq_state[node_id] & RQ_NET_OK)
-			mask |= NODE_MASK(node_id);
-	}
-	rcu_read_unlock();
 
 	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
 	if (!p)
 		return -EIO;
-	p->mask = cpu_to_be64(mask);
-	p->dagtag = cpu_to_be64(req->dagtag_sector);
+	p->mask = cpu_to_be64(peer_ack->mask);
+	p->dagtag = cpu_to_be64(peer_ack->dagtag_sector);
 
 	return send_command(connection, -1, P_PEER_ACK, CONTROL_STREAM);
 }
@@ -3215,7 +3197,10 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	spin_lock_init(&resource->tl_update_lock);
 	INIT_LIST_HEAD(&resource->transfer_log);
 	spin_lock_init(&resource->peer_ack_lock);
+	INIT_LIST_HEAD(&resource->peer_ack_req_list);
 	INIT_LIST_HEAD(&resource->peer_ack_list);
+	INIT_LIST_HEAD(&resource->peer_ack_work.list);
+	resource->peer_ack_work.cb = w_queue_peer_ack;
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);
 	timer_setup(&resource->repost_up_to_date_timer, repost_up_to_date_fn, 0);
 	sema_init(&resource->state_sem, 1);

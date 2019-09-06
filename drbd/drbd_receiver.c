@@ -187,7 +187,6 @@ static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_ho
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
-static void destroy_peer_ack_req(struct kref *kref);
 
 static const struct sync_descriptor strategy_descriptor(enum sync_strategy strategy)
 {
@@ -7851,30 +7850,30 @@ int drbd_receiver(struct drbd_thread *thi)
 static int process_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_request *req, *tmp;
-	unsigned int idx;
+	struct drbd_peer_ack *peer_ack, *tmp;
+	u64 node_id_mask;
 	int err = 0;
 
-	idx = connection->peer_node_id;
+	node_id_mask = NODE_MASK(connection->peer_node_id);
 
 	spin_lock_irq(&resource->peer_ack_lock);
-	req = list_first_entry(&resource->peer_ack_list, struct drbd_request, list);
-	while (&req->list != &resource->peer_ack_list) {
-		if (!(req->net_rq_state[idx] & RQ_PEER_ACK)) {
-			req = list_next_entry(req, list);
+	peer_ack = list_first_entry(&resource->peer_ack_list, struct drbd_peer_ack, list);
+	while (&peer_ack->list != &resource->peer_ack_list) {
+		if (!(peer_ack->pending_mask & node_id_mask)) {
+			peer_ack = list_next_entry(peer_ack, list);
 			continue;
 		}
-		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
 		spin_unlock_irq(&resource->peer_ack_lock);
 
-		err = drbd_send_peer_ack(connection, req);
+		err = drbd_send_peer_ack(connection, peer_ack);
 
 		spin_lock_irq(&resource->peer_ack_lock);
-		tmp = list_next_entry(req, list);
-		kref_put(&req->kref, destroy_peer_ack_req);
+		tmp = list_next_entry(peer_ack, list);
+		peer_ack->pending_mask &= ~node_id_mask;
+		drbd_destroy_peer_ack_if_done(peer_ack);
 		if (err)
 			break;
-		req = tmp;
+		peer_ack = tmp;
 	}
 	spin_unlock_irq(&resource->peer_ack_lock);
 	return err;
@@ -8452,27 +8451,20 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 	}
 }
 
-static void destroy_peer_ack_req(struct kref *kref)
-{
-	struct drbd_request *req =
-		container_of(kref, struct drbd_request, kref);
-
-	list_del(&req->list);
-	call_rcu(&req->rcu, drbd_reclaim_req);
-}
-
 static void cleanup_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_request *req, *tmp;
+	struct drbd_peer_ack *peer_ack, *tmp;
+	struct drbd_request *req;
 	int idx = connection->peer_node_id;
+	u64 node_id_mask = NODE_MASK(idx);
 
 	spin_lock_irq(&resource->peer_ack_lock);
-	list_for_each_entry_safe(req, tmp, &resource->peer_ack_list, list) {
-		if (!(req->net_rq_state[idx] & RQ_PEER_ACK))
+	list_for_each_entry_safe(peer_ack, tmp, &resource->peer_ack_list, list) {
+		if (!(peer_ack->pending_mask & node_id_mask))
 			continue;
-		req->net_rq_state[idx] &= ~RQ_PEER_ACK;
-		kref_put(&req->kref, destroy_peer_ack_req);
+		peer_ack->pending_mask &= ~node_id_mask;
+		drbd_destroy_peer_ack_if_done(peer_ack);
 	}
 	req = resource->peer_ack_req;
 	if (req)

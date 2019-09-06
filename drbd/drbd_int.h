@@ -401,6 +401,15 @@ struct drbd_request {
 	struct rcu_head rcu;
 };
 
+/* Used to multicast peer acks. */
+struct drbd_peer_ack {
+	struct drbd_resource *resource;
+	struct list_head list;
+	u64 pending_mask;
+	u64 mask;
+	u64 dagtag_sector;
+};
+
 /* Tracks received writes grouped in epochs. Protected by epoch_lock. */
 struct drbd_epoch {
 	struct drbd_connection *connection;
@@ -898,7 +907,9 @@ struct drbd_resource {
 	struct drbd_request *tl_previous_write;
 
 	spinlock_t peer_ack_lock;
-	struct list_head peer_ack_list;  /* requests to send peer acks for */
+	struct list_head peer_ack_req_list;  /* requests to send peer acks for */
+	struct list_head peer_ack_list;  /* peer acks to send */
+	struct drbd_work peer_ack_work;
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
 	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */
 
@@ -2432,7 +2443,7 @@ extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
 extern int conn_send_twopc_request(struct drbd_connection *, int vnr, enum drbd_packet, struct p_twopc_request *);
-extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_request *);
+extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_peer_ack *);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
