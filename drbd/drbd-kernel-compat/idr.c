@@ -13,23 +13,8 @@
  * 9f7de8275b46 2012-03-21 idr: make idr_get_next() good for rcu_read_lock()
  */
 #ifndef IDR_GET_NEXT_EXPORTED
-#ifndef rcu_dereference_raw
-/* see c26d34a rcu: Add lockdep-enabled variants of rcu_dereference() */
-#define rcu_dereference_raw(p) rcu_dereference(p)
-#endif
 #ifndef MAX_IDR_SHIFT
 #define MAX_IDR_SHIFT MAX_ID_SHIFT
-#endif
-
-#ifndef round_up
-/*
- * This looks more complex than it should be. But we need to
- * get the type for the ~ right in round_down (it needs to be
- * as wide as the result!), and we want to evaluate the macro
- * arguments just once each.
- */
-#define __round_mask(x, y) ((__typeof__(x))((y)-1))
-#define round_up(x, y) ((((x)-1) | __round_mask(x, y))+1)
 #endif
 
 /* the maximum ID which can be allocated given idr->layers */

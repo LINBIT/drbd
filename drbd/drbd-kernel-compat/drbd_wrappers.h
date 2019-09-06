@@ -108,126 +108,6 @@ static inline void drbd_plug_device(struct request_queue *q)
 }
 #endif
 
-#if !defined(CRYPTO_ALG_ASYNC)
-/* With Linux-2.6.19 the crypto API changed! */
-/* This is not a generic backport of the new api, it just implements
-   the corner case of "hmac(xxx)".  */
-
-#define CRYPTO_ALG_ASYNC 4711
-#define CRYPTO_ALG_TYPE_HASH CRYPTO_ALG_TYPE_DIGEST
-
-struct crypto_hash {
-	struct crypto_tfm *base;
-	const u8 *key;
-	int keylen;
-};
-
-struct hash_desc {
-	struct crypto_hash *tfm;
-	u32 flags;
-};
-
-static inline struct crypto_hash *
-crypto_alloc_hash(char *alg_name, u32 type, u32 mask)
-{
-	struct crypto_hash *ch;
-	char *closing_bracket;
-
-	/* "hmac(xxx)" is in alg_name we need that xxx. */
-	closing_bracket = strchr(alg_name, ')');
-	if (!closing_bracket) {
-		ch = kmalloc(sizeof(struct crypto_hash), GFP_KERNEL);
-		if (!ch)
-			return ERR_PTR(-ENOMEM);
-		ch->base = crypto_alloc_tfm(alg_name, 0);
-		if (ch->base == NULL) {
-			kfree(ch);
-			return ERR_PTR(-ENOMEM);
-		}
-		return ch;
-	}
-	if (closing_bracket-alg_name < 6)
-		return ERR_PTR(-ENOENT);
-
-	ch = kmalloc(sizeof(struct crypto_hash), GFP_KERNEL);
-	if (!ch)
-		return ERR_PTR(-ENOMEM);
-
-	*closing_bracket = 0;
-	ch->base = crypto_alloc_tfm(alg_name + 5, 0);
-	*closing_bracket = ')';
-
-	if (ch->base == NULL) {
-		kfree(ch);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	return ch;
-}
-
-static inline int
-crypto_hash_setkey(struct crypto_hash *hash, const u8 *key, unsigned int keylen)
-{
-	hash->key = key;
-	hash->keylen = keylen;
-
-	return 0;
-}
-
-static inline int
-crypto_hash_digest(struct hash_desc *desc, struct scatterlist *sg,
-		   unsigned int nbytes, u8 *out)
-{
-
-	crypto_hmac(desc->tfm->base, (u8 *)desc->tfm->key,
-		    &desc->tfm->keylen, sg, 1 /* ! */ , out);
-	/* ! this is not generic. Would need to convert nbytes -> nsg */
-
-	return 0;
-}
-
-static inline void crypto_free_hash(struct crypto_hash *tfm)
-{
-	if (!tfm)
-		return;
-	crypto_free_tfm(tfm->base);
-	kfree(tfm);
-}
-
-static inline unsigned int crypto_hash_digestsize(struct crypto_hash *tfm)
-{
-	return crypto_tfm_alg_digestsize(tfm->base);
-}
-
-static inline struct crypto_tfm *crypto_hash_tfm(struct crypto_hash *tfm)
-{
-	return tfm->base;
-}
-
-static inline int crypto_hash_init(struct hash_desc *desc)
-{
-	crypto_digest_init(desc->tfm->base);
-	return 0;
-}
-
-static inline int crypto_hash_update(struct hash_desc *desc,
-				     struct scatterlist *sg,
-				     unsigned int nbytes)
-{
-	crypto_digest_update(desc->tfm->base,sg,1 /* ! */ );
-	/* ! this is not generic. Would need to convert nbytes -> nsg */
-
-	return 0;
-}
-
-static inline int crypto_hash_final(struct hash_desc *desc, u8 *out)
-{
-	crypto_digest_final(desc->tfm->base, out);
-	return 0;
-}
-
-#endif
-
 /* How do we tell the block layer to pass down flush/fua? */
 #ifndef COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE
 static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua)
@@ -351,30 +231,6 @@ static inline int op_from_rq_bits(u64 flags)
 	else
 		return REQ_OP_READ;
 }
-#endif
-
-#ifndef CONFIG_DYNAMIC_DEBUG
-/* At least in 2.6.34 the function macro dynamic_dev_dbg() is broken when compiling
-   without CONFIG_DYNAMIC_DEBUG. It has 'format' in the argument list, it references
-   to 'fmt' in its body. */
-#ifdef dynamic_dev_dbg
-#undef dynamic_dev_dbg
-#define dynamic_dev_dbg(dev, fmt, ...)                               \
-        do { if (0) dev_printk(KERN_DEBUG, dev, fmt, ##__VA_ARGS__); } while (0)
-#endif
-#endif
-
-#ifndef min_not_zero
-#define min_not_zero(x, y) ({			\
-	typeof(x) __x = (x);			\
-	typeof(y) __y = (y);			\
-	__x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
-#endif
-
-#ifndef time_in_range
-#define time_in_range(a,b,c) \
-	(time_after_eq(a,b) && \
-	 time_before_eq(a,c))
 #endif
 
 /* history of bioset_create():
@@ -516,30 +372,12 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
 #ifndef RCU_INITIALIZER
 #define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)
 #endif
-#ifndef RCU_INIT_POINTER
-#define RCU_INIT_POINTER(p, v) \
-	do { \
-		p = RCU_INITIALIZER(v); \
-	} while (0)
-#endif
-
-#ifndef list_entry_rcu
-#ifndef rcu_dereference_raw
-/* see c26d34a rcu: Add lockdep-enabled variants of rcu_dereference() */
-#define rcu_dereference_raw(p) rcu_dereference(p)
-#endif
-#define list_entry_rcu(ptr, type, member) \
-	({typeof (*ptr) *__ptr = (typeof (*ptr) __force *)ptr; \
-	 container_of((typeof(ptr))rcu_dereference_raw(__ptr), type, member); \
-	})
-#endif
 
 #ifndef list_next_entry
 /* introduced in 008208c (v3.13-rc1) */
 #define list_next_entry(pos, member) \
-        list_entry((pos)->member.next, typeof(*(pos)), member)
+	list_entry((pos)->member.next, typeof(*(pos)), member)
 #endif
-
 
 /*
  * v4.12 fceb6435e852 netlink: pass extended ACK struct to parsing functions
@@ -553,37 +391,11 @@ extern void *idr_get_next(struct idr *idp, int *nextidp);
        nla_parse_nested(tb, maxtype, nla, policy)
 #endif
 
-/*
- * list_for_each_entry_continue_rcu() was introduced in mainline commit
- * 254245d2 (v2.6.33-rc1).
- */
-#ifndef list_for_each_entry_continue_rcu
-#define list_for_each_entry_continue_rcu(pos, head, member)             \
-	for (pos = list_entry_rcu(pos->member.next, typeof(*pos), member); \
-	     &pos->member != (head);    \
-	     pos = list_entry_rcu(pos->member.next, typeof(*pos), member))
-
-#endif
-
 #ifndef SK_CAN_REUSE
 /* This constant was introduced by Pavel Emelyanov <xemul@parallels.com> on
    Thu Apr 19 03:39:36 2012 +0000. Before the release of linux-3.5
    commit 4a17fd52 sock: Introduce named constants for sk_reuse */
 #define SK_CAN_REUSE   1
-#endif
-
-#if !defined(for_each_set_bit) && defined(for_each_bit)
-#define for_each_set_bit(bit, addr, size) for_each_bit(bit, addr, size)
-#endif
-
-#ifndef list_first_entry
-#define list_first_entry(ptr, type, member) \
-	list_entry((ptr)->next, type, member)
-#endif
-
-#ifndef list_first_entry_or_null
-#define list_first_entry_or_null(ptr, type, member) \
-	(!list_empty(ptr) ? list_first_entry(ptr, type, member) : NULL)
 #endif
 
 #ifndef COMPAT_HAVE_IDR_ALLOC
@@ -631,7 +443,7 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #endif
 
 
-#if !defined(QUEUE_FLAG_DISCARD) || !defined(QUEUE_FLAG_SECDISCARD)
+#if !defined(QUEUE_FLAG_SECDISCARD)
 # define queue_flag_set_unlocked(F, Q)				\
 	({							\
 		if ((F) != -1)					\
@@ -644,11 +456,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 			queue_flag_clear_unlocked(F, Q);	\
 	})
 
-# ifndef blk_queue_discard
-#  define blk_queue_discard(q)   (0)
-#  define QUEUE_FLAG_DISCARD    (-1)
-# endif
-
 # ifndef blk_queue_secdiscard
 #  define blk_queue_secdiscard(q)   (0)
 #  define QUEUE_FLAG_SECDISCARD    (-1)
@@ -657,15 +464,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 
 #ifndef list_next_rcu
 #define list_next_rcu(list)	(*((struct list_head **)(&(list)->next)))
-#endif
-
-#ifndef list_first_or_null_rcu
-#define list_first_or_null_rcu(ptr, type, member) \
-({ \
-	struct list_head *__ptr = (ptr); \
-	struct list_head *__next = ACCESS_ONCE(__ptr->next); \
-	likely(__ptr != __next) ? list_entry_rcu(__next, type, member) : NULL; \
-})
 #endif
 
 #if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
