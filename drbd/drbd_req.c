@@ -656,7 +656,7 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 	}
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
-		if ((s & is_set) && !(s & is_clear))
+		if (((s & is_set) == is_set) && !(s & is_clear))
 			break;
 	}
 	if (&req->tl_requests == &connection->resource->transfer_log)
