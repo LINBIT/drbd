@@ -4714,7 +4714,7 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 		if (peer_device->bitmap_uuids[node_id] == 0) {
 			struct drbd_peer_device *p2;
 			p2 = peer_device_by_node_id(peer_device->device, node_id);
-			if (p2 && drbd_should_do_remote(p2, NOW))
+			if (p2 && !want_bitmap(p2))
 				continue;
 
 			if (node_id == my_node_id && intentional_diskless)
@@ -4734,7 +4734,8 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (!drbd_should_do_remote(peer_device, NOW))
+		/* Only an up-to-date peer persists a new current uuid! */
+		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
 		if (peer_can_fill_a_bitmap_slot(peer_device)) {
 			rv = true;
