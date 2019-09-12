@@ -4912,6 +4912,7 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold
 {
 	struct drbd_device *device = peer_device->device;
 
+	peer_device->rs_source_uuid = peer_device->current_uuid;
 	rotate_current_into_bitmap(device, false, device->resource->dagtag_sector);
 }
 
@@ -4926,8 +4927,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	ss_bm = __test_bitmap_slots_of_peer(peer_device);
 	ss_bm &= ~peers_with_current_uuid(device, peer_device->current_uuid);
 
-	newer = __set_bitmap_slots(device, drbd_current_uuid(device), ss_bm);
-	__set_bitmap_slots(device, 0, ~ss_bm);
+	newer = __set_bitmap_slots(device, peer_device->rs_source_uuid, ss_bm);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);

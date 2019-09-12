@@ -1163,6 +1163,7 @@ struct drbd_peer_device {
 	ktime_t rs_last_mk_req_kt;
 	unsigned long ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
+	u64 rs_source_uuid;
 
 	u64 current_uuid;
 	u64 bitmap_uuids[DRBD_PEERS_MAX];
