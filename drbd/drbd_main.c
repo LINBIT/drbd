@@ -4910,6 +4910,13 @@ remove_peers_with_current_uuid(struct drbd_device *device, u64 current_uuid, u64
 	return nodes;
 }
 
+void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+
+	rotate_current_into_bitmap(device, false, device->resource->dagtag_sector);
+}
+
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;

@@ -1981,9 +1981,6 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 
 	if (!test_bit(B_RS_H_DONE, &peer_device->flags)) {
 		if (side == L_SYNC_TARGET) {
-			/* Since application IO was locked out during L_WF_BITMAP_T and
-			   L_WF_SYNC_UUID we are still unmodified. Before going to L_SYNC_TARGET
-			   we check that we might make the data inconsistent. */
 			r = drbd_maybe_khelper(device, connection, "before-resync-target");
 			if (r == DRBD_UMH_DISABLED)
 				goto skip_helper;
@@ -2119,8 +2116,10 @@ skip_helper:
 		 * we may have been paused in between, or become paused until
 		 * the timer triggers.
 		 * No matter, that is handled in resync_timer_fn() */
-		if (repl_state == L_SYNC_TARGET)
+		if (repl_state == L_SYNC_TARGET) {
+			drbd_uuid_resync_starting(peer_device);
 			mod_timer(&peer_device->resync_timer, jiffies);
+		}
 
 		drbd_md_sync_if_dirty(device);
 	}
