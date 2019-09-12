@@ -4872,6 +4872,10 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 	return modified;
 }
 
+/* __test_bitmap_slots_of_peer() operates on view of the world I know the
+   SyncSource had. It might be that in the mean time some peers sent more
+   recent UUIDs to me. Remove all peers that are on the same UUID as I am
+   now from the set of nodes */
 static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	u64 set_bitmap_slots = 0;
@@ -4887,24 +4891,17 @@ static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __m
 	return set_bitmap_slots;
 }
 
-/* __test_bitmap_slots_of_peer() operates on view of the world I know the
-   SyncSource had. It might be that in the mean time some peers sent more
-   recent UUIDs to me. Remove all peers that are on the same UUID as I am
-   now from the set of nodes */
 static u64
-remove_peers_with_current_uuid(struct drbd_device *device, u64 current_uuid, u64 nodes)
+peers_with_current_uuid(struct drbd_device *device, u64 current_uuid)
 {
 	struct drbd_peer_device *peer_device;
+	u64 nodes = 0;
 
 	current_uuid &= ~UUID_PRIMARY;
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		int peer_node_id = peer_device->node_id;
-
-		if (!(NODE_MASK(peer_node_id) & nodes))
-			continue;
 		if (current_uuid == (peer_device->current_uuid & ~UUID_PRIMARY))
-			nodes &= ~NODE_MASK(peer_node_id);
+			nodes |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
 
@@ -4921,16 +4918,16 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 set_bitmap_slots, newer;
 	unsigned long flags;
+	u64 ss_bm; /* sync_source has non zero bitmap for. expressed as nodemask */
+	u64 newer;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	set_bitmap_slots = __test_bitmap_slots_of_peer(peer_device);
-	set_bitmap_slots = remove_peers_with_current_uuid(device,
-							  peer_device->current_uuid,
-							  set_bitmap_slots);
-	newer = __set_bitmap_slots(device, drbd_current_uuid(device), set_bitmap_slots);
-	__set_bitmap_slots(device, 0, ~set_bitmap_slots);
+	ss_bm = __test_bitmap_slots_of_peer(peer_device);
+	ss_bm &= ~peers_with_current_uuid(device, peer_device->current_uuid);
+
+	newer = __set_bitmap_slots(device, drbd_current_uuid(device), ss_bm);
+	__set_bitmap_slots(device, 0, ~ss_bm);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
