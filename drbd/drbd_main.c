@@ -1363,13 +1363,15 @@ static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(lo
 
 	rcu_read_lock();
 	peer_device = peer_device_by_node_id(device, node_id);
-
-	if (bitmap_uuid == 0 && peer_device &&
-	    peer_device->current_uuid != 0 &&
-	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
-	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
-		bitmap_uuid = -1;
-
+	if (peer_device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if (bitmap_uuid == 0 &&
+		    (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+		    peer_device->current_uuid != 0 &&
+		    (peer_device->current_uuid & ~UUID_PRIMARY) !=
+		    (drbd_current_uuid(device) & ~UUID_PRIMARY))
+			bitmap_uuid = -1;
+	}
 	rcu_read_unlock();
 
 	return bitmap_uuid;
@@ -4775,7 +4777,8 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
 			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
-			peer_device->current_uuid = current_uuid; /* In case resync finishes soon */
+			if (is_sync_target_state(peer_device, NOW))
+				peer_device->current_uuid = current_uuid;
 		}
 	}
 }
