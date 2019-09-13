@@ -58,6 +58,8 @@ static void drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
+static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local);
+static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -4861,8 +4863,17 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	}
 
 	if (set_current) {
+		u64 upd;
+
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
 			receipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);
+
+		upd = ~weak_nodes; /* These nodes are connected to the primary */
+		upd &= __test_bitmap_slots(device); /* of those, I have a bitmap for */
+		__set_bitmap_slots(device, val, upd);
+		/* Setting bitmap to the (new) current-UUID, means, at this moment
+		   we know that we are at the same data as this not connected peer. */
+
 		__drbd_uuid_set_current(device, val);
 	}
 
@@ -4896,6 +4907,20 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 	}
 
 	return modified;
+}
+
+static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+	u64 rv = 0;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (peer_md[node_id].bitmap_uuid)
+			rv |= NODE_MASK(node_id);
+	}
+
+	return rv;
 }
 
 /* __test_bitmap_slots_of_peer() operates on view of the world I know the
