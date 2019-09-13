@@ -2622,9 +2622,9 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	return true;
 }
 
-static inline int drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
+static inline bool drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
 {
-	int changed = device->exposed_data_uuid != val;
+	bool changed = (device->exposed_data_uuid & ~UUID_PRIMARY) != (val & ~UUID_PRIMARY);
 	device->exposed_data_uuid = val;
 	return changed;
 }

@@ -4749,6 +4749,27 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 	return rv;
 }
 
+static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+
+		if (pdsk >= D_INCONSISTENT && pdsk <= D_UNKNOWN &&
+		    (device->exposed_data_uuid & ~UUID_PRIMARY) ==
+		    (peer_device->current_uuid & ~UUID_PRIMARY)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
  * @device:	DRBD device.
@@ -4762,7 +4783,8 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		__drbd_uuid_new_current(device, forced, true);
 		put_ldev(device);
-	} else if (diskfull_peers_need_new_cur_uuid(device)) {
+	} else if (diskfull_peers_need_new_cur_uuid(device) ||
+		   a_lost_peer_is_on_same_cur_uuid(device)) {
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
@@ -4776,9 +4798,10 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 
 		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
-			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
-			if (is_sync_target_state(peer_device, NOW))
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
+				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 				peer_device->current_uuid = current_uuid;
+			}
 		}
 	}
 }
