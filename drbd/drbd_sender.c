@@ -1457,6 +1457,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 			peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
 			peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
 			kfree(di);
+			atomic_add(peer_req->i.size >> 9, &peer_device->connection->rs_in_flight);
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		}
 	} else {
