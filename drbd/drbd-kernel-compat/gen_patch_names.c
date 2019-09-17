@@ -218,17 +218,39 @@ int main(int argc, char **argv)
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
-	patch(1, "req_op_write_zeroes", true, false,
-	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "present");
-
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
+
+	patch(1, "req_nounmap", true, false,
+	      COMPAT_HAVE_REQ_NOUNMAP, "present");
 
 #if !defined(COMPAT_HAVE_REQ_OP_WRITE_SAME) && \
 	!defined(COMPAT_HAVE_REQ_WRITE_SAME)
 	patch(1, "write_same", true, false,
 	      NO, "capable");
 #endif
+
+#if defined(COMPAT_HAVE_BIO_RW)
+	/* This is the oldest supported version, using BIO_*. Read/write
+	 * direction is controlled by a single bit (BIO_RW). */
+	patch(1, "bio_rw", false, true,
+	      YES, "present");
+#elif defined(COMPAT_HAVE_REQ_WRITE)
+	/* This is an intermediate version, using REQ_* flags. The bio ops
+	 * and flags are separated, and it's using bio->bi_rw and bi_flags,
+	 * respectively */
+	patch(1, "req_write", false, true,
+	      YES, "present");
+#elif defined(COMPAT_HAVE_REQ_OP_WRITE)
+	/* We're dealing with a "modern" kernel which has REQ_OP_* flags.
+	 * It has separate bio operations (bio->bi_opf) and flags
+	 * (bio->bi_flags). */
+#else
+# warning "Unknown bio rw flags, check compat layer"
+#endif
+
+	patch(1, "req_op_write_zeroes", true, false,
+	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "present");
 
 	patch(1, "blk_check_plugged", true, false,
 	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
