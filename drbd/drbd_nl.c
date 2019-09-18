@@ -1736,7 +1736,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 			continue; /* skip myself... */
 		}
 		/* Have we met this peer node id before? */
-		if (peer_md->bitmap_index == -1)
+		if (!(peer_md->flags & MDF_HAVE_BITMAP))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
@@ -2440,7 +2440,7 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[node_id];
 
-		if (peer_md->bitmap_index != -1)
+		if (peer_md->flags & MDF_HAVE_BITMAP)
 			used++;
 	}
 
@@ -2490,6 +2490,7 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	peer_md->bitmap_index = bitmap_index;
 	peer_device->bitmap_index = bitmap_index;
 	peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
+	peer_md->flags |= MDF_HAVE_BITMAP;
 
 	return 0;
 }
@@ -2520,7 +2521,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 	from_index = unallocated_index(device->ldev, device->bitmap->bm_max_peers);
 
 	peer_md = &device->ldev->md.peers[peer_node_id];
-	if (peer_md->bitmap_index == -1) {
+	if (!(peer_md->flags & MDF_HAVE_BITMAP)) {
 		put_ldev(device);
 		return -ENOENT;
 	}
@@ -2550,7 +2551,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 		peer_md->bitmap_uuid = 0;
 		peer_md->bitmap_dagtag = 0;
 	}
-	peer_md->flags = md_flags;
+	peer_md->flags = md_flags & ~MDF_HAVE_BITMAP;
 	peer_md->bitmap_index = -1;
 	drbd_md_sync(device);
 	drbd_resume_io(device);
@@ -2874,10 +2875,17 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		bitmap_index = nbc->md.peers[connection->peer_node_id].bitmap_index;
-		if (bitmap_index != -1)
-			peer_device->bitmap_index = bitmap_index;
-		else if (want_bitmap(peer_device))
-			slots_needed++;
+		if (want_bitmap(peer_device)) {
+			if (bitmap_index != -1)
+				peer_device->bitmap_index = bitmap_index;
+			else
+				slots_needed++;
+		} else if (bitmap_index != -1) {
+			/* Pretend in core that there is not bitmap for that peer,
+			   in the on disk meta-data we keep it until it is de-allocated
+			   with forget-peer */
+			nbc->md.peers[connection->peer_node_id].flags &= ~MDF_HAVE_BITMAP;
+		}
 	}
 	if (slots_needed) {
 		int slots_available = device->bitmap->bm_max_peers - used_bitmap_slots(nbc);
@@ -3733,8 +3741,12 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 			continue;
 
 		bitmap_index = device->ldev->md.peers[adm_ctx->peer_node_id].bitmap_index;
-		if (bitmap_index != -1)
-			peer_device->bitmap_index = bitmap_index;
+		if (bitmap_index != -1) {
+			if (want_bitmap(peer_device))
+				peer_device->bitmap_index = bitmap_index;
+			else
+				device->ldev->md.peers[adm_ctx->peer_node_id].flags &= ~MDF_HAVE_BITMAP;
+		}
 		put_ldev(device);
 	}
 

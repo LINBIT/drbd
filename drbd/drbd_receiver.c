@@ -5033,7 +5033,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		if (bitmap_uuids_mask & NODE_MASK(i)) {
 			bitmap_uuid = be64_to_cpu(p->other_uuids[pos++]);
 
-			if (peer_md && peer_md[i].bitmap_index == -1)
+			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP))
 				peer_md[i].flags |= MDF_NODE_EXISTS;
 		} else {
 			bitmap_uuid = -1;
