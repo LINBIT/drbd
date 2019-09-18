@@ -1227,6 +1227,7 @@ struct drbd_peer_device {
 	ktime_t rs_last_mk_req_kt;
 	unsigned long ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
+	u64 rs_source_uuid;
 
 	u64 current_uuid;
 	u64 bitmap_uuids[DRBD_PEERS_MAX];
@@ -1573,6 +1574,7 @@ extern void drbd_uuid_new_current_by_user(struct drbd_device *device);
 extern void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local);
 extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
+extern void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device); __must_hold(local);
 extern u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
 extern u64 drbd_weak_nodes_device(struct drbd_device *device);
@@ -2673,9 +2675,9 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	return true;
 }
 
-static inline int drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
+static inline bool drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
 {
-	int changed = device->exposed_data_uuid != val;
+	bool changed = (device->exposed_data_uuid & ~UUID_PRIMARY) != (val & ~UUID_PRIMARY);
 	device->exposed_data_uuid = val;
 	return changed;
 }

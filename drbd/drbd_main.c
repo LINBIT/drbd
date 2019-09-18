@@ -58,6 +58,8 @@ static void drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
+static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local);
+static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -1266,13 +1268,15 @@ static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(lo
 
 	rcu_read_lock();
 	peer_device = peer_device_by_node_id(device, node_id);
-
-	if (bitmap_uuid == 0 && peer_device &&
-	    peer_device->current_uuid != 0 &&
-	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
-	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
-		bitmap_uuid = -1;
-
+	if (peer_device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+		if (bitmap_uuid == 0 &&
+		    (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
+		    peer_device->current_uuid != 0 &&
+		    (peer_device->current_uuid & ~UUID_PRIMARY) !=
+		    (drbd_current_uuid(device) & ~UUID_PRIMARY))
+			bitmap_uuid = -1;
+	}
 	rcu_read_unlock();
 
 	return bitmap_uuid;
@@ -4555,7 +4559,7 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 		if (peer_device->bitmap_uuids[node_id] == 0) {
 			struct drbd_peer_device *p2;
 			p2 = peer_device_by_node_id(peer_device->device, node_id);
-			if (p2 && drbd_should_do_remote(p2, NOW))
+			if (p2 && !want_bitmap(p2))
 				continue;
 
 			if (node_id == my_node_id && intentional_diskless)
@@ -4575,9 +4579,31 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (!drbd_should_do_remote(peer_device, NOW))
+		/* Only an up-to-date peer persists a new current uuid! */
+		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
 		if (peer_can_fill_a_bitmap_slot(peer_device)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
+static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+
+		if (pdsk >= D_INCONSISTENT && pdsk <= D_UNKNOWN &&
+		    (device->exposed_data_uuid & ~UUID_PRIMARY) ==
+		    (peer_device->current_uuid & ~UUID_PRIMARY)) {
 			rv = true;
 			break;
 		}
@@ -4600,7 +4626,8 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		__drbd_uuid_new_current(device, forced, true);
 		put_ldev(device);
-	} else if (diskfull_peers_need_new_cur_uuid(device)) {
+	} else if (diskfull_peers_need_new_cur_uuid(device) ||
+		   a_lost_peer_is_on_same_cur_uuid(device)) {
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
@@ -4614,8 +4641,10 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 
 		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
-			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
-			peer_device->current_uuid = current_uuid; /* In case resync finishes soon */
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
+				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+				peer_device->current_uuid = current_uuid;
+			}
 		}
 	}
 }
@@ -4677,8 +4706,17 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	rcu_read_unlock();
 
 	if (set_current) {
+		u64 upd;
+
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
 			receipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);
+
+		upd = ~weak_nodes; /* These nodes are connected to the primary */
+		upd &= __test_bitmap_slots(device); /* of those, I have a bitmap for */
+		__set_bitmap_slots(device, val, upd);
+		/* Setting bitmap to the (new) current-UUID, means, at this moment
+		   we know that we are at the same data as this not connected peer. */
+
 		__drbd_uuid_set_current(device, val);
 	}
 
@@ -4714,6 +4752,24 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 	return modified;
 }
 
+static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local)
+{
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int node_id;
+	u64 rv = 0;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (peer_md[node_id].bitmap_uuid)
+			rv |= NODE_MASK(node_id);
+	}
+
+	return rv;
+}
+
+/* __test_bitmap_slots_of_peer() operates on view of the world I know the
+   SyncSource had. It might be that in the mean time some peers sent more
+   recent UUIDs to me. Remove all peers that are on the same UUID as I am
+   now from the set of nodes */
 static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	u64 set_bitmap_slots = 0;
@@ -4729,43 +4785,43 @@ static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __m
 	return set_bitmap_slots;
 }
 
-/* __test_bitmap_slots_of_peer() operates on view of the world I know the
-   SyncSource had. It might be that in the mean time some peers sent more
-   recent UUIDs to me. Remove all peers that are on the same UUID as I am
-   now from the set of nodes */
 static u64
-remove_peers_with_current_uuid(struct drbd_device *device, u64 current_uuid, u64 nodes)
+peers_with_current_uuid(struct drbd_device *device, u64 current_uuid)
 {
 	struct drbd_peer_device *peer_device;
+	u64 nodes = 0;
 
 	current_uuid &= ~UUID_PRIMARY;
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		int peer_node_id = peer_device->node_id;
-
-		if (!(NODE_MASK(peer_node_id) & nodes))
-			continue;
 		if (current_uuid == (peer_device->current_uuid & ~UUID_PRIMARY))
-			nodes &= ~NODE_MASK(peer_node_id);
+			nodes |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
 
 	return nodes;
 }
 
+void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	struct drbd_device *device = peer_device->device;
+
+	peer_device->rs_source_uuid = peer_device->current_uuid;
+	rotate_current_into_bitmap(device, false, device->resource->dagtag_sector);
+}
+
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	u64 set_bitmap_slots, newer;
 	unsigned long flags;
+	u64 ss_bm; /* sync_source has non zero bitmap for. expressed as nodemask */
+	u64 newer;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	set_bitmap_slots = __test_bitmap_slots_of_peer(peer_device);
-	set_bitmap_slots = remove_peers_with_current_uuid(device,
-							  peer_device->current_uuid,
-							  set_bitmap_slots);
-	newer = __set_bitmap_slots(device, drbd_current_uuid(device), set_bitmap_slots);
-	__set_bitmap_slots(device, 0, ~set_bitmap_slots);
+	ss_bm = __test_bitmap_slots_of_peer(peer_device);
+	ss_bm &= ~peers_with_current_uuid(device, peer_device->current_uuid);
+
+	newer = __set_bitmap_slots(device, peer_device->rs_source_uuid, ss_bm);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
