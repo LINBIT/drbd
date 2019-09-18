@@ -227,6 +227,15 @@ int main(int argc, char **argv)
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
+	patch(1, "nla_nest_start_noflag", true, false,
+	      COMPAT_HAVE_NLA_NEST_START_NOFLAG, "present");
+
+	patch(1, "nla_parse_deprecated", true, false,
+	      COMPAT_HAVE_NLA_PARSE_DEPRECATED, "present");
+
+	patch(1, "allow_kernel_signal", true, false,
+	      COMPAT_HAVE_ALLOW_KERNEL_SIGNAL, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

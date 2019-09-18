@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
    drbd_nl.c
 
@@ -7,19 +8,6 @@
    Copyright (C) 1999-2008, Philipp Reisner <philipp.reisner@linbit.com>.
    Copyright (C) 2002-2008, Lars Ellenberg <lars.ellenberg@linbit.com>.
 
-   drbd is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
-   drbd is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with drbd; see the file COPYING.  If not, write to
-   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
 
  */
 
@@ -123,7 +111,7 @@ static int drbd_msg_put_info(struct sk_buff *skb, const char *info)
 	if (!info || !info[0])
 		return 0;
 
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
 		return err;
 
@@ -150,7 +138,7 @@ static int drbd_msg_sprintf_info(struct sk_buff *skb, const char *fmt, ...)
 	int aligned_len;
 	char *msg_buf;
 
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_REPLY);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_REPLY);
 	if (!nla)
 		return err;
 
@@ -4899,7 +4887,7 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 				    struct drbd_path *path)
 {
 	struct nlattr *nla;
-	nla = nla_nest_start(skb, DRBD_NLA_CFG_CONTEXT);
+	nla = nla_nest_start_noflag(skb, DRBD_NLA_CFG_CONTEXT);
 	if (!nla)
 		goto nla_put_failure;
 	if (device)
@@ -5156,7 +5144,7 @@ int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 static int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *connection)
 {
 	struct drbd_path *path;
-	struct nlattr *tla = nla_nest_start(skb, DRBD_NLA_PATH_PARMS);
+	struct nlattr *tla = nla_nest_start_noflag(skb, DRBD_NLA_PATH_PARMS);
 	if (!tla)
 		goto nla_put_failure;
 
