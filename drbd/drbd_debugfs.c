@@ -23,6 +23,7 @@ static struct dentry *drbd_debugfs_version;
 static struct dentry *drbd_debugfs_refcounts;
 static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
+static struct dentry *drbd_debugfs_compat;
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 static void seq_print_age_or_dash(struct seq_file *m, bool valid, ktime_t dt)
@@ -1713,10 +1714,29 @@ static const struct file_operations drbd_refcounts_fops = {
 	.release = single_release,
 };
 
+static int drbd_compat_show(struct seq_file *m, void *ignored)
+{
+	return 0;
+}
+
+static int drbd_compat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, drbd_compat_show, NULL);
+}
+
+static const struct file_operations drbd_compat_fops = {
+	.owner = THIS_MODULE,
+	.open = drbd_compat_open,
+	.llseek = seq_lseek,
+	.read = seq_read,
+	.release = single_release,
+};
+
 /* not __exit, may be indirectly called
  * from the module-load-failure path as well. */
 void drbd_debugfs_cleanup(void)
 {
+	drbd_debugfs_remove(&drbd_debugfs_compat);
 	drbd_debugfs_remove(&drbd_debugfs_resources);
 	drbd_debugfs_remove(&drbd_debugfs_minors);
 	drbd_debugfs_remove(&drbd_debugfs_version);
@@ -1742,4 +1762,7 @@ void __init drbd_debugfs_init(void)
 
 	dentry = debugfs_create_dir("minors", drbd_debugfs_root);
 	drbd_debugfs_minors = dentry;
+
+	dentry = debugfs_create_file("compat", 0444, drbd_debugfs_root, NULL, &drbd_compat_fops);
+	drbd_debugfs_compat = dentry;
 }
