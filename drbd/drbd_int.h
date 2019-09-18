@@ -49,6 +49,10 @@
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
 
+#ifndef SECTOR_SHIFT
+#define SECTOR_SHIFT 9
+#endif
+
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
 #include "compat.h"

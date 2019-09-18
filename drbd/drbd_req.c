@@ -2616,7 +2616,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 	 * We don't need to, anymore, either: starting with kernel 2.6.36,
 	 * we have REQ_FUA and REQ_PREFLUSH, which will be handled transparently
 	 * by the block layer. */
-	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER)) {
+	if (unlikely(bio->bi_opf & DRBD_REQ_HARDBARRIER) || resource->res_opts.node_id < device->erasure_code.disk_count_total) {
 		drbd_bio_endio(bio, BLK_STS_NOTSUPP);
 		MAKE_REQUEST_RETURN;
 	}
@@ -2643,7 +2643,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 		unsigned int remaining_in_stripe = sectors_remaining_in_stripe << SECTOR_SHIFT;
 		struct bio *bio_to_submit;
 		if (remaining > remaining_in_stripe) {
-			bio_to_submit = bio_split(bio, sectors_remaining_in_stripe, GFP_NOIO, &drbd_io_bio_set);
+			bio_to_submit = bio_split(bio, sectors_remaining_in_stripe, GFP_NOIO, drbd_io_bio_set);
 			bio_chain(bio_to_submit, bio);
 			sector += sectors_remaining_in_stripe;
 			remaining -= remaining_in_stripe;

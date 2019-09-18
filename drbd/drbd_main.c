@@ -3752,7 +3752,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->device_conf = *device_conf;
 
 	/* TODO: Make configurable */
-	device->erasure_code.disk_count_total = 4;
+	device->erasure_code.disk_count_total = 5;
 	device->erasure_code.disk_count_data = 3;
 	erasure_code_gf16_init(&device->erasure_code);
 
