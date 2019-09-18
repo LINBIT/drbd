@@ -404,6 +404,7 @@ struct drbd_request {
 	unsigned int local_rq_state;
 	u16 net_rq_state[DRBD_NODE_ID_MAX];
 
+	bool full_stripe;
 	/* TODO: might hurt performance to allocate this extra data for every request */
 	struct request_operation operation[DRBD_NODE_ID_MAX];
 

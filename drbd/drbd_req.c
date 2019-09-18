@@ -91,8 +91,10 @@ static void distributed_request_operation(struct drbd_request *req)
 	req->data_disk_index = (ec->disk_count_total - (stripe % ec->disk_count_total)) % ec->disk_count_total;
 	parity_0_node_id = (req->data_disk_index + ec->disk_count_data) % ec->disk_count_total;
 
-	printk("## distributed_request_operation, sector %llu, size %llubytes, chunksect_bits %d, chunk %llu, stripe %d, data_disk_number %d, data_disk_index %d\n",
-		(long long unsigned) sector, (long long unsigned) size, chunksect_bits, (long long unsigned) chunk, stripe, data_disk_number, req->data_disk_index);
+	req->full_stripe = big_stripe_sectors == (size >> SECTOR_SHIFT);
+
+	printk("## distributed_request_operation, sector %llu, size %llubytes, chunksect_bits %d, chunk %llu, stripe %d, data_disk_number %d, data_disk_index %d %s\n",
+		(long long unsigned) sector, (long long unsigned) size, chunksect_bits, (long long unsigned) chunk, stripe, data_disk_number, req->data_disk_index, req->full_stripe ? "full_stripe" : "partial_stripe");
 	for (i = data_disk_number; i < ec->disk_count_data && size > 0; ++i) {
 		const int data_node_id = (req->data_disk_index + i) % ec->disk_count_total;
 		struct request_operation *data_operation = &req->operation[data_node_id];
@@ -1894,6 +1896,54 @@ static void * drbd_check_plugged(struct drbd_resource *resource) { return NULL; 
 static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req) { };
 #endif
 
+static void copy_bio_to_pre_read_data(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device;
+
+	/* overwrite pre-read data with new data from write request */
+	for_each_peer_device(peer_device, device) {
+		struct request_operation *operation = &req->operation[peer_device->node_id];
+		struct bvec_iter iter;
+		DRBD_BIO_VEC_TYPE bvec;
+		unsigned int size;
+		unsigned int copied = 0;
+		unsigned int pre_read_data_offset;
+
+		if (!operation->target_size_sectors || operation->parity_number != -1)
+			continue;
+
+		iter = req->master_bio->bi_iter;
+		size = operation->target_size_sectors << SECTOR_SHIFT;
+		pre_read_data_offset = (operation->target_sector - operation->pre_read_sector) << SECTOR_SHIFT;
+
+		if (!size)
+			continue;
+
+		bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << SECTOR_SHIFT);
+		__bio_for_each_segment(bvec, req->master_bio, iter, iter) {
+			int segment_copy = min(bvec BVD bv_len, size - copied);
+			struct page *page = bvec BVD bv_page;
+			unsigned int offset = bvec BVD bv_offset;
+			char *from_base;
+
+			D_ASSERT(peer_device, segment_copy > 0);
+			from_base = drbd_kmap_atomic(page, KM_USER0);
+
+			//				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
+			//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
+
+			memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_copy);
+			drbd_kunmap_atomic(from_base, KM_USER0);
+
+			copied += segment_copy;
+
+			if (copied == size)
+				break;
+		}
+	}
+}
+
 static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
 {
 	struct drbd_resource *resource = device->resource;
@@ -1976,7 +2026,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		list_add_tail(&req->tl_requests, &resource->transfer_log);
 	}
 
-	if (req->i.size != 0 && device->distribute_data) {
+	if (req->i.size != 0 && device->distribute_data && !(rw == WRITE && req->full_stripe)) {
 		if (!drbd_process_pre_read(req))
 			no_remote = true;
 		/* TODO: Fail request if we can't read from a sufficient number of peers, or if we won't be able to finish the request with the pre-read data */
@@ -1999,8 +2049,14 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 				/* The only size==0 bios we expect are empty flushes. */
 				D_ASSERT(device, req->master_bio->bi_opf & DRBD_REQ_PREFLUSH);
 				_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
-			} else if (!drbd_process_write_request(req, false))
-				no_remote = true;
+			} else {
+				if (device->distribute_data) {
+					D_ASSERT(device, req->full_stripe);
+					copy_bio_to_pre_read_data(req);
+				}
+				if (!drbd_process_write_request(req, false))
+					no_remote = true;
+			}
 			/* TODO: Fail request if we can't write to a sufficient number of peers */
 			wake_all_senders(resource);
 		} else {
@@ -2097,49 +2153,7 @@ void pre_read_done(struct drbd_request *req)
 	}
 
 	if (rw == WRITE) {
-		struct drbd_peer_device *peer_device;
-
-		/* overwrite pre-read data with new data from write request */
-		for_each_peer_device(peer_device, device) {
-			struct request_operation *operation = &req->operation[peer_device->node_id];
-			struct bvec_iter iter;
-			DRBD_BIO_VEC_TYPE bvec;
-			unsigned int size;
-			unsigned int copied = 0;
-			unsigned int pre_read_data_offset;
-
-			if (!operation->target_size_sectors || operation->parity_number != -1)
-				continue;
-
-			iter = req->master_bio->bi_iter;
-			size = operation->target_size_sectors << SECTOR_SHIFT;
-			pre_read_data_offset = (operation->target_sector - operation->pre_read_sector) << SECTOR_SHIFT;
-
-			if (!size)
-				continue;
-
-			bvec_iter_advance(req->master_bio->bi_io_vec, &iter, operation->input_offset << SECTOR_SHIFT);
-			__bio_for_each_segment(bvec, req->master_bio, iter, iter) {
-				int segment_copy = min(bvec BVD bv_len, size - copied);
-				struct page *page = bvec BVD bv_page;
-				unsigned int offset = bvec BVD bv_offset;
-				char *from_base;
-
-				D_ASSERT(peer_device, segment_copy > 0);
-				from_base = drbd_kmap_atomic(page, KM_USER0);
-
-//				drbd_info(peer_device, "## pre_read_done req %p overwrite pre_read_data node %d, offset %u, offset into bio page %u, size %d\n",
-//					  req, peer_device->node_id, pre_read_data_offset + copied, offset, segment_copy);
-
-				memcpy((char *) req->pre_read_data[peer_device->node_id] + pre_read_data_offset + copied, from_base + offset, segment_copy);
-				drbd_kunmap_atomic(from_base, KM_USER0);
-
-				copied += segment_copy;
-
-				if (copied == size)
-					break;
-			}
-		}
+		copy_bio_to_pre_read_data(req);
 
 		if (!drbd_process_write_request(req, true))
 			no_remote = true;
