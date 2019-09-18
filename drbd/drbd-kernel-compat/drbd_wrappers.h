@@ -108,8 +108,8 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define REQ_DISCARD 0
 #endif
 
-#ifndef REQ_WSAME
-#define REQ_WSAME 0
+#ifndef REQ_WRITE_SAME
+#define REQ_WRITE_SAME 0
 #endif
 
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
@@ -169,7 +169,7 @@ enum req_op {
 	 * and we map the REQ_OP_* to something stupid.
 	 */
 	REQ_OP_DISCARD          = REQ_DISCARD ?: -1,
-	REQ_OP_WRITE_SAME       = REQ_WSAME   ?: -2,
+	REQ_OP_WRITE_SAME       = REQ_WRITE_SAME ?: -2,
 	REQ_OP_WRITE_ZEROES     = -3,
 };
 #define bio_op(bio)                            (op_from_rq_bits((bio)->bi_rw))
@@ -178,7 +178,7 @@ static inline int op_from_rq_bits(u64 flags)
 {
 	if (flags & REQ_DISCARD)
 		return REQ_OP_DISCARD;
-	else if (flags & REQ_WSAME)
+	else if (flags & REQ_WRITE_SAME)
 		return REQ_OP_WRITE_SAME;
 	else if (flags & REQ_WRITE)
 		return REQ_OP_WRITE;
