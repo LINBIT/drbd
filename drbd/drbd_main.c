@@ -4094,15 +4094,16 @@ void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buff
 	buffer->al_stripe_size_4k = cpu_to_be32(device->ldev->md.al_stripe_size_4k);
 }
 
-void drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
+int drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
 {
 	sector_t sector;
+	int err;
 
 	if (drbd_md_dax_active(device->ldev)) {
 		drbd_md_encode(device, drbd_dax_md_addr(device->ldev));
 		arch_wb_cache_pmem(drbd_dax_md_addr(device->ldev),
 				   sizeof(struct meta_data_on_disk_9));
-		return;
+		return 0;
 	}
 
 	memset(buffer, 0, sizeof(*buffer));
@@ -4112,11 +4113,13 @@ void drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffe
 	D_ASSERT(device, drbd_md_ss(device->ldev) == device->ldev->md.md_offset);
 	sector = device->ldev->md.md_offset;
 
-	if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
-		/* this was a try anyways ... */
+	err = drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE);
+	if (err) {
 		drbd_err(device, "meta data update failed!\n");
-		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
+		drbd_chk_io_error(device, err, DRBD_META_IO_ERROR);
 	}
+
+	return err;
 }
 
 /**
@@ -4124,9 +4127,10 @@ void drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffe
  * @device:	DRBD device.
  * @maybe:	meta data may in fact be "clean", the actual write may be skipped.
  */
-static void __drbd_md_sync(struct drbd_device *device, bool maybe)
+static int __drbd_md_sync(struct drbd_device *device, bool maybe)
 {
 	struct meta_data_on_disk_9 *buffer;
+	int err = -EIO;
 
 	/* Don't accidentally change the DRBD meta data layout. */
 	BUILD_BUG_ON(DRBD_PEERS_MAX != 32);
@@ -4136,32 +4140,34 @@ static void __drbd_md_sync(struct drbd_device *device, bool maybe)
 	del_timer(&device->md_sync_timer);
 	/* timer may be rearmed by drbd_md_mark_dirty() now. */
 	if (!test_and_clear_bit(MD_DIRTY, &device->flags) && maybe)
-		return;
+		return 0;
 
 	/* We use here D_FAILED and not D_ATTACHING because we try to write
 	 * metadata even if we detach due to a disk failure! */
 	if (!get_ldev_if_state(device, D_DETACHING))
-		return;
+		return -EIO;
 
 	buffer = drbd_md_get_buffer(device, __func__);
 	if (!buffer)
 		goto out;
 
-	drbd_md_write(device, buffer);
+	err = drbd_md_write(device, buffer);
 
 	drbd_md_put_buffer(device);
 out:
 	put_ldev(device);
+
+	return err;
 }
 
-void drbd_md_sync(struct drbd_device *device)
+int drbd_md_sync(struct drbd_device *device)
 {
-	__drbd_md_sync(device, false);
+	return __drbd_md_sync(device, false);
 }
 
-void drbd_md_sync_if_dirty(struct drbd_device *device)
+int drbd_md_sync_if_dirty(struct drbd_device *device)
 {
-	__drbd_md_sync(device, true);
+	return __drbd_md_sync(device, true);
 }
 
 static int check_activity_log_stripe_size(struct drbd_device *device,
