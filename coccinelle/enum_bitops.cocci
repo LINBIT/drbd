@@ -18,10 +18,10 @@ identifier c;
 id << find_enums.id;
 c << find_enums.c;
 @@
-if enums.has_key(id):
-        enums[id].append(c)
+if id in enums:
+    enums[id].append(c)
 else:
-        enums[id] = [c]
+    enums[id] = [c]
 
 @drbd_flag_ops@
 constant F;
@@ -47,8 +47,7 @@ f << drbd_flag_ops.F;
 p << drbd_flag_ops.p;
 @@
 if t.startswith("struct drbd_"):
-        enum_name = t[12:] + "_flag";
-        if enum_name in enums and not f in enums[enum_name]:
-		msg = "ERROR: %s used as enum value on %s but it is " \
-			"not a %s" % (f, t, enum_name)
-		coccilib.report.print_report(p[0], msg)
+    enum_name = t[12:] + "_flag";
+    if enum_name in enums and not f in enums[enum_name]:
+        msg = "ERROR: %s used as enum value on %s but it is not a %s" % (f, t, enum_name)
+        coccilib.report.print_report(p[0], msg)
