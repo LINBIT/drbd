@@ -1765,8 +1765,8 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct ib_device *device = cm->id->device;
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 	int i, nr_sges;
 
 	switch (tx_desc->type) {
@@ -1784,7 +1784,7 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
 					  DMA_TO_DEVICE);
 		bio_for_each_segment(bvec, tx_desc->bio, iter) {
-			put_page(bvec BVD bv_page);
+			put_page(bvec.bv_page);
 			if (bio_op(tx_desc->bio) == REQ_OP_WRITE_SAME)
 				break;
 		}
@@ -2991,8 +2991,8 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 	struct dtr_tx_desc *tx_desc;
 	struct ib_device *device;
 	struct dtr_path *path = NULL;
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 	int i = 0, pos = 0, done = 0, err;
 
 	if (!size_tx_desc)
@@ -3012,9 +3012,9 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 	device = rdma_stream->cm.id->device;
 
 	bio_for_each_segment(bvec, tx_desc->bio, iter) {
-		struct page *page = bvec BVD bv_page;
-		int offset = bvec BVD bv_offset;
-		int size = bvec BVD bv_len;
+		struct page *page = bvec.bv_page;
+		int offset = bvec.bv_offset;
+		int size = bvec.bv_len;
 		int shift = 0;
 		get_page(page);
 
@@ -3056,7 +3056,7 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 			dtr_free_tx_desc(path, tx_desc);
 		} else {
 			bio_for_each_segment(bvec, tx_desc->bio, iter) {
-				put_page(bvec BVD bv_page);
+				put_page(bvec.bv_page);
 				if (bio_op(tx_desc->bio) == REQ_OP_WRITE_SAME)
 					break;
 			}
@@ -3077,8 +3077,8 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	int sges_max = rdma_transport->sges_max;
 #endif
 	int err = -EINVAL;
-	DRBD_BIO_VEC_TYPE bvec;
-	DRBD_ITER_TYPE iter;
+	struct bio_vec bvec;
+	struct bvec_iter iter;
 
 	//tr_info(transport, "in send_zc_bio, size: %d\n", bio->bi_size);
 
@@ -3087,8 +3087,8 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 
 #if SENDER_COMPACTS_BVECS
 	bio_for_each_segment(bvec, bio, iter) {
-		size_tx_desc += bvec BVD bv_len;
-		//tr_info(transport, " bvec len = %d\n", bvec BVD bv_len);
+		size_tx_desc += bvec.bv_len;
+		//tr_info(transport, " bvec len = %d\n", bvec.bv_len);
 		if (size_tx_desc > DRBD_SOCKET_BUFFER_SIZE) {
 			remaining = size_tx_desc - DRBD_SOCKET_BUFFER_SIZE;
 			size_tx_desc = DRBD_SOCKET_BUFFER_SIZE;
@@ -3110,12 +3110,12 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	err = dtr_send_bio_part(rdma_transport, bio, start, size_tx_desc, sges);
 	start += size_tx_desc;
 
-	TR_ASSERT(transport, start == DRBD_BIO_BI_SIZE(bio));
+	TR_ASSERT(transport, start == bio->bi_iter.bi_size);
 out:
 #else
 	bio_for_each_segment(bvec, bio, iter) {
 		err = dtr_send_page(transport, DATA_STREAM,
-			bvec BVD bv_page, bvec BVD bv_offset, bvec BVD bv_len,
+			bvec.bv_page, bvec.bv_offset, bvec.bv_len,
 			0 /* flags currently unused by dtr_send_page */);
 		if (err)
 			break;
