@@ -2,13 +2,34 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-HEAD
+9.0.20-0rc1 (api:genl2/proto:86-115/transport:14)
 --------
+ * fix a case of false split brain detection if a diskless node promotes
+   multiple times, by aligning the rules for generating a new current-UUID
+   on a diskless nodes with them on a node with disk
  * check if we still have quorum by exchanging a drbd-ping with peers
    before creating new current UUID after loosing one peer
  * fix after weak handling to not interfere with reconciliation resyncs
+ * retry connect when one of the relevant flags changes during UUID exchange
+ * fix reconciliation resync if one of the secondary got an current-UUID update
+ * fix resync to make progress after it was paused by an other resync operation
+ * fix false split-brains when a resync source changes current-UUID during
+   resync operation
+ * fix restore of D_OUTDATED when the resource first only attached and
+   then the peer objects are created (in contrast to the usual, new-peer,
+   attach, connect)
+ * abort creating new current-UUID when writing to meta-data fails in
+   the moment where the new-current-UUID should be written
+ * removed DRBD marking itself as read-only when secondary; this flag
+   was exposed using the BLKROGET ioctl; that should be left to user-land
+   use; recent KVM checks that flag, and does not dare auto-promote when
+   set by DRBD
+ * fix a small memory-leak when creating peer devices
+ * fix a possible information leak of kernel memory that pads net-link packets
+ * code cleanups, introduced enums for remaining magic numbers
  * new kernel-backward-compatibility framework based on spatch/coccinelle,
-   replacing an unmaintainable moloch of C preprocessor hell
+   replacing an unmaintainable moloch of C preprocessor hell; Merged the
+   complete kernel-compat submodule
  * compat with up to Linux-5.3-rc2
 
 9.0.19-1 (api:genl2/proto:86-115/transport:14)
