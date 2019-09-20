@@ -371,7 +371,7 @@ static int dtr_activate_path(struct dtr_path *path);
 static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
-static void dtr_tx_timeout_fn(DRBD_TIMER_FN_ARG);
+static void dtr_tx_timeout_fn(struct timer_list *t);
 static void dtr_tx_timeout_work_fn(struct work_struct *work);
 
 static struct drbd_transport_class rdma_transport_class = {
@@ -979,7 +979,7 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
 	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
-	drbd_timer_setup(cm, tx_timeout, dtr_tx_timeout_fn);
+	timer_setup(&cm->tx_timeout, dtr_tx_timeout_fn, 0);
 
 	return cm;
 }
@@ -1590,9 +1590,9 @@ out:
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
-static void dtr_tx_timeout_fn(DRBD_TIMER_FN_ARG)
+static void dtr_tx_timeout_fn(struct timer_list *t)
 {
-	struct dtr_cm *cm = DRBD_TIMER_ARG2OBJ(cm, tx_timeout);
+	struct dtr_cm *cm = from_timer(cm, t, tx_timeout);
 
 	kref_get(&cm->kref);
 	schedule_work(&cm->tx_timeout_work);
