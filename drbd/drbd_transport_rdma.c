@@ -1898,7 +1898,8 @@ static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
 static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 {
 	struct dtr_transport *rdma_transport = cm->path->rdma_transport;
-	struct ib_recv_wr recv_wr, *recv_wr_failed;
+	struct ib_recv_wr recv_wr;
+	const struct ib_recv_wr *recv_wr_failed;
 	int err = -EIO;
 
 	recv_wr.next = NULL;
@@ -2074,7 +2075,8 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport = cm->path->rdma_transport;
-	struct ib_send_wr send_wr, *send_wr_failed;
+	struct ib_send_wr send_wr;
+	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
 	int i, err = -EIO;
 
