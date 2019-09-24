@@ -5599,7 +5599,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_ret_code retcode;
 	int err;
 	struct new_c_uuid_parms args;
-	u64 nodes = 0, diskfull = 0;
+	u64 nodes = 0, diskful = 0;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5629,7 +5629,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		if (args.clear_bm && should_skip_initial_sync(peer_device)) {
 			if (peer_device->disk_state[NOW] >= D_INCONSISTENT) {
 				drbd_info(peer_device, "Preparing to skip initial sync\n");
-				diskfull |= NODE_MASK(peer_device->node_id);
+				diskful |= NODE_MASK(peer_device->node_id);
 			}
 			nodes |= NODE_MASK(peer_device->node_id);
 		} else if (peer_device->repl_state[NOW] != L_OFF) {
@@ -5653,7 +5653,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 		for_each_peer_device(peer_device, device) {
 			if (NODE_MASK(peer_device->node_id) & nodes) {
-				if (NODE_MASK(peer_device->node_id) & diskfull)
+				if (NODE_MASK(peer_device->node_id) & diskful)
 					drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
 				_drbd_uuid_set_bitmap(peer_device, 0);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
@@ -5662,7 +5662,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 		__change_disk_state(device, D_UP_TO_DATE);
 		for_each_peer_device(peer_device, device) {
-			if (NODE_MASK(peer_device->node_id) & diskfull)
+			if (NODE_MASK(peer_device->node_id) & diskful)
 				__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 		}
 		end_state_change(device->resource, &irq_flags);
