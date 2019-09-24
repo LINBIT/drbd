@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
 
-9.0.20-0rc1 (api:genl2/proto:86-115/transport:14)
+9.0.20-0rc2 (api:genl2/proto:86-115/transport:14)
 --------
  * fix a case of false split brain detection if a diskless node promotes
    multiple times, by aligning the rules for generating a new current-UUID
