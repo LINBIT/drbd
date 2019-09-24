@@ -132,6 +132,7 @@ $(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
 	@mkdir -p $(dir)
 	@test -e $(dir)/compat.h || cp -t $(dir) $(obj)/compat.h
 	@echo $(KERNELRELEASE) > $(dir)/kernelrelease.txt
+	@ln -f -s -T ../cocci_cache/$(chksum) $(obj)/drbd-kernel-compat/l/$(KERNELRELEASE)
 	@PATCHLEVEL="" $(MAKE) -C $(src) drbd-kernel-compat/cocci_cache/$(chksum)/compat.patch
 	@ln -f -s $(dir)/compat.patch $(src)/drbd-kernel-compat/compat.patch
 

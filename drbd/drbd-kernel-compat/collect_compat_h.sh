@@ -77,6 +77,8 @@ for F in $FILES; do
     fi
     echo -n "$SEP$KERNELRELEASE" >> cocci_cache/$MD5SUM/kernelrelease.txt
 
+    ln -f -s -T ../cocci_cache/$MD5SUM l/$KERNELRELEASE
+
     # Progress
     printf "%3d %3d %-60s\r" $N_CONFIGS $N_UNIQUE $F
 done
