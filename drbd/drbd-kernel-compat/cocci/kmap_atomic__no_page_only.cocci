@@ -43,33 +43,27 @@ else:
 // Actually replace calls to relevant functions inside the tagged functions we
 // found above.
 @@
-expression device, bitmap_index, start, end, op, buffer;
-expression page, addr;
-expression bitmap;
 identifier find_kmap_tagged_function.fn;
 identifier parse_kmap_tag.km;
 @@
 fn(...) {
 <...
 (
--___bm_op(device, bitmap_index, start, end, op, buffer)
-+___bm_op(device, bitmap_index, start, end, op, buffer, km)
+___bm_op
 |
--____bm_op(device, bitmap_index, start, end, op, buffer)
-+____bm_op(device, bitmap_index, start, end, op, buffer, km)
+____bm_op
 |
--bm_map(bitmap, page)
-+bm_map(bitmap, page, km)
+bm_map
 |
--bm_unmap(bitmap, addr)
-+bm_unmap(bitmap, addr, km)
+bm_unmap
 |
--kmap_atomic(page)
-+kmap_atomic(page, km)
+kmap_atomic
 |
--kunmap_atomic(addr)
-+kunmap_atomic(addr, km)
+kunmap_atomic
 )
+ (...
++    , km
+         )
 ...>
 }
 

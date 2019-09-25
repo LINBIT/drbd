@@ -1,12 +1,11 @@
 @@
-function fn;
 @@
 + static void ___bio_destructor_drbd(struct bio *bio)
 + {
 +	bio_free(bio, drbd_md_io_bio_set);
 + }
 
-fn(...)
+bio_alloc_drbd(...)
 {
 +	struct bio *___bio;
 ...

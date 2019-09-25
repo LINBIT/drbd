@@ -59,7 +59,7 @@ if (connection->agreed_pro_version >= 95)
 // What we have: a full value, bio->bi_opf set to REQ_OP_READ
 // What we want: the lowest bit (REQ_WRITE) of bio->bi_rw unset
 
-@@
+@ disable bitand_comm, not_int1, not_int2, commeq, ptr_to_array @
 struct bio *b;
 @@
 static void drbd_req_complete(...)
