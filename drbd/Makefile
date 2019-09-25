@@ -199,7 +199,8 @@ else
 	fi
 	@spatch --sp-file $(incdir)/.compat.cocci \
 	    $(sources) \
-	    --macro-file drbd-kernel-compat/cocci_macros.h > $@.tmp 2> $(incdir)/.spatch.stderr
+	    --macro-file drbd-kernel-compat/cocci_macros.h \
+	    --very-quiet > $@.tmp 2> $(incdir)/.spatch.stderr
 	@if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
 	fi
