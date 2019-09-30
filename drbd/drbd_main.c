@@ -1392,6 +1392,8 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	if (test_bit(RECONNECT, &peer_device->connection->flags))
 		uuid_flags |= UUID_FLAG_RECONNECT;
+	if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+		uuid_flags |= UUID_FLAG_PRIMARY_LOST_QUORUM;
 	if (drbd_device_stable(device, authoritative_mask))
 		uuid_flags |= UUID_FLAG_STABLE;
 
