@@ -1577,19 +1577,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		}
 		allow:
 
-		for (which = OLD; which <= NEW; which++) {
-			any_disk_up_to_date[which] = disk_state[which] == D_UP_TO_DATE;
-			if (any_disk_up_to_date[which])
-				continue;
-			for_each_peer_device_rcu(peer_device, device) {
-				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+		for (which = OLD; which <= NEW; which++)
+			any_disk_up_to_date[which] = drbd_data_accessible(device, which);
 
-				if (peer_disk_state[which] == D_UP_TO_DATE) {
-					any_disk_up_to_date[which] = true;
-					break;
-				}
-			}
-		}
 		/* Prevent becoming primary while there is not data accessible
 		   and prevent detach or disconnect while primary */
 		if (!(role[OLD] == R_PRIMARY && !any_disk_up_to_date[OLD]) &&
@@ -5103,12 +5093,12 @@ void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
 	peer_device->resync_susp_dependency[NEW] = value;
 }
 
-bool drbd_data_accessible(struct drbd_device *device)
+bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
 	bool data_accessible = false;
 
-	if (device->disk_state[NOW] == D_UP_TO_DATE)
+	if (device->disk_state[which] == D_UP_TO_DATE)
 		return true;
 
 	rcu_read_lock();
@@ -5117,7 +5107,7 @@ bool drbd_data_accessible(struct drbd_device *device)
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		if (nc && !nc->allow_remote_read)
 			continue;
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+		if (peer_device->disk_state[which] == D_UP_TO_DATE) {
 			data_accessible = true;
 			break;
 		}
