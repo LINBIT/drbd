@@ -37,6 +37,10 @@ DESTDIR ?= /
 # o  print "Entering directory ...";
 MAKEFLAGS += -rR --no-print-directory
 
+# Use the SPAAS (spatch as a service) online service
+# Have this as make variable for distributions.
+SPAAS ?= true
+
 # since 2.6.16, KERNELRELEASE may be empty,
 # e.g. when building against some (broken?) linux-header package.
 # Lets test on PATCHLEVEL, that won't change too soon...
@@ -205,7 +209,7 @@ else
 	    mv $@.tmp $@; \
 	    rm -f $(incdir)/.compat.cocci; \
 	    rm -f $(incdir)/.compat.patch; \
-	elif test ! -e ../.git; then\
+	elif test ! -e ../.git && $(SPAAS); then\
 	    echo "  INFO: spatch not found; trying spatch-as-a-service;"; \
 	    echo "  be patinent, may take up to 10 minutes"; \
 	    echo "  if it is in the server side cache it might only take a second"; \

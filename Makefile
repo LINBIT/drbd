@@ -31,6 +31,10 @@ DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9:rhel7
 DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9:rhel8
 DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9:bionic
 
+# Use the SPAAS (spatch as a service) online service
+# Have this as make variable for distributions.
+SPAAS ?= true
+
 # default for KDIR/KVER
 ifndef KVER
  ifndef KDIR
@@ -131,7 +135,7 @@ endif
 
 .PHONY: module
 module: check-kdir check-submods fix-tar-timestamps
-	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR)
+	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR) SPAAS=$(SPAAS)
 	@ echo -e "\n\tModule build was successful."
 
 install:
