@@ -1316,6 +1316,7 @@ struct drbd_device {
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
 	bool cached_state_unstable; /* updates with each state change */
+	bool cached_err_io; /* complete all IOs with error */
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	spinlock_t timing_lock;

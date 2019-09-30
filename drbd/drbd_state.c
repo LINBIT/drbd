@@ -724,6 +724,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->cached_min_aggreed_protocol_version = pro_ver;
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct res_opts *o = &resource->res_opts;
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NOW] = device->disk_state[NEW];
@@ -745,6 +746,9 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_other_c[NEW];
 		}
 		device->cached_state_unstable = !state_is_stable(device);
+		device->cached_err_io =
+			(o->on_no_quorum == ONQ_IO_ERROR && !device->have_quorum[NOW]) ||
+			(o->on_no_data == OND_IO_ERROR && !drbd_data_accessible(device, NOW));
 	}
 	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
 	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
