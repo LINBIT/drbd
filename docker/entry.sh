@@ -39,7 +39,7 @@ print_version_and_exit() {
 HOW_REPOFILE=0
 HOW_VARS=1
 HOW_FROMSRC=2
-how_to_load() {
+how_to_get() {
 	local repo="$1"
 
 	[ -f "$repo" ] && { echo $HOW_REPOFILE; return; }
@@ -47,6 +47,14 @@ how_to_load() {
 	[ -d "/lib/modules/$(uname -r)" ] && { echo $HOW_FROMSRC; return; }
 
 	echo "You need to set LB_DIST and LB_HASH; or bind mount your existing repo config to $1; or bindmount /lib/modules"
+}
+
+HOW_LOAD_FROM_RAM=0  # insmod
+HOW_INSTALL=1  # make install && modprobe
+how_to_load() {
+	[[ $LB_INSTALL == yes ]] && echo "$HOW_INSTALL" || echo "$HOW_LOAD_FROM_RAM"
+
+	return 0
 }
 
 repo::rpm::getrepofile() {
@@ -94,7 +102,6 @@ kos::fromsrc() {
 	# cd $(ls -1 | head -1) || die "Could not cd"
 	cd drbd-* || die "Could not cd to drbd src dir"
 	make -j
-	# mv drbd/*.ko "$kodir"
 }
 
 kos::rpm::frompkg() {
@@ -119,6 +126,19 @@ kos::deb::frompkg() {
 	dpkg -x ./"$pkg"*.deb "$pkgdir"
 }
 
+load_from_ram() {
+	local pkgdir="$1"
+	local kodir="$2"
+
+	find "$pkgdir" -name "*.ko" -exec cp {} "$kodir" \;
+	cd "$kodir" || die "Could not cd to $kodir"
+	if [ ! -f drbd.ko ] || [ ! -f drbd_transport_tcp.ko ]; then
+		die "Could not find the expexted *.ko, see stderr for more details"
+	fi
+
+	insmod ./drbd.ko usermode_helper=disabled
+	insmod ./drbd_transport_tcp.ko
+}
 
 ### main
 grep -q '^drbd' /proc/modules && echo "DRBD module is already loaded" && print_version_and_exit
@@ -134,30 +154,33 @@ fmt=rpm
 [ -n "$(type -p dpkg)" ] && fmt=deb
 repo=$(repo::$fmt::getrepofile)
 
-how=$(how_to_load "$repo")
+how_get=$(how_to_get "$repo")
 
-case $how in
+case $how_get in
 	$HOW_FROMSRC)
 		kos::fromsrc "$pkgdir" "$kodir"
 		;;
 	$HOW_REPOFILE|$HOW_VARS)
 		repo::$fmt::getsignkey
-		[[ $how == "$HOW_VARS" ]] && repo::$fmt::createrepo "$dist" "$LB_HASH"
+		[[ $how_get == "$HOW_VARS" ]] && repo::$fmt::createrepo "$dist" "$LB_HASH"
 		kos::$fmt::frompkg "$pkgdir"
 		;;
-	*) die "$how" ;;
+	*) die "$how_get" ;;
 esac
 
-find "$pkgdir" -name "*.ko" -exec cp {} "$kodir" \;
-cd "$kodir" || die "Could not cd to $kodir"
-if [ ! -f drbd.ko ] || [ ! -f drbd_transport_tcp.ko ]; then
-	die "Could not find the expexted *.ko, see stderr for more details"
+modprobe libcrc32c
+
+how_load=$(how_to_load)
+if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load = "$HOW_INSTALL" ]]; then
+	cd "$pkgdir" || die "Could not cd to $pkgdir"
+	cd drbd-* || die "Could not cd to drbd src dir"
+	make install
+	modprobe drbd
+	modprobe drbd_transport_tcp
+else
+	load_from_ram "$pkgdir" "$kodir"
 fi
 
-# as we insmod, we need to load our dependencies; we assume /lib/modules to be bindmounted
-modprobe libcrc32c
-insmod ./drbd.ko usermode_helper=disabled
-insmod ./drbd_transport_tcp.ko
 modprobe drbd_transport_rdma 2>/dev/null || true
 if ! grep -q '^drbd_transport_tcp' /proc/modules; then
 	die "Could not load DRBD kernel modules"
