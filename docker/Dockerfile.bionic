@@ -1,6 +1,6 @@
 FROM ubuntu:bionic
 
-RUN apt-get update && apt-get install -y kmod gnupg wget make gcc
+RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch
 
 COPY /drbd.tar.gz /
 COPY /entry.sh /
