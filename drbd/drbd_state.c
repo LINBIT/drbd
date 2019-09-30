@@ -5113,6 +5113,10 @@ bool drbd_data_accessible(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
+		struct net_conf *nc;
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (nc && !nc->allow_remote_read)
+			continue;
 		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
 			data_accessible = true;
 			break;
