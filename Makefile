@@ -216,8 +216,8 @@ endif
 	  grep -v "gitignore\|gitmodules" > .filelist
 	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' | \
 	  grep -v "gitignore\|gitmodules" >> .filelist
-	@for F in drbd/drbd-kernel-compat/cocci_cache/*/*; \
-		do echo drbd-$(DIST_VERSION)/$$F; done >> .filelist
+	@mkdir -p drbd/drbd-kernel-compat/cocci_cache/ 
+	@find drbd/drbd-kernel-compat/cocci_cache/ | sed -e 's,^,drbd-$(DIST_VERSION)/,' >> .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
