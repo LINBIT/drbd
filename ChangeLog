@@ -1,6 +1,15 @@
 Latest:
 ------
- For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
+ For even more detail, use "git log" or visit
+ https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
+
+9.0.20-0rc3 (api:genl2/proto:86-115/transport:14)
+--------
+ * fix regression related to the quorum feature,
+   introduced by code deduplication; regression never released,
+   happened during this .20 development/release cycle
+ * completing aspects of "allow-remote-read=no" behavior
+ * build: add spatch-as-a-service
 
 9.0.20-0rc2 (api:genl2/proto:86-115/transport:14)
 --------
