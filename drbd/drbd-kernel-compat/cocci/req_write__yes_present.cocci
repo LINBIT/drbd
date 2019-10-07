@@ -67,7 +67,7 @@ static void drbd_req_complete(...)
 <...
 // a little special case...
 -(!ok && bio_op(b) == REQ_OP_READ && !(b->bi_opf & REQ_RAHEAD))
-+(!ok && b->bi_rw & READ)
++(!ok && !(b->bi_rw & WRITE))
 ...>
 }
 
