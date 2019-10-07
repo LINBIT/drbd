@@ -445,3 +445,12 @@ int
 )
 ...>
 }
+
+@@
+identifier pr;
+identifier opf;
+@@
+pr->op_flags =
+-opf
++rw
+;
