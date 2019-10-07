@@ -27,6 +27,14 @@ identifier pd, o;
 @@
 -D_ASSERT(pd, o == REQ_OP_WRITE_ZEROES);
 
+@@
+expression device, flags, peer_req, fault_type;
+@@
+drbd_submit_peer_request(device, peer_req
+-, REQ_OP_WRITE_ZEROES, flags
++, (-3) /* WRITE_ZEROES not supported on this kernel */
+, fault_type)
+
 @ exists @
 type T;
 identifier o, fn;
@@ -57,4 +65,3 @@ o = wire_flags_to_bio_op(flags);
 @@
 -REQ_OP_WRITE_ZEROES
 +(-3) /* WRITE_ZEROES not supported on this kernel */
-

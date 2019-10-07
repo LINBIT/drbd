@@ -224,11 +224,17 @@ int main(int argc, char **argv)
 	patch(1, "req_nounmap", true, false,
 	      COMPAT_HAVE_REQ_NOUNMAP, "present");
 
+	patch(1, "write_zeroes", true, false,
+	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "capable");
+
 #if !defined(COMPAT_HAVE_REQ_OP_WRITE_SAME) && \
 	!defined(COMPAT_HAVE_REQ_WRITE_SAME)
 	patch(1, "write_same", true, false,
 	      NO, "capable");
 #endif
+
+	patch(1, "bio_bi_opf", true, false,
+	      COMPAT_HAVE_BIO_BI_OPF, "present");
 
 #if defined(COMPAT_HAVE_BIO_RW)
 	/* This is the oldest supported version, using BIO_*. Read/write
@@ -249,9 +255,6 @@ int main(int argc, char **argv)
 # warning "Unknown bio rw flags, check compat layer"
 #endif
 
-	patch(1, "req_op_write_zeroes", true, false,
-	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "present");
-
 	patch(1, "blk_check_plugged", true, false,
 	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
 
@@ -269,12 +272,6 @@ int main(int argc, char **argv)
 
 	patch(1, "req_prio", true, false,
 	      COMPAT_HAVE_REQ_PRIO, "present");
-
-	patch(1, "req_preflush", true, false,
-	      COMPAT_HAVE_REQ_PREFLUSH, "present");
-
-	patch(1, "bio_bi_opf", true, false,
-	      COMPAT_HAVE_BIO_BI_OPF, "present");
 
 	patch(1, "bio_flush", false, true,
 	      COMPAT_HAVE_BIO_FLUSH, "present");
