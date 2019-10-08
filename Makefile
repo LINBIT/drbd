@@ -117,24 +117,8 @@ check-kdir:
 		false;\
 	fi
 
-.EXPORT: DRBD_BUILD_FROM_GIT
-DRBD_BUILD_FROM_GIT := $(if $(wildcard .git),yes)
-ifeq ($(DRBD_BUILD_FROM_GIT),yes)
-  fix-tar-timestamps:
-else
-  fix-tar-timestamps:
-	@if ! test -e .timestamps_fixed; then \
-	    cd drbd/drbd-kernel-compat/cocci_cache; \
-	    for P in */compat.patch; do \
-		touch $$P; \
-	    done; \
-	    cd ../../..; \
-	fi
-	@touch .timestamps_fixed
-endif
-
 .PHONY: module
-module: check-kdir check-submods fix-tar-timestamps
+module: check-kdir check-submods
 	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR) SPAAS=$(SPAAS)
 	@ echo -e "\n\tModule build was successful."
 

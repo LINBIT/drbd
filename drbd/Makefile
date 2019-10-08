@@ -121,7 +121,7 @@ else
 	@touch dummy-for-compat-h.c
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) dummy-for-compat-h.o
 
-  kbuild:
+  kbuild: fix-tar-timestamps
 	@rm -f .drbd_kernelrelease*
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
@@ -206,6 +206,11 @@ else
 	@false
   endif
 endif
+
+.PHONY: fix-tar-timestamps
+fix-tar-timestamps:
+	@-test -e ../.git || test -e .timestamps_fixed || \
+	touch drbd-kernel-compat/cocci_cache/*/compat.patch .timestamps_fixed
 
 uninstall:
 
