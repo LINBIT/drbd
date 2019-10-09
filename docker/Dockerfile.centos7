@@ -12,7 +12,7 @@ LABEL name="DRBD Kernel module load container" \
 		description="DRBD's kernel component"
 
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
-	yum install -y wget gcc make patch curl && yum clean all -y
+	yum install -y wget gcc make patch curl kmod yum-utils && yum clean all -y
 
 # one can not comment copy
 RUN wget https://www.linbit.com/downloads/drbd/9.0/drbd-${DRBD_VERSION}.tar.gz -O /drbd.tar.gz # !lbbuild
