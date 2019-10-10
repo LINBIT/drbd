@@ -3,15 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.20-0rc3 (api:genl2/proto:86-115/transport:14)
---------
- * fix regression related to the quorum feature,
-   introduced by code deduplication; regression never released,
-   happened during this .20 development/release cycle
- * completing aspects of "allow-remote-read=no" behavior
- * build: add spatch-as-a-service
-
-9.0.20-0rc2 (api:genl2/proto:86-115/transport:14)
+9.0.20-1 (api:genl2/proto:86-115/transport:14)
 --------
  * fix a case of false split brain detection if a diskless node promotes
    multiple times, by aligning the rules for generating a new current-UUID
@@ -35,10 +27,20 @@ Latest:
    set by DRBD
  * fix a small memory-leak when creating peer devices
  * fix a possible information leak of kernel memory that pads net-link packets
+ * completing implications of "allow-remote-read=no"; i.e.  when not to
+   create a new-current-UUID as read-write access to the data set was lost;
+   also fail both reads and writes if reads are no longer possible
+ * new option value "rr-conflict=retry-connect"; that helps in scenarios with
+   quorum where stopping a service takes longer than a temporarily network
+   outage and DRBD's reconnect
  * code cleanups, introduced enums for remaining magic numbers
  * new kernel-backward-compatibility framework based on spatch/coccinelle,
    replacing an unmaintainable moloch of C preprocessor hell; Merged the
    complete kernel-compat submodule
+ * ships with pre-computed compat-patches for main distros' kernels; in case
+   an other kernel is found it tries to use local spatch, if that is not
+   installed the build process tries to use a LINBIT hosted web service
+   to create the compat patch ("spatch-as-a-service").
  * compat with up to Linux-5.3-rc2
 
 9.0.19-1 (api:genl2/proto:86-115/transport:14)

@@ -1,20 +1,8 @@
-drbd (9.0.20~rc3) unstable; urgency=medium
+drbd (9.0.20-1) unstable; urgency=medium
 
-  * New upstream release candidate
+  * New upstream release
 
- -- Lars Ellenberg <lars.ellenberg@linbit.com>  Tue, 01 Oct 2019 14:30:17 +0200
-
-drbd (9.0.20~rc2) unstable; urgency=medium
-
-  * New upstream release candidate
-
- -- Philipp Reisner <phil@linbit.com>  Tue, 24 Sep 2019 12:37:11 +0200
-
-drbd (9.0.20~rc1) unstable; urgency=medium
-
-  * New upstream release candidate
-
- -- Philipp Reisner <phil@linbit.com>  Fri, 20 Sep 2019 11:37:31 +0200
+ -- Philipp Reisner <phil@linbit.com>  Thu, 10 Oct 2019 09:12:38 +0200
 
 drbd (9.0.19-1) unstable; urgency=medium
 
