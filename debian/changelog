@@ -1,3 +1,9 @@
+drbd (9.0.20-2) unstable; urgency=medium
+
+  * New Debian release
+
+ -- Roland Kammerer <roland.kammerer@linbit.com>  Fri, 11 Oct 2019 14:14:18 +0200
+
 drbd (9.0.20-1) unstable; urgency=medium
 
   * New upstream release
