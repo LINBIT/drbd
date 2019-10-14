@@ -100,18 +100,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 	} \
 } while(0)
 
-#ifndef REQ_NOUNMAP
-#define REQ_NOUNMAP 0
-#endif
-
-#ifndef REQ_DISCARD
-#define REQ_DISCARD 0
-#endif
-
-#ifndef REQ_WRITE_SAME
-#define REQ_WRITE_SAME 0
-#endif
-
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
 #define bdi_from_device(device) (device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
 #define init_bdev_info(bdev_info, drbd_congested, device) do { \
@@ -130,61 +118,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 	(bdev_info).capabilities |= BDI_CAP_STABLE_WRITES; \
 } while(0)
 #define adjust_ra_pages(q, b) _adjust_ra_pages((q)->backing_dev_info.ra_pages, (b)->backing_dev_info.ra_pages)
-#endif
-
-
-#if defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) /* compat for Linux before 4.8 {{{2 */
-#if (defined(RHEL_RELEASE_CODE /* 7.4 broke our compat detection here */) && \
-			LINUX_VERSION_CODE < KERNEL_VERSION(4,8,0))
-/* Thank you RHEL 7.4 for backporting just enough to break existing compat code,
- * but not enough to make it work for us without additional compat code.
- */
-#define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
-# ifdef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-#  error "unexpectedly defined REQ_OP_WRITE_ZEROES, double check compat wrappers!"
-# else
-#  define  REQ_OP_WRITE_ZEROES (-3u)
-# endif
-#endif
-
-#ifndef COMPAT_HAVE_REQ_OP_WRITE_ZEROES
-#define REQ_OP_WRITE_ZEROES (-3u)
-#endif
-
-#else /* !defined(COMPAT_HAVE_BIO_SET_OP_ATTRS) */
-#define COMPAT_NEED_BI_OPF_AND_SUBMIT_BIO_COMPAT_DEFINES 1
-
-enum req_op {
-       REQ_OP_READ,				/* 0 */
-       REQ_OP_WRITE		= REQ_WRITE,	/* 1 */
-
-       /* Not yet a distinguished op,
-	* but identified via FLUSH/FUA flags.
-	* If at all. */
-       REQ_OP_FLUSH		= REQ_OP_WRITE,
-
-	/* These may be not supported in older kernels.
-	 * In that case, the DRBD_REQ_* will be 0,
-	 * bio_op() aka. op_from_rq_bits() will never return these,
-	 * and we map the REQ_OP_* to something stupid.
-	 */
-	REQ_OP_DISCARD          = REQ_DISCARD ?: -1,
-	REQ_OP_WRITE_SAME       = REQ_WRITE_SAME ?: -2,
-	REQ_OP_WRITE_ZEROES     = -3,
-};
-#define bio_op(bio)                            (op_from_rq_bits((bio)->bi_rw))
-
-static inline int op_from_rq_bits(u64 flags)
-{
-	if (flags & REQ_DISCARD)
-		return REQ_OP_DISCARD;
-	else if (flags & REQ_WRITE_SAME)
-		return REQ_OP_WRITE_SAME;
-	else if (flags & REQ_WRITE)
-		return REQ_OP_WRITE;
-	else
-		return REQ_OP_READ;
-}
 #endif
 
 /* introduced in v4.4-rc2-61-ga55bbd375d18 */
