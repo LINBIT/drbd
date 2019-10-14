@@ -4521,7 +4521,8 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, bool send) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device;
-	u64 got_new_bitmap_uuid, weak_nodes, val;
+	u64 got_new_bitmap_uuid, weak_nodes, val, old_current_uuid;
+	int err;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
@@ -4533,15 +4534,21 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 		return;
 	}
 
+	old_current_uuid = device->ldev->md.current_uuid;
 	get_random_bytes(&val, sizeof(u64));
 	__drbd_uuid_set_current(device, val);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	/* get it to stable storage _now_ */
+	err = drbd_md_sync(device);
+	if (err) {
+		__drbd_uuid_set_current(device, old_current_uuid);
+		return;
+	}
+
 	weak_nodes = drbd_weak_nodes_device(device);
 	drbd_info(device, "new current UUID: %016llX weak: %016llX\n",
 		  device->ldev->md.current_uuid, weak_nodes);
-
-	/* get it to stable storage _now_ */
-	drbd_md_sync(device);
 
 	if (!send)
 		return;
