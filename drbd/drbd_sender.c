@@ -281,23 +281,19 @@ void drbd_request_endio(struct bio *bio)
 
 	/* to avoid recursion in __req_mod */
 	if (unlikely(status)) {
-		switch (bio_op(bio)) {
-		case REQ_OP_DISCARD:
-		case REQ_OP_WRITE_ZEROES:
+		unsigned int op = bio_op(bio);
+		if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;
 			else
 				what = DISCARD_COMPLETED_WITH_ERROR;
-			break;
-		case REQ_OP_READ:
+		} else if (op == REQ_OP_READ) {
 			if (bio->bi_opf & REQ_RAHEAD)
 				what = READ_AHEAD_COMPLETED_WITH_ERROR;
 			else
 				what = READ_COMPLETED_WITH_ERROR;
-			break;
-		default:
+		} else {
 			what = WRITE_COMPLETED_WITH_ERROR;
-			break;
 		}
 	} else {
 		what = COMPLETED_OK;
