@@ -176,38 +176,49 @@ else
 	    patch -R -p0 --batch < .compat_patches_applied; \
 	    rm -f .compat_patches_applied; \
 	fi
-	@K=$$(cat $(incdir)/kernelrelease.txt); echo "  GENPATCHNAMES   $$K"
-	@gcc -I $(incdir) -o $(incdir)/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
-	@$(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt
-	@rm $(incdir)/gen_patch_names
-	@rm -f $(incdir)/.compat.cocci
-	@rm -f $(incdir)/.compat.patch
-	@for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
-	    if [ -e drbd-kernel-compat/cocci/$$F.cocci ] ; then				\
-		cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
-	    else							\
-		cat drbd-kernel-compat/patches/$$F.patch >> $(incdir)/.compat.patch; \
-	    fi; \
-	    sed -e "s:@""COMPAT_PATCH_NAME@:$$F:g" \
-		drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
-		>> $(incdir)/.compat.cocci; \
-	done
-	@if hash spatch; then \
-	    echo "  SPATCH   $(chksum)"; \
-	else \
-	    echo "  ERROR: spatch not found in \$$PATH. Install package 'coccinelle'!"; \
-	fi
-	@spatch --sp-file $(incdir)/.compat.cocci \
-	    $(sources) \
-	    --macro-file drbd-kernel-compat/cocci_macros.h \
-	    --very-quiet > $@.tmp 2> $(incdir)/.spatch.stderr
 
-	@if [ -e $(incdir)/.compat.patch ]; then \
+	@set -e; if hash spatch; then \
+	    K=$$(cat $(incdir)/kernelrelease.txt); \
+	    echo "  GENPATCHNAMES   $$K"; \
+	    gcc -I $(incdir) -o $(incdir)/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c; \
+	    $(incdir)/gen_patch_names > $(incdir)/applied_cocci_files.txt; \
+	    rm $(incdir)/gen_patch_names; \
+	    rm -f $(incdir)/.compat.cocci; \
+	    rm -f $(incdir)/.compat.patch; \
+	    for F in $$(cat $(incdir)/applied_cocci_files.txt); do \
+		if [ -e drbd-kernel-compat/cocci/$$F.cocci ] ; then \
+		    cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
+		else \
+		    cat drbd-kernel-compat/patches/$$F.patch >> $(incdir)/.compat.patch; \
+		fi; \
+	        sed -e "s:@""COMPAT_PATCH_NAME@:$$F:g" \
+			drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
+			>> $(incdir)/.compat.cocci; \
+	    done; \
+	    echo "  SPATCH   $(chksum)"; \
+	    spatch --sp-file $(incdir)/.compat.cocci $(sources) \
+		    --macro-file drbd-kernel-compat/cocci_macros.h \
+		    --very-quiet > $@.tmp 2> $(incdir)/.spatch.stderr; \
+	    if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
+	    fi; \
+	    mv $@.tmp $@; \
+	    rm -f $(incdir)/.compat.cocci; \
+	    rm -f $(incdir)/.compat.patch; \
+	elif test ! -e ../.git; then\
+	    echo "  INFO: spatch not found; trying spatch-as-a-service;"; \
+	    echo "  be patinent, may take up to 10 minutes"; \
+	    echo "  if it is in the server side cache it might only take a second"; \
+	    echo "  SPAAS    $(chksum)"; \
+	    REL_VERSION=$$(sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' linux/drbd_config.h); \
+	    base64 $(incdir)/compat.h | curl -T - -X POST -o $@.tmp https://drbd.io:2020/api/v1/spatch/$$REL_VERSION && \
+		mv $@.tmp $@; \
+	    echo "  You can create a new .tgz including this pre-computed compat patch"; \
+	    echo "  by calling \"echo drbd-$$REL_VERSION/drbd/$@ >>.filelist ; make tgz\""; \
+	else \
+	   echo "ERROR: spatch not found in \$$PATH. Install package 'coccinelle'!"; \
+	   false; \
 	fi
-	@mv $@.tmp $@
-	@rm -f $(incdir)/.compat.cocci
-	@rm -f $(incdir)/.compat.patch
 
   compat: $(compat_patches)
 
