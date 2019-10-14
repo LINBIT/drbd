@@ -193,7 +193,10 @@ endif
 		cat drbd-kernel-compat/cocci/$$F.cocci >> $(incdir)/.compat.cocci; \
 	    else							\
 		cat drbd-kernel-compat/patches/$$F.patch >> $(incdir)/.compat.patch; \
-	    fi \
+	    fi; \
+	    sed -e "s:@""COMPAT_PATCH_NAME@:$$F:g" \
+		drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
+		>> $(incdir)/.compat.cocci; \
 	done
 	@if hash spatch; then \
 	    echo "  SPATCH   $(chksum)"; \

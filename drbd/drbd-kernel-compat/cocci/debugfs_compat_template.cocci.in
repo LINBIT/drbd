@@ -1,0 +1,9 @@
+@@
+identifier m, ignored;
+@@
+static int drbd_compat_show(struct seq_file *m, void *ignored)
+{
+	...
++	seq_puts(m, "@COMPAT_PATCH_NAME@\n");
+	return 0;
+}
