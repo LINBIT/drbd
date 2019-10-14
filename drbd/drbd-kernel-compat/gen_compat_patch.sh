@@ -1,0 +1,94 @@
+#!/bin/bash
+
+[[ ${V:-0} != 0 ]] && set -x
+
+# generate compat patches by using the cache,
+# or using spatch,
+# or using curl to fetch it from spatch-as-a-service
+
+compat_patch=$1
+shift
+
+[[ $compat_patch = drbd-kernel-compat/cocci_cache/*/compat.patch ]] || exit 1
+
+incdir=${compat_patch%/compat.patch}
+chksum=${incdir##*/}
+
+set -e
+
+if test -e .compat_patches_applied; then
+    echo "Removing compat patches";
+    patch -R -p0 --batch < .compat_patches_applied;
+    rm -f .compat_patches_applied;
+fi
+
+if hash spatch; then
+    K=$(cat $incdir/kernelrelease.txt);
+    echo "  GENPATCHNAMES   "$K;
+    gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c;
+    $incdir/gen_patch_names > $incdir/applied_cocci_files.txt;
+    rm $incdir/gen_patch_names;
+    rm -f $incdir/.compat.cocci;
+    rm -f $incdir/.compat.patch;
+    rm -f $incdir/.spatch.tty.out;
+    for F in $(cat $incdir/applied_cocci_files.txt); do
+	if [ -e drbd-kernel-compat/cocci/$F.cocci ] ; then
+	    cat drbd-kernel-compat/cocci/$F.cocci >> $incdir/.compat.cocci;
+	else
+	    cat drbd-kernel-compat/patches/$F.patch >> $incdir/.compat.patch;
+	fi;
+	sed -e "s:@COMPAT_PATCH_NAME@:$F:g" \
+		< drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
+		>> $incdir/.compat.cocci;
+    done;
+    echo "  SPATCH   $chksum  "$K;
+    # Note: $* (or $@) is NOT make magic variable now, this is a shell script
+    # make $@, the target file, was passed as $1, and is now $compat_patch
+    # make $^, the source (and header) files spatch should operate on,
+    # are "the rest of the shell argument array", so after shifting the first
+    # argument away this is shell $@ respectively $* now.
+    # we know we don't have white-space in the argument list
+
+    command="spatch --sp-file $incdir/.compat.cocci $* --macro-file drbd-kernel-compat/cocci_macros.h --very-quiet > $compat_patch.tmp 2> $incdir/.spatch.stderr;"
+
+    if test -t 0; then
+	$SHELL -c "$command"
+    else
+	# spatch is broken in a way: it "requires" a tty.
+	# provide a tty using "script", so I can have several spatch in parallel.
+	# They may ignore INT and TERM; if you have to, use HUP.
+	</dev/null &> /dev/null script --append $incdir/.spatch.tty.out --return --quiet --command "$command"
+    fi
+    if [ -e $incdir/.compat.patch ]; then
+	cat $incdir/.compat.patch >> $compat_patch.tmp;
+    fi;
+    mv $compat_patch.tmp $compat_patch;
+    rm -f $incdir/.compat.cocci;
+    rm -f $incdir/.compat.patch;
+elif test ! -e ../.git && [[ $SPAAS = true ]]; then
+    echo "  INFO: spatch not found; trying spatch-as-a-service;";
+    echo "  be patinent, may take up to 10 minutes";
+    echo "  if it is in the server side cache it might only take a second";
+    echo "  SPAAS    $chksum";
+    REL_VERSION=$(sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' linux/drbd_config.h);
+    rm -f $compat_patch.tmp.header $compat_patch.tmp
+    if ! base64 $incdir/compat.h |
+	curl -T - -X POST -o $compat_patch.tmp -D $compat_patch.tmp.header -f \
+	    https://drbd.io:2020/api/v1/spatch/$REL_VERSION
+    then
+	ex=${PIPESTATUS[*]}
+	(
+	echo "=== pipestatus: $ex"
+	cat $compat_patch.tmp.header $compat_patch.tmp
+	printf "\n===\n\n"
+	) >&2
+	exit ${ex##* }
+    else
+	mv $compat_patch.tmp $compat_patch
+    fi
+    echo "  You can create a new .tgz including this pre-computed compat patch";
+    echo "  by calling \"echo drbd-$REL_VERSION/drbd/$compat_patch >>.filelist ; make tgz\"";
+else
+   echo "ERROR: spatch not found in \$PATH. Install package 'coccinelle'!";
+   exit 1
+fi
