@@ -719,6 +719,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->cached_min_aggreed_protocol_version = pro_ver;
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct res_opts *o = &resource->res_opts;
 		struct drbd_peer_device *peer_device;
 
 		device->disk_state[NOW] = device->disk_state[NEW];
@@ -740,6 +741,9 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_other_c[NEW];
 		}
 		device->cached_state_unstable = !state_is_stable(device);
+		device->cached_err_io =
+			(o->on_no_quorum == ONQ_IO_ERROR && !device->have_quorum[NOW]) ||
+			(o->on_no_data == OND_IO_ERROR && !drbd_data_accessible(device, NOW));
 	}
 	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
 	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
@@ -1572,19 +1576,9 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		}
 		allow:
 
-		for (which = OLD; which <= NEW; which++) {
-			any_disk_up_to_date[which] = disk_state[which] == D_UP_TO_DATE;
-			if (any_disk_up_to_date[which])
-				continue;
-			for_each_peer_device_rcu(peer_device, device) {
-				enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+		for (which = OLD; which <= NEW; which++)
+			any_disk_up_to_date[which] = drbd_data_accessible(device, which);
 
-				if (peer_disk_state[which] == D_UP_TO_DATE) {
-					any_disk_up_to_date[which] = true;
-					break;
-				}
-			}
-		}
 		/* Prevent becoming primary while there is not data accessible
 		   and prevent detach or disconnect while primary */
 		if (!(role[OLD] == R_PRIMARY && !any_disk_up_to_date[OLD]) &&
@@ -1799,6 +1793,8 @@ static void sanitize_state(struct drbd_resource *resource)
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	bool maybe_crashed_primary = false;
+	bool volume_lost_data_access = false;
+	bool volumes_have_data_access = true;
 	int connected_primaries = 0;
 	int vnr;
 
@@ -1823,7 +1819,6 @@ static void sanitize_state(struct drbd_resource *resource)
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
 		bool lost_connection = false;
-		int good_data_count[2] = { };
 
 		if (disk_state[OLD] == D_DISKLESS && disk_state[NEW] == D_DETACHING)
 			disk_state[NEW] = D_DISKLESS;
@@ -1996,12 +1991,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[OLD] != D_UNKNOWN))
 				connection->susp_fen[NEW] = true;
 
-			/* Count access to good data */
-			if (peer_disk_state[OLD] == D_UP_TO_DATE)
-				++good_data_count[OLD];
-			if (peer_disk_state[NEW] == D_UP_TO_DATE)
-				++good_data_count[NEW];
-
 			/* Pause a SyncSource until it finishes resync as target on other connections */
 			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
 			    is_sync_target_other_c(peer_device))
@@ -2068,18 +2057,15 @@ static void sanitize_state(struct drbd_resource *resource)
 		else
 			device->have_quorum[NEW] = true;
 
-		if (disk_state[OLD] == D_UP_TO_DATE)
-			++good_data_count[OLD];
-		if (disk_state[NEW] == D_UP_TO_DATE)
-			++good_data_count[NEW];
-
 		/* Suspend IO if we have no accessible data available.
 		 * Policy may be extended later to be able to suspend
 		 * if redundancy falls below a certain level. */
-		if (resource->res_opts.on_no_data == OND_SUSPEND_IO &&
-		    (role[NEW] == R_PRIMARY && good_data_count[NEW] == 0) &&
-		   !(role[OLD] == R_PRIMARY && good_data_count[OLD] == 0))
-			resource->susp_nod[NEW] = true;
+		if (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, NEW)) {
+			volumes_have_data_access = false;
+			if (role[OLD] != R_PRIMARY || drbd_data_accessible(device, OLD))
+				volume_lost_data_access = true;
+		}
+
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
 			disk_state[NEW] = disk_state_from_md(device);
 
@@ -2088,6 +2074,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			disk_state[NEW] = D_CONSISTENT;
 	}
 	rcu_read_unlock();
+
+	if (volumes_have_data_access)
+		resource->susp_nod[NEW] = false;
+	if (volume_lost_data_access && resource->res_opts.on_no_data == OND_SUSPEND_IO)
+		resource->susp_nod[NEW] = true;
 }
 
 void drbd_resume_al(struct drbd_device *device)
@@ -4938,17 +4929,21 @@ void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
 	peer_device->resync_susp_dependency[NEW] = value;
 }
 
-bool drbd_data_accessible(struct drbd_device *device)
+bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
 	bool data_accessible = false;
 
-	if (device->disk_state[NOW] == D_UP_TO_DATE)
+	if (device->disk_state[which] == D_UP_TO_DATE)
 		return true;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+		struct net_conf *nc;
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (nc && !nc->allow_remote_read)
+			continue;
+		if (peer_device->disk_state[which] == D_UP_TO_DATE) {
 			data_accessible = true;
 			break;
 		}

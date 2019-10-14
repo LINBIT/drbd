@@ -2313,7 +2313,6 @@ void do_submit(struct work_struct *ws)
 blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
-	struct drbd_resource *resource = device->resource;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	ktime_t start_kt;
 #endif
@@ -2321,7 +2320,7 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 
 	blk_queue_split(q, &bio);
 
-	if (!device->have_quorum[NOW] && resource->res_opts.on_no_quorum == ONQ_IO_ERROR) {
+	if (device->cached_err_io) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 		return BLK_QC_T_NONE;

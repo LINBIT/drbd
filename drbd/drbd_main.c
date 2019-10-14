@@ -1295,6 +1295,8 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
 	if (test_bit(RECONNECT, &peer_device->connection->flags))
 		uuid_flags |= UUID_FLAG_RECONNECT;
+	if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
+		uuid_flags |= UUID_FLAG_PRIMARY_LOST_QUORUM;
 	if (drbd_device_stable(device, authoritative_mask))
 		uuid_flags |= UUID_FLAG_STABLE;
 
@@ -4827,14 +4829,16 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
-	u64 ss_bm; /* sync_source has non zero bitmap for. expressed as nodemask */
+	u64 ss_nz_bm; /* sync_source has non zero bitmap for. expressed as nodemask */
+	u64 pwcu; /* peers with current uuid */
 	u64 newer;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
-	ss_bm = __test_bitmap_slots_of_peer(peer_device);
-	ss_bm &= ~peers_with_current_uuid(device, peer_device->current_uuid);
+	ss_nz_bm = __test_bitmap_slots_of_peer(peer_device);
+	pwcu = peers_with_current_uuid(device, peer_device->current_uuid);
 
-	newer = __set_bitmap_slots(device, peer_device->rs_source_uuid, ss_bm);
+	newer = __set_bitmap_slots(device, peer_device->rs_source_uuid, ss_nz_bm & ~pwcu);
+	__set_bitmap_slots(device, 0, ~ss_nz_bm & pwcu);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
