@@ -3718,6 +3718,14 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 			       device->vnr, device->vnr + 1, GFP_KERNEL);
 		if (id < 0)
 			goto unlock_fail_free_connection;
+
+		if (get_ldev(device)) {
+			struct drbd_peer_md *peer_md =
+				&device->ldev->md.peers[adm_ctx->peer_node_id];
+			if (peer_md->flags & MDF_PEER_OUTDATED)
+				peer_device->disk_state[NOW] = D_OUTDATED;
+			put_ldev(device);
+		}
 	}
 
 	/* Set bitmap_index if it was allocated previously */
