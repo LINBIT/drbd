@@ -6,7 +6,7 @@ struct my_plug_cb {
 };
 
 
-static void unplug_fn(struct blk_plug_cb *cb, bool from_schedule)
+static void drbd_compat_test_unplug_fn(struct blk_plug_cb *cb, bool from_schedule)
 {
 }
 
@@ -14,5 +14,5 @@ void foo(void)
 {
 	struct blk_plug_cb *plug;
 
-	plug = blk_check_plugged(unplug_fn, NULL, sizeof(struct my_plug_cb));
+	plug = blk_check_plugged(drbd_compat_test_unplug_fn, NULL, sizeof(struct my_plug_cb));
 }
