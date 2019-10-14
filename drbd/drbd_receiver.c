@@ -3399,6 +3399,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 	case ASB_DISCARD_SECONDARY:
 	case ASB_CALL_HELPER:
 	case ASB_VIOLENTLY:
+	case ASB_RETRY_CONNECT:
 		drbd_err(peer_device, "Configuration error.\n");
 		break;
 	case ASB_DISCONNECT:
@@ -3479,6 +3480,7 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 	case ASB_DISCARD_LOCAL:
 	case ASB_DISCARD_REMOTE:
 	case ASB_DISCARD_ZERO_CHG:
+	case ASB_RETRY_CONNECT:
 		drbd_err(device, "Configuration error.\n");
 		break;
 	case ASB_DISCONNECT:
@@ -3539,6 +3541,7 @@ static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_devi
 	case ASB_CONSENSUS:
 	case ASB_DISCARD_SECONDARY:
 	case ASB_DISCARD_ZERO_CHG:
+	case ASB_RETRY_CONNECT:
 		drbd_err(device, "Configuration error.\n");
 		break;
 	case ASB_VIOLENTLY:
@@ -4068,8 +4071,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			drbd_maybe_khelper(device, connection, "pri-lost");
 			/* fall through */
 		case ASB_DISCONNECT:
+		case ASB_RETRY_CONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
-			return -2;
+			return rr_conflict == ASB_RETRY_CONNECT ? -1 : -2;
 		case ASB_VIOLENTLY:
 			drbd_warn(device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
