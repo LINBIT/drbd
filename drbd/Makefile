@@ -197,12 +197,10 @@ else
 	else \
 	    echo "  ERROR: spatch not found in \$$PATH. Install package 'coccinelle'!"; \
 	fi
-	@touch $@.tmp
-	@if [ -e $(incdir)/.compat.cocci ]; then \
-		spatch --sp-file $(incdir)/.compat.cocci \
-		    $(sources) \
-		    --macro-file drbd-kernel-compat/cocci_macros.h >> $@.tmp 2> $(incdir)/.spatch.stderr; \
-	fi
+	@spatch --sp-file $(incdir)/.compat.cocci \
+	    $(sources) \
+	    --macro-file drbd-kernel-compat/cocci_macros.h \
+	    --very-quiet > $@.tmp 2> $(incdir)/.spatch.stderr
 
 	@if [ -e $(incdir)/.compat.patch ]; then \
 		cat $(incdir)/.compat.patch >> $@.tmp; \
