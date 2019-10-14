@@ -165,14 +165,8 @@ else
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
 
-.EXPORT: DRBD_BUILD_FROM_GIT
-DRBD_BUILD_FROM_GIT := $(if $(wildcard ../.git),yes)
-ifeq ($(DRBD_BUILD_FROM_GIT),yes)
   sources := $(filter-out drbd_strings.c drbd_buildtag.c,$(wildcard *.c))
   sources += $(wildcard drbd-headers/linux/*.h)
-else
-  sources :=
-endif
 
   $(compat_patches): $(sources)
 	$(eval incdir := $(subst /compat.patch,,$@))

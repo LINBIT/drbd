@@ -57,7 +57,7 @@ rm -rf obj
 mkdir obj
 
 for flavor in %flavors_to_build; do
-    cp -r drbd obj/$flavor
+    cp -a -r drbd obj/$flavor
     #make -C %{kernel_source $flavor} M=$PWD/obj/$flavor
     # Workaround: for the whole kernel compatibility patching concept to work,
     # we need to be able to refer to the drbd sources as "drbd". We cannot
@@ -67,6 +67,8 @@ for flavor in %flavors_to_build; do
     # sources that are currently being built.
     # Since we potentially have to build for multiple flavors, remove the link
     # after each build and re-create it for the next one.
+    # Since we are using spatch and shipping pre-computed patches, make sure
+    # the timestamps are preserved by the cp
     ln -s $flavor obj/drbd
     make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor}
     rm obj/drbd
