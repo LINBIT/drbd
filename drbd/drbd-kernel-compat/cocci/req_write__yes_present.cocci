@@ -204,97 +204,6 @@ drbd_md_sync_page_io(...
 )
 
 //------------------------------------------------------------------------------
-// PART 3: REQ_OP_WRITE_ZEROES
-@@
-struct bio *b;
-@@
-(
-- (bio_op(b) == REQ_OP_WRITE_ZEROES)
-+ (false) /* WRITE_ZEROES not supported on this kernel */
-|
-- (bio_op(b) != REQ_OP_WRITE_ZEROES)
-+ (true) /* WRITE_ZEROES not supported on this kernel */
-)
-
-@@
-identifier pd, o;
-@@
--D_ASSERT(pd, o == REQ_OP_WRITE_ZEROES);
-
-@ exists @
-type T;
-identifier o, fn;
-expression flags;
-struct bio *b;
-@@
-fn(...) {
-<...
-(
-T o = bio_op(b);
-|
-o = bio_op(b);
-|
-o = wire_flags_to_bio_op(flags);
-)
-...
-(
-- o == REQ_OP_WRITE_ZEROES
-+ (false) /* WRITE_ZEROES not supported on this kernel */
-|
-- o != REQ_OP_WRITE_ZEROES
-+ (true) /* WRITE_ZEROES not supported on this kernel */
-)
-...>
-}
-
-@@
-@@
--REQ_OP_WRITE_ZEROES
-+(-3) /* WRITE_ZEROES not supported on this kernel */
-
-//------------------------------------------------------------------------------
-// PART 4: bi_opf -> bi_rw
-@@
-struct bio *b;
-constant op, op_flags;
-@@
--b->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
-+submit_bio(WRITE_FLUSH, bio);
-<...
--submit_bio(b);
-...>
-
-@@
-struct bio *b;
-symbol op, op_flags, rw;
-@@
-(
--b->bi_opf = op | op_flags;
-+b->bi_rw = rw;
-|
--b->bi_opf = op;
-+b->bi_rw = rw;
-)
-<...
--submit_bio(b);
-+submit_bio(rw, b);
-...>
-
-@@
-struct bio *b;
-constant flag;
-@@
--b->bi_opf & flag
-+b->bi_rw & flag
-
-@@
-struct bio *b;
-@@
--b->bi_opf &=
-+b->bi_rw &=
-...;
-
-//------------------------------------------------------------------------------
 // PART n: Generic REQ_OP_* -> REQ_*
 
 @ find_req_ops @
@@ -438,3 +347,10 @@ pr->op_flags =
 -opf
 +rw
 ;
+
+@@
+@@
+(
+-REQ_PREFLUSH
++REQ_FLUSH
+)
