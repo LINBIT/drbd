@@ -1,6 +1,17 @@
 #!/bin/bash
 
+MIN_SPATCH_VERSION=1.0.8
 [[ ${V:-0} != 0 ]] && set -x
+
+# test if the version $1 is greater (more recent) than $2.
+function version_gt() {
+	test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1";
+}
+
+function spatch_is_recent() {
+	ver=$(spatch --version | head -1 | sed -rn 's/^spatch version ([[:digit:]]\.[[:digit:]]\.[[:digit:]]).*/\1/p')
+	! version_gt $MIN_SPATCH_VERSION $ver
+}
 
 # generate compat patches by using the cache,
 # or using spatch,
@@ -22,7 +33,7 @@ if test -e .compat_patches_applied; then
     rm -f .compat_patches_applied;
 fi
 
-if hash spatch; then
+if hash spatch && spatch_is_recent; then
     K=$(cat $incdir/kernelrelease.txt);
     echo "  GENPATCHNAMES   "$K;
     gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c;
@@ -66,7 +77,7 @@ if hash spatch; then
     rm -f $incdir/.compat.cocci;
     rm -f $incdir/.compat.patch;
 elif test ! -e ../.git && [[ $SPAAS = true ]]; then
-    echo "  INFO: spatch not found; trying spatch-as-a-service;";
+    echo "  INFO: no suitable spatch found; trying spatch-as-a-service;";
     echo "  be patinent, may take up to 10 minutes";
     echo "  if it is in the server side cache it might only take a second";
     echo "  SPAAS    $chksum";
