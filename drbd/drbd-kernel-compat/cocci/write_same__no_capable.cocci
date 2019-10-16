@@ -31,54 +31,15 @@ void drbd_issue_peer_wsame(...)
 }
 
 @@
-expression device, peer_req, flags, fault_type;
-@@
-drbd_submit_peer_request(device, peer_req
--, REQ_OP_WRITE_SAME
-+, (-2) /* WRITE_SAME not supported on this kernel */
-, flags, fault_type)
-
-@@
-struct bio *b;
+expression op;
 @@
 (
-- (bio_op(b) == REQ_OP_WRITE_SAME)
+- (op == REQ_OP_WRITE_SAME)
 + (false) /* WRITE_SAME not supported on this kernel */
 |
-- (bio_op(b) != REQ_OP_WRITE_SAME)
+- (op != REQ_OP_WRITE_SAME)
 + (true) /* WRITE_SAME not supported on this kernel */
 )
-
-@@
-identifier pd, o;
-@@
--D_ASSERT(pd, o == REQ_OP_WRITE_SAME);
-
-@ exists @
-type T;
-identifier o, fn;
-expression flags;
-struct bio *b;
-@@
-fn(...) {
-<...
-(
-T o = bio_op(b);
-|
-o = bio_op(b);
-|
-o = wire_flags_to_bio_op(flags);
-)
-...
-(
-- o == REQ_OP_WRITE_SAME
-+ (false) /* WRITE_SAME not supported on this kernel */
-|
-- o != REQ_OP_WRITE_SAME
-+ (true) /* WRITE_SAME not supported on this kernel */
-)
-...>
-}
 
 @@
 @@

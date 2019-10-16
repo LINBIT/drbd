@@ -390,7 +390,7 @@ struct drbd_peer_request {
 	struct list_head wait_for_actlog;
 
 	struct drbd_page_chain_head page_chain;
-	unsigned int op_flags; /* to be used as bi_op_flags */
+	unsigned int opf; /* to be used as bi_opf */
 	atomic_t pending_bios;
 	struct drbd_interval i;
 	unsigned long flags;	/* see comments on ee flag bits below */
@@ -412,6 +412,10 @@ struct drbd_peer_request {
 		};
 	};
 };
+
+/* Equivalent to bio_op and req_op. */
+#define peer_req_op(peer_req) \
+	((peer_req)->opf & REQ_OP_MASK)
 
 /* ee flag bits.
  * While corresponding bios are in flight, the only modification will be
@@ -2005,9 +2009,7 @@ extern void drbd_send_peer_ack_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
 extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
 				     bool throttle_if_app_is_waiting);
-extern int drbd_submit_peer_request(struct drbd_device *,
-				    struct drbd_peer_request *, const unsigned,
-				    const unsigned, const int);
+extern int drbd_submit_peer_request(struct drbd_peer_request *);
 extern void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
 extern int drbd_free_peer_reqs(struct drbd_resource *, struct list_head *, bool is_net_ee);

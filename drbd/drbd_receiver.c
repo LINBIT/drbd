@@ -1555,12 +1555,20 @@ static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_h
 	wait_event(connection->ee_wait, conn_wait_ee_cond(connection, head));
 }
 
+static int peer_request_fault_type(struct drbd_peer_request *peer_req)
+{
+	if (peer_req_op(peer_req) == REQ_OP_READ) {
+		return peer_req->flags & EE_APPLICATION ?
+			DRBD_FAULT_DT_RD : DRBD_FAULT_RS_RD;
+	} else {
+		return peer_req->flags & EE_APPLICATION ?
+			DRBD_FAULT_DT_WR : DRBD_FAULT_RS_WR;
+	}
+}
+
 /**
  * drbd_submit_peer_request()
- * @device:	DRBD device.
  * @peer_req:	peer request
- * @op:		REQ_OP_READ, REQ_OP_WRITE, ...
- * @op_flags:	flag field, see bio->bi_opf
  *
  * May spread the pages to multiple bios,
  * depending on bio_add_page restrictions.
@@ -1576,11 +1584,9 @@ static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_h
  *  reference is released when the request completes.
  */
 /* TODO allocate from our own bio_set. */
-int drbd_submit_peer_request(struct drbd_device *device,
-			     struct drbd_peer_request *peer_req,
-			     const unsigned op, const unsigned op_flags,
-			     const int fault_type)
+int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 {
+	struct drbd_device *device = peer_req->peer_device->device;
 	struct bio *bios = NULL;
 	struct bio *bio;
 	struct page *page = peer_req->page_chain.head;
@@ -1625,8 +1631,9 @@ next_bio:
 	 * should have been mapped to a "drbd protocol barrier".
 	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
 	 */
-	if (!(op == REQ_OP_WRITE || op == REQ_OP_READ)) {
-		drbd_err(device, "Invalid bio op received: 0x%x\n", op);
+	if (!(peer_req_op(peer_req) == REQ_OP_WRITE ||
+				peer_req_op(peer_req) == REQ_OP_READ)) {
+		drbd_err(device, "Invalid bio op received: 0x%x\n", peer_req->opf);
 		err = -EINVAL;
 		goto fail;
 	}
@@ -1641,7 +1648,7 @@ next_bio:
 	bio_set_dev(bio, device->ldev->backing_bdev);
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio->bi_opf = op | op_flags;
+	bio->bi_opf = peer_req->opf;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
 
@@ -1653,7 +1660,7 @@ next_bio:
 		unsigned off, len;
 		int res;
 
-		if (op == REQ_OP_READ) {
+		if (peer_req_op(peer_req) == REQ_OP_READ) {
 			set_page_chain_offset(page, 0);
 			set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
 		}
@@ -1698,7 +1705,7 @@ next_bio:
 		bios = bios->bi_next;
 		bio->bi_next = NULL;
 
-		drbd_generic_make_request(device, fault_type, bio);
+		drbd_generic_make_request(device, peer_request_fault_type(peer_req), bio);
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
@@ -1760,7 +1767,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	 * get_ldev was done in receive_Data. */
 
 	peer_req->w.cb = e_end_block;
-	err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(peer_req);
 	switch (err) {
 	case -ENOMEM:
 		peer_req->w.cb = w_e_reissue;
@@ -2107,6 +2114,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	 * respective _drbd_clear_done_ee */
 
 	peer_req->w.cb = e_end_resync_block;
+	peer_req->opf = REQ_OP_WRITE;
 	peer_req->submit_jif = jiffies;
 
 	spin_lock_irq(&device->resource->req_lock);
@@ -2120,7 +2128,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
 	drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
 
-	err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE, 0, DRBD_FAULT_RS_WR);
+	err = drbd_submit_peer_request(peer_req);
 	if (err)
 		goto out;
 
@@ -2528,18 +2536,6 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	return ret;
 }
 
-/* see also bio_flags_to_wire() */
-static unsigned long wire_flags_to_bio_flags(struct drbd_connection *connection, u32 dpf)
-{
-	if (connection->agreed_pro_version >= 95)
-		return  (dpf & DP_RW_SYNC ? REQ_SYNC : 0) |
-			(dpf & DP_FUA ? REQ_FUA : 0) |
-			(dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
-
-	/* else: we used to communicate one bit only in older DRBD */
-	return dpf & DP_RW_SYNC ? REQ_SYNC : 0;
-}
-
 static unsigned long wire_flags_to_bio_op(u32 dpf)
 {
 	if (dpf & DP_ZEROES)
@@ -2550,6 +2546,20 @@ static unsigned long wire_flags_to_bio_op(u32 dpf)
 		return REQ_OP_WRITE_SAME;
 	else
 		return REQ_OP_WRITE;
+}
+
+/* see also bio_flags_to_wire() */
+static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 dpf)
+{
+	unsigned long opf = wire_flags_to_bio_op(dpf) |
+		(dpf & DP_RW_SYNC ? REQ_SYNC : 0);
+
+	/* we used to communicate one bit only in older DRBD */
+	if (connection->agreed_pro_version >= 95)
+		opf |= (dpf & DP_FUA ? REQ_FUA : 0) |
+			    (dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
+
+	return opf;
 }
 
 static void fail_postponed_requests(struct drbd_peer_request *peer_req)
@@ -2781,7 +2791,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	struct net_conf *nc;
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request_details d;
-	int op, op_flags;
 	int err, tp;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -2832,12 +2841,11 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	peer_req->submit_jif = jiffies;
 	peer_req->flags |= EE_APPLICATION;
 
-	op = wire_flags_to_bio_op(d.dp_flags);
-	op_flags = wire_flags_to_bio_flags(connection, d.dp_flags);
+	peer_req->opf = wire_flags_to_bio(connection, d.dp_flags);
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
-		D_ASSERT(peer_device, op == REQ_OP_DISCARD);
+		D_ASSERT(peer_device, peer_req_op(peer_req) == REQ_OP_DISCARD);
 		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
 		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
 		/* need to play safe: an older DRBD sender
@@ -2847,7 +2855,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	} else if (pi->cmd == P_ZEROES) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_ZEROES);
-		D_ASSERT(peer_device, op == REQ_OP_WRITE_ZEROES);
+		D_ASSERT(peer_device, peer_req_op(peer_req) == REQ_OP_WRITE_ZEROES);
 		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
 		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
 		/* Do (not) pass down BLKDEV_ZERO_NOUNMAP? */
@@ -2855,7 +2863,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			peer_req->flags |= EE_TRIM;
 	} else if (pi->cmd == P_WSAME) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
-		D_ASSERT(peer_device, op == REQ_OP_WRITE_SAME);
+		D_ASSERT(peer_device, peer_req_op(peer_req) == REQ_OP_WRITE_SAME);
 		D_ASSERT(peer_device, peer_req->page_chain.head != NULL);
 	} else if (peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
@@ -2866,7 +2874,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(device, d.dp_flags & DP_FLUSH);
 	} else {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
-		D_ASSERT(peer_device, op == REQ_OP_WRITE);
+		D_ASSERT(peer_device, peer_req_op(peer_req) == REQ_OP_WRITE);
 	}
 
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
@@ -2888,14 +2896,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		epoch = list_entry(peer_req->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == peer_req->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-			op_flags |= REQ_PREFLUSH | REQ_FUA;
+			peer_req->opf |= REQ_PREFLUSH | REQ_FUA;
 			peer_req->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-				op_flags |= REQ_PREFLUSH | REQ_FUA;
+				peer_req->opf |= REQ_PREFLUSH | REQ_FUA;
 				peer_req->flags |= EE_IS_BARRIER;
 			}
 		}
@@ -2968,11 +2976,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			wait_event(connection->ee_wait, !overlapping_resync_write(connection, peer_req));
 	}
 
-	/* If we would need to block on the activity log,
-	 * we may queue this request for the submitter workqueue.
-	 * Remember the op_flags. */
-	peer_req->op_flags = op_flags;
-
 	err = prepare_activity_log(peer_req);
 	if (err == DRBD_PAL_DISCONNECTED)
 		goto disconnect_during_al_begin_io;
@@ -2998,7 +3001,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		return 0;
 	}
 
-	err = drbd_submit_peer_request(device, peer_req, op, op_flags, DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(peer_req);
 	if (!err)
 		return 0;
 
@@ -3171,7 +3174,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	struct drbd_peer_request *peer_req;
 	struct digest_info *di = NULL;
 	int size, verb;
-	unsigned int fault_type;
 	struct p_block_req *p =	pi->data;
 	enum drbd_disk_state min_d_state;
 	int err;
@@ -3240,6 +3242,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
 	peer_req->block_id = p->block_id;
+	peer_req->opf = REQ_OP_READ;
 	/* no longer valid, about to call drbd_recv again for the digest... */
 	p = pi->data = NULL;
 
@@ -3278,7 +3281,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_data_req;
-		fault_type = DRBD_FAULT_DT_RD;
 		/* application IO, don't drbd_rs_begin_io */
 		peer_req->flags |= EE_APPLICATION;
 		goto submit;
@@ -3292,12 +3294,10 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	/* Fall through */
 	case P_RS_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_rsdata_req;
-		fault_type = DRBD_FAULT_RS_RD;
 		break;
 
 	case P_OV_REPLY:
 	case P_CSUM_RS_REQUEST:
-		fault_type = DRBD_FAULT_RS_RD;
 		di = kmalloc(sizeof(*di) + pi->size, GFP_NOIO);
 		err = -ENOMEM;
 		if (!di)
@@ -3348,7 +3348,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 					(unsigned long long)sector);
 		}
 		peer_req->w.cb = w_e_end_ov_req;
-		fault_type = DRBD_FAULT_RS_RD;
 		break;
 
 	default:
@@ -3416,7 +3415,7 @@ submit_for_resync:
 submit:
 	update_receiver_timing_details(connection, drbd_submit_peer_request);
 	inc_unacked(peer_device);
-	if (drbd_submit_peer_request(device, peer_req, REQ_OP_READ, 0, fault_type) == 0)
+	if (drbd_submit_peer_request(peer_req) == 0)
 		return 0;
 
 	/* don't care for the reason here */
@@ -7585,6 +7584,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		peer_req->i.sector = sector;
 		peer_req->block_id = ID_SYNCER;
 		peer_req->w.cb = e_end_resync_block;
+		peer_req->opf = REQ_OP_DISCARD;
 		peer_req->submit_jif = jiffies;
 		peer_req->flags |= EE_TRIM;
 
@@ -7593,8 +7593,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&device->resource->req_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(device, peer_req, REQ_OP_DISCARD,
-				0, DRBD_FAULT_RS_WR);
+		err = drbd_submit_peer_request(peer_req);
 
 		if (err) {
 			spin_lock_irq(&device->resource->req_lock);

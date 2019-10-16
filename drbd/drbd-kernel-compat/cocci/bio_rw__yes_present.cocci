@@ -1,67 +1,55 @@
 // PART 0: General fixups
 @@
-identifier op, op_flags;
-struct bio *b;
-iterator it;
 @@
-drbd_submit_peer_request(...,
--	unsigned op
-+	unsigned rw
-	,
--	unsigned int op_flags,
-	...)
+struct drbd_peer_request {
+...
+unsigned int
+-opf
++rw
+;
+...
+}
+
+@@
+@@
+-#define peer_req_op(...) (...)
+
+@@
+identifier peer_req;
+struct bio *b;
+@@
+drbd_submit_peer_request(...)
 {
 ...
-// with the old system, the bio implicitly has to be either "read" or "write", so we can delete this whole check.
-- if (!(op == REQ_OP_WRITE || op == REQ_OP_READ)) {
--...
--}
-...
--b->bi_opf = op | op_flags;
-+b->bi_rw = rw;
-...
-it(...) {
-...
--(op == REQ_OP_READ)
-+!(rw & BIO_WRITE)
+-b->bi_opf = peer_req->opf;
++b->bi_rw = peer_req->rw;
 ...
 }
-...
-}
+
+@@
+identifier peer_req;
+@@
+drbd_err(...,
+-peer_req->opf);
++peer_req->rw);
 
 @@
 @@
 -wire_flags_to_bio_op(...) {...}
 
-@ disable bitand_comm, neg_if_exp @
-typedef u32;
-identifier connection, dpf;
 @@
-static unsigned long
--wire_flags_to_bio_flags
-+wire_flags_to_bio
- (struct drbd_connection *connection, u32 dpf)
-{
-if (connection->agreed_pro_version >= 95)
-                return  (dpf & DP_RW_SYNC ? REQ_SYNC : 0) |
--                        (dpf & DP_FUA ? REQ_FUA : 0) |
--                        (dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
-+                        (dpf & DP_FUA ? BIO_FUA : 0) |
-+                        (dpf & DP_DISCARD ? BIO_DISCARD : 0) |
-+                        (dpf & DP_FLUSH ? BIO_FLUSH : 0);
-...
-}
-
+identifier dpf;
 @@
-@@
-// THINK: how can we generalize this?
-- op_flags |= REQ_PREFLUSH | REQ_FUA
-+ rw |= BIO_FLUSH | BIO_FUA
+(
+-               wire_flags_to_bio_op(dpf)
++               BIO_WRITE |
++               (dpf & DP_DISCARD ? BIO_DISCARD : 0)
+)
 
 //------------------------------------------------------------------------------
 // PART 1: REQ_OP_READ
 // What we have: a full value, bio->bi_opf set to REQ_OP_READ
-// What we want: the lowest bit (REQ_WRITE) of bio->bi_rw unset
+// What we want: the lowest bit (BIO_WRITE) of bio->bi_rw unset
 
 @ disable bitand_comm, not_int1, not_int2, commeq, ptr_to_array @
 struct bio *b;
@@ -71,7 +59,7 @@ static void drbd_req_complete(...)
 <...
 // a little special case...
 -(!ok && bio_op(b) == REQ_OP_READ && !(b->bi_opf & REQ_RAHEAD))
-+(!ok && !(b->bi_rw & WRITE))
++(!ok && !(b->bi_rw & BIO_WRITE))
 ...>
 }
 
@@ -85,14 +73,14 @@ unsigned int
 +rw
 = ... ?
 -REQ_OP_READ
-+READ
++0
 :
 -REQ_OP_WRITE
-+WRITE
++BIO_WRITE
 ;
 <...
 -(op == REQ_OP_WRITE)
-+(rw & WRITE)
++(rw & BIO_WRITE)
 ...>
 }
 
@@ -123,28 +111,30 @@ unsigned int o = bio_op(b);
 ...>
 
 @@
-expression device, peer_req, flags, fault_type;
+struct drbd_peer_request *peer_req;
 @@
 (
-drbd_submit_peer_request(device, peer_req
--, REQ_OP_READ, flags
-+, READ | flags
-, fault_type)
+- peer_req_op(peer_req) == REQ_OP_READ
++ !(peer_req->rw & BIO_WRITE)
 |
-drbd_submit_peer_request(device, peer_req
--, REQ_OP_WRITE, flags
-+, WRITE | flags
-, fault_type)
+- peer_req_op(peer_req) != REQ_OP_READ
++ (peer_req->rw & BIO_WRITE)
+)
+
+@@
+struct drbd_peer_request *peer_req;
+@@
+- peer_req->opf =
++ peer_req->rw =
+(
+- REQ_OP_READ
++ 0
 |
-drbd_submit_peer_request(device, peer_req
--, (-3), flags
-+, (-3) /* WRITE_ZEROES not supported on this kernel */
-, fault_type)
+// REQ_OP_WRITE_ZEROES replacement.
+// Start line with space to avoid spatch parsing it as a disjunction.
+ (-3)
 |
-drbd_submit_peer_request(device, peer_req
--, op, op_flags
-+, rw
-, fault_type)
+wire_flags_to_bio(...)
 )
 
 //------------------------------------------------------------------------------
@@ -158,7 +148,7 @@ drbd_md_sync_page_io(...
 {
 <...
 -(op == REQ_OP_WRITE)
-+(rw & WRITE)
++(rw & BIO_WRITE)
 ? ... ;
 ...>
 }
@@ -179,10 +169,10 @@ _drbd_md_sync_page_io(...
 ...;
 |
 -(op == REQ_OP_WRITE)
-+(rw & WRITE)
++(rw & BIO_WRITE)
 |
 -(op != REQ_OP_WRITE)
-+!(rw & WRITE)
++!(rw & BIO_WRITE)
 )
 ...>
 }
@@ -199,12 +189,12 @@ _drbd_md_sync_page_io(...
 (
 drbd_md_sync_page_io(...
 -, REQ_OP_WRITE
-+, WRITE
++, BIO_WRITE
  )
 |
 drbd_md_sync_page_io(...
 -, REQ_OP_READ
-+, READ
++, 0
  )
 )
 
@@ -293,28 +283,24 @@ o = bio_op(b);
 @ exists @
 identifier find_req_ops.req_op;
 identifier transform_req_ops.req;
-identifier o, fn;
-expression flags;
-struct bio *b;
-type T;
+struct drbd_peer_request *peer_req;
 @@
-fn(...) {
-<...
 (
-T o = wire_flags_to_bio_op(flags);
+- peer_req_op(peer_req) == req_op
++ (peer_req->rw & req)
 |
-o = wire_flags_to_bio_op(flags);
+- peer_req_op(peer_req) != req_op
++ !(peer_req->rw & req)
 )
-...
-(
-- o == req_op
-+ (rw & req)
-|
-- o != req_op
-+ !(rw & req)
-)
-...>
-}
+
+@@
+identifier find_req_ops.req_op;
+identifier transform_req_ops.req;
+struct drbd_peer_request *peer_req;
+symbol opf;
+@@
+- peer_req->opf = req_op;
++ peer_req->rw = req;
 
 //------------------------------------------------------------------------------
 // PART n+1: Clean up any bio_op calls
@@ -326,49 +312,8 @@ identifier o;
 -T o = bio_op(b);
 
 @@
-expression connection, flags;
-symbol op, op_flags;
-identifier fn;
+identifier peer_req;
 @@
-fn(...)
-{
-...
-int
--op
-+rw = WRITE
-;
-...
--op = wire_flags_to_bio_op(flags);
--op_flags = wire_flags_to_bio_flags(connection, flags);
-+rw |= wire_flags_to_bio(connection, flags);
-<...
-(
--op == REQ_OP_DISCARD
-+rw & BIO_DISCARD
-|
-// we do not support WRITE_ZEROES
--op == REQ_OP_WRITE_ZEROES
-+false
-|
--op_flags |=
-+rw |=
-...
-)
-...>
-}
-
-@@
-identifier pr;
-identifier opf;
-@@
-pr->op_flags =
--opf
-+rw
-;
-
-@@
-@@
-(
--REQ_PREFLUSH
-+(1UL << BIO_RW_FLUSH)
-)
+-peer_req->opf |=
++peer_req->rw |=
+...;
