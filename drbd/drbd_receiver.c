@@ -3940,8 +3940,8 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			continue;
 		if (i == device->ldev->md.node_id)
 			continue;
-		/* Skip bitmap indexes which are not assigned to a peer. */
-		if (device->ldev->md.peers[i].bitmap_index == -1)
+		if (connection->agreed_pro_version < 116 &&
+		    device->ldev->md.peers[i].bitmap_index == -1)
 			continue;
 		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
 		if (self == peer) {
@@ -4040,20 +4040,34 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 	if (strategy == SYNC_SOURCE_COPY_BITMAP) {
 		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
 
-		if (from == -1 || peer_device->bitmap_index == -1)
+		if (from == -1)
+			from = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
+
+		if (peer_device->bitmap_index == -1)
 			return 0;
 
-		drbd_info(peer_device, "Peer synced up with node %d, copying bitmap\n", peer_node_id);
+		if (from == -1)
+			drbd_info(peer_device,
+				  "Setting all bitmap bits, day0 bm not available node_id=%d\n",
+				  peer_node_id);
+		else
+			drbd_info(peer_device,
+				  "Copying bitmap of peer node_id=%d (bitmap_index=%d)\n",
+				  peer_node_id, from);
+
 		drbd_suspend_io(device, WRITE_ONLY);
-		drbd_bm_slot_lock(peer_device, "bm_copy_slot from sync_handshake", BM_LOCK_BULK);
-		drbd_bm_copy_slot(device, from, peer_device->bitmap_index);
+		drbd_bm_slot_lock(peer_device, "copy_slot/set_many sync_handshake", BM_LOCK_BULK);
+		if (from == -1)
+			drbd_bm_set_many_bits(peer_device, 0, -1UL);
+		else
+			drbd_bm_copy_slot(device, from, peer_device->bitmap_index);
 		drbd_bm_write(device, NULL);
 		drbd_bm_slot_unlock(peer_device);
 		drbd_resume_io(device);
 	} else if (strategy == SYNC_TARGET_CLEAR_BITMAP) {
-		drbd_info(peer_device, "synced up with node %d in the mean time\n", peer_node_id);
+		drbd_info(peer_device, "Resync source provides bitmap (node_id=%d)\n", peer_node_id);
 		drbd_suspend_io(device, WRITE_ONLY);
-		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits from sync_handshake", BM_LOCK_BULK);
+		drbd_bm_slot_lock(peer_device, "bm_clear_many_bits sync_handshake", BM_LOCK_BULK);
 		drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 		drbd_bm_write(device, NULL);
 		drbd_bm_slot_unlock(peer_device);

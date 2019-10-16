@@ -2448,7 +2448,7 @@ static bool bitmap_index_vacant(struct drbd_backing_dev *bdev, int bitmap_index)
 	return true;
 }
 
-static int unallocated_index(struct drbd_backing_dev *bdev, int bm_max_peers)
+int drbd_unallocated_index(struct drbd_backing_dev *bdev, int bm_max_peers)
 {
 	int bitmap_index;
 
@@ -2469,7 +2469,7 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 	struct drbd_peer_md *peer_md = &nbc->md.peers[peer_node_id];
 	int bitmap_index;
 
-	bitmap_index = unallocated_index(nbc, device->bitmap->bm_max_peers);
+	bitmap_index = drbd_unallocated_index(nbc, device->bitmap->bm_max_peers);
 	if (bitmap_index == -1) {
 		drbd_err(peer_device, "Not enough free bitmap slots\n");
 		return -ENOSPC;
@@ -2506,7 +2506,7 @@ static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 m
 	if (!get_ldev(device))
 		return -ENODEV;
 
-	from_index = unallocated_index(device->ldev, device->bitmap->bm_max_peers);
+	from_index = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
 
 	peer_md = &device->ldev->md.peers[peer_node_id];
 	if (!(peer_md->flags & MDF_HAVE_BITMAP)) {
