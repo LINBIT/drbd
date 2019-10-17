@@ -2682,6 +2682,9 @@ static inline void put_ldev(struct drbd_device *device)
 
 static inline void drbd_free_request(struct drbd_request *req)
 {
+	if (!req)
+		return;
+
 	int i;
 	for (i = 0; i < DRBD_NODE_ID_MAX; ++i) {
 		kfree(req->pre_read_data[i]);
