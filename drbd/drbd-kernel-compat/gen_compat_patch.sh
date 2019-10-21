@@ -52,23 +52,28 @@ if hash spatch && spatch_is_recent; then
 		< drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
 		>> $incdir/.compat.cocci
     done
-    echo "  SPATCH   $chksum  "$K
-    # Note: $* (or $@) is NOT make magic variable now, this is a shell script
-    # make $@, the target file, was passed as $1, and is now $compat_patch
-    # make $^, the source (and header) files spatch should operate on,
-    # are "the rest of the shell argument array", so after shifting the first
-    # argument away this is shell $@ respectively $* now.
-    # we know we don't have white-space in the argument list
+    if [ -e $incdir/.compat.cocci ]; then
+	echo "  SPATCH   $chksum  "$K
+	# Note: $* (or $@) is NOT make magic variable now, this is a shell script
+	# make $@, the target file, was passed as $1, and is now $compat_patch
+	# make $^, the source (and header) files spatch should operate on,
+	# are "the rest of the shell argument array", so after shifting the first
+	# argument away this is shell $@ respectively $* now.
+	# we know we don't have white-space in the argument list
 
-    command="spatch --sp-file $incdir/.compat.cocci $* --macro-file drbd-kernel-compat/cocci_macros.h --very-quiet > $compat_patch.tmp 2> $incdir/.spatch.stderr;"
+	command="spatch --sp-file $incdir/.compat.cocci $* --macro-file drbd-kernel-compat/cocci_macros.h --very-quiet > $compat_patch.tmp 2> $incdir/.spatch.stderr;"
 
-    if test -t 0; then
-	$SHELL -c "$command"
+	if test -t 0; then
+	    $SHELL -c "$command"
+	else
+	    # spatch is broken in a way: it "requires" a tty.
+	    # provide a tty using "script", so I can have several spatch in parallel.
+	    # They may ignore INT and TERM; if you have to, use HUP.
+	    </dev/null &> /dev/null script --append $incdir/.spatch.tty.out --return --quiet --command "$command"
+	fi
     else
-	# spatch is broken in a way: it "requires" a tty.
-	# provide a tty using "script", so I can have several spatch in parallel.
-	# They may ignore INT and TERM; if you have to, use HUP.
-	</dev/null &> /dev/null script --append $incdir/.spatch.tty.out --return --quiet --command "$command"
+	echo "  SPATCH   $chksum  "$K" - nothing to do"
+	touch $compat_patch.tmp
     fi
     if [ -e $incdir/.compat.patch ]; then
 	cat $incdir/.compat.patch >> $compat_patch.tmp
