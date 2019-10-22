@@ -1,11 +1,15 @@
-# DRBD9
+# DRBD erasure coding proof-of-concept
 
-This repository contains the Linux kernel code for DRBD9.
+This is a proof-of-concept integration of erasure coding into DRBD, based on DRBD 9.
+It is highly experimental and should not be used to store any data of value.
 
-DRBD, developed by [LINBIT](https://www.linbit.com), is a software that allows RAID 1 functionality over
-TCP/IP and RDMA for GNU/Linux. DRBD is a block device which is designed to build high availability clusters and
-software defined storage by providing a virtual shared device which keeps disks in nodes synchronised using
-TCP/IP or RDMA. This simulates RAID 1 but avoids the use of uncommon hardware (shared SCSI buses or Fibre Channel).
+The proof-of-concept has some limitations:
+
+* All forms of resync are broken. You will need to skip the usual initial resync, for instance by using `drbdmeta ... set-gi ...` appropriately.
+* The nodes with disks must have consecutive node IDs starting from 0.
+* Only diskless nodes should be made primary.
+* The number of disks to use and the data/parity split is hardcoded. See `disk_count_total` and `disk_count_data`.
+* A PMEM device at `/dev/pmem0` in `fsdax` mode is required for the journal.
 
 # Using DRBD
 Please read the user-guide provided at [docs.linbit.com](https://docs.linbit.com).
