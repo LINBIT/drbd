@@ -2349,7 +2349,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	// if nothing to send, error out
 	if (!operation->target_size_sectors) {
 		/* TODO: bail out better */
-		drbd_err(device, "## drbd_send_dblock nothing to send\n");
+//		drbd_err(device, "## drbd_send_dblock nothing to send\n");
 		err = 0;
 		goto out;
 	}

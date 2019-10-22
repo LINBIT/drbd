@@ -93,8 +93,8 @@ static void distributed_request_operation(struct drbd_request *req)
 
 	req->full_stripe = big_stripe_sectors == (size >> SECTOR_SHIFT);
 
-	printk("## distributed_request_operation, sector %llu, size %llubytes, chunksect_bits %d, chunk %llu, stripe %d, data_disk_number %d, data_disk_index %d %s\n",
-		(long long unsigned) sector, (long long unsigned) size, chunksect_bits, (long long unsigned) chunk, stripe, data_disk_number, req->data_disk_index, req->full_stripe ? "full_stripe" : "partial_stripe");
+//	printk("## distributed_request_operation, sector %llu, size %llubytes, chunksect_bits %d, chunk %llu, stripe %d, data_disk_number %d, data_disk_index %d %s\n",
+//		(long long unsigned) sector, (long long unsigned) size, chunksect_bits, (long long unsigned) chunk, stripe, data_disk_number, req->data_disk_index, req->full_stripe ? "full_stripe" : "partial_stripe");
 	for (i = data_disk_number; i < ec->disk_count_data && size > 0; ++i) {
 		const int data_node_id = (req->data_disk_index + i) % ec->disk_count_total;
 		struct request_operation *data_operation = &req->operation[data_node_id];
@@ -121,7 +121,7 @@ static void distributed_request_operation(struct drbd_request *req)
 		parity_operation->target_sector = stripe << chunksect_bits;
 		parity_operation->target_size_sectors = CHUNK_SECTORS;
 		parity_operation->parity_number = i;
-		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
+//		printk("## parity_operation, peer %d, sector %llu, size %llu, parity number %d\n", parity_node_id, (long long unsigned) parity_operation->target_sector, (long long unsigned) parity_operation->target_size_sectors, parity_operation->parity_number);
 	}
 
 	req->stripe_interval.sector = stripe * big_stripe_sectors;
@@ -1953,8 +1953,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	bool no_remote = false;
 	bool submit_private_bio = false;
 
-	drbd_info(device, "## drbd_send_and_submit %p %s sector %lld, size %lld (bi_vcnt %u)\n",
-		req, rw == WRITE ? "write" : "read", (unsigned long long) req->i.sector, (unsigned long long) req->i.size, req->master_bio->bi_vcnt);
+//	drbd_info(device, "## drbd_send_and_submit %p %s sector %lld, size %lld (bi_vcnt %u)\n",
+//		req, rw == WRITE ? "write" : "read", (unsigned long long) req->i.sector, (unsigned long long) req->i.size, req->master_bio->bi_vcnt);
 
 	spin_lock_irq(&resource->req_lock);
 
@@ -2666,7 +2666,7 @@ MAKE_REQUEST_TYPE drbd_make_request(struct request_queue *q, struct bio *bio)
 			sector += remaining >> SECTOR_SHIFT;
 			remaining = 0;
 		}
-		drbd_info(device, "## drbd_make_request sector %lld, size %lld\n", (unsigned long long) DRBD_BIO_BI_SECTOR(bio_to_submit), (unsigned long long) DRBD_BIO_BI_SIZE(bio_to_submit));
+//		drbd_info(device, "## drbd_make_request sector %lld, size %lld\n", (unsigned long long) DRBD_BIO_BI_SECTOR(bio_to_submit), (unsigned long long) DRBD_BIO_BI_SIZE(bio_to_submit));
 		__drbd_make_request(device, bio_to_submit, start_kt, start_jif);
 	} while (remaining);
 //	drbd_info(device, "## drbd_make_request done\n");

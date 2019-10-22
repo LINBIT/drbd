@@ -1690,8 +1690,8 @@ next_bio:
 			unsigned off = persistent_memory_page_offset(data);
 			unsigned len = min_t(unsigned, data_size, PAGE_SIZE - off);
 
-			drbd_info(device, "## drbd_submit_peer_request_interval sector %llu, req_sector %llu, position_in_req %u, peer_req->data %px, data %px, off %u, len %u",
-				  (unsigned long long) sector, (unsigned long long) req_sector, position_in_req, peer_req->data, data, off, len);
+//			drbd_info(device, "## drbd_submit_peer_request_interval sector %llu, req_sector %llu, position_in_req %u, peer_req->data %px, data %px, off %u, len %u",
+//				  (unsigned long long) sector, (unsigned long long) req_sector, position_in_req, peer_req->data, data, off, len);
 			res = bio_add_page(bio, page, len, off);
 			if (res <= 0) {
 				/* A single page must always be possible!
@@ -1926,10 +1926,10 @@ int drbd_submit_peer_request(struct drbd_device *device,
 		list_for_each_entry(existing_journal_interval, &peer_req->journal_intervals, list) {
 			struct drbd_interval *existing_interval = &existing_journal_interval->i;
 
-			drbd_info(device,
-				  "## drbd_submit_peer_request write to backing disk sector %llu size %llu\n",
-				  (unsigned long long) existing_interval->sector,
-				  (unsigned long long) existing_interval->size);
+//			drbd_info(device,
+//				  "## drbd_submit_peer_request write to backing disk sector %llu size %llu\n",
+//				  (unsigned long long) existing_interval->sector,
+//				  (unsigned long long) existing_interval->size);
 			err = drbd_submit_peer_request_interval(device, peer_req, op, op_flags, fault_type,
 								NULL, existing_interval->sector, existing_interval->size);
 		}

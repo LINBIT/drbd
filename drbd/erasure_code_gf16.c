@@ -432,7 +432,7 @@ void erasure_code_gf16_decode(struct erasure_code *ec, block_t **data_blocks, in
 		}
 	}
 
-	printk("## erasure_code_gf16_decode rmask 0x%x plast %d\n", rmask, plast);
+//	printk("## erasure_code_gf16_decode rmask 0x%x plast %d\n", rmask, plast);
 
 	if (plast >= ec->disk_count_data) {                        /* do reconstruction proper */
 		int r = 0;
