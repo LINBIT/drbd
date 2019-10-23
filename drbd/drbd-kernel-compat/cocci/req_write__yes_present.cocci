@@ -255,7 +255,6 @@ struct bio *b;
 identifier find_req_ops.req_op;
 identifier transform_req_ops.req;
 identifier o, fn;
-expression flags;
 type T;
 struct bio *b;
 @@

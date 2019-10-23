@@ -1,6 +1,5 @@
 @@
 struct bio *b;
-constant op, op_flags;
 @@
 -b->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
 +submit_bio(WRITE_FLUSH, bio);
