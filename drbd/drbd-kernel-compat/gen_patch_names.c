@@ -220,6 +220,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
 
+	patch(1, "req_noidle", false, true,
+	      COMPAT_HAVE_REQ_NOIDLE, "present");
+
 	patch(1, "req_nounmap", true, false,
 	      COMPAT_HAVE_REQ_NOUNMAP, "present");
 
@@ -277,9 +280,6 @@ int main(int argc, char **argv)
 
 	patch(1, "bio_flush", false, true,
 	      COMPAT_HAVE_BIO_FLUSH, "present");
-
-	patch(1, "req_noidle", false, true,
-	      COMPAT_HAVE_REQ_NOIDLE, "present");
 
 	patch(1, "nla_nest_start_noflag", true, false,
 	      COMPAT_HAVE_NLA_NEST_START_NOFLAG, "present");
