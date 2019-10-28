@@ -4115,14 +4115,17 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 		u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
 
 		rv = L_ESTABLISHED;
-		if (drbd_bitmap_uuid(peer_device) && peer_current_uuid == my_current_uuid) {
-			drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
-				  drbd_bm_total_weight(peer_device));
-			drbd_uuid_set_bitmap(peer_device, 0);
+		if (peer_current_uuid == my_current_uuid) {
+			if (drbd_bitmap_uuid(peer_device)) {
+				drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
+					  drbd_bm_total_weight(peer_device));
+				drbd_uuid_set_bitmap(peer_device, 0);
+
+			} else if (drbd_bm_total_weight(peer_device)) {
+				drbd_info(peer_device, "bitmap content (%lu bits)\n",
+					  drbd_bm_total_weight(peer_device));
+			}
 			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
-		} else if (drbd_bm_total_weight(peer_device)) {
-			drbd_info(device, "No resync, but %lu bits in bitmap!\n",
-				  drbd_bm_total_weight(peer_device));
 		}
 	}
 
