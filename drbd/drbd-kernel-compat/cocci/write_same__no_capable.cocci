@@ -34,9 +34,9 @@ void drbd_issue_peer_wsame(...)
 expression device, peer_req, flags, fault_type;
 @@
 drbd_submit_peer_request(device, peer_req
--, REQ_OP_WRITE_SAME, flags
+-, REQ_OP_WRITE_SAME
 +, (-2) /* WRITE_SAME not supported on this kernel */
-, fault_type)
+, flags, fault_type)
 
 @@
 struct bio *b;

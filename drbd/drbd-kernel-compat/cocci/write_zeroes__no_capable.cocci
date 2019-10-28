@@ -31,9 +31,9 @@ identifier pd, o;
 expression device, flags, peer_req, fault_type;
 @@
 drbd_submit_peer_request(device, peer_req
--, REQ_OP_WRITE_ZEROES, flags
+-, REQ_OP_WRITE_ZEROES
 +, (-3) /* WRITE_ZEROES not supported on this kernel */
-, fault_type)
+, flags, fault_type)
 
 @ exists @
 type T;

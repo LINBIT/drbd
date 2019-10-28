@@ -137,6 +137,11 @@ drbd_submit_peer_request(device, peer_req
 , fault_type)
 |
 drbd_submit_peer_request(device, peer_req
+-, (-3), flags
++, (-3) /* WRITE_ZEROES not supported on this kernel */
+, fault_type)
+|
+drbd_submit_peer_request(device, peer_req
 -, op, op_flags
 +, rw
 , fault_type)
