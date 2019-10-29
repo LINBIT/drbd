@@ -42,6 +42,8 @@ expression op;
 )
 
 @@
+expression e;
 @@
--REQ_OP_WRITE_SAME
-+(-2) /* WRITE_SAME not supported on this kernel */
+-if (e)
+-	return REQ_OP_WRITE_SAME;
++WARN_ON_ONCE(e); /* WRITE_SAME not supported on this kernel */
