@@ -175,6 +175,25 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 	return all_peers_outdated;
 }
 
+static bool stable_up_to_date_neighbor(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE &&
+		    peer_device->uuid_flags & UUID_FLAG_STABLE && /* primary is also stable */
+		    peer_device->current_uuid == drbd_current_uuid(device)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 /**
  * disk_state_from_md()  -  determine initial disk state
  *
@@ -2056,6 +2075,12 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_device->uuid_flags & UUID_FLAG_GOT_STABLE ||
 			     peer_disk_state[OLD] == D_OUTDATED))
 				disk_state[NEW] = peer_disk_state[NEW];
+
+			/* The attempted resync made us D_OUTDATED, roll that back in case */
+			if (repl_state[OLD] == L_WF_BITMAP_T && repl_state[NEW] == L_OFF &&
+			    disk_state[NEW] == D_OUTDATED &&
+			    stable_up_to_date_neighbor(device) && may_be_up_to_date(device, NEW))
+				disk_state[NEW] = D_UP_TO_DATE;
 
 			/* clause intentional here, the D_CONSISTENT form above might trigger this */
 			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED &&
