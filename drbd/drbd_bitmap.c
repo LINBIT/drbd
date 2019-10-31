@@ -927,6 +927,11 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			void *src = b->bm_on_pmem;
 			memmove(bm_on_pmem, src, b->bm_words * sizeof(long));
 			arch_wb_cache_pmem(bm_on_pmem, b->bm_words * sizeof(long));
+		} else {
+			/* We are attaching a bitmap on PMEM. Since the memory
+			 * is persistent, the bitmap is still valid. Do not
+			 * overwrite it. */
+			growing = false;
 		}
 		b->bm_on_pmem = bm_on_pmem;
 		b->bm_flags |= BM_ON_DAX_PMEM;
