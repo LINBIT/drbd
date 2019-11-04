@@ -2051,8 +2051,7 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	atomic_dec(&device->wait_for_actlog);
 	list_del_init(&peer_req->wait_for_actlog);
 
-	err = drbd_submit_peer_request(device, peer_req,
-			REQ_OP_WRITE, peer_req->op_flags, DRBD_FAULT_DT_WR);
+	err = drbd_submit_peer_request(peer_req);
 
 	if (err)
 		drbd_cleanup_after_failed_submit_peer_request(peer_req);

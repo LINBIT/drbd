@@ -12,7 +12,7 @@ receive_Data(struct drbd_connection *conn, ...)
 +	 * Note that the epoch handling code below
 +	 * may add it again, though.
 +	 */
-+	op_flags &= ~REQ_HARDBARRIER;
++	peer_req->rw &= ~REQ_HARDBARRIER;
 spin_lock(&conn->epoch_lock);
 ...+>
 }
