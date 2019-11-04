@@ -1917,6 +1917,7 @@ extern bool conn_try_outdate_peer(struct drbd_connection *connection);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_maybe_khelper(struct drbd_device *, struct drbd_connection *, char *);
 extern int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device);
+extern int drbd_unallocated_index(struct drbd_backing_dev *bdev, int bm_max_peers);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);

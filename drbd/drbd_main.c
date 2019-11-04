@@ -1308,6 +1308,7 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md;
 	struct p_uuids110 *p;
+	bool sent_one_unallocated;
 	int i, pos = 0;
 	u64 bitmap_uuids_mask = 0;
 	u64 authoritative_mask;
@@ -1330,8 +1331,15 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 	peer_device->comm_current_uuid = drbd_current_uuid(device);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
+	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
-		if (peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS) {
+		bool send_this =
+			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS;
+		if (!send_this && !sent_one_unallocated) {
+			send_this = true;
+			sent_one_unallocated = true;
+		}
+		if (send_this) {
 			bitmap_uuids_mask |= NODE_MASK(i);
 			p->other_uuids[pos++] = cpu_to_be64(__bitmap_uuid(device, i));
 		}
