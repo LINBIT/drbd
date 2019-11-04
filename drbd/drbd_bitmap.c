@@ -1593,16 +1593,17 @@ int drbd_bm_count_bits(struct drbd_device *device, unsigned int bitmap_index, un
 void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsigned int to_index)
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
-	unsigned long word_nr, from_word_nr, to_word_nr;
+	unsigned long word_nr, from_word_nr, to_word_nr, words32_total;
 	unsigned int from_page_nr, to_page_nr, current_page_nr;
 	u32 data_word, *addr;
 
+	words32_total = bitmap->bm_words * sizeof(unsigned long) / sizeof(u32);
 	spin_lock_irq(&bitmap->bm_lock);
 
 	bitmap->bm_set[to_index] = 0;
 	current_page_nr = 0;
 	addr = bm_map(bitmap, current_page_nr);
-	for (word_nr = 0; word_nr < bitmap->bm_words; word_nr += bitmap->bm_max_peers) {
+	for (word_nr = 0; word_nr < words32_total; word_nr += bitmap->bm_max_peers) {
 		from_word_nr = word_nr + from_index;
 		from_page_nr = word32_to_page(from_word_nr);
 		to_word_nr = word_nr + to_index;
@@ -1620,7 +1621,7 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		}
 		data_word = addr[word32_in_page(from_word_nr)];
 
-		if (word_nr == bitmap->bm_words - bitmap->bm_max_peers) {
+		if (word_nr == words32_total - bitmap->bm_max_peers) {
 			unsigned long lw = word_nr / bitmap->bm_max_peers;
 			if (bitmap->bm_bits < (lw + 1) * 32)
 			    data_word &= cpu_to_le32((1 << (bitmap->bm_bits - lw * 32)) - 1);

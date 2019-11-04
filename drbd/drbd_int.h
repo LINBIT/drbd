@@ -654,7 +654,7 @@ struct drbd_bitmap {
 
 	unsigned long bm_set[DRBD_PEERS_MAX]; /* number of bits set */
 	unsigned long bm_bits;  /* bits per peer */
-	size_t   bm_words;
+	size_t   bm_words; /* platform specitif word size; not 32bit!! */
 	size_t   bm_number_of_pages;
 	sector_t bm_dev_capacity;
 	struct mutex bm_change; /* serializes resize operations */
