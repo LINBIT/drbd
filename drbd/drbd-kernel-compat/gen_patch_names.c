@@ -240,9 +240,6 @@ int main(int argc, char **argv)
 	patch(1, "req_prio", true, false,
 	      COMPAT_HAVE_REQ_PRIO, "present");
 
-	patch(1, "bio_flush", false, true,
-	      COMPAT_HAVE_BIO_FLUSH, "present");
-
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
