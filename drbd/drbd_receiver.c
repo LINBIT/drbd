@@ -7169,7 +7169,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(device, peer_req, REQ_OP_WRITE_ZEROES,
+		err = drbd_submit_peer_request(device, peer_req, REQ_OP_DISCARD,
 				0, DRBD_FAULT_RS_WR);
 
 		if (err) {
