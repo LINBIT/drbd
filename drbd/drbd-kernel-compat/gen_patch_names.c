@@ -193,6 +193,9 @@ int main(int argc, char **argv)
 	patch(1, "req_nounmap", true, false,
 	      COMPAT_HAVE_REQ_NOUNMAP, "present");
 
+	patch(1, "bio_op_shift", false, true,
+	      COMPAT_HAVE_BIO_OP_SHIFT, "present");
+
 	patch(1, "write_zeroes", true, false,
 	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "capable");
 
