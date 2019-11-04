@@ -5592,9 +5592,10 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 
 	/* this is "skip initial sync", assume to be clean */
 	for_each_peer_device(peer_device, device) {
-		if (args.clear_bm && should_skip_initial_sync(peer_device)) {
+		if ((args.clear_bm || args.force_resync) && should_skip_initial_sync(peer_device)) {
 			if (peer_device->disk_state[NOW] >= D_INCONSISTENT) {
-				drbd_info(peer_device, "Preparing to skip initial sync\n");
+				drbd_info(peer_device, "Preparing to %s initial sync\n",
+					  args.clear_bm ? "skip" : "force");
 				diskful |= NODE_MASK(peer_device->node_id);
 			}
 			nodes |= NODE_MASK(peer_device->node_id);
@@ -5607,6 +5608,26 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 	for_each_peer_device(peer_device, device)
 		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
 	drbd_uuid_new_current_by_user(device); /* New current, previous to UI_BITMAP */
+
+	if (args.force_resync) {
+		unsigned long irq_flags;
+		begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
+		__change_disk_state(device, D_UP_TO_DATE);
+		end_state_change(device->resource, &irq_flags);
+
+		for_each_peer_device(peer_device, device) {
+			if (NODE_MASK(peer_device->node_id) & nodes) {
+				if (NODE_MASK(peer_device->node_id) & diskful) {
+					drbd_info(peer_device, "Forcing resync");
+					set_bit(CONSIDER_RESYNC, &peer_device->flags);
+					drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
+					drbd_send_current_state(peer_device);
+				}
+
+				drbd_print_uuids(peer_device, "forced resync UUID");
+			}
+		}
+	}
 
 	if (args.clear_bm) {
 		unsigned long irq_flags;
