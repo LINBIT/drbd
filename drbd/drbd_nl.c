@@ -5639,8 +5639,8 @@ out_dec:
 	put_ldev(device);
 out:
 	up(&device->resource->state_sem);
-out_nolock:
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+out_nolock:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
