@@ -18,9 +18,6 @@ spin_lock(&conn->epoch_lock);
 }
 
 @@
-type T;
-identifier x;
-declaration d;
 @@
 drbd_make_request(...)
 {
