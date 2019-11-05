@@ -43,9 +43,9 @@ identifier dpf;
 (
 -               wire_flags_to_bio_op(dpf)
 +               REQ_WRITE |
-+               (dpf & DP_DISCARD ? REQ_DISCARD : 0) |
++               (dpf & DP_DISCARD ? REQ_DISCARD : 0)
 +#ifdef REQ_WRITE_SAME
-+               (dpf & DP_WSAME ? REQ_WRITE_SAME : 0)
++               | (dpf & DP_WSAME ? REQ_WRITE_SAME : 0)
 +#endif
 )
 
