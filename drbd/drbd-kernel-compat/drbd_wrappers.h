@@ -63,8 +63,8 @@ static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
 
 /* introduced in v5.0-6417-g2bdde670beed */
 #ifndef DEFINE_DYNAMIC_DEBUG_METADATA
-#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) do { } while(0)
-#define __dynamic_pr_debug(D, F, ...) do { } while(0)
+#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) const char *D = F
+#define __dynamic_pr_debug(D, F, args...) do { (void)(D); if (0) printk(F, ## args); } while(0)
 #define DYNAMIC_DEBUG_BRANCH(D) false
 #endif
 
