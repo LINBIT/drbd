@@ -3,6 +3,23 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.21-0rc1 (api:genl2/proto:86-116/transport:14)
+--------
+ * fix compat for write same on linux 4.9 and the Debian users
+ * fix kernel compat for linux 4.8 and 4.9; this mainly affected Debian
+   users; The symptoms where slow resync and resync getting stuck always at
+   the same point
+ * enable resync of lost and re-created backing devices (think lost node) when
+   the backing device was thinly provisioned and its current uuid is pre-set
+   to a 'day0 UUID' (by LINSTOR); that works by copying a unused bitmap slot
+   which tracks all changes since day 0
+ * fix attach when bitmap is on PMEM; before it was set to
+   'all blocks out-of-sync' upon attach
+ * return disk-state from Outdated to UpToDate when it looses connection
+   while in WFBitMapT and we have a stable and UpToDate peer
+ * new option --force-resync flag can be passed to new-current-uuid, that
+   can be used to trigger initial resync without touching the role
+
 9.0.20-1 (api:genl2/proto:86-115/transport:14)
 --------
  * fix a case of false split brain detection if a diskless node promotes
