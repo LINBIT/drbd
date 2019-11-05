@@ -33,7 +33,11 @@ if test -e .compat_patches_applied; then
     rm -f .compat_patches_applied
 fi
 
-if hash spatch && spatch_is_recent; then
+if hash spatch ; then
+    if ! spatch_is_recent; then
+	echo "ERROR: spatch not recent enough, need spatch version >= $MIN_SPATCH_VERSION"
+	exit 1
+    fi
     K=$(cat $incdir/kernelrelease.txt)
     echo "  GENPATCHNAMES   "$K
     gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
