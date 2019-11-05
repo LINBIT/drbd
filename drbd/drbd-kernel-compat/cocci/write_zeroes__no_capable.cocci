@@ -23,6 +23,8 @@ expression op;
 )
 
 @@
+expression e;
 @@
--REQ_OP_WRITE_ZEROES
-+(-3) /* WRITE_ZEROES not supported on this kernel */
+-if (e)
+-	return REQ_OP_WRITE_ZEROES;
++WARN_ON_ONCE(e); /* WRITE_ZEROES not supported on this kernel */
