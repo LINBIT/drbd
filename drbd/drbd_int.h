@@ -1058,6 +1058,11 @@ struct drbd_connection {
 		u64 current_dagtag_sector;
 	} send;
 
+	struct {
+		u64 dagtag_sector;
+		int lost_node_id;
+	} after_reconciliation;
+
 	unsigned int peer_node_id;
 	struct list_head twopc_parent_list;
 	struct rcu_head rcu;

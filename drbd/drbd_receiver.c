@@ -7486,6 +7486,11 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	if (new_repl_state != L_ESTABLISHED) {
 		unsigned long irq_flags;
 
+		if (new_repl_state == L_WF_BITMAP_T) {
+			connection->after_reconciliation.dagtag_sector = be64_to_cpu(p->dagtag);
+			connection->after_reconciliation.lost_node_id = be32_to_cpu(p->node_id);
+		}
+
 		drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
@@ -7892,6 +7897,8 @@ void conn_disconnect(struct drbd_connection *connection)
 	cleanup_remote_state_change(connection);
 
 	drain_resync_activity(connection);
+
+	connection->after_reconciliation.lost_node_id = -1;
 
 	/* Wait for current activity to cease.  This includes waiting for
 	 * peer_request queued to the submitter workqueue. */
