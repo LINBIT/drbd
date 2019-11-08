@@ -232,20 +232,25 @@ check_all_committed: unpatch
 	       	false;			\
 	fi
 
+.PHONY: prepare_release
 prepare_release:
 	$(MAKE) tarball
 
+.PHONY: release
 release:
 	$(MAKE) tarball
 
+.PHONY: debrelease
 debrelease:
 	cd drbd/drbd-kernel-compat && bash collect_compat_h.sh
 	$(MAKE) -C drbd compat
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
-tgz: | .filelist
-.filelist: | check-submods check_all_committed distclean
-tarball: check-submods check_all_committed distclean drbd/.drbd_git_revision .filelist
+.PHONY: tarball
+tarball:
+	$(MAKE) distclean
+	$(MAKE) check-submods check_all_committed drbd/.drbd_git_revision
+	$(MAKE) .filelist
 	$(MAKE) tgz
 
 module .filelist: drbd/.drbd_git_revision
