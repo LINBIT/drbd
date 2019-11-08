@@ -108,7 +108,7 @@ kos::rpm::frompkg() {
 	local pkgdir="$1"
 
 	cd "$pkgdir" || die "Could not cd to $pkgdir"
-	yumdownloader -y --disablerepo="*" --enablerepo=drbd-9 kmod-drbd
+	yumdownloader -y --disablerepo="*" --enablerepo=drbd-9 kmod-drbd || yum download -y --disablerepo="*" --enablerepo=drbd-9 kmod-drbd
 	rpm2cpio ./*.rpm | cpio -idmv 2>/dev/null
 }
 
