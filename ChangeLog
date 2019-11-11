@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.21-0rc1 (api:genl2/proto:86-116/transport:14)
+9.0.21-1 (api:genl2/proto:86-116/transport:14)
 --------
  * fix compat for write same on linux 4.9 and the Debian users
  * fix kernel compat for linux 4.8 and 4.9; this mainly affected Debian
@@ -15,7 +15,9 @@ Latest:
    which tracks all changes since day 0
  * fix attach when bitmap is on PMEM; before it was set to
    'all blocks out-of-sync' upon attach
- * return disk-state from Outdated to UpToDate when it looses connection
+ * avoid doing reconciliation resync multiple times by updating the
+   resync target's dagtag after if completed successfully
+ * return disk-state from Outdated to UpToDate when it loses connection
    while in WFBitMapT and we have a stable and UpToDate peer
  * new option --force-resync flag can be passed to new-current-uuid, that
    can be used to trigger initial resync without touching the role
