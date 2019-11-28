@@ -1988,7 +1988,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			case L_PAUSED_SYNC_S:
 			case L_STARTING_SYNC_S:
 			case L_AHEAD:
-				min_disk_state = D_OUTDATED;
+				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_UP_TO_DATE;
 				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
