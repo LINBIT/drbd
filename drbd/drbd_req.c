@@ -622,7 +622,7 @@ static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_r
 	rcu_read_lock();
 	prev_req = cmpxchg(cache_ptr, old_req, req);
 	while (prev_req != old_req) {
-		if (req->dagtag_sector > prev_req->dagtag_sector)
+		if (prev_req && req->dagtag_sector > prev_req->dagtag_sector)
 			break;
 		old_req = prev_req;
 		prev_req = cmpxchg(cache_ptr, old_req, req);
