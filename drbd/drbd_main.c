@@ -4496,11 +4496,22 @@ void drbd_md_mark_dirty(struct drbd_device *device)
 void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local)
 {
 	struct drbd_md *md = &device->ldev->md;
-	int i;
+	int node_id, i;
 
 	if (val == UUID_JUST_CREATED)
 		return;
-	val &= ~1;  /* The lowest bit only indicates that the node was primary */
+
+	val &= ~UUID_PRIMARY;
+
+	if (val == (md->current_uuid & ~UUID_PRIMARY))
+		return;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == md->node_id)
+			continue;
+		if (val == (md->peers[node_id].bitmap_uuid & ~UUID_PRIMARY))
+			return;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(md->history_uuids); i++) {
 		if (md->history_uuids[i] == val)
