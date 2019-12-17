@@ -2462,7 +2462,7 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 		[IB_GET_DMA_MR] = "ib_get_dma_mr()",
 	};
 
-	err = device->query_device(device, &dev_attr, &uhw);
+	err = device->ops.query_device(device, &dev_attr, &uhw);
 	if (err) {
 		tr_err(&path->rdma_transport->transport,
 				"ib_query_device: %d\n", err);
