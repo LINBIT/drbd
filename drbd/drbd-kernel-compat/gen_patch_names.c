@@ -110,6 +110,9 @@ int main(int argc, char **argv)
 	patch(1, "rdma_create_id", true, false,
 	      COMPAT_RDMA_CREATE_ID_HAS_NET_NS, "has_net_ns");
 
+	patch(1, "ib_device", true, false,
+	      COMPAT_IB_DEVICE_HAS_OPS, "has_ops");
+
 #ifndef COMPAT_IB_DEVICE_HAS_OPS
 	patch(1, "ib_query_device", true, false,
 	      COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS, "has_3_params");
