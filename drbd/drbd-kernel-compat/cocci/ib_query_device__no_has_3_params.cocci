@@ -1,13 +1,29 @@
 @@
 struct ib_device dev;
-expression D, A, U;
+expression D, A;
+identifier fn, U;
 @@
-- dev.query_device(D, A, U)
+fn(...)
+{
+...
+- struct ib_udata U = {.outlen = 0, .inlen = 0};
+...
+- dev.query_device(D, A, &U)
 + dev.query_device(D, A)
+...
+}
 
 @@
 struct ib_device *dev;
-expression D, A, U;
+expression D, A;
+identifier fn, U;
 @@
-- dev->query_device(D, A, U)
+fn(...)
+{
+...
+- struct ib_udata U = {.outlen = 0, .inlen = 0};
+...
+- dev->query_device(D, A, &U)
 + dev->query_device(D, A)
+...
+}
