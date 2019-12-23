@@ -1321,7 +1321,8 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	}
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
+	peer_device->comm_current_uuid = drbd_current_uuid(device);
+	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
 	for (i = 0; i < ARRAY_SIZE(p->history_uuids); i++)
 		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(device, i));
@@ -1336,6 +1337,13 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
 	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
 		uuid_flags |= UUID_FLAG_INCONSISTENT;
+
+	/* Silently mask out any "too recent" flags,
+	 * we cannot communicate those in old DRBD
+	 * protocol versions. */
+	uuid_flags &= UUID_FLAG_MASK_COMPAT_84;
+
+	peer_device->comm_uuid_flags = uuid_flags;
 	p->uuid_flags = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);

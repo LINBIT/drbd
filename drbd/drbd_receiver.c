@@ -3810,6 +3810,9 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
 	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
 
+	if (connection->agreed_pro_version < 110)
+		local_uuid_flags &= UUID_FLAG_MASK_COMPAT_84;
+
 	initial_handshake =
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
 		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
