@@ -4005,6 +4005,23 @@ out:
 	return 0;
 }
 
+static bool legacy_peer_present(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool legacy_peer_present = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection->cstate[NOW] < C_CONNECTED ||
+		    connection->agreed_pro_version >= 110)
+			continue;
+		legacy_peer_present = true;
+		break;
+	}
+	rcu_read_unlock();
+	return legacy_peer_present;
+}
+
 int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -4020,6 +4037,9 @@ int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	if (adm_ctx.connection) {
 		retcode = ERR_INVALID_REQUEST;
 		drbd_msg_put_info(adm_ctx.reply_skb, "peer connection already exists");
+	} else if (legacy_peer_present(adm_ctx.resource)) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_put_info(adm_ctx.reply_skb, "legacy peer present, cannot support multiple peers");
 	} else {
 		retcode = adm_new_connection(&connection, &adm_ctx, info);
 	}
