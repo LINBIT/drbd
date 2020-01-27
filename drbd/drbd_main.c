@@ -4939,11 +4939,12 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP))
 			continue;
 		if (peer_md[node_id].bitmap_uuid != bitmap_uuid) {
-			_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
+			u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
 			/* drbd_info(device, "XXX bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
 			peer_md[node_id].bitmap_uuid = bitmap_uuid;
 			peer_md[node_id].bitmap_dagtag =
 				bitmap_uuid ? device->resource->dagtag_sector : 0;
+			_drbd_uuid_push_history(device, previous_bitmap_uuid);
 			drbd_md_mark_dirty(device);
 			modified |= NODE_MASK(node_id);
 		}
