@@ -1116,6 +1116,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	drbd_ping_peer(connection);
 
+	down_write(&device->uuid_sem);
 	spin_lock_irq(&device->resource->req_lock);
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	old_repl_state = repl_state[NOW];
@@ -1243,6 +1244,7 @@ out_unlock:
 
 	resync_again(device, source_m, target_m);
 	spin_unlock_irq(&device->resource->req_lock);
+	up_write(&device->uuid_sem);
 	if (connection->after_reconciliation.lost_node_id != -1)
 		after_reconciliation_resync(connection);
 
