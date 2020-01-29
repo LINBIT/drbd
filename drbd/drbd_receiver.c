@@ -3785,7 +3785,7 @@ static enum sync_strategy uuid_fixup_resync_start2(struct drbd_peer_device *peer
 				return REQUIRES_PROTO_91;
 
 			bitmap_uuid = _drbd_uuid_pull_history(peer_device);
-			__drbd_uuid_set_bitmap(peer_device, bitmap_uuid);
+			_drbd_uuid_set_bitmap(peer_device, bitmap_uuid);
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
