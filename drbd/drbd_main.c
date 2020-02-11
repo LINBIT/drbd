@@ -4692,7 +4692,10 @@ static u64 initial_resync_nodes(struct drbd_device *device)
 u64 drbd_weak_nodes_device(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
-	u64 not_weak = NODE_MASK(device->resource->res_opts.node_id);
+	u64 not_weak = 0;
+
+	if (device->disk_state[NOW] == D_UP_TO_DATE)
+		not_weak = NODE_MASK(device->resource->res_opts.node_id);
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
