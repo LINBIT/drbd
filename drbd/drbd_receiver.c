@@ -7498,14 +7498,12 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 
 	if (new_repl_state != L_ESTABLISHED) {
 		unsigned long irq_flags;
+		enum drbd_state_rv rv;
 
 		if (new_repl_state == L_WF_BITMAP_T) {
 			connection->after_reconciliation.dagtag_sector = be64_to_cpu(p->dagtag);
 			connection->after_reconciliation.lost_node_id = be32_to_cpu(p->node_id);
 		}
-
-		drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
-			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -7514,7 +7512,16 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			if (new_repl_state == L_WF_BITMAP_T && peer_device->disk_state[NOW] == D_CONSISTENT)
 				__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 		}
-		end_state_change(resource, &irq_flags);
+		rv = end_state_change(resource, &irq_flags);
+		if (rv == SS_SUCCESS)
+			drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
+				  lost_peer->transport.net_conf->name, (int)dagtag_offset);
+		else if (rv == SS_NOTHING_TO_DO)
+			drbd_info(connection, "\'%s\' disappeared (o=%d), no reconciliation since one diskless\n",
+				  lost_peer->transport.net_conf->name, (int)dagtag_offset);
+			/* sanitize_state() silently removes the resync and the RECONCILIATION_RESYNC bit */
+		else
+			drbd_info(connection, "rv = %d", rv);
 	} else {
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);

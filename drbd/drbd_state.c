@@ -1966,8 +1966,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* Abort resync if a disk fails/detaches */
 			if (repl_state[NEW] > L_ESTABLISHED &&
 			    (disk_state[NEW] <= D_FAILED ||
-			     peer_disk_state[NEW] <= D_FAILED))
+			     peer_disk_state[NEW] <= D_FAILED)) {
 				repl_state[NEW] = L_ESTABLISHED;
+				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+			}
 
 			/* D_CONSISTENT vanish when we get connected (pre 9.0) */
 			if (connection->agreed_pro_version < 110 &&
