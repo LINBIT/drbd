@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch curl && 
 	rm -rf python-lbdist-master master.tar.gz
 
 COPY /drbd.tar.gz /
+
+COPY /pkgs /pkgs
+
 COPY /entry.sh /
 RUN chmod +x /entry.sh
 ENTRYPOINT /entry.sh

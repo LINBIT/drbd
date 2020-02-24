@@ -167,8 +167,9 @@ kos::rpm::fromshipped() {
 kos::deb::fromshipped() {
 	local pkgdir="$1"
 
-	# TODO(rck)
-	die "Currently not implemented :-/"
+	cp "$PKGS"/*/"drbd-module-$(uname -r)_"*.deb "$pkgdir"
+	nr_debs=$(find "$pkgdir" -name "*.deb" | wc -l)
+	[[ $nr_debs -eq 1 ]] || die "Expected to find 1 matching package, but got: $nr_debs"
 
 	kos::deb::extract "$pkgdir"
 }
