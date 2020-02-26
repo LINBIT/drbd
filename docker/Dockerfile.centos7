@@ -10,6 +10,7 @@ LABEL name="DRBD Kernel module load container" \
 		release="$release" \
 		summary="DRBD's kernel component" \
 		description="DRBD's kernel component"
+RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils-4.6/gpl-2.0.txt /licenses/
 
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
 	yum install -y wget gcc make patch curl kmod yum-utils && yum clean all -y && \
