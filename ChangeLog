@@ -3,6 +3,24 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.22-0rc1 (api:genl2/proto:86-116/transport:14)
+--------
+ * introduce locking to avoid connection retries when UUIDs or
+   relevant flags change during the exchange of this data
+ * improve serialization of events after loosing a primary
+ * fix a constraint in sanitize state that can caused a promote to be
+   deliced by some other node
+ * fix a case of a false positive detection of a split brain condition
+ * allow a resync target to switch to the resync source with less
+   bits out of sync
+ * fix bitmap UUID after resync to use current UUID from self rather
+   than sync source
+ * fix pushing bitmap UUID into history when changed
+ * fix regression introduced with 9.0.20, that can cause a missed
+   resync after a reconciliation resync
+ * fix regression introduced with 9.0.20, that can cause a missed
+   resync after a promote on a diskless node
+
 9.0.21-1 (api:genl2/proto:86-116/transport:14)
 --------
  * fix compat for write same on linux 4.9 and the Debian users
