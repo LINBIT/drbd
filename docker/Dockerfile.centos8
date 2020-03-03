@@ -8,7 +8,7 @@ ENV DRBD_VERSION 9.0.22-0rc1
 ARG release=1
 LABEL name="DRBD Kernel module load container" \
       vendor="LINBIT" \
-		version="$LINSTOR_VERSION" \
+		version="$DRBD_VERSION" \
 		release="$release" \
 		summary="DRBD's kernel component" \
 		description="DRBD's kernel component"
