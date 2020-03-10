@@ -5878,7 +5878,7 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 			enum drbd_state_rv rv;
 
 			begin_state_change(resource, &irq_flags, flags);
-			__change_peer_disk_states(affected_connection, D_OUTDATED);
+			__downgrade_peer_disk_states(affected_connection, D_OUTDATED);
 			rv = end_state_change(resource, &irq_flags);
 			kref_put(&affected_connection->kref, drbd_destroy_connection);
 			return rv;
