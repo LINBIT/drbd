@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.22-0rc1 (api:genl2/proto:86-116/transport:14)
+9.0.22-1 (api:genl2/proto:86-116/transport:14)
 --------
  * introduce locking to avoid connection retries when UUIDs or
    relevant flags change during the exchange of this data
@@ -20,6 +20,9 @@ Latest:
    resync after a reconciliation resync
  * fix regression introduced with 9.0.20, that can cause a missed
    resync after a promote on a diskless node
+ * fix UUID handling in case a node promotes during (a short)
+   reconciliation resync
+ * fix removing of a diskless node when quorum is enabled
 
 9.0.21-1 (api:genl2/proto:86-116/transport:14)
 --------
