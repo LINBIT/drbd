@@ -536,6 +536,7 @@ enum device_flag {
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
 	READ_BALANCE_RR,
 	PRIMARY_LOST_QUORUM,
+	TIEBREAKER_QUORUM,	/* Tiebreaker keeps quorum; used to avoid too verbose logging */
 	DESTROYING_DEV,
 };
 

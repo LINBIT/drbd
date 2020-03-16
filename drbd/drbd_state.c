@@ -1471,8 +1471,13 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		   Check if we have majority of the diskless nodes connected.
 		   Using the diskless nodes a tie-breaker! */
 	    qd.diskless >= diskless_majority_at && device->have_quorum[NOW]) {
-		drbd_info(device, "Would lose quorum, but using tiebreaker logic to keep\n");
 		have_quorum = true;
+		if (!test_bit(TIEBREAKER_QUORUM, &device->flags)) {
+			set_bit(TIEBREAKER_QUORUM, &device->flags);
+			drbd_info(device, "Would lose quorum, but using tiebreaker logic to keep\n");
+		}
+	} else {
+		clear_bit(TIEBREAKER_QUORUM, &device->flags);
 	}
 
 	return have_quorum;
