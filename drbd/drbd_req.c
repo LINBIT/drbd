@@ -1036,7 +1036,8 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case NEG_ACKED:
-		mod_rq_state(req, m, peer_device, RQ_NET_OK|RQ_NET_PENDING, 0);
+		mod_rq_state(req, m, peer_device, RQ_NET_OK|RQ_NET_PENDING,
+			     (req->local_rq_state & RQ_WRITE) ? 0 : RQ_NET_DONE);
 		break;
 
 	case COMPLETION_RESUMED:
