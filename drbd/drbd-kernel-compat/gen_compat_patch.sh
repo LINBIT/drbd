@@ -107,7 +107,7 @@ elif test ! -e ../.git && [[ $SPAAS = true ]]; then
 	mv $compat_patch.tmp $compat_patch
     fi
     echo "  You can create a new .tgz including this pre-computed compat patch"
-    echo "  by calling \"echo drbd-$REL_VERSION/drbd/$compat_patch >>.filelist ; make tgz\""
+    echo "  by calling \"make unpatch ; echo drbd-$REL_VERSION/drbd/$compat_patch >>.filelist ; make tgz\""
 else
    echo "ERROR: no suitable spatch found in \$PATH. Install package 'coccinelle'!"
    exit 1
