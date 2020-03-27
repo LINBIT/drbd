@@ -217,7 +217,7 @@ ifeq ($(FORCE),)
 tgz: check_changelogs_up2date
 endif
 
-check_all_committed:
+check_all_committed: unpatch
 	@$(if $(FORCE),-,)modified=`$(GIT) diff --name-status HEAD`; 	\
 	if test -n "$$modified" ; then	\
 		echo "$$modified";	\
@@ -235,6 +235,8 @@ debrelease:
 	$(MAKE) -C drbd compat
 	$(MAKE) tarball PRESERVE_DEBIAN=1
 
+tgz: | .filelist
+.filelist: | check-submods check_all_committed distclean
 tarball: check-submods check_all_committed distclean drbd/.drbd_git_revision .filelist
 	$(MAKE) tgz
 
