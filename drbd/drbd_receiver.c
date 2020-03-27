@@ -7117,6 +7117,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	current_uuid = be64_to_cpu(p->uuid);
 	weak_nodes = be64_to_cpu(p->weak_nodes);
+	weak_nodes |= NODE_MASK(peer_device->node_id);
 	peer_device->current_uuid = current_uuid;
 
 	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
