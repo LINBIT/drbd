@@ -27,9 +27,9 @@ RPMBUILD = rpmbuild
 DEBBUILD = debuild
 
 DOCKERREGISTRY = drbd.io
-DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9:rhel7
-DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9:rhel8
-DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9:bionic
+DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9-rhel7
+DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9-rhel8
+DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9-bionic
 
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
@@ -64,6 +64,9 @@ SUBDIRS     = drbd
 
 REL_VERSION := $(shell sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
 override GITHEAD := $(shell test -e .git && $(GIT) rev-parse HEAD)
+
+# container image version tag. 'TAG', becasue we have this (too) generic name in other projects already
+TAG ?= v$(REL_VERSION)
 
 ifdef FORCE
 #
@@ -290,19 +293,24 @@ endif
 
 .PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage
 dockerimage.rhel7:
-	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7) .
+	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) .
+	docker tag $(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest
 
 dockerimage.rhel8:
-	cd docker && docker build -f Dockerfile.centos8 -t $(DOCKERREGPATH_RHEL8) .
+	cd docker && docker build -f Dockerfile.centos8 -t $(DOCKERREGPATH_RHEL8):$(TAG) .
+	docker tag $(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
 
 dockerimage.bionic:
-	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC) .
+	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC):$(TAG) .
+	docker tag $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest
 
 dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic
 
 # used for --sync in lbbuild to decide which containers to push to which registry
 dockerpath:
-	@echo $(DOCKERREGPATH_BIONIC) $(DOCKERREGPATH_RHEL7) $(DOCKERREGPATH_RHEL8)
+	@echo $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest \
+		$(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest \
+		$(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
 
 ifndef MODE
 MODE = report
