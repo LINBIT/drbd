@@ -1033,6 +1033,23 @@ static void init_resync_stable_bits(struct drbd_peer_device *first_target_pd)
 	clear_bit(STABLE_RESYNC, &device->flags);
 }
 
+static void after_reconciliation_resync(struct drbd_connection *connection)
+{
+	struct drbd_connection *lost_peer =
+		drbd_get_connection_by_node_id(connection->resource,
+					       connection->after_reconciliation.lost_node_id);
+
+	if (lost_peer) {
+		if (lost_peer->cstate[NOW] < C_CONNECTED)
+			lost_peer->last_dagtag_sector =
+				connection->after_reconciliation.dagtag_sector;
+
+		kref_put(&lost_peer->kref, drbd_destroy_connection);
+	}
+
+	connection->after_reconciliation.lost_node_id = -1;
+}
+
 int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
@@ -1219,6 +1236,8 @@ out_unlock:
 
 	resync_again(device, source_m, target_m);
 	write_unlock_irq(&device->resource->state_rwlock);
+	if (connection->after_reconciliation.lost_node_id != -1)
+		after_reconciliation_resync(connection);
 
 out:
 	/* reset start sector, if we reached end of device */

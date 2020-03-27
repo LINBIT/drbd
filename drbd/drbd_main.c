@@ -3323,6 +3323,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
+	connection->after_reconciliation.lost_node_id = -1;
 
 	INIT_LIST_HEAD(&connection->transport.paths);
 	connection->transport.log_prefix = resource->name;
