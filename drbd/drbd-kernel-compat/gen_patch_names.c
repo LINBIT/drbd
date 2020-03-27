@@ -106,6 +106,9 @@ int main(int argc, char **argv)
 	patch(1, "ib_alloc_pd", true, false,
 	      COMPAT_IB_ALLOC_PD_HAS_2_PARAMS, "has_2_params");
 
+	patch(1, "ib_post", true, false,
+	      COMPAT_IB_POST_SEND_CONST_PARAMS, "const");
+
 	patch(1, "req_hardbarrier", false, true,
 	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
 
