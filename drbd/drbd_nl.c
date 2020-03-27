@@ -5604,8 +5604,6 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	for_each_peer_device(peer_device, device)
-		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
 	drbd_uuid_new_current_by_user(device); /* New current, previous to UI_BITMAP */
 
 	if (args.force_resync) {
