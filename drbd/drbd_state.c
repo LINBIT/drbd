@@ -1956,8 +1956,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			/* Abort resync if a disk fails/detaches */
 			if (repl_state[NEW] > L_ESTABLISHED &&
 			    (disk_state[NEW] <= D_FAILED ||
-			     peer_disk_state[NEW] <= D_FAILED))
+			     peer_disk_state[NEW] <= D_FAILED)) {
 				repl_state[NEW] = L_ESTABLISHED;
+				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+			}
 
 			/* Implications of the repl state on the disk states */
 			min_disk_state = D_DISKLESS;
