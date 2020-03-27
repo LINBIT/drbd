@@ -1758,22 +1758,12 @@ static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 	enum drbd_state_rv rv;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	for_each_connection(connection, resource) {
 		rv = is_valid_conn_transition(connection->cstate[OLD], connection->cstate[NEW]);
 		if (rv < SS_SUCCESS)
 			return rv;
-
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			/* When establishing a connection we need to go through C_CONNECTED!
-			   Necessary to do the right thing upon invalidate-remote on a disconnected
-			   resource */
-			if (connection->cstate[OLD] < C_CONNECTED &&
-			    peer_device->repl_state[NEW] >= L_ESTABLISHED)
-				return SS_NEED_CONNECTION;
-		}
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
