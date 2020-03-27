@@ -5033,8 +5033,11 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		return err;
 
 	rest = pi->size - (bitmap_uuids + history_uuids) * sizeof(p->other_uuids[0]);
-	if (rest && !ignore_remaining_packet(connection, rest))
-		return -EIO;
+	if (rest) {
+		err = ignore_remaining_packet(connection, rest);
+		if (err)
+			return err;
+	}
 
 	if (get_ldev(device))
 		peer_md = device->ldev->md.peers;
