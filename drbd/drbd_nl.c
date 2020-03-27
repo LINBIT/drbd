@@ -995,15 +995,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 retry:
 
 	if (role == R_PRIMARY) {
-		struct drbd_connection *connection;
-
-		/* Detect dead peers as soon as possible.  */
-
-		rcu_read_lock();
-		for_each_connection_rcu(connection, resource)
-			request_ping(connection);
-		rcu_read_unlock();
-
+		drbd_check_peers(resource);
 		wait_event(resource->state_wait, !reconciliation_ongoing(resource));
 		wait_up_to_date(resource);
 		down(&resource->state_sem);

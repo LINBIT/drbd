@@ -2285,9 +2285,8 @@ void __update_timing_details(
 	++(*cb_nr);
 }
 
-static bool all_peers_responded(struct drbd_device *device)
+static bool all_peers_responded(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	bool all_responded = true;
 
@@ -2309,11 +2308,18 @@ static bool all_peers_responded(struct drbd_device *device)
 	return all_responded;
 }
 
-void drbd_check_peers_new_current_uuid(struct drbd_device *device)
+void drbd_check_peers(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
+	bool check_ongoing;
 	u64 im;
+
+	check_ongoing = test_and_set_bit(CHECKING_PEERS, &resource->flags);
+	if (check_ongoing) {
+		wait_event(resource->state_wait,
+			   !test_bit(CHECKING_PEERS, &resource->flags));
+		return;
+	}
 
 	for_each_connection_ref(connection, im, resource) {
 		if (connection->cstate[NOW] < C_CONNECTED)
@@ -2322,7 +2328,18 @@ void drbd_check_peers_new_current_uuid(struct drbd_device *device)
 		set_bit(CHECKING_PEER, &connection->flags);
 		request_ping(connection);
 	}
-	wait_event(resource->state_wait, all_peers_responded(device));
+
+	wait_event(resource->state_wait, all_peers_responded(resource));
+
+	clear_bit(CHECKING_PEERS, &resource->flags);
+	wake_up(&resource->state_wait);
+}
+
+void drbd_check_peers_new_current_uuid(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+
+	drbd_check_peers(resource);
 
 	if (device->have_quorum[NOW] && drbd_data_accessible(device, NOW)) {
 		mutex_lock(&resource->conf_update);
