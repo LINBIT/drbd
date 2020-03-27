@@ -809,17 +809,17 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	switch ((r>>8) & 0xff) {
 	case P_INCONSISTENT: /* peer is inconsistent */
 		ex_to_string = "peer is inconsistent or worse";
-		__change_peer_disk_states(connection, D_INCONSISTENT);
+		__downgrade_peer_disk_states(connection, D_INCONSISTENT);
 		break;
 	case P_OUTDATED: /* peer got outdated, or was already outdated */
 		ex_to_string = "peer was fenced";
-		__change_peer_disk_states(connection, D_OUTDATED);
+		__downgrade_peer_disk_states(connection, D_OUTDATED);
 		break;
 	case P_DOWN: /* peer was down */
 		if (conn_highest_disk(connection) == D_UP_TO_DATE) {
 			/* we will(have) create(d) a new UUID anyways... */
 			ex_to_string = "peer is unreachable, assumed to be dead";
-			__change_peer_disk_states(connection, D_OUTDATED);
+			__downgrade_peer_disk_states(connection, D_OUTDATED);
 		} else {
 			ex_to_string = "peer unreachable, doing nothing since disk != UpToDate";
 		}
@@ -829,7 +829,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		 * become R_PRIMARY, but finds the other peer being active. */
 		ex_to_string = "peer is active";
 		drbd_warn(connection, "Peer is primary, outdating myself.\n");
-		__change_disk_states(resource, D_OUTDATED);
+		__downgrade_disk_states(resource, D_OUTDATED);
 		break;
 	case P_FENCING:
 		/* THINK: do we need to handle this
@@ -837,7 +837,7 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		if (fencing_policy != FP_STONITH)
 			drbd_err(connection, "fence-peer() = 7 && fencing != Stonith !!!\n");
 		ex_to_string = "peer was stonithed";
-		__change_peer_disk_states(connection, D_OUTDATED);
+		__downgrade_peer_disk_states(connection, D_OUTDATED);
 		break;
 	default:
 		/* The script is broken ... */
@@ -4138,7 +4138,7 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	struct drbd_resource *resource = connection->resource;
 	enum drbd_conn_state cstate;
 	enum drbd_state_rv rv;
-	enum chg_state_flags flags = force ? CS_HARD : 0;
+	enum chg_state_flags flags = (force ? CS_HARD : 0) | CS_VERBOSE;
 	const char *err_str = NULL;
 	long t;
 

@@ -4529,14 +4529,16 @@ void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_s
 	device->disk_state[NEW] = disk_state;
 }
 
-void __change_disk_states(struct drbd_resource *resource, enum drbd_disk_state disk_state)
+void __downgrade_disk_states(struct drbd_resource *resource, enum drbd_disk_state disk_state)
 {
 	struct drbd_device *device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr)
-		__change_disk_state(device, disk_state);
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (device->disk_state[NEW] > disk_state)
+			__change_disk_state(device, disk_state);
+	}
 	rcu_read_unlock();
 }
 
@@ -4752,10 +4754,10 @@ static void __change_cstate_and_outdate(struct drbd_connection *connection,
 	__change_cstate(connection, cstate);
 	switch(outdate_what) {
 		case OUTDATE_DISKS:
-			__change_disk_states(connection->resource, D_OUTDATED);
+			__downgrade_disk_states(connection->resource, D_OUTDATED);
 			break;
 		case OUTDATE_PEER_DISKS:
-			__change_peer_disk_states(connection, D_OUTDATED);
+			__downgrade_peer_disk_states(connection, D_OUTDATED);
 			break;
 		case OUTDATE_NOTHING:
 			break;
@@ -4922,15 +4924,16 @@ void __change_peer_disk_state(struct drbd_peer_device *peer_device, enum drbd_di
 	peer_device->disk_state[NEW] = disk_state;
 }
 
-void __change_peer_disk_states(struct drbd_connection *connection,
-			       enum drbd_disk_state disk_state)
+void __downgrade_peer_disk_states(struct drbd_connection *connection, enum drbd_disk_state disk_state)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		__change_peer_disk_state(peer_device, disk_state);
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->disk_state[NEW] > disk_state)
+			__change_peer_disk_state(peer_device, disk_state);
+	}
 	rcu_read_unlock();
 }
 
