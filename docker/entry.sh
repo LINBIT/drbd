@@ -1,6 +1,8 @@
 #!/bin/bash
 
 SIGN_KEY=https://packages.linbit.com/package-signing-pubkey.asc
+PKGS=/pkgs
+HOSTRELEASE=/etc/host-release
 
 die() {
 	>&2 echo
@@ -8,21 +10,23 @@ die() {
 	exit 1
 }
 
+debug() {
+	[ -n "$LB_DEBUG" ] || return 0
+
+	>&2 echo
+	>&2 echo "DEBUG: $1"
+	>&2 echo
+}
+
 map_dist() {
-	local k=${1:-doesnotexist}
-	k=${k,,}
-	k="${k/centos/rhel}"
+	# allow to override
+	[ -n "$LB_DIST" ] && { echo "$LB_DIST"; return 0; }
 
-	declare -A dmap
-	# convenience
-	dmap["openshift4.1"]="rhel8.0"
+	# if we got called, and are that far we can assume this mapped file has to exist
+	[ -f "$HOSTRELEASE" ] || die "You have to bind-mount /etc/os-release to the container's $HOSTRELEASE"
+	lbdisttool.py --os-release $HOSTRELEASE -l || echo ""
 
-	# /etc/os-release ones (${ID}${VERSION_ID})
-	dmap["rhcos4.1"]="rhel8.0"
-	dmap["ubuntu18.04"]="bionic"
-
-	v=${dmap[$k]}
-	[ -n "$v" ] && echo "$v" || echo "$k"
+	return 0
 }
 
 print_version_and_exit() {
@@ -32,25 +36,40 @@ print_version_and_exit() {
 	exit 0
 }
 
-# ret 0 if repo file exists
-#     1 if repo file does not exist but exptected vars are set
-#     2 if building from source
-# err msg, which should then be used in die()
-HOW_REPOFILE=0
-HOW_VARS=1
-HOW_FROMSRC=2
+HOW_REPOFILE=repo_file; HOW_HASH=node_hash; HOW_FROMSRC=compile; HOW_FROMSHIPPED=shipped_modules
 how_to_get() {
 	local repo="$1"
+	local how=""
 
-	[ -f "$repo" ] && { echo $HOW_REPOFILE; return; }
-	[ -n "$LB_DIST" ] && [ -n "$LB_HASH" ] && { echo $HOW_VARS; return; }
-	[ -d "/lib/modules/$(uname -r)" ] && { echo $HOW_FROMSRC; return; }
+	if [ -n "$LB_HOW" ]; then # allow to override
+		how="$LB_HOW"
+	elif [ -f "$repo" ]; then
+		how=$HOW_REPOFILE
+	elif [ -n "$LB_HASH" ]; then
+		how=$HOW_HASH
+	elif mountpoint -q /usr/src; then
+		how=$HOW_FROMSRC
+	else
+		how=$HOW_FROMSHIPPED
+	fi
 
-	echo "You need to set LB_DIST and LB_HASH; or bind mount your existing repo config to $1; or bindmount /lib/modules"
+	echo "$how"
+	return 0
 }
 
-HOW_LOAD_FROM_RAM=0  # insmod
-HOW_INSTALL=1  # make install && modprobe
+needs_dist() {
+	local how="$1"
+	local needsdist=n
+	if [[ $how == "$HOW_HASH" ]]; then
+		needsdist=y
+	fi
+
+	echo "$needsdist"
+	return 0
+}
+
+HOW_LOAD_FROM_RAM=RAM  # insmod
+HOW_INSTALL=install  # make install && modprobe
 how_to_load() {
 	[[ $LB_INSTALL == yes ]] && echo "$HOW_INSTALL" || echo "$HOW_LOAD_FROM_RAM"
 
@@ -104,17 +123,26 @@ kos::fromsrc() {
 	make -j
 }
 
-kos::rpm::frompkg() {
+kos::rpm::extract() {
+	local pkgdir="$1"
+	cd "$pkgdir" || die "Could not cd to $pkgdir"
+	rpm2cpio ./*.rpm | cpio -idmv 2>/dev/null
+}
+kos::deb::extract() {
+	local pkgdir="$1"
+	cd "$pkgdir" || die "Could not cd to $pkgdir"
+	dpkg -x ./*.deb "$pkgdir"
+}
+
+kos::rpm::fromrepo() {
 	local pkgdir="$1"
 
 	cd "$pkgdir" || die "Could not cd to $pkgdir"
 	yumdownloader -y --disablerepo="*" --enablerepo=drbd-9 kmod-drbd || yum download -y --disablerepo="*" --enablerepo=drbd-9 kmod-drbd
-	rpm2cpio ./*.rpm | cpio -idmv 2>/dev/null
+	kos::rpm::extract "$pkgdir"
 }
-
-kos::deb::frompkg() {
+kos::deb::fromrepo() {
 	local pkgdir="$1"
-
 	local pkg
 
 	chown _apt "$pkgdir"
@@ -123,7 +151,26 @@ kos::deb::frompkg() {
 	apt-get update -o Dir::Etc::sourcelist="sources.list.d/linbit.list" \
 		-o Dir::Etc::sourceparts="-" \
 		-o APT::Get::List-Cleanup="0" && apt-get -y download "$pkg"
-	dpkg -x ./"$pkg"*.deb "$pkgdir"
+	kos::deb::extract "$pkgdir"
+}
+
+kos::rpm::fromshipped() {
+	local pkgdir="$1"
+
+	best="$(lbdisttool.py --force-name rhel_or_centos -k "$PKGS"/*/*.rpm)"
+	[ -n "$best" ] || die "Could not find matching rpm package for your kernel"
+	debug "Best kernel module package: \"$best\""
+	cp "$best" "$pkgdir"
+
+	kos::rpm::extract "$pkgdir"
+}
+kos::deb::fromshipped() {
+	local pkgdir="$1"
+
+	# TODO(rck)
+	die "Currently not implemented :-/"
+
+	kos::deb::extract "$pkgdir"
 }
 
 load_from_ram() {
@@ -143,8 +190,6 @@ load_from_ram() {
 ### main
 grep -q '^drbd' /proc/modules && echo "DRBD module is already loaded" && print_version_and_exit
 
-dist=$(map_dist "$LB_DIST")
-
 pkgdir=/tmp/pkg
 kodir=/tmp/ko
 rm -rf "$pkgdir" "$kodir"
@@ -154,24 +199,37 @@ fmt=rpm
 [ -n "$(type -p dpkg)" ] && fmt=deb
 repo=$(repo::$fmt::getrepofile)
 
-how_get=$(how_to_get "$repo")
+how_get=$(how_to_get "$repo") || exit 1
+debug "Detected kmod method: \"$how_get\""
+
+dist=we_do_not_care
+need_dist=$(needs_dist "$how_get")
+debug "Needs distribution info: \"$need_dist\""
+if [[ $need_dist == y ]]; then
+	dist=$(map_dist "$LB_DIST") || exit 1
+	debug "Detected distribution: \"$dist\""
+fi
 
 case $how_get in
 	$HOW_FROMSRC)
 		kos::fromsrc "$pkgdir" "$kodir"
 		;;
-	$HOW_REPOFILE|$HOW_VARS)
+	$HOW_REPOFILE|$HOW_HASH)
 		repo::$fmt::getsignkey
-		[[ $how_get == "$HOW_VARS" ]] && repo::$fmt::createrepo "$dist" "$LB_HASH"
-		kos::$fmt::frompkg "$pkgdir"
+		[[ $how_get == "$HOW_HASH" ]] && repo::$fmt::createrepo "$dist" "$LB_HASH"
+		kos::$fmt::fromrepo "$pkgdir"
+		;;
+	$HOW_FROMSHIPPED)
+		kos::$fmt::fromshipped "$pkgdir"
 		;;
 	*) die "$how_get" ;;
 esac
 
 modprobe libcrc32c
 
-how_load=$(how_to_load)
-if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load = "$HOW_INSTALL" ]]; then
+how_load=$(how_to_load) || exit 1
+debug "Detected load method: \"$how_load\""
+if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load == "$HOW_INSTALL" ]]; then
 	cd "$pkgdir" || die "Could not cd to $pkgdir"
 	cd drbd-* || die "Could not cd to drbd src dir"
 	make install
@@ -182,8 +240,5 @@ else
 fi
 
 modprobe drbd_transport_rdma 2>/dev/null || true
-if ! grep -q '^drbd_transport_tcp' /proc/modules; then
-	die "Could not load DRBD kernel modules"
-fi
+grep -q '^drbd_transport_tcp' /proc/modules || die "Could not load DRBD kernel modules"
 print_version_and_exit
-
