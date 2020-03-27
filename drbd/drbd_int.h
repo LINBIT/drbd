@@ -606,6 +606,7 @@ enum peer_device_flag {
 	SYNC_TARGET_TO_BEHIND,  /* SyncTarget, wait for Behind */
 	HANDLING_CONGESTION,    /* Set while testing for congestion and handling it */
 	HANDLE_CONGESTION,      /* tell worker to change state due to congestion */
+	HOLDING_UUID_READ_LOCK, /* did a down_read(&device->uuid_sem) */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1382,6 +1383,7 @@ struct drbd_device {
 	wait_queue_head_t seq_wait;
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
+	struct rw_semaphore uuid_sem;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	struct pending_bitmap_work_s {
 		atomic_t n;		/* inc when queued here, */

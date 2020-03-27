@@ -658,8 +658,12 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
-	if (!err)
+	if (!err) {
+		down_read(&device->uuid_sem);
+		set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
+
 		err = drbd_send_uuids(peer_device, 0, weak_nodes);
+	}
 	if (!err) {
 		set_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		err = drbd_send_current_state(peer_device);
@@ -6495,6 +6499,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		peer_disk_state = D_CONSISTENT;
 	}
 
+	/* This is after the point where we did UUID comparison and joined with the
+	   diskless case again. Releasing uuid_sem here */
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+		up_read(&device->uuid_sem);
+
 	write_lock_irq(&resource->state_rwlock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
@@ -7372,6 +7381,9 @@ static void drain_resync_activity(struct drbd_connection *connection)
 static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+		up_read(&device->uuid_sem);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */

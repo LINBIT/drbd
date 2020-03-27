@@ -3483,7 +3483,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->minor = minor;
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
-
 #ifdef PARANOIA
 	SET_MDEV_MAGIC(device);
 #endif
@@ -3521,6 +3520,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	init_waitqueue_head(&device->misc_wait);
 	init_waitqueue_head(&device->al_wait);
 	init_waitqueue_head(&device->seq_wait);
+
+	init_rwsem(&device->uuid_sem);
 
 	q = blk_alloc_queue(GFP_KERNEL);
 	if (!q)
@@ -4549,6 +4550,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 	u64 got_new_bitmap_uuid, weak_nodes, val, old_current_uuid;
 	int err;
 
+	down_write(&device->uuid_sem);
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
 					forced ? initial_resync_nodes(device) : 0,
@@ -4556,6 +4558,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 
 	if (!got_new_bitmap_uuid) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		up_write(&device->uuid_sem);
 		return;
 	}
 
@@ -4566,22 +4569,29 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 
 	/* get it to stable storage _now_ */
 	err = drbd_md_sync(device);
-	if (err) {
-		__drbd_uuid_set_current(device, old_current_uuid);
-		return;
-	}
+	if (err)
+		_drbd_uuid_set_current(device, old_current_uuid);
+
+	downgrade_write(&device->uuid_sem);
+
+	if (err)
+		goto out;
 
 	weak_nodes = drbd_weak_nodes_device(device);
 	drbd_info(device, "new current UUID: %016llX weak: %016llX\n",
 		  device->ldev->md.current_uuid, weak_nodes);
 
 	if (!send)
-		return;
+		goto out;
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
 	}
+
+out:
+	up_read(&device->uuid_sem);
+
 }
 
 static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
@@ -4722,6 +4732,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	u64 receipients = 0;
 	bool set_current = true;
 
+	down_write(&device->uuid_sem);
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
 	rcu_read_lock();
@@ -4759,8 +4770,10 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	downgrade_write(&device->uuid_sem);
 	if (set_current)
 		drbd_propagate_uuids(device, receipients);
+	up_read(&device->uuid_sem);
 }
 
 static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local)
