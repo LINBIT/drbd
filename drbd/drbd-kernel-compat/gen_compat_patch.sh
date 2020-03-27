@@ -33,11 +33,11 @@ if test -e .compat_patches_applied; then
     rm -f .compat_patches_applied
 fi
 
-if hash spatch ; then
-    if ! spatch_is_recent; then
-	echo "ERROR: spatch not recent enough, need spatch version >= $MIN_SPATCH_VERSION"
-	exit 1
-    fi
+if ! spatch_is_recent; then
+    echo "INFO: spatch not recent enough, need spatch version >= $MIN_SPATCH_VERSION"
+fi
+
+if hash spatch && spatch_is_recent; then
     K=$(cat $incdir/kernelrelease.txt)
     echo "  GENPATCHNAMES   "$K
     gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
@@ -87,7 +87,7 @@ if hash spatch ; then
     rm -f $incdir/.compat.patch
 elif test ! -e ../.git && [[ $SPAAS = true ]]; then
     echo "  INFO: no suitable spatch found; trying spatch-as-a-service;"
-    echo "  be patinent, may take up to 10 minutes"
+    echo "  be patient, may take up to 10 minutes"
     echo "  if it is in the server side cache it might only take a second"
     echo "  SPAAS    $chksum"
     REL_VERSION=$(sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' linux/drbd_config.h)
@@ -109,6 +109,6 @@ elif test ! -e ../.git && [[ $SPAAS = true ]]; then
     echo "  You can create a new .tgz including this pre-computed compat patch"
     echo "  by calling \"echo drbd-$REL_VERSION/drbd/$compat_patch >>.filelist ; make tgz\""
 else
-   echo "ERROR: spatch not found in \$PATH. Install package 'coccinelle'!"
+   echo "ERROR: no suitable spatch found in \$PATH. Install package 'coccinelle'!"
    exit 1
 fi
