@@ -13,6 +13,11 @@ function spatch_is_recent() {
 	! version_gt $MIN_SPATCH_VERSION $ver
 }
 
+function die_no_spatch() {
+   echo "ERROR: no suitable spatch found in \$PATH. Install package 'coccinelle'!"
+   exit 1
+}
+
 # generate compat patches by using the cache,
 # or using spatch,
 # or using curl to fetch it from spatch-as-a-service
@@ -85,7 +90,23 @@ if hash spatch && spatch_is_recent; then
     mv $compat_patch.tmp $compat_patch
     rm -f $incdir/.compat.cocci
     rm -f $incdir/.compat.patch
-elif test ! -e ../.git && [[ $SPAAS = true ]]; then
+else
+	if test -e ../.git; then
+		echo "  INFO: not trying spatch-as-a-service because you are trying"
+		echo "  to build DRBD from a git checkout. Please install a suitable"
+		echo "  version of coccinelle (>1.0.8) or try building from a"
+		echo "  release tarball."
+		die_no_spatch
+	fi
+
+	if [[ $SPAAS != true ]]; then
+		echo "  INFO: spatch-as-a-service was disabled by your package"
+		echo "  maintainer (\$SPAAS = false). Install a suitable version"
+		echo "  of coccinelle (>1.0.8) or allow spatch-as-a-service by"
+		echo "  setting \$SPAAS = true"
+		die_no_spatch
+	fi
+
     echo "  INFO: no suitable spatch found; trying spatch-as-a-service;"
     echo "  be patient, may take up to 10 minutes"
     echo "  if it is in the server side cache it might only take a second"
@@ -108,7 +129,4 @@ elif test ! -e ../.git && [[ $SPAAS = true ]]; then
     fi
     echo "  You can create a new .tgz including this pre-computed compat patch"
     echo "  by calling \"make unpatch ; echo drbd-$REL_VERSION/drbd/$compat_patch >>.filelist ; make tgz\""
-else
-   echo "ERROR: no suitable spatch found in \$PATH. Install package 'coccinelle'!"
-   exit 1
 fi
