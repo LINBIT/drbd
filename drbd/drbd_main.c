@@ -2697,6 +2697,9 @@ Enomem:
 
 static void free_peer_device(struct drbd_peer_device *peer_device)
 {
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+		up_read(&peer_device->device->uuid_sem);
+
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
 	kfree(peer_device->conf);
@@ -3376,9 +3379,10 @@ void drbd_destroy_connection(struct kref *kref)
 	kfree(connection->current_epoch);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		kref_debug_put(&peer_device->device->kref_debug, 1);
-		kref_put(&peer_device->device->kref, drbd_destroy_device);
+		struct drbd_device *device = peer_device->device;
 		free_peer_device(peer_device);
+		kref_debug_put(&device->kref_debug, 1);
+		kref_put(&device->kref, drbd_destroy_device);
 	}
 	idr_destroy(&connection->peer_devices);
 
