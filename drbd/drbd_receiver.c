@@ -3708,14 +3708,6 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		}
 	}
 
-	*rule_nr = 60;
-	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
-	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
-		peer = peer_device->history_uuids[i] & ~UUID_PRIMARY;
-		if (self == peer)
-			return SYNC_TARGET_SET_BITMAP;
-	}
-
 	*rule_nr = 70;
 	self = drbd_bitmap_uuid(peer_device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
@@ -3736,6 +3728,14 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			*peer_node_id = i;
 			return SYNC_SOURCE_COPY_BITMAP;
 		}
+	}
+
+	*rule_nr = 60;
+	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
+	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
+		peer = peer_device->history_uuids[i] & ~UUID_PRIMARY;
+		if (self == peer)
+			return SYNC_TARGET_SET_BITMAP;
 	}
 
 	*rule_nr = 80;
