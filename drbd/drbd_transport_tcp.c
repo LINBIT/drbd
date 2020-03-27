@@ -1313,7 +1313,7 @@ retry:
 		spin_unlock(&tcp_transport->paths_lock);
 		goto retry;
 	}
-	list_add(&drbd_path->list, &transport->paths);
+	list_add_tail(&drbd_path->list, &transport->paths);
 	spin_unlock(&tcp_transport->paths_lock);
 
 	return 0;
