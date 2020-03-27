@@ -4465,7 +4465,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		node_mask |= NODE_MASK(node_id);
 		__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
 		bm_uuid = peer_md[node_id].bitmap_uuid;
-		if (bm_uuid)
+		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
 
 		pdsk = peer_device->disk_state[NOW];
@@ -4490,7 +4490,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			__set_bit(slot_nr, (unsigned long*)&slot_mask);
 		}
 		bm_uuid = peer_md[node_id].bitmap_uuid;
-		if (bm_uuid)
+		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
 		if (slot_nr == -1) {
 			slot_nr = find_first_zero_bit((unsigned long*)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
