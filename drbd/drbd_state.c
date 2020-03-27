@@ -1806,6 +1806,32 @@ static bool is_sync_target_other_c(struct drbd_peer_device *ign_peer_device)
 	return false;
 }
 
+static void select_best_resync_source(struct drbd_peer_device *candidate_pd)
+{
+	struct drbd_device *device = candidate_pd->device;
+	struct drbd_peer_device *current_pd;
+	long diff_w, candidate_w, current_w;
+
+	for_each_peer_device_rcu(current_pd, device) {
+		if (current_pd->repl_state[NEW] == L_SYNC_TARGET)
+			goto found_pd;
+	}
+	return;
+
+found_pd:
+	candidate_w = drbd_bm_total_weight(candidate_pd);
+	current_w = drbd_bm_total_weight(current_pd);
+	diff_w = candidate_w - current_w;
+	if (diff_w < -256L) {
+		/* Only switch resync source if it is at least 1MByte storage
+		   (256 bits) less to resync than from the previous sync source */
+		candidate_pd->repl_state[NEW] = L_SYNC_TARGET;
+		candidate_pd->resync_susp_other_c[NEW] = false;
+		current_pd->repl_state[NEW] = L_PAUSED_SYNC_T;
+		current_pd->resync_susp_other_c[NEW] = true;
+	}
+}
+
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -2014,6 +2040,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
 			    is_sync_target_other_c(peer_device))
 				peer_device->resync_susp_other_c[NEW] = true;
+
+			if (peer_device->resync_susp_other_c[NEW] &&
+			    repl_state[NEW] == L_SYNC_TARGET)
+				select_best_resync_source(peer_device);
 
 			if (resync_suspended(peer_device, NEW)) {
 				if (repl_state[NEW] == L_SYNC_SOURCE)
