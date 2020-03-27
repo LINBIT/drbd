@@ -3759,8 +3759,15 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	*rule_nr = 100;
 	for (i = 0; i < HISTORY_UUIDS; i++) {
 		self = drbd_history_uuid(device, i) & ~UUID_PRIMARY;
+		/* Don't conclude to have "data divergence" from a "common ancestor"
+		 * if that common ancestor is just a not used yet slot in the history,
+		 * which is still initialized to zero on both peers. */
+		if (self == 0)
+			break;
 		for (j = 0; j < ARRAY_SIZE(peer_device->history_uuids); j++) {
 			peer = peer_device->history_uuids[j] & ~UUID_PRIMARY;
+			if (peer == 0)
+				break;
 			if (self == peer)
 				return SPLIT_BRAIN_DISCONNECT;
 		}
