@@ -196,7 +196,19 @@ schedule_timeout_interruptible(...);
 ...
 }
 
-@ script:python depends on (!add_maybe_kick_alloc_pages || !rewrite_unplug_all ||
+// special case for drbd_transport_rdma: we don't want to apply the "subtle
+// breakage" logic there
+@ rdma_special_case @
+identifier x;
+@@
+static struct drbd_transport_class x = {
+	.name = "rdma",
+...
+};
+
+
+@ script:python depends on !rdma_special_case &&
+			    (!add_maybe_kick_alloc_pages || !rewrite_unplug_all ||
 			    !add_maybe_kick_submit_pr ||
 			    !add_kick_resync_finished || !add_blk_run_queue ||
 			    !add_unplug_fn || !add_kick_do_submit) @
