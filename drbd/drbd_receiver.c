@@ -5274,6 +5274,22 @@ __change_peer_device_state(struct drbd_peer_device *peer_device,
 	return SS_SUCCESS;
 }
 
+static union drbd_state
+sanitize_outdate(struct drbd_peer_device *peer_device,
+		 union drbd_state mask,
+		 union drbd_state val)
+{
+	struct drbd_device *device = peer_device->device;
+	union drbd_state result_mask = mask;
+
+	if (val.pdsk == D_OUTDATED && peer_device->disk_state[NEW] < D_OUTDATED)
+		result_mask.pdsk = 0;
+	if (val.disk == D_OUTDATED && device->disk_state[NEW] < D_OUTDATED)
+		result_mask.disk = 0;
+
+	return result_mask;
+}
+
 /**
  * change_connection_state()  -  change state of a connection and all its peer devices
  *
@@ -5293,13 +5309,17 @@ change_connection_state(struct drbd_connection *connection,
 	enum drbd_state_rv rv;
 	int vnr;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
+	bool is_disconnect;
 
+	is_disconnect = mask.conn && val.conn == C_DISCONNECTING;
 	mask = convert_state(mask);
 	val = convert_state(val);
 retry:
 	begin_state_change(resource, &irq_flags, flags & ~CS_VERBOSE);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		rv = __change_peer_device_state(peer_device, mask, val);
+		union drbd_state l_mask;
+		l_mask = is_disconnect ? sanitize_outdate(peer_device, mask, val) : mask;
+		rv = __change_peer_device_state(peer_device, l_mask, val);
 		if (rv < SS_SUCCESS)
 			goto fail;
 	}
