@@ -1,3 +1,10 @@
+drbd (9.0.22-2) unstable; urgency=low
+
+  * Fix reads on diskless in the presence of IO errors
+  * Fix diskless nodes leaving a quorum enabled cluster
+
+ -- Philipp Reisner <phil@linbit.com>  Mon, 30 Mar 2020 12:03:10 +0100
+
 drbd (9.0.22-1) unstable; urgency=low
 
   * New upstream release

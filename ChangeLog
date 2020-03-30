@@ -3,6 +3,15 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.22-2 (api:genl2/proto:86-116/transport:14)
+--------
+ * fix read requests on diskless nodes that hit a read
+   error on a diskful node; the retry on an other diskful node
+   works, but a bug could lead to a log-storm on the
+   diskless node
+ * fix removal of diskless nodes from clusters with quorum
+   enabled (initiated from the diskless itself)
+
 9.0.22-1 (api:genl2/proto:86-116/transport:14)
 --------
  * introduce locking to avoid connection retries when UUIDs or
