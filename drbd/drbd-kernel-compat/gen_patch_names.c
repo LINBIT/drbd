@@ -296,6 +296,9 @@ int main(int argc, char **argv)
 	patch(1, "allow_kernel_signal", true, false,
 	      COMPAT_HAVE_ALLOW_KERNEL_SIGNAL, "present");
 
+	patch(1, "struct_size", true, false,
+	      COMPAT_HAVE_STRUCT_SIZE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
