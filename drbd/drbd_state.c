@@ -1951,6 +1951,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_conn_state *cstate = connection->cstate;
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
+			enum drbd_role *peer_role = connection->peer_role;
+			bool uuids_match;
 
 			if (repl_state[NEW] < L_ESTABLISHED) {
 				peer_device->resync_susp_peer[NEW] = false;
@@ -2130,6 +2132,40 @@ static void sanitize_state(struct drbd_resource *resource)
 				disk_state[NEW] = D_UP_TO_DATE;
 
 			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
+
+			uuids_match =
+				(peer_device->current_uuid & ~UUID_PRIMARY) ==
+				(drbd_current_uuid(device) & ~UUID_PRIMARY);
+
+			if (peer_role[OLD] == R_UNKNOWN && peer_role[NEW] == R_PRIMARY &&
+			    peer_disk_state[NEW] == D_DISKLESS && disk_state[NEW] >= D_NEGOTIATING) {
+				/* Got connected to a diskless primary */
+				if (uuids_match) {
+					if (device->disk_state[NOW] < D_UP_TO_DATE) {
+						drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
+						disk_state[NEW] = D_UP_TO_DATE;
+					}
+				} else {
+					set_bit(TRY_TO_GET_RESYNC, &device->flags);
+					if (disk_state[NEW] == D_UP_TO_DATE) {
+						drbd_info(peer_device, "Downgrading local disk to D_CONSISTENT since current UUID differs.\n");
+						disk_state[NEW] = D_CONSISTENT;
+						/* This is a "safety net"; it can only happen if fencing and quorum
+						   are both disabled. This alone would be racy, look for
+						   "Do not trust this guy!" (see also may_return_to_up_to_date()) */
+					}
+				}
+			}
+			if (peer_disk_state[OLD] == D_UNKNOWN && peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    role[NEW] == R_PRIMARY && disk_state[NEW] == D_DISKLESS && !uuids_match) {
+				/* Do not trust this guy!
+				   He pretends to be D_UP_TO_DATE, but has a different current UUID. Do not
+				   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
+				   do the same. We need to do it here to avoid that the peer is visible as
+				   D_UP_TO_DATE at all. Otherwise we could ship read requests to it!
+				*/
+				peer_disk_state[NEW] = D_CONSISTENT;
+			}
 		}
 
 		if (resource->res_opts.quorum != QOU_OFF)
@@ -3642,6 +3678,12 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		    may_return_to_up_to_date(device, NOW))
 			try_become_up_to_date = true;
 
+		if (test_bit(TRY_TO_GET_RESYNC, &device->flags)) {
+			/* Got connected to a diskless primary */
+			clear_bit(TRY_TO_GET_RESYNC, &device->flags);
+			drbd_try_to_get_resynced(device);
+		}
+
 		drbd_md_sync_if_dirty(device);
 
 		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
@@ -4950,6 +4992,29 @@ static void __change_cstate_and_outdate(struct drbd_connection *connection,
 	}
 }
 
+void apply_connect(struct drbd_connection *connection, bool commit)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		union drbd_state s = peer_device->connect_state;
+
+		if (s.disk != D_MASK)
+			__change_disk_state(device, s.disk);
+		if (device->disk_state[NOW] != D_NEGOTIATING)
+			__change_repl_state(peer_device, s.conn);
+		__change_peer_disk_state(peer_device, s.pdsk);
+		__change_resync_susp_peer(peer_device, s.peer_isp);
+
+		if (commit) {
+			set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
+			clear_bit(DISCARD_MY_DATA, &peer_device->flags);
+		}
+	}
+}
+
 struct change_cstate_context {
 	struct change_context context;
 	struct drbd_connection *connection;
@@ -4960,12 +5025,13 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 {
 	struct change_cstate_context *cstate_context =
 		container_of(context, struct change_cstate_context, context);
+	struct drbd_connection *connection = cstate_context->connection;
 
 	if (phase == PH_PREPARE) {
 		cstate_context->outdate_what = OUTDATE_NOTHING;
 		if (context->val.conn == C_DISCONNECTING && !(context->flags & CS_HARD)) {
 			cstate_context->outdate_what =
-				outdate_on_disconnect(cstate_context->connection);
+				outdate_on_disconnect(connection);
 			switch(cstate_context->outdate_what) {
 			case OUTDATE_DISKS:
 				context->mask.disk = disk_MASK;
@@ -4980,9 +5046,13 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 			}
 		}
 	}
-	__change_cstate_and_outdate(cstate_context->connection,
+	__change_cstate_and_outdate(connection,
 				    context->val.conn,
 				    cstate_context->outdate_what);
+
+	if (context->val.conn == C_CONNECTED &&
+	    connection->agreed_pro_version >= 117)
+		apply_connect(connection, phase == PH_COMMIT);
 
 	if (phase == PH_COMMIT) {
 		struct drbd_resource *resource = context->resource;
@@ -4997,7 +5067,7 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 	return phase != PH_PREPARE ||
 	       context->val.conn == C_CONNECTED ||
 	       (context->val.conn == C_DISCONNECTING &&
-		connection_has_connected_peer_devices(cstate_context->connection));
+		connection_has_connected_peer_devices(connection));
 }
 
 /**

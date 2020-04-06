@@ -690,24 +690,10 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
-void connect_timer_fn(struct timer_list *t)
-{
-	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
-	struct drbd_resource *resource = connection->resource;
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&resource->req_lock, irq_flags);
-	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
-	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
-}
-
 static void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
-
-	atomic_set(&connection->ap_in_flight, 0);
-	atomic_set(&connection->rs_in_flight, 0);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -726,6 +712,36 @@ static void conn_connect2(struct drbd_connection *connection)
 		kref_put(&device->kref, drbd_destroy_device);
 	}
 	rcu_read_unlock();
+
+}
+
+static bool initial_states_received(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+	bool rv = true;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
+			rv = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
+void connect_timer_fn(struct timer_list *t)
+{
+	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
+	struct drbd_resource *resource = connection->resource;
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&resource->req_lock, irq_flags);
+	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
+	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
 static int connect_work(struct drbd_work *work, int cancel)
@@ -739,6 +755,19 @@ static int connect_work(struct drbd_work *work, int cancel)
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
 
+	if (connection->agreed_pro_version >= 117) {
+		struct net_conf *nc;
+
+		rcu_read_lock();
+		nc = rcu_dereference(connection->transport.net_conf);
+		t = nc->ping_timeo * 4 * HZ/10;
+		rcu_read_unlock();
+		wait_event_interruptible_timeout(connection->ee_wait,
+						 initial_states_received(connection),
+						 t);
+	}
+
+	t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	do {
 		rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE | CS_DONT_RETRY);
 		if (rv != SS_PRIMARY_READER)
@@ -755,7 +784,8 @@ static int connect_work(struct drbd_work *work, int cancel)
 	} while (t > 0);
 
 	if (rv >= SS_SUCCESS) {
-		conn_connect2(connection);
+		if (connection->agreed_pro_version < 117)
+			conn_connect2(connection);
 	} else if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 		if (connection->cstate[NOW] != C_CONNECTING)
 			goto out_put;
@@ -897,7 +927,13 @@ start:
 		goto retry;
 	}
 
+	atomic_set(&connection->ap_in_flight, 0);
+	atomic_set(&connection->rs_in_flight, 0);
+
 	if (connection->agreed_pro_version >= 110) {
+		if (connection->agreed_pro_version >= 117)
+			conn_connect2(connection);
+
 		if (resource->res_opts.node_id < connection->peer_node_id) {
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 11);
@@ -5695,6 +5731,9 @@ retry:
 			__outdate_myself(resource);
 	}
 
+	if (mask.conn && val.conn == C_CONNECTED &&
+	    connection->agreed_pro_version >= 117)
+		apply_connect(connection, flags & CS_PREPARED);
 	rv = end_state_change(resource, &irq_flags);
 out:
 
@@ -6692,17 +6731,17 @@ static int process_twopc(struct drbd_connection *connection,
 		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
 			drbd_md_sync_if_dirty(peer_device->device);
 
-		if (rv >= SS_SUCCESS && !(flags & CS_ABORT)) {
-			if (affected_connection &&
-			    mask.conn == conn_MASK && val.conn == C_CONNECTED)
-				conn_connect2(connection);
-		}
+		if (connection->agreed_pro_version < 117 &&
+		    rv >= SS_SUCCESS && !(flags & CS_ABORT) &&
+		    affected_connection &&
+		    mask.conn == conn_MASK && val.conn == C_CONNECTED)
+			conn_connect2(connection);
 	}
 
 	return 0;
 }
 
-static void try_to_get_resynced(struct drbd_device *device)
+void drbd_try_to_get_resynced(struct drbd_device *device)
 {
 	int best_resync_peer_preference = 0;
 	struct drbd_peer_device *best_peer_device = NULL;
@@ -6744,7 +6783,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	union drbd_state old_peer_state, peer_state;
 	enum drbd_disk_state peer_disk_state, new_disk_state = D_MASK;
 	enum drbd_repl_state new_repl_state;
-	bool peer_was_resync_target, try_to_get_resync = false;
+	bool peer_was_resync_target;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE;
 	int rv;
 
@@ -6944,41 +6983,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			begin_state_chg_flags |= CS_FORCE_RECALC;
 			peer_device->negotiation_result = new_repl_state;
 		}
-	} else if (peer_state.role == R_PRIMARY &&
-		   peer_device->disk_state[NOW] == D_UNKNOWN && peer_state.disk == D_DISKLESS &&
-		   device->disk_state[NOW] >= D_NEGOTIATING) {
-		/* I got connected to a diskless primary */
-		if ((peer_device->current_uuid & ~UUID_PRIMARY) ==
-		    (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
-			if (device->disk_state[NOW] < D_UP_TO_DATE) {
-				drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
-				new_disk_state = D_UP_TO_DATE;
-			}
-		} else {
-			/* Try to get a resync from some other node that is D_UP_TO_DATE. */
-			try_to_get_resync = true;
-
-			if (device->disk_state[NOW] == D_UP_TO_DATE) {
-				drbd_info(peer_device, "Downgrading local disk to D_CONSISTENT since current UUID differs.\n");
-				new_disk_state = D_CONSISTENT;
-				/* This is a "safety net"; it can only happen if fencing and quorum
-				   are both disabled. This alone would be racy, look for
-				   "Do not trust this guy!" (see also may_return_to_up_to_date()) */
-			}
-		}
-	} else if (resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] == D_DISKLESS &&
-		   peer_disk_state == D_UP_TO_DATE &&
-		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
-		   (device->exposed_data_uuid & ~UUID_PRIMARY)) {
-		/* Do not trust this guy!
-		   He pretends to be D_UP_TO_DATE, but has a different current UUID. Do not
-		   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
-		   do the same. We need to do it here to avoid that the peer is visible as
-		   D_UP_TO_DATE at all. Otherwise we could ship read requests to it!
-		 */
-		peer_disk_state = D_CONSISTENT;
 	}
-
 	/* This is after the point where we did UUID comparison and joined with the
 	   diskless case again. Releasing uuid_sem here */
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
@@ -7006,6 +7011,18 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	if (connection->cstate[NOW] == C_CONNECTING) {
+		/* Since protocol 117 state comes before change on the cstate */
+		peer_device->connect_state = (union drbd_state)
+			{ { .disk = new_disk_state,
+			    .conn = new_repl_state,
+			    .peer = peer_state.role,
+			    .pdsk = peer_disk_state,
+			    .peer_isp = peer_state.aftr_isp | peer_state.user_isp } };
+
+		wake_up(&connection->ee_wait);
+		return 0;
+	}
 
 	spin_lock_irq(&resource->req_lock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
@@ -7030,7 +7047,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	rv = end_state_change_locked(resource);
 	new_repl_state = peer_device->repl_state[NOW];
-	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
+	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags); /* Only relevant for agreed_pro_version < 117 */
 	spin_unlock_irq(&resource->req_lock);
 
 	if (rv < SS_SUCCESS)
@@ -7047,10 +7064,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	clear_bit(DISCARD_MY_DATA, &peer_device->flags);
-
-	if (try_to_get_resync)
-		try_to_get_resynced(device);
+	clear_bit(DISCARD_MY_DATA, &peer_device->flags); /* Only relevant for agreed_pro_version < 117 */
 
 	drbd_md_sync(device); /* update connected indicator, effective_size, ... */
 
