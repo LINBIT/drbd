@@ -119,7 +119,8 @@ else
   .PHONY: compat.h
   compat.h:
 	@touch dummy-for-compat-h.c
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) dummy-for-compat-h.o
+	@mkdir .tmp_versions
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
 
   kbuild: fix-tar-timestamps
 	@rm -f .drbd_kernelrelease*
