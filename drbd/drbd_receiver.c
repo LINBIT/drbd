@@ -675,12 +675,8 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	err = drbd_send_sync_param(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
-	if (!err) {
-		down_read_non_owner(&device->uuid_sem);
-		set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
-
+	if (!err)
 		err = drbd_send_uuids(peer_device, 0, weak_nodes);
-	}
 	if (!err) {
 		set_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		err = drbd_send_current_state(peer_device);
@@ -717,7 +713,13 @@ static void conn_connect2(struct drbd_connection *connection)
 		kref_get(&device->kref);
 		/* connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
+
+		down_read_non_owner(&device->uuid_sem);
+		set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
+		/* since drbd_connected() is also called from drbd_create_device()
+		   aquire lock here before calling drbd_connected(). */
 		drbd_connected(peer_device);
+
 		rcu_read_lock();
 		kref_put(&device->kref, drbd_destroy_device);
 	}
