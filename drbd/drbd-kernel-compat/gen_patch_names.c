@@ -299,6 +299,18 @@ int main(int argc, char **argv)
 	patch(1, "struct_size", true, false,
 	      COMPAT_HAVE_STRUCT_SIZE, "present");
 
+#if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
+	/* good, newest version */
+#elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
+	/* older version */
+	patch(1, "generic_start_io_acct", true, false,
+	      NO, "has_four_params");
+#else
+	/* not present at all */
+	patch(1, "generic_start_io_acct", true, false,
+	      NO, "present");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

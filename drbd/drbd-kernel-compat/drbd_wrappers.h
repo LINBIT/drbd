@@ -394,52 +394,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #define list_next_rcu(list)	(*((struct list_head **)(&(list)->next)))
 #endif
 
-#if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
-/* void generic_start_io_acct(struct request_queue *q,
- *		int rw, unsigned long sectors, struct hd_struct *part); */
-#elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
-/* void generic_start_io_acct(
- *		int rw, unsigned long sectors, struct hd_struct *part); */
-#define generic_start_io_acct(q, rw, sect, part) generic_start_io_acct(rw, sect, part)
-#define generic_end_io_acct(q, rw, part, start) generic_end_io_acct(rw, part, start)
-
-#elif defined(__disk_stat_inc)
-/* too old, we don't care */
-#warning "io accounting disabled"
-#else
-
-static inline void generic_start_io_acct(struct request_queue *q,
-		int rw, unsigned long sectors, struct hd_struct *part)
-{
-	int cpu;
-
-	cpu = part_stat_lock();
-	part_round_stats(cpu, part);
-	part_stat_inc(cpu, part, ios[rw]);
-	part_stat_add(cpu, part, sectors[rw], sectors);
-	(void) cpu; /* The macro invocations above want the cpu argument, I do not like
-		       the compiler warning about cpu only assigned but never used... */
-	/* part_inc_in_flight(part, rw); */
-	{ BUILD_BUG_ON(sizeof(atomic_t) != sizeof(part->in_flight[0])); }
-	atomic_inc((atomic_t*)&part->in_flight[rw]);
-	part_stat_unlock();
-}
-
-static inline void generic_end_io_acct(struct request_queue *q,
-		int rw, struct hd_struct *part, unsigned long start_time)
-{
-	unsigned long duration = jiffies - start_time;
-	int cpu;
-
-	cpu = part_stat_lock();
-	part_stat_add(cpu, part, ticks[rw], duration);
-	part_round_stats(cpu, part);
-	/* part_dec_in_flight(part, rw); */
-	atomic_dec((atomic_t*)&part->in_flight[rw]);
-	part_stat_unlock();
-}
-#endif /* __disk_stat_inc, COMPAT_HAVE_GENERIC_START_IO_ACCT ... */
-
 #ifndef COMPAT_HAVE_SIMPLE_POSITIVE
 #include <linux/dcache.h>
 static inline int simple_positive(struct dentry *dentry)
