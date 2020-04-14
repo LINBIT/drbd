@@ -554,7 +554,7 @@ enum peer_device_flag {
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
 	INITIAL_STATE_SENT,
-	INITIAL_STATE_RECEIVED,
+	INITIAL_STATE_PROCESSED,
 	RECONCILIATION_RESYNC,
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	SEND_STATE_AFTER_AHEAD,
