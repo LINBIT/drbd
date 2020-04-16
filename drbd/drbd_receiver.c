@@ -6919,7 +6919,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 		if (new_repl_state == -1)
 			return -EIO; /* retry connect */
-		if (new_repl_state == -2) {
+		else if (new_repl_state == -2) {
 			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				new_repl_state = L_NEG_NO_RESULT;
@@ -6988,6 +6988,23 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 	}
 
+	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
+	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
+	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+		unsigned long irq_flags;
+
+		/* Do not allow RESEND for a rebooted peer. We can only allow this
+		   for temporary network outages! */
+		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
+		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
+		drbd_uuid_new_current(device, false);
+		begin_state_change(resource, &irq_flags, CS_HARD);
+		__change_cstate(connection, C_PROTOCOL_ERROR);
+		__change_io_susp_user(resource, false);
+		end_state_change(resource, &irq_flags);
+		return -EIO;
+	}
+
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 
 	spin_lock_irq(&resource->req_lock);
@@ -7010,26 +7027,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	repl_state = peer_device->repl_state;
 	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
-	if (peer_device->disk_state[NEW] == D_CONSISTENT &&
-	    drbd_suspended(device) &&
-	    repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] == L_ESTABLISHED &&
-	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-		unsigned long irq_flags;
 
-		/* Do not allow RESEND for a rebooted peer. We can only allow this
-		   for temporary network outages! */
-		abort_state_change_locked(resource);
-		spin_unlock_irq(&resource->req_lock);
-
-		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-		drbd_uuid_new_current(device, false);
-		begin_state_change(resource, &irq_flags, CS_HARD);
-		__change_cstate(connection, C_PROTOCOL_ERROR);
-		__change_io_susp_user(resource, false);
-		end_state_change(resource, &irq_flags);
-		return -EIO;
-	}
 	rv = end_state_change_locked(resource);
 	new_repl_state = peer_device->repl_state[NOW];
 	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
