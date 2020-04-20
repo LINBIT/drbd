@@ -2489,6 +2489,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 					create_new_uuid = true;
 			}
 
+			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
+			    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
+				create_new_uuid = true;
+
 			if (peer_disk_state[NEW] < D_UP_TO_DATE && test_bit(GOT_NEG_ACK, &peer_device->flags))
 				clear_bit(GOT_NEG_ACK, &peer_device->flags);
 		}
@@ -3510,6 +3514,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
 				   we know that a write failed on that node. Therefore we need to create
 				   the new UUID right now (not wait for the next write to come in) */
+				drbd_uuid_new_current(device, false);
+			}
+
+			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
+			    role[NEW] == R_PRIMARY && test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
 				drbd_uuid_new_current(device, false);
 			}
 
