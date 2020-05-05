@@ -3,14 +3,22 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.22-2 (api:genl2/proto:86-116/transport:14)
+9.0.23-0rc1 (api:genl2/proto:86-116/transport:14)
 --------
- * fix read requests on diskless nodes that hit a read
-   error on a diskful node; the retry on an other diskful node
-   works, but a bug could lead to a log-storm on the
-   diskless node
- * fix removal of diskless nodes from clusters with quorum
-   enabled (initiated from the diskless itself)
+ * fix a deadlock (regression introduced in 9.0.22) that can be
+   triggered if a minor is added into a resource with an established
+   connection
+ * generate new UUID immediately if a primary loses a disk due to an IO
+   error
+ * fix read requests on diskless nodes that hit a read error on a
+   diskful node; the retry on another diskful node works, but a bug
+   could lead to a log-storm on the diskless node
+ * fix removal of diskless nodes from clusters with quorum enabled
+   (initiated from the diskless itself)
+ * fix wrongly declined state changes if connections are established
+   concurrently
+ * use rwsem _non_owner() operations to avoid false positives of
+   lock-dep when running on a debug kernel
 
 9.0.22-1 (api:genl2/proto:86-116/transport:14)
 --------

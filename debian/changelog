@@ -1,3 +1,9 @@
+drbd (9.0.23~rc1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Philipp Reisner <phil@linbit.com>  Tue, 05 May 2020 12:03:10 +0100
+
 drbd (9.0.22-2) unstable; urgency=low
 
   * Fix reads on diskless in the presence of IO errors
