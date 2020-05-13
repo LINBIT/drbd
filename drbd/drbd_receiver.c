@@ -4098,6 +4098,17 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		if (drbd_bitmap_io(device, &drbd_bmio_set_n_write, "set_n_write from sync_handshake",
 					BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
 			return -1;
+
+		if (strategy == SYNC_TARGET_SET_BITMAP &&
+		    drbd_current_uuid(device) == UUID_JUST_CREATED) {
+			/* prepare to continue an interrupted initial resync later */
+			if (get_ldev(device)) {
+				const int my_node_id = device->resource->res_opts.node_id;
+				_drbd_uuid_set_current(device, peer_device->bitmap_uuids[my_node_id]);
+				drbd_print_uuids(peer_device, "setting UUIDs to");
+				put_ldev(device);
+			}
+		}
 	}
 	return 0;
 }
