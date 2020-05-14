@@ -19,7 +19,5 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 
 void foo(void)
 {
-	struct request_queue *q = NULL;
-	blk_queue_make_request(q, drbd_make_request);
 	BUILD_BUG_ON(!(__same_type(drbd_make_request, make_request_fn)));
 }
