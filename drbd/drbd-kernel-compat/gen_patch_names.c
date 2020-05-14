@@ -311,6 +311,9 @@ int main(int argc, char **argv)
 	      NO, "present");
 #endif
 
+	patch(1, "part_stat_h", true, false,
+	      COMPAT_HAVE_PART_STAT_H, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
