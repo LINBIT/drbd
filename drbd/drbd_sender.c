@@ -2240,10 +2240,6 @@ static void go_diskless(struct drbd_device *device)
 static int do_md_sync(struct drbd_device *device)
 {
 	drbd_warn(device, "md_sync_timer expired! Worker calls drbd_md_sync().\n");
-#ifdef DRBD_DEBUG_MD_SYNC
-	drbd_warn(device, "last md_mark_dirty: %s:%u\n",
-		device->last_md_mark_dirty.func, device->last_md_mark_dirty.line);
-#endif
 	drbd_md_sync(device);
 	return 0;
 }
