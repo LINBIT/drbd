@@ -1411,6 +1411,7 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
+	const int my_node_id = device->resource->res_opts.node_id;
 	struct drbd_peer_md *peer_md;
 	struct p_uuids110 *p;
 	bool sent_one_unallocated;
@@ -1440,7 +1441,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		bool send_this =
 			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS;
-		if (!send_this && !sent_one_unallocated) {
+		if (!send_this && !sent_one_unallocated &&
+		    i != my_node_id && i != peer_device->node_id) {
 			send_this = true;
 			sent_one_unallocated = true;
 		}
