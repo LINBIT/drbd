@@ -36,6 +36,8 @@ print_version_and_exit() {
 	exit 0
 }
 
+HOW_DEPSONLY=deps_only
+
 HOW_REPOFILE=repo_file; HOW_HASH=node_hash; HOW_FROMSRC=compile; HOW_FROMSHIPPED=shipped_modules
 how_to_get() {
 	local repo="$1"
@@ -188,7 +190,29 @@ load_from_ram() {
 	insmod ./drbd_transport_tcp.ko
 }
 
+modprobe_deps() {
+	# we are not too strict about these, not all are required everywhere
+	#
+	# libcrc32c: dependency for DRBD
+	# nvmet_rdma, nvme_rdma: LINSTOR NVME layer
+	# loop: LINSTOR when using loop devices as backing disks
+	# dm_writecache: LINSTOR writecache layer
+	# dm_cache: LINSTOR cache layer
+	# dm_thin_pool: LINSTOR thinly provisioned storage
+
+	local s;
+	for m in libcrc32c nvmet_rdma nvme_rdma loop dm_writecache dm_cache dm_thin_pool; do
+		modprobe "$m" 2>/dev/null && s=success || s=failed
+		debug "Loading ${m}: ${s}"
+	done
+
+	return 0
+}
+
 ### main
+modprobe_deps
+[[ $LB_HOW == "$HOW_DEPSONLY" ]] && { debug "dependencies loading only, exiting now"; exit 0; }
+
 grep -q '^drbd' /proc/modules && echo "DRBD module is already loaded" && print_version_and_exit
 
 pkgdir=/tmp/pkg
@@ -225,8 +249,6 @@ case $how_get in
 		;;
 	*) die "$how_get" ;;
 esac
-
-modprobe libcrc32c
 
 how_load=$(how_to_load) || exit 1
 debug "Detected load method: \"$how_load\""
