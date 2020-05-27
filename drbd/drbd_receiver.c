@@ -7005,9 +7005,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-		mutex_lock(&resource->conf_update);
 		drbd_uuid_new_current(device, false);
-		mutex_unlock(&resource->conf_update);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);

@@ -4714,6 +4714,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 	struct drbd_peer_device *peer_device;
 	u64 got_new_bitmap_uuid, weak_nodes, val, old_current_uuid;
 	int err;
+	u64 im;
 
 	down_write(&device->uuid_sem);
 	spin_lock_irq(&device->ldev->md.uuid_lock);
@@ -4749,7 +4750,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 	if (!send)
 		goto out;
 
-	for_each_peer_device(peer_device, device) {
+	for_each_peer_device_ref(peer_device, im, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
 	}
@@ -4832,7 +4833,6 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  *
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
- * The caller must hold adm_mutex or conf_update
  */
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
