@@ -2317,7 +2317,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
-		bool one_peer_disk_up_to_date[2] = { };
 		bool create_new_uuid = false;
 
 		if (disk_state[OLD] != D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
@@ -2350,18 +2349,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		for_each_peer_device(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			struct drbd_connection *connection = peer_device->connection;
-			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
-			enum which_state which;
 
 			/* Wake up role changes, that were delayed because of connection establishing */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] != L_OFF &&
 			    all_peer_devices_connected(connection))
 				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-
-			for (which = OLD; which <= NEW; which++) {
-				if (peer_disk_state[which] == D_UP_TO_DATE)
-					one_peer_disk_up_to_date[which] = true;
-			}
 		}
 
 		for_each_peer_device(peer_device, device) {
@@ -2484,7 +2476,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (lost_contact_to_peer_data(peer_disk_state)) {
 				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
-				    (disk_state[NEW] == D_UP_TO_DATE || one_peer_disk_up_to_date[NEW]))
+				    drbd_data_accessible(device, NEW))
 					create_new_uuid = true;
 
 				if (connection->agreed_pro_version < 110 &&
@@ -2499,7 +2491,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
-			    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
+			    role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW))
 				create_new_uuid = true;
 
 			if (peer_disk_state[NEW] < D_UP_TO_DATE && test_bit(GOT_NEG_ACK, &peer_device->flags))
@@ -2532,7 +2524,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		}
 
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
-		    role[NEW] == R_PRIMARY && one_peer_disk_up_to_date[NEW])
+		    role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW))
 			create_new_uuid = true;
 
 		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
