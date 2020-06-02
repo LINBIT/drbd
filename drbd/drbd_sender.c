@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/scatterlist.h>
+#include <linux/overflow.h>
 
 #include "drbd_int.h"
 #include "drbd_protocol.h"
