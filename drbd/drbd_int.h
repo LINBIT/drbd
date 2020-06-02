@@ -1561,6 +1561,7 @@ extern int drbd_bitmap_io_from_worker(struct drbd_device *,
 extern int drbd_bmio_set_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_clear_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
 extern int drbd_bmio_set_all_n_write(struct drbd_device *device, struct drbd_peer_device *) __must_hold(local);
+extern int drbd_bmio_set_allocated_n_write(struct drbd_device *,struct drbd_peer_device *) __must_hold(local);
 extern bool drbd_device_stable(struct drbd_device *device, u64 *authoritative);
 extern void drbd_flush_peer_acks(struct drbd_resource *resource);
 extern void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
