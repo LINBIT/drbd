@@ -111,6 +111,15 @@ else
     echo "  be patient, may take up to 10 minutes"
     echo "  if it is in the server side cache it might only take a second"
     echo "  SPAAS    $chksum"
+
+    # check if SPAAS is even reachable
+    if ! curl -fsS https://drbd.io:2020/api/v1/hello; then
+        echo "  ERROR: SPAAS is not reachable! Please check if your network"
+        echo "  configuration or some firewall prohibits access to "
+        echo "  https://drbd.io:2020."
+        exit 1
+    fi
+
     REL_VERSION=$(sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' linux/drbd_config.h)
     rm -f $compat_patch.tmp.header $compat_patch.tmp
     if ! base64 $incdir/compat.h |
