@@ -35,7 +35,6 @@
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
-#include <linux/part_stat.h>
 
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
@@ -2294,13 +2293,6 @@ static inline void drbd_chk_io_error_(struct drbd_device *device,
 		write_unlock_irqrestore(&device->resource->state_rwlock,
 					flags);
 	}
-}
-
-static inline int drbd_backing_bdev_events(struct drbd_device *device)
-{
-	struct hd_struct *part = &device->ldev->backing_bdev->bd_contains->bd_disk->part0;
-	return (int)part_stat_read(part, sectors[0])
-	     + (int)part_stat_read(part, sectors[1]);
 }
 
 /**
