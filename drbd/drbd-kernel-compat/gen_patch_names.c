@@ -112,6 +112,9 @@ int main(int argc, char **argv)
 	patch(1, "req_hardbarrier", false, true,
 	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
 
+	patch(1, "blk_queue_make_request", false, true,
+	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
+
 #ifndef COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST
 	patch(2, "make_request", false, false,
 	      COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST, "is_blk_qc_t",
