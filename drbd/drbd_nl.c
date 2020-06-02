@@ -3478,7 +3478,7 @@ static int adjust_resync_fifo(struct drbd_peer_device *peer_device,
 			      struct fifo_buffer **pp_old_plan)
 {
 	struct fifo_buffer *old_plan, *new_plan = NULL;
-	int fifo_size;
+	unsigned int fifo_size;
 
 	fifo_size = (conf->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ;
 
