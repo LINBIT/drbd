@@ -234,7 +234,7 @@ if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load == "$HOW_INSTALL" ]]; then
 	cd "$pkgdir" || die "Could not cd to $pkgdir"
 	cd drbd-* || die "Could not cd to drbd src dir"
 	make install
-	modprobe drbd
+	modprobe drbd usermode_helper=disabled
 	modprobe drbd_transport_tcp
 else
 	load_from_ram "$pkgdir" "$kodir"
