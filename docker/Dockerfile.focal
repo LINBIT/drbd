@@ -1,0 +1,16 @@
+FROM ubuntu:focal
+
+# note: py2 setuptools are a bit smaller than the py3 ones
+RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch curl && \
+	apt-get install -y python-setuptools && apt-get clean && \
+	cd /tmp && wget https://github.com/LINBIT/python-lbdist/archive/master.tar.gz && \
+	tar xvf master.tar.gz && cd python-lbdist-master && python2 setup.py install && \
+	rm -rf python-lbdist-master master.tar.gz
+
+COPY /drbd.tar.gz /
+
+COPY /pkgs /pkgs
+
+COPY /entry.sh /
+RUN chmod +x /entry.sh
+ENTRYPOINT /entry.sh

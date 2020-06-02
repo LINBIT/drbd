@@ -30,6 +30,7 @@ DOCKERREGISTRY = drbd.io
 DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9-rhel7
 DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9-rhel8
 DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9-bionic
+DOCKERREGPATH_FOCAL = $(DOCKERREGISTRY)/drbd9-focal
 
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
@@ -291,7 +292,7 @@ km-deb: check-submods distclean drbd/.drbd_git_revision
 	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"
 endif
 
-.PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage
+.PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage
 dockerimage.rhel7:
 	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) .
 	docker tag $(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest
@@ -304,11 +305,16 @@ dockerimage.bionic:
 	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC):$(TAG) .
 	docker tag $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest
 
-dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic
+dockerimage.focal:
+	cd docker && docker build -f Dockerfile.focal -t $(DOCKERREGPATH_FOCAL):$(TAG) .
+	docker tag $(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest
+
+dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal
 
 # used for --sync in lbbuild to decide which containers to push to which registry
 dockerpath:
 	@echo $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest \
+		$(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest \
 		$(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest \
 		$(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
 
