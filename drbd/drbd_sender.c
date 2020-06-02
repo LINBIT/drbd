@@ -2341,11 +2341,8 @@ void drbd_check_peers_new_current_uuid(struct drbd_device *device)
 
 	drbd_check_peers(resource);
 
-	if (device->have_quorum[NOW] && drbd_data_accessible(device, NOW)) {
-		mutex_lock(&resource->conf_update);
+	if (device->have_quorum[NOW] && drbd_data_accessible(device, NOW))
 		drbd_uuid_new_current(device, false);
-		mutex_unlock(&resource->conf_update);
-	}
 }
 
 static void make_new_current_uuid(struct drbd_device *device)

@@ -3115,13 +3115,18 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 
 	/* case1: The outdate peer handler is successful: */
 	if (all_peer_disks_outdated) {
-		mutex_lock(&resource->conf_update);
+		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
-			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+				kref_get(&device->kref);
+				rcu_read_unlock();
 				drbd_uuid_new_current(device, false);
+				kref_put(&device->kref, drbd_destroy_device);
+				rcu_read_lock();
+			}
 		}
-		mutex_unlock(&resource->conf_update);
+		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
 		_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		__change_io_susp_fencing(connection, false);
