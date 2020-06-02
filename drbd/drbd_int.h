@@ -1333,12 +1333,6 @@ struct drbd_device {
 	unsigned long last_reattach_jif;
 	struct timer_list md_sync_timer;
 	struct timer_list request_timer;
-#ifdef DRBD_DEBUG_MD_SYNC
-	struct {
-		unsigned int line;
-		const char* func;
-	} last_md_mark_dirty;
-#endif
 
 	enum drbd_disk_state disk_state[2];
 	wait_queue_head_t misc_wait;
@@ -1597,13 +1591,7 @@ extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);
 extern void drbd_md_set_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
 extern void drbd_md_clear_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
 extern bool drbd_md_test_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
-#ifndef DRBD_DEBUG_MD_SYNC
 extern void drbd_md_mark_dirty(struct drbd_device *device);
-#else
-#define drbd_md_mark_dirty(m)	drbd_md_mark_dirty_(m, __LINE__ , __func__ )
-extern void drbd_md_mark_dirty_(struct drbd_device *device,
-		unsigned int line, const char *func);
-#endif
 extern void drbd_queue_bitmap_io(struct drbd_device *,
 				 int (*io_fn)(struct drbd_device *, struct drbd_peer_device *),
 				 void (*done)(struct drbd_device *, struct drbd_peer_device *, int),
