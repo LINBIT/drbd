@@ -173,6 +173,7 @@ else
 
   sources := $(filter-out drbd_strings.c drbd_buildtag.c,$(wildcard *.c))
   sources += $(wildcard drbd-headers/linux/*.h)
+  sources += drbd_int.h
 
   $(compat_patches): $(sources)
 	@. ./drbd-kernel-compat/gen_compat_patch.sh $@ $^
