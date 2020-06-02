@@ -261,6 +261,8 @@ int main(int argc, char **argv)
 	patch(1, "rb_declare_callbacks_max", true, false,
 	      COMPAT_HAVE_RB_DECLARE_CALLBACKS_MAX, "present");
 
+	patch(1, "struct_size", true, false,
+	      COMPAT_HAVE_STRUCT_SIZE, "present");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
