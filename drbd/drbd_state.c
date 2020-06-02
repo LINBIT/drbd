@@ -1516,6 +1516,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	bool in_handshake = false;
 	int vnr;
 
 	/* See drbd_state_sw_errors in drbd_strings.c */
@@ -1533,6 +1534,22 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	}
 
 	for_each_connection_rcu(connection, resource) {
+		struct drbd_peer_device *peer_device;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+			    !test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags)) {
+				in_handshake = true;
+				goto handshake_found;
+			}
+		}
+	}
+handshake_found:
+
+	if (in_handshake && role[OLD] != role[NEW])
+		return SS_IN_TRANSIENT_STATE;
+
+	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
 		struct net_conf *nc;
@@ -1546,19 +1563,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		if (cstate[NEW] == C_DISCONNECTING && cstate[OLD] == C_UNCONNECTED)
 			return SS_IN_TRANSIENT_STATE;
-
-		/* While establishing a connection only allow cstate to change.
-		   Delay/refuse role changes, detach attach etc... */
-		if (!(cstate[OLD] == C_CONNECTED ||
-		     (cstate[NEW] == C_CONNECTED && cstate[OLD] == C_CONNECTING))) {
-			struct drbd_peer_device *peer_device;
-
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
-				    !test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags))
-					return SS_IN_TRANSIENT_STATE;
-			}
-		}
 
 		nc = rcu_dereference(connection->transport.net_conf);
 		two_primaries = nc ? nc->two_primaries : false;
@@ -1578,6 +1582,11 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		bool any_disk_up_to_date[2];
 		enum which_state which;
 		int nr_negotiating = 0;
+
+		if (in_handshake &&
+		    ((disk_state[OLD] < D_ATTACHING && disk_state[NEW] == D_ATTACHING) ||
+		     (disk_state[OLD] > D_DETACHING && disk_state[NEW] == D_DETACHING)))
+			return SS_IN_TRANSIENT_STATE;
 
 		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_rw_cnt)
 			return SS_DEVICE_IN_USE;
