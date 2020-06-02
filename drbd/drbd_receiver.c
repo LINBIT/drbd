@@ -846,8 +846,6 @@ start:
 		}
 	}
 
-	transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
-
 	discard_my_data = test_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 	if (__drbd_send_protocol(connection, P_PROTOCOL) == -EOPNOTSUPP)
@@ -6545,8 +6543,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	/* This is after the point where we did UUID comparison and joined with the
 	   diskless case again. Releasing uuid_sem here */
-	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
+		struct drbd_transport *transport = &connection->transport;
 		up_read_non_owner(&device->uuid_sem);
+		/* Last packet of handshake received, disarm receive timeout */
+		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
+	}
 
 	write_lock_irq(&resource->state_rwlock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
