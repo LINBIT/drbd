@@ -3527,7 +3527,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	init_rwsem(&device->uuid_sem);
 
-	q = blk_alloc_queue(GFP_KERNEL);
+	q = blk_alloc_queue(drbd_make_request, NUMA_NO_NODE);
 	if (!q)
 		goto out_no_q;
 	device->rq_queue = q;
@@ -3551,7 +3551,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	init_bdev_info(q->backing_dev_info, drbd_congested, device);
 
-	blk_queue_make_request(q, drbd_make_request);
 	blk_queue_write_cache(q, true, true);
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
