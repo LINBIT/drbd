@@ -659,7 +659,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err) {
-		down_read(&device->uuid_sem);
+		down_read_non_owner(&device->uuid_sem);
 		set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
 
 		err = drbd_send_uuids(peer_device, 0, weak_nodes);
@@ -6529,7 +6529,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	/* This is after the point where we did UUID comparison and joined with the
 	   diskless case again. Releasing uuid_sem here */
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
-		up_read(&device->uuid_sem);
+		up_read_non_owner(&device->uuid_sem);
 
 	write_lock_irq(&resource->state_rwlock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
