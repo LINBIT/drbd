@@ -35,6 +35,7 @@
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd.h>
 #include <linux/drbd_config.h>
+#include <linux/part_stat.h>
 
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
