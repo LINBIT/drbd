@@ -3813,6 +3813,7 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	int i, j;
 	bool initial_handshake;
 	bool uuid_matches_initial;
+	bool flags_matches_initial;
 
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
@@ -3824,13 +3825,18 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	initial_handshake =
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
 		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-	uuid_matches_initial =
-		self == (peer_device->comm_current_uuid & ~UUID_PRIMARY) &&
-		local_uuid_flags == peer_device->comm_uuid_flags;
-	if (initial_handshake && !uuid_matches_initial) {
+	uuid_matches_initial = self == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
+	flags_matches_initial = local_uuid_flags == peer_device->comm_uuid_flags;
+	if (initial_handshake && (!uuid_matches_initial || !flags_matches_initial)) {
 		*rule_nr = 9;
-		drbd_warn(peer_device, "My current UUID/flags changed during "
-			  "handshake. Retry connecting.\n");
+		if (!uuid_matches_initial)
+			drbd_warn(peer_device, "My current UUID changed during "
+				  "handshake. Retry connecting.\n");
+		if (!flags_matches_initial)
+			drbd_warn(peer_device, "My uuid_flags changed from 0x%llX to 0x%llX during "
+				  "handshake. Retry connecting.\n",
+				  (unsigned long long)peer_device->comm_uuid_flags,
+				  (unsigned long long)local_uuid_flags);
 		return RETRY_CONNECT;
 	}
 
