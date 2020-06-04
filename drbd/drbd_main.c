@@ -2881,7 +2881,7 @@ Enomem:
 static void free_peer_device(struct drbd_peer_device *peer_device)
 {
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
-		up_read(&peer_device->device->uuid_sem);
+		up_read_non_owner(&peer_device->device->uuid_sem);
 
 	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
