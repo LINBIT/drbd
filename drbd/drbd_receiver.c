@@ -4103,15 +4103,24 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		drbd_bm_slot_unlock(peer_device);
 		drbd_resume_io(device);
 	} else if (strategy == SYNC_SOURCE_SET_BITMAP || strategy == SYNC_TARGET_SET_BITMAP) {
+		int (*io_func)(struct drbd_device *, struct drbd_peer_device *);
+		int err;
+
 		if (strategy == SYNC_TARGET_SET_BITMAP &&
 		    drbd_current_uuid(device) == UUID_JUST_CREATED &&
 		    is_resync_running(device))
 			return 0;
 
-		drbd_info(peer_device,
-			  "Writing the whole bitmap, full sync required after drbd_sync_handshake.\n");
-		if (drbd_bitmap_io(device, &drbd_bmio_set_allocated_n_write, "set_n_write from sync_handshake",
-				   BM_LOCK_CLEAR | BM_LOCK_BULK, NULL))
+		if (drbd_current_uuid(device) == UUID_JUST_CREATED) {
+			drbd_info(peer_device, "Setting and writing the whole bitmap, fresh node\n");
+			io_func = &drbd_bmio_set_allocated_n_write;
+		} else {
+			drbd_info(peer_device, "Setting and writing one bitmap slot, after drbd_sync_handshake\n");
+			io_func = &drbd_bmio_set_n_write;
+		}
+		err = drbd_bitmap_io(device, io_func, "set_n_write sync_handshake",
+				     BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
+		if (err)
 			return -1;
 	}
 	return 0;
