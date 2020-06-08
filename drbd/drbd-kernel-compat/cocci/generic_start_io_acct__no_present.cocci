@@ -36,4 +36,4 @@ typedef atomic_t;
 +	part_stat_unlock();
 +}
 
-static void _drbd_start_io_acct(...) { ... }
+drbd_req_new(...) { ... }

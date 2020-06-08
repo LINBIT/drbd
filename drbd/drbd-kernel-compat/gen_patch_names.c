@@ -250,6 +250,24 @@ int main(int argc, char **argv)
 	patch(1, "bio_bi_opf", true, false,
 	      COMPAT_HAVE_BIO_BI_OPF, "present");
 
+#if defined(COMPAT_HAVE_BIO_START_IO_ACCT)
+	/* good, newest version */
+#else
+	patch(1, "bio_start_io_acct", true, false,
+	      NO, "present");
+# if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
+	/* older version, 4 params */
+# elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
+	/* even, older version, 3 params */
+	patch(1, "generic_start_io_acct", true, false,
+	      NO, "has_four_params");
+# else
+	/* not present at all */
+	patch(1, "generic_start_io_acct", true, false,
+	      NO, "present");
+# endif
+#endif
+
 #if defined(COMPAT_HAVE_BIO_RW)
 	/* This is the oldest supported version, using BIO_*. Read/write
 	 * direction is controlled by a single bit (BIO_RW). */
@@ -301,18 +319,6 @@ int main(int argc, char **argv)
 
 	patch(1, "struct_size", true, false,
 	      COMPAT_HAVE_STRUCT_SIZE, "present");
-
-#if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
-	/* good, newest version */
-#elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
-	/* older version */
-	patch(1, "generic_start_io_acct", true, false,
-	      NO, "has_four_params");
-#else
-	/* not present at all */
-	patch(1, "generic_start_io_acct", true, false,
-	      NO, "present");
-#endif
 
 	patch(1, "part_stat_h", true, false,
 	      COMPAT_HAVE_PART_STAT_H, "present");
