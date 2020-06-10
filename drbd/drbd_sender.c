@@ -2052,6 +2052,22 @@ void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_stat
 
 skip_helper:
 
+	if (side == L_SYNC_TARGET && drbd_current_uuid(device) == UUID_JUST_CREATED) {
+		/* prepare to continue an interrupted initial resync later */
+		if (get_ldev(device)) {
+			const int my_node_id = device->resource->res_opts.node_id;
+			u64 peer_bitmap_uuid = peer_device->bitmap_uuids[my_node_id];
+
+			if (peer_bitmap_uuid) {
+				down_write(&device->uuid_sem);
+				_drbd_uuid_set_current(device, peer_bitmap_uuid);
+				up_write(&device->uuid_sem);
+				drbd_print_uuids(peer_device, "setting UUIDs to");
+			}
+			put_ldev(device);
+		}
+	}
+
 	if (down_trylock(&device->resource->state_sem)) {
 		/* Retry later and let the worker make progress in the
 		 * meantime; two-phase commits depend on that.  */
@@ -2061,6 +2077,7 @@ skip_helper:
 		add_timer(&peer_device->start_resync_timer);
 		return;
 	}
+
 	lock_all_resources();
 	clear_bit(B_RS_H_DONE, &peer_device->flags);
 	if (connection->cstate[NOW] < C_CONNECTED ||
