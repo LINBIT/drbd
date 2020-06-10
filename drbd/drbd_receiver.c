@@ -3834,6 +3834,13 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 {
 	struct drbd_device *device = peer_device->device;
 
+	/* reduce contention by giving up uuid_sem before taking bitmap locks */
+	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
+		struct drbd_transport *transport = &peer_device->connection->transport;
+		up_read_non_owner(&device->uuid_sem);
+		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
+	}
+
 	if (strategy == SYNC_SOURCE_COPY_BITMAP) {
 		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
 
@@ -7429,7 +7436,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	struct drbd_device *device = peer_device->device;
 
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
-		up_read(&device->uuid_sem);
+		up_read_non_owner(&device->uuid_sem);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
