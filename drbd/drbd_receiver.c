@@ -6852,6 +6852,7 @@ static enum drbd_disk_state read_disk_state(struct drbd_device *device)
 static int receive_bitmap(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
+	enum drbd_repl_state repl_state;
 	struct drbd_device *device;
 	struct bm_xfer_ctx c;
 	int err;
@@ -6921,26 +6922,38 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 	INFO_bm_xfer_stats(peer_device, "receive", &c);
 
-	if (peer_device->repl_state[NOW] == L_WF_BITMAP_T) {
+	repl_state = peer_device->repl_state[NOW];
+	if (repl_state == L_WF_BITMAP_T) {
 		err = drbd_send_bitmap(device, peer_device);
 		if (err)
 			goto out;
-		/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
-		 * transition to avoid deadlocks. */
+	}
 
-		drbd_start_resync(peer_device, L_SYNC_TARGET);
-	} else if (peer_device->repl_state[NOW] != L_WF_BITMAP_S) {
+	drbd_bm_slot_unlock(peer_device);
+
+	if (repl_state == L_WF_BITMAP_S) {
+		drbd_start_resync(peer_device, L_SYNC_SOURCE);
+	} else if (repl_state == L_WF_BITMAP_T) {
+		if (connection->agreed_pro_version < 110) {
+			enum drbd_state_rv rv;
+
+			/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
+			 * transition to avoid deadlocks. */
+			rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
+			D_ASSERT(device, rv == SS_SUCCESS);
+		} else {
+			drbd_start_resync(peer_device, L_SYNC_TARGET);
+		}
+	} else {
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
 		drbd_info(peer_device, "unexpected repl_state (%s) in receive_bitmap\n",
-		    drbd_repl_str(peer_device->repl_state[NOW]));
+			  drbd_repl_str(repl_state));
 	}
-	err = 0;
 
+	return 0;
  out:
 	drbd_bm_slot_unlock(peer_device);
-	if (!err && peer_device->repl_state[NOW] == L_WF_BITMAP_S)
-		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	return err;
 }
 
