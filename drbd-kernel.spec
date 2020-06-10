@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 10.0.0a1
-Release: 0.1.a1
+Version: 10.0.0a2
+Release: 0.1.a2
 
 # always require a suitable userland
 Requires: drbd-utils >= 9.2.0
@@ -114,82 +114,9 @@ echo "override drbd * weak-updates" \
 rm -rf %{buildroot}
 
 %changelog
-* Fri Aug 02 2019 Roland Kammerer <roland.kammerer@linbit.com> 10.0.0a1-0.1.a1
+* Wed Jun 10 2020 Philipp Reisner <phil@linbit.com> - 10.0.0a2-0.1.a2
 -  New upstream release.
 
-* Mon Jul 08 2019 Philipp Reisner <phil@linbit.com> - 9.0.19-1
-- New upstream release.
+* Fri Aug 02 2019 Roland Kammerer <roland.kammerer@linbit.com> - 10.0.0a1-0.1.a1
+-  New upstream release.
 
-* Fri May 31 2019 Lars Ellenberg <lars@linbit.com> - 9.0.18.1-1
-- New upstream release.
-
-* Fri May 24 2019 Philipp Reisner <phil@linbit.com> - 9.0.18-1
-- New upstream release.
-
-* Tue Mar 26 2019 Philipp Reisner <phil@linbit.com> - 9.0.17-1
-- New upstream release.
-
-* Thu Oct 25 2018 Philipp Reisner <phil@linbit.com> - 9.0.16-1
-- New upstream release.
-
-* Tue Aug 14 2018 Philipp Reisner <phil@linbit.com> - 9.0.15-1
-- New upstream release.
-
-* Tue May 01 2018 Lars Ellenberg <lars@linbit.com> - 9.0.14-1
-- New upstream release.
-
-* Tue Apr 17 2018 Philipp Reisner <phil@linbit.com> - 9.0.13-1
-- New upstream release.
-
-* Mon Jan 22 2018 Philipp Reisner <phil@linbit.com> - 9.0.12-1
-- New upstream release.
-
-* Tue Jan 09 2018 Roland Kammerer <roland.kammerer@linbit.com> - 9.0.11-1
-- New upstream release.
-
-* Fri Dec 22 2017 Roland Kammerer <roland.kammerer@linbit.com> - 9.0.10-1
-- New upstream release.
-
-* Thu Aug 31 2017 Philipp Reisner <phil@linbit.com> - 9.0.9-1
-- New upstream release.
-
-* Mon Jun 19 2017 Philipp Reisner <phil@linbit.com> - 9.0.8-1
-- New upstream release.
-
-* Fri Mar 31 2017 Philipp Reisner <phil@linbit.com> - 9.0.7-1
-- New upstream release.
-
-* Fri Dec 23 2016 Philipp Reisner <phil@linbit.com> - 9.0.6-1
-- New upstream release.
-
-* Thu Oct 20 2016 Philipp Reisner <phil@linbit.com> - 9.0.5-1
-- New upstream release.
-
-* Tue Sep 06 2016 Philipp Reisner <phil@linbit.com> - 9.0.4-1
-- New upstream release.
-
-* Thu Jul 14 2016 Philipp Reisner <phil@linbit.com> - 9.0.3-1
-- New upstream release.
-
-* Tue Apr 19 2016 Philipp Reisner <phil@linbit.com> - 9.0.2-1
-- New upstream release.
-
-* Tue Feb 02 2016 Philipp Reisner <phil@linbit.com> - 9.0.1-1
-- New upstream release.
-
-* Tue Jul 28 2015 Lars Ellenberg <lars@linbit.com> - 9.0.0-3
-- Fixes for the RDMA transport
-- Fixes for 8.4 compatibility
-- Rebuild after compat and build system fixes
-
-* Tue Jun 16 2015 Philipp Reisner <phil@linbit.com> - 9.0.0-1
-- New upstream release.
-
-* Mon Jul 18 2011 Philipp Reisner <phil@linbit.com> - 8.4.0-1
-- New upstream release.
-
-* Fri Jan 28 2011 Philipp Reisner <phil@linbit.com> - 8.3.10-1
-- New upstream release.
-
-* Thu Nov 25 2010 Andreas Gruenbacher <agruen@linbit.com> - 8.3.9-1
-- Convert to a Kernel Module Package.
