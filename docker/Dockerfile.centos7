@@ -15,7 +15,8 @@ RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils-4.6/gpl-2.0.txt /lice
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
 	yum install -y wget gcc make patch curl kmod yum-utils && yum clean all -y && \
 	cd /tmp && wget https://github.com/LINBIT/python-lbdist/archive/master.tar.gz && \
-	tar xvf master.tar.gz && cd python-lbdist-master && python setup.py install && \
+	tar xvf master.tar.gz && \
+	( cd python-lbdist-master && python setup.py install ) && \
 	rm -rf python-lbdist-master master.tar.gz
 
 # one can not comment copy
