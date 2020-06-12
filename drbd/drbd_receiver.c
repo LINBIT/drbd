@@ -6402,7 +6402,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	 */
 	if (peer_was_resync_target &&
 	    (old_peer_state.pdsk == D_INCONSISTENT || old_peer_state.pdsk == D_CONSISTENT) &&
-	    old_peer_state.conn > L_ESTABLISHED && old_peer_state.disk >= D_OUTDATED) {
+	    old_peer_state.conn > L_ESTABLISHED && old_peer_state.disk >= D_INCONSISTENT) {
 		/* If we are (becoming) SyncSource, but peer is still in sync
 		 * preparation, ignore its uptodate-ness to avoid flapping, it
 		 * will change to inconsistent once the peer reaches active
