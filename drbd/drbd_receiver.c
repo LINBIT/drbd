@@ -4159,7 +4159,9 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 			if (drbd_bitmap_uuid(peer_device)) {
 				drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
 					  drbd_bm_total_weight(peer_device));
+				down_write(&device->uuid_sem);
 				drbd_uuid_set_bitmap(peer_device, 0);
+				up_write(&device->uuid_sem);
 
 			} else if (drbd_bm_total_weight(peer_device)) {
 				drbd_info(peer_device, "bitmap content (%lu bits)\n",
