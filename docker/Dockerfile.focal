@@ -4,7 +4,8 @@ FROM ubuntu:focal
 RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch curl && \
 	apt-get install -y python-setuptools && apt-get clean && \
 	cd /tmp && wget https://github.com/LINBIT/python-lbdist/archive/master.tar.gz && \
-	tar xvf master.tar.gz && cd python-lbdist-master && python2 setup.py install && \
+	tar xvf master.tar.gz && \
+	( cd python-lbdist-master && python2 setup.py install ) && \
 	rm -rf python-lbdist-master master.tar.gz
 
 COPY /drbd.tar.gz /
