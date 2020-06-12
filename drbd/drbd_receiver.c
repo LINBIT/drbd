@@ -4944,6 +4944,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 	struct drbd_device *device = peer_device->device;
+	struct drbd_resource *resource = device->resource;
 	int updated_uuids = 0, err = 0;
 
 	if (get_ldev(device)) {
@@ -4998,8 +4999,9 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
 		   repl_state >= L_ESTABLISHED &&
 		   peer_device->disk_state[NOW] == D_UP_TO_DATE &&
-		   peer_device->current_uuid != device->exposed_data_uuid) {
-		struct drbd_resource *resource = device->resource;
+		   peer_device->current_uuid != device->exposed_data_uuid &&
+		   (resource->role[NOW] == R_SECONDARY ||
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))) {
 
 		write_lock_irq(&resource->state_rwlock);
 		if (resource->remote_state_change) {
