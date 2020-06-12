@@ -4426,20 +4426,19 @@ void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must
 	up_write(&device->uuid_sem);
 }
 
+/* call holding down_write(uuid_sem) */
 void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
 	u64 previous_uuid;
 
-	down_write(&device->uuid_sem);
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	previous_uuid = drbd_bitmap_uuid(peer_device);
 	if (previous_uuid)
 		_drbd_uuid_push_history(device, previous_uuid);
 	__drbd_uuid_set_bitmap(peer_device, uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
-	up_write(&device->uuid_sem);
 }
 
 static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes, u64 dagtag) __must_hold(local)
@@ -4730,6 +4729,7 @@ void drbd_uuid_new_current_by_user(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 
+	down_write(&device->uuid_sem);
 	for_each_peer_device(peer_device, device)
 		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
 
