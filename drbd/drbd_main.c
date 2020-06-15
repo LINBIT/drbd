@@ -4780,6 +4780,16 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 	}
 }
 
+static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device) __must_hold(local)
+{
+	u64 weak_nodes;
+
+	if (!__new_current_uuid_prepare(device, false))
+		return;
+	weak_nodes = drbd_weak_nodes_device(device);
+	__new_current_uuid_info(device, weak_nodes);
+}
+
 static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
@@ -4889,12 +4899,12 @@ void drbd_uuid_new_current_by_user(struct drbd_device *device)
 	down_write(&device->uuid_sem);
 	for_each_peer_device(peer_device, device)
 		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
-	up_write(&device->uuid_sem);
 
 	if (get_ldev(device)) {
-		__drbd_uuid_new_current(device, false, false);
+		__drbd_uuid_new_current_holding_uuid_sem(device);
 		put_ldev(device);
 	}
+	up_write(&device->uuid_sem);
 }
 
 static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
