@@ -5348,7 +5348,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
 		   repl_state >= L_ESTABLISHED &&
 		   peer_device->disk_state[NOW] == D_UP_TO_DATE &&
-		   peer_device->current_uuid != device->exposed_data_uuid &&
+		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
+		   (device->exposed_data_uuid & ~UUID_PRIMARY) &&
 		   (resource->role[NOW] == R_SECONDARY ||
 		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))) {
 
