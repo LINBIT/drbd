@@ -3,6 +3,22 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.24-0rc1 (api:genl2/proto:86-117/transport:14)
+--------
+ * fix deadlock when connecting drbd-9 to drbd-8.4 and the drbd-9
+   side becomes sync-source
+ * fix an issue with 3 (or more) node configurations; with a diskless node
+   and two storage nodes; if one of the storage nodes was hard rebooted
+   and came back and the diskless got primary and did not issue write
+   requests and the returning storage node established a connection with
+   the surviving storage node first, DRBD failed to upgrade the disk
+   state to UpToDate after the resync
+ * detect split-brain situations also when both nodes are primary;
+   this is how it was in drbd-8.4; up to now drbd-9 did not realize
+   the split-brain since it complains about the not allowed dual
+   primary first; for this change a new protocol version was necessary
+ * verified it compiles with Linux 5.7
+
 9.0.23-1 (api:genl2/proto:86-116/transport:14)
 --------
  * fix a deadlock (regression introduced in 9.0.22) that can happen when
