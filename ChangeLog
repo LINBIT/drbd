@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.24-0rc1 (api:genl2/proto:86-117/transport:14)
+9.0.24-1 (api:genl2/proto:86-117/transport:14)
 --------
  * fix deadlock when connecting drbd-9 to drbd-8.4 and the drbd-9
    side becomes sync-source
