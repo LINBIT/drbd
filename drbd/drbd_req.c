@@ -2208,7 +2208,7 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 		return BLK_QC_T_NONE;
 	}
 
-	blk_queue_split(q, &bio);
+	blk_queue_split(&bio);
 
 	if (device->cached_err_io) {
 		bio->bi_status = BLK_STS_IOERR;
