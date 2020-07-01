@@ -1560,7 +1560,6 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	rcu_read_lock();
 	{
 		/* reset device->congestion_reason */
-		bdi_rw_congested(device->rq_queue->backing_dev_info);
 
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
