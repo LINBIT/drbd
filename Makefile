@@ -73,6 +73,10 @@ override GITHEAD := $(shell test -e .git && $(GIT) rev-parse HEAD)
 # container image version tag. 'TAG', becasue we have this (too) generic name in other projects already
 TAG ?= v$(REL_VERSION)
 
+ifneq ("$(wildcard .force)","")
+    FORCE := 1
+endif
+
 ifdef FORCE
 #
 # NOTE to generate a tgz even if too lazy to update the changelogs,
@@ -81,7 +85,7 @@ ifdef FORCE
 # in the tgz name:
 #   make distclean tgz FORCE=1
 #
-REL_VERSION := $(REL_VERSION)-$(GITHEAD)
+REL_VERSION := 9.0.0.$(GITHEAD)-1
 endif
 
 DIST_VERSION := $(REL_VERSION)
@@ -214,6 +218,7 @@ endif
 	@[ -s .filelist ] # assert there is something in .filelist now
 	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
 	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
+	[ ! -z "$(FORCE)" ] && echo drbd-$(DIST_VERSION)/.force >> .filelist; \
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
@@ -225,8 +230,18 @@ tgz:
 	test -s .filelist
 	rm -f drbd-$(FDIST_VERSION)
 	$(LN_S) . drbd-$(FDIST_VERSION)
+	cp drbd-kernel.spec drbd-kernel.spec.orig
+	cp debian/changelog debian/changelog.orig
+	@if [[ ! -z "$(FORCE)" ]]; then \
+		touch .force; \
+		sed -i "s/Version: .*/Version: 9.0.0.$(GITHEAD)/g" drbd-kernel.spec; \
+		dch -b -v 9.0.0.$(GITHEAD) "Intermediate release" || true; \
+	fi
 	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
 	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION).tar.gz
+	mv drbd-kernel.spec.orig drbd-kernel.spec
+	mv debian/changelog.orig debian/changelog
+	rm -f .force
 	rm drbd-$(FDIST_VERSION)
 
 ifeq ($(FORCE),)
