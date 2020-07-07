@@ -939,49 +939,63 @@ restart:
 	rcu_read_unlock();
 }
 
+static int count_up_to_date(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr, nr_up_to_date = 0;
 
-static bool reconciliation_ongoing(struct drbd_resource *resource)
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		enum drbd_disk_state disk_state = device->disk_state[NOW];
+		if (disk_state == D_UP_TO_DATE)
+			nr_up_to_date++;
+	}
+	rcu_read_unlock();
+	return nr_up_to_date;
+}
+
+static bool reconciliation_ongoing(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device_rcu(peer_device, device) {
+		if (test_bit(RECONCILIATION_RESYNC, &peer_device->flags))
+			return true;
+	}
+	return false;
+}
+
+/* reconciliation resyncs finished and I know if I am D_UP_TO_DATE or D_OUTDATED */
+static bool after_primary_lost_events_settled(struct drbd_resource *resource)
+{
 	struct drbd_device *device;
-	bool rv = false;
 	int vnr;
 
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		for_each_peer_device_rcu(peer_device, device) {
-			if (test_bit(RECONCILIATION_RESYNC, &peer_device->flags)) {
-				rv = true;
-				goto break_out;
-			}
+		enum drbd_disk_state disk_state = device->disk_state[NOW];
+		if (disk_state == D_CONSISTENT ||
+		    (reconciliation_ongoing(device) &&
+		     (disk_state == D_OUTDATED || disk_state == D_INCONSISTENT))) {
+			rcu_read_unlock();
+			return false;
 		}
 	}
-break_out:
 	rcu_read_unlock();
-
-	return rv;
+	return true;
 }
 
 static bool wait_up_to_date(struct drbd_resource *resource)
 {
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
-	struct drbd_device *device;
-	int vnr;
+	int initial_up_to_date, up_to_date;
 
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (device->disk_state[NOW] == D_CONSISTENT)
-			break;
-	}
-	rcu_read_unlock();
-
-	if (!device)
-		return false;
-
-	timeout = wait_event_interruptible_timeout(resource->state_wait,
-						   device->disk_state[NOW] != D_CONSISTENT,
-						   timeout);
-	return device->disk_state[NOW] == D_UP_TO_DATE;
+	initial_up_to_date = count_up_to_date(resource);
+	wait_event_interruptible_timeout(resource->state_wait,
+					 after_primary_lost_events_settled(resource),
+					 timeout);
+	up_to_date = count_up_to_date(resource);
+	return up_to_date > initial_up_to_date;
 }
 
 
@@ -989,7 +1003,7 @@ enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, struct sk_buff *reply_skb)
 {
 	struct drbd_device *device;
-	int vnr, err, try = 0, forced = 0;
+	int vnr, try = 0, forced = 0;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	bool retried_ss_two_primaries = false;
@@ -1001,10 +1015,6 @@ retry:
 
 	if (role == R_PRIMARY) {
 		drbd_check_peers(resource);
-		err = wait_event_interruptible(resource->state_wait,
-					       !reconciliation_ongoing(resource));
-		if (err)
-			return SS_INTERRUPTED;
 		wait_up_to_date(resource);
 		down(&resource->state_sem);
 	} else /* (role == R_SECONDARY) */ {
