@@ -1,0 +1,98 @@
+stages:
+  - compat-tarball
+  - compat-lbbuild
+  - tarball
+  - lbbuild
+
+.setup-lbbuild:
+  before_script:
+    - rm -rf lbbuild rq
+    - mkdir -p lbbuild drbd-test-bundle
+    - curl -k $LINBIT_REGISTRY_URL/repository/lbbuild/lbbuild-latest.tar.gz | tar -C lbbuild -xvzf -
+    - curl -k $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
+    - curl -sSL https://github.com/dflemstr/rq/releases/download/v1.0.2/rq-v1.0.2-x86_64-unknown-linux-gnu.tar.gz | tar -xvzf -
+
+compat-tarball:
+  stage: compat-tarball
+  image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
+  script:
+    - make FORCE=1 PRESERVE_DEBIAN=1 tarball
+  artifacts:
+    paths:
+      - drbd-*.tar.gz
+    expire_in: 1 week
+
+compat-lbbuild:
+  stage: compat-lbbuild
+  extends: .setup-lbbuild
+  tags: ['shell']
+  script:
+    - mkdir -p lbbuild/upstream
+    - mv drbd-*.tar.gz lbbuild/upstream/
+    - export META_JSON=$(./rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+    - cd lbbuild
+    - export VERSION=$(ls -1 upstream/drbd-*.tar.gz | head -n1 | xargs basename | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
+    - |
+      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | while read args; do
+        ./lbbuild build drbd -v "$VERSION" --compat-only -l $args
+      done
+  dependencies:
+    - compat-tarball
+  artifacts:
+    when: always
+    paths:
+      - lbbuild/localpkgs
+
+tarball:
+  stage: tarball
+  image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
+  script:
+    - |
+      find lbbuild/localpkgs/ -name 'compat.h*' -print0 |
+        while IFS= read -r -d '' h; do
+          s=$(md5sum "$h")
+          s=${s%% *}
+          release=${h#*compat.h.}
+          echo $s
+          echo $release
+          mkdir -p drbd/drbd-kernel-compat/cocci_cache/$s
+          cp $h drbd/drbd-kernel-compat/cocci_cache/$s/compat.h
+          echo $release >> drbd/drbd-kernel-compat/cocci_cache/$s/kernelrelease.txt
+        done
+    - make -j $(nproc) -C drbd compat
+    - make FORCE=1 PRESERVE_DEBIAN=1 tarball
+  dependencies:
+    - compat-lbbuild
+  artifacts:
+    when: always
+    paths:
+      - drbd-*.tar.gz
+      - drbd/drbd-kernel-compat/cocci_cache/
+    expire_in: 1 week
+
+lbbuild:
+  stage: lbbuild
+  extends: .setup-lbbuild
+  tags: ['shell']
+  script:
+    - mkdir -p lbbuild/upstream
+    - mv drbd-*.tar.gz lbbuild/upstream/
+    - export META_JSON=$(./rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+    - cd lbbuild
+    - export VERSION=$(ls -1 upstream/drbd-*.tar.gz | head -n1 | xargs basename | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
+    - |
+      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | while read args; do
+        ./lbbuild build drbd -v "$VERSION" -l $args
+      done
+    - cd ../
+    - export R=$LINBIT_REGISTRY_URL/repository
+    - TYPE=yum TARGET_REPO=$R/yum/rhel8/drbd-9.0/x86_64 .gitlab/upload.sh lbbuild/localpkgs/drbd-*/rhel8.*/amd64/kmod-drbd-*.rpm
+    - TYPE=apt TARGET_REPO=$R/ubuntu-xenial .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-xenial/amd64/drbd-module-*.deb
+    - TYPE=apt TARGET_REPO=$R/ubuntu-bionic .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-bionic/amd64/drbd-module-*.deb
+    - TYPE=apt TARGET_REPO=$R/ubuntu-focal .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-focal/amd64/drbd-module-*.deb
+  dependencies:
+    - tarball
+  artifacts:
+    when: always
+    paths:
+      - lbbuild/localpkgs
