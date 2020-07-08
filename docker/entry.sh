@@ -158,8 +158,12 @@ kos::deb::fromrepo() {
 
 kos::rpm::fromshipped() {
 	local pkgdir="$1"
+	local family
+	local best
 
-	best="$(lbdisttool.py --force-name rhel_or_centos -k "$PKGS"/*/*.rpm)"
+	family="$(lbdisttool.py --family)"
+
+	best="$(lbdisttool.py --force-name "$family" -k "${PKGS}/${family}"*/*.rpm)"
 	[ -n "$best" ] || die "Could not find matching rpm package for your kernel"
 	debug "Best kernel module package: \"$best\""
 	cp "$best" "$pkgdir"
