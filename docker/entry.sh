@@ -230,7 +230,7 @@ debug "Detected kmod method: \"$how_get\""
 
 dist=we_do_not_care
 need_dist=$(needs_dist "$how_get")
-debug "Needs distribution info: \"$need_dist\""
+debug "Needs host distribution info: \"$need_dist\""
 if [[ $need_dist == y ]]; then
 	dist=$(map_dist "$LB_DIST") || exit 1
 	debug "Detected distribution: \"$dist\""
