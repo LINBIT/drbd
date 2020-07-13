@@ -78,7 +78,7 @@ lbbuild:
       done
     - cd ../
     - export R=$LINBIT_REGISTRY_URL/repository
-    - TYPE=yum TARGET_REPO=$R/yum/rhel8/drbd-9.0/x86_64 .gitlab/upload.sh lbbuild/localpkgs/drbd-*/rhel8.*/amd64/kmod-drbd-*.rpm
+    - TYPE=yum TARGET_REPO=$R/rhel8/drbd-9.0/x86_64 .gitlab/upload.sh lbbuild/localpkgs/drbd-*/rhel8.*/amd64/kmod-drbd-*.rpm
     - TYPE=apt TARGET_REPO=$R/ubuntu-xenial .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-xenial/amd64/drbd-module-*.deb
     - TYPE=apt TARGET_REPO=$R/ubuntu-bionic .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-bionic/amd64/drbd-module-*.deb
     - TYPE=apt TARGET_REPO=$R/ubuntu-focal .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-focal/amd64/drbd-module-*.deb
