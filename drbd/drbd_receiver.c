@@ -7966,12 +7966,22 @@ static bool any_connection_up(struct drbd_resource *resource)
 static void cleanup_remote_state_change(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
+	struct twopc_reply *reply = &resource->twopc_reply;
 
 	spin_lock_irq(&resource->req_lock);
-	if (twopc_between_lost_node_and_me(connection) || !any_connection_up(resource)) {
-		drbd_info(connection, "Aborting remote state change %u commit not possible\n",
-			  resource->twopc_reply.tid);
-		__clear_remote_state_change(resource);
+	if (resource->remote_state_change &&
+	    (twopc_between_lost_node_and_me(connection) || !any_connection_up(resource))) {
+		bool remote = reply->initiator_node_id != resource->res_opts.node_id;
+
+		drbd_info(connection, "Aborting %s state change %u commit not possible\n",
+			  remote ? "remote" : "local", reply->tid);
+		if (remote) {
+			__clear_remote_state_change(resource);
+		} else {
+			enum alt_rv alt_rv = abort_local_transaction(resource, 0);
+			if (alt_rv != ALT_LOCKED)
+				return;
+		}
 	}
 	spin_unlock_irq(&resource->req_lock);
 }
