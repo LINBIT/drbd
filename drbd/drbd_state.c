@@ -1833,6 +1833,8 @@ static void select_best_resync_source(struct drbd_peer_device *candidate_pd)
 	long diff_w, candidate_w, current_w;
 
 	for_each_peer_device_rcu(current_pd, device) {
+		if (current_pd == candidate_pd)
+			continue;
 		if (current_pd->repl_state[NEW] == L_SYNC_TARGET)
 			goto found_pd;
 	}
