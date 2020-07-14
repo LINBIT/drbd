@@ -2879,7 +2879,7 @@ static int process_one_request(struct drbd_connection *connection)
 			 */
 			if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size) ||
 			    is_write_in_flight(peer_device, &req->i))
-				err = drbd_send_out_of_sync(peer_device, &req->i);
+				err = drbd_send_out_of_sync(peer_device, req->i.sector, req->i.size);
 			what = OOS_HANDED_TO_NETWORK; /* Well, most of the time, anyways. */
 		}
 	} else {
