@@ -5426,10 +5426,6 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		return config_unknown_volume(connection, pi);
 
 	device = peer_device->device;
-
-	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
-	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
-	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	bitmap_uuids_mask = be64_to_cpu(p->bitmap_uuids_mask);
 	if (bitmap_uuids_mask & ~(NODE_MASK(DRBD_PEERS_MAX) - 1))
 		return -EIO;
@@ -5454,8 +5450,14 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			return err;
 	}
 
-	if (get_ldev(device))
+	if (get_ldev(device)) {
 		peer_md = device->ldev->md.peers;
+		spin_lock_irq(&device->ldev->md.uuid_lock);
+	}
+	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
+	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+
 	pos = 0;
 	for (i = 0; i < ARRAY_SIZE(peer_device->bitmap_uuids); i++) {
 		u64 bitmap_uuid;
@@ -5471,14 +5473,16 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 		update_bitmap_slot_of_peer(peer_device, i, bitmap_uuid);
 	}
-	if (peer_md)
-		put_ldev(device);
 
 	for (i = 0; i < history_uuids; i++)
 		peer_device->history_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
 	while (i < ARRAY_SIZE(peer_device->history_uuids))
 		peer_device->history_uuids[i++] = 0;
 	peer_device->uuids_received = true;
+	if (peer_md) {
+		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		put_ldev(device);
+	}
 
 	node_mask = be64_to_cpu(p->node_mask);
 

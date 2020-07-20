@@ -5069,7 +5069,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	pwcu = peers_with_current_uuid(device, peer_device->current_uuid);
 
 	newer = __set_bitmap_slots(device, peer_device->rs_start_uuid, ss_nz_bm & ~pwcu);
-	__set_bitmap_slots(device, 0, ~ss_nz_bm & pwcu);
+	__set_bitmap_slots(device, 0, ~ss_nz_bm | pwcu);
 	_drbd_uuid_push_history(device, drbd_current_uuid(device));
 	__drbd_uuid_set_current(device, peer_device->current_uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
