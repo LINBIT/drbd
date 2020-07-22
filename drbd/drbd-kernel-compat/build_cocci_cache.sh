@@ -29,7 +29,7 @@ for F in $FILES; do
     fi
 
     # clean up directory if already empty
-    D="${F%/*}"
+    D=$(dirname "$F")
     while [ -n "$D" -a "$D" != "." ]; do
 	rmdir --ignore-fail-on-non-empty $D
 	D="${D%/*}"
