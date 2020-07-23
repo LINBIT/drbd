@@ -122,7 +122,7 @@ kos::fromsrc() {
 	tar xf /drbd.tar.gz
 	# cd $(ls -1 | head -1) || die "Could not cd"
 	cd drbd-* || die "Could not cd to drbd src dir"
-	make -j
+	make $LB_MAKEOPTS
 }
 
 kos::rpm::extract() {
