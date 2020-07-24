@@ -133,6 +133,7 @@ test:
     - >-
       vmshed
       --jenkins "$(readlink -f tests-out)"
+      --startvm 40
       --nvms 4
       --vms source/drbd-test-bundle/virter/vms.toml
       --tests source/drbd-test-bundle/virter/tests.toml
