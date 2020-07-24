@@ -19,6 +19,7 @@ stages:
 .rules-build:
   rules:
     - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
     - if: $CI_COMMIT_BRANCH == 'master'
 
 source:
