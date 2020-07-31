@@ -108,6 +108,7 @@ rm -f drbd.conf
 mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
 echo "override drbd * weak-updates" \
     > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
+install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
 %endif
 
 %clean
