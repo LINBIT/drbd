@@ -621,6 +621,7 @@ static int drbd_khelper(struct drbd_device *device, struct drbd_connection *conn
 			env_print_address(&env, "DRBD_PEER_", &path->peer_addr);
 		}
 		env_print(&env, "DRBD_PEER_NODE_ID=%u", connection->peer_node_id);
+		env_print(&env, "DRBD_CSTATE=%s", drbd_conn_str(connection->cstate[NOW]));
 	}
 	if (connection && !device) {
 		struct drbd_peer_device *peer_device;
