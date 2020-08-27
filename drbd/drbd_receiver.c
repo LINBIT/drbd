@@ -3916,6 +3916,15 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 				return rv;
 		}
 
+		if (test_bit(RS_SOURCE_MISSED_END, &peer_device->flags)) {
+			*rule_nr = 34;
+			return SYNC_SOURCE_USE_BITMAP;
+		}
+		if (test_bit(RS_PEER_MISSED_END, &peer_device->flags)) {
+			*rule_nr = 35;
+			return SYNC_TARGET_USE_BITMAP;
+		}
+
 		*rule_nr = 39;
 		if (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags))
@@ -7055,6 +7064,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
+
 	if (connection->cstate[NOW] == C_CONNECTING) {
 		/* Since protocol 117 state comes before change on the cstate */
 		peer_device->connect_state = (union drbd_state)

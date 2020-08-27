@@ -565,6 +565,8 @@ enum peer_device_flag {
 	AHEAD_TO_SYNC_SOURCE,   /* Ahead -> SyncSource queued */
 	SYNC_TARGET_TO_BEHIND,  /* SyncTarget, wait for Behind */
 	HOLDING_UUID_READ_LOCK, /* did a down_read(&device->uuid_sem) */
+	RS_SOURCE_MISSED_END,   /* SyncSource did not got P_UUIDS110 */
+	RS_PEER_MISSED_END,     /* Peer (which was SyncSource) did not got P_UUIDS110 after resync */
 };
 
 /* We could make these currently hardcoded constants configurable
