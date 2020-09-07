@@ -1,6 +1,6 @@
 variables:
-  VIRTER_VERSION: v0.4.0
-  VMSHED_VERSION: v0.3.0
+  VIRTER_VERSION: v0.4.1
+  VMSHED_VERSION: v0.4.1
 
 stages:
   - source
