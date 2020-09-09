@@ -2611,7 +2611,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	enum ioc_rv r;
-	int rv = 0;
+	int err = 0;
 
 	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 3);
@@ -2650,31 +2650,31 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 		}
 	} else if (resource->role[NOW] != R_PRIMARY &&
 			!(mode & FMODE_WRITE) && !drbd_allow_oos) {
-		rv = -EMEDIUMTYPE;
+		err = -EMEDIUMTYPE;
 		goto out;
 	}
 
 	if (test_bit(UNREGISTERED, &device->flags)) {
-		rv = -ENODEV;
+		err = -ENODEV;
 	} else if (mode & FMODE_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
-			rv = -EROFS;
+			err = -EROFS;
 	} else /* READ access only */ {
-		rv = ro_open_cond(device);
+		err = ro_open_cond(device);
 	}
 out:
 	/* still keep mutex, but release ASAP */
-	if (!rv)
+	if (!err)
 		add_opener(device);
 
 	mutex_unlock(&resource->open_release);
-	if (rv) {
+	if (err) {
 		drbd_release(bdev->bd_disk, mode);
-		if (rv == -EAGAIN && !(mode & FMODE_NDELAY))
-			rv = -EMEDIUMTYPE;
+		if (err == -EAGAIN && !(mode & FMODE_NDELAY))
+			err = -EMEDIUMTYPE;
 	}
 
-	return rv;
+	return err;
 }
 
 void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro_count_ptr)
