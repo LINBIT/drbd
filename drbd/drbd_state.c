@@ -3201,7 +3201,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	int n_device, n_connection;
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
-	bool resync_finished = false;
 
 	notify_state_change(state_change);
 
@@ -3213,6 +3212,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
 		bool device_stable[2], resync_target[2];
+		bool resync_finished = false;
 		enum which_state which;
 
 		for (which = OLD; which <= NEW; which++) {
@@ -3262,14 +3262,21 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_other_c = peer_device_state_change->resync_susp_other_c;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
-			bool send_state = false;
+			bool send_uuids, send_state = false;
 
 			/* In case we finished a resync as resync-target update all neighbors
 			   about having a bitmap_uuid of 0 towards the previous sync-source.
 			   That needs to go out before sending the new disk state
 			   (To avoid a race where the other node might downgrade our disk
 			   state due to old UUID valued) */
-			if (resync_finished && peer_disk_state[NEW] != D_UNKNOWN)
+			send_uuids = resync_finished && peer_disk_state[NEW] != D_UNKNOWN;
+
+			/* Send UUIDs again if they changed while establishing the connection */
+			if (repl_state[OLD] == L_OFF && repl_state[NEW] > L_OFF &&
+			    peer_device->comm_current_uuid != drbd_current_uuid(device))
+				send_uuids = true;
+
+			if (send_uuids)
 				drbd_send_uuids(peer_device, 0, 0);
 
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
