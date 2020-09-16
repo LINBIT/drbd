@@ -112,6 +112,11 @@ else
 	    rm -f .compat_patches_applied; \
 	fi
 
+  .PHONY: test-compile
+  test-compile:
+	$(MAKE)
+	$(MAKE) unpatch
+
   # compat.h is built by Kbuild; I think the most easy way to trigger that
   # without trying to re-implement all the Kbuild magic badly, is to simply
   # tell it to compile our smallest, least complex .c file which still
