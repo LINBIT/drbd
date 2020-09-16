@@ -4542,14 +4542,11 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 }
 
 
-static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, bool send) __must_hold(local)
+static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced) __must_hold(local)
 {
-	struct drbd_peer_device *peer_device;
-	u64 got_new_bitmap_uuid, weak_nodes, val, old_current_uuid;
+	u64 got_new_bitmap_uuid, val, old_current_uuid;
 	int err;
-	u64 im;
 
-	down_write(&device->uuid_sem);
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
 					forced ? initial_resync_nodes(device) : 0,
@@ -4557,8 +4554,7 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 
 	if (!got_new_bitmap_uuid) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
-		up_write(&device->uuid_sem);
-		return;
+		return false;
 	}
 
 	old_current_uuid = device->ldev->md.current_uuid;
@@ -4568,29 +4564,51 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 
 	/* get it to stable storage _now_ */
 	err = drbd_md_sync(device);
-	if (err)
+	if (err) {
 		_drbd_uuid_set_current(device, old_current_uuid);
+		return false;
+	}
 
-	downgrade_write(&device->uuid_sem);
+	return true;
+}
 
-	if (err)
-		goto out;
-
-	weak_nodes = drbd_weak_nodes_device(device);
+static void __new_current_uuid_info(struct drbd_device *device, u64 weak_nodes)
+{
 	drbd_info(device, "new current UUID: %016llX weak: %016llX\n",
 		  device->ldev->md.current_uuid, weak_nodes);
+}
 
-	if (!send)
-		goto out;
+static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, bool forced) __must_hold(local)
+{
+	struct drbd_peer_device *peer_device;
+	u64 im;
 
 	for_each_peer_device_ref(peer_device, im, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_uuids(peer_device, forced ? 0 : UUID_FLAG_NEW_DATAGEN, weak_nodes);
 	}
+}
 
-out:
-	up_read(&device->uuid_sem);
+static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, bool send) __must_hold(local)
+{
+	u64 weak_nodes;
 
+	down_write(&device->uuid_sem);
+	if (!__new_current_uuid_prepare(device, forced)) {
+		up_write(&device->uuid_sem);
+		return;
+	}
+	if (send) {
+		downgrade_write(&device->uuid_sem);
+		weak_nodes = drbd_weak_nodes_device(device);
+		__new_current_uuid_info(device, weak_nodes);
+		__new_current_uuid_send(device, weak_nodes, forced);
+		up_read(&device->uuid_sem);
+	} else {
+		weak_nodes = drbd_weak_nodes_device(device);
+		__new_current_uuid_info(device, weak_nodes);
+		up_write(&device->uuid_sem);
+	}
 }
 
 static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
