@@ -965,6 +965,16 @@ static bool reconciliation_ongoing(struct drbd_device *device)
 	return false;
 }
 
+static bool any_peer_is_consistent(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NOW] == D_CONSISTENT)
+			return true;
+	}
+	return false;
+}
 /* reconciliation resyncs finished and I know if I am D_UP_TO_DATE or D_OUTDATED */
 static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 {
@@ -975,6 +985,7 @@ static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state disk_state = device->disk_state[NOW];
 		if (disk_state == D_CONSISTENT ||
+		    any_peer_is_consistent(device) ||
 		    (reconciliation_ongoing(device) &&
 		     (disk_state == D_OUTDATED || disk_state == D_INCONSISTENT))) {
 			rcu_read_unlock();
