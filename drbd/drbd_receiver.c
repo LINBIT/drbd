@@ -100,6 +100,7 @@ static const struct sync_descriptor sync_descriptors[] = {
 	},
 	[NO_SYNC] = {
 		.name = "no-sync",
+		.resync_peer_preference = 5,
 	},
 	[SYNC_SOURCE_IF_BOTH_FAILED] = {
 		.name = "source-if-both-failed",
@@ -6341,6 +6342,7 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 	int best_resync_peer_preference = 0;
 	struct drbd_peer_device *best_peer_device = NULL;
 	struct drbd_peer_device *peer_device;
+	enum sync_strategy best_strategy = UNDETERMINED;
 
 	if (!get_ldev(device))
 		return;
@@ -6355,13 +6357,16 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 			if (strategy_descriptor(strategy).resync_peer_preference > best_resync_peer_preference) {
 				best_resync_peer_preference = strategy_descriptor(strategy).resync_peer_preference;
 				best_peer_device = peer_device;
+				best_strategy = strategy;
 			}
 		}
 	}
 	rcu_read_unlock();
 	peer_device = best_peer_device;
 
-	if (peer_device) {
+	if (best_strategy == NO_SYNC) {
+		change_disk_state(device, D_UP_TO_DATE, CS_VERBOSE, NULL);
+	} else if (peer_device) {
 		drbd_resync(peer_device, DISKLESS_PRIMARY);
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
 	}
