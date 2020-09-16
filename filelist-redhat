@@ -4,3 +4,4 @@
 /lib/modules/%verrel%dotvariant
 %doc obj/k-config-%verrel%dotvariant.gz
 %config /etc/depmod.d/drbd.conf
+%config /etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
