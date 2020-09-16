@@ -4589,7 +4589,7 @@ static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, 
 	}
 }
 
-static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, bool send) __must_hold(local)
+static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced) __must_hold(local)
 {
 	u64 weak_nodes;
 
@@ -4598,17 +4598,11 @@ static void __drbd_uuid_new_current(struct drbd_device *device, bool forced, boo
 		up_write(&device->uuid_sem);
 		return;
 	}
-	if (send) {
-		downgrade_write(&device->uuid_sem);
-		weak_nodes = drbd_weak_nodes_device(device);
-		__new_current_uuid_info(device, weak_nodes);
-		__new_current_uuid_send(device, weak_nodes, forced);
-		up_read(&device->uuid_sem);
-	} else {
-		weak_nodes = drbd_weak_nodes_device(device);
-		__new_current_uuid_info(device, weak_nodes);
-		up_write(&device->uuid_sem);
-	}
+	downgrade_write(&device->uuid_sem);
+	weak_nodes = drbd_weak_nodes_device(device);
+	__new_current_uuid_info(device, weak_nodes);
+	__new_current_uuid_send(device, weak_nodes, forced);
+	up_read(&device->uuid_sem);
 }
 
 static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device) __must_hold(local)
@@ -4698,7 +4692,7 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
-		__drbd_uuid_new_current(device, forced, true);
+		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
 	} else if (diskfull_peers_need_new_cur_uuid(device) ||
 		   a_lost_peer_is_on_same_cur_uuid(device)) {
