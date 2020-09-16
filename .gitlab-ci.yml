@@ -134,7 +134,7 @@ test:
       vmshed
       --jenkins "$(readlink -f tests-out)"
       --startvm 40
-      --nvms 4
+      --nvms 20
       --vms source/drbd-test-bundle/virter/vms.toml
       --tests source/drbd-test-bundle/virter/tests.toml
       --set values.TestSuiteImage=$LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
