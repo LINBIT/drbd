@@ -508,8 +508,22 @@ static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struc
 }
 
 /**
+ * dtt_socket_free() - Free the socket
+ * @socket:	pointer to the pointer to the socket.
+ */
+static void dtt_socket_free(struct socket **socket)
+{
+	if (!*socket)
+		return;
+
+	kernel_sock_shutdown(*socket, SHUT_RDWR);
+	sock_release(*socket);
+	*socket = NULL;
+}
+
+/**
  * dtt_socket_ok_or_free() - Free the socket if its connection is not okay
- * @sock:	pointer to the pointer to the socket.
+ * @socket:	pointer to the pointer to the socket.
  */
 static bool dtt_socket_ok_or_free(struct socket **socket)
 {
@@ -519,9 +533,7 @@ static bool dtt_socket_ok_or_free(struct socket **socket)
 	if ((*socket)->sk->sk_state == TCP_ESTABLISHED)
 		return true;
 
-	kernel_sock_shutdown(*socket, SHUT_RDWR);
-	sock_release(*socket);
-	*socket = NULL;
+	dtt_socket_free(socket);
 	return false;
 }
 
@@ -931,15 +943,13 @@ static int dtt_connect(struct drbd_transport *transport)
 		if (s) {
 			bool use_for_data;
 
-			if (!first_path) {
-				first_path = connect_to_path;
-			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial paths crossed A\n");
-				kernel_sock_shutdown(s, SHUT_RDWR);
-				sock_release(s);
-				connect_to_path = first_path;
-				continue;
+			if (first_path && first_path != connect_to_path) {
+				tr_info(transport, "initial paths crossed A - fail over\n");
+				dtt_socket_free(&dsocket);
+				dtt_socket_free(&csocket);
 			}
+
+			first_path = connect_to_path;
 
 			if (!dsocket && !csocket) {
 				use_for_data = dtt_path_cmp_addr(first_path);
@@ -976,15 +986,14 @@ retry:
 		if (s) {
 			int fp = dtt_receive_first_packet(tcp_transport, s);
 
-			if (!first_path) {
-				first_path = connect_to_path;
-			} else if (first_path != connect_to_path) {
-				tr_warn(transport, "initial paths crossed P\n");
-				kernel_sock_shutdown(s, SHUT_RDWR);
-				sock_release(s);
-				connect_to_path = first_path;
-				goto randomize;
+			if (first_path && first_path != connect_to_path) {
+				tr_info(transport, "initial paths crossed P - fail over\n");
+				dtt_socket_free(&dsocket);
+				dtt_socket_free(&csocket);
 			}
+
+			first_path = connect_to_path;
+
 			dtt_socket_ok_or_free(&dsocket);
 			dtt_socket_ok_or_free(&csocket);
 			switch (fp) {
