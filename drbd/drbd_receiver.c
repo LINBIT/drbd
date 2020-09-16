@@ -7680,6 +7680,8 @@ void conn_disconnect(struct drbd_connection *connection)
 	if (resource->role[NOW] == R_PRIMARY && conn_highest_pdsk(connection) >= D_UNKNOWN)
 		conn_try_outdate_peer_async(connection);
 
+	drbd_maybe_khelper(NULL, connection, "disconnected");
+
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED) {
