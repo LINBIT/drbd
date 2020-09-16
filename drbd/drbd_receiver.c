@@ -2113,6 +2113,8 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
+	unsigned int size;
+	sector_t sector;
 	int err;
 	u64 im;
 
@@ -2142,16 +2144,19 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	/* Setting all peer out of sync here. Sync source peer will be set
 	   in sync when the write completes. Other peers will be set in
 	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
-	drbd_set_all_out_of_sync(device, peer_req->i.sector, peer_req->i.size);
+	sector = peer_req->i.sector;
+	size = peer_req->i.size;
+	drbd_set_all_out_of_sync(device, sector, size);
 
 	err = drbd_submit_peer_request(peer_req);
 	if (err)
 		goto out;
+	peer_req = NULL; /* since submitted, might be destroyed already */
 
 	for_each_peer_device_ref(peer_device, im, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 		if (repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
-			drbd_send_out_of_sync(peer_device, &peer_req->i);
+			drbd_send_out_of_sync(peer_device, sector, size);
 	}
 	return 0;
 out:
@@ -8468,7 +8473,7 @@ static int w_send_out_of_sync(struct drbd_work *w, int cancel)
 	u64 in_sync = peer_req->send_oos_in_sync;
 	int err;
 
-	err = drbd_send_out_of_sync(peer_device, &peer_req->i);
+	err = drbd_send_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 	peer_req->sent_oos_nodes |= NODE_MASK(peer_device->node_id);
 
 	rcu_read_lock();
