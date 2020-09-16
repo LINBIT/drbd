@@ -854,7 +854,7 @@ start:
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+		clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	}
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (discard_my_data)
@@ -3622,7 +3622,7 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 
 	initial_handshake =
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
-		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+		!test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	uuid_matches_initial = self == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
 	flags_matches_initial = local_uuid_flags == peer_device->comm_uuid_flags;
 	if (initial_handshake && (!uuid_matches_initial || !flags_matches_initial)) {
@@ -5106,7 +5106,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	node_mask = be64_to_cpu(p->node_mask);
 
-	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
 	    peer_device->connection->peer_role[NOW] == R_PRIMARY &&
 	    peer_device->uuid_flags & UUID_FLAG_STABLE)
 		check_resync_source(device, node_mask);
@@ -6389,7 +6389,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.conn <= C_TEAR_DOWN)
 		return -ECONNRESET;
 
-	if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	if (!test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
 	    peer_state.role == R_PRIMARY && peer_device->uuid_flags & UUID_FLAG_STABLE)
 		check_resync_source(device, peer_device->uuid_node_mask);
 
@@ -6605,7 +6605,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	}
 	rv = end_state_change_locked(resource);
 	new_repl_state = peer_device->repl_state[NOW];
-	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	write_unlock_irq(&resource->state_rwlock);
 
 	if (rv < SS_SUCCESS)
@@ -7206,7 +7206,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	weak_nodes |= NODE_MASK(peer_device->node_id);
 	peer_device->current_uuid = current_uuid;
 
-	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
 	    connection->peer_role[NOW] == R_PRIMARY)
 		check_resync_source(device, weak_nodes);
 
@@ -7216,7 +7216,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 
-	if (test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags) &&
+	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
 	    get_ldev_if_state(device, D_UP_TO_DATE)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_warn(peer_device, "received new current UUID: %016llX "
