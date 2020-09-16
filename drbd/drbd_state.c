@@ -2121,7 +2121,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (peer_role[OLD] == R_UNKNOWN && peer_role[NEW] == R_PRIMARY &&
 			    peer_disk_state[NEW] == D_DISKLESS && disk_state[NEW] >= D_NEGOTIATING) {
 				/* Got connected to a diskless primary */
-				if (uuids_match) {
+				if (uuids_match && !is_sync_target_other_c(peer_device)) {
 					if (device->disk_state[NOW] < D_UP_TO_DATE) {
 						drbd_info(peer_device, "Upgrading local disk to D_UP_TO_DATE since current UUID matches.\n");
 						disk_state[NEW] = D_UP_TO_DATE;
