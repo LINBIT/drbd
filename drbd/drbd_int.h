@@ -581,6 +581,7 @@ enum device_flag {
 	PRIMARY_LOST_QUORUM,
 	TIEBREAKER_QUORUM,	/* Tiebreaker keeps quorum; used to avoid too verbose logging */
 	DESTROYING_DEV,
+	TRY_TO_GET_RESYNC,
 };
 
 /* flag bits per peer device */
@@ -1266,6 +1267,7 @@ struct drbd_peer_device {
 	struct {/* sender todo per peer_device */
 		bool was_ahead;
 	} todo;
+	union drbd_state connect_state;
 };
 
 struct submit_worker {
@@ -2076,6 +2078,7 @@ extern bool drbd_have_local_disk(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 extern enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach);
+extern void drbd_try_to_get_resynced(struct drbd_device *device);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {

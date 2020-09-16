@@ -125,6 +125,7 @@ extern void __change_resync_susp_user(struct drbd_peer_device *, bool);
 extern enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *, bool, enum chg_state_flags);
 extern void __change_resync_susp_peer(struct drbd_peer_device *, bool);
 extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
+extern void apply_connect(struct drbd_connection *, bool);
 
 struct drbd_work;
 extern int abort_nested_twopc_work(struct drbd_work *, int);
