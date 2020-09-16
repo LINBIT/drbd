@@ -35,6 +35,7 @@ DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9-rhel7
 DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9-rhel8
 DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9-bionic
 DOCKERREGPATH_FOCAL = $(DOCKERREGISTRY)/drbd9-focal
+DOCKERREGPATH_SLES15SP1 = $(DOCKERREGISTRY)/drbd9-sles15sp1
 
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
@@ -311,7 +312,7 @@ km-deb: check-submods distclean drbd/.drbd_git_revision
 	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"
 endif
 
-.PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage
+.PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1 dockerimage
 dockerimage.rhel7:
 	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) .
 	docker tag $(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest
@@ -328,14 +329,19 @@ dockerimage.focal:
 	cd docker && docker build -f Dockerfile.focal -t $(DOCKERREGPATH_FOCAL):$(TAG) .
 	docker tag $(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest
 
-dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal
+dockerimage.sles15sp1:
+	cd docker && docker build -f Dockerfile.sles15sp1 -t $(DOCKERREGPATH_SLES15SP1):$(TAG) .
+	docker tag $(DOCKERREGPATH_SLES15SP1):$(TAG) $(DOCKERREGPATH_SLES15SP1):latest
+
+dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1
 
 # used for --sync in lbbuild to decide which containers to push to which registry
 dockerpath:
 	@echo $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest \
 		$(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest \
 		$(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest \
-		$(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
+		$(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest \
+		$(DOCKERREGPATH_SLES15SP1):$(TAG) $(DOCKERREGPATH_SLES15SP1):latest
 
 ifndef MODE
 MODE = report
