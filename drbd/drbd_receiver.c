@@ -5374,6 +5374,24 @@ sanitize_outdate(struct drbd_peer_device *peer_device,
 	return result_mask;
 }
 
+static void log_openers(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	mutex_lock(&resource->open_release);
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct opener *opener;
+
+		opener = list_first_entry_or_null(&device->openers.list, struct opener, list);
+		if (opener)
+			drbd_warn(device, "Held open by %s(%d)\n", opener->comm, opener->pid);
+	}
+	rcu_read_unlock();
+	mutex_unlock(&resource->open_release);
+}
+
 /**
  * change_connection_state()  -  change state of a connection and all its peer devices
  *
@@ -5436,8 +5454,11 @@ out:
 			goto retry;
 	}
 
-	if (rv < SS_SUCCESS)
+	if (rv < SS_SUCCESS) {
 		drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
+		if (rv == SS_PRIMARY_READER)
+			log_openers(resource);
+	}
 
 	return rv;
 fail:
