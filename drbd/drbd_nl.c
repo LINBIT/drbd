@@ -989,12 +989,10 @@ enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, struct sk_buff *reply_skb)
 {
 	struct drbd_device *device;
-	int vnr;
+	int vnr, err, try = 0, forced = 0;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
-	int try = 0;
 	bool retried_ss_two_primaries = false;
-	int forced = 0;
 	bool with_force = false;
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
@@ -1003,7 +1001,10 @@ retry:
 
 	if (role == R_PRIMARY) {
 		drbd_check_peers(resource);
-		wait_event(resource->state_wait, !reconciliation_ongoing(resource));
+		err = wait_event_interruptible(resource->state_wait,
+					       !reconciliation_ongoing(resource));
+		if (err)
+			return SS_INTERRUPTED;
 		wait_up_to_date(resource);
 		down(&resource->state_sem);
 	} else /* (role == R_SECONDARY) */ {

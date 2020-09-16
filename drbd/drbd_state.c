@@ -1229,8 +1229,14 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 {
 	struct drbd_peer_device *peer_device;
 
-	if (device->resource->role[which] == R_PRIMARY)
+	if (device->resource->role[which] == R_PRIMARY) {
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->disk_state[which] == D_UP_TO_DATE &&
+			    peer_device->repl_state[which] == L_WF_BITMAP_T)
+				return true;
+		}
 		return false;
+	}
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->connection->peer_role[which] == R_PRIMARY &&
