@@ -610,6 +610,8 @@ enum peer_device_flag {
 	HANDLING_CONGESTION,    /* Set while testing for congestion and handling it */
 	HANDLE_CONGESTION,      /* tell worker to change state due to congestion */
 	HOLDING_UUID_READ_LOCK, /* did a down_read(&device->uuid_sem) */
+	RS_SOURCE_MISSED_END,   /* SyncSource did not got P_UUIDS110 */
+	RS_PEER_MISSED_END,     /* Peer (which was SyncSource) did not got P_UUIDS110 after resync */
 };
 
 /* We could make these currently hardcoded constants configurable

@@ -5078,13 +5078,37 @@ found:
 
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
-	int node_id;
+	const int my_node_id = device->resource->res_opts.node_id;
 	bool write_bm = false;
 	bool filled = false;
+	bool current_equal;
+	int node_id;
+
+	current_equal = peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY);
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
+
+	if (!test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) && current_equal) {
+		u64 bm_to_peer = peer_md[peer_device->node_id].bitmap_uuid & ~UUID_PRIMARY;
+		u64 bm_towards_me = peer_device->bitmap_uuids[my_node_id] & ~UUID_PRIMARY;
+
+		if (bm_towards_me != 0 && bm_to_peer == 0 &&
+		    bm_towards_me != peer_current_uuid) {
+			drbd_info(peer_device, "Peer missed end of resync\n");
+			set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+		}
+		if (bm_towards_me == 0 && bm_to_peer != 0 &&
+		    bm_to_peer != peer_current_uuid) {
+			drbd_info(peer_device, "Missed end of resync as sync-source\n");
+			set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+		}
+		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		return;
+	}
+
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == device->ldev->md.node_id)
 			continue;
@@ -5093,10 +5117,9 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			continue;
 
 		if (peer_device->bitmap_uuids[node_id] == 0 && peer_md[node_id].bitmap_uuid != 0) {
-			u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 			int from_node_id;
 
-			if (peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
+			if (current_equal) {
 				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
 				peer_md[node_id].bitmap_uuid = 0;
 				if (node_id == peer_device->node_id)
