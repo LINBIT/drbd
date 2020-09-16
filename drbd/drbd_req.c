@@ -20,21 +20,6 @@
 
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size);
 
-/* Update disk stats at start of I/O request */
-static void _drbd_start_io_acct(struct drbd_device *device, struct drbd_request *req)
-{
-	generic_start_io_acct(device->rq_queue, bio_data_dir(req->master_bio), req->i.size >> 9,
-			      &device->vdisk->part0);
-}
-
-/* Update disk stats when completing request upwards */
-static void _drbd_end_io_acct(struct drbd_device *device, struct drbd_request *req)
-{
-	generic_end_io_acct(device->rq_queue, bio_data_dir(req->master_bio),
-			    &device->vdisk->part0,
-			    req->start_jif);
-}
-
 static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio *bio_src)
 {
 	struct drbd_request *req;
@@ -517,7 +502,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		start_new_tl_epoch(device->resource);
 
 	/* Update disk stats */
-	_drbd_end_io_acct(device, req);
+	bio_end_io_acct(req->master_bio, req->start_jif);
 
 	/* If READ failed,
 	 * have it be pushed back to the retry work queue,
@@ -1646,14 +1631,14 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 		bio_endio(bio);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	/* Update disk stats */
+	req->start_jif = bio_start_io_acct(req->master_bio);
+
 	if (get_ldev(device))
 		req_make_private_bio(req, bio);
 
-	req->start_jif = start_jif;
 	ktime_get_accounting_assign(req->start_kt, start_kt);
-
-	/* Update disk stats */
-	_drbd_start_io_acct(device, req);
 
 	if (rw != WRITE || req->i.size == 0)
 		return req;
