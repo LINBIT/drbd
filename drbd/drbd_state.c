@@ -2613,6 +2613,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+				clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 				clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 			}
 		}
