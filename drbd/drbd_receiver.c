@@ -749,7 +749,14 @@ static int connect_work(struct drbd_work *work, int cancel)
 
 	t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	do {
-		rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE | CS_VERBOSE | CS_DONT_RETRY);
+		/* Carefully check if it is okay to do a two_phase_commit from sender context */
+		if (down_trylock(&resource->state_sem)) {
+			rv = SS_CONCURRENT_ST_CHG;
+			break;
+		}
+		rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE |
+				   CS_ALREADY_SERIALIZED | CS_VERBOSE | CS_DONT_RETRY);
+		up(&resource->state_sem);
 		if (rv != SS_PRIMARY_READER)
 			break;
 
