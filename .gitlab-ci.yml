@@ -47,18 +47,10 @@ tarball:
   stage: tarball
   image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
   script:
-    - |
-      find lbbuild/localpkgs/ -name 'compat.h*' -print0 |
-        while IFS= read -r -d '' h; do
-          s=$(md5sum "$h")
-          s=${s%% *}
-          release=${h#*compat.h.}
-          echo $s
-          echo $release
-          mkdir -p drbd/drbd-kernel-compat/cocci_cache/$s
-          cp $h drbd/drbd-kernel-compat/cocci_cache/$s/compat.h
-          echo $release >> drbd/drbd-kernel-compat/cocci_cache/$s/kernelrelease.txt
-        done
+    - pushd drbd/drbd-kernel-compat
+    - export FILES=$((cd ../../lbbuild/localpkgs; find . -name 'compat.h*' | tar -T - -czf -) | tar xzvf -)
+    - ./build_cocci_cache.sh $FILES
+    - popd
     - make -j $(nproc) -C drbd compat
     - make FORCE=1 PRESERVE_DEBIAN=1 tarball
   dependencies:
