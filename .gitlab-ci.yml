@@ -6,10 +6,11 @@ stages:
 
 .setup-lbbuild:
   before_script:
-    - rm -rf lbbuild rq
-    - mkdir -p lbbuild drbd-test-bundle
-    - curl -k $LINBIT_REGISTRY_URL/repository/lbbuild/lbbuild-latest.tar.gz | tar -C lbbuild -xvzf -
-    - curl -k $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
+    - rm -rf lbbuildctl rq
+    - mkdir -p drbd-test-bundle
+    - curl -sSL $LINBIT_REGISTRY_URL/repository/lbbuild/lbbuildctl-latest -o lbbuildctl
+    - chmod +x lbbuildctl
+    - curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
     - curl -sSL https://github.com/dflemstr/rq/releases/download/v1.0.2/rq-v1.0.2-x86_64-unknown-linux-gnu.tar.gz | tar -xvzf -
 
 compat-tarball:
@@ -27,33 +28,41 @@ compat-lbbuild:
   extends: .setup-lbbuild
   tags: ['shell']
   script:
-    - mkdir -p lbbuild/upstream
-    - mv drbd-*.tar.gz lbbuild/upstream/
+    - test -d /home/lbbuild || ( echo "NFS share /home does not seem to be mounted"; exit 1 )
+    - export VERSION=$(ls -1 drbd-*.tar.gz | head -n1 | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
+    - mv drbd-*.tar.gz /home/lbbuild/lbbuild/upstream/ci/
     - export META_JSON=$(./rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-    - cd lbbuild
-    - export VERSION=$(ls -1 upstream/drbd-*.tar.gz | head -n1 | xargs basename | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
     - |
-      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | while read args; do
-        ./lbbuild build drbd -v "$VERSION" --compat-only -l $args
-      done
+      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+        ./lbbuildctl build drbd --arch amd64 --ci -v "$VERSION" --compat-only -l \
+          -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
+          -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
+          -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
+          {}
   dependencies:
     - compat-tarball
-  artifacts:
-    when: always
-    paths:
-      - lbbuild/localpkgs
 
 tarball:
   stage: tarball
   image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
   script:
+    - export VERSION=$(ls -1 drbd-*.tar.gz | head -n1 | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
+    - rm -f drbd-*.tar.gz
     - pushd drbd/drbd-kernel-compat
-    - export FILES=$((cd ../../lbbuild/localpkgs; find . -name 'compat.h*' | tar -T - -czf -) | tar xzvf -)
+    - export ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/${VERSION}")
+    - test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version ${VERSION}"; exit 1)
+    - export URLS=$(echo "$ASSETS_JSON" | jq -r '.items[].downloadUrl')
+    - export FILES=$(echo "$URLS" | xargs basename -a)
+    - |
+      echo "$URLS" | while read url; do
+        curl -ksSLO "$url"
+      done
     - ./build_cocci_cache.sh $FILES
     - popd
     - make -j $(nproc) -C drbd compat
     - make FORCE=1 PRESERVE_DEBIAN=1 tarball
   dependencies:
+    - compat-tarball
     - compat-lbbuild
   artifacts:
     when: always
@@ -67,24 +76,16 @@ lbbuild:
   extends: .setup-lbbuild
   tags: ['shell']
   script:
-    - mkdir -p lbbuild/upstream
-    - mv drbd-*.tar.gz lbbuild/upstream/
+    - test -d /home/lbbuild || ( echo "NFS share /home does not seem to be mounted"; exit 1 )
+    - export VERSION=$(ls -1 drbd-*.tar.gz | head -n1 | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
+    - mv drbd-*.tar.gz /home/lbbuild/lbbuild/upstream/ci/
     - export META_JSON=$(./rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-    - cd lbbuild
-    - export VERSION=$(ls -1 upstream/drbd-*.tar.gz | head -n1 | xargs basename | sed -r 's/drbd-(.*)\.tar\.gz/\1/g')
     - |
-      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | while read args; do
-        ./lbbuild build drbd -v "$VERSION" -l $args
-      done
-    - cd ../
-    - export R=$LINBIT_REGISTRY_URL/repository
-    - TYPE=yum TARGET_REPO=$R/rhel8/x86_64 .gitlab/upload.sh lbbuild/localpkgs/drbd-*/rhel8.*/amd64/kmod-drbd-*.rpm
-    - TYPE=apt TARGET_REPO=$R/ubuntu-xenial .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-xenial/amd64/drbd-module-*.deb
-    - TYPE=apt TARGET_REPO=$R/ubuntu-bionic .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-bionic/amd64/drbd-module-*.deb
-    - TYPE=apt TARGET_REPO=$R/ubuntu-focal .gitlab/upload.sh lbbuild/localpkgs/drbd-*/ubuntu-focal/amd64/drbd-module-*.deb
+      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+        ./lbbuildctl build drbd --arch amd64 --ci -v "$VERSION" -l \
+          -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
+          -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
+          -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
+          {}
   dependencies:
     - tarball
-  artifacts:
-    when: always
-    paths:
-      - lbbuild/localpkgs
