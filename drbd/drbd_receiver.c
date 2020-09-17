@@ -4233,11 +4233,12 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 	return rv;
 }
 
-static void disk_states_to_goodness(struct drbd_device *device,
+static void disk_states_to_goodness(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
 				    enum sync_strategy *strategy, int rule_nr)
 {
-	enum drbd_disk_state disk_state = device->disk_state[NOW];
+	struct drbd_device *device = peer_device->device;
+	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
 	bool p = false;
 
 	if (*strategy != NO_SYNC && rule_nr != 40)
@@ -4257,7 +4258,7 @@ static void disk_states_to_goodness(struct drbd_device *device,
 	}
 
 	if (p)
-		drbd_info(device, "Becoming sync %s due to disk states.\n",
+		drbd_info(peer_device, "Becoming sync %s due to disk states.\n",
 			  strategy_descriptor(*strategy).is_sync_source ? "source" : "target");
 }
 
@@ -4273,7 +4274,7 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 		return -1;
 
 	bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
-	disk_states_to_goodness(peer_device->device, peer_disk_state, &strategy, rule_nr);
+	disk_states_to_goodness(peer_device, peer_disk_state, &strategy, rule_nr);
 
 	return goodness_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
 }
@@ -4313,7 +4314,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -2;
 	}
 
-	disk_states_to_goodness(device, peer_disk_state, &strategy, rule_nr);
+	disk_states_to_goodness(peer_device, peer_disk_state, &strategy, rule_nr);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
 		drbd_warn(device, "Ignore Split-Brain, for now, at least one side unstable\n");

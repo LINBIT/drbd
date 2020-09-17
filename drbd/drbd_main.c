@@ -1683,6 +1683,7 @@ int conn_send_state(struct drbd_connection *connection, union drbd_state state)
  */
 int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
 {
+	peer_device->comm_state = state;
 	return send_state(peer_device->connection, peer_device->device->vnr, state);
 }
 
