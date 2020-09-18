@@ -2651,10 +2651,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		    disk_state[NEW] > D_NEGOTIATING)
 			device->last_reattach_jif = jiffies;
 
-		if (!device->have_quorum[OLD] && device->have_quorum[NEW]) {
+		if (!device->have_quorum[OLD] && device->have_quorum[NEW])
 			clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
-			clear_bit(NEW_CUR_UUID, &device->flags);
-		}
 	}
 
 	for_each_connection(connection, resource) {
