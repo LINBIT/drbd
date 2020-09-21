@@ -1062,6 +1062,8 @@ static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool v
 
 			if (r == L_SYNC_SOURCE)
 				p->repl_state[NEW] = L_PAUSED_SYNC_S;
+			else if (r == L_SYNC_TARGET)
+				p->repl_state[NEW] = L_PAUSED_SYNC_T;
 		}
 	} else {
 		for_each_peer_device(p, device) {
