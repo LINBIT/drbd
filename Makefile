@@ -209,6 +209,7 @@ endif
 	@set -e ; submodules=`$(GIT) submodule foreach --quiet 'echo $$path'`; \
 	$(GIT) ls-files | \
 	  grep -vxF -e "$$submodules" | \
+	  grep -v "^\.gitlab" | \
 	  sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' | \
 	  grep -v "gitignore\|gitmodules" > .filelist
 	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' | \
