@@ -1,12 +1,10 @@
 variables:
   VIRTER_VERSION: v0.4.2
   VMSHED_VERSION: v0.4.1
+  BUILD_HELPERS_VERSION: 50502ca38df13d14a4bb7a63ece1d0b985cd9b59
 
 stages:
-  - source
-  - compat-lbbuild
-  - tarball
-  - lbbuild
+  - build
   - test
 
 .setup-lbbuild:
@@ -22,50 +20,32 @@ stages:
     - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
     - if: $CI_COMMIT_BRANCH == 'master'
 
-source:
-  stage: source
-  extends: .rules-build
-  image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
-  script:
-    - |
-      mkdir -p source/drbd-test-bundle
-      curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C source/drbd-test-bundle -xvzf -
-    - |
-      make FORCE=1 PRESERVE_DEBIAN=1 tarball
-      echo DRBD_VERSION=$(ls -1 drbd-*.tar.gz | head -n1 | sed -r 's/drbd-(.*)\.tar\.gz/\1/g') >> build.env
-      mv drbd-*.tar.gz source/
-  artifacts:
-    reports:
-      dotenv: build.env
-    paths:
-      - source
-    expire_in: 1 week
-
-compat-lbbuild:
-  stage: compat-lbbuild
+build:
+  stage: build
   extends: [ .rules-build, .setup-lbbuild ]
-  tags: ['shell']
+  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file source/drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
-    - META_JSON=$(rq -t < source/drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+    - |
+      mkdir -p drbd-test-bundle
+      curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
+    - |
+      DRBD_VERSION=9.0.0.$CI_COMMIT_SHA
+      drbd_dummy_release "$DRBD_VERSION"
+    - |
+      make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$DRBD_VERSION" tarball
+      echo DRBD_VERSION=$DRBD_VERSION >> build.env
+    - curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+    - META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
     - |
       echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
-        lbbuildctl build drbd --arch amd64 --ci -v "$DRBD_VERSION" --compat-only -l \
+        lbbuildctl build drbd --arch amd64 --ci -v "${DRBD_VERSION}-1" --compat-only -l \
           -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
           -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
           -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
           {}
-  dependencies:
-    - source
-
-tarball:
-  stage: tarball
-  extends: .rules-build
-  image: $LINBIT_DOCKER_REGISTRY/drbd-build:latest
-  script:
     - pushd drbd/drbd-kernel-compat
-    - ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/${DRBD_VERSION}")
-    - test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version ${DRBD_VERSION}"; exit 1)
+    - ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/${DRBD_VERSION}-1")
+    - test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version ${DRBD_VERSION}-1"; exit 1)
     - URLS=$(echo "$ASSETS_JSON" | jq -r '.items[].downloadUrl')
     - FILES=$(echo "$URLS" | xargs basename -a)
     - |
@@ -75,34 +55,23 @@ tarball:
     - ./build_cocci_cache.sh $FILES
     - popd
     - make -j $(nproc) -C drbd compat
-    - make FORCE=1 PRESERVE_DEBIAN=1 tarball
-  dependencies:
-    - source
-    - compat-lbbuild
-  artifacts:
-    when: always
-    paths:
-      - drbd-*.tar.gz
-      - drbd/drbd-kernel-compat/cocci_cache/
-    expire_in: 1 week
-
-lbbuild:
-  stage: lbbuild
-  extends: [ .rules-build, .setup-lbbuild ]
-  tags: ['shell']
-  script:
+    - make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$DRBD_VERSION" tarball
     - curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
-    - META_JSON=$(rq -t < source/drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+    - META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
     - |
       echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
-        lbbuildctl build drbd --arch amd64 --ci -v "$DRBD_VERSION" -l \
+        lbbuildctl build drbd --arch amd64 --ci -v "${DRBD_VERSION}-1" -l \
           -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
           -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
           -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
           {}
-  dependencies:
-    - source
-    - tarball
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths:
+      - drbd-test-bundle
+    expire_in: 1 week
+
 
 test:
   stage: test
@@ -120,28 +89,27 @@ test:
       drbd_fetch_binary virter virter-$VIRTER_VERSION https://github.com/LINBIT/virter/releases/download/$VIRTER_VERSION/virter-linux-amd64
       drbd_fetch_binary vmshed vmshed-$VMSHED_VERSION https://github.com/LINBIT/vmshed/releases/download/$VMSHED_VERSION/vmshed-linux-amd64
     - |
-      for BASE_IMAGE in $(rq -t < source/drbd-test-bundle/virter/vms.toml | jq -r '.vms[] | .base_image'); do
+      for BASE_IMAGE in $(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[] | .base_image'); do
         if ! virsh vol-info --pool default $BASE_IMAGE; then
           virter image pull --url $LINBIT_REGISTRY_URL/repository/vm-image/$BASE_IMAGE $BASE_IMAGE
         fi
       done
     - |
       mkdir -p packages
-      cp source/drbd-test-bundle/target/drbd-test-target.tgz packages/
+      cp drbd-test-bundle/target/drbd-test-target.tgz packages/
     - docker image pull $LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
-    - DRBD_PACKAGE_VERSION=$(echo "$DRBD_VERSION" | cut -d - -f 1)
     - >-
       vmshed
       --jenkins "$(readlink -f tests-out)"
       --startvm 40
       --nvms 20
-      --vms source/drbd-test-bundle/virter/vms.toml
-      --tests source/drbd-test-bundle/virter/tests.toml
+      --vms drbd-test-bundle/virter/vms.toml
+      --tests drbd-test-bundle/virter/tests.toml
       --set values.TestSuiteImage=$LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
-      --set values.DrbdVersion=$DRBD_PACKAGE_VERSION
+      --set values.DrbdVersion=${DRBD_VERSION}
       --set '"""values.RepositoryPackages=exxe\,drbd-utils"""'
   dependencies:
-    - source
+    - build
   artifacts:
     # provide a convenient name so that the downloaded artifacts can be identified
     name: $CI_PROJECT_NAME-$CI_JOB_ID
