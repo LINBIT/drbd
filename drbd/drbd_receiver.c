@@ -3246,12 +3246,12 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	size   = be32_to_cpu(p->blksize);
 
 	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
-		drbd_err(device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
 		return -EINVAL;
 	}
 	if (sector + (size>>9) > capacity) {
-		drbd_err(device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
 		return -EINVAL;
 	}
@@ -3269,7 +3269,12 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		case P_RS_THIN_REQ:
 		case P_RS_DATA_REQUEST:
 		case P_CSUM_RS_REQUEST:
-			drbd_send_ack_rp(peer_device, P_NEG_RS_DREPLY , p);
+			if (peer_device->repl_state[NOW] == L_PAUSED_SYNC_S) {
+				verb = 0;
+				drbd_send_ack_rp(peer_device, P_RS_CANCEL, p);
+			} else {
+				drbd_send_ack_rp(peer_device, P_NEG_RS_DREPLY, p);
+			}
 			break;
 		case P_OV_REPLY:
 			verb = 0;
@@ -3280,7 +3285,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			BUG();
 		}
 		if (verb && drbd_ratelimit())
-			drbd_err(device, "Can not satisfy peer's read request, "
+			drbd_err(peer_device, "Can not satisfy peer's read request, "
 			    "no local data.\n");
 
 		/* drain possibly payload */
