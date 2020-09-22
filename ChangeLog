@@ -3,8 +3,10 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.25-0rc1 (api:genl2/proto:86-117/transport:14)
+9.0.25-1 (api:genl2/proto:86-117/transport:14)
 --------
+ * fix a missed resync after regaining quorum if a node gets disconnected
+   while (or shortly before) losing quorum
  * fix a race condition between receiving UUIDs and finishing a resync
    that can lead to a false-positive split-brain detection later on
  * fix access after free of peer_req objects, that only happened when
@@ -12,10 +14,15 @@ Latest:
  * fix abortion of local state changes in case they can not proceed due
    to loss of connection
  * fix corner cases with reconciliation resync and parallel promote
+ * fix a race that can lead to a stuck resync when a resync goes
+   into pause (e.g. because the resync source becomes a resync target
+   from another node)
  * fix an issue establishing a connection when the multipath feature is
    used to connect to a stacked resource without a dedicated service IP
  * fix sometimes a peer-disk state to another resync-target staying Outdated
    after two resyncs from the same sync source node finish
+ * fix transition to paused-resync-state when an other connection continues
+   its resync operation
  * fix an (unlikely) deadlock while establishing a connection
  * deactivate the kref_debug code, it has performance implicatios
  * Introduce the "disconnected" hander; it receives the last connection
