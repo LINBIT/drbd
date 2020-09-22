@@ -8898,12 +8898,12 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 				mutex_unlock(&peer_device->resync_next_bit_mutex);
 			}
 
-			rs_sectors_came_in(peer_device, size);
-			mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 			break;
 		default:
 			BUG();
 		}
+		rs_sectors_came_in(peer_device, size);
+		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 		put_ldev(device);
 	}
 
