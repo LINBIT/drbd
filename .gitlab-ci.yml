@@ -2,6 +2,12 @@ variables:
   VIRTER_VERSION: v0.5.0
   VMSHED_VERSION: v0.5.0
   BUILD_HELPERS_VERSION: fa389c8d20dd8f6a7a3b3973bdb14fc6597008cf
+  # we have to change the way GitLab CI clones the repository.
+  # by default, it is shallow, which gives us a wrong commit count when
+  # we do `git rev-list --count origin/master` below.
+  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
+  GIT_SUBMODULE_STRATEGY: normal
 
 stages:
   - build
@@ -12,6 +18,50 @@ stages:
     - . .gitlab/gitlab-utils.sh
     - drbd_prepare_tools
     - drbd_fetch_lbbuildctl
+    - |
+      drbd_build () {
+        local version="$1"
+        local release="$2"
+
+        mkdir -p drbd-test-bundle
+        curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
+
+        drbd_dummy_release "$version" "$release"
+        make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$version-$release" tarball
+
+        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+
+        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+        echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+          lbbuildctl build drbd --arch amd64 --ci -v "${version}-${release}" --compat-only -l \
+            -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
+            -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
+            -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
+            {}
+
+        pushd drbd/drbd-kernel-compat
+        ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/${version}-${release}")
+        test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version ${version}-${release}"; exit 1)
+        URLS=$(echo "$ASSETS_JSON" | jq -r '.items[].downloadUrl')
+        FILES=$(echo "$URLS" | xargs basename -a)
+        echo "$URLS" | while read url; do
+          curl -ksSLO "$url"
+        done
+        ./build_cocci_cache.sh $FILES
+        popd
+
+        make -j $(nproc) -C drbd compat
+        make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$version-$release" tarball
+        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+
+        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
+        echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+          lbbuildctl build drbd --arch amd64 --ci -v "${version}-${release}" -l \
+            -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
+            -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
+            -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
+            {}
+      }
 
 # rules clause determining whether to build
 .rules-build:
@@ -24,53 +74,28 @@ build:
   stage: build
   extends: [ .rules-build, .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
-  script:
-    - |
-      mkdir -p drbd-test-bundle
-      curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
-    - |
-      DRBD_VERSION=9.0.0.$CI_COMMIT_SHA
-      drbd_dummy_release "$DRBD_VERSION" 1
-    - |
-      make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$DRBD_VERSION" tarball
-      echo DRBD_VERSION=$DRBD_VERSION >> build.env
-    - curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
-    - META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-    - |
-      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
-        lbbuildctl build drbd --arch amd64 --ci -v "${DRBD_VERSION}-1" --compat-only -l \
-          -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
-          -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
-          -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-          {}
-    - pushd drbd/drbd-kernel-compat
-    - ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/${DRBD_VERSION}-1")
-    - test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version ${DRBD_VERSION}-1"; exit 1)
-    - URLS=$(echo "$ASSETS_JSON" | jq -r '.items[].downloadUrl')
-    - FILES=$(echo "$URLS" | xargs basename -a)
-    - |
-      echo "$URLS" | while read url; do
-        curl -ksSLO "$url"
-      done
-    - ./build_cocci_cache.sh $FILES
-    - popd
-    - make -j $(nproc) -C drbd compat
-    - make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$DRBD_VERSION" tarball
-    - curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
-    - META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-    - |
-      echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
-        lbbuildctl build drbd --arch amd64 --ci -v "${DRBD_VERSION}-1" -l \
-          -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
-          -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
-          -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-          {}
+  script: 
+    - DRBD_VERSION=9.0.0.$CI_COMMIT_SHA
+    - echo DRBD_VERSION=$DRBD_VERSION >> build.env
+    - drbd_build $DRBD_VERSION 1
   artifacts:
     reports:
       dotenv: build.env
     paths:
       - drbd-test-bundle
     expire_in: 1 week
+
+build-latest:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
+    - if: $CI_COMMIT_BRANCH == 'master'
+  extends: [ .setup-lbbuild ]
+  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
+  script:
+    - DRBD_VERSION=9.0.0.latest
+    - DRBD_RELEASE=$(git rev-list --count origin/drbd-9.0)
+    - drbd_build $DRBD_VERSION $DRBD_RELEASE
 
 
 test:
