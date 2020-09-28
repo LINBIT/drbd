@@ -1,7 +1,7 @@
 variables:
   VIRTER_VERSION: v0.5.0
   VMSHED_VERSION: v0.5.0
-  BUILD_HELPERS_VERSION: 50502ca38df13d14a4bb7a63ece1d0b985cd9b59
+  BUILD_HELPERS_VERSION: fa389c8d20dd8f6a7a3b3973bdb14fc6597008cf
 
 stages:
   - build
@@ -30,7 +30,7 @@ build:
       curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
     - |
       DRBD_VERSION=9.0.0.$CI_COMMIT_SHA
-      drbd_dummy_release "$DRBD_VERSION"
+      drbd_dummy_release "$DRBD_VERSION" 1
     - |
       make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$DRBD_VERSION" tarball
       echo DRBD_VERSION=$DRBD_VERSION >> build.env
