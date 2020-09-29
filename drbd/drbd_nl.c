@@ -5132,6 +5132,8 @@ int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
 	return put_resource_in_arg0(cb, 7);
 }
 
+static void device_to_info(struct device_info *info, struct drbd_device *device);
+
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -5831,7 +5833,7 @@ out_no_unlock:
 	return 0;
 }
 
-void device_to_info(struct device_info *info,
+static void device_to_info(struct device_info *info,
 			   struct drbd_device *device)
 {
 	info->dev_disk_state = device->disk_state[NOW];
