@@ -3110,7 +3110,8 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
-	if (resource->role[NOW] == R_PRIMARY)
+	if (resource->role[NOW] == R_PRIMARY
+	&&  device->ldev->md.current_uuid != UUID_JUST_CREATED)
 		device->ldev->md.current_uuid |= UUID_PRIMARY;
 	else
 		device->ldev->md.current_uuid &= ~UUID_PRIMARY;
