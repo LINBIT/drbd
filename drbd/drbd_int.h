@@ -801,6 +801,7 @@ struct twopc_reply {
 		};
 	};
 	unsigned int is_disconnect:1;
+	unsigned int is_connect:1;
 	unsigned int is_aborted:1;
 };
 
@@ -2022,6 +2023,9 @@ extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
 #define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
+extern void conn_connect2(struct drbd_connection *);
+extern void wait_initial_states_received(struct drbd_connection *);
+extern void abort_connect(struct drbd_connection *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
