@@ -7052,8 +7052,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
-				D_ASSERT(device, old_peer_state.conn == L_OFF);
-				goto fail;
+				if (connection->agreed_pro_version >= 118)
+					new_repl_state = L_OFF;
+				else
+					goto fail;
 			}
 		}
 
@@ -9315,18 +9317,18 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 				rflags = GROW_BUFFER;
 
 		} else if (rv == 0) {
-			if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
-				long t;
-				rcu_read_lock();
-				t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
-				rcu_read_unlock();
+			long t;
 
-				t = wait_event_timeout(connection->resource->state_wait,
-						       connection->cstate[NOW] < C_CONNECTED,
-						       t);
-				if (t)
-					break;
-			}
+			rcu_read_lock();
+			t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
+			rcu_read_unlock();
+
+			t = wait_event_timeout(connection->resource->state_wait,
+					       connection->cstate[NOW] < C_CONNECTING,
+					       t);
+			if (t)
+				break;
+
 			drbd_err(connection, "meta connection shut down by peer.\n");
 			goto reconnect;
 		} else if (rv == -EAGAIN) {

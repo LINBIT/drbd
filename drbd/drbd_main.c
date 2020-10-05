@@ -1037,15 +1037,6 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	if (size == 0)
 		return 0;
 
-	if (connection->cstate[NOW] < C_CONNECTING) {
-		/* DROP UNSENT INSTEAD */
-		sbuf->unsent =
-		sbuf->pos = page_address(sbuf->page);
-		sbuf->allocated_size = 0;
-		sbuf->additional_size = 0;
-		return -EIO;
-	}
-
 	if (drbd_stream == DATA_STREAM) {
 		rcu_read_lock();
 		connection->transport.ko_count = rcu_dereference(connection->transport.net_conf)->ko_count;
