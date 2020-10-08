@@ -6640,7 +6640,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 
-	write_lock_irq(&resource->state_rwlock);
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
@@ -6658,6 +6657,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		return 0;
 	}
 
+	write_lock_irq(&resource->state_rwlock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
