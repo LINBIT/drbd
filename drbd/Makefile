@@ -156,12 +156,6 @@ else
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
-	@if git show HEAD:drbd/linux/drbd_config.h > linux/drbd_config.h.tmp \
-	&& ! diff -s -U0 linux/drbd_config.h.tmp linux/drbd_config.h ; then \
-		mv linux/drbd_config.h.tmp linux/drbd_config.h ; \
-	else \
-		rm -f linux/drbd_config.h.tmp ; \
-	fi
 	rm -f drbd_buildtag.c .config*.timestamp compat*.h
 
   tags:
