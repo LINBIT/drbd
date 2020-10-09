@@ -2874,9 +2874,11 @@ void notify_device_state_change(struct sk_buff *skb,
 				enum drbd_notification_type type)
 {
 	struct drbd_device *device = device_state_change->device;
-	struct device_info device_info;
-
-	device_to_info(&device_info, device);
+	struct device_info device_info = {
+		.dev_disk_state = device_state_change->disk_state[NEW],
+		.is_intentional_diskless = device->device_conf.intentional_diskless,
+		.dev_has_quorum = device_state_change->have_quorum[NEW],
+	};
 
 	notify_device_state(skb, seq, device, &device_info, type);
 }
