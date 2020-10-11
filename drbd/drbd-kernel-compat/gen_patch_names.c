@@ -323,6 +323,9 @@ int main(int argc, char **argv)
 	patch(1, "part_stat_h", true, false,
 	      COMPAT_HAVE_PART_STAT_H, "present");
 
+	patch(1, "__vmalloc", true, false,
+	      COMPAT___VMALLOC_HAS_2_PARAMS, "has_2_params");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
