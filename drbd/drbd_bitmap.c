@@ -366,8 +366,7 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 	new_pages = kzalloc(bytes, GFP_NOIO | __GFP_NOWARN);
 	if (!new_pages) {
 		new_pages = __vmalloc(bytes,
-				GFP_NOIO | __GFP_HIGHMEM | __GFP_ZERO,
-				PAGE_KERNEL);
+				GFP_NOIO | __GFP_HIGHMEM | __GFP_ZERO);
 		if (!new_pages)
 			return NULL;
 	}
