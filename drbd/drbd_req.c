@@ -2179,6 +2179,21 @@ void do_submit(struct work_struct *ws)
 	}
 }
 
+static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
+{
+	struct drbd_resource *resource = device->resource;
+
+	/* If you "mount -o ro", then later "mount -o remount,rw", you can end
+	 * up with a DRBD "Secondary" receiving WRITE requests from the VFS.
+	 * We cannot have that. */
+	if (resource->role[NOW] != R_PRIMARY && bio_data_dir(bio) == WRITE) {
+		if (drbd_ratelimit())
+		       drbd_err(device, "Rejected WRITE request, not in Primary role.\n");
+		return true;
+	}
+	return false;
+}
+
 blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
@@ -2186,6 +2201,12 @@ blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 	ktime_t start_kt;
 #endif
 	unsigned long start_jif;
+
+	if (drbd_fail_request_early(device, bio)) {
+		bio->bi_status = BLK_STS_IOERR;
+		bio_endio(bio);
+		return BLK_QC_T_NONE;
+	}
 
 	blk_queue_split(q, &bio);
 
