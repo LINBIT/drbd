@@ -1,3 +1,15 @@
+drbd (10.0.0a4-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Joel Colledge <joel.colledge@linbit.com>  Fri, 16 Oct 2020 10:07:41 +0200
+
+drbd (10.0.0a3~0a3) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Philipp Reisner <philipp.reisner@linbit.com>  Fri, 18 Sep 2020 13:13:41 +0200
+
 drbd (10.0.0a2~0a2) unstable; urgency=medium
 
   * New upstream release
