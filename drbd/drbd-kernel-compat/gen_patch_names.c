@@ -329,6 +329,9 @@ int main(int argc, char **argv)
 	patch(1, "tcp_sock_set_cork", true, false,
 	      COMPAT_HAVE_TCP_SOCK_SET_CORK, "present");
 
+	patch(1, "tcp_sock_set_nodelay", true, false,
+	      COMPAT_HAVE_TCP_SOCK_SET_NODELAY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
