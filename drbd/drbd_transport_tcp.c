@@ -152,12 +152,6 @@ static struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,
 	return drbd_path;
 }
 
-static void dtt_nodelay(struct socket *socket)
-{
-	int val = 1;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY, (char *)&val, sizeof(val));
-}
-
 static int dtt_init(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -1056,8 +1050,8 @@ randomize:
 
 	/* we don't want delays.
 	 * we use tcp_sock_set_cork where appropriate, though */
-	dtt_nodelay(dsocket);
-	dtt_nodelay(csocket);
+	tcp_sock_set_nodelay(dsocket->sk);
+	tcp_sock_set_nodelay(csocket->sk);
 
 	tcp_transport->stream[DATA_STREAM] = dsocket;
 	tcp_transport->stream[CONTROL_STREAM] = csocket;
@@ -1236,7 +1230,7 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		tcp_sock_set_cork(socket->sk, false);
 		break;
 	case NODELAY:
-		dtt_nodelay(socket);
+		tcp_sock_set_nodelay(socket->sk);
 		break;
 	case NOSPACE:
 		if (socket->sk->sk_socket)
