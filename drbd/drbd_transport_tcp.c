@@ -1055,7 +1055,7 @@ randomize:
 	 * which we set to 4x the configured ping_timeout. */
 
 	/* we don't want delays.
-	 * we use TCP_CORK where appropriate, though */
+	 * we use tcp_sock_set_cork where appropriate, though */
 	dtt_nodelay(dsocket);
 	dtt_nodelay(csocket);
 
@@ -1211,18 +1211,6 @@ static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	return 0;
 }
 
-static void dtt_cork(struct socket *socket)
-{
-	int val = 1;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
-}
-
-static void dtt_uncork(struct socket *socket)
-{
-	int val = 0;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_CORK, (char *)&val, sizeof(val));
-}
-
 static void dtt_quickack(struct socket *socket)
 {
 	int val = 2;
@@ -1242,10 +1230,10 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 
 	switch (hint) {
 	case CORK:
-		dtt_cork(socket);
+		tcp_sock_set_cork(socket->sk, true);
 		break;
 	case UNCORK:
-		dtt_uncork(socket);
+		tcp_sock_set_cork(socket->sk, false);
 		break;
 	case NODELAY:
 		dtt_nodelay(socket);
