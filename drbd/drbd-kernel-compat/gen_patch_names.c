@@ -326,6 +326,9 @@ int main(int argc, char **argv)
 	patch(1, "__vmalloc", true, false,
 	      COMPAT___VMALLOC_HAS_2_PARAMS, "has_2_params");
 
+	patch(1, "tcp_sock_set_cork", true, false,
+	      COMPAT_HAVE_TCP_SOCK_SET_CORK, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
