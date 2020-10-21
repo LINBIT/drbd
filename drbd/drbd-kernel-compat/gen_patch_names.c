@@ -92,6 +92,24 @@ int main(int argc, char **argv)
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
 
+#if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_BIO)
+	/* "modern" version (>=5.9) with only 1 argument. nothing to do */
+#elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO)
+	/* older version with 2 arguments */
+	patch(1, "blk_queue_split", false, true,
+	      YES, "has_two_parameters");
+#elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
+	/* even older version with 3 arguments */
+	patch(1, "blk_queue_split", false, true,
+	      YES, "has_three_parameters");
+	patch(1, "make_request", false, true,
+	      COMPAT_NEED_MAKE_REQUEST_RECURSION, "need_recursion");
+#else
+	/* ancient version, blk_queue_split not defined at all */
+	patch(1, "blk_queue_split", true, false,
+	      NO, "present");
+#endif
+
 	patch(1, "bio_bi_bdev", false, true,
 	      COMPAT_HAVE_BIO_BI_BDEV, "present");
 
@@ -208,20 +226,6 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_queue_merge_bvec", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC, "present");
-
-#if !defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO)
-# if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
-	/* if _BIOSET is true, it's the variant with 3 arguments */
-	patch(1, "blk_queue_split", false, true,
-	      YES, "bioset");
-	patch(1, "make_request", false, true,
-	      COMPAT_NEED_MAKE_REQUEST_RECURSION, "need_recursion");
-# else
-	/* if _BIOSET is also false, it's not present at all */
-	patch(1, "blk_queue_split", true, false,
-	      NO, "present");
-# endif
-#endif
 
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
