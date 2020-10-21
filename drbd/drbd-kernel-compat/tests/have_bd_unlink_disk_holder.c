@@ -1,4 +1,5 @@
 #include <linux/fs.h>
+#include <linux/blkdev.h>
 
 #ifdef CONFIG_SYSFS
 void dummy(struct block_device *bdev, struct gendisk *disk)
