@@ -1764,7 +1764,7 @@ next_bio:
 		bios = bios->bi_next;
 		bio->bi_next = NULL;
 
-		drbd_generic_make_request(device, peer_request_fault_type(peer_req), bio);
+		drbd_submit_bio_noacct(device, peer_request_fault_type(peer_req), bio);
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
