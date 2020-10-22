@@ -369,6 +369,9 @@ int main(int argc, char **argv)
 	patch(1, "backing_dev_info", true, false,
 	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
 
+	patch(1, "congested_fn", false, true,
+	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
