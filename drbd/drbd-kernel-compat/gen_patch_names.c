@@ -363,6 +363,9 @@ int main(int argc, char **argv)
 	patch(1, "tcp_sock_set_quickack", true, false,
 	      COMPAT_HAVE_TCP_SOCK_SET_QUICKACK, "present");
 
+	patch(1, "submit_bio_noacct", true, false,
+	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
