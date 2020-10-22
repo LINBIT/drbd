@@ -143,21 +143,11 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
 #define bdi_from_device(device) (device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#define init_bdev_info(bdev_info, drbd_congested, device) do { \
-	(bdev_info)->congested_fn = drbd_congested; \
-	(bdev_info)->congested_data = device; \
-	set_bdi_cap_stable_writes(bdev_info->capabilities); \
-} while(0)
 #define adjust_ra_pages(q, b) _adjust_ra_pages((q)->backing_dev_info->ra_pages, (b)->backing_dev_info->ra_pages)
 #else /* < v4.11 */
 #define bdi_rw_congested(BDI) bdi_rw_congested(&BDI)
 #define bdi_congested(BDI, BDI_BITS) bdi_congested(&BDI, (BDI_BITS))
 #define bdi_from_device(device) (&device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#define init_bdev_info(bdev_info, drbd_congested, device) do { \
-	(bdev_info).congested_fn = drbd_congested; \
-	(bdev_info).congested_data = device; \
-	set_bdi_cap_stable_writes((bdev_info).capabilities); \
-} while(0)
 #define adjust_ra_pages(q, b) _adjust_ra_pages((q)->backing_dev_info.ra_pages, (b)->backing_dev_info.ra_pages)
 #endif
 
