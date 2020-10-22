@@ -145,17 +145,38 @@ int main(int argc, char **argv)
 	patch(1, "ib_post", true, false,
 	      COMPAT_IB_POST_SEND_CONST_PARAMS, "const");
 
-	patch(1, "req_hardbarrier", false, true,
-	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
-
 	patch(1, "blk_queue_make_request", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
 
-#ifndef COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST
-	patch(2, "make_request", false, false,
-	      COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST, "is_blk_qc_t",
-	      COMPAT_HAVE_VOID_MAKE_REQUEST, "is_void");
+
+#if defined COMPAT_HAVE_SUBMIT_BIO
+	/*
+	 * modern version (>=v5.9), make_request_fn moved to
+	 * submit_bio block_device_operation.
+	 * nothing to do.
+	 */
+#else
+	/* old versions (<v5.9), using make_request_fn */
+	patch(1, "submit_bio", true, false,
+	      NO, "present");
+
+	patch(1, "req_hardbarrier", false, true,
+	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
+# if defined(COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST)
+	/* older version (v4.3-v5.9): make_request function pointer
+	 * with blk_qc_t return value. most modern make_request based version,
+	 * so nothing more to do. */
+# elif defined(COMPAT_HAVE_VOID_MAKE_REQUEST)
+	/* even older version (v3.1-v4.3): void return value */
+	patch(1, "make_request", false, true,
+	      YES, "returns_void");
+# else
+	/* ancient version (<v3.1): int return value */
+	patch(1, "make_request", false, true,
+	      YES, "returns_int");
+# endif
 #endif
+
 
 	patch(1, "blkdev_get_by_path", true, false,
 	      COMPAT_HAVE_BLKDEV_GET_BY_PATH, "present");
