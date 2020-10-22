@@ -1324,7 +1324,7 @@ struct drbd_device {
 	} pending_bitmap_work;
 	struct device_conf device_conf;
 
-	/* any requests that would block in drbd_make_request()
+	/* any requests that would block in drbd_submit_bio()
 	 * are deferred to this single-threaded work queue */
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
@@ -1840,7 +1840,7 @@ extern void do_submit(struct work_struct *ws);
 #define __drbd_make_request(d,b,k,j) __drbd_make_request(d,b,j)
 #endif
 extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t, unsigned long);
-extern blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio);
+extern blk_qc_t drbd_submit_bio(struct bio *bio);
 
 /* drbd_nl.c */
 enum suspend_scope {
