@@ -1,6 +1,4 @@
 variables:
-  VIRTER_VERSION: v0.6.0
-  VMSHED_VERSION: v0.6.0
   BUILD_HELPERS_VERSION: 378ab075793ec9fef875b67ee1c4dc53a681d49a
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
@@ -110,6 +108,7 @@ test:
     paths:
       - download
   script:
+    - . drbd-test-bundle/virter/version.env
     - |
       curl -sSfL -u gitlab-ci-token:$CI_JOB_TOKEN https://gitlab.at.linbit.com/linbit/build-helpers/-/archive/$BUILD_HELPERS_VERSION/ignored.tar.gz | tar -xvzf -
       mv build-helpers-* build-helpers
