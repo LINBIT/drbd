@@ -4349,12 +4349,13 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				}
 				rcu_read_unlock();
 			}
-			if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
-			    target_connection->agreed_pro_version >= 118)
-				wait_initial_states_received(target_connection);
 
 			request.primary_nodes = cpu_to_be64(reply->primary_nodes);
 		}
+
+		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
+		    target_connection->agreed_pro_version >= 118)
+			wait_initial_states_received(target_connection);
 	}
 
 	if (rv < SS_SUCCESS && target_connection)
