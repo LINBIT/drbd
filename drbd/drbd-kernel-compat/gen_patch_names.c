@@ -205,9 +205,6 @@ int main(int argc, char **argv)
 	patch(1, "sock_create_kern", true, false,
 	      COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS, "has_five_parameters");
 
-	patch(1, "wb_congested_enum", true, false,
-	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
-
 	patch(1, "time64_to_tm", true, false,
 	      COMPAT_HAVE_TIME64_TO_TM, "present");
 
@@ -366,14 +363,17 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
-	patch(1, "backing_dev_info", true, false,
-	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
-
 	patch(1, "congested_fn", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
 
+	patch(1, "wb_congested_enum", true, false,
+	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
+
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
+
+	patch(1, "backing_dev_info", true, false,
+	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
 
 	patch(1, "sendpage_ok", true, false,
 	      COMPAT_HAVE_SENDPAGE_OK, "present");
