@@ -145,9 +145,6 @@ int main(int argc, char **argv)
 	patch(1, "ib_post", true, false,
 	      COMPAT_IB_POST_SEND_CONST_PARAMS, "const");
 
-	patch(1, "blk_queue_make_request", false, true,
-	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
-
 
 #if defined COMPAT_HAVE_SUBMIT_BIO
 	/*
@@ -159,6 +156,9 @@ int main(int argc, char **argv)
 	/* old versions (<v5.9), using make_request_fn */
 	patch(1, "submit_bio", true, false,
 	      NO, "present");
+
+	patch(1, "blk_queue_make_request", false, true,
+	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
 
 	patch(1, "req_hardbarrier", false, true,
 	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
@@ -377,6 +377,9 @@ int main(int argc, char **argv)
 
 	patch(1, "sendpage_ok", true, false,
 	      COMPAT_HAVE_SENDPAGE_OK, "present");
+
+	patch(1, "fallthrough", true, false,
+	      COMPAT_HAVE_FALLTHROUGH, "present");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
