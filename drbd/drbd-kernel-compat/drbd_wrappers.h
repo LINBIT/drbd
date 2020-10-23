@@ -127,13 +127,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif
 
-#define _adjust_ra_pages(qrap, brap) do { \
-	if (qrap != brap) { \
-		drbd_info(device, "Adjusting my ra_pages to backing device's (%lu -> %lu)\n", qrap, brap); \
-		qrap = brap; \
-	} \
-} while(0)
-
 #ifdef BDI_CAP_STABLE_WRITES /* >= v3.9 */
 #define set_bdi_cap_stable_writes(cap)	do { (cap) |= BDI_CAP_STABLE_WRITES; } while (0)
 #else /* < v3.9 */
@@ -143,12 +136,10 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
 #define bdi_from_device(device) (device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#define adjust_ra_pages(q, b) _adjust_ra_pages((q)->backing_dev_info->ra_pages, (b)->backing_dev_info->ra_pages)
 #else /* < v4.11 */
 #define bdi_rw_congested(BDI) bdi_rw_congested(&BDI)
 #define bdi_congested(BDI, BDI_BITS) bdi_congested(&BDI, (BDI_BITS))
 #define bdi_from_device(device) (&device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#define adjust_ra_pages(q, b) _adjust_ra_pages((q)->backing_dev_info.ra_pages, (b)->backing_dev_info.ra_pages)
 #endif
 
 /* history of bioset_create():
