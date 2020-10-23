@@ -1627,9 +1627,9 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 	p->u_size = cpu_to_be64(u_size);
 	/*
 	TODO verify: this may be needed for v8 compatibility still.
-	p->c_size = cpu_to_be64(trigger_reply ? 0 : drbd_get_capacity(device->this_bdev));
+	p->c_size = cpu_to_be64(trigger_reply ? 0 : get_capacity(device->vdisk));
 	*/
-	p->c_size = cpu_to_be64(drbd_get_capacity(device->this_bdev));
+	p->c_size = cpu_to_be64(get_capacity(device->vdisk));
 	p->max_bio_size = cpu_to_be32(max_bio_size);
 	p->queue_order_type = cpu_to_be16(q_order_type);
 	p->dds_flags = cpu_to_be16(flags);
@@ -2903,9 +2903,6 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 	struct drbd_device *device = container_of(work, struct drbd_device, finalize_work);
 	struct drbd_resource *resource = device->resource;
 
-	if (device->this_bdev)
-		bdput(device->this_bdev);
-
 	if (device->bitmap) {
 		drbd_bm_free(device->bitmap);
 		device->bitmap = NULL;
@@ -3667,8 +3664,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = device;
-
-	device->this_bdev = bdget(MKDEV(DRBD_MAJOR, minor));
 
 	blk_queue_write_cache(q, true, true);
 

@@ -1114,7 +1114,7 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	if (device->disk_state[NOW] != D_INCONSISTENT)
 		return false;
 	esector = sector + (size >> 9) - 1;
-	nr_sectors = drbd_get_capacity(device->this_bdev);
+	nr_sectors = get_capacity(device->vdisk);
 	D_ASSERT(device, sector  < nr_sectors);
 	D_ASSERT(device, esector < nr_sectors);
 
@@ -1810,7 +1810,7 @@ out:
 
 	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
 	 * we plug after submit, so we won't miss an unplug event */
-	drbd_plug_device(bdev_get_queue(device->this_bdev));
+	drbd_plug_device(device->vdisk->queue);
 
 	if (m.bio)
 		complete_master_bio(device, &m);

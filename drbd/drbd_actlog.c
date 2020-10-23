@@ -794,7 +794,7 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 	}
 
 	size_sect = min(BM_SECT_PER_EXT,
-			drbd_get_capacity(device->this_bdev) - BM_EXT_TO_SECT(rs_enr));
+			get_capacity(device->vdisk) - BM_EXT_TO_SECT(rs_enr));
 
 	for_each_peer_device_ref(p, im, device) {
 		if (mask & NODE_MASK(p->node_id))
@@ -1149,7 +1149,7 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 	if (!get_ldev(device))
 		return 0; /* no disk, no metadata, no bitmap to manipulate bits in */
 
-	nr_sectors = drbd_get_capacity(device->this_bdev);
+	nr_sectors = get_capacity(device->vdisk);
 	esector = sector + (size >> 9) - 1;
 
 	if (!expect(peer_device, sector < nr_sectors))
@@ -1214,7 +1214,7 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	if (!get_ldev(device))
 		return false; /* no disk, no metadata, no bitmap to set bits in */
 
-	nr_sectors = drbd_get_capacity(device->this_bdev);
+	nr_sectors = get_capacity(device->vdisk);
 	esector = sector + (size >> 9) - 1;
 
 	if (!expect(device, sector < nr_sectors))
