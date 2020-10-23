@@ -372,6 +372,9 @@ int main(int argc, char **argv)
 	patch(1, "congested_fn", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
 
+	patch(1, "blk_queue_update_readahead", true, false,
+	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
