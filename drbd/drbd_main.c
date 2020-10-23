@@ -707,7 +707,7 @@ int drbd_thread_start(struct drbd_thread *thi)
 		else
 			drbd_info(resource, "Restarting %s thread (from %s [%d])\n",
 					thi->name, current->comm, current->pid);
-		/* fall through */
+		fallthrough;
 	case RUNNING:
 	case RESTARTING:
 	default:

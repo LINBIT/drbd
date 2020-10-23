@@ -849,7 +849,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
 		drbd_report_io_error(device, req);
 		__drbd_chk_io_error(device, DRBD_READ_ERROR);
-		/* fall through. */
+		fallthrough;
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
 		/* it is legal to fail read-ahead, no __drbd_chk_io_error in that case. */
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
@@ -1059,7 +1059,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 					RQ_NET_QUEUED|RQ_NET_PENDING);
 			break;
 		}
-		/* else, fall through - to BARRIER_ACKED */
+		fallthrough;	/* to BARRIER_ACKED */
 	case BARRIER_ACKED:
 		/* barrier ack for READ requests does not make sense */
 		if (!(req->local_rq_state & RQ_WRITE))
