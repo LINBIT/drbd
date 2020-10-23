@@ -381,6 +381,13 @@ int main(int argc, char **argv)
 	patch(1, "fallthrough", true, false,
 	      COMPAT_HAVE_FALLTHROUGH, "present");
 
+#if defined(COMPAT_HAVE_REVALIDATE_DISK_SIZE)
+	/* revalidate_disk_size is there, nothing to do */
+#else
+	patch(1, "revalidate_disk_size", true, false,
+	      NO, "present");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
