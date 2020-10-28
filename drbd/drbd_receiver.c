@@ -166,7 +166,7 @@ static const struct sync_descriptor sync_descriptors[] = {
 
 int drbd_do_features(struct drbd_connection *connection);
 int drbd_do_auth(struct drbd_connection *connection);
-void conn_disconnect(struct drbd_connection *connection);
+static void conn_disconnect(struct drbd_connection *connection);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 static int e_end_block(struct drbd_work *, int);
@@ -818,7 +818,11 @@ start:
 
 	err = transport->ops->connect(transport);
 	if (err == -EAGAIN) {
-		if (connection->cstate[NOW] == C_DISCONNECTING)
+		enum drbd_conn_state cstate;
+		read_lock_irq(&resource->state_rwlock); /* See commit message */
+		cstate = connection->cstate[NOW];
+		read_unlock_irq(&resource->state_rwlock);
+		if (cstate == C_DISCONNECTING)
 			return false;
 		goto retry;
 	} else if (err == -EADDRNOTAVAIL) {
@@ -7615,7 +7619,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 	write_unlock_irq(&resource->state_rwlock);
 }
 
-void conn_disconnect(struct drbd_connection *connection)
+static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
