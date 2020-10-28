@@ -4893,6 +4893,9 @@ void apply_connect(struct drbd_connection *connection, bool commit)
 		__change_peer_disk_state(peer_device, s.pdsk);
 		__change_resync_susp_peer(peer_device, s.peer_isp);
 
+		if (s.conn == L_OFF)
+			__change_cstate(connection, C_DISCONNECTING);
+
 		if (commit) {
 			set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 			clear_bit(DISCARD_MY_DATA, &peer_device->flags);
