@@ -4299,6 +4299,7 @@ retry:
 		return DS_2PC_NOT_SUPPORTED;
 
 	state_change_lock(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
+	rcu_read_lock();
 	complete_remote_state_change(resource, &irq_flags);
 	start_time = jiffies;
 	reach_immediately = directly_connected_nodes(resource, NOW);
@@ -4324,6 +4325,7 @@ retry:
 	reply->max_possible_size = local_max_size;
 	reply->reachable_nodes = reach_immediately | NODE_MASK(resource->res_opts.node_id);
 	reply->target_reachable_nodes = reply->reachable_nodes;
+	rcu_read_unlock();
 	state_change_unlock(resource, &irq_flags);
 
 	drbd_info(resource, "Preparing cluster-wide state change %u "
