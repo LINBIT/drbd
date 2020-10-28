@@ -674,7 +674,7 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 	return err;
 }
 
-static void conn_connect2(struct drbd_connection *connection)
+void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
@@ -717,6 +717,20 @@ static bool initial_states_received(struct drbd_connection *connection)
 	return rv;
 }
 
+void wait_initial_states_received(struct drbd_connection *connection)
+{
+	struct net_conf *nc;
+	long timeout;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	timeout = nc->ping_timeo * 4 * HZ/10;
+	rcu_read_unlock();
+	wait_event_interruptible_timeout(connection->ee_wait,
+					 initial_states_received(connection),
+					 timeout);
+}
+
 void connect_timer_fn(struct timer_list *t)
 {
 	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
@@ -735,19 +749,9 @@ static int connect_work(struct drbd_work *work, int cancel)
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
 
-	if (connection->agreed_pro_version >= 117) {
-		struct net_conf *nc;
+	if (connection->agreed_pro_version == 117)
+		wait_initial_states_received(connection);
 
-		rcu_read_lock();
-		nc = rcu_dereference(connection->transport.net_conf);
-		t = nc->ping_timeo * 4 * HZ/10;
-		rcu_read_unlock();
-		wait_event_interruptible_timeout(connection->ee_wait,
-						 initial_states_received(connection),
-						 t);
-	}
-
-	t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	do {
 		/* Carefully check if it is okay to do a two_phase_commit from sender context */
 		if (down_trylock(&resource->state_sem)) {
@@ -921,7 +925,10 @@ start:
 	atomic_set(&connection->ap_in_flight, 0);
 	atomic_set(&connection->rs_in_flight, 0);
 
-	if (connection->agreed_pro_version >= 117)
+	/* Allow 5 seconds for the two-phase commits */
+	transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 10 * HZ);
+
+	if (connection->agreed_pro_version == 117)
 		conn_connect2(connection);
 
 	if (resource->res_opts.node_id < connection->peer_node_id) {
@@ -5427,16 +5434,23 @@ change_connection_state(struct drbd_connection *connection,
 			enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
+	bool is_disconnect = reply->is_disconnect;
+	bool is_connect = reply->is_connect;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 	int vnr;
-	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
-	bool is_disconnect;
 
-	is_disconnect = mask.conn && val.conn == C_DISCONNECTING;
 	mask = convert_state(mask);
 	val = convert_state(val);
+
+	if (is_connect && connection->agreed_pro_version >= 118) {
+		if (flags & CS_PREPARE)
+			conn_connect2(connection);
+		if (flags & CS_ABORT)
+			abort_connect(connection);
+	}
 retry:
 	begin_state_change(resource, &irq_flags, flags & ~CS_VERBOSE);
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -5458,8 +5472,7 @@ retry:
 			__outdate_myself(resource);
 	}
 
-	if (mask.conn && val.conn == C_CONNECTED &&
-	    connection->agreed_pro_version >= 117)
+	if (is_connect && connection->agreed_pro_version >= 117)
 		apply_connect(connection, flags & CS_PREPARED);
 	rv = end_state_change(resource, &irq_flags);
 out:
@@ -6257,8 +6270,10 @@ static int process_twopc(struct drbd_connection *connection,
 	if (mask.conn == conn_MASK) {
 		u64 m = NODE_MASK(reply->initiator_node_id);
 
-		if (val.conn == C_CONNECTED)
+		if (val.conn == C_CONNECTED) {
 			reply->reachable_nodes |= m;
+			reply->is_connect = 1;
+		}
 		if (val.conn == C_DISCONNECTING) {
 			reply->reachable_nodes &= ~m;
 			reply->is_disconnect = 1;
@@ -6651,7 +6666,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		return -EIO;
 	}
 
-	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
@@ -6664,9 +6678,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			    .pdsk = peer_disk_state,
 			    .peer_isp = peer_state.aftr_isp | peer_state.user_isp } };
 
+		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 		wake_up(&connection->ee_wait);
 		return 0;
 	}
+	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 
 	write_lock_irq(&resource->state_rwlock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
@@ -7586,7 +7602,13 @@ static bool any_connection_up(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		if (connection->cstate[NOW] == C_CONNECTED) {
+		struct drbd_transport *transport = &connection->transport;
+		enum drbd_conn_state cstate = connection->cstate[NOW];
+
+		if (cstate == C_CONNECTED ||
+		    (cstate == C_CONNECTING &&
+		     transport->ops->stream_ok(transport, DATA_STREAM) &&
+		     transport->ops->stream_ok(transport, CONTROL_STREAM))) {
 			rv = true;
 			break;
 		}

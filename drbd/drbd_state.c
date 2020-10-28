@@ -609,6 +609,8 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection, *tmp;
+	bool is_connect = resource->twopc_reply.is_connect;
+	int initiator_node_id = resource->twopc_reply.initiator_node_id;
 
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
@@ -616,6 +618,8 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	del_timer(&resource->queued_twopc_timer);
 
 	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
+		if (is_connect && connection->peer_node_id == initiator_node_id)
+			abort_connect(connection);
 		kref_debug_put(&connection->kref_debug, 9);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
@@ -3948,6 +3952,19 @@ long twopc_retry_timeout(struct drbd_resource *resource, int retries)
 	return timeout;
 }
 
+void abort_connect(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+			up_read_non_owner(&peer_device->device->uuid_sem);
+	}
+	rcu_read_unlock();
+}
+
 static void twopc_phase2(struct drbd_resource *resource, int vnr,
 			 bool success,
 			 struct p_twopc_request *request,
@@ -4137,6 +4154,10 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				    &request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;
 	if (have_peers) {
+		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
+		    target_connection->agreed_pro_version >= 118)
+			conn_connect2(target_connection);
+
 		if (wait_event_timeout(resource->state_wait,
 				       cluster_wide_reply_ready(resource),
 				       twopc_timeout(resource)))
@@ -4199,9 +4220,16 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				}
 				rcu_read_unlock();
 			}
+			if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
+			    target_connection->agreed_pro_version >= 118)
+				wait_initial_states_received(target_connection);
+
 			request.primary_nodes = cpu_to_be64(reply->primary_nodes);
 		}
 	}
+
+	if (rv < SS_SUCCESS && target_connection)
+		abort_connect(target_connection);
 
 	if ((rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) &&
 	    !(context->flags & CS_DONT_RETRY)) {
@@ -4851,6 +4879,9 @@ void apply_connect(struct drbd_connection *connection, bool commit)
 	struct drbd_peer_device *peer_device;
 	int vnr;
 
+	if (!commit || connection->cstate[NEW] != C_CONNECTED)
+		return;
+
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		union drbd_state s = peer_device->connect_state;
@@ -4900,9 +4931,11 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 			}
 		}
 	}
-	__change_cstate_and_outdate(connection,
-				    context->val.conn,
-				    cstate_context->outdate_what);
+	if ((context->val.conn == C_CONNECTED && connection->cstate[NEW] == C_CONNECTING) ||
+	    context->val.conn != C_CONNECTED)
+		__change_cstate_and_outdate(connection,
+					    context->val.conn,
+					    cstate_context->outdate_what);
 
 	if (context->val.conn == C_CONNECTED &&
 	    connection->agreed_pro_version >= 117)
