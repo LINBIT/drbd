@@ -2437,6 +2437,11 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 			return -EACCES;
 	}
 
+	/* Fail read-write open early,
+	 * in case someone explicitly set us read-only (blockdev --setro) */
+	if (bdev_read_only(bdev) && (mode & FMODE_WRITE))
+		return -EACCES;
+
 	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 3);
 
