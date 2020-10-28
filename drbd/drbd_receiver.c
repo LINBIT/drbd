@@ -783,6 +783,8 @@ static int connect_work(struct drbd_work *work, int cancel)
 		connection->connect_timer.expires = jiffies + HZ/20;
 		add_timer(&connection->connect_timer);
 		return 0; /* Return early. Keep the reference on the connection! */
+	} else if (rv == SS_CW_FAILED_BY_PEER) {
+		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	} else {
 		drbd_info(connection, "Failure to connect; retrying\n");
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
@@ -898,11 +900,6 @@ start:
 		goto abort;
 
 	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-		clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
-	}
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (discard_my_data)
 			set_bit(DISCARD_MY_DATA, &peer_device->flags);
@@ -6372,6 +6369,7 @@ static int process_twopc(struct drbd_connection *connection,
 		} else {
 			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
 				P_TWOPC_RETRY : P_TWOPC_NO;
+			resource->twopc_prepare_reply_cmd = cmd;
 			drbd_send_twopc_reply(connection, cmd, reply);
 		}
 	} else {
@@ -6396,6 +6394,11 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_commit_size_change(device, NULL, be64_to_cpu(p->nodes_to_reach));
 			rv = SS_SUCCESS;
 		}
+		if (connection->agreed_pro_version >= 118 &&
+		    (flags & CS_ABORT) && reply->is_connect &&
+		    resource->twopc_prepare_reply_cmd == P_TWOPC_NO)
+			change_cstate(connection, C_DISCONNECTING, CS_HARD);
+
 		clear_remote_state_change(resource);
 
 		if (peer_device && rv >= SS_SUCCESS && !(flags & CS_ABORT))
@@ -7556,6 +7559,10 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&device->uuid_sem);
+
+	clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
