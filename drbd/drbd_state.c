@@ -849,24 +849,6 @@ void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags
 	__begin_state_change(resource);
 }
 
-static bool all_peer_devices_connected(struct drbd_connection *connection)
-{
-	struct drbd_peer_device *peer_device;
-	int vnr;
-	bool rv = true;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state[NOW] < L_ESTABLISHED) {
-			rv = false;
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	return rv;
-}
-
 static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
 					     unsigned long *irq_flags,
 					     enum drbd_state_rv rv)
@@ -2378,16 +2360,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		for_each_peer_device(peer_device, device) {
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
-			struct drbd_connection *connection = peer_device->connection;
-
-			/* Wake up role changes, that were delayed because of connection establishing */
-			if (repl_state[OLD] == L_OFF && repl_state[NEW] != L_OFF &&
-			    all_peer_devices_connected(connection))
-				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-		}
-
-		for_each_peer_device(peer_device, device) {
-			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_role *peer_role = connection->peer_role;
@@ -2658,16 +2630,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
 			twopc_connection_down(connection);
-
-		if (cstate[NEW] < C_CONNECTED) {
-			struct drbd_peer_device *peer_device;
-
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-				clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-				clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
-			}
-		}
 
 		/* remember last connect time so request_timer_fn() won't
 		 * kill newly established sessions while we are still trying to thaw
