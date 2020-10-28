@@ -1052,6 +1052,37 @@ static void after_reconciliation_resync(struct drbd_connection *connection)
 	connection->after_reconciliation.lost_node_id = -1;
 }
 
+static void try_to_get_resynced_from_primary(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
+
+	read_lock_irq(&resource->state_rwlock);
+	for_each_peer_device(peer_device, device) {
+		if (peer_device->connection->peer_role[NEW] == R_PRIMARY &&
+		    peer_device->disk_state[NEW] == D_UP_TO_DATE)
+			goto found;
+	}
+	peer_device = NULL;
+found:
+	read_unlock_irq(&resource->state_rwlock);
+
+	if (!peer_device)
+		return;
+
+	connection = peer_device->connection;
+	if (connection->agreed_pro_version < 118) {
+		drbd_warn(connection,
+			  "peer is lower than protocol vers 118, reconnecting to get resynced\n");
+		change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
+		return;
+	}
+
+	drbd_send_uuids(peer_device, 0, 0);
+	drbd_start_resync(peer_device, L_SYNC_TARGET);
+}
+
 int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
@@ -1059,6 +1090,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	enum drbd_repl_state old_repl_state = L_ESTABLISHED;
+	bool try_to_get_resynced_from_primary_flag = false;
 	u64 source_m = 0, target_m = 0;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
@@ -1185,8 +1217,15 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			bool stable_resync = was_resync_stable(peer_device);
-			if (stable_resync)
-				__change_disk_state(device, peer_device->disk_state[NOW]);
+			if (stable_resync) {
+				enum drbd_disk_state new_disk_state = peer_device->disk_state[NOW];
+				if (new_disk_state < D_UP_TO_DATE &&
+				    test_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags)) {
+					try_to_get_resynced_from_primary_flag = true;
+					set_bit(CRASHED_PRIMARY, &device->flags);
+				}
+				__change_disk_state(device, new_disk_state);
+			}
 
 			if (device->disk_state[NEW] == D_UP_TO_DATE)
 				target_m = __cancel_other_resyncs(device);
@@ -1274,6 +1313,9 @@ out:
 		if (disk_state == D_UP_TO_DATE && pdsk_state == D_UP_TO_DATE)
 			drbd_maybe_khelper(NULL, connection, "unfence-peer");
 	}
+
+	if (try_to_get_resynced_from_primary_flag)
+		try_to_get_resynced_from_primary(device);
 
 	return 1;
 }

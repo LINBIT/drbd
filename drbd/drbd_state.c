@@ -2521,6 +2521,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (peer_disk_state[NEW] < D_UP_TO_DATE && test_bit(GOT_NEG_ACK, &peer_device->flags))
 				clear_bit(GOT_NEG_ACK, &peer_device->flags);
+
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
+				clear_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
 		}
 
 		for_each_connection(connection, resource) {

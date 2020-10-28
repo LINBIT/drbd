@@ -611,6 +611,7 @@ enum peer_device_flag {
 	HOLDING_UUID_READ_LOCK, /* did a down_read(&device->uuid_sem) */
 	RS_SOURCE_MISSED_END,   /* SyncSource did not got P_UUIDS110 */
 	RS_PEER_MISSED_END,     /* Peer (which was SyncSource) did not got P_UUIDS110 after resync */
+	SYNC_SRC_CRASHED_PRI,   /* Source of this resync was a crashed primary */
 };
 
 /* We could make these currently hardcoded constants configurable
