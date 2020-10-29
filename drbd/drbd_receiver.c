@@ -6307,7 +6307,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 {
 	struct drbd_resource *resource = connection->resource;
 	struct p_twopc_request *p = pi->data;
-	struct twopc_reply reply;
+	struct twopc_reply reply = {0};
 	int rv;
 
 	reply.vnr = pi->vnr;
@@ -6316,10 +6316,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
-	reply.primary_nodes = 0;
-	reply.weak_nodes = 0;
-	reply.is_disconnect = 0;
-	reply.is_aborted = 0;
 
 	rv = process_twopc(connection, &reply, pi, jiffies);
 
