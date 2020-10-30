@@ -2828,11 +2828,33 @@ err:
 	return -EINVAL;
 }
 
+static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const char *format, ...)
+{
+	struct drbd_device *device = adm_ctx->device;
+	struct drbd_resource *resource = device->resource;
+	va_list args;
+	char *text;
+
+	va_start(args, format);
+	text = kvasprintf(GFP_ATOMIC, format, args);
+	va_end(args);
+
+	if (!text)
+		return;
+
+	printk(KERN_ERR __drbd_printk_drbd_device_fmt("%s"),
+	       resource->name, device->vnr, device->minor, text);
+	drbd_msg_put_info(adm_ctx->reply_skb, text);
+
+	kfree(text);
+}
+
 static
-int drbd_md_decode(struct drbd_device *device,
+int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		   struct drbd_backing_dev *bdev,
 		   struct meta_data_on_disk_9 *buffer)
 {
+	struct drbd_device *device = adm_ctx->device;
 	u32 magic, flags;
 	int i, rv = NO_ERROR;
 	int my_node_id = device->resource->res_opts.node_id;
@@ -2842,7 +2864,7 @@ int drbd_md_decode(struct drbd_device *device,
 	flags = be32_to_cpu(buffer->flags);
 	if (magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) {
 			/* btw: that's Activity Log clean, not "all" clean. */
-		drbd_err(device, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
+		drbd_err_and_skb_info(adm_ctx, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
 		rv = ERR_MD_UNCLEAN;
 		goto err;
 	}
@@ -2851,14 +2873,14 @@ int drbd_md_decode(struct drbd_device *device,
 		if (magic == DRBD_MD_MAGIC_07 ||
 		    magic == DRBD_MD_MAGIC_08 ||
 		    magic == DRBD_MD_MAGIC_84_UNCLEAN)
-			drbd_err(device, "Found old meta data magic. Did you \"drbdadm create-md\"?\n");
+			drbd_err_and_skb_info(adm_ctx, "Found old meta data magic. Did you \"drbdadm create-md\"?\n");
 		else
-			drbd_err(device, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
+			drbd_err_and_skb_info(adm_ctx, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
 		goto err;
 	}
 
 	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
-		drbd_err(device, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
+		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
 		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
 		goto err;
 	}
@@ -2877,7 +2899,7 @@ int drbd_md_decode(struct drbd_device *device,
 	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
 	if (bdev->md.node_id != -1 && bdev->md.node_id != my_node_id) {
-		drbd_err(device, "ambiguous node id: meta-data: %d, config: %d\n",
+		drbd_err_and_skb_info(adm_ctx, "ambiguous node id: meta-data: %d, config: %d\n",
 			bdev->md.node_id, my_node_id);
 		goto err;
 	}
@@ -2895,12 +2917,12 @@ int drbd_md_decode(struct drbd_device *device,
 			continue;
 		peer_md->flags |= MDF_HAVE_BITMAP;
 		if (i == my_node_id) {
-			drbd_warn(device, "my own node id (%d) should not have a bitmap index (%d)\n",
+			drbd_err_and_skb_info(adm_ctx, "my own node id (%d) should not have a bitmap index (%d)\n",
 				my_node_id, peer_md->bitmap_index);
 			goto err;
 		}
 		if (peer_md->bitmap_index < -1 || peer_md->bitmap_index >= max_peers) {
-			drbd_warn(device, "peer node id %d: bitmap index (%d) exceeds allocated bitmap slots (%d)\n",
+			drbd_err_and_skb_info(adm_ctx, "peer node id %d: bitmap index (%d) exceeds allocated bitmap slots (%d)\n",
 				i, peer_md->bitmap_index, max_peers);
 			goto err;
 		}
@@ -2928,8 +2950,9 @@ err:
  * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
  * even before @bdev is assigned to @device->ldev.
  */
-int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
+int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing_dev *bdev)
 {
+	struct drbd_device *device = adm_ctx->device;
 	struct meta_data_on_disk_9 *buffer;
 	int rv;
 
@@ -2948,7 +2971,7 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 	drbd_dax_open(bdev);
 	if (drbd_md_dax_active(bdev)) {
 		drbd_info(device, "meta-data IO uses: dax-pmem\n");
-		rv = drbd_md_decode(device, bdev, drbd_dax_md_addr(bdev));
+		rv = drbd_md_decode(adm_ctx, bdev, drbd_dax_md_addr(bdev));
 		if (rv != NO_ERROR)
 			return rv;
 		if (drbd_dax_map(bdev))
@@ -2965,12 +2988,12 @@ int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
 				 REQ_OP_READ)) {
 		/* NOTE: can't do normal error processing here as this is
 		   called BEFORE disk is attached */
-		drbd_err(device, "Error while reading metadata.\n");
+		drbd_err_and_skb_info(adm_ctx, "Error while reading metadata.\n");
 		rv = ERR_IO_MD_DISK;
 		goto err;
 	}
 
-	rv = drbd_md_decode(device, bdev, buffer);
+	rv = drbd_md_decode(adm_ctx, bdev, buffer);
  err:
 	drbd_md_put_buffer(device);
 
@@ -3078,7 +3101,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Read our meta data super block early.
 	 * This also sets other on-disk offsets. */
-	retcode = drbd_md_read(device, nbc);
+	retcode = drbd_md_read(&adm_ctx, nbc);
 	if (retcode != NO_ERROR)
 		goto fail;
 
@@ -3087,7 +3110,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	backing_disk_max_sectors = drbd_get_max_capacity(device, nbc, true);
 	if (backing_disk_max_sectors < new_disk_conf->disk_size) {
-		drbd_err(device, "max capacity %llu smaller than disk size %llu\n",
+		drbd_err_and_skb_info(&adm_ctx, "max capacity %llu smaller than disk size %llu\n",
 			(unsigned long long) backing_disk_max_sectors,
 			(unsigned long long) new_disk_conf->disk_size);
 		retcode = ERR_DISK_TOO_SMALL;
@@ -3113,7 +3136,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * (we may currently be R_PRIMARY with no local disk...) */
 	if (backing_disk_max_sectors <
 	    get_capacity(device->vdisk)) {
-		drbd_err(device,
+		drbd_err_and_skb_info(&adm_ctx,
 			"Current (diskless) capacity %llu, cannot attach smaller (%llu) disk\n",
 			(unsigned long long)get_capacity(device->vdisk),
 			(unsigned long long)backing_disk_max_sectors);
@@ -3152,7 +3175,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Make sure the local node id matches or is unassigned */
 	if (nbc->md.node_id != -1 && nbc->md.node_id != resource->res_opts.node_id) {
-		drbd_err(device, "Local node id %d differs from local "
+		drbd_err_and_skb_info(&adm_ctx, "Local node id %d differs from local "
 			 "node id %d on device\n",
 			 resource->res_opts.node_id,
 			 nbc->md.node_id);
@@ -3162,7 +3185,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* Make sure no bitmap slot has our own node id */
 	if (nbc->md.peers[resource->res_opts.node_id].bitmap_index != -1) {
-		drbd_err(device, "There is a bitmap for my own node id (%d)\n",
+		drbd_err_and_skb_info(&adm_ctx, "There is a bitmap for my own node id (%d)\n",
 			 resource->res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;
 		goto force_diskless_dec;
@@ -3174,7 +3197,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		int bitmap_index;
 
 		if (peer_device->bitmap_index != -1) {
-			drbd_err(peer_device,
+			drbd_err_and_skb_info(&adm_ctx,
 					"ASSERTION FAILED bitmap_index %d during attach, expected -1\n",
 					peer_device->bitmap_index);
 		}
@@ -3196,7 +3219,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		int slots_available = device->bitmap->bm_max_peers - used_bitmap_slots(nbc);
 
 		if (slots_needed > slots_available) {
-			drbd_err(device, "Not enough free bitmap "
+			drbd_err_and_skb_info(&adm_ctx, "Not enough free bitmap "
 				 "slots (available=%d, needed=%d)\n",
 				 slots_available,
 				 slots_needed);
@@ -3227,7 +3250,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				data_present = true;
 		}
 		if (!data_present) {
-			drbd_err(device, "Can only attach to data with current UUID=%016llX\n",
+			drbd_err_and_skb_info(&adm_ctx, "Can only attach to data with current UUID=%016llX\n",
 				 (unsigned long long)device->exposed_data_uuid);
 			retcode = ERR_DATA_NOT_CURRENT;
 			goto force_diskless_dec;
