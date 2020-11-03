@@ -5447,6 +5447,8 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		s->peer_dev_flags = peer_md->flags;
 		put_ldev(device);
 	}
+
+	s->peer_dev_uuid_flags = pd->uuid_flags;
 }
 
 int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
@@ -6332,12 +6334,11 @@ failed:
 		 err, seq);
 }
 
-void drbd_broadcast_sync_progress(struct drbd_peer_device *peer_device)
+void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device)
 {
 	struct peer_device_info peer_device_info;
 	mutex_lock(&notification_mutex);
 	peer_device_to_info(&peer_device_info, peer_device);
-	/* XXX maybe we want a .nh_type = NOTIFY_RESYNC_PROGRESS or something? */
 	notify_peer_device_state(NULL, 0, peer_device, &peer_device_info, NOTIFY_CHANGE);
 	mutex_unlock(&notification_mutex);
 }
