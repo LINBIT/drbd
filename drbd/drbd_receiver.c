@@ -3871,12 +3871,14 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
-	u64 self, peer;
-	u64 local_uuid_flags;
-	int i, j;
-	bool initial_handshake;
-	bool uuid_matches_initial;
+	bool my_current_in_peers_history;
+	bool peers_current_in_my_history;
 	bool flags_matches_initial;
+	bool uuid_matches_initial;
+	bool initial_handshake;
+	u64 local_uuid_flags;
+	u64 self, peer;
+	int i, j;
 
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
@@ -4030,12 +4032,14 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		}
 	}
 
-	*rule_nr = 60;
+	my_current_in_peers_history = false;
 	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
 	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
 		peer = peer_device->history_uuids[i] & ~UUID_PRIMARY;
-		if (self == peer)
-			return SYNC_TARGET_SET_BITMAP;
+		if (self == peer) {
+			my_current_in_peers_history = true;
+			break;
+		}
 	}
 
 	if (connection->agreed_pro_version < 110) {
@@ -4044,12 +4048,23 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			return rv;
 	}
 
-	*rule_nr = 80;
+	peers_current_in_my_history = false;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
 	for (i = 0; i < HISTORY_UUIDS; i++) {
 		self = drbd_history_uuid(device, i) & ~UUID_PRIMARY;
-		if (self == peer)
-			return SYNC_SOURCE_SET_BITMAP;
+		if (self == peer) {
+			peers_current_in_my_history = true;
+			break;
+		}
+	}
+
+	if (my_current_in_peers_history && !peers_current_in_my_history) {
+		*rule_nr = 60;
+		return SYNC_TARGET_SET_BITMAP;
+	}
+	if (!my_current_in_peers_history && peers_current_in_my_history) {
+		*rule_nr = 80;
+		return SYNC_SOURCE_SET_BITMAP;
 	}
 
 	*rule_nr = 90;
