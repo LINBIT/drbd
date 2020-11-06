@@ -109,7 +109,7 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[SYNC_SOURCE_USE_BITMAP] = {
 		.name = "source-use-bitmap",
 		.is_sync_source = true,
-		.full_sync_equivalent = SYNC_TARGET_USE_BITMAP,
+		.full_sync_equivalent = SYNC_SOURCE_SET_BITMAP,
 	},
 	[SYNC_SOURCE_SET_BITMAP] = {
 		.name = "source-set-bitmap",
@@ -127,7 +127,7 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[SYNC_TARGET_USE_BITMAP] = {
 		.name = "target-use-bitmap",
 		.is_sync_target = true,
-		.full_sync_equivalent = SYNC_SOURCE_USE_BITMAP,
+		.full_sync_equivalent = SYNC_TARGET_SET_BITMAP,
 		.resync_peer_preference = 3,
 	},
 	[SYNC_TARGET_SET_BITMAP] = {
