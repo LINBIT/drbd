@@ -3273,7 +3273,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			break;
 		case P_OV_REQUEST:
 			verify_skipped_block(peer_device, sector, size);
-			fallthrough;
+			drbd_send_ack_rp(peer_device, P_RS_CANCEL, p);
+			break;
 		case P_RS_THIN_REQ:
 		case P_RS_DATA_REQUEST:
 		case P_CSUM_RS_REQUEST:
