@@ -3,6 +3,23 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.26-0rc1 (api:genl2/proto:86-118/transport:14)
+--------
+ * fix a case of a disk unexpectedly becoming Outdated by moving the
+   exchange of the initial packets into the body of the two-phase-commit
+   that happens at a connect
+ * fix adding of new volumes to resources with a primary node
+ * reliably detect split brain situation on both nodes
+ * fix an unexpected occurence of NetworkFailure state in a tight
+   drbdsetup disconnect; drbdsetup connect sequence
+ * fix online verify to return to Established from VerifyS if the VerifyT node
+   was temporarily Inconsistent during the run
+ * fix a corner case where a node ends up Outdated after crash and rejoin
+   of a primary node
+ * implement 'blockdev --setro' in DRBD
+ * following upstream changes to DRBD up to Linux 5.9 and ensure
+   compabitibility with Linux 5.8 and 5.9
+
 9.0.25-1 (api:genl2/proto:86-117/transport:14)
 --------
  * fix a missed resync after regaining quorum if a node gets disconnected
