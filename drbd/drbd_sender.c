@@ -1255,30 +1255,27 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (device->disk_state[NEW] == D_UP_TO_DATE)
 				target_m = __cancel_other_resyncs(device);
 
-			if (stable_resync &&
-			    peer_device->uuids_received) {
+			if (stable_resync && peer_device->uuids_received) {
+				const int node_id = device->resource->res_opts.node_id;
+				int i;
+
 				u64 newer = drbd_uuid_resync_finished(peer_device);
 				__outdate_peer_disk_by_mask(device, newer);
+				drbd_print_uuids(peer_device, "updated UUIDs");
+
+				/* Now the two UUID sets are equal, update what we
+				 * know of the peer. */
+				peer_device->current_uuid = drbd_current_uuid(device);
+				peer_device->bitmap_uuids[node_id] = drbd_bitmap_uuid(peer_device);
+				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+					peer_device->history_uuids[i] =
+						drbd_history_uuid(device, i);
 			} else {
 				if (!peer_device->uuids_received)
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
 
 				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 					drbd_info(peer_device, "Peer was unstable during resync\n");
-			}
-
-			if (stable_resync && peer_device->uuids_received) {
-				/* Now the two UUID sets are equal, update what we
-				 * know of the peer. */
-				const int node_id = device->resource->res_opts.node_id;
-				int i;
-
-				drbd_print_uuids(peer_device, "updated UUIDs");
-				peer_device->current_uuid = drbd_current_uuid(device);
-				peer_device->bitmap_uuids[node_id] = drbd_bitmap_uuid(peer_device);
-				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
-					peer_device->history_uuids[i] =
-						drbd_history_uuid(device, i);
 			}
 		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 			if (new_peer_disk_state != D_MASK)
