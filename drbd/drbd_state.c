@@ -941,6 +941,11 @@ union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_st
 	return rv;
 }
 
+static bool resync_susp_comb_dep(struct drbd_peer_device *peer_device, enum which_state which)
+{
+	return peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which];
+}
+
 union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -949,7 +954,7 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	rv = drbd_get_device_state(peer_device->device, which);
 	rv.user_isp = peer_device->resync_susp_user[which];
 	rv.peer_isp = peer_device->resync_susp_peer[which];
-	rv.aftr_isp = peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which];
+	rv.aftr_isp = resync_susp_comb_dep(peer_device, which);
 	rv.conn = combined_conn_state(peer_device, which);
 	rv.peer = connection->peer_role[which];
 	rv.pdsk = peer_device->disk_state[which];
@@ -1020,8 +1025,7 @@ static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_st
 {
 	return peer_device->resync_susp_user[which] ||
 	       peer_device->resync_susp_peer[which] ||
-	       peer_device->resync_susp_dependency[which] ||
-	       peer_device->resync_susp_other_c[which];
+	       resync_susp_comb_dep(peer_device, which);
 }
 
 static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool val, bool start)
@@ -2792,6 +2796,18 @@ static bool state_change_is_susp_quorum(struct drbd_state_change *state_change,
 	return false;
 }
 
+static bool resync_susp_comb_dep_sc(struct drbd_state_change *state_change,
+				    unsigned int n_device, int n_connection,
+				    enum which_state which)
+{
+	struct drbd_peer_device_state_change *peer_device_state_change =
+		&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+	bool resync_susp_dependency = peer_device_state_change->resync_susp_dependency[which];
+	bool resync_susp_other_c = peer_device_state_change->resync_susp_other_c[which];
+
+	return resync_susp_dependency || resync_susp_other_c;
+}
+
 static union drbd_state state_change_word(struct drbd_state_change *state_change,
 					  unsigned int n_device, int n_connection,
 					  enum which_state which)
@@ -2825,8 +2841,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 		if (state.conn <= L_OFF)
 			state.conn = connection_state_change->cstate[which];
 		state.pdsk = peer_device_state_change->disk_state[which];
-		state.aftr_isp = peer_device_state_change->resync_susp_dependency[which] ||
-			peer_device_state_change->resync_susp_other_c[which];
+		state.aftr_isp = resync_susp_comb_dep_sc(state_change, n_device, n_connection, which);
 		state.peer_isp = peer_device_state_change->resync_susp_peer[which];
 		state.user_isp = peer_device_state_change->resync_susp_user[which];
 	}
@@ -2892,7 +2907,7 @@ void notify_peer_device_state_change(struct sk_buff *skb,
 		.peer_disk_state = p->disk_state[NEW],
 		.peer_resync_susp_user = p->resync_susp_user[NEW],
 		.peer_resync_susp_peer = p->resync_susp_peer[NEW],
-		.peer_resync_susp_dependency = p->resync_susp_dependency[NEW] || p->resync_susp_other_c[NEW],
+		.peer_resync_susp_dependency = resync_susp_comb_dep(peer_device, NEW),
 		.peer_is_intentional_diskless = !want_bitmap(peer_device),
 	};
 
@@ -3274,7 +3289,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			bool *resync_susp_user = peer_device_state_change->resync_susp_user;
 			bool *resync_susp_peer = peer_device_state_change->resync_susp_peer;
 			bool *resync_susp_dependency = peer_device_state_change->resync_susp_dependency;
-			bool *resync_susp_other_c = peer_device_state_change->resync_susp_other_c;
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
 			bool send_uuids, send_state = false;
@@ -3406,9 +3420,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* We want to pause/continue resync, tell peer. */
 			if (repl_state[NEW] >= L_ESTABLISHED &&
-			     ((resync_susp_dependency[OLD] != resync_susp_dependency[NEW]) ||
-			      (resync_susp_other_c[OLD] != resync_susp_other_c[NEW]) ||
-			      (resync_susp_user[OLD] != resync_susp_user[NEW])))
+			    ((resync_susp_comb_dep_sc(state_change, n_device, n_connection, OLD) !=
+			      resync_susp_comb_dep_sc(state_change, n_device, n_connection, NEW)) ||
+			     (resync_susp_user[OLD] != resync_susp_user[NEW])))
 				send_state = true;
 
 			/* finished resync, tell sync source */
