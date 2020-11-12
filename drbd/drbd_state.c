@@ -943,7 +943,10 @@ union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_st
 
 static bool resync_susp_comb_dep(struct drbd_peer_device *peer_device, enum which_state which)
 {
-	return peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which];
+	struct drbd_device *device = peer_device->device;
+
+	return peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which] ||
+		(is_sync_source_state(peer_device, which) && device->disk_state[which] <= D_INCONSISTENT);
 }
 
 union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
@@ -1087,6 +1090,7 @@ static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
 					  struct drbd_peer_device *peer_device,
 					  enum which_state which)
 {
+	struct drbd_device *device = peer_device->device;
 	char *b = buffer, *end = buffer + size;
 
 	if (!resync_suspended(peer_device, which))
@@ -1100,6 +1104,9 @@ static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
 		b += scnprintf(b, end - b, "after dependency,");
 	if (peer_device->resync_susp_other_c[which])
 		b += scnprintf(b, end - b, "connection dependency,");
+	if (is_sync_source_state(peer_device, which) && device->disk_state[which] <= D_INCONSISTENT)
+		b += scnprintf(b, end - b, "disk inconsistent,");
+
 	*(--b) = 0;
 
 	return b - buffer;
@@ -2802,10 +2809,15 @@ static bool resync_susp_comb_dep_sc(struct drbd_state_change *state_change,
 {
 	struct drbd_peer_device_state_change *peer_device_state_change =
 		&state_change->peer_devices[n_device * state_change->n_connections + n_connection];
+	struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
 	bool resync_susp_dependency = peer_device_state_change->resync_susp_dependency[which];
 	bool resync_susp_other_c = peer_device_state_change->resync_susp_other_c[which];
+	enum drbd_repl_state repl_state = peer_device_state_change->repl_state[which];
+	enum drbd_disk_state disk_state = device_state_change->disk_state[which];
 
-	return resync_susp_dependency || resync_susp_other_c;
+	return resync_susp_dependency || resync_susp_other_c ||
+		((repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
+		 && disk_state <= D_INCONSISTENT);
 }
 
 static union drbd_state state_change_word(struct drbd_state_change *state_change,
