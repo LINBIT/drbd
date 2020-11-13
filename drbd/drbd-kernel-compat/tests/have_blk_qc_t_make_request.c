@@ -11,6 +11,7 @@
 
 blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
 {
+	return BLK_QC_T_NONE;
 }
 
 #ifndef __same_type
