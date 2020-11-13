@@ -1993,7 +1993,48 @@ static void sanitize_state(struct drbd_resource *resource)
 					peer_disk_state[NEW] = D_UP_TO_DATE;
 			}
 
-			/* Implications of the repl state on the disk states */
+			/* Suspend IO while fence-peer handler runs (peer lost) */
+			if (connection->fencing_policy == FP_STONITH &&
+			    (role[NEW] == R_PRIMARY &&
+			     repl_state[NEW] < L_ESTABLISHED &&
+			     peer_disk_state[NEW] == D_UNKNOWN) &&
+			    (role[OLD] != R_PRIMARY ||
+			     peer_disk_state[OLD] != D_UNKNOWN))
+				connection->susp_fen[NEW] = true;
+
+			/* Pause a SyncSource until it finishes resync as target on other connections */
+			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
+			    is_sync_target_other_c(peer_device))
+				peer_device->resync_susp_other_c[NEW] = true;
+
+			if (peer_device->resync_susp_other_c[NEW] &&
+			    repl_state[NEW] == L_SYNC_TARGET)
+				select_best_resync_source(peer_device);
+
+			if (resync_suspended(peer_device, NEW)) {
+				if (repl_state[NEW] == L_SYNC_SOURCE)
+					repl_state[NEW] = L_PAUSED_SYNC_S;
+				if (repl_state[NEW] == L_SYNC_TARGET)
+					repl_state[NEW] = L_PAUSED_SYNC_T;
+			} else {
+				if (repl_state[NEW] == L_PAUSED_SYNC_S)
+					repl_state[NEW] = L_SYNC_SOURCE;
+				if (repl_state[NEW] == L_PAUSED_SYNC_T)
+					repl_state[NEW] = L_SYNC_TARGET;
+			}
+
+			/* This needs to be after the previous block, since we should not set
+			   the bit if we are paused ourselves */
+			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
+				set_resync_susp_other_c(peer_device, true, false);
+			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
+				set_resync_susp_other_c(peer_device, false, false);
+
+			/* Implication of the repl state on other peer's repl state */
+			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
+				set_resync_susp_other_c(peer_device, true, true);
+
+						/* Implications of the repl state on the disk states */
 			min_disk_state = D_DISKLESS;
 			max_disk_state = D_UP_TO_DATE;
 			min_peer_disk_state = D_INCONSISTENT;
@@ -2060,47 +2101,6 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			if (peer_disk_state[NEW] < min_peer_disk_state)
 				peer_disk_state[NEW] = min_peer_disk_state;
-
-			/* Suspend IO while fence-peer handler runs (peer lost) */
-			if (connection->fencing_policy == FP_STONITH &&
-			    (role[NEW] == R_PRIMARY &&
-			     repl_state[NEW] < L_ESTABLISHED &&
-			     peer_disk_state[NEW] == D_UNKNOWN) &&
-			    (role[OLD] != R_PRIMARY ||
-			     peer_disk_state[OLD] != D_UNKNOWN))
-				connection->susp_fen[NEW] = true;
-
-			/* Pause a SyncSource until it finishes resync as target on other connections */
-			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
-			    is_sync_target_other_c(peer_device))
-				peer_device->resync_susp_other_c[NEW] = true;
-
-			if (peer_device->resync_susp_other_c[NEW] &&
-			    repl_state[NEW] == L_SYNC_TARGET)
-				select_best_resync_source(peer_device);
-
-			if (resync_suspended(peer_device, NEW)) {
-				if (repl_state[NEW] == L_SYNC_SOURCE)
-					repl_state[NEW] = L_PAUSED_SYNC_S;
-				if (repl_state[NEW] == L_SYNC_TARGET)
-					repl_state[NEW] = L_PAUSED_SYNC_T;
-			} else {
-				if (repl_state[NEW] == L_PAUSED_SYNC_S)
-					repl_state[NEW] = L_SYNC_SOURCE;
-				if (repl_state[NEW] == L_PAUSED_SYNC_T)
-					repl_state[NEW] = L_SYNC_TARGET;
-			}
-
-			/* This needs to be after the previous block, since we should not set
-			   the bit if we are paused ourselves */
-			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, true, false);
-			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, false, false);
-
-			/* Implication of the repl state on other peer's repl state */
-			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
-				set_resync_susp_other_c(peer_device, true, true);
 
 			/* A detach is a cluster wide transaction. The peer_disk_state updates
 			   are coming in while we have it prepared. When the cluster wide
