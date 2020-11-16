@@ -148,15 +148,16 @@ uninstall:
 .PHONY: check check_changelogs_up2date install uninstall distclean clean unpatch
 check check_changelogs_up2date:
 	@ up2date=true; dver=$(DIST_VERSION); dver=$${dver//./\\.};		\
-	echo "checking for presence of $$dver in various changelog files"; 	\
+	packagever=$${dver//-/"~"};						\
+	echo "checking for presence of $$dver ($$packagever for packaging) in various changelog files"; \
 	for f in drbd-kernel.spec ; do 						\
 	v=$$(sed -ne 's/^Version: //p' $$f); 					\
-	if ! printf "%s" "$$v" | grep -H --label $$f "$$dver\>"; then		\
+	if ! printf "%s" "$$v" | grep -H --label $$f "$$packagever\>"; then	\
 	   printf "\n\t%s Version: tags need update\n" $$f;			\
 	   grep -Hn "^Version: " $$f ; 						\
 	   up2date=false; fi ; 							\
 	   in_changelog=$$(sed -n -e '0,/^%changelog/d' 			\
-			     -e '/- '"$$dver"'\>/p' < $$f) ;			\
+			     -e '/- '"$$packagever"'\>/p' < $$f) ;		\
 	   if test -z "$$in_changelog" ; then 					\
 	   printf "\n\t%%changelog in %s needs update\n" $$f; 			\
 	   grep -Hn "^%changelog" $$f ; 					\
@@ -173,7 +174,7 @@ check check_changelogs_up2date:
 	   up2date=false; fi ; 							\
 	done ;									\
 	if test -e debian/changelog 						\
-	&& ! grep -H "^drbd ($$dver\(+linbit\)\?" debian/changelog;		\
+	&& ! grep -H "^drbd ($$packagever\(+linbit\)\?" debian/changelog;	\
 	then 									\
 	   printf "\n\tdebian/changelog:1: needs update\n"; 			\
 	   up2date=false; fi ; 							\
