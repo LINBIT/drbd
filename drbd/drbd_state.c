@@ -4677,6 +4677,15 @@ static bool has_up_to_date_peer_disks(struct drbd_device *device)
 	return false;
 }
 
+static void disconnect_where_resync_target(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	for_each_peer_device(peer_device, device)
+		if (is_sync_target_state(peer_device, NEW))
+			__change_cstate(peer_device->connection, C_TEAR_DOWN);
+}
+
 struct change_role_context {
 	struct change_context context;
 	bool force;
@@ -4703,6 +4712,7 @@ static void __change_role(struct change_role_context *role_context)
 				/* adding it to the context so that it gets sent to the peers */
 				role_context->context.mask.disk |= disk_MASK;
 				role_context->context.val.disk |= D_UP_TO_DATE;
+				disconnect_where_resync_target(device);
 			}
 		}
 	}
