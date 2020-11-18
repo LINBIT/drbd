@@ -2352,7 +2352,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 			put_ldev(device);
 	} else {
 		if (drbd_ratelimit())
-			drbd_err(device, "Can not write resync data to local disk.\n");
+			drbd_err(device, "Cannot write resync data to local disk.\n");
 
 		err = ignore_remaining_packet(connection, pi->size);
 
@@ -7794,8 +7794,6 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
-	dec_rs_pending(peer_device);
-
 	if (get_ldev(device)) {
 		struct drbd_peer_request *peer_req;
 
@@ -7804,6 +7802,10 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 			put_ldev(device);
 			return -ENOMEM;
 		}
+
+		dec_rs_pending(peer_device);
+
+		inc_unacked(peer_device);
 
 		peer_req->i.size = size;
 		peer_req->i.sector = sector;
@@ -7821,23 +7823,21 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		err = drbd_submit_peer_request(peer_req);
 
 		if (err) {
+			drbd_err(device, "discard submit failed, triggering re-connect\n");
 			spin_lock_irq(&device->resource->req_lock);
 			list_del(&peer_req->w.list);
 			spin_unlock_irq(&device->resource->req_lock);
 
 			drbd_free_peer_req(peer_req);
 			put_ldev(device);
-			err = 0;
-			goto fail;
 		}
-
-		inc_unacked(peer_device);
 
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(),
 		   as well as drbd_rs_complete_io() */
 	} else {
-	fail:
-		drbd_rs_complete_io(peer_device, sector);
+		if (drbd_ratelimit())
+			drbd_err(device, "Cannot discard on local disk.\n");
+
 		drbd_send_ack_ex(peer_device, P_NEG_ACK, sector, size, ID_SYNCER);
 	}
 
