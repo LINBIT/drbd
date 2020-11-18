@@ -3,6 +3,21 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.26-0rc2 (api:genl2/proto:86-118/transport:14)
+--------
+ * fix a crash if during resync a discard operation fails on the
+   resync-target node
+ * fix online verify to not clamp disk states to UpToDate
+ * fix promoting resync-target nodes; the problem was that it could modify
+   the bitmap of an ongoing resync; which leads to alarming log messages
+ * pause a resync if the sync-source node becomes inconsistent; an example
+   is a cascading resync where the upstream resync aborts and leaves the
+   sync-source node for the downstream resync with an inconsistent disk;
+   note, the node at the end of the chain could still have an outdated disk
+   (better than inconsistent)
+ * allow force primary on a sync-target node by breaking the resync
+ * minor fixes to the compat tests
+
 9.0.26-0rc1 (api:genl2/proto:86-118/transport:14)
 --------
  * fix a case of a disk unexpectedly becoming Outdated by moving the
@@ -10,15 +25,15 @@ Latest:
    that happens at a connect
  * fix adding of new volumes to resources with a primary node
  * reliably detect split brain situation on both nodes
- * fix an unexpected occurence of NetworkFailure state in a tight
+ * fix an unexpected occurrence of NetworkFailure state in a tight
    drbdsetup disconnect; drbdsetup connect sequence
  * fix online verify to return to Established from VerifyS if the VerifyT node
    was temporarily Inconsistent during the run
- * fix a corner case where a node ends up Outdated after crash and rejoin
+ * fix a corner case where a node ends up Outdated after the crash and rejoin
    of a primary node
  * implement 'blockdev --setro' in DRBD
  * following upstream changes to DRBD up to Linux 5.9 and ensure
-   compabitibility with Linux 5.8 and 5.9
+   compatibility with Linux 5.8 and 5.9
 
 9.0.25-1 (api:genl2/proto:86-117/transport:14)
 --------
