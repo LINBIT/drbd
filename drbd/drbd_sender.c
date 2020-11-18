@@ -2144,6 +2144,9 @@ skip_helper:
 		r = SS_UNKNOWN_ERROR;
 
 	if (r == SS_SUCCESS) {
+		if (side == L_SYNC_TARGET)
+			drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+
 		drbd_pause_after(device);
 		/* Forget potentially stale cached per resync extent bit-counts.
 		 * Open coded drbd_rs_cancel_all(device), we already have IRQs
