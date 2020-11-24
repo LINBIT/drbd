@@ -753,6 +753,9 @@ enum connection_flag {
 	NOTIFY_PEERS_LOST_PRIMARY,
 	CHECKING_PEER,		/* used by make_new_urrent_uuid() to check liveliness */
 	CONN_CONGESTED,
+	CONN_HANDSHAKE_DISCONNECT,
+	CONN_HANDSHAKE_RETRY,
+	CONN_HANDSHAKE_READY,
 };
 
 /* flag bits per resource */
@@ -804,6 +807,11 @@ struct twopc_reply {
 	unsigned int is_disconnect:1;
 	unsigned int is_connect:1;
 	unsigned int is_aborted:1;
+	/* Whether the state change on receiving the twopc failed. When this is
+	 * a twopc for transitioning to C_CONNECTED, we cannot immediately
+	 * reply with P_TWOPC_NO. The state handshake must complete first to
+	 * decide the appropriate reply. */
+	unsigned int state_change_failed:1;
 };
 
 struct drbd_thread_timing_details

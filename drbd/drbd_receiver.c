@@ -713,7 +713,7 @@ void conn_connect2(struct drbd_connection *connection)
 		kref_put(&device->kref, drbd_destroy_device);
 	}
 	rcu_read_unlock();
-
+	drbd_uncork(connection, DATA_STREAM);
 }
 
 static bool initial_states_received(struct drbd_connection *connection)
@@ -804,7 +804,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 		connection->connect_timer.expires = jiffies + HZ/20;
 		add_timer(&connection->connect_timer);
 		return 0; /* Return early. Keep the reference on the connection! */
-	} else if (rv == SS_CW_FAILED_BY_PEER) {
+	} else if (rv == SS_HANDSHAKE_DISCONNECT) {
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	} else {
 		drbd_info(connection, "Failure to connect; retrying\n");
@@ -914,6 +914,13 @@ start:
 			goto retry;
 		}
 	}
+
+	/* Clear handshake bits before sending P_PROTOCOL. As soon as
+	 * P_PROTOCOL is sent, the peer may start the two-phase commit for
+	 * transitioning to C_CONNECTED and send us their state. */
+	clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+	clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+	clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
 
 	discard_my_data = test_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
@@ -6701,19 +6708,6 @@ static int process_twopc(struct drbd_connection *connection,
 	    mask.conn == 0)
 		affected_connection = NULL;
 
-	if (mask.conn == conn_MASK) {
-		u64 m = NODE_MASK(reply->initiator_node_id);
-
-		if (val.conn == C_CONNECTED) {
-			reply->reachable_nodes |= m;
-			reply->is_connect = 1;
-		}
-		if (val.conn == C_DISCONNECTING) {
-			reply->reachable_nodes &= ~m;
-			reply->is_disconnect = 1;
-		}
-	}
-
 	if (pi->vnr != -1 && affected_connection) {
 		peer_device = conn_peer_device(affected_connection, pi->vnr);
 		/* If we do not know the peer_device, then we are fine with
@@ -6721,6 +6715,20 @@ static int process_twopc(struct drbd_connection *connection,
 		   one each node, one after the other */
 
 		affected_connection = NULL; /* It is intended for a peer_device! */
+	}
+
+	if (mask.conn == conn_MASK) {
+		u64 m = NODE_MASK(reply->initiator_node_id);
+
+		if (val.conn == C_CONNECTED) {
+			reply->reachable_nodes |= m;
+			if (affected_connection)
+				reply->is_connect = 1;
+		}
+		if (val.conn == C_DISCONNECTING) {
+			reply->reachable_nodes &= ~m;
+			reply->is_disconnect = 1;
+		}
 	}
 
 	if (pi->cmd == P_TWOPC_PREPARE) {
@@ -6801,13 +6809,16 @@ static int process_twopc(struct drbd_connection *connection,
 		mod_timer(&resource->twopc_timer, receive_jif + twopc_timeout(resource));
 		spin_unlock_irq(&resource->req_lock);
 
-		if (rv >= SS_SUCCESS) {
-			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+		/* Retry replies can be sent immediately. Otherwise use the
+		 * nested twopc path. This waits for the state handshake to
+		 * complete in the case of a twopc for transitioning to
+		 * C_CONNECTED. */
+		if (rv == SS_IN_TRANSIENT_STATE) {
+			resource->twopc_prepare_reply_cmd = P_TWOPC_RETRY;
+			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 		} else {
-			enum drbd_packet cmd = (rv == SS_IN_TRANSIENT_STATE) ?
-				P_TWOPC_RETRY : P_TWOPC_NO;
-			resource->twopc_prepare_reply_cmd = cmd;
-			drbd_send_twopc_reply(connection, cmd, reply);
+			resource->twopc_reply.state_change_failed = rv < SS_SUCCESS;
+			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		}
 	} else {
 		if (flags & CS_PREPARED) {
@@ -6833,7 +6844,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		if (connection->agreed_pro_version >= 118 &&
 		    (flags & CS_ABORT) && reply->is_connect &&
-		    resource->twopc_prepare_reply_cmd == P_TWOPC_NO)
+		    test_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags))
 			change_cstate(connection, C_DISCONNECTING, CS_HARD);
 
 		clear_remote_state_change(resource);
@@ -6885,6 +6896,33 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
 	}
 	put_ldev(device);
+}
+
+static void finish_nested_twopc(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	int vnr = 0;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags))
+			return;
+	}
+
+	set_bit(CONN_HANDSHAKE_READY, &connection->flags);
+
+	wake_up(&resource->state_wait);
+
+	if (!resource->remote_state_change)
+		return;
+
+	if (resource->twopc_parent_nodes == 0) /* we are the initiator, no nesting here */
+		return;
+
+	if (cluster_wide_reply_ready(resource) && resource->twopc_work.cb == NULL) {
+		resource->twopc_work.cb = nested_twopc_work;
+		drbd_queue_work(&resource->work, &resource->twopc_work);
+	}
 }
 
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
@@ -7073,9 +7111,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 
 		put_ldev(device);
-		if (new_repl_state == -1)
-			return -EIO; /* retry connect */
-		else if (new_repl_state == -2) {
+		if (new_repl_state == -1) { /* retry connect */
+			if (connection->agreed_pro_version >= 118) {
+				new_repl_state = L_OFF;
+				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+			} else {
+				return -EIO; /* retry connect */
+			}
+		} else if (new_repl_state == -2) {
 			new_repl_state = L_ESTABLISHED;
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				new_repl_state = L_NEG_NO_RESULT;
@@ -7091,10 +7134,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
-				if (connection->agreed_pro_version >= 118)
+				if (connection->agreed_pro_version >= 118) {
 					new_repl_state = L_OFF;
-				else
+					set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+				} else {
 					goto fail;
+				}
 			}
 		}
 
@@ -7143,6 +7188,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 		wake_up(&connection->ee_wait);
+
+		finish_nested_twopc(connection);
 		return 0;
 	}
 	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
