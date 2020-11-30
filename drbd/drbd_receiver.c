@@ -8055,17 +8055,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	}
 }
 
-static bool twopc_between_lost_node_and_me(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct twopc_reply *o = &resource->twopc_reply;
-
-	return (o->target_node_id == resource->res_opts.node_id &&
-		o->initiator_node_id == connection->peer_node_id) ||
-		(o->target_node_id == connection->peer_node_id &&
-		 o->initiator_node_id == resource->res_opts.node_id);
-}
-
 static bool any_connection_up(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
@@ -8096,7 +8085,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 
 	spin_lock_irq(&resource->req_lock);
 	if (resource->remote_state_change &&
-	    (twopc_between_lost_node_and_me(connection) || !any_connection_up(resource))) {
+	    (drbd_twopc_between_peer_and_me(connection) || !any_connection_up(resource))) {
 		bool remote = reply->initiator_node_id != resource->res_opts.node_id;
 
 		drbd_info(connection, "Aborting %s state change %u commit not possible\n",
