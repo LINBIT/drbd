@@ -6,7 +6,7 @@ HOSTRELEASE=/etc/host-release
 
 die() {
 	>&2 echo
-	>&2 echo "$1"
+	>&2 echo -e "$1"
 	exit 1
 }
 
@@ -29,10 +29,14 @@ map_dist() {
 	return 0
 }
 
-print_version_and_exit() {
+print_drbd_version() {
 	echo
 	echo "DRBD version loaded:"
 	cat /proc/drbd
+}
+
+print_drbd_version_and_exit() {
+	print_drbd_version
 	exit 0
 }
 
@@ -218,7 +222,15 @@ modprobe_deps() {
 modprobe_deps
 [[ $LB_HOW == "$HOW_DEPSONLY" ]] && { debug "dependencies loading only, exiting now"; exit 0; }
 
-grep -q '^drbd' /proc/modules && echo "DRBD module is already loaded" && print_version_and_exit
+if grep -q '^drbd ' /proc/modules; then
+	echo "DRBD module is already loaded"
+	print_drbd_version
+
+	[[ $LB_FAIL_IF_USERMODE_HELPER_NOT_DISABLED == yes ]] && ! grep -qw disabled /sys/module/drbd/parameters/usermode_helper &&
+		die "- load the drbd module on the host with the module parameter 'usermode_helper=disabled' OR\n- let this container handle that for you by not already loading the drbd module on the host"
+
+	exit 0
+fi
 
 pkgdir=/tmp/pkg
 kodir=/tmp/ko
@@ -269,4 +281,4 @@ fi
 
 modprobe drbd_transport_rdma 2>/dev/null || true
 grep -q '^drbd_transport_tcp' /proc/modules || die "Could not load DRBD kernel modules"
-print_version_and_exit
+print_drbd_version_and_exit
