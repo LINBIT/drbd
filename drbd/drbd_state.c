@@ -4680,7 +4680,7 @@ int nested_twopc_work(struct drbd_work *work, int cancel)
 	rv = get_cluster_wide_reply(resource, NULL);
 	if (rv >= SS_SUCCESS)
 		cmd = P_TWOPC_YES;
-	else if (rv == SS_CONCURRENT_ST_CHG)
+	else if (rv == SS_CONCURRENT_ST_CHG || rv == SS_HANDSHAKE_RETRY)
 		cmd = P_TWOPC_RETRY;
 	else
 		cmd = P_TWOPC_NO;

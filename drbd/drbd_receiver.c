@@ -759,6 +759,19 @@ void connect_timer_fn(struct timer_list *t)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+static bool retry_by_rr_conflict(struct drbd_connection *connection)
+{
+	enum drbd_after_sb_p rr_conflict;
+	struct net_conf *nc;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	rr_conflict = nc->rr_conflict;
+	rcu_read_unlock();
+
+	return rr_conflict == ASB_RETRY_CONNECT;
+}
+
 static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
@@ -766,6 +779,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 	struct drbd_resource *resource = connection->resource;
 	enum drbd_state_rv rv;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
+	bool retry = retry_by_rr_conflict(connection);
 
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
@@ -804,10 +818,15 @@ static int connect_work(struct drbd_work *work, int cancel)
 		connection->connect_timer.expires = jiffies + HZ/20;
 		add_timer(&connection->connect_timer);
 		return 0; /* Return early. Keep the reference on the connection! */
-	} else if (rv == SS_HANDSHAKE_DISCONNECT) {
+	} else if (rv == SS_HANDSHAKE_RETRY || (rv == SS_CW_FAILED_BY_PEER && retry)) {
+		connection->connect_timer.expires = jiffies + HZ;
+		add_timer(&connection->connect_timer);
+		return 0; /* Keep reference */
+	} else if (rv == SS_HANDSHAKE_DISCONNECT || (rv == SS_CW_FAILED_BY_PEER && !retry)) {
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	} else {
-		drbd_info(connection, "Failure to connect; retrying\n");
+		drbd_info(connection, "Failure to connect %d %s; retrying\n",
+			  rv, drbd_set_st_err_str(rv));
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
 
@@ -6852,9 +6871,17 @@ static int process_twopc(struct drbd_connection *connection,
 			rv = SS_SUCCESS;
 		}
 		if (connection->agreed_pro_version >= 118 &&
-		    (flags & CS_ABORT) && reply->is_connect &&
-		    test_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags))
-			change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		    (flags & CS_ABORT) && reply->is_connect) {
+			bool retry_connect = true;
+
+			if (test_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags))
+				retry_connect = false;
+			else if (resource->twopc_prepare_reply_cmd == P_TWOPC_NO)
+				retry_connect = retry_by_rr_conflict(connection);
+
+			if (!retry_connect)
+				change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		}
 
 		clear_remote_state_change(resource);
 
