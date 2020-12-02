@@ -915,13 +915,6 @@ start:
 		}
 	}
 
-	/* Clear handshake bits before sending P_PROTOCOL. As soon as
-	 * P_PROTOCOL is sent, the peer may start the two-phase commit for
-	 * transitioning to C_CONNECTED and send us their state. */
-	clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
-	clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
-	clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
-
 	discard_my_data = test_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 	if (__drbd_send_protocol(connection, P_PROTOCOL) == -EOPNOTSUPP)
@@ -6360,6 +6353,22 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	reply.target_node_id = be32_to_cpu(p->target_node_id);
 	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
+
+	if (pi->cmd == P_TWOPC_PREPARE &&
+			reply.initiator_node_id == connection->peer_node_id &&
+			reply.target_node_id == resource->res_opts.node_id) {
+		/* Clear the relevant flags at the start of a connection
+		 * attempt from this peer. They must be cleared before we
+		 * receive any more packets, because the state packets follow
+		 * after this one even when this two-phase commit is queued. If
+		 * the two-phase commit is not a connection attempt, clearing
+		 * the flags is harmless. The peer will never initiate a
+		 * concurrent two-phase commit while a connection attempt is
+		 * ongoing. */
+		clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+		clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+		clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
+	}
 
 	rv = process_twopc(connection, &reply, pi, jiffies);
 
