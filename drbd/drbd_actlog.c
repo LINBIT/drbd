@@ -782,9 +782,21 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
 	int size_sect;
+	struct bm_extent *bm_ext;
+	struct lc_element *e;
 
 	if (peer_device->connection->agreed_pro_version < 110)
 		return;
+
+	if (drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr), false))
+		return;
+
+	e = lc_find(peer_device->resync_lru, rs_enr);
+	bm_ext = lc_entry(e, struct bm_extent, lce);
+	if (bm_ext->rs_left) {
+		drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
+		return;
+	}
 
 	for_each_peer_device_ref(p, im, device) {
 		if (p == peer_device)
@@ -800,6 +812,8 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 		if (mask & NODE_MASK(p->node_id))
 			drbd_send_peers_in_sync(p, mask, BM_EXT_TO_SECT(rs_enr), size_sect << 9);
 	}
+
+	drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
 }
 
 int drbd_al_initialize(struct drbd_device *device, void *buffer)
