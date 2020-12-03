@@ -661,6 +661,16 @@ static int drbd_recv_all_warn(struct drbd_connection *connection, void **buf, si
 	return err;
 }
 
+static int drbd_send_disconnect(struct drbd_connection *connection)
+{
+	if (connection->agreed_pro_version < 118)
+		return 0;
+
+	if (!conn_prepare_command(connection, 0, CONTROL_STREAM))
+		return -EIO;
+	return send_command(connection, -1, P_DISCONNECT, CONTROL_STREAM);
+}
+
 /* Gets called if a connection is established, or if a new minor gets created
    in a connection */
 int drbd_connected(struct drbd_peer_device *peer_device)
@@ -780,6 +790,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 	enum drbd_state_rv rv;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	bool retry = retry_by_rr_conflict(connection);
+	bool incompat_states;
 
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
@@ -809,6 +820,8 @@ static int connect_work(struct drbd_work *work, int cancel)
 						     t);
 	} while (t > 0);
 
+	incompat_states = (rv == SS_CW_FAILED_BY_PEER || rv == SS_TWO_PRIMARIES);
+
 	if (rv >= SS_SUCCESS) {
 		if (connection->agreed_pro_version < 117)
 			conn_connect2(connection);
@@ -818,11 +831,12 @@ static int connect_work(struct drbd_work *work, int cancel)
 		connection->connect_timer.expires = jiffies + HZ/20;
 		add_timer(&connection->connect_timer);
 		return 0; /* Return early. Keep the reference on the connection! */
-	} else if (rv == SS_HANDSHAKE_RETRY || (rv == SS_CW_FAILED_BY_PEER && retry)) {
+	} else if (rv == SS_HANDSHAKE_RETRY || (incompat_states && retry)) {
 		connection->connect_timer.expires = jiffies + HZ;
 		add_timer(&connection->connect_timer);
 		return 0; /* Keep reference */
-	} else if (rv == SS_HANDSHAKE_DISCONNECT || (rv == SS_CW_FAILED_BY_PEER && !retry)) {
+	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
+		drbd_send_disconnect(connection);
 		change_cstate(connection, C_DISCONNECTING, CS_HARD);
 	} else {
 		drbd_info(connection, "Failure to connect %d %s; retrying\n",
@@ -6862,18 +6876,6 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_commit_size_change(device, NULL, be64_to_cpu(p->nodes_to_reach));
 			rv = SS_SUCCESS;
 		}
-		if (connection->agreed_pro_version >= 118 &&
-		    (flags & CS_ABORT) && reply->is_connect) {
-			bool retry_connect = true;
-
-			if (test_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags))
-				retry_connect = false;
-			else if (resource->twopc_prepare_reply_cmd == P_TWOPC_NO)
-				retry_connect = retry_by_rr_conflict(connection);
-
-			if (!retry_connect)
-				change_cstate(connection, C_DISCONNECTING, CS_HARD);
-		}
 
 		clear_remote_state_change(resource);
 
@@ -7935,6 +7937,12 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	return err;
 }
 
+static int receive_disconnect(struct drbd_connection *connection, struct packet_info *pi)
+{
+	change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	return 0;
+}
+
 struct data_cmd {
 	int expect_payload;
 	unsigned int pkt_size;
@@ -7979,6 +7987,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_ZEROES]	    = { 0, sizeof(struct p_trim), receive_Data },
 	[P_RS_DEALLOCATED]  = { 0, sizeof(struct p_block_desc), receive_rs_deallocated },
 	[P_WSAME]	    = { 1, sizeof(struct p_wsame), receive_Data },
+	[P_DISCONNECT]      = { 0, 0, receive_disconnect },
 };
 
 static void drbdd(struct drbd_connection *connection)
