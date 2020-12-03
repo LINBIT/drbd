@@ -6711,17 +6711,9 @@ static int process_twopc(struct drbd_connection *connection,
 		 * connected to the initiator as well as indirectly, we don't
 		 * have connection or peer device objects for this peer.
 		 */
-		for_each_connection(affected_connection, resource) {
-			/* for_each_connection() protected by holding req_lock here */
-			if (reply->initiator_node_id ==
-			    affected_connection->peer_node_id)
-				goto directly_connected;
-		}
-		/* only indirectly connected */
-		affected_connection = NULL;
+		affected_connection = drbd_connection_by_node_id(resource, reply->initiator_node_id);
 	}
 
-    directly_connected:
 	if (reply->target_node_id != -1 &&
 	    reply->target_node_id != resource->res_opts.node_id) {
 		affected_connection = NULL;
