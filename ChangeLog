@@ -3,6 +3,14 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.26-0rc3 (api:genl2/proto:86-118/transport:14)
+--------
+ * fix for writes not getting mirrored over a connection while the primary
+   transitions through the WFBitMapS state
+ * completed missing logic of the new two-phase-commit based connect process;
+   avoid connecting partitions with a primary in each; ensure consistent
+   decisions if the connect attempt will be retried
+
 9.0.26-0rc2 (api:genl2/proto:86-118/transport:14)
 --------
  * fix a crash if during resync a discard operation fails on the
