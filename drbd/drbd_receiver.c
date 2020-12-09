@@ -666,9 +666,9 @@ static int drbd_send_disconnect(struct drbd_connection *connection)
 	if (connection->agreed_pro_version < 118)
 		return 0;
 
-	if (!conn_prepare_command(connection, 0, CONTROL_STREAM))
+	if (!conn_prepare_command(connection, 0, DATA_STREAM))
 		return -EIO;
-	return send_command(connection, -1, P_DISCONNECT, CONTROL_STREAM);
+	return send_command(connection, -1, P_DISCONNECT, DATA_STREAM);
 }
 
 /* Gets called if a connection is established, or if a new minor gets created
