@@ -2758,7 +2758,7 @@ static void free_page_pool(struct drbd_resource *resource)
 		page = resource->pp_pool;
 		resource->pp_pool = page_chain_next(page);
 		__free_page(page);
-		resource->pp_vacant--;
+		atomic_dec(&resource->pp_vacant);
 	}
 }
 
@@ -3204,8 +3204,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	/* drbd's page pool */
 	init_waitqueue_head(&resource->pp_wait);
 
-	spin_lock_init(&resource->pp_lock);
-
 	for (i = 0; i < page_pool_count; i++) {
 		page = alloc_page(GFP_HIGHUSER);
 		if (!page)
@@ -3213,7 +3211,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 		set_page_chain_next_offset_size(page, resource->pp_pool, 0, 0);
 		resource->pp_pool = page;
 	}
-	resource->pp_vacant = page_pool_count;
+	atomic_set(&resource->pp_vacant, page_pool_count);
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 

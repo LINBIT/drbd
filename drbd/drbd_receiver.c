@@ -210,44 +210,53 @@ static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, str
 
 /* If at least n pages are linked at head, get n pages off.
  * Otherwise, don't modify head, and return NULL.
- * Locking is the responsibility of the caller.
  */
-static struct page *page_chain_del(struct page **head, int n)
+static struct page *page_chain_del(struct page **head, int count)
 {
-	struct page *page;
-	struct page *tmp;
+	struct page *page, *tmp = NULL, *rv_head, *rv_tail;
+	int n;
 
-	BUG_ON(!n);
+	BUG_ON(!count);
 	BUG_ON(!head);
 
-	page = *head;
-
+	page = READ_ONCE(*head);
 	if (!page)
 		return NULL;
 
-	while (page) {
-		tmp = page_chain_next(page);
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, 0);
-		if (--n == 0)
-			break; /* found sufficient pages */
-		if (tmp == NULL)
-			/* insufficient pages, don't use any of them. */
-			return NULL;
-		page = tmp;
-	}
+	do {
+		n = count;
+		rv_head = page;
+		while (true) {
+			tmp = page_chain_next(page);
+			if (--n == 0)
+				break; /* found sufficient pages */
+			if (tmp == NULL)
+				/* insufficient pages, don't use any of them. */
+				return NULL;
+			page = tmp;
+		}
+		rv_tail = page;
+		/* adjustment of head */
+		page = cmpxchg(head, rv_head, tmp);
+	} while (page != rv_head);
 
 	/* add end of list marker for the returned list */
-	set_page_chain_next(page, NULL);
-	/* actual return value, and adjustment of head */
-	page = *head;
-	*head = tmp;
-	return page;
+	set_page_chain_next(rv_tail, NULL);
+
+	/* cleanup page chain before returning it */
+	page = rv_head;
+	do {
+		set_page_chain_offset(page, 0);
+		set_page_chain_size(page, 0);
+		page = page_chain_next(page);
+	} while (page);
+
+	return rv_head;
 }
 
 /* may be used outside of locks to find the tail of a (usually short)
- * "private" page chain, before adding it back to a global chain head
- * with page_chain_add() under a spinlock. */
+ * "private" page chain, before adding it back to a chain head
+ * with page_chain_add(). */
 static struct page *page_chain_tail(struct page *page, int *len)
 {
 	struct page *tmp;
@@ -274,15 +283,14 @@ static int page_chain_free(struct page *page)
 static void page_chain_add(struct page **head,
 		struct page *chain_first, struct page *chain_last)
 {
-#if 1
-	struct page *tmp;
-	tmp = page_chain_tail(chain_first, NULL);
-	BUG_ON(tmp != chain_last);
-#endif
+	struct page *first, *try;
 
-	/* add chain to head */
-	set_page_chain_next(chain_last, *head);
-	*head = chain_first;
+	first = READ_ONCE(*head);
+	do {
+		try = first;
+		set_page_chain_next(chain_last, try);
+		first = cmpxchg(head, try, chain_first);
+	} while (first != try);
 }
 
 static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned int number, gfp_t gfp_mask)
@@ -291,16 +299,12 @@ static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned 
 	struct page *tmp = NULL;
 	unsigned int i = 0;
 
-	/* Yes, testing drbd_pp_vacant outside the lock is racy.
-	 * So what. It saves a spin_lock. */
-	if (resource->pp_vacant >= number) {
-		spin_lock(&resource->pp_lock);
+	if (atomic_read(&resource->pp_vacant) >= number) {
 		page = page_chain_del(&resource->pp_pool, number);
-		if (page)
-			resource->pp_vacant -= number;
-		spin_unlock(&resource->pp_lock);
-		if (page)
+		if (page) {
+			atomic_sub(number, &resource->pp_vacant);
 			return page;
+		}
 	}
 
 	for (i = 0; i < number; i++) {
@@ -319,10 +323,8 @@ static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned 
 	 * function "soon". */
 	if (page) {
 		tmp = page_chain_tail(page, NULL);
-		spin_lock(&resource->pp_lock);
 		page_chain_add(&resource->pp_pool, page, tmp);
-		resource->pp_vacant += i;
-		spin_unlock(&resource->pp_lock);
+		atomic_add(i, &resource->pp_vacant);
 	}
 	return NULL;
 }
@@ -440,7 +442,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 }
 
 /* Must not be used from irq, as that may deadlock: see drbd_alloc_pages.
- * Either links the page chain back to the global pool,
+ * Either links the page chain back to the pool of free pages,
  * or returns all pages to the system. */
 void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is_net)
 {
@@ -453,15 +455,13 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is
 	if (page == NULL)
 		return;
 
-	if (resource->pp_vacant > DRBD_MAX_BIO_SIZE/PAGE_SIZE)
+	if (atomic_read(&resource->pp_vacant) > DRBD_MAX_BIO_SIZE/PAGE_SIZE) {
 		i = page_chain_free(page);
-	else {
+	} else {
 		struct page *tmp;
 		tmp = page_chain_tail(page, &i);
-		spin_lock(&resource->pp_lock);
 		page_chain_add(&resource->pp_pool, page, tmp);
-		resource->pp_vacant += i;
-		spin_unlock(&resource->pp_lock);
+		atomic_add(i, &resource->pp_vacant);
 	}
 	i = atomic_sub_return(i, a);
 	if (i < 0)
