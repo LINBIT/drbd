@@ -1,3 +1,4 @@
+#include <linux/genhd.h>
 #include <linux/fs.h>
 #include <linux/blkdev.h>
 
