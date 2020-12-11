@@ -2196,6 +2196,7 @@ static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
 
 blk_qc_t drbd_submit_bio(struct bio *bio)
 {
+	struct request_queue *q = bio->bi_disk->queue;
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	ktime_t start_kt;
