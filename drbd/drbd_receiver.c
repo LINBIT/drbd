@@ -3918,6 +3918,7 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	u64 resolved_uuid;
 	bool my_current_in_peers_history;
 	bool peers_current_in_my_history;
+	bool bitmap_matches_initial;
 	bool flags_matches_initial;
 	bool uuid_matches_initial;
 	bool initial_handshake;
@@ -3938,12 +3939,18 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
 		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	uuid_matches_initial = self == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
+	bitmap_matches_initial = drbd_bitmap_uuid(peer_device) == peer_device->comm_bitmap_uuid;
 	flags_matches_initial = local_uuid_flags == peer_device->comm_uuid_flags;
-	if (initial_handshake && (!uuid_matches_initial || !flags_matches_initial)) {
+	if (initial_handshake && (!uuid_matches_initial || !flags_matches_initial || !bitmap_matches_initial)) {
 		*rule_nr = 9;
 		if (!uuid_matches_initial)
 			drbd_warn(peer_device, "My current UUID changed during "
 				  "handshake. Retry connecting.\n");
+		if (!bitmap_matches_initial)
+			drbd_warn(peer_device, "My bitmap UUID changed during "
+				  "handshake. Retry connecting. 0x%llX to 0x%llX\n",
+				  (unsigned long long)peer_device->comm_bitmap_uuid,
+				  (unsigned long long)drbd_bitmap_uuid(peer_device));
 		if (!flags_matches_initial)
 			drbd_warn(peer_device, "My uuid_flags changed from 0x%llX to 0x%llX during "
 				  "handshake. Retry connecting.\n",

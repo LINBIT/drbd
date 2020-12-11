@@ -1224,6 +1224,7 @@ struct drbd_peer_device {
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 comm_current_uuid; /* communicated current UUID */
 	u64 comm_uuid_flags; /* communicated UUID flags */
+	u64 comm_bitmap_uuid;
 	union drbd_state comm_state;
 
 #ifdef CONFIG_DEBUG_FS
