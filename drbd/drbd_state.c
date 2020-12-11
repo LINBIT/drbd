@@ -3577,7 +3577,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_uuid_new_current(device, false);
 			}
 
-			if (repl_state[NEW] == L_VERIFY_S && get_ldev(device)) {
+			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S && get_ldev(device)) {
 				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
 						(unsigned long long)peer_device->ov_position);
 				mod_timer(&peer_device->resync_timer, jiffies);
