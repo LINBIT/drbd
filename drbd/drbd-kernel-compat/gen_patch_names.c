@@ -251,6 +251,18 @@ int main(int argc, char **argv)
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
+#if defined(COMPAT_HAVE_QUEUE_FLAG_STABLE_WRITES)
+	/* in versions >=5.9, there is QUEUE_FLAG_STABLE_WRITES */
+#elif defined(COMPAT_HAVE_BDI_CAP_STABLE_WRITES)
+	/* for <5.9 but >=3.9, fall back to BDI_CAP_STABLE_WRITES */
+	patch(1, "queue_flag_stable_writes", true, false,
+	      NO, "present");
+#else
+	/* before 3.9, BDI_CAP_STABLE_WRITES is also not available */
+	patch(1, "bdi_cap_stable_writes", true, false,
+	      NO, "present");
+#endif
+
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
 
