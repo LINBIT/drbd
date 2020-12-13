@@ -127,13 +127,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif
 
-#ifdef BDI_CAP_STABLE_WRITES /* >= v3.9 */
-#define set_bdi_cap_stable_writes(cap)	do { (cap) |= BDI_CAP_STABLE_WRITES; } while (0)
-#else /* < v3.9 */
-#warning "BDI_CAP_STABLE_WRITES not available"
-#define set_bdi_cap_stable_writes(cap)	do { } while (0)
-#endif
-
 #ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
 #define bdi_from_device(device) (device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
 #else /* < v4.11 */
