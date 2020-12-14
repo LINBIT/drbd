@@ -2217,6 +2217,19 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 		return BLK_QC_T_NONE;
 	}
 
+	/* This is both an optimization: READ of size 0, nothing to do
+	 * and a workaround: (older) ZFS explodes on size zero reads, see
+	 * https://github.com/zfsonlinux/zfs/issues/8379
+	 * Actually don't do anything for size zero bios.
+	 * Add a "WARN_ONCE", so we can tell the caller to stop doing this.
+	 */
+	if (bio_op(bio) == REQ_OP_READ && bio->bi_iter.bi_size == 0) {
+		WARN_ONCE(1, "size zero read from upper layers");
+		bio->bi_status = BLK_STS_OK;
+		bio_endio(bio);
+		return BLK_QC_T_NONE;
+	}
+
 	ktime_get_accounting(start_kt);
 	start_jif = jiffies;
 
