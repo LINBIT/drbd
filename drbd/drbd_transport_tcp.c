@@ -1205,12 +1205,6 @@ static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	return 0;
 }
 
-static void dtt_quickack(struct socket *socket)
-{
-	int val = 2;
-	(void) kernel_setsockopt(socket, SOL_TCP, TCP_QUICKACK, (char *)&val, sizeof(val));
-}
-
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		enum drbd_tr_hints hint)
 {
@@ -1237,7 +1231,7 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 			set_bit(SOCK_NOSPACE, &socket->sk->sk_socket->flags);
 		break;
 	case QUICKACK:
-		dtt_quickack(socket);
+		tcp_sock_set_quickack(socket, 2);
 		break;
 	default: /* not implemented, but should not trigger error handling */
 		return true;
