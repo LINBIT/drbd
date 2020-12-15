@@ -5,13 +5,7 @@ identifier ws;
 extern void do_submit(struct work_struct *ws);
 
 @@
-identifier q, bio;
 @@
-drbd_make_request(struct request_queue *q, struct bio *bio)
-{
-...
-}
-
 +/* This is called by bio_add_page().
 + *
 + * q->max_hw_sectors and other global limits are already enforced there.
@@ -47,12 +41,14 @@ drbd_make_request(struct request_queue *q, struct bio *bio)
 +	return limit;
 +}
 
+do_submit(...)
+{ ... }
+
 @@
 identifier x;
 @@
 {
 ...
-blk_queue_make_request(x, ...);
 blk_queue_write_cache(x, ...);
 + blk_queue_merge_bvec(x, drbd_merge_bvec);
 ...
