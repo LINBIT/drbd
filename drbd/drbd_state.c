@@ -3768,6 +3768,17 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 	return rv;
 }
 
+bool drbd_twopc_between_peer_and_me(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct twopc_reply *o = &resource->twopc_reply;
+
+	return (o->target_node_id == resource->res_opts.node_id &&
+		o->initiator_node_id == connection->peer_node_id) ||
+		(o->target_node_id == connection->peer_node_id &&
+		 o->initiator_node_id == resource->res_opts.node_id);
+}
+
 bool cluster_wide_reply_ready(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
