@@ -5674,9 +5674,14 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NOW] == R_PRIMARY) {
 		struct net_conf *nc;
+		bool two_primaries_allowed = false;
 
+		rcu_read_lock();
 		nc = rcu_dereference(connection->transport.net_conf);
-		if (!nc || !nc->two_primaries)
+		if (nc)
+			two_primaries_allowed = nc->two_primaries;
+		rcu_read_unlock();
+		if (!two_primaries_allowed)
 			return SS_TWO_PRIMARIES;
 
 		/* A node further away wants to become primary. In case I am
