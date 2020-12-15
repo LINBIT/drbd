@@ -5194,6 +5194,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	u64 bitmap_uuids_mask, node_mask;
 	struct drbd_peer_md *peer_md = NULL;
 	struct drbd_device *device;
+	int not_allocated = -1;
 
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -5232,6 +5233,10 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
+	if (peer_device->uuid_flags & UUID_FLAG_HAS_UNALLOC) {
+		not_allocated = peer_device->uuid_flags >> UUID_FLAG_UNALLOC_SHIFT;
+		peer_device->uuid_flags &= ~UUID_FLAG_UNALLOC_MASK;
+	}
 
 	pos = 0;
 	for (i = 0; i < ARRAY_SIZE(peer_device->bitmap_uuids); i++) {
@@ -5240,7 +5245,8 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		if (bitmap_uuids_mask & NODE_MASK(i)) {
 			bitmap_uuid = be64_to_cpu(p->other_uuids[pos++]);
 
-			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP))
+			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP) &&
+			    i != not_allocated)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
 		} else {
 			bitmap_uuid = -1;
