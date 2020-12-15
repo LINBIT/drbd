@@ -1346,8 +1346,11 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 			sent_one_unallocated = true;
 		}
 		if (send_this) {
+			u64 val = __bitmap_uuid(device, i);
 			bitmap_uuids_mask |= NODE_MASK(i);
-			p->other_uuids[pos++] = cpu_to_be64(__bitmap_uuid(device, i));
+			p->other_uuids[pos++] = cpu_to_be64(val);
+			if (i == peer_device->node_id)
+				peer_device->comm_bitmap_uuid = val;
 		}
 	}
 
