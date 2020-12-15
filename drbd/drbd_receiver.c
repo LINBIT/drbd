@@ -4045,29 +4045,31 @@ static void disk_states_to_goodness(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
 				    enum sync_strategy *strategy, int rule_nr)
 {
-	struct drbd_device *device = peer_device->device;
 	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
-	bool p = false;
-
-	if (*strategy != NO_SYNC && rule_nr != 40)
-		return;
-
-	/* rule_nr 40 means that the current UUIDs are equal. The decision
-	   was found by looking at the crashed_primary bits.
-	   The current disk states might give a better basis for decision-making! */
+	struct drbd_device *device = peer_device->device;
+	bool decide_based_on_dstates = false;
+	bool prefer_local;
 
 	if (disk_state == D_NEGOTIATING)
 		disk_state = disk_state_from_md(device);
 
 	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
 	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
-		*strategy = disk_state > D_INCONSISTENT ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
-		p = true;
+		decide_based_on_dstates = true;
+		prefer_local = disk_state > D_INCONSISTENT;
 	}
 
-	if (p)
-		drbd_info(peer_device, "Becoming sync %s due to disk states.\n",
-			  strategy_descriptor(*strategy).is_sync_source ? "source" : "target");
+	if (rule_nr == 40 || *strategy == NO_SYNC) {
+		/* rule_nr 40 means that the current UUIDs are equal. The decision
+		   was found by looking at the crashed_primary bits.
+		   The current disk states might give a better basis for decision-making! */
+
+		if (decide_based_on_dstates) {
+			*strategy = prefer_local ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+			drbd_info(peer_device, "Becoming sync %s due to disk states.\n",
+				  strategy_descriptor(*strategy).is_sync_source ? "source" : "target");
+		}
+	}
 }
 
 static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device,
