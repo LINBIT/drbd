@@ -2170,7 +2170,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	for_each_peer_device_ref(peer_device, im, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
-		if (repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
+		if (repl_state == L_WF_BITMAP_S || repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
 			drbd_send_out_of_sync(peer_device, sector, size);
 	}
 	return 0;
