@@ -5109,6 +5109,9 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	    !drbd_stable_sync_source_present(peer_device, NOW))
 		set_bit(UNSTABLE_RESYNC, &peer_device->flags);
 
+	/* send notification in case UUID flags have changed */
+	drbd_broadcast_peer_device_state(peer_device);
+
 	return err;
 }
 

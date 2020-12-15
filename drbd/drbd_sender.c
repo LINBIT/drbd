@@ -2427,7 +2427,7 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
 {
 	if (test_bit(RS_PROGRESS, &todo))
-		drbd_broadcast_sync_progress(peer_device);
+		drbd_broadcast_peer_device_state(peer_device);
 	if (test_bit(RS_DONE, &todo) ||
 	    test_bit(RS_LAZY_BM_WRITE, &todo))
 		update_on_disk_bitmap(peer_device, test_bit(RS_DONE, &todo));
