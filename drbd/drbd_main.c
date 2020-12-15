@@ -4634,7 +4634,8 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 
 		if (pdsk >= D_INCONSISTENT && pdsk <= D_UNKNOWN &&
 		    (device->exposed_data_uuid & ~UUID_PRIMARY) ==
-		    (peer_device->current_uuid & ~UUID_PRIMARY)) {
+		    (peer_device->current_uuid & ~UUID_PRIMARY) &&
+		    !(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET)) {
 			rv = true;
 			break;
 		}
