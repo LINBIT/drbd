@@ -3,6 +3,7 @@
 
 static int foo_seq_show(struct seq_file *seq, void *v)
 {
+	return 0;
 }
 
 struct proc_dir_entry *foo(void)
