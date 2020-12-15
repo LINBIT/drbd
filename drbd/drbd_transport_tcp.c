@@ -1138,7 +1138,6 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[stream];
-	mm_segment_t oldfs = get_fs();
 	int len = size;
 	int err = -EIO;
 
@@ -1147,7 +1146,6 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 
 	msg_flags |= MSG_NOSIGNAL;
 	dtt_update_congested(tcp_transport);
-	set_fs(KERNEL_DS);
 	do {
 		int sent;
 
@@ -1173,7 +1171,6 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 		 * and add that to the while() condition below.
 		 */
 	} while (len > 0 /* THINK && peer_device->repl_state[NOW] >= L_ESTABLISHED */);
-	set_fs(oldfs);
 	clear_bit(NET_CONGESTED, &tcp_transport->transport.flags);
 
 	if (len == 0)
