@@ -1,0 +1,5 @@
+@@
+symbol fallthrough;
+@@
+- fallthrough;
++ ;/* fallthrough */
