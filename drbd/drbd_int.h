@@ -1543,6 +1543,7 @@ extern void drbd_free_sock(struct drbd_connection *connection);
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);
 extern int drbd_send_protocol(struct drbd_connection *connection);
 extern u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *authoritative_mask);
+extern u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flags);
 extern int drbd_send_uuids(struct drbd_peer_device *, u64 uuid_flags, u64 weak_nodes);
 extern int drbd_attach_peer_device(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, uint64_t u_size_diskless, enum dds_flags flags);

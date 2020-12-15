@@ -3644,7 +3644,7 @@ static void drbd_uuid_dump_self(struct drbd_peer_device *peer_device, u64 bits, 
 	struct drbd_device *device = peer_device->device;
 
 	drbd_info(peer_device, "self %016llX:%016llX:%016llX:%016llX bits:%llu flags:%llX\n",
-		  (unsigned long long)drbd_current_uuid(peer_device->device),
+		  (unsigned long long)drbd_resolved_uuid(peer_device, NULL),
 		  (unsigned long long)drbd_bitmap_uuid(peer_device),
 		  (unsigned long long)drbd_history_uuid(device, 0),
 		  (unsigned long long)drbd_history_uuid(device, 1),
@@ -3672,18 +3672,21 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
+	u64 resolved_uuid;
 	bool my_current_in_peers_history;
 	bool peers_current_in_my_history;
 	bool flags_matches_initial;
 	bool uuid_matches_initial;
 	bool initial_handshake;
-	u64 local_uuid_flags;
+	u64 local_uuid_flags = 0;
 	u64 self, peer;
 	int i, j;
 
-	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
+	resolved_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags) & ~UUID_PRIMARY;
+
+	self = resolved_uuid;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
-	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
+	local_uuid_flags |= drbd_collect_local_uuid_flags(peer_device, NULL);
 
 	initial_handshake =
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
@@ -3819,7 +3822,7 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	}
 
 	my_current_in_peers_history = false;
-	self = drbd_current_uuid(device) & ~UUID_PRIMARY;
+	self = resolved_uuid;
 	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
 		peer = peer_device->history_uuids[i] & ~UUID_PRIMARY;
 		if (self == peer) {
@@ -4022,7 +4025,7 @@ static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer
 		u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
 
 		rv = L_ESTABLISHED;
-		if (peer_current_uuid == my_current_uuid) {
+		if (peer_current_uuid == my_current_uuid && !(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET)) {
 			if (drbd_bitmap_uuid(peer_device)) {
 				drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
 					  drbd_bm_total_weight(peer_device));

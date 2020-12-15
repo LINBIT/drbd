@@ -1295,6 +1295,29 @@ u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *aut
 	return uuid_flags;
 }
 
+/* sets UUID_FLAG_SYNC_TARGET on uuid_flags as appropriate (may be NULL) */
+u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flags)
+{
+	struct drbd_device *device = peer_device_base->device;
+	struct drbd_peer_device *peer_device;
+	u64 uuid = drbd_current_uuid(device);
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->node_id == peer_device_base->node_id)
+			continue;
+		if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
+			uuid = peer_device->current_uuid;
+			if (uuid_flags)
+				*uuid_flags |= UUID_FLAG_SYNC_TARGET;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return uuid;
+}
+
 int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1321,7 +1344,7 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 	}
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	peer_device->comm_current_uuid = drbd_current_uuid(device);
+	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &uuid_flags);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
 	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
@@ -5021,7 +5044,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	bool current_equal;
 	int node_id;
 
-	current_equal = peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY);
+	current_equal = peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY) &&
+		!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET);
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
