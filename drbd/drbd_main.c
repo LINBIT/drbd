@@ -2010,7 +2010,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 		bio_for_each_segment(bvec, bio, iter) {
 			struct page *page = bvec.bv_page;
 
-			if (page_count(page) < 1 || PageSlab(page)) {
+			if (!sendpage_ok(page)) {
 				no_zc = true;
 				break;
 			}
