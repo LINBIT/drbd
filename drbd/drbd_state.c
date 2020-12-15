@@ -3910,12 +3910,12 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		if (!idr_is_empty(&resource->devices) &&
+		if (connection->agreed_pro_version >= 118 &&
+				!idr_is_empty(&resource->devices) &&
 				resource->twopc_reply.is_connect &&
 				drbd_twopc_between_peer_and_me(connection) &&
-				!test_bit(CONN_HANDSHAKE_READY, &connection->flags)) {
+				!test_bit(CONN_HANDSHAKE_READY, &connection->flags))
 			connect_ready = false;
-		}
 
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
@@ -4325,7 +4325,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	request.mask = cpu_to_be32(context->mask.i);
 	request.val = cpu_to_be32(context->val.i);
 
-	drbd_info(resource, "Preparing cluster-wide state change %u (%u->%d %u/%u)",
+	drbd_info(resource, "Preparing cluster-wide state change %u (%u->%d %u/%u)\n",
 		  be32_to_cpu(request.tid),
 		  resource->res_opts.node_id,
 		  context->target_node_id,
