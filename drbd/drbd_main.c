@@ -3513,6 +3513,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = device;
 
+	blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, q);
 	blk_queue_write_cache(q, true, true);
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
