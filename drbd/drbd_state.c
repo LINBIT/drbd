@@ -3863,44 +3863,46 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 	return rv;
 }
 
-/* Think: Can this be replaced by a call to __is_valid_soft_transition() */
-static enum drbd_state_rv primary_nodes_allowed(struct drbd_resource *resource)
+/* That two_primaries is a connection option is one of those things of
+   the past, that should be cleaned up!! it should be a resource config!
+   Here is a inaccurate heuristic */
+static bool multiple_primaries_allowed(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
-	enum drbd_state_rv rv = SS_SUCCESS;
+	bool allowed = false;
+	struct net_conf *nc;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		u64 mask;
-
-		/* If this peer is primary as well, the config must allow it. */
-		mask = NODE_MASK(connection->peer_node_id);
-		if ((resource->twopc_reply.primary_nodes & mask) &&
-		    !(connection->transport.net_conf->two_primaries)) {
-			rv = SS_TWO_PRIMARIES;
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (nc && nc->two_primaries) {
+			allowed = true;
 			break;
 		}
 	}
 	rcu_read_unlock();
-	return rv;
+
+	return allowed;
 }
 
 static enum drbd_state_rv
 check_primaries_distances(struct drbd_resource *resource)
 {
 	struct twopc_reply *reply = &resource->twopc_reply;
+	int nr_primaries = hweight64(reply->primary_nodes);
 	u64 common_server;
-	int node_id;
 
-	/* All primaries directly connected. Good */
-	if (!(reply->primary_nodes & reply->weak_nodes))
+	if (nr_primaries <= 1)
 		return SS_SUCCESS;
+	if (nr_primaries > 1 && !multiple_primaries_allowed(resource))
+		return SS_TWO_PRIMARIES;
 
 	/* For virtualization setups with diskless hypervisors (R_PRIMARY) and one
 	   or multiple storage servers (R_SECONDARY) allow live-migration between the
 	   hypervisors. */
 	common_server = ~reply->weak_nodes;
 	if (common_server) {
+		int node_id;
 		/* Only allow if the new primary is diskless. See also far_away_change()
 		   in drbd_receiver.c for the diskless check on the other primary */
 		if ((reply->primary_nodes & NODE_MASK(resource->res_opts.node_id)) &&
@@ -4224,11 +4226,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 			drbd_info(resource, "State change %u: primary_nodes=%lX, weak_nodes=%lX\n",
 				  reply->tid, (unsigned long)reply->primary_nodes,
 				  (unsigned long)reply->weak_nodes);
-			if (context->mask.role == role_MASK && context->val.role == R_PRIMARY)
-				rv = primary_nodes_allowed(resource);
-			if (rv >= SS_SUCCESS &&
-			    ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
-			     (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED)))
+
+			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
+			    (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED))
 				rv = check_primaries_distances(resource);
 
 			if (rv >= SS_SUCCESS &&
