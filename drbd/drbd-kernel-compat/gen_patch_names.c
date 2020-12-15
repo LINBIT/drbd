@@ -344,6 +344,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
 
+	patch(1, "sendpage_ok", true, false,
+	      COMPAT_HAVE_SENDPAGE_OK, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
