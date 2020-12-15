@@ -1022,6 +1022,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	bool with_force = false;
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
+	struct block_device *bdev = NULL;
 
 retry:
 
@@ -1032,7 +1033,10 @@ retry:
 	} else /* (role == R_SECONDARY) */ {
 		down(&resource->state_sem);
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			fsync_bdev(device->this_bdev);
+			bdev = bdget_disk(device->vdisk, 0);
+			if (bdev)
+				fsync_bdev(bdev);
+			bdput(bdev);
 			flush_workqueue(device->submit.wq);
 		}
 
@@ -1520,8 +1524,10 @@ static bool effective_disk_size_determined(struct drbd_device *device)
 void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 {
 	char ppb[10];
+
 	set_capacity(device->vdisk, size);
-	device->this_bdev->bd_inode->i_size = (loff_t)size << 9;
+	revalidate_disk_size(device->vdisk, false);
+
 	drbd_info(device, "size = %s (%llu KB)\n",
 		ppsize(ppb, size>>1), (unsigned long long)size>>1);
 }
@@ -1607,7 +1613,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 			goto err_out;
 	}
 
-	if (drbd_get_capacity(device->this_bdev) != size ||
+	if (get_capacity(device->vdisk) != size ||
 	    drbd_bm_capacity(device) != size) {
 		int err;
 		err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
@@ -2817,10 +2823,10 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	/* Make sure the new disk is big enough
 	 * (we may currently be R_PRIMARY with no local disk...) */
 	if (backing_disk_max_sectors <
-	    drbd_get_capacity(device->this_bdev)) {
+	    get_capacity(device->vdisk)) {
 		drbd_err(device,
 			"Current (diskless) capacity %llu, cannot attach smaller (%llu) disk\n",
-			(unsigned long long)drbd_get_capacity(device->this_bdev),
+			(unsigned long long)get_capacity(device->vdisk),
 			(unsigned long long)backing_disk_max_sectors);
 		retcode = ERR_DISK_TOO_SMALL;
 		goto fail;
@@ -5052,7 +5058,7 @@ static void device_to_statistics(struct device_statistics *s,
 				      (1 << WB_sync_congested));
 		put_ldev(device);
 	}
-	s->dev_size = drbd_get_capacity(device->this_bdev);
+	s->dev_size = get_capacity(device->vdisk);
 	s->dev_read = device->read_cnt;
 	s->dev_write = device->writ_cnt;
 	s->dev_al_writes = device->al_writ_cnt;

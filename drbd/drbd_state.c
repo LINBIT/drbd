@@ -3506,7 +3506,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		 * if a local disk is attached and either the local disk state
 		 * or a peer disk state is D_UP_TO_DATE.  */
 		if (effective_disk_size_determined && get_ldev(device)) {
-			sector_t size = drbd_get_capacity(device->this_bdev);
+			sector_t size = get_capacity(device->vdisk);
 			if (device->ldev->md.effective_size != size) {
 				char ppb[10];
 
@@ -4356,7 +4356,7 @@ retry:
 
 	if (rv >= SS_SUCCESS) {
 		new_size = min_not_zero(reply->max_possible_size, new_user_size);
-		commit_it = new_size != drbd_get_capacity(device->this_bdev);
+		commit_it = new_size != get_capacity(device->vdisk);
 
 		if (commit_it) {
 			request.exposed_size = cpu_to_be64(new_size);

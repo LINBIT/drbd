@@ -1334,7 +1334,6 @@ struct drbd_device {
 	struct drbd_backing_dev *ldev __protected_by(local);
 
 	struct request_queue *rq_queue;
-	struct block_device *this_bdev;
 	struct gendisk	    *vdisk;
 
 	unsigned long last_reattach_jif;

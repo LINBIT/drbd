@@ -1956,7 +1956,7 @@ static struct drbd_peer_request *
 read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_details *d) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
-	const uint64_t capacity = drbd_get_capacity(device->this_bdev);
+	const uint64_t capacity = get_capacity(device->vdisk);
 	struct drbd_peer_request *peer_req;
 	int err;
 	void *dig_in = peer_device->connection->int_dig_in;
@@ -3195,7 +3195,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	if (!peer_device)
 		return -EIO;
 	device = peer_device->device;
-	capacity = drbd_get_capacity(device->this_bdev);
+	capacity = get_capacity(device->vdisk);
 
 	sector = be64_to_cpu(p->sector);
 	size   = be32_to_cpu(p->blksize);
@@ -4732,7 +4732,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	if (p_size)
 		peer_device->max_size = p_size;
 
-	cur_size = drbd_get_capacity(device->this_bdev);
+	cur_size = get_capacity(device->vdisk);
 	dynamic_drbd_dbg(device, "current_size: %llu\n", (unsigned long long)cur_size);
 	dynamic_drbd_dbg(peer_device, "c_size: %llu u_size: %llu d_size: %llu max_size: %llu\n",
 			(unsigned long long)p_csize,
@@ -4912,7 +4912,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		drbd_setup_order_type(device, be16_to_cpu(p->queue_order_type));
 	}
 
-	cur_size = drbd_get_capacity(device->this_bdev);
+	cur_size = get_capacity(device->vdisk);
 
 	for_each_peer_device_ref(peer_device_it, im, device) {
 		struct drbd_connection *con_it = peer_device_it->connection;
