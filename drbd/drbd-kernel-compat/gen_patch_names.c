@@ -375,6 +375,9 @@ int main(int argc, char **argv)
 	patch(1, "sched_set_fifo", true, false,
 	      COMPAT_HAVE_SCHED_SET_FIFO, "present");
 
+	patch(1, "vermagic_h", false, true,
+	      COMPAT_CAN_INCLUDE_VERMAGIC_H, "can_include");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
