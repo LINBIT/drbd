@@ -286,7 +286,7 @@ static void page_chain_add(struct page **head,
 	*head = chain_first;
 }
 
-static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
+static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned int number, gfp_t gfp_mask)
 {
 	struct page *page = NULL;
 	struct page *tmp = NULL;
@@ -294,12 +294,12 @@ static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
 
 	/* Yes, testing drbd_pp_vacant outside the lock is racy.
 	 * So what. It saves a spin_lock. */
-	if (drbd_pp_vacant >= number) {
-		spin_lock(&drbd_pp_lock);
-		page = page_chain_del(&drbd_pp_pool, number);
+	if (resource->pp_vacant >= number) {
+		spin_lock(&resource->pp_lock);
+		page = page_chain_del(&resource->pp_pool, number);
 		if (page)
-			drbd_pp_vacant -= number;
-		spin_unlock(&drbd_pp_lock);
+			resource->pp_vacant -= number;
+		spin_unlock(&resource->pp_lock);
 		if (page)
 			return page;
 	}
@@ -320,10 +320,10 @@ static struct page *__drbd_alloc_pages(unsigned int number, gfp_t gfp_mask)
 	 * function "soon". */
 	if (page) {
 		tmp = page_chain_tail(page, NULL);
-		spin_lock(&drbd_pp_lock);
-		page_chain_add(&drbd_pp_pool, page, tmp);
-		drbd_pp_vacant += i;
-		spin_unlock(&drbd_pp_lock);
+		spin_lock(&resource->pp_lock);
+		page_chain_add(&resource->pp_pool, page, tmp);
+		resource->pp_vacant += i;
+		spin_unlock(&resource->pp_lock);
 	}
 	return NULL;
 }
@@ -394,6 +394,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
+	struct drbd_resource *resource = connection->resource;
 	struct page *page = NULL;
 	DEFINE_WAIT(wait);
 	unsigned int mxb;
@@ -403,7 +404,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 	rcu_read_unlock();
 
 	if (atomic_read(&connection->pp_in_use) < mxb)
-		page = __drbd_alloc_pages(number, gfp_mask & ~__GFP_RECLAIM);
+		page = __drbd_alloc_pages(resource, number, gfp_mask & ~__GFP_RECLAIM);
 
 	/* Try to keep the fast path fast, but occasionally we need
 	 * to reclaim the pages we lent to the network stack. */
@@ -411,12 +412,12 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 		drbd_reclaim_net_peer_reqs(connection);
 
 	while (page == NULL) {
-		prepare_to_wait(&drbd_pp_wait, &wait, TASK_INTERRUPTIBLE);
+		prepare_to_wait(&resource->pp_wait, &wait, TASK_INTERRUPTIBLE);
 
 		drbd_reclaim_net_peer_reqs(connection);
 
 		if (atomic_read(&connection->pp_in_use) < mxb) {
-			page = __drbd_alloc_pages(number, gfp_mask);
+			page = __drbd_alloc_pages(resource, number, gfp_mask);
 			if (page)
 				break;
 		}
@@ -432,7 +433,7 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 		if (schedule_timeout(HZ/10) == 0)
 			mxb = UINT_MAX;
 	}
-	finish_wait(&drbd_pp_wait, &wait);
+	finish_wait(&resource->pp_wait, &wait);
 
 	if (page)
 		atomic_add(number, &connection->pp_in_use);
@@ -446,27 +447,28 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
+	struct drbd_resource *resource = connection->resource;
 	atomic_t *a = is_net ? &connection->pp_in_use_by_net : &connection->pp_in_use;
 	int i;
 
 	if (page == NULL)
 		return;
 
-	if (drbd_pp_vacant > (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count)
+	if (resource->pp_vacant > DRBD_MAX_BIO_SIZE/PAGE_SIZE)
 		i = page_chain_free(page);
 	else {
 		struct page *tmp;
 		tmp = page_chain_tail(page, &i);
-		spin_lock(&drbd_pp_lock);
-		page_chain_add(&drbd_pp_pool, page, tmp);
-		drbd_pp_vacant += i;
-		spin_unlock(&drbd_pp_lock);
+		spin_lock(&resource->pp_lock);
+		page_chain_add(&resource->pp_pool, page, tmp);
+		resource->pp_vacant += i;
+		spin_unlock(&resource->pp_lock);
 	}
 	i = atomic_sub_return(i, a);
 	if (i < 0)
 		drbd_warn(connection, "ASSERTION FAILED: %s: %d < 0\n",
 			is_net ? "pp_in_use_by_net" : "pp_in_use", i);
-	wake_up(&drbd_pp_wait);
+	wake_up(&resource->pp_wait);
 }
 
 /* normal: payload_size == request size (bi_size)

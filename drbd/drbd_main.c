@@ -146,17 +146,6 @@ mempool_t drbd_md_io_page_pool;
 struct bio_set drbd_md_io_bio_set;
 struct bio_set drbd_io_bio_set;
 
-/* I do not use a standard mempool, because:
-   1) I want to hand out the pre-allocated objects first.
-   2) I want to be able to interrupt sleeping allocation with a signal.
-   Note: This is a single linked list, the next pointer is the private
-	 member of struct page.
- */
-struct page *drbd_pp_pool;
-spinlock_t   drbd_pp_lock;
-int          drbd_pp_vacant;
-wait_queue_head_t drbd_pp_wait;
-
 static const struct block_device_operations drbd_ops = {
 	.owner		= THIS_MODULE,
 	.submit_bio	= drbd_submit_bio,
@@ -2624,17 +2613,6 @@ void drbd_cleanup_device(struct drbd_device *device)
 
 static void drbd_destroy_mempools(void)
 {
-	struct page *page;
-
-	while (drbd_pp_pool) {
-		page = drbd_pp_pool;
-		drbd_pp_pool = page_chain_next(page);
-		__free_page(page);
-		drbd_pp_vacant--;
-	}
-
-	/* D_ASSERT(device, atomic_read(&drbd_pp_vacant)==0); */
-
 	bioset_exit(&drbd_io_bio_set);
 	bioset_exit(&drbd_md_io_bio_set);
 	mempool_exit(&drbd_md_io_page_pool);
@@ -2659,9 +2637,8 @@ static void drbd_destroy_mempools(void)
 
 static int drbd_create_mempools(void)
 {
-	struct page *page;
 	const int number = (DRBD_MAX_BIO_SIZE/PAGE_SIZE) * drbd_minor_count;
-	int i, ret;
+	int ret;
 
 	/* caches */
 	drbd_request_cache = kmem_cache_create(
@@ -2706,18 +2683,6 @@ static int drbd_create_mempools(void)
 	ret = mempool_init_slab_pool(&drbd_ee_mempool, number, drbd_ee_cache);
 	if (ret)
 		goto Enomem;
-
-	/* drbd's page pool */
-	spin_lock_init(&drbd_pp_lock);
-
-	for (i = 0; i < number; i++) {
-		page = alloc_page(GFP_HIGHUSER);
-		if (!page)
-			goto Enomem;
-		set_page_chain_next_offset_size(page, drbd_pp_pool, 0, 0);
-		drbd_pp_pool = page;
-	}
-	drbd_pp_vacant = number;
 
 	return 0;
 
@@ -2781,10 +2746,23 @@ void drbd_destroy_device(struct kref *kref)
 	schedule_work(&device->finalize_work);
 }
 
+static void free_page_pool(struct drbd_resource *resource)
+{
+	struct page *page;
+
+	while (resource->pp_pool) {
+		page = resource->pp_pool;
+		resource->pp_pool = page_chain_next(page);
+		__free_page(page);
+		resource->pp_vacant--;
+	}
+}
+
 void drbd_destroy_resource(struct kref *kref)
 {
 	struct drbd_resource *resource = container_of(kref, struct drbd_resource, kref);
 
+	free_page_pool(resource);
 	idr_destroy(&resource->devices);
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
@@ -3166,6 +3144,9 @@ struct drbd_resource *drbd_create_resource(const char *name,
 					   struct res_opts *res_opts)
 {
 	struct drbd_resource *resource;
+	struct page *page;
+	const int page_pool_count = DRBD_MAX_BIO_SIZE/PAGE_SIZE;
+	int i;
 
 	resource = kzalloc(sizeof(struct drbd_resource), GFP_KERNEL);
 	if (!resource)
@@ -3216,10 +3197,26 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
 
+	/* drbd's page pool */
+	init_waitqueue_head(&resource->pp_wait);
+
+	spin_lock_init(&resource->pp_lock);
+
+	for (i = 0; i < page_pool_count; i++) {
+		page = alloc_page(GFP_HIGHUSER);
+		if (!page)
+			goto fail_free_pages;
+		set_page_chain_next_offset_size(page, resource->pp_pool, 0, 0);
+		resource->pp_pool = page;
+	}
+	resource->pp_vacant = page_pool_count;
+
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
 	return resource;
 
+fail_free_pages:
+	free_page_pool(resource);
 fail_free_name:
 	kfree(resource->name);
 fail_free_resource:
@@ -3823,8 +3820,6 @@ static int __init drbd_init(void)
 	/*
 	 * allocate all necessary structs
 	 */
-	init_waitqueue_head(&drbd_pp_wait);
-
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
 
