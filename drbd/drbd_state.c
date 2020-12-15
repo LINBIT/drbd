@@ -3782,31 +3782,45 @@ bool drbd_twopc_between_peer_and_me(struct drbd_connection *connection)
 bool cluster_wide_reply_ready(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
-	bool ready = true;
+	bool connect_ready = true;
+	bool have_no = resource->twopc_reply.state_change_failed;
+	bool have_retry = false;
+	bool all_yes = true;
 
 	if (test_bit(TWOPC_ABORT_LOCAL, &resource->flags))
-		return ready;
+		return true;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
+		if (!idr_is_empty(&resource->devices) &&
+				resource->twopc_reply.is_connect &&
+				drbd_twopc_between_peer_and_me(connection) &&
+				!test_bit(CONN_HANDSHAKE_READY, &connection->flags)) {
+			connect_ready = false;
+		}
+
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		if (test_bit(TWOPC_NO, &connection->flags) ||
-		    test_bit(TWOPC_RETRY, &connection->flags)) {
-			ready = true;
-			break;
-		}
+		if (test_bit(TWOPC_NO, &connection->flags))
+			have_no = true;
+		if (test_bit(TWOPC_RETRY, &connection->flags))
+			have_retry = true;
 		if (!test_bit(TWOPC_YES, &connection->flags))
-			ready = false;
+			all_yes = false;
 	}
 	rcu_read_unlock();
-	return ready;
+
+	return have_retry || (connect_ready && (have_no || all_yes));
 }
 
 static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 						 struct change_context *context)
 {
 	struct drbd_connection *connection, *failed_by = NULL;
+	bool handshake_disconnect = false;
+	bool handshake_retry = false;
+	bool have_no = resource->twopc_reply.state_change_failed;
+	bool have_retry = false;
 	enum drbd_state_rv rv = SS_CW_SUCCESS;
 
 	if (test_bit(TWOPC_ABORT_LOCAL, &resource->flags))
@@ -3814,21 +3828,37 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
+		if (resource->twopc_reply.is_connect &&
+				drbd_twopc_between_peer_and_me(connection)) {
+			if (test_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags))
+				handshake_disconnect = true;
+			if (test_bit(CONN_HANDSHAKE_RETRY, &connection->flags))
+				handshake_retry = true;
+		}
+
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
 		if (test_bit(TWOPC_NO, &connection->flags)) {
 			failed_by = connection;
-			rv = SS_CW_FAILED_BY_PEER;
+			have_no = true;
 		}
-		if (test_bit(TWOPC_RETRY, &connection->flags)) {
-			rv = SS_CONCURRENT_ST_CHG;
-			break;
-		}
+		if (test_bit(TWOPC_RETRY, &connection->flags))
+			have_retry = true;
 	}
-	if (rv == SS_CW_FAILED_BY_PEER && context)
-		_drbd_state_err(context, "Declined by peer %s (id: %d), see the kernel log there",
-			       rcu_dereference((failed_by)->transport.net_conf)->name,
-			       failed_by->peer_node_id);
+
+	if (have_retry)
+		rv = SS_CONCURRENT_ST_CHG;
+	else if (handshake_retry)
+		rv = SS_HANDSHAKE_RETRY;
+	else if (handshake_disconnect)
+		rv = SS_HANDSHAKE_DISCONNECT;
+	else if (have_no) {
+		if (context)
+			_drbd_state_err(context, "Declined by peer %s (id: %d), see the kernel log there",
+					rcu_dereference((failed_by)->transport.net_conf)->name,
+					failed_by->peer_node_id);
+		rv = SS_CW_FAILED_BY_PEER;
+	}
 	rcu_read_unlock();
 	return rv;
 }
@@ -4083,6 +4113,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	start_time = jiffies;
 	resource->state_change_err_str = context->err_str;
 
+	*reply = (struct twopc_reply) { 0 };
+
 	reach_immediately = directly_connected_nodes(resource, NOW);
 	if (context->target_node_id != -1) {
 		struct drbd_connection *connection;
@@ -4135,14 +4167,13 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	resource->twopc_type = TWOPC_STATE_CHANGE;
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = context->target_node_id;
-	reply->primary_nodes = 0;
-	reply->weak_nodes = 0;
 
 	reply->reachable_nodes = directly_connected_nodes(resource, NOW) |
 				       NODE_MASK(resource->res_opts.node_id);
 	if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED) {
 		reply->reachable_nodes |= NODE_MASK(context->target_node_id);
 		reply->target_reachable_nodes = reply->reachable_nodes;
+		reply->is_connect = 1;
 	} else if (context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) {
 		reply->target_reachable_nodes = NODE_MASK(context->target_node_id);
 		reply->reachable_nodes &= ~reply->target_reachable_nodes;
@@ -4496,6 +4527,7 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 {
 	enum drbd_state_rv rv;
 	u64 nodes_to_reach, reach_immediately;
+	bool have_peers;
 
 	write_lock_irq(&resource->state_rwlock);
 	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
@@ -4505,11 +4537,12 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 	write_unlock_irq(&resource->state_rwlock);
 
 	rv = __cluster_wide_request(resource, vnr, cmd, request, reach_immediately);
+	have_peers = rv == SS_CW_SUCCESS;
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
-		if (rv <= SS_SUCCESS) {
-			cmd = (rv == SS_SUCCESS) ? P_TWOPC_YES : P_TWOPC_NO;
-			twopc_end_nested(resource, cmd, false);
-		}
+		if (rv < SS_SUCCESS)
+			twopc_end_nested(resource, P_TWOPC_NO, false);
+		else if (!have_peers && cluster_wide_reply_ready(resource)) /* no nested nodes */
+			nested_twopc_work(&resource->twopc_work, false);
 	}
 	return rv;
 }
