@@ -2036,9 +2036,9 @@ static void sanitize_state(struct drbd_resource *resource)
 				break;
 			case L_VERIFY_S:
 			case L_VERIFY_T:
-				min_disk_state = D_UP_TO_DATE;
+				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_UP_TO_DATE;
-				min_peer_disk_state = D_UP_TO_DATE;
+				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_UP_TO_DATE;
 				break;
 			case L_ESTABLISHED:
