@@ -35,6 +35,8 @@
 #include <linux/security.h>
 #include <net/genetlink.h>
 
+#include "drbd_meta_data.h"
+
 /* .doit */
 // int drbd_adm_create_resource(struct sk_buff *skb, struct genl_info *info);
 // int drbd_adm_delete_resource(struct sk_buff *skb, struct genl_info *info);
@@ -2686,6 +2688,293 @@ static void discard_not_wanted_bitmap_uuids(struct drbd_device *device, struct d
 		if (peer_device && peer_md[node_id].bitmap_uuid && !want_bitmap(peer_device))
 			peer_md[node_id].bitmap_uuid = 0;
 	}
+}
+
+static int check_activity_log_stripe_size(struct drbd_device *device,
+		struct meta_data_on_disk_9 *on_disk,
+		struct drbd_md *in_core)
+{
+	u32 al_stripes = be32_to_cpu(on_disk->al_stripes);
+	u32 al_stripe_size_4k = be32_to_cpu(on_disk->al_stripe_size_4k);
+	u64 al_size_4k;
+
+	/* both not set: default to old fixed size activity log */
+	if (al_stripes == 0 && al_stripe_size_4k == 0) {
+		al_stripes = 1;
+		al_stripe_size_4k = (32768 >> 9)/8;
+	}
+
+	/* some paranoia plausibility checks */
+
+	/* we need both values to be set */
+	if (al_stripes == 0 || al_stripe_size_4k == 0)
+		goto err;
+
+	al_size_4k = (u64)al_stripes * al_stripe_size_4k;
+
+	/* Upper limit of activity log area, to avoid potential overflow
+	 * problems in al_tr_number_to_on_disk_sector(). As right now, more
+	 * than 72 * 4k blocks total only increases the amount of history,
+	 * limiting this arbitrarily to 16 GB is not a real limitation ;-)  */
+	if (al_size_4k > (16 * 1024 * 1024/4))
+		goto err;
+
+	/* Lower limit: we need at least 8 transaction slots (32kB)
+	 * to not break existing setups */
+	if (al_size_4k < (32768 >> 9)/8)
+		goto err;
+
+	in_core->al_stripe_size_4k = al_stripe_size_4k;
+	in_core->al_stripes = al_stripes;
+	in_core->al_size_4k = al_size_4k;
+
+	return 0;
+err:
+	drbd_err(device, "invalid activity log striping: al_stripes=%u, al_stripe_size_4k=%u\n",
+			al_stripes, al_stripe_size_4k);
+	return -EINVAL;
+}
+
+static int check_offsets_and_sizes(struct drbd_device *device,
+		struct meta_data_on_disk_9 *on_disk,
+		struct drbd_backing_dev *bdev)
+{
+	sector_t capacity = drbd_get_capacity(bdev->md_bdev);
+	struct drbd_md *in_core = &bdev->md;
+	u32 max_peers = be32_to_cpu(on_disk->bm_max_peers);
+	s32 on_disk_al_sect;
+	s32 on_disk_bm_sect;
+
+	if (max_peers > DRBD_PEERS_MAX) {
+		drbd_err(device, "bm_max_peers too high\n");
+		goto err;
+	}
+	device->bitmap->bm_max_peers = max_peers;
+
+	in_core->al_offset = be32_to_cpu(on_disk->al_offset);
+	in_core->bm_offset = be32_to_cpu(on_disk->bm_offset);
+	in_core->md_size_sect = be32_to_cpu(on_disk->md_size_sect);
+
+	/* The on-disk size of the activity log, calculated from offsets, and
+	 * the size of the activity log calculated from the stripe settings,
+	 * should match.
+	 * Though we could relax this a bit: it is ok, if the striped activity log
+	 * fits in the available on-disk activity log size.
+	 * Right now, that would break how resize is implemented.
+	 * TODO: make drbd_determine_dev_size() (and the drbdmeta tool) aware
+	 * of possible unused padding space in the on disk layout. */
+	if (in_core->al_offset < 0) {
+		if (in_core->bm_offset > in_core->al_offset)
+			goto err;
+		on_disk_al_sect = -in_core->al_offset;
+		on_disk_bm_sect = in_core->al_offset - in_core->bm_offset;
+	} else {
+		if (in_core->al_offset != (4096 >> 9))
+			goto err;
+		if (in_core->bm_offset < in_core->al_offset + in_core->al_size_4k * (4096 >> 9))
+			goto err;
+
+		on_disk_al_sect = in_core->bm_offset - (4096 >> 9);
+		on_disk_bm_sect = in_core->md_size_sect - in_core->bm_offset;
+	}
+
+	/* old fixed size meta data is exactly that: fixed. */
+	if (in_core->meta_dev_idx >= 0) {
+		if (in_core->md_size_sect != (128 << 20 >> 9)
+		||  in_core->al_offset != (4096 >> 9)
+		||  in_core->bm_offset != (4096 >> 9) + (32768 >> 9)
+		||  in_core->al_stripes != 1
+		||  in_core->al_stripe_size_4k != (32768 >> 12))
+			goto err;
+	}
+
+	if (capacity < in_core->md_size_sect)
+		goto err;
+	if (capacity - in_core->md_size_sect < drbd_md_first_sector(bdev))
+		goto err;
+
+	/* should be aligned, and at least 32k */
+	if ((on_disk_al_sect & 7) || (on_disk_al_sect < (32768 >> 9)))
+		goto err;
+
+	/* should fit (for now: exactly) into the available on-disk space;
+	 * overflow prevention is in check_activity_log_stripe_size() above. */
+	if (on_disk_al_sect != in_core->al_size_4k * (4096 >> 9))
+		goto err;
+
+	/* again, should be aligned */
+	if (in_core->bm_offset & 7)
+		goto err;
+
+	/* FIXME check for device grow with flex external meta data? */
+
+	/* can the available bitmap space cover the last agreed device size? */
+	if (on_disk_bm_sect < drbd_capacity_to_on_disk_bm_sect(
+				in_core->effective_size, max_peers))
+		goto err;
+
+	return 0;
+
+err:
+	drbd_err(device, "meta data offsets don't make sense: idx=%d "
+			"al_s=%u, al_sz4k=%u, al_offset=%d, bm_offset=%d, "
+			"md_size_sect=%u, la_size=%llu, md_capacity=%llu\n",
+			in_core->meta_dev_idx,
+			in_core->al_stripes, in_core->al_stripe_size_4k,
+			in_core->al_offset, in_core->bm_offset, in_core->md_size_sect,
+			(unsigned long long)in_core->effective_size,
+			(unsigned long long)capacity);
+
+	return -EINVAL;
+}
+
+static
+int drbd_md_decode(struct drbd_device *device,
+		   struct drbd_backing_dev *bdev,
+		   struct meta_data_on_disk_9 *buffer)
+{
+	u32 magic, flags;
+	int i, rv = NO_ERROR;
+	int my_node_id = device->resource->res_opts.node_id;
+	u32 max_peers;
+
+	magic = be32_to_cpu(buffer->magic);
+	flags = be32_to_cpu(buffer->flags);
+	if (magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) {
+			/* btw: that's Activity Log clean, not "all" clean. */
+		drbd_err(device, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
+		rv = ERR_MD_UNCLEAN;
+		goto err;
+	}
+	rv = ERR_MD_INVALID;
+	if (magic != DRBD_MD_MAGIC_09) {
+		if (magic == DRBD_MD_MAGIC_07 ||
+		    magic == DRBD_MD_MAGIC_08 ||
+		    magic == DRBD_MD_MAGIC_84_UNCLEAN)
+			drbd_err(device, "Found old meta data magic. Did you \"drbdadm create-md\"?\n");
+		else
+			drbd_err(device, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
+		goto err;
+	}
+
+	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
+		drbd_err(device, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
+		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
+		goto err;
+	}
+
+	if (check_activity_log_stripe_size(device, buffer, &bdev->md))
+		goto err;
+	if (check_offsets_and_sizes(device, buffer, bdev))
+		goto err;
+
+	bdev->md.effective_size = be64_to_cpu(buffer->effective_size);
+	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
+	bdev->md.flags = be32_to_cpu(buffer->flags);
+	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
+	bdev->md.node_id = be32_to_cpu(buffer->node_id);
+
+	bdev->md.node_id = be32_to_cpu(buffer->node_id);
+
+	if (bdev->md.node_id != -1 && bdev->md.node_id != my_node_id) {
+		drbd_err(device, "ambiguous node id: meta-data: %d, config: %d\n",
+			bdev->md.node_id, my_node_id);
+		goto err;
+	}
+
+	max_peers = be32_to_cpu(buffer->bm_max_peers);
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
+
+		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
+		peer_md->bitmap_dagtag = be64_to_cpu(buffer->peers[i].bitmap_dagtag);
+		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
+		peer_md->bitmap_index = be32_to_cpu(buffer->peers[i].bitmap_index);
+
+		if (peer_md->bitmap_index == -1)
+			continue;
+		peer_md->flags |= MDF_HAVE_BITMAP;
+		if (i == my_node_id) {
+			drbd_warn(device, "my own node id (%d) should not have a bitmap index (%d)\n",
+				my_node_id, peer_md->bitmap_index);
+			goto err;
+		}
+		if (peer_md->bitmap_index < -1 || peer_md->bitmap_index >= max_peers) {
+			drbd_warn(device, "peer node id %d: bitmap index (%d) exceeds allocated bitmap slots (%d)\n",
+				i, peer_md->bitmap_index, max_peers);
+			goto err;
+		}
+		/* maybe: for each bitmap_index != -1, create a connection object
+		 * with peer_node_id = i, unless already present. */
+	}
+	BUILD_BUG_ON(ARRAY_SIZE(bdev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
+	for (i = 0; i < ARRAY_SIZE(buffer->history_uuids); i++)
+		bdev->md.history_uuids[i] = be64_to_cpu(buffer->history_uuids[i]);
+
+	rv = NO_ERROR;
+
+err:
+	return rv;
+}
+
+/**
+ * drbd_md_read() - Reads in the meta data super block
+ * @device:	DRBD device.
+ * @bdev:	Device from which the meta data should be read in.
+ *
+ * Return NO_ERROR on success, and an enum drbd_ret_code in case
+ * something goes wrong.
+ *
+ * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
+ * even before @bdev is assigned to @device->ldev.
+ */
+int drbd_md_read(struct drbd_device *device, struct drbd_backing_dev *bdev)
+{
+	struct meta_data_on_disk_9 *buffer;
+	int rv;
+
+	if (device->disk_state[NOW] != D_DISKLESS)
+		return ERR_DISK_CONFIGURED;
+
+	/* First, figure out where our meta data superblock is located,
+	 * and read it. */
+	bdev->md.meta_dev_idx = bdev->disk_conf->meta_dev_idx;
+	bdev->md.md_offset = drbd_md_ss(bdev);
+	/* Even for (flexible or indexed) external meta data,
+	 * initially restrict us to the 4k superblock for now.
+	 * Affects the paranoia out-of-range access check in drbd_md_sync_page_io(). */
+	bdev->md.md_size_sect = 8;
+
+	drbd_dax_open(bdev);
+	if (drbd_md_dax_active(bdev)) {
+		drbd_info(device, "meta-data IO uses: dax-pmem\n");
+		rv = drbd_md_decode(device, bdev, drbd_dax_md_addr(bdev));
+		if (rv != NO_ERROR)
+			return rv;
+		if (drbd_dax_map(bdev))
+			return ERR_IO_MD_DISK;
+		return NO_ERROR;
+	}
+	drbd_info(device, "meta-data IO uses: blk-bio\n");
+
+	buffer = drbd_md_get_buffer(device, __func__);
+	if (!buffer)
+		return ERR_NOMEM;
+
+	if (drbd_md_sync_page_io(device, bdev, bdev->md.md_offset,
+				 REQ_OP_READ)) {
+		/* NOTE: can't do normal error processing here as this is
+		   called BEFORE disk is attached */
+		drbd_err(device, "Error while reading metadata.\n");
+		rv = ERR_IO_MD_DISK;
+		goto err;
+	}
+
+	rv = drbd_md_decode(device, bdev, buffer);
+ err:
+	drbd_md_put_buffer(device);
+
+	return rv;
 }
 
 int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
