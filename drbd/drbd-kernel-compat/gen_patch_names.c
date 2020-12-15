@@ -335,6 +335,9 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
+	patch(1, "backing_dev_info", true, false,
+	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
