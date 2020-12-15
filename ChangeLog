@@ -3,6 +3,24 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.26-0rc4 (api:genl2/proto:86-118/transport:14)
+--------
+
+ * fix a source of possible data corruption; related to a resync and
+   a primary node that is connected to the sync-source node only
+ * restore protocol compatibility with 9.0.25 and earlier
+ * fix for sporadic "Clearing bitmap UUID for node" log entries;
+   a potential source of problems later on leading to false split-brain
+   or unrelated data messages.
+ * retry connect properly in case of bitmap-uuid changes during the handshake
+ * complete size 0 reads immediately; some workloads (KVM and
+   iscsi targets) in combination with a ZFS zvol as the backend can lead to
+   a kernel OOPS in ZFS; this is a workaround in DRBD for that
+ * improve error reporting for failures during attach
+ * reduce lock contention on the secondary for many resources; can improve
+   performance significantly
+ * Compatibility with Linux 5.10
+
 9.0.26-0rc3 (api:genl2/proto:86-118/transport:14)
 --------
  * fix for writes not getting mirrored over a connection while the primary
