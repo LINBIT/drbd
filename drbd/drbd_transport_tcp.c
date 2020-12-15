@@ -1231,7 +1231,7 @@ static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream,
 			set_bit(SOCK_NOSPACE, &socket->sk->sk_socket->flags);
 		break;
 	case QUICKACK:
-		tcp_sock_set_quickack(socket, 2);
+		tcp_sock_set_quickack(socket->sk, 2);
 		break;
 	default: /* not implemented, but should not trigger error handling */
 		return true;
