@@ -1983,7 +1983,7 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio,
 /* helpers for do_submit */
 
 struct incoming_pending_later {
-	/* from drbd_make_request() or receive_Data() */
+	/* from drbd_submit_bio() or receive_Data() */
 	struct list_head incoming;
 	/* for non-blocking fill-up # of updates in the transaction */
 	struct list_head more_incoming;
@@ -2310,7 +2310,7 @@ static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
 	return false;
 }
 
-blk_qc_t drbd_make_request(struct request_queue *q, struct bio *bio)
+blk_qc_t drbd_submit_bio(struct bio *bio)
 {
 	struct drbd_device *device = (struct drbd_device *) q->queuedata;
 #ifdef CONFIG_DRBD_TIMING_STATS

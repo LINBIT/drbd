@@ -7684,7 +7684,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 		return;
 
 	/* We are about to start the cleanup after connection loss.
-	 * Make sure drbd_make_request knows about that.
+	 * Make sure drbd_submit_bio knows about that.
 	 * Usually we should be in some network failure state already,
 	 * but just in case we are not, we fix it up here.
 	 */

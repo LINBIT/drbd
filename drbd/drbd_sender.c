@@ -233,7 +233,7 @@ void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *
 }
 
 
-/* read, readA or write requests on R_PRIMARY coming from drbd_make_request
+/* read, readA or write requests on R_PRIMARY coming from drbd_submit_bio
  */
 void drbd_request_endio(struct bio *bio)
 {
