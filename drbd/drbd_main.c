@@ -5068,10 +5068,16 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	}
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_device *pd2;
+
 		if (node_id == device->ldev->md.node_id)
 			continue;
 
 		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP) && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
+			continue;
+
+		pd2 = peer_device_by_node_id(device, node_id);
+		if (pd2 && pd2 != peer_device && pd2->repl_state[NOW] > L_ESTABLISHED)
 			continue;
 
 		if (peer_device->bitmap_uuids[node_id] == 0 && peer_md[node_id].bitmap_uuid != 0) {
