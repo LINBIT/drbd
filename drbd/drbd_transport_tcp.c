@@ -654,12 +654,12 @@ retry:
 			switch (peer_addr.ss_family) {
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				tr_err(transport, "Closing unexpected connection from "
+				tr_notice(transport, "Closing unexpected connection from "
 				       "%pI6\n", &from_sin6->sin6_addr);
 				break;
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
-				tr_err(transport, "Closing unexpected connection from "
+				tr_notice(transport, "Closing unexpected connection from "
 					 "%pI4\n", &from_sin->sin_addr);
 				break;
 			}
