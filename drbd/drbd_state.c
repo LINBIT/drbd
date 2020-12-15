@@ -3993,6 +3993,9 @@ void abort_connect(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 			up_read_non_owner(&peer_device->device->uuid_sem);
+		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+		clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	}
 	rcu_read_unlock();
 }
