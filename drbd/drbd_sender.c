@@ -2150,11 +2150,8 @@ skip_helper:
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	__change_resync_susp_dependency(peer_device, !__drbd_may_sync_now(peer_device));
 	__change_repl_state(peer_device, side);
-	if (side == L_SYNC_TARGET) {
-		__change_disk_state(device, D_INCONSISTENT);
+	if (side == L_SYNC_TARGET)
 		init_resync_stable_bits(peer_device);
-	} else /* side == L_SYNC_SOURCE */
-		__change_peer_disk_state(peer_device, D_INCONSISTENT);
 	finished_resync_pdsk = peer_device->resync_finished_pdsk;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;
 	r = end_state_change_locked(device->resource);
