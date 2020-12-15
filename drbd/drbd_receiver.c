@@ -3993,7 +3993,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 	return 0;
 }
 
-static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer_device,
+static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer_device,
 						   enum drbd_role peer_role,
 						   enum sync_strategy strategy)
 {
@@ -4041,7 +4041,7 @@ static enum drbd_repl_state goodness_to_repl_state(struct drbd_peer_device *peer
 	return rv;
 }
 
-static void disk_states_to_goodness(struct drbd_peer_device *peer_device,
+static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
 				    enum sync_strategy *strategy, int rule_nr)
 {
@@ -4084,9 +4084,9 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 		return -1;
 
 	bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
-	disk_states_to_goodness(peer_device, peer_disk_state, &strategy, rule_nr);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr);
 
-	return goodness_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
+	return strategy_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
 }
 
 /* drbd_sync_handshake() returns the new replication state on success, and -1
@@ -4124,7 +4124,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -2;
 	}
 
-	disk_states_to_goodness(peer_device, peer_disk_state, &strategy, rule_nr);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
 		drbd_warn(device, "Ignore Split-Brain, for now, at least one side unstable\n");
@@ -4237,7 +4237,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (r)
 		return r;
 
-	return goodness_to_repl_state(peer_device, peer_role, strategy);
+	return strategy_to_repl_state(peer_device, peer_role, strategy);
 }
 
 static enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
@@ -4984,7 +4984,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		return;
 	}
 
-	new_repl_state = goodness_to_repl_state(peer_device, peer_role, strategy);
+	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
 		bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
 		drbd_info(peer_device, "Becoming %s %s\n", drbd_repl_str(new_repl_state),
