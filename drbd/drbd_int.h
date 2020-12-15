@@ -2104,7 +2104,7 @@ static inline void drbd_kobject_uevent(struct drbd_device *device)
 /*
  * used to submit our private bio
  */
-static inline void drbd_generic_make_request(struct drbd_device *device,
+static inline void drbd_submit_bio_noacct(struct drbd_device *device,
 					     int fault_type, struct bio *bio)
 {
 	__release(local);
@@ -2113,7 +2113,7 @@ static inline void drbd_generic_make_request(struct drbd_device *device,
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 	} else {
-		generic_make_request(bio);
+		submit_bio_noacct(bio);
 	}
 }
 
