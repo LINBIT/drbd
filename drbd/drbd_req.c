@@ -1808,10 +1808,6 @@ out:
 	if (submit_private_bio)
 		drbd_submit_req_private_bio(req);
 
-	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
-	 * we plug after submit, so we won't miss an unplug event */
-	drbd_plug_device(device->vdisk->queue);
-
 	if (m.bio)
 		complete_master_bio(device, &m);
 }

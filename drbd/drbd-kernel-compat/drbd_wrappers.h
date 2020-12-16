@@ -64,28 +64,6 @@
 #endif
 #endif
 
-/* see 7eaceac block: remove per-queue plugging */
-#ifdef blk_queue_plugged
-static inline void drbd_plug_device(struct request_queue *q)
-{
-	spin_lock_irq(q->queue_lock);
-
-/* XXX the check on !blk_queue_plugged is redundant,
- * implicitly checked in blk_plug_device */
-
-	if (!blk_queue_plugged(q)) {
-		blk_plug_device(q);
-		del_timer(&q->unplug_timer);
-		/* unplugging should not happen automatically... */
-	}
-	spin_unlock_irq(q->queue_lock);
-}
-#else
-static inline void drbd_plug_device(struct request_queue *q)
-{
-}
-#endif
-
 /* How do we tell the block layer to pass down flush/fua? */
 #ifndef COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE
 static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua)

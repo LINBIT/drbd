@@ -182,6 +182,35 @@ schedule();
 + drbd_kick_lo(dev);
 }
 
+@ add_plug_send_and_submit @
+type T;
+identifier x;
+identifier dev;
+@@
+drbd_send_and_submit(struct drbd_device *dev, ...)
+{
+...
++	struct request_queue *q = dev->vdisk->queue;
+	struct drbd_resource *x = ...;
+...
++	/* we need to plug ALWAYS since we possibly need to kick lo_dev.
++	 * we plug after submit, so we won't miss an unplug event */
++	spin_lock_irq(q->queue_lock);
++
++	/* XXX the check on !blk_queue_plugged is redundant,
++	 * implicitly checked in blk_plug_device */
++
++	if (!blk_queue_plugged(q)) {
++		blk_plug_device(q);
++		del_timer(&q->unplug_timer);
++		/* unplugging should not happen automatically... */
++	}
++	spin_unlock_irq(q->queue_lock);
++
+	if (...)
+		complete_master_bio(...);
+}
+
 // drbd_sender.c
 @ add_kick_resync_finished exists @
 identifier dev;
@@ -211,7 +240,8 @@ static struct drbd_transport_class x = {
 			    (!add_maybe_kick_alloc_pages || !rewrite_unplug_all ||
 			    !add_maybe_kick_submit_pr ||
 			    !add_kick_resync_finished || !add_blk_run_queue ||
-			    !add_unplug_fn || !add_kick_do_submit) @
+			    !add_unplug_fn || !add_kick_do_submit ||
+			    !add_plug_send_and_submit) @
 @@
 import sys
 print('ERROR: A rule adding an essential piece of code was not executed!')
