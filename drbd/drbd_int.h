@@ -38,7 +38,6 @@
 
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
-#include "compat.h"
 #include "drbd_state.h"
 #include "drbd_protocol.h"
 #include "drbd_kref_debug.h"
@@ -2059,15 +2058,6 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 
 /* sets the number of 512 byte sectors of our virtual device */
 void drbd_set_my_capacity(struct drbd_device *device, sector_t size);
-
-static inline void drbd_kobject_uevent(struct drbd_device *device)
-{
-	kobject_uevent(disk_to_kobj(device->vdisk), KOBJ_CHANGE);
-	/* rhel4 / sles9 and older don't have this at all,
-	 * which means user space (udev) won't get events about possible changes of
-	 * corresponding resource + disk names after the initial drbd minor creation.
-	 */
-}
 
 /*
  * used to submit our private bio
