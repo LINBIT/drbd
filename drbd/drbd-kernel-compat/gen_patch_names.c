@@ -409,6 +409,9 @@ int main(int argc, char **argv)
 	patch(1, "vermagic_h", false, true,
 	      COMPAT_CAN_INCLUDE_VERMAGIC_H, "can_include");
 
+	patch(1, "nla_strscpy", true, false,
+	      COMPAT_HAVE_NLA_STRSCPY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
