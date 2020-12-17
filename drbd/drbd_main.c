@@ -4904,7 +4904,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 
 	if (!test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) && current_equal) {
-		u64 bm_to_peer = peer_md[peer_device->node_id].bitmap_uuid & ~UUID_PRIMARY;
+		u64 bm_to_peer = peer_device->comm_bitmap_uuid & ~UUID_PRIMARY;
 		u64 bm_towards_me = peer_device->bitmap_uuids[my_node_id] & ~UUID_PRIMARY;
 
 		if (bm_towards_me != 0 && bm_to_peer == 0 &&
