@@ -497,8 +497,13 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	 * transfer log epoch number.
 	 * With very specific timing, this may cause unnecessary barriers
 	 * to be sent, but that is harmless.
+	 *
+	 * There is no need to close the transfer log epoch for empty flushes.
+	 * The completion of the previous requests had the required effect on
+	 * the peers already.
 	 */
 	if (bio_data_dir(req->master_bio) == WRITE &&
+	    likely(req->i.size != 0) &&
 	    req->epoch == atomic_read(&device->resource->current_tle_nr))
 		start_new_tl_epoch(device->resource);
 
@@ -1177,10 +1182,8 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK|RQ_NET_DONE);
 		break;
 
-	case QUEUE_AS_DRBD_BARRIER:
-		start_new_tl_epoch(device->resource);
-		for_each_peer_device(peer_device, device)
-			mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
+	case BARRIER_SENT:
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
 		break;
 	};
 }
@@ -1491,6 +1494,46 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		put_ldev(device);
 	}
 	return peer_device;
+}
+
+static int drbd_process_empty_flush(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+	struct drbd_peer_device *peer_device;
+	int count = 0;
+
+	for_each_peer_device(peer_device, device) {
+		/* When a flush is submitted, the expectation is that the data
+		 * is written somewhere in a usable form. Hence only
+		 * D_UP_TO_DATE peers are included and not all peers that
+		 * receive the data. */
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+			++count;
+
+			/* An empty flush indicates that all previously
+			 * completed requests should be written out to stable
+			 * storage. Request completion already triggers a
+			 * barrier to be sent and the current epoch closed. The
+			 * barrier causes the data to be written out unless
+			 * that is configured not to be necessary.
+			 *
+			 * Hence there is nothing more to be done to cause the
+			 * writing out to persistent storage which was
+			 * requested. We just mark the request so that we know
+			 * that a flush has effectively occurred on this peer
+			 * so that we can complete it successfully.
+			 *
+			 * We _should_ wait for any outstanding barriers to
+			 * protocol C peers to be acked before completing this
+			 * request, so that we are sure that the previously
+			 * completed requests have really been written out
+			 * there too. However, DRBD has never yet implemented
+			 * this. */
+			_req_mod(req, BARRIER_SENT, peer_device);
+		}
+	}
+
+	return count;
 }
 
 /* returns the number of connections expected to actually write this data,
@@ -1831,8 +1874,11 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	/* A size==0 bio can only be an empty flush, which is mapped to a DRBD
 	 * P_BARRIER packet. */
 	if (unlikely(req->i.size == 0)) {
+		/* The only size==0 bios we expect are empty flushes. */
 		D_ASSERT(device, req->master_bio->bi_opf & REQ_PREFLUSH);
-		_req_mod(req, QUEUE_AS_DRBD_BARRIER, NULL);
+
+		if (!drbd_process_empty_flush(req))
+			no_remote = true;
 	} else {
 		if (rw == WRITE) {
 			struct drbd_request *prev_write = resource->tl_previous_write;
