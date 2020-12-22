@@ -3,63 +3,50 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.26-0rc4 (api:genl2/proto:86-118/transport:14)
+9.0.26-1 (api:genl2/proto:86-118/transport:14)
 --------
-
  * fix a source of possible data corruption; related to a resync and
    a primary node that is connected to the sync-source node only
- * restore protocol compatibility with 9.0.25 and earlier
+ * fix for writes not getting mirrored over a connection while the primary
+   transitions through the WFBitMapS state
+ * complete size 0 reads immediately; some workloads (KVM and
+   iscsi targets) in combination with a ZFS zvol as the backend can lead to
+   a kernel OOPS in ZFS; this is a workaround in DRBD for that
+ * fix a crash if during resync a discard operation fails on the
+   resync-target node
+ * fix a case of a disk unexpectedly becoming Outdated by moving the
+   exchange of the initial packets into the body of the two-phase-commit
+   that happens at a connect
  * fix for sporadic "Clearing bitmap UUID for node" log entries;
    a potential source of problems later on leading to false split-brain
    or unrelated data messages.
  * retry connect properly in case of bitmap-uuid changes during the handshake
- * complete size 0 reads immediately; some workloads (KVM and
-   iscsi targets) in combination with a ZFS zvol as the backend can lead to
-   a kernel OOPS in ZFS; this is a workaround in DRBD for that
- * improve error reporting for failures during attach
- * reduce lock contention on the secondary for many resources; can improve
-   performance significantly
- * Compatibility with Linux 5.10
-
-9.0.26-0rc3 (api:genl2/proto:86-118/transport:14)
---------
- * fix for writes not getting mirrored over a connection while the primary
-   transitions through the WFBitMapS state
  * completed missing logic of the new two-phase-commit based connect process;
    avoid connecting partitions with a primary in each; ensure consistent
    decisions if the connect attempt will be retried
-
-9.0.26-0rc2 (api:genl2/proto:86-118/transport:14)
---------
- * fix a crash if during resync a discard operation fails on the
-   resync-target node
- * fix online verify to not clamp disk states to UpToDate
- * fix promoting resync-target nodes; the problem was that it could modify
-   the bitmap of an ongoing resync; which leads to alarming log messages
- * pause a resync if the sync-source node becomes inconsistent; an example
-   is a cascading resync where the upstream resync aborts and leaves the
-   sync-source node for the downstream resync with an inconsistent disk;
-   note, the node at the end of the chain could still have an outdated disk
-   (better than inconsistent)
- * allow force primary on a sync-target node by breaking the resync
- * minor fixes to the compat tests
-
-9.0.26-0rc1 (api:genl2/proto:86-118/transport:14)
---------
- * fix a case of a disk unexpectedly becoming Outdated by moving the
-   exchange of the initial packets into the body of the two-phase-commit
-   that happens at a connect
- * fix adding of new volumes to resources with a primary node
- * reliably detect split brain situation on both nodes
  * fix an unexpected occurrence of NetworkFailure state in a tight
    drbdsetup disconnect; drbdsetup connect sequence
  * fix online verify to return to Established from VerifyS if the VerifyT node
    was temporarily Inconsistent during the run
  * fix a corner case where a node ends up Outdated after the crash and rejoin
    of a primary node
+ * pause a resync if the sync-source node becomes inconsistent; an example
+   is a cascading resync where the upstream resync aborts and leaves the
+   sync-source node for the downstream resync with an inconsistent disk;
+   note, the node at the end of the chain could still have an outdated disk
+   (better than inconsistent)
+ * reduce lock contention on the secondary for many resources; can improve
+   performance significantly
+ * fix online verify to not clamp disk states to UpToDate
+ * fix promoting resync-target nodes; the problem was that it could modify
+   the bitmap of an ongoing resync; which leads to alarming log messages
+ * allow force primary on a sync-target node by breaking the resync
+ * fix adding of new volumes to resources with a primary node
+ * reliably detect split brain situation on both nodes
+ * improve error reporting for failures during attach
  * implement 'blockdev --setro' in DRBD
- * following upstream changes to DRBD up to Linux 5.9 and ensure
-   compatibility with Linux 5.8 and 5.9
+ * following upstream changes to DRBD up to Linux 5.10 and ensure
+   compatibility with Linux 5.8, 5.9, and 5.10
 
 9.0.25-1 (api:genl2/proto:86-117/transport:14)
 --------
