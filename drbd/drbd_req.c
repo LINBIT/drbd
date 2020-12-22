@@ -1573,13 +1573,13 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 {
 	if (req->private_bio)
 		atomic_inc(&device->ap_actlog_cnt);
-	spin_lock(&device->submit.lock);
-	list_add_tail(&req->list, &device->submit.writes);
-	spin_unlock(&device->submit.lock);
 	spin_lock_irq(&device->pending_completion_lock);
 	list_add_tail(&req->req_pending_master_completion,
 			&device->pending_master_completion[1 /* WRITE */]);
 	spin_unlock_irq(&device->pending_completion_lock);
+	spin_lock(&device->submit.lock);
+	list_add_tail(&req->list, &device->submit.writes);
+	spin_unlock(&device->submit.lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
