@@ -1,3 +1,10 @@
+drbd (9.0.27-1) unstable; urgency=low
+
+  * New upstream release
+  * Fix regression: allow live migration between two diskful peers again
+
+ -- Lars Ellenberg <lars.ellenberg@linbit.com>  Wed, 23 Dec 2020 11:51:29 +0100
+
 drbd (9.0.26-1) unstable; urgency=low
 
   * New upstream release

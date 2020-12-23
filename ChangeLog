@@ -3,6 +3,10 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.27-1 (api:genl2/proto:86-118/transport:14)
+--------
+ * Fix regression: allow live migration between two diskful peers again
+
 9.0.26-1 (api:genl2/proto:86-118/transport:14)
 --------
  * fix a source of possible data corruption; related to a resync and
