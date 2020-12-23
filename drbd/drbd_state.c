@@ -4046,6 +4046,9 @@ check_primaries_distances(struct drbd_resource *resource)
 		return SS_SUCCESS;
 	if (nr_primaries > 1 && !multiple_primaries_allowed(resource))
 		return SS_TWO_PRIMARIES;
+	/* All primaries directly connected. Good */
+	if (!(reply->primary_nodes & reply->weak_nodes))
+		return SS_SUCCESS;
 
 	/* For virtualization setups with diskless hypervisors (R_PRIMARY) and one
 	   or multiple storage servers (R_SECONDARY) allow live-migration between the
