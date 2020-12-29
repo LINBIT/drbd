@@ -6812,7 +6812,7 @@ static int process_twopc(struct drbd_connection *connection,
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
-		drbd_info(connection, "Preparing remote state change %u ", reply->tid);
+		drbd_info(connection, "Preparing remote state change %u\n", reply->tid);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_PREP_RSZ:
