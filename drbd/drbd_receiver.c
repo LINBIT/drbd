@@ -7510,16 +7510,19 @@ void INFO_bm_xfer_stats(struct drbd_peer_device *peer_device,
 			total, r/10, r % 10);
 }
 
-static enum drbd_disk_state read_disk_state(struct drbd_device *device)
+static bool ready_for_bitmap(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
-	enum drbd_disk_state disk_state;
+	bool ready = true;
 
 	spin_lock_irq(&resource->req_lock);
-	disk_state = device->disk_state[NOW];
+	if (device->disk_state[NOW] == D_NEGOTIATING)
+		ready = false;
+	if (test_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags))
+		ready = false;
 	spin_unlock_irq(&resource->req_lock);
 
-	return disk_state;
+	return ready;
 }
 
 /* Since we are processing the bitfield from lower addresses to higher,
@@ -7549,7 +7552,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 	/* Final repl_states become visible when the disk leaves NEGOTIATING state */
 	wait_event_interruptible(device->resource->state_wait,
-				 read_disk_state(device) != D_NEGOTIATING);
+				 ready_for_bitmap(device));
 
 	drbd_bm_slot_lock(peer_device, "receive bitmap", BM_LOCK_CLEAR | BM_LOCK_BULK);
 	/* you are supposed to send additional out-of-sync information

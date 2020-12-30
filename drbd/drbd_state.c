@@ -4466,8 +4466,10 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 			  jiffies_to_msecs(jiffies - start_time),
 			  rv);
 
-	if (have_peers && context->change_local_state_last)
+	if (have_peers && context->change_local_state_last) {
+		set_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags);
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
+	}
 
 	if (context->flags & CS_INHIBIT_MD_IO) {
 		struct drbd_device *device =
@@ -4476,6 +4478,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	}
 
 	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
+	clear_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags);
 	if (rv >= SS_SUCCESS) {
 		change(context, PH_COMMIT);
 		if (target_connection &&
