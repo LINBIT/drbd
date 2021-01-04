@@ -1248,7 +1248,7 @@ retry:
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		drbd_md_sync_if_dirty(device);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
-			drbd_kobject_uevent(device);
+			kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
 	}
 
 out:
@@ -3436,7 +3436,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_md_sync(device);
 
-	drbd_kobject_uevent(device);
+	kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
 	put_ldev(device);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);

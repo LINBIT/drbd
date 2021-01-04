@@ -38,7 +38,6 @@
 
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
-#include "compat.h"
 #include "drbd_state.h"
 #include "drbd_protocol.h"
 #include "drbd_kref_debug.h"
@@ -2108,11 +2107,6 @@ static inline sector_t drbd_get_capacity(struct block_device *bdev)
 
 /* sets the number of 512 byte sectors of our virtual device */
 void drbd_set_my_capacity(struct drbd_device *device, sector_t size);
-
-static inline void drbd_kobject_uevent(struct drbd_device *device)
-{
-	kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
-}
 
 /*
  * used to submit our private bio
