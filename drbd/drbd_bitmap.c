@@ -19,7 +19,6 @@
 #include <linux/slab.h>
 #include <linux/dynamic_debug.h>
 #include <linux/libnvdimm.h>
-#include <asm/kmap_types.h>
 
 #include "drbd_int.h"
 #include "drbd_dax_pmem.h"
