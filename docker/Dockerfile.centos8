@@ -20,9 +20,9 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
 
 COPY --from=cent8 /etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial /etc/pki/rpm-gpg/
-COPY --from=cent8 /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/
-RUN yum install -y --disablerepo="*" --enablerepo=BaseOS elfutils-libelf-devel && \
-	rm -f /etc/yum.repos.d/CentOS-Base.repo
+COPY --from=cent8 /etc/yum.repos.d/CentOS-Linux-BaseOS.repo /etc/yum.repos.d/
+RUN yum install -y --disablerepo="*" --enablerepo=baseos elfutils-libelf-devel && \
+	rm -f /etc/yum.repos.d/CentOS-Linux-BaseOS.repo
 
 # one can not comment copy
 RUN wget https://www.linbit.com/downloads/drbd/9.0/drbd-${DRBD_VERSION}.tar.gz -O /drbd.tar.gz # !lbbuild
