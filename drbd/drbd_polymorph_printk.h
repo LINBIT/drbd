@@ -113,10 +113,14 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 	drbd_printk(KERN_EMERG, device, fmt, ## args)
 #define drbd_alert(device, fmt, args...) \
 	drbd_printk(KERN_ALERT, device, fmt, ## args)
+#define drbd_crit(device, fmt, args...) \
+	drbd_printk(KERN_CRIT, device, fmt, ## args)
 #define drbd_err(device, fmt, args...) \
 	drbd_printk(KERN_ERR, device, fmt, ## args)
 #define drbd_warn(device, fmt, args...) \
 	drbd_printk(KERN_WARNING, device, fmt, ## args)
+#define drbd_notice(device, fmt, args...) \
+	drbd_printk(KERN_NOTICE, device, fmt, ## args)
 #define drbd_info(device, fmt, args...) \
 	drbd_printk(KERN_INFO, device, fmt, ## args)
 

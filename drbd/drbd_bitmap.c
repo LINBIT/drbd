@@ -1325,7 +1325,7 @@ static int bm_rw_range(struct drbd_device *device,
 	}
 
 	if (ctx->error) {
-		drbd_alert(device, "we had at least one MD IO ERROR during bitmap IO\n");
+		drbd_err(device, "we had at least one MD IO ERROR during bitmap IO\n");
 		drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
 		err = -EIO; /* ctx->error ? */
 	}
