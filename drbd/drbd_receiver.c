@@ -3116,6 +3116,8 @@ disconnect_during_al_begin_io:
 	spin_unlock_irq(&device->resource->req_lock);
 
 out_interrupted:
+	if (peer_req->flags & EE_SEND_WRITE_ACK)
+		dec_unacked(peer_device);
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
 	drbd_free_peer_req(peer_req);
