@@ -56,7 +56,7 @@ int err;
 +	return -EINVAL;
 initialize_kref_debugging();
 
-@ add_vermagic_h depends on ever add_double_check @
+@ add_vermagic_h depends on ever add_double_check && file in "drbd_main.c" @
 @@
  #include <...>
 + #include <linux/vermagic.h>
