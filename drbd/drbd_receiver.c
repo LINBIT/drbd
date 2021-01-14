@@ -4325,27 +4325,48 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
 	struct drbd_device *device = peer_device->device;
 	bool decide_based_on_dstates = false;
-	bool prefer_local;
+	bool prefer_local, either_inconsistent;
 
 	if (disk_state == D_NEGOTIATING)
 		disk_state = disk_state_from_md(device);
 
-	if ((disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
-	    (peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT)) {
-		decide_based_on_dstates = true;
-		prefer_local = disk_state > D_INCONSISTENT;
-	}
+	either_inconsistent =
+		(disk_state == D_INCONSISTENT && peer_disk_state > D_INCONSISTENT) ||
+		(peer_disk_state == D_INCONSISTENT && disk_state > D_INCONSISTENT);
 
-	if (rule_nr == 40 || *strategy == NO_SYNC) {
+	if (peer_device->connection->agreed_pro_version >= 119) {
+		bool dstates_want_resync =
+			disk_state != peer_disk_state && disk_state >= D_INCONSISTENT &&
+			peer_disk_state >= D_INCONSISTENT && peer_disk_state != D_UNKNOWN;
+		bool resync_direction_arbitrary =
+			*strategy == SYNC_TARGET_IF_BOTH_FAILED ||
+			*strategy == SYNC_SOURCE_IF_BOTH_FAILED;
+
+		decide_based_on_dstates =
+			dstates_want_resync &&
+			(((rule_nr == 38 || rule_nr == 39 || rule_nr == 40) &&
+			  resync_direction_arbitrary) ||
+			 (*strategy == NO_SYNC && either_inconsistent));
+
+		prefer_local = disk_state > peer_disk_state;
 		/* rule_nr 40 means that the current UUIDs are equal. The decision
 		   was found by looking at the crashed_primary bits.
 		   The current disk states might give a better basis for decision-making! */
 
-		if (decide_based_on_dstates) {
-			*strategy = prefer_local ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
-			drbd_info(peer_device, "Becoming sync %s due to disk states.\n",
-				  strategy_descriptor(*strategy).is_sync_source ? "source" : "target");
-		}
+		/* rule_nr 39 means that the current UUIDs are equal. The resync direction
+		   was found by looking if a node lost quorum while being primary */
+	} else {
+		decide_based_on_dstates =
+			(rule_nr == 40 || *strategy == NO_SYNC) && either_inconsistent;
+
+		prefer_local = disk_state > D_INCONSISTENT;
+	}
+
+	if (decide_based_on_dstates) {
+		*strategy = prefer_local ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+		drbd_info(peer_device, "Becoming sync %s due to disk states. (%s/%s)\n",
+			  strategy_descriptor(*strategy).is_sync_source ? "source" : "target",
+			  drbd_disk_str(disk_state), drbd_disk_str(peer_disk_state));
 	}
 }
 
