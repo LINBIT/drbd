@@ -7020,7 +7020,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	peer_disk_state = peer_state.disk;
 
 	if (peer_disk_state > D_DISKLESS && !want_bitmap(peer_device)) {
-		drbd_warn(device, "The peer is configured to be diskless but presents %s\n",
+		drbd_warn(peer_device, "The peer is configured to be diskless but presents %s\n",
 			  drbd_disk_str(peer_disk_state));
 		goto fail;
 	}
@@ -7028,7 +7028,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.disk == D_NEGOTIATING) {
 		peer_disk_state = peer_device->uuid_flags & UUID_FLAG_INCONSISTENT ?
 			D_INCONSISTENT : D_CONSISTENT;
-		drbd_info(device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
+		drbd_info(peer_device, "real peer disk state = %s\n", drbd_disk_str(peer_disk_state));
 	}
 
 	spin_lock_irq(&resource->req_lock);
@@ -7172,7 +7172,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				new_repl_state = L_NEG_NO_RESULT;
 			} else if (peer_state.disk == D_NEGOTIATING) {
 				if (connection->agreed_pro_version < 110) {
-					drbd_err(device, "Disk attach process on the peer node was aborted.\n");
+					drbd_err(peer_device, "Disk attach process on the peer node was aborted.\n");
 					peer_state.disk = D_DISKLESS;
 					peer_disk_state = D_DISKLESS;
 				} else {
@@ -7212,7 +7212,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
-		drbd_err(device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
+		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		drbd_uuid_new_current(device, false);
 		begin_state_change(resource, &irq_flags, CS_HARD);
