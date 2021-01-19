@@ -2875,7 +2875,7 @@ void notify_resource_state_change(struct sk_buff *skb,
 		.res_susp_quorum = state_change_is_susp_quorum(state_change, NEW),
 	};
 
-	notify_resource_state(skb, seq, resource, &resource_info, type);
+	notify_resource_state(skb, seq, resource, &resource_info, NULL, type);
 }
 
 void notify_connection_state_change(struct sk_buff *skb,

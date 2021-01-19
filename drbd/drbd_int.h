@@ -2125,6 +2125,7 @@ extern void notify_resource_state(struct sk_buff *,
 				  unsigned int,
 				  struct drbd_resource *,
 				  struct resource_info *,
+				  struct rename_resource_info *,
 				  enum drbd_notification_type);
 extern void notify_device_state(struct sk_buff *,
 				unsigned int,

@@ -74,6 +74,7 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
 int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info);
+int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info);
 /* .dumpit */
 int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
@@ -6140,7 +6141,7 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 
 		mutex_lock(&notification_mutex);
 		resource_to_info(&resource_info, resource);
-		notify_resource_state(NULL, 0, resource, &resource_info, NOTIFY_CREATE);
+		notify_resource_state(NULL, 0, resource, &resource_info, NULL, NOTIFY_CREATE);
 		mutex_unlock(&notification_mutex);
 	} else {
 		module_put(THIS_MODULE);
@@ -6339,7 +6340,7 @@ static int adm_del_resource(struct drbd_resource *resource)
 	call_rcu(&resource->rcu, drbd_reclaim_resource);
 
 	mutex_lock(&notification_mutex);
-	notify_resource_state(NULL, 0, resource, NULL, NOTIFY_DESTROY);
+	notify_resource_state(NULL, 0, resource, NULL, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 
 	/* When the last resource was removed do an explicit synchronize RCU.
@@ -6455,6 +6456,7 @@ void notify_resource_state(struct sk_buff *skb,
 			   unsigned int seq,
 			   struct drbd_resource *resource,
 			   struct resource_info *resource_info,
+			   struct rename_resource_info *rename_resource_info,
 			   enum drbd_notification_type type)
 {
 	struct resource_statistics resource_statistics;
@@ -6478,14 +6480,25 @@ void notify_resource_state(struct sk_buff *skb,
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
 	if (nla_put_drbd_cfg_context(skb, resource, NULL, NULL, NULL) ||
-	    nla_put_notification_header(skb, type) ||
-	    ((type & ~NOTIFY_FLAGS) != NOTIFY_DESTROY &&
-	     resource_info_to_skb(skb, resource_info, true)))
+	    nla_put_notification_header(skb, type))
 		goto nla_put_failure;
+
+	if (resource_info) {
+		err = resource_info_to_skb(skb, resource_info, true);
+		if (err)
+			goto nla_put_failure;
+	}
+
 	resource_statistics.res_stat_write_ordering = resource->write_ordering;
 	err = resource_statistics_to_skb(skb, &resource_statistics, !capable(CAP_SYS_ADMIN));
 	if (err)
 		goto nla_put_failure;
+
+	if (rename_resource_info) {
+		err = rename_resource_info_to_skb(skb, rename_resource_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto nla_put_failure;
+	}
 	genlmsg_end(skb, dh);
 	if (multicast) {
 		err = drbd_genl_multicast_events(skb, GFP_NOWAIT);
@@ -6958,4 +6971,55 @@ out_no_adm:
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
 	return 0;
 
+}
+
+int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
+{
+	struct drbd_config_context adm_ctx;
+	struct drbd_resource *resource;
+	struct rename_resource_info rename_resource_info;
+	struct rename_resource_parms parms = { };
+	char *old_res_name, *new_res_name;
+	enum drbd_state_rv retcode;
+	int err;
+
+	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
+	if (!adm_ctx.reply_skb)
+		return retcode;
+
+	resource = adm_ctx.resource;
+
+	err = rename_resource_parms_from_attrs(&parms, info);
+	if (err) {
+		retcode = ERR_MANDATORY_TAG;
+		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+		goto out_no_adm;
+	}
+
+	drbd_info(resource, "Renaming to %s\n", parms.new_resource_name);
+
+	strlcpy(rename_resource_info.res_new_name, parms.new_resource_name, sizeof(rename_resource_info.res_new_name));
+	rename_resource_info.res_new_name_len = min(strlen(parms.new_resource_name), sizeof(rename_resource_info.res_new_name));
+
+	mutex_lock(&notification_mutex);
+	notify_resource_state(NULL, 0, resource, NULL, &rename_resource_info, NOTIFY_RENAME);
+	mutex_unlock(&notification_mutex);
+
+	mutex_lock(&resource->adm_mutex);
+
+	new_res_name = kstrdup(parms.new_resource_name, GFP_KERNEL);
+	if (!new_res_name) {
+		retcode = ERR_NOMEM;
+		goto out;
+	}
+	old_res_name = resource->name;
+	resource->name = new_res_name;
+	synchronize_rcu();
+	kfree(old_res_name);
+
+out:
+	mutex_unlock(&resource->adm_mutex);
+out_no_adm:
+	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
+	return 0;
 }
