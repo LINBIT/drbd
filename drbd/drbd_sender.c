@@ -655,13 +655,12 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 
 static int drbd_single_request_delay(struct drbd_peer_device *peer_device)
 {
-	struct net_conf *nc;
+	struct peer_device_conf *pdc;
 	unsigned long delay;
 
 	rcu_read_lock();
-	nc = rcu_dereference(peer_device->connection->transport.net_conf);
-	if (rcu_dereference(peer_device->rs_plan_s)->size) {
-		struct peer_device_conf *pdc = rcu_dereference(peer_device->conf);
+	pdc = rcu_dereference(peer_device->conf);
+	if (rcu_dereference(peer_device->rs_plan_s)->size && pdc->c_max_rate > 0) {
 		/* The delay should be at least enough so that we can request
 		 * some data next time, so round up. */
 		delay = DIV_ROUND_UP(HZ * BM_SECT_PER_BIT, pdc->c_max_rate * 2);
