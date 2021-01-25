@@ -381,6 +381,9 @@ int main(int argc, char **argv)
 	patch(1, "nla_strscpy", true, false,
 	      COMPAT_HAVE_NLA_STRSCPY, "present");
 
+	patch(1, "queue_discard_zeroes_data", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

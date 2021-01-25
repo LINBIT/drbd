@@ -45,13 +45,6 @@
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
 
-#ifndef COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA
-static inline unsigned int queue_discard_zeroes_data(struct request_queue *q)
-{
-	return 0;
-}
-#endif
-
 #ifndef FMODE_EXCL
 #define FMODE_EXCL 0
 #endif
