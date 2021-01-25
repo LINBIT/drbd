@@ -3314,8 +3314,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			/* Do not change the order of the if above and the two below... */
-			if (peer_disk_state[OLD] == D_DISKLESS &&
-			    peer_disk_state[NEW] > D_DISKLESS && peer_disk_state[NEW] != D_UNKNOWN) {      /* attach on the peer */
+			if (peer_disk_state[OLD] < D_NEGOTIATING &&
+			    peer_disk_state[NEW] == D_NEGOTIATING) { /* attach on the peer */
 				/* we probably will start a resync soon.
 				 * make sure those things are properly reset. */
 				peer_device->rs_total = 0;
