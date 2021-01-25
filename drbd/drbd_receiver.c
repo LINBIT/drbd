@@ -3118,7 +3118,8 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, wait_for_actlog) {
 		atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 		atomic_dec(&device->wait_for_actlog);
-		dec_unacked(peer_req->peer_device);
+		if (peer_req->flags & EE_SEND_WRITE_ACK)
+			dec_unacked(peer_req->peer_device);
 		list_del_init(&peer_req->wait_for_actlog);
 		drbd_may_finish_epoch(peer_req->peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
 		drbd_free_peer_req(peer_req);
