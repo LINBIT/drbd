@@ -4521,6 +4521,9 @@ peers_with_current_uuid(struct drbd_device *device, u64 current_uuid)
 	current_uuid &= ~UUID_PRIMARY;
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+		if (peer_disk_state < D_INCONSISTENT || peer_disk_state == D_UNKNOWN)
+			continue;
 		if (current_uuid == (peer_device->current_uuid & ~UUID_PRIMARY))
 			nodes |= NODE_MASK(peer_device->node_id);
 	}
