@@ -93,14 +93,6 @@ static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, 
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif
 
-#ifdef COMPAT_HAVE_POINTER_BACKING_DEV_INFO /* >= v4.11 */
-#define bdi_from_device(device) (device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#else /* < v4.11 */
-#define bdi_rw_congested(BDI) bdi_rw_congested(&BDI)
-#define bdi_congested(BDI, BDI_BITS) bdi_congested(&BDI, (BDI_BITS))
-#define bdi_from_device(device) (&device->ldev->backing_bdev->bd_disk->queue->backing_dev_info)
-#endif
-
 /* introduced in v4.4-rc2-61-ga55bbd375d18 */
 #ifndef idr_for_each_entry_continue
 #define idr_for_each_entry_continue(idp, entry, id)			\
