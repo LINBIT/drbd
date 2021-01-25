@@ -6916,6 +6916,26 @@ out_no_adm:
 
 }
 
+enum drbd_ret_code validate_new_resource_name(const struct drbd_resource *resource, const char *new_name)
+{
+	struct drbd_resource *next_resource;
+	enum drbd_ret_code retcode = NO_ERROR;
+
+	rcu_read_lock();
+	for_each_resource_rcu(next_resource, &drbd_resources) {
+		if (strcmp(next_resource->name, new_name) == 0) {
+			retcode = ERR_ALREADY_EXISTS;
+			drbd_err(resource, "Cannot rename to %s: a resource with that name already exists\n",
+					new_name);
+			goto out;
+		}
+	}
+
+out:
+	rcu_read_unlock();
+	return retcode;
+}
+
 int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -6924,11 +6944,15 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	struct rename_resource_parms parms = { };
 	char *old_res_name, *new_res_name;
 	enum drbd_state_rv retcode;
+	enum drbd_ret_code validate_err;
 	int err;
 
+	mutex_lock(&resources_mutex);
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
-	if (!adm_ctx.reply_skb)
+	if (!adm_ctx.reply_skb) {
+		mutex_unlock(&resources_mutex);
 		return retcode;
+	}
 
 	resource = adm_ctx.resource;
 
@@ -6936,7 +6960,13 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
-		goto out_no_adm;
+		goto out;
+	}
+
+	validate_err = validate_new_resource_name(resource, parms.new_resource_name);
+	if (validate_err != NO_ERROR) {
+		retcode = validate_err;
+		goto out;
 	}
 
 	drbd_info(resource, "Renaming to %s\n", parms.new_resource_name);
@@ -6947,8 +6977,6 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&notification_mutex);
 	notify_resource_state(NULL, 0, resource, NULL, &rename_resource_info, NOTIFY_RENAME);
 	mutex_unlock(&notification_mutex);
-
-	mutex_lock(&resource->adm_mutex);
 
 	new_res_name = kstrdup(parms.new_resource_name, GFP_KERNEL);
 	if (!new_res_name) {
@@ -6961,8 +6989,7 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	kfree(old_res_name);
 
 out:
-	mutex_unlock(&resource->adm_mutex);
-out_no_adm:
+	mutex_unlock(&resources_mutex);
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
 	return 0;
 }
