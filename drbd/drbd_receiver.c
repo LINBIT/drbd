@@ -5091,7 +5091,7 @@ static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int
 		rcu_read_unlock();
 	}
 
-	if (bitmap_uuid != -1 && get_ldev(device)) {
+	if (node_id != device->resource->res_opts.node_id && bitmap_uuid != -1 && get_ldev(device)) {
 		_drbd_uuid_push_history(device, bitmap_uuid);
 		put_ldev(device);
 	}
