@@ -771,6 +771,16 @@ void connect_timer_fn(struct timer_list *t)
 	spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 }
 
+static void arm_connect_timer(struct drbd_connection *connection, unsigned long expires)
+{
+	bool was_pending = mod_timer(&connection->connect_timer, expires);
+
+	if (was_pending) {
+		kref_debug_put(&connection->kref_debug, 11);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 static bool retry_by_rr_conflict(struct drbd_connection *connection)
 {
 	enum drbd_after_sb_p rr_conflict;
@@ -830,12 +840,10 @@ static int connect_work(struct drbd_work *work, int cancel)
 	} else if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 		if (connection->cstate[NOW] != C_CONNECTING)
 			goto out_put;
-		connection->connect_timer.expires = jiffies + HZ/20;
-		add_timer(&connection->connect_timer);
+		arm_connect_timer(connection, jiffies + HZ/20);
 		return 0; /* Return early. Keep the reference on the connection! */
 	} else if (rv == SS_HANDSHAKE_RETRY || (incompat_states && retry)) {
-		connection->connect_timer.expires = jiffies + HZ;
-		add_timer(&connection->connect_timer);
+		arm_connect_timer(connection, jiffies + HZ);
 		return 0; /* Keep reference */
 	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
 		drbd_send_disconnect(connection);
@@ -992,8 +1000,7 @@ start:
 			timeout = twopc_retry_timeout(resource, 0);
 			drbd_debug(connection, "Waiting for %ums to avoid transaction "
 				   "conflicts\n", jiffies_to_msecs(timeout));
-			connection->connect_timer.expires = jiffies + timeout;
-			add_timer(&connection->connect_timer);
+			arm_connect_timer(connection, jiffies + timeout);
 		}
 	} else {
 		enum drbd_state_rv rv;
