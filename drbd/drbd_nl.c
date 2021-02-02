@@ -2594,6 +2594,30 @@ bool want_bitmap(struct drbd_peer_device *peer_device)
 	return want_bitmap;
 }
 
+static void close_backing_dev(struct drbd_device *device, struct block_device *bdev,
+	bool do_bd_unlink)
+{
+	if (!bdev)
+		return;
+	if (do_bd_unlink)
+		bd_unlink_disk_holder(bdev, device->vdisk);
+	blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+}
+
+void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev)
+{
+	if (ldev == NULL)
+		return;
+
+	drbd_dax_close(ldev);
+
+	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
+	close_backing_dev(device, ldev->backing_bdev, true);
+
+	kfree(ldev->disk_conf);
+	kfree(ldev);
+}
+
 static struct block_device *open_backing_dev(struct drbd_device *device,
 		const char *bdev_path, void *claim_ptr, bool do_bd_link)
 {
@@ -2652,30 +2676,6 @@ static int open_backing_devices(struct drbd_device *device,
 		return ERR_OPEN_MD_DISK;
 	nbc->md_bdev = bdev;
 	return NO_ERROR;
-}
-
-static void close_backing_dev(struct drbd_device *device, struct block_device *bdev,
-	bool do_bd_unlink)
-{
-	if (!bdev)
-		return;
-	if (do_bd_unlink)
-		bd_unlink_disk_holder(bdev, device->vdisk);
-	blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
-}
-
-void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev)
-{
-	if (ldev == NULL)
-		return;
-
-	drbd_dax_close(ldev);
-
-	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
-	close_backing_dev(device, ldev->backing_bdev, true);
-
-	kfree(ldev->disk_conf);
-	kfree(ldev);
 }
 
 static void discard_not_wanted_bitmap_uuids(struct drbd_device *device, struct drbd_backing_dev *ldev)
