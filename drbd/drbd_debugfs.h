@@ -10,6 +10,7 @@ void drbd_debugfs_cleanup(void);
 
 void drbd_debugfs_resource_add(struct drbd_resource *resource);
 void drbd_debugfs_resource_cleanup(struct drbd_resource *resource);
+void drbd_debugfs_resource_rename(struct drbd_resource *resource, const char *new_name);
 
 void drbd_debugfs_connection_add(struct drbd_connection *connection);
 void drbd_debugfs_connection_cleanup(struct drbd_connection *connection);
@@ -26,6 +27,7 @@ static inline void drbd_debugfs_cleanup(void) { }
 
 static inline void drbd_debugfs_resource_add(struct drbd_resource *resource) { }
 static inline void drbd_debugfs_resource_cleanup(struct drbd_resource *resource) { }
+static inline void drbd_debugfs_resource_rename(struct drbd_resource *resource, const char *new_name) { }
 
 static inline void drbd_debugfs_connection_add(struct drbd_connection *connection) { }
 static inline void drbd_debugfs_connection_cleanup(struct drbd_connection *connection) { }

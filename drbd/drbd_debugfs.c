@@ -693,6 +693,19 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 	drbd_debugfs_remove(&resource->debugfs_res);
 }
 
+void drbd_debugfs_resource_rename(struct drbd_resource *resource, const char *new_name)
+{
+	struct dentry *new_d;
+
+	new_d = debugfs_rename(drbd_debugfs_resources, resource->debugfs_res,
+				drbd_debugfs_resources, new_name);
+	if (IS_ERR(new_d)) {
+		drbd_err(resource, "failed to rename debugfs entry for resource\n");
+	} else {
+		resource->debugfs_res = new_d;
+	}
+}
+
 static void seq_print_one_timing_detail(struct seq_file *m,
 	const struct drbd_thread_timing_details *tdp,
 	unsigned long jif)
