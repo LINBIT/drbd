@@ -2619,30 +2619,26 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 }
 
 static struct block_device *open_backing_dev(struct drbd_device *device,
-		const char *bdev_path, void *claim_ptr, bool do_bd_link)
+		const char *bdev_path, void *claim_ptr)
 {
-	struct block_device *bdev;
-	int err = 0;
-
-	bdev = blkdev_get_by_path(bdev_path,
+	struct block_device *bdev = blkdev_get_by_path(bdev_path,
 				  FMODE_READ | FMODE_WRITE | FMODE_EXCL, claim_ptr);
 	if (IS_ERR(bdev)) {
 		drbd_err(device, "open(\"%s\") failed with %ld\n",
 				bdev_path, PTR_ERR(bdev));
-		return bdev;
-	}
-
-	if (!do_bd_link)
-		return bdev;
-
-	err = bd_link_disk_holder(bdev, device->vdisk);
-	if (err) {
-		blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
-		drbd_err(device, "bd_link_disk_holder(\"%s\", ...) failed with %d\n",
-				bdev_path, err);
-		bdev = ERR_PTR(err);
 	}
 	return bdev;
+}
+
+static int link_backing_dev(struct drbd_device *device,
+		const char *bdev_path, struct block_device *bdev)
+{
+	int err = bd_link_disk_holder(bdev, device->vdisk);
+	if (err) {
+		drbd_err(device, "bd_link_disk_holder(\"%s\", ...) failed with %d\n",
+				bdev_path, err);
+	}
+	return err;
 }
 
 static int open_backing_devices(struct drbd_device *device,
@@ -2650,10 +2646,19 @@ static int open_backing_devices(struct drbd_device *device,
 		struct drbd_backing_dev *nbc)
 {
 	struct block_device *bdev;
+	int err;
 
-	bdev = open_backing_dev(device, new_disk_conf->backing_dev, device, true);
+	bdev = open_backing_dev(device, new_disk_conf->backing_dev, device);
 	if (IS_ERR(bdev))
 		return ERR_OPEN_DISK;
+
+	err = link_backing_dev(device, new_disk_conf->backing_dev, bdev);
+	if (err) {
+		/* close without unlinking; otherwise error path will try to unlink */
+		close_backing_dev(device, bdev, false);
+		return ERR_OPEN_DISK;
+	}
+
 	nbc->backing_bdev = bdev;
 
 	/*
@@ -2667,13 +2672,21 @@ static int open_backing_devices(struct drbd_device *device,
 	bdev = open_backing_dev(device, new_disk_conf->meta_dev,
 		/* claim ptr: device, if claimed exclusively; shared drbd_m_holder,
 		 * if potentially shared with other drbd minors */
-			(new_disk_conf->meta_dev_idx < 0) ? (void*)device : (void*)drbd_m_holder,
-		/* avoid double bd_claim_by_disk() for the same (source,target) tuple,
-		 * as would happen with internal metadata. */
-			(new_disk_conf->meta_dev_idx != DRBD_MD_INDEX_FLEX_INT &&
-			 new_disk_conf->meta_dev_idx != DRBD_MD_INDEX_INTERNAL));
+			(new_disk_conf->meta_dev_idx < 0) ? (void*)device : (void*)drbd_m_holder);
 	if (IS_ERR(bdev))
 		return ERR_OPEN_MD_DISK;
+
+	/* avoid double bd_claim_by_disk() for the same (source,target) tuple,
+	 * as would happen with internal metadata. */
+	if (bdev != nbc->backing_bdev) {
+		err = link_backing_dev(device, new_disk_conf->meta_dev, bdev);
+		if (err) {
+			/* close without unlinking; otherwise error path will try to unlink */
+			close_backing_dev(device, bdev, false);
+			return ERR_OPEN_MD_DISK;
+		}
+	}
+
 	nbc->md_bdev = bdev;
 	return NO_ERROR;
 }
