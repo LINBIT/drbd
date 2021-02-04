@@ -653,18 +653,28 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	return number;
 }
 
-static int drbd_single_request_delay(struct drbd_peer_device *peer_device)
+static int drbd_resync_delay(struct drbd_peer_device *peer_device)
 {
 	struct peer_device_conf *pdc;
 	unsigned long delay;
 
+	if (peer_device->rs_in_flight > 0) {
+		/* Requests in-flight. Use the standard delay. If all responses
+		 * are received before this time, the resync work will be
+		 * scheduled immediately. */
+		return RS_MAKE_REQS_INTV;
+	}
+
 	rcu_read_lock();
 	pdc = rcu_dereference(peer_device->conf);
 	if (rcu_dereference(peer_device->rs_plan_s)->size && pdc->c_max_rate > 0) {
-		/* The delay should be at least enough so that we can request
-		 * some data next time, so round up. */
+		/* Dynamic resync. This occurs when the peer responds so
+		 * quickly to the resync requests that the rate limiting
+		 * prevents any new requests from being made. Wait just long
+		 * enough so that we can request some data next time. */
 		delay = DIV_ROUND_UP(HZ * BM_SECT_PER_BIT, pdc->c_max_rate * 2);
 	} else {
+		/* Fixed resync rate. Use the standard delay. */
 		delay = RS_MAKE_REQS_INTV;
 	}
 	rcu_read_unlock();
@@ -862,8 +872,7 @@ request_done:
 			&peer_device->connection->sender_work,
 			&peer_device->resync_work);
 	} else {
-		unsigned long delay = number == 0 ? drbd_single_request_delay(peer_device) : RS_MAKE_REQS_INTV;
-		mod_timer(&peer_device->resync_timer, jiffies + delay);
+		mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device));
 	}
 	put_ldev(device);
 	return 0;
