@@ -601,8 +601,13 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	if (req_sect < 0)
 		req_sect = 0;
 
-	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
-	do_div(max_sect, NSEC_PER_SEC);
+	if (pdc->c_max_rate == 0) {
+		/* No rate limiting. */
+		max_sect = U64_MAX;
+	} else {
+		max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
+		do_div(max_sect, NSEC_PER_SEC);
+	}
 
 	dynamic_drbd_dbg(peer_device, "dur=%lluns (%llums) sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
 		 duration_ns, duration_ns / NSEC_PER_MSEC, sect_in, peer_device->rs_in_flight, want, correction,
@@ -669,12 +674,20 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device)
 
 	rcu_read_lock();
 	pdc = rcu_dereference(peer_device->conf);
-	if (rcu_dereference(peer_device->rs_plan_s)->size && pdc->c_max_rate > 0) {
-		/* Dynamic resync. This occurs when the peer responds so
-		 * quickly to the resync requests that the rate limiting
-		 * prevents any new requests from being made. Wait just long
-		 * enough so that we can request some data next time. */
-		delay = DIV_ROUND_UP(HZ * BM_SECT_PER_BIT, pdc->c_max_rate * 2);
+	if (rcu_dereference(peer_device->rs_plan_s)->size) {
+		if (pdc->c_max_rate == 0) {
+			/* Dynamic resync with no rate limiting. This should
+			 * not happen under normal circumstances. Use the
+			 * standard delay. */
+			delay = RS_MAKE_REQS_INTV;
+		} else {
+			/* Dynamic resync with rate limiting. This occurs when
+			 * the peer responds so quickly to the resync requests
+			 * that the rate limiting prevents any new requests
+			 * from being made. Wait just long enough so that we
+			 * can request some data next time. */
+			delay = DIV_ROUND_UP(HZ * BM_SECT_PER_BIT, pdc->c_max_rate * 2);
+		}
 	} else {
 		/* Fixed resync rate. Use the standard delay. */
 		delay = RS_MAKE_REQS_INTV;
