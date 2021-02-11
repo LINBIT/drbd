@@ -6023,21 +6023,47 @@ out_nolock:
 	return 0;
 }
 
-static enum drbd_ret_code
-drbd_check_resource_name(struct drbd_config_context *adm_ctx)
-{
-	const char *name = adm_ctx->resource_name;
-	if (!name || !name[0]) {
-		drbd_msg_put_info(adm_ctx->reply_skb, "resource name missing");
+/* name: a "resource name"
+ * Comes from a NLA_NUL_STRING, and already passed validate_nla().
+ * It is known to be NUL-terminated within the bounds of our defined netlink
+ * attribute policy.
+ *
+ * It must not be empty.
+ * It must not contain '/', we use it as directory name in debugfs.
+ * It shall not contain "control characters" or space, as those may confuse
+ * utils when trying to parse the output of "drbdsetup events2" or similar.
+ * Otherwise, we don't care, it may be any tag that makes sense to userland,
+ * we do not enforce strict ascii or any other "encoding".
+ */
+static enum drbd_ret_code drbd_check_resource_name_str(const char *name) {
+	unsigned char c;
+	if (name == NULL || name[0] == 0)
 		return ERR_MANDATORY_TAG;
-	}
-	/* As we want to use these in sysfs/configfs/debugfs,
-	 * we must not allow slashes. */
-	if (strchr(name, '/')) {
-		drbd_msg_put_info(adm_ctx->reply_skb, "invalid resource name");
-		return ERR_INVALID_REQUEST;
-	}
+
+	while ((c = *name++))
+		if (c == '/' || c <= ' ' || c == '\x7f')
+			return ERR_INVALID_REQUEST;
 	return NO_ERROR;
+}
+
+static void drbd_msg_put_name_error(struct sk_buff *reply_skb, enum drbd_ret_code ret_code)
+{
+	if (ret_code == NO_ERROR)
+		return;
+	if (ret_code == ERR_INVALID_REQUEST) {
+		drbd_msg_put_info(reply_skb, "invalid resource name");
+	} else if (ret_code == ERR_MANDATORY_TAG) {
+		drbd_msg_put_info(reply_skb, "resource name missing");
+	} else {
+		drbd_msg_put_info(reply_skb, "unhandled error in drbd_check_resource_name");
+	}
+}
+
+static enum drbd_ret_code drbd_check_resource_name(struct drbd_config_context *const adm_ctx)
+{
+	enum drbd_ret_code ret_code = drbd_check_resource_name_str(adm_ctx->resource_name);
+	drbd_msg_put_name_error(adm_ctx->reply_skb, ret_code);
+	return ret_code;
 }
 
 static void resource_to_info(struct resource_info *info,
@@ -6931,21 +6957,19 @@ out_no_adm:
 
 enum drbd_ret_code validate_new_resource_name(const struct drbd_resource *resource, const char *new_name)
 {
-	struct drbd_resource *next_resource;
-	enum drbd_ret_code retcode = NO_ERROR;
+	enum drbd_ret_code retcode = drbd_check_resource_name_str(new_name);
 
-	rcu_read_lock();
-	for_each_resource_rcu(next_resource, &drbd_resources) {
-		if (strcmp(next_resource->name, new_name) == 0) {
-			retcode = ERR_ALREADY_EXISTS;
-			drbd_err(resource, "Cannot rename to %s: a resource with that name already exists\n",
-					new_name);
-			goto out;
+	if (retcode == NO_ERROR) {
+		struct drbd_resource *next_resource;
+		rcu_read_lock();
+		for_each_resource_rcu(next_resource, &drbd_resources) {
+			if (strcmp(next_resource->name, new_name) == 0) {
+				retcode = ERR_ALREADY_EXISTS;
+				break;
+			}
 		}
+		rcu_read_unlock();
 	}
-
-out:
-	rcu_read_unlock();
 	return retcode;
 }
 
@@ -6980,6 +7004,13 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 
 	validate_err = validate_new_resource_name(resource, parms.new_resource_name);
 	if (validate_err != NO_ERROR) {
+		if (ERR_ALREADY_EXISTS) {
+			drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				"Cannot rename to %s: a resource with that name already exists\n",
+				 parms.new_resource_name);
+		} else {
+			drbd_msg_put_name_error(adm_ctx.reply_skb, validate_err);
+		}
 		retcode = validate_err;
 		goto out;
 	}
