@@ -4428,6 +4428,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	rcu_read_unlock();
 
 	if (set_current) {
+		u64 old_current = device->ldev->md.current_uuid;
 		u64 upd;
 
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
@@ -4440,6 +4441,15 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		   we know that we are at the same data as this not connected peer. */
 
 		__drbd_uuid_set_current(device, val);
+
+		/* Even when the old current UUID was not used as any bitmap
+		 * UUID, we still add it to the history. This is relevant, in
+		 * particular, when we afterwards perform a sync handshake with
+		 * a peer which is not one of the "weak_nodes", but hasn't
+		 * received the new current UUID. If we do not add the current
+		 * UUID to the history, we will end up with a spurious
+		 * unrelated data or split-brain decision. */
+		_drbd_uuid_push_history(device, old_current);
 	}
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
