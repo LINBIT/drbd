@@ -604,7 +604,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 
 	if (pdc->c_max_rate == 0) {
 		/* No rate limiting. */
-		max_sect = U64_MAX;
+		max_sect = ~0ULL;
 	} else {
 		max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
 		do_div(max_sect, NSEC_PER_SEC);
