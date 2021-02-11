@@ -6953,12 +6953,14 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
+	struct drbd_device *device;
 	struct rename_resource_info rename_resource_info;
 	struct rename_resource_parms parms = { };
 	char *old_res_name, *new_res_name;
 	enum drbd_state_rv retcode;
 	enum drbd_ret_code validate_err;
 	int err;
+	int vnr;
 
 	mutex_lock(&resources_mutex);
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -7002,6 +7004,10 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	kfree(old_res_name);
 
 	drbd_debugfs_resource_rename(resource, new_res_name);
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
+	}
 
 out:
 	mutex_unlock(&resources_mutex);
