@@ -1,22 +1,10 @@
 Latest:
 ------
- For even more detail, use "git log" or visit https://github.com/LINBIT/drbd-9.0/commits/master.
+ For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-10.0.0a4 (api:genl2/proto:110-117/transport:16)
+9.1.0-rc.1 (api:genl2/proto:110-119/transport:16)
 --------
- * Merged all fixes and compat improvements up to drbd 9.0.25
- * Fix some deadlocks introduced by older merges
-
-10.0.0a3 (api:genl2/proto:110-117/transport:16)
---------
- * Merged all fixes and compat improvements up to drbd 9.0.24
-
-10.0.0a2 (api:genl2/proto:110-116/transport:16)
---------
- * Merged all fixes and compat improvements up to drbd 9.0.23
-
-10.0.0a1 (api:genl2/proto:110-115/transport:16)
---------
- * DRBD 10 was forked off from drbd 9.0.19.
- * Locking in the code path for submitting IO requests was improved
-   to allow multiple CPU to submitt in parallel
+ * was forked off from drbd 9.0.19
+ * has all changes up to 9.0.28-rc1
+ * locking in the IO-submit code path was considerably improved,
+   allowing multiple CPU to submitt in parallel
