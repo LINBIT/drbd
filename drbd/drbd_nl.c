@@ -7001,6 +7001,8 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	synchronize_rcu();
 	kfree(old_res_name);
 
+	drbd_debugfs_resource_rename(resource, new_res_name);
+
 out:
 	mutex_unlock(&resources_mutex);
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
