@@ -67,21 +67,6 @@
 	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
 #endif
 
-/* How do we tell the block layer to pass down flush/fua? */
-#ifndef COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE
-static inline void blk_queue_write_cache(struct request_queue *q, bool enabled, bool fua)
-{
-#if defined(REQ_FLUSH) && !defined(REQ_HARDBARRIER)
-/* Linux version 2.6.37 up to 4.7
- * needs blk_queue_flush() to announce driver support */
-	blk_queue_flush(q, (enabled ? REQ_FLUSH : 0) | (fua ? REQ_FUA : 0));
-#else
-/* Older kernels either flag affected bios with BIO_RW_BARRIER, or do not know
- * how to handle this at all. No need to "announce" driver support. */
-#endif
-}
-#endif
-
 #ifndef KREF_INIT
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif

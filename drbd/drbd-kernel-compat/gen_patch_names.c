@@ -384,6 +384,17 @@ int main(int argc, char **argv)
 	patch(1, "queue_discard_zeroes_data", true, false,
 	      COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA, "present");
 
+#if !defined(COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE)
+	patch(2, "blk_queue_write_cache", true, false,
+	      COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE, "present",
+# if defined(COMPAT_HAVE_REQ_FLUSH) && !defined(COMPAT_HAVE_REQ_HARDBARRIER)
+	      YES, "flush"
+# else
+	      NO, "flush"
+# endif
+	);
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
