@@ -3,6 +3,30 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.28-0rc1 (api:genl2/proto:86-119/transport:14)
+--------
+ * fix a kernel OOPS (via a BUG()) upon adding a timer twice under very rare
+   timing
+ * fix a counter imbalance that could lead to assertion messages when a
+   protocol A peer disconnects with a certain timing
+ * fix a rare race with receiving bitmap and a state change while
+   establishing a connection
+ * fix UUID handling to avoid false split brain detections; this bug got
+   triggered an isolated primary that gets demoted, and temporal network
+   interruptions among the remaining nodes
+ * fix resync decission to obey disk states when the generation UUIDs are
+   equal; the effect of this bug was that you could end up with two Outdated
+   nodes after resync
+ * fix concurrent disk-attach operations
+ * Fix possible kernel warning regarding an inbalance of backing device
+   link/unlink
+ * move some amount of kernel backward compatiblity code moved from the old
+   method (drbd_wrappers.h) to new cocci semantic patches
+ * add support renaming resources while its devices might be in use and
+   process IO requests
+ * Allow setting c_max_rate to 0 with the meaning that the resync controller
+   has no upper limit for the resync speed
+
 9.0.27-1 (api:genl2/proto:86-118/transport:14)
 --------
  * Fix regression: allow live migration between two diskful peers again
