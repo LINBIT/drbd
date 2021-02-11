@@ -563,6 +563,9 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	else if (duration_ns > max_duration_ns)
 		duration_ns = max_duration_ns;
 
+	/* Scale sect_in so that it represents the number of sectors which
+	 * would have arrived if the cycle had lasted the normal time
+	 * (RS_MAKE_REQS_INTV). */
 	sect_in = sect_in * RS_MAKE_REQS_INTV_NS;
 	do_div(sect_in, duration_ns);
 
@@ -601,8 +604,8 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
 	do_div(max_sect, NSEC_PER_SEC);
 
-	dynamic_drbd_dbg(peer_device, "dur=%lluns sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
-		 duration_ns, sect_in, peer_device->rs_in_flight, want, correction,
+	dynamic_drbd_dbg(peer_device, "dur=%lluns (%llums) sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
+		 duration_ns, duration_ns / NSEC_PER_MSEC, sect_in, peer_device->rs_in_flight, want, correction,
 		 steps, cps, curr_corr, req_sect, max_sect);
 
 	if (req_sect > max_sect)
