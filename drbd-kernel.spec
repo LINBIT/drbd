@@ -6,7 +6,7 @@ Release: 1
 # always require a suitable userland
 Requires: drbd-utils >= 9.2.0
 
-%global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,,")
+%global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,," -e "s,~,-,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
 License: GPLv2+
 Group: System Environment/Kernel
