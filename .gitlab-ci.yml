@@ -1,5 +1,5 @@
 variables:
-  BUILD_HELPERS_VERSION: 378ab075793ec9fef875b67ee1c4dc53a681d49a
+  BUILD_HELPERS_VERSION: 97370543f06f09c81604b1bb952c4571ffbe35fe
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -75,7 +75,7 @@ build:
   extends: [ .rules-build, .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - DRBD_VERSION=10.0.0.$CI_COMMIT_SHA
+    - DRBD_VERSION=9.1.0.$CI_COMMIT_SHA
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
     - drbd_build $DRBD_VERSION 1 $DRBD_VERSION
   artifacts:
@@ -93,7 +93,7 @@ build-latest:
   extends: [ .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - DRBD_VERSION=10.0.0.latest
+    - DRBD_VERSION=9.1.0.latest
     - DRBD_RELEASE=$(git rev-list --count origin/master)
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION
 
