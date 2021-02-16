@@ -530,7 +530,6 @@ enum device_flag {
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 	MAKE_NEW_CUR_UUID,	/* tell worker to ping peers and eventually write new current uuid */
 
-	HAVE_LDEV,
 	STABLE_RESYNC,		/* One peer_device finished the resync stable! */
 	READ_BALANCE_RR,
 	PRIMARY_LOST_QUORUM,
