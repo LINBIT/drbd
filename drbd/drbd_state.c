@@ -306,10 +306,8 @@ static struct drbd_state_change *alloc_state_change(unsigned int n_devices, unsi
 	state_change->connections = (void *)&state_change->devices[n_devices];
 	state_change->peer_devices = (void *)&state_change->connections[n_connections];
 	state_change->resource->resource = NULL;
-	for (n = 0; n < n_devices; n++) {
+	for (n = 0; n < n_devices; n++)
 		state_change->devices[n].device = NULL;
-		state_change->devices[n].have_ldev = false;
-	}
 	for (n = 0; n < n_connections; n++)
 		state_change->connections[n].connection = NULL;
 	return state_change;
@@ -357,8 +355,6 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 		       device->disk_state, sizeof(device->disk_state));
 		memcpy(device_state_change->have_quorum,
 		       device->have_quorum, sizeof(device->have_quorum));
-		if (test_and_clear_bit(HAVE_LDEV, &device->flags))
-			device_state_change->have_ldev = true;
 
 		/* The peer_devices for each device have to be enumerated in
 		   the order of the connections. We may not use for_each_peer_device() here. */
@@ -2287,6 +2283,13 @@ static bool primary_and_data_present(struct drbd_device *device)
 	return primary && up_to_date_data;
 }
 
+static bool extra_ldev_ref_for_after_state_chg(enum drbd_disk_state *disk_state)
+{
+	return (disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
+	       (disk_state[OLD] != D_DETACHING && disk_state[NEW] == D_DETACHING) ||
+	       (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS);
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -2351,12 +2354,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
 		 * drbd_ldev_destroy() won't happen before our corresponding
 		 * w_after_state_change works run, where we put_ldev again. */
-		if ((disk_state[OLD] != D_FAILED && disk_state[NEW] == D_FAILED) ||
-		    (disk_state[OLD] != D_DETACHING && disk_state[NEW] == D_DETACHING) ||
-		    (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS)) {
+		if (extra_ldev_ref_for_after_state_chg(disk_state))
 			atomic_inc(&device->local_cnt);
-			BUG_ON(test_and_set_bit(HAVE_LDEV, &device->flags));
-		}
 
 		if (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS) {
 			/* who knows if we are ever going to be attached again,
@@ -3206,6 +3205,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
 		struct drbd_device *device = device_state_change->device;
 		enum drbd_disk_state *disk_state = device_state_change->disk_state;
+		bool have_ldev = extra_ldev_ref_for_after_state_chg(disk_state);
 		bool *have_quorum = device_state_change->have_quorum;
 		bool effective_disk_size_determined = false;
 		bool one_peer_disk_up_to_date[2] = { };
@@ -3554,7 +3554,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* Our cleanup here with the transition to D_DISKLESS.
 			 * It is still not safe to dereference ldev here, since
 			 * we might come from an failed Attach before ldev was set. */
-			if (expect(device, device_state_change->have_ldev) && device->ldev) {
+			if (have_ldev && device->ldev) {
 				rcu_read_lock();
 				eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
 				rcu_read_unlock();
@@ -3618,11 +3618,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* we may need to cancel the md_sync timer */
 			del_timer_sync(&device->md_sync_timer);
 
-			if (expect(device, device_state_change->have_ldev))
+			if (have_ldev)
 				send_new_state_to_all_peer_devices(state_change, n_device);
 		}
 
-		if (device_state_change->have_ldev)
+		if (have_ldev)
 			put_ldev(device);
 
 		/* Notify peers that I had a local IO error and did not detach. */

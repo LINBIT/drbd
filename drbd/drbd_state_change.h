@@ -12,7 +12,6 @@ struct drbd_device_state_change {
 	struct drbd_device *device;
 	enum drbd_disk_state disk_state[2];
 	bool have_quorum[2];
-	bool have_ldev;
 };
 
 struct drbd_connection_state_change {
