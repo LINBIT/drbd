@@ -2,6 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.0-rc.2 (api:genl2/proto:110-119/transport:16)
+--------
+ * merged fixes from 9.0.28-rc2
+  - fix a regression introduces with 9.0.25; it failed to determine the
+    right device size and the connection hangs in WFBitmapS/WFBitmapT
+    repl state; to trigger this you need to do a partial resync to a
+    new node with different backing device size
+  - fix a race condition that causes a detach operation to hang; it
+    is very hard to trigger
+
 9.1.0-rc.1 (api:genl2/proto:110-119/transport:16)
 --------
  * was forked off from drbd 9.0.19
