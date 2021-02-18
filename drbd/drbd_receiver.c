@@ -4837,6 +4837,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	/* Maybe the peer knows something about peers I cannot currently see. */
 	ddsf |= DDSF_IGNORE_PEER_CONSTRAINTS;
 
+	set_bit(HAVE_SIZES, &peer_device->flags);
+
 	if (get_ldev(device)) {
 		sector_t new_size;
 
@@ -7729,6 +7731,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
+	clear_bit(HAVE_SIZES, &peer_device->flags);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
