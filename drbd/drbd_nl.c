@@ -4937,6 +4937,7 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
+	mutex_lock(&adm_ctx.resource->adm_mutex);
 	res_opts = adm_ctx.resource->res_opts;
 	if (should_set_defaults(info))
 		set_res_opts_defaults(&res_opts);
@@ -4948,16 +4949,15 @@ int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	mutex_lock(&adm_ctx.resource->adm_mutex);
 	err = set_resource_options(adm_ctx.resource, &res_opts);
 	if (err) {
 		retcode = ERR_INVALID_REQUEST;
 		if (err == -ENOMEM)
 			retcode = ERR_NOMEM;
 	}
-	mutex_unlock(&adm_ctx.resource->adm_mutex);
 
 fail:
+	mutex_unlock(&adm_ctx.resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
