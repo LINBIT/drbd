@@ -132,6 +132,18 @@ unsigned int drbd_protocol_version_min = PRO_VERSION_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
 
 
+/* defined in drbd_nl.c, where it is used */
+int param_set_drbd_strict_names(const char *s, const struct kernel_param *kp);
+#define param_check_drbd_strict_names		param_check_bool
+#define param_get_drbd_strict_names		param_get_bool
+const struct kernel_param_ops param_ops_drbd_strict_names = {
+	.set = param_set_drbd_strict_names,
+	.get = param_get_drbd_strict_names,
+};
+bool drbd_strict_names = true;
+MODULE_PARM_DESC(strict_names, "restrict resource and connection names to ascii alnum and a subset of punct");
+module_param_named(strict_names, drbd_strict_names, drbd_strict_names, 0644);
+
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"
  */

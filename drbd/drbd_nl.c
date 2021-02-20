@@ -4060,6 +4060,35 @@ static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_d
 	return false;
 }
 
+static enum drbd_ret_code drbd_check_name_str(const char *name, const bool strict);
+static void drbd_msg_put_name_error(struct sk_buff *reply_skb, enum drbd_ret_code ret_code);
+
+static enum drbd_ret_code drbd_check_conn_name(struct drbd_resource *resource, const char *new_name)
+{
+	struct drbd_connection *connection;
+	enum drbd_ret_code retcode;
+	const char *tmp_name;
+
+	retcode = drbd_check_name_str(new_name, drbd_strict_names);
+	if (retcode != NO_ERROR)
+		return retcode;
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		/* is this even possible? */
+		if (!connection->transport.net_conf)
+			continue;
+		tmp_name = connection->transport.net_conf->name;
+		if (!tmp_name)
+			continue;
+		if (strcmp(tmp_name, new_name))
+			continue;
+		retcode = ERR_ALREADY_EXISTS;
+		break;
+	}
+	rcu_read_unlock();
+	return retcode;
+}
+
 static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_info *info)
 {
 	struct connection_info connection_info;
@@ -4086,6 +4115,12 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
+		goto fail;
+	}
+
+	retcode = drbd_check_conn_name(adm_ctx->resource, new_net_conf->name);
+	if (retcode != NO_ERROR) {
+		drbd_msg_put_name_error(adm_ctx->reply_skb, retcode);
 		goto fail;
 	}
 
@@ -6162,45 +6197,128 @@ out_nolock:
 	return 0;
 }
 
-/* name: a "resource name"
+/* name: a resource or connection name
  * Comes from a NLA_NUL_STRING, and already passed validate_nla().
  * It is known to be NUL-terminated within the bounds of our defined netlink
  * attribute policy.
  *
  * It must not be empty.
+ * It must not be the literal "all".
+ *
+ * If strict:
+ * Only allow strict ascii alnum [0-9A-Za-z]
+ * and some hand selected punctuation characters
+ *
+ * If non strict:
  * It must not contain '/', we use it as directory name in debugfs.
  * It shall not contain "control characters" or space, as those may confuse
  * utils when trying to parse the output of "drbdsetup events2" or similar.
  * Otherwise, we don't care, it may be any tag that makes sense to userland,
  * we do not enforce strict ascii or any other "encoding".
  */
-static enum drbd_ret_code drbd_check_resource_name_str(const char *name) {
+static enum drbd_ret_code drbd_check_name_str(const char *name, const bool strict) {
 	unsigned char c;
 	if (name == NULL || name[0] == 0)
 		return ERR_MANDATORY_TAG;
 
-	while ((c = *name++))
+	/* Tools reserve the literal "all" to mean what you would expect. */
+	/* If we want to get really paranoid,
+	 * we could add a number of "reserved" names,
+	 * like the *_state_names defined in drbd_strings.c */
+	if (memcmp("all", name, 4) == 0)
+		return ERR_INVALID_REQUEST;
+
+	while ((c = *name++)) {
 		if (c == '/' || c <= ' ' || c == '\x7f')
 			return ERR_INVALID_REQUEST;
+		if (strict) {
+			switch (c) {
+			case '0' ... '9':
+			case 'A' ... 'Z':
+			case 'a' ... 'z':
+				/* if you change this, also change "strict_pattern" below */
+			case '+': case '-': case '.': case '_':
+				break;
+			default:
+				return ERR_INVALID_REQUEST;
+			}
+		}
+	}
 	return NO_ERROR;
+}
+
+int param_set_drbd_strict_names(const char *val, const struct kernel_param *kp)
+{
+	int err = 0;
+	bool new_value;
+	bool orig_value = *(bool *)kp->arg;
+	struct kernel_param dummy_kp = *kp;
+
+	dummy_kp.arg = &new_value;
+
+	err = param_set_bool(val, &dummy_kp);
+	if (err || new_value == orig_value)
+		return err;
+
+	if (new_value) {
+		struct drbd_resource *resource;
+		struct drbd_connection *connection;
+		int non_strict_cnt = 0;
+
+		/* If we transition from "not enforced" to "enforcing strict names",
+		 * we complain about all "non-strict names" that still exist,
+		 * but intentionally still enable the enforcing.
+		 *
+		 * That way we can prevent new "non-strict" from being created,
+		 * while allowing us to clean up the existing ones at some
+		 * "convenient time" later.
+		 */
+		rcu_read_lock();
+		for_each_resource_rcu(resource, &drbd_resources) {
+			for_each_connection_rcu(connection, resource) {
+				char *name = connection->transport.net_conf->name;
+				if (drbd_check_name_str(name, true) == NO_ERROR)
+					continue;
+				drbd_info(connection, "non-strict name still in use\n");
+				++non_strict_cnt;
+			}
+			if (drbd_check_name_str(resource->name, true) == NO_ERROR)
+				continue;
+			drbd_info(resource, "non-strict name still in use\n");
+			++non_strict_cnt;
+		}
+		rcu_read_unlock();
+		if (non_strict_cnt)
+			pr_notice("%u non-strict names still in use\n", non_strict_cnt);
+	}
+	if (!err) {
+		*(bool *)kp->arg = new_value;
+		pr_info("%s strict name checks\n", new_value ? "enabled" : "disabled");
+	}
+	return err;
 }
 
 static void drbd_msg_put_name_error(struct sk_buff *reply_skb, enum drbd_ret_code ret_code)
 {
+	char *strict_pattern = " (strict_names=1 allows only [0-9A-Za-z+._-])";
+	char *non_strict_pat = " (disallowed: ascii control, space, slash)";
 	if (ret_code == NO_ERROR)
 		return;
 	if (ret_code == ERR_INVALID_REQUEST) {
-		drbd_msg_put_info(reply_skb, "invalid resource name");
+		drbd_msg_sprintf_info(reply_skb, "invalid name%s",
+			drbd_strict_names ? strict_pattern : non_strict_pat);
 	} else if (ret_code == ERR_MANDATORY_TAG) {
-		drbd_msg_put_info(reply_skb, "resource name missing");
+		drbd_msg_put_info(reply_skb, "name missing");
+	} else if (ret_code == ERR_ALREADY_EXISTS) {
+		drbd_msg_put_info(reply_skb, "name already exists");
 	} else {
-		drbd_msg_put_info(reply_skb, "unhandled error in drbd_check_resource_name");
+		drbd_msg_put_info(reply_skb, "unhandled error in drbd_check_name_str");
 	}
 }
 
 static enum drbd_ret_code drbd_check_resource_name(struct drbd_config_context *const adm_ctx)
 {
-	enum drbd_ret_code ret_code = drbd_check_resource_name_str(adm_ctx->resource_name);
+	enum drbd_ret_code ret_code = drbd_check_name_str(adm_ctx->resource_name, drbd_strict_names);
 	drbd_msg_put_name_error(adm_ctx->reply_skb, ret_code);
 	return ret_code;
 }
@@ -6239,11 +6357,12 @@ int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	retcode = drbd_check_resource_name(&adm_ctx);
-	if (retcode != NO_ERROR)
+	/* ERR_ALREADY_EXISTS? */
+	if (adm_ctx.resource)
 		goto out;
 
-	if (adm_ctx.resource)
+	retcode = drbd_check_resource_name(&adm_ctx);
+	if (retcode != NO_ERROR)
 		goto out;
 
 	if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
@@ -7118,7 +7237,7 @@ out_no_adm:
 
 static enum drbd_ret_code validate_new_resource_name(const struct drbd_resource *resource, const char *new_name)
 {
-	enum drbd_ret_code retcode = drbd_check_resource_name_str(new_name);
+	enum drbd_ret_code retcode = drbd_check_name_str(new_name, drbd_strict_names);
 
 	if (retcode == NO_ERROR) {
 		struct drbd_resource *next_resource;

@@ -59,6 +59,7 @@
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
 extern unsigned int drbd_protocol_version_min;
+extern bool drbd_strict_names;
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int drbd_enable_faults;
