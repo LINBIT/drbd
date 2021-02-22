@@ -558,6 +558,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	int curr_corr;
 	u64 max_sect;
 	struct fifo_buffer *plan;
+	u64 duration_ms;
 
 	if (duration_ns == 0)
 		duration_ns = 1;
@@ -610,8 +611,10 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 		do_div(max_sect, NSEC_PER_SEC);
 	}
 
+	duration_ms = duration_ns;
+	do_div(duration_ms, NSEC_PER_MSEC);
 	dynamic_drbd_dbg(peer_device, "dur=%lluns (%llums) sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
-		 duration_ns, duration_ns / NSEC_PER_MSEC, sect_in, peer_device->rs_in_flight, want, correction,
+		 duration_ns, duration_ms, sect_in, peer_device->rs_in_flight, want, correction,
 		 steps, cps, curr_corr, req_sect, max_sect);
 
 	if (req_sect > max_sect)
