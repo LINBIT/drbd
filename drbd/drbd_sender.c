@@ -687,7 +687,7 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device)
 			 * that the rate limiting prevents any new requests
 			 * from being made. Wait just long enough so that we
 			 * can request some data next time. */
-			delay = DIV_ROUND_UP(HZ * BM_SECT_PER_BIT, pdc->c_max_rate * 2);
+			delay = DIV_ROUND_UP((unsigned long)(HZ * BM_SECT_PER_BIT / 2), pdc->c_max_rate);
 		}
 	} else {
 		/* Fixed resync rate. Use the standard delay. */
