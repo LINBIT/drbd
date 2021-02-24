@@ -252,8 +252,9 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	adm_ctx->peer_node_id = PEER_NODE_ID_UNSPECIFIED;
 	if (info->attrs[DRBD_NLA_CFG_CONTEXT]) {
 		struct nlattr *nla;
+		struct nlattr **nested_attr_tb;
 		/* parse and validate only */
-		err = drbd_cfg_context_from_attrs(NULL, info);
+		err = drbd_cfg_context_ntb_from_attrs(&nested_attr_tb, info);
 		if (err)
 			goto fail;
 
@@ -275,6 +276,7 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 		nla = nested_attr_tb[__nla_type(T_ctx_resource_name)];
 		if (nla)
 			adm_ctx->resource_name = nla_data(nla);
+		kfree(nested_attr_tb);
 	}
 
 	if (adm_ctx->resource_name) {
@@ -4236,19 +4238,22 @@ static enum drbd_ret_code
 adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
 	struct drbd_transport *transport = &adm_ctx->connection->transport;
-	struct nlattr *my_addr = NULL, *peer_addr = NULL;
+	struct nlattr **nested_attr_tb;
+	struct nlattr *my_addr, *peer_addr;
 	struct drbd_path *path;
 	enum drbd_ret_code retcode;
 	int err;
 
 	/* parse and validate only */
-	err = path_parms_from_attrs(NULL, info);
+	err = path_parms_ntb_from_attrs(&nested_attr_tb, info);
 	if (err) {
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
 		return ERR_MANDATORY_TAG;
 	}
 	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
 	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+	kfree(nested_attr_tb);
+	nested_attr_tb = NULL;
 
 	rcu_read_lock();
 	retcode = check_path_usable(adm_ctx, my_addr, peer_addr);
@@ -4406,19 +4411,22 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
 	struct drbd_connection *connection = adm_ctx->connection;
 	struct drbd_transport *transport = &connection->transport;
-	struct nlattr *my_addr = NULL, *peer_addr = NULL;
+	struct nlattr **nested_attr_tb;
+	struct nlattr *my_addr, *peer_addr;
 	struct drbd_path *path;
 	int nr_paths = 0;
 	int err;
 
 	/* parse and validate only */
-	err = path_parms_from_attrs(NULL, info);
+	err = path_parms_ntb_from_attrs(&nested_attr_tb, info);
 	if (err) {
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
 		return ERR_MANDATORY_TAG;
 	}
 	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
 	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+	kfree(nested_attr_tb);
+	nested_attr_tb = NULL;
 
 	list_for_each_entry(path, &transport->paths, list)
 		nr_paths++;
