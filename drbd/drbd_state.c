@@ -3011,6 +3011,14 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 	}
 }
 
+static bool receiver_exited_main_loop(struct drbd_connection *connection)
+{
+	enum drbd_conn_state cstate = connection->cstate[NOW];
+
+	return cstate == C_STANDALONE || cstate == C_UNCONNECTED ||
+		cstate == C_CONNECTING || cstate == C_CONNECTED;
+}
+
 void drbd_notify_peers_lost_primary(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection, *lost_peer;
@@ -3027,6 +3035,7 @@ void drbd_notify_peers_lost_primary(struct drbd_resource *resource)
 	return;
 found:
 
+	wait_event(resource->state_wait, receiver_exited_main_loop(lost_peer));
 	for_each_connection_ref(connection, im, resource) {
 		if (connection == lost_peer)
 			continue;
