@@ -1442,17 +1442,18 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		u64 val = __bitmap_uuid(device, i);
 		bool send_this =
 			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS;
 		if (!send_this && !sent_one_unallocated &&
-		    i != my_node_id && i != peer_device->node_id) {
+		    i != my_node_id && i != peer_device->node_id &&
+		    val) {
 			send_this = true;
 			sent_one_unallocated = true;
 			uuid_flags |= (u64)i << UUID_FLAG_UNALLOC_SHIFT;
 			uuid_flags |= UUID_FLAG_HAS_UNALLOC;
 		}
 		if (send_this) {
-			u64 val = __bitmap_uuid(device, i);
 			bitmap_uuids_mask |= NODE_MASK(i);
 			p->other_uuids[pos++] = cpu_to_be64(val);
 			if (i == peer_device->node_id)
