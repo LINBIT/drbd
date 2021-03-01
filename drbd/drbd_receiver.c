@@ -673,6 +673,16 @@ static int drbd_send_disconnect(struct drbd_connection *connection)
 	return send_command(connection, -1, P_DISCONNECT, DATA_STREAM);
 }
 
+static void initialize_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream)
+{
+	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
+
+	sbuf->unsent =
+	sbuf->pos = page_address(sbuf->page);
+	sbuf->allocated_size = 0;
+	sbuf->additional_size = 0;
+}
+
 /* Gets called if a connection is established, or if a new minor gets created
    in a connection */
 int drbd_connected(struct drbd_peer_device *peer_device)
@@ -869,6 +879,7 @@ static bool conn_connect(struct drbd_connection *connection)
 	struct drbd_resource *resource = connection->resource;
 	int ping_timeo, ping_int, h, err, vnr, timeout;
 	struct drbd_peer_device *peer_device;
+	enum drbd_stream stream;
 	struct net_conf *nc;
 	bool discard_my_data;
 	bool have_mutex;
@@ -931,8 +942,10 @@ start:
 
 	/* Make sure we are "uncorked", otherwise we risk timeouts,
 	 * in case this is a reconnect and we had been corked before. */
-	drbd_uncork(connection, CONTROL_STREAM);
-	drbd_uncork(connection, DATA_STREAM);
+	for (stream = DATA_STREAM; stream <= CONTROL_STREAM; stream++) {
+		initialize_send_buffer(connection, stream);
+		drbd_uncork(connection, stream);
+	}
 
 	/* Make sure the handshake happens without interference from other threads,
 	 * or the challenge response authentication could be garbled. */
