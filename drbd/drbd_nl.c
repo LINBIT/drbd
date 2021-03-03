@@ -3986,6 +3986,32 @@ static void connection_to_info(struct connection_info *info,
 	info->conn_role = connection->peer_role[NOW];
 }
 
+#define str_to_info(info, field, str) ({ \
+	strlcpy(info->field, str, sizeof(info->field)); \
+	info->field ## _len = min(strlen(str), sizeof(info->field)); \
+})
+
+/* shared logic between peer_device_to_info and peer_device_state_change_to_info */
+static void __peer_device_to_info(struct peer_device_info *info,
+				  struct drbd_peer_device *peer_device,
+				  enum which_state which)
+{
+	struct drbd_device *device = peer_device->device;
+	info->peer_resync_susp_dependency = resync_susp_comb_dep(peer_device, which);
+	info->peer_is_intentional_diskless = !want_bitmap(peer_device);
+
+	rcu_read_lock();
+	if (get_ldev(device)) {
+		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
+		str_to_info(info, peer_backing_dev_path, disk_conf->backing_dev);
+		put_ldev(device);
+	} else {
+		info->peer_backing_dev_path[0] = '\0';
+		info->peer_backing_dev_path_len = 0;
+	}
+	rcu_read_unlock();
+}
+
 static void peer_device_to_info(struct peer_device_info *info,
 				struct drbd_peer_device *peer_device)
 {
@@ -3993,8 +4019,52 @@ static void peer_device_to_info(struct peer_device_info *info,
 	info->peer_disk_state = peer_device->disk_state[NOW];
 	info->peer_resync_susp_user = peer_device->resync_susp_user[NOW];
 	info->peer_resync_susp_peer = peer_device->resync_susp_peer[NOW];
-	info->peer_resync_susp_dependency = peer_device->resync_susp_dependency[NOW];
-	info->peer_is_intentional_diskless = !want_bitmap(peer_device);
+	__peer_device_to_info(info, peer_device, NOW);
+}
+
+void peer_device_state_change_to_info(struct peer_device_info *info,
+				      struct drbd_peer_device_state_change *state_change)
+{
+	info->peer_repl_state = state_change->repl_state[NEW];
+	info->peer_disk_state = state_change->disk_state[NEW];
+	info->peer_resync_susp_user = state_change->resync_susp_user[NEW];
+	info->peer_resync_susp_peer = state_change->resync_susp_peer[NEW];
+	__peer_device_to_info(info, state_change->peer_device, NEW);
+}
+
+/* shared logic between device_to_info and device_state_change_to_info */
+static void __device_to_info(struct device_info *info,
+			     struct drbd_device *device)
+{
+	info->is_intentional_diskless = device->device_conf.intentional_diskless;
+
+	rcu_read_lock();
+	if (get_ldev(device)) {
+		struct disk_conf *disk_conf =
+			rcu_dereference(device->ldev->disk_conf);
+		str_to_info(info, backing_dev_path, disk_conf->backing_dev);
+		put_ldev(device);
+	} else {
+		info->backing_dev_path[0] = '\0';
+		info->backing_dev_path_len = 0;
+	}
+	rcu_read_unlock();
+}
+
+static void device_to_info(struct device_info *info,
+			   struct drbd_device *device)
+{
+	info->dev_disk_state = device->disk_state[NOW];
+	info->dev_has_quorum = device->have_quorum[NOW];
+	__device_to_info(info, device);
+}
+
+void device_state_change_to_info(struct device_info *info,
+				 struct drbd_device_state_change *state_change)
+{
+	info->dev_disk_state = state_change->disk_state[NEW];
+	info->dev_has_quorum = state_change->have_quorum[NEW];
+	__device_to_info(info, state_change->device);
 }
 
 static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_device)
@@ -5473,8 +5543,6 @@ int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
 	return put_resource_in_arg0(cb, 7);
 }
 
-static void device_to_info(struct device_info *info, struct drbd_device *device);
-
 int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
@@ -6174,14 +6242,6 @@ out:
 out_no_unlock:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
-}
-
-static void device_to_info(struct device_info *info,
-			   struct drbd_device *device)
-{
-	info->dev_disk_state = device->disk_state[NOW];
-	info->is_intentional_diskless = device->device_conf.intentional_diskless;
-	info->dev_has_quorum = device->have_quorum[NOW];
 }
 
 int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)

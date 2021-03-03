@@ -937,14 +937,6 @@ union drbd_state drbd_get_device_state(struct drbd_device *device, enum which_st
 	return rv;
 }
 
-static bool resync_susp_comb_dep(struct drbd_peer_device *peer_device, enum which_state which)
-{
-	struct drbd_device *device = peer_device->device;
-
-	return peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which] ||
-		(is_sync_source_state(peer_device, which) && device->disk_state[which] <= D_INCONSISTENT);
-}
-
 union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -2897,30 +2889,20 @@ void notify_device_state_change(struct sk_buff *skb,
 				enum drbd_notification_type type)
 {
 	struct drbd_device *device = device_state_change->device;
-	struct device_info device_info = {
-		.dev_disk_state = device_state_change->disk_state[NEW],
-		.is_intentional_diskless = device->device_conf.intentional_diskless,
-		.dev_has_quorum = device_state_change->have_quorum[NEW],
-	};
+	struct device_info device_info;
+	device_state_change_to_info(&device_info, device_state_change);
 
 	notify_device_state(skb, seq, device, &device_info, type);
 }
 
 void notify_peer_device_state_change(struct sk_buff *skb,
 				     unsigned int seq,
-				     struct drbd_peer_device_state_change *p,
+				     struct drbd_peer_device_state_change *state_change,
 				     enum drbd_notification_type type)
 {
-	struct drbd_peer_device *peer_device = p->peer_device;
-	/* THINK maybe unify with peer_device_to_info */
-	struct peer_device_info peer_device_info = {
-		.peer_repl_state = p->repl_state[NEW],
-		.peer_disk_state = p->disk_state[NEW],
-		.peer_resync_susp_user = p->resync_susp_user[NEW],
-		.peer_resync_susp_peer = p->resync_susp_peer[NEW],
-		.peer_resync_susp_dependency = resync_susp_comb_dep(peer_device, NEW),
-		.peer_is_intentional_diskless = !want_bitmap(peer_device),
-	};
+	struct drbd_peer_device *peer_device = state_change->peer_device;
+	struct peer_device_info peer_device_info;
+	peer_device_state_change_to_info(&peer_device_info, state_change);
 
 	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type);
 }
