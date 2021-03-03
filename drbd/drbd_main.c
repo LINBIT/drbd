@@ -5377,8 +5377,8 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 
 static sector_t bm_sect_to_max_capacity(unsigned int bm_max_peers, sector_t bm_sect)
 {
-	u64 bm_pages = bm_sect >> (PAGE_SHIFT - SECTOR_SHIFT);
-	u64 bm_bytes = bm_pages << PAGE_SHIFT;
+	/* we do our meta data IO in 4k units */
+	u64 bm_bytes = ALIGN_DOWN(bm_sect << SECTOR_SHIFT, 4096);
 	u64 bm_bytes_per_peer = div_u64(bm_bytes, bm_max_peers);
 	u64 bm_bits_per_peer = bm_bytes_per_peer * BITS_PER_BYTE;
 	return BM_BIT_TO_SECT(bm_bits_per_peer);
