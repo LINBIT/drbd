@@ -142,6 +142,9 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio", true, false,
 	      NO, "present");
 
+	patch(1, "blk_alloc_queue_rh", false, true,
+		COMPAT_HAVE_BLK_ALLOC_QUEUE_RH, "present");
+
 	patch(1, "blk_queue_make_request", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
 
