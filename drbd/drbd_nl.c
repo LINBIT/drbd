@@ -3690,6 +3690,10 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf)
 			return ERR_INTEGRITY_ALG;
 		}
 	}
+	if (crypto->verify_tfm && (crypto_shash_get_flags(crypto->verify_tfm) & CRYPTO_TFM_NEED_KEY)) {
+		pr_err("may not use a keyed alorithm for verify (tried to use %s, but it requires a key)\n", new_net_conf->verify_alg);
+		return ERR_INTEGRITY_ALG;
+	}
 	if (new_net_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
 			 new_net_conf->cram_hmac_alg);
