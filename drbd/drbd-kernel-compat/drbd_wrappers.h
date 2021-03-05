@@ -27,6 +27,11 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 #endif
 
+#ifndef ALIGN_DOWN
+/* ed067d4a859f linux/kernel.h: Add ALIGN_DOWN macro */
+#define ALIGN_DOWN(x, a)       __ALIGN_KERNEL((x) - ((a) - 1), (a))
+#endif
+
 /* introduced in v3.13-4220-g89a0714106aa */
 #ifndef U32_MAX
 #define U32_MAX ((u32)~0U)
