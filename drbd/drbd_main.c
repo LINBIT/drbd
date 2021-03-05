@@ -991,7 +991,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
-	int msg_flags, err, offset, size;
+	int flags, err, offset, size;
 
 	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
 	if (size == 0)
@@ -1003,9 +1003,10 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 		rcu_read_unlock();
 	}
 
-	msg_flags = sbuf->additional_size ? MSG_MORE : 0;
+	flags = (connection->cstate[NOW] < C_CONNECTING ? MSG_DONTWAIT : 0) |
+		(sbuf->additional_size ? MSG_MORE : 0);
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
-	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, msg_flags);
+	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, flags);
 	if (!err) {
 		sbuf->unsent =
 		sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
