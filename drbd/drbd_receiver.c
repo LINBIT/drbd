@@ -3932,6 +3932,43 @@ static enum sync_strategy uuid_fixup_resync_start2(struct drbd_peer_device *peer
 	return UNDETERMINED;
 }
 
+/* find the peer's bitmap slot for the given UUID, if they have one */
+static int drbd_find_peer_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uuid)
+{
+	u64 peer;
+	int i;
+
+	for (i = 0; i < DRBD_PEERS_MAX; i++) {
+		peer = peer_device->bitmap_uuids[i] & ~UUID_PRIMARY;
+		if (uuid == peer)
+			return i;
+	}
+
+	return -1;
+}
+
+/* find our bitmap slot for the given UUID, if we have one */
+static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uuid)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	u64 self;
+	int i;
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		if (i == device->ldev->md.node_id)
+			continue;
+		if (connection->agreed_pro_version < 116 &&
+		    device->ldev->md.peers[i].bitmap_index == -1)
+			continue;
+		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
+		if (self == uuid)
+			return i;
+	}
+
+	return -1;
+}
+
 static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device,
 			     int *rule_nr, int *peer_node_id) __must_hold(local)
 {
@@ -4073,12 +4110,10 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		return SYNC_TARGET_USE_BITMAP;
 
 	*rule_nr = 52;
-	for (i = 0; i < DRBD_PEERS_MAX; i++) {
-		peer = peer_device->bitmap_uuids[i] & ~UUID_PRIMARY;
-		if (self == peer) {
-			*peer_node_id = i;
-			return SYNC_TARGET_CLEAR_BITMAP;
-		}
+	i = drbd_find_peer_bitmap_by_uuid(peer_device, self);
+	if (i != -1) {
+		*peer_node_id = i;
+		return SYNC_TARGET_CLEAR_BITMAP;
 	}
 
 	if (connection->agreed_pro_version < 110) {
@@ -4094,19 +4129,10 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		return SYNC_SOURCE_USE_BITMAP;
 
 	*rule_nr = 72;
-	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
-		if (i == peer_device->node_id)
-			continue;
-		if (i == device->ldev->md.node_id)
-			continue;
-		if (connection->agreed_pro_version < 116 &&
-		    device->ldev->md.peers[i].bitmap_index == -1)
-			continue;
-		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
-		if (self == peer) {
-			*peer_node_id = i;
-			return SYNC_SOURCE_COPY_BITMAP;
-		}
+	i = drbd_find_bitmap_by_uuid(peer_device, peer);
+	if (i != -1) {
+		*peer_node_id = i;
+		return SYNC_SOURCE_COPY_BITMAP;
 	}
 
 	my_current_in_peers_history = false;
