@@ -4364,9 +4364,62 @@ static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer
 	return rv;
 }
 
+static enum sync_strategy drbd_disk_states_source_strategy(
+		struct drbd_peer_device *peer_device,
+		int *peer_node_id)
+{
+	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
+	int i;
+
+	if (!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET))
+		return SYNC_SOURCE_USE_BITMAP;
+
+	/* When the peer is already a sync target, we actually see its
+	 * current UUID in the bitmap UUID slot towards us. We may need
+	 * to pick a different bitmap as a result. */
+	i = drbd_find_bitmap_by_uuid(peer_device, peer_device->bitmap_uuids[node_id]);
+
+	if (i == -1)
+		return SYNC_SOURCE_SET_BITMAP;
+
+	if (i == peer_device->node_id)
+		return SYNC_SOURCE_USE_BITMAP;
+
+	*peer_node_id = i;
+	return SYNC_SOURCE_COPY_BITMAP;
+}
+
+static enum sync_strategy drbd_disk_states_target_strategy(
+		struct drbd_peer_device *peer_device,
+		int *peer_node_id)
+{
+	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
+	int i;
+
+	if (!(peer_device->comm_uuid_flags & UUID_FLAG_SYNC_TARGET))
+		return SYNC_TARGET_USE_BITMAP;
+
+	/* When we are already a sync target, we need to choose our
+	 * strategy to mirror the peer's choice (see
+	 * drbd_disk_states_source_strategy). */
+	i = drbd_find_peer_bitmap_by_uuid(peer_device, drbd_bitmap_uuid(peer_device));
+
+	if (i == -1)
+		return SYNC_TARGET_SET_BITMAP;
+
+	if (i == node_id)
+		return SYNC_TARGET_USE_BITMAP;
+
+	*peer_node_id = i;
+	return SYNC_TARGET_CLEAR_BITMAP;
+}
+
 static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
-				    enum sync_strategy *strategy, int rule_nr)
+				    enum sync_strategy *strategy, int rule_nr,
+				    int *peer_node_id)
 {
 	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
 	struct drbd_device *device = peer_device->device;
@@ -4409,9 +4462,11 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 	}
 
 	if (decide_based_on_dstates) {
-		*strategy = prefer_local ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
-		drbd_info(peer_device, "Becoming sync %s due to disk states. (%s/%s)\n",
-			  strategy_descriptor(*strategy).is_sync_source ? "source" : "target",
+		*strategy = prefer_local ?
+			drbd_disk_states_source_strategy(peer_device, peer_node_id) :
+			drbd_disk_states_target_strategy(peer_device, peer_node_id);
+		drbd_info(peer_device, "strategy = %s due to disk states. (%s/%s)\n",
+			  strategy_descriptor(*strategy).name,
 			  drbd_disk_str(disk_state), drbd_disk_str(peer_disk_state));
 	}
 }
@@ -4427,8 +4482,8 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 	if (!is_strategy_determined(strategy))
 		return -1;
 
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr, &peer_node_id);
 	bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr);
 
 	return strategy_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
 }
@@ -4468,7 +4523,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -2;
 	}
 
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule_nr, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
 		drbd_warn(device, "Ignore Split-Brain, for now, at least one side unstable\n");
