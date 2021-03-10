@@ -3982,20 +3982,8 @@ static void __peer_device_to_info(struct peer_device_info *info,
 				  struct drbd_peer_device *peer_device,
 				  enum which_state which)
 {
-	struct drbd_device *device = peer_device->device;
 	info->peer_resync_susp_dependency = resync_susp_comb_dep(peer_device, which);
 	info->peer_is_intentional_diskless = !want_bitmap(peer_device);
-
-	rcu_read_lock();
-	if (get_ldev(device)) {
-		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
-		str_to_info(info, peer_backing_dev_path, disk_conf->backing_dev);
-		put_ldev(device);
-	} else {
-		info->peer_backing_dev_path[0] = '\0';
-		info->peer_backing_dev_path_len = 0;
-	}
-	rcu_read_unlock();
 }
 
 static void peer_device_to_info(struct peer_device_info *info,
