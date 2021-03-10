@@ -208,9 +208,10 @@ modprobe_deps() {
 	# dm_cache: LINSTOR cache layer
 	# dm_thin_pool: LINSTOR thinly provisioned storage
 	# dm_snapshot: LINSTOR snapshotting
+	# dm_crypt: LINSTOR encrypted volumes
 
 	local s;
-	for m in libcrc32c nvmet_rdma nvme_rdma loop dm_writecache dm_cache dm_thin_pool dm_snapshot; do
+	for m in libcrc32c nvmet_rdma nvme_rdma loop dm_writecache dm_cache dm_thin_pool dm_snapshot dm_crypt; do
 		modprobe "$m" 2>/dev/null && s=success || s=failed
 		debug "Loading ${m}: ${s}"
 	done
