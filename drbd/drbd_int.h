@@ -39,6 +39,7 @@
 #include "drbd_wrappers.h"
 #include "drbd_strings.h"
 #include "drbd_state.h"
+#include "drbd_state_change.h"
 #include "drbd_protocol.h"
 #include "drbd_kref_debug.h"
 #include "drbd_transport.h"
@@ -2198,6 +2199,11 @@ extern void drbd_broadcast_peer_device_state(struct drbd_peer_device *);
 
 extern sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
 extern int drbd_open_ro_count(struct drbd_resource *resource);
+
+extern void device_state_change_to_info(struct device_info *,
+					struct drbd_device_state_change *);
+extern void peer_device_state_change_to_info(struct peer_device_info *,
+					     struct drbd_peer_device_state_change *);
 /*
  * inline helper functions
  *************************/
@@ -2575,6 +2581,14 @@ static inline bool is_verify_state(struct drbd_peer_device *peer_device,
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[which];
 	return repl_state == L_VERIFY_S || repl_state == L_VERIFY_T;
+}
+
+static inline bool resync_susp_comb_dep(struct drbd_peer_device *peer_device, enum which_state which)
+{
+	struct drbd_device *device = peer_device->device;
+
+	return peer_device->resync_susp_dependency[which] || peer_device->resync_susp_other_c[which] ||
+		(is_sync_source_state(peer_device, which) && device->disk_state[which] <= D_INCONSISTENT);
 }
 
 /**
