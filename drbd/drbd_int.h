@@ -1267,8 +1267,6 @@ struct drbd_device {
 	struct list_head peer_devices;
 	struct list_head pending_bitmap_io;
 
-	struct opener openers;
-
 	unsigned long flush_jif;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_minor;
@@ -1377,6 +1375,7 @@ struct drbd_device {
 	ktime_t al_mid_kt;
 	ktime_t al_after_sync_page_kt;
 #endif
+	struct list_head openers;
 
 	struct rcu_head rcu;
 	struct work_struct finalize_work;

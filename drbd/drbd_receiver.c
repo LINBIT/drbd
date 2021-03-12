@@ -6010,7 +6010,7 @@ static void log_openers(struct drbd_resource *resource)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct opener *opener;
 
-		opener = list_first_entry_or_null(&device->openers.list, struct opener, list);
+		opener = list_first_entry_or_null(&device->openers, struct opener, list);
 		if (opener)
 			drbd_warn(device, "Held open by %s(%d)\n", opener->comm, opener->pid);
 	}
