@@ -28,6 +28,11 @@
 #endif
 
 #ifndef ALIGN_DOWN
+# ifndef __ALIGN_KERNEL
+/* a79ff731a1b2 netfilter: xtables: make XT_ALIGN() usable in exported headers by exporting __ALIGN_KERNEL() */
+# define __ALIGN_KERNEL(x, a)		__ALIGN_KERNEL_MASK(x, (typeof(x))(a) - 1)
+# define __ALIGN_KERNEL_MASK(x, mask)	(((x) + (mask)) & ~(mask))
+# endif
 /* ed067d4a859f linux/kernel.h: Add ALIGN_DOWN macro */
 #define ALIGN_DOWN(x, a)       __ALIGN_KERNEL((x) - ((a) - 1), (a))
 #endif
