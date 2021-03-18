@@ -8005,7 +8005,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	/* restart sender thread,
 	 * potentially get it out of blocking network operations */
-	drbd_thread_restart_nowait(&connection->sender);
+	drbd_thread_stop(&connection->sender);
+	drbd_thread_start(&connection->sender);
 
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
 

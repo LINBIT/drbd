@@ -4189,16 +4189,19 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				    &request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;
 	if (have_peers) {
+		long t;
+
 		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
 		    target_connection->agreed_pro_version >= 118)
 			conn_connect2(target_connection);
 
-		if (wait_event_timeout(resource->state_wait,
-				       cluster_wide_reply_ready(resource),
-				       twopc_timeout(resource)))
+		t = wait_event_interruptible_timeout(resource->state_wait,
+						     cluster_wide_reply_ready(resource),
+						     twopc_timeout(resource));
+		if (t > 0)
 			rv = get_cluster_wide_reply(resource, context);
 		else
-			rv = SS_TIMEOUT;
+			rv = t == 0 ? SS_TIMEOUT : SS_INTERRUPTED;
 
 		if (rv == SS_CW_SUCCESS) {
 			u64 directly_reachable =
