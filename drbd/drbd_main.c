@@ -2387,6 +2387,8 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 {
 	struct opener *pos, *tmp;
 
+	spin_lock(&device->openers_lock);
+
 	list_for_each_entry_safe(pos, tmp, &device->openers, list) {
 		// if pid == 0, i.e., counts were 0, delete all entries, else the matching one
 		if (pid == 0 || pid == pos->pid) {
@@ -2398,37 +2400,40 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 			/* in case we remove a real process, stop here, there might be multiple openers with the same pid */
 			/* this assumes that the oldest opener with the same pid releases first. "as good as it gets" */
 			if (pid != 0)
-				return;
+				break;
 		}
 	}
+	spin_unlock(&device->openers_lock);
 }
 
 static void free_openers(struct drbd_device *device) {
 	__prune_or_free_openers(device, 0);
 }
 
-/* caller needs to hold the the open_release_lock */
 static void add_opener(struct drbd_device *device)
 {
-	struct opener *opener;
+	struct opener *opener, *tmp;
 	int len = 0;
 
-	list_for_each_entry(opener, &device->openers, list)
-		if (++len > 100) { /* 100 ought to be enough for everybody */
-			dynamic_drbd_dbg(device, "openers: list full, do not add new opener\n");
-			return;
-		}
-
 	opener = kmalloc(sizeof(*opener), GFP_NOIO);
-	if (!opener) {
+	if (!opener)
 		return;
-	}
-
 	get_task_comm(opener->comm, current);
 	opener->pid = task_pid_nr(current);
 	opener->opened = ktime_get_real();
+
+	spin_lock(&device->openers_lock);
+	list_for_each_entry(tmp, &device->openers, list)
+		if (++len > 100) { /* 100 ought to be enough for everybody */
+			dynamic_drbd_dbg(device, "openers: list full, do not add new opener\n");
+			kfree(opener);
+			goto out;
+		}
+
 	list_add(&opener->list, &device->openers);
 	dynamic_drbd_dbg(device, "openers add: %s(%d)\n", opener->comm, opener->pid);
+out:
+	spin_unlock(&device->openers_lock);
 }
 
 static int drbd_open(struct block_device *bdev, fmode_t mode)
@@ -3485,6 +3490,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_completion[0]);
 	INIT_LIST_HEAD(&device->pending_completion[1]);
 	INIT_LIST_HEAD(&device->openers);
+	spin_lock_init(&device->openers_lock);
 
 	atomic_set(&device->pending_bitmap_work.n, 0);
 	spin_lock_init(&device->pending_bitmap_work.q_lock);

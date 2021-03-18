@@ -1269,7 +1269,6 @@ static void opener_info(struct drbd_resource *resource,
 			enum drbd_state_rv rv)
 {
 	struct drbd_device *device;
-	struct opener *o;
 	int i;
 
 	if (rv != SS_DEVICE_IN_USE) {
@@ -1277,15 +1276,17 @@ static void opener_info(struct drbd_resource *resource,
 		return;
 	}
 
-	mutex_lock(&resource->open_release);
-
 	idr_for_each_entry(&resource->devices, device, i) {
 		struct timespec64 ts;
+		struct opener *o;
 		struct tm tm;
 
+		spin_lock(&device->openers_lock);
 		o = list_first_entry_or_null(&device->openers, struct opener, list);
-		if (!o)
+		if (!o) {
+			spin_unlock(&device->openers_lock);
 			continue;
+		}
 
 		ts = ktime_to_timespec64(o->opened);
 		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
@@ -1302,9 +1303,10 @@ static void opener_info(struct drbd_resource *resource,
 				      tm.tm_min,
 				      tm.tm_sec,
 				      ts.tv_nsec / NSEC_PER_MSEC);
+
+		spin_unlock(&device->openers_lock);
 		break;
 	}
-	mutex_unlock(&resource->open_release);
 }
 
 static const char *from_attrs_err_to_txt(int err)

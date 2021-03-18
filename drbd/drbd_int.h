@@ -1445,6 +1445,7 @@ struct drbd_device {
 	ktime_t al_after_sync_page_kt;
 #endif
 	struct list_head openers;
+	spinlock_t openers_lock;
 
 	struct rcu_head rcu;
 	struct work_struct finalize_work;

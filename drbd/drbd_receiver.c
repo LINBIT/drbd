@@ -5675,17 +5675,17 @@ static void log_openers(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr;
 
-	mutex_lock(&resource->open_release);
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct opener *opener;
 
+		spin_lock(&device->openers_lock);
 		opener = list_first_entry_or_null(&device->openers, struct opener, list);
 		if (opener)
 			drbd_warn(device, "Held open by %s(%d)\n", opener->comm, opener->pid);
+		spin_unlock(&device->openers_lock);
 	}
 	rcu_read_unlock();
-	mutex_unlock(&resource->open_release);
 }
 
 /**
