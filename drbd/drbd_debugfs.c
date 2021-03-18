@@ -1041,7 +1041,7 @@ static int device_openers_show(struct seq_file *m, void *ignored)
 	struct opener *tmp;
 
 	mutex_lock(&resource->open_release);
-	list_for_each_entry(tmp, &device->openers.list, list)
+	list_for_each_entry(tmp, &device->openers, list)
 		seq_printf(m, "%s\t%d\t%lld\n", tmp->comm, tmp->pid,
 			ktime_to_ms(ktime_sub(now, tmp->opened)));
 	mutex_unlock(&resource->open_release);

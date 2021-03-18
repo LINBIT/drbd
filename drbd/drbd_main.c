@@ -2387,7 +2387,7 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 {
 	struct opener *pos, *tmp;
 
-	list_for_each_entry_safe(pos, tmp, &device->openers.list, list) {
+	list_for_each_entry_safe(pos, tmp, &device->openers, list) {
 		// if pid == 0, i.e., counts were 0, delete all entries, else the matching one
 		if (pid == 0 || pid == pos->pid) {
 			dynamic_drbd_dbg(device, "%sopeners del: %s(%d)\n", pid == 0 ? "" : "all ",
@@ -2413,7 +2413,7 @@ static void add_opener(struct drbd_device *device)
 	struct opener *opener;
 	int len = 0;
 
-	list_for_each_entry(opener, &device->openers.list, list)
+	list_for_each_entry(opener, &device->openers, list)
 		if (++len > 100) { /* 100 ought to be enough for everybody */
 			dynamic_drbd_dbg(device, "openers: list full, do not add new opener\n");
 			return;
@@ -2427,7 +2427,7 @@ static void add_opener(struct drbd_device *device)
 	get_task_comm(opener->comm, current);
 	opener->pid = task_pid_nr(current);
 	opener->opened = ktime_get_real();
-	list_add(&opener->list, &device->openers.list);
+	list_add(&opener->list, &device->openers);
 	dynamic_drbd_dbg(device, "openers add: %s(%d)\n", opener->comm, opener->pid);
 }
 
@@ -3484,7 +3484,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_master_completion[1]);
 	INIT_LIST_HEAD(&device->pending_completion[0]);
 	INIT_LIST_HEAD(&device->pending_completion[1]);
-	INIT_LIST_HEAD(&device->openers.list);
+	INIT_LIST_HEAD(&device->openers);
 
 	atomic_set(&device->pending_bitmap_work.n, 0);
 	spin_lock_init(&device->pending_bitmap_work.q_lock);

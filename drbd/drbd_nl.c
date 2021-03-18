@@ -1283,7 +1283,7 @@ static void opener_info(struct drbd_resource *resource,
 		struct timespec64 ts;
 		struct tm tm;
 
-		o = list_first_entry_or_null(&device->openers.list, struct opener, list);
+		o = list_first_entry_or_null(&device->openers, struct opener, list);
 		if (!o)
 			continue;
 
