@@ -368,6 +368,9 @@ int main(int argc, char **argv)
 	patch(1, "fallthrough", true, false,
 	      COMPAT_HAVE_FALLTHROUGH, "present");
 
+	patch(1, "set_capacity_and_notify", true, false,
+	      HAVE_SET_CAPACITY_AND_NOTIFY, "present");
+
 #if defined(COMPAT_HAVE_REVALIDATE_DISK_SIZE)
 	/* revalidate_disk_size is there, nothing to do */
 #else
@@ -400,7 +403,6 @@ int main(int argc, char **argv)
 
 	patch(1, "crypto_tfm_need_key", true, false,
 	      HAVE_CRYPTO_TFM_NEED_KEY, "present");
-
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
