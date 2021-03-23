@@ -32,6 +32,7 @@
 #include <linux/random.h>
 #include <net/ipv6.h>
 #include <linux/scatterlist.h>
+#include <linux/part_stat.h>
 
 #include "drbd_int.h"
 #include "drbd_protocol.h"
@@ -1915,7 +1916,7 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 		drbd_queue_work(&connection->sender_work,
 				&peer_req->w);
 		/* retry later */
-		;/* fallthrough */
+		fallthrough;
 	case 0:
 		/* keep worker happy and connection up */
 		return 0;
@@ -3406,7 +3407,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			/* case P_DATA_REQUEST: see above, not based on protocol version */
 			case P_OV_REQUEST:
 				verify_skipped_block(peer_device, sector, size);
-				;/* fallthrough */
+				fallthrough;
 			case P_RS_DATA_REQUEST:
 			case P_RS_THIN_REQ:
 			case P_CSUM_RS_REQUEST:
@@ -3435,7 +3436,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		   then we would do something smarter here than reading
 		   the block... */
 		peer_req->flags |= EE_RS_THIN_REQ;
-		;/* fallthrough */
+		fallthrough;
 	case P_RS_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_rsdata_req;
 		break;
@@ -3607,7 +3608,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 			rv = SYNC_SOURCE_USE_BITMAP;
 			break;
 		}
-		;/* fallthrough */	/* to one of the other strategies */
+		fallthrough;	/* to one of the other strategies */
 	case ASB_DISCARD_OLDER_PRI:
 		if (self == 0 && peer == 1) {
 			rv = SYNC_SOURCE_USE_BITMAP;
@@ -3619,7 +3620,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 		}
 		drbd_warn(peer_device, "Discard younger/older primary did not find a decision\n"
 			  "Using discard-least-changes instead\n");
-		;/* fallthrough */
+		fallthrough;
 	case ASB_DISCARD_ZERO_CHG:
 		if (ch_peer == 0 && ch_self == 0) {
 			rv = test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)
@@ -3631,7 +3632,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 		}
 		if (after_sb_0p == ASB_DISCARD_ZERO_CHG)
 			break;
-		;/* fallthrough */
+		fallthrough;
 	case ASB_DISCARD_LEAST_CHG:
 		if	(ch_self < ch_peer)
 			rv = SYNC_TARGET_USE_BITMAP;
@@ -4453,7 +4454,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
 			drbd_maybe_khelper(device, connection, "pri-lost");
-			;/* fallthrough */
+			fallthrough;
 		case ASB_DISCONNECT:
 		case ASB_RETRY_CONNECT:
 			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
@@ -8772,7 +8773,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 			break;
 		case P_RS_CANCEL_AHEAD:
 			set_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags);
-			;/* fallthrough */
+			fallthrough;
 		case P_RS_CANCEL:
 			if (peer_device->repl_state[NOW] == L_VERIFY_S) {
 				verify_skipped_block(peer_device, sector, size);
@@ -9117,15 +9118,7 @@ int drbd_ack_receiver(struct drbd_thread *thi)
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 
-	struct sched_param param = {
-		.sched_priority = 2
-		};
-	int ____rv0;
-	____rv0 = sched_setscheduler(current, SCHED_RR, &param);
-	if (____rv0 < 0)
-		drbd_err(connection,
-			 "drbd_ack_receiver: ERROR set priority, ret=%d\n",
-			 ____rv0);
+	sched_set_fifo_low(current);
 
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
