@@ -31,8 +31,10 @@ stages:
 
         curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-        echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq '.vms[].metadata')
+        LBBUILD_ARGS=$(echo "$META_JSON" | jq -r '"-d " + .BuildDistribution + " -k " + .KernelRelease')
+
+        echo "$LBBUILD_ARGS" | parallel --colsep ' ' -k -j24 \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only -l \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
@@ -54,8 +56,7 @@ stages:
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
         curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq -r '.vms[].metadata')
-        echo "$META_JSON" | jq -r '. | "-d " + .BuildDistribution + " -k " + .KernelRelease' | parallel --colsep ' ' -k -j24 \
+        echo "$LBBUILD_ARGS" | parallel --colsep ' ' -k -j24 \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" -l \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
