@@ -2387,8 +2387,6 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 {
 	struct opener *pos, *tmp;
 
-	spin_lock(&device->openers_lock);
-
 	list_for_each_entry_safe(pos, tmp, &device->openers, list) {
 		// if pid == 0, i.e., counts were 0, delete all entries, else the matching one
 		if (pid == 0 || pid == pos->pid) {
@@ -2403,11 +2401,18 @@ static void __prune_or_free_openers(struct drbd_device *device, pid_t pid)
 				break;
 		}
 	}
-	spin_unlock(&device->openers_lock);
 }
 
-static void free_openers(struct drbd_device *device) {
+static void free_openers(struct drbd_device *device)
+{
 	__prune_or_free_openers(device, 0);
+}
+
+static void prune_or_free_openers(struct drbd_device *device, pid_t pid)
+{
+	spin_lock(&device->openers_lock);
+	__prune_or_free_openers(device, pid);
+	spin_unlock(&device->openers_lock);
 }
 
 static void add_opener(struct drbd_device *device)
@@ -2571,7 +2576,7 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 	}
 
 	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */
-	__prune_or_free_openers(device,
+	prune_or_free_openers(device,
 			(open_ro_cnt == 0 && open_rw_cnt == 0) ? 0 : task_pid_nr(current));
 
 	mutex_unlock(&resource->open_release);
