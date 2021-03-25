@@ -6750,51 +6750,65 @@ void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device)
 	mutex_unlock(&notification_mutex);
 }
 
-void notify_path(struct drbd_connection *connection, struct drbd_path *path,
-		 enum drbd_notification_type type)
+void notify_path_state(struct sk_buff *skb,
+		       unsigned int seq,
+		       /* until we have a backpointer in drbd_path, we need an explicit connection: */
+		       struct drbd_connection *connection,
+		       struct drbd_path *path,
+		       struct drbd_path_info *path_info,
+		       enum drbd_notification_type type)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_path_info path_info;
-	unsigned int seq = atomic_inc_return(&drbd_genl_seq);
-	struct sk_buff *skb = NULL;
 	struct drbd_genlmsghdr *dh;
+	bool multicast = false;
 	int err;
 
-	path_info.path_established = path->established;
-
-	skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
-	err = -ENOMEM;
-	if (!skb)
-		goto fail;
+	if (!skb) {
+		seq = atomic_inc_return(&drbd_genl_seq);
+		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
+		err = -ENOMEM;
+		if (!skb)
+			goto failed;
+		multicast = true;
+	}
 
 	err = -EMSGSIZE;
 	dh = genlmsg_put(skb, 0, seq, &drbd_genl_family, 0, DRBD_PATH_STATE);
 	if (!dh)
-		goto fail;
+		goto nla_put_failure;
 
 	dh->minor = -1U;
 	dh->ret_code = NO_ERROR;
-	mutex_lock(&notification_mutex);
 	if (nla_put_drbd_cfg_context(skb, resource, connection, NULL, path) ||
 	    nla_put_notification_header(skb, type) ||
-	    drbd_path_info_to_skb(skb, &path_info, true))
-		goto unlock_fail;
-
+	    drbd_path_info_to_skb(skb, path_info, true))
+		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	err = drbd_genl_multicast_events(skb, GFP_NOWAIT);
-	skb = NULL;
-	/* skb has been consumed or freed in netlink_broadcast() */
-	if (err && err != -ESRCH)
-		goto unlock_fail;
-	mutex_unlock(&notification_mutex);
+	if (multicast) {
+		err = drbd_genl_multicast_events(skb, GFP_NOWAIT);
+		/* skb has been consumed or freed in netlink_broadcast() */
+		if (err && err != -ESRCH)
+			goto failed;
+	}
 	return;
 
-unlock_fail:
-	mutex_unlock(&notification_mutex);
-fail:
+nla_put_failure:
 	nlmsg_free(skb);
-	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
+failed:
+	/* FIXME add path specifics to our drbd_polymorph_printk.h */
+	drbd_err(connection, "path: Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+}
+
+void notify_path(struct drbd_connection *connection, struct drbd_path *path, enum drbd_notification_type type)
+{
+	struct drbd_path_info path_info;
+
+	path_info.path_established = path->established;
+	mutex_lock(&notification_mutex);
+	notify_path_state(NULL, 0, connection, path, &path_info, type);
+	mutex_unlock(&notification_mutex);
+
 }
 
 void notify_helper(enum drbd_notification_type type,
@@ -6881,7 +6895,8 @@ static unsigned int notifications_for_state_change(struct drbd_state_change *sta
 	return 1 +
 	       state_change->n_connections +
 	       state_change->n_devices +
-	       state_change->n_devices * state_change->n_connections;
+	       state_change->n_devices * state_change->n_connections +
+	       state_change->n_paths;
 }
 
 static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
@@ -6916,6 +6931,18 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		goto next;
 	}
 	n -= state_change->n_connections;
+	if (n < state_change->n_paths) {
+		struct drbd_path_state *path_state = &state_change->paths[n];
+		struct drbd_path_info path_info;
+
+		path_info.path_established = path_state->path_established;
+		notify_path_state(skb, seq,
+				path_state->connection,
+				path_state->path,
+				&path_info, NOTIFY_EXISTS | flags);
+		goto next;
+	}
+	n -= state_change->n_paths;
 	if (n < state_change->n_devices) {
 		notify_device_state_change(skb, seq, &state_change->devices[n],
 					   NOTIFY_EXISTS | flags);
@@ -6927,6 +6954,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 						NOTIFY_EXISTS | flags);
 		goto next;
 	}
+	n -= state_change->n_devices * state_change->n_connections;
 
 next:
 	if (cb->args[4] == cb->args[3]) {

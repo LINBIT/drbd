@@ -272,45 +272,48 @@ bool resource_is_suspended(struct drbd_resource *resource, enum which_state whic
 }
 
 static void count_objects(struct drbd_resource *resource,
-			  unsigned int *n_devices,
-			  unsigned int *n_connections)
+			  struct drbd_state_change_object_count *ocnt)
 {
 	/* Caller holds req_lock */
+	struct drbd_path *path;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	int vnr;
 
-	*n_devices = 0;
-	*n_connections = 0;
+	ocnt->n_devices = 0;
+	ocnt->n_connections = 0;
+	ocnt->n_paths = 0;
 
 	idr_for_each_entry(&resource->devices, device, vnr)
-		(*n_devices)++;
-	for_each_connection(connection, resource)
-		(*n_connections)++;
+		ocnt->n_devices++;
+	for_each_connection(connection, resource) {
+		ocnt->n_connections++;
+		list_for_each_entry(path, &connection->transport.paths, list) {
+			ocnt->n_paths++;
+		}
+	}
 }
 
-static struct drbd_state_change *alloc_state_change(unsigned int n_devices, unsigned int n_connections, gfp_t flags)
+static struct drbd_state_change *alloc_state_change(struct drbd_state_change_object_count *ocnt, gfp_t flags)
 {
 	struct drbd_state_change *state_change;
-	unsigned int size, n;
+	unsigned int size;
 
 	size = sizeof(struct drbd_state_change) +
-	       n_devices * sizeof(struct drbd_device_state_change) +
-	       n_connections * sizeof(struct drbd_connection_state_change) +
-	       n_devices * n_connections * sizeof(struct drbd_peer_device_state_change);
-	state_change = kmalloc(size, flags);
+	       ocnt->n_devices * sizeof(struct drbd_device_state_change) +
+	       ocnt->n_connections * sizeof(struct drbd_connection_state_change) +
+	       ocnt->n_devices * ocnt->n_connections * sizeof(struct drbd_peer_device_state_change) +
+	       ocnt->n_paths * sizeof(struct drbd_path_state);
+	state_change = kzalloc(size, flags);
 	if (!state_change)
 		return NULL;
-	state_change->n_devices = n_devices;
-	state_change->n_connections = n_connections;
+	state_change->n_connections = ocnt->n_connections;
+	state_change->n_devices = ocnt->n_devices;
+	state_change->n_paths = ocnt->n_paths;
 	state_change->devices = (void *)(state_change + 1);
-	state_change->connections = (void *)&state_change->devices[n_devices];
-	state_change->peer_devices = (void *)&state_change->connections[n_connections];
-	state_change->resource->resource = NULL;
-	for (n = 0; n < n_devices; n++)
-		state_change->devices[n].device = NULL;
-	for (n = 0; n < n_connections; n++)
-		state_change->connections[n].connection = NULL;
+	state_change->connections = (void *)&state_change->devices[ocnt->n_devices];
+	state_change->peer_devices = (void *)&state_change->connections[ocnt->n_connections];
+	state_change->paths = (void*)&state_change->peer_devices[ocnt->n_devices*ocnt->n_connections];
 	return state_change;
 }
 
@@ -319,17 +322,17 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	/* Caller holds req_lock */
 	struct drbd_state_change *state_change;
 	struct drbd_device *device;
-	unsigned int n_devices;
 	struct drbd_connection *connection;
-	unsigned int n_connections;
+	struct drbd_state_change_object_count ocnt;
 	int vnr;
 
 	struct drbd_device_state_change *device_state_change;
 	struct drbd_peer_device_state_change *peer_device_state_change;
 	struct drbd_connection_state_change *connection_state_change;
+	struct drbd_path_state *path_state; /* yes, not a _change :-( */
 
-	count_objects(resource, &n_devices, &n_connections);
-	state_change = alloc_state_change(n_devices, n_connections, gfp);
+	count_objects(resource, &ocnt);
+	state_change = alloc_state_change(&ocnt, gfp);
 	if (!state_change)
 		return NULL;
 
@@ -384,7 +387,10 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	}
 
 	connection_state_change = state_change->connections;
+	path_state = state_change->paths;
 	for_each_connection(connection, resource) {
+		struct drbd_path *path;
+
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 7);
 		connection_state_change->connection = connection;
@@ -394,6 +400,21 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 		       connection->peer_role, sizeof(connection->peer_role));
 		memcpy(connection_state_change->susp_fen,
 		       connection->susp_fen, sizeof(connection->susp_fen));
+
+		list_for_each_entry(path, &connection->transport.paths, list) {
+			/* Share the connection kref with above.
+			 * Could also share the pointer, but would then need to
+			 * remember an additional n_paths per connection
+			 * count/offset (connection_state_change->n_paths++)
+			 * to be able to associate the paths with its connection.
+			 * So why not directly store the pointer here again. */
+			path_state->connection = connection;
+			kref_get(&path->kref);
+			path_state->path = path;
+			path_state->path_established = path->established;
+
+			path_state++;
+		}
 
 		connection_state_change++;
 	}
@@ -472,6 +493,12 @@ void forget_state_change(struct drbd_state_change *state_change)
 		if (connection) {
 			kref_debug_put(&connection->kref_debug, 7);
 			kref_put(&connection->kref, drbd_destroy_connection);
+		}
+	}
+	for (n = 0; n < state_change->n_paths; n++) {
+		struct drbd_path *path = state_change->paths[n].path;
+		if (path) {
+			kref_put(&path->kref, drbd_destroy_path);
 		}
 	}
 	kfree(state_change);

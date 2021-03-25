@@ -205,8 +205,10 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	for_each_path_ref(drbd_path, transport) {
 		bool was_established = drbd_path->established;
 		drbd_path->established = false;
-		if (was_established)
-			drbd_path_event(transport, drbd_path);
+		if (free_op == DESTROY_TRANSPORT)
+			drbd_path_event(transport, drbd_path, true);
+		else if (was_established)
+			drbd_path_event(transport, drbd_path, false);
 	}
 
 	if (free_op == DESTROY_TRANSPORT) {
@@ -1040,7 +1042,7 @@ randomize:
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	connect_to_path->path.established = true;
-	drbd_path_event(transport, &connect_to_path->path);
+	drbd_path_event(transport, &connect_to_path->path, false);
 	dtt_put_listeners(transport);
 
 	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
