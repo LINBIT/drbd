@@ -2,9 +2,27 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.1 (api:genl2/proto:110-119/transport:17)
+--------
+ * fix a temporal deadlock you could trigger when you exercise promotion races
+   and mix some read-only openers into the test case
+ * fix for bitmap-copy operation in a very specific and unlikely case where
+   two nodes do a bitmap-based resync due to disk-states
+ * fix size negotiation when combining nodes of different CPU architectures
+   that have different page sizes
+ * fix a very rare race where DRBD reported wrong magic in a header
+   packet right after reconnecting
+ * fix a case where DRBD ends up reporting unrelated data; it affected
+   thinly allocated resources with a diskless node in a recreate from day0
+   event
+ * changes to socket buffer sizes get applied to established connections immediately;
+   before it was applied after a re-connect
+ * add exists events for path objects
+ * fix a merge-mistake that broke compatibility with 5.10 kernels
+
 9.1.0 (api:genl2/proto:110-119/transport:16)
 --------
  * was forked off from drbd 9.0.19
  * has all changes up to 9.0.28-1
  * locking in the IO-submit code path was considerably improved,
-   allowing multiple CPU to submitt in parallel
+   allowing multiple CPU to submit in parallel
