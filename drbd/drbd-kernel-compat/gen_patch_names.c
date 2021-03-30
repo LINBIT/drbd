@@ -400,7 +400,7 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_FALLTHROUGH, "present");
 
 	patch(1, "set_capacity_and_notify", true, false,
-	      HAVE_SET_CAPACITY_AND_NOTIFY, "present");
+	      COMPAT_HAVE_SET_CAPACITY_AND_NOTIFY, "present");
 
 #if defined(COMPAT_HAVE_REVALIDATE_DISK_SIZE)
 	/* revalidate_disk_size is there, nothing to do */
