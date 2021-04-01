@@ -1167,6 +1167,8 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
 		bio_endio(bio);
 	} else {
 		submit_bio(bio);
+		if (op == REQ_OP_WRITE)
+			device->bm_writ_cnt++;
 		/* this should not count as user activity and cause the
 		 * resync to throttle -- see drbd_rs_should_slow_down(). */
 		atomic_add(len >> 9, &device->rs_sect_ev);
