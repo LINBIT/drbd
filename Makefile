@@ -308,23 +308,23 @@ endif
 
 .PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1 dockerimage
 dockerimage.rhel7:
-	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) .
+	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
 	docker tag $(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest
 
 dockerimage.rhel8:
-	cd docker && docker build -f Dockerfile.centos8 -t $(DOCKERREGPATH_RHEL8):$(TAG) .
+	cd docker && docker build -f Dockerfile.centos8 -t $(DOCKERREGPATH_RHEL8):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
 	docker tag $(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
 
 dockerimage.bionic:
-	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC):$(TAG) .
+	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
 	docker tag $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest
 
 dockerimage.focal:
-	cd docker && docker build -f Dockerfile.focal -t $(DOCKERREGPATH_FOCAL):$(TAG) .
+	cd docker && docker build -f Dockerfile.focal -t $(DOCKERREGPATH_FOCAL):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
 	docker tag $(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest
 
 dockerimage.sles15sp1:
-	cd docker && docker build -f Dockerfile.sles15sp1 -t $(DOCKERREGPATH_SLES15SP1):$(TAG) .
+	cd docker && docker build -f Dockerfile.sles15sp1 -t $(DOCKERREGPATH_SLES15SP1):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
 	docker tag $(DOCKERREGPATH_SLES15SP1):$(TAG) $(DOCKERREGPATH_SLES15SP1):latest
 
 dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1
