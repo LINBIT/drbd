@@ -5875,6 +5875,8 @@ static union drbd_state convert_state(union drbd_state peer_state)
 
 		[L_STARTING_SYNC_S] = L_STARTING_SYNC_T,
 		[L_STARTING_SYNC_T] = L_STARTING_SYNC_S,
+		[L_WF_BITMAP_S] = L_WF_BITMAP_T,
+		[L_WF_BITMAP_T] = L_WF_BITMAP_S,
 		[C_DISCONNECTING] = C_TEAR_DOWN, /* C_NETWORK_FAILURE, */
 		[C_CONNECTING] = C_CONNECTING,
 		[L_VERIFY_S]       = L_VERIFY_T,
