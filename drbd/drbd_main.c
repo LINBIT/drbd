@@ -2487,6 +2487,33 @@ static bool any_disk_is_uptodate(struct drbd_device *device)
 	return ret;
 }
 
+/* If we are trying to (re-)establish some connection,
+ * it may be useful to re-try the conditions in drbd_open().
+ * But if we have no connection at all (yet/anymore),
+ * or are disconnected and not trying to (re-)establish,
+ * or are established already, retrying won't help at all.
+ * Asking the same peer(s) the same question
+ * is unlikely to change their answer.
+ * Almost always triggered by udev (and the configured probes) while bringing
+ * the resource "up", just after "new-minor", even before "attach" or any
+ * "peers"/"paths" are configured.
+ */
+static bool connection_state_may_improve_soon(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	bool ret = false;
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		enum drbd_conn_state cstate = connection->cstate[NOW];
+		if (C_DISCONNECTING < cstate && cstate < C_CONNECTED) {
+			ret = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return ret;
+}
+
 static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
@@ -2511,7 +2538,7 @@ static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 				timeout);
 			if (timeout <= 0)
 				break;
-		} else if (rv == SS_NO_UP_TO_DATE_DISK) {
+		} else if (rv == SS_NO_UP_TO_DATE_DISK && connection_state_may_improve_soon(resource)) {
 			/* Wait until we get a connection established */
 			timeout = wait_event_interruptible_timeout(resource->state_wait,
 				any_disk_is_uptodate(device), timeout);
@@ -2535,8 +2562,10 @@ static int ro_open_cond(struct drbd_device *device)
 		return -EMEDIUMTYPE;
 	else if (any_disk_is_uptodate(device))
 		return 0;
-	else
+	else if (connection_state_may_improve_soon(resource))
 		return -EAGAIN;
+	else
+		return -ENODATA;
 }
 
 enum ioc_rv {
