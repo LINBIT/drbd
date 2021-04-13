@@ -1,13 +1,10 @@
 @@
-expression tfm;
+identifier h;
 @@
-- if (crypto->verify_tfm && (crypto_shash_get_flags(tfm) & CRYPTO_TFM_NEED_KEY))
-+ if (crypto->verify_tfm)
-{
+- return h && (crypto_shash_get_flags(h) & CRYPTO_TFM_NEED_KEY);
++ if (h) {
 +	/* HACK: try to set a dummy key. if it succeeds, that's bad: we only want algorithms that don't support keys */
 +	u8 dummy_key[] = {'a'};
-+	int setkey_res = crypto_shash_setkey(crypto->verify_tfm, dummy_key, 1);
-+	if (setkey_res != -ENOSYS) {
-...
-+	}
-}
++	return crypto_shash_setkey(h, dummy_key, 1) != -ENOSYS;
++ }
++ return false;
