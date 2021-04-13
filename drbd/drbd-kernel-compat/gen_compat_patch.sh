@@ -52,8 +52,14 @@ if hash spatch && spatch_is_recent; then
     rm -f $incdir/.compat.patch
     rm -f $incdir/.spatch.tty.out
     for F in $(cat $incdir/applied_cocci_files.txt); do
-	if [ -e drbd-kernel-compat/cocci/$F.cocci ] ; then
-	    cat drbd-kernel-compat/cocci/$F.cocci >> $incdir/.compat.cocci
+        F_cocci=drbd-kernel-compat/cocci/$F.cocci
+	if [ -e $F_cocci ] ; then
+	    (
+	    # so you can match spatch warnings to cocci source files
+	    dashes=${F_cocci//?/-}
+	    printf "\n// -%s-\n//  %s\n// -%s-\n" "$dashes" "$F_cocci" "$dashes"
+	    cat $F_cocci
+	    ) >> $incdir/.compat.cocci
 	else
 	    cat drbd-kernel-compat/patches/$F.patch >> $incdir/.compat.patch
 	fi
@@ -70,15 +76,14 @@ if hash spatch && spatch_is_recent; then
 	# argument away this is shell $@ respectively $* now.
 	# we know we don't have white-space in the argument list
 
-	command="spatch --sp-file $incdir/.compat.cocci $* --macro-file drbd-kernel-compat/cocci_macros.h --very-quiet > $compat_patch.tmp 2> $incdir/.spatch.stderr;"
-
-	if test -t 0; then
-	    $SHELL -c "$command"
-	else
-	    # spatch is broken in a way: it "requires" a tty.
-	    # provide a tty using "script", so I can have several spatch in parallel.
-	    # They may ignore INT and TERM; if you have to, use HUP.
-	    </dev/null &> /dev/null script --append $incdir/.spatch.tty.out --return --quiet --command "$command"
+	spatch --sp-file "$incdir/.compat.cocci" "$@" \
+		--macro-file drbd-kernel-compat/cocci_macros.h \
+		--very-quiet \
+		> "$compat_patch.tmp" \
+		2> "$incdir/.spatch.stderr"
+	if [[ ${V-0} != 0 ]] ; then
+		echo "    $incdir/.compat.cocci" >&2
+		sed -e "s/^/    : /" < "$incdir/.spatch.stderr" >&2
 	fi
     else
 	echo "  SPATCH   $chksum  "$K" - nothing to do"
@@ -88,7 +93,9 @@ if hash spatch && spatch_is_recent; then
 	cat $incdir/.compat.patch >> $compat_patch.tmp
     fi
     mv $compat_patch.tmp $compat_patch
-    rm -f $incdir/.compat.cocci
+    # keep it around
+    # to better be able to match the "stderr" warnings to their source files
+    # rm -f $incdir/.compat.cocci
     rm -f $incdir/.compat.patch
 else
 	if test -e ../.git; then
