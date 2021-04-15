@@ -280,12 +280,12 @@ static struct page *page_chain_del(struct page **head, int count)
 	BUG_ON(!head);
 
 	page = READ_ONCE(*head);
-	if (!page)
-		return NULL;
 
 	do {
 		n = count;
 		rv_head = page;
+		if (!page)
+			return NULL;
 		while (true) {
 			tmp = page_chain_next(page);
 			if (--n == 0)
