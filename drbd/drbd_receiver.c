@@ -3870,10 +3870,11 @@ static enum sync_strategy uuid_fixup_resync_end(struct drbd_peer_device *peer_de
 		    (drbd_history_uuid(device, 0) & ~UUID_PRIMARY) ==
 		    (peer_device->history_uuids[0] & ~UUID_PRIMARY)) {
 			struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
+			u64 previous_bitmap_uuid = peer_md->bitmap_uuid;
 
 			drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
-			_drbd_uuid_push_history(device, peer_md->bitmap_uuid);
 			peer_md->bitmap_uuid = 0;
+			_drbd_uuid_push_history(device, previous_bitmap_uuid);
 
 			drbd_uuid_dump_self(peer_device,
 					    device->disk_state[NOW] >= D_NEGOTIATING ? drbd_bm_total_weight(peer_device) : 0, 0);
