@@ -1,4 +1,13 @@
-FROM centos:centos8 as cent8
+ARG EXTRAPKGS=centos:centos8
+FROM $EXTRAPKGS as extrapkgs
+# by checking for /pkgs we can cache that step
+# and prepare images that already contain the packages.
+RUN if [ ! -d /pkgs ]; then \
+      dnf install -y 'dnf-command(download)' && \
+      mkdir /pkgs && cd /pkgs && \
+      dnf download elfutils-libelf-devel && \
+      ls *.rpm | grep -v "$(uname -m)" | xargs rm \
+    ; fi
 
 FROM registry.access.redhat.com/ubi8/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
@@ -19,10 +28,9 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 	alternatives --set python /usr/bin/python3 && \
 	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
 
-COPY --from=cent8 /etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial /etc/pki/rpm-gpg/
-COPY --from=cent8 /etc/yum.repos.d/CentOS-Linux-BaseOS.repo /etc/yum.repos.d/
-RUN yum install -y --disablerepo="*" --enablerepo=baseos elfutils-libelf-devel && \
-	rm -f /etc/yum.repos.d/CentOS-Linux-BaseOS.repo
+COPY --from=extrapkgs /pkgs /pkgs
+RUN yum install -y /pkgs/*.rpm && \
+    rm -rf /pkgs
 
 # one can not comment copy
 RUN wget https://www.linbit.com/downloads/drbd/9.0/drbd-${DRBD_VERSION}.tar.gz -O /drbd.tar.gz # !lbbuild
