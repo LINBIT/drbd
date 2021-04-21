@@ -4114,9 +4114,9 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	previous_uuid = drbd_bitmap_uuid(peer_device);
+	__drbd_uuid_set_bitmap(peer_device, uuid);
 	if (previous_uuid)
 		_drbd_uuid_push_history(device, previous_uuid);
-	__drbd_uuid_set_bitmap(peer_device, uuid);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
@@ -4823,8 +4823,9 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			int from_node_id;
 
 			if (current_equal) {
-				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
+				u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
 				peer_md[node_id].bitmap_uuid = 0;
+				_drbd_uuid_push_history(device, previous_bitmap_uuid);
 				if (node_id == peer_device->node_id)
 					drbd_print_uuids(peer_device, "updated UUIDs");
 				else if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
@@ -4840,9 +4841,10 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			if (from_node_id != -1 && node_id != from_node_id &&
 			    dagtag_newer(peer_md[from_node_id].bitmap_dagtag,
 					 peer_md[node_id].bitmap_dagtag)) {
-				_drbd_uuid_push_history(device, peer_md[node_id].bitmap_uuid);
+				u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
 				peer_md[node_id].bitmap_uuid = peer_md[from_node_id].bitmap_uuid;
 				peer_md[node_id].bitmap_dagtag = peer_md[from_node_id].bitmap_dagtag;
+				_drbd_uuid_push_history(device, previous_bitmap_uuid);
 				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&
 				    peer_md[from_node_id].flags & MDF_HAVE_BITMAP)
 					copy_bitmap(device, from_node_id, node_id);
