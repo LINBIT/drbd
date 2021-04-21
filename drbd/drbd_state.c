@@ -3288,6 +3288,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool one_peer_disk_up_to_date[2] = { };
 		bool device_stable[2], resync_target[2];
 		bool resync_finished = false;
+		bool some_peer_demoted = false;
 		enum which_state which;
 
 		for (which = OLD; which <= NEW; which++) {
@@ -3425,30 +3426,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 						peer_device);
 
-			if (peer_disk_state[NEW] < D_INCONSISTENT && get_ldev(device)) {
-				/* D_DISKLESS Peer becomes secondary */
-				if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_SECONDARY)
-					/* We may still be Primary ourselves.
-					 * No harm done if the bitmap still changes,
-					 * redirtied pages will follow later. */
-					drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote diskless peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
-						NULL);
-				put_ldev(device);
-			}
-
-			/* Write out all changed bits on demote.
-			 * Though, no need to da that just yet
-			 * if there is a resync going on still */
-			if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY &&
-				peer_device->repl_state[NOW] <= L_ESTABLISHED && get_ldev(device)) {
-				/* No changes to the bitmap expected this time, so assert that,
-				 * even though no harm was done if it did change. */
-				drbd_bitmap_io_from_worker(device, &drbd_bm_write,
-						"demote", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
-						NULL);
-				put_ldev(device);
-			}
+			if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_SECONDARY)
+				some_peer_demoted = true;
 
 			/* Last part of the attaching process ... */
 			if (repl_state[NEW] >= L_ESTABLISHED &&
@@ -3616,6 +3595,18 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				mod_timer(&peer_device->resync_timer, jiffies);
 				put_ldev(device);
 			}
+		}
+
+		if (((role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) || some_peer_demoted) &&
+		    get_ldev(device)) {
+			/* No changes to the bitmap expected after this point, so write out any
+			 * changes up to now to ensure that the metadata disk has the full
+			 * bitmap content. Even if the bitmap changes (e.g. it was dual primary)
+			 * no harm was done if it did change. */
+			drbd_bitmap_io_from_worker(device, &drbd_bm_write,
+						   "demote", BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK,
+						   NULL);
+			put_ldev(device);
 		}
 
 		/* Make sure the effective disk size is stored in the metadata
