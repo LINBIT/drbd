@@ -1480,9 +1480,7 @@ char *ppsize(char *buf, unsigned long long size)
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
 {
 	atomic_inc(&device->suspend_cnt);
-	if (drbd_suspended(device))
-		return;
-	wait_event(device->misc_wait,
+	wait_event(device->misc_wait, drbd_suspended(device) ||
 		   (atomic_read(&device->ap_bio_cnt[WRITE]) +
 		    ss == READ_AND_WRITE ? atomic_read(&device->ap_bio_cnt[READ]) : 0) == 0);
 }
