@@ -2309,6 +2309,18 @@ static bool extra_ldev_ref_for_after_state_chg(enum drbd_disk_state *disk_state)
 	       (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS);
 }
 
+static void resend_after_lack_of_quorum(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		enum drbd_conn_state *cstate = connection->cstate;
+
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+			_tl_walk(connection, RESEND);
+	}
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -2696,6 +2708,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			}
 		}
 	}
+
+	if (is_suspended_quorum(resource, OLD) && !is_suspended_quorum(resource, NEW))
+		resend_after_lack_of_quorum(resource);
 
 	queue_after_state_change_work(resource, done);
 }
