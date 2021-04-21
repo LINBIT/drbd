@@ -3648,62 +3648,89 @@ struct crypto {
 	struct crypto_shash *integrity_tfm;
 };
 
+static bool needs_key(struct crypto_shash *h)
+{
+	return h && (crypto_shash_get_flags(h) & CRYPTO_TFM_NEED_KEY);
+}
+
+/**
+ * alloc_shash() - Allocate a keyed or unkeyed shash algorithm
+ * @tfm: Destination crypto_shash
+ * @tfm_name: Which algorithm to use
+ * @err_alg: The error code to return on allocation failure
+ * @type: The functionality that the hash is used for
+ * @must_unkeyed: If set, a check is included which ensures that the algorithm
+ * 	     does not require a key
+ * @reply_skb: for sending detailed error description to user-space
+ */
 static int
-alloc_shash(struct crypto_shash **tfm, char *tfm_name, int err_alg)
+alloc_shash(struct crypto_shash **tfm, char *tfm_name, const char *type, bool must_unkeyed,
+	    struct sk_buff *reply_skb)
 {
 	if (!tfm_name[0])
-		return NO_ERROR;
+		return 0;
 
 	*tfm = crypto_alloc_shash(tfm_name, 0, 0);
 	if (IS_ERR(*tfm)) {
+		drbd_msg_sprintf_info(reply_skb, "failed to allocate %s for %s\n", tfm_name, type);
 		*tfm = NULL;
-		return err_alg;
+		return -EINVAL;
 	}
 
-	return NO_ERROR;
+	if (must_unkeyed && needs_key(*tfm)) {
+		drbd_msg_sprintf_info(reply_skb,
+				      "may not use %s for %s. It requires an unkeyed algorithm\n",
+				      tfm_name, type);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static enum drbd_ret_code
-alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf)
+alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf, struct sk_buff *reply_skb)
 {
 	char hmac_name[CRYPTO_MAX_ALG_NAME];
 	int digest_size = 0;
-	enum drbd_ret_code rv;
+	int err;
 
-	rv = alloc_shash(&crypto->csums_tfm, new_net_conf->csums_alg,
-			 ERR_CSUMS_ALG);
-	if (rv != NO_ERROR)
-		return rv;
-	rv = alloc_shash(&crypto->verify_tfm, new_net_conf->verify_alg,
-			 ERR_VERIFY_ALG);
-	if (rv != NO_ERROR)
-		return rv;
-	rv = alloc_shash(&crypto->integrity_tfm, new_net_conf->integrity_alg,
-			 ERR_INTEGRITY_ALG);
-	if (rv != NO_ERROR)
-		return rv;
+	err = alloc_shash(&crypto->csums_tfm, new_net_conf->csums_alg,
+			  "csums", true, reply_skb);
+	if (err)
+		return ERR_CSUMS_ALG;
+
+	err = alloc_shash(&crypto->verify_tfm, new_net_conf->verify_alg,
+			  "verify", true, reply_skb);
+	if (err)
+		return ERR_VERIFY_ALG;
+
+	err = alloc_shash(&crypto->integrity_tfm, new_net_conf->integrity_alg,
+			  "integrity", true, reply_skb);
+	if (err)
+		return ERR_INTEGRITY_ALG;
+
 	if (crypto->integrity_tfm) {
 		const int max_digest_size = sizeof(((struct drbd_connection*)0)->scratch_buffer.d.before);
 		digest_size = crypto_shash_digestsize(crypto->integrity_tfm);
 		if (digest_size > max_digest_size) {
-			pr_notice("we currently support only digest sizes <= %d bits, but digest size of %s is %d bits\n",
+			drbd_msg_sprintf_info(reply_skb,
+				"we currently support only digest sizes <= %d bits, but digest size of %s is %d bits\n",
 				max_digest_size * 8, new_net_conf->integrity_alg, digest_size * 8);
 			return ERR_INTEGRITY_ALG;
 		}
 	}
-	if (crypto->verify_tfm && (crypto_shash_get_flags(crypto->verify_tfm) & CRYPTO_TFM_NEED_KEY)) {
-		pr_err("may not use a keyed alorithm for verify (tried to use %s, but it requires a key)\n", new_net_conf->verify_alg);
-		return ERR_INTEGRITY_ALG;
-	}
+
 	if (new_net_conf->cram_hmac_alg[0] != 0) {
 		snprintf(hmac_name, CRYPTO_MAX_ALG_NAME, "hmac(%s)",
 			 new_net_conf->cram_hmac_alg);
 
-		rv = alloc_shash(&crypto->cram_hmac_tfm, hmac_name,
-				 ERR_AUTH_ALG);
+		err = alloc_shash(&crypto->cram_hmac_tfm, hmac_name,
+				  "hmac", false, reply_skb);
+		if (err)
+			return ERR_AUTH_ALG;
 	}
 
-	return rv;
+	return NO_ERROR;
 }
 
 static void free_crypto(struct crypto *crypto)
@@ -3781,7 +3808,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	retcode = alloc_crypto(&crypto, new_net_conf);
+	retcode = alloc_crypto(&crypto, new_net_conf, adm_ctx.reply_skb);
 	if (retcode != NO_ERROR)
 		goto fail;
 
@@ -4122,7 +4149,7 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	if (retcode != NO_ERROR)
 		goto fail_free_connection;
 
-	retcode = alloc_crypto(&crypto, new_net_conf);
+	retcode = alloc_crypto(&crypto, new_net_conf, adm_ctx->reply_skb);
 	if (retcode != NO_ERROR)
 		goto fail_free_connection;
 
