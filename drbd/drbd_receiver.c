@@ -3905,6 +3905,13 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			return SYNC_TARGET_USE_BITMAP;
 		}
 
+		if (connection->agreed_pro_version >= 120) {
+			*rule = RULE_RECONNECTED;
+			if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
+			    local_uuid_flags & UUID_FLAG_RECONNECT)
+				return NO_SYNC;
+		}
+
 		*rule = RULE_LOST_QUORUM;
 		if (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags))
@@ -3920,11 +3927,12 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 				SYNC_SOURCE_IF_BOTH_FAILED :
 				SYNC_TARGET_IF_BOTH_FAILED;
 
-		*rule = RULE_RECONNECTED;
-		/* This is a safety net for the following two clauses */
-		if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
-		    local_uuid_flags & UUID_FLAG_RECONNECT)
-			return NO_SYNC;
+		if (connection->agreed_pro_version < 120) {
+			*rule = RULE_RECONNECTED;
+			if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
+			    local_uuid_flags & UUID_FLAG_RECONNECT)
+				return NO_SYNC;
+		}
 
 		/* Peer crashed as primary, I survived, resync from me */
 		if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
