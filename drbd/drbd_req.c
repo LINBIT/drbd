@@ -2494,30 +2494,8 @@ void request_timer_fn(struct timer_list *t)
 		struct net_conf *nc;
 		struct drbd_request *req;
 		unsigned long ent = 0;
-		unsigned long pre_send_jif = 0;
+		unsigned long pre_send_jif = now;
 		unsigned int ko_count = 0, timeout = 0;
-
-		/* maybe the oldest request waiting for the peer is in fact still
-		 * blocking in tcp sendmsg.  That's ok, though, that's handled via the
-		 * socket send timeout, requesting a ping, and bumping ko-count in
-		 * we_should_drop_the_connection().
-		 */
-
-		/* check the oldest request we did successfully sent,
-		 * but which is still waiting for an ACK. */
-		req = connection->req_ack_pending;
-
-		/* if we don't have such request (e.g. protocol A)
-		 * check the oldest requests which is still waiting on its epoch
-		 * closing barrier ack. */
-		if (!req)
-			req = connection->req_not_net_done;
-
-		/* evaluate the oldest peer request only in one timer! */
-		if (req && req->device != device)
-			req = NULL;
-		if (!req)
-			continue;
 
 		rcu_read_lock();
 		nc = rcu_dereference(connection->transport.net_conf);
@@ -2530,16 +2508,43 @@ void request_timer_fn(struct timer_list *t)
 		}
 		rcu_read_unlock();
 
+		/* This connection is not established,
+		 * or has the effective timeout disabled.
+		 * no timer restart needed (for this connection). */
 		if (!timeout)
 			continue;
 
-		pre_send_jif = req->pre_send_jif[connection->peer_node_id];
+		/* maybe the oldest request waiting for the peer is in fact still
+		 * blocking in tcp sendmsg.  That's ok, though, that's handled via the
+		 * socket send timeout, requesting a ping, and bumping ko-count in
+		 * we_should_drop_the_connection().
+		 */
+
+		/* check the oldest request we did successfully sent,
+		 * but which is still waiting for an ACK. */
+		req = connection->req_ack_pending;
+
+		/* If we don't have such request (e.g. protocol A)
+		 * check the oldest request which is still waiting on its epoch
+		 * closing barrier ack. */
+		if (!req)
+			req = connection->req_not_net_done;
+		if (req)
+			pre_send_jif = req->pre_send_jif[connection->peer_node_id];
 
 		ent = timeout * HZ/10 * ko_count;
 		et = min_not_zero(et, ent);
 		next_trigger_time = time_min_in_future(now,
 				next_trigger_time, pre_send_jif + ent);
+		/* Restart the timer, even if there are no pending requests at all.
+		 * We currently do not re-arm from the submit path. */
 		restart_timer = true;
+
+		/* We have one timer per "device",
+		 * but the "oldest" request is per "connection".
+		 * Evaluate the oldest peer request only in one timer! */
+		if (req == NULL || req->device != device)
+			continue;
 
 		if (net_timeout_reached(req, peer_device, now, ent, ko_count, timeout)) {
 			dynamic_drbd_dbg(peer_device, "Request at %llus+%u timed out\n",
