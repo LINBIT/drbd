@@ -5031,6 +5031,10 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	int retcode = 0; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	struct invalidate_parms inv = {
+		.sync_from_peer_node_id = -1,
+		.reset_bitmap = DRBD_INVALIDATE_RESET_BITMAP_DEF,
+	};
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5048,10 +5052,8 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&resource->adm_mutex);
 
 	if (info->attrs[DRBD_NLA_INVALIDATE_PARMS]) {
-		struct invalidate_parms inv = {};
 		int err;
 
-		inv.sync_from_peer_node_id = -1;
 		err = invalidate_parms_from_attrs(&inv, info);
 		if (err) {
 			retcode = ERR_MANDATORY_TAG;
@@ -5064,6 +5066,14 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 				drbd_connection_by_node_id(resource, inv.sync_from_peer_node_id);
 			sync_from_peer_device = conn_peer_device(connection, device->vnr);
 		}
+
+		if (!inv.reset_bitmap && sync_from_peer_device &&
+		    sync_from_peer_device->connection->agreed_pro_version < 120) {
+			retcode = ERR_APV_TOO_LOW;
+			drbd_msg_put_info(adm_ctx.reply_skb,
+					  "Need protocol level 120 to initiate bitmap based resync");
+			goto out_no_resume;
+		}
 	}
 
 	/* If there is still bitmap IO pending, probably because of a previous
@@ -5073,7 +5083,12 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
 
 	if (sync_from_peer_device) {
-		retcode = invalidate_resync(sync_from_peer_device);
+		if (inv.reset_bitmap) {
+			retcode = invalidate_resync(sync_from_peer_device);
+		} else {
+			retcode = change_repl_state(sync_from_peer_device, L_WF_BITMAP_T,
+					CS_VERBOSE | CS_CLUSTER_WIDE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+		}
 	} else {
 		int retry = 3;
 		do {
@@ -5083,7 +5098,20 @@ int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 				struct drbd_peer_device *peer_device;
 
 				peer_device = conn_peer_device(connection, device->vnr);
-				retcode = invalidate_resync(peer_device);
+				if (!peer_device)
+					continue;
+
+				if (inv.reset_bitmap) {
+					retcode = invalidate_resync(peer_device);
+				} else {
+					if (connection->agreed_pro_version < 120) {
+						retcode = ERR_APV_TOO_LOW;
+						continue;
+					}
+					retcode = change_repl_state(peer_device, L_WF_BITMAP_T,
+								CS_VERBOSE | CS_CLUSTER_WIDE |
+								CS_WAIT_COMPLETE | CS_SERIALIZE);
+				}
 				if (retcode >= SS_SUCCESS)
 					goto out;
 			}
@@ -5113,6 +5141,35 @@ static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_de
 	return rv;
 }
 
+static int full_sync_from_peer(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_resource *resource = device->resource;
+	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+
+	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S, CS_SERIALIZE);
+	if (retcode < SS_SUCCESS) {
+		if (retcode == SS_NEED_CONNECTION && resource->role[NOW] == R_PRIMARY) {
+			/* The peer will get a resync upon connect anyways.
+			 * Just make that into a full resync. */
+			retcode = change_peer_disk_state(peer_device, D_INCONSISTENT,
+							 CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
+			if (retcode >= SS_SUCCESS) {
+				if (drbd_bitmap_io(device, &drbd_bmio_set_susp_al,
+						   "set_n_write from invalidate_peer",
+						   BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
+					retcode = ERR_IO_MD_DISK;
+			}
+		} else {
+			retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
+							   CS_VERBOSE | CS_SERIALIZE);
+		}
+	}
+
+	return retcode;
+}
+
+
 int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -5120,6 +5177,9 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	struct invalidate_peer_parms inv = {
+		.p_reset_bitmap = DRBD_INVALIDATE_RESET_BITMAP_DEF,
+	};
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_DEVICE);
 	if (!adm_ctx.reply_skb)
@@ -5136,29 +5196,36 @@ int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&resource->adm_mutex);
 
+	if (info->attrs[DRBD_NLA_INVAL_PEER_PARAMS]) {
+		int err;
+
+		err = invalidate_peer_parms_from_attrs(&inv, info);
+		if (err) {
+			retcode = ERR_MANDATORY_TAG;
+			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+			goto out_unlock;
+		}
+		if (!inv.p_reset_bitmap && peer_device->connection->agreed_pro_version < 120) {
+			retcode = ERR_APV_TOO_LOW;
+			drbd_msg_put_info(adm_ctx.reply_skb,
+					  "Need protocol level 120 to initiate bitmap based resync");
+			goto out_unlock;
+		}
+	}
+
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
 	drbd_flush_workqueue(&peer_device->connection->sender_work);
-	retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S, CS_SERIALIZE);
 
-	if (retcode < SS_SUCCESS) {
-		if (retcode == SS_NEED_CONNECTION && resource->role[NOW] == R_PRIMARY) {
-			/* The peer will get a resync upon connect anyways.
-			 * Just make that into a full resync. */
-			retcode = change_peer_disk_state(peer_device, D_INCONSISTENT,
-							 CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
-			if (retcode >= SS_SUCCESS) {
-				if (drbd_bitmap_io(adm_ctx.device, &drbd_bmio_set_susp_al,
-						   "set_n_write from invalidate_peer",
-						   BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
-					retcode = ERR_IO_MD_DISK;
-			}
-		} else
-			retcode = stable_change_repl_state(peer_device, L_STARTING_SYNC_S,
-							   CS_VERBOSE | CS_SERIALIZE);
+	if (inv.p_reset_bitmap) {
+		retcode = full_sync_from_peer(peer_device);
+	} else {
+		retcode = change_repl_state(peer_device, L_WF_BITMAP_S,
+				CS_VERBOSE | CS_CLUSTER_WIDE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	}
 	drbd_resume_io(device);
 
+out_unlock:
 	mutex_unlock(&resource->adm_mutex);
 	put_ldev(device);
 out:

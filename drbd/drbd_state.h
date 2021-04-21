@@ -43,6 +43,7 @@ enum chg_state_flags {
          * drbd_md_get_buffer().  Used for graceful detach. */
 	CS_INHIBIT_MD_IO = 1 << 12,
 	CS_FORCE_RECALC  = 1 << 13, /* Force re-evaluation of state logic */
+	CS_CLUSTER_WIDE  = 1 << 14, /* Make this a cluster wide state change! */
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

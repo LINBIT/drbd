@@ -5107,6 +5107,7 @@ static bool do_change_repl_state(struct change_context *context, enum change_pha
 	struct drbd_peer_device *peer_device = repl_context->peer_device;
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	enum drbd_repl_state new_repl_state = context->val.conn;
+	bool cluster_wide = context->flags & CS_CLUSTER_WIDE;
 
 	__change_repl_state(peer_device, new_repl_state);
 
@@ -5114,7 +5115,9 @@ static bool do_change_repl_state(struct change_context *context, enum change_pha
 		((repl_state[NOW] >= L_ESTABLISHED &&
 		  (new_repl_state == L_STARTING_SYNC_S || new_repl_state == L_STARTING_SYNC_T)) ||
 		 (repl_state[NOW] == L_ESTABLISHED &&
-		  (new_repl_state == L_VERIFY_S || new_repl_state == L_OFF)));
+		  (new_repl_state == L_VERIFY_S || new_repl_state == L_OFF)) ||
+		 (repl_state[NOW] == L_ESTABLISHED && cluster_wide &&
+		  (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)));
 }
 
 enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
@@ -5132,6 +5135,9 @@ enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 		},
 		.peer_device = peer_device
 	};
+
+	if (new_repl_state == L_WF_BITMAP_S)
+		repl_context.context.change_local_state_last = true;
 
 	return change_cluster_wide_state(do_change_repl_state, &repl_context.context);
 }
