@@ -1038,7 +1038,7 @@ retry:
 	} else /* (role == R_SECONDARY) */ {
 		down(&resource->state_sem);
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			bdev = bdget_disk(device->vdisk, 0);
+			bdev = bdgrab(device->vdisk->part0);
 			if (bdev)
 				fsync_bdev(bdev);
 			bdput(bdev);
