@@ -435,6 +435,9 @@ int main(int argc, char **argv)
 	patch(1, "crypto_tfm_need_key", true, false,
 	      COMPAT_HAVE_CRYPTO_TFM_NEED_KEY, "present");
 
+	patch(1, "part_stat_read", true, false,
+	      COMPAT_PART_STAT_READ_TAKES_BLOCK_DEVICE, "takes_block_device");
+
 	patch(1, "part_stat_read_accum", true, false,
 	      COMPAT_HAVE_PART_STAT_READ_ACCUM, "present");
 
