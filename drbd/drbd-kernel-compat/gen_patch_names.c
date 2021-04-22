@@ -435,6 +435,9 @@ int main(int argc, char **argv)
 	patch(1, "crypto_tfm_need_key", true, false,
 	      COMPAT_HAVE_CRYPTO_TFM_NEED_KEY, "present");
 
+	patch(1, "part_stat_read_accum", true, false,
+	      COMPAT_HAVE_PART_STAT_READ_ACCUM, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
