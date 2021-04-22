@@ -2238,8 +2238,19 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 static unsigned long time_min_in_future(unsigned long now,
 		unsigned long t1, unsigned long t2)
 {
-	t1 = time_after(now, t1) ? now : t1;
-	t2 = time_after(now, t2) ? now : t2;
+	bool t1_in_future = time_after(t1, now);
+	bool t2_in_future = time_after(t2, now);
+
+	/* Ensure that we never return a time in the past. */
+	t1 = t1_in_future ? t1 : now;
+	t2 = t2_in_future ? t2 : now;
+
+	if (!t1_in_future)
+		return t2;
+
+	if (!t2_in_future)
+		return t1;
+
 	return time_after(t1, t2) ? t2 : t1;
 }
 
