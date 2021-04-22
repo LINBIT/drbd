@@ -25,6 +25,27 @@ fn(struct bio *b, int e)
 }
 
 @@
+expression errno;
+struct bio *b;
+@@
+// Special case for complete_master_bio: we can safely assume that there is
+// no error if it was not passed in with m->error (which is the expression
+// `status` here).
+complete_master_bio(...)
+{
+	...
+	if(...)
++	{
+- 		b->bi_status = errno_to_blk_status(errno);
++ 		bio_endio(b, errno);
++	} else {
++		bio_endio(b, 0);
++	}
+-	bio_endio(b);
+	...
+}
+
+@@
 expression status;
 struct bio *b;
 @@
