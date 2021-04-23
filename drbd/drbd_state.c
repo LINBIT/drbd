@@ -4384,6 +4384,14 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, context->vnr, P_TWOPC_PREPARE,
 				    &request, reach_immediately);
+
+	/* If we are changing state attached to a particular connection then we
+	 * expect that connection to remain connected. A failure to send
+	 * P_TWOPC_PREPARE on that connection is a failure for the whole
+	 * cluster-wide state change. */
+	if (target_connection && !test_bit(TWOPC_PREPARED, &target_connection->flags))
+		rv = SS_NEED_CONNECTION;
+
 	have_peers = rv == SS_CW_SUCCESS;
 	if (have_peers) {
 		long t;
