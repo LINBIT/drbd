@@ -12,7 +12,7 @@ c << find_compat.compat;
 p << find_compat.p;
 @@
 import sys
-from os import path, listdir
+from os import listdir
 
 def exists(c):
     for f in listdir('drbd/drbd-kernel-compat/tests/'):
