@@ -1447,7 +1447,8 @@ static void drbd_process_discard_or_zeroes_req(struct drbd_request *req, int fla
 {
 	int err = drbd_issue_discard_or_zero_out(req->device,
 				req->i.sector, req->i.size >> 9, flags);
-	req->private_bio->bi_status = err ? BLK_STS_IOERR : BLK_STS_OK;
+	if (err)
+		req->private_bio->bi_status = BLK_STS_IOERR;
 	bio_endio(req->private_bio);
 }
 
@@ -2222,7 +2223,6 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 	 */
 	if (bio_op(bio) == REQ_OP_READ && bio->bi_iter.bi_size == 0) {
 		WARN_ONCE(1, "size zero read from upper layers");
-		bio->bi_status = BLK_STS_OK;
 		bio_endio(bio);
 		return BLK_QC_T_NONE;
 	}
