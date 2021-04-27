@@ -3769,6 +3769,7 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 
 	for_each_connection_ref(connection, im, resource) {
 		u64 mask;
+		int err;
 
 		clear_bit(TWOPC_PREPARED, &connection->flags);
 
@@ -3782,12 +3783,13 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 		clear_bit(TWOPC_NO, &connection->flags);
 		clear_bit(TWOPC_RETRY, &connection->flags);
 
-		if (!conn_send_twopc_request(connection, vnr, cmd, request)) {
-			rv = SS_CW_SUCCESS;
-		} else {
+		err = conn_send_twopc_request(connection, vnr, cmd, request);
+		if (err) {
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 			wake_up(&resource->work.q_wait);
+			continue;
 		}
+		rv = SS_CW_SUCCESS;
 	}
 	return rv;
 }
