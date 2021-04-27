@@ -415,6 +415,13 @@ int main(int argc, char **argv)
 	patch(1, "part_stat_read_accum", true, false,
 	      COMPAT_HAVE_PART_STAT_READ_ACCUM, "present");
 
+/* hd_struct is the old struct; got merged into block_device.
+ * so if we still have hd_struct, part0 will not be a block_device. */
+#if defined(COMPAT_HAVE_HD_STRUCT)
+	patch(1, "gendisk_part0", true, false,
+	      NO, "is_block_device");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
