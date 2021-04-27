@@ -3,6 +3,36 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.29-0rc1 (api:genl2/proto:86-120/transport:14)
+--------
+ * fix data corruption when DRBD's backing disk is a degraded Linux software
+   raid (MD)
+ * add correct thawing of IO requests after IO was frozen due to loss of quorum
+ * fix timeout detection after idle periods and for configs with ko-count
+   when a disk on an a secondary stops delivering IO-completion events
+ * fixed an issue where UUIDs where not shifted in the history slots; that
+   caused false "unrelated data" events
+ * fix a temporal deadlock you could trigger when you exercise promotion races
+   and mix some read-only openers into the test case
+ * fix for bitmap-copy operation in a very specific and unlikely case where
+   two nodes do a bitmap-based resync due to disk-states
+ * fix size negotiation when combining nodes of different CPU architectures
+   that have different page sizes
+ * fix a very rare race where DRBD reported wrong magic in a header
+   packet right after reconnecting
+ * fix a case where DRBD ends up reporting unrelated data; it affected
+   thinly allocated resources with a diskless node in a recreate from day0
+   event
+ * speedup open() of drbd devices if promote has not chance to go through
+ * new option "--reset-bitmap=no" for the invalidate and invalidate-remote
+   commands; this allows to do a resync after online verify found differences
+ * changes to socket buffer sizes get applied to established connections
+   immediately; before it was applied after a re-connect
+ * add exists events for path objects
+ * forbid keyed hash algorithms for online verify, csyms and HMAC base alg
+ * following upstream changes to DRBD up to Linux 5.12 and updated compat
+   rules to support up to Linux 5.12
+
 9.0.28-1 (api:genl2/proto:86-119/transport:14)
 --------
  * fix a regression introduces with 9.0.25; it failed to determine the
