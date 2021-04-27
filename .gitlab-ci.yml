@@ -8,6 +8,7 @@ variables:
   GIT_SUBMODULE_STRATEGY: normal
 
 stages:
+  - check
   - build
   - test
 
@@ -71,6 +72,20 @@ stages:
     - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
     - if: $CI_COMMIT_BRANCH == 'master'
 
+check:coccicheck:
+  stage: check
+  extends: [ .rules-build ]
+  image: szeder/coccinelle:1.1.0-1
+  script:
+    - make coccicheck
+
+check:check-compat:
+  stage: check
+  extends: [ .rules-build ]
+  image: szeder/coccinelle:1.1.0-1
+  script:
+    - make check-compat
+
 build:
   stage: build
   extends: [ .rules-build, .setup-lbbuild ]
@@ -87,6 +102,7 @@ build:
       - drbd/drbd-kernel-compat/cocci_cache
     when: always
     expire_in: 1 week
+  needs: []
 
 build-latest:
   stage: build
@@ -99,7 +115,7 @@ build-latest:
     - DRBD_VERSION=9.1.0.latest
     - DRBD_RELEASE=$(git rev-list --count origin/master)
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION
-
+  needs: []
 
 test:
   stage: test
@@ -137,3 +153,5 @@ test:
     when: always
     reports:
       junit: tests-out/test-results/*.xml
+  needs:
+    - build
