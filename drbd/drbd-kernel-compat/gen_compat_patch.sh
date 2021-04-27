@@ -76,15 +76,19 @@ if hash spatch && spatch_is_recent; then
 	# argument away this is shell $@ respectively $* now.
 	# we know we don't have white-space in the argument list
 
+	set +e
 	spatch --sp-file "$incdir/.compat.cocci" "$@" \
 		--macro-file drbd-kernel-compat/cocci_macros.h \
 		--very-quiet \
 		> "$compat_patch.tmp" \
 		2> "$incdir/.spatch.stderr"
-	if [[ ${V-0} != 0 ]] ; then
+	ex=$?
+	if [[ $ex != 0 ]] || [[ ${V-0} != 0 ]] ; then
 		echo "    $incdir/.compat.cocci" >&2
 		sed -e "s/^/    : /" < "$incdir/.spatch.stderr" >&2
 	fi
+	[[ $ex != 0 ]] && exit $ex
+	set -e
     else
 	echo "  SPATCH   $chksum  "$K" - nothing to do"
 	touch $compat_patch.tmp
