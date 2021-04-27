@@ -402,7 +402,7 @@ int main(int argc, char **argv)
 #endif
 
 	patch(1, "crypto_tfm_need_key", true, false,
-	      HAVE_CRYPTO_TFM_NEED_KEY, "present");
+	      COMPAT_HAVE_CRYPTO_TFM_NEED_KEY, "present");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
