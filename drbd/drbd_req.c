@@ -411,7 +411,8 @@ void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
 	int rw = bio_data_dir(m->bio);
-	m->bio->bi_status = errno_to_blk_status(m->error);
+	if (unlikely(m->error))
+		m->bio->bi_status = errno_to_blk_status(m->error);
 	bio_endio(m->bio);
 	dec_ap_bio(device, rw);
 }
