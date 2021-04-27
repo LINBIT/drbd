@@ -371,9 +371,14 @@ int main(int argc, char **argv)
 	patch(1, "set_capacity_and_notify", true, false,
 	      COMPAT_HAVE_SET_CAPACITY_AND_NOTIFY, "present");
 
-#if defined(COMPAT_HAVE_REVALIDATE_DISK_SIZE)
-	/* revalidate_disk_size is there, nothing to do */
-#else
+/* revalidate_disk_size was removed 2 months after it was added.
+ * So we need to differentiate whether revalidate_disk_size has never existed yet,
+ * or if it has existed and it is now gone again. If it is already gone again,
+ * we don't need it anyways because we now have set_capacity_and_notify in its
+ * place.
+ * -> If we have set_capacity_and_notify, it already got removed.
+ * -> If we don't have set_capacity_and_notify, it was not yet added. */
+#if !defined(COMPAT_HAVE_REVALIDATE_DISK_SIZE) && !defined(COMPAT_HAVE_SET_CAPACITY_AND_NOTIFY)
 	patch(1, "revalidate_disk_size", true, false,
 	      NO, "present");
 #endif
