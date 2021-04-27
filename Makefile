@@ -334,10 +334,18 @@ ifndef MODE
 MODE = report
 endif
 
+.PHONY: coccicheck
 coccicheck: coccinelle/*.cocci
 	@for file in $^ ; do \
 		echo "  COCCICHECK $$(basename $${file} .cocci)"; \
 		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
 	done
+
+.PHONY: check-compat
+check-compat:
+	@echo "  COMPATCHECK";
+	@spatch --very-quiet --no-show-diff -D report \
+		drbd/drbd-kernel-compat/check_patch_names.cocci \
+		drbd/drbd-kernel-compat/gen_patch_names.c
 
 Makefile: ;
