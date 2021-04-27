@@ -1147,7 +1147,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   allowed to complete this one "out-of-sequence".
 		 */
 		if (!(req->net_rq_state[idx] & RQ_NET_OK)) {
-			mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP,
+			mod_rq_state(req, m, peer_device, RQ_NET_SENT|RQ_COMPLETION_SUSP,
 					RQ_NET_QUEUED|RQ_NET_PENDING);
 			break;
 		}
