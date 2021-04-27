@@ -4909,10 +4909,18 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 			got_state_sem = true;
 			role_context.context.flags |= CS_ALREADY_SERIALIZED;
 		}
-		idr_for_each_entry(&resource->devices, device, vnr)
-			wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			long t = wait_event_interruptible_timeout(device->misc_wait,
+						!atomic_read(&device->ap_bio_cnt[WRITE]),
+						twopc_timeout(resource));
+			if (t <= 0) {
+				rv = t == 0 ? SS_TIMEOUT : SS_INTERRUPTED;
+				goto out;
+			}
+		}
 	}
 	rv = change_cluster_wide_state(do_change_role, &role_context.context);
+out:
 	if (got_state_sem)
 		up(&resource->state_sem);
 	return rv;
