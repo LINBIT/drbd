@@ -20,7 +20,7 @@ fn(struct bio *b, int e)
 // only way it's used in DRBD and this is still a whole lot more flexible than
 // the old way, so it's fine for now.
 - b->bi_status
-+ errno_to_blk_status(e)
++ (e ? errno_to_blk_status(e) : bio_flagged(bio, BIO_UPTODATE) ? 0 : BLK_STS_IOERR)
 ...
 }
 
