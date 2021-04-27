@@ -2516,6 +2516,7 @@ void request_timer_fn(struct timer_list *t)
 			if (connection->cstate[NOW] == C_CONNECTED) {
 				ko_count = nc->ko_count;
 				timeout = nc->timeout;
+				ent = timeout * HZ/10 * ko_count;
 			}
 		}
 		rcu_read_unlock();
@@ -2523,7 +2524,7 @@ void request_timer_fn(struct timer_list *t)
 		/* This connection is not established,
 		 * or has the effective timeout disabled.
 		 * no timer restart needed (for this connection). */
-		if (!timeout)
+		if (!ent)
 			continue;
 
 		/* maybe the oldest request waiting for the peer is in fact still
@@ -2544,7 +2545,6 @@ void request_timer_fn(struct timer_list *t)
 		if (req)
 			pre_send_jif = req->pre_send_jif[connection->peer_node_id];
 
-		ent = timeout * HZ/10 * ko_count;
 		et = min_not_zero(et, ent);
 		next_trigger_time = time_min_in_future(now,
 				next_trigger_time, pre_send_jif + ent);
