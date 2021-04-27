@@ -1948,7 +1948,7 @@ void drbd_resync_after_changed(struct drbd_device *device)
 
 void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 {
-	struct gendisk *disk = peer_device->device->ldev->backing_bdev->bd_contains->bd_disk;
+	struct gendisk *disk = peer_device->device->ldev->backing_bdev->bd_disk;
 	struct fifo_buffer *plan;
 
 	atomic_set(&peer_device->rs_sect_in, 0);
