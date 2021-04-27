@@ -6,7 +6,7 @@ RUN if [ ! -d /pkgs ]; then \
       dnf install -y 'dnf-command(download)' && \
       mkdir /pkgs && cd /pkgs && \
       dnf download elfutils-libelf-devel && \
-      ls *.rpm | grep -v "$(uname -m)" | xargs rm \
+      rm -f *.i686.rpm \
     ; fi
 
 FROM registry.access.redhat.com/ubi8/ubi
