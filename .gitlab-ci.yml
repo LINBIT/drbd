@@ -19,52 +19,60 @@ stages:
     - ci_fetch_rq
     - ci_fetch_lbbuildctl
     - |
+      kernels_from_vms() {
+        mkdir -p drbd-test-bundle
+        curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xzf -
+        rq -t < drbd-test-bundle/virter/vms.toml | \
+          jq -r '.vms[].metadata | .BuildDistribution + " " + .KernelRelease'
+      }
+
+      # parameters: [version] [release] [rel-version] [kernels]
+      # kernels should be a string with lines with the format: "[distribution] [kernel version]"
       drbd_build () {
         local version="$1"
         local release="$2"
         local rel_version="$3"
+        local kernels="$4"
 
-        mkdir -p drbd-test-bundle
-        curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xvzf -
+        set -x
 
         drbd_dummy_release "$version" "$release" "$rel_version"
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
+        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD \
+          --upload-file drbd-*.tar.gz \
+          $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
-
-        META_JSON=$(rq -t < drbd-test-bundle/virter/vms.toml | jq '.vms[].metadata')
-        LBBUILD_ARGS=$(echo "$META_JSON" | jq -r '"-d " + .BuildDistribution + " -k " + .KernelRelease')
-        # verify compilation on RHEL6 even though we don't test with it
-        LBBUILD_ARGS=$(cat <(echo "$LBBUILD_ARGS") <(echo "-d rhel6.6 -k 2.6.32-504.el6"))
-
-        echo "$LBBUILD_ARGS" | parallel --colsep ' ' -k -j24 \
+        echo "$kernels" | parallel --colsep ' ' -k -j24 \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only -l \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-            {}
+            -d {1} -k {2}
 
         pushd drbd/drbd-kernel-compat
-        ASSETS_JSON=$(curl -ksSL "$LINBIT_REGISTRY_URL/service/rest/v1/search/assets?repository=drbd-compat&group=/$rel_version")
-        test $(echo "$ASSETS_JSON" | jq '.items | length') -ne 0 || (echo "ERROR No nexus assets found for drbd version $rel_version"; exit 1)
-        URLS=$(echo "$ASSETS_JSON" | jq -r '.items[].downloadUrl')
-        FILES=$(echo "$URLS" | xargs basename -a)
-        echo "$URLS" | while read url; do
-          curl -ksSLO "$url"
-        done
-        ./build_cocci_cache.sh $FILES
+        local compat_hs
+        while read line; do
+          kver=${line#* } # everything after " " -> the kernel version
+          curl -fsSLO "$LINBIT_REGISTRY_URL/repository/drbd-compat/$rel_version/compat.h.$kver"
+          compat_hs+=("compat.h.$kver")
+        done <<< "$kernels"
+        ./build_cocci_cache.sh ${compat_hs[@]}
         popd
 
         make -j $(nproc) -C drbd compat
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
-        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD --upload-file drbd-*.tar.gz $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD \
+          --upload-file drbd-*.tar.gz \
+          $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        echo "$LBBUILD_ARGS" | parallel --colsep ' ' -k -j24 \
+        echo "$kernels" | parallel --colsep ' ' -k -j24 \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" -l \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-            {}
+            -d {1} -k {2}
+
+        set +x
       }
 
 # rules clause determining whether to build
@@ -88,19 +96,35 @@ check:check-compat:
   script:
     - make check-compat
 
-build:
+build:for-tests:
   stage: build
   extends: [ .rules-build, .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script: 
     - DRBD_VERSION=9.0.0.$CI_COMMIT_SHA
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
-    - drbd_build $DRBD_VERSION 1 $DRBD_VERSION-1
+    - drbd_build $DRBD_VERSION 1 $DRBD_VERSION-1 "$(kernels_from_vms)"
   artifacts:
     reports:
       dotenv: build.env
     paths:
       - drbd-test-bundle
+      - drbd/drbd-kernel-compat/cocci_cache
+    when: always
+    expire_in: 1 week
+  needs: []
+
+build:compile-only:
+  stage: build
+  extends: [ .rules-build, .setup-lbbuild ]
+  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
+  script:
+    - DRBD_VERSION=9.0.0.$CI_COMMIT_SHA.compileonly
+    - |
+      # verify compilation on RHEL6 even though we don't test with it
+      drbd_build $DRBD_VERSION 1 $DRBD_VERSION-1 "rhel6.6 2.6.32-504.el6"
+  artifacts:
+    paths:
       - drbd/drbd-kernel-compat/cocci_cache
     when: always
     expire_in: 1 week
@@ -116,7 +140,7 @@ build-latest:
   script:
     - DRBD_VERSION=9.0.0.latest
     - DRBD_RELEASE=$(git rev-list --count origin/drbd-9.0)
-    - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION-$DRBD_RELEASE
+    - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION-$DRBD_RELEASE "$(kernels_from_vms)"
   needs: []
 
 
@@ -147,7 +171,7 @@ test:
       export DRBD9_TESTS_VERSION=latest
       ./drbd-test-bundle/virter/run-test.sh
   dependencies:
-    - build
+    - build:for-tests
   artifacts:
     # provide a convenient name so that the downloaded artifacts can be identified
     name: $CI_PROJECT_NAME-$CI_JOB_ID
@@ -157,4 +181,4 @@ test:
     reports:
       junit: tests-out/test-results/*.xml
   needs:
-    - build
+    - build:for-tests
