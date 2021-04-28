@@ -975,6 +975,7 @@ struct drbd_resource {
 	unsigned int w_cb_nr; /* keeps counting up */
 	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
 	wait_queue_head_t barrier_wait;  /* upon each state change. */
+	u64 peers_at_quorum_loss;
 	struct rcu_head rcu;
 
 	/* drbd's page pool, used to buffer data received from the peer, or

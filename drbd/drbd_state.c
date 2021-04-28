@@ -2309,15 +2309,60 @@ static bool extra_ldev_ref_for_after_state_chg(enum drbd_disk_state *disk_state)
 	       (disk_state[OLD] != D_DISKLESS && disk_state[NEW] == D_DISKLESS);
 }
 
-static void resend_after_lack_of_quorum(struct drbd_resource *resource)
+static u64 connected_peers_mask(struct drbd_resource *resource, enum which_state which)
+{
+	struct drbd_connection *connection;
+	u64 rv = 0;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[which] == C_CONNECTED)
+			rv |= NODE_MASK(connection->peer_node_id);
+	}
+	return rv;
+}
+
+static bool has_starting_resyncs(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->repl_state[NEW] > L_ESTABLISHED)
+			return true;
+	}
+	return false;
+}
+
+static void resend_during_quorum_suspend(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 
 	for_each_connection(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
+		bool establishing = cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED;
 
-		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+		if (establishing && !has_starting_resyncs(connection))
 			_tl_walk(connection, RESEND);
+	}
+}
+
+static void thaw_requests_after_quorum_suspend(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	u64 current_peers = connected_peers_mask(resource, NEW);
+	u64 missing_peers = resource->peers_at_quorum_loss & ~current_peers;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NEW] < C_CONNECTED)
+			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
+	}
+
+	if (!missing_peers) {
+		struct drbd_device *device;
+		int vnr;
+
+		idr_for_each_entry(&resource->devices, device, vnr)
+			clear_bit(NEW_CUR_UUID, &device->flags);
 	}
 }
 
@@ -2334,6 +2379,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	bool lost_a_primary_peer = false;
 	bool some_peer_is_primary = false;
 	bool some_peer_request_in_flight = false;
+	bool suspended_quorum_old, suspended_quorum_new;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -2709,8 +2755,18 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		}
 	}
 
-	if (is_suspended_quorum(resource, OLD) && !is_suspended_quorum(resource, NEW))
-		resend_after_lack_of_quorum(resource);
+	suspended_quorum_old = is_suspended_quorum(resource, OLD);
+	suspended_quorum_new = is_suspended_quorum(resource, NEW);
+
+	if (!suspended_quorum_old && suspended_quorum_new)
+		resource->peers_at_quorum_loss = connected_peers_mask(resource, OLD);
+
+	if (suspended_quorum_old) {
+		resend_during_quorum_suspend(resource);
+
+		if (!suspended_quorum_new)
+			thaw_requests_after_quorum_suspend(resource);
+	}
 
 	queue_after_state_change_work(resource, done);
 }
