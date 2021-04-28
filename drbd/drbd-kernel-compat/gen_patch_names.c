@@ -422,6 +422,9 @@ int main(int argc, char **argv)
 	      NO, "is_block_device");
 #endif
 
+	patch(1, "bio_max_vecs", true, false,
+	      COMPAT_HAVE_BIO_MAX_VECS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
