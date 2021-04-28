@@ -68,6 +68,20 @@ drbd_create_device(...)
 struct drbd_resource *resource = ...;
 ...
 struct request_queue *q;
+...
+// In the compat implementation of drbd_unplug_fn, which we insert above,
+// we have to get the DRBD device the "old" way, via request_queue->queuedata.
+// This is because we do not have access to the actual bio in that function,
+// only the request_queue.
+// So, if we are using that compat implementation, we just redundantly store
+// the device in queuedata as well, so that we have access to it in drbd_unplug_fn.
+// The "new" way would be to get the device from bio->bi_disk->private_data,
+// like in drbd_submit_bio:
+//     struct drbd_device *device = bio->bi_disk->private_data;
+// This is still valid, since we still store the device in private_data, we just
+// also want to store it in queuedata for the compat.
+device->rq_queue = q;
++ q->queuedata = device;
 <...
 blk_queue_write_cache(q, true, true);
 +q->queue_lock = &resource->req_lock; /* needed since we use */
