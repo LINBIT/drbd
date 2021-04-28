@@ -2314,7 +2314,7 @@ static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
 
 blk_qc_t drbd_submit_bio(struct bio *bio)
 {
-	struct drbd_device *device = bio->bi_disk->private_data;
+	struct drbd_device *device = bio->bi_bdev->bd_disk->private_data;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	ktime_t start_kt;
 #endif
