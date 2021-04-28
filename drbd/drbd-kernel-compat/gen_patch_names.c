@@ -110,11 +110,13 @@ int main(int argc, char **argv)
 	      NO, "present");
 #endif
 
-	patch(1, "bio_bi_bdev", false, true,
-	      COMPAT_HAVE_BIO_BI_BDEV, "present");
+#if !defined(COMPAT_HAVE_BIO_SET_DEV)
+	patch(1, "bio_set_dev", true, false,
+	      COMPAT_HAVE_BIO_SET_DEV, "present");
+#endif
 
-	patch(1, "bio_bi_disk", true, false,
-	      COMPAT_HAVE_BIO_BI_DISK, "present");
+	patch(1, "bio_bi_bdev", true, false,
+	      COMPAT_HAVE_BIO_BI_BDEV, "present");
 
 	patch(1, "refcount_inc", true, false,
 	      COMPAT_HAVE_REFCOUNT_INC, "present");
