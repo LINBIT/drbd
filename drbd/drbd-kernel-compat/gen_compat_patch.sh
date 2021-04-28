@@ -80,6 +80,7 @@ if hash spatch && spatch_is_recent; then
 	spatch --sp-file "$incdir/.compat.cocci" "$@" \
 		--macro-file drbd-kernel-compat/cocci_macros.h \
 		--very-quiet \
+		--all-includes \
 		> "$compat_patch.tmp" \
 		2> "$incdir/.spatch.stderr"
 	ex=$?
