@@ -893,6 +893,7 @@ struct drbd_resource {
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
+	bool susp_quorum[2];		/* IO suspended because no quorum */
 	bool cached_susp;		/* cached result of looking at all different suspend bits */
 	bool cached_all_devices_have_quorum;
 

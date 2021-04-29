@@ -240,35 +240,14 @@ bool is_suspended_fen(struct drbd_resource *resource, enum which_state which)
 	return rv;
 }
 
-bool is_suspended_quorum(struct drbd_resource *resource, enum which_state which)
-{
-	struct drbd_device *device;
-	bool rv = false;
-	int vnr;
-
-	if (resource->res_opts.on_no_quorum != ONQ_SUSPEND_IO)
-		return false;
-
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (!device->have_quorum[which]) {
-			rv = true;
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	return rv;
-}
-
 bool resource_is_suspended(struct drbd_resource *resource, enum which_state which)
 {
-	bool rv = resource->susp_user[which] || resource->susp_nod[which];
+	bool rv = resource->susp_user[which] || resource->susp_nod[which] || resource->susp_quorum[which];
 
 	if (rv)
 		return rv;
 
-	return is_suspended_fen(resource, which) || is_suspended_quorum(resource, which);
+	return is_suspended_fen(resource, which);
 }
 
 static void count_objects(struct drbd_resource *resource,
@@ -515,7 +494,8 @@ static bool state_has_changed(struct drbd_resource *resource)
 
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp_user[OLD] != resource->susp_user[NEW] ||
-	    resource->susp_nod[OLD] != resource->susp_nod[NEW])
+	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
+	    resource->susp_quorum[OLD] != resource->susp_quorum[NEW])
 		return true;
 
 	for_each_connection(connection, resource) {
@@ -559,6 +539,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->role[NEW] = resource->role[NOW];
 	resource->susp_user[NEW] = resource->susp_user[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
+	resource->susp_quorum[NEW] = resource->susp_quorum[NOW];
 
 	for_each_connection_rcu(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
@@ -754,6 +735,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->role[NOW] = resource->role[NEW];
 	resource->susp_user[NOW] = resource->susp_user[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
+	resource->susp_quorum[NOW] = resource->susp_quorum[NEW];
 	resource->cached_susp = resource_is_suspended(resource, NEW);
 
 	pro_ver = PRO_VERSION_MAX;
@@ -945,7 +927,7 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.disk = D_UNKNOWN,  /* really: undefined */
 		.role = resource->role[which],
 		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp_user[which] || is_suspended_quorum(resource, which),
+		.susp = resource->susp_user[which] || resource->susp_quorum[which],
 		.susp_nod = resource->susp_nod[which],
 		.susp_fen = is_suspended_fen(resource, which),
 		.pdsk = D_UNKNOWN,  /* really: undefined */
@@ -1142,7 +1124,7 @@ static int scnprintf_io_suspend_flags(char *buffer, size_t size,
 		b += scnprintf(b, end - b, "no-disk,");
 	if (is_suspended_fen(resource, which))
 		b += scnprintf(b, end - b, "fencing,");
-	if (is_suspended_quorum(resource, which))
+	if (resource->susp_quorum[which])
 		b += scnprintf(b, end - b, "quorum,");
 	*(--b) = 0;
 
@@ -1876,6 +1858,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	bool maybe_crashed_primary = false;
 	bool volume_lost_data_access = false;
 	bool volumes_have_data_access = true;
+	bool resource_has_quorum = true;
 	int connected_primaries = 0;
 	int vnr;
 
@@ -2195,6 +2178,9 @@ static void sanitize_state(struct drbd_resource *resource)
 		else
 			device->have_quorum[NEW] = true;
 
+		if (!device->have_quorum[NEW])
+			resource_has_quorum = false;
+
 		/* Suspend IO if we have no accessible data available.
 		 * Policy may be extended later to be able to suspend
 		 * if redundancy falls below a certain level. */
@@ -2217,6 +2203,9 @@ static void sanitize_state(struct drbd_resource *resource)
 		resource->susp_nod[NEW] = false;
 	if (volume_lost_data_access && resource->res_opts.on_no_data == OND_SUSPEND_IO)
 		resource->susp_nod[NEW] = true;
+
+	resource->susp_quorum[NEW] =
+		resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO ? !resource_has_quorum : false;
 }
 
 void drbd_resume_al(struct drbd_device *device)
@@ -2399,7 +2388,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	bool lost_a_primary_peer = false;
 	bool some_peer_is_primary = false;
 	bool some_peer_request_in_flight = false;
-	bool suspended_quorum_old, suspended_quorum_new;
+	bool *susp_quorum  = resource->susp_quorum;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -2780,16 +2769,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		}
 	}
 
-	suspended_quorum_old = is_suspended_quorum(resource, OLD);
-	suspended_quorum_new = is_suspended_quorum(resource, NEW);
-
-	if (!suspended_quorum_old && suspended_quorum_new)
+	if (!susp_quorum[OLD] && susp_quorum[NEW])
 		resource->peers_at_quorum_loss = connected_peers_mask(resource, OLD);
 
-	if (suspended_quorum_old) {
+	if (susp_quorum[OLD]) {
 		resend_during_quorum_suspend(resource);
 
-		if (!suspended_quorum_new)
+		if (!susp_quorum[NEW])
 			thaw_requests_after_quorum_suspend(resource);
 	}
 
@@ -4952,9 +4938,9 @@ void __change_io_susp_fencing(struct drbd_connection *connection, bool value)
 	connection->susp_fen[NEW] = value;
 }
 
-void __change_have_quorum(struct drbd_device *device, bool value)
+void __change_io_susp_quorum(struct drbd_resource *resource, bool value)
 {
-	device->have_quorum[NEW] = value;
+	resource->susp_quorum[NEW] = value;
 }
 
 void __change_disk_state(struct drbd_device *device, enum drbd_disk_state disk_state)

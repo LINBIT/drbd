@@ -3340,17 +3340,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 				drbd_uuid_new_current(device, false);
 		}
 
-		/* The following is about the same as thaw_requests_after_quorum_suspend().
-		   The code can be removed here when the "is_suspended_quorum" becomes a real
-		   part of the state. Right now it is calculated during every state change.
-		   In the moment we change the resource->res_opts.on_no_quorum config,
-		   the state engine no longer sees that it was suspended. */
-		spin_lock_irq(&resource->req_lock);
-		for_each_connection(connection, resource) {
-			if (connection->cstate[NEW] < C_CONNECTED)
-				_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-		}
-		spin_unlock_irq(&resource->req_lock);
+		/* IO restarted in thaw_requests_after_quorum_suspend() in drbd_state.c */
 	}
 
 	if (resource->res_opts.nr_requests < res_opts->nr_requests)
