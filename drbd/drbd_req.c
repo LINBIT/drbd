@@ -1506,18 +1506,6 @@ static void drbd_queue_write(struct drbd_device *device, struct drbd_request *re
 	wake_up(&device->al_wait);
 }
 
-static void req_make_private_bio(struct drbd_request *req, struct bio *bio_src)
-{
-	struct bio *bio;
-	bio = bio_clone_fast(bio_src, GFP_NOIO, &drbd_io_bio_set);
-
-	req->private_bio = bio;
-
-	bio->bi_private  = req;
-	bio->bi_end_io   = drbd_request_endio;
-	bio->bi_next     = NULL;
-}
-
 static void drbd_req_in_actlog(struct drbd_request *req)
 {
 	req->local_rq_state |= RQ_IN_ACT_LOG;
@@ -1556,8 +1544,11 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	/* Update disk stats */
 	req->start_jif = bio_start_io_acct(req->master_bio);
 
-	if (get_ldev(device))
-		req_make_private_bio(req, bio);
+	if (get_ldev(device)) {
+		req->private_bio  = bio_clone_fast(bio, GFP_NOIO, &drbd_io_bio_set);
+		req->private_bio->bi_private = req;
+		req->private_bio->bi_end_io = drbd_request_endio;
+	}
 
 	ktime_get_accounting_assign(req->start_kt, start_kt);
 
