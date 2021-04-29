@@ -3292,6 +3292,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	bool wake_device_misc = false;
 	bool force_state_recalc = false;
 	unsigned long irq_flags;
+	struct res_opts *old_opts = &resource->res_opts;
 
 	if (!zalloc_cpumask_var(&new_cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
@@ -3323,15 +3324,19 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	if (res_opts->nr_requests < DRBD_NR_REQUESTS_MIN)
 		res_opts->nr_requests = DRBD_NR_REQUESTS_MIN;
 
-	if (resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO &&
-	    res_opts->on_no_quorum == ONQ_IO_ERROR) {
+	if (old_opts->quorum != res_opts->quorum ||
+	    old_opts->on_no_quorum != res_opts->on_no_quorum)
+		force_state_recalc = true;
+
+	if (resource->susp_quorum[NOW] &&
+	    (res_opts->quorum != old_opts->quorum ||
+	     (old_opts->on_no_quorum == ONQ_SUSPEND_IO && res_opts->on_no_quorum == ONQ_IO_ERROR))) {
 		struct drbd_device *device;
 		int vnr;
 
-		/* when changing from suspend-io to io-error, we need
-		 * to wake all waitqueues which are blocking io. we also
-		 * need to cancel all pending requests with an io error. */
-		force_state_recalc = true;
+		/* when changing from suspend-io to io-error, or when
+		 * quorum setting get "eased" in any way, and IO was
+		 * frozen due to quorum, it might unfreeze now: */
 		wake_device_misc = true;
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
@@ -3401,8 +3406,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	timer_setup(&resource->repost_up_to_date_timer, repost_up_to_date_fn, 0);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
-	if (set_resource_options(resource, res_opts))
-		goto fail_free_name;
 	resource->max_node_id = res_opts->node_id;
 	resource->twopc_reply.initiator_node_id = -1;
 	mutex_init(&resource->conf_update);
@@ -3439,6 +3442,9 @@ struct drbd_resource *drbd_create_resource(const char *name,
 		resource->pp_pool = page;
 	}
 	resource->pp_vacant = page_pool_count;
+
+	if (set_resource_options(resource, res_opts))
+		goto fail_free_pages;
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
