@@ -6549,7 +6549,9 @@ int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_connection_ref(connection, im, resource) {
-		retcode = conn_try_disconnect(connection, 0, adm_ctx.reply_skb);
+		retcode = SS_SUCCESS;
+		if (connection->cstate[NOW] > C_STANDALONE)
+			retcode = conn_try_disconnect(connection, 0, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS) {
 			mutex_lock(&resource->conf_update);
 			del_connection(connection);
