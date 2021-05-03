@@ -1490,11 +1490,6 @@ static inline unsigned drbd_req_state_by_peer_device(struct drbd_request *req,
 	     peer_device;						\
 	     peer_device = __drbd_next_peer_device_ref(&m, peer_device, device))
 
-static inline unsigned int device_to_minor(struct drbd_device *device)
-{
-	return device->minor;
-}
-
 /*
  * function declarations
  *************************/
