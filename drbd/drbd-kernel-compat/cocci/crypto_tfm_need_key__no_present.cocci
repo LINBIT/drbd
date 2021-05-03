@@ -2,9 +2,9 @@
 identifier h;
 @@
 - return h && (crypto_shash_get_flags(h) & CRYPTO_TFM_NEED_KEY);
-+ if (h) {
-+	/* HACK: try to set a dummy key. if it succeeds, that's bad: we only want algorithms that don't support keys */
-+	u8 dummy_key[] = {'a'};
-+	return crypto_shash_setkey(h, dummy_key, 1) != -ENOSYS;
-+ }
++ /*
++  * On kernels before 4.15, there is no way to check whether or not an algorithm
++  * requires a key. Allow all algorithms, possibly leading to BUGs if they are
++  * used later.
++  */
 + return false;
