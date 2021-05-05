@@ -2345,6 +2345,7 @@ static void thaw_requests_after_quorum_suspend(struct drbd_resource *resource)
 		if (connection->cstate[NEW] < C_CONNECTED)
 			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 	}
+	__tl_walk(resource, NULL, COMPLETION_RESUMED);
 
 	if (!missing_peers) {
 		struct drbd_device *device;
