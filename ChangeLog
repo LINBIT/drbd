@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.29-0rc1 (api:genl2/proto:86-120/transport:14)
+9.0.29-1 (api:genl2/proto:86-120/transport:14)
 --------
  * fix data corruption when DRBD's backing disk is a degraded Linux software
    raid (MD)
@@ -12,6 +12,10 @@ Latest:
    when a disk on an a secondary stops delivering IO-completion events
  * fixed an issue where UUIDs where not shifted in the history slots; that
    caused false "unrelated data" events
+ * fix switching resync sources by letting resync requests drain before
+   issuing resync requests to the new source; before the fix, it could happen
+   that the resync does not terminate since a late reply from the previous
+   caused a out-of-sync bit set after the "scan point"
  * fix a temporal deadlock you could trigger when you exercise promotion races
    and mix some read-only openers into the test case
  * fix for bitmap-copy operation in a very specific and unlikely case where
