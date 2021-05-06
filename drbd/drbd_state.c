@@ -2462,8 +2462,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				initialize_resync_progress_marks(peer_device);
 				peer_device->resync_next_bit = 0;
-				if (repl_state[NEW] == L_SYNC_TARGET)
-					mod_timer(&peer_device->resync_timer, jiffies);
 			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&
@@ -3436,6 +3434,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			     (resync_susp_user[OLD] != resync_susp_user[NEW])))
 				send_state = true;
 
+			/* Resync continues, start making requests. */
+			if (repl_state[OLD] == L_PAUSED_SYNC_T && repl_state[NEW] == L_SYNC_TARGET)
+				drbd_device_post_work(device, MAKE_RESYNC_REQUEST);
+
 			/* finished resync, tell sync source */
 			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    repl_state[NEW] == L_ESTABLISHED)
@@ -3578,7 +3580,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S && get_ldev(device)) {
 				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
 						(unsigned long long)peer_device->ov_position);
-				mod_timer(&peer_device->resync_timer, jiffies);
+				drbd_device_post_work(peer_device->device, MAKE_RESYNC_REQUEST);
 				put_ldev(device);
 			}
 		}

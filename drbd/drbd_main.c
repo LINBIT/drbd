@@ -3439,9 +3439,6 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	}
 
 	timer_setup(&peer_device->start_resync_timer, start_resync_timer_fn, 0);
-
-	INIT_LIST_HEAD(&peer_device->resync_work.list);
-	peer_device->resync_work.cb  = w_resync_timer;
 	timer_setup(&peer_device->resync_timer, resync_timer_fn, 0);
 
 	INIT_LIST_HEAD(&peer_device->propagate_uuids_work.list);
