@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.2-rc.1 (api:genl2/proto:110-120/transport:17)
+9.1.2 (api:genl2/proto:110-120/transport:17)
 --------
  * merged all fixes from drbd-9.0.29; other than that no changes in this branch
 
