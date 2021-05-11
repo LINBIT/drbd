@@ -862,6 +862,10 @@ struct drbd_send_buffer {
 	int additional_size;  /* additional space to be added to next packet's size */
 };
 
+struct drbd_mutable_buffer {
+	u8 *buffer;
+	unsigned int avail;
+};
 
 struct drbd_resource {
 	char *name;
@@ -1164,6 +1168,18 @@ struct drbd_connection {
 
 	unsigned int peer_node_id;
 	struct list_head twopc_parent_list;
+
+	struct drbd_mutable_buffer reassemble_buffer;
+	union {
+		u8 bytes[8];
+		struct p_block_ack block_ack;
+		struct p_barrier_ack barrier_ack;
+		struct p_confirm_stable confirm_stable;
+		struct p_peer_ack peer_ack;
+		struct p_peer_block_desc peer_block_desc;
+		struct p_twopc_reply twopc_reply;
+	} reassemble_buffer_bytes;
+
 	struct rcu_head rcu;
 
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal

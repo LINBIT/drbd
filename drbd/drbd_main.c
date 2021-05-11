@@ -3336,6 +3336,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->resource = resource;
 	connection->after_reconciliation.lost_node_id = -1;
 
+	connection->reassemble_buffer.buffer = connection->reassemble_buffer_bytes.bytes;
+
 	INIT_LIST_HEAD(&connection->transport.paths);
 	connection->transport.log_prefix = resource->name;
 	if (tc->init(&connection->transport))

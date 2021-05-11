@@ -19,6 +19,7 @@
 #include <linux/highmem.h>
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd_config.h>
+#include <net/tcp.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
 #include "drbd_wrappers.h"
@@ -745,6 +746,39 @@ static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, st
 	return be16_to_cpu(h->command);
 }
 
+
+static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb,
+				 unsigned int offset, size_t len)
+{
+	struct drbd_transport *transport = rd_desc->arg.data;
+	struct skb_seq_state seq;
+	unsigned int consumed = 0;
+
+	skb_prepare_seq_read(skb, offset, skb->len, &seq);
+	while (true) {
+		struct drbd_const_buffer buffer;
+
+		buffer.avail = skb_seq_read(consumed, &buffer.buffer, &seq);
+		if (buffer.avail == 0)
+			break;
+		consumed += buffer.avail;
+		drbd_control_data_ready(transport, &buffer);
+	}
+	return consumed;
+}
+
+static void dtt_control_data_ready(struct sock *sock)
+{
+	struct drbd_transport *transport = sock->sk_user_data;
+	read_descriptor_t rd_desc = {
+		.count = 1,
+		.arg = { .data = transport },
+	};
+
+	tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
+}
+
+
 static void dtt_incoming_connection(struct sock *sock)
 {
 	struct dtt_listener *listener = sock->sk_user_data;
@@ -1077,6 +1111,9 @@ randomize:
 	csocket->sk->sk_sndtimeo = timeout;
 
 	sock_set_keepalive(dsocket->sk);
+
+	csocket->sk->sk_user_data = transport;
+	csocket->sk->sk_data_ready = dtt_control_data_ready;
 
 	return 0;
 

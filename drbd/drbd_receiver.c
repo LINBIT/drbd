@@ -1004,6 +1004,7 @@ start:
 	}
 
 	connection->last_received = jiffies;
+	connection->reassemble_buffer.avail = 0;
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
@@ -9780,6 +9781,117 @@ disconnect:
 	return 0;
 }
 
+static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)
+{
+	if (to_fill->avail < need) {
+		unsigned int missing = min(need - to_fill->avail, pool->avail);
+
+		memcpy(to_fill->buffer + to_fill->avail, pool->buffer, missing);
+		pool->buffer += missing;
+		pool->avail -= missing;
+		to_fill->avail += missing;
+	}
+}
+
+static int decode_meta_cmd(struct drbd_connection *connection, const u8 *pos, struct packet_info *pi)
+{
+	struct meta_sock_cmd *cmd;
+	int payload_size;
+	int err = decode_header(connection, pos, pi);
+
+	if (err)
+		return err;
+
+	if (pi->cmd >= ARRAY_SIZE(ack_receiver_tbl)) {
+		drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
+			 drbd_packet_name(pi->cmd), pi->cmd);
+		return -ENOENT;
+	}
+
+	cmd = &ack_receiver_tbl[pi->cmd];
+	payload_size = cmd->pkt_size;
+	if (pi->size != payload_size) {
+		drbd_err(connection, "Wrong packet size on meta (c: %d, l: %d)\n",
+			 pi->cmd, pi->size);
+		return -EINVAL;
+	}
+
+	return payload_size;
+}
+
+static int process_previous_part(struct drbd_connection *connection, struct drbd_const_buffer *pool)
+{
+	struct drbd_mutable_buffer *buffer = &connection->reassemble_buffer;
+	const unsigned int header_size = drbd_header_size(connection);
+	struct packet_info pi;
+	int payload_size, packet_size;
+	int err;
+
+	fillup_buffer_from(buffer, header_size, pool);
+	if (buffer->avail < header_size)
+		return 0;
+
+	payload_size = decode_meta_cmd(connection, buffer->buffer, &pi);
+	if (payload_size < 0)
+		return payload_size;
+
+	packet_size = header_size + payload_size;
+	fillup_buffer_from(buffer, packet_size, pool);
+	if (buffer->avail < packet_size)
+		return 0;
+
+	err = ack_receiver_tbl[pi.cmd].fn(connection, &pi);
+	connection->reassemble_buffer.avail = 0;
+	return err;
+}
+
+void drbd_control_data_ready(struct drbd_transport *transport, struct drbd_const_buffer *pool)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+	const unsigned int header_size = drbd_header_size(connection);
+	int err;
+
+	/*	if (connection->cstate[NOW] < C_TEAR_DOWN)
+		return;*/
+
+	if (connection->reassemble_buffer.avail) {
+		err = process_previous_part(connection, pool);
+		if (err < 0)
+			goto reconnect;
+	}
+
+	while (pool->avail >= header_size) {
+		int payload_size, packet_size;
+		struct packet_info pi;
+
+		payload_size = decode_meta_cmd(connection, pool->buffer, &pi);
+		if (payload_size < 0)
+			goto reconnect;
+
+		packet_size = header_size + payload_size;
+		if (packet_size > pool->avail)
+			goto keep_part;
+
+		err = ack_receiver_tbl[pi.cmd].fn(connection, &pi);
+		if (err)
+			goto reconnect;
+
+		pool->buffer += packet_size;
+		pool->avail -= packet_size;
+	}
+	if (pool->avail > 0) {
+keep_part:
+		memcpy(connection->reassemble_buffer.buffer, pool->buffer, pool->avail);
+		connection->reassemble_buffer.avail = pool->avail;
+		pool->avail = 0;
+	}
+	return;
+
+reconnect:
+	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+}
+
 void drbd_send_acks_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
@@ -9818,3 +9930,4 @@ void drbd_send_peer_ack_wf(struct work_struct *ws)
 
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
 EXPORT_SYMBOL(drbd_free_pages);
+EXPORT_SYMBOL(drbd_control_data_ready);
