@@ -91,7 +91,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	device->md_io.done = 0;
 	device->md_io.error = -ENODEV;
 
-	bio = bio_alloc_drbd(GFP_NOIO);
+	bio = bio_alloc_bioset(GFP_NOIO, 1, &drbd_md_io_bio_set);
 	bio_set_dev(bio, bdev->md_bdev);
 	bio->bi_iter.bi_sector = sector;
 	err = -EIO;
