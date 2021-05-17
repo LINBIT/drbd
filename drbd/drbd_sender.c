@@ -2242,12 +2242,8 @@ skip_helper:
 		     drbd_repl_str(repl_state),
 		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
 		     (unsigned long) peer_device->rs_total);
-		if (side == L_SYNC_TARGET) {
-			peer_device->resync_next_bit = 0;
-			peer_device->use_csums = use_checksum_based_resync(connection, device);
-		} else {
-			peer_device->use_csums = false;
-		}
+		peer_device->use_csums = side == L_SYNC_TARGET ?
+			use_checksum_based_resync(connection, device) : false;
 
 		if ((side == L_SYNC_TARGET || side == L_PAUSED_SYNC_T) &&
 		    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
