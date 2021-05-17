@@ -153,6 +153,7 @@ else
 	rm -f dummy-for-compat-h.c
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
+	rm -f .timestamps_fixed
 	rm -rf .compat_test.* .cache.mk
 
   distclean: clean
