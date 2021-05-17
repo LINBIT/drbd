@@ -1724,6 +1724,8 @@ handshake_found:
  * several "soft" transitions to get the resource back to normal.  To allow
  * those, rather than checking if the desired new state is valid, we can only
  * check if the desired new state is "at least as good" as the current state.
+ *
+ * @resource:	DRBD resource
  */
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *resource)
 {

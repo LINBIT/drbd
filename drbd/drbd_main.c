@@ -711,7 +711,7 @@ void _drbd_thread_stop(struct drbd_thread *thi, int restart, int wait)
 }
 
 #ifdef CONFIG_SMP
-/**
+/*
  * drbd_calc_cpu_mask() - Generate CPU masks, spread over all CPUs
  *
  * Forces all threads of a resource onto the same CPU. This is beneficial for
@@ -749,7 +749,6 @@ static void drbd_calc_cpu_mask(cpumask_var_t *cpu_mask)
 
 /**
  * drbd_thread_current_set_cpu() - modifies the cpu mask of the _current_ thread
- * @device:	DRBD device.
  * @thi:	drbd_thread object
  *
  * call in the "main loop" of _all_ threads, no need for any mutex, current won't die
@@ -809,7 +808,7 @@ bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr)
 	return device_stable;
 }
 
-/**
+/*
  * drbd_header_size  -  size of a packet header
  *
  * The header size is a multiple of 8, so any payload following the header is
@@ -1732,7 +1731,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	return len;
 }
 
-/**
+/*
  * send_bitmap_rle_or_plain
  *
  * Return 0 when done, 1 when another iteration is needed, and a negative error

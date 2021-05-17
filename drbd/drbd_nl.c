@@ -1340,12 +1340,13 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
-		retcode = drbd_set_role(adm_ctx.resource, R_PRIMARY, parms.assume_uptodate,
-					adm_ctx.reply_skb);
+		retcode = (enum drbd_ret_code)drbd_set_role(adm_ctx.resource,
+				R_PRIMARY, parms.assume_uptodate, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	} else {
-		retcode = drbd_set_role(adm_ctx.resource, R_SECONDARY, false, adm_ctx.reply_skb);
+		retcode = (enum drbd_ret_code)drbd_set_role(adm_ctx.resource,
+				R_SECONDARY, false, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 		else
@@ -1536,7 +1537,7 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
 		ppsize(ppb, size>>1), (unsigned long long)size>>1);
 }
 
-/**
+/*
  * drbd_determine_dev_size() -  Sets the right device size obeying all constraints
  * @device:	DRBD device.
  *
@@ -1871,7 +1872,7 @@ drbd_new_dev_size(struct drbd_device *device,
 	return size;
 }
 
-/**
+/*
  * drbd_check_al_size() - Ensures that the AL is of the right size
  * @device:	DRBD device.
  *
@@ -3168,7 +3169,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	rv = stable_state_change(resource,
 		change_disk_state(device, D_ATTACHING, CS_VERBOSE | CS_SERIALIZE, NULL));
-	retcode = rv;  /* FIXME: Type mismatch. */
+	retcode = (enum drbd_ret_code)rv;
 	if (rv >= SS_SUCCESS)
 		update_resource_dagtag(resource, nbc);
 	drbd_resume_io(device);
@@ -4729,7 +4730,7 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 		mutex_unlock(&connection->resource->conf_update);
 	}
 	if (rv < SS_SUCCESS)
-		retcode = rv;  /* FIXME: Type mismatch. */
+		retcode = (enum drbd_ret_code)rv;
 	else
 		retcode = NO_ERROR;
 	mutex_unlock(&adm_ctx.resource->adm_mutex);

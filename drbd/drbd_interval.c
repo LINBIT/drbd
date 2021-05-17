@@ -3,7 +3,7 @@
 #include "drbd_interval.h"
 #include "drbd_wrappers.h"
 
-/**
+/*
  * interval_end  -  return end of @node
  */
 static inline
@@ -18,7 +18,7 @@ sector_t interval_end(struct rb_node *node)
 RB_DECLARE_CALLBACKS_MAX(_STATIC, augment_callbacks, struct drbd_interval, rb,
 		sector_t, end, NODE_END);
 
-/**
+/*
  * drbd_insert_interval  -  insert a new interval into a tree
  */
 bool
@@ -56,6 +56,7 @@ drbd_insert_interval(struct rb_root *root, struct drbd_interval *this)
 
 /**
  * drbd_contains_interval  -  check if a tree contains a given interval
+ * @root:	red black tree root
  * @sector:	start sector of @interval
  * @interval:	may be an invalid pointer
  *
@@ -88,7 +89,7 @@ drbd_contains_interval(struct rb_root *root, sector_t sector,
 	return false;
 }
 
-/**
+/*
  * drbd_remove_interval  -  remove an interval from a tree
  */
 void
@@ -103,6 +104,7 @@ drbd_remove_interval(struct rb_root *root, struct drbd_interval *this)
 
 /**
  * drbd_find_overlap  - search for an interval overlapping with [sector, sector + size)
+ * @root:	red black tree root
  * @sector:	start sector
  * @size:	size, aligned to 512 bytes
  *
