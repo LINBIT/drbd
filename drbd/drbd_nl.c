@@ -3656,7 +3656,6 @@ static bool needs_key(struct crypto_shash *h)
  * alloc_shash() - Allocate a keyed or unkeyed shash algorithm
  * @tfm: Destination crypto_shash
  * @tfm_name: Which algorithm to use
- * @err_alg: The error code to return on allocation failure
  * @type: The functionality that the hash is used for
  * @must_unkeyed: If set, a check is included which ensures that the algorithm
  * 	     does not require a key
