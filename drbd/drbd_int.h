@@ -1051,7 +1051,6 @@ struct drbd_connection {
 	struct blk_plug receiver_plug;
 	struct drbd_thread receiver;
 	struct drbd_thread sender;
-	struct drbd_thread ack_receiver;
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
 
@@ -2085,7 +2084,6 @@ extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
 			    sector_t sector, int blksize, u64 block_id);
 extern int drbd_receiver(struct drbd_thread *thi);
 extern void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed);
-extern int drbd_ack_receiver(struct drbd_thread *thi);
 extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
@@ -2347,17 +2345,6 @@ drbd_post_work(struct drbd_resource *resource, int work_bit)
 }
 
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
-
-/* To get the ack_receiver out of the blocking network stack,
- * so it can change its sk_rcvtimeo from idle- to ping-timeout,
- * and send a ping, we need to send a signal.
- * Which signal we send is irrelevant. */
-static inline void wake_ack_receiver(struct drbd_connection *connection)
-{
-	struct task_struct *task = connection->ack_receiver.task;
-	if (task && get_t_state(&connection->ack_receiver) == RUNNING)
-		send_sig(SIGXCPU, task, 1);
-}
 
 extern void *__conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
 extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);

@@ -4241,8 +4241,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		if (!expect(connection, current != connection->receiver.task) ||
-		    !expect(connection, current != connection->ack_receiver.task)) {
+		if (!expect(connection, current != connection->receiver.task)) {
 			rcu_read_unlock();
 			BUG();
 		}

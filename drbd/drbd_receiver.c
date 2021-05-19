@@ -1059,7 +1059,6 @@ start:
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	have_mutex = false;
 
-	drbd_thread_start(&connection->ack_receiver);
 	connection->ack_sender =
 		alloc_ordered_workqueue("drbd_as_%s", WQ_MEM_RECLAIM, connection->resource->name);
 	if (!connection->ack_sender) {
@@ -8464,7 +8463,6 @@ static void conn_disconnect(struct drbd_connection *connection)
 	del_connect_timer(connection);
 
 	/* ack_receiver does not clean up anything. it must not interfere, either */
-	drbd_thread_stop(&connection->ack_receiver);
 	if (connection->ack_sender) {
 		destroy_workqueue(connection->ack_sender);
 		connection->ack_sender = NULL;
@@ -9653,135 +9651,6 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_RETRY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
-
-int drbd_ack_receiver(struct drbd_thread *thi)
-{
-	struct drbd_connection *connection = thi->connection;
-	struct meta_sock_cmd *cmd = NULL;
-	struct packet_info pi;
-	unsigned long pre_recv_jif;
-	int rv;
-	void *buffer;
-	int received = 0, rflags = 0;
-	unsigned int header_size = drbd_header_size(connection);
-	int expect   = header_size;
-	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
-
-	sched_set_fifo_low(current);
-
-	while (get_t_state(thi) == RUNNING) {
-		drbd_thread_current_set_cpu(thi);
-
-		drbd_reclaim_net_peer_reqs(connection);
-
-		pre_recv_jif = jiffies;
-		rv = tr_ops->recv(transport, CONTROL_STREAM, &buffer, expect - received, rflags);
-
-		/* Note:
-		 * -EINTR	 (on meta) we got a signal
-		 * -EAGAIN	 (on meta) rcvtimeo expired
-		 * -ECONNRESET	 other side closed the connection
-		 * -ERESTARTSYS  (on data) we got a signal
-		 * rv <  0	 other than above: unexpected error!
-		 * rv == expected: full header or command
-		 * rv <  expected: "woken" by signal during receive
-		 * rv == 0	 : "connection shut down by peer"
-		 */
-		if (likely(rv > 0)) {
-			received += rv;
-
-			if (received < expect)
-				rflags = GROW_BUFFER;
-
-		} else if (rv == 0) {
-			long t;
-
-			rcu_read_lock();
-			t = rcu_dereference(connection->transport.net_conf)->ping_timeo * HZ/10;
-			rcu_read_unlock();
-
-			t = wait_event_timeout(connection->resource->state_wait,
-					       connection->cstate[NOW] < C_CONNECTING,
-					       t);
-			if (t)
-				break;
-
-			drbd_err(connection, "meta connection shut down by peer.\n");
-			goto reconnect;
-		} else if (rv == -EAGAIN) {
-			/* If the data socket received something meanwhile,
-			 * that is good enough: peer is still alive. */
-
-			if (time_after(connection->last_received, pre_recv_jif))
-				continue;
-			if (test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
-				drbd_err(connection, "PingAck did not arrive in time.\n");
-				goto reconnect;
-			}
-			drbd_send_ping(connection);
-			continue;
-		} else if (rv == -EINTR) {
-			/* maybe drbd_thread_stop(): the while condition will notice.
-			 * maybe woken for send_ping: we'll send a ping above,
-			 * and change the rcvtimeo */
-			flush_signals(current);
-			continue;
-		} else {
-			drbd_err(connection, "sock_recvmsg returned %d\n", rv);
-			goto reconnect;
-		}
-
-		if (received == expect && cmd == NULL) {
-			if (decode_header(connection, buffer, &pi))
-				goto reconnect;
-
-			cmd = &ack_receiver_tbl[pi.cmd];
-			if (pi.cmd >= ARRAY_SIZE(ack_receiver_tbl) || !cmd->fn) {
-				drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
-					 drbd_packet_name(pi.cmd), pi.cmd);
-				goto disconnect;
-			}
-			expect = header_size + cmd->pkt_size;
-			if (pi.size != expect - header_size) {
-				drbd_err(connection, "Wrong packet size on meta (c: %d, l: %d)\n",
-					pi.cmd, pi.size);
-				goto reconnect;
-			}
-			rflags = 0;
-		}
-		if (received == expect) {
-			bool err;
-
-			pi.data = buffer;
-			err = cmd->fn(connection, &pi);
-			if (err) {
-				drbd_err(connection, "%ps failed\n", cmd->fn);
-				goto reconnect;
-			}
-
-			connection->last_received = jiffies;
-
-			received = 0;
-			expect = header_size;
-			cmd = NULL;
-			rflags = 0;
-		}
-	}
-
-	if (0) {
-reconnect:
-		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-	}
-	if (0) {
-disconnect:
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
-	}
-
-	drbd_info(connection, "ack_receiver terminated\n");
-
-	return 0;
-}
 
 static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)
 {

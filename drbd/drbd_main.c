@@ -3158,7 +3158,6 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		rcu_read_lock();
 		for_each_connection_rcu(connection, resource) {
 			connection->receiver.reset_cpu_mask = 1;
-			connection->ack_receiver.reset_cpu_mask = 1;
 			connection->sender.reset_cpu_mask = 1;
 		}
 		rcu_read_unlock();
@@ -3309,8 +3308,6 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->receiver.connection = connection;
 	drbd_thread_init(resource, &connection->sender, drbd_sender, "sender");
 	connection->sender.connection = connection;
-	drbd_thread_init(resource, &connection->ack_receiver, drbd_ack_receiver, "ack_recv");
-	connection->ack_receiver.connection = connection;
 	spin_lock_init(&connection->peer_reqs_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->connections);
