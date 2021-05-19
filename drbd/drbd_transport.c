@@ -283,11 +283,10 @@ bool drbd_stream_send_timed_out(struct drbd_transport *transport, enum drbd_stre
 	if (!drop_it) {
 		drbd_err(connection, "[%s/%d] sending time expired, ko = %u\n",
 			 current->comm, current->pid, connection->transport.ko_count);
-		request_ping(connection);
+		schedule_work(&connection->send_ping_work);
 	}
 
 	return drop_it;
-
 }
 
 bool drbd_should_abort_listening(struct drbd_transport *transport)

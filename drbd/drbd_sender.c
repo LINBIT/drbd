@@ -1371,7 +1371,7 @@ static int w_resync_finished(struct drbd_work *w, int cancel)
 void drbd_ping_peer(struct drbd_connection *connection)
 {
 	clear_bit(GOT_PING_ACK, &connection->flags);
-	request_ping(connection);
+	schedule_work(&connection->send_ping_work);
 	wait_event(connection->resource->state_wait,
 		   test_bit(GOT_PING_ACK, &connection->flags) ||
 		   connection->cstate[NOW] < C_CONNECTED);
@@ -2876,7 +2876,7 @@ void drbd_check_peers(struct drbd_resource *resource)
 			continue;
 		clear_bit(GOT_PING_ACK, &connection->flags);
 		set_bit(CHECKING_PEER, &connection->flags);
-		request_ping(connection);
+		schedule_work(&connection->send_ping_work);
 	}
 
 	wait_event(resource->state_wait, all_peers_responded(resource));

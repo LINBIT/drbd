@@ -59,6 +59,7 @@ static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
 static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local);
 static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local);
+static void drbd_send_ping_ack_wf(struct work_struct *ws);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -1101,11 +1102,17 @@ int drbd_send_ping(struct drbd_connection *connection)
 	return send_command(connection, -1, P_PING, CONTROL_STREAM);
 }
 
-int drbd_send_ping_ack(struct drbd_connection *connection)
+void drbd_send_ping_ack_wf(struct work_struct *ws)
 {
-	if (!conn_prepare_command(connection, 0, CONTROL_STREAM))
-		return -EIO;
-	return send_command(connection, -1, P_PING_ACK, CONTROL_STREAM);
+	struct drbd_connection *connection =
+		container_of(ws, struct drbd_connection, send_ping_ack_work);
+	int err;
+
+	err = conn_prepare_command(connection, 0, CONTROL_STREAM) ? 0 : -EIO;
+	if (!err)
+		err = send_command(connection, -1, P_PING_ACK, CONTROL_STREAM);
+	if (err)
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
 int drbd_send_peer_ack(struct drbd_connection *connection,
@@ -3322,6 +3329,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 
 	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
 	INIT_WORK(&connection->send_acks_work, drbd_send_acks_wf);
+	INIT_WORK(&connection->send_ping_ack_work, drbd_send_ping_ack_wf);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
