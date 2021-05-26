@@ -134,6 +134,7 @@ module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protoco
  */
 struct idr drbd_devices;
 struct list_head drbd_resources;
+DEFINE_SPINLOCK(drbd_devices_lock);
 DEFINE_MUTEX(resources_mutex);
 
 struct kmem_cache *drbd_request_cache;
@@ -3767,7 +3768,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	locked = true;
 	spin_lock_irq(&resource->req_lock);
+	spin_lock(&drbd_devices_lock);
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_NOWAIT);
+	spin_unlock(&drbd_devices_lock);
 	if (id < 0) {
 		if (id == -ENOSPC)
 			err = ERR_MINOR_OR_VOLUME_EXISTS;
@@ -3841,7 +3844,9 @@ out_remove_peer_device:
 	kref_debug_put(&device->kref_debug, 1);
 
 out_idr_remove_minor:
+	spin_lock(&drbd_devices_lock);
 	idr_remove(&drbd_devices, minor);
+	spin_unlock(&drbd_devices_lock);
 	kref_debug_put(&device->kref_debug, 1);
 out_no_minor_idr:
 	if (locked)
@@ -3889,7 +3894,9 @@ void drbd_unregister_device(struct drbd_device *device)
 		idr_remove(&connection->peer_devices, device->vnr);
 	}
 	idr_remove(&resource->devices, device->vnr);
+	spin_lock(&drbd_devices_lock);
 	idr_remove(&drbd_devices, device->minor);
+	spin_unlock(&drbd_devices_lock);
 	spin_unlock_irq(&resource->req_lock);
 
 	for_each_peer_device(peer_device, device)
