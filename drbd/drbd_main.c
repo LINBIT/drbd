@@ -134,6 +134,7 @@ module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protoco
  */
 struct idr drbd_devices;
 struct list_head drbd_resources;
+DEFINE_MUTEX(resources_mutex);
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
@@ -4012,7 +4013,6 @@ static int __init drbd_init(void)
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
 
-	mutex_init(&resources_mutex);
 	INIT_LIST_HEAD(&drbd_resources);
 
 	err = drbd_genl_register();
