@@ -947,7 +947,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, unsigned int se
 		/* We check for "finished" only in the reply path:
 		 * w_e_end_ov_reply().
 		 * We need to send at least one request out. */
-		stop_sector_reached = i > 0
+		stop_sector_reached = sector > peer_device->ov_start_sector
 			&& verify_can_do_stop_sector(peer_device)
 			&& sector >= peer_device->ov_stop_sector;
 		if (stop_sector_reached)
