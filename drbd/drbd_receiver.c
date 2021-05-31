@@ -396,7 +396,9 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 
 	/* In case resync runs faster than anticipated, run the resync_work early */
 	if (rs_sect_in >= peer_device->rs_in_flight)
-		drbd_device_post_work(peer_device->device, MAKE_RESYNC_REQUEST);
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
 }
 
 static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
@@ -8334,13 +8336,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
 	drbd_rs_cancel_all(peer_device);
-
-	if (get_ldev(device)) {
-		/* Avoid holding a different resync because this one looks like it is
-		 * still active. */
-		drbd_rs_controller_reset(peer_device);
-		put_ldev(device);
-	}
 
 	peer_device->uuids_received = false;
 

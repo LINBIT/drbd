@@ -31,8 +31,8 @@
 
 void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *device);
 
-static int make_ov_request(struct drbd_peer_device *, unsigned int sect_in);
-static int make_resync_request(struct drbd_peer_device *, unsigned int sect_in);
+static int make_ov_request(struct drbd_peer_device *, int);
+static int make_resync_request(struct drbd_peer_device *, int);
 static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
 static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags);
@@ -447,67 +447,28 @@ defer:
 	return -EAGAIN;
 }
 
-static void drbd_device_resync_request(struct drbd_device *device)
+int w_resync_timer(struct drbd_work *w, int cancel)
 {
-	struct drbd_peer_device *peer_device;
-	struct drbd_peer_device *peer_device_active = NULL;
-	struct drbd_peer_device *peer_device_target = NULL;
-	unsigned int sect_in_target = 0;  /* Number of sectors that came in since the last turn for peer to which we are target. */
-	bool other_peer_active;
+	struct drbd_peer_device *peer_device =
+		container_of(w, struct drbd_peer_device, resync_work);
 
-	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, device) {
-		unsigned int sect_in;  /* Number of sectors that came in since the last turn */
+	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
+		return 0;
 
-		sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
-		peer_device->rs_in_flight -= sect_in;
-
-		if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_SYNC_TARGET) {
-			if (peer_device_target && drbd_ratelimit())
-				drbd_warn(device, "%s to peer %d while %s to %d\n",
-						drbd_repl_str(peer_device_target->repl_state[NOW]),
-						peer_device_target->connection->peer_node_id,
-						drbd_repl_str(peer_device->repl_state[NOW]),
-						peer_device->connection->peer_node_id);
-			peer_device_target = peer_device;
-			sect_in_target = sect_in;
-		}
-
-		if (peer_device->connection->cstate[NOW] == C_CONNECTED && peer_device->rs_in_flight > 0) {
-			if (peer_device_active && drbd_ratelimit())
-				drbd_warn(device, "resync requests in-flight with peer %d and peer %d\n",
-						peer_device_active->connection->peer_node_id,
-						peer_device->connection->peer_node_id);
-			peer_device_active = peer_device;
-		}
-	}
-
-	other_peer_active = peer_device_active && peer_device_target != peer_device_active;
-	if (!peer_device_target || /* Nothing to do. */
-			other_peer_active || /* Wait for activity to drain before making requests to other peer. */
-			test_bit(SYNC_TARGET_TO_BEHIND, &peer_device_target->flags)) {
-		rcu_read_unlock();
-		return;
-	}
-
-	kref_get(&peer_device_target->connection->kref);
-	rcu_read_unlock();
-
-	mutex_lock(&peer_device_target->resync_next_bit_mutex);
-	switch (peer_device_target->repl_state[NOW]) {
+	mutex_lock(&peer_device->resync_next_bit_mutex);
+	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
-		make_ov_request(peer_device_target, sect_in_target);
+		make_ov_request(peer_device, cancel);
 		break;
 	case L_SYNC_TARGET:
-		make_resync_request(peer_device_target, sect_in_target);
+		make_resync_request(peer_device, cancel);
 		break;
 	default:
 		break;
 	}
-	mutex_unlock(&peer_device_target->resync_next_bit_mutex);
+	mutex_unlock(&peer_device->resync_next_bit_mutex);
 
-	kref_put(&peer_device_target->connection->kref, drbd_destroy_connection);
-	return;
+	return 0;
 }
 
 int w_send_uuids(struct drbd_work *w, int cancel)
@@ -531,10 +492,9 @@ void resync_timer_fn(struct timer_list *t)
 	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
 		return;
 
-	/* Post work for the device regardless of the peer_device to which this
-	 * timer is attached. This may result in some extra runs of the resync
-	 * work, but that is harmless. */
-	drbd_device_post_work(peer_device->device, MAKE_RESYNC_REQUEST);
+	drbd_queue_work_if_unqueued(
+		&peer_device->connection->sender_work,
+		&peer_device->resync_work);
 }
 
 static void fifo_set(struct fifo_buffer *fb, int value)
@@ -661,11 +621,15 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	return req_sect;
 }
 
-static int drbd_rs_number_requests(struct drbd_peer_device *peer_device, unsigned int sect_in)
+static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
 	struct net_conf *nc;
 	ktime_t duration, now;
+	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
+
+	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
+	peer_device->rs_in_flight -= sect_in;
 
 	now = ktime_get();
 	duration = ktime_sub(now, peer_device->rs_last_mk_req_kt);
@@ -735,7 +699,7 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device)
 	return delay;
 }
 
-static int make_resync_request(struct drbd_peer_device *peer_device, unsigned int sect_in)
+static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_transport *transport = &peer_device->connection->transport;
@@ -747,6 +711,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, unsigned in
 	int align;
 	int i;
 	int discard_granularity = 0;
+
+	if (unlikely(cancel))
+		return 0;
 
 	if (peer_device->rs_total == 0) {
 		/* empty resync? */
@@ -779,7 +746,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, unsigned in
 	}
 
 	max_bio_size = queue_max_hw_sectors(device->rq_queue) << 9;
-	number = drbd_rs_number_requests(peer_device, sect_in);
+	number = drbd_rs_number_requests(peer_device);
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
@@ -918,7 +885,9 @@ request_done:
 
 	/* and in case that raced with the receiver, reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight) {
-		drbd_device_post_work(device, MAKE_RESYNC_REQUEST);
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
 	} else {
 		mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device));
 	}
@@ -926,7 +895,7 @@ request_done:
 	return 0;
 }
 
-static int make_ov_request(struct drbd_peer_device *peer_device, unsigned int sect_in)
+static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
 	int number, i, size;
@@ -934,7 +903,10 @@ static int make_ov_request(struct drbd_peer_device *peer_device, unsigned int se
 	const sector_t capacity = get_capacity(device->vdisk);
 	bool stop_sector_reached = false;
 
-	number = drbd_rs_number_requests(peer_device, sect_in);
+	if (unlikely(cancel))
+		return 1;
+
+	number = drbd_rs_number_requests(peer_device);
 	sector = peer_device->ov_position;
 
 	/* don't let rs_sectors_came_in() re-schedule us "early"
@@ -976,7 +948,9 @@ static int make_ov_request(struct drbd_peer_device *peer_device, unsigned int se
 	/* ... and in case that raced with the receiver,
 	 * reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
-		drbd_device_post_work(device, MAKE_RESYNC_REQUEST);
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
 	if (i == 0)
 		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
 	return 1;
@@ -1173,14 +1147,10 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	int verify_done = 0;
 	bool aborted = false;
 
-	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S ||
-			repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
+
+	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 		/* Make sure all queued w_update_peers()/consider_sending_peers_in_sync()
-		 * executed before killing the resync_lru with drbd_rs_del_all().
-		 *
-		 * Also make sure w_after_state_change has run and sent notifications
-		 * for the new state before potentially calling a usermode helper
-		 * corresponding to the new sync target state. */
+		   executed before killing the resync_lru with drbd_rs_del_all() */
 		if (current == device->resource->worker.task)
 			goto queue_on_sender_workq;
 		else
@@ -2003,9 +1973,6 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	plan->total = 0;
 	fifo_set(plan, 0);
 	rcu_read_unlock();
-
-	/* Clearing rs_in_flight may release some other resync. */
-	drbd_device_post_work(peer_device->device, MAKE_RESYNC_REQUEST);
 }
 
 void start_resync_timer_fn(struct timer_list *t)
@@ -2271,7 +2238,7 @@ skip_helper:
 		 * No matter, that is handled in resync_timer_fn() */
 		if (repl_state == L_SYNC_TARGET) {
 			drbd_uuid_resync_starting(peer_device);
-			drbd_device_post_work(peer_device->device, MAKE_RESYNC_REQUEST);
+			mod_timer(&peer_device->resync_timer, jiffies);
 		}
 
 		drbd_md_sync_if_dirty(device);
@@ -2512,8 +2479,6 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 		drbd_ldev_destroy(device);
 	if (test_bit(MAKE_NEW_CUR_UUID, &todo))
 		make_new_current_uuid(device);
-	if (test_bit(MAKE_RESYNC_REQUEST, &todo))
-		drbd_device_resync_request(device);
 }
 
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)
@@ -2535,7 +2500,6 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << DESTROY_DISK)	\
 	|(1UL << MD_SYNC)	\
 	|(1UL << MAKE_NEW_CUR_UUID)\
-	|(1UL << MAKE_RESYNC_REQUEST)\
 	)
 
 #define DRBD_PEER_DEVICE_WORK_MASK	\
