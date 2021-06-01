@@ -50,8 +50,6 @@ static unsigned long get_work_bits(const unsigned long mask, unsigned long *flag
  *
  */
 
-struct mutex resources_mutex;
-
 /* used for synchronous meta data and bitmap IO
  * submitted by drbd_md_sync_page_io()
  */
