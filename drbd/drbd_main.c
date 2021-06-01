@@ -3716,7 +3716,7 @@ void drbd_unregister_device(struct drbd_device *device)
 		idr_remove(&connection->peer_devices, device->vnr);
 	}
 	idr_remove(&resource->devices, device->vnr);
-	idr_remove(&drbd_devices, device_to_minor(device));
+	idr_remove(&drbd_devices, device->minor);
 	write_unlock_irq(&resource->state_rwlock);
 
 	for_each_peer_device(peer_device, device)
@@ -5336,7 +5336,7 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 
 	unsigned int ret = (
 		(drbd_fault_devs == 0 ||
-			((1 << device_to_minor(device)) & drbd_fault_devs) != 0) &&
+			((1 << device->minor) & drbd_fault_devs) != 0) &&
 		(((_drbd_fault_random(&rrs) % 100) + 1) <= drbd_fault_rate));
 
 	if (ret) {

@@ -608,7 +608,7 @@ static int drbd_khelper(struct drbd_device *device, struct drbd_connection *conn
 	env_print(&env, "TERM=linux");
 	env_print(&env, "PATH=/sbin:/usr/sbin:/bin:/usr/bin");
 	if (device) {
-		env_print(&env, "DRBD_MINOR=%u", device_to_minor(device));
+		env_print(&env, "DRBD_MINOR=%u", device->minor);
 		env_print(&env, "DRBD_VOLUME=%u", device->vnr);
 		if (get_ldev(device)) {
 			struct disk_conf *disk_conf =

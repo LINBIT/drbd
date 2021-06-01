@@ -1539,11 +1539,6 @@ conn_peer_device(struct drbd_connection *connection, int volume_number)
 	     peer_device;						\
 	     peer_device = __drbd_next_peer_device_ref(&m, peer_device, device))
 
-static inline unsigned int device_to_minor(struct drbd_device *device)
-{
-	return device->minor;
-}
-
 /*
  * function declarations
  *************************/
