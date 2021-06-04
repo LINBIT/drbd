@@ -1131,6 +1131,7 @@ struct drbd_peer_device {
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
+	bool resync_active[2];
 	enum drbd_repl_state negotiation_result; /* To find disk state after attach */
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -2500,27 +2501,38 @@ static inline int __sub_unacked(struct drbd_peer_device *peer_device, int n)
 	return atomic_sub_return(n, &peer_device->unacked_cnt);
 }
 
+static inline bool repl_is_sync_target(enum drbd_repl_state repl_state)
+{
+	return repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T;
+}
+
+static inline bool repl_is_sync_source(enum drbd_repl_state repl_state)
+{
+	return repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S;
+}
+
+static inline bool repl_is_sync(enum drbd_repl_state repl_state)
+{
+	return repl_is_sync_source(repl_state) ||
+		repl_is_sync_target(repl_state);
+}
+
 static inline bool is_sync_target_state(struct drbd_peer_device *peer_device,
 					enum which_state which)
 {
-	enum drbd_repl_state repl_state = peer_device->repl_state[which];
-
-	return repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T;
+	return repl_is_sync_target(peer_device->repl_state[which]);
 }
 
 static inline bool is_sync_source_state(struct drbd_peer_device *peer_device,
 					enum which_state which)
 {
-	enum drbd_repl_state repl_state = peer_device->repl_state[which];
-
-	return repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S;
+	return repl_is_sync_source(peer_device->repl_state[which]);
 }
 
 static inline bool is_sync_state(struct drbd_peer_device *peer_device,
 				 enum which_state which)
 {
-	return is_sync_source_state(peer_device, which) ||
-		is_sync_target_state(peer_device, which);
+	return repl_is_sync(peer_device->repl_state[which]);
 }
 
 static inline bool is_verify_state(struct drbd_peer_device *peer_device,

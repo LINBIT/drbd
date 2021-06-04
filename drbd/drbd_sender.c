@@ -452,21 +452,27 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, resync_work);
 
-	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
-		return 0;
-
-	mutex_lock(&peer_device->resync_next_bit_mutex);
 	switch (peer_device->repl_state[NOW]) {
 	case L_VERIFY_S:
+		mutex_lock(&peer_device->resync_next_bit_mutex);
 		make_ov_request(peer_device, cancel);
+		mutex_unlock(&peer_device->resync_next_bit_mutex);
 		break;
 	case L_SYNC_TARGET:
+		mutex_lock(&peer_device->resync_next_bit_mutex);
 		make_resync_request(peer_device, cancel);
+		mutex_unlock(&peer_device->resync_next_bit_mutex);
 		break;
 	default:
+		if (atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight) {
+			struct drbd_resource *resource = peer_device->device->resource;
+			unsigned long irq_flags;
+			begin_state_change(resource, &irq_flags, 0);
+			peer_device->resync_active[NEW] = false;
+			end_state_change(resource, &irq_flags);
+		}
 		break;
 	}
-	mutex_unlock(&peer_device->resync_next_bit_mutex);
 
 	return 0;
 }
@@ -488,9 +494,6 @@ int w_send_uuids(struct drbd_work *w, int cancel)
 void resync_timer_fn(struct timer_list *t)
 {
 	struct drbd_peer_device *peer_device = from_timer(peer_device, t, resync_timer);
-
-	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags))
-		return;
 
 	drbd_queue_work_if_unqueued(
 		&peer_device->connection->sender_work,
@@ -1208,6 +1211,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	   of application IO), and against connectivity loss just before we arrive here. */
 	if (peer_device->repl_state[NOW] <= L_ESTABLISHED)
 		goto out_unlock;
+	peer_device->resync_active[NEW] = false;
 	__change_repl_state(peer_device, L_ESTABLISHED);
 
 	aborted = device->disk_state[NOW] == D_OUTDATED && new_peer_disk_state == D_INCONSISTENT;
@@ -2047,18 +2051,6 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
 }
 
-static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
-{
-	bool csums_after_crash_only;
-	rcu_read_lock();
-	csums_after_crash_only = rcu_dereference(connection->transport.net_conf)->csums_after_crash_only;
-	rcu_read_unlock();
-	return connection->agreed_pro_version >= 89 &&		/* supported? */
-		connection->csums_tfm &&			/* configured? */
-		(csums_after_crash_only == false		/* use for each resync? */
-		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
-}
-
 /**
  * drbd_start_resync() - Start the resync process
  * @side:	Either L_SYNC_SOURCE or L_SYNC_TARGET
@@ -2168,81 +2160,10 @@ skip_helper:
 	if (repl_state < L_ESTABLISHED)
 		r = SS_UNKNOWN_ERROR;
 
-	if (r == SS_SUCCESS) {
-		if (side == L_SYNC_TARGET)
-			drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
-
+	if (r == SS_SUCCESS)
 		drbd_pause_after(device);
-		/* Forget potentially stale cached per resync extent bit-counts.
-		 * Open coded drbd_rs_cancel_all(device), we already have IRQs
-		 * disabled, and know the disk state is ok. */
-		spin_lock(&device->al_lock);
-		lc_reset(peer_device->resync_lru);
-		peer_device->resync_locked = 0;
-		peer_device->resync_wenr = LC_FREE;
-		spin_unlock(&device->al_lock);
-	}
 
 	unlock_all_resources();
-
-	if (r == SS_SUCCESS) {
-		drbd_info(peer_device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
-		     drbd_repl_str(repl_state),
-		     (unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
-		     (unsigned long) peer_device->rs_total);
-		peer_device->use_csums = side == L_SYNC_TARGET ?
-			use_checksum_based_resync(connection, device) : false;
-
-		if ((side == L_SYNC_TARGET || side == L_PAUSED_SYNC_T) &&
-		    !(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
-		    !drbd_stable_sync_source_present(peer_device, NOW))
-			set_bit(UNSTABLE_RESYNC, &peer_device->flags);
-
-		/* Since protocol 96, we must serialize drbd_gen_and_send_sync_uuid
-		 * with w_send_oos, or the sync target will get confused as to
-		 * how much bits to resync.  We cannot do that always, because for an
-		 * empty resync and protocol < 95, we need to do it here, as we call
-		 * drbd_resync_finished from here in that case.
-		 * We drbd_gen_and_send_sync_uuid here for protocol < 96,
-		 * and from after_state_ch otherwise. */
-		if (side == L_SYNC_SOURCE && connection->agreed_pro_version < 96)
-			drbd_gen_and_send_sync_uuid(peer_device);
-
-		if (connection->agreed_pro_version < 95 && peer_device->rs_total == 0) {
-			/* This still has a race (about when exactly the peers
-			 * detect connection loss) that can lead to a full sync
-			 * on next handshake. In 8.3.9 we fixed this with explicit
-			 * resync-finished notifications, but the fix
-			 * introduces a protocol change.  Sleeping for some
-			 * time longer than the ping interval + timeout on the
-			 * SyncSource, to give the SyncTarget the chance to
-			 * detect connection loss, then waiting for a ping
-			 * response (implicit in drbd_resync_finished) reduces
-			 * the race considerably, but does not solve it. */
-			if (side == L_SYNC_SOURCE) {
-				struct net_conf *nc;
-				int timeo;
-
-				rcu_read_lock();
-				nc = rcu_dereference(connection->transport.net_conf);
-				timeo = nc->ping_int * HZ + nc->ping_timeo * HZ / 9;
-				rcu_read_unlock();
-				schedule_timeout_interruptible(timeo);
-			}
-			drbd_resync_finished(peer_device, D_MASK);
-		}
-
-		/* ns.conn may already be != peer_device->repl_state[NOW],
-		 * we may have been paused in between, or become paused until
-		 * the timer triggers.
-		 * No matter, that is handled in resync_timer_fn() */
-		if (repl_state == L_SYNC_TARGET) {
-			drbd_uuid_resync_starting(peer_device);
-			mod_timer(&peer_device->resync_timer, jiffies);
-		}
-
-		drbd_md_sync_if_dirty(device);
-	}
 	put_ldev(device);
     out:
 	up(&device->resource->state_sem);
