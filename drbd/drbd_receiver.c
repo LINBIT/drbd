@@ -245,7 +245,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
-static int decode_header(struct drbd_connection *, void *, struct packet_info *);
+static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 
@@ -1102,13 +1102,13 @@ abort:
 	return false;
 }
 
-static int decode_header(struct drbd_connection *connection, void *header, struct packet_info *pi)
+static int decode_header(struct drbd_connection *connection, const void *header, struct packet_info *pi)
 {
 	unsigned int header_size = drbd_header_size(connection);
 
 	if (header_size == sizeof(struct p_header100) &&
 	    *(__be32 *)header == cpu_to_be32(DRBD_MAGIC_100)) {
-		struct p_header100 *h = header;
+		const struct p_header100 *h = header;
 		u16 vnr = be16_to_cpu(h->volume);
 
 		if (h->pad != 0) {
@@ -1121,13 +1121,13 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 		pi->size = be32_to_cpu(h->length);
 	} else if (header_size == sizeof(struct p_header95) &&
 		   *(__be16 *)header == cpu_to_be16(DRBD_MAGIC_BIG)) {
-		struct p_header95 *h = header;
+		const struct p_header95 *h = header;
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be32_to_cpu(h->length);
 		pi->vnr = 0;
 	} else if (header_size == sizeof(struct p_header80) &&
 		   *(__be32 *)header == cpu_to_be32(DRBD_MAGIC)) {
-		struct p_header80 *h = header;
+		const struct p_header80 *h = header;
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be16_to_cpu(h->length);
 		pi->vnr = 0;
@@ -1137,7 +1137,7 @@ static int decode_header(struct drbd_connection *connection, void *header, struc
 			 connection->agreed_pro_version);
 		return -EINVAL;
 	}
-	pi->data = header + header_size;
+	pi->data = (void *)(header + header_size); /* casting away 'const'! */
 	return 0;
 }
 
