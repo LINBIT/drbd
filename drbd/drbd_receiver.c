@@ -6044,12 +6044,20 @@ change_connection_state(struct drbd_connection *connection,
 {
 	struct drbd_resource *resource = connection->resource;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
-	bool is_disconnect = reply->is_disconnect;
-	bool is_connect = reply->is_connect;
+	bool is_disconnect = false;
+	bool is_connect = false;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 	int vnr;
+
+	if (reply) {
+		is_disconnect = reply->is_disconnect;
+		is_connect = reply->is_connect;
+	} else if (mask.conn == conn_MASK) {
+		is_connect = val.conn == C_CONNECTED;
+		is_disconnect = val.conn == C_DISCONNECTING;
+	}
 
 	mask = convert_state(mask);
 	val = convert_state(val);
