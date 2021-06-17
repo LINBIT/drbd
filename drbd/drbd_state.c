@@ -5267,7 +5267,7 @@ enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
 		.peer_device = peer_device
 	};
 
-	if (new_repl_state == L_WF_BITMAP_S)
+	if (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_VERIFY_S)
 		repl_context.context.change_local_state_last = true;
 
 	return change_cluster_wide_state(do_change_repl_state, &repl_context.context);
