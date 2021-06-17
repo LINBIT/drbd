@@ -273,7 +273,7 @@ static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, str
  */
 static struct page *page_chain_del(struct page **head, int count)
 {
-	struct page *page, *tmp = NULL, *rv_head, *rv_tail;
+	struct page *page, *tmp, *rv_head, *rv_tail;
 	int n;
 
 	BUG_ON(!count);
@@ -298,6 +298,8 @@ static struct page *page_chain_del(struct page **head, int count)
 		rv_tail = page;
 		/* adjustment of head */
 		page = cmpxchg(head, rv_head, tmp);
+		if (page == NULL)
+			return NULL;  /* someone else took all of them */
 	} while (page != rv_head);
 
 	/* add end of list marker for the returned list */
