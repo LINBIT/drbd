@@ -360,6 +360,9 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 			memcpy(peer_device_state_change->resync_susp_other_c,
 			       peer_device->resync_susp_other_c,
 			       sizeof(peer_device->resync_susp_other_c));
+			memcpy(peer_device_state_change->resync_active,
+			       peer_device->resync_active,
+			       sizeof(peer_device->resync_active));
 			peer_device_state_change++;
 		}
 		device_state_change++;
@@ -441,6 +444,7 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 		OLD_TO_NEW(p->resync_susp_peer);
 		OLD_TO_NEW(p->resync_susp_dependency);
 		OLD_TO_NEW(p->resync_susp_other_c);
+		OLD_TO_NEW(p->resync_active);
 	}
 
 #undef OLD_TO_NEW
@@ -523,6 +527,8 @@ static bool state_has_changed(struct drbd_resource *resource)
 				peer_device->resync_susp_dependency[NEW] ||
 			    peer_device->resync_susp_other_c[OLD] !=
 				peer_device->resync_susp_other_c[NEW] ||
+			    peer_device->resync_active[OLD] !=
+				peer_device->resync_active[NEW] ||
 			    peer_device->uuid_flags & UUID_FLAG_GOT_STABLE)
 				return true;
 		}
@@ -564,6 +570,8 @@ static void ___begin_state_change(struct drbd_resource *resource)
 				peer_device->resync_susp_dependency[NOW];
 			peer_device->resync_susp_other_c[NEW] =
 				peer_device->resync_susp_other_c[NOW];
+			peer_device->resync_active[NEW] =
+				peer_device->resync_active[NOW];
 		}
 	}
 }
@@ -767,6 +775,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_dependency[NEW];
 			peer_device->resync_susp_other_c[NOW] =
 				peer_device->resync_susp_other_c[NEW];
+			peer_device->resync_active[NOW] =
+				peer_device->resync_active[NEW];
 		}
 		device->cached_state_unstable = !state_is_stable(device);
 		device->cached_err_io =
@@ -1021,61 +1031,6 @@ static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_st
 	return peer_device->resync_susp_user[which] ||
 	       peer_device->resync_susp_peer[which] ||
 	       resync_susp_comb_dep(peer_device, which);
-}
-
-static void set_resync_susp_other_c(struct drbd_peer_device *peer_device, bool val, bool start)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_device *p;
-	enum drbd_repl_state r;
-
-	/* When the resync_susp_other_connection flag gets cleared, make sure it gets
-	   cleared first on all connections where we are L_PAUSED_SYNC_T. Clear it on
-	   one L_PAUSED_SYNC_T at a time. Only if we have no connection that is
-	   L_PAUSED_SYNC_T clear it on all L_PAUSED_SYNC_S connections at once. */
-
-	if (val) {
-		for_each_peer_device(p, device) {
-			if (p == peer_device)
-				continue;
-
-			r = p->repl_state[NEW];
-			p->resync_susp_other_c[NEW] = true;
-
-			if (start && p->disk_state[NEW] >= D_INCONSISTENT && r == L_ESTABLISHED)
-				p->repl_state[NEW] = L_PAUSED_SYNC_T;
-
-			if (r == L_SYNC_SOURCE)
-				p->repl_state[NEW] = L_PAUSED_SYNC_S;
-			else if (r == L_SYNC_TARGET)
-				p->repl_state[NEW] = L_PAUSED_SYNC_T;
-		}
-	} else {
-		for_each_peer_device(p, device) {
-			if (p == peer_device)
-				continue;
-
-			r = p->repl_state[NEW];
-			if (r == L_PAUSED_SYNC_S)
-				continue;
-
-			p->resync_susp_other_c[NEW] = false;
-			if (r == L_PAUSED_SYNC_T && !resync_suspended(p, NEW)) {
-				p->repl_state[NEW] = L_SYNC_TARGET;
-				return;
-			}
-		}
-
-		for_each_peer_device(p, device) {
-			if (p == peer_device)
-				continue;
-
-			p->resync_susp_other_c[NEW] = false;
-
-			if (p->repl_state[NEW] == L_PAUSED_SYNC_S && !resync_suspended(p, NEW))
-				p->repl_state[NEW] = L_SYNC_SOURCE;
-		}
-	}
 }
 
 static int scnprintf_resync_suspend_flags(char *buffer, size_t size,
@@ -1814,31 +1769,88 @@ static bool is_sync_target_other_c(struct drbd_peer_device *ign_peer_device)
 	return false;
 }
 
-static void select_best_resync_source(struct drbd_peer_device *candidate_pd)
+static void drbd_start_other_targets_paused(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = candidate_pd->device;
-	struct drbd_peer_device *current_pd;
-	long diff_w, candidate_w, current_w;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_device *p;
 
-	for_each_peer_device_rcu(current_pd, device) {
-		if (current_pd == candidate_pd)
+	for_each_peer_device(p, device) {
+		if (p == peer_device)
 			continue;
-		if (current_pd->repl_state[NEW] == L_SYNC_TARGET)
-			goto found_pd;
-	}
-	return;
 
-found_pd:
-	candidate_w = drbd_bm_total_weight(candidate_pd);
-	current_w = drbd_bm_total_weight(current_pd);
-	diff_w = candidate_w - current_w;
-	if (diff_w < -256L) {
-		/* Only switch resync source if it is at least 1MByte storage
-		   (256 bits) less to resync than from the previous sync source */
-		candidate_pd->repl_state[NEW] = L_SYNC_TARGET;
-		candidate_pd->resync_susp_other_c[NEW] = false;
-		current_pd->repl_state[NEW] = L_PAUSED_SYNC_T;
-		current_pd->resync_susp_other_c[NEW] = true;
+		if (p->disk_state[NEW] >= D_INCONSISTENT && p->repl_state[NEW] == L_ESTABLISHED)
+			p->repl_state[NEW] = L_PAUSED_SYNC_T;
+	}
+}
+
+static bool drbd_is_sync_target_candidate(struct drbd_peer_device *peer_device)
+{
+	if (!repl_is_sync_target(peer_device->repl_state[NEW]))
+		return false;
+
+	if (peer_device->resync_susp_dependency[NEW] ||
+			peer_device->resync_susp_peer[NEW] ||
+			peer_device->resync_susp_user[NEW])
+		return false;
+
+	if (peer_device->disk_state[NEW] < D_OUTDATED)
+		return false;
+
+	return true;
+
+}
+
+static void drbd_select_sync_target(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *target_current = NULL;
+	struct drbd_peer_device *target_active = NULL;
+	struct drbd_peer_device *target_desired = NULL;
+
+	/* Find current and active resync peers. */
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->repl_state[OLD] == L_SYNC_TARGET && drbd_is_sync_target_candidate(peer_device))
+			target_current = peer_device;
+
+		if (peer_device->resync_active[NEW])
+			target_active = peer_device;
+	}
+
+	/* Choose desired resync peer. */
+	for_each_peer_device_rcu(peer_device, device) {
+		if (!drbd_is_sync_target_candidate(peer_device))
+			continue;
+
+		if (target_desired && drbd_bm_total_weight(peer_device) > drbd_bm_total_weight(target_desired))
+			continue;
+
+		target_desired = peer_device;
+	}
+
+	/* Keep current resync target if the alternative has less than 1MiB
+	 * storage (256 bits) less to resync. */
+	if (target_current && target_desired &&
+			drbd_bm_total_weight(target_current) < drbd_bm_total_weight(target_desired) + 256UL)
+		target_desired = target_current;
+
+	/* Do not activate/unpause a resync if some other is still active. */
+	if (target_desired && target_active && target_desired != target_active)
+		target_desired = NULL;
+
+	/* Activate resync (if not already active). */
+	if (target_desired)
+		target_desired->resync_active[NEW] = true;
+
+	/* Make sure that the targets are correctly paused/unpaused. */
+	for_each_peer_device_rcu(peer_device, device) {
+		enum drbd_repl_state *repl_state = peer_device->repl_state;
+
+		peer_device->resync_susp_other_c[NEW] = target_desired && peer_device != target_desired;
+
+		if (!repl_is_sync_target(repl_state[NEW]))
+			continue;
+
+		peer_device->repl_state[NEW] = peer_device == target_desired ? L_SYNC_TARGET : L_PAUSED_SYNC_T;
 	}
 }
 
@@ -1946,10 +1958,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_conn_state *cstate = connection->cstate;
-			enum drbd_disk_state min_disk_state, max_disk_state;
-			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
-			enum drbd_role *peer_role = connection->peer_role;
-			bool uuids_match;
 
 			if (repl_state[NEW] < L_ESTABLISHED) {
 				peer_device->resync_susp_peer[NEW] = false;
@@ -1957,8 +1965,10 @@ static void sanitize_state(struct drbd_resource *resource)
 				    peer_disk_state[NEW] < D_INCONSISTENT)
 					peer_disk_state[NEW] = D_UNKNOWN;
 			}
-			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED)
+			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED) {
 				lost_connection = true;
+				peer_device->resync_active[NEW] = false;
+			}
 
 			/* Clear the aftr_isp when becoming unconfigured */
 			if (cstate[NEW] == C_STANDALONE &&
@@ -1972,6 +1982,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			     peer_disk_state[NEW] <= D_FAILED)) {
 				repl_state[NEW] = L_ESTABLISHED;
 				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+				peer_device->resync_active[NEW] = false;
 			}
 
 			/* Suspend IO while fence-peer handler runs (peer lost) */
@@ -1982,38 +1993,35 @@ static void sanitize_state(struct drbd_resource *resource)
 			    (role[OLD] != R_PRIMARY ||
 			     peer_disk_state[OLD] != D_UNKNOWN))
 				connection->susp_fen[NEW] = true;
+		}
+
+		drbd_select_sync_target(device);
+
+		for_each_peer_device_rcu(peer_device, device) {
+			enum drbd_repl_state *repl_state = peer_device->repl_state;
+			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
+			struct drbd_connection *connection = peer_device->connection;
+			enum drbd_disk_state min_disk_state, max_disk_state;
+			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
+			enum drbd_role *peer_role = connection->peer_role;
+			bool uuids_match;
 
 			/* Pause a SyncSource until it finishes resync as target on other connections */
 			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
 			    is_sync_target_other_c(peer_device))
 				peer_device->resync_susp_other_c[NEW] = true;
 
-			if (peer_device->resync_susp_other_c[NEW] &&
-			    repl_state[NEW] == L_SYNC_TARGET)
-				select_best_resync_source(peer_device);
-
 			if (resync_suspended(peer_device, NEW)) {
 				if (repl_state[NEW] == L_SYNC_SOURCE)
 					repl_state[NEW] = L_PAUSED_SYNC_S;
-				if (repl_state[NEW] == L_SYNC_TARGET)
-					repl_state[NEW] = L_PAUSED_SYNC_T;
 			} else {
 				if (repl_state[NEW] == L_PAUSED_SYNC_S)
 					repl_state[NEW] = L_SYNC_SOURCE;
-				if (repl_state[NEW] == L_PAUSED_SYNC_T)
-					repl_state[NEW] = L_SYNC_TARGET;
 			}
-
-			/* This needs to be after the previous block, since we should not set
-			   the bit if we are paused ourselves */
-			if (repl_state[OLD] != L_SYNC_TARGET && repl_state[NEW] == L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, true, false);
-			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] != L_SYNC_TARGET)
-				set_resync_susp_other_c(peer_device, false, false);
 
 			/* Implication of the repl state on other peer's repl state */
 			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
-				set_resync_susp_other_c(peer_device, true, true);
+				drbd_start_other_targets_paused(peer_device);
 
 			/* Implications of the repl state on the disk states */
 			min_disk_state = D_DISKLESS;
@@ -2465,8 +2473,6 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				initialize_resync_progress_marks(peer_device);
 				peer_device->resync_next_bit = 0;
-				if (repl_state[NEW] == L_SYNC_TARGET)
-					mod_timer(&peer_device->resync_timer, jiffies);
 			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&
@@ -3260,6 +3266,52 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 	}
 }
 
+static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
+{
+	bool csums_after_crash_only;
+	rcu_read_lock();
+	csums_after_crash_only = rcu_dereference(connection->transport.net_conf)->csums_after_crash_only;
+	rcu_read_unlock();
+	return connection->csums_tfm &&			/* configured? */
+		(csums_after_crash_only == false		/* use for each resync? */
+		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
+}
+
+static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+	enum drbd_repl_state side = repl_is_sync_target(repl_state) ? L_SYNC_TARGET : L_SYNC_SOURCE;
+
+	drbd_info(peer_device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
+			drbd_repl_str(repl_state),
+			(unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
+			(unsigned long) peer_device->rs_total);
+
+	if (side == L_SYNC_TARGET)
+		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+
+	/* Forget potentially stale cached per resync extent bit-counts. */
+	drbd_rs_cancel_all(peer_device);
+
+	peer_device->use_csums = side == L_SYNC_TARGET ?
+		use_checksum_based_resync(connection, device) : false;
+
+	if (side == L_SYNC_TARGET &&
+			!(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
+			!drbd_stable_sync_source_present(peer_device, NOW))
+		set_bit(UNSTABLE_RESYNC, &peer_device->flags);
+
+	/* ns.conn may already be != peer_device->repl_state[NOW],
+	 * we may have been paused in between, or become paused until
+	 * the timer triggers.
+	 * No matter, that is handled in resync_timer_fn() */
+	if (repl_state == L_SYNC_TARGET)
+		drbd_uuid_resync_starting(peer_device);
+
+	drbd_md_sync_if_dirty(device);
+}
+
 
 /*
  * Perform after state change actions that may sleep.
@@ -3578,12 +3630,21 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_uuid_new_current(device, false);
 			}
 
-			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S && get_ldev(device)) {
+			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S) {
 				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
 						(unsigned long long)peer_device->ov_position);
-				mod_timer(&peer_device->resync_timer, jiffies);
-				put_ldev(device);
+				drbd_queue_work_if_unqueued(
+						&peer_device->connection->sender_work,
+						&peer_device->resync_work);
 			}
+
+			if (!repl_is_sync(repl_state[OLD]) && repl_is_sync(repl_state[NEW]))
+				drbd_run_resync(peer_device, repl_state[NEW]);
+
+			if (!peer_device_state_change->resync_active[OLD] && peer_device_state_change->resync_active[NEW])
+				drbd_queue_work_if_unqueued(
+						&peer_device->connection->sender_work,
+						&peer_device->resync_work);
 		}
 
 		if (((role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) || some_peer_demoted) &&
