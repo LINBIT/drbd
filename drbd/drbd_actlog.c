@@ -806,6 +806,14 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 			get_capacity(device->vdisk) - BM_EXT_TO_SECT(rs_enr));
 
 	for_each_peer_device_ref(p, im, device) {
+		/* Only send to the peer whose bitmap bits have been cleared if
+		 * we are connected to that peer. The bits may have been
+		 * cleared by a P_PEERS_IN_SYNC from another peer while we are
+		 * connecting to this one. We mustn't send P_PEERS_IN_SYNC
+		 * during the initial connection handshake. */
+		if (p == peer_device && p->connection->cstate[NOW] != C_CONNECTED)
+			continue;
+
 		if (mask & NODE_MASK(p->node_id))
 			drbd_send_peers_in_sync(p, mask, BM_EXT_TO_SECT(rs_enr), size_sect << 9);
 	}
