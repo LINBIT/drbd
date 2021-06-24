@@ -1,0 +1,3 @@
+https://kibana.at.linbit.com/app/visualize#/edit/1d498cb0-d5ad-11eb-9aa4-5f6acb635f6f?
+_g=(time:(from:now-7d%2Fd,to:now%2Fd))&
+_a=(query:(language:kuery,query:'drbd9_tests_ref:%22master%22%20and%20(drbd_version:%22{{drbd_version}}%22%20or%20drbd_version:%229.0.0.latest%22)'))
