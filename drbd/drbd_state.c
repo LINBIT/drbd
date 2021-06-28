@@ -4139,9 +4139,9 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 	else if (handshake_disconnect)
 		rv = SS_HANDSHAKE_DISCONNECT;
 	else if (have_no) {
-		if (context)
+		if (context && failed_by)
 			_drbd_state_err(context, "Declined by peer %s (id: %d), see the kernel log there",
-					rcu_dereference((failed_by)->transport.net_conf)->name,
+					rcu_dereference(failed_by->transport.net_conf)->name,
 					failed_by->peer_node_id);
 		rv = SS_CW_FAILED_BY_PEER;
 	}
