@@ -4348,7 +4348,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	enum drbd_disk_state disk_state;
 	struct net_conf *nc;
 	enum sync_strategy strategy;
 	enum sync_rule rule;
@@ -4358,10 +4357,6 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	int required_protocol;
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
-
-	disk_state = device->disk_state[NOW];
-	if (disk_state == D_NEGOTIATING)
-		disk_state = disk_state_from_md(device);
 
 	if (strategy == RETRY_CONNECT)
 		return -1; /* retry connect */
@@ -7447,14 +7442,12 @@ static int receive_UnplugRemote(struct drbd_connection *connection, struct packe
 static int receive_out_of_sync(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
 	struct p_block_desc *p = pi->data;
 	sector_t sector;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return -EIO;
-	device = peer_device->device;
 
 	sector = be64_to_cpu(p->sector);
 
