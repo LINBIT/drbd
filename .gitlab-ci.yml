@@ -127,32 +127,34 @@ build-latest:
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   needs: []
 
-test:
-  stage: test
-  rules:
-    - if: $CI_MERGE_REQUEST_ID
+.test:
   tags:
     - libvirt
   cache:
     paths:
       - download
-  script:
-    - . drbd-test-bundle/virter/version.env
+  before_script:
     - |
-      curl -sSfL -u gitlab-ci-token:$CI_JOB_TOKEN https://gitlab.at.linbit.com/linbit/build-helpers/-/archive/$BUILD_HELPERS_VERSION/ignored.tar.gz | tar -xvzf -
-      mv build-helpers-* build-helpers
-      . build-helpers/gitlab-utils.sh
-    - |
-      ci_prepare_tools
-      ci_fetch_rq
-      ci_fetch_binary virter virter-$VIRTER_VERSION https://github.com/LINBIT/virter/releases/download/$VIRTER_VERSION/virter-linux-amd64
-      ci_fetch_binary vmshed vmshed-$VMSHED_VERSION https://github.com/LINBIT/vmshed/releases/download/$VMSHED_VERSION/vmshed-linux-amd64
-    - docker image pull $LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
-    - |
-      export DRBD_VERSION=$DRBD_VERSION
-      export DRBD_UTILS_VERSION=9.0.0.latest-*
-      export DRBD9_TESTS_VERSION=latest
-      ./drbd-test-bundle/virter/run-test.sh
+      set -e
+      run_test() {
+        . drbd-test-bundle/virter/version.env
+
+        curl -sSfL -u gitlab-ci-token:$CI_JOB_TOKEN $CI_SERVER_URL/linbit/build-helpers/-/archive/$BUILD_HELPERS_VERSION/ignored.tar.gz | tar -xvzf -
+        mv build-helpers-* build-helpers
+        . build-helpers/gitlab-utils.sh
+
+        ci_prepare_tools
+        ci_fetch_rq
+        ci_fetch_binary virter virter-$VIRTER_VERSION https://github.com/LINBIT/virter/releases/download/$VIRTER_VERSION/virter-linux-amd64
+        ci_fetch_binary vmshed vmshed-$VMSHED_VERSION https://github.com/LINBIT/vmshed/releases/download/$VMSHED_VERSION/vmshed-linux-amd64
+
+        docker image pull $LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
+
+        export DRBD_VERSION=$DRBD_VERSION
+        export DRBD_UTILS_VERSION=9.0.0.latest-*
+        export DRBD9_TESTS_VERSION=latest
+        ./drbd-test-bundle/virter/run-test.sh "$@"
+      }
   dependencies:
     - build:for-tests
   artifacts:
@@ -165,3 +167,34 @@ test:
       junit: tests-out/test-results/*.xml
   needs:
     - build:for-tests
+
+test:
+  stage: test
+  extends: [ .test ]
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+  script: run_test
+
+test-all:
+  stage: test
+  extends: [ .test ]
+  variables:
+    DRBD_TEST_REPEATS: 1
+    DRBD_TEST_VMSHED_ARGS: ""
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == 'schedule'
+  allow_failure: true
+  script:
+    - |
+      run_test \
+        --repeats="$DRBD_TEST_REPEATS" \
+        --tests=drbd-test-bundle/virter/tests.all.toml \
+        --error-details=false \
+        --quiet \
+        $DRBD_TEST_VMSHED_ARGS || true
+      DRBD9_TESTS_REF=master ./drbd-test-bundle/virter/elasticsearch/elasticsearch-insert.sh \
+        https://es01.at.linbit.com tests-out/results.json \
+        drbd-test-bundle/virter/tests.toml
+      cat .gitlab/kibana-version-comparison-url | tr -d '\n' | sed s/{{drbd_version}}/$DRBD_VERSION/
