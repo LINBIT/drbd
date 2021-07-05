@@ -2,6 +2,18 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.3-rc.1 (api:genl2/proto:110-120/transport:17)
+--------
+ * merged all fixes from drbd-9.0.30-0rc1
+ * fix a corner-case NULL deref in the lockless buffer pages handling; the
+   regression was introduced with 9.1.0 (released Feb 2021); To my knowledge
+   it took 6 months until someone triggered it for the first time
+ * fix sending a P_PEERS_IN_SYNC packet into a fresh connection (before
+   handshake packets); this problem was introduced when the drbd-8.x
+   compatibility code was removed
+ * remove sending a DRBD-barrier packet when processing a REQ_PREFLUSH
+   request, that improves IO-depth and improves performance with that
+
 9.1.2 (api:genl2/proto:110-120/transport:17)
 --------
  * merged all fixes from drbd-9.0.29; other than that no changes in this branch
