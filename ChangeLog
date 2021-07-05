@@ -3,6 +3,19 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.30-0rc1 (api:genl2/proto:86-120/transport:14)
+--------
+ * fix a crash when drbd-9 node gets connected to a drbd-8.4 node, the
+   regression was introduced between 9.0.25 and 9.0.26
+ * A improved approach to serialize rsyncs from multiple sources; the previous
+   one could cause wrong accounting for online verify
+ * fix a race condition that could cause resync operations to stall when the
+   completion of one resync allows another one to proceed
+ * fix a race condition that could cause an online verify operation to not
+   terminate under specific conditions (corking enabled no other IO)
+ * fix locking of drbd_devices idr that caused (very rarely) create/remove
+   minor to fail
+
 9.0.29-1 (api:genl2/proto:86-120/transport:14)
 --------
  * fix data corruption when DRBD's backing disk is a degraded Linux software
