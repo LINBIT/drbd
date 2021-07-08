@@ -114,7 +114,7 @@ static const char * const sync_rule_names[] = {
 };
 
 enum sync_strategy {
-	UNDETERMINED,
+	UNDETERMINED = 0,
 	NO_SYNC,
 	SYNC_SOURCE_IF_BOTH_FAILED,
 	SYNC_SOURCE_USE_BITMAP,
@@ -140,6 +140,7 @@ struct sync_descriptor {
 	bool is_sync_target;
 	int resync_peer_preference;
 	enum sync_strategy full_sync_equivalent;
+	enum sync_strategy reverse;
 };
 
 static const struct sync_descriptor sync_descriptors[] = {
@@ -153,15 +154,18 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[SYNC_SOURCE_IF_BOTH_FAILED] = {
 		.name = "source-if-both-failed",
 		.is_sync_source = true,
+		.reverse = SYNC_TARGET_IF_BOTH_FAILED,
 	},
 	[SYNC_SOURCE_USE_BITMAP] = {
 		.name = "source-use-bitmap",
 		.is_sync_source = true,
 		.full_sync_equivalent = SYNC_SOURCE_SET_BITMAP,
+		.reverse = SYNC_TARGET_USE_BITMAP,
 	},
 	[SYNC_SOURCE_SET_BITMAP] = {
 		.name = "source-set-bitmap",
 		.is_sync_source = true,
+		.reverse = SYNC_TARGET_SET_BITMAP,
 	},
 	[SYNC_SOURCE_COPY_BITMAP] = {
 		.name = "source-copy-other-bitmap",
@@ -171,17 +175,20 @@ static const struct sync_descriptor sync_descriptors[] = {
 		.name = "target-if-both-failed",
 		.is_sync_target = true,
 		.resync_peer_preference = 4,
+		.reverse = SYNC_SOURCE_IF_BOTH_FAILED,
 	},
 	[SYNC_TARGET_USE_BITMAP] = {
 		.name = "target-use-bitmap",
 		.is_sync_target = true,
 		.full_sync_equivalent = SYNC_TARGET_SET_BITMAP,
 		.resync_peer_preference = 3,
+		.reverse = SYNC_SOURCE_USE_BITMAP,
 	},
 	[SYNC_TARGET_SET_BITMAP] = {
 		.name = "target-set-bitmap",
 		.is_sync_target = true,
 		.resync_peer_preference = 2,
+		.reverse = SYNC_SOURCE_SET_BITMAP,
 	},
 	[SYNC_TARGET_CLEAR_BITMAP] = {
 		.name = "target-clear-bitmap",
@@ -4559,6 +4566,21 @@ static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_
 	return strategy_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
 }
 
+static enum sync_strategy discard_my_data_to_strategy(struct drbd_peer_device *peer_device)
+{
+	enum sync_strategy strategy = UNDETERMINED;
+
+	if (test_bit(DISCARD_MY_DATA, &peer_device->flags) &&
+	    !(peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
+		strategy = SYNC_TARGET_USE_BITMAP;
+
+	if (!test_bit(DISCARD_MY_DATA, &peer_device->flags) &&
+	    (peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
+		strategy = SYNC_SOURCE_USE_BITMAP;
+
+	return strategy;
+}
+
 /* drbd_sync_handshake() returns the new replication state on success, and -1
  * on failure.
  */
@@ -4574,6 +4596,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	enum drbd_role peer_role = peer_state.role;
 	enum drbd_disk_state peer_disk_state = peer_state.disk;
 	int required_protocol;
+	enum sync_strategy strategy_from_user = discard_my_data_to_strategy(peer_device);
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
 
@@ -4647,18 +4670,11 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		}
 	}
 
-	if (strategy == SPLIT_BRAIN_DISCONNECT) {
-		if (test_bit(DISCARD_MY_DATA, &peer_device->flags) &&
-		    !(peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
-			strategy = SYNC_TARGET_USE_BITMAP;
-		if (!test_bit(DISCARD_MY_DATA, &peer_device->flags) &&
-		    (peer_device->uuid_flags & UUID_FLAG_DISCARD_MY_DATA))
-			strategy = SYNC_SOURCE_USE_BITMAP;
-
-		if (!strategy_descriptor(strategy).is_split_brain)
-			drbd_warn(device, "Split-Brain detected, manually solved. "
-			     "Sync from %s node\n",
-			     strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
+	if (strategy == SPLIT_BRAIN_DISCONNECT && strategy_from_user != UNDETERMINED) {
+		strategy = strategy_from_user;
+		drbd_warn(device, "Split-Brain detected, manually solved. "
+			  "Sync from %s node\n",
+			  strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
 	}
 
 	if (strategy_descriptor(strategy).is_split_brain) {
@@ -4670,6 +4686,17 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (!is_strategy_determined(strategy)) {
 		drbd_alert(device, "Failed to fully determine sync strategy, dropping connection!\n");
 		return -2;
+	}
+
+	if (connection->agreed_pro_version >= 121 && strategy != NO_SYNC &&
+	    strategy_from_user != UNDETERMINED &&
+	    strategy_descriptor(strategy).is_sync_source != strategy_descriptor(strategy_from_user).is_sync_source) {
+		if (strategy_descriptor(strategy).reverse != UNDETERMINED) {
+			strategy = strategy_descriptor(strategy).reverse;
+			drbd_warn(device, "Resync direction reversed by --discard-my-data. Reverting to older data!\n");
+		} else {
+			drbd_warn(device, "Can not reverse resync direction (requested via --discard-my-data)\n");
+		}
 	}
 
 	if (strategy_descriptor(strategy).is_sync_target &&
@@ -5626,23 +5653,6 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			drbd_warn(peer_device, "received new current UUID: %016llX "
 				  "weak_nodes=%016llX\n", peer_device->current_uuid, node_mask);
 			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, node_mask);
-		}
-
-		if (device->disk_state[NOW] > D_OUTDATED) {
-			enum sync_strategy strategy;
-			enum sync_rule unused_rule;
-			int unused_int;
-			strategy = drbd_uuid_compare(peer_device, &unused_rule, &unused_int);
-
-			if (strategy == SYNC_TARGET_SET_BITMAP || strategy == SYNC_TARGET_USE_BITMAP) {
-				struct drbd_resource *resource = device->resource;
-				unsigned long irq_flags;
-
-				begin_state_change(resource, &irq_flags, CS_VERBOSE);
-				if (device->disk_state[NEW] > D_OUTDATED)
-					__change_disk_state(device, D_OUTDATED);
-				end_state_change(resource, &irq_flags);
-			}
 		}
 
 		drbd_uuid_detect_finished_resyncs(peer_device);
