@@ -614,7 +614,7 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 		drbd_free_net_peer_req(peer_req);
 
 	/* possible callbacks here:
-	 * e_end_block, and e_end_resync_block, e_send_discard_write.
+	 * e_end_block, and e_end_resync_block.
 	 * all ignore the last argument.
 	 */
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
@@ -2452,31 +2452,6 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	return err;
 }
 
-/* caller must hold interval_lock */
-static void restart_conflicting_writes(struct drbd_peer_request *peer_req)
-{
-	struct drbd_interval *i;
-	struct drbd_request *req;
-	struct drbd_device *device = peer_req->peer_device->device;
-	const sector_t sector = peer_req->i.sector;
-	const unsigned int size = peer_req->i.size;
-
-	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
-		unsigned int local_rq_state;
-
-		if (!i->local)
-			continue;
-		req = container_of(i, struct drbd_request, i);
-		local_rq_state = READ_ONCE(req->local_rq_state);
-		if ((local_rq_state & RQ_LOCAL_PENDING) ||
-		   !(local_rq_state & RQ_POSTPONED))
-			continue;
-		/* as it is RQ_POSTPONED, this will cause it to
-		 * be queued on the retry workqueue. */
-		__req_mod(req, DISCARD_WRITE, peer_req->peer_device, NULL);
-	}
-}
-
 /*
  * e_end_block() is called in ack_sender context via drbd_finish_peer_reqs().
  */
@@ -2519,8 +2494,6 @@ static int e_end_block(struct drbd_work *w, int cancel)
 		spin_lock(&device->interval_lock);
 		D_ASSERT(device, !drbd_interval_empty(&peer_req->i));
 		drbd_remove_peer_req_interval(device, peer_req);
-		if (peer_req->flags & EE_RESTART_REQUESTS)
-			restart_conflicting_writes(peer_req);
 		spin_unlock(&device->interval_lock);
 		read_unlock_irq(&device->resource->state_rwlock);
 	} else
@@ -2530,29 +2503,6 @@ static int e_end_block(struct drbd_work *w, int cancel)
 
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
 	return err;
-}
-
-static int e_send_ack(struct drbd_work *w, enum drbd_packet ack)
-{
-	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	int err;
-
-	err = drbd_send_ack(peer_device, ack, peer_req);
-	dec_unacked(peer_device);
-
-	return err;
-}
-
-static int e_send_discard_write(struct drbd_work *w, int unused)
-{
-	return e_send_ack(w, P_SUPERSEDED);
-}
-
-static int e_send_retry_write(struct drbd_work *w, int unused)
-{
-	return e_send_ack(w, P_RETRY_WRITE);
 }
 
 static bool seq_greater(u32 a, u32 b)
@@ -2675,83 +2625,14 @@ static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 d
 		(dpf & DP_FLUSH ? REQ_PREFLUSH : 0);
 }
 
-static void fail_postponed_requests(struct drbd_peer_request *peer_req)
-{
-	struct drbd_device *device = peer_req->peer_device->device;
-	struct drbd_interval *i;
-	const sector_t sector = peer_req->i.sector;
-	const unsigned int size = peer_req->i.size;
-
-    repeat:
-	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
-		struct drbd_request *req;
-
-		if (!i->local)
-			continue;
-		req = container_of(i, struct drbd_request, i);
-		if (!(req->local_rq_state & RQ_POSTPONED))
-			continue;
-		req->local_rq_state &= ~RQ_POSTPONED;
-		spin_unlock_irq(&device->interval_lock);
-		req_mod(req, NEG_ACKED, peer_req->peer_device);
-		spin_lock_irq(&device->interval_lock);
-		goto repeat;
-	}
-}
-
-/**
- * wait_misc  -  wait for a request or peer request to make progress
- * @device:	device associated with the request or peer request
- * @peer_device: NULL when waiting for a request; the peer device of the peer
- *		 request when waiting for a peer request
- * @i:		the struct drbd_interval embedded in struct drbd_request or
- *		struct drbd_peer_request
- */
-static int wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_device, struct drbd_interval *i)
-{
-	DEFINE_WAIT(wait);
-	long timeout;
-
-	rcu_read_lock();
-	if (peer_device) {
-		struct net_conf *net_conf = rcu_dereference(peer_device->connection->transport.net_conf);
-		if (!net_conf) {
-			rcu_read_unlock();
-			return -ETIMEDOUT;
-		}
-		timeout = net_conf->ko_count ? net_conf->timeout * HZ / 10 * net_conf->ko_count :
-					       MAX_SCHEDULE_TIMEOUT;
-	} else {
-		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
-		timeout = disk_conf->disk_timeout * HZ / 10;
-	}
-	rcu_read_unlock();
-
-	/* Indicate to wake up device->misc_wait on progress.  */
-	i->waiting = true;
-	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&device->interval_lock);
-	timeout = schedule_timeout(timeout);
-	finish_wait(&device->misc_wait, &wait);
-	spin_lock_irq(&device->interval_lock);
-	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
-		return -ETIMEDOUT;
-	if (signal_pending(current))
-		return -ERESTARTSYS;
-	return 0;
-}
-
 static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_connection *connection = peer_device->connection;
-	bool resolve_conflicts = test_bit(RESOLVE_CONFLICTS, &connection->transport.flags);
 	sector_t sector = peer_req->i.sector;
 	const unsigned int size = peer_req->i.size;
 	struct drbd_interval *i;
-	bool equal;
-	int err;
+	int err = 0;
 
 	spin_lock_irq(&device->interval_lock);
 	/*
@@ -2761,98 +2642,21 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 	drbd_insert_interval(&device->write_requests, &peer_req->i);
 	peer_req->flags |= EE_IN_INTERVAL_TREE;
 
-    repeat:
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		if (i == &peer_req->i)
 			continue;
+
+		/* Ignore, if already completed to upper layers. */
 		if (i->completed)
 			continue;
 
-		if (!i->local) {
-			/*
-			 * Our peer has sent a conflicting remote request; this
-			 * should not happen in a two-node setup.  Wait for the
-			 * earlier peer request to complete.
-			 */
-			err = wait_misc(device, peer_device, i);
-			if (err)
-				goto out;
-			goto repeat;
-		}
-
-		equal = i->sector == sector && i->size == size;
-		if (resolve_conflicts) {
-			/*
-			 * If the peer request is fully contained within the
-			 * overlapping request, it can be discarded; otherwise,
-			 * it will be retried once all overlapping requests
-			 * have completed.
-			 */
-			bool discard = i->sector <= sector && i->sector +
-				       (i->size >> 9) >= sector + (size >> 9);
-
-			if (!equal)
-				drbd_alert(device, "Concurrent writes detected: "
-					       "local=%llus +%u, remote=%llus +%u, "
-					       "assuming %s came first\n",
-					  (unsigned long long)i->sector, i->size,
-					  (unsigned long long)sector, size,
-					  discard ? "local" : "remote");
-
-			peer_req->w.cb = discard ? e_send_discard_write :
-						   e_send_retry_write;
-			atomic_inc(&connection->done_ee_cnt);
-			spin_lock(&connection->peer_reqs_lock);
-			list_add_tail(&peer_req->w.list, &connection->done_ee);
-			spin_unlock(&connection->peer_reqs_lock);
-			queue_work(connection->ack_sender, &connection->send_acks_work);
-
-			err = -ENOENT;
-			goto out;
-		} else {
-			struct drbd_request *req = container_of(i, struct drbd_request, i);
-			unsigned int local_rq_state;
-
-
-			if (!equal)
-				drbd_alert(device, "Concurrent writes detected: "
-					       "local=%llus +%u, remote=%llus +%u\n",
-					  (unsigned long long)i->sector, i->size,
-					  (unsigned long long)sector, size);
-
-			local_rq_state = READ_ONCE(req->local_rq_state);
-			if (local_rq_state & RQ_LOCAL_PENDING ||
-			    !(local_rq_state & RQ_POSTPONED)) {
-				/*
-				 * Wait for the node with the discard flag to
-				 * decide if this request will be discarded or
-				 * retried.  Requests that are discarded will
-				 * disappear from the write_requests tree.
-				 *
-				 * In addition, wait for the conflicting
-				 * request to finish locally before submitting
-				 * the conflicting peer request.
-				 */
-				err = wait_misc(device, NULL, &req->i);
-				if (err) {
-					fail_postponed_requests(peer_req);
-					goto out;
-				}
-				goto repeat;
-			}
-			/*
-			 * Remember to restart the conflicting requests after
-			 * the new peer request has completed.
-			 */
-			peer_req->flags |= EE_RESTART_REQUESTS;
-		}
+		drbd_alert(device, "Concurrent writes detected: "
+				"local=%llus +%u, remote=%llus +%u\n",
+				(unsigned long long) i->sector, i->size,
+				(unsigned long long) sector, size);
+		err = -EBUSY;
+		break;
 	}
-	err = 0;
-
-    out:
-	if (err)
-		drbd_remove_peer_req_interval(device, peer_req);
-
 	spin_unlock_irq(&device->interval_lock);
 	return err;
 }
@@ -3076,17 +2880,11 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(device, d.dp_flags & DP_SEND_WRITE_ACK);
 		err = wait_for_and_update_peer_seq(peer_device, d.peer_seq);
 		if (err)
-			goto out_interrupted;
-		err = handle_write_conflicts(peer_req);
-		if (err) {
-			change_cstate(connection, C_TIMEOUT, CS_HARD);
+			goto out;
 
-			if (err == -ENOENT) {
-				put_ldev(device);
-				return 0;
-			}
-			goto out_interrupted;
-		}
+		err = handle_write_conflicts(peer_req);
+		if (err)
+			goto out_remove_interval;
 	} else {
 		update_peer_seq(peer_device, d.peer_seq);
 	}
@@ -3136,12 +2934,14 @@ disconnect_during_al_begin_io:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
-	spin_unlock(&connection->peer_reqs_lock);
-	spin_lock(&device->interval_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+out_remove_interval:
+	spin_lock_irq(&device->interval_lock);
 	drbd_remove_peer_req_interval(device, peer_req);
 	spin_unlock_irq(&device->interval_lock);
 
-out_interrupted:
+out:
 	if (peer_req->flags & EE_SEND_WRITE_ACK)
 		dec_unacked(peer_device);
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
@@ -8673,12 +8473,6 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	case P_RECV_ACK:
 		what = RECV_ACKED_BY_PEER;
 		break;
-	case P_SUPERSEDED:
-		what = DISCARD_WRITE;
-		break;
-	case P_RETRY_WRITE:
-		what = POSTPONE_WRITE;
-		break;
 	default:
 		BUG();
 	}
@@ -9089,7 +8883,6 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_RECV_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_WRITE_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_RS_WRITE_ACK]    = { sizeof(struct p_block_ack), got_BlockAck },
-	[P_SUPERSEDED]      = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_NEG_ACK]	    = { sizeof(struct p_block_ack), got_NegAck },
 	[P_NEG_DREPLY]	    = { sizeof(struct p_block_ack), got_NegDReply },
 	[P_NEG_RS_DREPLY]   = { sizeof(struct p_block_ack), got_NegRSDReply },
@@ -9100,7 +8893,6 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
 	[P_RS_CANCEL]       = { sizeof(struct p_block_ack), got_NegRSDReply },
 	[P_RS_CANCEL_AHEAD] = { sizeof(struct p_block_ack), got_NegRSDReply },
-	[P_RETRY_WRITE]	    = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
 	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
 	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },

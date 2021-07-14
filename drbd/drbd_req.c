@@ -1067,19 +1067,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 				RQ_NET_DONE);
 		break;
 
-	case DISCARD_WRITE:
-		/* for discarded conflicting writes of multiple primaries,
-		 * there is no need to keep anything in the tl, potential
-		 * node crashes are covered by the activity log.
-		 *
-		 * If this request had been marked as RQ_POSTPONED before,
-		 * it will actually not be discarded, but "restarted",
-		 * resubmitted from the retry worker context. */
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_EXP_WRITE_ACK);
-		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_DONE|RQ_NET_OK);
-		break;
-
 	case WRITE_ACKED_BY_PEER_AND_SIS:
 		spin_lock_irqsave(&req->rq_lock, flags);
 		req->net_rq_state[idx] |= RQ_NET_SIS;
@@ -1100,21 +1087,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * protocol != C */
 	ack_common:
 		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
-		break;
-
-	case POSTPONE_WRITE:
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_EXP_WRITE_ACK);
-		/* If this node has already detected the write conflict, the
-		 * worker will be waiting on misc_wait.  Wake it up once this
-		 * request has completed locally.
-		 */
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
-		req->local_rq_state |= RQ_POSTPONED;
-		if (req->i.waiting)
-			wake_up(&req->device->misc_wait);
-		/* Do not clear RQ_NET_PENDING. This request will make further
-		 * progress via restart_conflicting_writes() or
-		 * fail_postponed_requests(). Hopefully. */
 		break;
 
 	case NEG_ACKED:

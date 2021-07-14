@@ -227,8 +227,6 @@ enum drbd_stream;
 
 #include "drbd_interval.h"
 
-extern int drbd_wait_misc(struct drbd_device *, struct drbd_peer_device *, struct drbd_interval *);
-
 extern void lock_all_resources(void);
 extern void unlock_all_resources(void);
 
@@ -498,9 +496,6 @@ enum {
 	/* This ee has a pointer to a digest instead of a block id */
 	__EE_HAS_DIGEST,
 
-	/* Conflicting local requests need to be restarted after this request */
-	__EE_RESTART_REQUESTS,
-
 	/* The peer wants a write ACK for this (wire proto C) */
 	__EE_SEND_WRITE_ACK,
 
@@ -535,7 +530,6 @@ enum {
 #define EE_RESUBMITTED         (1<<__EE_RESUBMITTED)
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
-#define EE_RESTART_REQUESTS	(1<<__EE_RESTART_REQUESTS)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
 #define EE_IN_INTERVAL_TREE	(1<<__EE_IN_INTERVAL_TREE)
 #define EE_SUBMITTED		(1<<__EE_SUBMITTED)
