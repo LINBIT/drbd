@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.3-rc.1 (api:genl2/proto:110-120/transport:17)
+9.1.3 (api:genl2/proto:110-120/transport:17)
 --------
  * merged all fixes from drbd-9.0.30-0rc1
  * fix a corner-case NULL deref in the lockless buffer pages handling; the
