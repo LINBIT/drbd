@@ -30,6 +30,7 @@ override_dh_install:
 
 	# m-a
 	dh_install drbd ../$(MODSRCDIR)/usr/src/modules/drbd/
+	dh_install misc/SECURE-BOOT-KEY-linbit.com.der ../$(MODSRCDIR)/usr/src/modules/drbd/misc
 	dh_install debian/changelog ../$(MODSRCDIR)/usr/src/modules/drbd/debian
 	dh_install debian/control ../$(MODSRCDIR)/usr/src/modules/drbd/debian
 	dh_install debian/compat ../$(MODSRCDIR)/usr/src/modules/drbd/debian
@@ -53,8 +54,8 @@ binary-modules: prep-deb-files
 	dh_testroot
 	dh_clean -k
 	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
-	install -m644 -b -D drbd/drbd.ko $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/updates/drbd.ko
-	install -m644 -b -D drbd/drbd_transport_tcp.ko $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/updates/drbd_transport_tcp.ko
+	$(MAKE) -C $(KSRC) M=$(CURDIR)/drbd modules_install INSTALL_MOD_PATH=$(CURDIR)/debian/$(PKGNAME) INSTALL_MOD_DIR=updates CONFIG_MODULE_SIG_ALL=y CONFIG_MODULE_SIG_KEY=certs/signing_key.pem
+	install -m644 -b -D misc/SECURE-BOOT-KEY-linbit.com.der $(CURDIR)/debian/$(PKGNAME)/etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
 	install -m644 -b -D drbd/Module.symvers $(DEB_DESTDIR)/Module.symvers.$(KVERS).$(DEB_BUILD_ARCH)
 	dh_installdocs
 	dh_installchangelogs
