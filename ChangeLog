@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.30-0rc1 (api:genl2/proto:86-120/transport:14)
+9.0.30-1 (api:genl2/proto:86-120/transport:14)
 --------
  * fix a crash when drbd-9 node gets connected to a drbd-8.4 node, the
    regression was introduced between 9.0.25 and 9.0.26
