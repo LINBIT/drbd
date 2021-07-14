@@ -622,13 +622,10 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 
 		++n;
 		/* list_del not necessary, next/prev members not touched */
+		/* The callback may free peer_req. */
 		err2 = peer_req->w.cb(&peer_req->w, !!err);
 		if (!err)
 			err = err2;
-		if (!list_empty(&peer_req->recv_order)) {
-			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, 0);
-		} else
-			drbd_free_peer_req(peer_req);
 	}
 	if (atomic_sub_and_test(n, &connection->done_ee_cnt))
 		wake_up(&connection->ee_wait);
@@ -2236,6 +2233,7 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 	}
 	dec_unacked(peer_device);
 
+	drbd_free_peer_req(peer_req);
 	return err;
 }
 
@@ -2530,6 +2528,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 
 	drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
 	return err;
 }
 
