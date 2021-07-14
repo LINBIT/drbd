@@ -6,9 +6,6 @@
 #include <linux/stat.h>
 #include <linux/jiffies.h>
 #include <linux/list.h>
-#ifdef COMPAT_CAN_INCLUDE_VERMAGIC_H
-#include <linux/vermagic.h>
-#endif
 
 #include "drbd_int.h"
 #include "drbd_req.h"
@@ -16,6 +13,9 @@
 #include "drbd_transport.h"
 #include "drbd_dax_pmem.h"
 
+#ifdef COMPAT_CAN_INCLUDE_VERMAGIC_H
+#include <linux/vermagic.h>
+#endif
 
 /**********************************************************************
  * Whenever you change the file format, remember to bump the version. *
