@@ -25,6 +25,7 @@ static const char * const drbd_interval_type_names[] = {
 	[INTERVAL_RESYNC_READ]    = "ResyncRead",
 	[INTERVAL_OV_READ_SOURCE] = "VerifySource",
 	[INTERVAL_OV_READ_TARGET] = "VerifyTarget",
+	[INTERVAL_PEERS_IN_SYNC_LOCK] = "PeersInSync",
 };
 
 const char *drbd_interval_type_str(struct drbd_interval *i)

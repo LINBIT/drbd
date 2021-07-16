@@ -2735,6 +2735,10 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 			/* Ignore verify requests, since they are always reads. */
 			if (drbd_interval_is_verify(i))
 				continue;
+
+			/* Ignore peers-in-sync intervals, since they are always reads. */
+			if (i->type == INTERVAL_PEERS_IN_SYNC_LOCK)
+				continue;
 		}
 
 		dynamic_drbd_dbg(device,

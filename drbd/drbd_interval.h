@@ -16,6 +16,7 @@ enum drbd_interval_type {
 	INTERVAL_RESYNC_READ, /* L_SYNC_SOURCE */
 	INTERVAL_OV_READ_SOURCE, /* L_VERIFY_S */
 	INTERVAL_OV_READ_TARGET, /* L_VERIFY_T */
+	INTERVAL_PEERS_IN_SYNC_LOCK,
 };
 
 enum drbd_interval_flags {

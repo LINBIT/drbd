@@ -2227,7 +2227,11 @@ static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_s
 {
 	struct drbd_device *device = peer_device->device;
 
-	if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
+	if (peer_device->repl_state[NOW] == L_ESTABLISHED ||
+			peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+			peer_device->repl_state[NOW] == L_SYNC_TARGET ||
+			peer_device->repl_state[NOW] == L_PAUSED_SYNC_S ||
+			peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
 		if (drbd_bm_total_weight(peer_device) == 0)
 			return true;
 		if (drbd_bm_count_bits(device, peer_device->bitmap_index,
@@ -2237,18 +2241,24 @@ static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_s
 	return false;
 }
 
-static void update_peers_for_range(struct drbd_peer_device *peer_device,
-		sector_t sector_start, sector_t sector_end)
+static void update_peers_for_interval(struct drbd_peer_device *peer_device,
+		struct drbd_interval *interval)
 {
 	struct drbd_device *device = peer_device->device;
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
+	sector_t sector_end = interval->sector + (interval->size >> SECTOR_SHIFT);
+
+	/* Only send P_PEERS_IN_SYNC if we are actually in sync with this peer. */
+	if (drbd_bm_count_bits(device, peer_device->bitmap_index,
+				BM_SECT_TO_BIT(interval->sector), BM_SECT_TO_BIT(sector_end - 1)))
+		return;
 
 	for_each_peer_device_ref(p, im, device) {
 		if (p == peer_device)
 			continue;
 
-		if (bits_in_sync(p, sector_start, sector_end))
+		if (bits_in_sync(p, interval->sector, sector_end))
 			mask |= NODE_MASK(p->node_id);
 	}
 
@@ -2262,10 +2272,67 @@ static void update_peers_for_range(struct drbd_peer_device *peer_device,
 			continue;
 
 		if (mask & NODE_MASK(p->node_id))
-			drbd_send_peers_in_sync(p, mask,
-					sector_start,
-					(sector_end - sector_start) << SECTOR_SHIFT);
+			drbd_send_peers_in_sync(p, mask, interval->sector, interval->size);
 	}
+}
+
+/* Potentially send P_PEERS_IN_SYNC for a range with size that fits in an int. */
+static void update_peers_for_small_range(struct drbd_peer_device *peer_device,
+		sector_t sector, int size)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_interval interval;
+
+	memset(&interval, 0, sizeof(interval));
+	drbd_clear_interval(&interval);
+	interval.sector = sector;
+	interval.size = size;
+	interval.type = INTERVAL_PEERS_IN_SYNC_LOCK;
+
+	spin_lock_irq(&device->interval_lock);
+	if (drbd_find_conflict(device, &interval, 0)) {
+		spin_unlock_irq(&device->interval_lock);
+		return;
+	}
+	drbd_insert_interval(&device->requests, &interval);
+	/* Interval is not waiting for conflicts to resolve so mark as "submitted". */
+	set_bit(INTERVAL_SUBMITTED, &interval.flags);
+	spin_unlock_irq(&device->interval_lock);
+
+	/* Check for activity in the activity log extent _after_ locking the
+	 * interval. Otherwise a write might occur between checking and
+	 * locking. */
+	if (!drbd_al_active(device, sector, size))
+		update_peers_for_interval(peer_device, &interval);
+
+	spin_lock_irq(&device->interval_lock);
+	drbd_remove_interval(&device->requests, &interval);
+	drbd_release_conflicts(device, &interval);
+	spin_unlock_irq(&device->interval_lock);
+}
+
+static void update_peers_for_range(struct drbd_peer_device *peer_device,
+		sector_t sector_start, sector_t sector_end)
+{
+	struct drbd_device *device = peer_device->device;
+	unsigned int enr_start = sector_start >> (AL_EXTENT_SHIFT - SECTOR_SHIFT);
+	unsigned int enr_end = ((sector_end - 1) >> (AL_EXTENT_SHIFT - SECTOR_SHIFT)) + 1;
+	unsigned int enr;
+
+	if (!get_ldev(device))
+		return;
+
+	for (enr = enr_start; enr < enr_end; enr++) {
+		sector_t enr_start_sector = max(sector_start,
+				((sector_t) enr) << (AL_EXTENT_SHIFT - SECTOR_SHIFT));
+		sector_t enr_end_sector = min(sector_end,
+				((sector_t) (enr + 1)) << (AL_EXTENT_SHIFT - SECTOR_SHIFT));
+
+		update_peers_for_small_range(peer_device,
+				enr_start_sector, (enr_end_sector - enr_start_sector) << SECTOR_SHIFT);
+	}
+
+	put_ldev(device);
 }
 
 static int w_update_peers(struct drbd_work *w, int unused)
