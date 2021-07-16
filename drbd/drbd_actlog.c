@@ -165,6 +165,26 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
+bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size) {
+	unsigned first = sector >> (AL_EXTENT_SHIFT-9);
+	unsigned last = size == 0 ? first : (sector + (size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned enr;
+	bool active = false;
+
+	spin_lock_irq(&device->al_lock);
+	for (enr = first; enr <= last; enr++) {
+		struct lc_element *al_ext;
+		al_ext = lc_find(device->act_log, enr);
+		if (al_ext && al_ext->refcnt > 0) {
+			active = true;
+			break;
+		}
+	}
+	spin_unlock_irq(&device->al_lock);
+
+	return active;
+}
+
 static
 struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr)
 {

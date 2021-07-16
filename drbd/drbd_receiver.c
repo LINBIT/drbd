@@ -8989,6 +8989,41 @@ static int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 					     NEG_ACKED, false);
 }
 
+void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_del(&peer_req->w.list);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	if (get_ldev_if_state(device, D_DETACHING)) {
+		if (failed) {
+			drbd_rs_failed_io(peer_device, peer_req->i.sector, peer_req->i.size);
+		} else {
+			if (drbd_interval_is_verify(&peer_req->i)) {
+				drbd_verify_skipped_block(peer_device, peer_req->i.sector, peer_req->i.size);
+				verify_progress(peer_device, peer_req->i.sector, peer_req->i.size);
+			} else {
+				unsigned long bit;
+				bit = BM_SECT_TO_BIT(peer_req->i.sector);
+				mutex_lock(&peer_device->resync_next_bit_mutex);
+				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);
+				mutex_unlock(&peer_device->resync_next_bit_mutex);
+			}
+		}
+
+		rs_sectors_came_in(peer_device, peer_req->i.size);
+		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
+		put_ldev(device);
+	}
+
+	drbd_remove_peer_req_interval(peer_req);
+	drbd_free_peer_req(peer_req);
+}
+
 static int got_NegRSDReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -8997,7 +9032,6 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	sector_t sector;
 	int size;
 	struct p_block_ack *p = pi->data;
-	unsigned long bit;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -9015,40 +9049,10 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 
 	dec_rs_pending(peer_device);
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
+	if (pi->cmd == P_RS_CANCEL_AHEAD)
+		set_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags);
 
-	if (get_ldev_if_state(device, D_DETACHING)) {
-		switch (pi->cmd) {
-		case P_NEG_RS_DREPLY:
-			drbd_rs_failed_io(peer_device, sector, size);
-			break;
-		case P_RS_CANCEL_AHEAD:
-			set_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags);
-			fallthrough;
-		case P_RS_CANCEL:
-			if (peer_device->repl_state[NOW] == L_VERIFY_S) {
-				drbd_verify_skipped_block(peer_device, sector, size);
-				verify_progress(peer_device, sector, size);
-			} else {
-				bit = BM_SECT_TO_BIT(sector);
-				mutex_lock(&peer_device->resync_next_bit_mutex);
-				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);
-				mutex_unlock(&peer_device->resync_next_bit_mutex);
-			}
-
-			break;
-		default:
-			BUG();
-		}
-		rs_sectors_came_in(peer_device, size);
-		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
-		put_ldev(device);
-	}
-
-	drbd_remove_peer_req_interval(peer_req);
-	drbd_free_peer_req(peer_req);
+	drbd_unsuccessful_resync_request(peer_req, pi->cmd == P_NEG_RS_DREPLY);
 	return 0;
 }
 

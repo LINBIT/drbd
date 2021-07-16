@@ -2411,11 +2411,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	if (start_new_epoch)
 		start_new_tl_epoch(resource);
 
+	spin_lock(&resource->peer_ack_lock);
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && resource->peer_ack_req) {
 		resource->last_peer_acked_dagtag = resource->peer_ack_req->dagtag_sector;
 		drbd_queue_peer_ack(resource, resource->peer_ack_req);
 		resource->peer_ack_req = NULL;
 	}
+	spin_unlock(&resource->peer_ack_lock);
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;

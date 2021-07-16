@@ -1711,6 +1711,9 @@ extern sector_t drbd_get_max_capacity(
 #define BM_BLOCK_SHIFT	12			 /* 4k per bit */
 #define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SHIFT)
 
+#define LEGACY_BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
+#define LEGACY_BM_EXT_SECT_MASK ((1UL << (LEGACY_BM_EXT_SHIFT - SECTOR_SHIFT)) - 1)
+
 #if (BM_BLOCK_SHIFT != 12)
 #error "HAVE YOU FIXED drbdmeta AS WELL??"
 #endif
@@ -1940,6 +1943,7 @@ extern void *drbd_md_get_buffer(struct drbd_device *device, const char *intent);
 extern void drbd_md_put_buffer(struct drbd_device *device);
 extern int drbd_md_sync_page_io(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, sector_t sector, int op);
+extern bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size);
 extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
 extern void wait_until_done_or_force_detached(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, unsigned int *done);
@@ -2045,6 +2049,7 @@ extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
 			    sector_t sector, int blksize, u64 block_id);
 extern int drbd_receiver(struct drbd_thread *thi);
+extern void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed);
 extern int drbd_ack_receiver(struct drbd_thread *thi);
 extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);

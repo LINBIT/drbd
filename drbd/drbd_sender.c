@@ -375,6 +375,16 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 	struct dagtag_find_result dagtag_result;
 	int do_wake;
 
+	if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
+			drbd_al_active(peer_device->device, peer_req->i.sector, peer_req->i.size)) {
+		dynamic_drbd_dbg(peer_device,
+				"Abort resync request at %llus+%u due to activity",
+				(unsigned long long) peer_req->i.sector, peer_req->i.size);
+
+		drbd_unsuccessful_resync_request(peer_req, false);
+		return;
+	}
+
 	dagtag_result = find_current_dagtag(peer_device->device->resource);
 	if (dagtag_result.err)
 		goto out;
@@ -857,7 +867,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	return number;
 }
 
-static int drbd_resync_delay(struct drbd_peer_device *peer_device)
+static int drbd_resync_delay(struct drbd_peer_device *peer_device, bool request_ok)
 {
 	struct peer_device_conf *pdc;
 	unsigned long delay;
@@ -866,6 +876,13 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device)
 		/* Requests in-flight. Use the standard delay. If all responses
 		 * are received before this time, the resync work will be
 		 * scheduled immediately. */
+		return RS_MAKE_REQS_INTV;
+	}
+
+	if (!request_ok) {
+		/* Something is causing requests to be aborted or canceled.
+		 * Back off to avoid flooding the connection with useless
+		 * requests. */
 		return RS_MAKE_REQS_INTV;
 	}
 
@@ -971,6 +988,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	int i;
 	int discard_granularity = 0;
 	bool last_request_sent;
+	bool request_ok = true;
 
 	if (unlikely(cancel))
 		return 0;
@@ -1016,6 +1034,15 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	for (i = 0; i < number; i++) {
 		int err;
 		bool send_buffer_ok = true;
+
+		/* If we are aborting the requests or the peer is canceling
+		 * them, there is no need to flood the connection with
+		 * requests. Back off now. */
+		if (i > 0 && peer_device->resync_next_bit <= peer_device->last_resync_next_bit) {
+			request_ok = false;
+			goto request_done;
+		}
+
 		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
 		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
@@ -1142,12 +1169,12 @@ request_done:
 	 */
 	if (!last_request_sent) {
 		/* and in case that raced with the receiver, reschedule ourselves right now */
-		if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight) {
+		if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight && request_ok) {
 			drbd_queue_work_if_unqueued(
 					&peer_device->connection->sender_work,
 					&peer_device->resync_work);
 		} else {
-			mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device));
+			mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device, request_ok));
 		}
 	}
 	put_ldev(device);
@@ -1802,6 +1829,17 @@ static bool all_zero(struct drbd_peer_request *peer_req)
 	return true;
 }
 
+static bool al_resync_extent_active(struct drbd_device *device, sector_t sector, unsigned int size)
+{
+	sector_t resync_extent_sector = sector & ~LEGACY_BM_EXT_SECT_MASK;
+	sector_t end_sector = sector + (size >> SECTOR_SHIFT);
+	sector_t resync_extent_end_sector =
+		(end_sector + LEGACY_BM_EXT_SECT_MASK) & ~LEGACY_BM_EXT_SECT_MASK;
+	return drbd_al_active(device,
+			resync_extent_sector,
+			(resync_extent_end_sector - resync_extent_sector) << SECTOR_SHIFT);
+}
+
 static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_request *peer_req, bool *expect_ack)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -1884,13 +1922,36 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	if (peer_device->repl_state[NOW] == L_AHEAD) {
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
-			err = drbd_rs_reply(peer_device, peer_req, &expect_ack);
-		} else {
+		if (unlikely(peer_device->disk_state[NOW] < D_INCONSISTENT)) {
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "Sending RSCancel, "
 						"partner DISKLESS!\n");
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+		} else if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
+				al_resync_extent_active(peer_device->device,
+					peer_req->i.sector, peer_req->i.size)) {
+			/* DRBD versions without DRBD_FF_RESYNC_DAGTAG lock
+			 * 128MiB "resync extents" in the activity log whenever
+			 * they make resync requests. They can deadlock if we
+			 * send resync replies in these extents as follows:
+			 * * Node is SyncTarget towards us
+			 * * Node locks a resync extent and sends P_RS_DATA_REQUEST
+			 * * Node receives P_DATA write in this extent; write
+			 *   waits for resync extent to be unlocked
+			 * * Node receives P_BARRIER (protocol A); receiver
+			 *   thread blocks waiting for write to complete
+			 * * We reply to P_RS_DATA_REQUEST, but it is never
+			 *   processed because receiver thread is blocked
+			 *
+			 * Break the deadlock by canceling instead. This is
+			 * sent on the control socket so it will be processed. */
+			dynamic_drbd_dbg(peer_device,
+					"Cancel resync request at %llus+%u due to activity",
+					(unsigned long long) peer_req->i.sector, peer_req->i.size);
+
+			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+		} else {
+			err = drbd_rs_reply(peer_device, peer_req, &expect_ack);
 		}
 	} else {
 		if (drbd_ratelimit())
@@ -1929,6 +1990,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
 	struct dagtag_find_result dagtag_result;
+	bool al_conflict = false;
 	int err = 0;
 	enum drbd_packet cmd = connection->agreed_features & DRBD_FF_RESYNC_DAGTAG ?
 		P_OV_DAGTAG_REPLY : P_OV_REPLY;
@@ -1936,7 +1998,29 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags)) {
+	if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
+		al_resync_extent_active(peer_device->device, peer_req->i.sector, peer_req->i.size)) {
+		/* A peer that does not support DRBD_FF_RESYNC_DAGTAG expects
+		 * online verify to be exclusive with 128MiB "resync extents"
+		 * in the activity log. If such a verify source sends a request
+		 * but we receive an overlapping write before the request then
+		 * we will read newer data for the verify transaction than the
+		 * source did. So we may detect spurious out-of-sync blocks.
+		 *
+		 * In addition, we may trigger a deadlock in such a peer by
+		 * sending a reply if it is waiting for writes to drain due to
+		 * a P_BARRIER packet. See w_e_end_rsdata_req for details.
+		 *
+		 * Prevent these issues by canceling instead.
+		 */
+		dynamic_drbd_dbg(peer_device,
+				"Cancel online verify request at %llus+%u due to activity",
+				(unsigned long long) peer_req->i.sector, peer_req->i.size);
+
+		al_conflict = true;
+	}
+
+	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags) || al_conflict) {
 		drbd_verify_skipped_block(peer_device, sector, size);
 		verify_progress(peer_device, sector, size);
 		drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, ID_SYNCER);
@@ -1980,6 +2064,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 		goto out_rs_pending;
 
 	dec_unacked(peer_device);
+	drbd_remove_peer_req_interval(peer_req);
 	return 0;
 
 out_rs_pending:
@@ -1989,6 +2074,7 @@ out_rs_pending:
 
 	dec_rs_pending(peer_device);
 out:
+	drbd_remove_peer_req_interval(peer_req);
 	drbd_free_peer_req(peer_req);
 	dec_unacked(peer_device);
 	return err;
@@ -2051,21 +2137,42 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
 	u64 block_id;
+	bool al_conflict = false;
 	int err;
 
-	/* Remove the interval whether or not the work is cancelled. */
-	drbd_remove_peer_req_interval(peer_req);
-
 	if (unlikely(cancel)) {
+		drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
 	}
 
-	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags)) {
+	if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
+		al_resync_extent_active(peer_device->device, peer_req->i.sector, peer_req->i.size)) {
+		/* A peer that does not support DRBD_FF_RESYNC_DAGTAG expects
+		 * online verify to be exclusive with 128MiB "resync extents"
+		 * in the activity log. We may have received an overlapping
+		 * write before issuing this read, which the peer did not have
+		 * at the time of its read. So we may detect spurious
+		 * out-of-sync blocks.
+		 *
+		 * Prevent this by skipping instead.
+		 */
+		dynamic_drbd_dbg(peer_device,
+				"Skip online verify block at %llus+%u due to activity",
+				(unsigned long long) peer_req->i.sector, peer_req->i.size);
+
+		al_conflict = true;
+	}
+
+	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags) || al_conflict) {
+		/* DRBD versions without DRBD_FF_RESYNC_DAGTAG do not know about
+		 * ID_SKIP, but they treat it the same as ID_IN_SYNC which is
+		 * the best we can do here anyway. */
 		block_id = ID_SKIP;
 		drbd_verify_skipped_block(peer_device, sector, size);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0) && digest_equal(peer_req)) {
@@ -2081,6 +2188,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
+	drbd_remove_peer_req_interval(peer_req);
 	drbd_free_peer_req(peer_req);
 	peer_req = NULL;
 
