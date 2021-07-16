@@ -1891,11 +1891,8 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 
 	drbd_remove_interval(&device->write_requests, i);
 	drbd_clear_interval(i);
+	drbd_release_conflicts(device, i);
 	peer_req->flags &= ~EE_IN_INTERVAL_TREE;
-
-	/* Wake up any processes waiting for this peer request to complete.  */
-	if (test_bit(INTERVAL_WAITING, &i->flags))
-		wake_up(&device->misc_wait);
 }
 
 /**

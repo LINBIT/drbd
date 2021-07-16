@@ -15,8 +15,11 @@ enum drbd_interval_type {
 };
 
 enum drbd_interval_flags {
-	/* Someone is waiting for completion. */
-	INTERVAL_WAITING,
+	/* Whether this has been queued after conflict. */
+	INTERVAL_SUBMIT_CONFLICT_QUEUED,
+
+	/* Whether this has been submitted already. */
+	INTERVAL_SUBMITTED,
 
 	/* This has been completed already; ignore for conflict detection. */
 	INTERVAL_COMPLETED,

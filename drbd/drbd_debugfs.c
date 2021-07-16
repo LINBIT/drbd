@@ -1060,7 +1060,8 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 
 		seq_printf(m, "%llus+%u", (unsigned long long) i->sector, i->size);
 		__seq_print_rq_state_bit(m, i->type == INTERVAL_LOCAL_WRITE, &sep, "local", "peer");
-		seq_print_rq_state_bit(m, test_bit(INTERVAL_WAITING, &i->flags), &sep, "waiting");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags), &sep, "submit-conflict-queued");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &i->flags), &sep, "submitted");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_COMPLETED, &i->flags), &sep, "completed");
 		seq_putc(m, '\n');
 

@@ -1042,7 +1042,12 @@ retry:
 			if (bdev)
 				fsync_bdev(bdev);
 			bdput(bdev);
-			flush_workqueue(device->submit.wq);
+			/* Prevent writes occurring after demotion, at least
+			 * the writes already submitted in this context. This
+			 * covers the case where DRBD auto-demotes on release,
+			 * which is important because it often occurs
+			 * immediately after a write. */
+			wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
 		}
 
 		if (start_new_tl_epoch(resource)) {

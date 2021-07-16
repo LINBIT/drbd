@@ -1291,6 +1291,14 @@ struct drbd_peer_device {
 	union drbd_state connect_state;
 };
 
+struct conflict_worker {
+	struct workqueue_struct *wq;
+	struct work_struct worker;
+
+	spinlock_t lock;
+	struct list_head writes;
+};
+
 struct submit_worker {
 	struct workqueue_struct *wq;
 	struct work_struct worker;
@@ -1409,8 +1417,11 @@ struct drbd_device {
 	} pending_bitmap_work;
 	struct device_conf device_conf;
 
-	/* any requests that would block in drbd_submit_bio()
-	 * are deferred to this single-threaded work queue */
+	/* any requests that were blocked due to conflicts with other requests
+	 * or resync are submitted on this ordered work queue */
+	struct conflict_worker submit_conflict;
+	/* any requests that would block due to the activity log
+	 * are deferred to this ordered work queue */
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
@@ -1877,6 +1888,7 @@ extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */
 extern void drbd_wake_all_senders(struct drbd_resource *resource);
+extern void drbd_do_submit_conflict(struct work_struct *ws);
 extern void do_submit(struct work_struct *ws);
 #ifndef CONFIG_DRBD_TIMING_STATS
 #define __drbd_make_request(d,b,k,j) __drbd_make_request(d,b,j)

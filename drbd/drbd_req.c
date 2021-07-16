@@ -185,15 +185,12 @@ static void drbd_remove_request_interval(struct rb_root *root,
 					 struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
-	struct drbd_interval *i = &req->i;
 
-	spin_lock(&device->interval_lock); /* local irq already disabled */
-	drbd_remove_interval(root, i);
+	lockdep_assert_irqs_disabled();
+
+	spin_lock(&device->interval_lock);
+	drbd_remove_interval(root, &req->i);
 	spin_unlock(&device->interval_lock);
-
-	/* Wake up any processes waiting for this request to complete.  */
-	if (test_bit(INTERVAL_WAITING, &i->flags))
-		wake_up(&device->misc_wait);
 }
 
 void drbd_req_destroy(struct kref *kref)
@@ -416,6 +413,51 @@ void complete_master_bio(struct drbd_device *device,
 	dec_ap_bio(device, rw);
 }
 
+static void drbd_queue_conflicting_write(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+
+	lockdep_assert_irqs_disabled();
+
+	spin_lock(&device->submit_conflict.lock);
+	list_add_tail(&req->list, &device->submit_conflict.writes);
+	spin_unlock(&device->submit_conflict.lock);
+	queue_work(device->submit_conflict.wq, &device->submit_conflict.worker);
+}
+
+/* Queue any conflicting requests in this interval to be submitted. */
+void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *release_interval)
+{
+	struct drbd_interval *i;
+
+	lockdep_assert_held(&device->interval_lock);
+
+	drbd_for_each_overlap(i, &device->write_requests, release_interval->sector, release_interval->size) {
+		struct drbd_request *conflicting_write;
+
+		if (i->type == INTERVAL_PEER_WRITE)
+			continue;
+
+		if (test_bit(INTERVAL_COMPLETED, &i->flags))
+			continue;
+
+		dynamic_drbd_dbg(device,
+				"%s write request at %llus+%u after conflict with %llus+%u\n",
+				test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags) ? "Already queued" : "Queue",
+				(unsigned long long) i->sector, i->size,
+				(unsigned long long) release_interval->sector, release_interval->size);
+
+		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
+			continue;
+
+		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags);
+		conflicting_write = container_of(i, struct drbd_request, i);
+		/* Queue the request regardless of whether other conflicts
+		 * remain. The conflict submitter will only actually submit the
+		 * request if there are no conflicts. */
+		drbd_queue_conflicting_write(conflicting_write);
+	}
+}
 
 /* Helper for __req_mod().
  * Set m->bio to the master bio, if it is fit to be completed,
@@ -545,8 +587,8 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		 * But we mark it as "complete", so it won't be counted as
 		 * conflict in a multi-primary setup. */
 		set_bit(INTERVAL_COMPLETED, &req->i.flags);
-		if (test_bit(INTERVAL_WAITING, &req->i.flags))
-			wake_up(&device->misc_wait);
+		if (req->local_rq_state & RQ_WRITE)
+			drbd_release_conflicts(device, &req->i);
 		spin_unlock_irqrestore(&device->interval_lock, flags);
 	}
 
@@ -814,11 +856,6 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	}
 
 	/* potentially complete and destroy */
-
-	/* If we made progress, retry conflicting peer requests, if any. */
-	if (test_bit(INTERVAL_WAITING, &req->i.flags))
-		wake_up(&req->device->misc_wait);
-
 	drbd_req_put_completion_ref(req, m, c_put);
 	kref_put(&req->kref, drbd_req_destroy);
 }
@@ -1239,45 +1276,39 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
 }
 
 /*
- * complete_conflicting_writes  -  wait for any conflicting write requests
- *
- * The write_requests tree contains all active write requests which we
- * currently know about.  Wait for any requests to complete which conflict with
- * the new one.
- *
- * Only way out: remove the conflicting intervals from the tree.
+ * has_write_conflict - check whether the write conflicts with any other requests
  */
-static void complete_conflicting_writes(struct drbd_request *req)
+static bool has_write_conflict(struct drbd_request *req)
 {
-	DEFINE_WAIT(wait);
 	struct drbd_device *device = req->device;
-	struct drbd_resource *resource = device->resource;
 	struct drbd_interval *i;
 	sector_t sector = req->i.sector;
 	int size = req->i.size;
 
-	for (;;) {
-		drbd_for_each_overlap(i, &device->write_requests, sector, size) {
-			/* Ignore, if already completed to upper layers. */
-			if (test_bit(INTERVAL_COMPLETED, &i->flags))
-				continue;
-			/* Handle the first found overlap.  After the schedule
-			 * we have to restart the tree walk. */
-			break;
-		}
-		if (!i)	/* if any */
-			break;
+	lockdep_assert_held(&device->interval_lock);
 
-		/* Indicate to wake up device->misc_wait on progress.  */
-		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
-		set_bit(INTERVAL_WAITING, &i->flags);
-		spin_unlock(&device->interval_lock);
-		read_unlock_irq(&resource->state_rwlock);
-		schedule();
-		read_lock_irq(&resource->state_rwlock);
-		spin_lock(&device->interval_lock);
+	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+		/* Ignore the interval itself. */
+		if (i == &req->i)
+			continue;
+
+		/* Ignore, if already completed to upper layers. */
+		if (test_bit(INTERVAL_COMPLETED, &i->flags))
+			continue;
+
+		/* Ignore, if not yet submitted. */
+		if (!test_bit(INTERVAL_SUBMITTED, &i->flags))
+			continue;
+
+		dynamic_drbd_dbg(device,
+				"Write request at %llus+%u conflicts with activity at %llus+%u\n",
+				(unsigned long long) req->i.sector, req->i.size,
+				(unsigned long long) i->sector, i->size);
+
+		break;
 	}
-	finish_wait(&device->misc_wait, &wait);
+
+	return i;
 }
 
 static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connection *connection)
@@ -1605,9 +1636,8 @@ static void drbd_req_in_actlog(struct drbd_request *req)
 	atomic_sub(interval_to_al_extents(&req->i), &req->device->wait_for_actlog_ecnt);
 }
 
-/* returns the new drbd_request pointer, if the caller is expected to
- * drbd_send_and_submit() it (to save latency), or NULL if we queued the
- * request on the submitter thread.
+/* returns the new drbd_request pointer, if the caller is expected to submit it
+ * (to save latency), or NULL if we queued the request on the submitter thread.
  * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
  */
 #ifndef CONFIG_DRBD_TIMING_STATS
@@ -1753,26 +1783,9 @@ static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req
 		kref_put(&tmp->kref, drbd_req_destroy);
 }
 
-/* caller must hold interval_lock */
-static void put_req_interval_into_tree(struct drbd_device *device, struct drbd_request *req)
+static void drbd_send_and_submit(struct drbd_request *req)
 {
-	struct drbd_peer_device *peer_device;
-	bool remote;
-
-	for_each_peer_device(peer_device, device) {
-		remote = drbd_should_do_remote(peer_device, NOW);
-		if (!remote)
-			continue;
-		drbd_insert_interval(&device->write_requests, &req->i);
-
-		/* Corresponding drbd_remove_request_interval is in
-		 * drbd_req_complete() */
-		break;
-	}
-}
-
-static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request *req)
-{
+	struct drbd_device *device = req->device;
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device = NULL; /* for read */
 	const int rw = bio_data_dir(req->master_bio);
@@ -1783,15 +1796,6 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	read_lock_irq(&resource->state_rwlock);
 
 	if (rw == WRITE) {
-		spin_lock(&device->interval_lock);
-		/* This may temporarily give up the state_rwlock and interval_lock,
-		 * but will re-acquire them before it returns here.
-		 * Needs to be before the check on drbd_suspended() */
-		complete_conflicting_writes(req);
-		/* no more giving up state_rwlock from now on! */
-		put_req_interval_into_tree(device, req);
-		spin_unlock(&device->interval_lock);
-
 		/* check for congestion, and potentially stop sending
 		 * full data updates, but start sending "dirty bits" only. */
 		maybe_pull_ahead(device);
@@ -1930,6 +1934,29 @@ out:
 		complete_master_bio(device, &m);
 }
 
+/* Insert the request into the tree of writes. Pass it through to be submitted
+ * if possible. Otherwise it will be submitted asynchronously via
+ * drbd_release_conflicts once the conflict has been resolved. */
+static void drbd_conflict_submit_write(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+	bool conflict = false;
+
+	spin_lock_irq(&device->interval_lock);
+	conflict = has_write_conflict(req);
+	drbd_insert_interval(&device->write_requests, &req->i);
+	if (!conflict)
+		set_bit(INTERVAL_SUBMITTED, &req->i.flags);
+	spin_unlock_irq(&device->interval_lock);
+
+	if (conflict) {
+		/* The request will be submitted once the conflict has cleared. */
+		return;
+	}
+
+	drbd_send_and_submit(req);
+}
+
 static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 {
 	bool rv = false;
@@ -1978,13 +2005,48 @@ void __drbd_make_request(struct drbd_device *device, struct bio *bio,
 		ktime_t start_kt,
 		unsigned long start_jif)
 {
+	const int rw = bio_data_dir(bio);
 	struct drbd_request *req;
 
 	inc_ap_bio(device, bio_data_dir(bio));
 	req = drbd_request_prepare(device, bio, start_kt, start_jif);
 	if (IS_ERR_OR_NULL(req))
 		return;
-	drbd_send_and_submit(device, req);
+
+	if (rw == WRITE)
+		drbd_conflict_submit_write(req);
+	else
+		drbd_send_and_submit(req);
+}
+
+/* Work function to submit requests once they are released after conflicts. The
+ * queued requests are processed and, if no other conflict is found, submitted. */
+void drbd_do_submit_conflict(struct work_struct *ws)
+{
+	struct drbd_device *device = container_of(ws, struct drbd_device, submit_conflict.worker);
+	struct drbd_request *req, *tmp;
+	LIST_HEAD(writes);
+
+	spin_lock_irq(&device->submit_conflict.lock);
+	list_splice_init(&device->submit_conflict.writes, &writes);
+	spin_unlock_irq(&device->submit_conflict.lock);
+
+	list_for_each_entry_safe(req, tmp, &writes, list) {
+		bool conflicts;
+
+		/* Delete the entry so that the request can be added to the
+		 * write conflict list again. */
+		list_del_init(&req->list);
+
+		spin_lock_irq(&device->interval_lock);
+		clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &req->i.flags);
+		conflicts = has_write_conflict(req);
+		if (!conflicts)
+			set_bit(INTERVAL_SUBMITTED, &req->i.flags);
+		spin_unlock_irq(&device->interval_lock);
+		if (!conflicts)
+			drbd_send_and_submit(req);
+	}
 }
 
 /* helpers for do_submit */
@@ -2076,7 +2138,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 		}
 
 		list_del_init(&req->list);
-		drbd_send_and_submit(device, req);
+		drbd_conflict_submit_write(req);
 	}
 	blk_finish_plug(&plug);
 }
@@ -2163,7 +2225,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 		drbd_req_in_actlog(req);
 		atomic_dec(&device->ap_actlog_cnt);
 		list_del_init(&req->list);
-		drbd_send_and_submit(device, req);
+		drbd_conflict_submit_write(req);
 	}
 	blk_finish_plug(&plug);
 }

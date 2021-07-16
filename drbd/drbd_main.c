@@ -3440,10 +3440,21 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	return peer_device;
 }
 
+static int init_conflict_submitter(struct drbd_device *device)
+{
+	/* Short name so that it is recognizable from the first 15 characters. */
+	device->submit_conflict.wq =
+		alloc_ordered_workqueue("drbd%u_sc", WQ_MEM_RECLAIM, device->minor);
+	if (!device->submit_conflict.wq)
+		return -ENOMEM;
+	INIT_WORK(&device->submit_conflict.worker, drbd_do_submit_conflict);
+	INIT_LIST_HEAD(&device->submit_conflict.writes);
+	spin_lock_init(&device->submit_conflict.lock);
+	return 0;
+}
+
 static int init_submitter(struct drbd_device *device)
 {
-	/* opencoded create_singlethread_workqueue(),
-	 * to be able to use format string arguments */
 	device->submit.wq =
 		alloc_ordered_workqueue("drbd%u_submit", WQ_MEM_RECLAIM, device->minor);
 	if (!device->submit.wq)
@@ -3617,6 +3628,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	write_unlock_irq(&resource->state_rwlock);
 	locked = false;
 
+	if (init_conflict_submitter(device)) {
+		err = ERR_NOMEM;
+		goto out_remove_peer_device;
+	}
+
 	if (init_submitter(device)) {
 		err = ERR_NOMEM;
 		goto out_remove_peer_device;
@@ -3715,6 +3731,8 @@ void drbd_unregister_device(struct drbd_device *device)
 	drbd_debugfs_device_cleanup(device);
 	del_gendisk(device->vdisk);
 
+	destroy_workqueue(device->submit_conflict.wq);
+	device->submit_conflict.wq = NULL;
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
 	del_timer_sync(&device->request_timer);
