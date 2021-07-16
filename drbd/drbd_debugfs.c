@@ -1063,6 +1063,40 @@ static int device_md_io_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
+{
+	struct rb_node *node;
+
+	node = rb_first(root);
+	while (node) {
+		struct drbd_interval *i = rb_entry(node, struct drbd_interval, rb);
+		char sep = ' ';
+
+		seq_printf(m, "%llus+%u", (unsigned long long) i->sector, i->size);
+		__seq_print_rq_state_bit(m, i->local, &sep, "local", "peer");
+		seq_print_rq_state_bit(m, i->waiting, &sep, "waiting");
+		seq_print_rq_state_bit(m, i->completed, &sep, "completed");
+		seq_putc(m, '\n');
+
+		node = rb_next(node);
+	}
+}
+
+static int device_interval_tree_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+
+	spin_lock_irq(&device->interval_lock);
+	seq_puts(m, "Write requests:\n");
+	seq_printf_interval_tree(m, &device->write_requests);
+	seq_putc(m, '\n');
+	seq_puts(m, "Read requests:\n");
+	seq_printf_interval_tree(m, &device->read_requests);
+	spin_unlock_irq(&device->interval_lock);
+
+	return 0;
+}
+
 static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
@@ -1239,6 +1273,7 @@ drbd_debugfs_device_attr(io_frozen)
 drbd_debugfs_device_attr(ed_gen_id)
 drbd_debugfs_device_attr(openers)
 drbd_debugfs_device_attr(md_io)
+drbd_debugfs_device_attr(interval_tree)
 #ifdef CONFIG_DRBD_TIMING_STATS
 __drbd_debugfs_device_attr(req_timing, device_req_timing_write)
 #endif
@@ -1278,6 +1313,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(ed_gen_id);
 	vol_dcf(openers);
 	vol_dcf(md_io);
+	vol_dcf(interval_tree);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_dcf(device->debugfs_vol, device, req_timing, 0600);
 #endif
@@ -1306,6 +1342,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_ed_gen_id);
 	drbd_debugfs_remove(&device->debugfs_vol_openers);
 	drbd_debugfs_remove(&device->debugfs_vol_md_io);
+	drbd_debugfs_remove(&device->debugfs_vol_interval_tree);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
 #endif

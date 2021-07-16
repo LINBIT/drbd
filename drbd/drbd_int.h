@@ -1343,6 +1343,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_ed_gen_id;
 	struct dentry *debugfs_vol_openers;
 	struct dentry *debugfs_vol_md_io;
+	struct dentry *debugfs_vol_interval_tree;
 #ifdef CONFIG_DRBD_TIMING_STATS
 	struct dentry *debugfs_vol_req_timing;
 #endif
