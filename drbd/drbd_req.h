@@ -289,6 +289,7 @@ extern void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m);
 extern void drbd_release_conflicts(struct drbd_device *device,
 		struct drbd_interval *release_interval);
+extern void drbd_flush_requests(struct drbd_device *device);
 extern void request_timer_fn(struct timer_list *t);
 extern void tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
 extern void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what);

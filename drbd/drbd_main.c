@@ -3211,6 +3211,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	rwlock_init(&resource->state_rwlock);
 	INIT_LIST_HEAD(&resource->listeners);
 	spin_lock_init(&resource->listeners_lock);
+	init_waitqueue_head(&resource->request_destroy_wait);
 	init_waitqueue_head(&resource->state_wait);
 	init_waitqueue_head(&resource->twopc_wait);
 	init_waitqueue_head(&resource->barrier_wait);

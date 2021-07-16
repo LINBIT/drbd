@@ -3463,11 +3463,19 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			 * anymore, so check also the _current_ state, not only the new state
 			 * at the time this work was queued. */
 			if (repl_state[OLD] != L_WF_BITMAP_S && repl_state[NEW] == L_WF_BITMAP_S &&
-			    peer_device->repl_state[NOW] == L_WF_BITMAP_S)
+			    peer_device->repl_state[NOW] == L_WF_BITMAP_S) {
+				/* Now that the connection is L_WF_BITMAP_S, new requests will
+				 * be sent to the peer as P_OUT_OF_SYNC packets. However, active
+				 * requests may not have been communicated to the peer and may
+				 * not yet be marked in the local bitmap. Hence wait for all
+				 * active requests to complete before reading and sending the
+				 * bitmap. */
+				drbd_flush_requests(device);
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 						peer_device);
+			}
 
 			if (peer_role[OLD] == R_PRIMARY && peer_role[NEW] == R_SECONDARY)
 				some_peer_demoted = true;
