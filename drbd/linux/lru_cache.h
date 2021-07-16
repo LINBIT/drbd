@@ -167,11 +167,6 @@ struct lru_cache {
 	/* the pre-created kmem cache to allocate the objects from */
 	struct kmem_cache *lc_cache;
 
-	/* size of tracked objects */
-	size_t element_size;
-	/* offset of struct lc_element member in the tracked object */
-	size_t element_off;
-
 	/* number of elements (indices) */
 	unsigned int nr_elements;
 	/* Arbitrary limit on maximum tracked objects. Practical limit is much
@@ -233,7 +228,7 @@ enum {
 
 extern struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 		unsigned max_pending_changes,
-		unsigned e_count, size_t e_size, size_t e_off);
+		unsigned e_count);
 extern void lc_destroy(struct lru_cache *lc);
 extern void lc_del(struct lru_cache *lc, struct lc_element *element);
 
@@ -283,9 +278,6 @@ static inline void lc_unlock(struct lru_cache *lc)
 	clear_bit(__LC_DIRTY, &lc->flags);
 	clear_bit_unlock(__LC_LOCKED, &lc->flags);
 }
-
-#define lc_entry(ptr, type, member) \
-	container_of(ptr, type, member)
 
 extern struct lc_element *lc_element_by_index(struct lru_cache *lc, unsigned i);
 

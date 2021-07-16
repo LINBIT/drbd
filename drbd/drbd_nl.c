@@ -1899,7 +1899,7 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 	in_use = 0;
 	t = device->act_log;
 	n = lc_create("act_log", drbd_al_ext_cache, AL_UPDATES_PER_TRANSACTION,
-		dc->al_extents, sizeof(struct lc_element), 0);
+		dc->al_extents);
 
 	if (n == NULL) {
 		drbd_err(device, "Cannot allocate act_log lru!\n");
