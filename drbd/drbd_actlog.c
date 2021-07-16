@@ -829,7 +829,6 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long count = 0;
-	unsigned int cleared = 0;
 	int bmi = peer_device->bitmap_index;
 
 	if (mode == RECORD_RS_FAILED)
@@ -845,8 +844,6 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 		count = drbd_bm_set_bits(device, bmi, sbnr, ebnr);
 
 	if (count) {
-		queue_update_peers(peer_device, sbnr, ebnr);
-
 		if (mode == SET_IN_SYNC) {
 			bool is_sync_target, rs_is_done;
 			unsigned long still_to_go;
@@ -866,8 +863,9 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 			still_to_go = drbd_bm_total_weight(peer_device);
 			rs_is_done = (still_to_go <= peer_device->rs_failed);
 			drbd_advance_rs_marks(peer_device, still_to_go);
-			if (cleared || rs_is_done)
+			if (rs_is_done)
 				maybe_schedule_on_disk_bitmap_update(peer_device, rs_is_done, is_sync_target);
+			queue_update_peers(peer_device, sbnr, ebnr);
 		} else if (mode == RECORD_RS_FAILED) {
 			peer_device->rs_failed += count;
 		} else /* if (mode == SET_OUT_OF_SYNC) */ {

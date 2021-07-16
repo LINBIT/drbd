@@ -1853,7 +1853,7 @@ int drbd_send_rs_deallocated(struct drbd_peer_device *peer_device,
 	return drbd_send_command(peer_device, P_RS_DEALLOCATED, DATA_STREAM);
 }
 
-int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
+int drbd_send_drequest(struct drbd_peer_device *peer_device,
 		       sector_t sector, int size, u64 block_id)
 {
 	struct p_block_req *p;
@@ -1863,38 +1863,58 @@ int drbd_send_drequest(struct drbd_peer_device *peer_device, int cmd,
 		return -EIO;
 	p->sector = cpu_to_be64(sector);
 	p->block_id = block_id;
-	p->pad = 0;
 	p->blksize = cpu_to_be32(size);
+	p->pad = 0;
+	return drbd_send_command(peer_device, P_DATA_REQUEST, DATA_STREAM);
+}
+
+static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd_packet cmd, int payload_size,
+		sector_t sector, int blksize, unsigned int dagtag_node_id, u64 dagtag)
+{
+	void *payload;
+	struct p_block_req_common *req_common;
+
+	if (cmd == P_RS_DAGTAG_REQ || cmd == P_RS_CSUM_DAGTAG_REQ || cmd == P_RS_THIN_DAGTAG_REQ ||
+			cmd == P_OV_DAGTAG_REQ || cmd == P_OV_DAGTAG_REPLY) {
+		struct p_rs_req *p;
+		p = drbd_prepare_command(peer_device, sizeof(*p) + payload_size, DATA_STREAM);
+		if (!p)
+			return NULL;
+		payload = p + 1;
+		req_common = &p->req_common;
+		p->dagtag_node_id = cpu_to_be32(dagtag_node_id);
+		p->dagtag = cpu_to_be64(dagtag);
+	} else {
+		struct p_block_req *p;
+		p = drbd_prepare_command(peer_device, sizeof(*p) + payload_size, DATA_STREAM);
+		if (!p)
+			return NULL;
+		payload = p + 1;
+		req_common = &p->req_common;
+		p->pad = 0;
+	}
+
+	req_common->sector = cpu_to_be64(sector);
+	req_common->block_id = ID_SYNCER;
+	req_common->blksize = cpu_to_be32(blksize);
+
+	return payload;
+}
+
+int drbd_send_rs_request(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
+		       sector_t sector, int size, unsigned int dagtag_node_id, u64 dagtag)
+{
+	if (!drbd_prepare_rs_req(peer_device, cmd, 0, sector, size, dagtag_node_id, dagtag))
+		return -EIO;
 	return drbd_send_command(peer_device, cmd, DATA_STREAM);
 }
 
-void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, int digest_size)
+void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_packet cmd,
+		int digest_size, unsigned int dagtag_node_id, u64 dagtag)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct p_block_req *p;
-
-	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
-	if (!p)
-		return NULL;
-
-	p->sector = cpu_to_be64(peer_req->i.sector);
-	p->block_id = ID_SYNCER /* unused */;
-	p->blksize = cpu_to_be32(peer_req->i.size);
-
-	return p + 1; /* digest should be placed behind the struct */
-}
-
-int drbd_send_ov_request(struct drbd_peer_device *peer_device, sector_t sector, int size)
-{
-	struct p_block_req *p;
-
-	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
-	if (!p)
-		return -EIO;
-	p->sector = cpu_to_be64(sector);
-	p->block_id = ID_SYNCER /* unused */;
-	p->blksize = cpu_to_be32(size);
-	return drbd_send_command(peer_device, P_OV_REQUEST, DATA_STREAM);
+	return drbd_prepare_rs_req(peer_device, cmd, digest_size,
+			peer_req->i.sector, peer_req->i.size, dagtag_node_id, dagtag);
 }
 
 /* The idea of sendpage seems to be to put some kind of reference
@@ -3286,11 +3306,14 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	spin_lock_init(&connection->peer_reqs_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->connections);
+	INIT_LIST_HEAD(&connection->resync_request_ee);
 	INIT_LIST_HEAD(&connection->active_ee);
 	INIT_LIST_HEAD(&connection->sync_ee);
-	INIT_LIST_HEAD(&connection->read_ee);
-	INIT_LIST_HEAD(&connection->net_ee);
 	INIT_LIST_HEAD(&connection->done_ee);
+	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
+	INIT_LIST_HEAD(&connection->read_ee);
+	INIT_LIST_HEAD(&connection->resync_ack_ee);
+	INIT_LIST_HEAD(&connection->net_ee);
 	init_waitqueue_head(&connection->ee_wait);
 
 	kref_init(&connection->kref);
@@ -3420,7 +3443,10 @@ static int init_conflict_submitter(struct drbd_device *device)
 	if (!device->submit_conflict.wq)
 		return -ENOMEM;
 	INIT_WORK(&device->submit_conflict.worker, drbd_do_submit_conflict);
+	INIT_LIST_HEAD(&device->submit_conflict.resync_writes);
+	INIT_LIST_HEAD(&device->submit_conflict.resync_reads);
 	INIT_LIST_HEAD(&device->submit_conflict.writes);
+	INIT_LIST_HEAD(&device->submit_conflict.peer_writes);
 	spin_lock_init(&device->submit_conflict.lock);
 	return 0;
 }

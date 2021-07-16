@@ -322,9 +322,14 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 {
 	seq_puts(m, "minor\tvnr\tsector\tsize\trw\tage\tflags\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
+	seq_print_peer_request(m, connection, &connection->resync_request_ee, jif);
 	seq_print_peer_request(m, connection, &connection->active_ee, jif);
-	seq_print_peer_request(m, connection, &connection->read_ee, jif);
 	seq_print_peer_request(m, connection, &connection->sync_ee, jif);
+	seq_print_peer_request(m, connection, &connection->done_ee, jif);
+	seq_print_peer_request(m, connection, &connection->dagtag_wait_ee, jif);
+	seq_print_peer_request(m, connection, &connection->read_ee, jif);
+	seq_print_peer_request(m, connection, &connection->resync_ack_ee, jif);
+	seq_print_peer_request(m, connection, &connection->net_ee, jif);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 }
 
@@ -1058,10 +1063,10 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 		struct drbd_interval *i = rb_entry(node, struct drbd_interval, rb);
 		char sep = ' ';
 
-		seq_printf(m, "%llus+%u", (unsigned long long) i->sector, i->size);
-		__seq_print_rq_state_bit(m, i->type == INTERVAL_LOCAL_WRITE, &sep, "local", "peer");
+		seq_printf(m, "%llus+%u %s", (unsigned long long) i->sector, i->size, drbd_interval_type_str(i));
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags), &sep, "submit-conflict-queued");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &i->flags), &sep, "submitted");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_BACKING_COMPLETED, &i->flags), &sep, "backing-completed");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_COMPLETED, &i->flags), &sep, "completed");
 		seq_putc(m, '\n');
 

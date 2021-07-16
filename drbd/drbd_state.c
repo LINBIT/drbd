@@ -2213,7 +2213,7 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 		/* starting online verify from an arbitrary position
 		 * does not fit well into the existing protocol.
 		 * on L_VERIFY_T, we initialize ov_left and friends
-		 * implicitly in receive_DataRequest once the
+		 * implicitly in receive_common_data_request once the
 		 * first P_OV_REQUEST is received */
 		peer_device->ov_start_sector = ~(sector_t)0;
 	} else {

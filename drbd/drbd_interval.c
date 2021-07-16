@@ -18,6 +18,25 @@ sector_t interval_end(struct rb_node *node)
 RB_DECLARE_CALLBACKS_MAX(_STATIC, augment_callbacks, struct drbd_interval, rb,
 		sector_t, end, NODE_END);
 
+static const char * const drbd_interval_type_names[] = {
+	[INTERVAL_LOCAL_WRITE]    = "LocalWrite",
+	[INTERVAL_PEER_WRITE]     = "PeerWrite",
+	[INTERVAL_RESYNC_WRITE]   = "ResyncWrite",
+	[INTERVAL_RESYNC_READ]    = "ResyncRead",
+	[INTERVAL_OV_READ_SOURCE] = "VerifySource",
+	[INTERVAL_OV_READ_TARGET] = "VerifyTarget",
+};
+
+const char *drbd_interval_type_str(struct drbd_interval *i)
+{
+	enum drbd_interval_type type = i->type;
+	unsigned int size = sizeof drbd_interval_type_names / sizeof drbd_interval_type_names[0];
+
+	return (type < 0 || type >= size ||
+	        !drbd_interval_type_names[type]) ?
+	       "?" : drbd_interval_type_names[type];
+}
+
 /*
  * drbd_insert_interval  -  insert a new interval into a tree
  */

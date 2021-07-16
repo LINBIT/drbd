@@ -85,6 +85,7 @@ enum {
  */
 #define DRBD_SIGKILL SIGHUP
 
+#define ID_SKIP         (4710ULL)
 #define ID_IN_SYNC      (4711ULL)
 #define ID_OUT_OF_SYNC  (4712ULL)
 #define ID_SYNCER (-1ULL)
@@ -425,9 +426,13 @@ struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
 	struct list_head recv_order; /* writes only */
-	/* writes only, blocked on activity log;
-	 * FIXME merge with rcv_order or w.list? */
+	/* Used by the submitter workqueues for:
+	 * * Processing conflicts
+	 * * Writes that are blocked on the activity log */
 	struct list_head submit_list;
+
+	unsigned int depend_dagtag_node_id;
+	u64 depend_dagtag;
 
 	struct drbd_page_chain_head page_chain;
 	unsigned int opf; /* to be used as bi_opf */
@@ -499,13 +504,11 @@ enum {
 	/* The peer wants a write ACK for this (wire proto C) */
 	__EE_SEND_WRITE_ACK,
 
-	/* Is set when net_conf had two_primaries set while creating this peer_req */
-	__EE_IN_INTERVAL_TREE,
-
 	/* this is/was a write same request */
 	__EE_WRITE_SAME,
 
-	/* If it contains only 0 bytes, send back P_RS_DEALLOCATED */
+	/* On target: Send P_RS_THIN_REQ.
+	 * On source: If it contains only 0 bytes, send back P_RS_DEALLOCATED. */
 	__EE_RS_THIN_REQ,
 
 	/* Hold reference in activity log */
@@ -520,7 +523,6 @@ enum {
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
-#define EE_IN_INTERVAL_TREE	(1<<__EE_IN_INTERVAL_TREE)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
@@ -782,6 +784,7 @@ enum connection_flag {
 	CONN_HANDSHAKE_DISCONNECT,
 	CONN_HANDSHAKE_RETRY,
 	CONN_HANDSHAKE_READY,
+	RECEIVED_DAGTAG, /* Whether we received any write or dagtag since connecting. */
 };
 
 /* flag bits per resource */
@@ -1043,16 +1046,25 @@ struct drbd_connection {
 	struct drbd_thread ack_receiver;
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
+
 	atomic64_t last_dagtag_sector;
 
 	atomic_t active_ee_cnt;
 	spinlock_t peer_reqs_lock;
-	struct list_head peer_requests; /* All peer requests in the order we received them.. */
+
+	/* Write/SyncTarget peer requests */
+	struct list_head peer_requests; /* All peer writes in the order we received them */
+	struct list_head resync_request_ee; /* Resync request (L_SYNC_TARGET/L_VERIFY_S) waiting for reply */
 	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
-	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk) */
-	struct list_head read_ee;   /* [RS]P_DATA_REQUEST being read */
+	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk), or resync request waiting for conflicts. */
+	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
+
+	/* Read/SyncSource peer requests */
+	struct list_head dagtag_wait_ee; /* Resync read waiting for dagtag to be reached */
+	struct list_head read_ee;   /* P_DATA_REQUEST/P_RS_DATA_REQUEST/P_OV_REQUEST/P_OV_REPLY being read */
+	struct list_head resync_ack_ee;   /* P_RS_DATA_REPLY sent, waiting for P_RS_WRITE_ACK */
 	struct list_head net_ee;    /* zero-copy network send in progress */
-	struct list_head done_ee;   /* need to send P_WRITE_ACK */
+
 	atomic_t done_ee_cnt;
 	struct work_struct send_acks_work;
 	wait_queue_head_t ee_wait;
@@ -1285,7 +1297,10 @@ struct conflict_worker {
 	struct work_struct worker;
 
 	spinlock_t lock;
+	struct list_head resync_writes;
+	struct list_head resync_reads;
 	struct list_head writes;
+	struct list_head peer_writes;
 };
 
 struct submit_worker {
@@ -1369,10 +1384,10 @@ struct drbd_device {
 
 	atomic_t suspend_cnt;	/* recursive suspend counter, if non-zero, IO will be blocked. */
 
-	/* Interval trees of pending local requests */
+	/* Interval trees of pending requests */
 	spinlock_t interval_lock;
-	struct rb_root read_requests;
-	struct rb_root requests;
+	struct rb_root read_requests; /* Local reads */
+	struct rb_root requests; /* Local and peer writes, resync operations etc. */
 
 	/* for statistics and timeouts */
 	/* [0] read, [1] write */
@@ -1567,10 +1582,12 @@ extern int drbd_send_out_of_sync(struct drbd_peer_device *, sector_t, unsigned i
 extern int drbd_send_block(struct drbd_peer_device *, enum drbd_packet,
 			   struct drbd_peer_request *);
 extern int drbd_send_dblock(struct drbd_peer_device *, struct drbd_request *req);
-extern int drbd_send_drequest(struct drbd_peer_device *, int cmd,
+extern int drbd_send_drequest(struct drbd_peer_device *,
 			      sector_t sector, int size, u64 block_id);
-extern void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, int digest_size);
-extern int drbd_send_ov_request(struct drbd_peer_device *, sector_t sector, int size);
+extern int drbd_send_rs_request(struct drbd_peer_device *, enum drbd_packet cmd,
+			      sector_t sector, int size, unsigned int dagtag_node_id, u64 dagtag);
+extern void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_packet cmd,
+		int digest_size, unsigned int dagtag_node_id, u64 dagtag);
 
 extern int drbd_send_bitmap(struct drbd_device *, struct drbd_peer_device *);
 extern int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag);
@@ -1929,6 +1946,7 @@ extern void wait_until_done_or_force_detached(struct drbd_device *device,
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 extern void drbd_check_peers(struct drbd_resource *resource);
 extern void drbd_check_peers_new_current_uuid(struct drbd_device *);
+extern void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req);
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
 extern void repost_up_to_date_fn(struct timer_list *t);
@@ -2020,6 +2038,8 @@ struct drbd_peer_request_details {
 
 extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
 		sector_t start, unsigned int nr_sectors, int flags);
+extern void drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
+		      sector_t sector, int size, u64 block_id);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
 extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
@@ -2030,9 +2050,14 @@ extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
+extern void drbd_verify_skipped_block(struct drbd_peer_device *peer_device,
+		const sector_t sector, const unsigned int size);
+extern void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req);
+extern void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req);
 extern int drbd_submit_peer_request(struct drbd_peer_request *);
 extern void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
+extern void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
@@ -2388,7 +2413,7 @@ static inline int __dec_rs_pending(struct drbd_peer_device *peer_device)
  *			we need to send a P_RECV_ACK (proto B)
  *			or P_WRITE_ACK (proto C)
  *  receive_RSDataReply (recv_resync_read) we need to send a P_WRITE_ACK
- *  receive_DataRequest (receive_RSDataRequest) we need to send back P_DATA
+ *  receive_data_request etc we need to send back P_DATA
  *  receive_Barrier_*	we need to send a P_BARRIER_ACK
  */
 static inline void inc_unacked(struct drbd_peer_device *peer_device)
@@ -2622,6 +2647,84 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
+
+#define CONFLICT_FLAG_WRITE (1 << 0)
+#define CONFLICT_FLAG_DEFER_TO_RESYNC (1 << 1)
+#define CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED (1 << 2)
+#define CONFLICT_FLAG_APPLICATION_ONLY (1 << 3)
+
+/*
+ * drbd_find_conflict - find conflicting interval, if any
+ */
+static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *device,
+		struct drbd_interval *interval, unsigned long flags)
+{
+	struct drbd_interval *i;
+	sector_t sector = interval->sector;
+	int size = interval->size;
+	bool write = flags & CONFLICT_FLAG_WRITE;
+	bool defer_to_resync = flags & CONFLICT_FLAG_DEFER_TO_RESYNC;
+	bool exclusive_until_completed = flags & CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED;
+	bool application_only = flags & CONFLICT_FLAG_APPLICATION_ONLY;
+
+	lockdep_assert_held(&device->interval_lock);
+
+	drbd_for_each_overlap(i, &device->requests, sector, size) {
+		/* Ignore the interval itself. */
+		if (i == interval)
+			continue;
+
+		if (exclusive_until_completed) {
+			/* Ignore, if already completed to upper layers. */
+			if (test_bit(INTERVAL_COMPLETED, &i->flags))
+				continue;
+		} else {
+			/* Ignore, if already completed by the backing disk. */
+			if (test_bit(INTERVAL_BACKING_COMPLETED, &i->flags))
+				continue;
+		}
+
+		/* Ignore, if not yet submitted, unless we should defer to a
+		 * resync request. */
+		if (!test_bit(INTERVAL_SUBMITTED, &i->flags) &&
+				!(defer_to_resync && drbd_interval_is_resync(i)))
+			continue;
+
+		if (unlikely(application_only)) {
+			/* Ignore, if not an application request. */
+			if (!drbd_interval_is_application(i))
+				continue;
+		}
+
+		if (write) {
+			/* Mark verify requests as conflicting rather than
+			 * treating them as conflicts for us. */
+			if (drbd_interval_is_verify(i)) {
+				set_bit(INTERVAL_CONFLICT, &i->flags);
+				continue;
+			}
+		} else {
+			/* Ignore other resync reads. */
+			if (i->type == INTERVAL_RESYNC_READ)
+				continue;
+
+			/* Ignore verify requests, since they are always reads. */
+			if (drbd_interval_is_verify(i))
+				continue;
+		}
+
+		dynamic_drbd_dbg(device,
+				"%s at %llus+%u conflicts with %s at %llus+%u\n",
+				drbd_interval_type_str(interval),
+				(unsigned long long) sector, size,
+				drbd_interval_type_str(i),
+				(unsigned long long) i->sector, i->size);
+
+		break;
+	}
+
+	return i;
+}
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 #define ktime_aggregate_delta(D, ST, M) D->M = ktime_add(D->M, ktime_sub(ktime_get(), ST))
