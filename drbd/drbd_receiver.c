@@ -6041,6 +6041,7 @@ change_connection_state(struct drbd_connection *connection,
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	bool is_disconnect = false;
 	bool is_connect = false;
+	bool abort = flags & CS_ABORT;
 	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
@@ -6060,7 +6061,7 @@ change_connection_state(struct drbd_connection *connection,
 	if (is_connect && connection->agreed_pro_version >= 118) {
 		if (flags & CS_PREPARE)
 			conn_connect2(connection);
-		if (flags & CS_ABORT)
+		if (abort)
 			abort_connect(connection);
 	}
 retry:
@@ -6076,7 +6077,7 @@ retry:
 	if (rv < SS_SUCCESS)
 		goto fail;
 
-	if (reply) {
+	if (reply && !abort) {
 		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
 			NODE_MASK(resource->res_opts.node_id);
 
@@ -6085,7 +6086,7 @@ retry:
 	}
 
 	if (is_connect && connection->agreed_pro_version >= 117)
-		apply_connect(connection, flags & CS_PREPARED);
+		apply_connect(connection, (flags & CS_PREPARED) && !abort);
 	rv = end_state_change(resource, &irq_flags);
 out:
 
