@@ -3910,6 +3910,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 	struct peer_device_conf *old_peer_device_conf, *new_peer_device_conf = NULL;
 	struct fifo_buffer *old_plan = NULL;
 	struct drbd_device *device;
+	bool notify = false;
 	int err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_DEVICE);
@@ -3953,13 +3954,24 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 				  "Former intentional diskless peer got bitmap slot %d\n",
 				  peer_device->bitmap_index);
 			drbd_md_sync(device);
+			notify = true;
 		}
 	}
 
 	if (old_peer_device_conf->bitmap && !new_peer_device_conf->bitmap) {
+		enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+		enum drbd_disk_state disk = device->disk_state[NOW];
+		if (!(disk == D_DISKLESS || pdsk == D_DISKLESS || pdsk == D_UNKNOWN)) {
+			drbd_msg_put_info(adm_ctx.reply_skb,
+					  "Can not drop the bitmap when both sides have a disk");
+			retcode = ERR_INVALID_REQUEST;
+			goto fail_ret_set;
+		}
 		err = free_bitmap_index(device, peer_device->node_id, MDF_NODE_EXISTS);
-		if (!err)
+		if (!err) {
 			peer_device->bitmap_index = -1;
+			notify = true;
+		}
 	}
 
 	if (!expect(peer_device, new_peer_device_conf->resync_rate >= 1))
@@ -3987,6 +3999,8 @@ fail_ret_set:
 
 	mutex_unlock(&adm_ctx.resource->conf_update);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	if (notify)
+		drbd_broadcast_peer_device_state(peer_device);
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 
