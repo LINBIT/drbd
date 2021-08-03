@@ -3667,6 +3667,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 	case ASB_CALL_HELPER:
 	case ASB_VIOLENTLY:
 	case ASB_RETRY_CONNECT:
+	case ASB_AUTO_DISCARD:
 		drbd_err(peer_device, "Configuration error.\n");
 		break;
 	case ASB_DISCONNECT:
@@ -3747,6 +3748,7 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 	case ASB_DISCARD_REMOTE:
 	case ASB_DISCARD_ZERO_CHG:
 	case ASB_RETRY_CONNECT:
+	case ASB_AUTO_DISCARD:
 		drbd_err(device, "Configuration error.\n");
 		break;
 	case ASB_DISCONNECT:
@@ -3808,6 +3810,7 @@ static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_devi
 	case ASB_DISCARD_SECONDARY:
 	case ASB_DISCARD_ZERO_CHG:
 	case ASB_RETRY_CONNECT:
+	case ASB_AUTO_DISCARD:
 		drbd_err(device, "Configuration error.\n");
 		break;
 	case ASB_VIOLENTLY:
@@ -4735,7 +4738,19 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		case ASB_VIOLENTLY:
 			drbd_warn(device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
+			break;
+		case ASB_AUTO_DISCARD:
+			if (strategy == SYNC_TARGET_USE_BITMAP && rule == RULE_CRASHED_PRIMARY) {
+				drbd_warn(peer_device, "reversing resync by auto-discard\n");
+				strategy = SYNC_SOURCE_USE_BITMAP;
+			}
 		}
+	}
+	if (strategy == SYNC_SOURCE_USE_BITMAP && rule == RULE_CRASHED_PRIMARY &&
+	    peer_role == R_PRIMARY && peer_disk_state >= D_CONSISTENT &&
+	    rr_conflict == ASB_AUTO_DISCARD) {
+		drbd_warn(peer_device, "reversing resync by auto-discard\n");
+		strategy = SYNC_TARGET_USE_BITMAP;
 	}
 
 	if (test_bit(CONN_DRY_RUN, &connection->flags)) {
