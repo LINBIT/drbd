@@ -4629,19 +4629,19 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -1; /* retry connect */
 
 	if (strategy == UNRELATED_DATA) {
-		drbd_alert(device, "Unrelated data, aborting!\n");
+		drbd_alert(peer_device, "Unrelated data, aborting!\n");
 		return -2;
 	}
 	required_protocol = strategy_descriptor(strategy).required_protocol;
 	if (required_protocol) {
-		drbd_alert(device, "To resolve this both sides have to support at least protocol %d\n", required_protocol);
+		drbd_alert(peer_device, "To resolve this both sides have to support at least protocol %d\n", required_protocol);
 		return -2;
 	}
 
 	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
-		drbd_warn(device, "Ignore Split-Brain, for now, at least one side unstable\n");
+		drbd_warn(peer_device, "Ignore Split-Brain, for now, at least one side unstable\n");
 		strategy = NO_SYNC;
 	}
 
@@ -4680,15 +4680,15 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			}
 		}
 		if (!strategy_descriptor(strategy).is_split_brain) {
-			drbd_warn(device, "Split-Brain detected, %d primaries, "
+			drbd_warn(peer_device, "Split-Brain detected, %d primaries, "
 			     "automatically solved. Sync from %s node\n",
 			     pcount, strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
 			if (forced) {
 				if (!strategy_descriptor(strategy).full_sync_equivalent) {
-					drbd_alert(device, "Want full sync but cannot decide direction, dropping connection!\n");
+					drbd_alert(peer_device, "Want full sync but cannot decide direction, dropping connection!\n");
 					return -2;
 				}
-				drbd_warn(device, "Doing a full sync, since"
+				drbd_warn(peer_device, "Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
 				strategy = strategy_descriptor(strategy).full_sync_equivalent;
 			}
@@ -4697,19 +4697,19 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	if (strategy == SPLIT_BRAIN_DISCONNECT && strategy_from_user != UNDETERMINED) {
 		strategy = strategy_from_user;
-		drbd_warn(device, "Split-Brain detected, manually solved. "
+		drbd_warn(peer_device, "Split-Brain detected, manually solved. "
 			  "Sync from %s node\n",
 			  strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
 	}
 
 	if (strategy_descriptor(strategy).is_split_brain) {
-		drbd_alert(device, "Split-Brain detected but unresolved, dropping connection!\n");
+		drbd_alert(peer_device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_maybe_khelper(device, connection, "split-brain");
 		return -2;
 	}
 
 	if (!is_strategy_determined(strategy)) {
-		drbd_alert(device, "Failed to fully determine sync strategy, dropping connection!\n");
+		drbd_alert(peer_device, "Failed to fully determine sync strategy, dropping connection!\n");
 		return -2;
 	}
 
@@ -4718,9 +4718,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	    strategy_descriptor(strategy).is_sync_source != strategy_descriptor(strategy_from_user).is_sync_source) {
 		if (strategy_descriptor(strategy).reverse != UNDETERMINED) {
 			strategy = strategy_descriptor(strategy).reverse;
-			drbd_warn(device, "Resync direction reversed by --discard-my-data. Reverting to older data!\n");
+			drbd_warn(peer_device, "Resync direction reversed by --discard-my-data. Reverting to older data!\n");
 		} else {
-			drbd_warn(device, "Can not reverse resync direction (requested via --discard-my-data)\n");
+			drbd_warn(peer_device, "Can not reverse resync direction (requested via --discard-my-data)\n");
 		}
 	}
 
@@ -4733,10 +4733,10 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			fallthrough;
 		case ASB_DISCONNECT:
 		case ASB_RETRY_CONNECT:
-			drbd_err(device, "I shall become SyncTarget, but I am primary!\n");
+			drbd_err(peer_device, "I shall become SyncTarget, but I am primary!\n");
 			return rr_conflict == ASB_RETRY_CONNECT ? -1 : -2;
 		case ASB_VIOLENTLY:
-			drbd_warn(device, "Becoming SyncTarget, violating the stable-data"
+			drbd_warn(peer_device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
 			break;
 		case ASB_AUTO_DISCARD:
@@ -4755,9 +4755,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 
 	if (test_bit(CONN_DRY_RUN, &connection->flags)) {
 		if (strategy == NO_SYNC)
-			drbd_info(device, "dry-run connect: No resync, would become Connected immediately.\n");
+			drbd_info(peer_device, "dry-run connect: No resync, would become Connected immediately.\n");
 		else
-			drbd_info(device, "dry-run connect: Would become %s, doing a %s resync.",
+			drbd_info(peer_device, "dry-run connect: Would become %s, doing a %s resync.",
 				 drbd_repl_str(strategy_descriptor(strategy).is_sync_target ? L_SYNC_TARGET : L_SYNC_SOURCE),
 				 strategy_descriptor(strategy).name);
 		return -2;
