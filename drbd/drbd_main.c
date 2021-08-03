@@ -1555,7 +1555,7 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 {
 	struct p_twopc_request *p;
 
-	drbd_debug(connection, "Sending %s request for state change %u\n",
+	dynamic_drbd_dbg(connection, "Sending %s request for state change %u\n",
 		   drbd_packet_name(cmd),
 		   be32_to_cpu(request->tid));
 

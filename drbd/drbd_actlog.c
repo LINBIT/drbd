@@ -140,7 +140,7 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 		return -EIO;
 	}
 
-	drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s) %pS\n",
+	dynamic_drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s) %pS\n",
 	     current->comm, current->pid, __func__,
 	     (unsigned long long)sector, (op == REQ_OP_WRITE) ? "WRITE" : "READ",
 	     (void*)_RET_IP_ );

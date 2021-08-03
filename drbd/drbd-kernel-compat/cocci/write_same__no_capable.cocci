@@ -14,7 +14,7 @@ void assign_p_sizes_qlim(..., struct request_queue *q)
 void decide_on_write_same_support(...)
 {
 -...
-+drbd_dbg(device, "This kernel is too old, no WRITE_SAME support.\n");
++dynamic_drbd_dbg(device, "This kernel is too old, no WRITE_SAME support.\n");
 }
 
 @@

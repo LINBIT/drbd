@@ -4649,7 +4649,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 		if (twopc_reply.is_disconnect)
 			set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
 
-		drbd_debug(twopc_parent, "Nested state change %u result: %s\n",
+		dynamic_drbd_dbg(twopc_parent, "Nested state change %u result: %s\n",
 			   twopc_reply.tid, drbd_packet_name(cmd));
 
 		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);

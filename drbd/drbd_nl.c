@@ -2064,7 +2064,7 @@ static void decide_on_write_same_support(struct drbd_device *device,
 			drbd_warn(device, "logical block sizes do not match (me:%u, peer:%u); this may cause problems.\n",
 				me_lbs, peer_lbs);
 			if (can_do) {
-				drbd_dbg(device, "logical block size mismatch: WRITE_SAME disabled.\n");
+				dynamic_drbd_dbg(device, "logical block size mismatch: WRITE_SAME disabled.\n");
 				can_do = false;
 			}
 			me_lbs = max(me_lbs, me_lbs_b);
@@ -2085,7 +2085,7 @@ static void decide_on_write_same_support(struct drbd_device *device,
 		if (can_do && !o->write_same_capable) {
 			/* If we introduce an open-coded write-same loop on the receiving side,
 			 * the peer would present itself as "capable". */
-			drbd_dbg(device, "WRITE_SAME disabled (peer device not capable)\n");
+			dynamic_drbd_dbg(device, "WRITE_SAME disabled (peer device not capable)\n");
 			can_do = false;
 		}
 	}

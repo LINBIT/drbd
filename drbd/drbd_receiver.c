@@ -1049,7 +1049,7 @@ start:
 		kref_debug_get(&connection->kref_debug, 11);
 		connection->connect_timer_work.cb = connect_work;
 		timeout = twopc_retry_timeout(resource, 0);
-		drbd_debug(connection, "Waiting for %ums to avoid transaction "
+		dynamic_drbd_dbg(connection, "Waiting for %ums to avoid transaction "
 				"conflicts\n", jiffies_to_msecs(timeout));
 		arm_connect_timer(connection, jiffies + timeout);
 	}
@@ -6194,7 +6194,7 @@ static int process_twopc(struct drbd_connection *connection,
 		if (!is_prepare(pi->cmd)) {
 			/* We have committed or aborted this transaction already. */
 			write_unlock_irq(&resource->state_rwlock);
-			drbd_debug(connection, "Ignoring %s packet %u\n",
+			dynamic_drbd_dbg(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
 				   reply->tid);
 			return 0;
@@ -8290,7 +8290,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	write_lock_irq(&resource->state_rwlock);
 	if (resource->twopc_reply.initiator_node_id == be32_to_cpu(p->initiator_node_id) &&
 	    resource->twopc_reply.tid == be32_to_cpu(p->tid)) {
-		drbd_debug(connection, "Got a %s reply for state change %u\n",
+		dynamic_drbd_dbg(connection, "Got a %s reply for state change %u\n",
 			   drbd_packet_name(pi->cmd),
 			   resource->twopc_reply.tid);
 
@@ -8350,7 +8350,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			}
 		}
 	} else {
-		drbd_debug(connection, "Ignoring %s reply for state change %u\n",
+		dynamic_drbd_dbg(connection, "Ignoring %s reply for state change %u\n",
 			   drbd_packet_name(pi->cmd),
 			   be32_to_cpu(p->tid));
 	}

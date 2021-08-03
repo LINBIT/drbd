@@ -78,14 +78,6 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 		__drbd_printk_if_same_type(obj, drbd_peer_device, level, fmt, ## args), \
 	        drbd_printk_with_wrong_object_type()))))
 
-#if defined(DEBUG)
-#define drbd_dbg(device, fmt, args...) \
-	drbd_printk(KERN_DEBUG, device, fmt, ## args)
-#else
-#define drbd_dbg(device, fmt, args...) \
-	do { if (0) drbd_printk(KERN_DEBUG, device, fmt, ## args); } while (0)
-#endif
-
 #define __drbd_dyn_dbg_if_same_type(obj, struct_name, fmt, args...) \
 	__drbd_printk_choose_cond(obj, struct_name), \
 ({ \
@@ -123,13 +115,6 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 	drbd_printk(KERN_NOTICE, device, fmt, ## args)
 #define drbd_info(device, fmt, args...) \
 	drbd_printk(KERN_INFO, device, fmt, ## args)
-
-#if defined(DEBUG)
-#define drbd_debug(obj, fmt, args...) \
-	drbd_printk(KERN_DEBUG, obj, fmt, ## args)
-#else
-#define drbd_debug(obj, fmt, args...)
-#endif
 
 
 #define drbd_ratelimit() \
