@@ -2185,11 +2185,11 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 		if (is_verify_state(peer_device, NOW)) {
 			ov_out_of_sync_print(peer_device);
 			ov_skipped_print(peer_device);
-		} else
-			resync_done = is_sync_state(peer_device, NOW);
+			drbd_resync_finished(peer_device, D_MASK);
+		} else if (is_sync_state(peer_device, NOW)) {
+			drbd_resync_finished(peer_device, D_MASK);
+		}
 	}
-	if (resync_done)
-		drbd_resync_finished(peer_device, D_MASK);
 
 	/* update timestamp, in case it took a while to write out stuff */
 	peer_device->rs_last_writeout = jiffies;

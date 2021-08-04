@@ -1050,16 +1050,15 @@ static void maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_d
 		if (peer_device->connection->agreed_pro_version <= 95 ||
 		    is_sync_target_state(peer_device, NOW))
 			set_bit(RS_DONE, &peer_device->flags);
-			/* and also set RS_PROGRESS below */
 
-		/* Else: rather wait for explicit notification via receive_state,
-		 * to avoid uuids-rotated-too-fast causing full resync
-		 * in next handshake, in case the replication link breaks
-		 * at the most unfortunate time... */
-	} else if (!lazy_bitmap_update_due(peer_device))
-		return;
+		/* If sync source: rather wait for explicit notification via
+		 * receive_state, to avoid uuids-rotated-too-fast causing full
+		 * resync in next handshake, in case the replication link
+		 * breaks at the most unfortunate time... */
+	}
 
-	drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
+	if (rs_done || lazy_bitmap_update_due(peer_device))
+		drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
 }
 
 
