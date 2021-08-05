@@ -1272,11 +1272,11 @@ static void complete_conflicting_writes(struct drbd_request *req)
 		/* Indicate to wake up device->misc_wait on progress.  */
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i->waiting = true;
-		spin_unlock_irq(&device->interval_lock);
+		spin_unlock(&device->interval_lock);
 		read_unlock_irq(&resource->state_rwlock);
 		schedule();
 		read_lock_irq(&resource->state_rwlock);
-		spin_lock_irq(&device->interval_lock);
+		spin_lock(&device->interval_lock);
 	}
 	finish_wait(&device->misc_wait, &wait);
 }
