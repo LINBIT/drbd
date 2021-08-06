@@ -45,6 +45,8 @@ struct drbd_tcp_transport {
 	unsigned long flags;
 	struct socket *stream[2];
 	struct buffer rbuf[2];
+	struct timer_list control_timer;
+	void (*original_control_sk_state_change)(struct sock *sk);
 };
 
 struct dtt_listener {
@@ -88,6 +90,7 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
 static int dtt_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtt_remove_path(struct drbd_transport *, struct drbd_path *);
+static void dtt_control_timer_fn(struct timer_list *t);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
@@ -171,6 +174,7 @@ static int dtt_init(struct drbd_transport *transport)
 		tcp_transport->rbuf[i].base = buffer;
 		tcp_transport->rbuf[i].pos = buffer;
 	}
+	timer_setup(&tcp_transport->control_timer, dtt_control_timer_fn, 0);
 
 	return 0;
 fail:
@@ -211,6 +215,8 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		else if (was_established)
 			drbd_path_event(transport, drbd_path, false);
 	}
+
+	del_timer_sync(&tcp_transport->control_timer);
 
 	if (free_op == DESTROY_TRANSPORT) {
 		struct drbd_path *tmp;
@@ -770,14 +776,38 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 static void dtt_control_data_ready(struct sock *sock)
 {
 	struct drbd_transport *transport = sock->sk_user_data;
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+
 	read_descriptor_t rd_desc = {
 		.count = 1,
 		.arg = { .data = transport },
 	};
 
+	mod_timer(&tcp_transport->control_timer, jiffies + sock->sk_rcvtimeo);
 	tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
 }
 
+static void dtt_control_state_change(struct sock *sock)
+{
+	struct drbd_transport *transport = sock->sk_user_data;
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
+
+	switch (sock->sk_state) {
+	case TCP_FIN_WAIT1:
+	case TCP_CLOSE_WAIT:
+	case TCP_CLOSE:
+	case TCP_LAST_ACK:
+	case TCP_CLOSING:
+		drbd_control_event(transport, CLOSED_BY_PEER);
+		break;
+	default:
+		tr_warn(transport, "unhandled state %d\n", sock->sk_state);
+	}
+
+	tcp_transport->original_control_sk_state_change(sock);
+}
 
 static void dtt_incoming_connection(struct sock *sock)
 {
@@ -791,6 +821,14 @@ static void dtt_incoming_connection(struct sock *sock)
 	listener->listener.pending_accepts++;
 	spin_unlock(&listener->listener.waiters_lock);
 	wake_up(&listener->wait);
+}
+
+static void dtt_control_timer_fn(struct timer_list *t)
+{
+	struct drbd_tcp_transport *tcp_transport = from_timer(tcp_transport, t, control_timer);
+	struct drbd_transport *transport = &tcp_transport->transport;
+
+	drbd_control_event(transport, TIMEOUT);
 }
 
 static void dtt_destroy_listener(struct drbd_listener *generic_listener)
@@ -1112,8 +1150,13 @@ randomize:
 
 	sock_set_keepalive(dsocket->sk);
 
+
+	write_lock_bh(&csocket->sk->sk_callback_lock);
+	tcp_transport->original_control_sk_state_change = csocket->sk->sk_state_change;
 	csocket->sk->sk_user_data = transport;
 	csocket->sk->sk_data_ready = dtt_control_data_ready;
+	csocket->sk->sk_state_change = dtt_control_state_change;
+	write_unlock_bh(&csocket->sk->sk_callback_lock);
 
 	return 0;
 
@@ -1161,6 +1204,10 @@ static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 		return;
 
 	socket->sk->sk_rcvtimeo = timeout;
+
+	if (stream == CONTROL_STREAM)
+		mod_timer(&tcp_transport->control_timer, jiffies + timeout);
+
 }
 
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream)

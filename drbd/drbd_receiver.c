@@ -1086,6 +1086,8 @@ start:
 				"conflicts\n", jiffies_to_msecs(timeout));
 		arm_connect_timer(connection, jiffies + timeout);
 	}
+
+	clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	return true;
 
 retry:
@@ -9892,6 +9894,25 @@ reconnect:
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
+void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event event)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+
+	if (event == TIMEOUT) {
+		if (!test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
+			schedule_work(&connection->send_ping_work);
+			return;
+		} else {
+			drbd_warn(connection, "PingAck did not arrive in time.\n");
+		}
+	} else if (connection->cstate[NOW] == C_CONNECTED) /* && event == CLOSED_BY_PEER */ {
+		drbd_warn(connection, "meta connection shut down by peer.\n");
+	}
+
+	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+}
+
 void drbd_send_acks_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
@@ -9931,3 +9952,4 @@ void drbd_send_peer_ack_wf(struct work_struct *ws)
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
 EXPORT_SYMBOL(drbd_free_pages);
 EXPORT_SYMBOL(drbd_control_data_ready);
+EXPORT_SYMBOL(drbd_control_event);

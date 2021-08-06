@@ -1076,6 +1076,7 @@ struct drbd_connection {
 	atomic_t done_ee_cnt;
 	struct work_struct send_acks_work;
 	struct work_struct send_ping_ack_work;
+	struct work_struct send_ping_work;
 	wait_queue_head_t ee_wait;
 
 	atomic_t pp_in_use;		/* allocated from page pool */
