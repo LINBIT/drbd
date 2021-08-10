@@ -1512,8 +1512,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	}
 
 	dec_unacked(peer_device);
-
-	move_to_net_ee_or_free(peer_device->connection, peer_req);
+	move_to_net_ee_or_free(connection, peer_req);
 
 	if (unlikely(err))
 		drbd_err(peer_device, "drbd_send_block() failed\n");
@@ -1524,11 +1523,9 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct digest_info *di;
-	int digest_size;
-	void *digest = NULL;
-	int err, eq = 0;
+	int err;
 
 	if (get_ldev(device)) {
 		drbd_rs_complete_io(peer_device, peer_req->i.sector);
@@ -1541,44 +1538,61 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	di = peer_req->digest;
+	if (peer_device->repl_state[NOW] == L_AHEAD) {
+		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
+		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
+			struct digest_info *di = peer_req->digest;
+			int digest_size;
+			void *digest = NULL;
+			int eq = 0;
 
-	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		/* quick hack to try to avoid a race against reconfiguration.
-		 * a real fix would be much more involved,
-		 * introducing more locking mechanisms */
-		if (peer_device->connection->csums_tfm) {
-			digest_size = crypto_shash_digestsize(peer_device->connection->csums_tfm);
-			D_ASSERT(device, digest_size == di->digest_size);
-			digest = kmalloc(digest_size, GFP_NOIO);
-			if (digest) {
-				drbd_csum_pages(peer_device->connection->csums_tfm, peer_req->page_chain.head, digest);
-				eq = !memcmp(digest, di->digest, digest_size);
-				kfree(digest);
+			/* quick hack to try to avoid a race against reconfiguration.
+			 * a real fix would be much more involved,
+			 * introducing more locking mechanisms */
+			if (connection->csums_tfm) {
+				digest_size = crypto_shash_digestsize(connection->csums_tfm);
+				D_ASSERT(device, digest_size == di->digest_size);
+				digest = kmalloc(digest_size, GFP_NOIO);
+				if (digest) {
+					drbd_csum_pages(connection->csums_tfm, peer_req->page_chain.head, digest);
+					eq = !memcmp(digest, di->digest, digest_size);
+					kfree(digest);
+				}
 			}
-		}
 
-		if (eq) {
-			drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
-			/* rs_same_csums unit is BM_BLOCK_SIZE */
-			peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
-			err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
+			if (eq) {
+				drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
+				/* rs_same_csums unit is BM_BLOCK_SIZE */
+				peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
+				err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
+			} else {
+				inc_rs_pending(peer_device);
+				peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
+				peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
+				kfree(di);
+				atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
+				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+			}
 		} else {
-			inc_rs_pending(peer_device);
-			peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
-			peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
-			kfree(di);
-			atomic_add(peer_req->i.size >> 9, &peer_device->connection->rs_in_flight);
-			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+			if (drbd_ratelimit())
+				drbd_err(peer_device, "Not sending RSDataReply/RSIsInSync, "
+						"partner DISKLESS!\n");
+			err = 0;
 		}
 	} else {
-		err = drbd_send_ack(peer_device, P_NEG_RS_DREPLY, peer_req);
 		if (drbd_ratelimit())
-			drbd_err(device, "Sending NegDReply. I guess it gets messy.\n");
+			drbd_err(peer_device, "Sending NegRSDReply. sector %llus.\n",
+			    (unsigned long long)peer_req->i.sector);
+
+		err = drbd_send_ack(peer_device, P_NEG_RS_DREPLY, peer_req);
+
+		/* update resync data with failure */
+		drbd_rs_failed_io(peer_device, peer_req->i.sector, peer_req->i.size);
 	}
 
 	dec_unacked(peer_device);
-	move_to_net_ee_or_free(peer_device->connection, peer_req);
+	move_to_net_ee_or_free(connection, peer_req);
 
 	if (unlikely(err))
 		drbd_err(device, "drbd_send_block/ack() failed\n");
