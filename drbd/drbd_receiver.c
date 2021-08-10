@@ -76,6 +76,7 @@ enum sync_rule {
 	RULE_JUST_CREATED_PEER,
 	RULE_JUST_CREATED_SELF,
 	RULE_JUST_CREATED_BOTH,
+	RULE_CRASHED_PRIMARY,
 	RULE_LOST_QUORUM,
 	RULE_RECONNECTED,
 	RULE_BOTH_OFF,
@@ -100,6 +101,7 @@ static const char * const sync_rule_names[] = {
 	[RULE_JUST_CREATED_PEER] = "just-created-peer",
 	[RULE_JUST_CREATED_SELF] = "just-created-self",
 	[RULE_JUST_CREATED_BOTH] = "just-created-both",
+	[RULE_CRASHED_PRIMARY] = "crashed-primary",
 	[RULE_LOST_QUORUM] = "lost-quorum",
 	[RULE_RECONNECTED] = "reconnected",
 	[RULE_BOTH_OFF] = "both-off",
@@ -3704,6 +3706,14 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		return SYNC_SOURCE_SET_BITMAP;
 
 	if (self == peer) {
+		struct net_conf *nc;
+		int wire_protocol;
+
+		rcu_read_lock();
+		nc = rcu_dereference(connection->transport.net_conf);
+		wire_protocol = nc->wire_protocol;
+		rcu_read_unlock();
+
 		if (test_bit(RS_SOURCE_MISSED_END, &peer_device->flags)) {
 			*rule = RULE_SYNC_SOURCE_MISSED_FINISH;
 			return SYNC_SOURCE_USE_BITMAP;
@@ -3718,6 +3728,18 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			if (peer_device->uuid_flags & UUID_FLAG_RECONNECT &&
 			    local_uuid_flags & UUID_FLAG_RECONNECT)
 				return NO_SYNC;
+		}
+
+		if (connection->agreed_pro_version >= 121 &&
+		    (wire_protocol == DRBD_PROT_A || wire_protocol == DRBD_PROT_B)) {
+			*rule = RULE_CRASHED_PRIMARY;
+			if (local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
+			    !(peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY))
+				return SYNC_SOURCE_USE_BITMAP;
+
+			if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY &&
+			    !(local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY))
+				return SYNC_TARGET_USE_BITMAP;
 		}
 
 		*rule = RULE_LOST_QUORUM;
