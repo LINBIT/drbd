@@ -22,7 +22,7 @@ extern const char *drbd_buildtag(void);
 
 #define REL_VERSION "9.1.3"
 #define PRO_VERSION_MIN 110
-#define PRO_VERSION_MAX 120
+#define PRO_VERSION_MAX 121
 
 /* Protocol version to use for initial version handshake.
  * This may be lower than PRO_VERSION_MIN because we want to be able to connect
