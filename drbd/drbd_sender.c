@@ -1467,15 +1467,15 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	struct drbd_device *device = peer_device->device;
 	int err;
 
+	if (get_ldev(device)) {
+		drbd_rs_complete_io(peer_device, peer_req->i.sector);
+		put_ldev(device);
+	}
+
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
-	}
-
-	if (get_ldev_if_state(device, D_DETACHING)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
 	}
 
 	if (peer_device->repl_state[NOW] == L_AHEAD) {
@@ -1530,15 +1530,15 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	void *digest = NULL;
 	int err, eq = 0;
 
+	if (get_ldev(device)) {
+		drbd_rs_complete_io(peer_device, peer_req->i.sector);
+		put_ldev(device);
+	}
+
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
-	}
-
-	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
 	}
 
 	di = peer_req->digest;
@@ -1671,17 +1671,15 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	int digest_size;
 	int err, eq = 0;
 
+	if (get_ldev(device)) {
+		drbd_rs_complete_io(peer_device, peer_req->i.sector);
+		put_ldev(device);
+	}
+
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		return 0;
-	}
-
-	/* after "cancel", because after drbd_disconnect/drbd_rs_cancel_all
-	 * the resync lru has been cleaned up already */
-	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
 	}
 
 	di = peer_req->digest;
