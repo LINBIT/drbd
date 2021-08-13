@@ -3522,7 +3522,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 
 		if (pi->cmd == P_CSUM_RS_REQUEST) {
 			D_ASSERT(device, connection->agreed_pro_version >= 89);
-			peer_req->w.cb = w_e_end_csum_rs_req;
+			peer_req->w.cb = w_e_end_rsdata_req;
 			/* remember to report stats in drbd_resync_finished */
 			peer_device->use_csums = true;
 		} else if (pi->cmd == P_OV_REPLY) {
