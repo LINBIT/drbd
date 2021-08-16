@@ -1446,10 +1446,68 @@ static bool all_zero(struct drbd_peer_request *peer_req)
 	return true;
 }
 
+static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_request *peer_req)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	int err;
+	bool eq = false;
+
+	if (peer_req->flags & EE_HAS_DIGEST) {
+		struct digest_info *di = peer_req->digest;
+		int digest_size;
+		void *digest = NULL;
+
+		/* quick hack to try to avoid a race against reconfiguration.
+		 * a real fix would be much more involved,
+		 * introducing more locking mechanisms */
+		if (connection->csums_tfm) {
+			digest_size = crypto_shash_digestsize(connection->csums_tfm);
+			D_ASSERT(device, digest_size == di->digest_size);
+			digest = kmalloc(digest_size, GFP_NOIO);
+			if (digest) {
+				drbd_csum_pages(connection->csums_tfm, peer_req->page_chain.head, digest);
+				eq = !memcmp(digest, di->digest, digest_size);
+				kfree(digest);
+			}
+		}
+
+		peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
+		kfree(di);
+		peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
+	}
+
+	if (eq) {
+		drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
+		/* rs_same_csums unit is BM_BLOCK_SIZE */
+		peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
+		err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
+	} else {
+		inc_rs_pending(peer_device);
+		/* If we send back as P_RS_DEALLOCATED,
+		 * this is overestimating "in-flight" accounting.
+		 * But needed to be properly balanced with
+		 * the atomic_sub() in got_BlockAck. */
+		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
+		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
+			err = drbd_send_rs_deallocated(peer_device, peer_req);
+		} else {
+			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
+		}
+	}
+
+	return err;
+}
+
 /**
- * w_e_end_rsdata_req() - Worker callback to send a P_RS_DATA_REPLY packet in response to a P_RS_DATA_REQUEST
+ * w_e_end_rsdata_req() - Reply to a resync request.
  * @w:		work object.
- * @cancel:	The connection will be closed anyways
+ * @cancel:	The connection is being closed
+ *
+ * Worker callback to send P_RS_DATA_REPLY or a related packet after completing
+ * a resync read.
+ *
+ * Return: Error code or 0 on success.
  */
 int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 {
@@ -1474,101 +1532,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
-			inc_rs_pending(peer_device);
-			/* If we send back as P_RS_DATA_REPLY,
-			 * this is overestimating "in-flight" accounting.
-			 * But needed to be properly balanced with
-			 * the atomic_sub() in got_BlockAck.
-			 * TODO: to fix that, we'd need a protocol bump. */
-			atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
-			if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
-				err = drbd_send_rs_deallocated(peer_device, peer_req);
-			} else {
-				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
-			}
+			err = drbd_rs_reply(peer_device, peer_req);
 		} else {
 			if (drbd_ratelimit())
-				drbd_err(peer_device, "Not sending RSDataReply, "
-				    "partner DISKLESS!\n");
-			err = 0;
-		}
-	} else {
-		if (drbd_ratelimit())
-			drbd_err(peer_device, "Sending NegRSDReply. sector %llus.\n",
-			    (unsigned long long)peer_req->i.sector);
-
-		err = drbd_send_ack(peer_device, P_NEG_RS_DREPLY, peer_req);
-
-		/* update resync data with failure */
-		drbd_rs_failed_io(peer_device, peer_req->i.sector, peer_req->i.size);
-	}
-
-	dec_unacked(peer_device);
-	move_to_net_ee_or_free(connection, peer_req);
-
-	if (unlikely(err))
-		drbd_err(peer_device, "drbd_send_block() failed\n");
-	return err;
-}
-
-int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
-{
-	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_device *device = peer_device->device;
-	int err;
-
-	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
-	}
-
-	if (unlikely(cancel)) {
-		drbd_free_peer_req(peer_req);
-		dec_unacked(peer_device);
-		return 0;
-	}
-
-	if (peer_device->repl_state[NOW] == L_AHEAD) {
-		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
-	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
-			struct digest_info *di = peer_req->digest;
-			int digest_size;
-			void *digest = NULL;
-			int eq = 0;
-
-			/* quick hack to try to avoid a race against reconfiguration.
-			 * a real fix would be much more involved,
-			 * introducing more locking mechanisms */
-			if (connection->csums_tfm) {
-				digest_size = crypto_shash_digestsize(connection->csums_tfm);
-				D_ASSERT(device, digest_size == di->digest_size);
-				digest = kmalloc(digest_size, GFP_NOIO);
-				if (digest) {
-					drbd_csum_pages(connection->csums_tfm, peer_req->page_chain.head, digest);
-					eq = !memcmp(digest, di->digest, digest_size);
-					kfree(digest);
-				}
-			}
-
-			if (eq) {
-				drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
-				/* rs_same_csums unit is BM_BLOCK_SIZE */
-				peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
-				err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
-			} else {
-				inc_rs_pending(peer_device);
-				peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
-				peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
-				kfree(di);
-				atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
-				err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
-			}
-		} else {
-			if (drbd_ratelimit())
-				drbd_err(peer_device, "Not sending RSDataReply/RSIsInSync, "
+				drbd_err(peer_device, "Not sending resync reply, "
 						"partner DISKLESS!\n");
 			err = 0;
 		}
@@ -1587,7 +1554,7 @@ int w_e_end_csum_rs_req(struct drbd_work *w, int cancel)
 	move_to_net_ee_or_free(connection, peer_req);
 
 	if (unlikely(err))
-		drbd_err(device, "drbd_send_block/ack() failed\n");
+		drbd_err(peer_device, "Sending resync reply failed\n");
 	return err;
 }
 
