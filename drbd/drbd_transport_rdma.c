@@ -329,6 +329,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
+static void dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
@@ -389,6 +390,7 @@ static struct drbd_transport_ops dtr_ops = {
 	.connect = dtr_connect,
 	.recv = dtr_recv,
 	.stats = dtr_stats,
+	.net_conf_change = dtr_net_conf_change,
 	.set_rcvtimeo = dtr_set_rcvtimeo,
 	.get_rcvtimeo = dtr_get_rcvtimeo,
 	.send_page = dtr_send_page,
@@ -937,7 +939,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	}
 
 	path->path.established = true;
-	drbd_path_event(transport, &path->path);
+	drbd_path_event(transport, &path->path, false);
 
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
@@ -1227,6 +1229,7 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	struct drbd_path *drbd_path = &path->path;
+	bool destroyed;
 	int err;
 
 	err = cm != path->cm;
@@ -1234,12 +1237,13 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	if (err)
 		return;
 
-	if (drbd_path->established) {
+	destroyed = path->nr == -1 || path->rdma_transport->active == false;
+	if (drbd_path->established || destroyed) {
 		drbd_path->established = false;
-		drbd_path_event(transport, drbd_path);
+		drbd_path_event(transport, drbd_path, destroyed);
 	}
 
-	if (path->nr == -1 || path->rdma_transport->active == false)
+	if (destroyed)
 		return;
 
 	/* in dtr_disconnect_path() -> __dtr_uninit_path() we free the previous
@@ -1583,7 +1587,7 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 
 	dtr_remove_cm_from_path(path, cm);
 	path->path.established = false;
-	drbd_path_event(transport, &path->path);
+	drbd_path_event(transport, &path->path, false);
 	kref_put(&cm->kref, dtr_destroy_cm); /* not expecting a disconnect */
 	dtr_activate_path(path);
 out:
@@ -2581,6 +2585,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	case PCS_CONNECTING:
 		if (delayed_work_pending(&path->cs.retry_connect_work))
 			flush_delayed_work(&path->cs.retry_connect_work);
+		fallthrough;
 	case PCS_REQUEST_ABORT:
 		t = wait_event_timeout(path->cs.wq,
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
@@ -2862,6 +2867,11 @@ abort:
 	for_each_path_ref(path, im, transport)
 		dtr_disconnect_path(path);
 	return err;
+}
+
+static void dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+{
+	tr_warn(transport, "online change of sndbuf_size of recvbuf_size not supported\n");
 }
 
 static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)
