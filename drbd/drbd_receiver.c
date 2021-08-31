@@ -4447,7 +4447,10 @@ static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer
 		u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
 
 		rv = L_ESTABLISHED;
-		if (peer_current_uuid == my_current_uuid && !(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET)) {
+		if (peer_current_uuid == my_current_uuid &&
+				!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET) &&
+				device->disk_state[NOW] >= D_OUTDATED &&
+				peer_device->disk_state[NOW] >= D_OUTDATED) {
 			if (drbd_bitmap_uuid(peer_device)) {
 				drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
 					  drbd_bm_total_weight(peer_device));
