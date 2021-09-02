@@ -4721,6 +4721,8 @@ retry:
 	start_time = jiffies;
 	reach_immediately = directly_connected_nodes(resource, NOW);
 
+	*reply = (struct twopc_reply) { 0 };
+
 	do
 		reply->tid = prandom_u32();
 	while (!reply->tid);
@@ -4742,6 +4744,8 @@ retry:
 	reply->max_possible_size = local_max_size;
 	reply->reachable_nodes = reach_immediately | NODE_MASK(resource->res_opts.node_id);
 	reply->target_reachable_nodes = reply->reachable_nodes;
+	if (resource->role[NOW] == R_PRIMARY)
+		reply->diskful_primary_nodes = NODE_MASK(resource->res_opts.node_id);
 	rcu_read_unlock();
 	state_change_unlock(resource, &irq_flags);
 
