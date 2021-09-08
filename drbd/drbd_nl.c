@@ -3341,15 +3341,12 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 	}
 
-	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY))
-		set_bit(CRASHED_PRIMARY, &device->flags);
-	else
-		clear_bit(CRASHED_PRIMARY, &device->flags);
-
-	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
+	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
 	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
 	    !device->exposed_data_uuid && !test_bit(NEW_CUR_UUID, &device->flags))
 		set_bit(CRASHED_PRIMARY, &device->flags);
+	else
+		clear_bit(CRASHED_PRIMARY, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_PRIMARY_LOST_QUORUM) &&
 	    !device->have_quorum[NOW])
