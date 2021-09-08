@@ -4152,13 +4152,6 @@ static int __drbd_md_sync(struct drbd_device *device, bool maybe)
 	BUILD_BUG_ON(HISTORY_UUIDS != 32);
 	BUILD_BUG_ON(sizeof(struct meta_data_on_disk_9) != 4096);
 
-	del_timer(&device->md_sync_timer);
-	/* timer may be rearmed by drbd_md_mark_dirty() now. */
-	if (!test_and_clear_bit(MD_DIRTY, &device->flags) && maybe)
-		return 0;
-
-	/* We use here D_FAILED and not D_ATTACHING because we try to write
-	 * metadata even if we detach due to a disk failure! */
 	if (!get_ldev_if_state(device, D_DETACHING))
 		return -EIO;
 
@@ -4166,7 +4159,14 @@ static int __drbd_md_sync(struct drbd_device *device, bool maybe)
 	if (!buffer)
 		goto out;
 
-	err = drbd_md_write(device, buffer);
+	del_timer(&device->md_sync_timer);
+	/* timer may be rearmed by drbd_md_mark_dirty() now. */
+
+	if (test_and_clear_bit(MD_DIRTY, &device->flags) || !maybe) {
+		err = drbd_md_write(device, buffer);
+		if (err)
+			set_bit(MD_DIRTY, &device->flags);
+	}
 
 	drbd_md_put_buffer(device);
 out:
