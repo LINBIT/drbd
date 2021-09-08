@@ -38,7 +38,7 @@ position p;
 |
 	test_and_set_bit(F, &var->flags)@p
 |
-	test_and_set_bit(F, &var->flags)@p
+	test_and_clear_bit(F, &var->flags)@p
 )
 
 @script:python depends on report@
