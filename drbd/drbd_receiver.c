@@ -6179,15 +6179,17 @@ cont:
 			if (tr->diskful_primary_nodes) {
 				if (tr->diskful_primary_nodes & NODE_MASK(my_node_id)) {
 					enum drbd_repl_state resync;
-					if (peer_device->connection->peer_role[NOW] == R_SECONDARY) {
-						resync = L_SYNC_SOURCE;
-					} else /* peer == R_PRIMARY */ {
+					if (tr->diskful_primary_nodes & NODE_MASK(peer_device->node_id)) {
+						/* peer is also primary */
 						resync = peer_device->node_id < my_node_id ?
 							L_SYNC_TARGET : L_SYNC_SOURCE;
+					} else {
+						/* peer is secondary */
+						resync = L_SYNC_SOURCE;
 					}
 					drbd_start_resync(peer_device, resync);
 				} else {
-					if (peer_device->connection->peer_role[NOW] == R_PRIMARY)
+					if (tr->diskful_primary_nodes & NODE_MASK(peer_device->node_id))
 						drbd_start_resync(peer_device, L_SYNC_TARGET);
 					/* else  no resync */
 				}
