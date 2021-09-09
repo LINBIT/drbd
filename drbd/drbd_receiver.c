@@ -5097,6 +5097,9 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		return;
 	}
 
+	peer_disk_state = peer_device->disk_state[NOW];
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
 		bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
@@ -5104,7 +5107,6 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
 
-	peer_disk_state = peer_device->disk_state[NOW];
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state >= D_CONSISTENT &&
 	    peer_device->device->disk_state[NOW] == D_OUTDATED) {
 		/* No resync with up-to-date peer -> I should be consistent or up-to-date as well.
@@ -6566,6 +6568,7 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 		int peer_node_id;
 		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
 			strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
+			disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, rule, &peer_node_id);
 			drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
 			if (strategy_descriptor(strategy).resync_peer_preference > best_resync_peer_preference) {
 				best_resync_peer_preference = strategy_descriptor(strategy).resync_peer_preference;
