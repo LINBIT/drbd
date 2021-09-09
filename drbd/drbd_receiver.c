@@ -4748,6 +4748,29 @@ static void warn_if_differ_considerably(struct drbd_peer_device *peer_device,
 		     (unsigned long long)a, (unsigned long long)b);
 }
 
+static bool drbd_other_peer_smaller(struct drbd_peer_device *reference_peer_device, uint64_t new_size)
+{
+	struct drbd_device *device = reference_peer_device->device;
+	struct drbd_peer_device *peer_device;
+	bool smaller = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device == reference_peer_device)
+			continue;
+
+		/* Ignore peers without an attached disk. */
+		if (peer_device->disk_state[NOW] < D_INCONSISTENT)
+			continue;
+
+		if (peer_device->d_size != 0 && peer_device->d_size < new_size)
+			smaller = true;
+	}
+	rcu_read_unlock();
+
+	return smaller;
+}
+
 static struct drbd_peer_device *get_neighbor_device(struct drbd_device *device,
 		enum drbd_neighbor neighbor)
 {
@@ -4999,11 +5022,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				"The peer's device size is too small! (%llu < %llu sectors); demote me first!\n",
 				(unsigned long long)new_size, (unsigned long long)cur_size);
 			goto disconnect;
-
-/* FIXME for each peer device: can I currently see any peer with attached disk
- * with a current size smaller than what that guy advertises? Then I better not
- * believe him.
- */
+		} else if (drbd_other_peer_smaller(peer_device, new_size)) {
+			dynamic_drbd_dbg(peer_device,
+					"Ignored peer device size (peer:%llu sectors); other peer smaller!\n",
+					(unsigned long long)new_size);
 		} else {
 			/* I believe the peer, if
 			 *  - I don't have a current size myself
