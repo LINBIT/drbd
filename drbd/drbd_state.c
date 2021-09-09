@@ -2656,6 +2656,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if (test_bit(CRASHED_PRIMARY, &device->flags) ||
 			    (role[NEW] == R_PRIMARY && !graceful_detach))
 				mdf |= MDF_CRASHED_PRIMARY;
+			mdf &= ~MDF_PRIMARY_LOST_QUORUM;
 			if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
 				mdf |= MDF_PRIMARY_LOST_QUORUM;
 			/* Do not touch MDF_CONSISTENT if we are D_FAILED */
