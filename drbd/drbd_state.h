@@ -38,10 +38,6 @@ enum chg_state_flags {
 	CS_TWOPC	 = 1 << 9,
 	CS_IGN_OUTD_FAIL = 1 << 10,
 	CS_DONT_RETRY    = 1 << 11, /* Disable internal retry. Caller has a retry loop */
-
-	/* Make sure no meta data IO is in flight, by calling
-         * drbd_md_get_buffer().  Used for graceful detach. */
-	CS_INHIBIT_MD_IO = 1 << 12,
 	CS_FORCE_RECALC  = 1 << 13, /* Force re-evaluation of state logic */
 	CS_CLUSTER_WIDE  = 1 << 14, /* Make this a cluster wide state change! */
 };

@@ -4451,12 +4451,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		twopc_phase2(resource, context->vnr, rv >= SS_SUCCESS, &request, reach_immediately);
 	}
 
-	if (context->flags & CS_INHIBIT_MD_IO) {
-		struct drbd_device *device =
-			container_of(context, struct change_disk_state_context, context)->device;
-		drbd_md_get_buffer(device, __func__);
-	}
-
 	end_remote_state_change(resource, &irq_flags, context->flags | CS_TWOPC);
 	clear_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags);
 	if (rv >= SS_SUCCESS) {
@@ -4474,12 +4468,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				 be32_to_cpu(request.tid));
 	} else {
 		abort_state_change(resource, &irq_flags);
-	}
-
-	if (context->flags & CS_INHIBIT_MD_IO) {
-		struct drbd_device *device =
-			container_of(context, struct change_disk_state_context, context)->device;
-		drbd_md_put_buffer(device);
 	}
 
 	if (have_peers && !context->change_local_state_last)
@@ -5012,9 +5000,6 @@ enum drbd_state_rv change_disk_state(struct drbd_device *device,
 		},
 		.device = device,
 	};
-
-	if (disk_state == D_DETACHING && !(flags & CS_HARD))
-		disk_state_context.context.flags |= CS_INHIBIT_MD_IO;
 
 	return change_cluster_wide_state(do_change_disk_state,
 					 &disk_state_context.context);
