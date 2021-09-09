@@ -2621,12 +2621,15 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
 			u32 mdf = device->ldev->md.flags;
+			bool graceful_detach = disk_state[NEW] == D_DETACHING && !test_bit(FORCE_DETACH, &device->flags);
+
 			/* For now, always require a drbdmeta apply-al run,
 			 * even if that ends up only re-initializing the AL */
 			mdf &= ~MDF_AL_CLEAN;
 			/* reset some flags to what we know now */
 			mdf &= ~MDF_CRASHED_PRIMARY;
-			if (test_bit(CRASHED_PRIMARY, &device->flags))
+			if (test_bit(CRASHED_PRIMARY, &device->flags) ||
+			    (role[NEW] == R_PRIMARY && !graceful_detach))
 				mdf |= MDF_CRASHED_PRIMARY;
 			if (test_bit(PRIMARY_LOST_QUORUM, &device->flags))
 				mdf |= MDF_PRIMARY_LOST_QUORUM;
@@ -2667,9 +2670,8 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			/* clear, if */
 			else if (/* NO peer requests in flight, AND */
 			    !some_peer_request_in_flight &&
-			    (   /* clean detach, */
-			     (disk_state[NEW] == D_DETACHING && !test_bit(FORCE_DETACH, &device->flags))
-			     || /* or everyone secondary ... */
+			    (graceful_detach ||
+			     /* or everyone secondary ... */
 			     (role[NEW] == R_SECONDARY && !some_peer_is_primary &&
 			        /* ... and not detaching because of IO error. */
 			      disk_state[NEW] >= D_INCONSISTENT)))

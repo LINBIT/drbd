@@ -2249,11 +2249,11 @@ static void go_diskless(struct drbd_device *device)
 				for_each_peer_device_rcu(peer_device, device)
 					drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
 				rcu_read_unlock();
-				drbd_md_sync_if_dirty(device);
 			}
 		}
 	}
 
+	drbd_md_sync_if_dirty(device);
 	change_disk_state(device, D_DISKLESS, CS_HARD, NULL);
 }
 
