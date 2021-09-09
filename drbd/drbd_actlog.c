@@ -40,8 +40,11 @@ void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
 	if (t == 0)
 		drbd_err(device, "Waited 10 Seconds for md_buffer! BUG?\n");
 
-	if (r)
+	if (r) {
+		drbd_err(device, "Failed to get md_buffer for %s, currently in use by %s\n",
+			 intent, device->md_io.current_use);
 		return NULL;
+	}
 
 	device->md_io.current_use = intent;
 	device->md_io.start_jif = jiffies;
