@@ -5607,7 +5607,8 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	}
 
 	peer_disk_state = peer_device->disk_state[NOW];
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+	if (reason == DISKLESS_PRIMARY)
+		disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
