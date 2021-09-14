@@ -4720,8 +4720,15 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	    strategy_from_user != UNDETERMINED &&
 	    strategy_descriptor(strategy).is_sync_source != strategy_descriptor(strategy_from_user).is_sync_source) {
 		if (strategy_descriptor(strategy).reverse != UNDETERMINED) {
-			strategy = strategy_descriptor(strategy).reverse;
-			drbd_warn(peer_device, "Resync direction reversed by --discard-my-data. Reverting to older data!\n");
+			enum sync_strategy reversed = strategy_descriptor(strategy).reverse;
+			enum drbd_disk_state resync_source_disk_state =
+				strategy_descriptor(reversed).is_sync_source ? device->disk_state[NOW] : peer_disk_state;
+			if (resync_source_disk_state > D_INCONSISTENT) {
+				strategy = reversed;
+				drbd_warn(peer_device, "Resync direction reversed by --discard-my-data. Reverting to older data!\n");
+			} else {
+				drbd_warn(peer_device, "Ignoring --discard-my-data\n");
+			}
 		} else {
 			drbd_warn(peer_device, "Can not reverse resync direction (requested via --discard-my-data)\n");
 		}
