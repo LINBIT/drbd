@@ -1413,8 +1413,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	struct p_uuids110 *p;
 	bool sent_one_unallocated;
 	int i, pos = 0;
-	u64 bitmap_uuids_mask = 0;
-	u64 authoritative_mask;
+	u64 local_uuid_flags = 0, authoritative_mask, bitmap_uuids_mask = 0;
 	int p_size = sizeof(*p);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
@@ -1431,7 +1430,7 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	}
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
-	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &uuid_flags);
+	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
 	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
@@ -1450,10 +1449,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		if (send_this) {
 			bitmap_uuids_mask |= NODE_MASK(i);
 			p->other_uuids[pos++] = cpu_to_be64(val);
-			if (i == peer_device->node_id)
-				peer_device->comm_bitmap_uuid = val;
 		}
 	}
+	peer_device->comm_bitmap_uuid = drbd_bitmap_uuid(peer_device);
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
 		p->other_uuids[pos++] = cpu_to_be64(drbd_history_uuid(device, i));
@@ -1463,7 +1461,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 
 	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
 	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
-	uuid_flags |= drbd_collect_local_uuid_flags(peer_device, &authoritative_mask);
+	local_uuid_flags |= drbd_collect_local_uuid_flags(peer_device, &authoritative_mask);
+	peer_device->comm_uuid_flags = local_uuid_flags;
+	uuid_flags |= local_uuid_flags;
 	if (uuid_flags & UUID_FLAG_STABLE) {
 		p->node_mask = cpu_to_be64(node_mask);
 	} else {
@@ -1471,7 +1471,6 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		p->node_mask = cpu_to_be64(authoritative_mask);
 	}
 
-	peer_device->comm_uuid_flags = uuid_flags & ~UUID_FLAG_UNALLOC_MASK & ~UUID_FLAG_HAS_UNALLOC;
 	p->uuid_flags = cpu_to_be64(uuid_flags);
 
 	put_ldev(device);
