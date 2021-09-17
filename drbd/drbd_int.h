@@ -567,6 +567,7 @@ enum peer_device_flag {
 	RS_PEER_MISSED_END,     /* Peer (which was SyncSource) did not got P_UUIDS110 after resync */
 	SYNC_SRC_CRASHED_PRI,   /* Source of this resync was a crashed primary */
 	HAVE_SIZES,		/* Cleared when connection gets lost; set when sizes received */
+	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1219,7 +1220,6 @@ struct drbd_peer_device {
 	u64 dirty_bits;
 	u64 uuid_flags;
 	u64 uuid_node_mask; /* might be authoritative_nodes or weak_nodes */
-	bool uuids_received;
 
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 comm_current_uuid; /* communicated current UUID */

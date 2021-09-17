@@ -5789,7 +5789,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 		peer_device->history_uuids[i] = 0;
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags) | UUID_FLAG_STABLE;
-	peer_device->uuids_received = true;
+	set_bit(UUIDS_RECEIVED, &peer_device->flags);
 
 	return __receive_uuids(peer_device, 0);
 }
@@ -5867,7 +5867,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i] = be64_to_cpu(p->other_uuids[pos++]);
 	while (i < ARRAY_SIZE(peer_device->history_uuids))
 		peer_device->history_uuids[i++] = 0;
-	peer_device->uuids_received = true;
+	set_bit(UUIDS_RECEIVED, &peer_device->flags);
 	if (peer_md) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		put_ldev(device);
@@ -7217,7 +7217,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
 
-	if (peer_device->uuids_received &&
+	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
 		bool consider_resync;
@@ -8221,12 +8221,11 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 	clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	clear_bit(HAVE_SIZES, &peer_device->flags);
+	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
 	drbd_rs_cancel_all(peer_device);
-
-	peer_device->uuids_received = false;
 
 	if (!drbd_suspended(device)) {
 		struct drbd_resource *resource = device->resource;

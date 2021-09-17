@@ -1285,7 +1285,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (device->disk_state[NEW] == D_UP_TO_DATE)
 				target_m = __cancel_other_resyncs(device);
 
-			if (stable_resync && peer_device->uuids_received) {
+			if (stable_resync && test_bit(UUIDS_RECEIVED, &peer_device->flags)) {
 				const int node_id = device->resource->res_opts.node_id;
 				int i;
 
@@ -1301,7 +1301,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 					peer_device->history_uuids[i] =
 						drbd_history_uuid(device, i);
 			} else {
-				if (!peer_device->uuids_received)
+				if (!test_bit(UUIDS_RECEIVED, &peer_device->flags))
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
 
 				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
