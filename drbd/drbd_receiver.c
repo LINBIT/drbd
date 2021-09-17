@@ -7317,22 +7317,25 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
-	if (connection->cstate[NOW] == C_CONNECTING) {
-		/* Since protocol 117 state comes before change on the cstate */
-		peer_device->connect_state = (union drbd_state)
-			{ { .disk = new_disk_state,
-			    .conn = new_repl_state,
-			    .peer = peer_state.role,
-			    .pdsk = peer_disk_state,
-			    .peer_isp = peer_state.aftr_isp | peer_state.user_isp } };
-
+	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) ||
+	    test_bit(CURRENT_UUID_RECEIVED, &peer_device->flags)) {
 		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-		wake_up(&connection->ee_wait);
 
-		finish_nested_twopc(connection);
-		return 0;
+		if (connection->cstate[NOW] == C_CONNECTING) {
+			/* Since protocol 117 state comes before change on the cstate */
+			peer_device->connect_state = (union drbd_state)
+				{ { .disk = new_disk_state,
+				    .conn = new_repl_state,
+				    .peer = peer_state.role,
+				    .pdsk = peer_disk_state,
+				    .peer_isp = peer_state.aftr_isp | peer_state.user_isp } };
+
+			wake_up(&connection->ee_wait);
+
+			finish_nested_twopc(connection);
+			return 0;
+		}
 	}
-	set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 
 	spin_lock_irq(&resource->req_lock);
 	begin_state_change_locked(resource, begin_state_chg_flags);
@@ -7961,8 +7964,10 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	    connection->peer_role[NOW] == R_PRIMARY)
 		check_resync_source(device, weak_nodes);
 
-	if (connection->peer_role[NOW] == R_UNKNOWN)
+	if (connection->peer_role[NOW] == R_UNKNOWN) {
+		set_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 		return 0;
+	}
 
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
@@ -8222,6 +8227,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	clear_bit(HAVE_SIZES, &peer_device->flags);
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
+	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
