@@ -7076,7 +7076,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	enum drbd_disk_state peer_disk_state, new_disk_state = D_MASK;
 	enum drbd_repl_state new_repl_state;
 	bool peer_was_resync_target;
-	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE;
+	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
+	unsigned long irq_flags;
 	int rv;
 
 	if (pi->vnr != -1) {
@@ -7098,8 +7099,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (pi->vnr == -1) {
 		if (peer_state.role == R_SECONDARY) {
-			unsigned long irq_flags;
-
 			begin_state_change(resource, &irq_flags, CS_HARD | CS_VERBOSE);
 			__change_peer_role(connection, R_SECONDARY);
 			rv = end_state_change(resource, &irq_flags);
@@ -7300,8 +7299,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
 	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
 	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-		unsigned long irq_flags;
-
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
@@ -7337,8 +7334,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	spin_lock_irq(&resource->req_lock);
-	begin_state_change_locked(resource, begin_state_chg_flags);
+	begin_state_change(resource, &irq_flags, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
@@ -7359,10 +7355,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
 
-	rv = end_state_change_locked(resource);
+	rv = end_state_change(resource, &irq_flags);
 	new_repl_state = peer_device->repl_state[NOW];
 	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags); /* Only relevant for agreed_pro_version < 117 */
-	spin_unlock_irq(&resource->req_lock);
 
 	if (rv < SS_SUCCESS)
 		goto fail;
