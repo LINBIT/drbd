@@ -4475,7 +4475,7 @@ static enum sync_strategy drbd_disk_states_source_strategy(
 {
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
-	int i;
+	int i = -1;
 
 	if (!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET))
 		return SYNC_SOURCE_USE_BITMAP;
@@ -4483,7 +4483,8 @@ static enum sync_strategy drbd_disk_states_source_strategy(
 	/* When the peer is already a sync target, we actually see its
 	 * current UUID in the bitmap UUID slot towards us. We may need
 	 * to pick a different bitmap as a result. */
-	i = drbd_find_bitmap_by_uuid(peer_device, peer_device->bitmap_uuids[node_id]);
+	if (peer_device->bitmap_uuids[node_id])
+		i = drbd_find_bitmap_by_uuid(peer_device, peer_device->bitmap_uuids[node_id]);
 
 	if (i == -1)
 		return SYNC_SOURCE_SET_BITMAP;
