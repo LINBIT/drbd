@@ -3388,7 +3388,7 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 	 * we may have been paused in between, or become paused until
 	 * the timer triggers.
 	 * No matter, that is handled in resync_timer_fn() */
-	if (repl_state == L_SYNC_TARGET)
+	if (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T)
 		drbd_uuid_resync_starting(peer_device);
 
 	drbd_md_sync_if_dirty(device);
