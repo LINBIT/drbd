@@ -935,10 +935,6 @@ struct drbd_resource {
 		u64 diskful_primary_nodes;/* added in commit phase */
 		u64 new_size;             /* added in commit phase */
 	} twopc_resize;
-	struct list_head queued_twopc;
-	spinlock_t queued_twopc_lock;
-	struct timer_list queued_twopc_timer;
-	struct queued_twopc *starting_queued_twopc;
 
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */
@@ -2044,15 +2040,6 @@ struct drbd_peer_request_details {
 	uint32_t digest_size;
 };
 
-struct queued_twopc {
-	struct drbd_work w;
-	unsigned long start_jif;
-	struct drbd_connection *connection;
-	struct twopc_reply reply;
-	struct packet_info packet_info;
-	struct p_twopc_request packet_data;
-};
-
 extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
 		sector_t start, unsigned int nr_sectors, int flags);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
@@ -2083,8 +2070,6 @@ extern void abort_connect(struct drbd_connection *);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
-extern void queue_queued_twopc(struct drbd_resource *resource);
-extern void queued_twopc_timer_fn(struct timer_list *t);
 extern bool drbd_have_local_disk(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 extern enum determine_dev_size

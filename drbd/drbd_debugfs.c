@@ -494,7 +494,6 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	struct twopc_reply twopc;
 	bool active = false;
 	unsigned long jif;
-	struct queued_twopc *q;
 
 	read_lock_irq(&resource->state_rwlock);
 	if (resource->remote_state_change) {
@@ -576,19 +575,6 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	} else {
 		seq_puts(m, "No ongoing two phase state transaction\n");
 	}
-
-	spin_lock_irq(&resource->queued_twopc_lock);
-	if (list_empty(&resource->queued_twopc)) {
-		spin_unlock_irq(&resource->queued_twopc_lock);
-		return 0;
-	}
-	seq_puts(m, "\n Queued for later execution:\n");
-	list_for_each_entry(q, &resource->queued_twopc, w.list) {
-		jif = jiffies - q->start_jif;
-		seq_printf(m, "  tid: %u, initiator_node_id: %d, since: %d ms\n",
-			   q->reply.tid, q->reply.initiator_node_id, jiffies_to_msecs(jif));
-	}
-	spin_unlock_irq(&resource->queued_twopc_lock);
 
 	return 0;
 }
