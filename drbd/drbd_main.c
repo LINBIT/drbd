@@ -4020,7 +4020,7 @@ void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(lo
 	struct drbd_md *md = &device->ldev->md;
 	int node_id, i;
 
-	if (val == UUID_JUST_CREATED)
+	if (val == UUID_JUST_CREATED || val == 0)
 		return;
 
 	val &= ~UUID_PRIMARY;
@@ -4644,9 +4644,15 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 
 static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
 {
-	int from_index = device->ldev->md.peers[from_id].bitmap_index;
-	int to_index = device->ldev->md.peers[to_id].bitmap_index;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	u64 previous_bitmap_uuid = peer_md[to_id].bitmap_uuid;
+	int from_index = peer_md[from_id].bitmap_index;
+	int to_index = peer_md[to_id].bitmap_index;
 	const char *from_name, *to_name;
+
+	peer_md[to_id].bitmap_uuid = peer_md[from_id].bitmap_uuid;
+	peer_md[to_id].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
+	_drbd_uuid_push_history(device, previous_bitmap_uuid);
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	rcu_read_lock();
@@ -4753,16 +4759,12 @@ found:
 
 	if (from_id != node_id1 &&
 	    peer_md[node_id1].bitmap_uuid != peer_bm_uuid) {
-		peer_md[node_id1].bitmap_uuid = peer_bm_uuid;
-		peer_md[node_id1].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 		copy_bitmap(device, from_id, node_id1);
 		modified = true;
 
 	}
 	if (from_id != node_id2 &&
 	    peer_md[node_id2].bitmap_uuid != peer_bm_uuid) {
-		peer_md[node_id2].bitmap_uuid = peer_bm_uuid;
-		peer_md[node_id2].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 		copy_bitmap(device, from_id, node_id2);
 		modified = true;
 	}
@@ -4839,10 +4841,6 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			if (from_node_id != -1 && node_id != from_node_id &&
 			    dagtag_newer(peer_md[from_node_id].bitmap_dagtag,
 					 peer_md[node_id].bitmap_dagtag)) {
-				u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
-				peer_md[node_id].bitmap_uuid = peer_md[from_node_id].bitmap_uuid;
-				peer_md[node_id].bitmap_dagtag = peer_md[from_node_id].bitmap_dagtag;
-				_drbd_uuid_push_history(device, previous_bitmap_uuid);
 				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&
 				    peer_md[from_node_id].flags & MDF_HAVE_BITMAP)
 					copy_bitmap(device, from_node_id, node_id);
