@@ -2455,6 +2455,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if (repl_state[OLD] <= L_ESTABLISHED && repl_state[NEW] == L_WF_BITMAP_S)
 				starting_resync = true;
 
+			if ((disk_state[OLD] != D_UP_TO_DATE || peer_disk_state[OLD] != D_UP_TO_DATE) &&
+			    (disk_state[NEW] == D_UP_TO_DATE && peer_disk_state[NEW] == D_UP_TO_DATE)) {
+				clear_bit(CRASHED_PRIMARY, &device->flags);
+				if (peer_device->uuids_received)
+					peer_device->uuid_flags &= ~((u64)UUID_FLAG_CRASHED_PRIMARY);
+			}
+
 			/* Aborted verify run, or we reached the stop sector.
 			 * Log the last position, unless end-of-device. */
 			if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
@@ -3413,13 +3420,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
-
-			if ((disk_state[OLD] != D_UP_TO_DATE || peer_disk_state[OLD] != D_UP_TO_DATE) &&
-			    (disk_state[NEW] == D_UP_TO_DATE && peer_disk_state[NEW] == D_UP_TO_DATE)) {
-				clear_bit(CRASHED_PRIMARY, &device->flags);
-				if (peer_device->uuids_received)
-					peer_device->uuid_flags &= ~((u64)UUID_FLAG_CRASHED_PRIMARY);
-			}
 
 			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
 			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]) &&
