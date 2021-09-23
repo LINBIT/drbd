@@ -2101,7 +2101,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			   2) The peer just became stable
 			   3) the peer was stable and just became D_UP_TO_DATE */
 			if (repl_state[NEW] == L_ESTABLISHED && disk_state[NEW] == D_OUTDATED &&
-			    peer_disk_state[NEW] >= D_CONSISTENT && peer_device->uuids_received &&
+			    peer_disk_state[NEW] >= D_CONSISTENT && test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 			    peer_device->uuid_flags & UUID_FLAG_STABLE &&
 			    (repl_state[OLD] < L_ESTABLISHED ||
 			     peer_device->uuid_flags & UUID_FLAG_GOT_STABLE ||
@@ -2456,7 +2456,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			if ((disk_state[OLD] != D_UP_TO_DATE || peer_disk_state[OLD] != D_UP_TO_DATE) &&
 			    (disk_state[NEW] == D_UP_TO_DATE && peer_disk_state[NEW] == D_UP_TO_DATE)) {
 				clear_bit(CRASHED_PRIMARY, &device->flags);
-				if (peer_device->uuids_received)
+				if (test_bit(UUIDS_RECEIVED, &peer_device->flags))
 					peer_device->uuid_flags &= ~((u64)UUID_FLAG_CRASHED_PRIMARY);
 			}
 
@@ -4891,7 +4891,7 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 			/* We expect to receive up-to-date UUIDs soon.
 			   To avoid a race in receive_state, "clear" uuids while
 			   holding state_rwlock. I.e. atomic with the state change */
-			peer_device->uuids_received = false;
+			clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 			if (peer_device->disk_state[NOW] > D_DISKLESS &&
 			    peer_device->disk_state[NOW] != D_UNKNOWN)
 				rv = true;
