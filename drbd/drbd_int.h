@@ -607,6 +607,7 @@ enum peer_device_flag {
 	SYNC_SRC_CRASHED_PRI,   /* Source of this resync was a crashed primary */
 	HAVE_SIZES,		/* Cleared when connection gets lost; set when sizes received */
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
+	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 };
 
 /* We could make these currently hardcoded constants configurable
