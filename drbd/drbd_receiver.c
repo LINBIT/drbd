@@ -5213,6 +5213,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			_drbd_uuid_set_current(device, peer_device->current_uuid);
 			peer_device->comm_current_uuid = peer_device->current_uuid;
 			peer_device->comm_uuid_flags = peer_device->uuid_flags;
+			peer_device->comm_bitmap_uuid = 0;
 			_drbd_uuid_set_bitmap(peer_device, 0);
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			__change_disk_state(device, D_UP_TO_DATE);
