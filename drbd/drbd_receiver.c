@@ -3651,10 +3651,10 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	u64 resolved_uuid;
 	bool my_current_in_peers_history;
 	bool peers_current_in_my_history;
-	bool bitmap_matches_initial;
-	bool flags_matches_initial;
-	bool uuid_matches_initial;
 	bool initial_handshake;
+	bool bitmap_matches;
+	bool flags_matches;
+	bool uuid_matches;
 	u64 local_uuid_flags = 0;
 	u64 self, peer;
 	int i, j;
@@ -3668,25 +3668,27 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	initial_handshake =
 		test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
 		!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-	uuid_matches_initial = self == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
-	bitmap_matches_initial = drbd_bitmap_uuid(peer_device) == peer_device->comm_bitmap_uuid;
-	flags_matches_initial = local_uuid_flags == peer_device->comm_uuid_flags;
-	if (initial_handshake && (!uuid_matches_initial || !flags_matches_initial || !bitmap_matches_initial)) {
-		*rule = RULE_INITIAL_HANDSHAKE_CHANGED;
-		if (!uuid_matches_initial)
-			drbd_warn(peer_device, "My current UUID changed during "
-				  "handshake. Retry connecting.\n");
-		if (!bitmap_matches_initial)
+	uuid_matches = self == (peer_device->comm_current_uuid & ~UUID_PRIMARY);
+	bitmap_matches = drbd_bitmap_uuid(peer_device) == peer_device->comm_bitmap_uuid;
+	/* UUID_FLAG_INCONSISTENT is not relevant for the handshake, allow it to change */
+	flags_matches = !((local_uuid_flags ^ peer_device->comm_uuid_flags) & ~UUID_FLAG_INCONSISTENT);
+	if (!uuid_matches || !flags_matches || !bitmap_matches) {
+		if (!uuid_matches)
+			drbd_warn(peer_device, "My current UUID changed during handshake.\n");
+		if (!bitmap_matches)
 			drbd_warn(peer_device, "My bitmap UUID changed during "
-				  "handshake. Retry connecting. 0x%llX to 0x%llX\n",
+				  "handshake. 0x%llX to 0x%llX\n",
 				  (unsigned long long)peer_device->comm_bitmap_uuid,
 				  (unsigned long long)drbd_bitmap_uuid(peer_device));
-		if (!flags_matches_initial)
-			drbd_warn(peer_device, "My uuid_flags changed from 0x%llX to 0x%llX during "
-				  "handshake. Retry connecting.\n",
+		if (!flags_matches)
+			drbd_warn(peer_device,
+				  "My uuid_flags changed from 0x%llX to 0x%llX during handshake.\n",
 				  (unsigned long long)peer_device->comm_uuid_flags,
 				  (unsigned long long)local_uuid_flags);
-		return RETRY_CONNECT;
+		if (initial_handshake) {
+			*rule = RULE_INITIAL_HANDSHAKE_CHANGED;
+			return RETRY_CONNECT;
+		}
 	}
 
 	/* Before DRBD 8.0.2 (from 2007), the uuid on sync targets was set to
