@@ -4654,7 +4654,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	wake_up(&resource->twopc_wait);
 }
 
-int nested_twopc_work(struct drbd_work *work, int cancel)
+static void __nested_twopc_work(struct drbd_work *work, bool as_work)
 {
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
@@ -4668,7 +4668,12 @@ int nested_twopc_work(struct drbd_work *work, int cancel)
 		cmd = P_TWOPC_RETRY;
 	else
 		cmd = P_TWOPC_NO;
-	twopc_end_nested(resource, cmd, true);
+	twopc_end_nested(resource, cmd, as_work);
+}
+
+int nested_twopc_work(struct drbd_work *work, int cancel)
+{
+	__nested_twopc_work(work, true);
 	return 0;
 }
 
@@ -4693,7 +4698,7 @@ nested_twopc_request(struct drbd_resource *resource, int vnr, enum drbd_packet c
 		if (rv < SS_SUCCESS)
 			twopc_end_nested(resource, P_TWOPC_NO, false);
 		else if (!have_peers && cluster_wide_reply_ready(resource)) /* no nested nodes */
-			nested_twopc_work(&resource->twopc_work, false);
+			__nested_twopc_work(&resource->twopc_work, false);
 	}
 	return rv;
 }
