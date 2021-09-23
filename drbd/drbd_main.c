@@ -4644,6 +4644,7 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 
 static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
 {
+	struct drbd_peer_device *peer_device = peer_device_by_node_id(device, to_id);
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 previous_bitmap_uuid = peer_md[to_id].bitmap_uuid;
 	int from_index = peer_md[from_id].bitmap_index;
@@ -4653,6 +4654,11 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	peer_md[to_id].bitmap_uuid = peer_md[from_id].bitmap_uuid;
 	peer_md[to_id].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
 	_drbd_uuid_push_history(device, previous_bitmap_uuid);
+
+	/* Pretending that the updated UUID was sent is a hack.
+	   Unfortunately Necessary to not interrupt the handshake */
+	if (peer_device && peer_device->comm_bitmap_uuid == previous_bitmap_uuid)
+		peer_device->comm_bitmap_uuid = peer_md[from_id].bitmap_uuid;
 
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	rcu_read_lock();
