@@ -6300,7 +6300,6 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	resource->remote_state_change = false;
 	spin_unlock_irq(&resource->req_lock);
 	wake_up(&resource->twopc_wait);
-	queue_queued_twopc(resource);
 
 	return 0;
 }
@@ -6327,7 +6326,6 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 	resource->twopc_work.cb = NULL;
 	spin_unlock_irq(&resource->req_lock);
 	wake_up(&resource->twopc_wait);
-	queue_queued_twopc(resource);
 
 	if (prepared)
 		abort_prepared_state_change(resource);
@@ -6439,7 +6437,6 @@ enum csc_rv {
 	CSC_CLEAR,
 	CSC_REJECT,
 	CSC_ABORT_LOCAL,
-	CSC_QUEUE,
 	CSC_TID_MISS,
 	CSC_MATCH,
 };
@@ -6456,7 +6453,7 @@ check_concurrent_transactions(struct drbd_resource *resource, struct twopc_reply
 		if (ongoing->initiator_node_id == resource->res_opts.node_id)
 			return CSC_ABORT_LOCAL;
 		else
-			return CSC_QUEUE;
+			return CSC_REJECT;
 	} else if (new_r->initiator_node_id > ongoing->initiator_node_id) {
 		return CSC_REJECT;
 	}
@@ -6496,186 +6493,6 @@ static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsig
 			   (rv = when_done_lock(resource, for_tid)) != ALT_TIMEOUT, t);
 	clear_bit(TWOPC_ABORT_LOCAL, &resource->flags);
 	return rv;
-}
-
-static void arm_queue_twopc_timer(struct drbd_resource *resource)
-{
-	struct queued_twopc *q;
-	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
-
-	if (q) {
-		unsigned long t = twopc_timeout(resource) / 4;
-		mod_timer(&resource->queued_twopc_timer, q->start_jif + t);
-	} else {
-		del_timer(&resource->queued_twopc_timer);
-	}
-}
-
-static int queue_twopc(struct drbd_connection *connection, struct twopc_reply *twopc, struct packet_info *pi)
-{
-	struct drbd_resource *resource = connection->resource;
-	struct queued_twopc *q;
-	bool was_empty, already_queued = false;
-
-	spin_lock_irq(&resource->queued_twopc_lock);
-	list_for_each_entry(q, &resource->queued_twopc, w.list) {
-		if (q->reply.tid == twopc->tid &&
-		    q->reply.initiator_node_id == twopc->initiator_node_id &&
-		    q->connection == connection)
-			already_queued = true;
-	}
-	spin_unlock_irq(&resource->queued_twopc_lock);
-
-	if (already_queued)
-		return 0;
-
-	q = kmalloc(sizeof(*q), GFP_NOIO);
-	if (!q)
-		return -ENOMEM;
-
-	q->reply = *twopc;
-	q->packet_data = *(struct p_twopc_request *)pi->data;
-	q->packet_info = *pi;
-	q->packet_info.data = &q->packet_data;
-	kref_get(&connection->kref);
-	kref_debug_get(&connection->kref_debug, 16);
-	q->connection = connection;
-	q->start_jif = jiffies;
-
-	spin_lock_irq(&resource->queued_twopc_lock);
-	was_empty = list_empty(&resource->queued_twopc);
-	list_add_tail(&q->w.list, &resource->queued_twopc);
-	if (was_empty)
-		arm_queue_twopc_timer(resource);
-	spin_unlock_irq(&resource->queued_twopc_lock);
-
-	return 0;
-}
-
-static int queued_twopc_work(struct drbd_work *w, int cancel)
-{
-	struct queued_twopc *q = container_of(w, struct queued_twopc, w), *q2, *tmp;
-	struct drbd_connection *connection = q->connection;
-	struct drbd_resource *resource = connection->resource;
-	unsigned long t = twopc_timeout(resource) / 4;
-	LIST_HEAD(work_list);
-
-	/* Look for more for the same TID... */
-	spin_lock_irq(&resource->queued_twopc_lock);
-	list_for_each_entry_safe(q2, tmp, &resource->queued_twopc, w.list) {
-		if (q2->reply.tid == q->reply.tid &&
-		    q2->reply.initiator_node_id == q->reply.initiator_node_id)
-			list_move_tail(&q2->w.list, &work_list);
-	}
-	spin_unlock_irq(&resource->queued_twopc_lock);
-
-	while (true) {
-		if (jiffies - q->start_jif >= t || cancel) {
-			if (!cancel)
-				drbd_info(connection, "Rejecting concurrent "
-					  "remote state change %u because of "
-					  "state change %u takes too long\n",
-					  q->reply.tid,
-					  resource->twopc_reply.tid);
-			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, &q->reply);
-		} else {
-			process_twopc(connection, &q->reply, &q->packet_info, q->start_jif);
-		}
-
-		kref_debug_put(&connection->kref_debug, 16);
-		kref_put(&connection->kref, drbd_destroy_connection);
-		kfree(q);
-
-		q = list_first_entry_or_null(&work_list, struct queued_twopc, w.list);
-		if (q) {
-			list_del(&q->w.list);
-			connection = q->connection;
-		} else
-			break;
-	}
-
-	return 0;
-}
-
-void queued_twopc_timer_fn(struct timer_list *t)
-{
-	struct drbd_resource *resource = from_timer(resource, t, queued_twopc_timer);
-	struct queued_twopc *q;
-	unsigned long irq_flags;
-	unsigned long time = twopc_timeout(resource) / 4;
-
-	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
-	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
-	if (q) {
-		if (jiffies - q->start_jif >= time) {
-			resource->starting_queued_twopc = q;
-			list_del(&q->w.list);
-		}
-	}
-	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
-
-	if (q) {
-		q->w.cb = &queued_twopc_work;
-		drbd_queue_work(&resource->work , &q->w);
-	}
-}
-
-void queue_queued_twopc(struct drbd_resource *resource)
-{
-	struct queued_twopc *q;
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
-	q = list_first_entry_or_null(&resource->queued_twopc, struct queued_twopc, w.list);
-	if (q) {
-		resource->starting_queued_twopc = q;
-		list_del(&q->w.list);
-		arm_queue_twopc_timer(resource);
-	}
-	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
-
-	if (!q)
-		return;
-
-	q->w.cb = &queued_twopc_work;
-	drbd_queue_work(&resource->work , &q->w);
-}
-
-static int abort_starting_twopc(struct drbd_resource *resource, struct twopc_reply *twopc)
-{
-	struct queued_twopc *q = resource->starting_queued_twopc;
-
-	if (q && q->reply.tid == twopc->tid) {
-		q->reply.is_aborted = 1;
-		return 0;
-	}
-
-	return -ENOENT;
-}
-
-static int abort_queued_twopc(struct drbd_resource *resource, struct twopc_reply *twopc)
-{
-	struct queued_twopc *q;
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&resource->queued_twopc_lock, irq_flags);
-	list_for_each_entry(q, &resource->queued_twopc, w.list) {
-		if (q->reply.tid == twopc->tid) {
-			list_del(&q->w.list);
-			goto found;
-		}
-	}
-	q = NULL;
-found:
-	spin_unlock_irqrestore(&resource->queued_twopc_lock, irq_flags);
-
-	if (q) {
-		kref_put(&q->connection->kref, drbd_destroy_connection);
-		kfree(q);
-		return 0;
-	}
-
-	return -ENOENT;
 }
 
 static int receive_twopc(struct drbd_connection *connection, struct packet_info *pi)
@@ -6900,7 +6717,6 @@ static int process_twopc(struct drbd_connection *connection,
 			spin_unlock_irq(&resource->req_lock);
 			return 0;
 		}
-		resource->starting_queued_twopc = NULL;
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_prepare_reply_cmd = 0;
@@ -6941,7 +6757,6 @@ static int process_twopc(struct drbd_connection *connection,
 			spin_unlock_irq(&resource->req_lock);
 			return 0;
 		}
-		resource->starting_queued_twopc = NULL;
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
@@ -6949,17 +6764,7 @@ static int process_twopc(struct drbd_connection *connection,
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
-		int err;
-
-		err = abort_starting_twopc(resource, reply);
 		spin_unlock_irq(&resource->req_lock);
-		if (err) {
-			err = abort_queued_twopc(resource, reply);
-			if (err)
-				drbd_info(connection, "Ignoring %s packet %u.\n",
-					  drbd_packet_name(pi->cmd),
-					  reply->tid);
-		}
 
 		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
 		return 0;
@@ -6978,11 +6783,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 
 		if (is_prepare(pi->cmd)) {
-			if (csc_rv == CSC_QUEUE) {
-				int err = queue_twopc(connection, reply, pi);
-				if (err)
-					goto reject;
-			} else if (csc_rv == CSC_TID_MISS) {
+			if (csc_rv == CSC_TID_MISS) {
 				goto reject;
 			} else if (csc_rv == CSC_MATCH) {
 				/* We have prepared this transaction already. */

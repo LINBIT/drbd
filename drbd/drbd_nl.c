@@ -6511,7 +6511,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 	drbd_debugfs_resource_cleanup(resource);
 	mutex_unlock(&resources_mutex);
 
-	del_timer_sync(&resource->queued_twopc_timer);
 	del_timer_sync(&resource->twopc_timer);
 	del_timer_sync(&resource->peer_ack_timer);
 	del_timer_sync(&resource->repost_up_to_date_timer);

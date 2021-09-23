@@ -627,7 +627,6 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
-	del_timer(&resource->queued_twopc_timer);
 
 	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
 		if (is_connect && connection->peer_node_id == initiator_node_id)
@@ -638,7 +637,6 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	INIT_LIST_HEAD(&resource->twopc_parents);
 
 	wake_up(&resource->twopc_wait);
-	queue_queued_twopc(resource);
 
 	/* Do things that where postponed to after two-phase commits finished */
 	apply_update_to_exposed_data_uuid(resource);
