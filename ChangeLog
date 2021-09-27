@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.4-rc.1 (api:genl2/proto:110-121/transport:17)
+--------
+ * merged all changes from drbd-9.0.31-0rc1
+ * enabled dynamic debug on some additional log messages
+ * remove (broken) write conflict resolution, replace it with warning
+   about the fact
+ * debugfs entry for the interval tree
+
 9.1.3 (api:genl2/proto:110-120/transport:17)
 --------
  * merged all fixes from drbd-9.0.30-0rc1
