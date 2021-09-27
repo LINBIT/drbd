@@ -1493,7 +1493,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
-			    !test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags)) {
+			    peer_device->repl_state[NOW] == L_OFF) {
 				in_handshake = true;
 				goto handshake_found;
 			}
@@ -4134,7 +4134,8 @@ void abort_connect(struct drbd_connection *connection)
 			up_read_non_owner(&peer_device->device->uuid_sem);
 		clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 		clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-		clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
+		clear_bit(UUIDS_RECEIVED, &peer_device->flags);
+		clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 	}
 	rcu_read_unlock();
 }
@@ -5101,10 +5102,8 @@ void apply_connect(struct drbd_connection *connection, bool commit)
 		if (s.conn == L_OFF)
 			__change_cstate(connection, C_DISCONNECTING);
 
-		if (commit) {
-			set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
+		if (commit)
 			clear_bit(DISCARD_MY_DATA, &peer_device->flags);
-		}
 	}
 }
 

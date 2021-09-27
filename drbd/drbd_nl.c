@@ -741,7 +741,7 @@ static bool initial_states_pending(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
-		    !test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags)) {
+		    peer_device->repl_state[NOW] == L_OFF) {
 			pending = true;
 			break;
 		}

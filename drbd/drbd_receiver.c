@@ -5345,8 +5345,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	node_mask = be64_to_cpu(p->node_mask);
 
-	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
-	    peer_device->connection->peer_role[NOW] == R_PRIMARY &&
+	if (peer_device->connection->peer_role[NOW] == R_PRIMARY &&
 	    peer_device->uuid_flags & UUID_FLAG_STABLE)
 		check_resync_source(device, node_mask);
 
@@ -6726,7 +6725,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	rv = end_state_change(resource, &irq_flags);
 	new_repl_state = peer_device->repl_state[NOW];
-	set_bit(INITIAL_STATE_PROCESSED, &peer_device->flags); /* Only relevant for agreed_pro_version < 117 */
 
 	if (rv < SS_SUCCESS)
 		goto fail;
@@ -7324,8 +7322,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	weak_nodes |= NODE_MASK(peer_device->node_id);
 	peer_device->current_uuid = current_uuid;
 
-	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
-	    connection->peer_role[NOW] == R_PRIMARY)
+	if (connection->peer_role[NOW] == R_PRIMARY)
 		check_resync_source(device, weak_nodes);
 
 	if (connection->peer_role[NOW] == R_UNKNOWN) {
@@ -7336,7 +7333,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 
-	if (test_bit(INITIAL_STATE_PROCESSED, &peer_device->flags) &&
+	if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
 	    get_ldev_if_state(device, D_UP_TO_DATE)) {
 		if (connection->peer_role[NOW] == R_PRIMARY) {
 			drbd_warn(peer_device, "received new current UUID: %016llX "
@@ -7584,7 +7581,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 
 	clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
 	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-	clear_bit(INITIAL_STATE_PROCESSED, &peer_device->flags);
 	clear_bit(HAVE_SIZES, &peer_device->flags);
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
