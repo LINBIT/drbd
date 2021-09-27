@@ -3,6 +3,23 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
+9.0.31-0rc1 (api:genl2/proto:86-121/transport:14)
+--------
+ * fix a possible call of NULL, a regression introduced with 9.0.26
+ * fix a corner case in aborting an connect 2-phase-commit
+ * fix detection of crashed primaries
+ * fix resync decisions for crashed primaries in protocol A
+ * protect resync decisions against changes of the local UUIDs
+ * fix corner case that led to an endless loop logged
+   with "Retrying drbd_rs_del_all() later. refcnt=..."
+ * fix to resync after connecting to a diskless primary
+ * do not clear bitmap between inconsistent nodes
+ * add missing initializer for a resize 2-phase-commit
+ * reject size increase from diskless nodes if there are size-limiting peers
+ * remove queuing of 2-phare-commits; reduce complexity
+ * allow reverting resync direction by the '--discard-my-data' option
+ * new rr-conflict strategy called 'auto-discard'
+
 9.0.30-1 (api:genl2/proto:86-120/transport:14)
 --------
  * fix a crash when drbd-9 node gets connected to a drbd-8.4 node, the

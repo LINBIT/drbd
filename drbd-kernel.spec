@@ -1,7 +1,7 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.0.30
-Release: 1
+Version: 9.0.31
+Release: 0rc1
 
 # always require a suitable userland
 Requires: drbd-utils >= 9.2.0
@@ -115,6 +115,9 @@ install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SE
 rm -rf %{buildroot}
 
 %changelog
+* Mon Sep 27 2021 Philipp Reisner <phil@linbit.com> - 9.0.31-0rc1
+- New upstream release.
+
 * Wed Jul 14 2021 Philipp Reisner <phil@linbit.com> - 9.0.30-1
 - New upstream release.
 
