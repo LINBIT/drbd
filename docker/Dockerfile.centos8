@@ -1,13 +1,9 @@
-ARG EXTRAPKGS=centos:centos8
+ARG EXTRAPKGS=almalinux:8
 FROM $EXTRAPKGS as extrapkgs
 # by checking for /pkgs we can cache that step
 # and prepare images that already contain the packages.
-RUN if [ ! -d /pkgs ]; then \
-      dnf install -y 'dnf-command(download)' && \
-      mkdir /pkgs && cd /pkgs && \
-      dnf download elfutils-libelf-devel && \
-      rm -f *.i686.rpm \
-    ; fi
+RUN mkdir /pkgs
+RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-libelf-devel && rm -f *.i686.rpm # !lbbuild
 
 FROM registry.access.redhat.com/ubi8/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
@@ -29,13 +25,17 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
 
 COPY --from=extrapkgs /pkgs /pkgs
-RUN yum install -y /pkgs/*.rpm && \
-    rm -rf /pkgs
+RUN yum install -y /pkgs/*.rpm # !lbbuild
+# or
+# =lbbuild RUN curl -fsSL https://nexus.at.linbit.com/repository/lbbuild/from_rhel_repos.sh | bash -s -- elfutils-libelf-devel
+
+RUN rm -rf /pkgs
 
 # one can not comment copy
 RUN wget https://pkg.linbit.com/downloads/drbd/9/drbd-${DRBD_VERSION}.tar.gz -O /drbd.tar.gz # !lbbuild
 # =lbbuild COPY /drbd.tar.gz /
 
+# these are now the kmod pkgs:
 COPY /pkgs /pkgs
 
 COPY /entry.sh /
