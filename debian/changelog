@@ -1,8 +1,8 @@
-drbd (9.0.31~rc1) unstable; urgency=low
+drbd (9.0.31-1) unstable; urgency=low
 
   * New upstream release
 
- -- Philipp Reisner <phil@linbit.com>  Mon, 27 Sep 2021 16:50:09 +0100
+ -- Philipp Reisner <phil@linbit.com>  Tue,  5 Oct 2021 08:37:02 +0100
 
 drbd (9.0.30-1) unstable; urgency=low
 

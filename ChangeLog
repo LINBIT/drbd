@@ -3,7 +3,7 @@ Latest:
  For even more detail, use "git log" or visit
  https://github.com/LINBIT/drbd-9.0/commits/drbd-9.0
 
-9.0.31-0rc1 (api:genl2/proto:86-121/transport:14)
+9.0.31-1 (api:genl2/proto:86-121/transport:14)
 --------
  * fix a possible call of NULL, a regression introduced with 9.0.26
  * fix a corner case in aborting an connect 2-phase-commit
