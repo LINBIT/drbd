@@ -46,6 +46,13 @@ struct flush_work {
 	struct drbd_epoch *epoch;
 };
 
+struct update_peers_work {
+       struct drbd_work w;
+       struct drbd_peer_device *peer_device;
+       sector_t sector_start;
+       sector_t sector_end;
+};
+
 enum epoch_event {
 	EV_PUT,
 	EV_GOT_BARRIER_NR,
@@ -2216,6 +2223,157 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	return 0;
 }
 
+static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_start, sector_t sector_end)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
+		if (drbd_bm_total_weight(peer_device) == 0)
+			return true;
+		if (drbd_bm_count_bits(device, peer_device->bitmap_index,
+					BM_SECT_TO_BIT(sector_start), BM_SECT_TO_BIT(sector_end - 1)) == 0)
+			return true;
+	}
+	return false;
+}
+
+static void update_peers_for_range(struct drbd_peer_device *peer_device,
+		sector_t sector_start, sector_t sector_end)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 mask = NODE_MASK(peer_device->node_id), im;
+	struct drbd_peer_device *p;
+
+	for_each_peer_device_ref(p, im, device) {
+		if (p == peer_device)
+			continue;
+
+		if (bits_in_sync(p, sector_start, sector_end))
+			mask |= NODE_MASK(p->node_id);
+	}
+
+	for_each_peer_device_ref(p, im, device) {
+		/* Only send to the peer whose bitmap bits have been cleared if
+		 * we are connected to that peer. The bits may have been
+		 * cleared by a P_PEERS_IN_SYNC from another peer while we are
+		 * connecting to this one. We mustn't send P_PEERS_IN_SYNC
+		 * during the initial connection handshake. */
+		if (p == peer_device && p->connection->cstate[NOW] != C_CONNECTED)
+			continue;
+
+		if (mask & NODE_MASK(p->node_id))
+			drbd_send_peers_in_sync(p, mask,
+					sector_start,
+					(sector_end - sector_start) << SECTOR_SHIFT);
+	}
+}
+
+static int w_update_peers(struct drbd_work *w, int unused)
+{
+	struct update_peers_work *upw = container_of(w, struct update_peers_work, w);
+	struct drbd_peer_device *peer_device = upw->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+
+	update_peers_for_range(peer_device, upw->sector_start, upw->sector_end);
+
+	kfree(upw);
+
+	kref_debug_put(&device->kref_debug, 5);
+	kref_put(&device->kref, drbd_destroy_device);
+
+	kref_debug_put(&connection->kref_debug, 14);
+	kref_put(&connection->kref, drbd_destroy_connection);
+
+	return 0;
+}
+
+void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
+		sector_t sector_start, sector_t sector_end)
+{
+	struct drbd_device *device = peer_device->device;
+	struct update_peers_work *upw;
+
+	upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
+	if (upw) {
+		upw->sector_start = sector_start;
+		upw->sector_end = sector_end;
+		upw->w.cb = w_update_peers;
+
+		kref_get(&peer_device->device->kref);
+		kref_debug_get(&peer_device->device->kref_debug, 5);
+
+		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 14);
+
+		upw->peer_device = peer_device;
+		drbd_queue_work(&device->resource->work, &upw->w);
+	} else {
+		if (drbd_ratelimit())
+			drbd_warn(peer_device, "kmalloc(upw) failed.\n");
+	}
+}
+
+static void drbd_peers_in_sync_progress(struct drbd_peer_device *peer_device, sector_t sector_end)
+{
+	/* Round down to the boundary defined by PEERS_IN_SYNC_STEP_SHIFT. */
+	sector_t peers_in_sync_end = sector_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+
+	/* If we move backwards then move marker back. */
+	if (peers_in_sync_end < peer_device->last_peers_in_sync_end) {
+		peer_device->last_peers_in_sync_end = peers_in_sync_end;
+		return;
+	}
+
+	/* Only schedule when we cross a boundary as defined by PEERS_IN_SYNC_STEP_SHIFT. */
+	if (peers_in_sync_end == peer_device->last_peers_in_sync_end)
+		return;
+
+	drbd_queue_update_peers(peer_device, peer_device->last_peers_in_sync_end, peers_in_sync_end);
+	peer_device->last_peers_in_sync_end = peers_in_sync_end;
+
+	/* Also consider scheduling a bitmap update to reduce the size of the
+	 * next resync if this one is disrupted. */
+	drbd_maybe_schedule_on_disk_bitmap_update(peer_device, false, is_sync_target_state(peer_device, NOW));
+}
+
+static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	LIST_HEAD(completed);
+	struct drbd_peer_request *peer_req, *tmp;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry_safe(peer_req, tmp, &peer_device->resync_requests, recv_order) {
+		if (!test_bit(INTERVAL_COMPLETED, &peer_req->i.flags))
+			break;
+
+		list_move_tail(&peer_req->recv_order, &completed);
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
+		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
+		list_del(&peer_req->recv_order);
+		drbd_free_peer_req(peer_req);
+	}
+}
+
+static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+
+	/* The interval is no longer in the tree, but use this flag
+	 * anyway, since it has an appropriate meaning. */
+	set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
+
+	/* Free the pages now but leave the peer request until the
+	 * corresponding peers-in-sync has been scheduled. */
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+
+	drbd_check_peers_in_sync_progress(peer_device);
+}
+
 /*
  * e_end_resync_block() is called in ack_sender context via
  * drbd_finish_peer_reqs().
@@ -2233,6 +2391,7 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(peer_device, sector, peer_req->i.size);
 		err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
+
 	} else {
 		/* Record failure to sync */
 		drbd_rs_failed_io(peer_device, sector, peer_req->i.size);
@@ -2241,7 +2400,7 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 	}
 	dec_unacked(peer_device);
 
-	drbd_free_peer_req(peer_req);
+	drbd_resync_request_complete(peer_req);
 	return err;
 }
 
@@ -2335,6 +2494,7 @@ out:
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
+	list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_free_peer_req(peer_req);
@@ -7827,6 +7987,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 			drbd_err(device, "discard submit failed, triggering re-connect\n");
 			spin_lock_irq(&connection->peer_reqs_lock);
 			list_del(&peer_req->w.list);
+			list_del(&peer_req->recv_order);
 			spin_unlock_irq(&connection->peer_reqs_lock);
 
 			drbd_remove_peer_req_interval(peer_req);
@@ -8014,6 +8175,9 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 	list_splice_init(&connection->resync_request_ee, &request_work_list);
 	list_splice_init(&connection->resync_ack_ee, &ack_work_list);
 	list_splice_init(&connection->dagtag_wait_ee, &dagtag_wait_work_list);
+
+	list_for_each_entry(peer_req, &request_work_list, w.list)
+		list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &request_work_list, w.list) {
@@ -8095,9 +8259,30 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
+static void drbd_free_completed_resync_requests(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	LIST_HEAD(resync_requests);
+	struct drbd_peer_request *peer_req, *t;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_splice_init(&peer_device->resync_requests, &resync_requests);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(peer_req, t, &resync_requests, recv_order) {
+		list_del(&peer_req->recv_order);
+		drbd_free_peer_req(peer_req);
+	}
+}
+
 static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+
+	/* Requests waiting for the peer (resync_request_ee), disk (sync_ee) or
+	 * for processing on the ack sender (done_ee) have been flushed.
+	 * Remaining requests just waiting for peers-in-sync to be sent. */
+	drbd_free_completed_resync_requests(peer_device);
 
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&device->uuid_sem);
@@ -8693,11 +8878,21 @@ static int got_peers_in_sync(struct drbd_connection *connection, struct packet_i
 	device = peer_device->device;
 
 	if (get_ldev(device)) {
+		int count;
+
 		sector = be64_to_cpu(p->sector);
 		size = be32_to_cpu(p->size);
 		in_sync_b = node_ids_to_bitmap(device, be64_to_cpu(p->mask));
 
-		drbd_set_sync(device, sector, size, 0, in_sync_b);
+		count = drbd_set_sync(device, sector, size, 0, in_sync_b);
+
+		/* If we are SyncSource then we rely on P_PEERS_IN_SYNC from
+		 * the peer to inform us of sync progress. Otherwise only send
+		 * peers-in-sync when we have actually cleared some bits.
+		 * This prevents an infinite loop with the peer. */
+		if (count > 0 || peer_device->repl_state[NOW] == L_SYNC_SOURCE)
+			drbd_queue_update_peers(peer_device, sector, sector + (size >> SECTOR_SHIFT));
+
 		put_ldev(device);
 	}
 
@@ -8852,7 +9047,7 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 	rs_sectors_came_in(peer_device, blksize);
 
 	drbd_remove_peer_req_interval(peer_req);
-	drbd_free_peer_req(peer_req);
+	drbd_resync_request_complete(peer_req);
 	return 0;
 }
 
@@ -8906,6 +9101,7 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
 		drbd_remove_peer_req_interval(peer_req);
+
 		drbd_free_peer_req(peer_req);
 		return 0;
 	}
@@ -8996,6 +9192,8 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 	struct drbd_connection *connection = peer_device->connection;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
+	if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
+		list_del(&peer_req->recv_order);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 

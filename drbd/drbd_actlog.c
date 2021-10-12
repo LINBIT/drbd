@@ -21,13 +21,6 @@
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
 
-struct update_peers_work {
-       struct drbd_work w;
-       struct drbd_peer_device *peer_device;
-       unsigned long sbnr;
-       unsigned long ebnr;
-};
-
 void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
 {
 	int r;
@@ -679,50 +672,6 @@ void drbd_al_shrink(struct drbd_device *device)
 	wake_up(&device->al_wait);
 }
 
-static bool bits_in_sync(struct drbd_peer_device *peer_device, unsigned long sbnr, unsigned long ebnr)
-{
-	struct drbd_device *device = peer_device->device;
-
-	if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
-		if (drbd_bm_total_weight(peer_device) == 0)
-			return true;
-		if (drbd_bm_count_bits(device, peer_device->bitmap_index, sbnr, ebnr) == 0)
-			return true;
-	}
-	return false;
-}
-
-static void
-consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned long sbnr, unsigned long ebnr)
-{
-	struct drbd_device *device = peer_device->device;
-	u64 mask = NODE_MASK(peer_device->node_id), im;
-	struct drbd_peer_device *p;
-
-	for_each_peer_device_ref(p, im, device) {
-		if (p == peer_device)
-			continue;
-
-		if (bits_in_sync(p, sbnr, ebnr))
-			mask |= NODE_MASK(p->node_id);
-	}
-
-	for_each_peer_device_ref(p, im, device) {
-		/* Only send to the peer whose bitmap bits have been cleared if
-		 * we are connected to that peer. The bits may have been
-		 * cleared by a P_PEERS_IN_SYNC from another peer while we are
-		 * connecting to this one. We mustn't send P_PEERS_IN_SYNC
-		 * during the initial connection handshake. */
-		if (p == peer_device && p->connection->cstate[NOW] != C_CONNECTED)
-			continue;
-
-		if (mask & NODE_MASK(p->node_id))
-			drbd_send_peers_in_sync(p, mask,
-					BM_BIT_TO_SECT(sbnr),
-					(BM_BIT_TO_SECT(ebnr + 1) - BM_BIT_TO_SECT(sbnr)) << SECTOR_SHIFT);
-	}
-}
-
 int drbd_al_initialize(struct drbd_device *device, void *buffer)
 {
 	struct al_transaction_on_disk *al = buffer;
@@ -750,57 +699,11 @@ int drbd_al_initialize(struct drbd_device *device, void *buffer)
 	return 0;
 }
 
-static int w_update_peers(struct drbd_work *w, int unused)
-{
-       struct update_peers_work *upw = container_of(w, struct update_peers_work, w);
-       struct drbd_peer_device *peer_device = upw->peer_device;
-       struct drbd_device *device = peer_device->device;
-       struct drbd_connection *connection = peer_device->connection;
-
-       consider_sending_peers_in_sync(peer_device, upw->sbnr, upw->ebnr);
-
-       kfree(upw);
-
-       kref_debug_put(&device->kref_debug, 5);
-       kref_put(&device->kref, drbd_destroy_device);
-
-       kref_debug_put(&connection->kref_debug, 14);
-       kref_put(&connection->kref, drbd_destroy_connection);
-
-       return 0;
-}
-
 static const char *drbd_change_sync_fname[] = {
 	[RECORD_RS_FAILED] = "drbd_rs_failed_io",
 	[SET_IN_SYNC] = "drbd_set_in_sync",
 	[SET_OUT_OF_SYNC] = "drbd_set_out_of_sync"
 };
-
-static void queue_update_peers(struct drbd_peer_device *peer_device,
-		unsigned long sbnr, unsigned long ebnr)
-{
-	struct drbd_device *device = peer_device->device;
-	struct update_peers_work *upw;
-
-	upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
-	if (upw) {
-		upw->sbnr = sbnr;
-		upw->ebnr = ebnr;
-		upw->w.cb = w_update_peers;
-
-		kref_get(&peer_device->device->kref);
-		kref_debug_get(&peer_device->device->kref_debug, 5);
-
-		kref_get(&peer_device->connection->kref);
-		kref_debug_get(&peer_device->connection->kref_debug, 14);
-
-		upw->peer_device = peer_device;
-		drbd_queue_work(&device->resource->work, &upw->w);
-	} else {
-		if (drbd_ratelimit())
-			drbd_warn(peer_device, "kmalloc(udw) failed.\n");
-	}
-}
 
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long still_to_go)
 {
@@ -825,7 +728,7 @@ static bool lazy_bitmap_update_due(struct drbd_peer_device *peer_device)
 	return time_after(jiffies, peer_device->rs_last_writeout + 2*HZ);
 }
 
-static void maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
+void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
 						 bool rs_done, bool is_sync_target)
 {
 	if (rs_done) {
@@ -884,8 +787,7 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 			rs_is_done = (still_to_go <= peer_device->rs_failed);
 			drbd_advance_rs_marks(peer_device, still_to_go);
 			if (rs_is_done)
-				maybe_schedule_on_disk_bitmap_update(peer_device, rs_is_done, is_sync_target);
-			queue_update_peers(peer_device, sbnr, ebnr);
+				drbd_maybe_schedule_on_disk_bitmap_update(peer_device, rs_is_done, is_sync_target);
 		} else if (mode == RECORD_RS_FAILED) {
 			peer_device->rs_failed += count;
 		} else /* if (mode == SET_OUT_OF_SYNC) */ {
@@ -971,7 +873,7 @@ out:
 	return count;
 }
 
-bool drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
 	return drbd_set_sync(device, sector, size, -1, -1);
 }
@@ -983,13 +885,15 @@ bool drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int s
  * @size:	size of disk range in bytes
  * @bits:	bit values to use by bitmap index
  * @mask:	bitmap indexes to modify (mask set)
+ *
+ * Returns the number of bits modified.
  */
-bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		   unsigned long bits, unsigned long mask)
 {
 	long set_start, set_end, clear_start, clear_end;
 	sector_t esector, nr_sectors;
-	bool set = false;
+	int count = 0;
 	struct drbd_peer_device *peer_device;
 
 	mask &= (1 << device->bitmap->bm_max_peers) - 1;
@@ -1036,10 +940,10 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 			continue;
 
 		if (test_bit(bitmap_index, &bits))
-			update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC);
+			count += update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC);
 
 		else if (clear_start <= clear_end)
-			update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
+			count += update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
 	}
 	rcu_read_unlock();
 	if (mask) {
@@ -1047,10 +951,10 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 
 		for_each_set_bit(bitmap_index, &mask, BITS_PER_LONG) {
 			if (test_bit(bitmap_index, &bits))
-				drbd_bm_set_bits(device, bitmap_index,
+				count += drbd_bm_set_bits(device, bitmap_index,
 						 set_start, set_end);
 			else if (clear_start <= clear_end)
-				drbd_bm_clear_bits(device, bitmap_index,
+				count += drbd_bm_clear_bits(device, bitmap_index,
 						   clear_start, clear_end);
 		}
 	}
@@ -1058,5 +962,5 @@ bool drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 out:
 	put_ldev(device);
 
-	return set;
+	return count;
 }

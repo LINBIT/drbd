@@ -425,7 +425,7 @@ struct digest_info {
 struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
-	struct list_head recv_order; /* writes only */
+	struct list_head recv_order; /* peer writes, resync requests initiated locally */
 	/* Used by the submitter workqueues for:
 	 * * Processing conflicts
 	 * * Writes that are blocked on the activity log */
@@ -1213,6 +1213,7 @@ struct drbd_peer_device {
 
 	enum drbd_disk_state resync_finished_pdsk; /* Finished while starting resync */
 	int resync_again; /* decided to resync again while resync running */
+	sector_t last_peers_in_sync_end; /* sector after end of last scheduled peers-in-sync */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
 	unsigned long last_resync_next_bit; /* value of resync_next_bit before last set of resync requests */
 	struct mutex resync_next_bit_mutex;
@@ -1220,6 +1221,9 @@ struct drbd_peer_device {
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
+
+	/* Protected by connection->peer_reqs_lock */
+	struct list_head resync_requests; /* Resync requests in the order we sent them */
 
 	/* use checksums for *this* resync */
 	bool use_csums;
@@ -1727,6 +1731,12 @@ extern sector_t drbd_get_max_capacity(
 #define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
+/* Send P_PEERS_IN_SYNC in steps defined by this shift. Set to the activity log
+ * extent shift since the P_PEERS_IN_SYNC intervals are broken up based on
+ * activity log extents anyway. */
+#define PEERS_IN_SYNC_STEP_SHIFT AL_EXTENT_SHIFT
+#define PEERS_IN_SYNC_STEP_SECT_MASK ((1UL << (PEERS_IN_SYNC_STEP_SHIFT - SECTOR_SHIFT)) - 1)
+
 /* bit to represented kilo byte conversion */
 #define Bit2KB(bits) ((bits)<<(BM_BLOCK_SHIFT-10))
 
@@ -2044,6 +2054,9 @@ struct drbd_peer_request_details {
 	uint32_t digest_size;
 };
 
+
+extern void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
+		sector_t sector_start, sector_t sector_end);
 extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
 		sector_t start, unsigned int nr_sectors, int flags);
 extern void drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
@@ -2130,8 +2143,10 @@ extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_in
 extern int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i);
 extern bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
-extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
-extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
+extern void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
+		 bool rs_done, bool is_sync_target);
+extern int drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
+extern int drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
 extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, int size,
 		enum update_sync_bits_mode mode);

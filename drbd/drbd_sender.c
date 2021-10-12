@@ -440,6 +440,7 @@ out_rs_pending:
 out:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
+	list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	/* We may have just emptied sync_ee. */
@@ -603,6 +604,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->w.list, &connection->read_ee);
+	list_add_tail(&peer_req->recv_order, &peer_device->resync_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
@@ -615,6 +617,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * If it does not, you may need to force disconnect. */
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
+	list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 defer2:
@@ -647,6 +650,7 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->w.list, &connection->sync_ee);
+	list_add_tail(&peer_req->recv_order, &peer_device->resync_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_conflict_submit_resync_request(peer_req);
@@ -1557,8 +1561,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
-		/* Make sure all queued w_update_peers()/consider_sending_peers_in_sync()
-		 * executed. */
+		/* Make sure all queued w_update_peers() executed. */
 		if (current == device->resource->worker.task) {
 			queue_resync_finished(peer_device, new_peer_disk_state);
 			return;
@@ -1714,6 +1717,10 @@ out_unlock:
 	up_write(&device->uuid_sem);
 	if (connection->after_reconciliation.lost_node_id != -1)
 		after_reconciliation_resync(connection);
+
+	/* Potentially send final P_PEERS_IN_SYNC. */
+	drbd_queue_update_peers(peer_device,
+			peer_device->last_peers_in_sync_end, BM_BIT_TO_SECT(drbd_bm_bits(device)));
 
 out:
 	/* reset start sector, if we reached end of device */

@@ -3428,6 +3428,9 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	atomic_set(&peer_device->ap_pending_cnt, 0);
 	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);
+
+	INIT_LIST_HEAD(&peer_device->resync_requests);
+
 	atomic_set(&peer_device->rs_sect_in, 0);
 
 	peer_device->bitmap_index = -1;
