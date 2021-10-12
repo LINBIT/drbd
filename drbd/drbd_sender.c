@@ -182,9 +182,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		queue_work(connection->ack_sender, &connection->send_acks_work);
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
-	if (block_id == ID_SYNCER)
-		drbd_rs_complete_io(peer_device, sector);
-
 	if (do_wake)
 		wake_up(&connection->ee_wait);
 
@@ -792,14 +789,13 @@ next_sector:
 
 		sector = BM_BIT_TO_SECT(bit);
 
-		if (drbd_try_rs_begin_io(peer_device, sector, true)) {
+		if (drbd_rs_c_min_rate_throttle(peer_device)) {
 			peer_device->resync_next_bit = bit;
 			goto request_done;
 		}
 
 		if (unlikely(drbd_bm_test_bit(peer_device, bit) == 0)) {
 			peer_device->resync_next_bit = bit + 1;
-			drbd_rs_complete_io(peer_device, sector);
 			goto next_sector;
 		}
 
@@ -822,9 +818,6 @@ next_sector:
 			if (discard_granularity && size == discard_granularity)
 				break;
 
-			/* do not cross extent boundaries */
-			if (((bit+1) & BM_BLOCKS_PER_BM_EXT_MASK) == 0)
-				break;
 			/* now, is it actually dirty, after all?
 			 * caution, drbd_bm_test_bit is tri-state for some
 			 * obscure reason; ( b == 0 ) would get the out-of-band
@@ -851,7 +844,6 @@ next_sector:
 				put_ldev(device);
 				return -EIO;
 			case -EAGAIN: /* allocation failed, or ldev busy */
-				drbd_rs_complete_io(peer_device, sector);
 				peer_device->resync_next_bit = BM_SECT_TO_BIT(sector);
 				i = rollback_i;
 				goto request_done;
@@ -935,7 +927,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 		size = BM_BLOCK_SIZE;
 
-		if (drbd_try_rs_begin_io(peer_device, sector, true))
+		if (drbd_rs_c_min_rate_throttle(peer_device))
 			break;
 
 		if (sector + (size>>9) > capacity)
@@ -1176,26 +1168,13 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 		/* Make sure all queued w_update_peers()/consider_sending_peers_in_sync()
-		   executed before killing the resync_lru with drbd_rs_del_all() */
+		 * executed. */
 		if (current == device->resource->worker.task) {
 			queue_resync_finished(peer_device, new_peer_disk_state);
 			return;
 		} else {
 			drbd_flush_workqueue(&device->resource->work);
 		}
-	}
-
-	/* Remove all elements from the resync LRU. Since future actions
-	 * might set bits in the (main) bitmap, then the entries in the
-	 * resync LRU would be wrong. */
-	if (drbd_rs_del_all(peer_device)) {
-		/* In case this is not possible now, most probably because
-		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
-		 * queue (or even the read operations for those packets
-		 * is not finished by now).   Retry in 100ms. */
-		schedule_timeout_interruptible(HZ / 10);
-		queue_resync_finished(peer_device, new_peer_disk_state);
-		return;
 	}
 
 	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;
@@ -1528,13 +1507,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_device *device = peer_device->device;
 	int err;
-
-	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
-	}
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
@@ -1673,16 +1646,10 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_device *device = peer_device->device;
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
 	u64 block_id;
 	int err;
-
-	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, peer_req->i.sector);
-		put_ldev(device);
-	}
 
 	if (unlikely(cancel)) {
 		drbd_free_peer_req(peer_req);
@@ -2222,14 +2189,6 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 
 static void drbd_ldev_destroy(struct drbd_device *device)
 {
-        struct drbd_peer_device *peer_device;
-
-        rcu_read_lock();
-        for_each_peer_device_rcu(peer_device, device) {
-                lc_destroy(peer_device->resync_lru);
-                peer_device->resync_lru = NULL;
-        }
-        rcu_read_unlock();
         lc_destroy(device->act_log);
         device->act_log = NULL;
 	__acquire(local);

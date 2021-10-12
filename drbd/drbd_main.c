@@ -139,7 +139,6 @@ DEFINE_MUTEX(resources_mutex);
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
-struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
 struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 mempool_t drbd_request_mempool;
 mempool_t drbd_ee_mempool;
@@ -1408,23 +1407,6 @@ int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uui
 	return drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
 }
 
-/* All callers hold resource->conf_update */
-int drbd_attach_peer_device(struct drbd_peer_device *const peer_device) __must_hold(local)
-{
-	struct lru_cache *resync_lru = NULL;
-	int err = -ENOMEM;
-
-	resync_lru = lc_create("resync", drbd_bm_ext_cache,
-	                       1, 61, sizeof(struct bm_extent),
-	                       offsetof(struct bm_extent, lce));
-	if (resync_lru != NULL) {
-		peer_device->resync_lru = resync_lru;
-		err = 0;
-	}
-
-	return err;
-}
-
 /* communicated if (agreed_features & DRBD_FF_WSAME) */
 static void assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p, struct request_queue *q)
 {
@@ -2659,14 +2641,11 @@ static void drbd_destroy_mempools(void)
 		kmem_cache_destroy(drbd_ee_cache);
 	if (drbd_request_cache)
 		kmem_cache_destroy(drbd_request_cache);
-	if (drbd_bm_ext_cache)
-		kmem_cache_destroy(drbd_bm_ext_cache);
 	if (drbd_al_ext_cache)
 		kmem_cache_destroy(drbd_al_ext_cache);
 
 	drbd_ee_cache        = NULL;
 	drbd_request_cache   = NULL;
-	drbd_bm_ext_cache    = NULL;
 	drbd_al_ext_cache    = NULL;
 
 	return;
@@ -2686,11 +2665,6 @@ static int drbd_create_mempools(void)
 	drbd_ee_cache = kmem_cache_create(
 		"drbd_ee", sizeof(struct drbd_peer_request), 0, 0, NULL);
 	if (drbd_ee_cache == NULL)
-		goto Enomem;
-
-	drbd_bm_ext_cache = kmem_cache_create(
-		"drbd_bm", sizeof(struct bm_extent), 0, 0, NULL);
-	if (drbd_bm_ext_cache == NULL)
 		goto Enomem;
 
 	drbd_al_ext_cache = kmem_cache_create(
@@ -2733,7 +2707,6 @@ static void free_peer_device(struct drbd_peer_device *peer_device)
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&peer_device->device->uuid_sem);
 
-	lc_destroy(peer_device->resync_lru);
 	kfree(peer_device->rs_plan_s);
 	kfree(peer_device->conf);
 	kfree(peer_device);
@@ -3434,7 +3407,6 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	atomic_set(&peer_device->rs_sect_in, 0);
 
 	peer_device->bitmap_index = -1;
-	peer_device->resync_wenr = LC_FREE;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;
 
 	return peer_device;

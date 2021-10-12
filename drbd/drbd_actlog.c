@@ -24,7 +24,8 @@
 struct update_peers_work {
        struct drbd_work w;
        struct drbd_peer_device *peer_device;
-       unsigned int enr;
+       unsigned long sbnr;
+       unsigned long ebnr;
 };
 
 void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
@@ -164,103 +165,28 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
-struct get_activity_log_ref_ctx {
-	/* in: which extent on which device? */
-	struct drbd_device *device;
-	unsigned int enr;
-	bool nonblock;
-
-	/* out: do we need to wake_up(&device->al_wait)? */
-	bool wake_up;
-};
-
-static struct bm_extent*
-find_active_resync_extent(struct get_activity_log_ref_ctx *al_ctx)
-{
-	struct drbd_peer_device *peer_device;
-	struct lc_element *tmp;
-
-	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, al_ctx->device) {
-		tmp = lc_find(peer_device->resync_lru, al_ctx->enr/AL_EXT_PER_BM_SECT);
-		if (unlikely(tmp != NULL)) {
-			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags)) {
-				if (peer_device->resync_wenr == tmp->lc_number) {
-					peer_device->resync_wenr = LC_FREE;
-					if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
-						bm_ext->flags = 0;
-						al_ctx->wake_up = true;
-						peer_device->resync_locked--;
-						continue;
-					}
-				}
-				rcu_read_unlock();
-				return bm_ext;
-			}
-		}
-	}
-	rcu_read_unlock();
-	return NULL;
-}
-
-void
-set_bme_priority(struct get_activity_log_ref_ctx *al_ctx)
-{
-	struct drbd_peer_device *peer_device;
-	struct lc_element *tmp;
-
-	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, al_ctx->device) {
-		tmp = lc_find(peer_device->resync_lru, al_ctx->enr/AL_EXT_PER_BM_SECT);
-		if (tmp) {
-			struct bm_extent  *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-			if (test_bit(BME_NO_WRITES, &bm_ext->flags)
-			&& !test_and_set_bit(BME_PRIORITY, &bm_ext->flags))
-				al_ctx->wake_up = true;
-		}
-	}
-	rcu_read_unlock();
-}
-
-static
-struct lc_element *__al_get(struct get_activity_log_ref_ctx *al_ctx)
-{
-	struct drbd_device *device = al_ctx->device;
-	struct lc_element *al_ext = NULL;
-	struct bm_extent *bm_ext;
-
-	spin_lock_irq(&device->al_lock);
-	bm_ext = find_active_resync_extent(al_ctx);
-	if (bm_ext) {
-		set_bme_priority(al_ctx);
-		goto out;
-	}
-	if (al_ctx->nonblock)
-		al_ext = lc_try_get(device->act_log, al_ctx->enr);
-	else
-		al_ext = lc_get(device->act_log, al_ctx->enr);
- out:
-	spin_unlock_irq(&device->al_lock);
-	if (al_ctx->wake_up)
-		wake_up(&device->al_wait);
-	return al_ext;
-}
-
 static
 struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr)
 {
-	struct get_activity_log_ref_ctx al_ctx =
-		{ .device = device, .enr = enr, .nonblock = true };
-	return __al_get(&al_ctx);
+	struct lc_element *al_ext;
+
+	spin_lock_irq(&device->al_lock);
+	al_ext = lc_try_get(device->act_log, enr);
+	spin_unlock_irq(&device->al_lock);
+
+	return al_ext;
 }
 
 static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 {
-	struct get_activity_log_ref_ctx al_ctx =
-		{ .device = device, .enr = enr, .nonblock = false };
-	return __al_get(&al_ctx);
+	struct lc_element *al_ext;
+
+	spin_lock_irq(&device->al_lock);
+	al_ext = lc_get(device->act_log, enr);
+	spin_unlock_irq(&device->al_lock);
+
+	return al_ext;
 }
 
 #if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
@@ -327,10 +253,9 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 }
 
 #if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
-/* Currently BM_BLOCK_SHIFT, BM_EXT_SHIFT and AL_EXTENT_SHIFT
+/* Currently BM_BLOCK_SHIFT and AL_EXTENT_SHIFT
  * are still coupled, or assume too much about their relation.
  * Code below will not work if this is violated.
- * Will be cleaned up with some followup patch.
  */
 # error FIXME
 #endif
@@ -491,8 +416,6 @@ static int al_write_transaction(struct drbd_device *device)
 	return err;
 }
 
-static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr);
-
 bool drbd_al_try_lock(struct drbd_device *device)
 {
 	bool locked;
@@ -584,8 +507,7 @@ static bool put_actlog(struct drbd_device *device, unsigned int first, unsigned 
  * @i:			interval to check and register
  *
  * Ensures that the extents covered by the interval @i are hot in the
- * activity log. This function makes sure the area is not active by any
- * resync operation on any connection.
+ * activity log.
  */
 int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i)
 {
@@ -643,14 +565,12 @@ int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_
 int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i)
 {
 	struct lru_cache *al = device->act_log;
-	struct bm_extent *bm_ext;
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
 	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned nr_al_extents;
 	unsigned available_update_slots;
-	struct get_activity_log_ref_ctx al_ctx = { .device = device, };
 	unsigned enr;
 
 	D_ASSERT(device, first <= last);
@@ -674,18 +594,6 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 		if (!al->pending_changes)
 			set_bit(__LC_STARVING, &device->act_log->flags);
 		return -ENOBUFS;
-	}
-
-	/* Is resync active in this area? */
-	for (enr = first; enr <= last; enr++) {
-		al_ctx.enr = enr;
-		bm_ext = find_active_resync_extent(&al_ctx);
-		if (unlikely(bm_ext != NULL)) {
-			set_bme_priority(&al_ctx);
-			if (al_ctx.wake_up)
-				return -EBUSY;
-			return -EWOULDBLOCK;
-		}
 	}
 
 	/* Checkout the refcounts.
@@ -751,62 +659,33 @@ void drbd_al_shrink(struct drbd_device *device)
 	wake_up(&device->al_wait);
 }
 
-static bool extent_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
+static bool bits_in_sync(struct drbd_peer_device *peer_device, unsigned long sbnr, unsigned long ebnr)
 {
+	struct drbd_device *device = peer_device->device;
+
 	if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
 		if (drbd_bm_total_weight(peer_device) == 0)
 			return true;
-		if (bm_e_weight(peer_device, rs_enr) == 0)
+		if (drbd_bm_count_bits(device, peer_device->bitmap_index, sbnr, ebnr) == 0)
 			return true;
-	} else if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
-		   peer_device->repl_state[NOW] == L_SYNC_TARGET) {
-		bool rv = false;
-
-		if (!drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr), false)) {
-			struct bm_extent *bm_ext;
-			struct lc_element *e;
-
-			e = lc_find(peer_device->resync_lru, rs_enr);
-			bm_ext = lc_entry(e, struct bm_extent, lce);
-			rv = (bm_ext->rs_left == 0);
-			drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
-		}
-
-		return rv;
 	}
-
 	return false;
 }
 
 static void
-consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned int rs_enr)
+consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned long sbnr, unsigned long ebnr)
 {
 	struct drbd_device *device = peer_device->device;
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
-	int size_sect;
-	struct bm_extent *bm_ext;
-	struct lc_element *e;
-
-	if (drbd_try_rs_begin_io(peer_device, BM_EXT_TO_SECT(rs_enr), false))
-		return;
-
-	e = lc_find(peer_device->resync_lru, rs_enr);
-	bm_ext = lc_entry(e, struct bm_extent, lce);
-	if (bm_ext->rs_left) {
-		drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
-		return;
-	}
 
 	for_each_peer_device_ref(p, im, device) {
 		if (p == peer_device)
 			continue;
-		if (extent_in_sync(p, rs_enr))
+
+		if (bits_in_sync(p, sbnr, ebnr))
 			mask |= NODE_MASK(p->node_id);
 	}
-
-	size_sect = min(BM_SECT_PER_EXT,
-			get_capacity(device->vdisk) - BM_EXT_TO_SECT(rs_enr));
 
 	for_each_peer_device_ref(p, im, device) {
 		/* Only send to the peer whose bitmap bits have been cleared if
@@ -818,10 +697,10 @@ consider_sending_peers_in_sync(struct drbd_peer_device *peer_device, unsigned in
 			continue;
 
 		if (mask & NODE_MASK(p->node_id))
-			drbd_send_peers_in_sync(p, mask, BM_EXT_TO_SECT(rs_enr), size_sect << 9);
+			drbd_send_peers_in_sync(p, mask,
+					BM_BIT_TO_SECT(sbnr),
+					(BM_BIT_TO_SECT(ebnr + 1) - BM_BIT_TO_SECT(sbnr)) << SECTOR_SHIFT);
 	}
-
-	drbd_rs_complete_io(peer_device, BM_EXT_TO_SECT(rs_enr));
 }
 
 int drbd_al_initialize(struct drbd_device *device, void *buffer)
@@ -858,7 +737,7 @@ static int w_update_peers(struct drbd_work *w, int unused)
        struct drbd_device *device = peer_device->device;
        struct drbd_connection *connection = peer_device->connection;
 
-       consider_sending_peers_in_sync(peer_device, upw->enr);
+       consider_sending_peers_in_sync(peer_device, upw->sbnr, upw->ebnr);
 
        kfree(upw);
 
@@ -871,161 +750,36 @@ static int w_update_peers(struct drbd_work *w, int unused)
        return 0;
 }
 
-/* inherently racy...
- * return value may be already out-of-date when this function returns.
- * but the general usage is that this is only use during a cstate when bits are
- * only cleared, not set, and typically only care for the case when the return
- * value is zero, or we already "locked" this "bitmap extent" by other means.
- *
- * enr is bm-extent number, since we chose to name one sector (512 bytes)
- * worth of the bitmap a "bitmap extent".
- *
- * TODO
- * I think since we use it like a reference count, we should use the real
- * reference count of some bitmap extent element from some lru instead...
- *
- */
-static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
-{
-	unsigned long start, end, count;
-
-	start = enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
-	end = ((enr + 1) << (BM_EXT_SHIFT - BM_BLOCK_SHIFT)) - 1;
-	count = drbd_bm_count_bits(peer_device->device, peer_device->bitmap_index, start, end);
-#if DUMP_MD >= 3
-	drbd_info(peer_device, "enr=%lu weight=%d\n", enr, count);
-#endif
-	return count;
-}
-
 static const char *drbd_change_sync_fname[] = {
 	[RECORD_RS_FAILED] = "drbd_rs_failed_io",
 	[SET_IN_SYNC] = "drbd_set_in_sync",
 	[SET_OUT_OF_SYNC] = "drbd_set_out_of_sync"
 };
 
-
-/* ATTENTION. The AL's extents are 4MB each, while the extents in the
- * resync LRU-cache are 128MB each.
- * The caller of this function has to hold an get_ldev() reference.
- *
- * Adjusts the caching members ->rs_left (success) or ->rs_failed (!success),
- * potentially pulling in (and recounting the corresponding bits)
- * this resync extent into the resync extent lru cache.
- *
- * Returns whether all bits have been cleared for this resync extent,
- * precisely: (rs_left <= rs_failed)
- *
- * TODO will be obsoleted once we have a caching lru of the on disk bitmap
- */
-static bool update_rs_extent(struct drbd_peer_device *peer_device,
-		unsigned int enr, int count,
-		enum update_sync_bits_mode mode)
+static void queue_update_peers(struct drbd_peer_device *peer_device,
+		unsigned long sbnr, unsigned long ebnr)
 {
 	struct drbd_device *device = peer_device->device;
-	struct lc_element *e;
+	struct update_peers_work *upw;
 
-	D_ASSERT(device, atomic_read(&device->local_cnt));
+	upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
+	if (upw) {
+		upw->sbnr = sbnr;
+		upw->ebnr = ebnr;
+		upw->w.cb = w_update_peers;
 
-	/* When setting out-of-sync bits,
-	 * we don't need it cached (lc_find).
-	 * But if it is present in the cache,
-	 * we should update the cached bit count.
-	 * Otherwise, that extent should be in the resync extent lru cache
-	 * already -- or we want to pull it in if necessary -- (lc_get),
-	 * then update and check rs_left and rs_failed. */
-	if (mode == SET_OUT_OF_SYNC)
-		e = lc_find(peer_device->resync_lru, enr);
-	else
-		e = lc_get(peer_device->resync_lru, enr);
-	if (e) {
-		struct bm_extent *ext = lc_entry(e, struct bm_extent, lce);
-		if (ext->lce.lc_number == enr) {
-			if (mode == SET_IN_SYNC)
-				ext->rs_left -= count;
-			else if (mode == SET_OUT_OF_SYNC)
-				ext->rs_left += count;
-			else
-				ext->rs_failed += count;
-			if (ext->rs_left < ext->rs_failed) {
-				struct drbd_connection *connection = peer_device->connection;
-				drbd_warn(peer_device, "BAD! enr=%u rs_left=%d "
-				    "rs_failed=%d count=%d cstate=%s %s\n",
-				     ext->lce.lc_number, ext->rs_left,
-				     ext->rs_failed, count,
-				     drbd_conn_str(connection->cstate[NOW]),
-				     drbd_repl_str(peer_device->repl_state[NOW]));
+		kref_get(&peer_device->device->kref);
+		kref_debug_get(&peer_device->device->kref_debug, 5);
 
-				/* We don't expect to be able to clear more bits
-				 * than have been set when we originally counted
-				 * the set bits to cache that value in ext->rs_left.
-				 * Whatever the reason (disconnect during resync,
-				 * delayed local completion of an application write),
-				 * try to fix it up by recounting here. */
-				ext->rs_left = bm_e_weight(peer_device, enr);
-			}
-		} else {
-			/* Normally this element should be in the cache,
-			 * since drbd_rs_begin_io() pulled it already in.
-			 *
-			 * But maybe an application write finished, and we set
-			 * something outside the resync lru_cache in sync.
-			 */
-			int rs_left = bm_e_weight(peer_device, enr);
-			if (ext->flags != 0) {
-				drbd_warn(device, "changing resync lce: %d[%u;%02lx]"
-				     " -> %d[%u;00]\n",
-				     ext->lce.lc_number, ext->rs_left,
-				     ext->flags, enr, rs_left);
-				ext->flags = 0;
-			}
-			if (ext->rs_failed) {
-				drbd_warn(device, "Kicking resync_lru element enr=%u "
-				     "out with rs_failed=%d\n",
-				     ext->lce.lc_number, ext->rs_failed);
-			}
-			ext->rs_left = rs_left;
-			ext->rs_failed = (mode == RECORD_RS_FAILED) ? count : 0;
-			/* we don't keep a persistent log of the resync lru,
-			 * we can commit any change right away. */
-			lc_committed(peer_device->resync_lru);
-		}
-		if (mode != SET_OUT_OF_SYNC)
-			lc_put(peer_device->resync_lru, &ext->lce);
-		/* no race, we are within the al_lock! */
+		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 14);
 
-		if (ext->rs_left <= ext->rs_failed) {
-			struct update_peers_work *upw;
-
-			upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
-			if (upw) {
-				upw->enr = ext->lce.lc_number;
-				upw->w.cb = w_update_peers;
-
-				kref_get(&peer_device->device->kref);
-				kref_debug_get(&peer_device->device->kref_debug, 5);
-
-				kref_get(&peer_device->connection->kref);
-				kref_debug_get(&peer_device->connection->kref_debug, 14);
-
-				upw->peer_device = peer_device;
-				drbd_queue_work(&device->resource->work, &upw->w);
-			} else {
-				if (drbd_ratelimit())
-					drbd_warn(peer_device, "kmalloc(udw) failed.\n");
-			}
-
-			ext->rs_failed = 0;
-			return true;
-		}
-	} else if (mode != SET_OUT_OF_SYNC) {
-		/* be quiet if lc_find() did not find it. */
-		drbd_err(device, "lc_get() failed! locked=%d/%d flags=%lu\n",
-		    peer_device->resync_locked,
-		    peer_device->resync_lru->nr_elements,
-		    peer_device->resync_lru->flags);
+		upw->peer_device = peer_device;
+		drbd_queue_work(&device->resource->work, &upw->w);
+	} else {
+		if (drbd_ratelimit())
+			drbd_warn(peer_device, "kmalloc(udw) failed.\n");
 	}
-	return false;
 }
 
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long still_to_go)
@@ -1073,44 +827,26 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 		unsigned long sbnr, unsigned long ebnr,
 		enum update_sync_bits_mode mode)
 {
-	/*
-	 * We keep a count of set bits per resync-extent in the ->rs_left
-	 * caching member, so we need to loop and work within the resync extent
-	 * alignment. Typically this loop will execute exactly once.
-	 */
 	struct drbd_device *device = peer_device->device;
-	unsigned long flags;
 	unsigned long count = 0;
 	unsigned int cleared = 0;
-	while (sbnr <= ebnr) {
-		/* set temporary boundary bit number to last bit number within
-		 * the resync extent of the current start bit number,
-		 * but cap at provided end bit number */
-		unsigned long tbnr = min(ebnr, sbnr | BM_BLOCKS_PER_BM_EXT_MASK);
-		unsigned long c;
-		int bmi = peer_device->bitmap_index;
+	int bmi = peer_device->bitmap_index;
 
-		if (mode == RECORD_RS_FAILED)
-			/* Only called from drbd_rs_failed_io(), bits
-			 * supposedly still set.  Recount, maybe some
-			 * of the bits have been successfully cleared
-			 * by application IO meanwhile.
-			 */
-			c = drbd_bm_count_bits(device, bmi, sbnr, tbnr);
-		else if (mode == SET_IN_SYNC)
-			c = drbd_bm_clear_bits(device, bmi, sbnr, tbnr);
-		else /* if (mode == SET_OUT_OF_SYNC) */
-			c = drbd_bm_set_bits(device, bmi, sbnr, tbnr);
+	if (mode == RECORD_RS_FAILED)
+		/* Only called from drbd_rs_failed_io(), bits
+		 * supposedly still set.  Recount, maybe some
+		 * of the bits have been successfully cleared
+		 * by application IO meanwhile.
+		 */
+		count = drbd_bm_count_bits(device, bmi, sbnr, ebnr);
+	else if (mode == SET_IN_SYNC)
+		count = drbd_bm_clear_bits(device, bmi, sbnr, ebnr);
+	else /* if (mode == SET_OUT_OF_SYNC) */
+		count = drbd_bm_set_bits(device, bmi, sbnr, ebnr);
 
-		if (c) {
-			spin_lock_irqsave(&device->al_lock, flags);
-			cleared += update_rs_extent(peer_device, BM_BIT_TO_EXT(sbnr), c, mode);
-			spin_unlock_irqrestore(&device->al_lock, flags);
-			count += c;
-		}
-		sbnr = tbnr + 1;
-	}
 	if (count) {
+		queue_update_peers(peer_device, sbnr, ebnr);
+
 		if (mode == SET_IN_SYNC) {
 			bool is_sync_target, rs_is_done;
 			unsigned long still_to_go;
@@ -1305,260 +1041,4 @@ out:
 	put_ldev(device);
 
 	return set;
-}
-
-/**
- * drbd_try_rs_begin_io() - Gets an extent in the resync LRU cache, does not sleep
- *
- * Gets an extent in the resync LRU cache, sets it to BME_NO_WRITES, then
- * tries to set it to BME_LOCKED. Returns 0 upon success, and -EAGAIN
- * if there is still application IO going on in this area.
- */
-int drbd_try_rs_begin_io(struct drbd_peer_device *peer_device, sector_t sector, bool throttle)
-{
-	struct drbd_device *device = peer_device->device;
-	unsigned int enr = BM_SECT_TO_EXT(sector);
-	const unsigned int al_enr = enr*AL_EXT_PER_BM_SECT;
-	struct lc_element *e;
-	struct bm_extent *bm_ext;
-	int i;
-
-	if (throttle)
-		throttle = drbd_rs_should_slow_down(peer_device, sector, true);
-
-	/* If we need to throttle, a half-locked (only marked BME_NO_WRITES,
-	 * not yet BME_LOCKED) extent needs to be kicked out explicitly if we
-	 * need to throttle. There is at most one such half-locked extent,
-	 * which is remembered in resync_wenr. */
-
-	if (throttle && peer_device->resync_wenr != enr)
-		return -EAGAIN;
-
-	spin_lock_irq(&device->al_lock);
-	if (peer_device->resync_wenr != LC_FREE && peer_device->resync_wenr != enr) {
-		/* in case you have very heavy scattered io, it may
-		 * stall the syncer undefined if we give up the ref count
-		 * when we try again and requeue.
-		 *
-		 * if we don't give up the refcount, but the next time
-		 * we are scheduled this extent has been "synced" by new
-		 * application writes, we'd miss the lc_put on the
-		 * extent we keep the refcount on.
-		 * so we remembered which extent we had to try again, and
-		 * if the next requested one is something else, we do
-		 * the lc_put here...
-		 * we also have to wake_up
-		 */
-
-		e = lc_find(peer_device->resync_lru, peer_device->resync_wenr);
-		bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
-		if (bm_ext) {
-			D_ASSERT(device, !test_bit(BME_LOCKED, &bm_ext->flags));
-			D_ASSERT(device, test_bit(BME_NO_WRITES, &bm_ext->flags));
-			clear_bit(BME_NO_WRITES, &bm_ext->flags);
-			peer_device->resync_wenr = LC_FREE;
-			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
-				bm_ext->flags = 0;
-				peer_device->resync_locked--;
-			}
-			wake_up(&device->al_wait);
-		} else {
-			drbd_alert(device, "LOGIC BUG\n");
-		}
-	}
-	/* TRY. */
-	e = lc_try_get(peer_device->resync_lru, enr);
-	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
-	if (bm_ext) {
-		if (test_bit(BME_LOCKED, &bm_ext->flags))
-			goto proceed;
-		if (!test_and_set_bit(BME_NO_WRITES, &bm_ext->flags)) {
-			peer_device->resync_locked++;
-		} else {
-			/* we did set the BME_NO_WRITES,
-			 * but then could not set BME_LOCKED,
-			 * so we tried again.
-			 * drop the extra reference. */
-			bm_ext->lce.refcnt--;
-			D_ASSERT(device, bm_ext->lce.refcnt > 0);
-		}
-		goto check_al;
-	} else {
-		/* do we rather want to try later? */
-		if (peer_device->resync_locked > peer_device->resync_lru->nr_elements-3)
-			goto try_again;
-		/* Do or do not. There is no try. -- Yoda */
-		e = lc_get(peer_device->resync_lru, enr);
-		bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
-		if (!bm_ext) {
-			const unsigned long rs_flags = peer_device->resync_lru->flags;
-			if (rs_flags & LC_STARVING)
-				drbd_warn(device, "Have to wait for element"
-				     " (resync LRU too small?)\n");
-			BUG_ON(rs_flags & LC_LOCKED);
-			goto try_again;
-		}
-		if (bm_ext->lce.lc_number != enr) {
-			bm_ext->rs_left = bm_e_weight(peer_device, enr);
-			bm_ext->rs_failed = 0;
-			lc_committed(peer_device->resync_lru);
-			wake_up(&device->al_wait);
-			D_ASSERT(device, test_bit(BME_LOCKED, &bm_ext->flags) == 0);
-		}
-		set_bit(BME_NO_WRITES, &bm_ext->flags);
-		D_ASSERT(device, bm_ext->lce.refcnt == 1);
-		peer_device->resync_locked++;
-		goto check_al;
-	}
-check_al:
-	for (i = 0; i < AL_EXT_PER_BM_SECT; i++) {
-		if (lc_is_used(device->act_log, al_enr+i))
-			goto try_again;
-	}
-	set_bit(BME_LOCKED, &bm_ext->flags);
-proceed:
-	peer_device->resync_wenr = LC_FREE;
-	spin_unlock_irq(&device->al_lock);
-	return 0;
-
-try_again:
-	if (bm_ext) {
-		if (throttle ||
-		    (test_bit(BME_PRIORITY, &bm_ext->flags) && bm_ext->lce.refcnt == 1)) {
-			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
-			D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
-			clear_bit(BME_NO_WRITES, &bm_ext->flags);
-			clear_bit(BME_PRIORITY, &bm_ext->flags);
-			peer_device->resync_wenr = LC_FREE;
-			if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
-				bm_ext->flags = 0;
-				peer_device->resync_locked--;
-			}
-			wake_up(&device->al_wait);
-		} else
-			peer_device->resync_wenr = enr;
-	}
-	spin_unlock_irq(&device->al_lock);
-	return -EAGAIN;
-}
-
-void drbd_rs_complete_io(struct drbd_peer_device *peer_device, sector_t sector)
-{
-	struct drbd_device *device = peer_device->device;
-	unsigned int enr = BM_SECT_TO_EXT(sector);
-	struct lc_element *e;
-	struct bm_extent *bm_ext;
-	unsigned long flags;
-
-	spin_lock_irqsave(&device->al_lock, flags);
-	e = lc_find(peer_device->resync_lru, enr);
-	bm_ext = e ? lc_entry(e, struct bm_extent, lce) : NULL;
-	if (!bm_ext) {
-		spin_unlock_irqrestore(&device->al_lock, flags);
-		if (drbd_ratelimit())
-			drbd_err(device, "drbd_rs_complete_io() called, but extent not found\n");
-		return;
-	}
-
-	if (bm_ext->lce.refcnt == 0) {
-		spin_unlock_irqrestore(&device->al_lock, flags);
-		drbd_err(device, "drbd_rs_complete_io(,%llu [=%u]) called, "
-		    "but refcnt is 0!?\n",
-		    (unsigned long long)sector, enr);
-		return;
-	}
-
-	if (lc_put(peer_device->resync_lru, &bm_ext->lce) == 0) {
-		bm_ext->flags = 0; /* clear BME_LOCKED, BME_NO_WRITES and BME_PRIORITY */
-		peer_device->resync_locked--;
-		wake_up(&device->al_wait);
-	}
-
-	spin_unlock_irqrestore(&device->al_lock, flags);
-}
-
-/**
- * drbd_rs_cancel_all() - Removes all extents from the resync LRU (even BME_LOCKED)
- */
-void drbd_rs_cancel_all(struct drbd_peer_device *peer_device)
-{
-	struct drbd_device *device = peer_device->device;
-	spin_lock_irq(&device->al_lock);
-
-	if (get_ldev_if_state(device, D_DETACHING)) { /* Makes sure ->resync is there. */
-		lc_reset(peer_device->resync_lru);
-		put_ldev(device);
-	}
-	peer_device->resync_locked = 0;
-	peer_device->resync_wenr = LC_FREE;
-	spin_unlock_irq(&device->al_lock);
-	wake_up(&device->al_wait);
-}
-
-/**
- * drbd_rs_del_all() - Gracefully remove all extents from the resync LRU
- *
- * Returns 0 upon success, -EAGAIN if at least one reference count was
- * not zero.
- */
-int drbd_rs_del_all(struct drbd_peer_device *peer_device)
-{
-	struct drbd_device *device = peer_device->device;
-	struct lc_element *e;
-	struct bm_extent *bm_ext;
-	int i;
-
-	spin_lock_irq(&device->al_lock);
-
-	if (get_ldev_if_state(device, D_DETACHING)) {
-		/* ok, ->resync is there. */
-		for (i = 0; i < peer_device->resync_lru->nr_elements; i++) {
-			e = lc_element_by_index(peer_device->resync_lru, i);
-			bm_ext = lc_entry(e, struct bm_extent, lce);
-			if (bm_ext->lce.lc_number == LC_FREE)
-				continue;
-			if (bm_ext->lce.lc_number == peer_device->resync_wenr) {
-				drbd_info(peer_device, "dropping %u in drbd_rs_del_all, apparently"
-				     " got 'synced' by application io\n",
-				     peer_device->resync_wenr);
-				D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
-				D_ASSERT(peer_device, test_bit(BME_NO_WRITES, &bm_ext->flags));
-				clear_bit(BME_NO_WRITES, &bm_ext->flags);
-				peer_device->resync_wenr = LC_FREE;
-				lc_put(peer_device->resync_lru, &bm_ext->lce);
-			}
-			if (bm_ext->lce.refcnt != 0) {
-				drbd_info(peer_device, "Retrying drbd_rs_del_all() later. "
-				     "refcnt=%d\n", bm_ext->lce.refcnt);
-				put_ldev(device);
-				spin_unlock_irq(&device->al_lock);
-				return -EAGAIN;
-			}
-			D_ASSERT(peer_device, !test_bit(BME_LOCKED, &bm_ext->flags));
-			D_ASSERT(peer_device, !test_bit(BME_NO_WRITES, &bm_ext->flags));
-			lc_del(peer_device->resync_lru, &bm_ext->lce);
-		}
-		D_ASSERT(peer_device, peer_device->resync_lru->used == 0);
-		put_ldev(device);
-	}
-	spin_unlock_irq(&device->al_lock);
-	wake_up(&device->al_wait);
-
-	return 0;
-}
-
-bool drbd_sector_has_priority(struct drbd_peer_device *peer_device, sector_t sector)
-{
-	struct drbd_device *device = peer_device->device;
-	struct lc_element *tmp;
-	bool has_priority = false;
-
-	spin_lock_irq(&device->al_lock);
-	tmp = lc_find(peer_device->resync_lru, BM_SECT_TO_EXT(sector));
-	if (tmp) {
-		struct bm_extent *bm_ext = lc_entry(tmp, struct bm_extent, lce);
-		has_priority = test_bit(BME_PRIORITY, &bm_ext->flags);
-	}
-	spin_unlock_irq(&device->al_lock);
-	return has_priority;
 }

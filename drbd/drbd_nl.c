@@ -3299,14 +3299,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	for_each_peer_device(peer_device, device) {
-		err = drbd_attach_peer_device(peer_device);
-		if (err) {
-			retcode = ERR_NOMEM;
-			goto force_diskless_dec;
-		}
-	}
-
 	mutex_unlock(&resource->conf_update);
 	have_conf_update = false;
 
@@ -4210,14 +4202,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	}
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		if (get_ldev_if_state(peer_device->device, D_NEGOTIATING)) {
-			err = drbd_attach_peer_device(peer_device);
-			put_ldev(peer_device->device);
-			if (err) {
-				retcode = ERR_NOMEM;
-				goto unlock_fail_free_connection;
-			}
-		}
 		peer_device->send_cnt = 0;
 		peer_device->recv_cnt = 0;
 	}

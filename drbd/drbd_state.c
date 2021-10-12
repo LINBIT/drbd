@@ -3301,9 +3301,6 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 	if (side == L_SYNC_TARGET)
 		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
 
-	/* Forget potentially stale cached per resync extent bit-counts. */
-	drbd_rs_cancel_all(peer_device);
-
 	peer_device->use_csums = side == L_SYNC_TARGET ?
 		use_checksum_based_resync(connection, device) : false;
 
@@ -3456,7 +3453,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				peer_device->rs_total = 0;
 				peer_device->rs_failed = 0;
 				atomic_set(&peer_device->rs_pending_cnt, 0);
-				drbd_rs_cancel_all(peer_device);
 
 				drbd_send_uuids(peer_device, 0, 0);
 				drbd_send_state(peer_device, new_state);
@@ -3719,14 +3715,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					tl_abort_disk_io(device);
 
 				send_new_state_to_all_peer_devices(state_change, n_device);
-
-				for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
-					struct drbd_peer_device_state_change *peer_device_state_change =
-						&state_change->peer_devices[
-							n_device * state_change->n_connections + n_connection];
-					struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
-					drbd_rs_cancel_all(peer_device);
-				}
 
 				/* In case we want to get something to stable storage still,
 				 * this may be the last chance.

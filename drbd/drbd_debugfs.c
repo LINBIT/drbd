@@ -1376,33 +1376,6 @@ out:
 	return -ESTALE;
 }
 
-static void resync_dump_detail(struct seq_file *m, struct lc_element *e)
-{
-       struct bm_extent *bme = lc_entry(e, struct bm_extent, lce);
-
-       seq_printf(m, "%5d %s %s %s", bme->rs_left,
-		  test_bit(BME_NO_WRITES, &bme->flags) ? "NO_WRITES" : "---------",
-		  test_bit(BME_LOCKED, &bme->flags) ? "LOCKED" : "------",
-		  test_bit(BME_PRIORITY, &bme->flags) ? "PRIORITY" : "--------"
-		  );
-}
-
-static int peer_device_resync_extents_show(struct seq_file *m, void *ignored)
-{
-	struct drbd_peer_device *peer_device = m->private;
-	struct drbd_device *device = peer_device->device;
-
-	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
-
-	if (get_ldev_if_state(device, D_FAILED)) {
-		lc_seq_printf_stats(m, peer_device->resync_lru);
-		lc_seq_dump_details(m, peer_device->resync_lru, "rs_left flags", resync_dump_detail);
-		put_ldev(device);
-	}
-	return 0;
-}
-
 static void seq_printf_with_thousands_grouping(struct seq_file *seq, long v)
 {
 	/* v is in kB/sec. We don't expect TiByte/sec yet. */
@@ -1653,7 +1626,6 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 		drbd_syncer_progress(peer_device, m, state.conn);
 
 	if (get_ldev_if_state(device, D_FAILED)) {
-		lc_seq_printf_stats(m, peer_device->resync_lru);
 		lc_seq_printf_stats(m, device->act_log);
 		put_ldev(device);
 	}
@@ -1692,7 +1664,6 @@ static const struct file_operations peer_device_ ## name ## _fops = {		\
 	.release	= peer_device_ ## name ## _release,			\
 };
 
-drbd_debugfs_peer_device_attr(resync_extents)
 drbd_debugfs_peer_device_attr(proc_drbd)
 
 void drbd_debugfs_peer_device_add(struct drbd_peer_device *peer_device)
@@ -1706,14 +1677,12 @@ void drbd_debugfs_peer_device_add(struct drbd_peer_device *peer_device)
 	peer_device->debugfs_peer_dev = dentry;
 
 	/* debugfs create file */
-	peer_dev_dcf(resync_extents);
 	peer_dev_dcf(proc_drbd);
 }
 
 void drbd_debugfs_peer_device_cleanup(struct drbd_peer_device *peer_device)
 {
 	drbd_debugfs_remove(&peer_device->debugfs_peer_dev_proc_drbd);
-	drbd_debugfs_remove(&peer_device->debugfs_peer_dev_resync_extents);
 	drbd_debugfs_remove(&peer_device->debugfs_peer_dev);
 }
 

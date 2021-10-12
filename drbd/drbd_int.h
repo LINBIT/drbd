@@ -1195,12 +1195,6 @@ struct drbd_peer_device {
 	struct timer_list resync_timer;
 	struct drbd_work propagate_uuids_work;
 
-	/* Used to track operations of resync... */
-	struct lru_cache *resync_lru;
-	/* Number of locked elements in resync LRU */
-	unsigned int resync_locked;
-	/* resync extent number waiting for application requests */
-	unsigned int resync_wenr;
 	enum drbd_disk_state resync_finished_pdsk; /* Finished while starting resync */
 	int resync_again; /* decided to resync again while resync running */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
@@ -1564,7 +1558,6 @@ extern int drbd_send_protocol(struct drbd_connection *connection);
 extern u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *authoritative_mask);
 extern u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flags);
 extern int drbd_send_uuids(struct drbd_peer_device *, u64 uuid_flags, u64 weak_nodes);
-extern int drbd_attach_peer_device(struct drbd_peer_device *);
 extern int drbd_send_sizes(struct drbd_peer_device *, uint64_t u_size_diskless, enum dds_flags flags);
 extern int conn_send_state(struct drbd_connection *, union drbd_state);
 extern int drbd_send_state(struct drbd_peer_device *, union drbd_state);
@@ -1700,11 +1693,6 @@ extern sector_t drbd_get_max_capacity(
  * We also still have a hardcoded 4k per bit relation. */
 #define BM_BLOCK_SHIFT	12			 /* 4k per bit */
 #define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SHIFT)
-/* mostly arbitrarily set the represented size of one bitmap extent,
- * aka resync extent, to 128 MiB (which is also 4096 Byte worth of bitmap
- * at 4k per bit resolution) */
-#define BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
-#define BM_EXT_SIZE	 (1<<BM_EXT_SHIFT)
 
 #if (BM_BLOCK_SHIFT != 12)
 #error "HAVE YOU FIXED drbdmeta AS WELL??"
@@ -1717,24 +1705,6 @@ extern sector_t drbd_get_max_capacity(
 
 /* bit to represented kilo byte conversion */
 #define Bit2KB(bits) ((bits)<<(BM_BLOCK_SHIFT-10))
-
-/* in which _bitmap_ extent (resp. sector) the bit for a certain
- * _storage_ sector is located in */
-#define BM_SECT_TO_EXT(x)   ((x)>>(BM_EXT_SHIFT-9))
-#define BM_BIT_TO_EXT(x)    ((x) >> (BM_EXT_SHIFT - BM_BLOCK_SHIFT))
-
-/* first storage sector a bitmap extent corresponds to */
-#define BM_EXT_TO_SECT(x)   ((sector_t)(x) << (BM_EXT_SHIFT-9))
-/* how much _storage_ sectors we have per bitmap extent */
-#define BM_SECT_PER_EXT     BM_EXT_TO_SECT(1)
-/* how many bits are covered by one bitmap extent (resync extent) */
-#define BM_BITS_PER_EXT     (1UL << (BM_EXT_SHIFT - BM_BLOCK_SHIFT))
-
-#define BM_BLOCKS_PER_BM_EXT_MASK  (BM_BITS_PER_EXT - 1)
-
-
-/* in one sector of the bitmap, we have this many activity_log extents. */
-#define AL_EXT_PER_BM_SECT  (1 << (BM_EXT_SHIFT - AL_EXTENT_SHIFT))
 
 /* Indexed external meta data has a fixed on-disk size of 128MiB, of which
  * 4KiB are our "superblock", and 32KiB are the fixed size activity
@@ -1837,7 +1807,6 @@ extern void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_inde
 
 extern struct kmem_cache *drbd_request_cache;
 extern struct kmem_cache *drbd_ee_cache;	/* peer requests */
-extern struct kmem_cache *drbd_bm_ext_cache;	/* bitmap extents */
 extern struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 extern mempool_t drbd_request_mempool;
 extern mempool_t drbd_ee_mempool;
@@ -2061,8 +2030,6 @@ extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
-extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
-				     bool throttle_if_app_is_waiting);
 extern int drbd_submit_peer_request(struct drbd_peer_request *);
 extern void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
@@ -2128,12 +2095,6 @@ extern void drbd_al_begin_io_commit(struct drbd_device *device);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
 extern int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i);
 extern bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
-extern void drbd_rs_complete_io(struct drbd_peer_device *, sector_t);
-extern int drbd_rs_begin_io(struct drbd_peer_device *, sector_t);
-extern int drbd_try_rs_begin_io(struct drbd_peer_device *, sector_t, bool);
-extern void drbd_rs_cancel_all(struct drbd_peer_device *);
-extern int drbd_rs_del_all(struct drbd_peer_device *);
-extern void drbd_rs_failed_io(struct drbd_peer_device *, sector_t, int);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
 extern bool drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern bool drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
@@ -2147,7 +2108,6 @@ extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sec
 #define drbd_rs_failed_io(peer_device, sector, size) \
 	__drbd_change_sync(peer_device, sector, size, RECORD_RS_FAILED)
 extern void drbd_al_shrink(struct drbd_device *device);
-extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_al_initialize(struct drbd_device *, void *);
 
 /* drbd_nl.c */
@@ -2654,19 +2614,6 @@ static inline int drbd_queue_order_type(struct drbd_device *device)
 #endif
 	return QUEUE_ORDERED_NONE;
 }
-
-/* resync bitmap */
-/* 128MB sized 'bitmap extent' to track syncer usage */
-struct bm_extent {
-	int rs_left; /* number of bits set (out of sync) in this extent. */
-	int rs_failed; /* number of failed resync requests in this extent. */
-	unsigned long flags;
-	struct lc_element lce;
-};
-
-#define BME_NO_WRITES  0  /* bm_extent.flags: no more requests on this one! */
-#define BME_LOCKED     1  /* bm_extent.flags: syncer active on this one. */
-#define BME_PRIORITY   2  /* finish resync IO on this extent ASAP! App IO waiting! */
 
 static inline struct drbd_connection *first_connection(struct drbd_resource *resource)
 {

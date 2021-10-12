@@ -2051,30 +2051,27 @@ void drbd_do_submit_conflict(struct work_struct *ws)
 
 /* helpers for do_submit */
 
-struct incoming_pending_later {
+struct incoming_pending {
 	/* from drbd_submit_bio() or receive_Data() */
 	struct list_head incoming;
 	/* for non-blocking fill-up # of updates in the transaction */
 	struct list_head more_incoming;
 	/* to be submitted after next AL-transaction commit */
 	struct list_head pending;
-	/* currently blocked e.g. by concurrent resync requests */
-	struct list_head later;
 	/* need cleanup */
 	struct list_head cleanup;
 };
 
 struct waiting_for_act_log {
-	struct incoming_pending_later requests;
-	struct incoming_pending_later peer_requests;
+	struct incoming_pending requests;
+	struct incoming_pending peer_requests;
 };
 
-static void ipb_init(struct incoming_pending_later *ipb)
+static void ipb_init(struct incoming_pending *ipb)
 {
 	INIT_LIST_HEAD(&ipb->incoming);
 	INIT_LIST_HEAD(&ipb->more_incoming);
 	INIT_LIST_HEAD(&ipb->pending);
-	INIT_LIST_HEAD(&ipb->later);
 	INIT_LIST_HEAD(&ipb->cleanup);
 }
 
@@ -2129,7 +2126,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 		const int rw = bio_data_dir(req->master_bio);
 
 		if (rw == WRITE && req->private_bio && req->i.size
-		&& !test_bit(AL_SUSPENDED, &device->flags)) {
+				&& !test_bit(AL_SUSPENDED, &device->flags)) {
 			if (!drbd_al_begin_io_fastpath(device, &req->i))
 				continue;
 
@@ -2163,7 +2160,6 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 	struct drbd_peer_request *peer_req;
 	struct drbd_request *req;
 	bool made_progress = false;
-	bool wake = false;
 	int err;
 
 	spin_lock_irq(&device->al_lock);
@@ -2179,35 +2175,27 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 			continue;
 		}
 		err = drbd_al_begin_io_nonblock(device, &peer_req->i);
-		if (err == -ENOBUFS)
+		if (err) {
+			if (err != -ENOBUFS && drbd_ratelimit())
+				drbd_err(device, "Unexpected error %d from drbd_al_begin_io_nonblock\n", err);
 			break;
-		if (err == -EBUSY)
-			wake = true;
-		if (err)
-			list_move_tail(&peer_req->submit_list, &wfa->peer_requests.later);
-		else {
-			list_move_tail(&peer_req->submit_list, &wfa->peer_requests.pending);
-			made_progress = true;
 		}
+		list_move_tail(&peer_req->submit_list, &wfa->peer_requests.pending);
+		made_progress = true;
 	}
 	while ((req = wfa_next_request(wfa))) {
 		ktime_aggregate_delta(device, req->start_kt, before_al_begin_io_kt);
 		err = drbd_al_begin_io_nonblock(device, &req->i);
-		if (err == -ENOBUFS)
+		if (err) {
+			if (err != -ENOBUFS && drbd_ratelimit())
+				drbd_err(device, "Unexpected error %d from drbd_al_begin_io_nonblock\n", err);
 			break;
-		if (err == -EBUSY)
-			wake = true;
-		if (err)
-			list_move_tail(&req->list, &wfa->requests.later);
-		else {
-			list_move_tail(&req->list, &wfa->requests.pending);
-			made_progress = true;
 		}
+		list_move_tail(&req->list, &wfa->requests.pending);
+		made_progress = true;
 	}
  out:
 	spin_unlock_irq(&device->al_lock);
-	if (wake)
-		wake_up(&device->al_wait);
 	return made_progress;
 }
 
@@ -2261,8 +2249,6 @@ void do_submit(struct work_struct *ws)
 	for (;;) {
 		DEFINE_WAIT(wait);
 
-		/* move used-to-be-postponed back to front of incoming */
-		wfa_splice_init(&wfa, later, incoming);
 		submit_fast_path(device, &wfa);
 		if (wfa_lists_empty(&wfa, incoming))
 			break;
@@ -2275,27 +2261,24 @@ void do_submit(struct work_struct *ws)
 			 *
 			 * We need to sleep if we cannot activate enough
 			 * activity log extents for even one single request.
-			 * That would mean that all (peer-)requests in our incoming lists
-			 * either target "cold" activity log extent, all
-			 * activity log extent slots are have on-going
+			 * That would mean that all (peer-)requests in our
+			 * incoming lists target "cold" activity log extents,
+			 * all activity log extent slots are have on-going
 			 * in-flight IO (are "hot"), and no idle or free slot
-			 * is available, or the target regions are busy doing resync,
-			 * and lock out application requests for that reason.
+			 * is available.
 			 *
 			 * prepare_to_wait() can internally cause a wake_up()
 			 * as well, though, so this may appear to busy-loop
 			 * a couple times, but should settle down quickly.
 			 *
-			 * When resync and/or application requests make
-			 * sufficient progress, some refcount on some extent
-			 * will eventually drop to zero, we will be woken up,
-			 * and can try to move that now idle extent to "cold",
-			 * and recycle it's slot for one of the extents we'd
-			 * like to become hot.
+			 * When application requests make sufficient progress,
+			 * some refcount on some extent will eventually drop to
+			 * zero, we will be woken up, and can try to move that
+			 * now idle extent to "cold", and recycle its slot for
+			 * one of the extents we'd like to become hot.
 			 */
 			prepare_to_wait(&device->al_wait, &wait, TASK_UNINTERRUPTIBLE);
 
-			wfa_splice_init(&wfa, later, incoming);
 			made_progress = prepare_al_transaction_nonblock(device, &wfa);
 			if (made_progress)
 				break;
@@ -2316,9 +2299,8 @@ void do_submit(struct work_struct *ws)
 			if (!wfa_lists_empty(&wfa, incoming))
 				continue;
 
-			/* Nothing moved to pending, but nothing left
-			 * on incoming: all moved to "later"!
-			 * Grab new and iterate. */
+			/* Nothing moved to pending, but nothing left on
+			 * incoming. Grab new and iterate. */
 			grab_new_incoming_requests(device, &wfa, false);
 		}
 		finish_wait(&device->al_wait, &wait);
@@ -2327,9 +2309,8 @@ void do_submit(struct work_struct *ws)
 		 * had been processed, skip ahead to commit, and iterate
 		 * without splicing in more incoming requests from upper layers.
 		 *
-		 * Else, if all incoming have been processed,
-		 * they have become either "pending" (to be submitted after
-		 * next transaction commit) or "busy" (blocked by resync).
+		 * Else, if all incoming have been processed, they have become
+		 * "pending" (to be submitted after next transaction commit).
 		 *
 		 * Maybe more was queued, while we prepared the transaction?
 		 * Try to stuff those into this transaction as well.

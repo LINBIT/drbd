@@ -134,10 +134,6 @@ write intent log information, three of which are mentioned here.
  * an element is said to be "in the active set",
  * if either on "in_use" or "lru", i.e. lc_number != LC_FREE.
  *
- * DRBD currently (May 2009) only uses 61 elements on the resync lru_cache
- * (total memory usage 2 pages), and up to 3833 elements on the act_log
- * lru_cache, totalling ~215 kB for 64bit architecture, ~53 pages.
- *
  * We usually do not actually free these objects again, but only "recycle"
  * them, as the change "index: -old_label, +LC_FREE" would need a transaction
  * as well.  Which also means that using a kmem_cache to allocate the objects

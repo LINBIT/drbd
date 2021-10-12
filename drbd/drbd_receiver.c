@@ -3054,17 +3054,6 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
  */
-bool drbd_rs_should_slow_down(struct drbd_peer_device *peer_device, sector_t sector,
-			      bool throttle_if_app_is_waiting)
-{
-	bool throttle = drbd_rs_c_min_rate_throttle(peer_device);
-
-	if (!throttle || throttle_if_app_is_waiting)
-		return throttle;
-
-	return !drbd_sector_has_priority(peer_device, sector);
-}
-
 bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
@@ -3264,7 +3253,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	switch (pi->cmd) {
 	case P_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_data_req;
-		/* application IO, don't drbd_rs_begin_io */
 		peer_req->i.type = INTERVAL_PEER_READ;
 		goto submit;
 
@@ -3313,29 +3301,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		BUG();
 	}
 
-	/* Throttle, drbd_rs_begin_io and submit should become asynchronous
-	 * wrt the receiver, but it is not as straightforward as it may seem.
-	 * Various places in the resync start and stop logic assume resync
-	 * requests are processed in order, requeuing this on the worker thread
-	 * introduces a bunch of new code for synchronization between threads.
-	 *
-	 * Unlimited throttling before drbd_rs_begin_io may stall the resync
-	 * "forever", throttling after drbd_rs_begin_io will lock that extent
-	 * for application writes for the same time.  For now, just throttle
-	 * here, where the rest of the code expects the receiver to sleep for
-	 * a while, anyways.
-	 */
-
-	/* Throttle before drbd_rs_begin_io, as that locks out application IO;
-	 * this defers syncer requests for some time, before letting at least
-	 * on request through.  The resync controller on the receiving side
-	 * will adapt to the incoming rate accordingly.
-	 *
-	 * We cannot throttle here if remote is Primary/SyncTarget:
-	 * we would also throttle its application reads.
-	 * In that case, throttling is done on the SyncTarget only.
-	 */
-
 	/* Even though this may be a resync request, we do add to "read_ee";
 	 * "sync_ee" is only used for resync WRITEs.
 	 * Add to list early, so debugfs can find this request
@@ -3344,23 +3309,10 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	list_add_tail(&peer_req->w.list, &connection->read_ee);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	update_receiver_timing_details(connection, drbd_rs_should_slow_down);
+	update_receiver_timing_details(connection, drbd_rs_c_min_rate_throttle);
 	if (connection->peer_role[NOW] != R_PRIMARY &&
-	    drbd_rs_should_slow_down(peer_device, sector, false))
+	    drbd_rs_c_min_rate_throttle(peer_device))
 		schedule_timeout_uninterruptible(HZ/10);
-
-	/* We may not sleep here in order to avoid deadlocks.
-	   Instruct the SyncSource to retry */
-	err = drbd_try_rs_begin_io(peer_device, sector, false);
-	if (err) {
-		if (pi->cmd == P_OV_REQUEST) {
-			drbd_verify_skipped_block(peer_device, sector, size);
-			verify_progress(peer_device, sector, size);
-		}
-		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
-		/* If err is set, we will drop the connection... */
-		goto fail3;
-	}
 
 	atomic_add(size >> 9, &device->rs_sect_ev);
 
@@ -3374,7 +3326,6 @@ submit:
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	err = -EIO;
 
-fail3:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
@@ -5503,7 +5454,6 @@ abort:
 				 peer_device->repl_state[NOW] <= L_ESTABLISHED  ||
 				 atomic_read(&peer_device->rs_pending_cnt) == 0);
 
-	drbd_rs_del_all(peer_device);
 	peer_device->rs_total  = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
@@ -7495,8 +7445,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 			put_ldev(device);
 		}
 
-		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(),
-		   as well as drbd_rs_complete_io() */
+		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
 	} else {
 		if (drbd_ratelimit())
 			drbd_err(device, "Cannot discard on local disk.\n");
@@ -7622,12 +7571,7 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 	 *  * On L_SYNC_TARGET we do not have any data structures describing
 	 *    the pending RSDataRequest's we have sent.
 	 *  * On L_SYNC_SOURCE there is no data structure that tracks
-	 *    the P_RS_DATA_REPLY blocks that we sent to the SyncTarget.
-	 *  And no, it is not the sum of the reference counts in the
-	 *  resync_LRU. The resync_LRU tracks the whole operation including
-	 *  the disk-IO, while the rs_pending_cnt only tracks the blocks
-	 *  on the fly. */
-	drbd_rs_cancel_all(peer_device);
+	 *    the P_RS_DATA_REPLY blocks that we sent to the SyncTarget. */
 	peer_device->rs_total = 0;
 	peer_device->rs_failed = 0;
 	atomic_set(&peer_device->rs_pending_cnt, 0);
@@ -7676,10 +7620,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(HAVE_SIZES, &peer_device->flags);
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
-
-	/* need to do it again, drbd_finish_peer_reqs() may have populated it
-	 * again via drbd_try_clear_on_disk_bm(). */
-	drbd_rs_cancel_all(peer_device);
 
 	if (!drbd_suspended(device)) {
 		struct drbd_resource *resource = device->resource;
@@ -8385,7 +8325,6 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (get_ldev(device)) {
-		drbd_rs_complete_io(peer_device, sector);
 		drbd_set_in_sync(peer_device, sector, blksize);
 		/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
 		peer_device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
@@ -8539,7 +8478,6 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	dec_rs_pending(peer_device);
 
 	if (get_ldev_if_state(device, D_DETACHING)) {
-		drbd_rs_complete_io(peer_device, sector);
 		switch (pi->cmd) {
 		case P_NEG_RS_DREPLY:
 			drbd_rs_failed_io(peer_device, sector, size);
@@ -8614,7 +8552,6 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	if (!get_ldev(device))
 		return 0;
 
-	drbd_rs_complete_io(peer_device, sector);
 	dec_rs_pending(peer_device);
 
 	verify_progress(peer_device, sector, size);
