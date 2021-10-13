@@ -92,15 +92,18 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __rele
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
+	bool io_error;
 
 	spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
 	list_del(&peer_req->w.list);
 	if (list_empty(&connection->read_ee))
 		wake_up(&connection->ee_wait);
-	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
-		__drbd_chk_io_error(device, DRBD_READ_ERROR);
+	io_error = test_bit(__EE_WAS_ERROR, &peer_req->flags);
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
+
+	if (io_error)
+		drbd_chk_io_error(device, 1, DRBD_READ_ERROR);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
 	put_ldev(device);
@@ -154,6 +157,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
                 if (!__test_and_set_bit(__EE_SEND_WRITE_ACK, &peer_req->flags))
                         inc_unacked(peer_device);
                 drbd_set_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
+		drbd_chk_io_error(device, 1, DRBD_WRITE_ERROR);
         }
 
 	spin_lock_irqsave(&connection->peer_reqs_lock, flags);
@@ -173,11 +177,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		do_wake = list_empty(&connection->sync_ee);
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
-
-	/* FIXME do we want to detach for failed REQ_OP_DISCARD?
-	 * ((peer_req->flags & (EE_WAS_ERROR|EE_TRIM)) == EE_WAS_ERROR) */
-	if (peer_req->flags & EE_WAS_ERROR)
-		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
 
 	if (connection->cstate[NOW] == C_CONNECTED)
 		queue_work(connection->ack_sender, &connection->send_acks_work);
@@ -301,6 +300,11 @@ void drbd_request_endio(struct bio *bio)
 
 	bio_put(req->private_bio);
 	req->private_bio = ERR_PTR(blk_status_to_errno(status));
+
+	if (what == WRITE_COMPLETED_WITH_ERROR)
+		drbd_chk_io_error(device, 1, DRBD_WRITE_ERROR);
+	else if (what == READ_COMPLETED_WITH_ERROR)
+		drbd_chk_io_error(device, 1, DRBD_READ_ERROR);
 
 	/* not req_mod(), we need irqsave here! */
 	read_lock_irqsave(&device->resource->state_rwlock, flags);

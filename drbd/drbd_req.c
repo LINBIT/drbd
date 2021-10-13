@@ -935,14 +935,12 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case WRITE_COMPLETED_WITH_ERROR:
 		drbd_report_io_error(device, req);
-		__drbd_chk_io_error(device, DRBD_WRITE_ERROR);
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
 		break;
 
 	case READ_COMPLETED_WITH_ERROR:
 		drbd_set_all_out_of_sync(device, req->i.sector, req->i.size);
 		drbd_report_io_error(device, req);
-		__drbd_chk_io_error(device, DRBD_READ_ERROR);
 		fallthrough;
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
 		/* it is legal to fail read-ahead, no __drbd_chk_io_error in that case. */
@@ -2466,7 +2464,7 @@ void request_timer_fn(struct timer_list *t)
 	unsigned long et = 0;
 	unsigned long now = jiffies;
 	unsigned long next_trigger_time = now;
-	bool restart_timer = false;
+	bool restart_timer = false, io_error = false;
 
 	rcu_read_lock();
 	if (get_ldev(device)) { /* implicit state.disk >= D_INCONSISTENT */
@@ -2504,10 +2502,8 @@ void request_timer_fn(struct timer_list *t)
 		}
 
 		if (time_after(now, oldest_submit_jif + dt) &&
-		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
-			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-			__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
-		}
+		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt))
+			io_error = true;
 	}
 	for_each_connection(connection, device->resource) {
 		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
@@ -2577,6 +2573,10 @@ void request_timer_fn(struct timer_list *t)
 	}
 	read_unlock_irq(&device->resource->state_rwlock);
 
+	if (io_error) {
+		drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
+		drbd_chk_io_error(device, 1, DRBD_FORCE_DETACH);
+	}
 	if (restart_timer) {
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
 		mod_timer(&device->request_timer, next_trigger_time);
