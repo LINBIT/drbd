@@ -103,7 +103,7 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __rele
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
 	if (io_error)
-		drbd_chk_io_error(device, 1, DRBD_READ_ERROR);
+		drbd_handle_io_error(device, DRBD_READ_ERROR);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
 	put_ldev(device);
@@ -157,7 +157,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
                 if (!__test_and_set_bit(__EE_SEND_WRITE_ACK, &peer_req->flags))
                         inc_unacked(peer_device);
                 drbd_set_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
-		drbd_chk_io_error(device, 1, DRBD_WRITE_ERROR);
+		drbd_handle_io_error(device, DRBD_WRITE_ERROR);
         }
 
 	spin_lock_irqsave(&connection->peer_reqs_lock, flags);
@@ -301,10 +301,11 @@ void drbd_request_endio(struct bio *bio)
 	bio_put(req->private_bio);
 	req->private_bio = ERR_PTR(blk_status_to_errno(status));
 
+	/* it is legal to fail read-ahead, no drbd_handle_io_error for READ_AHEAD_COMPLETED_WITH_ERROR */
 	if (what == WRITE_COMPLETED_WITH_ERROR)
-		drbd_chk_io_error(device, 1, DRBD_WRITE_ERROR);
+		drbd_handle_io_error(device, DRBD_WRITE_ERROR);
 	else if (what == READ_COMPLETED_WITH_ERROR)
-		drbd_chk_io_error(device, 1, DRBD_READ_ERROR);
+		drbd_handle_io_error(device, DRBD_READ_ERROR);
 
 	/* not req_mod(), we need irqsave here! */
 	read_lock_irqsave(&device->resource->state_rwlock, flags);

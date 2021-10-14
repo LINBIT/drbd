@@ -74,7 +74,7 @@ void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_b
 			*done || test_bit(FORCE_DETACH, &device->flags), dt);
 	if (dt == 0) {
 		drbd_err(device, "meta-data IO operation timed out\n");
-		drbd_chk_io_error(device, 1, DRBD_FORCE_DETACH);
+		drbd_handle_io_error(device, DRBD_FORCE_DETACH);
 	}
 }
 
@@ -440,7 +440,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 			ktime_aggregate_delta(device, start_kt, al_mid_kt);
 			if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
 				err = -EIO;
-				drbd_chk_io_error(device, 1, DRBD_META_IO_ERROR);
+				drbd_handle_io_error(device, DRBD_META_IO_ERROR);
 			} else {
 				device->al_tr_number++;
 				device->al_writ_cnt++;

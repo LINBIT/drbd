@@ -3946,7 +3946,7 @@ int drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer
 	err = drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE);
 	if (err) {
 		drbd_err(device, "meta data update failed!\n");
-		drbd_chk_io_error(device, err, DRBD_META_IO_ERROR);
+		drbd_handle_io_error(device, DRBD_META_IO_ERROR);
 	}
 
 	return err;

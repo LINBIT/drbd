@@ -943,7 +943,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_report_io_error(device, req);
 		fallthrough;
 	case READ_AHEAD_COMPLETED_WITH_ERROR:
-		/* it is legal to fail read-ahead, no __drbd_chk_io_error in that case. */
 		mod_rq_state(req, m, peer_device, RQ_LOCAL_PENDING, RQ_LOCAL_COMPLETED);
 		break;
 
@@ -2575,10 +2574,79 @@ void request_timer_fn(struct timer_list *t)
 
 	if (io_error) {
 		drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
-		drbd_chk_io_error(device, 1, DRBD_FORCE_DETACH);
+		drbd_handle_io_error(device, DRBD_FORCE_DETACH);
 	}
 	if (restart_timer) {
 		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
 		mod_timer(&device->request_timer, next_trigger_time);
 	}
+}
+
+/**
+ * drbd_handle_io_error_: Handle the on_io_error setting, should be called from all io completion handlers
+ * @device: DRBD device.
+ * @df:     Detach flags indicating the kind of IO that failed.
+ * @where:  Calling function name.
+ */
+void drbd_handle_io_error_(struct drbd_device *device,
+	enum drbd_force_detach_flags df, const char *where)
+{
+	unsigned long flags;
+	enum drbd_io_error_p ep;
+
+	write_lock_irqsave(&device->resource->state_rwlock, flags);
+
+	rcu_read_lock();
+	ep = rcu_dereference(device->ldev->disk_conf)->on_io_error;
+	rcu_read_unlock();
+	switch (ep) {
+	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
+		if (df == DRBD_READ_ERROR ||  df == DRBD_WRITE_ERROR) {
+			if (drbd_ratelimit())
+				drbd_err(device, "Local IO failed in %s.\n", where);
+			if (device->disk_state[NOW] > D_INCONSISTENT) {
+				begin_state_change_locked(device->resource, CS_HARD);
+				__change_disk_state(device, D_INCONSISTENT);
+				end_state_change_locked(device->resource);
+			}
+			break;
+		}
+		fallthrough;	/* for DRBD_META_IO_ERROR or DRBD_FORCE_DETACH */
+	case EP_DETACH:
+	case EP_CALL_HELPER:
+		/* Remember whether we saw a READ or WRITE error.
+		 *
+		 * Recovery of the affected area for WRITE failure is covered
+		 * by the activity log.
+		 * READ errors may fall outside that area though. Certain READ
+		 * errors can be "healed" by writing good data to the affected
+		 * blocks, which triggers block re-allocation in lower layers.
+		 *
+		 * If we can not write the bitmap after a READ error,
+		 * we may need to trigger a full sync (see w_go_diskless()).
+		 *
+		 * Force-detach is not really an IO error, but rather a
+		 * desperate measure to try to deal with a completely
+		 * unresponsive lower level IO stack.
+		 * Still it should be treated as a WRITE error.
+		 *
+		 * Meta IO error is always WRITE error:
+		 * we read meta data only once during attach,
+		 * which will fail in case of errors.
+		 */
+		if (df == DRBD_READ_ERROR)
+			set_bit(WAS_READ_ERROR, &device->flags);
+		if (df == DRBD_FORCE_DETACH)
+			set_bit(FORCE_DETACH, &device->flags);
+		if (device->disk_state[NOW] > D_FAILED) {
+			begin_state_change_locked(device->resource, CS_HARD);
+			__change_disk_state(device, D_FAILED);
+			end_state_change_locked(device->resource);
+			drbd_err(device,
+				"Local IO failed in %s. Detaching...\n", where);
+		}
+		break;
+	}
+
+	write_unlock_irqrestore(&device->resource->state_rwlock, flags);
 }
