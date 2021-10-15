@@ -2789,10 +2789,10 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
 	unsigned int newest_peer_seq;
 
 	if (test_bit(RESOLVE_CONFLICTS, &peer_device->connection->transport.flags)) {
-		spin_lock(&peer_device->peer_seq_lock);
+		spin_lock_bh(&peer_device->peer_seq_lock);
 		newest_peer_seq = seq_max(peer_device->peer_seq, peer_seq);
 		peer_device->peer_seq = newest_peer_seq;
-		spin_unlock(&peer_device->peer_seq_lock);
+		spin_unlock_bh(&peer_device->peer_seq_lock);
 		/* wake up only if we actually changed peer_device->peer_seq */
 		if (peer_seq == newest_peer_seq)
 			wake_up(&peer_device->device->seq_wait);
@@ -2830,7 +2830,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	if (!test_bit(RESOLVE_CONFLICTS, &connection->transport.flags))
 		return 0;
 
-	spin_lock(&peer_device->peer_seq_lock);
+	spin_lock_bh(&peer_device->peer_seq_lock);
 	for (;;) {
 		if (!seq_greater(peer_seq - 1, peer_device->peer_seq)) {
 			peer_device->peer_seq = seq_max(peer_device->peer_seq, peer_seq);
@@ -2851,19 +2851,19 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 
 		/* Only need to wait if two_primaries is enabled */
 		prepare_to_wait(&peer_device->device->seq_wait, &wait, TASK_INTERRUPTIBLE);
-		spin_unlock(&peer_device->peer_seq_lock);
+		spin_unlock_bh(&peer_device->peer_seq_lock);
 		rcu_read_lock();
 		timeout = rcu_dereference(connection->transport.net_conf)->ping_timeo*HZ/10;
 		rcu_read_unlock();
 		timeout = schedule_timeout(timeout);
-		spin_lock(&peer_device->peer_seq_lock);
+		spin_lock_bh(&peer_device->peer_seq_lock);
 		if (!timeout) {
 			ret = -ETIMEDOUT;
 			drbd_err(peer_device, "Timed out waiting for missing ack packets; disconnecting\n");
 			break;
 		}
 	}
-	spin_unlock(&peer_device->peer_seq_lock);
+	spin_unlock_bh(&peer_device->peer_seq_lock);
 	finish_wait(&peer_device->device->seq_wait, &wait);
 	return ret;
 }
