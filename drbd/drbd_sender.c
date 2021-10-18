@@ -1033,7 +1033,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
-	mutex_lock(&peer_device->resync_next_bit_mutex);
+	spin_lock_bh(&peer_device->resync_next_bit_lock);
 	peer_device->last_resync_next_bit = peer_device->resync_next_bit;
 	for (i = 0; i < number; i++) {
 		int err;
@@ -1046,6 +1046,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			request_ok = false;
 			goto request_done;
 		}
+		spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
 		/* Stop generating RS requests, when half of the send buffer is filled */
 		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
@@ -1063,9 +1064,10 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		} else
 			send_buffer_ok = false;
 		mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
+		spin_lock_bh(&peer_device->resync_next_bit_lock);
+
 		if (!send_buffer_ok)
 			goto request_done;
-
 next_sector:
 		size = BM_BLOCK_SIZE;
 		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
@@ -1122,13 +1124,11 @@ next_sector:
 		/* set the offset to start the next drbd_bm_find_next from */
 		peer_device->resync_next_bit = bit + 1;
 
+		spin_unlock_bh(&peer_device->resync_next_bit_lock);
+
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
-
-		/* resync_next_bit may be modified while the request is being
-		 * sent. */
-		mutex_unlock(&peer_device->resync_next_bit_mutex);
 
 		if (peer_device->use_csums)
 			err = read_for_csum(peer_device, sector, size);
@@ -1140,7 +1140,7 @@ next_sector:
 				put_ldev(device);
 				return -EIO;
 			case -EAGAIN: /* allocation failed, or ldev busy */
-				mutex_lock(&peer_device->resync_next_bit_mutex);
+				spin_lock_bh(&peer_device->resync_next_bit_lock);
 				/* Set resync_next_bit back, but make sure that
 				 * it really moves backwards. If a negative
 				 * reply has been received in the meantime it
@@ -1155,7 +1155,7 @@ next_sector:
 				BUG();
 		}
 
-		mutex_lock(&peer_device->resync_next_bit_mutex);
+		spin_lock_bh(&peer_device->resync_next_bit_lock);
 	}
 
 request_done:
@@ -1163,7 +1163,7 @@ request_done:
 	peer_device->rs_in_flight -= (number - i) * BM_SECT_PER_BIT;
 
 	last_request_sent = peer_device->resync_next_bit >= drbd_bm_bits(device);
-	mutex_unlock(&peer_device->resync_next_bit_mutex);
+	spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
 	/* If the last syncer _request_ was sent,
 	 * but the P_RS_DATA_REPLY not yet received.  sync will end (and

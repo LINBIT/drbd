@@ -1217,7 +1217,7 @@ struct drbd_peer_device {
 	sector_t last_peers_in_sync_end; /* sector after end of last scheduled peers-in-sync */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
 	unsigned long last_resync_next_bit; /* value of resync_next_bit before last set of resync requests */
-	struct mutex resync_next_bit_mutex;
+	spinlock_t resync_next_bit_lock;
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
 	atomic_t unacked_cnt;	 /* Need to send replies for */

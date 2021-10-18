@@ -422,7 +422,7 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 	/* When resync runs faster than anticipated, consider running the
 	 * resync_work early. */
 	if (rs_sect_in >= peer_device->rs_in_flight) {
-		mutex_lock(&peer_device->resync_next_bit_mutex);
+		spin_lock_bh(&peer_device->resync_next_bit_lock);
 		/* Only run resync_work early if we are definitely making
 		 * progress. Otherwise we might continually lock a resync
 		 * extent even when all the requests are canceled. This can
@@ -433,7 +433,7 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 			drbd_queue_work_if_unqueued(
 					&peer_device->connection->sender_work,
 					&peer_device->resync_work);
-		mutex_unlock(&peer_device->resync_next_bit_mutex);
+		spin_unlock_bh(&peer_device->resync_next_bit_lock);
 	}
 }
 
@@ -7810,7 +7810,7 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	conn_wait_active_ee_empty_or_disconnect(connection);
 	conn_wait_done_ee_empty_or_disconnect(connection);
 
-	mutex_lock(&peer_device->resync_next_bit_mutex);
+	spin_lock_bh(&peer_device->resync_next_bit_lock);
 
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
 		unsigned long bit = BM_SECT_TO_BIT(sector);
@@ -7820,7 +7820,7 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));
 
-	mutex_unlock(&peer_device->resync_next_bit_mutex);
+	spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
 	return 0;
 }
@@ -9281,10 +9281,11 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 				verify_progress(peer_device, peer_req->i.sector, peer_req->i.size);
 			} else {
 				unsigned long bit;
+
 				bit = BM_SECT_TO_BIT(peer_req->i.sector);
-				mutex_lock(&peer_device->resync_next_bit_mutex);
+				spin_lock_bh(&peer_device->resync_next_bit_lock);
 				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);
-				mutex_unlock(&peer_device->resync_next_bit_mutex);
+				spin_unlock_bh(&peer_device->resync_next_bit_lock);
 			}
 		}
 
