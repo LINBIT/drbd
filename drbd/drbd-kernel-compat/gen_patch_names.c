@@ -227,13 +227,9 @@ int main(int argc, char **argv)
 
 #if defined(COMPAT_HAVE_QUEUE_FLAG_STABLE_WRITES)
 	/* in versions >=5.9, there is QUEUE_FLAG_STABLE_WRITES */
-#elif defined(COMPAT_HAVE_BDI_CAP_STABLE_WRITES)
+#else
 	/* for <5.9 but >=3.9, fall back to BDI_CAP_STABLE_WRITES */
 	patch(1, "queue_flag_stable_writes", true, false,
-	      NO, "present");
-#else
-	/* before 3.9, BDI_CAP_STABLE_WRITES is also not available */
-	patch(1, "bdi_cap_stable_writes", true, false,
 	      NO, "present");
 #endif
 
@@ -251,12 +247,6 @@ int main(int argc, char **argv)
 
 	patch(1, "write_zeroes", true, false,
 	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "capable");
-
-#if !defined(COMPAT_HAVE_REQ_OP_WRITE_SAME) && \
-	!defined(COMPAT_HAVE_REQ_WRITE_SAME)
-	patch(1, "write_same", true, false,
-	      NO, "capable");
-#endif
 
 	patch(1, "bio_bi_opf", true, false,
 	      COMPAT_HAVE_BIO_BI_OPF, "present");
@@ -279,13 +269,8 @@ int main(int argc, char **argv)
 # endif
 #endif
 
-#if defined(COMPAT_HAVE_BIO_RW)
-	/* This is the oldest supported version, using BIO_*. Read/write
-	 * direction is controlled by a single bit (BIO_RW). */
-	patch(1, "bio_rw", false, true,
-	      YES, "present");
-#elif defined(COMPAT_HAVE_REQ_WRITE)
-	/* This is an intermediate version, using REQ_* flags. The bio ops
+#if defined(COMPAT_HAVE_REQ_WRITE)
+	/* This is the oldest version, using REQ_* flags. The bio ops
 	 * and flags are separated, and it's using bio->bi_rw and bi_flags,
 	 * respectively */
 	patch(1, "req_write", false, true,
@@ -300,18 +285,6 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_check_plugged", true, false,
 	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
-
-	patch(1, "blk_queue_plugged", false, true,
-	      COMPAT_HAVE_BLK_QUEUE_PLUGGED, "present");
-
-	patch(1, "alloc_workqueue", true, false,
-	      COMPAT_ALLOC_WORKQUEUE_TAKES_FMT, "takes_fmt");
-
-	patch(1, "struct_kernel_param_ops", true, false,
-	      COMPAT_HAVE_STRUCT_KERNEL_PARAM_OPS, "present");
-
-	patch(1, "req_prio", true, false,
-	      COMPAT_HAVE_REQ_PRIO, "present");
 
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
@@ -400,10 +373,10 @@ int main(int argc, char **argv)
 #if !defined(COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE)
 	patch(2, "blk_queue_write_cache", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE, "present",
-# if defined(COMPAT_HAVE_REQ_FLUSH) && !defined(COMPAT_HAVE_REQ_HARDBARRIER)
-	      YES, "flush"
-# else
+# if defined(COMPAT_HAVE_REQ_HARDBARRIER)
 	      NO, "flush"
+# else
+	      YES, "flush"
 # endif
 	);
 #endif
