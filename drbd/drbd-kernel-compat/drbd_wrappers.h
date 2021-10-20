@@ -23,12 +23,8 @@
 #include <linux/kernel.h>
 #include <linux/kconfig.h>
 
-#ifndef pr_fmt
-#define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
-#endif
-
+/* introduced in v4.11-rc3-93-ged067d4a859f linux/kernel.h: Add ALIGN_DOWN macro */
 #ifndef ALIGN_DOWN
-/* ed067d4a859f linux/kernel.h: Add ALIGN_DOWN macro */
 #define ALIGN_DOWN(x, a)       __ALIGN_KERNEL((x) - ((a) - 1), (a))
 #endif
 
@@ -50,10 +46,6 @@
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
 
-#ifndef FMODE_EXCL
-#define FMODE_EXCL 0
-#endif
-
 /* introduced in v4.14-rc8-66-gf54bb2ec02c8 */
 #ifndef lockdep_assert_irqs_disabled
 #define lockdep_assert_irqs_disabled() do { } while (0)
@@ -72,6 +64,7 @@
 	(unlikely(descriptor.flags & _DPRINTK_FLAGS_PRINT))
 #endif
 
+/* introduced in v4.10-rc3-157-g1e24edca0557 */
 #ifndef KREF_INIT
 #define KREF_INIT(N) { ATOMIC_INIT(N) }
 #endif
@@ -84,7 +77,7 @@
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
 #endif
 
-
+/* introduced in v3.13-rc2-4-g462225ae47d7 */
 #ifndef RCU_INITIALIZER
 #define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)
 #endif
@@ -107,14 +100,7 @@
        nla_parse_nested(tb, maxtype, nla, policy)
 #endif
 
-#ifndef BLKDEV_ISSUE_ZEROOUT_EXPORTED
-/* Was introduced with 2.6.34 */
-extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-				sector_t nr_sects, gfp_t gfp_mask);
-#define blkdev_issue_zeroout(BDEV, SS, NS, GFP, flags /* = NOUNMAP */) \
-	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
-#else
-/* synopsis changed a few times, though */
+/* synopsis of blkdev_issue_zeroout changed a few times */
 #if  defined(BLKDEV_ZERO_NOUNMAP)
 /* >= v4.12 */
 /* use blkdev_issue_zeroout() as written out in the actual source code.
@@ -128,7 +114,6 @@ extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 #else /* !defined(COMPAT_BLKDEV_ISSUE_ZEROOUT_DISCARD) */
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
-#endif
 #endif
 
 #ifndef COMPAT_HAVE_SIMPLE_POSITIVE
@@ -203,6 +188,7 @@ extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,
 #define MAX_SGE(ATTR) (ATTR).max_sge
 #endif
 
+/* made conveniently accessible in v4.16-rc2-252-g233bde21aa43 */
 #ifndef SECTOR_SHIFT
 #define SECTOR_SHIFT 9
 #endif
