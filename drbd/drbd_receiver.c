@@ -1894,7 +1894,7 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 	peer_req->flags &= ~EE_IN_INTERVAL_TREE;
 
 	/* Wake up any processes waiting for this peer request to complete.  */
-	if (i->waiting)
+	if (test_bit(INTERVAL_WAITING, &i->flags))
 		wake_up(&device->misc_wait);
 }
 
@@ -2126,6 +2126,7 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 		return NULL;
 	peer_req->i.size = d->bi_size; /* storage size */
 	peer_req->i.sector = d->sector;
+	peer_req->i.type = INTERVAL_PEER_WRITE;
 	peer_req->block_id = d->block_id;
 
 	peer_req->flags |= EE_WRITE;
@@ -2322,14 +2323,15 @@ out:
 
 /* caller must hold interval_lock */
 static struct drbd_request *
-find_request(struct drbd_device *device, struct rb_root *root, u64 id,
+find_request(struct drbd_device *device, enum drbd_interval_type type, u64 id,
 	     sector_t sector, bool missing_ok, const char *func)
 {
+	struct rb_root *root = type == INTERVAL_LOCAL_READ ? &device->read_requests : &device->write_requests;
 	struct drbd_request *req;
 
 	/* Request object according to our peer */
 	req = (struct drbd_request *)(unsigned long)id;
-	if (drbd_contains_interval(root, sector, &req->i) && req->i.local)
+	if (drbd_contains_interval(root, sector, &req->i) && req->i.type == type)
 		return req;
 	if (!missing_ok) {
 		drbd_err(device, "%s: failed to find request 0x%lx, sector %llus\n", func,
@@ -2355,7 +2357,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	sector = be64_to_cpu(p->sector);
 
 	spin_lock_irq(&device->interval_lock);
-	req = find_request(device, &device->read_requests, p->block_id, sector, false, __func__);
+	req = find_request(device, INTERVAL_LOCAL_READ, p->block_id, sector, false, __func__);
 	spin_unlock_irq(&device->interval_lock);
 	if (unlikely(!req))
 		return -EIO;
@@ -2667,7 +2669,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			continue;
 
 		/* Ignore, if already completed to upper layers. */
-		if (i->completed)
+		if (test_bit(INTERVAL_COMPLETED, &i->flags))
 			continue;
 
 		drbd_alert(device, "Concurrent writes detected: "
@@ -3262,6 +3264,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		peer_req->w.cb = w_e_end_data_req;
 		/* application IO, don't drbd_rs_begin_io */
 		peer_req->flags |= EE_APPLICATION;
+		peer_req->i.type = INTERVAL_PEER_READ;
 		goto submit;
 
 	case P_RS_THIN_REQ:
@@ -8395,14 +8398,14 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 
 static int
 validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sector_t sector,
-			      struct rb_root *root, const char *func,
+			      enum drbd_interval_type type, const char *func,
 			      enum drbd_req_event what, bool missing_ok)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_request *req;
 
 	spin_lock_irq(&device->interval_lock);
-	req = find_request(device, root, id, sector, missing_ok, func);
+	req = find_request(device, type, id, sector, missing_ok, func);
 	spin_unlock_irq(&device->interval_lock);
 	if (unlikely(!req))
 		return -EIO;
@@ -8448,7 +8451,7 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	}
 
 	return validate_req_change_req_state(peer_device, p->block_id, sector,
-					     &device->write_requests, __func__,
+					     INTERVAL_LOCAL_WRITE, __func__,
 					     what, false);
 }
 
@@ -8478,7 +8481,7 @@ static int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 	}
 
 	err = validate_req_change_req_state(peer_device, p->block_id, sector,
-					    &device->write_requests, __func__,
+					    INTERVAL_LOCAL_WRITE, __func__,
 					    NEG_ACKED, true);
 	if (err) {
 		/* Protocol A has no P_WRITE_ACKs, but has P_NEG_ACKs.
@@ -8509,7 +8512,7 @@ static int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 		 (unsigned long long)sector, be32_to_cpu(p->blksize));
 
 	return validate_req_change_req_state(peer_device, p->block_id, sector,
-					     &device->read_requests, __func__,
+					     INTERVAL_LOCAL_READ, __func__,
 					     NEG_ACKED, false);
 }
 

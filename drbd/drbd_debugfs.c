@@ -1059,9 +1059,9 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 		char sep = ' ';
 
 		seq_printf(m, "%llus+%u", (unsigned long long) i->sector, i->size);
-		__seq_print_rq_state_bit(m, i->local, &sep, "local", "peer");
-		seq_print_rq_state_bit(m, i->waiting, &sep, "waiting");
-		seq_print_rq_state_bit(m, i->completed, &sep, "completed");
+		__seq_print_rq_state_bit(m, i->type == INTERVAL_LOCAL_WRITE, &sep, "local", "peer");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_WAITING, &i->flags), &sep, "waiting");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_COMPLETED, &i->flags), &sep, "completed");
 		seq_putc(m, '\n');
 
 		node = rb_next(node);

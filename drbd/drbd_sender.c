@@ -2826,7 +2826,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
 		if (i == in)
 			continue;
-		if (!i->local)
+		if (i->type != INTERVAL_LOCAL_WRITE)
 			continue;
 		/* don't care for i->completed, in DRBD_PROT_A we
 		 * are more interested in RQ_NET_DONE instead */
