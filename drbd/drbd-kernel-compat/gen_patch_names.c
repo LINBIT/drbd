@@ -80,6 +80,8 @@ int main(int argc, char **argv)
 	/* 		COMPAT_HAVE_ATOMIC_IN_FLIGHT, "atomic_in_flight", */
 	/* 		COMPAT_HAVE_BD_CLAIM_BY_DISK, "bd_claim_by_disk"); */
 
+	patch(1, "sk_data_ready", true, false, COMPAT_SK_DATA_READY_HAS_1_PARAM, "has_1_param");
+
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
 
