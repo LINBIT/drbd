@@ -1141,7 +1141,24 @@ found:
 	drbd_start_resync(peer_device, L_SYNC_TARGET);
 }
 
-int drbd_resync_finished(struct drbd_peer_device *peer_device,
+static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drbd_disk_state new_peer_disk_state)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct resync_finished_work *rfw;
+
+	rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
+	if (!rfw) {
+		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
+		return;
+	}
+
+	rfw->pdw.w.cb = w_resync_finished;
+	rfw->pdw.peer_device = peer_device;
+	rfw->new_peer_disk_state = new_peer_disk_state;
+	drbd_queue_work(&connection->sender_work, &rfw->pdw.w);
+}
+
+void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1160,33 +1177,25 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 		/* Make sure all queued w_update_peers()/consider_sending_peers_in_sync()
 		   executed before killing the resync_lru with drbd_rs_del_all() */
-		if (current == device->resource->worker.task)
-			goto queue_on_sender_workq;
-		else
+		if (current == device->resource->worker.task) {
+			queue_resync_finished(peer_device, new_peer_disk_state);
+			return;
+		} else {
 			drbd_flush_workqueue(&device->resource->work);
+		}
 	}
 
 	/* Remove all elements from the resync LRU. Since future actions
 	 * might set bits in the (main) bitmap, then the entries in the
 	 * resync LRU would be wrong. */
 	if (drbd_rs_del_all(peer_device)) {
-		struct resync_finished_work *rfw;
-
 		/* In case this is not possible now, most probably because
 		 * there are P_RS_DATA_REPLY Packets lingering on the sender's
 		 * queue (or even the read operations for those packets
 		 * is not finished by now).   Retry in 100ms. */
 		schedule_timeout_interruptible(HZ / 10);
-	queue_on_sender_workq:
-		rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
-		if (rfw) {
-			rfw->pdw.w.cb = w_resync_finished;
-			rfw->pdw.peer_device = peer_device;
-			rfw->new_peer_disk_state = new_peer_disk_state;
-			drbd_queue_work(&connection->sender_work, &rfw->pdw.w);
-			return 1;
-		}
-		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
+		queue_resync_finished(peer_device, new_peer_disk_state);
+		return;
 	}
 
 	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;
@@ -1372,8 +1381,6 @@ out:
 
 	if (try_to_get_resynced_from_primary_flag)
 		try_to_get_resynced_from_primary(device);
-
-	return 1;
 }
 
 /* helper */
