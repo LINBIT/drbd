@@ -2081,12 +2081,12 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
  * both trim and write same have the bi_size ("data len to be affected")
  * as extra argument in the packet header.
  */
-static struct drbd_peer_request *
-read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_details *d) __must_hold(local)
+static int
+read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_details *d) __must_hold(local)
 {
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	const uint64_t capacity = get_capacity(device->vdisk);
-	struct drbd_peer_request *peer_req;
 	int err;
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
@@ -2096,16 +2096,16 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (d->digest_size) {
 		err = drbd_recv_into(peer_device->connection, dig_in, d->digest_size);
 		if (err)
-			return NULL;
+			return err;
 	}
 
 	if (!expect(peer_device, IS_ALIGNED(d->bi_size, 512)))
-		return NULL;
+		return -EINVAL;
 	if (d->dp_flags & (DP_WSAME|DP_DISCARD|DP_ZEROES)) {
 		if (!expect(peer_device, d->bi_size <= (DRBD_MAX_BBIO_SECTORS << 9)))
-			return NULL;
+			return -EINVAL;
 	} else if (!expect(peer_device, d->bi_size <= DRBD_MAX_BIO_SIZE))
-		return NULL;
+		return -EINVAL;
 
 	/* even though we trust our peer,
 	 * we sometimes have to double check. */
@@ -2113,23 +2113,18 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 		drbd_err(device, "request from peer beyond end of local disk: "
 			"capacity: %llus < sector: %llus + size: %u\n",
 			capacity, d->sector, d->bi_size);
-		return NULL;
+		return -EINVAL;
 	}
 
-	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
-	if (!peer_req)
-		return NULL;
-	peer_req->i.size = d->bi_size; /* storage size */
-	peer_req->i.sector = d->sector;
 	peer_req->i.type = INTERVAL_PEER_WRITE;
 	peer_req->block_id = d->block_id;
 
 	if (d->length == 0)
-		return peer_req;
+		return 0;
 
 	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length - d->digest_size);
 	if (err)
-		goto fail;
+		return -ENOMEM;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 		struct page *page;
@@ -2147,15 +2142,11 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 		if (memcmp(dig_in, dig_vv, d->digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				d->sector, d->bi_size);
-			goto fail;
+			return -EINVAL;
 		}
 	}
 	peer_device->recv_cnt += d->bi_size >> 9;
-	return peer_req;
-
-fail:
-	drbd_free_peer_req(peer_req);
-	return NULL;
+	return 0;
 }
 
 static int ignore_remaining_packet(struct drbd_connection *connection, int size)
@@ -2263,9 +2254,17 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	int err;
 	u64 im;
 
-	peer_req = read_in_block(peer_device, d);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
 	if (!peer_req)
 		return -EIO;
+	peer_req->i.size = d->bi_size; /* storage size */
+	peer_req->i.sector = d->sector;
+
+	err = read_in_block(peer_req, d);
+	if (err) {
+		drbd_free_peer_req(peer_req);
+		return -EIO;
+	}
 
 	if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 		clear_bit(STABLE_RESYNC, &device->flags);
@@ -2811,11 +2810,21 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	 * end of this function.
 	 */
 
-	peer_req = read_in_block(peer_device, &d);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
 	if (!peer_req) {
 		put_ldev(device);
 		return -EIO;
 	}
+	peer_req->i.size = d.bi_size; /* storage size */
+	peer_req->i.sector = d.sector;
+
+	err = read_in_block(peer_req, &d);
+	if (err) {
+		drbd_free_peer_req(peer_req);
+		put_ldev(device);
+		return -EIO;
+	}
+
 	if (pi->cmd == P_TRIM)
 		peer_req->flags |= EE_TRIM;
 	else if (pi->cmd == P_ZEROES)
