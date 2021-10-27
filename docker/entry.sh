@@ -103,7 +103,7 @@ repo::rpm::createrepo() {
 cat << EOF > "$(repo::rpm::getrepofile)"
 [drbd-9]
 name=DRBD9 - \$basearch
-baseurl=http://packages.linbit.com/${hash}/yum/${dist}/drbd-9.0/\$basearch
+baseurl=http://packages.linbit.com/${hash}/yum/${dist}/drbd-9/\$basearch
 gpgkey=$SIGN_KEY
 gpgcheck=1
 enabled=1
@@ -114,7 +114,7 @@ repo::deb::createrepo() {
 	local hash="$2"
 
 cat << EOF > "$(repo::deb::getrepofile)"
-deb http://packages.linbit.com/${hash}/ ${dist} drbd-9.0
+deb http://packages.linbit.com/${hash}/ ${dist} drbd-9
 EOF
 }
 
