@@ -277,7 +277,7 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	char sep = ' ';
 
 	__seq_print_rq_state_bit(m, f & EE_SUBMITTED, &sep, "submitted", "preparing");
-	__seq_print_rq_state_bit(m, f & EE_APPLICATION, &sep, "application", "internal");
+	__seq_print_rq_state_bit(m, drbd_interval_is_application(&peer_req->i), &sep, "application", "internal");
 	seq_print_rq_state_bit(m, f & EE_IS_BARRIER, &sep, "barr");
 	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
 	seq_print_rq_state_bit(m, f & EE_MAY_SET_IN_SYNC, &sep, "set-in-sync");

@@ -512,10 +512,6 @@ enum {
 	/* this is/was a write same request */
 	__EE_WRITE_SAME,
 
-	/* this originates from application on peer
-	 * (not some resync or verify or other DRBD internal request) */
-	__EE_APPLICATION,
-
 	/* If it contains only 0 bytes, send back P_RS_DEALLOCATED */
 	__EE_RS_THIN_REQ,
 
@@ -535,7 +531,6 @@ enum {
 #define EE_SUBMITTED		(1<<__EE_SUBMITTED)
 #define EE_WRITE		(1<<__EE_WRITE)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
-#define EE_APPLICATION		(1<<__EE_APPLICATION)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 

@@ -1719,10 +1719,10 @@ static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_h
 static int peer_request_fault_type(struct drbd_peer_request *peer_req)
 {
 	if (peer_req_op(peer_req) == REQ_OP_READ) {
-		return peer_req->flags & EE_APPLICATION ?
+		return drbd_interval_is_application(&peer_req->i) ?
 			DRBD_FAULT_DT_RD : DRBD_FAULT_RS_RD;
 	} else {
-		return peer_req->flags & EE_APPLICATION ?
+		return drbd_interval_is_application(&peer_req->i) ?
 			DRBD_FAULT_DT_WR : DRBD_FAULT_RS_WR;
 	}
 }
@@ -2834,7 +2834,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	peer_req->w.cb = e_end_block;
 	peer_req->submit_jif = jiffies;
-	peer_req->flags |= EE_APPLICATION;
 
 	peer_req->opf = wire_flags_to_bio(connection, d.dp_flags);
 	if (pi->cmd == P_TRIM) {
@@ -3263,7 +3262,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	case P_DATA_REQUEST:
 		peer_req->w.cb = w_e_end_data_req;
 		/* application IO, don't drbd_rs_begin_io */
-		peer_req->flags |= EE_APPLICATION;
 		peer_req->i.type = INTERVAL_PEER_READ;
 		goto submit;
 
