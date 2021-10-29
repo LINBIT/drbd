@@ -1645,17 +1645,39 @@ void verify_progress(struct drbd_peer_device *peer_device,
 		drbd_peer_device_post_work(peer_device, RS_DONE);
 }
 
+static bool digest_equal(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct digest_info *di;
+	void *digest;
+	int digest_size;
+	bool eq = false;
+
+	di = peer_req->digest;
+
+	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
+	digest = kmalloc(digest_size, GFP_NOIO);
+	if (digest) {
+		drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);
+
+		D_ASSERT(device, digest_size == di->digest_size);
+		eq = !memcmp(digest, di->digest, digest_size);
+		kfree(digest);
+	}
+
+	return eq;
+}
+
 int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct digest_info *di;
-	void *digest;
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
-	int digest_size;
-	int err, eq = 0;
+	u64 block_id;
+	int err;
 
 	if (get_ldev(device)) {
 		drbd_rs_complete_io(peer_device, peer_req->i.sector);
@@ -1668,18 +1690,12 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 		return 0;
 	}
 
-	di = peer_req->digest;
-
-	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
-		digest = kmalloc(digest_size, GFP_NOIO);
-		if (digest) {
-			drbd_csum_pages(peer_device->connection->verify_tfm, peer_req->page_chain.head, digest);
-
-			D_ASSERT(device, digest_size == di->digest_size);
-			eq = !memcmp(digest, di->digest, digest_size);
-			kfree(digest);
-		}
+	if (likely((peer_req->flags & EE_WAS_ERROR) == 0) && digest_equal(peer_req)) {
+		block_id = ID_IN_SYNC;
+		ov_out_of_sync_print(peer_device);
+	} else {
+		block_id = ID_OUT_OF_SYNC;
+		drbd_ov_out_of_sync_found(peer_device, sector, size);
 	}
 
 	/* Free peer_req and pages before send.
@@ -1688,13 +1704,9 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
 	drbd_free_peer_req(peer_req);
-	if (!eq)
-		drbd_ov_out_of_sync_found(peer_device, sector, size);
-	else
-		ov_out_of_sync_print(peer_device);
+	peer_req = NULL;
 
-	err = drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size,
-			       eq ? ID_IN_SYNC : ID_OUT_OF_SYNC);
+	err = drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, block_id);
 
 	dec_unacked(peer_device);
 
