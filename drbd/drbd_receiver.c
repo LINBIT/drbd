@@ -2750,6 +2750,32 @@ prepare_activity_log(struct drbd_peer_request *peer_req)
 	return ret;
 }
 
+static void submit_peer_request_activity_log(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+	int err;
+
+	err = prepare_activity_log(peer_req);
+	if (err == DRBD_PAL_DISCONNECTED)
+		goto out;
+
+	atomic_inc(&connection->active_ee_cnt);
+
+	if (err == DRBD_PAL_QUEUE) {
+		drbd_queue_peer_request(device, peer_req);
+		return;
+	}
+
+	err = drbd_submit_peer_request(peer_req);
+	if (!err)
+		return;
+
+out:
+	drbd_cleanup_after_failed_submit_peer_write(peer_req);
+}
+
 /* mirrored write */
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
@@ -2917,10 +2943,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	err = prepare_activity_log(peer_req);
-	if (err == DRBD_PAL_DISCONNECTED)
-		goto disconnect_during_al_begin_io;
-
 	/* Note: this now may or may not be "hot" in the activity log.
 	 * Still, it is the best time to record that we need to set the
 	 * out-of-sync bit, if we delay that until drbd_submit_peer_request(),
@@ -2935,26 +2957,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		peer_req->flags |= EE_SET_OUT_OF_SYNC;
 	}
 
-	atomic_inc(&connection->active_ee_cnt);
-
-	if (err == DRBD_PAL_QUEUE) {
-		drbd_queue_peer_request(device, peer_req);
-		return 0;
-	}
-
-	err = drbd_submit_peer_request(peer_req);
-	if (!err)
-		return 0;
-
-	/* don't care for the reason here */
-	drbd_err(peer_device, "submit failed, triggering re-connect\n");
-	drbd_al_complete_io(device, &peer_req->i);
-
-disconnect_during_al_begin_io:
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	list_del_init(&peer_req->recv_order);
-	spin_unlock_irq(&connection->peer_reqs_lock);
+	submit_peer_request_activity_log(peer_req);
+	return 0;
 
 out_remove_interval:
 	spin_lock_irq(&device->interval_lock);
@@ -2971,9 +2975,7 @@ out:
 }
 
 /*
- * To be called when __drbd_submit_peer_request() fails from submitter
- * workqueue context.  Mimic what happens in the receive_Data() error path,
- * when the submit happens directly in the receiver context.
+ * To be called when drbd_submit_peer_request() fails for a peer write request.
  */
 void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req)
 {
@@ -2984,7 +2986,8 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 	if (drbd_ratelimit())
 		drbd_err(peer_device, "submit failed, triggering re-connect\n");
 
-	drbd_al_complete_io(device, &peer_req->i);
+	if (peer_req->flags & EE_IN_ACTLOG)
+		drbd_al_complete_io(device, &peer_req->i);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
