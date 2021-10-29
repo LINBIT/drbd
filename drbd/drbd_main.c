@@ -3567,7 +3567,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_no_bitmap;
 	spin_lock_init(&device->interval_lock);
 	device->read_requests = RB_ROOT;
-	device->write_requests = RB_ROOT;
+	device->requests = RB_ROOT;
 
 	BUG_ON(!mutex_is_locked(&resource->conf_update));
 	for_each_connection(connection, resource) {

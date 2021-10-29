@@ -1887,7 +1887,7 @@ static void drbd_remove_peer_req_interval(struct drbd_device *device,
 {
 	struct drbd_interval *i = &peer_req->i;
 
-	drbd_remove_interval(&device->write_requests, i);
+	drbd_remove_interval(&device->requests, i);
 	drbd_clear_interval(i);
 	drbd_release_conflicts(device, i);
 	peer_req->flags &= ~EE_IN_INTERVAL_TREE;
@@ -2319,7 +2319,7 @@ static struct drbd_request *
 find_request(struct drbd_device *device, enum drbd_interval_type type, u64 id,
 	     sector_t sector, bool missing_ok, const char *func)
 {
-	struct rb_root *root = type == INTERVAL_LOCAL_READ ? &device->read_requests : &device->write_requests;
+	struct rb_root *root = type == INTERVAL_LOCAL_READ ? &device->read_requests : &device->requests;
 	struct drbd_request *req;
 
 	/* Request object according to our peer */
@@ -2651,13 +2651,13 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 
 	spin_lock_irq(&device->interval_lock);
 	/*
-	 * Inserting the peer request into the write_requests tree will prevent
+	 * Inserting the peer request into the requests tree will prevent
 	 * new conflicting local requests from being added.
 	 */
-	drbd_insert_interval(&device->write_requests, &peer_req->i);
+	drbd_insert_interval(&device->requests, &peer_req->i);
 	peer_req->flags |= EE_IN_INTERVAL_TREE;
 
-	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+	drbd_for_each_overlap(i, &device->requests, sector, size) {
 		if (i == &peer_req->i)
 			continue;
 

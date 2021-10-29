@@ -166,7 +166,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	list_move_tail(&peer_req->w.list, &connection->done_ee);
 
 	/*
-	 * Do not remove from the write_requests tree here: we did not send the
+	 * Do not remove from the requests tree here: we did not send the
 	 * Ack yet and did not wake possibly waiting conflicting requests.
 	 * Removed from the tree from "drbd_process_done_ee" within the
 	 * appropriate callback (e_end_block/e_end_resync_block) or from
@@ -2823,7 +2823,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 
 	read_lock_irq(&device->resource->state_rwlock);
 	spin_lock(&device->interval_lock);
-	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+	drbd_for_each_overlap(i, &device->requests, sector, size) {
 		if (i == in)
 			continue;
 		if (i->type != INTERVAL_LOCAL_WRITE)

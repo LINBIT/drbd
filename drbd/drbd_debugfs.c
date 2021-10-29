@@ -1075,7 +1075,7 @@ static int device_interval_tree_show(struct seq_file *m, void *ignored)
 
 	spin_lock_irq(&device->interval_lock);
 	seq_puts(m, "Write requests:\n");
-	seq_printf_interval_tree(m, &device->write_requests);
+	seq_printf_interval_tree(m, &device->requests);
 	seq_putc(m, '\n');
 	seq_puts(m, "Read requests:\n");
 	seq_printf_interval_tree(m, &device->read_requests);

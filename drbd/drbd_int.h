@@ -1378,7 +1378,7 @@ struct drbd_device {
 	/* Interval trees of pending local requests */
 	spinlock_t interval_lock;
 	struct rb_root read_requests;
-	struct rb_root write_requests;
+	struct rb_root requests;
 
 	/* for statistics and timeouts */
 	/* [0] read, [1] write */

@@ -266,7 +266,7 @@ void drbd_req_destroy(struct kref *kref)
 		struct rb_root *root;
 
 		if (s & RQ_WRITE)
-			root = &device->write_requests;
+			root = &device->requests;
 		else
 			root = &device->read_requests;
 		drbd_remove_request_interval(root, req);
@@ -432,7 +432,7 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 
 	lockdep_assert_held(&device->interval_lock);
 
-	drbd_for_each_overlap(i, &device->write_requests, release_interval->sector, release_interval->size) {
+	drbd_for_each_overlap(i, &device->requests, release_interval->sector, release_interval->size) {
 		struct drbd_request *conflicting_write;
 
 		if (i->type == INTERVAL_PEER_WRITE)
@@ -1287,7 +1287,7 @@ static bool has_write_conflict(struct drbd_request *req)
 
 	lockdep_assert_held(&device->interval_lock);
 
-	drbd_for_each_overlap(i, &device->write_requests, sector, size) {
+	drbd_for_each_overlap(i, &device->requests, sector, size) {
 		/* Ignore the interval itself. */
 		if (i == &req->i)
 			continue;
@@ -1944,7 +1944,7 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 
 	spin_lock_irq(&device->interval_lock);
 	conflict = has_write_conflict(req);
-	drbd_insert_interval(&device->write_requests, &req->i);
+	drbd_insert_interval(&device->requests, &req->i);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
