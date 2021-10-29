@@ -3200,11 +3200,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 				drbd_send_ack_rp(peer_device, P_NEG_RS_DREPLY, p);
 			}
 			break;
-		case P_OV_REPLY:
-			verb = 0;
-			dec_rs_pending(peer_device);
-			drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, ID_IN_SYNC);
-			break;
 		default:
 			BUG();
 		}
@@ -3255,10 +3250,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			case P_CSUM_RS_REQUEST:
 				err = drbd_send_ack(peer_device, P_RS_CANCEL_AHEAD, peer_req);
 				goto fail2;
-			case P_OV_REPLY:
-				/* FIXME how can we cancel these?
-				 * just ignore L_AHEAD for now */
-				break;
 			default:
 				BUG();
 			}
@@ -3283,25 +3274,14 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		peer_req->w.cb = w_e_end_rsdata_req;
 		break;
 
-	case P_OV_REPLY:
 	case P_CSUM_RS_REQUEST:
 		err = receive_digest(peer_req, pi->size);
 		if (err)
 			goto fail2;
 
-		if (pi->cmd == P_CSUM_RS_REQUEST) {
-			peer_req->w.cb = w_e_end_rsdata_req;
-			/* remember to report stats in drbd_resync_finished */
-			peer_device->use_csums = true;
-		} else if (pi->cmd == P_OV_REPLY) {
-			/* track progress, we may need to throttle */
-			rs_sectors_came_in(peer_device, size);
-			peer_req->w.cb = w_e_end_ov_reply;
-			dec_rs_pending(peer_device);
-			/* drbd_rs_begin_io done when we sent this request,
-			 * but accounting still needs to be done. */
-			goto submit_for_resync;
-		}
+		peer_req->w.cb = w_e_end_rsdata_req;
+		/* remember to report stats in drbd_resync_finished */
+		peer_device->use_csums = true;
 		break;
 
 	case P_OV_REQUEST:
@@ -3375,7 +3355,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		goto fail3;
 	}
 
-submit_for_resync:
 	atomic_add(size >> 9, &device->rs_sect_ev);
 
 submit:
@@ -3392,6 +3371,91 @@ fail3:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
+	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
+fail2:
+	drbd_free_peer_req(peer_req);
+fail:
+	put_ldev(device);
+	return err;
+}
+
+static int receive_ov_reply(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	sector_t sector;
+	sector_t capacity;
+	struct drbd_peer_request *peer_req;
+	int size;
+	struct p_block_req *p =	pi->data;
+	int err;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+	device = peer_device->device;
+	capacity = get_capacity(device->vdisk);
+
+	sector = be64_to_cpu(p->sector);
+	size   = be32_to_cpu(p->blksize);
+
+	if (size <= 0 || !IS_ALIGNED(size, 512) || size > DRBD_MAX_BIO_SIZE) {
+		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+				(unsigned long long)sector, size);
+		return -EINVAL;
+	}
+	if (sector + (size>>9) > capacity) {
+		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
+				(unsigned long long)sector, size);
+		return -EINVAL;
+	}
+
+	if (!get_ldev_if_state(device, D_OUTDATED)) {
+		dec_rs_pending(peer_device);
+		drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, ID_IN_SYNC);
+
+		/* drain payload */
+		return ignore_remaining_packet(connection, pi->size);
+	}
+
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
+	err = -ENOMEM;
+	if (!peer_req)
+		goto fail;
+	if (size) {
+		drbd_alloc_page_chain(&peer_device->connection->transport,
+			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+		if (!peer_req->page_chain.head)
+			goto fail2;
+	}
+	peer_req->i.size = size;
+	peer_req->i.sector = sector;
+	peer_req->block_id = p->block_id;
+	peer_req->opf = REQ_OP_READ;
+	/* no longer valid, about to call drbd_recv again for the digest... */
+	p = pi->data = NULL;
+
+	err = receive_digest(peer_req, pi->size);
+	if (err)
+		goto fail2;
+
+	/* track progress, we may need to throttle */
+	rs_sectors_came_in(peer_device, size);
+	peer_req->w.cb = w_e_end_ov_reply;
+	dec_rs_pending(peer_device);
+	/* drbd_rs_begin_io done when we sent this request,
+	 * but accounting still needs to be done. */
+	atomic_add(size >> 9, &device->rs_sect_ev);
+
+	update_receiver_timing_details(connection, drbd_submit_peer_request);
+	inc_unacked(peer_device);
+	if (drbd_submit_peer_request(peer_req) == 0)
+		return 0;
+
+	/* don't care for the reason here */
+	drbd_err(device, "submit failed, triggering re-connect\n");
+	err = -EIO;
+
 	/* no drbd_rs_complete_io(), we are dropping the connection anyways */
 fail2:
 	drbd_free_peer_req(peer_req);
@@ -7466,7 +7530,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_STATE]	    = { 0, sizeof(struct p_state), receive_state },
 	[P_SYNC_UUID]       = { 0, sizeof(struct p_uuid), receive_sync_uuid },
 	[P_OV_REQUEST]      = { 0, sizeof(struct p_block_req), receive_DataRequest },
-	[P_OV_REPLY]        = { 1, sizeof(struct p_block_req), receive_DataRequest },
+	[P_OV_REPLY]        = { 1, sizeof(struct p_block_req), receive_ov_reply },
 	[P_CSUM_RS_REQUEST] = { 1, sizeof(struct p_block_req), receive_DataRequest },
 	[P_RS_THIN_REQ]     = { 0, sizeof(struct p_block_req), receive_DataRequest },
 	[P_DELAY_PROBE]     = { 0, sizeof(struct p_delay_probe93), receive_skip },
