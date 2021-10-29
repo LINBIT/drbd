@@ -502,10 +502,6 @@ enum {
 	/* Is set when net_conf had two_primaries set while creating this peer_req */
 	__EE_IN_INTERVAL_TREE,
 
-	/* for debugfs: */
-	/* has this been submitted, or does it still wait for something else? */
-	__EE_SUBMITTED,
-
 	/* this is/was a write same request */
 	__EE_WRITE_SAME,
 
@@ -525,7 +521,6 @@ enum {
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
 #define EE_IN_INTERVAL_TREE	(1<<__EE_IN_INTERVAL_TREE)
-#define EE_SUBMITTED		(1<<__EE_SUBMITTED)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)

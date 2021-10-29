@@ -276,7 +276,7 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	unsigned long f = peer_req->flags;
 	char sep = ' ';
 
-	__seq_print_rq_state_bit(m, f & EE_SUBMITTED, &sep, "submitted", "preparing");
+	__seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags), &sep, "submitted", "preparing");
 	__seq_print_rq_state_bit(m, drbd_interval_is_application(&peer_req->i), &sep, "application", "internal");
 	seq_print_rq_state_bit(m, f & EE_IS_BARRIER, &sep, "barr");
 	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
@@ -299,7 +299,7 @@ static void seq_print_peer_request(struct seq_file *m,
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
 		struct drbd_device *device = peer_device ? peer_device->device : NULL;
 
-		if (reported_preparing && !(peer_req->flags & EE_SUBMITTED))
+		if (reported_preparing && !test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
 			continue;
 
 		if (device)
@@ -310,7 +310,7 @@ static void seq_print_peer_request(struct seq_file *m,
 			drbd_interval_is_write(&peer_req->i) ? 'W' : 'R',
 			jiffies_to_msecs(jif - peer_req->submit_jif));
 		seq_print_peer_request_flags(m, peer_req);
-		if (peer_req->flags & EE_SUBMITTED)
+		if (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
 			break;
 		else
 			reported_preparing = true;

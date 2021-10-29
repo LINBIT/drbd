@@ -1769,7 +1769,6 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	 */
 	if (peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) {
 		peer_req->submit_jif = jiffies;
-		peer_req->flags |= EE_SUBMITTED;
 
 		if (peer_req->flags & (EE_TRIM|EE_ZEROOUT))
 			drbd_issue_peer_discard_or_zero_out(device, peer_req);
@@ -1860,7 +1859,6 @@ next_bio:
 	atomic_set(&peer_req->pending_bios, n_bios);
 	/* for debugfs: update timestamp, mark as submitted */
 	peer_req->submit_jif = jiffies;
-	peer_req->flags |= EE_SUBMITTED;
 	do {
 		bio = bios;
 		bios = bios->bi_next;
