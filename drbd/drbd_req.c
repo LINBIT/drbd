@@ -2104,7 +2104,7 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	peer_req->flags |= EE_IN_ACTLOG;
 	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 	atomic_dec(&device->wait_for_actlog);
-	list_del_init(&peer_req->wait_for_actlog);
+	list_del_init(&peer_req->submit_list);
 
 	err = drbd_submit_peer_request(peer_req);
 
@@ -2119,7 +2119,7 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 	struct drbd_peer_request *pr, *pr_tmp;
 
 	blk_start_plug(&plug);
-	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.incoming, wait_for_actlog) {
+	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.incoming, submit_list) {
 		if (!drbd_al_begin_io_fastpath(pr->peer_device->device, &pr->i))
 			continue;
 
@@ -2154,7 +2154,7 @@ static struct drbd_peer_request *wfa_next_peer_request(struct waiting_for_act_lo
 {
 	struct list_head *lh = !list_empty(&wfa->peer_requests.more_incoming) ?
 			&wfa->peer_requests.more_incoming: &wfa->peer_requests.incoming;
-	return list_first_entry_or_null(lh, struct drbd_peer_request, wait_for_actlog);
+	return list_first_entry_or_null(lh, struct drbd_peer_request, submit_list);
 }
 
 static bool prepare_al_transaction_nonblock(struct drbd_device *device,
@@ -2174,7 +2174,7 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 
 	while ((peer_req = wfa_next_peer_request(wfa))) {
 		if (peer_req->peer_device->connection->cstate[NOW] < C_CONNECTED) {
-			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.cleanup);
+			list_move_tail(&peer_req->submit_list, &wfa->peer_requests.cleanup);
 			made_progress = true;
 			continue;
 		}
@@ -2184,9 +2184,9 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 		if (err == -EBUSY)
 			wake = true;
 		if (err)
-			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.later);
+			list_move_tail(&peer_req->submit_list, &wfa->peer_requests.later);
 		else {
-			list_move_tail(&peer_req->wait_for_actlog, &wfa->peer_requests.pending);
+			list_move_tail(&peer_req->submit_list, &wfa->peer_requests.pending);
 			made_progress = true;
 		}
 	}
@@ -2218,7 +2218,7 @@ static void send_and_submit_pending(struct drbd_device *device, struct waiting_f
 	struct drbd_peer_request *pr, *pr_tmp;
 
 	blk_start_plug(&plug);
-	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.pending, wait_for_actlog) {
+	list_for_each_entry_safe(pr, pr_tmp, &wfa->peer_requests.pending, submit_list) {
 		__drbd_submit_peer_request(pr);
 	}
 	list_for_each_entry_safe(req, tmp, &wfa->requests.pending, list) {

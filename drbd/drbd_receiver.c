@@ -577,7 +577,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	INIT_LIST_HEAD(&peer_req->w.list);
 	drbd_clear_interval(&peer_req->i);
 	INIT_LIST_HEAD(&peer_req->recv_order);
-	INIT_LIST_HEAD(&peer_req->wait_for_actlog);
+	INIT_LIST_HEAD(&peer_req->submit_list);
 	peer_req->submit_jif = jiffies;
 	peer_req->peer_device = peer_device;
 
@@ -2680,7 +2680,7 @@ static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer
 {
 	atomic_inc(&device->wait_for_actlog);
 	spin_lock(&device->submit.lock);
-	list_add_tail(&peer_req->wait_for_actlog, &device->submit.peer_writes);
+	list_add_tail(&peer_req->submit_list, &device->submit.peer_writes);
 	spin_unlock(&device->submit.lock);
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
@@ -3018,7 +3018,7 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 
 	write_lock_irq(&device->resource->state_rwlock);
 	spin_lock(&device->interval_lock);
-	list_for_each_entry(peer_req, cleanup, wait_for_actlog) {
+	list_for_each_entry(peer_req, cleanup, submit_list) {
 		list_del(&peer_req->w.list); /* should be on the "->active_ee" list */
 		atomic_dec(&peer_req->peer_device->connection->active_ee_cnt);
 		list_del_init(&peer_req->recv_order);
@@ -3027,12 +3027,12 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 	spin_unlock(&device->interval_lock);
 	write_unlock_irq(&device->resource->state_rwlock);
 
-	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, wait_for_actlog) {
+	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, submit_list) {
 		atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 		atomic_dec(&device->wait_for_actlog);
 		if (peer_req->flags & EE_SEND_WRITE_ACK)
 			dec_unacked(peer_req->peer_device);
-		list_del_init(&peer_req->wait_for_actlog);
+		list_del_init(&peer_req->submit_list);
 		drbd_may_finish_epoch(peer_req->peer_device->connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
 		drbd_free_peer_req(peer_req);
 		put_ldev(device);

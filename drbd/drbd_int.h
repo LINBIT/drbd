@@ -427,7 +427,7 @@ struct drbd_peer_request {
 	struct list_head recv_order; /* writes only */
 	/* writes only, blocked on activity log;
 	 * FIXME merge with rcv_order or w.list? */
-	struct list_head wait_for_actlog;
+	struct list_head submit_list;
 
 	struct drbd_page_chain_head page_chain;
 	unsigned int opf; /* to be used as bi_opf */
