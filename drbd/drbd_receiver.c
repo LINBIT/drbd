@@ -3107,7 +3107,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 	return false;
 }
 
-static void verify_skipped_block(struct drbd_peer_device *peer_device,
+static void drbd_verify_skipped_block(struct drbd_peer_device *peer_device,
 		const sector_t sector, const unsigned int size)
 {
 	++peer_device->ov_skipped;
@@ -3118,7 +3118,6 @@ static void verify_skipped_block(struct drbd_peer_device *peer_device,
 		peer_device->ov_last_skipped_start = sector;
 		peer_device->ov_last_skipped_size = size>>9;
 	}
-	verify_progress(peer_device, sector, size);
 }
 
 static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
@@ -3187,7 +3186,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			drbd_send_ack_rp(peer_device, P_NEG_DREPLY, p);
 			break;
 		case P_OV_REQUEST:
-			verify_skipped_block(peer_device, sector, size);
+			drbd_verify_skipped_block(peer_device, sector, size);
+			verify_progress(peer_device, sector, size);
 			drbd_send_ack_rp(peer_device, P_RS_CANCEL, p);
 			break;
 		case P_RS_THIN_REQ:
@@ -3243,7 +3243,8 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			switch (pi->cmd) {
 			/* case P_DATA_REQUEST: see above, not based on protocol version */
 			case P_OV_REQUEST:
-				verify_skipped_block(peer_device, sector, size);
+				drbd_verify_skipped_block(peer_device, sector, size);
+				verify_progress(peer_device, sector, size);
 				fallthrough;
 			case P_RS_DATA_REQUEST:
 			case P_RS_THIN_REQ:
@@ -3348,8 +3349,10 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	   Instruct the SyncSource to retry */
 	err = drbd_try_rs_begin_io(peer_device, sector, false);
 	if (err) {
-		if (pi->cmd == P_OV_REQUEST)
-			verify_skipped_block(peer_device, sector, size);
+		if (pi->cmd == P_OV_REQUEST) {
+			drbd_verify_skipped_block(peer_device, sector, size);
+			verify_progress(peer_device, sector, size);
+		}
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 		/* If err is set, we will drop the connection... */
 		goto fail3;
@@ -8542,7 +8545,8 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 			fallthrough;
 		case P_RS_CANCEL:
 			if (peer_device->repl_state[NOW] == L_VERIFY_S) {
-				verify_skipped_block(peer_device, sector, size);
+				drbd_verify_skipped_block(peer_device, sector, size);
+				verify_progress(peer_device, sector, size);
 			} else {
 				bit = BM_SECT_TO_BIT(sector);
 				mutex_lock(&peer_device->resync_next_bit_mutex);
