@@ -1612,7 +1612,7 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 	if (!p)
 		return -EIO;
 
-	p->dagtag = cpu_to_be64(lost_peer->last_dagtag_sector);
+	p->dagtag = cpu_to_be64(atomic64_read(&lost_peer->last_dagtag_sector));
 	p->node_id = cpu_to_be32(lost_peer->peer_node_id);
 
 	return send_command(connection, -1, P_PEER_DAGTAG, DATA_STREAM);
@@ -4432,7 +4432,7 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u64 weak_nodes) __must_hold(local)
 {
 	struct drbd_device *device = from_pd->device;
-	u64 dagtag = from_pd->connection->last_dagtag_sector;
+	u64 dagtag = atomic64_read(&from_pd->connection->last_dagtag_sector);
 	struct drbd_peer_device *peer_device;
 	u64 receipients = 0;
 	bool set_current = true;

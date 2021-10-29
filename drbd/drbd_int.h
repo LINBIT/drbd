@@ -1057,7 +1057,7 @@ struct drbd_connection {
 	struct drbd_thread ack_receiver;
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
-	u64 last_dagtag_sector;
+	atomic64_t last_dagtag_sector;
 
 	atomic_t active_ee_cnt;
 	spinlock_t peer_reqs_lock;

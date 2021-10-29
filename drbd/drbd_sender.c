@@ -1101,8 +1101,8 @@ static void after_reconciliation_resync(struct drbd_connection *connection)
 
 	if (lost_peer) {
 		if (lost_peer->cstate[NOW] < C_CONNECTED)
-			lost_peer->last_dagtag_sector =
-				connection->after_reconciliation.dagtag_sector;
+			atomic64_set(&lost_peer->last_dagtag_sector,
+				connection->after_reconciliation.dagtag_sector);
 
 		kref_put(&lost_peer->kref, drbd_destroy_connection);
 	}

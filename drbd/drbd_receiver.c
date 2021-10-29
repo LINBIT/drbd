@@ -2827,8 +2827,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	else if (pi->cmd == P_WSAME)
 		peer_req->flags |= EE_WRITE_SAME;
 
-	peer_req->dagtag_sector = connection->last_dagtag_sector + (peer_req->i.size >> 9);
-	connection->last_dagtag_sector = peer_req->dagtag_sector;
+	peer_req->dagtag_sector = atomic64_read(&connection->last_dagtag_sector) + (peer_req->i.size >> 9);
+	atomic64_set(&connection->last_dagtag_sector, peer_req->dagtag_sector);
 
 	peer_req->w.cb = e_end_block;
 	peer_req->submit_jif = jiffies;
@@ -7249,7 +7249,7 @@ static int receive_dagtag(struct drbd_connection *connection, struct packet_info
 {
 	struct p_dagtag *p = pi->data;
 
-	connection->last_dagtag_sector = be64_to_cpu(p->dagtag);
+	atomic64_set(&connection->last_dagtag_sector, be64_to_cpu(p->dagtag));
 	return 0;
 }
 
@@ -7338,7 +7338,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	wait_event(resource->state_wait,
 		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_CONNECTING);
 
-	dagtag_offset = (s64)lost_peer->last_dagtag_sector - (s64)be64_to_cpu(p->dagtag);
+	dagtag_offset = atomic64_read(&lost_peer->last_dagtag_sector) - (s64)be64_to_cpu(p->dagtag);
 	if (strategy == SYNC_SOURCE_USE_BITMAP)  {
 		new_repl_state = L_WF_BITMAP_S;
 	} else if (strategy == SYNC_TARGET_USE_BITMAP)  {
