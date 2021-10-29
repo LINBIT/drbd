@@ -2048,7 +2048,7 @@ static void __drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	err = drbd_submit_peer_request(peer_req);
 
 	if (err)
-		drbd_cleanup_after_failed_submit_peer_request(peer_req);
+		drbd_cleanup_after_failed_submit_peer_write(peer_req);
 }
 
 static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_log *wfa)

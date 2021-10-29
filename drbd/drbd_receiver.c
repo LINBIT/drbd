@@ -2975,7 +2975,7 @@ out:
  * workqueue context.  Mimic what happens in the receive_Data() error path,
  * when the submit happens directly in the receiver context.
  */
-void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *peer_req)
+void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;

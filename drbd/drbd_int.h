@@ -2066,7 +2066,7 @@ extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
 extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
 				     bool throttle_if_app_is_waiting);
 extern int drbd_submit_peer_request(struct drbd_peer_request *);
-extern void drbd_cleanup_after_failed_submit_peer_request(struct drbd_peer_request *peer_req);
+extern void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
 extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
