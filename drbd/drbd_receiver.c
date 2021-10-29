@@ -3118,6 +3118,23 @@ static void verify_skipped_block(struct drbd_peer_device *peer_device,
 	verify_progress(peer_device, sector, size);
 }
 
+static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
+{
+	struct digest_info *di = NULL;
+
+	di = kmalloc(sizeof(*di) + digest_size, GFP_NOIO);
+	if (!di)
+		return -ENOMEM;
+
+	di->digest_size = digest_size;
+	di->digest = (((char *)di)+sizeof(struct digest_info));
+
+	peer_req->digest = di;
+	peer_req->flags |= EE_HAS_DIGEST;
+
+	return drbd_recv_into(peer_req->peer_device->connection, di->digest, digest_size);
+}
+
 static int receive_DataRequest(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -3125,7 +3142,6 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	sector_t sector;
 	sector_t capacity;
 	struct drbd_peer_request *peer_req;
-	struct digest_info *di = NULL;
 	int size, verb;
 	struct p_block_req *p =	pi->data;
 	enum drbd_disk_state min_d_state;
@@ -3266,18 +3282,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 
 	case P_OV_REPLY:
 	case P_CSUM_RS_REQUEST:
-		di = kmalloc(sizeof(*di) + pi->size, GFP_NOIO);
-		err = -ENOMEM;
-		if (!di)
-			goto fail2;
-
-		di->digest_size = pi->size;
-		di->digest = (((char *)di)+sizeof(struct digest_info));
-
-		peer_req->digest = di;
-		peer_req->flags |= EE_HAS_DIGEST;
-
-		err = drbd_recv_into(connection, di->digest, pi->size);
+		err = receive_digest(peer_req, pi->size);
 		if (err)
 			goto fail2;
 
