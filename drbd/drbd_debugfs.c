@@ -282,7 +282,7 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
 	seq_print_rq_state_bit(m, f & EE_MAY_SET_IN_SYNC, &sep, "set-in-sync");
 	seq_print_rq_state_bit(m, f & EE_SET_OUT_OF_SYNC, &sep, "set-out-of-sync");
-	seq_print_rq_state_bit(m, (f & (EE_IN_ACTLOG|EE_WRITE)) == EE_WRITE, &sep, "blocked-on-al");
+	seq_print_rq_state_bit(m, drbd_interval_is_write(&peer_req->i) && !(f & EE_IN_ACTLOG), &sep, "blocked-on-al");
 	seq_print_rq_state_bit(m, f & EE_TRIM, &sep, "trim");
 	seq_print_rq_state_bit(m, f & EE_ZEROOUT, &sep, "zero-out");
 	seq_print_rq_state_bit(m, f & EE_WRITE_SAME, &sep, "write-same");
@@ -307,7 +307,7 @@ static void seq_print_peer_request(struct seq_file *m,
 
 		seq_printf(m, "%llu\t%u\t%c\t%u\t",
 			(unsigned long long)peer_req->i.sector, peer_req->i.size >> 9,
-			(peer_req->flags & EE_WRITE) ? 'W' : 'R',
+			drbd_interval_is_write(&peer_req->i) ? 'W' : 'R',
 			jiffies_to_msecs(jif - peer_req->submit_jif));
 		seq_print_peer_request_flags(m, peer_req);
 		if (peer_req->flags & EE_SUBMITTED)

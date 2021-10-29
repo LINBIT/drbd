@@ -37,6 +37,11 @@ static inline bool drbd_interval_is_application(struct drbd_interval *i)
 		i->type == INTERVAL_LOCAL_READ || i->type == INTERVAL_PEER_READ;
 }
 
+static inline bool drbd_interval_is_write(struct drbd_interval *i)
+{
+	return i->type == INTERVAL_LOCAL_WRITE || i->type == INTERVAL_PEER_WRITE;
+}
+
 static inline void drbd_clear_interval(struct drbd_interval *i)
 {
 	RB_CLEAR_NODE(&i->rb);

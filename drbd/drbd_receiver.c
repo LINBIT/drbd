@@ -2129,7 +2129,6 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	peer_req->i.type = INTERVAL_PEER_WRITE;
 	peer_req->block_id = d->block_id;
 
-	peer_req->flags |= EE_WRITE;
 	if (d->length == 0)
 		return peer_req;
 
