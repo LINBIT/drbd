@@ -1,5 +1,5 @@
 @@
-struct request_queue *q;
+expression q;
 identifier x;
 @@
 q->backing_dev_info
@@ -16,7 +16,7 @@ b =
 d->ldev->backing_bdev->bd_disk->queue->backing_dev_info;
 
 @@
-struct request_queue *q;
+expression q;
 @@
 bdi_congested(
 + &
