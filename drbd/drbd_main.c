@@ -2749,8 +2749,7 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 		device->bitmap = NULL;
 	}
 
-	put_disk(device->vdisk);
-	blk_cleanup_queue(device->rq_queue);
+	blk_cleanup_disk(device->vdisk);
 
 	kfree(device);
 
@@ -3464,7 +3463,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device, *tmp_peer_device;
 	struct gendisk *disk;
-	struct request_queue *q;
 	LIST_HEAD(peer_devices);
 	LIST_HEAD(tmp);
 	int id;
@@ -3532,25 +3530,22 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	init_rwsem(&device->uuid_sem);
 
-	q = blk_alloc_queue(NUMA_NO_NODE);
-	if (!q)
-		goto out_no_q;
-	device->rq_queue = q;
-
-	disk = alloc_disk(1);
+	disk = blk_alloc_disk(NUMA_NO_NODE);
 	if (!disk)
 		goto out_no_disk;
-	device->vdisk = disk;
 
-	disk->queue = q;
+	device->vdisk = disk;
+	device->rq_queue = disk->queue;
+
 	disk->major = DRBD_MAJOR;
 	disk->first_minor = minor;
+	disk->minors = 1;
 	disk->fops = &drbd_ops;
 	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = device;
 
-	blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, q);
-	blk_queue_write_cache(q, true, true);
+	blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, disk->queue);
+	blk_queue_write_cache(disk->queue, true, true);
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
 	if (!device->md_io.page)
@@ -3681,10 +3676,8 @@ out_no_peer_device:
 out_no_bitmap:
 	__free_page(device->md_io.page);
 out_no_io_page:
-	put_disk(disk);
+	blk_cleanup_disk(disk);
 out_no_disk:
-	blk_cleanup_queue(q);
-out_no_q:
 	kref_put(&resource->kref, drbd_destroy_resource);
 	kref_debug_put(&resource->kref_debug, 4);
 		/* kref debugging wants an extra put, see has_refs() */
