@@ -5014,7 +5014,8 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	bm_io_work = kmalloc(sizeof(*bm_io_work), GFP_NOIO);
 	if (!bm_io_work) {
-		done(device, peer_device, -ENOMEM);
+		if (done)
+			done(device, peer_device, -ENOMEM);
 		return;
 	}
 	bm_io_work->w.cb = w_bitmap_io;
