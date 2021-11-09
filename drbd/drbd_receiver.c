@@ -403,11 +403,22 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 {
 	int rs_sect_in = atomic_add_return(size >> 9, &peer_device->rs_sect_in);
 
-	/* In case resync runs faster than anticipated, run the resync_work early */
-	if (rs_sect_in >= peer_device->rs_in_flight)
-		drbd_queue_work_if_unqueued(
-			&peer_device->connection->sender_work,
-			&peer_device->resync_work);
+	/* When resync runs faster than anticipated, consider running the
+	 * resync_work early. */
+	if (rs_sect_in >= peer_device->rs_in_flight) {
+		mutex_lock(&peer_device->resync_next_bit_mutex);
+		/* Only run resync_work early if we are definitely making
+		 * progress. Otherwise we might continually lock a resync
+		 * extent even when all the requests are canceled. This can
+		 * cause application IO to be blocked for an indefinitely long
+		 * time. */
+		if (peer_device->repl_state[NOW] == L_VERIFY_S ||
+				peer_device->resync_next_bit > peer_device->last_resync_next_bit)
+			drbd_queue_work_if_unqueued(
+					&peer_device->connection->sender_work,
+					&peer_device->resync_work);
+		mutex_unlock(&peer_device->resync_next_bit_mutex);
+	}
 }
 
 static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,

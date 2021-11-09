@@ -754,6 +754,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
+	peer_device->last_resync_next_bit = peer_device->resync_next_bit;
+
 	for (i = 0; i < number; i++) {
 		bool send_buffer_ok = true;
 		/* Stop generating RS requests, when half of the send buffer is filled */

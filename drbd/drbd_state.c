@@ -2291,6 +2291,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	unsigned long now = jiffies;
 
 	peer_device->resync_next_bit = 0;
+	peer_device->last_resync_next_bit = 0;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
 	peer_device->rs_same_csum = 0;
@@ -2498,6 +2499,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 						  -(long)peer_device->rs_mark_time[peer_device->rs_last_mark];
 				initialize_resync_progress_marks(peer_device);
 				peer_device->resync_next_bit = 0;
+				peer_device->last_resync_next_bit = 0;
 			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET  || repl_state[OLD] == L_SYNC_SOURCE) &&
