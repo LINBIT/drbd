@@ -1218,6 +1218,7 @@ struct drbd_peer_device {
 	enum drbd_disk_state resync_finished_pdsk; /* Finished while starting resync */
 	int resync_again; /* decided to resync again while resync running */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
+	unsigned long last_resync_next_bit; /* value of resync_next_bit before last set of resync requests */
 	struct mutex resync_next_bit_mutex;
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
