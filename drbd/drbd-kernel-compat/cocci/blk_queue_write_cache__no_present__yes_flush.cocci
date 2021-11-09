@@ -1,5 +1,6 @@
 @@
-identifier q, enabled, fua;
+expression q;
+identifier enabled, fua;
 symbol true, false;
 @@
 // enumerate all possible combinations of the "enabled" and "fua" parameters,
