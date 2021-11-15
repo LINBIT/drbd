@@ -2454,7 +2454,7 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 	struct ib_device *device = cm->id->device;
 	int rx_descs_max = 0, tx_descs_max = 0;
 	bool reduced = false;
-	int i, hca_max, err;
+	int i, hca_max, err, dev_sge;
 
 	static const char * const err_txt[] = {
 		[IB_ALLOC_PD] = "ib_alloc_pd()",
@@ -2473,8 +2473,9 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 		return err;
 	}
 
-	if (path->rdma_transport->sges_max > dev_attr.max_sge)
-		path->rdma_transport->sges_max = dev_attr.max_sge;
+	dev_sge = min(dev_attr.max_send_sge, dev_attr.max_recv_sge);
+	if (path->rdma_transport->sges_max > dev_sge)
+		path->rdma_transport->sges_max = dev_sge;
 
 	hca_max = min(dev_attr.max_qp_wr, dev_attr.max_cqe);
 
