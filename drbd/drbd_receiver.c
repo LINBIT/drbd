@@ -3010,12 +3010,14 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 	struct drbd_peer_request *peer_req, *pr_tmp;
 
 	write_lock_irq(&device->resource->state_rwlock);
+	spin_lock(&device->interval_lock);
 	list_for_each_entry(peer_req, cleanup, wait_for_actlog) {
 		list_del(&peer_req->w.list); /* should be on the "->active_ee" list */
 		atomic_dec(&peer_req->peer_device->connection->active_ee_cnt);
 		list_del_init(&peer_req->recv_order);
 		drbd_remove_peer_req_interval(device, peer_req);
 	}
+	spin_unlock(&device->interval_lock);
 	write_unlock_irq(&device->resource->state_rwlock);
 
 	list_for_each_entry_safe(peer_req, pr_tmp, cleanup, wait_for_actlog) {
