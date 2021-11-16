@@ -101,7 +101,7 @@ build:for-tests:
   extends: [ .rules-build, .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - DRBD_VERSION=9.1.0.$CI_COMMIT_SHA
+    - DRBD_VERSION=9.2.0.$CI_COMMIT_SHA
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
     - drbd_build $DRBD_VERSION 1 $DRBD_VERSION "$(kernels_from_vms)"
   artifacts:
@@ -122,7 +122,7 @@ build-latest:
   extends: [ .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - DRBD_VERSION=9.1.0.latest
+    - DRBD_VERSION=9.2.0.latest
     - DRBD_RELEASE=$(git rev-list --count origin/master)
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   needs: []
