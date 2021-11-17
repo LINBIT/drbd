@@ -106,6 +106,12 @@ int main(int argc, char **argv)
 	      NO, "present");
 #endif
 
+	patch(1, "sge_max_send_and_recv", true, false,
+	      COMPAT_HAVE_MAX_SEND_RECV_SGE, "present");
+
+	patch(1, "ib_get_dma_mr", false, true,
+	      COMPAT_HAVE_IB_GET_DMA_MR, "present");
+
 #if !defined(COMPAT_HAVE_BIO_SET_DEV)
 	patch(1, "bio_set_dev", true, false,
 	      COMPAT_HAVE_BIO_SET_DEV, "present");

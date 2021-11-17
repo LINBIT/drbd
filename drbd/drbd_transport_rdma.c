@@ -280,9 +280,6 @@ struct dtr_cm {
 	struct ib_cq *send_cq;
 	struct ib_pd *pd;
 
-#ifdef COMPAT_HAVE_IB_GET_DMA_MR
-	struct ib_mr *dma_mr;
-#endif
 	enum dtr_state state;
 	wait_queue_head_t state_wq;
 	unsigned long last_sent_jif;
@@ -448,20 +445,9 @@ __next_path_ref(u32 *visited, struct dtr_path *path, struct drbd_transport* tran
 	return path;
 }
 
-/*
-Upstream ib_get_dma_mr() was removed with
-5ef990f06bd7e3cf521b5705d898d8e43d04ea90
-
-mr->lkey gets replaced with pd->local_dma_lkey, an example:
-2f31fa881fbe70808b945a6d23cae1ca8eadf1b3
-*/
 static u32 dtr_cm_to_lkey(struct dtr_cm *cm)
 {
-#ifdef COMPAT_HAVE_IB_GET_DMA_MR
-	return cm->dma_mr->lkey;
-#else
 	return cm->pd->local_dma_lkey;
-#endif
 }
 
 static void dtr_re_init_stream(struct dtr_stream *rdma_stream)
@@ -2474,22 +2460,6 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 		goto createqp_failed;
 	}
 
-#ifdef COMPAT_HAVE_IB_GET_DMA_MR
-	/* create RDMA memory region (MR) */
-	cm->dma_mr = ib_get_dma_mr(cm->pd,
-			IB_ACCESS_LOCAL_WRITE |
-			IB_ACCESS_REMOTE_READ |
-			IB_ACCESS_REMOTE_WRITE);
-	if (IS_ERR(cm->dma_mr)) {
-		*cause = IB_GET_DMA_MR;
-		err = PTR_ERR(cm->dma_mr);
-		cm->dma_mr = NULL;
-
-		rdma_destroy_qp(cm->id);
-		goto createqp_failed;
-	}
-#endif
-
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_create_rx_desc(&path->flow[i]);
 
@@ -2708,14 +2678,6 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
-
-
-#ifdef COMPAT_HAVE_IB_GET_DMA_MR
-	if (cm->dma_mr) {
-		ib_dereg_mr(cm->dma_mr);
-		cm->dma_mr = NULL;
-	}
-#endif
 
 	if (cm->id) {
 		if (cm->id->qp)
