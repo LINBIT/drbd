@@ -25,7 +25,7 @@
 #include <linux/sched/signal.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
-
+#include <rdma/ib_cm.h>
 #include <linux/drbd_genl_api.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
@@ -994,7 +994,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	cm = dtr_alloc_cm();
 	if (!cm) {
 		tr_err(transport, "rejecting connecting since -ENOMEM for cm\n");
-		rdma_reject(new_cm_id, NULL, 0);
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 		return;
 	}
 
@@ -1015,7 +1015,7 @@ static void dtr_cma_accept_work_fn(struct work_struct *work)
 	/* The initial reference is gifted to the path */
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
-		rdma_reject(new_cm_id, NULL, 0);
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 		kref_put(&cm->kref, dtr_destroy_cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
 		return;
@@ -1061,14 +1061,14 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 				peer_addr->ss_family);
 		}
 
-		rdma_reject(new_cm_id, NULL, 0);
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 		return 0;
 	}
 
 	path = container_of(drbd_path, struct dtr_path, path);
 	cs = &path->cs;
 	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
-		rdma_reject(new_cm_id, NULL, 0);
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 		return -EAGAIN;
 	}
 
@@ -1076,7 +1076,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	if (!ad) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 		tr_err(transport,"rejecting connecting since -ENOMEM for ad\n");
-		rdma_reject(new_cm_id, NULL, 0);
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
 		return -ENOMEM;
 	}
 	INIT_WORK(&ad->work, dtr_cma_accept_work_fn);

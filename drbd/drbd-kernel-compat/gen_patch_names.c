@@ -112,6 +112,9 @@ int main(int argc, char **argv)
 	patch(1, "ib_get_dma_mr", false, true,
 	      COMPAT_HAVE_IB_GET_DMA_MR, "present");
 
+	patch(1, "rdma_reject", true, false,
+	      COMPAT_RDMA_REJECT_HAS_REASON_ARG, "4-arguments");
+
 #if !defined(COMPAT_HAVE_BIO_SET_DEV)
 	patch(1, "bio_set_dev", true, false,
 	      COMPAT_HAVE_BIO_SET_DEV, "present");
