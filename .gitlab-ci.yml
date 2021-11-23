@@ -1,5 +1,7 @@
 variables:
-  BUILD_HELPERS_VERSION: 97370543f06f09c81604b1bb952c4571ffbe35fe
+  RELEASE_BRANCH: drbd-9.1
+  DRBD_VERSION_BASE: 9.1.0
+  BUILD_HELPERS_VERSION: a87d4f95c35fa24eebe1a157408ef59cebd1f3f4
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -79,8 +81,7 @@ stages:
 .rules-build:
   rules:
     - if: $CI_MERGE_REQUEST_ID
-    - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
-    - if: $CI_COMMIT_BRANCH == 'master'
+    - if: $CI_COMMIT_BRANCH == $RELEASE_BRANCH
 
 check:coccicheck:
   stage: check
@@ -101,9 +102,15 @@ build:for-tests:
   extends: [ .rules-build, .setup-lbbuild ]
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
-    - DRBD_VERSION=9.1.0.$CI_COMMIT_SHA
+    - if [ "$CI_COMMIT_BRANCH" = "$RELEASE_BRANCH" ]; then
+    -   DRBD_VERSION=$DRBD_VERSION_BASE.latest
+    -   DRBD_RELEASE=$(git rev-list --count "origin/$CI_COMMIT_BRANCH")
+    - else
+    -   DRBD_VERSION=$DRBD_VERSION_BASE.$CI_COMMIT_SHA
+    -   DRBD_RELEASE=1
+    - fi
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
-    - drbd_build $DRBD_VERSION 1 $DRBD_VERSION "$(kernels_from_vms)"
+    - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   artifacts:
     reports:
       dotenv: build.env
@@ -112,19 +119,6 @@ build:for-tests:
       - drbd/drbd-kernel-compat/cocci_cache
     when: always
     expire_in: 1 week
-  needs: []
-
-build-latest:
-  stage: build
-  rules:
-    - if: $CI_COMMIT_BRANCH == 'drbd-9.0'
-    - if: $CI_COMMIT_BRANCH == 'master'
-  extends: [ .setup-lbbuild ]
-  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
-  script:
-    - DRBD_VERSION=9.1.0.latest
-    - DRBD_RELEASE=$(git rev-list --count origin/master)
-    - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   needs: []
 
 .test:
