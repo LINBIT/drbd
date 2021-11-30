@@ -248,6 +248,7 @@ static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
+static bool disconnect_expected(struct drbd_connection *connection);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -9777,9 +9778,30 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 		}
 	} else if (connection->cstate[NOW] == C_CONNECTED) /* && event == CLOSED_BY_PEER */ {
 		drbd_warn(connection, "meta connection shut down by peer.\n");
+		if (disconnect_expected(connection))
+			return;
 	}
 
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+}
+
+static bool disconnect_expected(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	bool expect_disconnect;
+
+	/* We are reacting to a not-committed state change! The disconnect might
+	   get aborted. This is not a problem worth much more complex code.
+	   In the unlikely case, it happens that a two-phase-commit of a graceful
+	   disconnect gets aborted and the control connection breaks in exactly
+	   this time window, we will notice it as soon as sending something on the
+	   control stream. */
+	read_lock_irq(&resource->state_rwlock);
+	expect_disconnect = resource->remote_state_change &&
+		drbd_twopc_between_peer_and_me(connection) &&
+		resource->twopc_reply.is_disconnect;
+	read_unlock_irq(&resource->state_rwlock);
+	return expect_disconnect;
 }
 
 void drbd_send_acks_wf(struct work_struct *ws)
