@@ -279,6 +279,7 @@ struct dtr_transport {
 	 */
 	struct ratelimit_state rate_limit;
 
+	struct timer_list control_timer;
 	atomic_t first_path_connect_err;
 	struct completion connected;
 };
@@ -353,7 +354,8 @@ static bool dtr_receive_rx_desc(struct dtr_transport *, enum drbd_stream,
 				struct dtr_rx_desc **);
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				enum drbd_stream stream,
-				struct dtr_rx_desc **pp_rx_desc);
+				struct dtr_rx_desc **pp_rx_desc,
+				gfp_t gfp_mask);
 static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 			       enum drbd_stream stream);
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc);
@@ -364,7 +366,7 @@ static void __dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
-static int dtr_send_flow_control_msg(struct dtr_path *path);
+static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask);
 static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
@@ -373,6 +375,7 @@ static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 static void dtr_tx_timeout_fn(struct timer_list *t);
+static void dtr_control_timer_fn(struct timer_list *t);
 static void dtr_tx_timeout_work_fn(struct work_struct *work);
 
 static struct drbd_transport_class rdma_transport_class = {
@@ -522,6 +525,7 @@ static int dtr_init(struct drbd_transport *transport)
 	rdma_transport->sges_max = DTR_MAX_TX_SGES;
 
 	ratelimit_state_init(&rdma_transport->rate_limit, 5*HZ, 4);
+	timer_setup(&rdma_transport->control_timer, dtr_control_timer_fn, 0);
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
@@ -567,6 +571,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			kref_put(&cm->kref, dtr_destroy_cm);
 	}
 
+	del_timer_sync(&rdma_transport->control_timer);
+
 	if (free_op == DESTROY_TRANSPORT) {
 		LIST_HEAD(work_list);
 		struct dtr_path *tmp;
@@ -590,8 +596,15 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	}
 }
 
+static void dtr_control_timer_fn(struct timer_list *t)
+{
+	struct dtr_transport *rdma_transport = from_timer(rdma_transport, t, control_timer);
+	struct drbd_transport *transport = &rdma_transport->transport;
 
-static int dtr_send(struct dtr_path *path, void *buf, size_t size)
+	drbd_control_event(transport, TIMEOUT);
+}
+
+static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mask)
 {
 	struct ib_device *device;
 	struct dtr_tx_desc *tx_desc;
@@ -606,11 +619,11 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size)
 		goto out;
 
 	err = -ENOMEM;
-	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), GFP_NOIO);
+	tx_desc = kzalloc(sizeof(*tx_desc) + sizeof(struct ib_sge), gfp_mask);
 	if (!tx_desc)
 		goto out_put;
 
-	send_buffer = kmalloc(size, GFP_NOIO);
+	send_buffer = kmalloc(size, gfp_mask);
 	if (!send_buffer) {
 		kfree(tx_desc);
 		goto out_put;
@@ -648,7 +661,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 
 	// pr_info("%s: in recv_pages, size: %zu\n", rdma_stream->name, size);
 	TR_ASSERT(transport, rdma_stream->current_rx.bytes_left == 0);
-	dtr_recycle_rx_desc(transport, DATA_STREAM, &rdma_stream->current_rx.desc);
+	dtr_recycle_rx_desc(transport, DATA_STREAM, &rdma_stream->current_rx.desc, GFP_NOIO);
 	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 
 	while (size) {
@@ -730,7 +743,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 	} else if (rdma_stream->current_rx.bytes_left == 0) {
 		long t;
 
-		dtr_recycle_rx_desc(transport, stream, &rdma_stream->current_rx.desc);
+		dtr_recycle_rx_desc(transport, stream, &rdma_stream->current_rx.desc, GFP_NOIO);
 		if (flags & MSG_DONTWAIT) {
 			t = dtr_receive_rx_desc(rdma_transport, stream, &rx_desc);
 		} else {
@@ -916,7 +929,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		__dtr_refill_rx_desc(path, i);
-	err = dtr_send_flow_control_msg(path);
+	err = dtr_send_flow_control_msg(path, GFP_NOIO);
 	if (err > 0)
 		err = 0;
 	if (err)
@@ -1243,6 +1256,9 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 		drbd_path_event(transport, drbd_path, destroyed);
 	}
 
+	if (!dtr_transport_ok(transport))
+		drbd_control_event(transport, CLOSED_BY_PEER);
+
 	if (destroyed)
 		return;
 
@@ -1420,11 +1436,8 @@ static int dtr_new_rx_descs(struct dtr_flow *flow)
 	return max(posted - known, 0);
 }
 
-static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
-				enum drbd_stream stream,
-				struct dtr_rx_desc **ptr_rx_desc)
+static struct dtr_rx_desc *dtr_next_rx_desc(struct dtr_stream *rdma_stream)
 {
-	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct dtr_rx_desc *rx_desc;
 
 	spin_lock_irq(&rdma_stream->rx_descs_lock);
@@ -1440,6 +1453,18 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 		}
 	}
 	spin_unlock_irq(&rdma_stream->rx_descs_lock);
+
+	return rx_desc;
+}
+
+static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
+				enum drbd_stream stream,
+				struct dtr_rx_desc **ptr_rx_desc)
+{
+	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
+	struct dtr_rx_desc *rx_desc;
+
+	rx_desc = dtr_next_rx_desc(rdma_stream);
 
 	if (rx_desc) {
 		struct dtr_cm *cm = rx_desc->cm;
@@ -1461,7 +1486,7 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 
 			if (atomic_read(&flow->rx_descs_known_to_peer) <
 			    atomic_read(&flow->rx_descs_posted) / 8)
-				dtr_send_flow_control_msg(path);
+				dtr_send_flow_control_msg(path, GFP_NOIO);
 		}
 		rcu_read_unlock();
 	}
@@ -1469,7 +1494,7 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 	return false;
 }
 
-static int dtr_send_flow_control_msg(struct dtr_path *path)
+static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 {
 	struct dtr_flow_control msg;
 	enum drbd_stream i;
@@ -1477,7 +1502,7 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 
-	spin_lock(&path->send_flow_control_lock);
+	spin_lock_bh(&path->send_flow_control_lock);
 	/* dtr_send_flow_control_msg() is called from the receiver thread and
 	   areceiver, asender (multiple threads).
 	   determining the number of new tx_descs and subtracting this number
@@ -1494,7 +1519,7 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
 			rx_desc_stolen_from = i;
 	}
-	spin_unlock(&path->send_flow_control_lock);
+	spin_unlock_bh(&path->send_flow_control_lock);
 
 	if (rx_desc_stolen_from == -1) {
 		tr_err(&path->rdma_transport->transport,
@@ -1509,7 +1534,7 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 	}
 
 	msg.rx_desc_stolen_from_stream = cpu_to_be32(rx_desc_stolen_from);
-	err = dtr_send(path, &msg, sizeof(msg));
+	err = dtr_send(path, &msg, sizeof(msg), gfp_mask);
 	if (err) {
 		atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
 	out_undo:
@@ -1521,14 +1546,14 @@ static int dtr_send_flow_control_msg(struct dtr_path *path)
 	return err;
 }
 
-static void dtr_flow_control(struct dtr_flow *flow)
+static void dtr_flow_control(struct dtr_flow *flow, gfp_t gfp_mask)
 {
 	int n, known_to_peer = atomic_read(&flow->rx_descs_known_to_peer);
 	int tx_descs_max = flow->tx_descs_max;
 
 	n = dtr_new_rx_descs(flow);
 	if (n > tx_descs_max / 8 || known_to_peer < tx_descs_max / 8)
-		dtr_send_flow_control_msg(flow->path);
+	  dtr_send_flow_control_msg(flow->path, gfp_mask);
 }
 
 static int dtr_got_flow_control_msg(struct dtr_path *path,
@@ -1649,6 +1674,25 @@ static void dtr_dec_rx_descs(struct dtr_cm *cm)
 		atomic_dec(&flow[CONTROL_STREAM].rx_descs_posted);
 }
 
+static void dtr_control_data_ready(struct dtr_stream *rdma_stream, struct dtr_rx_desc *rx_desc)
+{
+	struct dtr_transport *rdma_transport = rdma_stream->rdma_transport;
+	struct drbd_transport *transport = &rdma_transport->transport;
+	struct drbd_const_buffer buffer;
+	struct dtr_cm *cm = rx_desc->cm;
+
+	ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+				   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+
+	buffer.buffer = page_address(rx_desc->page);
+	buffer.avail = rx_desc->size;
+	drbd_control_data_ready(transport, &buffer);
+	rdma_stream->rx_sequence =
+		(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+
+	dtr_recycle_rx_desc(transport, CONTROL_STREAM, &rx_desc, GFP_ATOMIC);
+}
+
 static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 {
 	struct dtr_path *path = cm->path;
@@ -1722,10 +1766,19 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		smp_wmb(); /* smp_rmb() is in dtr_new_rx_descs() */
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
-		rx_desc->sequence = immediate.sequence;
-		dtr_order_rx_descs(rdma_stream, rx_desc);
+		if (immediate.stream == ST_CONTROL)
+			mod_timer(&rdma_transport->control_timer, jiffies + rdma_stream->recv_timeout);
 
-		wake_up_interruptible(&rdma_stream->recv_wq);
+		if (immediate.stream == ST_CONTROL &&
+		    rdma_stream->rx_sequence == immediate.sequence) {
+			dtr_control_data_ready(rdma_stream, rx_desc);
+			while ((rx_desc = dtr_next_rx_desc(rdma_stream)))
+				dtr_control_data_ready(rdma_stream, rx_desc);
+		} else {
+			rx_desc->sequence = immediate.sequence;
+			dtr_order_rx_descs(rdma_stream, rx_desc);
+			wake_up_interruptible(&rdma_stream->recv_wq);
+		}
 	}
 
 	return 0;
@@ -2030,7 +2083,7 @@ static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 			continue;
 
 		__dtr_refill_rx_desc(path, stream);
-		dtr_flow_control(&path->flow[stream]);
+		dtr_flow_control(&path->flow[stream], GFP_NOIO);
 	}
 }
 
@@ -2049,7 +2102,8 @@ static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 
 static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 				enum drbd_stream stream,
-				struct dtr_rx_desc **pp_rx_desc)
+				struct dtr_rx_desc **pp_rx_desc,
+				gfp_t gfp_mask)
 {
 	struct dtr_rx_desc *rx_desc = *pp_rx_desc;
 	struct dtr_cm *cm;
@@ -2070,7 +2124,7 @@ static void dtr_recycle_rx_desc(struct drbd_transport *transport,
 		dtr_free_rx_desc(rx_desc);
 	} else {
 		atomic_inc(&flow->rx_descs_posted);
-		dtr_flow_control(flow);
+		dtr_flow_control(flow, gfp_mask);
 	}
 
 	*pp_rx_desc = NULL;
