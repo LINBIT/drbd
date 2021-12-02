@@ -8405,6 +8405,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
 	atomic_set(&connection->current_epoch->epoch_size, 0);
 	connection->send.seen_any_write_yet = false;
+	connection->current_epoch->oldest_unconfirmed_peer_req = NULL;
 
 	drbd_info(connection, "Connection closed\n");
 
