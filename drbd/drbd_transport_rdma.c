@@ -635,6 +635,13 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mas
 	tx_desc->data = send_buffer;
 	tx_desc->nr_sges = 1;
 	tx_desc->sge[0].addr = ib_dma_map_single(device, send_buffer, size, DMA_TO_DEVICE);
+	err = ib_dma_mapping_error(device, tx_desc->sge[0].addr);
+	if (err) {
+		kfree(tx_desc);
+		kfree(send_buffer);
+		goto out_put;
+	}
+
 	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 	tx_desc->sge[0].length = size;
 	tx_desc->imm = (union dtr_immediate)
@@ -2028,9 +2035,8 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 
 	cm = dtr_path_get_cm(path);
 	if (!cm) {
-		kfree(rx_desc);
-		drbd_free_pages(transport, page, 0);
-		return -ECONNRESET;
+		err = -ECONNRESET;
+		goto out;
 	}
 	rx_desc->cm = cm;
 	rx_desc->page = page;
@@ -2038,6 +2044,9 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
 	rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page), alloc_size,
 					      DMA_FROM_DEVICE);
+	err = ib_dma_mapping_error(cm->id->device, rx_desc->sge.addr);
+	if (err)
+		goto out;
 	rx_desc->sge.length = alloc_size;
 
 	err = dtr_post_rx_desc(cm, rx_desc);
@@ -2049,6 +2058,10 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 		atomic_inc(&flow->rx_descs_posted);
 	}
 
+	return err;
+out:
+	kfree(rx_desc);
+	drbd_free_pages(transport, page, 0);
 	return err;
 }
 
@@ -2218,11 +2231,11 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 	return cm;
 }
 
-static void dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
+static int dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 			      struct dtr_tx_desc *tx_desc)
 {
 	struct ib_device *device = old_cm->id->device;
-	int i, nr_sges;
+	int i, nr_sges, err;
 	dma_addr_t a = 0;
 
 	switch (tx_desc->type) {
@@ -2255,9 +2268,12 @@ static void dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 #endif
 		break;
 	}
+	err = ib_dma_mapping_error(device, a);
 
 	tx_desc->sge[0].addr = a;
 	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
+
+	return err;
 }
 
 
@@ -2273,7 +2289,10 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 		if (!cm)
 			return -ECONNRESET;
 
-		dtr_remap_tx_desc(old_cm, cm, tx_desc);
+		err = dtr_remap_tx_desc(old_cm, cm, tx_desc);
+		if (err)
+			continue;
+
 		err = __dtr_post_tx_desc(cm, tx_desc);
 		if (!err) {
 			struct dtr_flow *flow = &cm->path->flow[stream];
@@ -2320,6 +2339,10 @@ retry:
 		offset = tx_desc->sge[0].lkey;
 		tx_desc->sge[0].addr = ib_dma_map_page(device, tx_desc->page, offset,
 						      tx_desc->sge[0].length, DMA_TO_DEVICE);
+		err = ib_dma_mapping_error(device, tx_desc->sge[0].addr);
+		if (err)
+			goto out;
+
 		tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 		break;
 	case SEND_MSG:
@@ -2333,6 +2356,8 @@ retry:
 	else
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
 
+
+out:
 	// pr_info("%s: Created send_wr (%p, %p): nr_sges=%u, first seg: lkey=%x, addr=%llx, length=%d\n", rdma_stream->name, tx_desc->page, tx_desc, tx_desc->nr_sges, tx_desc->sge[0].lkey, tx_desc->sge[0].addr, tx_desc->sge[0].length);
 	kref_put(&cm->kref, dtr_destroy_cm);
 	return err;
@@ -3103,6 +3128,9 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 		//	i, offset, size);
 
 		tx_desc->sge[i].addr = ib_dma_map_page(device, page, offset, size, DMA_TO_DEVICE);
+		err = ib_dma_mapping_error(device, tx_desc->sge[i].addr);
+		if (err)
+			return err; // FIX THIS
 		tx_desc->sge[i].lkey = dtr_path_to_lkey(path);
 		tx_desc->sge[i].length = size;
 		done += size;
