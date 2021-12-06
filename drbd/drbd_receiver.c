@@ -8551,6 +8551,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	/* ok, no more ee's on the fly, it is safe to reset the epoch_size */
 	atomic_set(&connection->current_epoch->epoch_size, 0);
 	connection->send.seen_any_write_yet = false;
+	connection->current_epoch->oldest_unconfirmed_peer_req = NULL;
 
 	/* Indicate that last_dagtag_sector may no longer be up-to-date. We
 	 * need to keep last_dagtag_sector because we may still need it to
