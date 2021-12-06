@@ -2,51 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.4 (api:genl2/proto:110-121/transport:17)
+9.2.0-rc.1 (api:genl2/proto:110-121/transport:18)
 --------
- * merged all changes from drbd-9.0.31
- * enabled dynamic debug on some additional log messages
- * remove (broken) write conflict resolution, replace it with warning
-   about the fact
- * debugfs entry for the interval tree
-
-9.1.3 (api:genl2/proto:110-120/transport:17)
---------
- * merged all fixes from drbd-9.0.30-0rc1
- * fix a corner-case NULL deref in the lockless buffer pages handling; the
-   regression was introduced with 9.1.0 (released Feb 2021); To my knowledge
-   it took 6 months until someone triggered it for the first time
- * fix sending a P_PEERS_IN_SYNC packet into a fresh connection (before
-   handshake packets); this problem was introduced when the drbd-8.x
-   compatibility code was removed
- * remove sending a DRBD-barrier packet when processing a REQ_PREFLUSH
-   request, that improves IO-depth and improves performance with that
-
-9.1.2 (api:genl2/proto:110-120/transport:17)
---------
- * merged all fixes from drbd-9.0.29; other than that no changes in this branch
-
-9.1.1 (api:genl2/proto:110-119/transport:17)
---------
- * fix a temporal deadlock you could trigger when you exercise promotion races
-   and mix some read-only openers into the test case
- * fix for bitmap-copy operation in a very specific and unlikely case where
-   two nodes do a bitmap-based resync due to disk-states
- * fix size negotiation when combining nodes of different CPU architectures
-   that have different page sizes
- * fix a very rare race where DRBD reported wrong magic in a header
-   packet right after reconnecting
- * fix a case where DRBD ends up reporting unrelated data; it affected
-   thinly allocated resources with a diskless node in a recreate from day0
-   event
- * changes to socket buffer sizes get applied to established connections immediately;
-   before it was applied after a re-connect
- * add exists events for path objects
- * fix a merge-mistake that broke compatibility with 5.10 kernels
-
-9.1.0 (api:genl2/proto:110-119/transport:16)
---------
- * was forked off from drbd 9.0.19
- * has all changes up to 9.0.28-1
- * locking in the IO-submit code path was considerably improved,
-   allowing multiple CPU to submit in parallel
+ * was forked off between 9.1.4 and 9.1.5
+ * implemented a geniue way of coordinating resync and application IO;
+   removed the internal resync_lru
+ * receive and process ack-packets in TCP/RDMA SOFTIRQ context, that
+   improves latency on all write operations; removed ack_receiver thread
+ * add RDMA transport for IB, RoCE networking
