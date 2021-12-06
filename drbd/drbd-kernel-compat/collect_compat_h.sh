@@ -10,7 +10,7 @@ N_UNIQUE=0
 N_PRESERVED=0
 
 if [ -z "$LBBUILD_CI_BUILD" ]; then
-	COMPAT_HEADERS_PATH=/home/lbbuild/lbbuild/localpkgs/drbd-9.1-compat-latest
+	COMPAT_HEADERS_PATH=/home/lbbuild/lbbuild/localpkgs/drbd-9.2-compat-latest
 else
 	COMPAT_HEADERS_PATH=/home/lbbuild/lbbuild/localpkgs/ci/drbd
 fi
