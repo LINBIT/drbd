@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.5-rc.1 (api:genl2/proto:110-121/transport:17)
+--------
+ * merged all changes from drbd-9.0.32
+ * fixed a locking regression of the 9.1 branch, only relevant in
+   the moment a local backing device delivers an IO error to drbd
+ * removed compat support for kernel older than Linux-3.10 (RHEL7)
+ * code cleanups and refactoring
+
 9.1.4 (api:genl2/proto:110-121/transport:17)
 --------
  * merged all changes from drbd-9.0.31
