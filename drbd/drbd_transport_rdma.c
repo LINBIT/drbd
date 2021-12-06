@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
    drbd_transport_rdma.c
 
    This file is part of DRBD.
 
-   Copyright (C) 2014, LINBIT HA-Solutions GmbH.
-
-   drbd is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
-   drbd is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with drbd; see the file COPYING.  If not, write to
-   the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+   Copyright (C) 2014-2021, LINBIT HA-Solutions GmbH.
 */
 
 #undef pr_fmt
@@ -43,7 +30,7 @@
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
 #include <drbd_wrappers.h>
-
+#include <linux/drbd_config.h> /* for REL_VERSION */
 
 /* Nearly all data transfer uses the send/receive semantics. No need to
    actually use RDMA WRITE / READ.
@@ -76,7 +63,7 @@ MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
 MODULE_AUTHOR("Lars Ellenberg <lars.ellenberg@linbit.com>");
 MODULE_DESCRIPTION("RDMA transport layer for DRBD");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("2.0.16");
+MODULE_VERSION(REL_VERSION);
 
 int allocation_size;
 /* module_param(allocation_size, int, 0664);
