@@ -1884,6 +1884,9 @@ static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd
 	if (cmd == P_RS_DAGTAG_REQ || cmd == P_RS_CSUM_DAGTAG_REQ || cmd == P_RS_THIN_DAGTAG_REQ ||
 			cmd == P_OV_DAGTAG_REQ || cmd == P_OV_DAGTAG_REPLY) {
 		struct p_rs_req *p;
+		/* Due to the slightly complicated nested struct definition,
+		 * verify that the packet size is as expected. */
+		BUILD_BUG_ON(sizeof(struct p_rs_req) != 32);
 		p = drbd_prepare_command(peer_device, sizeof(*p) + payload_size, DATA_STREAM);
 		if (!p)
 			return NULL;
@@ -1893,6 +1896,9 @@ static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd
 		p->dagtag = cpu_to_be64(dagtag);
 	} else {
 		struct p_block_req *p;
+		/* Due to the slightly complicated nested struct definition,
+		 * verify that the packet size is as expected. */
+		BUILD_BUG_ON(sizeof(struct p_block_req) != 24);
 		p = drbd_prepare_command(peer_device, sizeof(*p) + payload_size, DATA_STREAM);
 		if (!p)
 			return NULL;
