@@ -1,5 +1,7 @@
-obj-m += drbd.o drbd_transport_tcp.o drbd_transport_rdma.o
-# obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o drbd_transport_tcp.o
+obj-m += drbd.o drbd_transport_tcp.o
+ifdef CONFIG_INFINIBAND
+obj-m += drbd_transport_rdma.o
+endif
 
 clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
