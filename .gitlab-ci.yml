@@ -25,7 +25,7 @@ stages:
         mkdir -p drbd-test-bundle
         curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xzf -
         rq -t < drbd-test-bundle/virter/vms.toml | \
-          jq -r '.vms[].metadata | .BuildDistribution + " " + .KernelRelease'
+          jq -r '.vms[].metadata | .BuildDistribution + " " + .BuildKernel'
       }
 
       # parameters: [version] [release] [rel-version] [kernels]
