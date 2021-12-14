@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0-rc.2 (api:genl2/proto:110-121/transport:18)
+--------
+ * Fix broken wire compatibility with drbd-9.x
+ * Fix DKMS builds when the kernel config has CONFIG_INFINIBAND=n
+
 9.2.0-rc.1 (api:genl2/proto:110-121/transport:18)
 --------
  * was forked off between 9.1.4 and 9.1.5
