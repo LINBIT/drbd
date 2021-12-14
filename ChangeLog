@@ -2,9 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.5-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.5 (api:genl2/proto:110-121/transport:17)
 --------
  * merged all changes from drbd-9.0.32
+  - fix a read-access-after-free, that could cause an OOPs; triggers with
+    an unusual configuration with a secondary having a smaller AL than
+    the primary or a diskless primary and heavy IO
+  - avoid a livelock that can cause long IO delays during resync on a
+    primary resync-target node
+  - following upstream changes to DRBD up to Linux 5.14 and updated compat
+    (including RHEL9-beta)
+  - fix module override for Oracle-Linux
  * fixed a locking regression of the 9.1 branch, only relevant in
    the moment a local backing device delivers an IO error to drbd
  * removed compat support for kernel older than Linux-3.10 (RHEL7)
