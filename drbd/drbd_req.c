@@ -470,7 +470,7 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 				(unsigned long long) release_interval->sector, release_interval->size);
 
 		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
-			return;
+			continue;
 
 		/* Verify requests never wait for conflicting intervals. If
 		 * there are no conflicts, they are marked direcly as
