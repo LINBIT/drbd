@@ -2134,7 +2134,6 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 		return -EINVAL;
 	}
 
-	peer_req->i.type = INTERVAL_PEER_WRITE;
 	peer_req->block_id = d->block_id;
 
 	if (d->length == 0)
@@ -3184,6 +3183,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	}
 	peer_req->i.size = d.bi_size; /* storage size */
 	peer_req->i.sector = d.sector;
+	peer_req->i.type = INTERVAL_PEER_WRITE;
 
 	err = read_in_block(peer_req, &d);
 	if (err) {
