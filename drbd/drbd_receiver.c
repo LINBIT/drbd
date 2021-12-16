@@ -8308,6 +8308,10 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	 * flushing sender_work. */
 	conn_wait_ee_empty(connection, &connection->sync_ee);
 
+	/* Clear up and remove requests that have progressed from sync_ee to
+	 * done_ee. */
+	drbd_finish_peer_reqs(connection);
+
 	/* Requests that are waiting for a dagtag or resync reply must be
 	 * removed from the interval tree and then freed. */
 	free_waiting_resync_requests(connection);
