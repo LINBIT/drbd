@@ -2514,9 +2514,23 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 						  drbd_set_st_err_str(rv));
 			}
 		} else if ((mode & FMODE_NDELAY) == 0) {
-			wait_event_interruptible_timeout(resource->state_wait,
-				ro_open_cond(device) != -EAGAIN,
-				resource->res_opts.auto_promote_timeout * HZ / 10);
+			/* Double check peers
+			 *
+			 * Some services may try to first open ro, and only if that
+			 * works open rw.  An attempt to failover immediately after
+			 * primary crash, before DRBD has noticed that the primary peer
+			 * is gone, would result in open failure, thus failure to take
+			 * over services. */
+			err = ro_open_cond(device);
+			if (err == -EMEDIUMTYPE) {
+				drbd_check_peers(resource);
+				err = -EAGAIN;
+			}
+			if (err == -EAGAIN) {
+				wait_event_interruptible_timeout(resource->state_wait,
+					ro_open_cond(device) != -EAGAIN,
+					resource->res_opts.auto_promote_timeout * HZ / 10);
+			}
 		}
 	} else if (resource->role[NOW] != R_PRIMARY &&
 			!(mode & FMODE_WRITE) && !drbd_allow_oos) {
