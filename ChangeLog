@@ -2,6 +2,13 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0-rc.3 (api:genl2/proto:110-121/transport:18)
+--------
+ * fix a corner case that might cause conflicting requests (touching
+   a storage area that is under resync) to not terminate
+ * merge from drbd-9.0: fix failing read-only open immediately after
+   a primary peer left the cluster ungracefully
+
 9.2.0-rc.2 (api:genl2/proto:110-121/transport:18)
 --------
  * Fix broken wire compatibility with drbd-9.x
