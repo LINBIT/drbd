@@ -31,11 +31,8 @@ ARCH ?= amd64
 ifneq ($(strip $(ARCH)),)
 DOCKERREGISTRY := $(DOCKERREGISTRY)/$(ARCH)
 endif
-DOCKERREGPATH_RHEL7 = $(DOCKERREGISTRY)/drbd9-rhel7
-DOCKERREGPATH_RHEL8 = $(DOCKERREGISTRY)/drbd9-rhel8
-DOCKERREGPATH_BIONIC = $(DOCKERREGISTRY)/drbd9-bionic
-DOCKERREGPATH_FOCAL = $(DOCKERREGISTRY)/drbd9-focal
-DOCKERREGPATH_SLES15SP1 = $(DOCKERREGISTRY)/drbd9-sles15sp1
+DOCKERIMAGES = rhel7 rhel8 bionic focal sles15sp1 flatcar
+DOCKERIMAGESTARGETS = $(addprefix dockerimage.,$(DOCKERIMAGES))
 
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
@@ -168,9 +165,9 @@ check check_changelogs_up2date:
 	   printf "\nChangeLog:3:\tneeds update\n"; 				\
 	   up2date=false; fi ; 							\
 	for df in 7 8 ; do							\
-	if ! grep "^ENV DRBD_VERSION $$dver" docker/Dockerfile.centos$$df ;	\
+	if ! grep "^ENV DRBD_VERSION $$dver" docker/Dockerfile.rhel$$df ;	\
 	then 									\
-		printf "\nDockerfile.centos$$df: needs update\n"; 		\
+		printf "\nDockerfile.rhel$$df: needs update\n"; 		\
 	   up2date=false; fi ; 							\
 	done ;									\
 	if test -e debian/changelog 						\
@@ -299,36 +296,29 @@ km-deb: check-submods distclean drbd/.drbd_git_revision
 	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"
 endif
 
-.PHONY: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1 dockerimage
-dockerimage.rhel7:
-	cd docker && docker build -f Dockerfile.centos7 -t $(DOCKERREGPATH_RHEL7):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
-	docker tag $(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest
+dockerimage.%: FORCE
+	cd docker && docker build -f Dockerfile.$* -t $(DOCKERREGISTRY)/drbd9-$*:$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
+	docker tag $(DOCKERREGISTRY)/drbd9-$*:$(TAG) $(DOCKERREGISTRY)/drbd9-$*:latest
 
-dockerimage.rhel8:
-	cd docker && docker build -f Dockerfile.centos8 -t $(DOCKERREGPATH_RHEL8):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
-	docker tag $(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest
+.PHONY: dockerimage
+dockerimage: $(DOCKERIMAGESTARGETS)
 
-dockerimage.bionic:
-	cd docker && docker build -f Dockerfile.bionic -t $(DOCKERREGPATH_BIONIC):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
-	docker tag $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest
-
-dockerimage.focal:
-	cd docker && docker build -f Dockerfile.focal -t $(DOCKERREGPATH_FOCAL):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
-	docker tag $(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest
-
-dockerimage.sles15sp1:
-	cd docker && docker build -f Dockerfile.sles15sp1 -t $(DOCKERREGPATH_SLES15SP1):$(TAG) $(EXTRA_DOCKER_BUILDARGS) .
-	docker tag $(DOCKERREGPATH_SLES15SP1):$(TAG) $(DOCKERREGPATH_SLES15SP1):latest
-
-dockerimage: dockerimage.rhel7 dockerimage.rhel8 dockerimage.bionic dockerimage.focal dockerimage.sles15sp1
+# make does not consider implicit rules for PHONY targets.
+# This is used as an explicit dependency instead.
+# .PHONY xyz.foo
+# xyz.%:
+# 	body
+# does not work as one would expect, it actually makes things worse.
+.PHONY: FORCE
+FORCE:
 
 # used for --sync in lbbuild to decide which containers to push to which registry
 dockerpath:
-	@echo $(DOCKERREGPATH_BIONIC):$(TAG) $(DOCKERREGPATH_BIONIC):latest \
-		$(DOCKERREGPATH_FOCAL):$(TAG) $(DOCKERREGPATH_FOCAL):latest \
-		$(DOCKERREGPATH_RHEL7):$(TAG) $(DOCKERREGPATH_RHEL7):latest \
-		$(DOCKERREGPATH_RHEL8):$(TAG) $(DOCKERREGPATH_RHEL8):latest \
-		$(DOCKERREGPATH_SLES15SP1):$(TAG) $(DOCKERREGPATH_SLES15SP1):latest
+	@for d in $(DOCKERIMAGES); do \
+		repo="$(DOCKERREGISTRY)/drbd9-$${d}" ;\
+		: trailing space in format string necessary to separate output! ;\
+		printf "%s:%s %s:latest " "$$repo" "$(TAG)" "$$repo" ;\
+	done
 
 ifndef MODE
 MODE = report

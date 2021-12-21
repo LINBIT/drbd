@@ -196,6 +196,7 @@ load_from_ram() {
 
 	insmod ./drbd.ko usermode_helper=disabled
 	insmod ./drbd_transport_tcp.ko
+	insmod ./drbd_transport_rdma.ko 2>/dev/null || true
 }
 
 modprobe_deps() {
@@ -239,10 +240,24 @@ rm -rf "$pkgdir" "$kodir"
 mkdir -p "$pkgdir" "$kodir"
 
 fmt=rpm
-[ -n "$(type -p dpkg)" ] && fmt=deb
-repo=$(repo::$fmt::getrepofile)
+if [ -n "$(type -p dpkg)" ]; then
+	fmt=deb
+elif [ -n "$(type -p emerge)" ]; then
+	fmt=emerge
+fi
 
-how_get=$(how_to_get "$repo") || exit 1
+case $fmt in
+	rpm|deb)
+		repo=$(repo::$fmt::getrepofile)
+		how_get=$(how_to_get "$repo") || exit 1
+		;;
+	emerge)
+		# Cannot easily use how_to_get(), as we usually have /usr/src bind-mounted in that case.
+		# On flatcar this does not exist and we strictly only support building from source there anyway.
+		how_get=$HOW_FROMSRC
+		;;
+esac
+
 debug "Detected kmod method: \"$how_get\""
 
 dist=we_do_not_care
@@ -254,15 +269,15 @@ if [[ $need_dist == y ]]; then
 fi
 
 case $how_get in
-	$HOW_FROMSRC)
+	"$HOW_FROMSRC")
 		kos::fromsrc "$pkgdir" "$kodir"
 		;;
-	$HOW_REPOFILE|$HOW_HASH)
+	"$HOW_REPOFILE"|"$HOW_HASH")
 		repo::$fmt::getsignkey
 		[[ $how_get == "$HOW_HASH" ]] && repo::$fmt::createrepo "$dist" "$LB_HASH"
 		kos::$fmt::fromrepo "$pkgdir"
 		;;
-	$HOW_FROMSHIPPED)
+	"$HOW_FROMSHIPPED")
 		kos::$fmt::fromshipped "$pkgdir"
 		;;
 	*) die "$how_get" ;;
@@ -276,10 +291,10 @@ if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load == "$HOW_INSTALL" ]]; then
 	make install
 	modprobe drbd usermode_helper=disabled
 	modprobe drbd_transport_tcp
+	modprobe drbd_transport_rdma 2>/dev/null || true
 else
 	load_from_ram "$pkgdir" "$kodir"
 fi
 
-modprobe drbd_transport_rdma 2>/dev/null || true
 grep -q '^drbd_transport_tcp' /proc/modules || die "Could not load DRBD kernel modules"
 print_drbd_version_and_exit
