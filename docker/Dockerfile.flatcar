@@ -1,0 +1,8 @@
+FROM gentoo/stage3
+MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
+
+COPY /drbd.tar.gz /
+
+COPY /entry.sh /
+RUN chmod +x /entry.sh
+ENTRYPOINT /entry.sh
