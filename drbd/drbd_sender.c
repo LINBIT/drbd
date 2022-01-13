@@ -612,7 +612,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 		/* No rate limiting. */
 		max_sect = ~0ULL;
 	} else {
-		max_sect = (u64)pdc->c_max_rate * 2 * duration_ns;
+		max_sect = (u64)pdc->c_max_rate * 2 * RS_MAKE_REQS_INTV_NS;
 		do_div(max_sect, NSEC_PER_SEC);
 	}
 
@@ -669,11 +669,8 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	return number;
 }
 
-static int drbd_resync_delay(struct drbd_peer_device *peer_device, int number, int done)
+static int resync_delay(int number, int done)
 {
-	struct peer_device_conf *pdc;
-	unsigned long delay;
-
 	if (number > 0 && done > 0) {
 		/* Requests in-flight. Adjusting the standard delay to
 		 * mitigate rounding and other errors, that cause 'done'
@@ -682,29 +679,60 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device, int number, i
 		return RS_MAKE_REQS_INTV * done / number;
 	}
 
-	rcu_read_lock();
-	pdc = rcu_dereference(peer_device->conf);
-	if (rcu_dereference(peer_device->rs_plan_s)->size) {
-		if (pdc->c_max_rate == 0) {
-			/* Dynamic resync with no rate limiting. This should
-			 * not happen under normal circumstances. Use the
-			 * standard delay. */
-			delay = RS_MAKE_REQS_INTV;
-		} else {
-			/* Dynamic resync with rate limiting. This occurs when
-			 * the peer responds so quickly to the resync requests
-			 * that the rate limiting prevents any new requests
-			 * from being made. Wait just long enough so that we
-			 * can request some data next time. */
-			delay = DIV_ROUND_UP((unsigned long)(HZ * BM_SECT_PER_BIT / 2), pdc->c_max_rate);
-		}
-	} else {
-		/* Fixed resync rate. Use the standard delay. */
-		delay = RS_MAKE_REQS_INTV;
+	return RS_MAKE_REQS_INTV;
+}
+
+void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int rs_sect_in)
+{
+	unsigned int max_bio_size_kb = DRBD_MAX_BIO_SIZE / 1024;
+	struct drbd_device *device = peer_device->device;
+	unsigned int c_max_rate, interval, latency, m;
+	unsigned int rs_kib_in = rs_sect_in / 2;
+	ktime_t latency_kt;
+
+	if (get_ldev(device)) {
+		max_bio_size_kb = queue_max_hw_sectors(device->rq_queue) / 2;
+		put_ldev(device);
 	}
+
+	rcu_read_lock();
+	c_max_rate = rcu_dereference(peer_device->conf)->c_max_rate;
 	rcu_read_unlock();
 
-	return delay;
+	latency_kt = ktime_sub(ktime_get(), peer_device->rs_last_mk_req_kt);
+	latency = nsecs_to_jiffies(ktime_to_ns(latency_kt));
+
+	m = max_bio_size_kb > rs_kib_in ? max_bio_size_kb / rs_kib_in : 1;
+	if (c_max_rate != 0)
+		interval = rs_kib_in * m * HZ / c_max_rate;
+	else
+		interval = 0;
+	/* interval holds the ideal pace in which we should request max_bio_size */
+
+	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
+		bool progress;
+		mutex_lock(&peer_device->resync_next_bit_mutex);
+		/* Only run resync_work early if we are definitely making
+		 * progress. Otherwise we might continually lock a resync
+		 * extent even when all the requests are canceled. This can
+		 * cause application IO to be blocked for an indefinitely long
+		 * time. */
+		progress = peer_device->resync_next_bit > peer_device->last_resync_next_bit;
+		mutex_unlock(&peer_device->resync_next_bit_mutex);
+		if (!progress)
+			return;
+	}
+
+	if (peer_device->repl_state[NOW] == L_VERIFY_S ||
+	    interval <= latency) {
+		drbd_queue_work_if_unqueued(
+			&peer_device->connection->sender_work,
+			&peer_device->resync_work);
+		return;
+	}
+
+	if (interval < RS_MAKE_REQS_INTV)
+		mod_timer(&peer_device->resync_timer, jiffies + (interval - latency));
 }
 
 static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
@@ -938,8 +966,7 @@ request_done:
 			&peer_device->connection->sender_work,
 			&peer_device->resync_work);
 	} else {
-		mod_timer(&peer_device->resync_timer,
-			  jiffies + drbd_resync_delay(peer_device, number, i));
+		mod_timer(&peer_device->resync_timer, jiffies + resync_delay(number, i));
 	}
 	put_ldev(device);
 	return 0;

@@ -1946,6 +1946,7 @@ extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
 extern void wait_until_done_or_force_detached(struct drbd_device *device,
 		struct drbd_backing_dev *bdev, unsigned int *done);
 extern void drbd_rs_controller_reset(struct drbd_peer_device *);
+extern void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *, int);
 extern void drbd_check_peers(struct drbd_resource *resource);
 extern void drbd_check_peers_new_current_uuid(struct drbd_device *);
 extern void drbd_ping_peer(struct drbd_connection *connection);
