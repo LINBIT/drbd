@@ -980,7 +980,8 @@ struct drbd_resource {
 	 * Note: This is a single linked list, the next pointer is the private
 	 *       member of struct page. */
 	struct page *pp_pool;
-	atomic_t pp_vacant;
+	spinlock_t pp_lock;
+	int pp_vacant;
 	wait_queue_head_t pp_wait;
 };
 
