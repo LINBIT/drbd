@@ -762,14 +762,19 @@ static int round_to_powerof_2(int value)
 	return value - smaller < bigger - value ? smaller : bigger;
 }
 
+static bool adjacent(sector_t sector1, int size, sector_t sector2)
+{
+	return sector1 + (size >> SECTOR_SHIFT) == sector2;
+}
+
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
-	int max_bio_bits, number, rollback_i, size, i, err, optimal_bits;
+	int max_bio_bits, number, rollback_i, i, err, optimal_bits, size = 0;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
 	unsigned long bit;
-	sector_t sector;
+	sector_t sector, prev_sector = 0;
 
 	if (unlikely(cancel))
 		return 0;
@@ -842,6 +847,15 @@ next_sector:
 			goto next_sector;
 		}
 
+		if (adjacent(prev_sector, size, sector) && (number - i) << BM_BLOCK_SHIFT < size) {
+			/* When making requests in an out-of-sync area, ensure that the size
+			   of successive requests does not decrease. This allows the next
+			   make_resync_request call to start with optimal alignment. */
+			drbd_rs_complete_io(peer_device, sector);
+			goto request_done;
+		}
+
+		prev_sector = sector;
 		size = BM_BLOCK_SIZE;
 		optimal_bits_alignment = optimal_bits_for_alignment(bit, max_bio_bits);
 		optimal_bits_rate = round_to_powerof_2(number - i);
