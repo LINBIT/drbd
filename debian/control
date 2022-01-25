@@ -51,3 +51,11 @@ Description: RAID 1 over TCP/IP for Linux module source
  .
  This package contains the source code for the DRBD kernel module.
 Homepage: http://www.drbd.org
+
+Package: drbd-ueficert
+Architecture: all
+Section: admin
+Depends: debhelper (>= 7),
+         ${misc:Depends}
+Description: Public key part used for DRBD kernel module signing.
+Homepage: https://www.linbit.com

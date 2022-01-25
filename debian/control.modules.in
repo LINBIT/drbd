@@ -11,7 +11,8 @@ Standards-Version: 3.6.1
 
 Package: drbd-module-_KVERS_
 Architecture: any
-Depends: drbd-utils
+Depends: drbd-utils,
+         drbd-ueficert,
 Conflicts: drbd-module-_KVERS_
 Provides: drbd-module-_KVERS_
 Replaces: drbd-module-_KVERS_
