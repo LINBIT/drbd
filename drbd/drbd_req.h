@@ -260,11 +260,6 @@ enum drbd_req_state_bits {
 	 RQ_POSTPONED   |\
 	 RQ_COMPLETION_SUSP)
 
-/* For waking up the frozen transfer log mod_req() has to return if the request
-   should be counted in the epoch object*/
-#define MR_WRITE       1
-#define MR_READ        2
-
 static inline bool drbd_req_is_write(struct drbd_request *req)
 {
 	return req->local_rq_state & RQ_WRITE;
