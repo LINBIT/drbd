@@ -250,12 +250,14 @@ enum drbd_req_state_bits {
 /* these flags go into local_rq_state,
  * orhter flags go into their respective net_rq_state[idx] */
 #define RQ_STATE_0_MASK	\
-	(RQ_LOCAL_MASK	|\
-	 RQ_WRITE	|\
+	(RQ_LOCAL_MASK  |\
+	 RQ_WRITE       |\
 	 RQ_WSAME       |\
-	 RQ_IN_ACT_LOG	|\
-	 RQ_POSTPONED	|\
-	 RQ_UNPLUG	|\
+	 RQ_UNMAP       |\
+	 RQ_ZEROES      |\
+	 RQ_IN_ACT_LOG  |\
+	 RQ_UNPLUG      |\
+	 RQ_POSTPONED   |\
 	 RQ_COMPLETION_SUSP)
 
 /* For waking up the frozen transfer log mod_req() has to return if the request
