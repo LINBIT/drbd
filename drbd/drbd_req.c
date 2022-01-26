@@ -959,8 +959,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		drbd_insert_interval(&device->read_requests, &req->i);
 		spin_unlock_irqrestore(&device->interval_lock, flags);
 
-		set_bit(UNPLUG_REMOTE, &device->flags);
-
 		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
 		D_ASSERT(device, !(req->local_rq_state & RQ_LOCAL_MASK));
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED);
@@ -983,11 +981,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * again ourselves to close the current epoch.
 		 *
 		 * Add req to the (now) current epoch (barrier). */
-
-		/* otherwise we may lose an unplug, which may cause some remote
-		 * io-scheduler timeout to expire, increasing maximum latency,
-		 * hurting performance. */
-		set_bit(UNPLUG_REMOTE, &device->flags);
 
 		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
 
@@ -1743,8 +1736,7 @@ static struct drbd_plug_cb* drbd_check_plugged(struct drbd_resource *resource)
 static void drbd_update_plug(struct drbd_plug_cb *plug, struct drbd_request *req)
 {
 	struct drbd_request *tmp = plug->most_recent_req;
-	/* Will be sent to some peer.
-	 * Remember to tag it with UNPLUG_REMOTE on unplug */
+	/* Will be sent to some peer. */
 	kref_get(&req->kref);
 	plug->most_recent_req = req;
 	if (tmp)
