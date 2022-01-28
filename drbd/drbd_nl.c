@@ -3094,7 +3094,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* make sure there is no leftover from previous force-detach attempts */
 	clear_bit(FORCE_DETACH, &device->flags);
-	clear_bit(WAS_READ_ERROR, &device->flags);
 
 	/* and no leftover from previously aborted resync or verify, either */
 	for_each_peer_device(peer_device, device) {

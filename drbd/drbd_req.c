@@ -2612,28 +2612,11 @@ void drbd_handle_io_error_(struct drbd_device *device,
 		fallthrough;	/* for DRBD_META_IO_ERROR or DRBD_FORCE_DETACH */
 	case EP_DETACH:
 	case EP_CALL_HELPER:
-		/* Remember whether we saw a READ or WRITE error.
-		 *
-		 * Recovery of the affected area for WRITE failure is covered
-		 * by the activity log.
-		 * READ errors may fall outside that area though. Certain READ
-		 * errors can be "healed" by writing good data to the affected
-		 * blocks, which triggers block re-allocation in lower layers.
-		 *
-		 * If we can not write the bitmap after a READ error,
-		 * we may need to trigger a full sync (see w_go_diskless()).
-		 *
-		 * Force-detach is not really an IO error, but rather a
+		/* Force-detach is not really an IO error, but rather a
 		 * desperate measure to try to deal with a completely
 		 * unresponsive lower level IO stack.
 		 * Still it should be treated as a WRITE error.
-		 *
-		 * Meta IO error is always WRITE error:
-		 * we read meta data only once during attach,
-		 * which will fail in case of errors.
 		 */
-		if (df == DRBD_READ_ERROR)
-			set_bit(WAS_READ_ERROR, &device->flags);
 		if (df == DRBD_FORCE_DETACH)
 			set_bit(FORCE_DETACH, &device->flags);
 		if (device->disk_state[NOW] > D_FAILED) {

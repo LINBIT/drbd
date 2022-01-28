@@ -538,7 +538,6 @@ enum device_flag {
 				 * goes into L_ESTABLISHED state. */
 	MD_NO_FUA,		/* meta data device does not support barriers,
 				   so don't even try */
-	WAS_READ_ERROR,		/* Local disk READ failed, returned IO error */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
 	__NEW_CUR_UUID,		/* Set NEW_CUR_UUID as soon as state change visible */
