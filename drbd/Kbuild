@@ -16,6 +16,11 @@ LINUXINCLUDE := -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
 # command line or environment
 override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
 
+ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
+		   $(objtree)/Module.symvers | wc -l),1)
+compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
+endif
+
 compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 ifdef CONFIG_DEV_DAX_PMEM
