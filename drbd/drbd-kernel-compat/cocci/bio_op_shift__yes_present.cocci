@@ -10,8 +10,6 @@ expression opf;
 @@
 expression e;
 @@
-#define peer_req_op(...) (e)
-
 +/* Combines op and op_flags as bio_set_op_attrs and returns the result. */
 +static inline unsigned int combine_opf(unsigned int op, unsigned int op_flags)
 +{
@@ -28,6 +26,8 @@ expression e;
 +	opf |= (op_flags);
 +	return opf;
 +}
++
+#define peer_req_op(...) (e)
 
 // We want to wrap the wire_flags_to_bio_op call and flags in a combine_opf
 // call. Unfortunately we cannot bind all the flags with a single expression,
@@ -65,7 +65,7 @@ sys.exit(1)
 
 @@
 struct drbd_peer_request *peer_req;
-identifier op;
+identifier op, opf;
 @@
 -peer_req->opf = op;
 +peer_req->opf = combine_opf(op, 0);
