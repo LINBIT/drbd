@@ -687,9 +687,6 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	spin_lock(&req->rq_lock); /* local IRQ already disabled */
 
 	old_local = req->local_rq_state;
-	if (drbd_suspended(req->device) && !((old_local | clear_local) & RQ_COMPLETION_SUSP))
-		set_local |= RQ_COMPLETION_SUSP;
-
 	req->local_rq_state &= ~clear_local;
 	req->local_rq_state |= set_local;
 
@@ -1018,7 +1015,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	case SEND_FAILED:
 		/* Just update flags so it is no longer marked as on the sender
 		 * queue; real cleanup will be done from
-		 * tl_walk(,CONNECTION_LOST_WHILE_PENDING). */
+		 * tl_walk(,CONNECTION_LOST*). */
 		mod_rq_state(req, m, peer_device, RQ_NET_QUEUED, 0);
 		break;
 
@@ -1042,14 +1039,30 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, RQ_NET_QUEUED, RQ_NET_DONE);
 		break;
 
-	case CONNECTION_LOST_WHILE_PENDING:
-		/* Transfer log cleanup after connection loss. Only apply to
-		 * requests that were for this peer. */
-		if (req->net_rq_state[idx] & RQ_NET_MASK) {
-			mod_rq_state(req, m, peer_device,
-					RQ_NET_OK|RQ_NET_PENDING|RQ_COMPLETION_SUSP,
-					RQ_NET_DONE);
-		}
+	case CONNECTION_LOST:
+	case CONNECTION_LOST_WHILE_SUSPENDED:
+		/* Only apply to requests that were for this peer but not done. */
+		if (!(req->net_rq_state[idx] & RQ_NET_MASK) || req->net_rq_state[idx] & RQ_NET_DONE)
+			break;
+
+		/* For protocol A, or when not suspended, we consider the
+		 * request to be lost towards this peer.
+		 *
+		 * Protocol B&C requests are kept while suspended because
+		 * resending is allowed. If such a request is pending to this
+		 * peer, we suspend its completion until IO is resumed. This is
+		 * a conservative simplification. We could complete it while
+		 * suspended once we know it has been received by "enough"
+		 * peers. However, we do not track that.
+		 *
+		 * If the request is no longer pending to this peer, then we
+		 * have already received the corresponding ack. The request may
+		 * complete as far as this peer is concerned. */
+		if (what == CONNECTION_LOST ||
+				!(req->net_rq_state[idx] & (RQ_EXP_RECEIVE_ACK|RQ_EXP_WRITE_ACK)))
+			mod_rq_state(req, m, peer_device, RQ_NET_PENDING|RQ_NET_OK, RQ_NET_DONE);
+		else if (req->net_rq_state[idx] & RQ_NET_PENDING)
+			mod_rq_state(req, m, peer_device, 0, RQ_COMPLETION_SUSP);
 		break;
 
 	case WRITE_ACKED_BY_PEER_AND_SIS:
@@ -1083,27 +1096,27 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
 		break;
 
-	case FAIL_FROZEN_DISK_IO:
-		if (!(req->local_rq_state & RQ_LOCAL_COMPLETED))
+	case CANCEL_SUSPENDED_IO:
+		/* Only apply to requests that were for this peer but not done. */
+		if (!(req->net_rq_state[idx] & RQ_NET_MASK) || req->net_rq_state[idx] & RQ_NET_DONE)
 			break;
-		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+
+		/* CONNECTION_LOST_WHILE_SUSPENDED followed by
+		 * CANCEL_SUSPENDED_IO should be essentially the same as
+		 * CONNECTION_LOST. Make the corresponding changes. The
+		 * RQ_COMPLETION_SUSP flag is handled by COMPLETION_RESUMED. */
+		mod_rq_state(req, m, peer_device, RQ_NET_PENDING|RQ_NET_OK, RQ_NET_DONE);
 		break;
 
 	case RESEND:
-		if (!(req->net_rq_state[idx] & RQ_NET_MASK)) {
-			/* Simply complete (local only) READs. */
-			if (!(req->local_rq_state & RQ_WRITE))
-				mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
-
-			/* Stop processing requests that are not for this peer. */
-			break;
-		}
-
 		/* If RQ_NET_OK is already set, we got a P_WRITE_ACK or P_RECV_ACK
 		   before the connection loss (B&C only); only P_BARRIER_ACK
 		   (or the local completion?) was missing when we suspended.
 		   Throwing them out of the TL here by pretending we got a BARRIER_ACK.
 		   During connection handshake, we ensure that the peer was not rebooted.
+
+		   Protocol A requests always have RQ_NET_OK removed when the
+		   connection is lost, so this will never apply to them.
 
 		   Resending is only allowed on synchronous connections,
 		   where all requests not yet completed to upper layers would
@@ -1111,13 +1124,20 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		   any dependency between incomplete requests, and we are
 		   allowed to complete this one "out-of-sequence".
 		 */
-		if (!(req->net_rq_state[idx] & RQ_NET_OK)) {
-			mod_rq_state(req, m, peer_device, RQ_NET_SENT|RQ_COMPLETION_SUSP,
-					RQ_NET_QUEUED|RQ_NET_PENDING);
+		if (req->net_rq_state[idx] & RQ_NET_OK)
+			goto barrier_acked;
+
+		/* Only apply to requests that are pending a response from
+		 * this peer. */
+		if (!(req->net_rq_state[idx] & RQ_NET_PENDING))
 			break;
-		}
-		fallthrough;	/* to BARRIER_ACKED */
+
+		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_QUEUED));
+		mod_rq_state(req, m, peer_device, RQ_NET_SENT, RQ_NET_QUEUED);
+		break;
+
 	case BARRIER_ACKED:
+barrier_acked:
 		/* barrier ack for READ requests does not make sense */
 		if (!(req->local_rq_state & RQ_WRITE))
 			break;
@@ -1129,12 +1149,11 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			drbd_err(device, "FIXME (BARRIER_ACKED but pending)\n");
 			mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
 		}
-		/* Allowed to complete requests, even while suspended.
-		 * As this is called for all requests within a matching epoch,
+		/* As this is called for all requests within a matching epoch,
 		 * we need to filter, and only set RQ_NET_DONE for those that
 		 * have actually been on the wire. */
-		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP,
-				(req->net_rq_state[idx] & RQ_NET_MASK) ? RQ_NET_DONE : 0);
+		if (req->net_rq_state[idx] & RQ_NET_MASK)
+			mod_rq_state(req, m, peer_device, 0, RQ_NET_DONE);
 		break;
 
 	case DATA_RECEIVED:

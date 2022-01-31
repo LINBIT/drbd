@@ -6744,7 +6744,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		drbd_uuid_new_current(device, false);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
@@ -7676,8 +7675,6 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
 		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 			drbd_check_peers_new_current_uuid(device);
-
-		tl_walk(peer_device->connection, CONNECTION_LOST_WHILE_PENDING);
 	}
 
 	drbd_md_sync(device);
@@ -7807,6 +7804,12 @@ static void conn_disconnect(struct drbd_connection *connection)
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
+
+	/* Apply these changes after peer_device_disconnected() because that
+	 * may cause the loss of other connections to be detected, which can
+	 * change the suspended state. */
+	tl_walk(connection, resource->cached_susp ?
+			CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
 
 	i = drbd_free_peer_reqs(connection, &connection->read_ee, true);
 	if (i)
