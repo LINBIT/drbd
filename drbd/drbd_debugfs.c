@@ -66,14 +66,15 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 	unsigned int s = req->local_rq_state;
 	char sep = ' ';
 	seq_printf(m, "\t0x%08x", s);
-	seq_printf(m, "\tmaster: %s", req->master_bio ? "pending" : "completed");
+	seq_puts(m, "\tmaster:");
+	__seq_print_rq_state_bit(m, req->master_bio, &sep, "pending", "completed");
+	seq_print_rq_state_bit(m, s & RQ_POSTPONED, &sep, "postponed");
+	seq_print_rq_state_bit(m, s & RQ_COMPLETION_SUSP, &sep, "suspended");
 
 	/* RQ_WRITE ignored, already reported */
 	seq_puts(m, "\tlocal:");
-	seq_print_rq_state_bit(m, s & RQ_IN_ACT_LOG, &sep, "in-AL");
-	seq_print_rq_state_bit(m, s & RQ_POSTPONED, &sep, "postponed");
-	seq_print_rq_state_bit(m, s & RQ_COMPLETION_SUSP, &sep, "suspended");
 	sep = ' ';
+	seq_print_rq_state_bit(m, s & RQ_IN_ACT_LOG, &sep, "in-AL");
 	seq_print_rq_state_bit(m, s & RQ_LOCAL_PENDING, &sep, "pending");
 	seq_print_rq_state_bit(m, s & RQ_LOCAL_COMPLETED, &sep, "completed");
 	seq_print_rq_state_bit(m, s & RQ_LOCAL_ABORTED, &sep, "aborted");
