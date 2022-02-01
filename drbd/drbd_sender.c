@@ -688,9 +688,10 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 {
 	unsigned int max_bio_size_kb = DRBD_MAX_BIO_SIZE / 1024;
 	struct drbd_device *device = peer_device->device;
-	unsigned int c_max_rate, interval, latency, m;
+	unsigned int c_max_rate, interval, latency, m, amount_kb;
 	unsigned int rs_kib_in = rs_sect_in / 2;
 	ktime_t latency_kt;
+	bool kickstart;
 
 	if (get_ldev(device)) {
 		max_bio_size_kb = queue_max_hw_sectors(device->rq_queue) / 2;
@@ -725,7 +726,14 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 			return;
 	}
 
+	amount_kb = c_max_rate / (HZ / RS_MAKE_REQS_INTV);
+	kickstart = rs_kib_in < amount_kb / 2 && latency < RS_MAKE_REQS_INTV / 2;
+	/* In case the latency of the link and remote IO subsystem is small and
+	   the controller was clearly issuing a too small number of requests,
+	   kickstart it by scheduling it immediately */
+
 	if (peer_device->repl_state[NOW] == L_VERIFY_S ||
+	    kickstart ||
 	    interval <= latency) {
 		drbd_queue_work_if_unqueued(
 			&peer_device->connection->sender_work,
