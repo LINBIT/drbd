@@ -1921,8 +1921,16 @@ out:
 
 static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 {
-	bool rv = false;
+	int ap_bio_cnt;
+	bool rv;
 
+	read_lock_irq(&device->resource->state_rwlock);
+	rv = may_inc_ap_bio(device);
+	read_unlock_irq(&device->resource->state_rwlock);
+	if (!rv)
+		return false;
+
+	/* check need for new current uuid _AFTER_ ensuring IO is not suspended via may_inc_ap_bio */
 	if (test_bit(NEW_CUR_UUID, &device->flags)) {
 		if (!test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags))
 			drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
@@ -1930,24 +1938,15 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 		return false;
 	}
 
-	read_lock_irq(&device->resource->state_rwlock);
-	rv = may_inc_ap_bio(device);
-	read_unlock_irq(&device->resource->state_rwlock);
-
-	if (rv) {
+	do {
 		unsigned int nr_requests = device->resource->res_opts.nr_requests;
-		int ap_bio_cnt;
-		do {
-			ap_bio_cnt = atomic_read(&device->ap_bio_cnt[rw]);
-			if (ap_bio_cnt >= nr_requests)
-				rv = false;
-		} while (
-			rv &&
-			atomic_cmpxchg(&device->ap_bio_cnt[rw], ap_bio_cnt, ap_bio_cnt + 1) != ap_bio_cnt
-		);
-	}
 
-	return rv;
+		ap_bio_cnt = atomic_read(&device->ap_bio_cnt[rw]);
+		if (ap_bio_cnt >= nr_requests)
+			return false;
+	} while (atomic_cmpxchg(&device->ap_bio_cnt[rw], ap_bio_cnt, ap_bio_cnt + 1) != ap_bio_cnt);
+
+	return true;
 }
 
 static void inc_ap_bio(struct drbd_device *device, int rw)
