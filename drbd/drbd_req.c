@@ -1810,16 +1810,16 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 	bool rv = false;
 	unsigned int nr_requests;
 
-	if (test_bit(NEW_CUR_UUID, &device->flags)) {
-		if (!test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags))
-			drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
-
-		return false;
-	}
-
 	spin_lock_irq(&device->resource->req_lock);
 	nr_requests = device->resource->res_opts.nr_requests;
-	rv = may_inc_ap_bio(device) && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
+	rv = may_inc_ap_bio(device);
+	/* check need for new current uuid _AFTER_ ensuring IO is not suspended via may_inc_ap_bio */
+	if (rv && test_bit(NEW_CUR_UUID, &device->flags)) {
+		if (!test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags))
+			drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
+		rv = false;
+	}
+	rv = rv && atomic_read(&device->ap_bio_cnt[rw]) < nr_requests;
 	if (rv)
 		atomic_inc(&device->ap_bio_cnt[rw]);
 	spin_unlock_irq(&device->resource->req_lock);
