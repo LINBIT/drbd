@@ -1236,7 +1236,7 @@ struct drbd_peer_device {
 	unsigned long last_resync_next_bit; /* value of resync_next_bit before last set of resync requests */
 	spinlock_t resync_next_bit_lock;
 
-	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected */
+	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected (RQ_NET_PENDING set) */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
 	atomic_t rs_pending_cnt; /* RS request/data packets on the wire */
 
@@ -2374,29 +2374,6 @@ static inline void drbd_thread_restart_nowait(struct drbd_thread *thi)
 	_drbd_thread_stop(thi, true, false);
 }
 
-/* counts how many answer packets packets we expect from our peer,
- * for either explicit application requests,
- * or implicit barrier packets as necessary.
- * increased:
- *  w_send_barrier
- *  _req_mod(req, QUEUE_FOR_NET_WRITE or QUEUE_FOR_NET_READ);
- *    it is much easier and equally valid to count what we queue for the
- *    sender, even before it actually was queued or sent.
- *    (drbd_make_request_common; recovery path on read io-error)
- * decreased:
- *  got_BarrierAck (respective tl_clear, tl_clear_barrier)
- *  _req_mod(req, DATA_RECEIVED)
- *     [from receive_DataReply]
- *  _req_mod(req, WRITE_ACKED_BY_PEER or RECV_ACKED_BY_PEER or NEG_ACKED)
- *     [from got_BlockAck (P_WRITE_ACK, P_RECV_ACK)]
- *     FIXME
- *     for some reason it is NOT decreased in got_NegAck,
- *     but in the resulting cleanup code from report_params.
- *     we should try to remember the reason for that...
- *  _req_mod(req, SEND_FAILED or SEND_CANCELED)
- *  _req_mod(req, CONNECTION_LOST_WHILE_PENDING)
- *     [from tl_clear_barrier]
- */
 static inline void inc_ap_pending(struct drbd_peer_device *peer_device)
 {
 	atomic_inc(&peer_device->ap_pending_cnt);
