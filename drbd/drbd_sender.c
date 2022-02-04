@@ -772,11 +772,13 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	else if (duration_ns > max_duration_ns)
 		duration_ns = max_duration_ns;
 
-	/* Scale sect_in so that it represents the number of sectors which
-	 * would have arrived if the cycle had lasted the normal time
-	 * (RS_MAKE_REQS_INTV). */
-	sect_in = sect_in * RS_MAKE_REQS_INTV_NS;
-	do_div(sect_in, duration_ns);
+	if (duration_ns < RS_MAKE_REQS_INTV_NS) {
+		/* Scale sect_in so that it represents the number of sectors which
+		 * would have arrived if the cycle had lasted the normal time
+		 * (RS_MAKE_REQS_INTV). */
+		sect_in = sect_in * RS_MAKE_REQS_INTV_NS;
+		do_div(sect_in, duration_ns);
+	}
 
 	pdc = rcu_dereference(peer_device->conf);
 	plan = rcu_dereference(peer_device->rs_plan_s);
