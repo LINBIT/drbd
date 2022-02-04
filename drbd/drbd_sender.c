@@ -871,23 +871,24 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	return number;
 }
 
-static int drbd_resync_delay(struct drbd_peer_device *peer_device, bool request_ok)
+static int drbd_resync_delay(struct drbd_peer_device *peer_device, bool request_ok, int number, int done)
 {
 	struct peer_device_conf *pdc;
 	unsigned long delay;
-
-	if (peer_device->rs_in_flight > 0) {
-		/* Requests in-flight. Use the standard delay. If all responses
-		 * are received before this time, the resync work will be
-		 * scheduled immediately. */
-		return RS_MAKE_REQS_INTV;
-	}
 
 	if (!request_ok) {
 		/* Something is causing requests to be aborted or canceled.
 		 * Back off to avoid flooding the connection with useless
 		 * requests. */
 		return RS_MAKE_REQS_INTV;
+	}
+
+	if (number > 0 && done > 0) {
+		/* Requests in-flight. Adjusting the standard delay to
+		 * mitigate rounding and other errors, that cause 'done'
+		 * to be different from the optimal 'number'.  (usually
+		 * in the range of 66ms to 133ms) */
+		return RS_MAKE_REQS_INTV * done / number;
 	}
 
 	rcu_read_lock();
@@ -1080,6 +1081,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	max_bio_bits = queue_max_hw_sectors(device->rq_queue) >> (BM_BLOCK_SHIFT - SECTOR_SHIFT);
 	number = drbd_rs_number_requests(peer_device);
+	if (number * BM_BLOCK_SIZE < discard_granularity)
+		number = discard_granularity / BM_BLOCK_SIZE;
+
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
@@ -1096,6 +1100,10 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			request_ok = false;
 			goto request_done;
 		}
+
+		if ((number - i) << BM_BLOCK_SHIFT < discard_granularity)
+			goto request_done;
+
 		if (send_buffer_half_full(peer_device))
 			goto request_done;
 next_sector:
@@ -1192,7 +1200,7 @@ request_done:
 					&peer_device->connection->sender_work,
 					&peer_device->resync_work);
 		} else {
-			mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device, request_ok));
+			mod_timer(&peer_device->resync_timer, jiffies + drbd_resync_delay(peer_device, request_ok, number, i));
 		}
 	}
 	put_ldev(device);
