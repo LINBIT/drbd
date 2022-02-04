@@ -941,6 +941,35 @@ static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
 	return half_full;
 }
 
+static int optimal_bits_for_alignment(unsigned long bit, int max_bio_bits)
+{
+	/* under the assumption that we find a big block of out-of-sync blocks
+	   in the bitmap, calculate the optimal request size so that the
+	   request sizes get bigger, and each request is "perfectly" aligned.
+	   (In case the backing device is a RAID5)
+	   for an odd number, it returns 1.
+	   for anything dividable by 2, it returns 2.
+	   for 3 it returns 1 so that the next request size can be 4.
+	   and so on...
+	*/
+	if (bit == 0)
+		return max_bio_bits;
+
+	return min(1 << __ffs(bit), max_bio_bits);
+}
+
+static int round_to_powerof_2(int value)
+{
+	int l2 = fls(value) - 1;
+	int smaller = 1 << l2;
+	int bigger = smaller << 1;
+
+	if (value == 0)
+		return 0;
+
+	return value - smaller < bigger - value ? smaller : bigger;
+}
+
 /* make_resync_request() - initiate resync requests as required
  *
  * Request handling flow:
@@ -1007,17 +1036,14 @@ static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
  */
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
+	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
+	int max_bio_bits, number, rollback_i, size, i, optimal_bits;
 	struct drbd_device *device = peer_device->device;
-	unsigned long bit;
-	sector_t sector;
 	const sector_t capacity = get_capacity(device->vdisk);
-	int max_bio_size;
-	int number, rollback_i, size;
-	int align;
-	int i;
-	int discard_granularity = 0;
 	bool last_request_sent;
 	bool request_ok = true;
+	unsigned long bit;
+	sector_t sector;
 
 	if (unlikely(cancel))
 		return 0;
@@ -1052,7 +1078,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		rcu_read_unlock();
 	}
 
-	max_bio_size = queue_max_hw_sectors(device->rq_queue) << 9;
+	max_bio_bits = queue_max_hw_sectors(device->rq_queue) >> (BM_BLOCK_SHIFT - SECTOR_SHIFT);
 	number = drbd_rs_number_requests(peer_device);
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
@@ -1073,9 +1099,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		if (send_buffer_half_full(peer_device))
 			goto request_done;
 next_sector:
-		size = BM_BLOCK_SIZE;
 		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
-
 		if (bit == DRBD_END_OF_BITMAP) {
 			peer_device->resync_next_bit = drbd_bm_bits(device);
 			goto request_done;
@@ -1093,38 +1117,24 @@ next_sector:
 			goto next_sector;
 		}
 
-		/* try to find some adjacent bits.
-		 * we stop if we have already the maximum req size.
-		 *
-		 * Additionally always align bigger requests, in order to
-		 * be prepared for all stripe sizes of software RAIDs.
-		 */
-		align = 1;
+		size = BM_BLOCK_SIZE;
+		optimal_bits_alignment = optimal_bits_for_alignment(bit, max_bio_bits);
+		optimal_bits_rate = round_to_powerof_2(number - i);
+		optimal_bits = min(optimal_bits_alignment, optimal_bits_rate) - 1;
+
+		/* try to find some adjacent bits. */
 		rollback_i = i;
-		while (i + 1 < number) {
-			if (size + BM_BLOCK_SIZE > max_bio_size)
-				break;
-
-			/* Be always aligned */
-			if (sector & ((1<<(align+3))-1))
-				break;
-
+		while (optimal_bits-- > 0) {
 			if (discard_granularity && size == discard_granularity)
 				break;
 
-			/* now, is it actually dirty, after all?
-			 * caution, drbd_bm_test_bit is tri-state for some
-			 * obscure reason; ( b == 0 ) would get the out-of-band
-			 * only accidentally right because of the "oddly sized"
-			 * adjustment below */
 			if (drbd_bm_test_bit(peer_device, bit + 1) != 1)
 				break;
-			bit++;
 			size += BM_BLOCK_SIZE;
-			if ((BM_BLOCK_SIZE << align) <= size)
-				align++;
+			bit++;
 			i++;
 		}
+
 		/* set the offset to start the next drbd_bm_find_next from */
 		peer_device->resync_next_bit = bit + 1;
 
