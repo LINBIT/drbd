@@ -416,6 +416,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_max_vecs", true, false,
 	      COMPAT_HAVE_BIO_MAX_VECS, "present");
 
+	patch(1, "resync_bio_max", false, true,
+	      COMPAT_IS_UBUNTU_BIONIC, "512KiB");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
