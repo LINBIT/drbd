@@ -765,12 +765,9 @@ enum connection_flag {
 	TWOPC_NO,
 	TWOPC_RETRY,
 	CONN_DRY_RUN,		/* Expect disconnect after resync handshake. */
-	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	DISCONNECT_EXPECTED,
 	BARRIER_ACK_PENDING,
 	CORKED,
-	DATA_CORKED = CORKED,
-	CONTROL_CORKED,
 	C_UNREGISTERED,
 	RECONNECT,
 	CONN_DISCARD_MY_DATA,

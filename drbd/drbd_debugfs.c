@@ -847,11 +847,8 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	pretty_print_bit(TWOPC_NO);
 	pretty_print_bit(TWOPC_RETRY);
 	pretty_print_bit(CONN_DRY_RUN);
-	pretty_print_bit(CREATE_BARRIER);
 	pretty_print_bit(DISCONNECT_EXPECTED);
 	pretty_print_bit(BARRIER_ACK_PENDING);
-	pretty_print_bit(DATA_CORKED);
-	pretty_print_bit(CONTROL_CORKED);
 	pretty_print_bit(C_UNREGISTERED);
 	pretty_print_bit(RECONNECT);
 	pretty_print_bit(CONN_DISCARD_MY_DATA);
