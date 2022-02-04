@@ -971,6 +971,11 @@ static int round_to_powerof_2(int value)
 	return value - smaller < bigger - value ? smaller : bigger;
 }
 
+static bool adjacent(sector_t sector1, int size, sector_t sector2)
+{
+	return sector1 + (size >> SECTOR_SHIFT) == sector2;
+}
+
 /* make_resync_request() - initiate resync requests as required
  *
  * Request handling flow:
@@ -1044,7 +1049,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	bool last_request_sent;
 	bool request_ok = true;
 	unsigned long bit;
-	sector_t sector;
+	sector_t sector, prev_sector = 0;
 
 	if (unlikely(cancel))
 		return 0;
@@ -1125,6 +1130,14 @@ next_sector:
 			goto next_sector;
 		}
 
+		if (adjacent(prev_sector, size, sector) && (number - i) << BM_BLOCK_SHIFT < size) {
+			/* When making requests in an out-of-sync area, ensure that the size
+			   of successive requests does not decrease. This allows the next
+			   make_resync_request call to start with optimal alignment. */
+			goto request_done;
+		}
+
+		prev_sector = sector;
 		size = BM_BLOCK_SIZE;
 		optimal_bits_alignment = optimal_bits_for_alignment(bit, max_bio_bits);
 		optimal_bits_rate = round_to_powerof_2(number - i);
