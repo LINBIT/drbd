@@ -915,6 +915,32 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device, bool request_
 	return delay;
 }
 
+static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_transport *transport = &connection->transport;
+	bool half_full = false;
+
+	mutex_lock(&connection->mutex[DATA_STREAM]);
+	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
+		struct drbd_transport_stats transport_stats;
+		int queued, sndbuf;
+
+		transport->ops->stats(transport, &transport_stats);
+		queued = transport_stats.send_buffer_used;
+		sndbuf = transport_stats.send_buffer_size;
+		if (queued > sndbuf / 2) {
+			half_full = true;
+			transport->ops->hint(transport, DATA_STREAM, NOSPACE);
+		}
+	} else {
+		half_full = true;
+	}
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
+
+	return half_full;
+}
+
 /* make_resync_request() - initiate resync requests as required
  *
  * Request handling flow:
@@ -982,7 +1008,6 @@ static int drbd_resync_delay(struct drbd_peer_device *peer_device, bool request_
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_transport *transport = &peer_device->connection->transport;
 	unsigned long bit;
 	sector_t sector;
 	const sector_t capacity = get_capacity(device->vdisk);
@@ -1037,7 +1062,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	peer_device->last_resync_next_bit = peer_device->resync_next_bit;
 	for (i = 0; i < number; i++) {
 		int err;
-		bool send_buffer_ok = true;
 
 		/* If we are aborting the requests or the peer is canceling
 		 * them, there is no need to flood the connection with
@@ -1046,27 +1070,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			request_ok = false;
 			goto request_done;
 		}
-		spin_unlock_bh(&peer_device->resync_next_bit_lock);
-
-		/* Stop generating RS requests, when half of the send buffer is filled */
-		mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
-		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
-			struct drbd_transport_stats transport_stats;
-			int queued, sndbuf;
-
-			transport->ops->stats(transport, &transport_stats);
-			queued = transport_stats.send_buffer_used;
-			sndbuf = transport_stats.send_buffer_size;
-			if (queued > sndbuf / 2) {
-				send_buffer_ok = false;
-				transport->ops->hint(transport, DATA_STREAM, NOSPACE);
-			}
-		} else
-			send_buffer_ok = false;
-		mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
-		spin_lock_bh(&peer_device->resync_next_bit_lock);
-
-		if (!send_buffer_ok)
+		if (send_buffer_half_full(peer_device))
 			goto request_done;
 next_sector:
 		size = BM_BLOCK_SIZE;
