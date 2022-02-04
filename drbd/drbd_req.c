@@ -951,6 +951,21 @@ static void drbd_report_io_error(struct drbd_device *device, struct drbd_request
 		  bdevname(device->ldev->backing_bdev, b));
 }
 
+static int drbd_protocol_state_bits(struct drbd_connection *connection)
+{
+	struct net_conf *nc;
+	int p;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	p = nc->wire_protocol;
+	rcu_read_unlock();
+
+	return p == DRBD_PROT_C ? RQ_EXP_WRITE_ACK :
+		p == DRBD_PROT_B ? RQ_EXP_RECEIVE_ACK : 0;
+
+}
+
 /* Helper for HANDED_OVER_TO_NETWORK.
  * Is this a protocol A write (neither WRITE_ACK nor RECEIVE_ACK expected)?
  * Is it also still "PENDING"?
@@ -1000,30 +1015,6 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 	switch (what) {
 	default:
 		drbd_err(device, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
-		break;
-
-	/* does not happen...
-	 * initialization done in drbd_req_new
-	case CREATED:
-		break;
-		*/
-
-	case TO_BE_SENT: /* via network */
-		/* reached via __drbd_make_request
-		 * and from w_read_retry_remote */
-		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
-		rcu_read_lock();
-		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		p = nc->wire_protocol;
-		rcu_read_unlock();
-		if (p != DRBD_PROT_A) {
-			spin_lock(&req->rq_lock); /* local irq already disabled */
-			req->net_rq_state[idx] |=
-				p == DRBD_PROT_C ? RQ_EXP_WRITE_ACK :
-				p == DRBD_PROT_B ? RQ_EXP_RECEIVE_ACK : 0;
-			spin_unlock(&req->rq_lock);
-		}
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING);
 		break;
 
 	case TO_BE_SUBMITTED: /* locally */
@@ -1084,9 +1075,9 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		set_bit(UNPLUG_REMOTE, &device->flags);
 
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
-		D_ASSERT(device, (req->local_rq_state & RQ_LOCAL_MASK) == 0);
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
+		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
+		D_ASSERT(device, !(req->local_rq_state & RQ_LOCAL_MASK));
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED);
 		break;
 
 	case QUEUE_FOR_NET_WRITE:
@@ -1112,9 +1103,11 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * hurting performance. */
 		set_bit(UNPLUG_REMOTE, &device->flags);
 
+		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
+
 		/* queue work item to send data */
-		D_ASSERT(device, req->net_rq_state[idx] & RQ_NET_PENDING);
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED|RQ_EXP_BARR_ACK);
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED|RQ_EXP_BARR_ACK|
+				drbd_protocol_state_bits(peer_device->connection));
 
 		/* Close the epoch, in case it outgrew the limit.
 		 * Or if this is a "batch bio", and some of our peers is "old",
@@ -1602,7 +1595,6 @@ static int drbd_process_write_request(struct drbd_request *req)
 
 		if (remote) {
 			++count;
-			_req_mod(req, TO_BE_SENT, peer_device);
 			_req_mod(req, QUEUE_FOR_NET_WRITE, peer_device);
 		} else
 			_req_mod(req, QUEUE_FOR_SEND_OOS, peer_device);
@@ -1911,10 +1903,9 @@ static void drbd_send_and_submit(struct drbd_request *req)
 			if (!drbd_process_write_request(req))
 				no_remote = true;
 		} else {
-			if (peer_device) {
-				_req_mod(req, TO_BE_SENT, peer_device);
+			if (peer_device)
 				_req_mod(req, QUEUE_FOR_NET_READ, peer_device);
-			} else
+			else
 				no_remote = true;
 		}
 

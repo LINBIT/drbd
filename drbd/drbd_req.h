@@ -64,8 +64,6 @@
  */
 
 enum drbd_req_event {
-	CREATED,
-	TO_BE_SENT,
 	TO_BE_SUBMITTED,
 
 	/* XXX yes, now I am inconsistent...
@@ -120,8 +118,6 @@ enum drbd_req_state_bits {
 	 *
 	 * <none>:
 	 *   No network required, or not yet processed.
-	 * pending:
-	 *   To be sent.
 	 * pending,queued:
 	 *   To be sent, on transfer log to be processed by sender.
 	 * queued:
