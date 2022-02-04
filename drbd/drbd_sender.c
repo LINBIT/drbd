@@ -1111,7 +1111,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 		if (send_buffer_half_full(peer_device))
 			goto request_done;
-next_sector:
+
 		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
 		if (bit == DRBD_END_OF_BITMAP) {
 			peer_device->resync_next_bit = drbd_bm_bits(device);
@@ -1123,11 +1123,6 @@ next_sector:
 		if (drbd_rs_c_min_rate_throttle(peer_device)) {
 			peer_device->resync_next_bit = bit;
 			goto request_done;
-		}
-
-		if (unlikely(drbd_bm_test_bit(peer_device, bit) == 0)) {
-			peer_device->resync_next_bit = bit + 1;
-			goto next_sector;
 		}
 
 		if (adjacent(prev_sector, size, sector) && (number - i) << BM_BLOCK_SHIFT < size) {
