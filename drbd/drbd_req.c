@@ -1215,9 +1215,12 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case RESEND:
-		/* Simply complete (local only) READs. */
-		if (!(req->local_rq_state & RQ_WRITE) && !(req->net_rq_state[idx] & RQ_NET_MASK)) {
-			mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+		if (!(req->net_rq_state[idx] & RQ_NET_MASK)) {
+			/* Simply complete (local only) READs. */
+			if (!(req->local_rq_state & RQ_WRITE))
+				mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+
+			/* Stop processing requests that are not for this peer. */
 			break;
 		}
 
