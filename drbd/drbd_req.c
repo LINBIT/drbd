@@ -1171,10 +1171,13 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case CONNECTION_LOST_WHILE_PENDING:
-		/* transfer log cleanup after connection loss */
-		mod_rq_state(req, m, peer_device,
-				RQ_NET_OK|RQ_NET_PENDING|RQ_COMPLETION_SUSP,
-				RQ_NET_DONE);
+		/* Transfer log cleanup after connection loss. Only apply to
+		 * requests that were for this peer. */
+		if (req->net_rq_state[idx] & RQ_NET_MASK) {
+			mod_rq_state(req, m, peer_device,
+					RQ_NET_OK|RQ_NET_PENDING|RQ_COMPLETION_SUSP,
+					RQ_NET_DONE);
+		}
 		break;
 
 	case WRITE_ACKED_BY_PEER_AND_SIS:
