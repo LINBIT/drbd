@@ -529,8 +529,6 @@ enum {
 
 /* flag bits per device */
 enum device_flag {
-	UNPLUG_QUEUED,		/* only relevant with kernel 2.4 */
-	UNPLUG_REMOTE,		/* sending a "UnplugRemote" could help */
 	MD_DIRTY,		/* current uuids and flags not yet on disk */
 	CRASHED_PRIMARY,	/* This node was a crashed primary.
 				 * Gets cleared when the state.conn
