@@ -65,7 +65,7 @@ sys.exit(1)
 
 @@
 struct drbd_peer_request *peer_req;
-identifier op, opf;
+identifier op;
 @@
 -peer_req->opf = op;
 +peer_req->opf = combine_opf(op, 0);
