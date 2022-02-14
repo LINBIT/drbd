@@ -1159,7 +1159,7 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
 	} else {
 		if (drbd_ratelimit()) {
 			drbd_err(device, "Invalid offset during on-disk bitmap access: "
-				 "page idx %u, sector %llu\n", page_nr, on_disk_sector);
+				 "page idx %u, sector %llu\n", page_nr, (unsigned long long) on_disk_sector);
 		}
 		ctx->error = -EIO;
 		bm_set_page_io_err(b->bm_pages[page_nr]);
