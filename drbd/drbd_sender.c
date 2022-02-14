@@ -934,9 +934,7 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 	   the controller was clearly issuing a too small number of requests,
 	   kickstart it by scheduling it immediately */
 
-	if (peer_device->repl_state[NOW] == L_VERIFY_S ||
-	    kickstart ||
-	    interval <= latency) {
+	if (kickstart || interval <= latency) {
 		drbd_queue_work_if_unqueued(
 			&peer_device->connection->sender_work,
 			&peer_device->resync_work);
@@ -1406,8 +1404,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		drbd_queue_work_if_unqueued(
 			&peer_device->connection->sender_work,
 			&peer_device->resync_work);
-	if (i == 0)
-		mod_timer(&peer_device->resync_timer, jiffies + RS_MAKE_REQS_INTV);
+	else
+		mod_timer(&peer_device->resync_timer, jiffies + resync_delay(true, number, i));
 	return 1;
 }
 
