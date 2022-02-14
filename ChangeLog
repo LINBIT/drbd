@@ -2,22 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.6-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.6 (api:genl2/proto:110-121/transport:17)
 --------
  * fix IO to internal meta-data for backing device larger than 128TB
  * fix resending requests towards diskless peers, this is relevant when
    fencing is enabled, but the connection is re-established before fencing
-   succeedes; when the bug triggered it lead to "stuck" requests
+   succeeds; when the bug triggered it lead to "stuck" requests
  * remove lockless buffer pages handling; it still contained very hard to
    trigger bugs
- * make sure DRBD's resync does not cause unneccesary allocation in a
-   thinly provisioned backing device on a resync target node
+ * make sure DRBD's resync does not cause unnecessary allocation in
+   a thinly provisioned backing device on a resync target node
  * avoid unnecessary resync (or split-brain) due to a wrongly generated
    new current UUID when an already IO frozen DBRD gets new writes
  * small fix to autopromote, when an application tries a read-only open
    before it does a read-write open immediately after the peer primary
    vanished ungracefully
- * split out the secure boot key into an package on its own, that is
+ * split out the secure boot key into a package on its own, that is
    necessary to allow installation of multiple drbd kernel module packages
  * Support for building containers for flacar linux
 
