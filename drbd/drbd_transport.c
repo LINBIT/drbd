@@ -163,6 +163,10 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 	return NULL;
 }
 
+static void generic_listener_destroy(struct drbd_listener *unused)
+{
+}
+
 int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		      int (*init_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener *))
 {
@@ -170,50 +174,50 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		container_of(transport, struct drbd_connection, transport);
 	struct sockaddr *addr = (struct sockaddr *)&path->my_addr;
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_listener *listener, *new_listener = NULL;
-	int err, tries = 0;
+	struct drbd_listener *listener;
+	bool needs_init = false;
+	int err;
 
-	while (1) {
-		spin_lock_bh(&resource->listeners_lock);
-		listener = find_listener(connection, (struct sockaddr_storage *)addr);
-		if (!listener && new_listener) {
-			list_add(&new_listener->list, &resource->listeners);
-			listener = new_listener;
-			new_listener = NULL;
-		}
-		if (listener) {
-			list_add(&path->listener_link, &listener->waiters);
-			path->listener = listener;
-		}
-		spin_unlock_bh(&resource->listeners_lock);
-
-		if (new_listener)
-			new_listener->destroy(new_listener);
-
-		if (listener)
-			return 0;
-
-		new_listener = kmalloc(transport->class->listener_instance_size, GFP_KERNEL);
-		if (!new_listener)
+	spin_lock_bh(&resource->listeners_lock);
+	listener = find_listener(connection, (struct sockaddr_storage *)addr);
+	if (!listener) {
+		listener = kmalloc(transport->class->listener_instance_size, GFP_ATOMIC);
+		if (!listener) {
+			spin_unlock_bh(&resource->listeners_lock);
 			return -ENOMEM;
-
-		kref_init(&new_listener->kref);
-		INIT_LIST_HEAD(&new_listener->waiters);
-		new_listener->resource = resource;
-		new_listener->pending_accepts = 0;
-		spin_lock_init(&new_listener->waiters_lock);
-
-		err = init_listener(transport, addr, new_listener);
-		if (err) {
-			kfree(new_listener);
-			new_listener = NULL;
-			if (err == -EADDRINUSE && ++tries < 3) {
-				schedule_timeout_uninterruptible(HZ / 20);
-				continue;
-			}
-			return err;
 		}
+		kref_init(&listener->kref);
+		INIT_LIST_HEAD(&listener->waiters);
+		listener->resource = resource;
+		listener->pending_accepts = 0;
+		spin_lock_init(&listener->waiters_lock);
+		init_completion(&listener->ready);
+		listener->listen_addr = *(struct sockaddr_storage *)addr;
+		listener->destroy = generic_listener_destroy;
+
+		list_add(&listener->list, &resource->listeners);
+		needs_init = true;
 	}
+	list_add(&path->listener_link, &listener->waiters);
+	path->listener = listener;
+	spin_unlock_bh(&resource->listeners_lock);
+
+	if (needs_init) {
+		err = init_listener(transport, addr, listener);
+		if (err)
+			drbd_put_listener(path);
+
+		listener->err = err;
+		complete_all(&listener->ready);
+		return err;
+	}
+
+	wait_for_completion(&listener->ready);
+	err = listener->err;
+	if (err)
+		drbd_put_listener(path);
+
+	return err;
 }
 
 static void drbd_listener_destroy(struct kref *kref)
