@@ -4723,45 +4723,32 @@ static void disconnect_where_resync_target(struct drbd_device *device)
 			__change_cstate(peer_device->connection, C_TEAR_DOWN);
 }
 
-struct change_role_context {
-	struct change_context context;
-	bool force;
-};
-
-static void __change_role(struct change_role_context *role_context)
+static bool do_change_role(struct change_context *context, enum change_phase phase)
 {
-	struct drbd_resource *resource = role_context->context.resource;
-	enum drbd_role role = role_context->context.val.role;
-	bool force = role_context->force;
+	struct drbd_resource *resource = context->resource;
+	enum drbd_role role = context->val.role;
+	int flags = context->flags;
 	struct drbd_device *device;
 	int vnr;
 
 	resource->role[NEW] = role;
 
-
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (role == R_PRIMARY && force) {
+		if (role == R_PRIMARY && (flags & CS_FP_LOCAL_UP_TO_DATE)) {
 			if (device->disk_state[NEW] < D_UP_TO_DATE &&
 			    device->disk_state[NEW] >= D_INCONSISTENT &&
 			    !has_up_to_date_peer_disks(device)) {
 				device->disk_state[NEW] = D_UP_TO_DATE;
 				/* adding it to the context so that it gets sent to the peers */
-				role_context->context.mask.disk |= disk_MASK;
-				role_context->context.val.disk |= D_UP_TO_DATE;
+				context->mask.disk |= disk_MASK;
+				context->val.disk |= D_UP_TO_DATE;
 				disconnect_where_resync_target(device);
 			}
 		}
 	}
 	rcu_read_unlock();
-}
 
-static bool do_change_role(struct change_context *context, enum change_phase phase)
-{
-	struct change_role_context *role_context =
-		container_of(context, struct change_role_context, context);
-
-	__change_role(role_context);
 	return phase != PH_PREPARE ||
 	       (context->resource->role[NOW] != R_PRIMARY &&
 		context->val.role == R_PRIMARY);
@@ -4770,20 +4757,16 @@ static bool do_change_role(struct change_context *context, enum change_phase pha
 enum drbd_state_rv change_role(struct drbd_resource *resource,
 			       enum drbd_role role,
 			       enum chg_state_flags flags,
-			       bool force,
 			       const char **err_str)
 {
-	struct change_role_context role_context = {
-		.context = {
-			.resource = resource,
-			.vnr = -1,
-			.mask = { { .role = role_MASK } },
-			.val = { { .role = role } },
-			.target_node_id = -1,
-			.flags = flags | CS_SERIALIZE,
-			.err_str = err_str,
-		},
-		.force = force,
+	struct change_context role_context = {
+		.resource = resource,
+		.vnr = -1,
+		.mask = { { .role = role_MASK } },
+		.val = { { .role = role } },
+		.target_node_id = -1,
+		.flags = flags | CS_SERIALIZE,
+		.err_str = err_str,
 	};
 	enum drbd_state_rv rv;
 	bool got_state_sem = false;
@@ -4795,7 +4778,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 		if (!(flags & CS_ALREADY_SERIALIZED)) {
 			down(&resource->state_sem);
 			got_state_sem = true;
-			role_context.context.flags |= CS_ALREADY_SERIALIZED;
+			role_context.flags |= CS_ALREADY_SERIALIZED;
 		}
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			long t = wait_event_interruptible_timeout(device->misc_wait,
@@ -4807,7 +4790,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 			}
 		}
 	}
-	rv = change_cluster_wide_state(do_change_role, &role_context.context);
+	rv = change_cluster_wide_state(do_change_role, &role_context);
 out:
 	if (got_state_sem)
 		up(&resource->state_sem);

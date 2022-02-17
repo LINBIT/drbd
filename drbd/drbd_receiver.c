@@ -3585,7 +3585,7 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, false, NULL);
+			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, NULL);
 			if (rv2 != SS_SUCCESS) {
 				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
@@ -3638,7 +3638,7 @@ static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_devi
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, false, NULL);
+			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, NULL);
 			if (rv2 != SS_SUCCESS) {
 				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
