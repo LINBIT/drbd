@@ -1072,7 +1072,7 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
-	int max_bio_bits, number, rollback_i, size, i, optimal_bits;
+	int max_bio_bits, number, rollback_i, size = 0, i, optimal_bits;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
 	bool last_request_sent;
