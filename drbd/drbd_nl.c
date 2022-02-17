@@ -1970,6 +1970,7 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 static void decide_on_discard_support(struct drbd_device *device,
 			struct request_queue *q,
 			struct request_queue *b,
+			struct o_qlim *o,
 			bool discard_zeroes_if_aligned)
 {
 	/* q = drbd device queue (device->rq_queue)
@@ -1981,6 +1982,10 @@ static void decide_on_discard_support(struct drbd_device *device,
 	if (can_do && b && !queue_discard_zeroes_data(b) && !discard_zeroes_if_aligned) {
 		can_do = false;
 		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
+	}
+	if (can_do && !b && !(o && o->discard_enabled && o->discard_zeroes_data)) {
+		can_do = false;
+		drbd_info(device, "disabling discards due to peer capabilities\n");
 	}
 	if (can_do && !(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
 		can_do = false;
@@ -2119,7 +2124,7 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_segment_boundary(q, PAGE_SIZE-1);
-	decide_on_discard_support(device, q, b, discard_zeroes_if_aligned);
+	decide_on_discard_support(device, q, b, o, discard_zeroes_if_aligned);
 	decide_on_write_same_support(device, q, b, o, disable_write_same);
 
 	if (b) {
