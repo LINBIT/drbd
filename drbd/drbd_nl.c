@@ -1027,6 +1027,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 	struct block_device *bdev = NULL;
+	bool fenced_peers = false;
 
 retry:
 
@@ -1093,7 +1094,7 @@ retry:
 		}
 		/* in case we first succeeded to outdate,
 		 * but now suddenly could establish a connection */
-		if (rv == SS_CW_FAILED_BY_PEER) {
+		if (rv == SS_CW_FAILED_BY_PEER && fenced_peers) {
 			flags &= ~CS_FP_LOCAL_UP_TO_DATE;
 			continue;
 		}
@@ -1120,6 +1121,7 @@ retry:
 			struct drbd_connection *connection;
 			u64 im;
 
+			fenced_peers = true;
 			up(&resource->state_sem); /* Allow connect while fencing */
 			for_each_connection_ref(connection, im, resource) {
 				struct drbd_peer_device *peer_device;
@@ -1134,13 +1136,15 @@ retry:
 					if (device->disk_state[NOW] != D_CONSISTENT)
 						continue;
 
-					if (conn_try_outdate_peer(connection))
-						flags |= CS_FP_LOCAL_UP_TO_DATE;
+					if (!conn_try_outdate_peer(connection))
+						fenced_peers = false;
 				}
 			}
 			down(&resource->state_sem);
-			if (flags & CS_FP_LOCAL_UP_TO_DATE)
+			if (fenced_peers) {
+				flags |= CS_FP_LOCAL_UP_TO_DATE;
 				continue;
+			}
 		}
 
 		if (rv == SS_NO_QUORUM && force && !(flags & CS_FP_OUTDATE_PEERS)) {
