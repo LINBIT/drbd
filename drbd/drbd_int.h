@@ -267,8 +267,8 @@ struct drbd_request {
 	 * no serialization required. */
 	struct bio *private_bio;
 
-	/* Fields sector and size are "immutable". Otherwise protected by
-	 * interval_lock. */
+	/* Fields sector and size are "immutable". Other fields protected
+	 * by interval_lock. */
 	struct drbd_interval i;
 
 	/* epoch: used to check on "completion" whether this req was in
