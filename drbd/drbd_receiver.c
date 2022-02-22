@@ -5894,6 +5894,35 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 	return outdate_if_weak(resource, reply, flags);
 }
 
+static void handle_neighbor_demotion(struct drbd_connection *connection, union drbd_state mask,
+				     union drbd_state val, struct twopc_reply *reply)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_device *device;
+	int vnr;
+
+	if (reply->initiator_node_id != connection->peer_node_id ||
+	    connection->peer_role[NOW] != R_PRIMARY ||
+	    mask.role != role_MASK || val.role != R_SECONDARY)
+		return;
+
+	/* A directly connected neighbor that was primary demotes to secondary */
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		kref_get(&device->kref);
+		rcu_read_unlock();
+		if (get_ldev(device)) {
+			drbd_bitmap_io(device, &drbd_bm_write, "peer demote",
+				       BM_LOCK_SET| BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
+			put_ldev(device);
+		}
+		rcu_read_lock();
+		kref_put(&device->kref, drbd_destroy_device);
+	}
+	rcu_read_unlock();
+}
+
 enum csc_rv {
 	CSC_CLEAR,
 	CSC_REJECT,
@@ -6386,8 +6415,10 @@ static int process_twopc(struct drbd_connection *connection,
 
 	switch (resource->twopc_type) {
 	case TWOPC_STATE_CHANGE:
-		if (flags & CS_PREPARED)
+		if (flags & CS_PREPARED) {
 			reply->primary_nodes = be64_to_cpu(p->primary_nodes);
+			handle_neighbor_demotion(connection, mask, val, reply);
+		}
 
 		if (peer_device)
 			rv = change_peer_device_state(peer_device, mask, val, flags);

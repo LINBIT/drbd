@@ -3617,7 +3617,12 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		if (((role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) || some_peer_demoted) &&
 		    get_ldev(device)) {
-			/* No changes to the bitmap expected after this point, so write out any
+			/* The some_peer_demoted case is superseded by
+			 * handle_neighbor_demotion(). We keep this call for
+			 * compatibility until support for protocol version 121
+			 * is removed.
+			 *
+			 * No changes to the bitmap expected after this point, so write out any
 			 * changes up to now to ensure that the metadata disk has the full
 			 * bitmap content. Even if the bitmap changes (e.g. it was dual primary)
 			 * no harm was done if it did change. */
@@ -4723,8 +4728,7 @@ static bool do_change_role(struct change_context *context, enum change_phase pha
 	rcu_read_unlock();
 
 	return phase != PH_PREPARE ||
-	       (context->resource->role[NOW] != R_PRIMARY &&
-		context->val.role == R_PRIMARY);
+		context->resource->role[NOW] != context->val.role;
 }
 
 enum drbd_state_rv change_role(struct drbd_resource *resource,
@@ -4762,6 +4766,7 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 				goto out;
 			}
 		}
+		role_context.change_local_state_last = true;
 	}
 	rv = change_cluster_wide_state(do_change_role, &role_context);
 out:
