@@ -77,6 +77,13 @@
 	     ++id, entry = (typeof(entry))idr_get_next((idp), &(id)))
 #endif
 
+/* introduced in v4.17-rc7-25-gead9ad7253f4 */
+#ifndef list_for_each_entry_from_rcu
+#define list_for_each_entry_from_rcu(pos, head, member)			\
+	for (; &(pos)->member != (head);					\
+		pos = list_entry_rcu(pos->member.next, typeof(*(pos)), member))
+#endif
+
 /* introduced in v3.13-rc2-4-g462225ae47d7 */
 #ifndef RCU_INITIALIZER
 #define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)

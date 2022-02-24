@@ -634,6 +634,8 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 	}
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
+		if (!(s & RQ_NET_MASK))
+			continue;
 		if (((s & is_set) == is_set) && !(s & is_clear))
 			break;
 	}
@@ -718,18 +720,18 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_inc(&req->completion_ref);
 	}
 
-	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED))
+	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
+		set_cache_ptr_if_null(&connection->req_not_net_done, req);
 		atomic_inc(&req->completion_ref);
+	}
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		kref_get(&req->kref); /* wait for the DONE */
 
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
 		/* potentially already completed in the ack_receiver thread */
-		if (!(old_net & RQ_NET_DONE)) {
+		if (!(old_net & RQ_NET_DONE))
 			atomic_add(req_payload_sectors(req), &peer_device->connection->ap_in_flight);
-			set_cache_ptr_if_null(&connection->req_not_net_done, req);
-		}
 		if (req->net_rq_state[idx] & RQ_NET_PENDING)
 			set_cache_ptr_if_null(&connection->req_ack_pending, req);
 	}
@@ -807,7 +809,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		advance_cache_ptr(connection, &connection->req_ack_pending,
 				  req, RQ_NET_SENT | RQ_NET_PENDING, 0);
 		advance_cache_ptr(connection, &connection->req_not_net_done,
-				  req, RQ_NET_SENT, RQ_NET_DONE);
+				  req, 0, RQ_NET_DONE);
 	}
 
 	/* potentially complete and destroy */
@@ -2399,6 +2401,15 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 
 	if (time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent))
 		return false;
+
+	/* We should not blame the peer for being unresponsive, if we did not
+	 * send the request yet. */
+	if (!(net_req->net_rq_state[peer_node_id] & RQ_NET_SENT)) {
+		drbd_warn(peer_device,
+			"We did not send a request for %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
+			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
+		return false;
+	}
 
 	if (net_req->net_rq_state[peer_node_id] & RQ_NET_PENDING) {
 		drbd_warn(peer_device, "Remote failed to finish a request within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",

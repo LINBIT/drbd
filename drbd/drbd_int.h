@@ -1113,6 +1113,8 @@ struct drbd_connection {
 	 * so we can look up the oldest pending requests more quickly.
 	 * TODO: RCU */
 	struct drbd_request *req_ack_pending;
+	/* The oldest request that is or was queued for this peer, but is not
+	 * done towards it. */
 	struct drbd_request *req_not_net_done;
 
 	unsigned int s_cb_nr; /* keeps counting up */
