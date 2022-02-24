@@ -4744,6 +4744,14 @@ static bool do_change_role(struct change_context *context, enum change_phase pha
 				disconnect_where_resync_target(device);
 			}
 		}
+
+		if (role == R_PRIMARY && (flags & CS_FP_OUTDATE_PEERS)) {
+			struct drbd_peer_device *peer_device;
+			for_each_peer_device_rcu(peer_device, device) {
+				if (peer_device->disk_state[NEW] == D_UNKNOWN)
+					__change_peer_disk_state(peer_device, D_OUTDATED);
+			}
+		}
 	}
 	rcu_read_unlock();
 

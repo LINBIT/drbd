@@ -1020,7 +1020,7 @@ enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, struct sk_buff *reply_skb)
 {
 	struct drbd_device *device;
-	int vnr, try = 0, forced = 0;
+	int vnr, try = 0;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	bool retried_ss_two_primaries = false;
@@ -1105,7 +1105,6 @@ retry:
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && force && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
 			flags |= CS_FP_LOCAL_UP_TO_DATE;
-			forced = 1;
 			continue;
 		}
 
@@ -1147,6 +1146,11 @@ retry:
 			down(&resource->state_sem);
 			if (flags & CS_FP_LOCAL_UP_TO_DATE)
 				continue;
+		}
+
+		if (rv == SS_NO_QUORUM && force && !(flags & CS_FP_OUTDATE_PEERS)) {
+			flags |= CS_FP_OUTDATE_PEERS;
+			continue;
 		}
 
 		if (rv == SS_NOTHING_TO_DO)
@@ -1207,8 +1211,12 @@ retry:
 	if (rv < SS_SUCCESS)
 		goto out;
 
-	if (forced)
-		drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
+	if (force) {
+		if (flags & CS_FP_LOCAL_UP_TO_DATE)
+			drbd_warn(resource, "Forced to consider local data as UpToDate!\n");
+		if (flags & CS_FP_OUTDATE_PEERS)
+			drbd_warn(resource, "Forced to consider peers as Outdated!\n");
+	}
 
 	if (role == R_SECONDARY) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
@@ -1226,7 +1234,7 @@ retry:
 		rcu_read_unlock();
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (forced) {
+			if (flags & CS_FP_LOCAL_UP_TO_DATE) {
 				drbd_uuid_new_current(device, true);
 				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
@@ -1243,7 +1251,7 @@ retry:
 
 			if (peer_device->connection->cstate[NOW] == C_CONNECTED) {
 				/* if this was forced, we should consider sync */
-				if (forced) {
+				if (flags & CS_FP_LOCAL_UP_TO_DATE) {
 					drbd_send_uuids(peer_device, 0, 0);
 					set_bit(CONSIDER_RESYNC, &peer_device->flags);
 				}
