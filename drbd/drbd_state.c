@@ -2759,7 +2759,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		resource->peers_at_quorum_loss = connected_peers_mask(resource, OLD);
 
 	if (resource_suspended[OLD] && !resource_suspended[NEW])
-		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
+		__tl_walk(resource, NULL, &resource->req_not_complete, COMPLETION_RESUMED);
 
 	if (susp_quorum[OLD] && !susp_quorum[NEW])
 		check_new_uuid_after_quorum_suspend(resource);

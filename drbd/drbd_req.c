@@ -386,6 +386,28 @@ void drbd_wake_all_senders(struct drbd_resource *resource) {
 	rcu_read_unlock();
 }
 
+static void advance_req_not_complete(struct drbd_resource *resource,
+			      struct drbd_request *req)
+{
+	struct drbd_request *old_req;
+
+	rcu_read_lock();
+	old_req = rcu_dereference(resource->req_not_complete);
+	if (old_req != req) {
+		rcu_read_unlock();
+		return;
+	}
+	list_for_each_entry_continue_rcu(req, &resource->transfer_log, tl_requests) {
+		if (req->master_bio && !(req->local_rq_state & RQ_POSTPONED))
+			break;
+	}
+	if (&req->tl_requests == &resource->transfer_log)
+		req = NULL;
+
+	cmpxchg(&resource->req_not_complete, old_req, req);
+	rcu_read_unlock();
+}
+
 bool start_new_tl_epoch(struct drbd_resource *resource)
 {
 	unsigned long flags;
@@ -549,6 +571,8 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 			wake_up(&device->misc_wait);
 		spin_unlock_irqrestore(&device->interval_lock, flags);
 	}
+
+	advance_req_not_complete(device->resource, req);
 
 	/* Either we are about to complete to upper layers,
 	 * or we will restart this request.
@@ -1880,6 +1904,8 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 		/* req may now be accessed by other threads - do not modify
 		 * "immutable" fields after this point */
 		list_add_tail_rcu(&req->tl_requests, &resource->transfer_log);
+
+		set_cache_ptr_if_null(&resource->req_not_complete, req);
 	}
 	spin_unlock(&resource->tl_update_lock);
 
