@@ -1100,15 +1100,10 @@ struct drbd_connection {
 		 * need to walk the full transfer_log list every time, even if
 		 * the list is kept long by some slow connections.
 		 *
-		 * There is also a special value to reliably re-start
-		 * the transfer log walk after having scheduled the requests
-		 * for RESEND.
-		 *
 		 * req_next is only accessed by drbd_sender thread, in
 		 * case of a resend from some worker, but then regular IO
 		 * is suspended.
 		 */
-#define TL_NEXT_REQUEST_RESEND	((void*)1)
 		struct drbd_request *req_next;
 	} todo;
 
