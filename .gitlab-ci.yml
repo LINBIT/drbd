@@ -1,6 +1,7 @@
 variables:
   RELEASE_BRANCH: master
   DRBD_VERSION_BASE: 9.2.0
+  DRBD9_TESTS_REF: master
   BUILD_HELPERS_VERSION: a87d4f95c35fa24eebe1a157408ef59cebd1f3f4
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
@@ -20,11 +21,10 @@ stages:
     - ci_prepare_tools
     - ci_fetch_rq
     - ci_fetch_lbbuildctl
+    - git clone --branch ${DRBD9_TESTS_REF} https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd9-tests.git
     - |
       kernels_from_vms() {
-        mkdir -p drbd-test-bundle
-        curl -sSL $LINBIT_REGISTRY_URL/repository/test-suite/drbd-test-bundle.tgz | tar -C drbd-test-bundle -xzf -
-        rq -t < drbd-test-bundle/virter/vms.toml | \
+        rq -t < drbd9-tests/virter/vms.toml | \
           jq -r '.vms[].metadata | .BuildDistribution + " " + .BuildKernel'
       }
 
@@ -115,7 +115,6 @@ build:for-tests:
     reports:
       dotenv: build.env
     paths:
-      - drbd-test-bundle
       - drbd/drbd-kernel-compat/cocci_cache
     when: always
     expire_in: 1 week
@@ -131,7 +130,8 @@ build:for-tests:
     - |
       set -e
       run_test() {
-        . drbd-test-bundle/virter/version.env
+        git clone --branch ${DRBD9_TESTS_REF} https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd9-tests.git
+        . drbd9-tests/virter/version.env
 
         curl -sSfL -u gitlab-ci-token:$CI_JOB_TOKEN $CI_SERVER_URL/linbit/build-helpers/-/archive/$BUILD_HELPERS_VERSION/ignored.tar.gz | tar -xvzf -
         mv build-helpers-* build-helpers
@@ -147,7 +147,8 @@ build:for-tests:
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
         export DRBD9_TESTS_VERSION=latest
-        ./drbd-test-bundle/virter/run-test.sh "$@"
+        cd drbd9-tests
+        ./virter/run-test.sh "$@"
       }
   dependencies:
     - build:for-tests
@@ -184,11 +185,11 @@ test-all:
     - |
       run_test \
         --repeats="$DRBD_TEST_REPEATS" \
-        --tests=drbd-test-bundle/virter/tests.all.toml \
+        --tests=drbd9-tests/virter/tests.all.toml \
         --error-details=false \
         --quiet \
         $DRBD_TEST_VMSHED_ARGS || true
-      DRBD9_TESTS_REF=master ./drbd-test-bundle/virter/elasticsearch/elasticsearch-insert.sh \
+      ./drbd9-tests/virter/elasticsearch/elasticsearch-insert.sh \
         https://es01.at.linbit.com tests-out/results.json \
-        drbd-test-bundle/virter/tests.toml
+        drbd9-tests/virter/tests.toml
       cat .gitlab/kibana-version-comparison-url | tr -d '\n' | sed s/{{drbd_version}}/$DRBD_VERSION/
