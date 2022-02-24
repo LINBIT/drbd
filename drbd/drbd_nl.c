@@ -1024,7 +1024,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	bool retried_ss_two_primaries = false;
-	bool with_force = false;
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 	struct block_device *bdev = NULL;
@@ -1083,7 +1082,7 @@ retry:
 			err_str = NULL;
 		}
 		rv = stable_state_change(resource,
-			change_role(resource, role, flags, with_force, &err_str));
+			change_role(resource, role, flags, &err_str));
 
 		if (rv == SS_CONCURRENT_ST_CHG)
 			continue;
@@ -1100,12 +1099,12 @@ retry:
 		/* in case we first succeeded to outdate,
 		 * but now suddenly could establish a connection */
 		if (rv == SS_CW_FAILED_BY_PEER) {
-			with_force = false;
+			flags &= ~CS_FP_LOCAL_UP_TO_DATE;
 			continue;
 		}
 
-		if (rv == SS_NO_UP_TO_DATE_DISK && force && !with_force) {
-			with_force = true;
+		if (rv == SS_NO_UP_TO_DATE_DISK && force && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
+			flags |= CS_FP_LOCAL_UP_TO_DATE;
 			forced = 1;
 			continue;
 		}
@@ -1123,7 +1122,7 @@ retry:
 			/* fall through into possible fence-peer or even force cases */
 		}
 
-		if (rv == SS_NO_UP_TO_DATE_DISK && !with_force) {
+		if (rv == SS_NO_UP_TO_DATE_DISK && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
 			struct drbd_connection *connection;
 			u64 im;
 
@@ -1142,17 +1141,17 @@ retry:
 						continue;
 
 					if (conn_try_outdate_peer(connection))
-						with_force = true;
+						flags |= CS_FP_LOCAL_UP_TO_DATE;
 				}
 			}
 			down(&resource->state_sem);
-			if (with_force)
+			if (flags & CS_FP_LOCAL_UP_TO_DATE)
 				continue;
 		}
 
 		if (rv == SS_NOTHING_TO_DO)
 			goto out;
-		if (rv == SS_PRIMARY_NOP && !with_force) {
+		if (rv == SS_PRIMARY_NOP && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
 			struct drbd_connection *connection;
 			u64 im;
 
@@ -1160,11 +1159,11 @@ retry:
 			for_each_connection_ref(connection, im, resource) {
 				if (!conn_try_outdate_peer(connection) && force) {
 					drbd_warn(connection, "Forced into split brain situation!\n");
-					with_force = true;
+					flags |= CS_FP_LOCAL_UP_TO_DATE;
 				}
 			}
 			down(&resource->state_sem);
-			if (with_force)
+			if (flags & CS_FP_LOCAL_UP_TO_DATE)
 				continue;
 		}
 
