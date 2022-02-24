@@ -1418,14 +1418,28 @@ int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uui
 static void assign_p_sizes_qlim(struct drbd_device *device, struct p_sizes *p, struct request_queue *q)
 {
 	if (q) {
+		struct disk_conf *dc;
+		bool discard_zeroes_if_aligned;
+		bool disable_write_same;
+
+		rcu_read_lock();
+		dc = rcu_dereference(device->ldev->disk_conf);
+		discard_zeroes_if_aligned = dc->discard_zeroes_if_aligned;
+		disable_write_same = dc->disable_write_same;
+		rcu_read_unlock();
+
 		p->qlim->physical_block_size = cpu_to_be32(queue_physical_block_size(q));
 		p->qlim->logical_block_size = cpu_to_be32(queue_logical_block_size(q));
 		p->qlim->alignment_offset = cpu_to_be32(queue_alignment_offset(q));
 		p->qlim->io_min = cpu_to_be32(queue_io_min(q));
 		p->qlim->io_opt = cpu_to_be32(queue_io_opt(q));
 		p->qlim->discard_enabled = blk_queue_discard(q);
-		p->qlim->discard_zeroes_data = queue_discard_zeroes_data(q);
-		p->qlim->write_same_capable = !!q->limits.max_write_same_sectors;
+		p->qlim->discard_zeroes_data = discard_zeroes_if_aligned ||
+			queue_discard_zeroes_data(q)
+			/* but that is always false on recent kernels */
+			;
+		p->qlim->write_same_capable = !disable_write_same &&
+			!!q->limits.max_write_same_sectors;
 	} else {
 		q = device->rq_queue;
 		p->qlim->physical_block_size = cpu_to_be32(queue_physical_block_size(q));
