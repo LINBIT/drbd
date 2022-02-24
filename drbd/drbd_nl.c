@@ -1152,6 +1152,14 @@ retry:
 			}
 		}
 
+		/* In case the disk is Consistent and fencing is enabled, and fencing did not work
+		 * but the user forces promote..., try it pretending we fenced the peers */
+		if (rv == SS_PRIMARY_NOP && force &&
+		    (flags & CS_FP_LOCAL_UP_TO_DATE) && !(flags & CS_FP_OUTDATE_PEERS)) {
+			flags |= CS_FP_OUTDATE_PEERS;
+			continue;
+		}
+
 		if (rv == SS_NO_QUORUM && force && !(flags & CS_FP_OUTDATE_PEERS)) {
 			flags |= CS_FP_OUTDATE_PEERS;
 			continue;
