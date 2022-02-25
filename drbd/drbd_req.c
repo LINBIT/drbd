@@ -2392,9 +2392,12 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	 * Check if we sent the barrier already.  We should not blame the peer
 	 * for being unresponsive, if we did not even ask it yet. */
 	if (net_req->epoch == connection->send.current_epoch_nr) {
-		drbd_warn(peer_device,
-			"We did not send a P_BARRIER for %ums > ko-count (%u) * timeout (%u * 0.1s); drbd kernel thread blocked?\n",
-			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
+		/* It is OK for the barrier to be delayed for a long time for a
+		 * suspended request. */
+		if (!(net_req->local_rq_state & RQ_COMPLETION_SUSP))
+			drbd_warn(peer_device,
+					"We did not send a P_BARRIER for %ums > ko-count (%u) * timeout (%u * 0.1s); drbd kernel thread blocked?\n",
+					jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
 		return false;
 	}
 
