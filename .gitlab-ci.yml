@@ -165,7 +165,7 @@ build:compile-only:
         export DRBD_UTILS_VERSION=9.0.0.latest-*
         export DRBD9_TESTS_VERSION=latest
         cd drbd9-tests
-        ./virter/run-test.sh "$@"
+        ./virter/run-test.sh --out-dir=../tests-out "$@"
       }
   dependencies:
     - build:for-tests
