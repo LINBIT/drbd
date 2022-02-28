@@ -1005,25 +1005,6 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 	return disk_state;
 }
 
-static enum drbd_repl_state conn_lowest_repl_state(struct drbd_connection *connection)
-{
-	unsigned int repl_state = -1U;
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state[NOW] < repl_state)
-			repl_state = peer_device->repl_state[NOW];
-	}
-	rcu_read_unlock();
-
-	if (repl_state == -1U)
-		return L_OFF;
-
-	return repl_state;
-}
-
 static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	return peer_device->resync_susp_user[which] ||
@@ -3431,20 +3412,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]) &&
 			    !test_bit(UNREGISTERED, &device->flags))
 				drbd_maybe_khelper(device, connection, "pri-on-incon-degr");
-
-			if (resource_state_change->susp_nod[NEW] &&
-					repl_state[OLD] < L_ESTABLISHED &&
-					conn_lowest_repl_state(connection) >= L_ESTABLISHED) {
-				unsigned long irq_flags;
-
-				/* Is this too early?  We should only
-				 * resume after the iteration over all
-				 * connections?
-				 */
-				begin_state_change(resource, &irq_flags, CS_VERBOSE);
-				__change_io_susp_no_data(resource, false);
-				end_state_change(resource, &irq_flags);
-			}
 
 			/* Do not change the order of the if above and the two below... */
 			if (peer_disk_state[OLD] < D_NEGOTIATING &&
