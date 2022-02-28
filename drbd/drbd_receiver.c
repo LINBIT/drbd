@@ -5269,6 +5269,13 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
 	int updated_uuids = 0, err = 0;
+	struct net_conf *nc;
+	bool two_primaries_allowed;
+
+	rcu_read_lock();
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
+	two_primaries_allowed = nc && nc->two_primaries;
+	rcu_read_unlock();
 
 	if (get_ldev(device)) {
 		int skip_initial_sync =
@@ -5310,7 +5317,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
 		   (device->exposed_data_uuid & ~UUID_PRIMARY) &&
 		   (resource->role[NOW] == R_SECONDARY ||
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))) {
+		    (two_primaries_allowed && test_and_clear_bit(NEW_CUR_UUID, &device->flags)))) {
 
 		write_lock_irq(&resource->state_rwlock);
 		if (resource->remote_state_change) {
