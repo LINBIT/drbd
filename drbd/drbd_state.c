@@ -240,7 +240,8 @@ bool is_suspended_fen(struct drbd_resource *resource, enum which_state which)
 
 bool resource_is_suspended(struct drbd_resource *resource, enum which_state which)
 {
-	bool rv = resource->susp_user[which] || resource->susp_nod[which] || resource->susp_quorum[which];
+	bool rv = resource->susp_user[which] || resource->susp_nod[which] ||
+		resource->susp_quorum[which] ||	resource->susp_uuid[which];
 
 	if (rv)
 		return rv;
@@ -324,6 +325,8 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	       resource->susp_user, sizeof(resource->susp_user));
 	memcpy(state_change->resource->susp_nod,
 	       resource->susp_nod, sizeof(resource->susp_nod));
+	memcpy(state_change->resource->susp_uuid,
+	       resource->susp_uuid, sizeof(resource->susp_uuid));
 
 	device_state_change = state_change->devices;
 	peer_device_state_change = state_change->peer_devices;
@@ -415,6 +418,7 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 	OLD_TO_NEW(resource_state_change->role);
 	OLD_TO_NEW(resource_state_change->susp);
 	OLD_TO_NEW(resource_state_change->susp_nod);
+	OLD_TO_NEW(resource_state_change->susp_uuid);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -499,7 +503,8 @@ static bool state_has_changed(struct drbd_resource *resource)
 	if (resource->role[OLD] != resource->role[NEW] ||
 	    resource->susp_user[OLD] != resource->susp_user[NEW] ||
 	    resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
-	    resource->susp_quorum[OLD] != resource->susp_quorum[NEW])
+	    resource->susp_quorum[OLD] != resource->susp_quorum[NEW] ||
+	    resource->susp_uuid[OLD] != resource->susp_uuid[NEW])
 		return true;
 
 	for_each_connection(connection, resource) {
@@ -546,6 +551,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->susp_user[NEW] = resource->susp_user[NOW];
 	resource->susp_nod[NEW] = resource->susp_nod[NOW];
 	resource->susp_quorum[NEW] = resource->susp_quorum[NOW];
+	resource->susp_uuid[NEW] = resource->susp_uuid[NOW];
 
 	for_each_connection_rcu(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
@@ -737,6 +743,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->susp_user[NOW] = resource->susp_user[NEW];
 	resource->susp_nod[NOW] = resource->susp_nod[NEW];
 	resource->susp_quorum[NOW] = resource->susp_quorum[NEW];
+	resource->susp_uuid[NOW] = resource->susp_uuid[NEW];
 	resource->cached_susp = resource_is_suspended(resource, NEW);
 
 	pro_ver = PRO_VERSION_MAX;
@@ -930,7 +937,7 @@ static union drbd_state drbd_get_resource_state(struct drbd_resource *resource, 
 		.disk = D_UNKNOWN,  /* really: undefined */
 		.role = resource->role[which],
 		.peer = R_UNKNOWN,  /* really: undefined */
-		.susp = resource->susp_user[which] || resource->susp_quorum[which],
+		.susp = resource->susp_user[which] || resource->susp_quorum[which] || resource->susp_uuid[which],
 		.susp_nod = resource->susp_nod[which],
 		.susp_fen = is_suspended_fen(resource, which),
 		.pdsk = D_UNKNOWN,  /* really: undefined */
@@ -1005,6 +1012,15 @@ enum drbd_disk_state conn_highest_pdsk(struct drbd_connection *connection)
 	return disk_state;
 }
 
+static bool suspend_reason_changed(struct drbd_resource *resource)
+{
+	return resource->susp_user[OLD] != resource->susp_user[NEW] ||
+		resource->susp_nod[OLD] != resource->susp_nod[NEW] ||
+		resource->susp_quorum[OLD] != resource->susp_quorum[NEW] ||
+		resource->susp_uuid[OLD] != resource->susp_uuid[NEW] ||
+		is_suspended_fen(resource, OLD) != is_suspended_fen(resource, NEW);
+}
+
 static bool resync_suspended(struct drbd_peer_device *peer_device, enum which_state which)
 {
 	return peer_device->resync_susp_user[which] ||
@@ -1055,6 +1071,8 @@ static int scnprintf_io_suspend_flags(char *buffer, size_t size,
 		b += scnprintf(b, end - b, "fencing,");
 	if (resource->susp_quorum[which])
 		b += scnprintf(b, end - b, "quorum,");
+	if (resource->susp_uuid[which])
+		b += scnprintf(b, end - b, "uuid,");
 	*(--b) = 0;
 
 	return b - buffer;
@@ -1073,7 +1091,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		b += scnprintf(b, end - b, "role( %s -> %s ) ",
 			       drbd_role_str(role[OLD]),
 			       drbd_role_str(role[NEW]));
-	if (resource_is_suspended(resource, OLD) != resource_is_suspended(resource, NEW)) {
+	if (suspend_reason_changed(resource)) {
 		b += scnprintf(b, end - b, "susp-io( ");
 		b += scnprintf_io_suspend_flags(b, end - b, resource, OLD);
 		b += scnprintf(b, end - b, " -> ");
@@ -2176,6 +2194,15 @@ static void sanitize_state(struct drbd_resource *resource)
 
 	resource->susp_quorum[NEW] =
 		resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO ? !resource_has_quorum : false;
+
+	if (resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW)) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (test_bit(NEW_CUR_UUID, &device->flags)) {
+				resource->susp_uuid[NEW] = true;
+				break;
+			}
+		}
+	}
 }
 
 void drbd_resume_al(struct drbd_device *device)
@@ -2861,7 +2888,8 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	} };
 
 	state.role = resource_state_change->role[which];
-	state.susp = resource_state_change->susp[which] || state_change_is_susp_quorum(state_change, which);
+	state.susp = resource_state_change->susp[which] || state_change_is_susp_quorum(state_change, which) ||
+		resource_state_change->susp_uuid[which];
 	state.susp_nod = resource_state_change->susp_nod[which];
 	state.susp_fen = state_change_is_susp_fen(state_change, which);
 	state.quorum = device_state_change->have_quorum[which];
@@ -2896,7 +2924,8 @@ void notify_resource_state_change(struct sk_buff *skb,
 		.res_susp = resource_state_change->susp[NEW],
 		.res_susp_nod = resource_state_change->susp_nod[NEW],
 		.res_susp_fen = state_change_is_susp_fen(state_change, NEW),
-		.res_susp_quorum = state_change_is_susp_quorum(state_change, NEW),
+		.res_susp_quorum = state_change_is_susp_quorum(state_change, NEW) ||
+			resource_state_change->susp_uuid[NEW],
 	};
 
 	notify_resource_state(skb, seq, resource, &resource_info, NULL, type);
@@ -2966,6 +2995,7 @@ static void notify_state_change(struct drbd_state_change *state_change)
 	    HAS_CHANGED(resource_state_change->role) ||
 	    HAS_CHANGED(resource_state_change->susp) ||
 	    HAS_CHANGED(resource_state_change->susp_nod) ||
+	    HAS_CHANGED(resource_state_change->susp_uuid) ||
 		state_change_is_susp_fen(state_change, OLD) !=
 		state_change_is_susp_fen(state_change, NEW) ||
 		state_change_is_susp_quorum(state_change, OLD) !=
@@ -3289,6 +3319,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	struct drbd_resource *resource = resource_state_change->resource;
 	enum drbd_role *role = resource_state_change->role;
+	bool *susp_uuid = resource_state_change->susp_uuid;
 	struct drbd_peer_device *send_state_others = NULL;
 	int n_device, n_connection;
 	bool still_connected = false;
@@ -3307,6 +3338,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool device_stable[2], resync_target[2];
 		bool resync_finished = false;
 		bool some_peer_demoted = false;
+		bool new_current_uuid = false;
 		enum which_state which;
 
 		for (which = OLD; which <= NEW; which++) {
@@ -3553,17 +3585,15 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&
-			    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+			    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
 				   we know that a write failed on that node. Therefore we need to create
 				   the new UUID right now (not wait for the next write to come in) */
-				drbd_uuid_new_current(device, false);
-			}
+				new_current_uuid = true;
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
-			    role[NEW] == R_PRIMARY && test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-				drbd_uuid_new_current(device, false);
-			}
+			    role[NEW] == R_PRIMARY && test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+				new_current_uuid = true;
 
 			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S) {
 				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
@@ -3714,6 +3744,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
 			drbd_maybe_khelper(device, NULL, "quorum-lost");
+
+		if (!susp_uuid[OLD] && susp_uuid[NEW] &&
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			new_current_uuid = true;
+
+		if (new_current_uuid)
+			drbd_uuid_new_current(device, false);
 	}
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
@@ -3746,6 +3783,14 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		if (cstate[NEW] == C_CONNECTED || cstate[NEW] == C_CONNECTING)
 			still_connected = true;
+	}
+
+	if (!susp_uuid[OLD] && susp_uuid[NEW]) {
+		unsigned long irq_flags;
+
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		resource->susp_uuid[NEW] = false;
+		end_state_change(resource, &irq_flags);
 	}
 
 	if (try_become_up_to_date)
