@@ -2756,7 +2756,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	}
 
 	if (resource_suspended[OLD] && !resource_suspended[NEW])
-		__tl_walk(resource, NULL, &resource->req_not_complete, COMPLETION_RESUMED);
+		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
 
 	queue_after_state_change_work(resource, done);
 }
