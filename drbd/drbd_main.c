@@ -2897,8 +2897,8 @@ static void do_retry(struct work_struct *ws)
 		ktime_get_accounting_assign(ktime_t start_kt, req->start_kt);
 
 
-		/* no locking when accssing local_rq_state & net_rq_state, since
-		   this request are not active at the moment */
+		/* No locking when accessing local_rq_state & net_rq_state, since
+		 * this request is not active at the moment. */
 		expected =
 			expect(device, atomic_read(&req->completion_ref) == 0) &&
 			expect(device, req->local_rq_state & RQ_POSTPONED) &&
@@ -2918,12 +2918,10 @@ static void do_retry(struct work_struct *ws)
 		kref_put(&req->kref, drbd_req_destroy_lock);
 
 		/* A single suspended or otherwise blocking device may stall
-		 * all others as well.  Fortunately, this code path is to
-		 * recover from a situation that "should not happen":
-		 * concurrent writes in multi-primary setup.
-		 * In a "normal" lifecycle, this workqueue is supposed to be
-		 * destroyed without ever doing anything.
-		 * If it turns out to be an issue anyways, we can do per
+		 * all others as well. This code path is to recover from a
+		 * situation that "should not happen": concurrent writes in
+		 * multi-primary setup. It is also used for retrying failed
+		 * reads. If it turns out to be an issue, we can do per
 		 * resource (replication group) or per device (minor) retry
 		 * workqueues instead.
 		 */
