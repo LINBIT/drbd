@@ -1539,20 +1539,6 @@ int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state
 	return send_state(peer_device->connection, peer_device->device->vnr, state);
 }
 
-int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
-			union drbd_state mask, union drbd_state val)
-{
-	struct p_req_state *p;
-
-	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
-	if (!p)
-		return -EIO;
-	p->mask = cpu_to_be32(mask.i);
-	p->val = cpu_to_be32(val.i);
-
-	return send_command(connection, vnr, cmd, DATA_STREAM);
-}
-
 int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
 			    struct p_twopc_request *request)
 {
