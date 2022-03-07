@@ -901,9 +901,6 @@ struct drbd_resource {
 	struct list_head transfer_log;	/* all requests not yet fully processed */
 	struct drbd_request *tl_previous_write;
 
-	/* The oldest request whose master bio has not been completed. */
-	struct drbd_request *req_not_complete;
-
 	spinlock_t peer_ack_lock;
 	struct list_head peer_ack_req_list;  /* requests to send peer acks for */
 	struct list_head peer_ack_list;  /* peer acks to send */
