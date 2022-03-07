@@ -3095,91 +3095,9 @@ static struct drbd_request *__next_request_for_connection(
 	return NULL;
 }
 
-/* holds rcu_read_lock on entry, may give up and reacquire temporarily */
-static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection)
-{
-	struct bio_and_error m;
-	struct drbd_request *req;
-	struct drbd_request *req_oldest = NULL;
-	struct drbd_request *tmp = NULL;
-	struct drbd_device *device;
-	struct drbd_peer_device *peer_device;
-	unsigned s;
-
-	/* In the unlikely case that we need to give up the rcu_read_lock
-	 * temporarily below, we need to restart the loop, as the request
-	 * pointer, or any next pointers, may become invalid meanwhile.
-	 *
-	 * We can restart from a known safe position, though:
-	 * the last request we successfully marked for resend,
-	 * without it disappearing.
-	 */
-restart:
-	req = list_prepare_entry(tmp, &connection->resource->transfer_log, tl_requests);
-	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
-		/* potentially needed in complete_master_bio below */
-		device = req->device;
-		peer_device = conn_peer_device(connection, device->vnr);
-		s = req->net_rq_state[peer_device->node_id];
-
-		if (!(s & RQ_NET_MASK))
-			continue;
-
-		/* if it is marked QUEUED, it can not be an old one,
-		 * so we can stop marking for RESEND here. */
-		if (s & RQ_NET_QUEUED)
-			break;
-
-		/* Skip old requests which are uninteresting for this connection.
-		 * Could happen, if this connection was restarted,
-		 * while some other connection was lagging seriously. */
-		if (s & RQ_NET_DONE)
-			continue;
-
-		/* FIXME what about QUEUE_FOR_SEND_OOS?
-		 * Is it even possible to encounter those here?
-		 * It should not.
-		 */
-		if (drbd_req_is_write(req))
-			expect(peer_device, s & RQ_EXP_BARR_ACK);
-
-		read_lock_irq(&connection->resource->state_rwlock);
-		__req_mod(req, RESEND, peer_device, &m);
-		read_unlock_irq(&connection->resource->state_rwlock);
-
-		/* If this is now RQ_NET_PENDING (it should), it won't
-		 * disappear, even if we give up the rcu_read_lock below. */
-		if (req->net_rq_state[peer_device->node_id] & RQ_NET_PENDING)
-			tmp = req;
-
-		/* We crunch through a potentially very long list, so be nice
-		 * and eventually temporarily give up the rcu_read_lock/re-enable
-		 * preemption.
-		 *
-		 * Also, in the very unlikely case that trying to mark it for
-		 * RESEND actually caused this request to be finished off, we
-		 * complete the master bio, outside of the RCU critical
-		 * section. */
-		if (m.bio || need_resched()) {
-			rcu_read_unlock();
-			if (m.bio)
-				complete_master_bio(device, &m);
-			cond_resched();
-			rcu_read_lock();
-			goto restart;
-		}
-		if (!req_oldest)
-			req_oldest = req;
-	}
-	return req_oldest;
-}
-
 static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
 {
-	if (connection->todo.req_next == TL_NEXT_REQUEST_RESEND)
-		connection->todo.req_next = tl_mark_for_resend_by_connection(connection);
-
-	else if (connection->todo.req_next == NULL)
+	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
 
 	connection->todo.req = connection->todo.req_next;
