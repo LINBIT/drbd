@@ -427,6 +427,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			break;
 	}
 	rcu_read_unlock();
+	seq_printf(m, "%u total\n", count);
 }
 
 /* TODO: transfer_log and friends should be moved to resource */
