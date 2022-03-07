@@ -469,7 +469,8 @@ bail:
 
 /**
  * _tl_walk() - Walks the transfer log, and applies an action to all requests
- * @connection:	DRBD connection to operate on.
+ * @connection: DRBD connection to operate on
+ * @from_req    If set, the walk starts from the request that this points to
  * @what:       The action/event to perform with all request objects
  *
  * @what might be one of CONNECTION_LOST, CONNECTION_LOST_WHILE_SUSPENDED,
@@ -477,13 +478,18 @@ bail:
  */
 void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
+		struct drbd_request **from_req,
 		const enum drbd_req_event what)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_request *req;
+	struct drbd_request *req = NULL;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+	if (from_req)
+		req = READ_ONCE(*from_req);
+	if (!req)
+		req = list_entry_rcu(resource->transfer_log.next, struct drbd_request, tl_requests);
+	list_for_each_entry_from_rcu(req, &resource->transfer_log, tl_requests) {
 		/* Skip if the request has already been destroyed. */
 		if (!kref_get_unless_zero(&req->kref))
 			continue;
@@ -496,12 +502,12 @@ void __tl_walk(struct drbd_resource *const resource,
 	rcu_read_unlock();
 }
 
-void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
+void tl_walk(struct drbd_connection *connection, struct drbd_request **from_req, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
 	read_lock_irq(&resource->state_rwlock);
-	__tl_walk(connection->resource, connection, what);
+	__tl_walk(connection->resource, connection, from_req, what);
 	read_unlock_irq(&resource->state_rwlock);
 }
 

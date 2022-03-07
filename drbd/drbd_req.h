@@ -288,9 +288,10 @@ extern void drbd_release_conflicts(struct drbd_device *device,
 		struct drbd_interval *release_interval);
 extern void drbd_flush_requests(struct drbd_device *device);
 extern void request_timer_fn(struct timer_list *t);
-extern void tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
+extern void tl_walk(struct drbd_connection *connection, struct drbd_request **from_req, enum drbd_req_event what);
 extern void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
+		struct drbd_request **from_req,
 		const enum drbd_req_event what);
 extern void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack);
 extern int w_queue_peer_ack(struct drbd_work *w, int cancel);

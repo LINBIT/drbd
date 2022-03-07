@@ -8501,8 +8501,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 	/* Apply these changes after peer_device_disconnected() because that
 	 * may cause the loss of other connections to be detected, which can
 	 * change the suspended state. */
-	tl_walk(connection, resource->cached_susp ?
-			CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
+	tl_walk(connection, &connection->req_not_net_done,
+			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
 
 	i = drbd_free_peer_reqs(connection, &connection->resync_request_ee, true);
 	if (i)
