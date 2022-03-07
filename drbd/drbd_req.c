@@ -2632,21 +2632,21 @@ void request_timer_fn(struct timer_list *t)
 	struct drbd_connection *connection;
 	struct drbd_request *req_read, *req_write;
 	unsigned long oldest_submit_jif, irq_flags;
-	unsigned long dt = 0, et = 0, now = jiffies, next_trigger_time = now;
+	unsigned long disk_timeout = 0, effective_timeout = 0, now = jiffies, next_trigger_time = now;
 	bool restart_timer = false, io_error = false;
 	unsigned long timeout_peers = 0;
 	int node_id;
 
 	rcu_read_lock();
 	if (get_ldev(device)) { /* implicit state.disk >= D_INCONSISTENT */
-		dt = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
+		disk_timeout = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
 		put_ldev(device);
 	}
 	rcu_read_unlock();
 
 	/* FIXME right now, this basically does a full transfer log walk *every time* */
 	read_lock_irq(&resource->state_rwlock);
-	if (dt) {
+	if (disk_timeout) {
 		unsigned long write_pre_submit_jif, read_pre_submit_jif;
 
 		spin_lock(&device->pending_completion_lock); /* local irq already disabled */
@@ -2666,21 +2666,21 @@ void request_timer_fn(struct timer_list *t)
 			: req_read ? read_pre_submit_jif : now;
 
 		if (device->disk_state[NOW] > D_FAILED) {
-			et = min_not_zero(et, dt);
+			effective_timeout = min_not_zero(effective_timeout, disk_timeout);
 			next_trigger_time = time_min_in_future(now,
-					next_trigger_time, oldest_submit_jif + dt);
+					next_trigger_time, oldest_submit_jif + disk_timeout);
 			restart_timer = true;
 		}
 
-		if (time_after(now, oldest_submit_jif + dt) &&
-		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt))
+		if (time_after(now, oldest_submit_jif + disk_timeout) &&
+		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + disk_timeout))
 			io_error = true;
 	}
 	for_each_connection(connection, resource) {
 		struct drbd_peer_device *peer_device = conn_peer_device(connection, device->vnr);
 		struct net_conf *nc;
 		struct drbd_request *req;
-		unsigned long ent = 0;
+		unsigned long effective_net_timeout = 0;
 		unsigned long pre_send_jif = now;
 		unsigned int ko_count = 0, timeout = 0;
 
@@ -2691,7 +2691,7 @@ void request_timer_fn(struct timer_list *t)
 			if (connection->cstate[NOW] == C_CONNECTED) {
 				ko_count = nc->ko_count;
 				timeout = nc->timeout;
-				ent = timeout * HZ/10 * ko_count;
+				effective_net_timeout = timeout * HZ/10 * ko_count;
 			}
 		}
 		rcu_read_unlock();
@@ -2699,7 +2699,7 @@ void request_timer_fn(struct timer_list *t)
 		/* This connection is not established,
 		 * or has the effective timeout disabled.
 		 * no timer restart needed (for this connection). */
-		if (!ent)
+		if (!effective_net_timeout)
 			continue;
 
 		/* maybe the oldest request waiting for the peer is in fact still
@@ -2720,9 +2720,9 @@ void request_timer_fn(struct timer_list *t)
 		if (req)
 			pre_send_jif = req->pre_send_jif[connection->peer_node_id];
 
-		et = min_not_zero(et, ent);
+		effective_timeout = min_not_zero(effective_timeout, effective_net_timeout);
 		next_trigger_time = time_min_in_future(now,
-				next_trigger_time, pre_send_jif + ent);
+				next_trigger_time, pre_send_jif + effective_net_timeout);
 		/* Restart the timer, even if there are no pending requests at all.
 		 * We currently do not re-arm from the submit path. */
 		restart_timer = true;
@@ -2733,7 +2733,7 @@ void request_timer_fn(struct timer_list *t)
 		if (req == NULL || req->device != device)
 			continue;
 
-		if (net_timeout_reached(req, peer_device, now, ent, ko_count, timeout)) {
+		if (net_timeout_reached(req, peer_device, now, effective_net_timeout, ko_count, timeout)) {
 			dynamic_drbd_dbg(peer_device, "Request at %llus+%u timed out\n",
 					(unsigned long long) req->i.sector,
 					req->i.size);
@@ -2759,7 +2759,7 @@ void request_timer_fn(struct timer_list *t)
 	}
 
 	if (restart_timer) {
-		next_trigger_time = time_min_in_future(now, next_trigger_time, now + et);
+		next_trigger_time = time_min_in_future(now, next_trigger_time, now + effective_timeout);
 		mod_timer(&device->request_timer, next_trigger_time);
 	}
 }
