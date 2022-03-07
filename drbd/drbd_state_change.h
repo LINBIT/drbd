@@ -6,6 +6,7 @@ struct drbd_resource_state_change {
 	enum drbd_role role[2];
 	bool susp[2];
 	bool susp_nod[2];
+	bool susp_uuid[2];
 };
 
 struct drbd_device_state_change {
