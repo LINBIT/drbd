@@ -2333,30 +2333,10 @@ static bool has_starting_resyncs(struct drbd_connection *connection)
 	return false;
 }
 
-static void resend_during_quorum_suspend(struct drbd_resource *resource)
+static void check_new_uuid_after_quorum_suspend(struct drbd_resource *resource)
 {
-	struct drbd_connection *connection;
-
-	for_each_connection(connection, resource) {
-		enum drbd_conn_state *cstate = connection->cstate;
-		bool establishing = cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED;
-
-		if (establishing && !has_starting_resyncs(connection))
-			_tl_walk(connection, RESEND);
-	}
-}
-
-static void thaw_requests_after_quorum_suspend(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection;
 	u64 current_peers = connected_peers_mask(resource, NEW);
 	u64 missing_peers = resource->peers_at_quorum_loss & ~current_peers;
-
-	for_each_connection(connection, resource) {
-		if (connection->cstate[NEW] < C_CONNECTED)
-			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-	}
-	__tl_walk(resource, NULL, COMPLETION_RESUMED);
 
 	if (!missing_peers) {
 		struct drbd_device *device;
@@ -2381,9 +2361,13 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	bool some_peer_is_primary = false;
 	bool some_peer_request_in_flight = false;
 	bool *susp_quorum  = resource->susp_quorum;
+	bool resource_suspended[2];
 	int vnr;
 
 	print_state_change(resource, "");
+
+	resource_suspended[OLD] = resource_is_suspended(resource, OLD);
+	resource_suspended[NEW] = resource_is_suspended(resource, NEW);
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		bool *have_quorum = device->have_quorum;
@@ -2736,6 +2720,32 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			connection->last_reconnect_jif = jiffies;
 
+		if (resource_suspended[OLD]) {
+			enum drbd_req_event walk_event = -1;
+
+			/* If we resume IO without this connection, then we
+			 * need to cancel suspended requests. */
+			if (!resource_suspended[NEW] && cstate[NEW] < C_CONNECTED)
+				walk_event = CANCEL_SUSPENDED_IO;
+			/* On reconnection when we have been suspended we need
+			 * to process suspended requests. If there are resyncs,
+			 * that means that it was not a simple disconnect and
+			 * reconnect, so we cannot resend. We must cancel
+			 * instead. */
+			else if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+				walk_event = has_starting_resyncs(connection) ? CANCEL_SUSPENDED_IO : RESEND;
+
+			if (walk_event != -1)
+				__tl_walk(resource, connection, walk_event);
+
+			/* Since we are in finish_state_change(), and the state
+			 * was previously not C_CONNECTED, the sender cannot
+			 * have received any requests yet. So it will find any
+			 * requests to resend when it rescans the transfer log. */
+			if (walk_event == RESEND)
+				wake_up(&connection->sender_work.q_wait);
+		}
+
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
 			set_bit(RECONNECT, &connection->flags);
 
@@ -2770,12 +2780,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	if (!susp_quorum[OLD] && susp_quorum[NEW])
 		resource->peers_at_quorum_loss = connected_peers_mask(resource, OLD);
 
-	if (susp_quorum[OLD]) {
-		resend_during_quorum_suspend(resource);
+	if (resource_suspended[OLD] && !resource_suspended[NEW])
+		__tl_walk(resource, NULL, COMPLETION_RESUMED);
 
-		if (!susp_quorum[NEW])
-			thaw_requests_after_quorum_suspend(resource);
-	}
+	if (susp_quorum[OLD] && !susp_quorum[NEW])
+		check_new_uuid_after_quorum_suspend(resource);
 
 	queue_after_state_change_work(resource, done);
 }
@@ -3260,7 +3269,6 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		__change_io_susp_fencing(connection, false);
 		end_state_change(resource, &irq_flags);
 	}
@@ -3273,7 +3281,6 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		_tl_walk(connection, RESEND);
 		__change_io_susp_fencing(connection, false);
 		end_state_change(resource, &irq_flags);
 	}
@@ -3335,7 +3342,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	struct drbd_resource *resource = resource_state_change->resource;
 	enum drbd_role *role = resource_state_change->role;
 	struct drbd_peer_device *send_state_others = NULL;
-	bool *susp_nod = resource_state_change->susp_nod;
 	int n_device, n_connection;
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
@@ -3426,26 +3432,18 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    !test_bit(UNREGISTERED, &device->flags))
 				drbd_maybe_khelper(device, connection, "pri-on-incon-degr");
 
-			if (susp_nod[NEW]) {
-				enum drbd_req_event what = NOTHING;
+			if (resource_state_change->susp_nod[NEW] &&
+					repl_state[OLD] < L_ESTABLISHED &&
+					conn_lowest_repl_state(connection) >= L_ESTABLISHED) {
+				unsigned long irq_flags;
 
-				if (repl_state[OLD] < L_ESTABLISHED &&
-				    conn_lowest_repl_state(connection) >= L_ESTABLISHED)
-					what = RESEND;
-
-				if (what != NOTHING) {
-					unsigned long irq_flags;
-
-					/* Is this too early?  We should only
-					 * resume after the iteration over all
-					 * connections?
-					 */
-					begin_state_change(resource, &irq_flags, CS_VERBOSE);
-					if (what == RESEND)
-						connection->todo.req_next = TL_NEXT_REQUEST_RESEND;
-					__change_io_susp_no_data(resource, false);
-					end_state_change(resource, &irq_flags);
-				}
+				/* Is this too early?  We should only
+				 * resume after the iteration over all
+				 * connections?
+				 */
+				begin_state_change(resource, &irq_flags, CS_VERBOSE);
+				__change_io_susp_no_data(resource, false);
+				end_state_change(resource, &irq_flags);
 			}
 
 			/* Do not change the order of the if above and the two below... */

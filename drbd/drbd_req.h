@@ -85,7 +85,8 @@ enum drbd_req_event {
 	SEND_FAILED,
 	HANDED_OVER_TO_NETWORK,
 	OOS_HANDED_TO_NETWORK,
-	CONNECTION_LOST_WHILE_PENDING,
+	CONNECTION_LOST,
+	CONNECTION_LOST_WHILE_SUSPENDED,
 	RECV_ACKED_BY_PEER,
 	WRITE_ACKED_BY_PEER,
 	WRITE_ACKED_BY_PEER_AND_SIS, /* and set_in_sync */
@@ -102,7 +103,7 @@ enum drbd_req_event {
 
 	ABORT_DISK_IO,
 	RESEND,
-	FAIL_FROZEN_DISK_IO,
+	CANCEL_SUSPENDED_IO,
 	COMPLETION_RESUMED,
 	NOTHING,
 };
@@ -118,6 +119,10 @@ enum drbd_req_state_bits {
 	 *
 	 * <none>:
 	 *   No network required, or not yet processed.
+	 * pending:
+	 *   Intended for this peer, but connection lost. If IO is suspended,
+	 *   it will stay in this state until the connection is restored or IO
+	 *   is resumed.
 	 * pending,queued:
 	 *   To be sent, on transfer log to be processed by sender.
 	 * queued:
@@ -214,7 +219,6 @@ enum drbd_req_state_bits {
 	/* would have been completed,
 	 * but was not, because of drbd_suspended() */
 	__RQ_COMPLETION_SUSP,
-
 };
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_QUEUED      (1UL << __RQ_NET_QUEUED)
@@ -285,7 +289,6 @@ extern void drbd_release_conflicts(struct drbd_device *device,
 extern void drbd_flush_requests(struct drbd_device *device);
 extern void request_timer_fn(struct timer_list *t);
 extern void tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
-extern void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what);
 extern void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
 		const enum drbd_req_event what);

@@ -792,11 +792,6 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	    !(disk_state == D_DISKLESS && intentional_diskless(resource))) {
 		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
 		__change_io_susp_fencing(connection, false);
-		/* We are no longer suspended due to the fencing policy.
-		 * We may still be suspended due to the on-no-data-accessible policy.
-		 * If that was OND_IO_ERROR, fail pending requests. */
-		if (!resource_is_suspended(resource, NOW))
-			_tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
 		end_state_change_locked(resource);
 		read_unlock_irq(&resource->state_rwlock);
 		return false;
@@ -5385,26 +5380,6 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 
 	__change_io_susp_quorum(resource, false);
 	retcode = end_state_change(resource, &irq_flags);
-	if (retcode == SS_SUCCESS) {
-		struct drbd_peer_device *peer_device;
-
-		/* All the tl_walk() below should probably be moved
-		 * to an "after state change work"? */
-		read_lock_irq(&resource->state_rwlock);
-		__tl_walk(resource, NULL, COMPLETION_RESUMED);
-
-		for_each_peer_device(peer_device, device) {
-			struct drbd_connection *connection = peer_device->connection;
-
-			if (peer_device->repl_state[NOW] < L_ESTABLISHED)
-				tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-			if (device->disk_state[NOW] == D_DISKLESS ||
-			    device->disk_state[NOW] == D_FAILED ||
-			    device->disk_state[NOW] == D_DETACHING)
-				tl_walk(connection, FAIL_FROZEN_DISK_IO);
-		}
-		read_unlock_irq(&resource->state_rwlock);
-	}
 	drbd_resume_io(device);
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);

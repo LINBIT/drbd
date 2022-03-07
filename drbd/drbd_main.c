@@ -472,8 +472,8 @@ bail:
  * @connection:	DRBD connection to operate on.
  * @what:       The action/event to perform with all request objects
  *
- * @what might be one of CONNECTION_LOST_WHILE_PENDING, RESEND, FAIL_FROZEN_DISK_IO,
- * COMPLETION_RESUMED.
+ * @what might be one of CONNECTION_LOST, CONNECTION_LOST_WHILE_SUSPENDED,
+ * RESEND, CANCEL_SUSPENDED_IO, COMPLETION_RESUMED.
  */
 void __tl_walk(struct drbd_resource *const resource,
 		struct drbd_connection *const connection,
@@ -496,17 +496,12 @@ void __tl_walk(struct drbd_resource *const resource,
 	rcu_read_unlock();
 }
 
-void _tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
-{
-	__tl_walk(connection->resource, connection, what);
-}
-
 void tl_walk(struct drbd_connection *connection, enum drbd_req_event what)
 {
 	struct drbd_resource *resource = connection->resource;
 
 	read_lock_irq(&resource->state_rwlock);
-	_tl_walk(connection, what);
+	__tl_walk(connection->resource, connection, what);
 	read_unlock_irq(&resource->state_rwlock);
 }
 
