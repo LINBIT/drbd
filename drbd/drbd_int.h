@@ -1332,7 +1332,7 @@ struct drbd_device {
 #endif
 #endif
 
-	unsigned int vnr;	/* volume number within the connection */
+	unsigned int vnr;	/* volume number within the resource */
 	unsigned int minor;	/* device minor number */
 
 	struct kref kref;
