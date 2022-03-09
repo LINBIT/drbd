@@ -41,6 +41,11 @@
 
 #define PRO_FEATURES (DRBD_FF_TRIM|DRBD_FF_THIN_RESYNC|DRBD_FF_WSAME|DRBD_FF_WZEROES)
 
+enum ao_op {
+	OUTDATE_DISKS,
+	OUTDATE_DISKS_AND_DISCONNECT,
+};
+
 struct flush_work {
 	struct drbd_work w;
 	struct drbd_epoch *epoch;
@@ -869,6 +874,34 @@ static bool retry_by_rr_conflict(struct drbd_connection *connection)
 	return rr_conflict == ASB_RETRY_CONNECT;
 }
 
+static void apply_local_state_change(struct drbd_connection *connection, enum ao_op ao_op)
+{
+	/* Although the connect failed, outdate local disks if we learn from the
+	 * handshake that the peer has more recent data */
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	unsigned long irq_flags;
+	int vnr;
+
+	begin_state_change(resource, &irq_flags, CS_HARD);
+	if (ao_op == OUTDATE_DISKS_AND_DISCONNECT)
+		__change_cstate(connection, C_DISCONNECTING);
+	if (resource->role[NOW] == R_SECONDARY ||
+	    (resource->res_opts.on_no_data == OND_IO_ERROR && resource->cached_susp)) {
+		/* One day we might relax the above condition to
+		 * resource->role[NOW] == R_SECONDARY || resource->cached_susp
+		 * Right now it is that way, because we do not offer a way to gracefully
+		 * get out of a Primary/Outdated state */
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			enum drbd_repl_state r = peer_device->connect_state.conn;
+			struct drbd_device *device = peer_device->device;
+			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T)
+				__change_disk_state(device, D_OUTDATED);
+		}
+	}
+	end_state_change(resource, &irq_flags);
+}
+
 static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
@@ -919,10 +952,11 @@ static int connect_work(struct drbd_work *work, int cancel)
 		return 0; /* Return early. Keep the reference on the connection! */
 	} else if (rv == SS_HANDSHAKE_RETRY || (incompat_states && retry)) {
 		arm_connect_timer(connection, jiffies + HZ);
+		apply_local_state_change(connection, OUTDATE_DISKS);
 		return 0; /* Keep reference */
 	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
 		drbd_send_disconnect(connection);
-		change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT);
 	} else {
 		drbd_info(connection, "Failure to connect %d %s; retrying\n",
 			  rv, drbd_set_st_err_str(rv));
