@@ -509,25 +509,29 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	/* Update disk stats */
 	bio_end_io_acct(req->master_bio, req->start_jif);
 
-	/* If READ failed,
-	 * have it be pushed back to the retry work queue,
-	 * so it will re-enter __drbd_make_request(),
-	 * and be re-assigned to a suitable local or remote path,
-	 * or failed if we do not have access to good data anymore.
-	 *
-	 * Unless it was failed early by __drbd_make_request(),
-	 * because no path was available, in which case
-	 * it was not even added to the transfer_log.
-	 *
-	 * read-ahead may fail, and will not be retried.
-	 *
-	 * WRITE should have used all available paths already.
-	 */
-	if (!ok &&
-	    bio_op(req->master_bio) == REQ_OP_READ &&
-	    !(req->master_bio->bi_opf & REQ_RAHEAD) &&
-	    !list_empty(&req->tl_requests))
+	if (device->cached_err_io) {
+		ok = 0;
+		req->local_rq_state &= ~RQ_POSTPONED;
+	} else if (!ok &&
+		   bio_op(req->master_bio) == REQ_OP_READ &&
+		   !(req->master_bio->bi_opf & REQ_RAHEAD) &&
+		   !list_empty(&req->tl_requests)) {
+		/* If READ failed,
+		 * have it be pushed back to the retry work queue,
+		 * so it will re-enter __drbd_make_request(),
+		 * and be re-assigned to a suitable local or remote path,
+		 * or failed if we do not have access to good data anymore.
+		 *
+		 * Unless it was failed early by __drbd_make_request(),
+		 * because no path was available, in which case
+		 * it was not even added to the transfer_log.
+		 *
+		 * read-ahead may fail, and will not be retried.
+		 *
+		 * WRITE should have used all available paths already.
+		 */
 		req->local_rq_state |= RQ_POSTPONED;
+	}
 
 	if (!(req->local_rq_state & RQ_POSTPONED)) {
 		struct drbd_resource *resource = device->resource;

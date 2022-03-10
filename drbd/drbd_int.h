@@ -2555,6 +2555,8 @@ static inline bool drbd_suspended(struct drbd_device *device)
 
 static inline bool may_inc_ap_bio(struct drbd_device *device)
 {
+	if (device->cached_err_io)
+		return true;
 	if (drbd_suspended(device))
 		return false;
 	if (atomic_read(&device->suspend_cnt))
