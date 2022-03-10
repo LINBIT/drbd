@@ -132,6 +132,8 @@ enum sync_strategy {
 	RETRY_CONNECT,
 	REQUIRES_PROTO_91,
 	REQUIRES_PROTO_96,
+	SYNC_TARGET_PRIMARY_RECONNECT,
+	SYNC_TARGET_PRIMARY_DISCONNECT,
 };
 
 struct sync_descriptor {
@@ -140,6 +142,8 @@ struct sync_descriptor {
 	bool is_split_brain;
 	bool is_sync_source;
 	bool is_sync_target;
+	bool reconnect;
+	bool disconnect;
 	int resync_peer_preference;
 	enum sync_strategy full_sync_equivalent;
 	enum sync_strategy reverse;
@@ -200,24 +204,40 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[SPLIT_BRAIN_AUTO_RECOVER] = {
 		.name = "split-brain-auto-recover",
 		.is_split_brain = true,
+		.disconnect = true,
 	},
 	[SPLIT_BRAIN_DISCONNECT] = {
 		.name = "split-brain-disconnect",
 		.is_split_brain = true,
+		.disconnect = true,
 	},
 	[UNRELATED_DATA] = {
 		.name = "unrelated-data",
+		.disconnect = true,
 	},
 	[RETRY_CONNECT] = {
 		.name = "retry-connect",
+		.reconnect = true,
 	},
 	[REQUIRES_PROTO_91] = {
 		.name = "requires-proto-91",
 		.required_protocol = 91,
+		.disconnect = true,
 	},
 	[REQUIRES_PROTO_96] = {
 		.name = "requires-proto-96",
 		.required_protocol = 96,
+		.disconnect = true,
+	},
+	[SYNC_TARGET_PRIMARY_RECONNECT] = {
+		.name = "sync-target-primary-reconnect",
+		.is_sync_target = true,
+		.reconnect = true,
+	},
+	[SYNC_TARGET_PRIMARY_DISCONNECT] = {
+		.name = "sync-target-primary-disconnect",
+		.is_sync_target = true,
+		.disconnect = true,
 	},
 };
 
@@ -4065,7 +4085,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		err = drbd_bitmap_io(device, io_func, "set_n_write sync_handshake",
 				     BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
 		if (err)
-			return -1;
+			return err;
 	}
 	return 0;
 }
@@ -4229,22 +4249,24 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 	}
 }
 
-static enum drbd_repl_state drbd_attach_handshake(struct drbd_peer_device *peer_device,
+static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
 						  enum drbd_disk_state peer_disk_state) __must_hold(local)
 {
 	enum sync_strategy strategy;
 	enum sync_rule rule;
-	int peer_node_id;
+	int peer_node_id, err;
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
 
 	if (!is_strategy_determined(strategy))
-		return -1;
+		return strategy;
 
 	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
-	bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
+	err = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
+	if (err)
+		return RETRY_CONNECT;
 
-	return strategy_to_repl_state(peer_device, peer_device->connection->peer_role[NOW], strategy);
+	return strategy;
 }
 
 static enum sync_strategy discard_my_data_to_strategy(struct drbd_peer_device *peer_device)
@@ -4265,15 +4287,15 @@ static enum sync_strategy discard_my_data_to_strategy(struct drbd_peer_device *p
 /* drbd_sync_handshake() returns the new replication state on success, and -1
  * on failure.
  */
-static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_device,
-						union drbd_state peer_state) __must_hold(local)
+static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_device,
+					      union drbd_state peer_state) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	struct net_conf *nc;
 	enum sync_strategy strategy;
 	enum sync_rule rule;
-	int rr_conflict, always_asbp, peer_node_id = 0, r;
+	int rr_conflict, always_asbp, peer_node_id = 0, err;
 	enum drbd_role peer_role = peer_state.role;
 	enum drbd_disk_state peer_disk_state = peer_state.disk;
 	int required_protocol;
@@ -4282,16 +4304,16 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
 
 	if (strategy == RETRY_CONNECT)
-		return -1; /* retry connect */
+		return strategy;
 
 	if (strategy == UNRELATED_DATA) {
 		drbd_alert(peer_device, "Unrelated data, aborting!\n");
-		return -2;
+		return strategy;
 	}
 	required_protocol = strategy_descriptor(strategy).required_protocol;
 	if (required_protocol) {
 		drbd_alert(peer_device, "To resolve this both sides have to support at least protocol %d\n", required_protocol);
-		return -2;
+		return strategy;
 	}
 
 	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
@@ -4342,7 +4364,7 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 			if (forced) {
 				if (!strategy_descriptor(strategy).full_sync_equivalent) {
 					drbd_alert(peer_device, "Want full sync but cannot decide direction, dropping connection!\n");
-					return -2;
+					return SPLIT_BRAIN_DISCONNECT;
 				}
 				drbd_warn(peer_device, "Doing a full sync, since"
 				     " UUIDs where ambiguous.\n");
@@ -4361,12 +4383,12 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 	if (strategy_descriptor(strategy).is_split_brain) {
 		drbd_alert(peer_device, "Split-Brain detected but unresolved, dropping connection!\n");
 		drbd_maybe_khelper(device, connection, "split-brain");
-		return -2;
+		return strategy;
 	}
 
 	if (!is_strategy_determined(strategy)) {
 		drbd_alert(peer_device, "Failed to fully determine sync strategy, dropping connection!\n");
-		return -2;
+		return strategy;
 	}
 
 	if (connection->agreed_pro_version >= 121 && strategy != NO_SYNC &&
@@ -4397,7 +4419,9 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		case ASB_DISCONNECT:
 		case ASB_RETRY_CONNECT:
 			drbd_err(peer_device, "I shall become SyncTarget, but I am primary!\n");
-			return rr_conflict == ASB_RETRY_CONNECT ? -1 : -2;
+			strategy = rr_conflict == ASB_RETRY_CONNECT ?
+				SYNC_TARGET_PRIMARY_RECONNECT : SYNC_TARGET_PRIMARY_DISCONNECT;
+			break;
 		case ASB_VIOLENTLY:
 			drbd_warn(peer_device, "Becoming SyncTarget, violating the stable-data"
 			     "assumption\n");
@@ -4426,11 +4450,11 @@ static enum drbd_repl_state drbd_sync_handshake(struct drbd_peer_device *peer_de
 		return -2;
 	}
 
-	r = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
-	if (r)
-		return r;
+	err = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
+	if (err)
+		return RETRY_CONNECT;
 
-	return strategy_to_repl_state(peer_device, peer_role, strategy);
+	return strategy;
 }
 
 static enum drbd_after_sb_p convert_after_sb(enum drbd_after_sb_p peer)
@@ -6705,6 +6729,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
+		enum sync_strategy strategy;
 		bool consider_resync;
 
 		/* clear CONN_DISCARD_MY_DATA so late, to not lose it if peer
@@ -6726,25 +6751,25 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				   peer_device->flags & UUID_FLAG_CRASHED_PRIMARY;
 
 		if (consider_resync) {
-			new_repl_state = drbd_sync_handshake(peer_device, peer_state);
+			strategy = drbd_sync_handshake(peer_device, peer_state);
+			new_repl_state = strategy_to_repl_state(peer_device, peer_state.role, strategy);
 		} else if (old_peer_state.conn == L_ESTABLISHED &&
 			   (peer_state.disk == D_NEGOTIATING ||
 			    old_peer_state.disk == D_NEGOTIATING)) {
-			new_repl_state = drbd_attach_handshake(peer_device, peer_disk_state);
+			strategy = drbd_attach_handshake(peer_device, peer_disk_state);
+			new_repl_state = strategy_to_repl_state(peer_device, peer_state.role, strategy);
 			if (new_repl_state == L_ESTABLISHED && device->disk_state[NOW] == D_UP_TO_DATE)
 				peer_disk_state = D_UP_TO_DATE;
 		}
 
 		put_ldev(device);
-		if (new_repl_state == -1) { /* retry connect */
-			if (connection->agreed_pro_version >= 118) {
-				new_repl_state = L_OFF;
+		if (strategy_descriptor(strategy).reconnect) { /* retry connect */
+			if (connection->agreed_pro_version >= 118)
 				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
-			} else {
+			else
 				return -EIO; /* retry connect */
-			}
-		} else if (new_repl_state == -2) {
-			new_repl_state = L_ESTABLISHED;
+		} else if (strategy_descriptor(strategy).disconnect ||
+			   !is_strategy_determined(strategy)) {
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				new_repl_state = L_NEG_NO_RESULT;
 			} else if (peer_state.disk == D_NEGOTIATING) {
@@ -6753,12 +6778,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			} else {
 				if (test_and_clear_bit(CONN_DRY_RUN, &connection->flags))
 					return -EIO;
-				if (connection->agreed_pro_version >= 118) {
-					new_repl_state = L_OFF;
+				if (connection->agreed_pro_version >= 118)
 					set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
-				} else {
+				else
 					goto fail;
-				}
 			}
 		}
 
