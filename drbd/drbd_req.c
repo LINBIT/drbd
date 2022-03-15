@@ -2499,7 +2499,7 @@ void request_timer_fn(struct timer_list *t)
 	/* FIXME right now, this basically does a full transfer log walk *every time* */
 	read_lock_irq(&resource->state_rwlock);
 	if (disk_timeout) {
-		unsigned long write_pre_submit_jif, read_pre_submit_jif;
+		unsigned long write_pre_submit_jif = 0, read_pre_submit_jif = 0;
 
 		spin_lock(&device->pending_completion_lock); /* local irq already disabled */
 		req_read = list_first_entry_or_null(&device->pending_completion[0], struct drbd_request, req_pending_local);
