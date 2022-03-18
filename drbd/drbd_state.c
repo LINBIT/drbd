@@ -78,7 +78,6 @@ static int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 static void sanitize_state(struct drbd_resource *resource);
-static bool io_error_due_to_lack_of_quorum(struct drbd_resource *resource, bool have_quorum);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -2196,9 +2195,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	resource->susp_quorum[NEW] =
 		resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO ? !resource_has_quorum : false;
 
-	if (resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW) &&
-	    !io_error_due_to_lack_of_quorum(resource, resource_has_quorum)) {
-		/* we unfreeze and we will complete the unfrozen IO requests with success */
+	if (resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW)) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (test_bit(NEW_CUR_UUID, &device->flags)) {
 				resource->susp_uuid[NEW] = true;
@@ -2206,11 +2203,6 @@ static void sanitize_state(struct drbd_resource *resource)
 			}
 		}
 	}
-}
-
-static bool io_error_due_to_lack_of_quorum(struct drbd_resource *resource, bool have_quorum)
-{
-	return !have_quorum && resource->res_opts.on_no_quorum == ONQ_IO_ERROR;
 }
 
 void drbd_resume_al(struct drbd_device *device)
