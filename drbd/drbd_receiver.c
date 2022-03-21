@@ -6615,6 +6615,22 @@ static void finish_nested_twopc(struct drbd_connection *connection)
 	}
 }
 
+static bool peer_data_is_successor_of_mine(struct drbd_peer_device *peer_device)
+{
+	u64 exposed = peer_device->device->exposed_data_uuid & ~UUID_PRIMARY;
+	int i;
+
+	i = drbd_find_peer_bitmap_by_uuid(peer_device, exposed);
+	if (i != -1)
+		return true;
+
+	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+		if ((peer_device->history_uuids[i] & ~UUID_PRIMARY) == exposed)
+			return true;
+
+	return false;
+}
+
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -6822,6 +6838,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_device->repl_state[NOW] == L_OFF && device->disk_state[NOW] == D_DISKLESS) {
 
+		drbd_info(peer_device, "my exposed UUID: %016llX\n", device->exposed_data_uuid);
+		drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
+
 		/* I am diskless primary connecting to a peer with disk, check that UUID match
 		   We only check if the peer claims to have D_UP_TO_DATE data. Only then is the
 		   peer a source for my data anyways. */
@@ -6829,12 +6848,37 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		    ((device->exposed_data_uuid & ~UUID_PRIMARY) !=
 		     (peer_device->current_uuid & ~UUID_PRIMARY)) &&
 		    peer_state.disk == D_UP_TO_DATE) {
+			bool data_successor = peer_data_is_successor_of_mine(peer_device);
 
-			if (resource->cached_susp)
-				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
-			else
+			if (resource->cached_susp && data_successor &&
+			    resource->res_opts.on_no_data == OND_IO_ERROR) {
+				if (!resource->fail_io[NOW]) {
+					drbd_warn(peer_device, "Remote node has more recent data;"
+						  " killing IOs; make me Secondary!\n");
+					begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
+					resource->role[NEW] = R_SECONDARY;
+					resource->fail_io[NEW] = true;
+					end_state_change(resource, &irq_flags);
+				}
+				set_bit(retry_by_rr_conflict(connection) ?
+					CONN_HANDSHAKE_RETRY : CONN_HANDSHAKE_DISCONNECT,
+					&connection->flags);
+			} else {
+				drbd_warn(peer_device, "Current UUID of peer does not match my"
+					  " exposed UUID.");
 				set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+			}
 		}
+	}
+	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS) {
+		u64 uuid_flags = 0;
+
+		if (get_ldev(device)) {
+			drbd_collect_local_uuid_flags(peer_device, NULL);
+			put_ldev(device);
+		}
+		drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, uuid_flags);
+		drbd_info(peer_device, "peer's exposed UUID: %016llX\n", peer_device->current_uuid);
 	}
 
 	/* This is after the point where we did UUID comparison and joined with the

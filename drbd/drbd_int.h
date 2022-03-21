@@ -927,6 +927,7 @@ struct drbd_resource {
 	bool susp_nod[2];		/* IO suspended because no data */
 	bool susp_quorum[2];		/* IO suspended because no quorum */
 	bool susp_uuid[2];		/* IO suspended because waiting new current UUID */
+	bool fail_io[2];		/* Fail all IO requests because forced a demote */
 	bool cached_susp;		/* cached result of looking at all different suspend bits */
 	bool cached_all_devices_have_quorum;
 
