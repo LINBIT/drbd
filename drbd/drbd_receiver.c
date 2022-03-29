@@ -6891,6 +6891,16 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 		drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, uuid_flags);
 		drbd_info(peer_device, "peer's exposed UUID: %016llX\n", peer_device->current_uuid);
+
+		if (peer_state.role == R_PRIMARY &&
+		    (peer_device->current_uuid & ~UUID_PRIMARY) ==
+		    (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
+			/* Connecting to diskless primary peer. When the state change is committed,
+			 * sanitize_state might set me D_UP_TO_DATE. Make sure the
+			 * effective_size is set. */
+			peer_device->max_size = peer_device->c_size;
+			drbd_determine_dev_size(device, peer_device->max_size, 0, NULL);
+		}
 	}
 
 	/* This is after the point where we did UUID comparison and joined with the
