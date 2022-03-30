@@ -1133,8 +1133,11 @@ struct drbd_connection {
 		 * If none, no P_BARRIER will be sent. */
 		unsigned current_epoch_writes;
 
-		/* position in change stream */
+		/* Position in change stream of last write sent. */
 		u64 current_dagtag_sector;
+
+		/* Position in change stream of last request seen. */
+		u64 seen_dagtag_sector;
 	} send;
 
 	struct {

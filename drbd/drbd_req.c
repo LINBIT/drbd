@@ -600,6 +600,7 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	rcu_read_lock();
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
+		connection->send.seen_dagtag_sector = req->dagtag_sector;
 		if (s & RQ_NET_QUEUED)
 			break;
 	}
@@ -1842,6 +1843,16 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	}
 
 	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
+	if (rw == WRITE) {
+		/* Update dagtag_sector before determining current_tle_nr so
+		 * that senders can detect if there are requests currently
+		 * being submitted. Updates are protected by tl_update_lock,
+		 * but reads are not, so WRITE_ONCE(). */
+		WRITE_ONCE(resource->dagtag_sector, resource->dagtag_sector + (req->i.size >> 9));
+		/* Ensure that the written value is visible to the senders. */
+		smp_wmb();
+	}
+	req->dagtag_sector = resource->dagtag_sector;
 
 	spin_lock(&resource->current_tle_lock);
 	/* which transfer log epoch does this belong to? */
@@ -1849,10 +1860,6 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	if (rw == WRITE && likely(req->i.size != 0))
 		resource->current_tle_writes++;
 	spin_unlock(&resource->current_tle_lock);
-
-	if (rw == WRITE)
-		resource->dagtag_sector += req->i.size >> 9;
-	req->dagtag_sector = resource->dagtag_sector;
 
 	/* A size==0 bio can only be an empty flush, which is mapped to a DRBD
 	 * P_BARRIER packet. */

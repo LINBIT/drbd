@@ -40,6 +40,10 @@
 #ifndef READ_ONCE
 #define READ_ONCE ACCESS_ONCE
 #endif
+/* introduced in v3.19-rc4-1-g43239cbe79fc */
+#ifndef WRITE_ONCE
+#define WRITE_ONCE(x, val) do { *(volatile typeof(x) *)&(x) = (val); } while (0)
+#endif
 
 /* introduced in v4.3-8058-g71baba4b92dc */
 #ifndef __GFP_RECLAIM
