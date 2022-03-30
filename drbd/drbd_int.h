@@ -1868,7 +1868,6 @@ extern void drbd_destroy_connection(struct kref *kref);
 extern void conn_free_crypto(struct drbd_connection *connection);
 
 /* drbd_req */
-extern void drbd_wake_all_senders(struct drbd_resource *resource);
 extern void do_submit(struct work_struct *ws);
 #ifndef CONFIG_DRBD_TIMING_STATS
 #define __drbd_make_request(d,b,k,j) __drbd_make_request(d,b,j)
@@ -2529,21 +2528,14 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 
 	D_ASSERT(device, ap_bio >= 0);
 
-	if (ap_bio == 0 && rw == WRITE) {
-		/* Check for list_empty outside the lock is ok.  Worst case it queues
-		 * nothing because someone else just now did.  During list_add, a
-		 * refcount on ap_bio_cnt[WRITE] is held, so the bitmap work will be
-		 * queued when that is released if we miss it here.
-		 * Checking pending_bitmap_work.n is not correct,
-		 * it has a different lifetime. */
-		if (!list_empty(&device->pending_bitmap_work.q))
-			drbd_queue_pending_bitmap_work(device);
-
-		/* Barrier may not have been sent because of active application
-		 * writes belonging to unknown epochs. Wake senders now to
-		 * give them a chance to send the barrier. */
-		drbd_wake_all_senders(device->resource);
-	}
+	/* Check for list_empty outside the lock is ok.  Worst case it queues
+	 * nothing because someone else just now did.  During list_add, a
+	 * refcount on ap_bio_cnt[WRITE] is held, so the bitmap work will be
+	 * queued when that is released if we miss it here.
+	 * Checking pending_bitmap_work.n is not correct,
+	 * it has a different lifetime. */
+	if (ap_bio == 0 && rw == WRITE && !list_empty(&device->pending_bitmap_work.q))
+		drbd_queue_pending_bitmap_work(device);
 
 	if (ap_bio == 0 || ap_bio == nr_requests-1)
 		wake_up(&device->misc_wait);

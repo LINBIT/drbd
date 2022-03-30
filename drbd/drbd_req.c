@@ -375,7 +375,7 @@ void drbd_req_destroy(struct kref *kref)
 	}
 }
 
-void drbd_wake_all_senders(struct drbd_resource *resource) {
+static void wake_all_senders(struct drbd_resource *resource) {
 	struct drbd_connection *connection;
 	/* We need make sure any update is visible before we wake up the
 	 * threads that may check the values in their wait_event() condition.
@@ -398,7 +398,7 @@ bool start_new_tl_epoch(struct drbd_resource *resource)
 	} else {
 		resource->current_tle_writes = 0;
 		atomic_inc(&resource->current_tle_nr);
-		drbd_wake_all_senders(resource);
+		wake_all_senders(resource);
 		new_epoch_started = true;
 	}
 	spin_unlock_irqrestore(&resource->current_tle_lock, flags);
@@ -1888,7 +1888,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	spin_unlock(&resource->tl_update_lock);
 
 	if (rw == WRITE)
-		drbd_wake_all_senders(resource);
+		wake_all_senders(resource);
 	else if (peer_device)
 		wake_up(&peer_device->connection->sender_work.q_wait);
 

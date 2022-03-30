@@ -2674,18 +2674,6 @@ static bool check_sender_todo(struct drbd_connection *connection)
 		|| !list_empty(&connection->todo.work_list);
 }
 
-static int ap_write_cnt_total(struct drbd_resource *resource)
-{
-	struct drbd_device *device;
-	int vnr;
-	int ap_bio_cnt_total = 0;
-
-	idr_for_each_entry(&resource->devices, device, vnr)
-		ap_bio_cnt_total += atomic_read(&device->ap_bio_cnt[WRITE]);
-
-	return ap_bio_cnt_total;
-}
-
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	DEFINE_WAIT(wait);
@@ -2729,17 +2717,10 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 					atomic_read(&connection->resource->current_tle_nr));
 
 		if (send_barrier) {
-			/* Do not send a barrier if there are active app
-			 * writes, because they may belong to the old epoch.
-			 * If there are active app writes belonging to the new
-			 * epoch, we will soon process them and send a barrier
-			 * before sending the write. */
-			if (!ap_write_cnt_total(connection->resource)) {
-				finish_wait(&connection->sender_work.q_wait, &wait);
-				maybe_send_barrier(connection,
-						connection->send.current_epoch_nr + 1);
-				continue;
-			}
+			finish_wait(&connection->sender_work.q_wait, &wait);
+			maybe_send_barrier(connection,
+					connection->send.current_epoch_nr + 1);
+			continue;
 		}
 
 		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags)) {
