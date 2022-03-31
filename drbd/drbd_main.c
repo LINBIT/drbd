@@ -363,7 +363,7 @@ void tl_release(struct drbd_connection *connection,
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_request *r;
-	struct drbd_request *req = NULL;
+	struct drbd_request *req = NULL, *tmp = NULL;
 	struct drbd_request *req_y = NULL;
 	int expect_epoch = 0;
 	int expect_size = 0;
@@ -474,8 +474,11 @@ void tl_release(struct drbd_connection *connection,
 	 * to catch requests being barrier-acked "unexpectedly".
 	 * It usually should find the same req again, or some READ preceding it. */
 	list_for_each_entry(req, &resource->transfer_log, tl_requests)
-		if (req->epoch == expect_epoch)
+		if (req->epoch == expect_epoch) {
+			tmp = req;
 			break;
+		}
+	req = list_prepare_entry(tmp, &resource->transfer_log, tl_requests);
 	tl_for_each_req_ref_from(req, r, &resource->transfer_log) {
 		struct drbd_peer_device *peer_device;
 		if (req->epoch != expect_epoch) {
