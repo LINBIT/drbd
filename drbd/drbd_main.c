@@ -4530,7 +4530,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	struct drbd_device *device = from_pd->device;
 	u64 dagtag = atomic64_read(&from_pd->connection->last_dagtag_sector);
 	struct drbd_peer_device *peer_device;
-	u64 receipients = 0;
+	u64 recipients = 0;
 	bool set_current = true;
 
 	down_write(&device->uuid_sem);
@@ -4546,12 +4546,12 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		}
 		if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
-			receipients |= NODE_MASK(peer_device->node_id);
+			recipients |= NODE_MASK(peer_device->node_id);
 
 		if (peer_device != from_pd &&
 		    peer_device->disk_state[NOW] == D_DISKLESS &&
 		    peer_device->current_uuid != drbd_current_uuid(device))
-			receipients |= NODE_MASK(peer_device->node_id);
+			recipients |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
 
@@ -4560,7 +4560,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		u64 upd;
 
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
-			receipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);
+			recipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);
 
 		upd = ~weak_nodes; /* These nodes are connected to the primary */
 		upd &= __test_bitmap_slots(device); /* of those, I have a bitmap for */
@@ -4583,7 +4583,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 	downgrade_write(&device->uuid_sem);
 	if (set_current)
-		drbd_propagate_uuids(device, receipients);
+		drbd_propagate_uuids(device, recipients);
 	up_read(&device->uuid_sem);
 }
 
