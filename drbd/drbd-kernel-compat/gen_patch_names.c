@@ -391,6 +391,9 @@ int main(int argc, char **argv)
 	patch(1, "wb_congested_enum", true, false,
 	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
 
+	patch(1, "disk_update_readahead", true, false,
+	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
+
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
 
