@@ -4907,10 +4907,8 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 	}
 
 	new_net_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
-	if (!new_net_conf) {
-		drbd_err(connection, "Allocation of new net_conf failed\n");
+	if (!new_net_conf)
 		goto disconnect;
-	}
 
 	if (mutex_lock_interruptible(&connection->resource->conf_update)) {
 		drbd_err(connection, "Interrupted while waiting for conf_update\n");
@@ -5136,10 +5134,8 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 
 		if (verify_tfm || csums_tfm) {
 			new_net_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
-			if (!new_net_conf) {
-				drbd_err(device, "Allocation of new net_conf failed\n");
+			if (!new_net_conf)
 				goto disconnect;
-			}
 
 			*new_net_conf = *old_net_conf;
 
@@ -5439,7 +5435,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 			new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 			if (!new_disk_conf) {
-				drbd_err(device, "Allocation of new disk_conf failed\n");
 				err = -ENOMEM;
 				goto out;
 			}
@@ -6584,7 +6579,6 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
-			drbd_err(device, "Allocation of new disk_conf failed\n");
 			device->ldev->disk_conf->disk_size = tr->user_size;
 			goto cont;
 		}
@@ -8652,8 +8646,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	peers_ch = kmalloc(sizeof(*peers_ch), GFP_NOIO);
-	if (peers_ch == NULL) {
-		drbd_err(connection, "kmalloc of peers_ch failed\n");
+	if (!peers_ch) {
 		rv = -1;
 		goto fail;
 	}
@@ -8721,8 +8714,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 	}
 
 	right_response = kmalloc(resp_size, GFP_NOIO);
-	if (right_response == NULL) {
-		drbd_err(connection, "kmalloc of right_response failed\n");
+	if (!right_response) {
 		rv = -1;
 		goto fail;
 	}
