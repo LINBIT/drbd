@@ -1040,7 +1040,7 @@ retry:
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			bdev = bdgrab(device->vdisk->part0);
 			if (bdev)
-				fsync_bdev(bdev);
+				sync_blockdev(bdev);
 			bdput(bdev);
 			flush_workqueue(device->submit.wq);
 		}
