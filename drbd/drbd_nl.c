@@ -1027,7 +1027,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	bool with_force = false;
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
-	struct block_device *bdev = NULL;
 
 retry:
 
@@ -1038,10 +1037,7 @@ retry:
 	} else /* (role == R_SECONDARY) */ {
 		down(&resource->state_sem);
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			bdev = bdgrab(device->vdisk->part0);
-			if (bdev)
-				sync_blockdev(bdev);
-			bdput(bdev);
+			sync_blockdev(device->vdisk->part0);
 			flush_workqueue(device->submit.wq);
 		}
 
