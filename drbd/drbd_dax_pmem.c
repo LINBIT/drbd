@@ -56,14 +56,10 @@ static int map_superblock_for_dax(struct drbd_backing_dev *bdev, struct dax_devi
  */
 int drbd_dax_open(struct drbd_backing_dev *bdev)
 {
-	const char *disk_name = bdev->md_bdev->bd_disk->disk_name;
 	struct dax_device *dax_dev;
 	int err;
 
-	if (!blk_queue_dax(bdev->md_bdev->bd_disk->queue))
-		return -ENODEV;
-
-	dax_dev = dax_get_by_host(disk_name);
+	dax_dev = fs_dax_get_by_bdev(bdev->md_bdev);
 	if (!dax_dev)
 		return -ENODEV;
 
