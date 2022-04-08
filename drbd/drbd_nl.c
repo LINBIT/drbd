@@ -5483,7 +5483,6 @@ static void device_to_statistics(struct device_statistics *s,
 	if (get_ldev(device)) {
 		struct drbd_md *md = &device->ldev->md;
 		u64 *history_uuids = (u64 *)s->history_uuids;
-		struct request_queue *q;
 		int n;
 
 		spin_lock_irq(&md->uuid_lock);
@@ -5495,9 +5494,8 @@ static void device_to_statistics(struct device_statistics *s,
 		spin_unlock_irq(&md->uuid_lock);
 
 		s->dev_disk_flags = md->flags;
-		q = bdev_get_queue(device->ldev->backing_bdev);
 		s->dev_lower_blocked =
-			bdi_congested(q->backing_dev_info,
+			bdi_congested(device->ldev->backing_bdev->bd_disk->bdi,
 				      (1 << WB_async_congested) |
 				      (1 << WB_sync_congested));
 		put_ldev(device);
