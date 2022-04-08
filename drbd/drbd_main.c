@@ -2605,7 +2605,7 @@ void drbd_fsync_device(struct drbd_device *device)
 
 	bdev = bdgrab(device->vdisk->part0);
 	if (bdev)
-		fsync_bdev(bdev);
+		sync_blockdev(bdev);
 	bdput(bdev);
 	/* Prevent writes occurring after demotion, at least
 	 * the writes already submitted in this context. This
