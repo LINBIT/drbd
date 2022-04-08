@@ -2601,12 +2601,8 @@ restart:
 void drbd_fsync_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
-	struct block_device *bdev;
 
-	bdev = bdgrab(device->vdisk->part0);
-	if (bdev)
-		sync_blockdev(bdev);
-	bdput(bdev);
+	sync_blockdev(device->vdisk->part0);
 	/* Prevent writes occurring after demotion, at least
 	 * the writes already submitted in this context. This
 	 * covers the case where DRBD auto-demotes on release,
