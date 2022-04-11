@@ -31,7 +31,7 @@ ARCH ?= amd64
 ifneq ($(strip $(ARCH)),)
 DOCKERREGISTRY := $(DOCKERREGISTRY)/$(ARCH)
 endif
-DOCKERIMAGES = rhel7 rhel8 bionic focal sles15sp1 flatcar
+DOCKERIMAGES = rhel7 rhel8 bionic focal jammy sles15sp1 flatcar
 DOCKERIMAGESTARGETS = $(addprefix dockerimage.,$(DOCKERIMAGES))
 
 # Use the SPAAS (spatch as a service) online service
