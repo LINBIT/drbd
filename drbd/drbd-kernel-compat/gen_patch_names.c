@@ -135,7 +135,21 @@ int main(int argc, char **argv)
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_HAVE_BLK_ALLOC_DISK, "present");
 
-#if defined COMPAT_HAVE_BLK_QC_T_SUBMIT_BIO
+/*******************************************************************************/
+	/*
+	 * if COMPAT_HAVE_VOID_SUBMIT_BIO is unset, that can mean one of two
+	 * things:
+	 * - the kernel uses submit_bio, but with a blk_qc_t return value
+	 * - the kernel does not use submit_bio at all (but uses make_request)
+	 *
+	 * regardless of which of these is true, we need to patch our submit_bio
+	 * back to the blk_qc_t based version. this makes sure the further
+	 * "back-patches" (like submit_bio -> make_request) actually match.
+	 */
+	patch(1, "submit_bio", true, false,
+	      COMPAT_HAVE_VOID_SUBMIT_BIO, "returns_void");
+
+#if defined(COMPAT_HAVE_BLK_QC_T_SUBMIT_BIO) || defined(COMPAT_HAVE_VOID_SUBMIT_BIO)
 	/*
 	 * modern version (>=v5.9), make_request_fn moved to
 	 * submit_bio block_device_operation.
@@ -168,6 +182,7 @@ int main(int argc, char **argv)
 	      YES, "returns_int");
 # endif
 #endif
+/*******************************************************************************/
 
 #if !defined(COMPAT_HAVE_BIO_BI_STATUS)
 	patch(2, "bio", false, false,
