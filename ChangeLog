@@ -2,15 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.7-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.7-rc.2 (api:genl2/proto:110-121/transport:17)
 --------
+ * avoid deadlock upon trying to down an io-frozen DRBD device that
+   has a file system mounted
+ * fix DRBD to not send too large resync requests at multiples of 8TiB
  * fix for a "forgotten" resync after IO was suspended due to lack of quorum
- * refactored IO suspend/resume fixing severl bugs; the worst one could
+ * refactored IO suspend/resume fixing several bugs; the worst one could
    lead to premature request completion
  * disable discards on diskless if diskful peers do not support it
  * make demote to secondary a two-phase state transition; that guarantees that
    after demotion, DRBD will not write to any meta-data in the cluster
  * enable "--force primary" in for no-quorum situations
+ * allow graceful recovery of primary lacking quorum and therefore
+   have forzen IO requests; that includes "--force secondary"
+ * following upstream changes to DRBD up to Linux 5.15 and updated compat
 
 9.1.6 (api:genl2/proto:110-121/transport:17)
 --------
