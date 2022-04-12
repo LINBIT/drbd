@@ -780,6 +780,11 @@ static int optimal_bits_for_alignment(unsigned long bit, int max_bio_bits)
 	   for 3 it returns 1 so that the next request size can be 4.
 	   and so on...
 	*/
+
+	/* Only consider the lower order bits up to the size of max_bio_bits.
+	 * This prevents overflows when converting to int. */
+	bit = bit & ((1 << fls(max_bio_bits)) - 1);
+
 	if (bit == 0)
 		return max_bio_bits;
 
