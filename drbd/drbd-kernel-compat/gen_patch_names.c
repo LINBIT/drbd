@@ -135,7 +135,7 @@ int main(int argc, char **argv)
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_HAVE_BLK_ALLOC_DISK, "present");
 
-#if defined COMPAT_HAVE_SUBMIT_BIO
+#if defined COMPAT_HAVE_BLK_QC_T_SUBMIT_BIO
 	/*
 	 * modern version (>=v5.9), make_request_fn moved to
 	 * submit_bio block_device_operation.
