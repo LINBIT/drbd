@@ -233,7 +233,7 @@ int main(int argc, char **argv)
 	patch(1, "kvfree", true, false,
 	      COMPAT_HAVE_KVFREE, "present");
 
-	patch(1, "genl_policy", false, true,
+	patch(1, "genl_policy", true, false,
 	      COMPAT_GENL_POLICY_IN_OPS, "in_ops");
 
 	patch(1, "blk_queue_merge_bvec", false, true,
