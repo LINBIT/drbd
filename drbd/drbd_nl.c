@@ -7082,7 +7082,7 @@ out_no_adm:
 
 }
 
-enum drbd_ret_code validate_new_resource_name(const struct drbd_resource *resource, const char *new_name)
+static enum drbd_ret_code validate_new_resource_name(const struct drbd_resource *resource, const char *new_name)
 {
 	enum drbd_ret_code retcode = drbd_check_resource_name_str(new_name);
 

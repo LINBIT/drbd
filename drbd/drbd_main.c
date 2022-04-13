@@ -120,7 +120,7 @@ static int param_set_drbd_protocol_version(const char *s, const struct kernel_pa
 #define param_check_drbd_protocol_version	param_check_uint
 #define param_get_drbd_protocol_version		param_get_uint
 
-const struct kernel_param_ops param_ops_drbd_protocol_version = {
+static const struct kernel_param_ops param_ops_drbd_protocol_version = {
 	.set = param_set_drbd_protocol_version,
 	.get = param_get_drbd_protocol_version,
 };
@@ -134,7 +134,7 @@ module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protoco
  */
 struct idr drbd_devices;
 struct list_head drbd_resources;
-DEFINE_SPINLOCK(drbd_devices_lock);
+static DEFINE_SPINLOCK(drbd_devices_lock);
 DEFINE_MUTEX(resources_mutex);
 
 struct kmem_cache *drbd_request_cache;
