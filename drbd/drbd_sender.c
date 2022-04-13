@@ -2301,27 +2301,6 @@ static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool res
 	put_ldev(device);
 }
 
-static void drbd_ldev_destroy(struct drbd_device *device)
-{
-        struct drbd_peer_device *peer_device;
-
-        rcu_read_lock();
-        for_each_peer_device_rcu(peer_device, device) {
-                lc_destroy(peer_device->resync_lru);
-                peer_device->resync_lru = NULL;
-        }
-        rcu_read_unlock();
-        lc_destroy(device->act_log);
-        device->act_log = NULL;
-	__acquire(local);
-	drbd_backing_dev_free(device, device->ldev);
-	device->ldev = NULL;
-	__release(local);
-
-        clear_bit(GOING_DISKLESS, &device->flags);
-	wake_up(&device->misc_wait);
-}
-
 static void go_diskless(struct drbd_device *device)
 {
 	D_ASSERT(device, device->disk_state[NOW] == D_FAILED ||
@@ -2501,8 +2480,6 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 		do_md_sync(device);
 	if (test_bit(GO_DISKLESS, &todo))
 		go_diskless(device);
-	if (test_bit(DESTROY_DISK, &todo))
-		drbd_ldev_destroy(device);
 	if (test_bit(MAKE_NEW_CUR_UUID, &todo))
 		make_new_current_uuid(device);
 }
@@ -2525,7 +2502,6 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 
 #define DRBD_DEVICE_WORK_MASK	\
 	((1UL << GO_DISKLESS)	\
-	|(1UL << DESTROY_DISK)	\
 	|(1UL << MD_SYNC)	\
 	|(1UL << MAKE_NEW_CUR_UUID)\
 	)

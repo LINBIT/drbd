@@ -3510,6 +3510,29 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	return peer_device;
 }
 
+static void drbd_ldev_destroy(struct work_struct *ws)
+{
+	struct drbd_device *device = container_of(ws, struct drbd_device, ldev_destroy_work);
+	struct drbd_peer_device *peer_device;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		lc_destroy(peer_device->resync_lru);
+		peer_device->resync_lru = NULL;
+	}
+	rcu_read_unlock();
+	lc_destroy(device->act_log);
+	device->act_log = NULL;
+	__acquire(local);
+	drbd_backing_dev_free(device, device->ldev);
+	device->ldev = NULL;
+	__release(local);
+
+	clear_bit(GOING_DISKLESS, &device->flags);
+	wake_up(&device->misc_wait);
+	kref_put(&device->kref, drbd_destroy_device);
+}
+
 static int init_submitter(struct drbd_device *device)
 {
 	/* opencoded create_singlethread_workqueue(),
@@ -3603,6 +3626,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	disk = blk_alloc_disk(NUMA_NO_NODE);
 	if (!disk)
 		goto out_no_disk;
+
+	INIT_WORK(&device->ldev_destroy_work, drbd_ldev_destroy);
 
 	device->vdisk = disk;
 	device->rq_queue = disk->queue;
