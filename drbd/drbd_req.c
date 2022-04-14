@@ -713,6 +713,7 @@ void drbd_flush_requests(struct drbd_device *device)
 
 static void advance_conn_req_next(struct drbd_connection *connection, struct drbd_request *req)
 {
+	struct drbd_request *found_req = NULL;
 	/* Only the sender thread comes here. No other caller context of req_mod() ever arrives here */
 	if (connection->todo.req_next != req)
 		return;
@@ -720,13 +721,13 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
 		connection->send.seen_dagtag_sector = req->dagtag_sector;
-		if (s & RQ_NET_QUEUED)
+		if (s & RQ_NET_QUEUED) {
+			found_req = req;
 			break;
+		}
 	}
 	rcu_read_unlock();
-	if (&req->tl_requests == &connection->resource->transfer_log)
-		req = NULL;
-	connection->todo.req_next = req;
+	connection->todo.req_next = found_req;
 }
 
 static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
@@ -749,6 +750,7 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 			      unsigned int is_set, unsigned int is_clear)
 {
 	struct drbd_request *old_req;
+	struct drbd_request *found_req = NULL;
 
 	rcu_read_lock();
 	old_req = rcu_dereference(*cache_ptr);
@@ -760,13 +762,13 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
 		if (!(s & RQ_NET_MASK))
 			continue;
-		if (((s & is_set) == is_set) && !(s & is_clear))
+		if (((s & is_set) == is_set) && !(s & is_clear)) {
+			found_req = req;
 			break;
+		}
 	}
-	if (&req->tl_requests == &connection->resource->transfer_log)
-		req = NULL;
 
-	cmpxchg(cache_ptr, old_req, req);
+	cmpxchg(cache_ptr, old_req, found_req);
 	rcu_read_unlock();
 }
 
