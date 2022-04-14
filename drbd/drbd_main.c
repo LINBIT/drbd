@@ -4886,7 +4886,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	bool current_equal;
 	int node_id;
 
-	current_equal = peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY) &&
+	current_equal = peer_current_uuid == (drbd_resolved_uuid(peer_device, NULL) & ~UUID_PRIMARY) &&
 		!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET);
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
