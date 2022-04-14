@@ -2351,6 +2351,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 	bool some_peer_is_primary = false;
 	bool some_peer_request_in_flight = false;
 	bool resource_suspended[2];
+	bool unfreeze_io = false;
 	int vnr;
 
 	print_state_change(resource, "");
@@ -2681,6 +2682,12 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (!device->have_quorum[OLD] && device->have_quorum[NEW])
 			clear_bit(PRIMARY_LOST_QUORUM, &device->flags);
+
+		if (resource_suspended[NEW] &&
+		    !(role[OLD] == R_PRIMARY && !drbd_data_accessible(device, OLD)) &&
+		     (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, NEW)) &&
+		    resource->res_opts.on_no_data == OND_IO_ERROR)
+			unfreeze_io = true;
 	}
 
 	for_each_connection(connection, resource) {
@@ -2714,7 +2721,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			/* If we resume IO without this connection, then we
 			 * need to cancel suspended requests. */
-			if (!resource_suspended[NEW] && cstate[NEW] < C_CONNECTED)
+			if ((!resource_suspended[NEW] || unfreeze_io) && cstate[NEW] < C_CONNECTED)
 				walk_event = CANCEL_SUSPENDED_IO;
 			/* On reconnection when we have been suspended we need
 			 * to process suspended requests. If there are resyncs,
@@ -2766,7 +2773,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		}
 	}
 
-	if (resource_suspended[OLD] && !resource_suspended[NEW])
+	if ((resource_suspended[OLD] && !resource_suspended[NEW]) || unfreeze_io)
 		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
 
 	queue_after_state_change_work(resource, done);
