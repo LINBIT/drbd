@@ -2464,7 +2464,7 @@ static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
  *                                           v
  *                                   Request state machine
  */
-blk_qc_t drbd_submit_bio(struct bio *bio)
+void drbd_submit_bio(struct bio *bio)
 {
 	struct drbd_device *device = bio->bi_bdev->bd_disk->private_data;
 #ifdef CONFIG_DRBD_TIMING_STATS
@@ -2475,7 +2475,7 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 	if (drbd_fail_request_early(device, bio)) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
-		return BLK_QC_T_NONE;
+		return;
 	}
 
 	blk_queue_split(&bio);
@@ -2483,7 +2483,7 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 	if (device->cached_err_io) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
-		return BLK_QC_T_NONE;
+		return;
 	}
 
 	/* This is both an optimization: READ of size 0, nothing to do
@@ -2495,15 +2495,13 @@ blk_qc_t drbd_submit_bio(struct bio *bio)
 	if (bio_op(bio) == REQ_OP_READ && bio->bi_iter.bi_size == 0) {
 		WARN_ONCE(1, "size zero read from upper layers");
 		bio_endio(bio);
-		return BLK_QC_T_NONE;
+		return;
 	}
 
 	ktime_get_accounting(start_kt);
 	start_jif = jiffies;
 
 	__drbd_make_request(device, bio, start_kt, start_jif);
-
-	return BLK_QC_T_NONE;
 }
 
 static unsigned long time_min_in_future(unsigned long now,
