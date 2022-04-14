@@ -1555,7 +1555,8 @@ handshake_found:
 		     (disk_state[OLD] > D_DETACHING && disk_state[NEW] == D_DETACHING)))
 			return SS_IN_TRANSIENT_STATE;
 
-		if (role[OLD] != R_SECONDARY && role[NEW] == R_SECONDARY && device->open_rw_cnt)
+		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && device->open_rw_cnt &&
+		    !(resource->state_change_flags & CS_FS_IGN_OPENERS))
 			return SS_DEVICE_IN_USE;
 
 		if (disk_state[NEW] > D_ATTACHING && disk_state[OLD] == D_DISKLESS)

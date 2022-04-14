@@ -1044,6 +1044,12 @@ retry:
 			continue;
 		}
 
+		if (rv == SS_DEVICE_IN_USE && force && !(flags & CS_FS_IGN_OPENERS)) {
+			drbd_warn(resource, "forced demotion\n");
+			flags |= CS_FS_IGN_OPENERS; /* this sets resource->fail_io[NOW] */
+			continue;
+		}
+
 		if (rv == SS_NO_UP_TO_DATE_DISK) {
 			bool a_disk_became_up_to_date;
 
@@ -1280,8 +1286,9 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct set_role_parms parms;
-	int err;
 	enum drbd_state_rv retcode;
+	enum drbd_role new_role;
+	int err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
@@ -1298,14 +1305,15 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	}
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
-	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
-		retcode = (enum drbd_ret_code)drbd_set_role(adm_ctx.resource,
-				R_PRIMARY, parms.force, adm_ctx.reply_skb);
+	new_role = info->genlhdr->cmd == DRBD_ADM_PRIMARY ? R_PRIMARY : R_SECONDARY;
+	retcode = (enum drbd_ret_code) drbd_set_role(adm_ctx.resource,
+				new_role,
+				parms.force, adm_ctx.reply_skb);
+
+	if (new_role == R_PRIMARY) {
 		if (retcode >= SS_SUCCESS)
 			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	} else {
-		retcode = (enum drbd_ret_code)drbd_set_role(adm_ctx.resource,
-				R_SECONDARY, false, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 		else
