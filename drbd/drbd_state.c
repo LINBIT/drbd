@@ -2680,6 +2680,9 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		     (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, NEW)) &&
 		    resource->res_opts.on_no_data == OND_IO_ERROR)
 			unfreeze_io = true;
+
+		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
+			clear_bit(NEW_CUR_UUID, &device->flags);
 	}
 
 	for_each_connection(connection, resource) {
