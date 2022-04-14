@@ -1339,7 +1339,8 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
 		bool send_this =
-			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS;
+			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS ||
+			peer_md[i].bitmap_uuid;
 		if (!send_this && !sent_one_unallocated &&
 		    i != my_node_id && i != peer_device->node_id &&
 		    val) {
@@ -4234,20 +4235,21 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state pdsk;
 		node_id = peer_device->node_id;
-		if (peer_device->bitmap_index == -1) {
-			struct peer_device_conf *pdc;
-			pdc = rcu_dereference(peer_device->conf);
-			if (pdc && !pdc->bitmap)
-				node_mask |= NODE_MASK(node_id); /* ign intentional diskless */
-			continue;
-		}
 		node_mask |= NODE_MASK(node_id);
-		__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
+		if (peer_device->bitmap_index != -1)
+			__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
 		bm_uuid = peer_md[node_id].bitmap_uuid;
 		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
 
 		pdsk = peer_device->disk_state[NOW];
+
+		/* Create a new current UUID for a peer that is diskless but usually has a backing disk.
+		 * Do not create a new current UUID for a CONNECTED intentional diskless peer.
+		 * Create one for an intentional diskless peer that is currently away. */
+		if (pdsk == D_DISKLESS && !(peer_md[node_id].flags & MDF_HAVE_BITMAP))
+			continue;
+
 		if ((pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
 		    (NODE_MASK(node_id) & weak_nodes)) {
 			peer_md[node_id].bitmap_uuid = prev_c_uuid;

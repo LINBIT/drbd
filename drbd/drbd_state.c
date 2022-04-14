@@ -3422,6 +3422,16 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				state_change_word(state_change, n_device, n_connection, NEW);
 			bool send_uuids, send_state = false;
 
+			if (repl_state[OLD] == L_OFF &&
+			    (peer_disk_state[NOW] == D_UP_TO_DATE || !want_bitmap(peer_device)) &&
+			    drbd_bitmap_uuid(peer_device) && get_ldev(device)) {
+				down_write(&device->uuid_sem);
+				drbd_uuid_set_bitmap(peer_device, 0);
+				up_write(&device->uuid_sem);
+				drbd_print_uuids(peer_device, "cleared bm UUID");
+				put_ldev(device);
+			}
+
 			/* In case we finished a resync as resync-target update all neighbors
 			   about having a bitmap_uuid of 0 towards the previous sync-source.
 			   That needs to go out before sending the new disk state

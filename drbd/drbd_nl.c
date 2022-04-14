@@ -2653,19 +2653,6 @@ static int open_backing_devices(struct drbd_device *device,
 	return NO_ERROR;
 }
 
-static void discard_not_wanted_bitmap_uuids(struct drbd_device *device, struct drbd_backing_dev *ldev)
-{
-	struct drbd_peer_md *peer_md = ldev->md.peers;
-	struct drbd_peer_device *peer_device;
-	int node_id;
-
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		peer_device = peer_device_by_node_id(device, node_id);
-		if (peer_device && peer_md[node_id].bitmap_uuid && !want_bitmap(peer_device))
-			peer_md[node_id].bitmap_uuid = 0;
-	}
-}
-
 static int check_activity_log_stripe_size(struct drbd_device *device,
 		struct meta_data_on_disk_9 *on_disk,
 		struct drbd_md *in_core)
@@ -3080,7 +3067,6 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto fail;
 
-	discard_not_wanted_bitmap_uuids(device, nbc);
 	sanitize_disk_conf(device, new_disk_conf, nbc);
 
 	backing_disk_max_sectors = drbd_get_max_capacity(device, nbc, true);
