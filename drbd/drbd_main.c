@@ -2499,6 +2499,9 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	if (bdev_read_only(bdev) && (mode & FMODE_WRITE))
 		return -EACCES;
 
+	if (resource->fail_io[NOW])
+		return -ENOTRECOVERABLE;
+
 	kref_get(&device->kref);
 	kref_debug_get(&device->kref_debug, 3);
 
@@ -2687,6 +2690,14 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 				drbd_warn(resource, "Auto-demote failed: %s\n",
 					  drbd_set_st_err_str(rv));
 		}
+	}
+
+	if (open_ro_cnt == 0 && open_rw_cnt == 0 && resource->fail_io[NOW]) {
+		unsigned long irq_flags;
+
+		begin_state_change(resource, &irq_flags, CS_VERBOSE);
+		resource->fail_io[NEW] = false;
+		end_state_change(resource, &irq_flags);
 	}
 
 	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */

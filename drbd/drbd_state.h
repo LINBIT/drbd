@@ -42,6 +42,7 @@ enum chg_state_flags {
 	CS_CLUSTER_WIDE  = 1 << 14, /* Make this a cluster wide state change! */
 	CS_FP_LOCAL_UP_TO_DATE = 1 << 15, /* force promotion by making local disk state up_to_date */
 	CS_FP_OUTDATE_PEERS = 1 << 16, /* force promotion by marking unknown peers as outdated */
+	CS_FS_IGN_OPENERS = 1 << 17, /* force demote, ignore openers */
 };
 
 extern void drbd_resume_al(struct drbd_device *device);

@@ -1300,7 +1300,7 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->genlhdr->cmd == DRBD_ADM_PRIMARY) {
 		retcode = (enum drbd_ret_code)drbd_set_role(adm_ctx.resource,
-				R_PRIMARY, parms.assume_uptodate, adm_ctx.reply_skb);
+				R_PRIMARY, parms.force, adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS)
 			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	} else {
@@ -6172,6 +6172,7 @@ static void resource_to_info(struct resource_info *info,
 	info->res_susp_nod = resource->susp_nod[NOW];
 	info->res_susp_fen = is_suspended_fen(resource, NOW);
 	info->res_susp_quorum = resource->susp_quorum[NOW];
+	info->res_fail_io = resource->fail_io[NOW];
 }
 
 int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)

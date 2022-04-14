@@ -7,6 +7,7 @@ struct drbd_resource_state_change {
 	bool susp[2];
 	bool susp_nod[2];
 	bool susp_uuid[2];
+	bool fail_io[2];
 };
 
 struct drbd_device_state_change {
