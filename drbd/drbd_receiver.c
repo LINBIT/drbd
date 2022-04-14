@@ -7401,6 +7401,25 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			peer_device->negotiation_result = new_repl_state;
 		}
 	}
+
+	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
+	    peer_device->repl_state[NOW] == L_OFF && device->disk_state[NOW] == D_DISKLESS) {
+
+		/* I am diskless primary connecting to a peer with disk, check that UUID match
+		   We only check if the peer claims to have D_UP_TO_DATE data. Only then is the
+		   peer a source for my data anyways. */
+		if (resource->role[NOW] == R_PRIMARY &&
+		    ((device->exposed_data_uuid & ~UUID_PRIMARY) !=
+		     (peer_device->current_uuid & ~UUID_PRIMARY)) &&
+		    peer_state.disk == D_UP_TO_DATE) {
+
+			if (resource->cached_susp)
+				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+			else
+				set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+		}
+	}
+
 	/* This is after the point where we did UUID comparison and joined with the
 	   diskless case again. Releasing uuid_sem here */
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
