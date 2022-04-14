@@ -7346,7 +7346,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
-		enum sync_strategy strategy;
+		enum sync_strategy strategy = UNDETERMINED;
 		bool consider_resync;
 
 		/* clear CONN_DISCARD_MY_DATA so late, to not lose it if peer
