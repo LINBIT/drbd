@@ -2582,10 +2582,12 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 	struct drbd_device *device;
 	int vnr, rw_count = 0, ro_count = 0;
 
+	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		rw_count += device->open_rw_cnt;
 		ro_count += device->open_ro_cnt;
 	}
+	rcu_read_unlock();
 	*rw_count_ptr = rw_count;
 	*ro_count_ptr = ro_count;
 }
