@@ -3161,16 +3161,24 @@ found:
 			continue;
 		if (connection->cstate[NOW] == C_CONNECTED) {
 			struct drbd_peer_device *peer_device;
+			bool send_dagtag = false;
 			int vnr;
 
 			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 				struct drbd_device *device = peer_device->device;
 				u64 current_uuid = drbd_current_uuid(device);
 				u64 weak_nodes = drbd_weak_nodes_device(device);
+
+				if (device->disk_state[NOW] < D_INCONSISTENT ||
+				    peer_device->disk_state[NOW] < D_INCONSISTENT)
+					continue; /* Ignore if one side is diskless */
+
 				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+				send_dagtag = true;
 			}
 
-			drbd_send_peer_dagtag(connection, lost_peer);
+			if (send_dagtag)
+				drbd_send_peer_dagtag(connection, lost_peer);
 		}
 	}
 }
