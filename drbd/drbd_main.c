@@ -2590,6 +2590,67 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 	*ro_count_ptr = ro_count;
 }
 
+static void wait_for_peer_disk_updates(struct drbd_resource *resource)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_device *device;
+	int vnr;
+
+restart:
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		for_each_peer_device_rcu(peer_device, device) {
+			if (test_bit(GOT_NEG_ACK, &peer_device->flags)) {
+				clear_bit(GOT_NEG_ACK, &peer_device->flags);
+				rcu_read_unlock();
+				wait_event(resource->state_wait, peer_device->disk_state[NOW] < D_UP_TO_DATE);
+				goto restart;
+			}
+		}
+	}
+	rcu_read_unlock();
+}
+
+void drbd_fsync_device(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct block_device *bdev;
+
+	bdev = bdgrab(device->vdisk->part0);
+	if (bdev)
+		fsync_bdev(bdev);
+	bdput(bdev);
+	/* Prevent writes occurring after demotion, at least
+	 * the writes already submitted in this context. This
+	 * covers the case where DRBD auto-demotes on release,
+	 * which is important because it often occurs
+	 * immediately after a write. */
+	wait_event(device->misc_wait, !atomic_read(&device->ap_bio_cnt[WRITE]));
+
+	if (start_new_tl_epoch(resource)) {
+		struct drbd_connection *connection;
+		u64 im;
+
+		for_each_connection_ref(connection, im, resource)
+			drbd_flush_workqueue(&connection->sender_work);
+	}
+	wait_event(resource->barrier_wait, !barrier_pending(resource));
+	/* After waiting for pending barriers, we got any possible NEG_ACKs,
+	   and see them in wait_for_peer_disk_updates() */
+	wait_for_peer_disk_updates(resource);
+
+	/* In case switching from R_PRIMARY to R_SECONDARY works
+	   out, there is no rw opener at this point. Thus, no new
+	   writes can come in. -> Flushing queued peer acks is
+	   necessary and sufficient.
+	   The cluster wide role change required packets to be
+	   received by the sender. -> We can be sure that the
+	   peer_acks queued on a sender's TODO list go out before
+	   we send the two phase commit packet.
+	*/
+	drbd_flush_peer_acks(resource);
+}
+
 static void drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
@@ -2603,6 +2664,10 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 		device->open_ro_cnt--;
 
 	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
+
+	/* last one to close will be responsible for write-out of all dirty pages */
+	if (mode & FMODE_WRITE && device->open_rw_cnt == 0)
+		drbd_fsync_device(device);
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
