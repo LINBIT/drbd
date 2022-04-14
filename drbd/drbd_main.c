@@ -3146,26 +3146,6 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	    old_opts->on_no_quorum != res_opts->on_no_quorum)
 		force_state_recalc = true;
 
-	if (resource->susp_quorum[NOW] &&
-	    (res_opts->quorum != old_opts->quorum ||
-	     (old_opts->on_no_quorum == ONQ_SUSPEND_IO && res_opts->on_no_quorum == ONQ_IO_ERROR))) {
-		struct drbd_device *device;
-		int vnr;
-
-		/* when changing from suspend-io to io-error, or when
-		 * quorum setting get "eased" in any way, and IO was
-		 * frozen due to quorum, it might unfreeze now: */
-		wake_device_misc = true;
-
-		idr_for_each_entry(&resource->devices, device, vnr) {
-			/* unfreezing IO by IO errors, starts a new data generation */
-			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-				drbd_uuid_new_current(device, false);
-		}
-
-		/* IO restarted in thaw_requests_after_quorum_suspend() in drbd_state.c */
-	}
-
 	if (resource->res_opts.nr_requests < res_opts->nr_requests)
 		wake_device_misc = true;
 
