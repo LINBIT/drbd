@@ -78,6 +78,7 @@ static int w_after_state_change(struct drbd_work *w, int unused);
 static enum drbd_state_rv is_valid_soft_transition(struct drbd_resource *);
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource);
 static void sanitize_state(struct drbd_resource *resource);
+static void ensure_exposed_data_uuid(struct drbd_device *device);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -2618,6 +2619,10 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 		if (create_new_uuid)
 			set_bit(__NEW_CUR_UUID, &device->flags);
+
+		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_INCONSISTENT) &&
+		     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_INCONSISTENT))
+			ensure_exposed_data_uuid(device);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
 			u32 mdf = device->ldev->md.flags;
@@ -5377,4 +5382,44 @@ bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 	rcu_read_unlock();
 
 	return data_accessible;
+}
+/* drbd_data_accessible() and exposable_data_uuid() have the same structure. By intention. */
+static u64 exposable_data_uuid(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 uuid = 0;
+
+	if (device->disk_state[NOW] == D_UP_TO_DATE && get_ldev(device)) {
+		uuid = device->ldev->md.current_uuid;
+		put_ldev(device);
+		return uuid;
+	}
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		struct net_conf *nc;
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (nc && !nc->allow_remote_read)
+			continue;
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
+			uuid = peer_device->current_uuid;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return uuid;
+}
+
+static void ensure_exposed_data_uuid(struct drbd_device *device)
+{
+	u64 uuid = exposable_data_uuid(device);
+	bool changed = false;
+
+	if (uuid)
+		changed = drbd_set_exposed_data_uuid(device, uuid);
+
+	if (changed)
+		drbd_info(device, "Setting exposed data uuid: %016llX\n",
+			  (unsigned long long)device->exposed_data_uuid);
 }
