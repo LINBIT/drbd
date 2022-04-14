@@ -3349,7 +3349,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool have_ldev = extra_ldev_ref_for_after_state_chg(disk_state);
 		bool *have_quorum = device_state_change->have_quorum;
 		bool effective_disk_size_determined = false;
-		bool one_peer_disk_up_to_date[2] = { };
 		bool device_stable[2], resync_target[2];
 		bool resync_finished = false;
 		bool some_peer_demoted = false;
@@ -3371,11 +3370,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 			enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
 			enum drbd_repl_state *repl_state = peer_device_state_change->repl_state;
-
-			for (which = OLD; which <= NEW; which++) {
-				if (peer_disk_state[which] == D_UP_TO_DATE)
-					one_peer_disk_up_to_date[which] = true;
-			}
 
 			if ((repl_state[OLD] == L_SYNC_TARGET || repl_state[OLD] == L_PAUSED_SYNC_T) &&
 			    repl_state[NEW] == L_ESTABLISHED)
@@ -3422,8 +3416,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
 
-			if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_UP_TO_DATE && !one_peer_disk_up_to_date[OLD]) &&
-			     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_UP_TO_DATE && !one_peer_disk_up_to_date[NEW]) &&
+			if (!(role[OLD] == R_PRIMARY && !drbd_data_accessible(device, OLD)) &&
+			     (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, NEW)) &&
 			    !test_bit(UNREGISTERED, &device->flags))
 				drbd_maybe_khelper(device, connection, "pri-on-incon-degr");
 
