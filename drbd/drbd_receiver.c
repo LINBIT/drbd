@@ -887,29 +887,39 @@ static bool retry_by_rr_conflict(struct drbd_connection *connection)
 	return rr_conflict == ASB_RETRY_CONNECT;
 }
 
-static void apply_local_state_change(struct drbd_connection *connection, enum ao_op ao_op)
+static void apply_local_state_change(struct drbd_connection *connection, enum ao_op ao_op, bool force_demote)
 {
 	/* Although the connect failed, outdate local disks if we learn from the
 	 * handshake that the peer has more recent data */
 	struct drbd_resource *resource = connection->resource;
-	struct drbd_peer_device *peer_device;
 	unsigned long irq_flags;
 	int vnr;
 
-	begin_state_change(resource, &irq_flags, CS_HARD);
+	begin_state_change(resource, &irq_flags, CS_HARD | (force_demote ? CS_FS_IGN_OPENERS : 0));
 	if (ao_op == OUTDATE_DISKS_AND_DISCONNECT)
 		__change_cstate(connection, C_DISCONNECTING);
 	if (resource->role[NOW] == R_SECONDARY ||
-	    (resource->res_opts.on_no_data == OND_IO_ERROR && resource->cached_susp)) {
+	    (resource->cached_susp && (
+		    resource->res_opts.on_no_data == OND_IO_ERROR ||
+		    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY))) {
 		/* One day we might relax the above condition to
 		 * resource->role[NOW] == R_SECONDARY || resource->cached_susp
 		 * Right now it is that way, because we do not offer a way to gracefully
 		 * get out of a Primary/Outdated state */
+		struct drbd_peer_device *peer_device;
+
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			enum drbd_repl_state r = peer_device->connect_state.conn;
 			struct drbd_device *device = peer_device->device;
-			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T)
+			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T) {
 				__change_disk_state(device, D_OUTDATED);
+				resource->fail_io[NEW] = true;
+			}
+		}
+		if (force_demote) {
+			drbd_warn(connection, "Remote node has more recent data;"
+				  " force secondary!\n");
+			resource->role[NEW] = R_SECONDARY;
 		}
 	}
 	end_state_change(resource, &irq_flags);
@@ -923,7 +933,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 	enum drbd_state_rv rv;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	bool retry = retry_by_rr_conflict(connection);
-	bool incompat_states;
+	bool incompat_states, force_demote;
 
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
@@ -954,6 +964,9 @@ static int connect_work(struct drbd_work *work, int cancel)
 	} while (t > 0);
 
 	incompat_states = (rv == SS_CW_FAILED_BY_PEER || rv == SS_TWO_PRIMARIES);
+	force_demote = resource->role[NOW] == R_PRIMARY &&
+		resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY;
+	retry = retry || force_demote;
 
 	if (rv >= SS_SUCCESS) {
 		if (connection->agreed_pro_version < 117)
@@ -965,11 +978,11 @@ static int connect_work(struct drbd_work *work, int cancel)
 		return 0; /* Return early. Keep the reference on the connection! */
 	} else if (rv == SS_HANDSHAKE_RETRY || (incompat_states && retry)) {
 		arm_connect_timer(connection, jiffies + HZ);
-		apply_local_state_change(connection, OUTDATE_DISKS);
+		apply_local_state_change(connection, OUTDATE_DISKS, force_demote);
 		return 0; /* Keep reference */
 	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
 		drbd_send_disconnect(connection);
-		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT);
+		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT, force_demote);
 	} else {
 		drbd_info(connection, "Failure to connect %d %s; retrying\n",
 			  rv, drbd_set_st_err_str(rv));
@@ -7434,18 +7447,17 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			bool data_successor = peer_data_is_successor_of_mine(peer_device);
 
 			if (resource->cached_susp && data_successor &&
-			    resource->res_opts.on_no_data == OND_IO_ERROR) {
+			    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
 				if (!resource->fail_io[NOW]) {
 					drbd_warn(peer_device, "Remote node has more recent data;"
-						  " killing IOs; make me Secondary!\n");
-					begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
+						  " force secondary!\n");
+					begin_state_change(resource, &irq_flags,
+							   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
 					resource->role[NEW] = R_SECONDARY;
-					resource->fail_io[NEW] = true;
+					/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
 					end_state_change(resource, &irq_flags);
 				}
-				set_bit(retry_by_rr_conflict(connection) ?
-					CONN_HANDSHAKE_RETRY : CONN_HANDSHAKE_DISCONNECT,
-					&connection->flags);
+				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 			} else {
 				drbd_warn(peer_device, "Current UUID of peer does not match my"
 					  " exposed UUID.");
