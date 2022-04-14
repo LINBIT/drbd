@@ -3088,6 +3088,7 @@ static struct drbd_request *__next_request_for_connection(
 
 	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		unsigned s = req->net_rq_state[connection->peer_node_id];
+		connection->send.seen_dagtag_sector = req->dagtag_sector;
 		if (!(s & RQ_NET_QUEUED))
 			continue;
 		return req;
@@ -3148,6 +3149,7 @@ static bool check_sender_todo(struct drbd_connection *connection)
 
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
+	struct drbd_resource *resource = connection->resource;
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
 	int uncork, cork;
@@ -3182,17 +3184,29 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 * no other work item.  We may still need to close the last
 		 * epoch.  Next incoming request epoch will be connection ->
 		 * current transfer log epoch number.  If that is different
-		 * from the epoch of the last request we communicated, it is
-		 * safe to send the epoch separating barrier now.
+		 * from the epoch of the last request we communicated, we want
+		 * to send the epoch separating barrier now.
 		 */
 		send_barrier = should_send_barrier(connection,
-					atomic_read(&connection->resource->current_tle_nr));
+					atomic_read(&resource->current_tle_nr));
 
 		if (send_barrier) {
-			finish_wait(&connection->sender_work.q_wait, &wait);
-			maybe_send_barrier(connection,
-					connection->send.current_epoch_nr + 1);
-			continue;
+			/* Ensure that we read the most recent
+			 * resource->dagtag_sector value. */
+			smp_rmb();
+			/* If a request is currently being submitted it may not
+			 * have been picked up by this sender, even though it
+			 * belongs to the old epoch. Ensure that we are
+			 * up-to-date with the most recently submitted dagtag
+			 * to ensure that we do not send a barrier early in
+			 * this case. If there is such a request then this
+			 * sender will be woken, so it is OK to schedule(). */
+			if (connection->send.seen_dagtag_sector >= READ_ONCE(resource->dagtag_sector)) {
+				finish_wait(&connection->sender_work.q_wait, &wait);
+				maybe_send_barrier(connection,
+						connection->send.current_epoch_nr + 1);
+				continue;
+			}
 		}
 
 		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags)) {
