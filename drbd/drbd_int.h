@@ -549,7 +549,6 @@ enum device_flag {
 
         /* to be used in drbd_device_post_work() */
         GO_DISKLESS,            /* tell worker to schedule cleanup before detach */
-        DESTROY_DISK,           /* tell worker to close backing devices and destroy related structures. */
 	MD_SYNC,		/* tell worker to call drbd_md_sync() */
 	MAKE_NEW_CUR_UUID,	/* tell worker to ping peers and eventually write new current uuid */
 
@@ -1381,6 +1380,9 @@ struct drbd_device {
 
 	/* configured by drbdsetup */
 	struct drbd_backing_dev *ldev __protected_by(local);
+
+	/* Used to close backing devices and destroy related structures. */
+	struct work_struct ldev_destroy_work;
 
 	struct request_queue *rq_queue;
 	struct gendisk	    *vdisk;
@@ -2507,9 +2509,11 @@ static inline void put_ldev(struct drbd_device *device)
 	__release(local);
 	D_ASSERT(device, i >= 0);
 	if (i == 0) {
-		if (disk_state == D_DISKLESS)
+		if (disk_state == D_DISKLESS) {
 			/* even internal references gone, safe to destroy */
-			drbd_device_post_work(device, DESTROY_DISK);
+			kref_get(&device->kref);
+			schedule_work(&device->ldev_destroy_work);
+		}
 		if (disk_state == D_FAILED || disk_state == D_DETACHING)
 			/* all application IO references gone. */
 			if (!test_and_set_bit(GOING_DISKLESS, &device->flags))

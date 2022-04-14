@@ -6325,8 +6325,8 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 		stable_change_repl_state(peer_device, L_OFF,
 					 CS_VERBOSE | CS_WAIT_COMPLETE);
 
-	/* If the worker still has to find it to call drbd_ldev_destroy(),
-	 * we must not unregister the device yet. */
+	/* If drbd_ldev_destroy() is pending, wait for it to run before
+	 * unregistering the device. */
 	wait_event(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
 	/*
 	 * Flush the resource work queue to make sure that no more events like
