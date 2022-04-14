@@ -1715,9 +1715,6 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 			dynamic_drbd_dbg(device, "my node_id: %u\n", node_id);
 			continue; /* skip myself... */
 		}
-		/* Have we met this peer node id before? */
-		if (!(peer_md->flags & MDF_HAVE_BITMAP))
-			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
