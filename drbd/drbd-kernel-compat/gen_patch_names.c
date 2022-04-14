@@ -353,6 +353,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
 
+	patch(1, "struct_gendisk", true, false,
+	      COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO, "has_backing_dev_info");
+
 	patch(1, "backing_dev_info", true, false,
 	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
 
