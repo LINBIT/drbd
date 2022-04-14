@@ -356,8 +356,10 @@ int main(int argc, char **argv)
 	patch(1, "struct_gendisk", true, false,
 	      COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO, "has_backing_dev_info");
 
+#if !defined(COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO)
 	patch(1, "backing_dev_info", true, false,
 	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
+#endif
 
 	patch(1, "sendpage_ok", true, false,
 	      COMPAT_HAVE_SENDPAGE_OK, "present");
