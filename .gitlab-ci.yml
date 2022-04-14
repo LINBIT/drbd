@@ -183,13 +183,11 @@ test-all:
   allow_failure: true
   script:
     - |
+      export VMSHED_TEST_SELECTION=all
       run_test \
         --repeats="$DRBD_TEST_REPEATS" \
-        --tests=drbd9-tests/virter/tests.all.toml \
         --error-details=false \
         --quiet \
         $DRBD_TEST_VMSHED_ARGS || true
-      ./drbd9-tests/virter/elasticsearch/elasticsearch-insert.sh \
-        https://es01.at.linbit.com tests-out/results.json \
-        drbd9-tests/virter/tests.toml
-      cat .gitlab/kibana-version-comparison-url | tr -d '\n' | sed s/{{drbd_version}}/$DRBD_VERSION/
+      ./virter/elasticsearch/elasticsearch-insert.sh https://es01.at.linbit.com ../tests-out/results.json
+      cat ../.gitlab/kibana-version-comparison-url | tr -d '\n' | sed s/{{drbd_version}}/$DRBD_VERSION/
