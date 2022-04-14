@@ -2,7 +2,9 @@
 
 #include <linux/blkdev.h>
 
+blk_qc_t submit(struct bio *bio);
+
 void foo(struct block_device_operations *ops)
 {
-	ops->submit_bio = NULL;
+	ops->submit_bio = submit;
 }
