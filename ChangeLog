@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.7-rc.2 (api:genl2/proto:110-121/transport:17)
+9.1.7 (api:genl2/proto:110-121/transport:17)
 --------
  * avoid deadlock upon trying to down an io-frozen DRBD device that
    has a file system mounted
