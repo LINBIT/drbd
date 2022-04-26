@@ -2573,9 +2573,13 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
 
-	drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
-
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+
+	drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
+	/* Do not use peer_req after this point. We may have sent the
+	 * corresponding barrier and received the corresponding peer ack. As a
+	 * result, peer_req may have been freed. */
+
 	return err;
 }
 
