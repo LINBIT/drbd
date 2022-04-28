@@ -866,6 +866,7 @@ struct drbd_resource {
 	struct dentry *debugfs_res_connections;
 	struct dentry *debugfs_res_in_flight_summary;
 	struct dentry *debugfs_res_state_twopc;
+	struct dentry *debugfs_res_worker_pid;
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;
@@ -988,6 +989,9 @@ struct drbd_connection {
 	struct dentry *debugfs_conn_oldest_requests;
 	struct dentry *debugfs_conn_transport;
 	struct dentry *debugfs_conn_debug;
+	struct dentry *debugfs_conn_receiver_pid;
+	struct dentry *debugfs_conn_ack_receiver_pid;
+	struct dentry *debugfs_conn_sender_pid;
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;
