@@ -3,7 +3,4 @@
 #include <linux/blkdev.h>
 #include <linux/dax.h>
 
-struct dax_device *foo(struct block_device *bdev)
-{
-	return fs_dax_get_by_bdev(bdev);
-}
+void *x = fs_dax_get_by_bdev;

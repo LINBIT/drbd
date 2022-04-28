@@ -431,6 +431,11 @@ int main(int argc, char **argv)
 	patch(1, "fs_dax_get_by_bdev", true, false,
 	      COMPAT_HAVE_FS_DAX_GET_BY_BDEV, "present");
 
+#if defined(COMPAT_HAVE_FS_DAX_GET_BY_BDEV)
+	patch(1, "fs_dax_get_by_bdev", true, false,
+	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF, "takes_start_off");
+#endif
+
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
