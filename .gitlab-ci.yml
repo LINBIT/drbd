@@ -130,8 +130,7 @@ build:compile-only:
     - DRBD_VERSION="$DRBD_VERSION_BASE.$CI_COMMIT_SHA.compileonly"
     - |
       # verify compilation on some distributions even though we don't test with them
-      extra_kernels='rhel6.6 2.6.32-504.el6
-      rhel9.0 5.14.0-1.7.1.el9'
+      extra_kernels='rhel6.6 2.6.32-504.el6'
       drbd_build $DRBD_VERSION 1 $DRBD_VERSION-1 "${extra_kernels}"
   artifacts:
     paths:
