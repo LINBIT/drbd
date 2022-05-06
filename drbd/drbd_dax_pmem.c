@@ -58,8 +58,9 @@ int drbd_dax_open(struct drbd_backing_dev *bdev)
 {
 	struct dax_device *dax_dev;
 	int err;
+	u64 part_off;
 
-	dax_dev = fs_dax_get_by_bdev(bdev->md_bdev);
+	dax_dev = fs_dax_get_by_bdev(bdev->md_bdev, &part_off);
 	if (!dax_dev)
 		return -ENODEV;
 
