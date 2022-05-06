@@ -4,7 +4,5 @@
 
 void foo(struct bio *bio)
 {
-	blk_qc_t result;
-
-	result = submit_bio_noacct(bio);
+	submit_bio_noacct(bio);
 }
