@@ -1,18 +1,18 @@
 --- drbd-headers/linux/genl_magic_func.h
 +++ drbd-headers/linux/genl_magic_func.h
-@@ -253,6 +253,7 @@ static const char *CONCAT_(GENL_MAGIC_FAMILY, _genl_cmd_to_str)(__u8 cmd)
+@@ -253,7 +253,6 @@ static const char *CONCAT_(GENL_MAGIC_FAMILY, _genl_cmd_to_str)(__u8 cmd)
  {								\
  	handler							\
  	.cmd = op_name,						\
-+	.policy	= CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),	\
+-	.policy	= CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),	\
  },
  
  #define ZZZ_genl_ops		CONCAT_(GENL_MAGIC_FAMILY, _genl_ops)
-@@ -331,7 +332,6 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
+@@ -312,6 +311,7 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
  #ifdef COMPAT_HAVE_GENL_FAMILY_PARALLEL_OPS
  	.parallel_ops = true,
  #endif
--	.policy = CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),
++	.policy = CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),
  };
  
  /*
