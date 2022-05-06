@@ -856,6 +856,11 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	pretty_print_bit(CONN_DISCARD_MY_DATA);
 	pretty_print_bit(SEND_STATE_AFTER_AHEAD_C);
 	pretty_print_bit(NOTIFY_PEERS_LOST_PRIMARY);
+	pretty_print_bit(CHECKING_PEER);
+	pretty_print_bit(CONN_CONGESTED);
+	pretty_print_bit(CONN_HANDSHAKE_DISCONNECT);
+	pretty_print_bit(CONN_HANDSHAKE_RETRY);
+	pretty_print_bit(CONN_HANDSHAKE_READY);
 #undef pretty_print_bit
 	seq_putc(m, '\n');
 
