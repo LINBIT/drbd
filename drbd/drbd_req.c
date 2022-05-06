@@ -745,7 +745,7 @@ static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_r
 }
 
 static void advance_cache_ptr(struct drbd_connection *connection,
-			      struct drbd_request **cache_ptr, struct drbd_request *req,
+			      struct drbd_request __rcu **cache_ptr, struct drbd_request *req,
 			      unsigned int is_set, unsigned int is_clear)
 {
 	struct drbd_request *old_req;

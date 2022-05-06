@@ -714,7 +714,7 @@ struct drbd_backing_dev {
 	struct block_device *backing_bdev;
 	struct block_device *md_bdev;
 	struct drbd_md md;
-	struct disk_conf *disk_conf; /* RCU, for updates: resource->conf_update */
+	struct disk_conf __rcu *disk_conf; /* RCU, for updates: resource->conf_update */
 	sector_t known_size; /* last known size of that backing device */
 #if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
 	struct dax_device *dax_dev;
@@ -1192,7 +1192,7 @@ struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
-	struct peer_device_conf *conf; /* RCU, for updates: resource->conf_update */
+	struct peer_device_conf __rcu *conf; /* RCU, for updates: resource->conf_update */
 	enum drbd_disk_state disk_state[2];
 	enum drbd_repl_state repl_state[2];
 	bool resync_susp_user[2];
@@ -1273,7 +1273,7 @@ struct drbd_peer_device {
 	/* size of skipped range in sectors. */
 	sector_t ov_last_skipped_size;
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
-	struct fifo_buffer *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
+	struct fifo_buffer __rcu *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
 	int rs_last_sect_ev; /* counter to compare with */
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
