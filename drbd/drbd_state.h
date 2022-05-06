@@ -31,7 +31,7 @@ enum chg_state_flags {
 	CS_WAIT_COMPLETE = 1 << 2,
 	CS_SERIALIZE     = 1 << 3,
 	CS_ALREADY_SERIALIZED = 1 << 4, /* resource->state_sem already taken */
-	CS_LOCAL_ONLY    = 1 << 5, /* Do not consider a device pair wide state change */
+	CS_LOCAL_ONLY    = 1 << 5, /* Do not consider a cluster-wide state change */
 	CS_PREPARE	 = 1 << 6,
 	CS_PREPARED	 = 1 << 7,
 	CS_ABORT	 = 1 << 8,
