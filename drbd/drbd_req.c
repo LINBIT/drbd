@@ -212,8 +212,7 @@ void drbd_req_destroy(struct kref *kref)
 	s = req->local_rq_state;
 
 #ifdef CONFIG_DRBD_TIMING_STATS
-	if (s & RQ_WRITE) {
-
+	if (s & RQ_WRITE && req->i.size != 0) {
 		spin_lock(&device->timing_lock); /* local irq already disabled */
 		device->reqs++;
 		ktime_aggregate(device, req, in_actlog_kt);
