@@ -1848,7 +1848,7 @@ extern void do_submit(struct work_struct *ws);
 #define __drbd_make_request(d,b,k,j) __drbd_make_request(d,b,j)
 #endif
 extern void __drbd_make_request(struct drbd_device *, struct bio *, ktime_t, unsigned long);
-extern blk_qc_t drbd_submit_bio(struct bio *bio);
+extern void drbd_submit_bio(struct bio *bio);
 
 /* drbd_nl.c */
 enum suspend_scope {
