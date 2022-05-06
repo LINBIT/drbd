@@ -1105,7 +1105,7 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		b += scnprintf_io_suspend_flags(b, end - b, resource, OLD);
 		b += scnprintf(b, end - b, " -> ");
 		b += scnprintf_io_suspend_flags(b, end - b, resource, NEW);
-		b += scnprintf(b, end - b, ") ");
+		b += scnprintf(b, end - b, " ) ");
 	}
 	if (fail_io[OLD] != fail_io[NEW])
 		b += scnprintf(b, end - b, "force-io-failures( %s -> %s ) ",
