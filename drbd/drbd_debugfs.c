@@ -597,6 +597,13 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	return 0;
 }
 
+static int resource_worker_pid_show(struct seq_file *m, void *pos)
+{
+	struct drbd_resource *resource = m->private;
+	seq_printf(m, "%d\n", resource->worker.task->pid);
+	return 0;
+}
+
 /* make sure at *open* time that the respective object won't go away. */
 static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, void *),
 		                void *data, struct kref *kref,
@@ -651,6 +658,7 @@ static const struct file_operations resource_ ## name ## _fops = {	\
 
 drbd_debugfs_resource_attr(in_flight_summary)
 drbd_debugfs_resource_attr(state_twopc)
+drbd_debugfs_resource_attr(worker_pid)
 
 #define drbd_dcf(top, obj, attr, perm) do {			\
 	dentry = debugfs_create_file(#attr, perm,		\
@@ -686,6 +694,7 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 	/* debugfs create file */
 	res_dcf(in_flight_summary);
 	res_dcf(state_twopc);
+	res_dcf(worker_pid);
 }
 
 static void drbd_debugfs_remove(struct dentry **dp)
@@ -704,6 +713,7 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 	 * and call debugfs_remove on all of them separately.
 	 */
 	/* it is ok to call debugfs_remove(NULL) */
+	drbd_debugfs_remove(&resource->debugfs_res_worker_pid);
 	drbd_debugfs_remove(&resource->debugfs_res_state_twopc);
 	drbd_debugfs_remove(&resource->debugfs_res_in_flight_summary);
 	drbd_debugfs_remove(&resource->debugfs_res_connections);
@@ -892,6 +902,20 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int connection_receiver_pid_show(struct seq_file *m, void *pos)
+{
+	struct drbd_connection *connection = m->private;
+	seq_printf(m, "%d\n", connection->receiver.task->pid);
+	return 0;
+}
+
+static int connection_sender_pid_show(struct seq_file *m, void *pos)
+{
+	struct drbd_connection *connection = m->private;
+	seq_printf(m, "%d\n", connection->sender.task->pid);
+	return 0;
+}
+
 static int connection_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
@@ -919,6 +943,8 @@ drbd_debugfs_connection_attr(oldest_requests)
 drbd_debugfs_connection_attr(callback_history)
 drbd_debugfs_connection_attr(transport)
 drbd_debugfs_connection_attr(debug)
+drbd_debugfs_connection_attr(receiver_pid)
+drbd_debugfs_connection_attr(sender_pid)
 
 void drbd_debugfs_connection_add(struct drbd_connection *connection)
 {
@@ -940,6 +966,8 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 	conn_dcf(oldest_requests);
 	conn_dcf(transport);
 	conn_dcf(debug);
+	conn_dcf(receiver_pid);
+	conn_dcf(sender_pid);
 
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (!peer_device->debugfs_peer_dev)
@@ -949,6 +977,8 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 
 void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 {
+	drbd_debugfs_remove(&connection->debugfs_conn_sender_pid);
+	drbd_debugfs_remove(&connection->debugfs_conn_receiver_pid);
 	drbd_debugfs_remove(&connection->debugfs_conn_debug);
 	drbd_debugfs_remove(&connection->debugfs_conn_transport);
 	drbd_debugfs_remove(&connection->debugfs_conn_callback_history);
