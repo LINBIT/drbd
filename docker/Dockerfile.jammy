@@ -1,6 +1,6 @@
 FROM ubuntu:jammy
 
-RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch curl && \
+RUN apt-get update && apt-get install -y kmod gnupg wget make gcc patch elfutils curl && \
 	apt-get install -y python3-setuptools && apt-get clean && \
 	cd /tmp && wget https://github.com/LINBIT/python-lbdist/archive/master.tar.gz && \
 	tar xvf master.tar.gz && \
