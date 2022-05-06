@@ -2488,7 +2488,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 	int err = 0;
 
 	/* Fail read-only open from systemd-udev (version <= 238) */
-	if (resource->role[NOW] != R_PRIMARY && !(mode & FMODE_WRITE) && !drbd_allow_oos) {
+	if (!(mode & FMODE_WRITE) && !drbd_allow_oos) {
 		char comm[TASK_COMM_LEN];
 		get_task_comm(comm, current);
 		if (!strcmp("systemd-udevd", comm))
