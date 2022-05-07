@@ -3148,7 +3148,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 		i = (peer_device->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
 
 		if (peer_device->repl_state[NOW] == L_VERIFY_S || peer_device->repl_state[NOW] == L_VERIFY_T)
-			rs_left = peer_device->ov_left;
+			rs_left = atomic64_read(&peer_device->ov_left);
 		else
 			rs_left = drbd_bm_total_weight(peer_device) - peer_device->rs_failed;
 
@@ -3347,13 +3347,14 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		if (peer_device->ov_start_sector == ~(sector_t)0) {
 			unsigned long now = jiffies;
 			int i;
+			unsigned long ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
+			atomic64_set(&peer_device->ov_left, ov_left);
 			peer_device->ov_start_sector = sector;
-			peer_device->ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
 			peer_device->ov_skipped = 0;
-			peer_device->rs_total = peer_device->ov_left;
+			peer_device->rs_total = ov_left;
 			peer_device->rs_last_writeout = now;
 			for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-				peer_device->rs_mark_left[i] = peer_device->ov_left;
+				peer_device->rs_mark_left[i] = ov_left;
 				peer_device->rs_mark_time[i] = now;
 			}
 			drbd_info(device, "Online Verify start sector: %llu\n",
