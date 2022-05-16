@@ -3944,6 +3944,8 @@ __cluster_wide_request(struct drbd_resource *resource, int vnr, enum drbd_packet
 			wake_up(&resource->work.q_wait);
 			continue;
 		}
+		if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ)
+			request_ping(connection);
 		rv = SS_CW_SUCCESS;
 	}
 	return rv;
