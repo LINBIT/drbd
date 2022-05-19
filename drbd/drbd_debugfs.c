@@ -584,7 +584,8 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 static int resource_worker_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
-	seq_printf(m, "%d\n", resource->worker.task->pid);
+	if (resource->worker.task)
+		seq_printf(m, "%d\n", resource->worker.task->pid);
 	return 0;
 }
 
@@ -890,21 +891,24 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 static int connection_receiver_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
-	seq_printf(m, "%d\n", connection->receiver.task->pid);
+	if (connection->receiver.task)
+		seq_printf(m, "%d\n", connection->receiver.task->pid);
 	return 0;
 }
 
 static int connection_ack_receiver_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
-	seq_printf(m, "%d\n", connection->ack_receiver.task->pid);
+	if (connection->ack_receiver.task)
+		seq_printf(m, "%d\n", connection->ack_receiver.task->pid);
 	return 0;
 }
 
 static int connection_sender_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
-	seq_printf(m, "%d\n", connection->sender.task->pid);
+	if (connection->sender.task)
+		seq_printf(m, "%d\n", connection->sender.task->pid);
 	return 0;
 }
 
