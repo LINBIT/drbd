@@ -1488,6 +1488,7 @@ static __printf(2, 3) void drbd_state_err(struct drbd_resource *resource, const 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
+	bool *fail_io = resource->fail_io;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	bool in_handshake = false;
@@ -1523,6 +1524,9 @@ handshake_found:
 	if (in_handshake && role[OLD] != role[NEW])
 		return SS_IN_TRANSIENT_STATE;
 
+	if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && fail_io[NEW])
+		return SS_DEVICE_IN_USE;
+
 	for_each_connection_rcu(connection, resource) {
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
@@ -1543,9 +1547,11 @@ handshake_found:
 		if (peer_role[NEW] == R_PRIMARY && peer_role[OLD] != R_PRIMARY && !two_primaries) {
 			if (role[NOW] == R_PRIMARY)
 				return SS_TWO_PRIMARIES;
-			idr_for_each_entry(&resource->devices, device, vnr) {
-				if (device->open_ro_cnt)
-					return SS_PRIMARY_READER;
+			if (!fail_io[NEW]) {
+				idr_for_each_entry(&resource->devices, device, vnr) {
+					if (device->open_ro_cnt || device->open_rw_cnt)
+						return SS_PRIMARY_READER;
+				}
 			}
 		}
 	}

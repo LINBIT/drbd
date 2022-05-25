@@ -1316,9 +1316,9 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	} else {
 		if (retcode >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
-		else
-			opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
 	}
+	if (retcode == SS_DEVICE_IN_USE)
+		opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 out:
