@@ -8,6 +8,8 @@ Requires: drbd-utils >= 9.2.0
 
 %global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,," -e "s,~,-,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
+Source1: filelist-redhat
+Source2: filelist-suse
 License: GPLv2+
 Group: System Environment/Kernel
 URL: http://www.drbd.org/
@@ -42,13 +44,28 @@ installed kernel.
 # Concept stolen from sles kernel-module-subpackage:
 # include the kernel version in the package version,
 # so we can have more than one kmod-drbd.
-# Needed, because even though kABI is still "compatible" in RHEL 6.0 to 6.1,
+#
+# As stated in the RHEL 9 release documents: There is no kernel Application
+# Binary Interface (ABI) guarantee between minor releases of RHEL 9.
+# So we need to build distinct kernel module packages for each minor release.
+# In fact, we have been doing this since RHEL 6, because there have been
+# incompatibilities.
+#
+# For instance, even though the kABI is still "compatible" in RHEL 6.0 to 6.1,
 # the actual functionality differs very much: 6.1 does no longer do BARRIERS,
 # but wants FLUSH/FUA instead.
-# For convenience, we want both 6.0 and 6.1 in the same repository,
-# and have yum/rpm figure out via dependencies, which kmod version should be installed.
-# This is a dirty hack, non generic, and should probably be enclosed in some "if-on-rhel6".
-%define _this_kmp_version %{version}_%(echo %kernel_version | sed -r 'y/-/_/; s/\.el.\.(x86_64|i.86)$//;')
+
+# Unfortunately, for us to be able to reference "kernel_version" here,
+# it needs to be defined on the command line already.
+# If not, it will only be defined within the expansion of "kernel_module_package",
+# and only after the "-v" argument was assigned/evaluated...
+# duplicate the "latest_kernel" hack from /usr/lib/rpm/macros.d/macros.kmp
+%define _this_latest_kernel_devel %({ rpm -q --qf '%%{VERSION}-%%{RELEASE}.%%{ARCH}\\n' `rpm -qa | egrep "^kernel(-rt|-aarch64)?-devel" | /usr/lib/rpm/redhat/rpmsort -r | head -n 1`; echo '%%{nil}'; } | head -n 1)
+%if 0%{!?kernel_version:1}
+%global kernel_version %_this_latest_kernel_devel
+%{warn: "XXX selected %kernel_version based on installed kernel-*-devel packages"}
+%endif
+%define _this_kmp_version %{version}_%(echo %{kernel_version} | sed -r 'y/-/_/; s/\.el[0-9_]+\.%{_arch}$//;')
 %kernel_module_package -v %_this_kmp_version -n drbd -f filelist-redhat %{?lb_flavors}
 %endif
 
@@ -115,7 +132,7 @@ install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SE
 rm -rf %{buildroot}
 
 %changelog
-* Tue Apr 20 2022 Philipp Reisner <phil@linbit.com> - 9.1.7
+* Wed Apr 20 2022 Philipp Reisner <phil@linbit.com> - 9.1.7
 -  New upstream release.
 
 * Mon Feb 14 2022 Philipp Reisner <phil@linbit.com> - 9.1.6

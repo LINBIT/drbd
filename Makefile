@@ -265,10 +265,9 @@ ifdef RPMBUILD
 # uname -r, which may be wrong in a chroot build environment.
 .PHONY: kmp-rpm
 kmp-rpm: tgz drbd-kernel.spec
-	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
 	KVER=$(KVER); flavors=; \
 	case $$KVER in *.debug) flavors=debug; KVER=$${KVER%.debug};; esac; \
-	$(RPMBUILD) -bb \
+	$(RPMBUILD) --define "_sourcedir $$PWD" -bb \
 	    $(if $(filter file,$(origin KVER)), --define "kernel_version $$KVER") \
 	    $${flavors:+ --define "lb_flavors $$flavors"} \
 	    $(RPMOPT) \
@@ -277,8 +276,7 @@ kmp-rpm: tgz drbd-kernel.spec
 
 .PHONY: srpm
 srpm: tgz
-	cp drbd-$(FDIST_VERSION).tar.gz `rpm -E "%_sourcedir"`
-	$(RPMBUILD) -bs \
+	$(RPMBUILD) --define "_sourcedir $$PWD" -bs \
 	    --define "kernelversion $(KVER)" \
 	    --define "kernel_version $(KVER)" \
 	    --define "kdir $(KDIR)" \
