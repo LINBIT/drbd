@@ -450,6 +450,8 @@ int main(int argc, char **argv)
 	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF, "takes_start_off");
 #endif
 
+	patch(1, "add_disk", true, false,
+	      COMPAT_ADD_DISK_RETURNS_INT, "returns_int");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
