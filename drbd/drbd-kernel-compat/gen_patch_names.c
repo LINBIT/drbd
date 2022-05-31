@@ -453,6 +453,9 @@ int main(int argc, char **argv)
 	patch(1, "add_disk", true, false,
 	      COMPAT_ADD_DISK_RETURNS_INT, "returns_int");
 
+	patch(1, "bdev_nr_sectors", true, false,
+	      COMPAT_HAVE_BDEV_NR_SECTORS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
