@@ -1453,7 +1453,7 @@ static void drbd_get_syncer_progress(struct drbd_peer_device *pd,
 	 * for the percentage, we don't care. */
 
 	if (repl_state == L_VERIFY_S || repl_state == L_VERIFY_T)
-		*bits_left = pd->ov_left;
+		*bits_left = atomic64_read(&pd->ov_left);
 	else
 		*bits_left = drbd_bm_total_weight(pd) - pd->rs_failed;
 	/* >> 10 to prevent overflow,
@@ -1589,7 +1589,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		unsigned long long stop_sector = 0;
 		if (repl_state == L_VERIFY_S ||
 		    repl_state == L_VERIFY_T) {
-			bit_pos = bm_bits - pd->ov_left;
+			bit_pos = bm_bits - (unsigned long)atomic64_read(&pd->ov_left);
 			stop_sector = pd->ov_stop_sector;
 		} else
 			bit_pos = pd->resync_next_bit;

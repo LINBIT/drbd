@@ -1643,7 +1643,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	db = peer_device->rs_total;
 	/* adjust for verify start and stop sectors, respective reached position */
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)
-		db -= peer_device->ov_left;
+		db -= atomic64_read(&peer_device->ov_left);
 
 	dbdt = Bit2KB(db/dt);
 	peer_device->rs_paused /= HZ;
@@ -1791,7 +1791,7 @@ out_unlock:
 
 out:
 	/* reset start sector, if we reached end of device */
-	if (verify_done && peer_device->ov_left == 0)
+	if (verify_done && atomic64_read(&peer_device->ov_left) == 0)
 		peer_device->ov_start_sector = 0;
 
 	drbd_md_sync_if_dirty(device);
@@ -2173,13 +2173,13 @@ void verify_progress(struct drbd_peer_device *peer_device,
 		(peer_device->repl_state[NOW] == L_VERIFY_S) &&
 		(sector + (size>>9)) >= peer_device->ov_stop_sector;
 
-	--peer_device->ov_left;
+	unsigned long ov_left = atomic64_dec_return(&peer_device->ov_left);
 
 	/* let's advance progress step marks only for every other megabyte */
-	if ((peer_device->ov_left & 0x1ff) == 0)
-		drbd_advance_rs_marks(peer_device, peer_device->ov_left);
+	if ((ov_left & 0x1ff) == 0)
+		drbd_advance_rs_marks(peer_device, ov_left);
 
-	if (peer_device->ov_left == 0 || stop_sector_reached)
+	if (ov_left == 0 || stop_sector_reached)
 		drbd_peer_device_post_work(peer_device, RS_DONE);
 }
 

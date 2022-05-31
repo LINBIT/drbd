@@ -2257,7 +2257,7 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 			peer_device->rs_total -= bit;
 		peer_device->ov_position = peer_device->ov_start_sector;
 	}
-	peer_device->ov_left = peer_device->rs_total;
+	atomic64_set(&peer_device->ov_left, peer_device->rs_total);
 	peer_device->ov_skipped = 0;
 }
 
@@ -2460,9 +2460,11 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 			 * Log the last position, unless end-of-device. */
 			if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
 			    repl_state[NEW] <= L_ESTABLISHED) {
+				unsigned long ov_left = atomic64_read(&peer_device->ov_left);
+
 				peer_device->ov_start_sector =
-					BM_BIT_TO_SECT(drbd_bm_bits(device) - peer_device->ov_left);
-				if (peer_device->ov_left)
+					BM_BIT_TO_SECT(drbd_bm_bits(device) - ov_left);
+				if (ov_left)
 					drbd_info(peer_device, "Online Verify reached sector %llu\n",
 						  (unsigned long long)peer_device->ov_start_sector);
 			}
@@ -2504,7 +2506,7 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 				peer_device->ov_last_skipped_start = 0;
 				peer_device->rs_last_writeout = now;
 				for (i = 0; i < DRBD_SYNC_MARKS; i++) {
-					peer_device->rs_mark_left[i] = peer_device->ov_left;
+					peer_device->rs_mark_left[i] = peer_device->rs_total;
 					peer_device->rs_mark_time[i] = now;
 				}
 
