@@ -3742,7 +3742,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		goto out_remove_peer_device;
 	}
 
-	add_disk(disk);
+	err = add_disk(disk);
+	if (err)
+		goto out_destroy_submitter;
 	device->have_quorum[OLD] =
 	device->have_quorum[NEW] =
 		(resource->res_opts.quorum == QOU_OFF);
@@ -3759,6 +3761,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	*p_device = device;
 	return NO_ERROR;
 
+out_destroy_submitter:
+	destroy_workqueue(device->submit.wq);
+	device->submit.wq = NULL;
 out_remove_peer_device:
 	list_add_rcu(&tmp, &device->peer_devices);
 	list_del_init(&device->peer_devices);
