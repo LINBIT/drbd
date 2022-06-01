@@ -1,0 +1,4 @@
+@@
+@@
+- GENHD_FL_NO_PART
++ GENHD_FL_NO_PART_SCAN

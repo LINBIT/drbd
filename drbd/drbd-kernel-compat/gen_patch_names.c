@@ -442,6 +442,9 @@ int main(int argc, char **argv)
 	patch(1, "bdev_nr_sectors", true, false,
 	      COMPAT_HAVE_BDEV_NR_SECTORS, "present");
 
+	patch(1, "genhd_fl_no_part", true, false,
+	      COMPAT_HAVE_GENHD_FL_NO_PART, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
