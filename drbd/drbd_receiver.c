@@ -7857,8 +7857,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 			else
 				return -EIO; /* retry connect */
-		} else if (strategy_descriptor(strategy).disconnect ||
-			   !is_strategy_determined(strategy)) {
+		} else if (strategy_descriptor(strategy).disconnect) {
 			if (device->disk_state[NOW] == D_NEGOTIATING) {
 				new_repl_state = L_NEG_NO_RESULT;
 			} else if (peer_state.disk == D_NEGOTIATING) {
