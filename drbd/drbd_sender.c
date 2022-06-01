@@ -1372,6 +1372,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		 * w_e_end_ov_reply().
 		 * We need to send at least one request out. */
 		stop_sector_reached = sector > peer_device->ov_start_sector
+			&& verify_can_do_stop_sector(peer_device)
 			&& sector >= peer_device->ov_stop_sector;
 		if (stop_sector_reached)
 			break;
@@ -1765,6 +1766,10 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 			if (new_peer_disk_state != D_MASK)
 				__change_peer_disk_state(peer_device, new_peer_disk_state);
+			if (peer_device->connection->agreed_pro_version < 110) {
+				drbd_uuid_set_bitmap(peer_device, 0UL);
+				drbd_print_uuids(peer_device, "updated UUIDs");
+			}
 		}
 	}
 
@@ -2174,6 +2179,7 @@ void verify_progress(struct drbd_peer_device *peer_device,
 {
 	bool stop_sector_reached =
 		(peer_device->repl_state[NOW] == L_VERIFY_S) &&
+		verify_can_do_stop_sector(peer_device) &&
 		(sector + (size>>9)) >= peer_device->ov_stop_sector;
 
 	unsigned long ov_left = atomic64_dec_return(&peer_device->ov_left);

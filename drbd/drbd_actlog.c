@@ -732,7 +732,7 @@ void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_dev
 						 bool rs_done, bool is_sync_target)
 {
 	if (rs_done) {
-		if (is_sync_target)
+		if (peer_device->connection->agreed_pro_version <= 95 || is_sync_target)
 			set_bit(RS_DONE, &peer_device->flags);
 
 		/* If sync source: rather wait for explicit notification via

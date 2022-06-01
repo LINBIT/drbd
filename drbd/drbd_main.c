@@ -1134,6 +1134,7 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
 	struct p_rs_param_95 *p;
 	int size;
+	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
 	struct net_conf *nc;
 	struct peer_device_conf *pdc;
@@ -1141,9 +1142,13 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 
-	size = sizeof(struct p_rs_param_95);
+	size = apv <= 87 ? sizeof(struct p_rs_param)
+		: apv == 88 ? sizeof(struct p_rs_param)
+			+ strlen(nc->verify_alg) + 1
+		: apv <= 94 ? sizeof(struct p_rs_param_89)
+		: /* apv >= 95 */ sizeof(struct p_rs_param_95);
 
-	cmd = P_SYNC_PARAM89;
+	cmd = apv >= 89 ? P_SYNC_PARAM89 : P_SYNC_PARAM;
 	rcu_read_unlock();
 
 	p = drbd_prepare_command(peer_device, size, DATA_STREAM);
@@ -1172,8 +1177,10 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 		p->c_max_rate = cpu_to_be32(DRBD_C_MAX_RATE_DEF);
 	}
 
-	strcpy(p->verify_alg, nc->verify_alg);
-	strcpy(p->csums_alg, nc->csums_alg);
+	if (apv >= 88)
+		strcpy(p->verify_alg, nc->verify_alg);
+	if (apv >= 89)
+		strcpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
 	return drbd_send_command(peer_device, cmd, DATA_STREAM);
@@ -1185,10 +1192,17 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	struct net_conf *nc;
 	int size, cf;
 
+	if (test_bit(CONN_DRY_RUN, &connection->flags) && connection->agreed_pro_version < 92) {
+		clear_bit(CONN_DRY_RUN, &connection->flags);
+		drbd_err(connection, "--dry-run is not supported by peer");
+		return -EOPNOTSUPP;
+	}
+
 	size = sizeof(*p);
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
-	size += strlen(nc->integrity_alg) + 1;
+	if (connection->agreed_pro_version >= 87)
+		size += strlen(nc->integrity_alg) + 1;
 	rcu_read_unlock();
 
 	p = __conn_prepare_command(connection, size, DATA_STREAM);
@@ -1210,7 +1224,8 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 		cf |= CF_DRY_RUN;
 	p->conn_flags    = cpu_to_be32(cf);
 
-	strcpy(p->integrity_alg, nc->integrity_alg);
+	if (connection->agreed_pro_version >= 87)
+		strcpy(p->integrity_alg, nc->integrity_alg);
 	rcu_read_unlock();
 
 	return __send_command(connection, -1, cmd, DATA_STREAM);
@@ -1225,6 +1240,51 @@ int drbd_send_protocol(struct drbd_connection *connection)
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 
 	return err;
+}
+
+static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
+{
+	struct drbd_device *device = peer_device->device;
+	struct p_uuids *p;
+	int i;
+
+	if (!get_ldev_if_state(device, D_NEGOTIATING))
+		return 0;
+
+	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	if (!p) {
+		put_ldev(device);
+		return -EIO;
+	}
+
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+	p->current_uuid = cpu_to_be64(drbd_current_uuid(device));
+	p->bitmap_uuid = cpu_to_be64(drbd_bitmap_uuid(peer_device));
+	for (i = 0; i < ARRAY_SIZE(p->history_uuids); i++)
+		p->history_uuids[i] = cpu_to_be64(drbd_history_uuid(device, i));
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
+
+	peer_device->comm_bm_set = drbd_bm_total_weight(peer_device);
+	p->dirty_bits = cpu_to_be64(peer_device->comm_bm_set);
+
+	if (test_bit(DISCARD_MY_DATA, &peer_device->flags))
+		uuid_flags |= UUID_FLAG_DISCARD_MY_DATA;
+	if (test_bit(CRASHED_PRIMARY, &device->flags))
+		uuid_flags |= UUID_FLAG_CRASHED_PRIMARY;
+	if (!drbd_md_test_flag(device->ldev, MDF_CONSISTENT))
+		uuid_flags |= UUID_FLAG_INCONSISTENT;
+
+	/* Silently mask out any "too recent" flags,
+	 * we cannot communicate those in old DRBD
+	 * protocol versions. */
+	uuid_flags &= UUID_FLAG_MASK_COMPAT_84;
+
+	peer_device->comm_uuid_flags = uuid_flags;
+	p->uuid_flags = cpu_to_be64(uuid_flags);
+
+	put_ldev(device);
+
+	return drbd_send_command(peer_device, P_UUIDS, DATA_STREAM);
 }
 
 static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(local)
@@ -1307,7 +1367,7 @@ u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flag
 	return uuid;
 }
 
-int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
+static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
 {
 	struct drbd_device *device = peer_device->device;
 	const int my_node_id = device->resource->res_opts.node_id;
@@ -1384,6 +1444,14 @@ int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 no
 	return drbd_send_command(peer_device, P_UUIDS110, DATA_STREAM);
 }
 
+int drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags, u64 node_mask)
+{
+	if (peer_device->connection->agreed_pro_version >= 110)
+		return _drbd_send_uuids110(peer_device, uuid_flags, node_mask);
+	else
+		return _drbd_send_uuids(peer_device, uuid_flags);
+}
+
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text)
 {
 	struct drbd_device *device = peer_device->device;
@@ -1414,6 +1482,33 @@ int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uui
 	p->uuid = cpu_to_be64(current_uuid);
 	p->weak_nodes = cpu_to_be64(weak_nodes);
 	return drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
+}
+
+void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct p_uuid *p;
+	u64 uuid;
+
+	D_ASSERT(device, device->disk_state[NOW] == D_UP_TO_DATE);
+
+	down_write(&device->uuid_sem);
+	uuid = drbd_bitmap_uuid(peer_device);
+	if (uuid && uuid != UUID_JUST_CREATED)
+		uuid = uuid + UUID_NEW_BM_OFFSET;
+	else
+		get_random_bytes(&uuid, sizeof(u64));
+	drbd_uuid_set_bitmap(peer_device, uuid);
+	drbd_print_uuids(peer_device, "updated sync UUID");
+	drbd_md_sync(device);
+	downgrade_write(&device->uuid_sem);
+
+	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	if (p) {
+		p->uuid = cpu_to_be64(uuid);
+		drbd_send_command(peer_device, P_SYNC_UUID, DATA_STREAM);
+	}
+	up_read(&device->uuid_sem);
 }
 
 /* communicated if (agreed_features & DRBD_FF_WSAME) */
@@ -1493,6 +1588,11 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		assign_p_sizes_qlim(device, p, NULL);
 	}
 
+	if (peer_device->connection->agreed_pro_version <= 94)
+		max_bio_size = min(max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
+	else if (peer_device->connection->agreed_pro_version < 100)
+		max_bio_size = min(max_bio_size, DRBD_MAX_BIO_SIZE_P95);
+
 	p->d_size = cpu_to_be64(d_size);
 	p->u_size = cpu_to_be64(u_size);
 	/*
@@ -1520,12 +1620,21 @@ static int send_state(struct drbd_connection *connection, int vnr, union drbd_st
 	if (!p)
 		return -EIO;
 
+	if (connection->agreed_pro_version < 110) {
+		/* D_DETACHING was introduced with drbd-9.0 */
+		if (state.disk > D_DETACHING)
+			state.disk--;
+		if (state.pdsk > D_DETACHING)
+			state.pdsk--;
+	}
+
 	p->state = cpu_to_be32(state.i); /* Within the send mutex */
 	return send_command(connection, vnr, P_STATE, DATA_STREAM);
 }
 
 int conn_send_state(struct drbd_connection *connection, union drbd_state state)
 {
+	BUG_ON(connection->agreed_pro_version < 100);
 	return send_state(connection, -1, state);
 }
 
@@ -1544,6 +1653,11 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 			union drbd_state mask, union drbd_state val)
 {
 	struct p_req_state *p;
+
+	/* Protocols before version 100 only support one volume and connection.
+	 * All state change requests are via P_STATE_CHG_REQ. */
+	if (connection->agreed_pro_version < 100)
+		cmd = P_STATE_CHG_REQ;
 
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
@@ -1569,6 +1683,22 @@ int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum dr
 	memcpy(p, request, sizeof(*request));
 
 	return send_command(connection, vnr, cmd, DATA_STREAM);
+}
+
+void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)
+{
+	struct p_req_state_reply *p;
+
+	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
+	if (p) {
+		enum drbd_packet cmd = P_STATE_CHG_REPLY;
+
+		if (connection->agreed_pro_version >= 100 && vnr < 0)
+			cmd = P_CONN_ST_CHG_REPLY;
+
+		p->retcode = cpu_to_be32(retcode);
+		send_command(connection, vnr, cmd, CONTROL_STREAM);
+	}
 }
 
 void drbd_send_twopc_reply(struct drbd_connection *connection,
@@ -1657,7 +1787,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	rcu_read_lock();
 	use_rle = rcu_dereference(peer_device->connection->transport.net_conf)->use_rle;
 	rcu_read_unlock();
-	if (!use_rle)
+	if (!use_rle || peer_device->connection->agreed_pro_version < 90)
 		return 0;
 
 	if (c->bit_offset >= c->bm_bits)
@@ -2104,16 +2234,20 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 /* see also wire_flags_to_bio() */
 static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio)
 {
-	return  (bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0) |
-		(bio->bi_opf & REQ_FUA ? DP_FUA : 0) |
-		(bio->bi_opf & REQ_PREFLUSH ? DP_FLUSH : 0) |
-		(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
-		(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
-		(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
-		 ((connection->agreed_features & DRBD_FF_WZEROES) ?
-		  (DP_ZEROES |(!(bio->bi_opf & REQ_NOUNMAP) ? DP_DISCARD : 0))
-		  : DP_DISCARD)
-		 : 0);
+	if (connection->agreed_pro_version >= 95)
+		return  (bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0) |
+			(bio->bi_opf & REQ_FUA ? DP_FUA : 0) |
+			(bio->bi_opf & REQ_PREFLUSH ? DP_FLUSH : 0) |
+			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
+			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
+			(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
+			 ((connection->agreed_features & DRBD_FF_WZEROES) ?
+			  (DP_ZEROES |(!(bio->bi_opf & REQ_NOUNMAP) ? DP_DISCARD : 0))
+			  : DP_DISCARD)
+			 : 0);
+
+	/* else: we used to communicate one bit only in older DRBD */
+	return bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0;
 }
 
 /* Used to send write or TRIM aka REQ_OP_DISCARD requests
@@ -2165,10 +2299,12 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio);
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
-	if (s & RQ_EXP_RECEIVE_ACK)
-		dp_flags |= DP_SEND_RECEIVE_ACK;
-	if (s & RQ_EXP_WRITE_ACK || dp_flags & DP_MAY_SET_IN_SYNC)
-		dp_flags |= DP_SEND_WRITE_ACK;
+	if (peer_device->connection->agreed_pro_version >= 100) {
+		if (s & RQ_EXP_RECEIVE_ACK)
+			dp_flags |= DP_SEND_RECEIVE_ACK;
+		if (s & RQ_EXP_WRITE_ACK || dp_flags & DP_MAY_SET_IN_SYNC)
+			dp_flags |= DP_SEND_WRITE_ACK;
+	}
 	p->dp_flags = cpu_to_be32(dp_flags);
 
 	if (trim) {
@@ -2273,6 +2409,9 @@ int drbd_send_out_of_sync(struct drbd_peer_device *peer_device, sector_t sector,
 int drbd_send_dagtag(struct drbd_connection *connection, u64 dagtag)
 {
 	struct p_dagtag *p;
+
+	if (connection->agreed_pro_version < 110)
+		return 0;
 
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
