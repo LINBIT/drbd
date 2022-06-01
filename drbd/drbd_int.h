@@ -2356,6 +2356,7 @@ extern int drbd_send_command(struct drbd_peer_device *, enum drbd_packet, enum d
 
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
+extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
 extern int conn_send_twopc_request(struct drbd_connection *, int vnr, enum drbd_packet, struct p_twopc_request *);
 extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_peer_ack *);
 
