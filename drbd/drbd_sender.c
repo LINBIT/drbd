@@ -1080,10 +1080,10 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
-	int max_bio_bits, number, rollback_i, size = 0, i, optimal_bits;
+	int max_bio_bits, number = 0, rollback_i, size = 0, i = 0, optimal_bits;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
-	bool last_request_sent;
+	bool last_request_sent = false;
 	bool request_ok = true;
 	unsigned long bit;
 	sector_t sector, prev_sector = 0;
@@ -1115,6 +1115,11 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		return 0;
 	}
 
+	if (send_buffer_half_full(peer_device)) {
+		/* We still want to reschedule ourselves, so do not return. */
+		goto skip_request;
+	}
+
 	if (peer_device->connection->agreed_features & DRBD_FF_THIN_RESYNC) {
 		rcu_read_lock();
 		discard_granularity = rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
@@ -1132,7 +1137,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	spin_lock_bh(&peer_device->resync_next_bit_lock);
 	peer_device->last_resync_next_bit = peer_device->resync_next_bit;
-	for (i = 0; i < number; i++) {
+	for (; i < number; i++) {
 		int err;
 
 		/* If we are aborting the requests or the peer is canceling
@@ -1144,9 +1149,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		}
 
 		if ((number - i) << BM_BLOCK_SHIFT < discard_granularity)
-			goto request_done;
-
-		if (send_buffer_half_full(peer_device))
 			goto request_done;
 
 		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
@@ -1232,6 +1234,7 @@ request_done:
 	last_request_sent = peer_device->resync_next_bit >= drbd_bm_bits(device);
 	spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
+skip_request:
 	/* If the last syncer _request_ was sent,
 	 * but the P_RS_DATA_REPLY not yet received.  sync will end (and
 	 * next sync group will resume), as soon as we receive the last
