@@ -2009,13 +2009,17 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 				drbd_err(peer_device, "Sending RSCancel, "
 						"partner DISKLESS!\n");
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
-		} else if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
+		} else if (connection->agreed_pro_version >= 110 &&
+				!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
 				al_resync_extent_active(peer_device->device,
 					peer_req->i.sector, peer_req->i.size)) {
 			/* DRBD versions without DRBD_FF_RESYNC_DAGTAG lock
 			 * 128MiB "resync extents" in the activity log whenever
-			 * they make resync requests. They can deadlock if we
-			 * send resync replies in these extents as follows:
+			 * they make resync requests. Some of these versions
+			 * also lock activity lock extents when receiving
+			 * P_DATA. In particular, DRBD 9.0 and 9.1. This can
+			 * cause a deadlock if we send resync replies in these
+			 * extents as follows:
 			 * * Node is SyncTarget towards us
 			 * * Node locks a resync extent and sends P_RS_DATA_REQUEST
 			 * * Node receives P_DATA write in this extent; write
