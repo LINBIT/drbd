@@ -3267,6 +3267,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request_details d;
 	int err, tp;
+	unsigned long conflict_flags = CONFLICT_FLAG_WRITE;
 	bool conflict = false;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -3474,9 +3475,16 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			goto out_del_list;
 		}
 	}
-	conflict = drbd_find_conflict(device, &peer_req->i,
-			CONFLICT_FLAG_WRITE |
-			CONFLICT_FLAG_DEFER_TO_RESYNC);
+	/* In protocol < 110 (compatibility with DRBD 8.4), we must not defer
+	 * to resync. The peer may have received a resync request from us in
+	 * the same "resync extent" as this write. In this case, it will block
+	 * until it has received the corresponding barrier ack, so we must
+	 * submit the write.
+	 */
+	if (connection->agreed_pro_version >= 110)
+		conflict_flags |= CONFLICT_FLAG_DEFER_TO_RESYNC;
+	conflict = connection->agreed_pro_version >= 110 &&
+		drbd_find_conflict(device, &peer_req->i, conflict_flags);
 	drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
