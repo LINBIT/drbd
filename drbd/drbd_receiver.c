@@ -8607,7 +8607,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		list_move_tail(&peer_req->w.list, &connection->sync_ee);
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
-		atomic_add(pi->size >> 9, &device->rs_sect_ev);
+		atomic_add(size >> 9, &device->rs_sect_ev);
 		drbd_conflict_submit_resync_request(peer_req);
 
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
