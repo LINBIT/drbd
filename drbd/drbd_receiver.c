@@ -2617,41 +2617,6 @@ static void update_peer_seq(struct drbd_peer_device *peer_device, unsigned int p
 	}
 }
 
-static inline int overlaps(sector_t s1, int l1, sector_t s2, int l2)
-{
-	return !((s1 + (l1>>9) <= s2) || (s1 >= s2 + (l2>>9)));
-}
-
-/* maybe change sync_ee into interval trees as well? */
-static bool overlapping_resync_write(struct drbd_connection *connection, struct drbd_peer_request *peer_req)
-{
-	struct drbd_peer_request *rs_req;
-	bool rv = false;
-
-	/* Now only called in the fallback compatibility path, when the peer is
-	 * DRBD version 8, which also means it is the only peer.
-	 * If we wanted to use this in a scenario where we could potentially
-	 * have in-flight resync writes from multiple peers, we'd need to
-	 * iterate over all connections.
-	 * Fortunately we don't have to, because we have now mutually excluded
-	 * resync and application activity on a particular region using
-	 * device->act_log and peer_device->resync_lru.
-	 */
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_for_each_entry(rs_req, &connection->sync_ee, w.list) {
-		if (rs_req->peer_device != peer_req->peer_device)
-			continue;
-		if (overlaps(peer_req->i.sector, peer_req->i.size,
-			     rs_req->i.sector, rs_req->i.size)) {
-			rv = true;
-			break;
-		}
-	}
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	return rv;
-}
-
 /* Called from receive_Data.
  * Synchronize packets on sock with packets on msock.
  *
@@ -3067,15 +3032,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	if (connection->agreed_pro_version < 110) {
-		/* If the peer is DRBD 8, a sync target may need to drain
-		 * (overlapping) in-flight resync requests first.
-		 * With DRBD 9, the mutually exclusive references in resync lru
-		 * and activity log takes care of that already. */
-		if (peer_device->repl_state[NOW] == L_SYNC_TARGET)
-			wait_event(connection->ee_wait, !overlapping_resync_write(connection, peer_req));
-	}
 
 	/* Note: this now may or may not be "hot" in the activity log.
 	 * Still, it is the best time to record that we need to set the
