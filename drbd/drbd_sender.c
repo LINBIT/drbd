@@ -2070,13 +2070,13 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req = container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	int digest_size;
 	void *digest;
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
 	struct dagtag_find_result dagtag_result;
-	bool al_conflict = false;
 	int err = 0;
 	enum drbd_packet cmd = connection->agreed_features & DRBD_FF_RESYNC_DAGTAG ?
 		P_OV_DAGTAG_REPLY : P_OV_REPLY;
@@ -2103,14 +2103,22 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 				"Cancel online verify request at %llus+%u due to activity",
 				(unsigned long long) peer_req->i.sector, peer_req->i.size);
 
-		al_conflict = true;
+		spin_lock_irq(&device->interval_lock);
+		set_bit(INTERVAL_CONFLICT, &peer_req->i.flags);
+		spin_unlock_irq(&device->interval_lock);
 	}
 
-	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags) || al_conflict) {
-		drbd_verify_skipped_block(peer_device, sector, size);
-		verify_progress(peer_device, sector, size);
-		drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, ID_SYNCER);
-		goto out;
+	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags)) {
+		if (connection->agreed_pro_version < 110) {
+			if (drbd_ratelimit())
+				drbd_warn(peer_device, "Verify request conflicts but cannot cancel, "
+						"peer may report spurious out-of-sync\n");
+		} else {
+			drbd_verify_skipped_block(peer_device, sector, size);
+			verify_progress(peer_device, sector, size);
+			drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, ID_SYNCER);
+			goto out;
+		}
 	}
 
 	dagtag_result = find_current_dagtag(peer_device->device->resource);

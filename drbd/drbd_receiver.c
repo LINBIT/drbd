@@ -10055,6 +10055,11 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
+	/* This may be a request that we could not cancel because the peer does
+	 * not understand P_RS_CANCEL. Treat it as a skipped block. */
+	if (connection->agreed_pro_version < 110 && test_bit(INTERVAL_CONFLICT, &peer_req->i.flags))
+		block_id = ID_SKIP;
+
 	drbd_free_peer_req(peer_req);
 	peer_req = NULL;
 
