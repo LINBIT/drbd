@@ -267,7 +267,7 @@ static int e_end_block(struct drbd_work *, int);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
-static int process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
+static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
@@ -7091,7 +7091,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	struct drbd_resource *resource = connection->resource;
 	struct p_twopc_request *p = pi->data;
 	struct twopc_reply reply = {0};
-	int rv;
 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
@@ -7116,9 +7115,9 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
 	}
 
-	rv = process_twopc(connection, &reply, pi, jiffies);
+	process_twopc(connection, &reply, pi, jiffies);
 
-	return rv;
+	return 0;
 }
 
 static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
@@ -7275,7 +7274,7 @@ enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource)
 	return rv;
 }
 
-static int process_twopc(struct drbd_connection *connection,
+static void process_twopc(struct drbd_connection *connection,
 			 struct twopc_reply *reply,
 			 struct packet_info *pi,
 			 unsigned long receive_jif)
@@ -7301,11 +7300,11 @@ static int process_twopc(struct drbd_connection *connection,
 			dynamic_drbd_dbg(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
 				   reply->tid);
-			return 0;
+			return;
 		}
 		if (reply->is_aborted) {
 			write_unlock_irq(&resource->state_rwlock);
-			return 0;
+			return;
 		}
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
@@ -7320,7 +7319,7 @@ static int process_twopc(struct drbd_connection *connection,
 			drbd_info(connection, "Ignoring redundant %s packet %u.\n",
 				  drbd_packet_name(pi->cmd),
 				  reply->tid);
-			return 0;
+			return;
 		}
 	} else if (csc_rv == CSC_ABORT_LOCAL && is_prepare(pi->cmd)) {
 		enum alt_rv alt_rv;
@@ -7340,12 +7339,12 @@ static int process_twopc(struct drbd_connection *connection,
 				  resource->twopc_reply.tid,
 				  reply->tid);
 			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
-			return 0;
+			return;
 		}
 		/* abort_local_transaction() returned with the state_rwlock write lock */
 		if (reply->is_aborted) {
 			write_unlock_irq(&resource->state_rwlock);
-			return 0;
+			return;
 		}
 		resource->remote_state_change = true;
 		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
@@ -7356,7 +7355,7 @@ static int process_twopc(struct drbd_connection *connection,
 		/* crc_rc != CRC_MATCH */
 		write_unlock_irq(&resource->state_rwlock);
 		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
-		return 0;
+		return;
 	} else {
 		write_unlock_irq(&resource->state_rwlock);
 
@@ -7368,7 +7367,7 @@ static int process_twopc(struct drbd_connection *connection,
 				  reply->tid,
 				  resource->twopc_reply.tid);
 			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
-			return 0;
+			return;
 		}
 
 		if (is_prepare(pi->cmd)) {
@@ -7413,7 +7412,7 @@ static int process_twopc(struct drbd_connection *connection,
 				  reply->tid,
 				  resource->twopc_reply.tid);
 		}
-		return 0;
+		return;
 	}
 
 	if (reply->initiator_node_id != connection->peer_node_id) {
@@ -7587,8 +7586,6 @@ static int process_twopc(struct drbd_connection *connection,
 		    mask.conn == conn_MASK && val.conn == C_CONNECTED)
 			conn_connect2(connection);
 	}
-
-	return 0;
 }
 
 void drbd_try_to_get_resynced(struct drbd_device *device)
