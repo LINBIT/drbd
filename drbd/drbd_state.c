@@ -4604,17 +4604,20 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		else
 			rv = t == 0 ? SS_TIMEOUT : SS_INTERRUPTED;
 
+		/* while waiting for the replies, reach_immediately might have changed. */
+		reach_immediately = directly_connected_nodes(resource, NOW);
+		if (target_connection && target_connection->cstate[NOW] == C_CONNECTING)
+			reach_immediately |= NODE_MASK(context->target_node_id);
+		request.nodes_to_reach = cpu_to_be64(
+			~(reach_immediately | NODE_MASK(resource->res_opts.node_id)));
+
 		if (rv == SS_CW_SUCCESS) {
-			u64 directly_reachable =
-				directly_connected_nodes(resource, NOW) |
+			u64 directly_reachable = reach_immediately |
 				NODE_MASK(resource->res_opts.node_id);
 
-			if (context->mask.conn == conn_MASK) {
-				if (context->val.conn == C_CONNECTED)
-					directly_reachable |= NODE_MASK(context->target_node_id);
-				if (context->val.conn == C_DISCONNECTING)
-					directly_reachable &= ~NODE_MASK(context->target_node_id);
-			}
+			if (context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING)
+				directly_reachable &= ~NODE_MASK(context->target_node_id);
+
 			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
 			    (context->mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
 				reply->primary_nodes |=
