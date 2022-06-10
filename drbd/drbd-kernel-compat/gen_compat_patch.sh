@@ -125,10 +125,11 @@ else
     echo "  SPAAS    $chksum"
 
     # check if SPAAS is even reachable
-    if ! curl -fsS https://drbd.io:2020/api/v1/hello; then
+    SPAAS_URL=${SPAAS_URL:-https://drbd.io:2020}
+    if ! curl -fsS $SPAAS_URL/api/v1/hello; then
         echo "  ERROR: SPAAS is not reachable! Please check if your network"
         echo "  configuration or some firewall prohibits access to "
-        echo "  https://drbd.io:2020."
+        echo "  $SPAAS_URL."
         exit 1
     fi
 
@@ -136,7 +137,7 @@ else
     rm -f $compat_patch.tmp.header $compat_patch.tmp
     if ! base64 $incdir/compat.h |
 	curl -T - -X POST -o $compat_patch.tmp -D $compat_patch.tmp.header -f \
-	    https://drbd.io:2020/api/v1/spatch/$REL_VERSION
+	    $SPAAS_URL/api/v1/spatch/$REL_VERSION
     then
 	ex=${PIPESTATUS[*]}
 	(
