@@ -48,19 +48,18 @@ symbol dpf;
 symbol dpf;
 expression flags;
 @@
-return combine_opf(wire_flags_to_bio_op(dpf),
+combine_opf(wire_flags_to_bio_op(dpf),
 -0
 +flags
  )
 - && flags
-;
 
 @ script:python depends on !combine_wire_flags @
 @@
 import sys
-print('ERROR: A rule making an essential change was not executed!')
-print('ERROR: This would not show up as a compiler error, but would still break DRBD.')
-print('ERROR: As a precaution, the build will be aborted here.')
+print('ERROR: A rule making an essential change was not executed!', file=sys.stderr)
+print('ERROR: This would not show up as a compiler error, but would still break DRBD.', file=sys.stderr)
+print('ERROR: As a precaution, the build will be aborted here.', file=sys.stderr)
 sys.exit(1)
 
 @@
