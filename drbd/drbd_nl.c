@@ -4068,8 +4068,7 @@ static bool is_resync_target_in_other_connection(struct drbd_peer_device *peer_d
 	return false;
 }
 
-static int adm_new_connection(struct drbd_connection **ret_conn,
-		struct drbd_config_context *adm_ctx, struct genl_info *info)
+static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_info *info)
 {
 	struct connection_info connection_info;
 	enum drbd_notification_type flags;
@@ -4083,13 +4082,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 	int i, err;
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
-
-	*ret_conn = NULL;
-	if (adm_ctx->connection) {
-		drbd_err(adm_ctx->resource, "Connection for peer node id %d already exists\n",
-			 adm_ctx->peer_node_id);
-		return ERR_INVALID_REQUEST;
-	}
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
@@ -4239,7 +4231,6 @@ static int adm_new_connection(struct drbd_connection **ret_conn,
 
 	drbd_debugfs_connection_add(connection); /* after ->net_conf was assigned */
 	drbd_thread_start(&connection->sender);
-	*ret_conn = connection;
 	return NO_ERROR;
 
 unlock_fail_free_connection:
@@ -4440,11 +4431,15 @@ int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
-	if (adm_ctx.connection) {
+	/* ensure uniqueness of peer_node_id by checking with adm_mutex */
+	connection = drbd_connection_by_node_id(adm_ctx.resource, adm_ctx.peer_node_id);
+	if (adm_ctx.connection || connection) {
 		retcode = ERR_INVALID_REQUEST;
-		drbd_msg_put_info(adm_ctx.reply_skb, "peer connection already exists");
+		drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				      "Connection for peer node id %d already exists",
+				      adm_ctx.peer_node_id);
 	} else {
-		retcode = adm_new_connection(&connection, &adm_ctx, info);
+		retcode = adm_new_connection(&adm_ctx, info);
 	}
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
