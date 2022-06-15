@@ -40,7 +40,9 @@ MAKEFLAGS += -rR --no-print-directory
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
 SPAAS ?= true
+SPAAS_URL ?= https://drbd.io:2020
 export SPAAS
+export SPAAS_URL
 
 # since 2.6.16, KERNELRELEASE may be empty,
 # e.g. when building against some (broken?) linux-header package.
