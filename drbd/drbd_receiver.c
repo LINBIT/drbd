@@ -1294,7 +1294,8 @@ static void one_flush_endio(struct bio *bio)
 
 static void submit_one_flush(struct drbd_device *device, struct issue_flush_context *ctx)
 {
-	struct bio *bio = bio_alloc(GFP_NOIO, 0);
+	struct bio *bio = bio_alloc(device->ldev->backing_bdev, 0,
+			REQ_OP_FLUSH | REQ_PREFLUSH, GFP_NOIO);
 	struct one_flush_context *octx = kmalloc(sizeof(*octx), GFP_NOIO);
 
 	if (!octx) {
@@ -1313,14 +1314,12 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 
 	octx->device = device;
 	octx->ctx = ctx;
-	bio_set_dev(bio, device->ldev->backing_bdev);
 	bio->bi_private = octx;
 	bio->bi_end_io = one_flush_endio;
 
 	device->flush_jif = jiffies;
 	set_bit(FLUSH_PENDING, &device->flags);
 	atomic_inc(&ctx->pending);
-	bio->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
 	submit_bio(bio);
 }
 
@@ -1860,13 +1859,12 @@ next_bio:
 		goto fail;
 	}
 
-	bio = bio_alloc(GFP_NOIO, nr_pages);
-	/* > peer_req->i.sector, unless this is the first bio */
-	bio->bi_iter.bi_sector = sector;
-	bio_set_dev(bio, device->ldev->backing_bdev);
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio->bi_opf = peer_req->opf;
+	bio = bio_alloc(device->ldev->backing_bdev, nr_pages, peer_req->opf,
+			GFP_NOIO);
+	/* > peer_req->i.sector, unless this is the first bio */
+	bio->bi_iter.bi_sector = sector;
 	bio->bi_private = peer_req;
 	bio->bi_end_io = drbd_peer_request_endio;
 
