@@ -1744,7 +1744,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	 * Needs to slow down to not congest on the activity log, in case we
 	 * have multiple primaries and the peer sends huge scattered epochs.
 	 * See also how peer_requests are handled
-	 * in receive_Data() { ... prepare_activity_log(); ... }
+	 * in receive_Data() { ... drbd_wait_for_activity_log_extents(); ... }
 	 */
 	if (req->private_bio)
 		atomic_add(interval_to_al_extents(&req->i), &device->wait_for_actlog_ecnt);

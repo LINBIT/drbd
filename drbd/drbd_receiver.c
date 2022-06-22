@@ -1441,12 +1441,11 @@ static void drbd_send_confirm_stable(struct drbd_peer_request *peer_req)
 	if (!p)
 		return;
 
-	/* receive_Data() does a list_add_tail() for every requests, which
-	 * means the oldest is .next, the currently blocked one that triggered
-	 * this code path is .prev, and the youngest that now should be on
-	 * stable storage is .prev->prev */
+	/* peer_req has not been added to connection->peer_requests yet, so
+	 * connection->peer_requests.prev is the youngest request that should
+	 * now be on stable storage. */
 	spin_lock_irq(&connection->peer_reqs_lock);
-	youngest = list_entry(peer_req->recv_order.prev, struct drbd_peer_request, recv_order);
+	youngest = list_entry(connection->peer_requests.prev, struct drbd_peer_request, recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	count = atomic_read(&epoch->epoch_size) - atomic_read(&epoch->confirmed) - 1;
@@ -2960,6 +2959,44 @@ static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 d
 	return opf;
 }
 
+static void drbd_wait_for_activity_log_extents(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection* connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	struct lru_cache *al;
+	int nr_al_extents;
+	int nr, used, ecnt;
+
+	/* Let the activity log know we are about to use it.
+	 * See also drbd_request_prepare() for the "request" entry point. */
+	nr_al_extents = interval_to_al_extents(&peer_req->i);
+	ecnt = atomic_add_return(nr_al_extents, &device->wait_for_actlog_ecnt);
+
+	spin_lock_irq(&device->al_lock);
+	al = device->act_log;
+	nr = al->nr_elements;
+	used = al->used;
+	spin_unlock_irq(&device->al_lock);
+
+	/* note: due to the slight delay between being accounted in "used" after
+	 * being committed to the activity log with drbd_al_begin_io_commit(),
+	 * and being subtracted from "wait_for_actlog_ecnt" in __drbd_submit_peer_request(),
+	 * this can err, but only on the conservative side (overestimating ecnt).
+	 * ecnt also includes any requests which are held due to conflicts,
+	 * conservatively overestimating the number of activity log extents
+	 * required. */
+	if (ecnt > nr - used) {
+		conn_wait_active_ee_empty_or_disconnect(connection);
+		drbd_flush_after_epoch(connection, NULL);
+		conn_wait_done_ee_empty_or_disconnect(connection);
+
+		/* would this peer even understand me? */
+		if (connection->agreed_pro_version >= 114)
+			drbd_send_confirm_stable(peer_req);
+	}
+}
+
 static int drbd_peer_write_conflicts(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -2993,77 +3030,6 @@ static void drbd_queue_peer_request(struct drbd_device *device, struct drbd_peer
 	queue_work(device->submit.wq, &device->submit.worker);
 	/* do_submit() may sleep internally on al_wait, too */
 	wake_up(&device->al_wait);
-}
-
-/* FIXME
- * TODO grab the device->al_lock *once*, and check:
- *     if possible, non-blocking get the reference(s),
- *     if transaction is required, queue them up,
- *        AND account for the queued up worst-case slot consumption
- *     if available slots, corrected by other accounting, suggest
- *        that we might block on this now or later,
- *        *FIRST* drain, then flush, then send P_CONFIRM_STABLE,
- *        then wait for available slots to be sufficient.
- */
-static enum { DRBD_PAL_QUEUE, DRBD_PAL_DISCONNECTED, DRBD_PAL_SUBMIT }
-prepare_activity_log(struct drbd_peer_request *peer_req)
-{
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_device *device = peer_device->device;
-
-	struct lru_cache *al;
-	int nr_al_extents = interval_to_al_extents(&peer_req->i);
-	int nr, used, ecnt;
-	int ret = DRBD_PAL_SUBMIT;
-
-	/* In protocol < 110 (which is compat mode 8.4 <-> 9.0),
-	 * we must not block in the activity log here, that would
-	 * deadlock during an ongoing resync with the drbd_rs_begin_io
-	 * we did when receiving the resync request.
-	 *
-	 * We still need to update the activity log, if ours is the
-	 * only remaining disk, in which case there cannot be a resync,
-	 * and the deadlock paths cannot be taken.
-	 */
-	if (connection->agreed_pro_version < 110 &&
-	    peer_device->disk_state[NOW] >= D_INCONSISTENT)
-		return DRBD_PAL_SUBMIT;
-
-	/* Let the activity log know we are about to use it.
-	 * See also drbd_request_prepare() for the "request" entry point. */
-	ecnt = atomic_add_return(nr_al_extents, &device->wait_for_actlog_ecnt);
-
-	spin_lock_irq(&device->al_lock);
-	al = device->act_log;
-	nr = al->nr_elements;
-	used = al->used;
-	spin_unlock_irq(&device->al_lock);
-
-	/* note: due to the slight delay between being accounted in "used" after
-	 * being committed to the activity log with drbd_al_begin_io_commit(),
-	 * and being subtracted from "wait_for_actlog_ecnt" in __drbd_submit_peer_request(),
-	 * this can err, but only on the conservative side (overestimating ecnt). */
-	if (ecnt > nr - used) {
-		conn_wait_active_ee_empty_or_disconnect(connection);
-		drbd_flush_after_epoch(connection, NULL);
-		conn_wait_done_ee_empty_or_disconnect(connection);
-
-		/* would this peer even understand me? */
-		if (connection->agreed_pro_version >= 114)
-			drbd_send_confirm_stable(peer_req);
-
-		if  (drbd_al_begin_io_for_peer(peer_device, &peer_req->i))
-			ret = DRBD_PAL_DISCONNECTED;
-	} else if (nr_al_extents != 1 || !drbd_al_begin_io_fastpath(device, &peer_req->i)) {
-		ret = DRBD_PAL_QUEUE;
-	}
-	if (ret == DRBD_PAL_SUBMIT)
-		peer_req->flags |= EE_IN_ACTLOG;
-	if (ret != DRBD_PAL_QUEUE)
-		atomic_sub(nr_al_extents, &device->wait_for_actlog_ecnt);
-
-	return ret;
 }
 
 static struct drbd_peer_request *find_released_peer_request(struct drbd_resource *resource, unsigned int node_id, u64 dagtag)
@@ -3128,26 +3094,20 @@ static void submit_peer_request_activity_log(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_connection *connection = peer_device->connection;
 	int err;
+	int nr_al_extents = interval_to_al_extents(&peer_req->i);
 
-	err = prepare_activity_log(peer_req);
-	if (err == DRBD_PAL_DISCONNECTED)
-		goto out;
-
-	atomic_inc(&connection->active_ee_cnt);
-
-	if (err == DRBD_PAL_QUEUE) {
+	if (nr_al_extents != 1 || !drbd_al_begin_io_fastpath(device, &peer_req->i)) {
 		drbd_queue_peer_request(device, peer_req);
 		return;
 	}
 
-	err = drbd_submit_peer_request(peer_req);
-	if (!err)
-		return;
+	peer_req->flags |= EE_IN_ACTLOG;
+	atomic_sub(nr_al_extents, &device->wait_for_actlog_ecnt);
 
-out:
-	drbd_cleanup_after_failed_submit_peer_write(peer_req);
+	err = drbd_submit_peer_request(peer_req);
+	if (err)
+		drbd_cleanup_after_failed_submit_peer_write(peer_req);
 }
 
 void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
@@ -3394,11 +3354,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	peer_req->dagtag_sector = atomic64_read(&connection->last_dagtag_sector) + (peer_req->i.size >> 9);
 
+	drbd_wait_for_activity_log_extents(peer_req);
+
 	spin_lock_irq(&connection->peer_reqs_lock);
-	/* NOTE: active_ee_cnt is only increased *after* we checked we won't
-	 * need to wait for current activity to drain when checking the
-	 * activity log.
-	 */
+	atomic_inc(&connection->active_ee_cnt);
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
@@ -3452,9 +3411,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 out_del_list:
 	spin_lock_irq(&connection->peer_reqs_lock);
+	atomic_dec(&connection->active_ee_cnt);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 
 out:
 	if (peer_req->flags & EE_SEND_WRITE_ACK)
