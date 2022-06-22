@@ -2550,7 +2550,7 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	 * the requests. Hence looking the request up with a list traversal
 	 * should not be too slow. */
 	list_for_each_entry(p, list, w.list) {
-		if (p->i.sector == sector && test_bit(INTERVAL_SUBMITTED, &p->i.flags)) {
+		if (p->i.sector == sector && test_bit(INTERVAL_SENT, &p->i.flags)) {
 			peer_req = p;
 			break;
 		}
@@ -2564,6 +2564,46 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 				(unsigned long long) sector);
 
 	return peer_req;
+}
+
+static void drbd_cleanup_after_failed_submit_resync_request(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection* connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+
+	drbd_err(device, "submit failed, triggering re-connect\n");
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_del(&peer_req->w.list);
+	list_del(&peer_req->recv_order);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	drbd_remove_peer_req_interval(peer_req);
+	drbd_free_peer_req(peer_req);
+	put_ldev(device);
+
+	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
+}
+
+void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	bool conflict;
+
+	spin_lock_irq(&device->interval_lock);
+	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
+	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
+	conflict = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_WRITE);
+	if (!conflict)
+		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
+	spin_unlock_irq(&device->interval_lock);
+
+	if (!conflict) {
+		int err = drbd_submit_peer_request(peer_req);
+		if (err)
+			drbd_cleanup_after_failed_submit_resync_request(peer_req);
+	}
 }
 
 static int recv_resync_read(struct drbd_peer_device *peer_device,
@@ -2611,9 +2651,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	size = peer_req->i.size;
 	drbd_set_all_out_of_sync(device, sector, size);
 
-	err = drbd_submit_peer_request(peer_req);
-	if (err)
-		goto out;
+	drbd_conflict_submit_resync_request(peer_req);
 	peer_req = NULL; /* since submitted, might be destroyed already */
 
 	for_each_peer_device_ref(peer_device, im, device) {
@@ -2622,16 +2660,6 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 			drbd_send_out_of_sync(peer_device, sector, size);
 	}
 	return 0;
-out:
-	/* don't care for the reason here */
-	drbd_err(device, "submit failed, triggering re-connect\n");
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	list_del(&peer_req->recv_order);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	drbd_free_peer_req(peer_req);
-	return err;
 }
 
 /* caller must hold interval_lock */
@@ -3187,7 +3215,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request_details d;
 	int err, tp;
-	unsigned long conflict_flags = CONFLICT_FLAG_WRITE;
 	bool conflict = false;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -3385,16 +3412,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			goto out_del_list;
 		}
 	}
-	/* In protocol < 110 (compatibility with DRBD 8.4), we must not defer
-	 * to resync. The peer may have received a resync request from us in
-	 * the same "resync extent" as this write. In this case, it will block
-	 * until it has received the corresponding barrier ack, so we must
-	 * submit the write.
-	 */
-	if (connection->agreed_pro_version >= 110)
-		conflict_flags |= CONFLICT_FLAG_DEFER_TO_RESYNC;
-	conflict = connection->agreed_pro_version >= 110 &&
-		drbd_find_conflict(device, &peer_req->i, conflict_flags);
+	conflict = drbd_find_conflict(device, &peer_req->i,
+			CONFLICT_FLAG_WRITE | CONFLICT_FLAG_DEFER_TO_RESYNC);
 	drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
@@ -4065,6 +4084,8 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 	err = receive_digest(peer_req, pi->size);
 	if (err)
 		goto fail;
+
+	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 
 	drbd_alloc_page_chain(&peer_device->connection->transport,
 			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
@@ -8587,20 +8608,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
 		atomic_add(pi->size >> 9, &device->rs_sect_ev);
-		err = drbd_submit_peer_request(peer_req);
-
-		if (err) {
-			drbd_err(device, "discard submit failed, triggering re-connect\n");
-			spin_lock_irq(&connection->peer_reqs_lock);
-			list_del(&peer_req->w.list);
-			list_del(&peer_req->recv_order);
-			spin_unlock_irq(&connection->peer_reqs_lock);
-
-			drbd_remove_peer_req_interval(peer_req);
-			drbd_free_peer_req(peer_req);
-			peer_req = NULL;
-			put_ldev(device);
-		}
+		drbd_conflict_submit_resync_request(peer_req);
 
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
 	} else {
@@ -9700,6 +9708,8 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 		return -EIO;
 
 	dec_rs_pending(peer_device);
+
+	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);

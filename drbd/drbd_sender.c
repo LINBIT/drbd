@@ -455,7 +455,7 @@ out:
 	change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 }
 
-void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
+void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -463,11 +463,12 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
-	conflict = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_WRITE);
+	conflict = drbd_find_conflict(device, &peer_req->i,
+			CONFLICT_FLAG_WRITE | CONFLICT_FLAG_IGNORE_SAME_PEER);
 	if (drbd_interval_empty(&peer_req->i))
 		drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
-		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
+		set_bit(INTERVAL_SENT, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
 	if (!conflict)
@@ -562,7 +563,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	list_add_tail(&peer_req->w.list, &connection->sync_ee);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	drbd_conflict_submit_resync_request(peer_req);
+	drbd_conflict_send_resync_request(peer_req);
 	return 0;
 
 out:
@@ -656,7 +657,7 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 	list_add_tail(&peer_req->recv_order, &peer_device->resync_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	drbd_conflict_submit_resync_request(peer_req);
+	drbd_conflict_send_resync_request(peer_req);
 	return 0;
 }
 
@@ -1039,7 +1040,7 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
  *                   |         +---------------- w_e_send_csum
  *           sync_ee |         |
  *                   |         v                             conflict
- *                   |   drbd_conflict_submit_resync_request -----+
+ *                   |   drbd_conflict_send_resync_request -------+
  *                   |         |                ^                 |
  *                   |         |                |                ...
  *                   |         |                |                 |
@@ -1055,7 +1056,13 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
  *                   |         v
  *                   +-- recv_resync_read
  *           sync_ee |         |
- *                   |         v
+ *                   |         v                             conflict
+ *                   |   drbd_conflict_submit_resync_request -----+
+ *                   |         |                ^                 |
+ *                   |         |                |                ...
+ *                   |         |                |                 |
+ *                   |         |                |                 v
+ *                   |         v                +---- drbd_do_submit_conflict
  *                   |   drbd_submit_peer_request
  *                   |         |
  *                   |        ...
@@ -1279,7 +1286,7 @@ out:
 	change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 }
 
-static void drbd_conflict_submit_ov_request(struct drbd_peer_request *peer_req)
+static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -1288,6 +1295,9 @@ static void drbd_conflict_submit_ov_request(struct drbd_peer_request *peer_req)
 	if (drbd_find_conflict(device, &peer_req->i, 0))
 		set_bit(INTERVAL_CONFLICT, &peer_req->i.flags);
 	drbd_insert_interval(&device->requests, &peer_req->i);
+	set_bit(INTERVAL_SENT, &peer_req->i.flags);
+	/* Mark as submitted now, since OV requests do not have a second
+	 * conflict resolution stage when the reply is received. */
 	set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
@@ -1401,7 +1411,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		list_add_tail(&peer_req->w.list, &connection->resync_request_ee);
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
-		drbd_conflict_submit_ov_request(peer_req);
+		drbd_conflict_send_ov_request(peer_req);
 
 		sector += BM_SECT_PER_BIT;
 	}
@@ -1965,6 +1975,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 * But needed to be properly balanced with
 		 * the atomic_sub() in got_BlockAck. */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
+		set_bit(INTERVAL_SENT, &peer_req->i.flags);
 		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 			err = drbd_send_rs_deallocated(peer_device, peer_req);
 		} else {
@@ -2124,6 +2135,8 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	dagtag_result = find_current_dagtag(peer_device->device->resource);
 	if (dagtag_result.err)
 		goto out;
+
+	set_bit(INTERVAL_SENT, &peer_req->i.flags);
 
 	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */

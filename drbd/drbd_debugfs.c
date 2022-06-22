@@ -1111,6 +1111,8 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 		char sep = ' ';
 
 		seq_printf(m, "%llus+%u %s", (unsigned long long) i->sector, i->size, drbd_interval_type_str(i));
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_SENT, &i->flags), &sep, "sent");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_RECEIVED, &i->flags), &sep, "received");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags), &sep, "submit-conflict-queued");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &i->flags), &sep, "submitted");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_BACKING_COMPLETED, &i->flags), &sep, "backing-completed");

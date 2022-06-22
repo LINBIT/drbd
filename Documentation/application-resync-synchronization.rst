@@ -56,8 +56,12 @@ scheme:
 * Secondary: The application IO interval is locked while the data is being
   written to the backing disk.
 * Sync target: The ``P_RS_DATA_REQUEST`` interval is locked. The lock is taken
-  then the dagtag is recorded and the request is sent. The lock is released
-  when the reply has been received and the data written to the backing disk.
+  in two phases. Before sending the request, the interval is locked for
+  conflicts with other peers. Then the dagtag is recorded and the request is
+  sent. When the reply is received, the interval is additionally locked for
+  conflicts with ongoing IO, in particular writes from the same peer. The lock
+  is released when the reply has been received and the data written to the
+  backing disk.
 * Sync source: The ``P_RS_DATA_REQUEST`` interval is locked. The lock is taken
   when the dagtag for the request is reached. It is released when the
   ``P_RS_WRITE_ACK`` is received. This lock is a read lock; it is exclusive
@@ -94,12 +98,12 @@ Correctness of data
 
 We only consider the synchronization between application and resync IO here.
 
-The locking scheme prevents any writes to the resync request interval from when
-the request is initiated until the received data is written. After the lock is
-taken on the target, the dagtag is recorded and the request is sent to the
-source. The source then waits until it has reached this dagtag before reading.
-This ensures that the resync data is at least as new as the data on the target
-when the request was made.
+The locking scheme prevents any writes from other peers to the resync request
+interval from when the request is initiated until the received data is written.
+After the lock is taken on the target, the dagtag is recorded and the request
+is sent to the source. The source then waits until it has reached this dagtag
+before reading. This ensures that the resync data is at least as new as the
+data on the target when the request was made.
 
 Conflicting application writes that reach the target while the resync request
 is in progress are held until the resync data has been written. Hence they
@@ -107,6 +111,12 @@ overwrite the resync data. In the case where the source had already received
 this application write when it performed the resync read, the application write
 will overwrite the resync write on the target with identical data. This is
 harmless.
+
+Resync requests sent from the target are not exclusive with application writes
+from the same peer. However, since the resync and application data originate
+from the same node, they are transmitted in the correct order in the data
+stream. Application IO defers to received resync IO, ensuring that a resync
+write received before an application write is also submitted first.
 
 Correctness of bitmap bits
 --------------------------

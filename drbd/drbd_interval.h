@@ -20,6 +20,12 @@ enum drbd_interval_type {
 };
 
 enum drbd_interval_flags {
+	/* Whether this resync write has been sent yet. */
+	INTERVAL_SENT,
+
+	/* Whether this resync write has been received yet. */
+	INTERVAL_RECEIVED,
+
 	/* Whether this has been queued after conflict. */
 	INTERVAL_SUBMIT_CONFLICT_QUEUED,
 

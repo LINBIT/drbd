@@ -1985,7 +1985,7 @@ extern void drbd_rs_controller_reset(struct drbd_peer_device *);
 extern void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *, int);
 extern void drbd_check_peers(struct drbd_resource *resource);
 extern void drbd_check_peers_new_current_uuid(struct drbd_device *);
-extern void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req);
+extern void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req);
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
 extern void repost_up_to_date_fn(struct timer_list *t);
@@ -2094,6 +2094,7 @@ extern void drbd_send_peer_ack_wf(struct work_struct *ws);
 extern bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *);
 extern void drbd_verify_skipped_block(struct drbd_peer_device *peer_device,
 		const sector_t sector, const unsigned int size);
+extern void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req);
 extern void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req);
 extern void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req);
 extern int drbd_submit_peer_request(struct drbd_peer_request *);
@@ -2654,10 +2655,57 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 
 #define NODE_MASK(id) ((u64)1 << (id))
 
+/*
+ * drbd_interval_same_peer - determine whether "interval" is for the same peer as "i"
+ *
+ * "i" must be an interval corresponding to a drbd_peer_request.
+ */
+static inline bool drbd_interval_same_peer(struct drbd_interval *interval, struct drbd_interval *i)
+{
+	struct drbd_peer_request *interval_peer_req, *i_peer_req;
+
+	/* Ensure we only call "container_of" if it is actually a peer request. */
+	if (interval->type == INTERVAL_LOCAL_WRITE ||
+			interval->type == INTERVAL_LOCAL_READ ||
+			interval->type == INTERVAL_PEERS_IN_SYNC_LOCK)
+		return false;
+
+	interval_peer_req = container_of(interval, struct drbd_peer_request, i);
+	i_peer_req = container_of(i, struct drbd_peer_request, i);
+	return interval_peer_req->peer_device == i_peer_req->peer_device;
+}
+
+/*
+ * drbd_resync_should_defer - determine whether "interval" should defer to "i"
+ */
+static inline bool drbd_should_defer_to_resync(struct drbd_interval *interval, struct drbd_interval *i)
+{
+	if (!drbd_interval_is_resync(i))
+		return false;
+
+	/* Always defer to resync requests once the reply has been received.
+	 * These just need to wait for conflicting local I/O to complete. This
+	 * is necessary to ensure that resync replies received before
+	 * application writes are submitted first, so that the resync writes do
+	 * not overwrite newer data. */
+	if (test_bit(INTERVAL_RECEIVED, &i->flags))
+		return true;
+
+	/* If we are still waiting for a reply from the peer, only defer to the
+	 * request if it is towards a different peer. The exclusivity between
+	 * resync requests and application writes from another peer is
+	 * necessary to avoid overwriting newer data with older in the resync.
+	 * When the data in both cases is coming from the same peer, this is
+	 * not necessary. The peer ensures that the data stream is correctly
+	 * ordered. */
+	return !drbd_interval_same_peer(interval, i);
+}
+
 #define CONFLICT_FLAG_WRITE (1 << 0)
 #define CONFLICT_FLAG_DEFER_TO_RESYNC (1 << 1)
-#define CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED (1 << 2)
-#define CONFLICT_FLAG_APPLICATION_ONLY (1 << 3)
+#define CONFLICT_FLAG_IGNORE_SAME_PEER (1 << 2)
+#define CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED (1 << 3)
+#define CONFLICT_FLAG_APPLICATION_ONLY (1 << 4)
 
 /*
  * drbd_find_conflict - find conflicting interval, if any
@@ -2670,6 +2718,7 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 	int size = interval->size;
 	bool write = flags & CONFLICT_FLAG_WRITE;
 	bool defer_to_resync = flags & CONFLICT_FLAG_DEFER_TO_RESYNC;
+	bool ignore_same_peer = flags & CONFLICT_FLAG_IGNORE_SAME_PEER;
 	bool exclusive_until_completed = flags & CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED;
 	bool application_only = flags & CONFLICT_FLAG_APPLICATION_ONLY;
 
@@ -2693,7 +2742,15 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 		/* Ignore, if not yet submitted, unless we should defer to a
 		 * resync request. */
 		if (!test_bit(INTERVAL_SUBMITTED, &i->flags) &&
-				!(defer_to_resync && drbd_interval_is_resync(i)))
+				!(defer_to_resync && drbd_should_defer_to_resync(interval, i)))
+			continue;
+
+		/* Ignore peer writes from the peer that this request relates
+		 * to, if requested. This is only used for determining whether
+		 * to send a request. It must not be used for determining
+		 * whether to submit a request, because that would allow
+		 * concurrent writes to the backing disk. */
+		if (ignore_same_peer && i->type == INTERVAL_PEER_WRITE && drbd_interval_same_peer(interval, i))
 			continue;
 
 		if (unlikely(application_only)) {
