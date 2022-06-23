@@ -8572,6 +8572,35 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
+static void submit_rs_discard(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+
+	if (get_ldev(device)) {
+		inc_unacked(peer_device);
+
+		peer_req->block_id = ID_SYNCER;
+		peer_req->w.cb = e_end_resync_block;
+		peer_req->opf = REQ_OP_DISCARD;
+		peer_req->flags |= EE_TRIM;
+
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_move_tail(&peer_req->w.list, &connection->sync_ee);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+
+		drbd_conflict_submit_resync_request(peer_req);
+
+		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
+	} else {
+		if (drbd_ratelimit())
+			drbd_err(device, "Cannot discard on local disk.\n");
+
+		drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
+	}
+}
+
 static int receive_rs_deallocated(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -8595,29 +8624,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 
 	dec_rs_pending(peer_device);
 	atomic_add(size >> 9, &device->rs_sect_ev);
-
-	if (get_ldev(device)) {
-		inc_unacked(peer_device);
-
-		peer_req->block_id = ID_SYNCER;
-		peer_req->w.cb = e_end_resync_block;
-		peer_req->opf = REQ_OP_DISCARD;
-		peer_req->flags |= EE_TRIM;
-
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_move_tail(&peer_req->w.list, &connection->sync_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-
-		drbd_conflict_submit_resync_request(peer_req);
-
-		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
-	} else {
-		if (drbd_ratelimit())
-			drbd_err(device, "Cannot discard on local disk.\n");
-
-		drbd_send_ack_ex(peer_device, P_NEG_ACK, sector, size, ID_SYNCER);
-	}
-
+	submit_rs_discard(peer_req);
 	rs_sectors_came_in(peer_device, size);
 
 	return err;
