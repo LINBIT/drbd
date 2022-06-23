@@ -274,6 +274,8 @@ static int decode_header(struct drbd_connection *, const void *, struct packet_i
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
+static void check_rs_discards(struct drbd_peer_request *peer_req);
+static void submit_rs_discard(struct drbd_peer_request *peer_req);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -2675,6 +2677,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	peer_req->w.cb = e_end_resync_block;
 	peer_req->opf = REQ_OP_WRITE;
 	peer_req->submit_jif = jiffies;
+	check_rs_discards(peer_req);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_move_tail(&peer_req->w.list, &connection->sync_ee);
@@ -8610,6 +8613,130 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
+static bool rs_discard_ready(struct drbd_peer_request *peer_req)
+{
+	static const int EE_RS_TRIM_LIMITED = EE_RS_TRIM_LIMITED_BEHIND | EE_RS_TRIM_LIMITED_FRONT;
+
+	return (peer_req->flags & EE_RS_TRIM_LIMITED) == EE_RS_TRIM_LIMITED ||
+		peer_req->i.size >= 1 << 27; /* 128 MiByte */
+}
+
+static bool interval_is_adjacent(const struct drbd_interval *i1, const struct drbd_interval *i2)
+{
+	return i1->sector + (i1->size >> SECTOR_SHIFT) == i2->sector;
+}
+
+void drbd_submit_ready_rs_discard(struct drbd_peer_request *peer_req)
+{
+	if (peer_req && !(peer_req->flags & EE_RS_TRIM_SUBMITTED) && rs_discard_ready(peer_req))
+		submit_rs_discard(peer_req);
+}
+
+static void check_rs_discards(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_peer_request *next = NULL, *prev = NULL;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
+		next = list_next_entry(peer_req, recv_order);
+		if (next->flags & EE_TRIM)
+			next->flags |= EE_RS_TRIM_LIMITED_FRONT;
+	}
+
+	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
+		prev = list_prev_entry(peer_req, recv_order);
+		if (prev->flags & EE_TRIM)
+			prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	drbd_submit_ready_rs_discard(next);
+	drbd_submit_ready_rs_discard(prev);
+}
+
+static struct drbd_peer_request *
+_try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remove_list)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+
+	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
+		struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
+		if (next->flags & EE_RS_TRIM_SUBMITTED || !interval_is_adjacent(&peer_req->i, &next->i)) {
+			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+		} else if (next->flags & EE_TRIM) {
+			peer_req->i.size += next->i.size;
+
+			if (next->flags & EE_RS_TRIM_LIMITED_BEHIND)
+				peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+
+			list_del(&next->w.list);
+			list_del(&next->recv_order);
+			list_add(&next->recv_order, remove_list);
+
+			if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
+				struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
+				if (!interval_is_adjacent(&peer_req->i, &next->i))
+					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+			}
+		}
+	}
+
+	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
+		struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
+		if (prev->flags & EE_RS_TRIM_SUBMITTED || !interval_is_adjacent(&prev->i, &peer_req->i)) {
+			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+		} else if (prev->flags & EE_TRIM) {
+			prev->i.size += peer_req->i.size;
+
+			if (peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND)
+				prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+
+			list_del(&peer_req->w.list);
+			list_del(&peer_req->recv_order);
+			list_add(&peer_req->recv_order, remove_list);
+			peer_req = prev;
+
+			if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
+				struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
+				if (!interval_is_adjacent(&prev->i, &peer_req->i))
+					peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+			} else {
+				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+			}
+		}
+	} else {
+		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+	}
+
+	return rs_discard_ready(peer_req) ? peer_req : NULL;
+}
+
+static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_request *submit_now, *pr_tmp;
+	LIST_HEAD(remove_list);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	submit_now = _try_merge_rs_discard(peer_req, &remove_list);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	spin_lock_irq(&device->interval_lock);
+	list_for_each_entry_safe(peer_req, pr_tmp, &remove_list, recv_order) {
+		drbd_remove_interval(&device->requests, &peer_req->i);
+		drbd_clear_interval(&peer_req->i);
+		drbd_free_peer_req(peer_req);
+	}
+	spin_unlock_irq(&device->interval_lock);
+
+	if (submit_now)
+		submit_rs_discard(submit_now);
+}
+
 static void submit_rs_discard(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -8622,7 +8749,7 @@ static void submit_rs_discard(struct drbd_peer_request *peer_req)
 		peer_req->block_id = ID_SYNCER;
 		peer_req->w.cb = e_end_resync_block;
 		peer_req->opf = REQ_OP_DISCARD;
-		peer_req->flags |= EE_TRIM;
+		peer_req->flags |= EE_RS_TRIM_SUBMITTED;
 
 		spin_lock_irq(&connection->peer_reqs_lock);
 		list_move_tail(&peer_req->w.list, &connection->sync_ee);
@@ -8662,7 +8789,8 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 
 	dec_rs_pending(peer_device);
 	atomic_add(size >> 9, &device->rs_sect_ev);
-	submit_rs_discard(peer_req);
+	peer_req->flags |= EE_TRIM;
+	try_merge_rs_discard(peer_req);
 	rs_sectors_came_in(peer_device, size);
 
 	return err;

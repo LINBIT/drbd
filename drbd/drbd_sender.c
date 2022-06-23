@@ -1119,6 +1119,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
 	int max_bio_bits, number = 0, rollback_i, size = 0, i = 0, optimal_bits;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
 	bool last_request_sent = false;
@@ -1158,7 +1159,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		goto skip_request;
 	}
 
-	if (peer_device->connection->agreed_features & DRBD_FF_THIN_RESYNC) {
+	if (connection->agreed_features & DRBD_FF_THIN_RESYNC) {
 		rcu_read_lock();
 		discard_granularity = rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
 		rcu_read_unlock();
@@ -1279,11 +1280,25 @@ skip_request:
 	 * resync data block, and the last bit is cleared.
 	 * until then resync "work" is "inactive" ...
 	 */
-	if (!last_request_sent) {
+	if (last_request_sent) {
+		if (!list_empty(&peer_device->resync_requests)) {
+			struct drbd_peer_request *peer_req, *to_submit = NULL;
+			spin_lock_irq(&connection->peer_reqs_lock);
+			list_for_each_entry_reverse(peer_req, &peer_device->resync_requests, recv_order) {
+				if (peer_req->flags & EE_RS_THIN_REQ) {
+					to_submit = peer_req;
+					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+					break;
+				}
+			}
+			spin_unlock_irq(&connection->peer_reqs_lock);
+			drbd_submit_ready_rs_discard(to_submit);
+		}
+	} else {
 		/* and in case that raced with the receiver, reschedule ourselves right now */
 		if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight && request_ok) {
 			drbd_queue_work_if_unqueued(
-					&peer_device->connection->sender_work,
+					&connection->sender_work,
 					&peer_device->resync_work);
 		} else {
 			mod_timer(&peer_device->resync_timer, jiffies + resync_delay(request_ok, number, i));

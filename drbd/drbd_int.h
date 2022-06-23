@@ -512,6 +512,15 @@ enum {
 
 	/* Hold reference in activity log */
 	__EE_IN_ACTLOG,
+
+	/* On resync target: This is a DISCARD and we can not merge it with requests behind */
+	__EE_RS_TRIM_LIMITED_BEHIND,
+
+	/* On resync target: This is a DISCARD and we can not merge it with requests before */
+	__EE_RS_TRIM_LIMITED_FRONT,
+
+	/* On resync target: This is a DISCARD was submitted */
+	__EE_RS_TRIM_SUBMITTED,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -525,6 +534,9 @@ enum {
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
+#define EE_RS_TRIM_LIMITED_BEHIND	(1<<__EE_RS_TRIM_LIMITED_BEHIND)
+#define EE_RS_TRIM_LIMITED_FRONT	(1<<__EE_RS_TRIM_LIMITED_FRONT)
+#define EE_RS_TRIM_SUBMITTED	(1<<__EE_RS_TRIM_SUBMITTED)
 
 /* flag bits per device */
 enum device_flag {
@@ -2119,6 +2131,7 @@ extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource
 extern enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach);
 extern void drbd_try_to_get_resynced(struct drbd_device *device);
+extern void drbd_submit_ready_rs_discard(struct drbd_peer_request *peer_req);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
