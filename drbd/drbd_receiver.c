@@ -2566,6 +2566,22 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	return peer_req;
 }
 
+static void find_resync_requests(struct drbd_peer_device *peer_device,
+		struct list_head *matching, sector_t sector, unsigned int size)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	sector_t next_sector = sector + (size >> SECTOR_SHIFT);
+	struct drbd_peer_request *peer_req, *tmp;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry_safe(peer_req, tmp, &connection->resync_ack_ee, w.list) {
+		if (peer_req->i.sector >= sector &&
+		    peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= next_sector)
+			list_move_tail(&peer_req->w.list, matching);
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+}
+
 static void drbd_cleanup_after_failed_submit_resync_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -9772,23 +9788,21 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	if (p->block_id == ID_SYNCER) {
-		struct drbd_peer_request *peer_req;
+		struct drbd_peer_request *peer_req, *t;
+		LIST_HEAD(peer_reqs);
 
-		peer_req = find_resync_request(peer_device, &connection->resync_ack_ee, sector, blksize);
-		if (!peer_req)
+		find_resync_requests(peer_device, &peer_reqs, sector, blksize);
+		if (list_empty(&peer_reqs))
 			return -EIO;
 
 		drbd_set_in_sync(peer_device, sector, blksize);
-		dec_rs_pending(peer_device);
 		atomic_sub(blksize >> 9, &connection->rs_in_flight);
 
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_del(&peer_req->w.list);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-
-		drbd_remove_peer_req_interval(peer_req);
-
-		drbd_free_peer_req(peer_req);
+		list_for_each_entry_safe(peer_req, t, &peer_reqs, w.list) {
+			dec_rs_pending(peer_device);
+			drbd_remove_peer_req_interval(peer_req);
+			drbd_free_peer_req(peer_req);
+		}
 		return 0;
 	}
 	switch (pi->cmd) {
