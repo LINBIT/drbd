@@ -2408,10 +2408,29 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 		struct drbd_peer_device *peer_device;
 
 		for_each_peer_device(peer_device, device) {
+			struct drbd_connection *connection = peer_device->connection;
 			bool did, should;
 
 			did = drbd_should_do_remote(peer_device, NOW);
 			should = drbd_should_do_remote(peer_device, NEW);
+
+			if (!did && should) {
+				/* Since "did" is false, the request with this
+				 * dagtag and prior requests were not be marked
+				 * to be sent to this peer. Hence this will not
+				 * send a dagtag packet before the
+				 * corresponding data packet.
+				 *
+				 * It is possible that this peer does not
+				 * actually have the data corresponding to this
+				 * dagtag. However in that case, the disk state
+				 * of that peer will not be D_UP_TO_DATE, so it
+				 * not be relevant what dagtag we have sent it. */
+				connection->send_dagtag = resource->dagtag_sector;
+				drbd_queue_work_if_unqueued(
+						&connection->sender_work,
+						&connection->send_dagtag_work);
+			}
 
 			if (did != should)
 				start_new_epoch = true;

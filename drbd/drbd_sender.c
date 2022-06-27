@@ -687,6 +687,37 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+int w_send_dagtag(struct drbd_work *w, int cancel)
+{
+	struct drbd_connection *connection =
+		container_of(w, struct drbd_connection, send_dagtag_work);
+	struct drbd_resource *resource = connection->resource;
+	int err;
+	u64 dagtag_sector;
+
+	if (cancel)
+		return 0;
+
+	read_lock_irq(&resource->state_rwlock);
+	dagtag_sector = connection->send_dagtag;
+	/* It is OK to use the value outside the lock, because the work will be
+	 * queued again if it is changed. */
+	read_unlock_irq(&resource->state_rwlock);
+
+	/* Only send if no request with a newer dagtag has been sent. This can
+	 * occur if a write arrives after the state change and is processed
+	 * before this work item. */
+	if (dagtag_newer_eq(connection->send.current_dagtag_sector, dagtag_sector))
+		return 0;
+
+	err = drbd_send_dagtag(connection, dagtag_sector);
+	if (err)
+		return err;
+
+	connection->send.current_dagtag_sector = dagtag_sector;
+	return 0;
+}
+
 int w_send_uuids(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device *peer_device =
@@ -3271,8 +3302,6 @@ static void re_init_if_first_write(struct drbd_connection *connection, unsigned 
 		connection->send.current_epoch_nr = epoch;
 		connection->send.current_epoch_writes = 0;
 		connection->send.last_sent_barrier_jif = jiffies;
-		connection->send.current_dagtag_sector =
-			connection->resource->dagtag_sector - ((BIO_MAX_VECS << PAGE_SHIFT) >> 9) - 1;
 	}
 }
 

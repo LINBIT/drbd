@@ -3516,7 +3516,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->send.seen_any_write_yet = false;
 	connection->send.current_epoch_nr = 0;
 	connection->send.current_epoch_writes = 0;
-	connection->send.current_dagtag_sector = 0;
+	connection->send.current_dagtag_sector =
+		resource->dagtag_sector - ((BIO_MAX_VECS << PAGE_SHIFT) >> SECTOR_SHIFT) - 1;
 
 	connection->cstate[NOW] = C_STANDALONE;
 	connection->peer_role[NOW] = R_UNKNOWN;
@@ -3553,6 +3554,9 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_WORK(&connection->send_acks_work, drbd_send_acks_wf);
 	INIT_WORK(&connection->send_ping_ack_work, drbd_send_ping_ack_wf);
 	INIT_WORK(&connection->send_ping_work, drbd_send_ping_wf);
+
+	INIT_LIST_HEAD(&connection->send_dagtag_work.list);
+	connection->send_dagtag_work.cb = w_send_dagtag;
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);

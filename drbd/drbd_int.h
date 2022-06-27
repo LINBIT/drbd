@@ -1080,6 +1080,9 @@ struct drbd_connection {
 	/* sender side */
 	struct drbd_work_queue sender_work;
 
+	struct drbd_work send_dagtag_work;
+	u64 send_dagtag;
+
 	struct sender_todo {
 		struct list_head work_list;
 
@@ -2023,6 +2026,7 @@ extern int w_send_read_req(struct drbd_work *, int);
 extern int w_e_reissue(struct drbd_work *, int);
 extern int w_restart_disk_io(struct drbd_work *, int);
 extern int w_start_resync(struct drbd_work *, int);
+extern int w_send_dagtag(struct drbd_work *w, int cancel);
 extern int w_send_uuids(struct drbd_work *, int);
 
 extern void resync_timer_fn(struct timer_list *t);
