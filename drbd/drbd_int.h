@@ -2222,14 +2222,14 @@ extern void peer_device_state_change_to_info(struct peer_device_info *,
  * inline helper functions
  *************************/
 
-static inline int drbd_peer_req_has_active_page(struct drbd_peer_request *peer_req)
+static inline bool drbd_peer_req_has_active_page(struct drbd_peer_request *peer_req)
 {
 	struct page *page = peer_req->page_chain.head;
 	page_chain_for_each(page) {
 		if (page_count(page) > 1)
-			return 1;
+			return true;
 	}
-	return 0;
+	return false;
 }
 
 /*

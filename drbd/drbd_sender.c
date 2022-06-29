@@ -2095,6 +2095,9 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	dec_unacked(peer_device);
 
 	if (expect_ack) {
+		if (!drbd_peer_req_has_active_page(peer_req))
+			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, false);
+
 		spin_lock_irq(&connection->peer_reqs_lock);
 		list_add_tail(&peer_req->w.list, &connection->resync_ack_ee);
 		spin_unlock_irq(&connection->peer_reqs_lock);

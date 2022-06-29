@@ -464,17 +464,39 @@ static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
 	}
 }
 
+static void reclaim_from_resync_ack_ee(struct drbd_connection *connection,
+				       struct page **page_chain)
+{
+	struct drbd_peer_request *peer_req;
+
+	list_for_each_entry(peer_req, &connection->resync_ack_ee, w.list) {
+		if (drbd_peer_req_has_active_page(peer_req))
+			break;
+		if (peer_req->page_chain.head) {
+			*page_chain = peer_req->page_chain.head;
+			peer_req->page_chain.head = NULL;
+			peer_req->page_chain.nr_pages = 0;
+			return;
+		}
+	}
+}
+
 static void drbd_reclaim_net_peer_reqs(struct drbd_connection *connection)
 {
 	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
+	struct page *page_chain = NULL;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	reclaim_finished_net_peer_reqs(connection, &reclaimed);
+	reclaim_from_resync_ack_ee(connection, &page_chain);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
 		drbd_free_net_peer_req(peer_req);
+
+	if (page_chain)
+		drbd_free_pages(&connection->transport, page_chain, false);
 }
 
 /**
