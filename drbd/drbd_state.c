@@ -3611,13 +3611,17 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			 * at the time this work was queued. */
 			if (repl_state[OLD] != L_WF_BITMAP_S && repl_state[NEW] == L_WF_BITMAP_S &&
 			    peer_device->repl_state[NOW] == L_WF_BITMAP_S) {
-				/* Now that the connection is L_WF_BITMAP_S, new requests will
-				 * be sent to the peer as P_OUT_OF_SYNC packets. However, active
-				 * requests may not have been communicated to the peer and may
-				 * not yet be marked in the local bitmap. Hence wait for all
-				 * active requests to complete before reading and sending the
-				 * bitmap. */
-				drbd_flush_requests(device);
+				/* Now that the connection is L_WF_BITMAP_S,
+				 * new requests will be sent to the peer as
+				 * P_OUT_OF_SYNC packets. However, active
+				 * requests may not have been communicated to
+				 * the peer and may not yet be marked in the
+				 * local bitmap. Mark these requests in the
+				 * bitmap before reading and sending that
+				 * bitmap. This may set bits unnecessarily, but
+				 * it does no harm to resync a small amount of
+				 * additional data. */
+				drbd_set_pending_out_of_sync(peer_device);
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,

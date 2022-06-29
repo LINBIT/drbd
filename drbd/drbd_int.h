@@ -891,10 +891,6 @@ struct drbd_resource {
 					 * &drbd_request */
 	unsigned long flags;
 
-	atomic64_t last_destroyed_dagtag; /* Dagtag of the last request to be removed from
-					   * transfer_log. */
-	wait_queue_head_t request_destroy_wait;
-
 	/* Protects updates to the transfer log and related counters. */
 	spinlock_t tl_update_lock;
 	struct list_head transfer_log;	/* all requests not yet fully processed */

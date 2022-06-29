@@ -330,10 +330,6 @@ void drbd_req_destroy(struct kref *kref)
 		}
 	}
 
-	/* Notify any waiting threads that this request has been destroyed. */
-	atomic64_set(&resource->last_destroyed_dagtag, req->dagtag_sector);
-	wake_up(&resource->request_destroy_wait);
-
 	if (s & RQ_WRITE && req->i.size) {
 		struct drbd_resource *resource = device->resource;
 		struct drbd_request *peer_ack_req;
@@ -692,28 +688,40 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 	kref_put(&req->kref, drbd_req_destroy);
 }
 
-void drbd_flush_requests(struct drbd_device *device)
+void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
 {
+	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
-	struct drbd_request *req, *last_req = NULL;
-	u64 required_dagtag;
-	u64 last_destroyed_dagtag = atomic64_read(&resource->last_destroyed_dagtag);
+	const int node_id = peer_device->node_id;
+	struct drbd_request *req;
 
 	rcu_read_lock();
-	/* Find the most recent request. */
-	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests)
-		last_req = req;
-	required_dagtag = last_req ? last_req->dagtag_sector : 0;
-	rcu_read_unlock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		unsigned int local_rq_state, net_rq_state;
 
-	if (last_destroyed_dagtag < required_dagtag) {
-		drbd_info(device, "Flushing requests from dagtag %llu to dagtag %llu\n",
-				(unsigned long long) last_destroyed_dagtag,
-				(unsigned long long) required_dagtag);
+		/* This is similar to the bitmap modification performed in
+		 * drbd_req_destroy(), but simplified for this special case. */
+
+		spin_lock_irq(&req->rq_lock);
+		local_rq_state = req->local_rq_state;
+		net_rq_state = req->net_rq_state[node_id];
+		spin_unlock_irq(&req->rq_lock);
+
+		if (!(local_rq_state & RQ_WRITE))
+			continue;
+
+		if ((local_rq_state & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) == RQ_POSTPONED)
+			continue;
+
+		if (!req->i.size)
+			continue;
+
+		if (net_rq_state & RQ_NET_OK)
+			continue;
+
+		drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size);
 	}
-
-	wait_event(resource->request_destroy_wait,
-			atomic64_read(&resource->last_destroyed_dagtag) >= required_dagtag);
+	rcu_read_unlock();
 }
 
 static void advance_conn_req_next(struct drbd_connection *connection, struct drbd_request *req)
