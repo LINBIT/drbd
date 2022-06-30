@@ -2132,6 +2132,7 @@ extern enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach);
 extern void drbd_try_to_get_resynced(struct drbd_device *device);
 extern void drbd_submit_ready_rs_discard(struct drbd_peer_request *peer_req);
+extern void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {

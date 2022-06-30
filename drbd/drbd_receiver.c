@@ -8796,6 +8796,23 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	return err;
 }
 
+void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_peer_request *peer_req, *tmp;
+	LIST_HEAD(work_list);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry_safe(peer_req, tmp, &peer_device->resync_requests, recv_order) {
+		if (peer_req->flags & EE_TRIM && !(peer_req->flags & EE_RS_TRIM_SUBMITTED))
+			list_move_tail(&peer_req->w.list, &work_list);
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(peer_req, tmp, &work_list, w.list)
+		submit_rs_discard(peer_req);
+}
+
 static int receive_disconnect(struct drbd_connection *connection, struct packet_info *pi)
 {
 	change_cstate(connection, C_DISCONNECTING, CS_HARD);
