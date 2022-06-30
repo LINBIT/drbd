@@ -459,6 +459,9 @@ int main(int argc, char **argv)
 	patch(1, "genhd_fl_no_part", true, false,
 	      COMPAT_HAVE_GENHD_FL_NO_PART, "present");
 
+	patch(1, "list_is_first", true, false,
+	      COMPAT_HAVE_NLA_STRSCPY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
