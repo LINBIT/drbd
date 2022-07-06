@@ -2,6 +2,25 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0-rc.6 (api:genl2/proto:110-121/transport:18)
+--------
+ * fixes to the new way of coordinating resync and application IO
+ * merge discard requests during resync on a resync target node;
+   This can speed up the resync progress by multiple orders of magnitude
+ * Merged changes from the 9.1.8 release
+  - restore protocol compatibility with drbd-8.4
+  - detect peers that died silently when starting a two-phase-commit
+  - correctly abort two-phase-commits when a connection breaks between
+    phases 1 and 2
+  - allow re-connect to a node that was forced into secondary role and
+    where an opener is still present from the last time it was primary
+  - fix a race condition that allowed to configure two peers with the
+    same node id
+  - ensure that an open() call fails within the auto-promote timeout
+    if it can not succeed
+  - build fixes for RHEL9
+  - following upstream changes to DRBD up to Linux 5.17 and updated compat
+
 9.2.0-rc.4 (api:genl2/proto:110-121/transport:18)
 --------
  * Merged fixes from the 9.1.6 release
