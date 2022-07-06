@@ -996,7 +996,7 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, s
 	int vnr, try = 0;
 	const int max_tries = 4;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
-	bool retried_ss_two_primaries = false;
+	bool retried_ss_two_primaries = false, retried_ss_primary_nop = false;
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 	bool fenced_peers = false;
@@ -1108,29 +1108,29 @@ retry:
 
 		if (rv == SS_NOTHING_TO_DO)
 			goto out;
-		if (rv == SS_PRIMARY_NOP && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
+		if (rv == SS_PRIMARY_NOP && !retried_ss_primary_nop) {
 			struct drbd_connection *connection;
 			u64 im;
 
+			retried_ss_primary_nop = true;
+
 			up(&resource->state_sem); /* Allow connect while fencing */
 			for_each_connection_ref(connection, im, resource) {
-				if (!conn_try_outdate_peer(connection) && force) {
+				bool outdated_peer = conn_try_outdate_peer(connection);
+				if (!outdated_peer && force) {
 					drbd_warn(connection, "Forced into split brain situation!\n");
 					flags |= CS_FP_LOCAL_UP_TO_DATE;
 				}
 			}
 			down(&resource->state_sem);
-			if (flags & CS_FP_LOCAL_UP_TO_DATE)
-				continue;
+			continue;
 		}
 
-		if (rv == SS_TWO_PRIMARIES) {
+		if (rv == SS_TWO_PRIMARIES && !retried_ss_two_primaries) {
 			struct drbd_connection *connection;
 			struct net_conf *nc;
 			int timeout = 0;
 
-			if (try >= max_tries || retried_ss_two_primaries)
-				break;
 			retried_ss_two_primaries = true;
 
 			/*
@@ -1154,10 +1154,6 @@ retry:
 			continue;
 		}
 
-		if (rv < SS_SUCCESS && !(flags & CS_VERBOSE)) {
-			flags |= CS_VERBOSE;
-			continue;
-		}
 		break;
 	}
 
@@ -1222,6 +1218,7 @@ retry:
 out:
 	up(&resource->state_sem);
 	if (err_str) {
+		drbd_err(resource, "%s", err_str);
 		if (reply_skb)
 			drbd_msg_put_info(reply_skb, err_str);
 		kfree(err_str);
