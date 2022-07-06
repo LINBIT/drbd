@@ -20,7 +20,7 @@ extern const char *drbd_buildtag(void);
 
 /* End of external module for 2.6.33 stuff */
 
-#define REL_VERSION "9.1.7"
+#define REL_VERSION "9.1.8-rc.1"
 #define PRO_VERSION_MIN 86
 #define PRO_VERSION_MAX 121
 
