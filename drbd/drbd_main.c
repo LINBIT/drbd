@@ -2475,37 +2475,47 @@ static bool connection_state_may_improve_soon(struct drbd_resource *resource)
 static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
-	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
+	int rv;
+
 	do {
+		unsigned long start = jiffies;
+		long t;
+
 		rv = drbd_set_role(resource, R_PRIMARY, false, NULL);
-		if (ndelay)
+		timeout -= jiffies - start;
+
+		if (ndelay || rv >= SS_SUCCESS || timeout <= 0) {
 			break;
-		if (rv >= SS_SUCCESS || timeout == 0) {
-			return rv;
 		} else if (rv == SS_CW_FAILED_BY_PEER) {
-			/* Probably udev has it open read-only on one of the peers */
-			long t = schedule_timeout_interruptible(HZ / 5);
-			if (t < 0)
-				break;
-			timeout -= HZ / 5;
+			/* Probably udev has it open read-only on one of the peers;
+			   since commit cbcbb50a65 from 2017 it waits on the peer;
+			   retry only if the timeout permits */
+			if (jiffies - start < HZ / 10) {
+				t = schedule_timeout_interruptible(HZ / 10);
+				if (t < 0)
+					break;
+				timeout -= HZ / 10;
+			}
 		} else if (rv == SS_TWO_PRIMARIES) {
 			/* Wait till the peer demoted itself */
-			timeout = wait_event_interruptible_timeout(resource->state_wait,
+			t = wait_event_interruptible_timeout(resource->state_wait,
 				resource->role[NOW] == R_PRIMARY ||
 				(!primary_peer_present(resource) && any_disk_is_uptodate(device)),
 				timeout);
-			if (timeout <= 0)
+			if (t <= 0)
 				break;
+			timeout -= t;
 		} else if (rv == SS_NO_UP_TO_DATE_DISK && connection_state_may_improve_soon(resource)) {
 			/* Wait until we get a connection established */
-			timeout = wait_event_interruptible_timeout(resource->state_wait,
+			t = wait_event_interruptible_timeout(resource->state_wait,
 				any_disk_is_uptodate(device), timeout);
-			if (timeout <= 0)
+			if (t <= 0)
 				break;
+			timeout -= t;
 		} else {
-			return rv;
+			break;
 		}
-	} while (--retry);
+	} while (timeout > 0);
 	return rv;
 }
 
