@@ -28,7 +28,7 @@ T *addr;
 + 	kfree(addr);
 
 
-@ add_linux_mm_h depends on !find_linux_mm_h && ever replace_kvfree || ever replace_kvfree2 @
+@ add_linux_mm_h depends on !find_linux_mm_h && ( ever replace_kvfree || ever replace_kvfree2 ) @
 @@
  #include <...>
 + #include <linux/mm.h>
