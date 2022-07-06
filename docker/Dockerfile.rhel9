@@ -1,0 +1,42 @@
+ARG EXTRAPKGS=almalinux:9
+FROM $EXTRAPKGS as extrapkgs
+# by checking for /pkgs we can cache that step
+# and prepare images that already contain the packages.
+RUN mkdir /pkgs
+RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-libelf-devel && rm -f *.i686.rpm # !lbbuild
+
+FROM registry.access.redhat.com/ubi9/ubi
+MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
+
+ENV DRBD_VERSION 9.1.7
+
+ARG release=1
+LABEL name="DRBD Kernel module load container" \
+      vendor="LINBIT" \
+		version="$DRBD_VERSION" \
+		release="$release" \
+		summary="DRBD's kernel component" \
+		description="DRBD's kernel component"
+RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils/gpl-2.0.txt /licenses/
+
+RUN dnf -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
+	dnf install -y gcc make patch kmod cpio python3 python3-pip && dnf clean all -y && \
+	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
+
+COPY --from=extrapkgs /pkgs /pkgs
+RUN dnf install -y /pkgs/*.rpm # !lbbuild
+# or
+# =lbbuild RUN curl -fsSL https://nexus.at.linbit.com/repository/lbbuild/from_rhel_repos.sh | bash -s -- elfutils-libelf-devel
+
+RUN rm -rf /pkgs
+
+# one can not comment copy
+RUN curl -fsSL https://pkg.linbit.com/downloads/drbd/9/drbd-${DRBD_VERSION}.tar.gz -o /drbd.tar.gz # !lbbuild
+# =lbbuild COPY /drbd.tar.gz /
+
+# these are now the kmod pkgs:
+COPY /pkgs /pkgs
+
+COPY /entry.sh /
+RUN chmod +x /entry.sh
+ENTRYPOINT /entry.sh
