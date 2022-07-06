@@ -903,19 +903,31 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static void pid_show(struct seq_file *m, struct drbd_thread *thi)
+{
+	struct task_struct *task = NULL;
+	pid_t pid;
+
+	spin_lock_irq(&thi->t_lock);
+	task = thi->task;
+	if (task)
+		pid = task->pid;
+	spin_unlock_irq(&thi->t_lock);
+	if (task)
+		seq_printf(m, "%d\n", pid);
+}
+
 static int connection_receiver_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
-	if (connection->receiver.task)
-		seq_printf(m, "%d\n", connection->receiver.task->pid);
+	pid_show(m, &connection->receiver);
 	return 0;
 }
 
 static int connection_sender_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
-	if (connection->sender.task)
-		seq_printf(m, "%d\n", connection->sender.task->pid);
+	pid_show(m, &connection->sender);
 	return 0;
 }
 
