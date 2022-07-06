@@ -37,6 +37,7 @@ DOCKERIMAGESTARGETS = $(addprefix dockerimage.,$(DOCKERIMAGES))
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
 SPAAS ?= true
+SPAAS_URL ?= https://drbd.io:2020
 
 # default for KDIR/KVER
 ifndef KVER
@@ -122,7 +123,7 @@ check-kdir:
 
 .PHONY: module
 module: check-kdir check-submods
-	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR) SPAAS=$(SPAAS)
+	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR) SPAAS=$(SPAAS) SPAAS_URL=$(SPAAS_URL)
 	@ echo -e "\n\tModule build was successful."
 
 install:
