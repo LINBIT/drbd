@@ -8663,9 +8663,8 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 
 	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
-		if (next->flags & EE_RS_TRIM_SUBMITTED || !interval_is_adjacent(&peer_req->i, &next->i)) {
-			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-		} else if (next->flags & EE_TRIM) {
+		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM &&
+		    interval_is_adjacent(&peer_req->i, &next->i)) {
 			peer_req->i.size += next->i.size;
 
 			if (next->flags & EE_RS_TRIM_LIMITED_BEHIND)
@@ -8680,14 +8679,15 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 				if (!interval_is_adjacent(&peer_req->i, &next->i))
 					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 			}
+		} else {
+			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 		}
 	}
 
 	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
-		if (prev->flags & EE_RS_TRIM_SUBMITTED || !interval_is_adjacent(&prev->i, &peer_req->i)) {
-			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-		} else if (prev->flags & EE_TRIM) {
+		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM &&
+		    interval_is_adjacent(&prev->i, &peer_req->i)) {
 			prev->i.size += peer_req->i.size;
 
 			if (peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND)
@@ -8705,6 +8705,8 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 			} else {
 				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 			}
+		} else {
+			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 		}
 	} else {
 		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
