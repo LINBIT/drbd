@@ -7022,6 +7022,17 @@ static void finish_nested_twopc(struct drbd_connection *connection)
 	}
 }
 
+static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+		if ((peer_device->history_uuids[i] & ~UUID_PRIMARY) == uuid)
+			return true;
+
+	return false;
+}
+
 static bool peer_data_is_successor_of_mine(struct drbd_peer_device *peer_device)
 {
 	u64 exposed = peer_device->device->exposed_data_uuid & ~UUID_PRIMARY;
@@ -7031,11 +7042,30 @@ static bool peer_data_is_successor_of_mine(struct drbd_peer_device *peer_device)
 	if (i != -1)
 		return true;
 
-	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
-		if ((peer_device->history_uuids[i] & ~UUID_PRIMARY) == exposed)
-			return true;
+	return uuid_in_peer_history(peer_device, exposed);
+}
 
-	return false;
+static bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 peer_uuid = peer_device->current_uuid;
+	struct drbd_peer_device *p2;
+	bool rv = false;
+	int i;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(p2, device) {
+		if (peer_device == p2)
+			continue;
+		i = drbd_find_peer_bitmap_by_uuid(p2, peer_uuid);
+		if (i != -1 || uuid_in_peer_history(peer_device, peer_uuid)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
 }
 
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
@@ -7273,6 +7303,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		     (peer_device->current_uuid & ~UUID_PRIMARY)) &&
 		    peer_state.disk == D_UP_TO_DATE) {
 			bool data_successor = peer_data_is_successor_of_mine(peer_device);
+			bool data_ancestor = peer_data_is_ancestor_of_mine(peer_device);
 
 			if (resource->cached_susp && data_successor &&
 			    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
@@ -7286,6 +7317,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 					end_state_change(resource, &irq_flags);
 				}
 				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+			} else if (data_ancestor) {
+				drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
+				if (peer_disk_state >= D_CONSISTENT)
+					peer_disk_state = D_CONSISTENT; /* See "Do not trust this guy!" in sanitize_state() */
 			} else {
 				drbd_warn(peer_device, "Current UUID of peer does not match my"
 					  " exposed UUID.");
