@@ -2539,14 +2539,15 @@ static int e_end_block(struct drbd_work *w, int cancel)
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
 
 	if (peer_req->flags & EE_IS_BARRIER) {
-		epoch = previous_epoch(peer_device->connection, peer_req->epoch);
+		epoch = previous_epoch(connection, peer_req->epoch);
 		if (epoch)
-			drbd_may_finish_epoch(peer_device->connection, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
+			drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
 	}
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
@@ -2577,12 +2578,17 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	} else
 		D_ASSERT(device, drbd_interval_empty(&peer_req->i));
 
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
-
-	drbd_may_finish_epoch(peer_device->connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
-	/* Do not use peer_req after this point. We may have sent the
-	 * corresponding barrier and received the corresponding peer ack. As a
-	 * result, peer_req may have been freed. */
+	if (list_empty(&peer_req->recv_order)) {
+		/* Compatibility with protocol version < 110 (that is, DRBD 8.4). */
+		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
+		drbd_free_peer_req(peer_req);
+	} else {
+		drbd_free_page_chain(&connection->transport, &peer_req->page_chain, 0);
+		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
+		/* Do not use peer_req after this point. We may have sent the
+		 * corresponding barrier and received the corresponding peer ack. As a
+		 * result, peer_req may have been freed. */
+	}
 
 	return err;
 }
