@@ -2574,7 +2574,13 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	 * the requests. Hence looking the request up with a list traversal
 	 * should not be too slow. */
 	list_for_each_entry(p, list, w.list) {
-		if (p->i.sector == sector && test_bit(INTERVAL_SENT, &p->i.flags)) {
+		if (p->peer_device != peer_device)
+			continue;
+
+		if (!test_bit(INTERVAL_SENT, &p->i.flags))
+			continue;
+
+		if (p->i.sector == sector) {
 			peer_req = p;
 			break;
 		}
@@ -2599,6 +2605,12 @@ static void find_resync_requests(struct drbd_peer_device *peer_device,
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_for_each_entry_safe(peer_req, tmp, &connection->resync_ack_ee, w.list) {
+		if (peer_req->peer_device != peer_device)
+			continue;
+
+		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
+			continue;
+
 		if (peer_req->i.sector >= sector &&
 		    peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= next_sector)
 			list_move_tail(&peer_req->w.list, matching);
