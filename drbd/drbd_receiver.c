@@ -2865,6 +2865,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	sector_t sector = peer_req->i.sector;
 	struct drbd_epoch *epoch;
@@ -2896,6 +2897,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 
 	if (list_empty(&peer_req->recv_order)) {
 		/* Compatibility with protocol version < 110 (that is, DRBD 8.4). */
+		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		drbd_free_peer_req(peer_req);
 	} else {
