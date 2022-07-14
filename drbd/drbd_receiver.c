@@ -8683,8 +8683,8 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 
 	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
-		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM &&
-		    interval_is_adjacent(&peer_req->i, &next->i)) {
+		bool adjacent = interval_is_adjacent(&peer_req->i, &next->i);
+		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM && adjacent) {
 			peer_req->i.size += next->i.size;
 
 			if (next->flags & EE_RS_TRIM_LIMITED_BEHIND)
@@ -8693,21 +8693,15 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 			list_del(&next->w.list);
 			list_del(&next->recv_order);
 			list_add(&next->recv_order, remove_list);
-
-			if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
-				struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
-				if (!interval_is_adjacent(&peer_req->i, &next->i))
-					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-			}
-		} else {
+		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &next->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 		}
 	}
 
 	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
-		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM &&
-		    interval_is_adjacent(&prev->i, &peer_req->i)) {
+		bool adjacent = interval_is_adjacent(&prev->i, &peer_req->i);
+		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM && adjacent) {
 			prev->i.size += peer_req->i.size;
 
 			if (peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND)
@@ -8718,14 +8712,9 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 			list_add(&peer_req->recv_order, remove_list);
 			peer_req = prev;
 
-			if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
-				struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
-				if (!interval_is_adjacent(&prev->i, &peer_req->i))
-					peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-			} else {
+			if (list_is_first(&peer_req->recv_order, &peer_device->resync_requests))
 				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-			}
-		} else {
+		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &prev->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 		}
 	} else {
