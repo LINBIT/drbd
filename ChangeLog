@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.8-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.8 (api:genl2/proto:110-121/transport:17)
 --------
  * restore protocol compatibility with drbd-8.4
  * detect peers that died silently when starting a two-phase-commit
