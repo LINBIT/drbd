@@ -1286,13 +1286,16 @@ skip_request:
 			spin_lock_irq(&connection->peer_reqs_lock);
 			list_for_each_entry_reverse(peer_req, &peer_device->resync_requests, recv_order) {
 				if (peer_req->flags & EE_RS_THIN_REQ) {
-					to_submit = peer_req;
 					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+					if (drbd_rs_discard_ready(peer_req))
+						to_submit = peer_req;
+
 					break;
 				}
 			}
 			spin_unlock_irq(&connection->peer_reqs_lock);
-			drbd_submit_ready_rs_discard(to_submit);
+			if (to_submit)
+				drbd_submit_rs_discard(to_submit);
 		}
 	} else {
 		/* and in case that raced with the receiver, reschedule ourselves right now */

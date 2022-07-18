@@ -275,7 +275,6 @@ static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
 static void check_rs_discards(struct drbd_peer_request *peer_req);
-static void submit_rs_discard(struct drbd_peer_request *peer_req);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -8633,7 +8632,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
-static bool rs_discard_ready(struct drbd_peer_request *peer_req)
+bool drbd_rs_discard_ready(struct drbd_peer_request *peer_req)
 {
 	static const int EE_RS_TRIM_LIMITED = EE_RS_TRIM_LIMITED_BEHIND | EE_RS_TRIM_LIMITED_FRONT;
 
@@ -8644,12 +8643,6 @@ static bool rs_discard_ready(struct drbd_peer_request *peer_req)
 static bool interval_is_adjacent(const struct drbd_interval *i1, const struct drbd_interval *i2)
 {
 	return i1->sector + (i1->size >> SECTOR_SHIFT) == i2->sector;
-}
-
-void drbd_submit_ready_rs_discard(struct drbd_peer_request *peer_req)
-{
-	if (peer_req && !(peer_req->flags & EE_RS_TRIM_SUBMITTED) && rs_discard_ready(peer_req))
-		submit_rs_discard(peer_req);
 }
 
 static void check_rs_discards(struct drbd_peer_request *peer_req)
@@ -8663,17 +8656,23 @@ static void check_rs_discards(struct drbd_peer_request *peer_req)
 		next = list_next_entry(peer_req, recv_order);
 		if (next->flags & EE_TRIM)
 			next->flags |= EE_RS_TRIM_LIMITED_FRONT;
+		if (!drbd_rs_discard_ready(next) || next->flags & EE_RS_TRIM_SUBMITTED)
+			next = NULL;
 	}
 
 	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
 		prev = list_prev_entry(peer_req, recv_order);
 		if (prev->flags & EE_TRIM)
 			prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+		if (!drbd_rs_discard_ready(prev) || prev->flags & EE_RS_TRIM_SUBMITTED)
+			prev = NULL;
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	drbd_submit_ready_rs_discard(next);
-	drbd_submit_ready_rs_discard(prev);
+	if (next)
+		drbd_submit_rs_discard(next);
+	if (prev)
+		drbd_submit_rs_discard(prev);
 }
 
 static struct drbd_peer_request *
@@ -8721,7 +8720,7 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 	}
 
-	return rs_discard_ready(peer_req) ? peer_req : NULL;
+	return drbd_rs_discard_ready(peer_req) ? peer_req : NULL;
 }
 
 static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
@@ -8745,10 +8744,10 @@ static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
 	spin_unlock_irq(&device->interval_lock);
 
 	if (submit_now)
-		submit_rs_discard(submit_now);
+		drbd_submit_rs_discard(submit_now);
 }
 
-static void submit_rs_discard(struct drbd_peer_request *peer_req)
+void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -8821,7 +8820,7 @@ void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device)
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &work_list, w.list)
-		submit_rs_discard(peer_req);
+		drbd_submit_rs_discard(peer_req);
 }
 
 static int receive_disconnect(struct drbd_connection *connection, struct packet_info *pi)
