@@ -327,7 +327,7 @@ static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
 static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
 
-static int dtr_create_cm_id(struct dtr_cm *cm_context);
+static int dtr_create_cm_id(struct dtr_cm *cm_context, struct net *net);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
@@ -1102,7 +1102,7 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 	kref_get(&path->path.kref);
 	cm->path = path;
 
-	err = dtr_create_cm_id(cm);
+	err = dtr_create_cm_id(cm, path->path.net);
 	if (err) {
 		tr_err(transport, "rdma_create_id() failed %d\n", err);
 		goto out;
@@ -1383,14 +1383,14 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	return kref_put(&cm->kref, dtr_destroy_cm_keep_id);
 }
 
-static int dtr_create_cm_id(struct dtr_cm *cm)
+static int dtr_create_cm_id(struct dtr_cm *cm, struct net *net)
 {
 	struct rdma_cm_id *id;
 
 	cm->state = IDLE;
 	init_waitqueue_head(&cm->state_wq);
 
-	id = rdma_create_id(&init_net, dtr_cma_event_handler, cm, RDMA_PS_TCP, IB_QPT_RC);
+	id = rdma_create_id(net, dtr_cma_event_handler, cm, RDMA_PS_TCP, IB_QPT_RC);
 	if (IS_ERR(id)) {
 		cm->id = NULL;
 		cm->state = ERROR;
@@ -2749,7 +2749,7 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 	kfree(listener);
 }
 
-static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct drbd_listener *drbd_listener)
+static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct net *net, struct drbd_listener *drbd_listener)
 {
 	struct dtr_listener *listener = container_of(drbd_listener, struct dtr_listener, listener);
 	struct sockaddr_storage my_addr;
@@ -2757,7 +2757,7 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 
 	my_addr = *(struct sockaddr_storage *)addr;
 
-	err = dtr_create_cm_id(&listener->cm);
+	err = dtr_create_cm_id(&listener->cm, net);
 	if (err) {
 		tr_err(transport, "rdma_create_id() failed\n");
 		goto out;

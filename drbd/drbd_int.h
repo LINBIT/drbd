@@ -1518,6 +1518,8 @@ struct drbd_config_context {
 	struct nlattr *my_addr;
 	struct nlattr *peer_addr;
 
+	/* network namespace of the sending socket */
+	struct net *net;
 	/* reply buffer */
 	struct sk_buff *reply_skb;
 	/* pointer into reply buffer */

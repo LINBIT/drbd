@@ -443,7 +443,7 @@ static int dtt_try_connect(struct drbd_transport *transport, struct dtt_path *pa
 	peer_addr = path->path.peer_addr;
 
 	what = "sock_create_kern";
-	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
+	err = sock_create_kern(path->path.net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &socket);
 	if (err < 0) {
 		socket = NULL;
 		goto out;
@@ -843,6 +843,7 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 
 static int dtt_init_listener(struct drbd_transport *transport,
 			     const struct sockaddr *addr,
+			     struct net *net,
 			     struct drbd_listener *drbd_listener)
 {
 	int err, sndbuf_size, rcvbuf_size, addr_len;
@@ -864,7 +865,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 
 	my_addr = *(struct sockaddr_storage *)addr;
 
-	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		what = "sock_create_kern";

@@ -34,6 +34,7 @@
 #include <linux/kthread.h>
 #include <linux/security.h>
 #include <net/genetlink.h>
+#include <net/sock.h>
 
 #include "drbd_meta_data.h"
 
@@ -208,6 +209,8 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	int err;
 
 	memset(adm_ctx, 0, sizeof(*adm_ctx));
+
+	adm_ctx->net = sock_net(skb->sk);
 
 	/*
 	 * genl_rcv_msg() only checks if commands with the GENL_ADMIN_PERM flag
@@ -4310,6 +4313,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	if (!path)
 		return ERR_NOMEM;
 
+	path->net = adm_ctx->net;
 	path->my_addr_len = nla_len(my_addr);
 	memcpy(&path->my_addr, nla_data(my_addr), path->my_addr_len);
 	path->peer_addr_len = nla_len(peer_addr);
