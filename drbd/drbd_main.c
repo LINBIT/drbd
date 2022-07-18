@@ -20,6 +20,7 @@
 #include <linux/drbd.h>
 #include <linux/uaccess.h>
 #include <asm/types.h>
+#include <net/net_namespace.h>
 #include <net/sock.h>
 #include <linux/ctype.h>
 #include <linux/fs.h>
@@ -60,6 +61,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local);
 static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local);
 static void drbd_send_ping_ack_wf(struct work_struct *ws);
+static void __net_exit __drbd_net_exit(struct net *net);
 
 MODULE_AUTHOR("Philipp Reisner <phil@linbit.com>, "
 	      "Lars Ellenberg <lars@linbit.com>");
@@ -152,6 +154,10 @@ static const struct block_device_operations drbd_ops = {
 	.submit_bio	= drbd_submit_bio,
 	.open		= drbd_open,
 	.release	= drbd_release,
+};
+
+static struct pernet_operations drbd_pernet_ops = {
+	.exit = __drbd_net_exit,
 };
 
 #ifdef __CHECKER__
@@ -2870,6 +2876,82 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
 }
 
+/** __drbd_net_exit is called when a network namespace is removed.
+ *
+ * For DRBD this means it needs to remove any sockets assigned to that namespace,
+ * i.e. it needs to disconnect some connections. It also needs to remove those
+ * paths associated with the to be removed namespace, so the connection can be
+ * reconfigured from a new namespace.
+ */
+static void __net_exit __drbd_net_exit(struct net *net)
+{
+	struct drbd_resource *resource;
+	struct drbd_connection *connection, *n;
+	enum drbd_state_rv rv;
+	LIST_HEAD(connections_wait_list);
+
+	/* Disconnect and removal of paths works in 3 steps:
+	 * 1. Find all connections associated with the namespace, add it to a separate list.
+	 * 2. Iterate over all connections in the new list and start the disconnect.
+	 * 3. Iterate again over all connections, waiting for them to disconnect and remove the path configuration.*/
+
+	/* Step 1 */
+	rcu_read_lock();
+	for_each_resource_rcu(resource, &drbd_resources) {
+		for_each_connection_rcu(connection, resource) {
+			/* We don't have to worry about any races here:
+			 * For a connection to be "missed", it would need to be configured
+			 * from the namespace to be removed. Since netlink does keep the
+			 * namespace alive for the duration of it's connection, we can
+			 * assume the namespace assignment can no longer be changed. */
+			if (net_eq(net, drbd_net_assigned_to_connection(connection))) {
+				drbd_info(connection, "Disconnect because network namespace is exiting\n");
+
+				kref_debug_get(&connection->kref_debug, 16);
+				kref_get(&connection->kref);
+
+				list_add(&connection->remove_net_list, &connections_wait_list);
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	/* Step 2 */
+	list_for_each_entry(connection, &connections_wait_list, remove_net_list) {
+		/* We just start the disconnect here.  We have to use force=true here,
+		 * otherwise the disconnect might fail waiting for some openers to disappear.
+		 *
+		 * Actually waiting for the disconnect is relegated to step 3, so we disconnect
+		 * in parallel. */
+		rv = change_cstate(connection, C_DISCONNECTING, CS_HARD);
+		if (rv < SS_SUCCESS && rv != SS_ALREADY_STANDALONE)
+			drbd_err(connection, "Failed to disconnect: %s\n", drbd_set_st_err_str(rv));
+	}
+
+	/* Step 3 */
+	list_for_each_entry_safe(connection, n, &connections_wait_list, remove_net_list) {
+		struct drbd_path *path, *tmp;
+		list_del_init(&connection->remove_net_list);
+
+		/* Wait here for StandAlone: a path can only be removed if it's not established */
+		wait_event(connection->resource->state_wait, connection->cstate[NOW] == C_STANDALONE);
+
+		mutex_lock(&connection->resource->adm_mutex);
+		list_for_each_entry_safe(path, tmp, &connection->transport.paths, list) {
+			int err = connection->transport.ops->remove_path(&connection->transport, path);
+			if (err)
+				drbd_err(connection, "Failed to remove path after disconnect: %d\n", err);
+
+			notify_path(connection, path, NOTIFY_DESTROY);
+			call_rcu(&path->rcu, drbd_reclaim_path);
+		}
+		mutex_unlock(&connection->resource->adm_mutex);
+
+		kref_debug_put(&connection->kref_debug, 16);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 void drbd_queue_unplug(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
@@ -3187,6 +3269,8 @@ static void drbd_cleanup(void)
 
 	drbd_genl_unregister();
 	drbd_debugfs_cleanup();
+
+	unregister_pernet_subsys(&drbd_pernet_ops);
 
 	drbd_destroy_mempools();
 	unregister_blkdev(DRBD_MAJOR, "drbd");
@@ -3554,6 +3638,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_LIST_HEAD(&connection->read_ee);
 	INIT_LIST_HEAD(&connection->resync_ack_ee);
 	INIT_LIST_HEAD(&connection->net_ee);
+	INIT_LIST_HEAD(&connection->remove_net_list);
 	init_waitqueue_head(&connection->ee_wait);
 
 	kref_init(&connection->kref);
@@ -4092,6 +4177,14 @@ void drbd_reclaim_connection(struct rcu_head *rp)
 	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
+void drbd_reclaim_path(struct rcu_head *rp)
+{
+	struct drbd_path *path = container_of(rp, struct drbd_path, rcu);
+
+	INIT_LIST_HEAD(&path->list);
+	kref_put(&path->kref, drbd_destroy_path);
+}
+
 static int __init drbd_init(void)
 {
 	int err;
@@ -4122,6 +4215,12 @@ static int __init drbd_init(void)
 	idr_init(&drbd_devices);
 
 	INIT_LIST_HEAD(&drbd_resources);
+
+	err = register_pernet_subsys(&drbd_pernet_ops);
+	if (err) {
+		pr_err("unable to register net namespace handlers\n");
+		goto fail;
+	}
 
 	err = drbd_genl_register();
 	if (err) {

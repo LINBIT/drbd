@@ -1188,6 +1188,10 @@ struct drbd_connection {
 		struct p_twopc_reply twopc_reply;
 	} reassemble_buffer_bytes;
 
+	/* Used when a network namespace is removed to track all connections
+	 * that need disconnecting. */
+	struct list_head remove_net_list;
+
 	struct rcu_head rcu;
 
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
@@ -1900,6 +1904,7 @@ extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_reclaim_device(struct rcu_head *);
 extern void drbd_unregister_connection(struct drbd_connection *);
 extern void drbd_reclaim_connection(struct rcu_head *);
+extern void drbd_reclaim_path(struct rcu_head *);
 void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);
@@ -2668,6 +2673,19 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 {
 	return list_first_entry_or_null(&resource->connections,
 				struct drbd_connection, connections);
+}
+
+static inline struct net *drbd_net_assigned_to_connection(struct drbd_connection *connection)
+{
+	struct drbd_path *path;
+
+	path = list_first_entry_or_null(&connection->transport.paths, struct drbd_path, list);
+
+	if (path == NULL) {
+		return NULL;
+	}
+
+	return path->net;
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
