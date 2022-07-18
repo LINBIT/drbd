@@ -4289,10 +4289,17 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	struct nlattr **nested_attr_tb;
 	struct nlattr *my_addr, *peer_addr;
 	struct drbd_path *path;
+	struct net *existing_net;
 	enum drbd_ret_code retcode;
 	int err;
 
 	/* parse and validate only */
+	existing_net = drbd_net_assigned_to_connection(adm_ctx->connection);
+	if (existing_net && !net_eq(adm_ctx->net, existing_net)) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "connection already assigned to a different network namespace");
+		return ERR_INVALID_REQUEST;
+	}
+
 	err = path_parms_ntb_from_attrs(&nested_attr_tb, info);
 	if (err) {
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
@@ -4355,6 +4362,12 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 
 	if (first_path(connection) == NULL) {
 		drbd_msg_put_info(adm_ctx.reply_skb, "connection endpoint(s) missing");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+
+	if (!net_eq(adm_ctx.net, drbd_net_assigned_to_connection(connection))) {
+		drbd_msg_put_info(adm_ctx.reply_skb, "connection assigned to a different network namespace");
 		retcode = ERR_INVALID_REQUEST;
 		goto out;
 	}
@@ -4463,6 +4476,11 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	int err;
 
 	/* parse and validate only */
+	if (!net_eq(adm_ctx->net, drbd_net_assigned_to_connection(connection))) {
+		drbd_msg_put_info(adm_ctx->reply_skb, "connection assigned to a different network namespace");
+		return ERR_INVALID_REQUEST;
+	}
+
 	err = path_parms_ntb_from_attrs(&nested_attr_tb, info);
 	if (err) {
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
@@ -4669,6 +4687,12 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 			goto fail;
 		}
+	}
+
+	if (!net_eq(adm_ctx.net, drbd_net_assigned_to_connection(adm_ctx.connection))) {
+		drbd_msg_put_info(adm_ctx.reply_skb, "connection assigned to a different network namespace");
+		retcode =  ERR_INVALID_REQUEST;
+		goto fail;
 	}
 
 	connection = adm_ctx.connection;
