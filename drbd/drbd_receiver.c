@@ -8656,7 +8656,9 @@ static void check_rs_discards(struct drbd_peer_request *peer_req)
 		next = list_next_entry(peer_req, recv_order);
 		if (next->flags & EE_TRIM)
 			next->flags |= EE_RS_TRIM_LIMITED_FRONT;
-		if (!drbd_rs_discard_ready(next) || next->flags & EE_RS_TRIM_SUBMITTED)
+		if (drbd_rs_discard_ready(next) && !(next->flags & EE_RS_TRIM_SUBMITTED))
+			next->flags |= EE_RS_TRIM_SUBMITTED;
+		else
 			next = NULL;
 	}
 
@@ -8664,7 +8666,9 @@ static void check_rs_discards(struct drbd_peer_request *peer_req)
 		prev = list_prev_entry(peer_req, recv_order);
 		if (prev->flags & EE_TRIM)
 			prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-		if (!drbd_rs_discard_ready(prev) || prev->flags & EE_RS_TRIM_SUBMITTED)
+		if (drbd_rs_discard_ready(prev) && !(prev->flags & EE_RS_TRIM_SUBMITTED))
+			prev->flags |= EE_RS_TRIM_SUBMITTED;
+		else
 			prev = NULL;
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
@@ -8720,7 +8724,11 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 	}
 
-	return drbd_rs_discard_ready(peer_req) ? peer_req : NULL;
+	if (drbd_rs_discard_ready(peer_req))
+		peer_req->flags |= EE_RS_TRIM_SUBMITTED;
+	else
+		peer_req = NULL;
+	return peer_req;
 }
 
 static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
@@ -8759,7 +8767,6 @@ void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 		peer_req->block_id = ID_SYNCER;
 		peer_req->w.cb = e_end_resync_block;
 		peer_req->opf = REQ_OP_DISCARD;
-		peer_req->flags |= EE_RS_TRIM_SUBMITTED;
 
 		spin_lock_irq(&connection->peer_reqs_lock);
 		list_move_tail(&peer_req->w.list, &connection->sync_ee);
@@ -8814,8 +8821,10 @@ void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device)
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_for_each_entry_safe(peer_req, tmp, &peer_device->resync_requests, recv_order) {
-		if (peer_req->flags & EE_TRIM && !(peer_req->flags & EE_RS_TRIM_SUBMITTED))
+		if (peer_req->flags & EE_TRIM && !(peer_req->flags & EE_RS_TRIM_SUBMITTED)) {
+			peer_req->flags |= EE_RS_TRIM_SUBMITTED;
 			list_move_tail(&peer_req->w.list, &work_list);
+		}
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 

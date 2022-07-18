@@ -1287,9 +1287,10 @@ skip_request:
 			list_for_each_entry_reverse(peer_req, &peer_device->resync_requests, recv_order) {
 				if (peer_req->flags & EE_RS_THIN_REQ) {
 					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-					if (drbd_rs_discard_ready(peer_req))
+					if (drbd_rs_discard_ready(peer_req) && !(peer_req->flags & EE_RS_TRIM_SUBMITTED)) {
 						to_submit = peer_req;
-
+						to_submit->flags |= EE_RS_TRIM_SUBMITTED;
+					}
 					break;
 				}
 			}
