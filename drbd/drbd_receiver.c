@@ -8679,8 +8679,8 @@ static void check_rs_discards(struct drbd_peer_request *peer_req)
 		drbd_submit_rs_discard(prev);
 }
 
-static struct drbd_peer_request *
-_try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remove_list)
+static void
+_try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *work_list)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 
@@ -8689,13 +8689,10 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 		bool adjacent = interval_is_adjacent(&peer_req->i, &next->i);
 		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM && adjacent) {
 			peer_req->i.size += next->i.size;
+			peer_req->flags |= next->flags; /* preserve LIMITED_BEHIND */
 
-			if (next->flags & EE_RS_TRIM_LIMITED_BEHIND)
-				peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-
-			list_del(&next->w.list);
 			list_del(&next->recv_order);
-			list_add(&next->recv_order, remove_list);
+			list_move(&next->w.list, work_list);  /* to be free'd */
 		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &next->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 		}
@@ -8706,29 +8703,41 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *remo
 		bool adjacent = interval_is_adjacent(&prev->i, &peer_req->i);
 		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM && adjacent) {
 			prev->i.size += peer_req->i.size;
+			prev->flags |= peer_req->flags; /* preserve LIMITED_BEHIND */
 
-			if (peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND)
-				prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-
-			list_del(&peer_req->w.list);
 			list_del(&peer_req->recv_order);
-			list_add(&peer_req->recv_order, remove_list);
+			list_move(&peer_req->w.list, work_list); /* to be free'd */
 			peer_req = prev;
 
 			if (list_is_first(&peer_req->recv_order, &peer_device->resync_requests))
 				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &prev->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+			if (prev->flags & EE_TRIM) {
+				/* The resync requests are issued at a specific rate. It might happen,
+				   when we get a reply for the request that is the last on the list.
+
+				   When this function is called for the last on the list, it can
+				   not merge with the entry behind, nor can it set the
+				   EE_RS_TRIM_LIMITED_BEHIND on that last entry.
+
+				   So, when we get the reply for the next element, we check if the
+				   previous one might lack the EE_RS_TRIM_LIMITED_BEHIND here. */
+				prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
+				if (drbd_rs_discard_ready(prev) && !(prev->flags & EE_RS_TRIM_SUBMITTED)) {
+					prev->flags |= EE_RS_TRIM_SUBMITTED;
+					list_move(&prev->w.list, work_list);
+				}
+			}
 		}
 	} else {
 		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 	}
 
-	if (drbd_rs_discard_ready(peer_req))
+	if (drbd_rs_discard_ready(peer_req)) {
 		peer_req->flags |= EE_RS_TRIM_SUBMITTED;
-	else
-		peer_req = NULL;
-	return peer_req;
+		list_move(&peer_req->w.list, work_list);
+	}
 }
 
 static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
@@ -8736,23 +8745,25 @@ static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_request *submit_now, *pr_tmp;
-	LIST_HEAD(remove_list);
+	struct drbd_peer_request *pr_tmp;
+	LIST_HEAD(work_list);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	submit_now = _try_merge_rs_discard(peer_req, &remove_list);
+	_try_merge_rs_discard(peer_req, &work_list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
+	list_for_each_entry_safe(peer_req, pr_tmp, &work_list, w.list) {
+		if (peer_req->flags & EE_RS_TRIM_SUBMITTED)
+			drbd_submit_rs_discard(peer_req); /* removes it from the work_list */
+	}
+
 	spin_lock_irq(&device->interval_lock);
-	list_for_each_entry_safe(peer_req, pr_tmp, &remove_list, recv_order) {
+	list_for_each_entry_safe(peer_req, pr_tmp, &work_list, w.list) {
 		drbd_remove_interval(&device->requests, &peer_req->i);
 		drbd_clear_interval(&peer_req->i);
 		drbd_free_peer_req(peer_req);
 	}
 	spin_unlock_irq(&device->interval_lock);
-
-	if (submit_now)
-		drbd_submit_rs_discard(submit_now);
 }
 
 void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
