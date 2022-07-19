@@ -104,6 +104,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_alloc", true, false,
 	      COMPAT_BIO_ALLOC_HAS_4_PARAMS, "has_4_params");
 
+	patch(1, "bio_alloc_clone", true, false,
+	      COMPAT_HAVE_BIO_ALLOC_CLONE, "present");
+
 #if !defined(COMPAT_HAVE_BIO_SET_DEV)
 	patch(1, "bio_set_dev", true, false,
 	      COMPAT_HAVE_BIO_SET_DEV, "present");
