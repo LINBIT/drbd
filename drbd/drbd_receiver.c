@@ -4278,13 +4278,6 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 {
 	struct drbd_device *device = peer_device->device;
 
-	/* reduce contention by giving up uuid_sem before taking bitmap locks */
-	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
-		struct drbd_transport *transport = &peer_device->connection->transport;
-		up_read_non_owner(&device->uuid_sem);
-		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
-	}
-
 	if (strategy == SYNC_SOURCE_COPY_BITMAP) {
 		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
 
@@ -7328,11 +7321,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
-	/* This is after the point where we did UUID comparison and joined with the
-	   diskless case again. Releasing uuid_sem here */
-	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
+	if (test_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
 		struct drbd_transport *transport = &connection->transport;
-		up_read_non_owner(&device->uuid_sem);
 		/* Last packet of handshake received, disarm receive timeout */
 		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 	}

@@ -807,6 +807,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
 		if (test_bit(__NEW_CUR_UUID, &device->flags)) {
 			clear_bit(__NEW_CUR_UUID, &device->flags);
 			set_bit(NEW_CUR_UUID, &device->flags);
@@ -814,6 +815,11 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 		wake_up(&device->al_wait);
 		wake_up(&device->misc_wait);
+
+		for_each_peer_device(peer_device, device) {
+			if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+				up_read_non_owner(&device->uuid_sem);
+		}
 	}
 
 	wake_up(&resource->state_wait);
