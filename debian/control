@@ -13,8 +13,7 @@ Standards-Version: 3.6.2.1
 Package: drbd-dkms
 Architecture: all
 Section: admin
-Depends: debhelper (>=7),
-         dkms (>= 1.9.5),
+Depends: dkms (>= 1.9.5),
          drbd-utils (>= 9.2.0),
          curl,
          ${misc:Depends}
@@ -55,7 +54,6 @@ Homepage: http://www.drbd.org
 Package: drbd-ueficert
 Architecture: all
 Section: admin
-Depends: debhelper (>= 7),
-         ${misc:Depends}
+Depends: ${misc:Depends}
 Description: Public key part used for DRBD kernel module signing.
 Homepage: https://www.linbit.com
