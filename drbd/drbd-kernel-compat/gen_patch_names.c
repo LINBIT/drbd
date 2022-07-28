@@ -217,7 +217,7 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_IDR_IS_EMPTY, "present");
 
 	patch(1, "sock_create_kern", true, false,
-	      COMPAT_SOCK_CREATE_KERN_HAS_FIVE_PARAMETERS, "has_five_parameters");
+	      COMPAT_SOCK_CREATE_KERN_HAS_NETNS_PARAMETER, "has_netns_parameter");
 
 	patch(1, "time64_to_tm", true, false,
 	      COMPAT_HAVE_TIME64_TO_TM, "present");
