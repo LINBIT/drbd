@@ -15,3 +15,12 @@ if (err < 0) { ... }
 @@ expression S; @@
 - sock_release(S)
 + sk_release_kernel(S->sk)
+
+@@
+identifier err;
+struct socket* parent, newsock;
+symbol flags;
+@@
+err = kernel_accept(parent, &newsock, ...);
+if (err < 0) { ... }
++ put_net(sock_net(newsock->sk));
