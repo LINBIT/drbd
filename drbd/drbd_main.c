@@ -3282,7 +3282,7 @@ static void drbd_cleanup(void)
 	drbd_genl_unregister();
 	drbd_debugfs_cleanup();
 
-	unregister_pernet_subsys(&drbd_pernet_ops);
+	unregister_pernet_device(&drbd_pernet_ops);
 
 	drbd_destroy_mempools();
 	unregister_blkdev(DRBD_MAJOR, "drbd");
@@ -4229,7 +4229,7 @@ static int __init drbd_init(void)
 
 	INIT_LIST_HEAD(&drbd_resources);
 
-	err = register_pernet_subsys(&drbd_pernet_ops);
+	err = register_pernet_device(&drbd_pernet_ops);
 	if (err) {
 		pr_err("unable to register net namespace handlers\n");
 		goto fail;
