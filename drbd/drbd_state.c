@@ -3506,6 +3506,27 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (disk_state[OLD] == D_INCONSISTENT && disk_state[NEW] == D_UP_TO_DATE &&
 			    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE)
 				send_state_others = peer_device;
+
+			/* connect without resync or remote attach without resync */
+			if (disk_state[NOW] >= D_OUTDATED && repl_state[NEW] == L_ESTABLISHED &&
+			    ((repl_state[OLD] == L_OFF &&
+			      (peer_disk_state[NEW] >= D_OUTDATED ||
+			       (peer_disk_state[NEW] == D_DISKLESS && !want_bitmap(peer_device)))) ||
+			     (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] >= D_OUTDATED))) {
+				u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
+				u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
+
+				if (peer_current_uuid == my_current_uuid && get_ldev(device)) {
+					down_write(&device->uuid_sem);
+					drbd_uuid_set_bitmap(peer_device, 0);
+					up_write(&device->uuid_sem);
+					drbd_print_uuids(peer_device, "cleared bm UUID and bitmap");
+					drbd_bitmap_io_from_worker(device, &drbd_bmio_clear_one_peer,
+								   "clearing bm one peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
+								   peer_device);
+					put_ldev(device);
+				}
+			}
 		}
 
 		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
@@ -3525,16 +3546,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			union drbd_state new_state =
 				state_change_word(state_change, n_device, n_connection, NEW);
 			bool send_uuids, send_state = false;
-
-			if (repl_state[OLD] == L_OFF &&
-			    (peer_disk_state[NOW] == D_UP_TO_DATE || !want_bitmap(peer_device)) &&
-			    drbd_bitmap_uuid(peer_device) && get_ldev(device)) {
-				down_write(&device->uuid_sem);
-				drbd_uuid_set_bitmap(peer_device, 0);
-				up_write(&device->uuid_sem);
-				drbd_print_uuids(peer_device, "cleared bm UUID");
-				put_ldev(device);
-			}
 
 			/* In case we finished a resync as resync-target update all neighbors
 			   about having a bitmap_uuid of 0 towards the previous sync-source.

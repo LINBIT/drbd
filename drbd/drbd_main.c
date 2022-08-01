@@ -5197,6 +5197,13 @@ int drbd_bmio_clear_all_n_write(struct drbd_device *device,
 	return drbd_bm_write(device, NULL);
 }
 
+int drbd_bmio_clear_one_peer(struct drbd_device *device,
+			     struct drbd_peer_device *peer_device) __must_hold(local)
+{
+	drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+	return drbd_bm_write(device, NULL);
+}
+
 static int w_bitmap_io(struct drbd_work *w, int unused)
 {
 	struct bm_io_work *work =
