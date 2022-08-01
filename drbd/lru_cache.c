@@ -127,7 +127,7 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 		return lc;
 
 	/* else: could not allocate all elements, give up */
-	for (i--; i; i--) {
+	while (i--) {
 		void *p = element[i];
 		kmem_cache_free(cache, (unsigned char *)p - e_off);
 	}
