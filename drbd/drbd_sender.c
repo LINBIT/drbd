@@ -1283,6 +1283,15 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 		return;
 	}
 
+	if (!down_write_trylock(&device->uuid_sem)) {
+		if (current == device->resource->worker.task) {
+			queue_resync_finished(peer_device, new_peer_disk_state);
+			return;
+		} else {
+			down_write(&device->uuid_sem);
+		}
+	}
+
 	dt = (jiffies - peer_device->rs_start - peer_device->rs_paused) / HZ;
 	if (dt <= 0)
 		dt = 1;
@@ -1294,12 +1303,13 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	dbdt = Bit2KB(db/dt);
 	peer_device->rs_paused /= HZ;
 
-	if (!get_ldev(device))
+	if (!get_ldev(device)) {
+		up_write(&device->uuid_sem);
 		goto out;
+	}
 
 	drbd_ping_peer(connection);
 
-	down_write(&device->uuid_sem);
 	write_lock_irq(&device->resource->state_rwlock);
 	begin_state_change_locked(device->resource, CS_VERBOSE);
 	old_repl_state = repl_state[NOW];
