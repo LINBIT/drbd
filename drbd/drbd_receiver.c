@@ -4972,7 +4972,6 @@ static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer
 						   enum drbd_role peer_role,
 						   enum sync_strategy strategy)
 {
-	struct drbd_device *device = peer_device->device;
 	enum drbd_role role = peer_device->device->resource->role[NOW];
 	enum drbd_repl_state rv;
 
@@ -4993,27 +4992,7 @@ static enum drbd_repl_state strategy_to_repl_state(struct drbd_peer_device *peer
 	} else if (strategy_descriptor(strategy).is_sync_target) {
 		rv = L_WF_BITMAP_T;
 	} else {
-		u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
-		u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
-
 		rv = L_ESTABLISHED;
-		if (peer_current_uuid == my_current_uuid &&
-				!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET) &&
-				device->disk_state[NOW] >= D_OUTDATED &&
-				peer_device->disk_state[NOW] >= D_OUTDATED) {
-			if (drbd_bitmap_uuid(peer_device)) {
-				drbd_info(peer_device, "clearing bitmap UUID and bitmap content (%lu bits)\n",
-					  drbd_bm_total_weight(peer_device));
-				down_write(&device->uuid_sem);
-				drbd_uuid_set_bitmap(peer_device, 0);
-				up_write(&device->uuid_sem);
-
-			} else if (drbd_bm_total_weight(peer_device)) {
-				drbd_info(peer_device, "bitmap content (%lu bits)\n",
-					  drbd_bm_total_weight(peer_device));
-			}
-			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
-		}
 	}
 
 	return rv;
