@@ -116,7 +116,7 @@ int main(int argc, char **argv)
 	      COMPAT_RDMA_REJECT_HAS_REASON_ARG, "4-arguments");
 
 	patch(1, "bio_alloc", true, false,
-	      COMPAT_BIO_ALLOC_HAS_5_PARAMS, "has_5_params");
+	      COMPAT_BIO_ALLOC_HAS_4_PARAMS, "has_4_params");
 
 #if !defined(COMPAT_HAVE_BIO_SET_DEV)
 	patch(1, "bio_set_dev", true, false,

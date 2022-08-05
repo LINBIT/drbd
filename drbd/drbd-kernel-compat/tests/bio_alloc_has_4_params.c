@@ -6,7 +6,7 @@
 #include <linux/bio.h>
 
 struct bio *foo(struct block_device *bdev, unsigned short nr_vecs,
-		unsigned int opf, gfp_t gfp_mask, struct bio_set *bs)
+		unsigned int opf, gfp_t gfp_mask)
 {
-	return bio_alloc(bdev, nr_vecs, opf, gfp_mask, bs);
+	return bio_alloc(bdev, nr_vecs, opf, gfp_mask);
 }
