@@ -4842,9 +4842,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
 			recipients |= NODE_MASK(peer_device->node_id);
 
-		if (peer_device != from_pd &&
-		    peer_device->disk_state[NOW] == D_DISKLESS &&
-		    peer_device->current_uuid != drbd_current_uuid(device))
+		if (peer_device->disk_state[NOW] == D_DISKLESS)
 			recipients |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
