@@ -347,7 +347,12 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		set_page_chain_size(page, len);
 		if (err < 0)
 			goto fail;
-		size -= len;
+		size -= err;
+	}
+	if (unlikely(size)) {
+		tr_warn(transport, "Not enough data received; missing %lu bytes\n", size);
+		err = -ENODATA;
+		goto fail;
 	}
 	return 0;
 fail:
