@@ -4672,6 +4672,7 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 	struct drbd_config_context adm_ctx;
 	struct disconnect_parms parms;
 	struct drbd_connection *connection;
+	struct net *existing_net;
 	enum drbd_state_rv rv;
 	enum drbd_ret_code retcode;
 
@@ -4689,7 +4690,8 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 		}
 	}
 
-	if (!net_eq(adm_ctx.net, drbd_net_assigned_to_connection(adm_ctx.connection))) {
+	existing_net = drbd_net_assigned_to_connection(adm_ctx.connection);
+	if (existing_net && !net_eq(adm_ctx.net, existing_net)) {
 		drbd_msg_put_info(adm_ctx.reply_skb, "connection assigned to a different network namespace");
 		retcode =  ERR_INVALID_REQUEST;
 		goto fail;
