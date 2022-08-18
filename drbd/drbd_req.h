@@ -66,12 +66,10 @@
 enum drbd_req_event {
 	TO_BE_SUBMITTED,
 
-	/* XXX yes, now I am inconsistent...
-	 * these are not "events" but "actions"
-	 * oh, well... */
-	QUEUE_FOR_NET_WRITE,
-	QUEUE_FOR_NET_READ,
-	QUEUE_FOR_SEND_OOS,
+	NEW_NET_READ,
+	NEW_NET_WRITE,
+	NEW_NET_OOS,
+	ADDED_TO_TRANSFER_LOG,
 
 	/* For an empty flush, mark that a corresponding barrier has been sent
 	 * to this peer. This causes it to complete "successfully", even if the
@@ -120,13 +118,11 @@ enum drbd_req_state_bits {
 	 * <none>:
 	 *   No network required, or not yet processed.
 	 * pending:
-	 *   Intended for this peer, but connection lost. If IO is suspended,
-	 *   it will stay in this state until the connection is restored or IO
-	 *   is resumed.
+	 *   Intended for this peer, but not yet queued, or connection lost. If
+	 *   IO is suspended, it will stay in this state until the connection
+	 *   is restored or IO is resumed.
 	 * pending,queued:
 	 *   To be sent, on transfer log to be processed by sender.
-	 * queued:
-	 *   Queued for sending P_OUT_OF_SYNC.
 	 * pending,sent:
 	 *   Sent, expecting P_RECV_ACK (B) or P_WRITE_ACK (C).
 	 * sent,ok:

@@ -2617,9 +2617,12 @@ static struct drbd_request *__next_request_for_connection(
 	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		unsigned s = req->net_rq_state[connection->peer_node_id];
 		connection->send.seen_dagtag_sector = req->dagtag_sector;
-		if (!(s & RQ_NET_QUEUED))
-			continue;
-		return req;
+		if (s & RQ_NET_QUEUED)
+			return req;
+		/* Found a request which is for this peer but not yet queued.
+		 * Do not skip past it. */
+		if (s & RQ_NET_PENDING && !(s & RQ_NET_SENT))
+			return NULL;
 	}
 	return NULL;
 }
