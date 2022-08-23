@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.9-rc.1 (api:genl2/proto:110-121/transport:17)
+--------
+ * fix a mistake in the compat generation code; it broke DRBD on
+   partitions on kernel older than linux 5.10 (this was introduced
+   with drbd-9.1.8; not affected: logical volumes)
+ * fix for a bug (introduced with drbd-9.0.0), that caused possible
+   inconsistencies in the mirror when using the 'resync-after' option
+ * fix a bug that could cause a request to get stuck after an unlucky
+   timing with a loss of connection
+ * close a very small timing window between connect and promote that
+   could lead to the new-current-uuid not being transmitted to the
+   concurrently connecting peer, which might lead to denied connections
+   later on
+ * fix a recently introduced OOPS when adding new volumes to a
+   connected resource
+
 9.1.8 (api:genl2/proto:110-121/transport:17)
 --------
  * restore protocol compatibility with drbd-8.4
