@@ -7923,13 +7923,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			}
 		}
 	}
-	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS) {
+	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS && get_ldev(device)) {
 		u64 uuid_flags = 0;
 
-		if (get_ldev(device)) {
-			drbd_collect_local_uuid_flags(peer_device, NULL);
-			put_ldev(device);
-		}
+		drbd_collect_local_uuid_flags(peer_device, NULL);
 		drbd_uuid_dump_self(peer_device, peer_device->comm_bm_set, uuid_flags);
 		drbd_info(peer_device, "peer's exposed UUID: %016llX\n", peer_device->current_uuid);
 
@@ -7942,6 +7939,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			peer_device->max_size = peer_device->c_size;
 			drbd_determine_dev_size(device, peer_device->max_size, 0, NULL);
 		}
+
+		put_ldev(device);
 	}
 
 	if (test_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
