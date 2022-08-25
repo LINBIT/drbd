@@ -1476,9 +1476,16 @@ bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_stat
 
 static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 {
-	return peer_device->repl_state[NOW] == L_AHEAD || peer_device->repl_state[NOW] == L_WF_BITMAP_S;
-	/* pdsk = D_INCONSISTENT as a consequence. Protocol 96 check not necessary
-	   since we enter state L_AHEAD only if proto >= 96 */
+	enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
+	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+
+	return repl_state == L_AHEAD ||
+		repl_state == L_WF_BITMAP_S ||
+		(peer_disk_state == D_OUTDATED && repl_state >= L_ESTABLISHED);
+
+	/* proto 96 check omitted, there was no L_AHEAD back then,
+	 * peer disk was never Outdated while connection was established,
+	 * and IO was frozen during bitmap exchange */
 }
 
 /* Prefer to read from protcol C peers, then B, last A */
