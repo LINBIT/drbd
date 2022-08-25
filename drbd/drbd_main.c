@@ -4809,7 +4809,7 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold
 	peer_device->rs_start_uuid = drbd_current_uuid(device);
 	if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
 		set_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
-	rotate_current_into_bitmap(device, false, device->resource->dagtag_sector);
+	rotate_current_into_bitmap(device, 0, device->resource->dagtag_sector);
 }
 
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
