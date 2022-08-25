@@ -866,8 +866,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (idx != -1) {
 		old_net = req->net_rq_state[idx];
-		req->net_rq_state[idx] &= ~clear;
-		req->net_rq_state[idx] |= set;
+		WRITE_ONCE(req->net_rq_state[idx], (req->net_rq_state[idx] & ~clear) | set);
 		connection = peer_device->connection;
 	}
 
