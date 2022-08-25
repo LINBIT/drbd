@@ -2078,7 +2078,6 @@ static void sanitize_state(struct drbd_resource *resource)
 				/* values from above */
 				break;
 			case L_WF_BITMAP_T:
-			case L_PAUSED_SYNC_T:
 			case L_STARTING_SYNC_T:
 			case L_WF_SYNC_UUID:
 			case L_BEHIND:
@@ -2109,6 +2108,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				min_peer_disk_state = D_INCONSISTENT;
 				max_peer_disk_state = D_CONSISTENT; /* D_OUTDATED would be nice. But explicit outdate necessary*/
 				break;
+			case L_PAUSED_SYNC_T:
 			case L_SYNC_TARGET:
 				min_disk_state = D_INCONSISTENT;
 				max_disk_state = D_INCONSISTENT;
