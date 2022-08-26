@@ -221,6 +221,22 @@ modprobe_deps() {
 }
 
 ### main
+
+## Skip if the linux distro of the host does not that of this image
+## Differentiate RHEL7 and RHEL8
+## Allow "exit 0", so that when used as an initContainers in Kubernetes, 
+## next initContainers with a different distro will be tried
+
+host_dist="$(lbdisttool.py -l --os-release $HOSTRELEASE | awk -F'.' '/^rhel/ {print $1}' )"
+image_dist="$(lbdisttool.py -l | awk -F'.' '/^rhel/ {print $1}' )"
+
+if [[ -z $host_dist ]] || [[ $host_dist != $image_dist ]]; then
+	echo " The distro of the host does not match that of the image"
+	[[ $LB_SKIP == yes ]] && exit 0 || exit 1
+fi
+
+##
+
 modprobe_deps
 [[ $LB_HOW == "$HOW_DEPSONLY" ]] && { debug "dependencies loading only, exiting now"; exit 0; }
 
