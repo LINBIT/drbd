@@ -121,6 +121,7 @@ extern struct drbd_interval *drbd_find_overlap(struct rb_root *, sector_t,
 					unsigned int);
 extern struct drbd_interval *drbd_next_overlap(struct drbd_interval *, sector_t,
 					unsigned int);
+extern void drbd_update_interval_size(struct drbd_interval *, unsigned int);
 
 #define drbd_for_each_overlap(i, root, sector, size)		\
 	for (i = drbd_find_overlap(root, sector, size);		\

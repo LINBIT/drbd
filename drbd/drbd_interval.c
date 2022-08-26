@@ -122,6 +122,18 @@ drbd_remove_interval(struct rb_root *root, struct drbd_interval *this)
 	rb_erase_augmented(&this->rb, root, &augment_callbacks);
 }
 
+void drbd_update_interval_size(struct drbd_interval *this, unsigned int new_size)
+{
+	this->size = new_size;
+
+	/* The size is one of the inputs to calculate the tree node's
+	 * augmented value. When we change it we need to update the augmented
+	 * value in this node and maybe in some parent nodes. That might be
+	 * all the way up to the root. As this function is used for joining
+	 * intervals, usually it will propagate only to the parent node. */
+	augment_callbacks_propagate(&this->rb, NULL);
+}
+
 /**
  * drbd_find_overlap  - search for an interval overlapping with [sector, sector + size)
  * @root:	red black tree root
