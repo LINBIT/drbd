@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.9-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.9 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a mistake in the compat generation code; it broke DRBD on
    partitions on kernel older than linux 5.10 (this was introduced
@@ -17,6 +17,7 @@ Latest:
    later on
  * fix a recently introduced OOPS when adding new volumes to a
    connected resource
+ * fix online attach when the connection to a 3rd node is down
 
 9.1.8 (api:genl2/proto:110-121/transport:17)
 --------
