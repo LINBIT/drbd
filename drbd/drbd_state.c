@@ -5264,10 +5264,8 @@ static bool do_change_disk_state(struct change_context *context, enum change_pha
 	if (device->disk_state[NOW] == D_ATTACHING &&
 	    context->val.disk == D_NEGOTIATING) {
 		if (device_has_peer_devices_with_disk(device)) {
-			struct drbd_connection *connection =
-				first_connection(device->resource);
 			cluster_wide_state_change =
-				connection && connection->agreed_pro_version >= 110;
+				supports_two_phase_commit(device->resource);
 		} else {
 			/* very last part of attach */
 			context->val.disk = disk_state_from_md(device);
