@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0-rc.7 (api:genl2/proto:110-121/transport:18)
+--------
+ * support for network namespaces
+ * multiple fixes to the merge-discards-during-resync functionality
+ * fix reference counting in AL with drbd-8.4 peers
+ * stricter limit for the set of characters allowed in resource names
+ * merge changes from the drbd 9.1.9 release
+
 9.2.0-rc.6 (api:genl2/proto:110-121/transport:18)
 --------
  * fixes to the new way of coordinating resync and application IO
