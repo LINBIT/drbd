@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.10 (api:genl2/proto:110-121/transport:17)
+--------
+ * fix a regression introduced with 9.1.9; using protocol A on SMP
+   with heavy IO can might cause kernel crash
+
 9.1.9 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a mistake in the compat generation code; it broke DRBD on
