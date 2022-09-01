@@ -3554,11 +3554,17 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			bool send_uuids, send_state = false;
 
 			/* In case we finished a resync as resync-target update all neighbors
-			   about having a bitmap_uuid of 0 towards the previous sync-source.
-			   That needs to go out before sending the new disk state
-			   (To avoid a race where the other node might downgrade our disk
-			   state due to old UUID valued) */
-			send_uuids = resync_finished && peer_disk_state[NEW] != D_UNKNOWN;
+			 * about having a bitmap_uuid of 0 towards the previous sync-source.
+			 * That needs to go out before sending the new disk state
+			 * to avoid a race where the other node might downgrade our disk
+			 * state due to old UUID values.
+			 *
+			 * Also check the replication state to ensure that we
+			 * do not send these extra UUIDs before the initial
+			 * handshake. */
+			send_uuids = resync_finished &&
+				peer_disk_state[NEW] != D_UNKNOWN &&
+				repl_state[NEW] > L_OFF;
 
 			/* Send UUIDs again if they changed while establishing the connection */
 			if (repl_state[OLD] == L_OFF && repl_state[NEW] > L_OFF &&
@@ -5240,10 +5246,8 @@ static bool do_change_disk_state(struct change_context *context, enum change_pha
 	if (device->disk_state[NOW] == D_ATTACHING &&
 	    context->val.disk == D_NEGOTIATING) {
 		if (device_has_peer_devices_with_disk(device)) {
-			struct drbd_connection *connection =
-				first_connection(device->resource);
 			cluster_wide_state_change =
-				connection && connection->agreed_pro_version >= 110;
+				supports_two_phase_commit(device->resource);
 		} else {
 			/* very last part of attach */
 			context->val.disk = disk_state_from_md(device);
