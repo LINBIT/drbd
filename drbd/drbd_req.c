@@ -759,8 +759,10 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_inc(&req->completion_ref);
 	}
 
-	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED))
+	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
 		set_cache_ptr_if_null(&connection->req_not_net_done, req);
+		atomic_inc(&req->completion_ref);
+	}
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		kref_get(&req->kref); /* wait for the DONE */
@@ -806,8 +808,10 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 				  req, RQ_NET_SENT | RQ_NET_PENDING, 0);
 	}
 
-	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED))
+	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
+		++c_put;
 		advance_conn_req_next(connection, req);
+	}
 
 	if (!(old_net & RQ_NET_DONE) && (set & RQ_NET_DONE)) {
 		atomic_t *ap_in_flight = &peer_device->connection->ap_in_flight;
