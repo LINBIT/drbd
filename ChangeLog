@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.11 (api:genl2/proto:110-121/transport:17)
+--------
+ * The change introduced with 9.1.10 created another problem that might
+   lead to premature request completion (kernel crash); reverted that
+   change and fix it in another way
+
 9.1.10 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a regression introduced with 9.1.9; using protocol A on SMP
