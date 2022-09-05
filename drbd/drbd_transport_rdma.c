@@ -287,6 +287,7 @@ struct dtr_cm {
 	struct timer_list tx_timeout;
 
 	struct work_struct tx_timeout_work;
+	struct work_struct connect_work;
 	struct work_struct establish_work;
 	struct work_struct disconnect_work;
 
@@ -361,6 +362,7 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 static void dtr_tx_timeout_fn(struct timer_list *t);
 static void dtr_control_timer_fn(struct timer_list *t);
 static void dtr_tx_timeout_work_fn(struct work_struct *work);
+static void dtr_cma_connect_work_fn(struct work_struct *work);
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
@@ -968,6 +970,7 @@ static struct dtr_cm *dtr_alloc_cm(void)
 		return NULL;
 
 	kref_init(&cm->kref);
+	INIT_WORK(&cm->connect_work, dtr_cma_connect_work_fn);
 	INIT_WORK(&cm->establish_work, dtr_path_established_work_fn);
 	INIT_WORK(&cm->disconnect_work, dtr_cma_disconnect_work_fn);
 	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
@@ -1183,8 +1186,9 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
-static void dtr_cma_connect(struct dtr_cm *cm)
+static void dtr_cma_connect_work_fn(struct work_struct *work)
 {
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, connect_work);
 	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	enum connect_state_enum p;
@@ -1193,13 +1197,14 @@ static void dtr_cma_connect(struct dtr_cm *cm)
 	p = atomic_cmpxchg(&path->cs.active_state, PCS_REQUEST_ABORT, PCS_INACTIVE);
 	if (p != PCS_CONNECTING) {
 		wake_up(&path->cs.wq);
+		kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 		return;
 	}
 
-	kref_get(&cm->kref); /* For path->cm */
+	/* kref_put()/kref_get(&cm->kref) Recycling reference for work for path->cm */
 	err = dtr_path_prepare(path, cm, true);
 	if (err) {
-		tr_err(transport, "dtr_path_prepared() = %d\n", err);
+		tr_err(transport, "dtr_path_prepare() = %d\n", err);
 		goto out;
 	}
 
@@ -1305,7 +1310,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_ROUTE_RESOLVED\n", cm->name);
 		cm->state = ROUTE_RESOLVED;
 
-		dtr_cma_connect(cm);
+		kref_get(&cm->kref);
+		schedule_work(&cm->connect_work);
 		break;
 
 	case RDMA_CM_EVENT_CONNECT_REQUEST:
