@@ -1333,10 +1333,10 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 	case RDMA_CM_EVENT_DISCONNECTED:
 		// pr_info("%s: RDMA_CM_EVENT_DISCONNECTED\n", cm->name);
-		clear_bit(DSB_CONNECTED, &cm->state);
+		if (!test_and_clear_bit(DSB_CONNECTED, &cm->state))
+			return 0; /* keep ref on cm; probably a tx_timeout */
 
 		dtr_cma_disconnect(cm);
-
 		break;
 
 	case RDMA_CM_EVENT_DEVICE_REMOVAL:
@@ -1557,7 +1557,7 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	struct drbd_transport *transport;
 	struct dtr_path *path = cm->path;
 
-	if (cm->state != DSM_CONNECTED || !path)
+	if (!test_and_clear_bit(DSB_CONNECTED, &cm->state) || !path)
 		goto out;
 
 	transport = &path->rdma_transport->transport;
@@ -1568,10 +1568,16 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	dtr_remove_cm_from_path(path, cm);
 	path->path.established = false;
 	drbd_path_event(transport, &path->path, false);
-	kref_put(&cm->kref, dtr_destroy_cm); /* not expecting a disconnect */
+
+	/* It is not sure that a RDMA_CM_EVENT_DISCONNECTED will be delivered.
+	 * Dropping ref for that here. In case it is delivered we will not drop
+	 * the ref in dtr_cma_event_handler() due to clearing DSB_CONNECTED
+	 * from cm->state */
+	kref_put(&cm->kref, dtr_destroy_cm);
+
 	dtr_activate_path(path);
 out:
-	kref_put(&cm->kref, dtr_destroy_cm);
+	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 }
 
 static void dtr_tx_timeout_fn(struct timer_list *t)
