@@ -2479,15 +2479,6 @@ static bool net_timeout_reached(struct drbd_request *net_req,
 	if (time_in_range(now, connection->last_reconnect_jif, connection->last_reconnect_jif + ent))
 		return false;
 
-	/* We should not blame the peer for being unresponsive, if we did not
-	 * send the request yet. */
-	if (!(net_req->net_rq_state[peer_node_id] & RQ_NET_SENT)) {
-		drbd_warn(peer_device,
-			"We did not send a request for %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
-			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
-		return false;
-	}
-
 	if (net_req->net_rq_state[peer_node_id] & RQ_NET_PENDING) {
 		drbd_warn(peer_device, "Remote failed to finish a request within %ums > ko-count (%u) * timeout (%u * 0.1s)\n",
 			jiffies_to_msecs(now - pre_send_jif), ko_count, timeout);
@@ -2640,8 +2631,16 @@ void request_timer_fn(struct timer_list *t)
 		/* If we don't have such request (e.g. protocol A)
 		 * check the oldest request which is still waiting on its epoch
 		 * closing barrier ack. */
-		if (!req)
+		if (!req) {
 			req = connection->req_not_net_done;
+
+			/* If we did not send the request yet then pre_send_jif
+			 * is not set. Treat this the same as when there are no
+			 * requests pending. */
+			if (req && !(req->net_rq_state[connection->peer_node_id] & RQ_NET_SENT))
+				req = NULL;
+		}
+
 		if (req)
 			pre_send_jif = req->pre_send_jif[connection->peer_node_id];
 
