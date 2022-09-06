@@ -304,12 +304,6 @@ struct dtr_listener {
 	struct dtr_cm cm;
 };
 
-struct dtr_accept_data {
-	struct work_struct work;
-	struct rdma_cm_id *new_cm_id;
-	struct dtr_path *path;
-};
-
 static int dtr_init(struct drbd_transport *transport);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
@@ -982,62 +976,16 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	return cm;
 }
 
-static void dtr_cma_accept_work_fn(struct work_struct *work)
-{
-	struct dtr_accept_data *ad = container_of(work, struct dtr_accept_data, work);
-	struct dtr_path *path = ad->path;
-	struct dtr_transport *rdma_transport = path->rdma_transport;
-	struct drbd_transport *transport = &rdma_transport->transport;
-	struct rdma_cm_id *new_cm_id = ad->new_cm_id;
-	struct dtr_cm *cm;
-	int err;
-
-	kfree(ad);
-
-	cm = dtr_alloc_cm();
-	if (!cm) {
-		tr_err(transport, "rejecting connecting since -ENOMEM for cm\n");
-		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
-		return;
-	}
-
-	cm->state = CONNECT_REQUEST;
-	init_waitqueue_head(&cm->state_wq);
-	new_cm_id->context = cm;
-	cm->id = new_cm_id;
-
-	/* Expecting RDMA_CM_EVENT_ESTABLISHED, after rdma_accept(). Get
-	   the ref before dtr_path_prepare(), since that exposes the cm
-	   to the path, and the path might get destroyed, and with that
-           going to put the cm */
-	kref_get(&cm->kref);
-
-	kref_get(&path->path.kref);
-	cm->path = path;
-
-	/* The initial reference is gifted to the path */
-	err = dtr_path_prepare(path, cm, false);
-	if (err) {
-		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
-		kref_put(&cm->kref, dtr_destroy_cm);
-		kref_put(&cm->kref, dtr_destroy_cm);
-		return;
-	}
-
-	err = rdma_accept(new_cm_id, &dtr_conn_param);
-	if (err)
-		kref_put(&cm->kref, dtr_destroy_cm);
-}
-
-
-static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id)
+static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id, struct dtr_cm **ret_cm)
 {
 	struct sockaddr_storage *peer_addr;
 	struct dtr_connect_state *cs;
-	struct dtr_accept_data *ad;
 	struct dtr_path *path;
 	struct drbd_path *drbd_path;
+	struct dtr_cm *cm;
+	int err;
 
+	*ret_cm = NULL;
 	peer_addr = &new_cm_id->route.addr.dst_addr;
 
 	spin_lock(&listener->listener.waiters_lock);
@@ -1065,7 +1013,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 		}
 
 		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
-		return 0;
+		return -EAGAIN;
 	}
 
 	path = container_of(drbd_path, struct dtr_path, path);
@@ -1075,20 +1023,43 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 		return -EAGAIN;
 	}
 
-	ad = kmalloc(sizeof(*ad), GFP_KERNEL);
-	if (!ad) {
-		struct drbd_transport *transport = &path->rdma_transport->transport;
-		tr_err(transport,"rejecting connecting since -ENOMEM for ad\n");
+	cm = dtr_alloc_cm();
+	if (!cm) {
+		pr_err("rejecting connecting since -ENOMEM for cm\n");
 		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
-		return -ENOMEM;
+		return -EAGAIN;
 	}
-	INIT_WORK(&ad->work, dtr_cma_accept_work_fn);
-	ad->new_cm_id = new_cm_id;
-	ad->path = path;
 
-	schedule_work(&ad->work);
+	cm->state = CONNECT_REQUEST;
+	init_waitqueue_head(&cm->state_wq);
+	new_cm_id->context = cm;
+	cm->id = new_cm_id;
+	*ret_cm = cm;
 
-	return 0;
+	/* Expecting RDMA_CM_EVENT_ESTABLISHED, after rdma_accept(). Get
+	   the ref before dtr_path_prepare(), since that exposes the cm
+	   to the path, and the path might get destroyed, and with that
+           going to put the cm */
+	kref_get(&cm->kref);
+
+	kref_get(&path->path.kref);
+	cm->path = path;
+
+	err = dtr_path_prepare(path, cm, false);
+	if (err) {
+		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
+		kref_put(&cm->kref, dtr_destroy_cm);
+		/* after this kref_put() it has a count of 1. Returning it in ret_cm and
+		   returning an error causes the caller to drop the final reference */
+
+		return -EAGAIN;
+	}
+
+	err = rdma_accept(new_cm_id, &dtr_conn_param);
+	if (err)
+		kref_put(&cm->kref, dtr_destroy_cm);
+
+	return err;
 }
 
 static int dtr_start_try_connect(struct dtr_connect_state *cs)
@@ -1319,15 +1290,17 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* for listener */
 
 		listener = container_of(cm, struct dtr_listener, cm);
-		dtr_cma_accept(listener, cm_id);
+		err = dtr_cma_accept(listener, cm_id, &cm);
 
 		/* I found this a bit confusing. When a new connection comes in, the callback
 		   gets called with a new rdma_cm_id. The new rdma_cm_id inherits its context
-		   pointer from the listening rdma_cm_id. We will create a new context later */
+		   pointer from the listening rdma_cm_id. The new context gets created in
+		   dtr_cma_accept() and is put into &cm here.
+		   cm now contains the accepted connection (no longer the listener); */
+		if (!err || cm == NULL)
+			return 0; /* do not touch kref of new connection/listener */
 
-		/* return instead of break. Do not put the reference on
-		   the listening cm! Wakeup not necessary! */
-		return 0;
+		break; /* in case of error drop the last ref of cm upon function exit */
 
 	case RDMA_CM_EVENT_CONNECT_RESPONSE:
 		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm->name);
