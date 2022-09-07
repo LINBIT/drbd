@@ -1566,8 +1566,6 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
 
 	dtr_remove_cm_from_path(path, cm);
-	path->path.established = false;
-	drbd_path_event(transport, &path->path, false);
 
 	/* It is not sure that a RDMA_CM_EVENT_DISCONNECTED will be delivered.
 	 * Dropping ref for that here. In case it is delivered we will not drop
@@ -1575,7 +1573,16 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	 * from cm->state */
 	kref_put(&cm->kref, dtr_destroy_cm);
 
-	dtr_activate_path(path);
+	path->path.established = false;
+	drbd_path_event(transport, &path->path, false);
+
+	if (!dtr_transport_ok(transport)) {
+		drbd_control_event(transport, CLOSED_BY_PEER);
+		path->rdma_transport->active = false;
+	} else {
+		dtr_activate_path(path);
+	}
+
 out:
 	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 }
