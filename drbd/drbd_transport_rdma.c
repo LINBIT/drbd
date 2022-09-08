@@ -2583,6 +2583,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	struct drbd_transport *transport;
 	enum connect_state_enum a, p;
+	bool was_scheduled;
 	struct dtr_cm *cm;
 	long t;
 	int err;
@@ -2611,8 +2612,11 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	switch (a) {
 	case PCS_CONNECTING:
-		if (delayed_work_pending(&path->cs.retry_connect_work))
-			flush_delayed_work(&path->cs.retry_connect_work);
+		was_scheduled = flush_delayed_work(&path->cs.retry_connect_work);
+		if (!was_scheduled) {
+			atomic_set(&path->cs.active_state, PCS_INACTIVE);
+			break;
+		}
 		fallthrough;
 	case PCS_REQUEST_ABORT:
 		t = wait_event_timeout(path->cs.wq,
