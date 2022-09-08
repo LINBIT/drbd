@@ -5514,10 +5514,7 @@ static void device_to_statistics(struct device_statistics *s,
 		spin_unlock_irq(&md->uuid_lock);
 
 		s->dev_disk_flags = md->flags;
-		s->dev_lower_blocked =
-			bdi_congested(device->ldev->backing_bdev->bd_disk->bdi,
-				      (1 << WB_async_congested) |
-				      (1 << WB_sync_congested));
+		s->dev_lower_blocked = false;
 		put_ldev(device);
 	}
 	s->dev_size = get_capacity(device->vdisk);
