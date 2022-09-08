@@ -2581,6 +2581,7 @@ static void dtr_end_tx_work_fn(struct work_struct *work)
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
 	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
+	struct drbd_transport *transport;
 	enum connect_state_enum a, p;
 	struct dtr_cm *cm;
 	long t;
@@ -2588,6 +2589,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	if (!path)
 		return;
+
+	transport = &path->rdma_transport->transport;
 
 	a = atomic_cmpxchg(&path->cs.active_state, PCS_CONNECTING, PCS_REQUEST_ABORT);
 	p = atomic_cmpxchg(&path->cs.passive_state, PCS_CONNECTING, PCS_INACTIVE);
@@ -2601,7 +2604,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       atomic_read(&path->cs.passive_state) == PCS_INACTIVE,
 				       HZ * 60);
 		if (t == 0)
-			pr_warn("passive_state still %d\n", atomic_read(&path->cs.passive_state));
+			tr_warn(transport, "passive_state still %d\n", atomic_read(&path->cs.passive_state));
 	case PCS_INACTIVE:
 		break;
 	}
@@ -2616,7 +2619,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
 				       HZ * 60);
 		if (t == 0)
-			pr_warn("active_state still %d\n", atomic_read(&path->cs.active_state));
+			tr_warn(transport, "active_state still %d\n", atomic_read(&path->cs.active_state));
 	case PCS_INACTIVE:
 		break;
 	}
@@ -2630,7 +2633,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	err = rdma_disconnect(cm->id);
 	if (err) {
-		pr_warn("failed to disconnect, id %p context %p err %d\n",
+		tr_warn(transport, "failed to disconnect, id %p context %p err %d\n",
 			cm->id, cm->id->context, err);
 		/* We are ignoring errors here on purpose */
 		goto out;
@@ -2643,7 +2646,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 
 	if (test_bit(DSB_CONNECTED, &cm->state))
 		/* rdma_stream->rdma_transport might still be NULL here. */
-		pr_warn("WARN: not properly disconnected, state = %lu\n",
+		tr_warn(transport, "WARN: not properly disconnected, state = %lu\n",
 			cm->state);
 
  out:
@@ -2651,7 +2654,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	   all posted rx_descs */
 	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
 	if (err)
-		pr_err("ib_modify_qp failed %d\n", err);
+		tr_err(transport, "ib_modify_qp failed %d\n", err);
 
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
