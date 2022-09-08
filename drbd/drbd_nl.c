@@ -3933,6 +3933,9 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 	kfree(old_peer_device_conf);
 	kfree(old_plan);
 
+	/* No need to call drbd_send_sync_param() here. The values in
+	 * peer_device->conf that we send are ignored by recent peers anyway. */
+
 	if (0) {
 fail:
 		retcode = ERR_NOMEM;

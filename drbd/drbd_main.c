@@ -1181,6 +1181,10 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 
 	if (get_ldev(peer_device->device)) {
 		pdc = rcu_dereference(peer_device->conf);
+		/* These values will be ignored by peers running DRBD 9.2+, but
+		 * we have to send something, so send the real values. We
+		 * cannot omit the entire packet because we must verify that
+		 * the algorithms match. */
 		p->resync_rate = cpu_to_be32(pdc->resync_rate);
 		p->c_plan_ahead = cpu_to_be32(pdc->c_plan_ahead);
 		p->c_delay_target = cpu_to_be32(pdc->c_delay_target);

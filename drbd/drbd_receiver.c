@@ -5513,6 +5513,11 @@ static int config_unknown_volume(struct drbd_connection *connection, struct pack
 	return ignore_remaining_packet(connection, pi->size);
 }
 
+/* Receive P_SYNC_PARAM89 and the older P_SYNC_PARAM. The peer_device fields
+ * related to resync configuration are ignored. These include resync_rate,
+ * c_max_rate and the like. We ignore them because applying them to our own
+ * configuration would be confusing. It would cause us to swap configuration
+ * with our peer each time we connected. */
 static int receive_SyncParam(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -5522,11 +5527,10 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	struct crypto_shash *verify_tfm = NULL;
 	struct crypto_shash *csums_tfm = NULL;
 	struct net_conf *old_net_conf, *new_net_conf = NULL;
-	struct peer_device_conf *old_peer_device_conf = NULL, *new_peer_device_conf = NULL;
+	struct peer_device_conf *old_peer_device_conf = NULL;
 	const int apv = connection->agreed_pro_version;
 	struct fifo_buffer *old_plan = NULL, *new_plan = NULL;
 	struct drbd_resource *resource = connection->resource;
-	unsigned int fifo_size = 0;
 	int err;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -5569,21 +5573,6 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		return err;
 	}
 	old_net_conf = connection->transport.net_conf;
-	if (get_ldev(device)) {
-		new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
-		if (!new_peer_device_conf) {
-			put_ldev(device);
-			mutex_unlock(&resource->conf_update);
-			drbd_err(device, "Allocation of new peer_device_conf failed\n");
-			return -ENOMEM;
-		}
-		/* With a non-zero new_peer_device_conf, we will call put_ldev() below.  */
-
-		old_peer_device_conf = peer_device->conf;
-		*new_peer_device_conf = *old_peer_device_conf;
-
-		new_peer_device_conf->resync_rate = be32_to_cpu(p->resync_rate);
-	}
 
 	if (apv >= 88) {
 		if (apv == 88) {
@@ -5632,24 +5621,6 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			}
 		}
 
-		if (apv > 94 && new_peer_device_conf) {
-			new_peer_device_conf->c_plan_ahead = be32_to_cpu(p->c_plan_ahead);
-			new_peer_device_conf->c_delay_target = be32_to_cpu(p->c_delay_target);
-			new_peer_device_conf->c_fill_target = be32_to_cpu(p->c_fill_target);
-			new_peer_device_conf->c_max_rate = be32_to_cpu(p->c_max_rate);
-
-			fifo_size = (new_peer_device_conf->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ;
-			old_plan = rcu_dereference_protected(peer_device->rs_plan_s,
-				lockdep_is_held(&resource->conf_update));
-			if (!old_plan || fifo_size != old_plan->size) {
-				new_plan = fifo_alloc(fifo_size);
-				if (!new_plan) {
-					drbd_err(device, "kmalloc of fifo_buffer failed");
-					goto disconnect;
-				}
-			}
-		}
-
 		if (verify_tfm || csums_tfm) {
 			new_net_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
 			if (!new_net_conf)
@@ -5675,11 +5646,6 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 	}
 
-	if (new_peer_device_conf) {
-		rcu_assign_pointer(peer_device->conf, new_peer_device_conf);
-		put_ldev(device);
-	}
-
 	if (new_plan)
 		rcu_assign_pointer(peer_device->rs_plan_s, new_plan);
 
@@ -5694,19 +5660,11 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 	return 0;
 
 reconnect:
-	if (new_peer_device_conf) {
-		put_ldev(device);
-		kfree(new_peer_device_conf);
-	}
 	mutex_unlock(&resource->conf_update);
 	return -EIO;
 
 disconnect:
 	kfree(new_plan);
-	if (new_peer_device_conf) {
-		put_ldev(device);
-		kfree(new_peer_device_conf);
-	}
 	mutex_unlock(&resource->conf_update);
 	/* just for completeness: actually not needed,
 	 * as this is not reached if csums_tfm was ok. */
