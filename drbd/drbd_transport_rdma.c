@@ -268,6 +268,9 @@ struct dtr_transport {
 	struct timer_list control_timer;
 	atomic_t first_path_connect_err;
 	struct completion connected;
+
+	atomic_t cm_count;
+	wait_queue_head_t cm_count_wait;
 };
 
 struct dtr_cm {
@@ -294,6 +297,7 @@ struct dtr_cm {
 	struct work_struct end_rx_work;
 	struct work_struct end_tx_work;
 
+	struct dtr_transport *rdma_transport;
 	struct rcu_head rcu;
 };
 
@@ -498,6 +502,9 @@ static int dtr_init(struct drbd_transport *transport)
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
 
+	atomic_set(&rdma_transport->cm_count, 0);
+	init_waitqueue_head(&rdma_transport->cm_count_wait);
+
 	return 0;
 }
 
@@ -557,6 +564,11 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 			kref_put(&path->path.kref, drbd_destroy_path);
 		}
+
+		/* After returning from dtr_free() this module might get unloaded soon. Make
+		   sure all dtr_tx_desc, dtr_rx_desc, dtr_cm objects ceased to exists. Otherwise
+		   we might get callbacks to an unloaded module. */
+		wait_event(rdma_transport->cm_count_wait, !atomic_read(&rdma_transport->cm_count));
 
 		/* The transport object itself is embedded into a conneciton.
 		   Do not free it here! The function should better be called
@@ -954,7 +966,7 @@ static void dtr_path_established(struct dtr_cm *cm)
 	schedule_work(&cm->establish_work);
 }
 
-static struct dtr_cm *dtr_alloc_cm(void)
+static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 {
 	struct dtr_cm *cm;
 
@@ -971,6 +983,11 @@ static struct dtr_cm *dtr_alloc_cm(void)
 	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
 	timer_setup(&cm->tx_timeout, dtr_tx_timeout_fn, 0);
+
+	kref_get(&path->path.kref);
+	cm->path = path;
+	cm->rdma_transport = path->rdma_transport;
+	atomic_inc(&cm->rdma_transport->cm_count);
 
 	return cm;
 }
@@ -1022,7 +1039,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 		return -EAGAIN;
 	}
 
-	cm = dtr_alloc_cm();
+	cm = dtr_alloc_cm(path);
 	if (!cm) {
 		pr_err("rejecting connecting since -ENOMEM for cm\n");
 		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
@@ -1040,9 +1057,6 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	   to the path, and the path might get destroyed, and with that
            going to put the cm */
 	kref_get(&cm->kref);
-
-	kref_get(&path->path.kref);
-	cm->path = path;
 
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
@@ -1068,12 +1082,9 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 	struct dtr_cm *cm;
 	int err = -ENOMEM;
 
-	cm = dtr_alloc_cm();
+	cm = dtr_alloc_cm(path);
 	if (!cm)
 		goto out;
-
-	kref_get(&path->path.kref);
-	cm->path = path;
 
 	err = dtr_create_cm_id(cm, path->path.net);
 	if (err) {
@@ -2662,6 +2673,7 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
+	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
 	if (cm->id) {
 		if (cm->id->qp)
@@ -2698,6 +2710,9 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	}
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
+
+	if (atomic_dec_and_test(&rdma_transport->cm_count))
+		wake_up(&rdma_transport->cm_count_wait);
 }
 
 static void dtr_destroy_cm(struct kref *kref)
