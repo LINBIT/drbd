@@ -560,6 +560,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		list_splice_init_rcu(&transport->paths, &work_list, synchronize_rcu);
 
 		list_for_each_entry_safe(path, tmp, &work_list, path.list) {
+			flush_delayed_work(&path->cs.retry_connect_work);
 			list_del_init(&path->path.list);
 
 			kref_put(&path->path.kref, drbd_destroy_path);
