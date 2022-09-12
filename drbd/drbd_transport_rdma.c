@@ -1752,16 +1752,6 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	return 0;
 }
 
-static int dtr_cm_posted_rx_descs(struct dtr_cm *cm)
-{
-	int i, posted = 0;
-
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		posted += atomic_read(&cm->path->flow[i].rx_descs_posted);
-
-	return posted;
-}
-
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_cm *cm = ctx;
@@ -1772,8 +1762,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
-		if (!(cm->state & (DSM_CONNECTED | DSM_CONNECT_REQ)) &&
-		    dtr_cm_posted_rx_descs(cm) == 0) {
+		if (!list_empty(&cm->error_rx_descs)) {
 			schedule_work(&cm->end_rx_work);
 			break;
 		}
