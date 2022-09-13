@@ -2042,7 +2042,6 @@ extern int w_send_dblock(struct drbd_work *, int);
 extern int w_send_read_req(struct drbd_work *, int);
 extern int w_e_reissue(struct drbd_work *, int);
 extern int w_restart_disk_io(struct drbd_work *, int);
-extern int w_start_resync(struct drbd_work *, int);
 extern int w_send_dagtag(struct drbd_work *w, int cancel);
 extern int w_send_uuids(struct drbd_work *, int);
 
