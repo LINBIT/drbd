@@ -3484,6 +3484,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		drbd_calc_cpu_mask(&new_cpu_mask);
 	if (!cpumask_equal(resource->cpu_mask, new_cpu_mask)) {
 		cpumask_copy(resource->cpu_mask, new_cpu_mask);
+		resource->worker.reset_cpu_mask = 1;
 		rcu_read_lock();
 		for_each_connection_rcu(connection, resource) {
 			connection->receiver.reset_cpu_mask = 1;
