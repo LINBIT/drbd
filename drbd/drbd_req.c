@@ -874,10 +874,10 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	unchanged = req->local_rq_state == old_local &&
 	  (idx == -1 || req->net_rq_state[idx] == old_net);
 
-	spin_unlock(&req->rq_lock);
-
-	if (unchanged)
+	if (unchanged) {
+		spin_unlock(&req->rq_lock);
 		return;
+	}
 
 	/* intent: get references */
 
@@ -894,6 +894,9 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
 		set_cache_ptr_if_null(&connection->req_not_net_done, req);
 		atomic_inc(&req->completion_ref);
+		/* This completion ref is necessary to avoid premature completion
+		   in case a WRITE_ACKED_BY_PEER comes in before the sender can do
+		   HANDED_OVER_TO_NETWORK. */
 	}
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
@@ -909,6 +912,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	if (!(old_local & RQ_COMPLETION_SUSP) && (set_local & RQ_COMPLETION_SUSP))
 		atomic_inc(&req->completion_ref);
+
+	spin_unlock(&req->rq_lock);
 
 	/* progress: put references */
 
