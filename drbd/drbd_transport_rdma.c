@@ -2650,16 +2650,18 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 			   HZ);
 
 	if (test_bit(DSB_CONNECTED, &cm->state))
-		/* rdma_stream->rdma_transport might still be NULL here. */
 		tr_warn(transport, "WARN: not properly disconnected, state = %lu\n",
 			cm->state);
 
  out:
-	/* With putting the QP into error state, it has to hand back
-	   all posted rx_descs */
-	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
-	if (err)
-		tr_err(transport, "ib_modify_qp failed %d\n", err);
+	/* between dtr_alloc_cm() and dtr_cm_alloc_rdma_res() cm->id->qp is NULL */
+	if (cm->id->qp) {
+		/* With putting the QP into error state, it has to hand back
+		   all posted rx_descs */
+		err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
+		if (err)
+			tr_err(transport, "ib_modify_qp failed %d\n", err);
+	}
 
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
