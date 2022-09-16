@@ -71,10 +71,10 @@ int allocation_size;
 
    That needs to be implemented in dtr_create_rx_desc() and in dtr_recv() and dtr_recv_pages() */
 
-/* If no recvbuf_size or sendbuf_size is configured use 512KiByte for the DATA_STREAM */
+/* If no recvbuf_size or sendbuf_size is configured use 1M plus two pages for the DATA_STREAM */
 /* Actually it is not a buffer, but the number of tx_descs or rx_descs we allow,
    very comparable to the socket sendbuf and recvbuf sizes */
-#define RDMA_DEF_BUFFER_SIZE (1 << 19)
+#define RDMA_DEF_BUFFER_SIZE (DRBD_MAX_BIO_SIZE + 2 * PAGE_SIZE)
 
 /* If we can send less than 8 packets, we consider the transport as congested. */
 #define DESCS_LOW_LEVEL 8
