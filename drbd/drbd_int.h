@@ -593,6 +593,7 @@ enum peer_device_flag {
 	HAVE_SIZES,		/* Cleared when connection gets lost; set when sizes received */
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
+	PEER_QUORATE,		/* Peer has quorum */
 };
 
 /* We could make these currently hardcoded constants configurable

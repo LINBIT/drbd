@@ -44,6 +44,7 @@ struct quorum_detail {
 	int diskless;
 	int missing_diskless;
 	int unknown;
+	int quorate_peers;
 };
 
 struct change_context {
@@ -1432,6 +1433,10 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 				present++;
 		}
 
+		if (disk_state == D_UP_TO_DATE && test_bit(PEER_QUORATE, &peer_device->flags))
+			qd->quorate_peers++;
+
+
 	}
 	rcu_read_unlock();
 
@@ -1478,7 +1483,8 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
-	have_quorum = (qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at;
+	have_quorum = qd.quorate_peers ||
+		((qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at);
 
 	if (!have_quorum && voters != 0 && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&
 		/* It is an even number of nodes (think 2) and we failed by one vote.
@@ -1656,7 +1662,9 @@ handshake_found:
 
 			calc_quorum(device, &qi);
 
-			if (qi.up_to_date + qi.present < qi.quorum_at)
+			if (disk_state[NEW] <= D_ATTACHING)
+				drbd_state_err(resource, "no UpToDate peer with quorum");
+			else if (qi.up_to_date + qi.present < qi.quorum_at)
 				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
 					       qi.up_to_date + qi.present, qi.voters, qi.quorum_at);
 			else if (qi.up_to_date < qi.min_redundancy_at)
@@ -3728,6 +3736,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    !(role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY))
 				send_state = true;
 
+			/* diskless peers need to be informed about quorum changes, since they consider
+			   the quorum state of the diskfull nodes. */
+			if (have_quorum[OLD] != have_quorum[NEW] && disk_state[NEW] >= D_INCONSISTENT)
+				send_state = true;
+
 			/* Skipped resync with peer_device, tell others... */
 			if (send_state_others && send_state_others != peer_device)
 				send_state = true;
@@ -3775,7 +3788,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				put_ldev(device);
 			}
 
-			if (send_state)
+			if (send_state && cstate[NEW] == C_CONNECTED)
 				drbd_send_state(peer_device, new_state);
 
 			if (((!device_stable[OLD] && device_stable[NEW]) ||
