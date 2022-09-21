@@ -7983,6 +7983,11 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	weak_nodes |= NODE_MASK(peer_device->node_id);
 	peer_device->current_uuid = current_uuid;
 
+	if (get_ldev(device)) {
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
+		peer_md->flags |= MDF_NODE_EXISTS;
+		put_ldev(device);
+	}
 	if (connection->peer_role[NOW] == R_PRIMARY)
 		check_resync_source(device, weak_nodes);
 
