@@ -29,19 +29,15 @@ map_dist() {
 	return 0
 }
 
-host_dist_matches_image_dist() {
-	if [ -z "$LB_DIST" ]; then
-		[ -f "$HOSTRELEASE" ] || die "You have to bind-mount /etc/os-release to the container's $HOSTRELEASE"
-		host_dist="$(lbdisttool.py -l --os-release $HOSTRELEASE | cut -d'.' -f1 )"
-	else
-		host_dist="$LB_DIST"
-	fi
-	image_dist="$(lbdisttool.py -l | cut -d'.' -f1 )"
-
-	if [[ -z $host_dist ]] ; then
+host_dist_matches_image_dist() {	
+	host_dist="$( map_dist | cut -d'.' -f1 )"
+	if [[ -z "$host_dist" ]] ; then
 		echo "Cannot get host distro!"
 		return 1
-	elif [[ $host_dist == $image_dist ]]; then
+	fi
+
+	image_dist="$( lbdisttool.py -l | cut -d'.' -f1 )"
+	if [[ "$host_dist" == "$image_dist" ]]; then
 		echo "The host distro matches image distro!"
 		return 0
 	else
@@ -248,7 +244,11 @@ modprobe_deps() {
 ## Allow "exit 0", so that when used as an initContainers in Kubernetes, 
 ## next initContainers with a different distro will be tried
 
-host_dist_matches_image_dist && [[ $LB_SKIP == yes ]] && exit 0 || exit 1
+if [[ $LB_SKIP == yes ]]; then
+	host_dist_matches_image_dist || exit 0
+elif [[ $LB_SKIP == no ]]; then
+	host_dist_matches_image_dist || exit 1
+fi
 
 ##
 
