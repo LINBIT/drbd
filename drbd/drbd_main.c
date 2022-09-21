@@ -1392,12 +1392,12 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
+		struct drbd_peer_device *p2 = peer_device_by_node_id(device, i);
+		bool is_diskless = p2 && p2->disk_state[NOW] == D_DISKLESS;
 		bool send_this =
-			peer_md[i].flags & MDF_HAVE_BITMAP || peer_md[i].flags & MDF_NODE_EXISTS ||
-			peer_md[i].bitmap_uuid;
+			peer_md[i].flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS) || is_diskless;
 		if (!send_this && !sent_one_unallocated &&
-		    i != my_node_id && i != peer_device->node_id &&
-		    val) {
+		    i != my_node_id && i != peer_device->node_id && val) {
 			send_this = true;
 			sent_one_unallocated = true;
 			uuid_flags |= (u64)i << UUID_FLAG_UNALLOC_SHIFT;
