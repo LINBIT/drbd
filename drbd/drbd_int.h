@@ -794,6 +794,9 @@ enum resource_flag {
 	TWOPC_ABORT_LOCAL,
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
+	TRY_BECOME_UP_TO_DATE_PENDING,  /* set when we change our disk state to
+		* D_CONSISTENT until we have determined whether we can return to
+		* being D_UP_TO_DATE */
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */

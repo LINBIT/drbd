@@ -1551,6 +1551,22 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
+		/* SS_NO_UP_TO_DATE_DISK is not quite accurate here. We may
+		 * have an up-to-date peer. However, we cannot trust that
+		 * information. TRY_BECOME_UP_TO_DATE_PENDING is set when we
+		 * have lost our connection to a primary peer. It is possible
+		 * that the "up-to-date peer" has also lost its connection to
+		 * the primary peer, but we have not yet received the
+		 * corresponding P_STATE packet.
+		 *
+		 * So return SS_NO_UP_TO_DATE_DISK conservatively. This causes
+		 * drbd_set_role() to release state_sem and wait, which gives
+		 * try_become_up_to_date() a chance to run. That will set our
+		 * disk state appropriately depending on whether our partition
+		 * is isolated from the original primary peer. */
+		if (test_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags))
+			return SS_NO_UP_TO_DATE_DISK;
+
 		for_each_connection_rcu(connection, resource) {
 			struct net_conf *nc;
 
@@ -2413,6 +2429,13 @@ static bool has_starting_resyncs(struct drbd_connection *connection)
 	return false;
 }
 
+static bool should_try_become_up_to_date(struct drbd_device *device, enum drbd_disk_state *disk_state,
+		enum which_state which)
+{
+	return disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
+			may_return_to_up_to_date(device, which);
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -2791,6 +2814,11 @@ static void finish_state_change(struct drbd_resource *resource)
 
 		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
 			clear_bit(NEW_CUR_UUID, &device->flags);
+
+		/* The NEW state version here is the same as the NOW version in
+		 * the context of w_after_state_change(). */
+		if (should_try_become_up_to_date(device, disk_state, NEW))
+			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -3956,8 +3984,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
-		    may_return_to_up_to_date(device, NOW))
+		/* We cannot test the flag TRY_BECOME_UP_TO_DATE_PENDING here
+		 * because that would cause us to queue the work more often
+		 * than necessary. */
+		if (should_try_become_up_to_date(device, disk_state, NOW))
 			try_become_up_to_date = true;
 
 		if (test_bit(TRY_TO_GET_RESYNC, &device->flags)) {
