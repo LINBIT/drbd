@@ -2726,7 +2726,16 @@ static void finish_state_change(struct drbd_resource *resource)
  * are not Primary ourselves, AND all previously received WRITE (peer-) requests
  * have been processed, NOTHING is in flight against our backend anymore,
  * AND we have successfully written out any dirty bitmap pages.
+ *
+ *
+ * MDF_PEER_DEVICE_SEEN ... The peer had a backing device at some point
+ * MDF_NODE_EXISTS ... We have seen evidence that this node exists in the cluster.
+ *   Note: This bit does **not** get set when a new peer/connection is created with
+ *   `drbdsetup new-peer ...`.  The bit gets set when we establish a connection
+ *   successfully for the first time or we learn via other nodes about the
+ *   existence.
  */
+
 			/* set, if someone is/becomes primary */
 			if (role[NEW] == R_PRIMARY || some_peer_is_primary)
 				mdf |= MDF_PRIMARY_IND;
