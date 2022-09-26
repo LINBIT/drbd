@@ -7924,6 +7924,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
+	if (peer_state.quorum)
+		set_bit(PEER_QUORATE, &peer_device->flags);
+	else
+		clear_bit(PEER_QUORATE, &peer_device->flags);
+
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) ||
 	    test_bit(CURRENT_UUID_RECEIVED, &peer_device->flags)) {
 		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
