@@ -2475,7 +2475,6 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 
 	peer_md->bitmap_index = bitmap_index;
 	peer_device->bitmap_index = bitmap_index;
-	peer_md->flags &= ~MDF_NODE_EXISTS; /* it is a peer now */
 	peer_md->flags |= MDF_HAVE_BITMAP;
 
 	return 0;
