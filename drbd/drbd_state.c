@@ -82,6 +82,7 @@ static void sanitize_state(struct drbd_resource *resource);
 static void ensure_exposed_data_uuid(struct drbd_device *device);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
+static void check_wrongly_set_mdf_exists(struct drbd_device *);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -1311,6 +1312,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 	const int my_node_id = device->resource->res_opts.node_id;
 	int node_id, up_to_date = 0, present = 0, outdated = 0, diskless = 0;
 	int missing_diskless = 0, unknown = 0;
+
+	check_wrongly_set_mdf_exists(device);
 
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -5718,4 +5721,47 @@ static void ensure_exposed_data_uuid(struct drbd_device *device)
 	if (changed)
 		drbd_info(device, "Setting exposed data uuid: %016llX\n",
 			  (unsigned long long)device->exposed_data_uuid);
+}
+
+/* Between 9.1.7 and 9.1.12 drbd was setting MDF_NODE_EXISTS for all peers.
+ * With that the flag got useless. It is a meta-data flag that persists.
+ * Clear it for all not configured nodes if we find it in every peer slot.
+ */
+static void check_wrongly_set_mdf_exists(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	const int my_node_id = resource->res_opts.node_id;
+	bool wrong = true;
+	int node_id;
+
+	if (!get_ldev(device))
+		return;
+
+	rcu_read_lock();
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+		if (!(peer_md->flags & MDF_NODE_EXISTS || peer_device || node_id == my_node_id)) {
+			wrong = false;
+			break;
+		}
+	}
+
+	if (wrong) {
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+			if (!peer_device)
+				peer_md->flags &= ~MDF_NODE_EXISTS;
+		}
+		if (!test_bit(WRONG_MDF_EXISTS, &resource->flags)) {
+			set_bit(WRONG_MDF_EXISTS, &resource->flags);
+			drbd_warn(resource, "Clearing excess MDF_NODE_EXISTS flags\n");
+		}
+	}
+	rcu_read_unlock();
+	put_ldev(device);
 }
