@@ -859,7 +859,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		}
 	}
 
-	wake_up(&resource->state_wait);
+	wake_up_all(&resource->state_wait);
 
 	/* Call this after applying the state change from NEW to NOW. */
 	queue_after_state_change_work(resource, done, work);

@@ -7001,7 +7001,7 @@ static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsig
 
 	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
 	write_unlock_irq(&resource->state_rwlock);
-	wake_up(&resource->state_wait);
+	wake_up_all(&resource->state_wait);
 	wait_event_timeout(resource->twopc_wait,
 			   (rv = when_done_lock(resource, for_tid)) != ALT_TIMEOUT, t);
 	clear_bit(TWOPC_ABORT_LOCAL, &resource->flags);
@@ -7561,7 +7561,7 @@ static void finish_nested_twopc(struct drbd_connection *connection)
 
 	set_bit(CONN_HANDSHAKE_READY, &connection->flags);
 
-	wake_up(&resource->state_wait);
+	wake_up_all(&resource->state_wait);
 
 	if (!resource->remote_state_change)
 		return;
@@ -9746,7 +9746,7 @@ static int got_RqSReply(struct drbd_connection *connection, struct packet_info *
 			   drbd_set_st_err_str(retcode), retcode);
 	}
 
-	wake_up(&connection->resource->state_wait);
+	wake_up_all(&connection->resource->state_wait);
 
 	return 0;
 }
@@ -9811,7 +9811,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 		if (cluster_wide_reply_ready(resource)) {
 			int my_node_id = resource->res_opts.node_id;
 			if (resource->twopc_reply.initiator_node_id == my_node_id) {
-				wake_up(&resource->state_wait);
+				wake_up_all(&resource->state_wait);
 			} else if (resource->twopc_work.cb == NULL) {
 				/* in case the timeout timer was not quicker in queuing the work... */
 				resource->twopc_work.cb = nested_twopc_work;
@@ -9838,7 +9838,7 @@ void twopc_connection_down(struct drbd_connection *connection)
 		if (cluster_wide_reply_ready(resource)) {
 			int my_node_id = resource->res_opts.node_id;
 			if (resource->twopc_reply.initiator_node_id == my_node_id) {
-				wake_up(&resource->state_wait);
+				wake_up_all(&resource->state_wait);
 			} else if (resource->twopc_work.cb == NULL) {
 				/* in case the timeout timer was not quicker in queuing the work... */
 				resource->twopc_work.cb = nested_twopc_work;
@@ -9861,7 +9861,7 @@ static int got_PingAck(struct drbd_connection *connection, struct packet_info *p
 
 	if (!test_bit(GOT_PING_ACK, &connection->flags)) {
 		set_bit(GOT_PING_ACK, &connection->flags);
-		wake_up(&connection->resource->state_wait);
+		wake_up_all(&connection->resource->state_wait);
 	}
 
 	return 0;

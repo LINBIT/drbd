@@ -3033,7 +3033,7 @@ void drbd_check_peers(struct drbd_resource *resource)
 	wait_event(resource->state_wait, all_peers_responded(resource));
 
 	clear_bit(CHECKING_PEERS, &resource->flags);
-	wake_up(&resource->state_wait);
+	wake_up_all(&resource->state_wait);
 }
 
 void drbd_check_peers_new_current_uuid(struct drbd_device *device)
