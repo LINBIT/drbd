@@ -5071,6 +5071,18 @@ static bool do_change_role(struct change_context *context, enum change_phase pha
 					__change_peer_disk_state(peer_device, D_OUTDATED);
 			}
 		}
+
+		if (role == R_PRIMARY && phase == PH_COMMIT) {
+			u64 reachable_nodes = resource->twopc_reply.reachable_nodes;
+			struct drbd_peer_device *peer_device;
+
+			for_each_peer_device_rcu(peer_device, device) {
+				if (NODE_MASK(peer_device->node_id) & reachable_nodes &&
+				    peer_device->disk_state[NEW] == D_UNKNOWN &&
+				    want_bitmap(peer_device))
+					__change_peer_disk_state(peer_device, D_OUTDATED);
+			}
+		}
 	}
 	rcu_read_unlock();
 
