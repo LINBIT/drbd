@@ -1331,6 +1331,13 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			continue;
 		}
 
+		/* Ignore non existing nodes.
+		   Note: a fresh (before connected once), intentional diskless peer
+		   gets ignored as well by this.
+		   A fresh diskful peer counts! (since it has MDF_HAVE_BITMAP) */
+		if (!(peer_md->flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS | MDF_PEER_DEVICE_SEEN)))
+			continue;
+
 		peer_device = peer_device_by_node_id(device, node_id);
 		is_intentional_diskless = peer_device && !want_bitmap(peer_device);
 
@@ -1342,14 +1349,6 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 				continue;
 			}
 		}
-
-		if (!(peer_md->flags & MDF_HAVE_BITMAP) && !(peer_md->flags & MDF_NODE_EXISTS) &&
-		    !is_intentional_diskless) {
-			continue;
-		}
-
-		if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN) && !is_intentional_diskless)
-			continue;
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
