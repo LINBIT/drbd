@@ -2,6 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0-rc.8 (api:genl2/proto:110-121/transport:18)
+--------
+ * fix the RDMA transport to work on more recent kernels (like RHEL9)
+ * improve transmit timeout handling of the RDMA transport
+ * register DRBD has pernet device for namespace management
+ * merged fixes from the drbd-9.1 branch, including
+  - request handling (9.1.11)
+  - fix quorum when fresh nodes join a quorate but incomplete partition
+  - minor state handling fixes/improvements
+
 9.2.0-rc.7 (api:genl2/proto:110-121/transport:18)
 --------
  * support for network namespaces
