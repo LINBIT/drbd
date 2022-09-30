@@ -451,6 +451,9 @@ int main(int argc, char **argv)
 	patch(1, "genhd_fl_no_part", true, false,
 	      COMPAT_HAVE_GENHD_FL_NO_PART, "present");
 
+	patch(1, "dax_direct_access", true, false,
+	      COMPAT_DAX_DIRECT_ACCESS_TAKES_MODE, "takes_mode");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
