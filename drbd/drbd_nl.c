@@ -3553,9 +3553,6 @@ _check_net_options(struct drbd_connection *connection, struct net_conf *old_net_
 		if (new_net_conf->two_primaries != old_net_conf->two_primaries)
 			return ERR_NEED_APV_100;
 
-		if (!new_net_conf->integrity_alg != !old_net_conf->integrity_alg)
-			return ERR_NEED_APV_100;
-
 		if (strcmp(new_net_conf->integrity_alg, old_net_conf->integrity_alg))
 			return ERR_NEED_APV_100;
 	}
@@ -5398,7 +5395,7 @@ static int nla_put_drbd_cfg_context(struct sk_buff *skb,
 	if (connection) {
 		nla_put_u32(skb, T_ctx_peer_node_id, connection->peer_node_id);
 		rcu_read_lock();
-		if (connection->transport.net_conf && connection->transport.net_conf->name)
+		if (connection->transport.net_conf)
 			nla_put_string(skb, T_ctx_conn_name, connection->transport.net_conf->name);
 		rcu_read_unlock();
 	}
