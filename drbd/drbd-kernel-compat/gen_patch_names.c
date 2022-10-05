@@ -360,8 +360,13 @@ int main(int argc, char **argv)
 	patch(1, "disk_update_readahead", true, false,
 	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
 
+#if !defined(COMPAT_HAVE_DISK_UPDATE_READAHEAD)
+	/* disk_update_readahead is the "new version" of
+	 * blk_queue_update_readahead. we only need to consider compat
+	 * for the old function if we don't already have the new one. */
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
+#endif
 
 	patch(1, "struct_gendisk", true, false,
 	      COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO, "has_backing_dev_info");
