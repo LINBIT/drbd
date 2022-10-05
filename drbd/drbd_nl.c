@@ -6492,7 +6492,7 @@ static int nla_put_notification_header(struct sk_buff *msg,
 	return drbd_notification_header_to_skb(msg, &nh, true);
 }
 
-void notify_resource_state(struct sk_buff *skb,
+int notify_resource_state(struct sk_buff *skb,
 			   unsigned int seq,
 			   struct drbd_resource *resource,
 			   struct resource_info *resource_info,
@@ -6546,16 +6546,17 @@ void notify_resource_state(struct sk_buff *skb,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(resource, "Error %d while broadcasting event. Event seq:%u\n",
 			err, seq);
+	return err;
 }
 
-void notify_device_state(struct sk_buff *skb,
+int notify_device_state(struct sk_buff *skb,
 			 unsigned int seq,
 			 struct drbd_device *device,
 			 struct device_info *device_info,
@@ -6595,17 +6596,18 @@ void notify_device_state(struct sk_buff *skb,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(device, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+	return err;
 }
 
 /* open coded path_parms_to_skb() iterating of the list */
-void notify_connection_state(struct sk_buff *skb,
+int notify_connection_state(struct sk_buff *skb,
 			     unsigned int seq,
 			     struct drbd_connection *connection,
 			     struct connection_info *connection_info,
@@ -6646,16 +6648,17 @@ void notify_connection_state(struct sk_buff *skb,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(connection, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+	return err;
 }
 
-void notify_peer_device_state(struct sk_buff *skb,
+int notify_peer_device_state(struct sk_buff *skb,
 			      unsigned int seq,
 			      struct drbd_peer_device *peer_device,
 			      struct peer_device_info *peer_device_info,
@@ -6696,13 +6699,14 @@ void notify_peer_device_state(struct sk_buff *skb,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 failed:
 	drbd_err(peer_device, "Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+	return err;
 }
 
 void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device)
@@ -6714,7 +6718,7 @@ void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device)
 	mutex_unlock(&notification_mutex);
 }
 
-void notify_path_state(struct sk_buff *skb,
+int notify_path_state(struct sk_buff *skb,
 		       unsigned int seq,
 		       /* until we have a backpointer in drbd_path, we need an explicit connection: */
 		       struct drbd_connection *connection,
@@ -6754,7 +6758,7 @@ void notify_path_state(struct sk_buff *skb,
 		if (err && err != -ESRCH)
 			goto failed;
 	}
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
@@ -6762,16 +6766,19 @@ failed:
 	/* FIXME add path specifics to our drbd_polymorph_printk.h */
 	drbd_err(connection, "path: Error %d while broadcasting event. Event seq:%u\n",
 		 err, seq);
+	return err;
 }
 
-void notify_path(struct drbd_connection *connection, struct drbd_path *path, enum drbd_notification_type type)
+int notify_path(struct drbd_connection *connection, struct drbd_path *path, enum drbd_notification_type type)
 {
 	struct drbd_path_info path_info;
+	int err;
 
 	path_info.path_established = path->established;
 	mutex_lock(&notification_mutex);
-	notify_path_state(NULL, 0, connection, path, &path_info, type);
+	err = notify_path_state(NULL, 0, connection, path, &path_info, type);
 	mutex_unlock(&notification_mutex);
+	return err;
 
 }
 
@@ -6823,7 +6830,7 @@ fail:
 		 err, seq);
 }
 
-static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
+static int notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
 {
 	struct drbd_genlmsghdr *dh;
 	int err;
@@ -6837,11 +6844,12 @@ static void notify_initial_state_done(struct sk_buff *skb, unsigned int seq)
 	if (nla_put_notification_header(skb, NOTIFY_EXISTS))
 		goto nla_put_failure;
 	genlmsg_end(skb, dh);
-	return;
+	return 0;
 
 nla_put_failure:
 	nlmsg_free(skb);
 	pr_err("Error %d sending event. Event seq:%u\n", err, seq);
+	return err;
 }
 
 static void free_state_changes(struct list_head *list)
@@ -6869,6 +6877,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	unsigned int seq = cb->args[2];
 	unsigned int n;
 	enum drbd_notification_type flags = 0;
+	int err = 0;
 
 	/* There is no need for taking notification_mutex here: it doesn't
 	   matter if the initial state events mix with later state change
@@ -6877,20 +6886,20 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 
 	cb->args[5]--;
 	if (cb->args[5] == 1) {
-		notify_initial_state_done(skb, seq);
+		err = notify_initial_state_done(skb, seq);
 		goto out;
 	}
 	n = cb->args[4]++;
 	if (cb->args[4] < cb->args[3])
 		flags |= NOTIFY_CONTINUES;
 	if (n < 1) {
-		notify_resource_state_change(skb, seq, state_change,
+		err = notify_resource_state_change(skb, seq, state_change,
 					     NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n--;
 	if (n < state_change->n_connections) {
-		notify_connection_state_change(skb, seq, &state_change->connections[n],
+		err = notify_connection_state_change(skb, seq, &state_change->connections[n],
 					       NOTIFY_EXISTS | flags);
 		goto next;
 	}
@@ -6900,7 +6909,7 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 		struct drbd_path_info path_info;
 
 		path_info.path_established = path_state->path_established;
-		notify_path_state(skb, seq,
+		err = notify_path_state(skb, seq,
 				path_state->connection,
 				path_state->path,
 				&path_info, NOTIFY_EXISTS | flags);
@@ -6908,13 +6917,13 @@ static int get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	}
 	n -= state_change->n_paths;
 	if (n < state_change->n_devices) {
-		notify_device_state_change(skb, seq, &state_change->devices[n],
+		err = notify_device_state_change(skb, seq, &state_change->devices[n],
 					   NOTIFY_EXISTS | flags);
 		goto next;
 	}
 	n -= state_change->n_devices;
 	if (n < state_change->n_devices * state_change->n_connections) {
-		notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
+		err = notify_peer_device_state_change(skb, seq, &state_change->peer_devices[n],
 						NOTIFY_EXISTS | flags);
 		goto next;
 	}
@@ -6930,6 +6939,8 @@ next:
 		cb->args[4] = 0;
 	}
 out:
+	if (err)
+		return err;
 	return skb->len;
 }
 

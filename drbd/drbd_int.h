@@ -2154,30 +2154,30 @@ extern int drbd_al_initialize(struct drbd_device *, void *);
 extern struct mutex notification_mutex;
 extern atomic_t drbd_genl_seq;
 
-extern void notify_resource_state(struct sk_buff *,
+extern int notify_resource_state(struct sk_buff *,
 				  unsigned int,
 				  struct drbd_resource *,
 				  struct resource_info *,
 				  struct rename_resource_info *,
 				  enum drbd_notification_type);
-extern void notify_device_state(struct sk_buff *,
+extern int notify_device_state(struct sk_buff *,
 				unsigned int,
 				struct drbd_device *,
 				struct device_info *,
 				enum drbd_notification_type);
-extern void notify_connection_state(struct sk_buff *,
+extern int notify_connection_state(struct sk_buff *,
 				    unsigned int,
 				    struct drbd_connection *,
 				    struct connection_info *,
 				    enum drbd_notification_type);
-extern void notify_peer_device_state(struct sk_buff *,
+extern int notify_peer_device_state(struct sk_buff *,
 				     unsigned int,
 				     struct drbd_peer_device *,
 				     struct peer_device_info *,
 				     enum drbd_notification_type);
 extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 			  struct drbd_connection *, const char *, int);
-extern void notify_path(struct drbd_connection *, struct drbd_path *,
+extern int notify_path(struct drbd_connection *, struct drbd_path *,
 			enum drbd_notification_type);
 extern void drbd_broadcast_peer_device_state(struct drbd_peer_device *);
 
