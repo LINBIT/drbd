@@ -1932,44 +1932,39 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 }
 
 static void decide_on_discard_support(struct drbd_device *device,
-			struct request_queue *q,
-			struct request_queue *b,
-			struct o_qlim *o,
-			bool discard_zeroes_if_aligned)
+                struct drbd_backing_dev *bdev)
 {
-	/* q = drbd device queue (device->rq_queue)
-	 * b = backing device queue (device->ldev->backing_bdev->bd_disk->queue),
-	 *     or NULL if diskless
-	 */
-	bool can_do = b ? blk_queue_discard(b) : true;
+        struct request_queue *q = device->rq_queue;
 
-	if (can_do && b && !queue_discard_zeroes_data(b) && !discard_zeroes_if_aligned) {
-		can_do = false;
-		drbd_info(device, "discard_zeroes_data=0 and discard_zeroes_if_aligned=no: disabling discards\n");
-	}
-	if (can_do && !b && !(o && o->discard_enabled && o->discard_zeroes_data)) {
-		can_do = false;
-		drbd_info(device, "disabling discards due to peer capabilities\n");
-	}
-	if (can_do && !(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
-		can_do = false;
-		drbd_info(device, "peer DRBD too old, does not support TRIM: disabling discards\n");
-	}
-	if (can_do) {
-		/* We don't care for the granularity, really.
-		 * Stacking limits below should fix it for the local
-		 * device.  Whether or not it is a suitable granularity
-		 * on the remote device is not our problem, really. If
-		 * you care, you need to use devices with similar
-		 * topology on all peers. */
-		blk_queue_discard_granularity(q, 512);
-		q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
-		blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
-	} else {
-		blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
-		blk_queue_discard_granularity(q, 0);
-		q->limits.max_discard_sectors = 0;
-	}
+        if (bdev && !blk_queue_discard(bdev->backing_bdev->bd_disk->queue))
+                goto not_supported;
+
+        if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
+                drbd_info(device,
+                        "peer DRBD too old, does not support TRIM: disabling discards\n");
+                goto not_supported;
+        }
+
+        /*
+         * We don't care for the granularity, really.
+         *
+         * Stacking limits below should fix it for the local device.  Whether or
+         * not it is a suitable granularity on the remote device is not our
+         * problem, really. If you care, you need to use devices with similar
+         * topology on all peers.
+         */
+        blk_queue_discard_granularity(q, 512);
+        q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
+        blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
+        q->limits.max_write_zeroes_sectors =
+                drbd_max_discard_sectors(device->resource);
+        return;
+
+not_supported:
+        blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
+        blk_queue_discard_granularity(q, 0);
+        q->limits.max_discard_sectors = 0;
+        q->limits.max_write_zeroes_sectors = 0;
 }
 
 static void fixup_discard_if_not_supported(struct request_queue *q)
@@ -2005,25 +2000,17 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
 	struct request_queue *b = NULL;
-	struct disk_conf *dc;
-	bool discard_zeroes_if_aligned = true;
 
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
-
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
-		rcu_read_lock();
-		dc = rcu_dereference(device->ldev->disk_conf);
-		discard_zeroes_if_aligned = dc->discard_zeroes_if_aligned;
-		rcu_read_unlock();
-
 		blk_set_stacking_limits(&q->limits);
 	}
 
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
 	blk_queue_segment_boundary(q, PAGE_SIZE-1);
-	decide_on_discard_support(device, q, b, o, discard_zeroes_if_aligned);
+	decide_on_discard_support(device, bdev);
 
 	if (b) {
 		blk_stack_limits(&q->limits, &b->limits, 0);
