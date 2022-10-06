@@ -362,6 +362,9 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
+	patch(1, "bdi_congested", false, true,
+	      COMPAT_HAVE_BDI_CONGESTED, "present");
+
 	patch(1, "congested_fn", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
 
