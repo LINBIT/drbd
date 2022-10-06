@@ -798,9 +798,6 @@ enum resource_flag {
 	EXPLICIT_PRIMARY,
 	CALLBACK_PENDING,	/* Whether we have a call_usermodehelper(, UMH_WAIT_PROC)
 				 * pending, from drbd worker context.
-				 * If set, bdi_write_congested() returns true,
-				 * so shrink_page_list() would not recurse into,
-				 * and potentially deadlock on, this drbd worker.
 				 */
 	TWOPC_ABORT_LOCAL,
 	TWOPC_EXECUTED,         /* Commited or aborted */
