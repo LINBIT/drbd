@@ -39,7 +39,7 @@ static int map_superblock_for_dax(struct drbd_backing_dev *bdev, struct dax_devi
 	int id;
 
 	id = dax_read_lock();
-	len = dax_direct_access(dax_dev, pgoff, want, &kaddr, &pfn_unused);
+	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, &pfn_unused);
 	dax_read_unlock(id);
 
 	if (len < want)
@@ -97,7 +97,7 @@ int drbd_dax_map(struct drbd_backing_dev *bdev)
 	int id;
 
 	id = dax_read_lock();
-	len = dax_direct_access(dax_dev, pgoff, want, &kaddr, &pfn_unused);
+	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, &pfn_unused);
 	dax_read_unlock(id);
 
 	if (len < want)
