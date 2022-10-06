@@ -1141,7 +1141,7 @@ struct drbd_connection {
 		/* Position in change stream of last write sent. */
 		u64 current_dagtag_sector;
 
-		/* Position in change stream of last request seen. */
+		/* Position in change stream of last queued request seen. */
 		u64 seen_dagtag_sector;
 	} send;
 

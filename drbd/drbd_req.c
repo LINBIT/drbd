@@ -600,15 +600,16 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	rcu_read_lock();
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
+		/* Found a request which is for this peer but not yet queued.
+		 * Do not skip past it. */
+		if (unlikely(s & RQ_NET_PENDING && !(s & (RQ_NET_QUEUED|RQ_NET_SENT))))
+			break;
+
 		connection->send.seen_dagtag_sector = req->dagtag_sector;
-		if (s & RQ_NET_QUEUED) {
+		if (likely(s & RQ_NET_QUEUED)) {
 			found_req = req;
 			break;
 		}
-		/* Found a request which is for this peer but not yet queued.
-		 * Do not skip past it. */
-		if (s & RQ_NET_PENDING && !(s & RQ_NET_SENT))
-			break;
 	}
 	rcu_read_unlock();
 	connection->todo.req_next = found_req;

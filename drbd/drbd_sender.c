@@ -2614,13 +2614,14 @@ static struct drbd_request *__next_request_for_connection(
 
 	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		unsigned s = req->net_rq_state[connection->peer_node_id];
+		/* Found a request which is for this peer but not yet queued.
+		 * Do not skip past it. */
+		if (unlikely(s & RQ_NET_PENDING && !(s & (RQ_NET_QUEUED|RQ_NET_SENT))))
+			return NULL;
+
 		connection->send.seen_dagtag_sector = req->dagtag_sector;
 		if (s & RQ_NET_QUEUED)
 			return req;
-		/* Found a request which is for this peer but not yet queued.
-		 * Do not skip past it. */
-		if (s & RQ_NET_PENDING && !(s & RQ_NET_SENT))
-			return NULL;
 	}
 	return NULL;
 }
@@ -2730,7 +2731,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 			 * to ensure that we do not send a barrier early in
 			 * this case. If there is such a request then this
 			 * sender will be woken, so it is OK to schedule(). */
-			if (connection->send.seen_dagtag_sector >= READ_ONCE(resource->dagtag_sector)) {
+			if (dagtag_newer_eq(connection->send.seen_dagtag_sector, READ_ONCE(resource->dagtag_sector))) {
 				finish_wait(&connection->sender_work.q_wait, &wait);
 				maybe_send_barrier(connection,
 						connection->send.current_epoch_nr + 1);
