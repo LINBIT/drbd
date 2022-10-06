@@ -1402,6 +1402,9 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
 
 	switch (rbm) {
 	case RB_CONGESTED_REMOTE:
+		/* originally, this used the bdi congestion framework,
+		 * but that was removed in linux 5.18.
+		 * so just never report the lower device as congested. */
 		return false;
 	case RB_LEAST_PENDING:
 		return atomic_read(&device->local_cnt) >
