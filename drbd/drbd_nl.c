@@ -964,6 +964,9 @@ static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr;
 
+	if (test_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags))
+		return false;
+
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state disk_state = device->disk_state[NOW];
