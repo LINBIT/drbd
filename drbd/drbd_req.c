@@ -1801,7 +1801,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	req->start_jif = bio_start_io_acct(req->master_bio);
 
 	if (get_ldev(device)) {
-		req->private_bio = bio_alloc_clone(bio->bi_bdev, bio, GFP_NOIO, &drbd_io_bio_set);
+		req->private_bio = bio_alloc_clone(device->ldev->backing_bdev, bio, GFP_NOIO, &drbd_io_bio_set);
 		req->private_bio->bi_private = req;
 		req->private_bio->bi_end_io = drbd_request_endio;
 	}
