@@ -1936,7 +1936,7 @@ static void decide_on_discard_support(struct drbd_device *device,
 {
 	struct request_queue *q = device->rq_queue;
 
-	if (bdev && !blk_queue_discard(bdev->backing_bdev->bd_disk->queue))
+	if (bdev && !bdev_max_discard_sectors(bdev->backing_bdev))
 		goto not_supported;
 
 	if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
@@ -1955,28 +1955,14 @@ static void decide_on_discard_support(struct drbd_device *device,
 	 */
 	blk_queue_discard_granularity(q, 512);
 	q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
-	blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
 	q->limits.max_write_zeroes_sectors =
 		drbd_max_discard_sectors(device->resource);
 	return;
 
 not_supported:
-	blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
 	blk_queue_discard_granularity(q, 0);
 	q->limits.max_discard_sectors = 0;
 	q->limits.max_write_zeroes_sectors = 0;
-}
-
-static void fixup_discard_if_not_supported(struct request_queue *q)
-{
-	/* To avoid confusion, if this queue does not support discard, clear
-	 * max_discard_sectors, which is what lsblk -D reports to the user.
-	 * Older kernels got this wrong in "stack limits".
-	 * */
-	if (!blk_queue_discard(q)) {
-		blk_queue_max_discard_sectors(q, 0);
-		blk_queue_discard_granularity(q, 0);
-	}
 }
 
 static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
@@ -2016,7 +2002,6 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		blk_stack_limits(&q->limits, &b->limits, 0);
 		disk_update_readahead(device->vdisk);
 	}
-	fixup_discard_if_not_supported(q);
 	fixup_write_zeroes(device, q);
 }
 
@@ -2121,14 +2106,15 @@ static bool write_ordering_changed(struct disk_conf *a, struct disk_conf *b)
 static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *disk_conf,
 			       struct drbd_backing_dev *nbc)
 {
-	struct request_queue * const q = nbc->backing_bdev->bd_disk->queue;
+	struct block_device *bdev = nbc->backing_bdev;
+	struct request_queue * const q = bdev->bd_disk->queue;
 
 	if (disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
 		disk_conf->al_extents = DRBD_AL_EXTENTS_MIN;
 	if (disk_conf->al_extents > drbd_al_extents_max(nbc))
 		disk_conf->al_extents = drbd_al_extents_max(nbc);
 
-	if (!blk_queue_discard(q) ||
+	if (!bdev_max_discard_sectors(bdev) ||
 	    (!queue_discard_zeroes_data(q) && !disk_conf->discard_zeroes_if_aligned)) {
 		if (disk_conf->rs_discard_granularity) {
 			disk_conf->rs_discard_granularity = 0; /* disable feature */
