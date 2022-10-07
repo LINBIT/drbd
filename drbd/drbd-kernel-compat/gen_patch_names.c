@@ -468,6 +468,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_max_write_same_sectors", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MAX_WRITE_SAME_SECTORS, "present");
 
+	patch(1, "blkdev_issue_discard", false, true,
+	      COMPAT_BLKDEV_ISSUE_DISCARD_TAKES_FLAGS, "takes_flags");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
