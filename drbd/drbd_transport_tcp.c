@@ -1310,9 +1310,6 @@ static int dtt_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 				      bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
-
-		if (bio_op(bio) == REQ_OP_WRITE_SAME)
-			break;
 	}
 	return 0;
 }

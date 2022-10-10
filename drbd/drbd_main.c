@@ -1580,8 +1580,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 			queue_discard_zeroes_data(q)
 			/* but that is always false on recent kernels */
 			;
-		p->qlim->write_same_capable = !disable_write_same &&
-			!!q->limits.max_write_same_sectors;
+		p->qlim->write_same_capable = 0;
 		put_ldev(device);
 	} else {
 		struct request_queue *q = device->rq_queue;
@@ -2171,9 +2170,6 @@ static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
 					 bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
 		if (err)
 			return err;
-		/* WRITE_SAME has only one segment */
-		if (bio_op(bio) == REQ_OP_WRITE_SAME)
-			break;
 
 		peer_device->send_cnt += bvec.bv_len >> 9;
 	}
@@ -2253,7 +2249,6 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 		return  (bio->bi_opf & REQ_SYNC ? DP_RW_SYNC : 0) |
 			(bio->bi_opf & REQ_FUA ? DP_FUA : 0) |
 			(bio->bi_opf & REQ_PREFLUSH ? DP_FLUSH : 0) |
-			(bio_op(bio) == REQ_OP_WRITE_SAME ? DP_WSAME : 0) |
 			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
 			 ((connection->agreed_features & DRBD_FF_WZEROES) ?
@@ -2275,7 +2270,6 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	char *const after = peer_device->connection->scratch_buffer.d.after;
 	struct p_trim *trim = NULL;
 	struct p_data *p;
-	struct p_wsame *wsame = NULL;
 	void *digest_out = NULL;
 	unsigned int dp_flags = 0;
 	int digest_size = 0;
@@ -2293,19 +2287,10 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		if (peer_device->connection->integrity_tfm)
 			digest_size = crypto_shash_digestsize(peer_device->connection->integrity_tfm);
 
-		if (op == REQ_OP_WRITE_SAME) {
-			wsame = drbd_prepare_command(peer_device, sizeof(*wsame) + digest_size, DATA_STREAM);
-			if (!wsame)
-				return -EIO;
-			p = &wsame->p_data;
-			wsame->size = cpu_to_be32(req->i.size);
-			digest_out = wsame + 1;
-		} else {
-			p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
-			if (!p)
-				return -EIO;
-			digest_out = p + 1;
-		}
+		p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
+		if (!p)
+			return -EIO;
+		digest_out = p + 1;
 	}
 
 	p->sector = cpu_to_be64(req->i.sector);
@@ -2334,14 +2319,8 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		memcpy(digest_out, before, digest_size);
 	}
 
-	if (wsame) {
-		additional_size_command(peer_device->connection, DATA_STREAM,
-					bio_iovec(req->master_bio).bv_len);
-		err = __send_command(peer_device->connection, device->vnr, P_WSAME, DATA_STREAM);
-	} else {
-		additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
-		err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
-	}
+	additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
+	err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
 		 * socket buffers, as we may complete right away
