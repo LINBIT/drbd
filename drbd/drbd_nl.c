@@ -1935,39 +1935,39 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 }
 
 static void decide_on_discard_support(struct drbd_device *device,
-                struct drbd_backing_dev *bdev)
+		struct drbd_backing_dev *bdev)
 {
-        struct request_queue *q = device->rq_queue;
+	struct request_queue *q = device->rq_queue;
 
-        if (bdev && !blk_queue_discard(bdev->backing_bdev->bd_disk->queue))
-                goto not_supported;
+	if (bdev && !blk_queue_discard(bdev->backing_bdev->bd_disk->queue))
+		goto not_supported;
 
-        if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
-                drbd_info(device,
-                        "peer DRBD too old, does not support TRIM: disabling discards\n");
-                goto not_supported;
-        }
+	if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
+		drbd_info(device,
+			"peer DRBD too old, does not support TRIM: disabling discards\n");
+		goto not_supported;
+	}
 
-        /*
-         * We don't care for the granularity, really.
-         *
-         * Stacking limits below should fix it for the local device.  Whether or
-         * not it is a suitable granularity on the remote device is not our
-         * problem, really. If you care, you need to use devices with similar
-         * topology on all peers.
-         */
-        blk_queue_discard_granularity(q, 512);
-        q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
-        blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
-        q->limits.max_write_zeroes_sectors =
-                drbd_max_discard_sectors(device->resource);
-        return;
+	/*
+	 * We don't care for the granularity, really.
+	 *
+	 * Stacking limits below should fix it for the local device.  Whether or
+	 * not it is a suitable granularity on the remote device is not our
+	 * problem, really. If you care, you need to use devices with similar
+	 * topology on all peers.
+	 */
+	blk_queue_discard_granularity(q, 512);
+	q->limits.max_discard_sectors = drbd_max_discard_sectors(device->resource);
+	blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
+	q->limits.max_write_zeroes_sectors =
+		drbd_max_discard_sectors(device->resource);
+	return;
 
 not_supported:
-        blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
-        blk_queue_discard_granularity(q, 0);
-        q->limits.max_discard_sectors = 0;
-        q->limits.max_write_zeroes_sectors = 0;
+	blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
+	blk_queue_discard_granularity(q, 0);
+	q->limits.max_discard_sectors = 0;
+	q->limits.max_write_zeroes_sectors = 0;
 }
 
 static void fixup_discard_if_not_supported(struct request_queue *q)
