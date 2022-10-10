@@ -1811,8 +1811,6 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 					  DMA_TO_DEVICE);
 		bio_for_each_segment(bvec, tx_desc->bio, iter) {
 			put_page(bvec.bv_page);
-			if (bio_op(tx_desc->bio) == REQ_OP_WRITE_SAME)
-				break;
 		}
 		break;
 	}
@@ -3086,8 +3084,6 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 		tx_desc->sge[i].length = size;
 		done += size;
 		i++;
-		if (bio_op(bio) == REQ_OP_WRITE_SAME)
-			break;
 	}
 
 	TR_ASSERT(&rdma_transport->transport, done == size_tx_desc);
@@ -3103,8 +3099,6 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 		} else {
 			bio_for_each_segment(bvec, tx_desc->bio, iter) {
 				put_page(bvec.bv_page);
-				if (bio_op(tx_desc->bio) == REQ_OP_WRITE_SAME)
-					break;
 			}
 			kfree(tx_desc);
 		}
@@ -3164,8 +3158,6 @@ out:
 			bvec.bv_page, bvec.bv_offset, bvec.bv_len,
 			0 /* flags currently unused by dtr_send_page */);
 		if (err)
-			break;
-		if (bio_op(bio) == REQ_OP_WRITE_SAME)
 			break;
 	}
 #endif
