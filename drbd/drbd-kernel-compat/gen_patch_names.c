@@ -482,6 +482,9 @@ int main(int argc, char **argv)
 	patch(1, "bdev_max_discard_sectors", true, false,
 	      COMPAT_HAVE_BDEV_MAX_DISCARD_SECTORS, "present");
 
+	patch(1, "blk_queue_max_write_same_sectors", false, true,
+	      COMPAT_HAVE_BLK_QUEUE_MAX_WRITE_SAME_SECTORS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
