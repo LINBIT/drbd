@@ -1575,7 +1575,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 			cpu_to_be32(bdev_alignment_offset(bdev));
 		p->qlim->io_min = cpu_to_be32(bdev_io_min(bdev));
 		p->qlim->io_opt = cpu_to_be32(bdev_io_opt(bdev));
-		p->qlim->discard_enabled = blk_queue_discard(q);
+		p->qlim->discard_enabled = !!bdev_max_discard_sectors(bdev);
 		p->qlim->discard_zeroes_data = discard_zeroes_if_aligned ||
 			queue_discard_zeroes_data(q)
 			/* but that is always false on recent kernels */
