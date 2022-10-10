@@ -2,6 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.0 (api:genl2/proto:110-121/transport:18)
+--------
+ * merged changes from the drbd-9.1 branch, including
+  - fix a race that could lead to an unexpected loss of connection
+    related to internal concurrency; it manifested itself as
+    "BAD! BarrierAck #X received with n_writes=..." in the logs
+  - fix a race that could lead to an unexpected loss of connection
+    if a node in the quorate partition promotes (too) quickly
+  - follow upstream and compat code for up to Linux 5.19
+
 9.2.0-rc.8 (api:genl2/proto:110-121/transport:18)
 --------
  * fix the RDMA transport to work on more recent kernels (like RHEL9)
