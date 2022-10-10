@@ -2149,7 +2149,7 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 	 */
 	if (disk_conf->rs_discard_granularity) {
 		unsigned int rs_dg = disk_conf->rs_discard_granularity;
-		unsigned int mds = q->limits.max_discard_sectors;
+		unsigned int mds = bdev_max_discard_sectors(nbc->backing_bdev);
 		/* compat:
 		 * old kernel has 0 granularity means "unknown" means one sector.
 		 * current kernel has 0 granularity means "discard not supported".
