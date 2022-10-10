@@ -479,6 +479,9 @@ int main(int argc, char **argv)
 	patch(1, "dax_direct_access", true, false,
 	      COMPAT_DAX_DIRECT_ACCESS_TAKES_MODE, "takes_mode");
 
+	patch(1, "bdev_max_discard_sectors", true, false,
+	      COMPAT_HAVE_BDEV_MAX_DISCARD_SECTORS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
