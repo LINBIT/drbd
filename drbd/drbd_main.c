@@ -1174,7 +1174,8 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 		return -EIO;
 
 	/* initialize verify_alg and csums_alg */
-	memset(p->verify_alg, 0, 2 * SHARED_SECRET_MAX);
+	memset(p->verify_alg, 0, sizeof(p->verify_alg));
+	memset(p->csums_alg, 0, sizeof(p->csums_alg));
 
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
