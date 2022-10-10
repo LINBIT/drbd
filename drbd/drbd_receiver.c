@@ -2182,6 +2182,14 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 
 	if (!expect(peer_device, IS_ALIGNED(d->bi_size, 512)))
 		return -EINVAL;
+	/* The WSAME mechanism was removed in Linux 5.18,
+	 * and subsequently from drbd.
+	 * In theory, a "modern" drbd will never advertise support for
+	 * WRITE_SAME, so a compliant peer should never send a DP_WSAME
+	 * packet. If we receive one anyway, that's a protocol error.
+	 */
+	if (!expect(peer_device, (d->dp_flags & DP_WSAME) == 0))
+		return -EINVAL;
 	if (d->dp_flags & (DP_DISCARD|DP_ZEROES)) {
 		if (!expect(peer_device, d->bi_size <= (DRBD_MAX_BBIO_SECTORS << 9)))
 			return -EINVAL;
