@@ -270,6 +270,9 @@ int main(int argc, char **argv)
 	      NO, "present");
 #endif
 
+	patch(1, "queue_flag_discard", false, true,
+	      COMPAT_HAVE_QUEUE_FLAG_DISCARD, "present");
+
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
 
