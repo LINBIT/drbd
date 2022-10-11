@@ -29,6 +29,23 @@ map_dist() {
 	return 0
 }
 
+host_dist_matches_image_dist() {
+	host_dist="$( map_dist | cut -d'.' -f1 )"
+	if [[ -z "$host_dist" ]] ; then
+		debug "Cannot get host distro!"
+		return 1
+	fi
+
+	image_dist="$( lbdisttool.py -l | cut -d'.' -f1 )"
+	if [[ "$host_dist" == "$image_dist" ]]; then
+		debug "The host distro matches image distro!"
+		return 0
+	else
+		debug "The host distro does not match image distro"
+		return 1
+	fi
+}
+
 print_drbd_version() {
 	echo
 	echo "DRBD version loaded:"
@@ -221,6 +238,16 @@ modprobe_deps() {
 }
 
 ### main
+# LB_SKIP
+# allows skipping (or failing) if the linux distro of the host does not match that of this image
+# Allow "exit 0", so that when used as an initContainer in Kubernetes,
+# next initContainer with a different distro will be tried
+if [[ $LB_SKIP == yes ]]; then
+	host_dist_matches_image_dist || exit 0
+elif [[ $LB_SKIP == no ]]; then
+	host_dist_matches_image_dist || exit 1
+fi
+
 modprobe_deps
 [[ $LB_HOW == "$HOW_DEPSONLY" ]] && { debug "dependencies loading only, exiting now"; exit 0; }
 
