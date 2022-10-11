@@ -104,6 +104,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_alloc", true, false,
 	      COMPAT_BIO_ALLOC_HAS_4_PARAMS, "has_4_params");
 
+	patch(1, "bio_alloc_clone", true, false,
+	      COMPAT_HAVE_BIO_ALLOC_CLONE, "present");
+
 #if !defined(COMPAT_HAVE_BIO_SET_DEV)
 	patch(1, "bio_set_dev", true, false,
 	      COMPAT_HAVE_BIO_SET_DEV, "present");
@@ -253,6 +256,9 @@ int main(int argc, char **argv)
 	      NO, "present");
 #endif
 
+	patch(1, "queue_flag_discard", false, true,
+	      COMPAT_HAVE_QUEUE_FLAG_DISCARD, "present");
+
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
 
@@ -345,6 +351,9 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
+	patch(1, "bdi_congested", false, true,
+	      COMPAT_HAVE_BDI_CONGESTED, "present");
+
 	patch(1, "congested_fn", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
 
@@ -354,8 +363,13 @@ int main(int argc, char **argv)
 	patch(1, "disk_update_readahead", true, false,
 	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
 
+#if !defined(COMPAT_HAVE_DISK_UPDATE_READAHEAD)
+	/* disk_update_readahead is the "new version" of
+	 * blk_queue_update_readahead. we only need to consider compat
+	 * for the old function if we don't already have the new one. */
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
+#endif
 
 	patch(1, "struct_gendisk", true, false,
 	      COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO, "has_backing_dev_info");
@@ -447,6 +461,18 @@ int main(int argc, char **argv)
 
 	patch(1, "genhd_fl_no_part", true, false,
 	      COMPAT_HAVE_GENHD_FL_NO_PART, "present");
+
+	patch(1, "dax_direct_access", true, false,
+	      COMPAT_DAX_DIRECT_ACCESS_TAKES_MODE, "takes_mode");
+
+	patch(1, "bdev_max_discard_sectors", true, false,
+	      COMPAT_HAVE_BDEV_MAX_DISCARD_SECTORS, "present");
+
+	patch(1, "blk_queue_max_write_same_sectors", false, true,
+	      COMPAT_HAVE_BLK_QUEUE_MAX_WRITE_SAME_SECTORS, "present");
+
+	patch(1, "blkdev_issue_discard", false, true,
+	      COMPAT_BLKDEV_ISSUE_DISCARD_TAKES_FLAGS, "takes_flags");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */

@@ -593,6 +593,7 @@ enum peer_device_flag {
 	HAVE_SIZES,		/* Cleared when connection gets lost; set when sizes received */
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
+	PEER_QUORATE,		/* Peer has quorum */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -786,13 +787,13 @@ enum resource_flag {
 	EXPLICIT_PRIMARY,
 	CALLBACK_PENDING,	/* Whether we have a call_usermodehelper(, UMH_WAIT_PROC)
 				 * pending, from drbd worker context.
-				 * If set, bdi_write_congested() returns true,
-				 * so shrink_page_list() would not recurse into,
-				 * and potentially deadlock on, this drbd worker.
 				 */
 	TWOPC_ABORT_LOCAL,
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
+	TRY_BECOME_UP_TO_DATE_PENDING,  /* set when we change our disk state to
+		* D_CONSISTENT until we have determined whether we can return to
+		* being D_UP_TO_DATE */
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
@@ -802,6 +803,7 @@ enum resource_flag {
 	R_UNREGISTERED,
 	DOWN_IN_PROGRESS,
 	CHECKING_PEERS,
+	WRONG_MDF_EXISTS,	/* Warned about MDF_EXISTS flag on all peer slots */
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
@@ -1139,7 +1141,7 @@ struct drbd_connection {
 		/* Position in change stream of last write sent. */
 		u64 current_dagtag_sector;
 
-		/* Position in change stream of last request seen. */
+		/* Position in change stream of last queued request seen. */
 		u64 seen_dagtag_sector;
 	} send;
 
@@ -2152,30 +2154,30 @@ extern int drbd_al_initialize(struct drbd_device *, void *);
 extern struct mutex notification_mutex;
 extern atomic_t drbd_genl_seq;
 
-extern void notify_resource_state(struct sk_buff *,
+extern int notify_resource_state(struct sk_buff *,
 				  unsigned int,
 				  struct drbd_resource *,
 				  struct resource_info *,
 				  struct rename_resource_info *,
 				  enum drbd_notification_type);
-extern void notify_device_state(struct sk_buff *,
+extern int notify_device_state(struct sk_buff *,
 				unsigned int,
 				struct drbd_device *,
 				struct device_info *,
 				enum drbd_notification_type);
-extern void notify_connection_state(struct sk_buff *,
+extern int notify_connection_state(struct sk_buff *,
 				    unsigned int,
 				    struct drbd_connection *,
 				    struct connection_info *,
 				    enum drbd_notification_type);
-extern void notify_peer_device_state(struct sk_buff *,
+extern int notify_peer_device_state(struct sk_buff *,
 				     unsigned int,
 				     struct drbd_peer_device *,
 				     struct peer_device_info *,
 				     enum drbd_notification_type);
 extern void notify_helper(enum drbd_notification_type, struct drbd_device *,
 			  struct drbd_connection *, const char *, int);
-extern void notify_path(struct drbd_connection *, struct drbd_path *,
+extern int notify_path(struct drbd_connection *, struct drbd_path *,
 			enum drbd_notification_type);
 extern void drbd_broadcast_peer_device_state(struct drbd_peer_device *);
 

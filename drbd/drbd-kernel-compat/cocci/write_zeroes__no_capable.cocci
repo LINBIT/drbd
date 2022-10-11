@@ -28,3 +28,8 @@ expression e;
 -if (e)
 -	return REQ_OP_WRITE_ZEROES;
 +WARN_ON_ONCE(e); /* WRITE_ZEROES not supported on this kernel */
+
+@@
+expression qlim;
+@@
+- qlim.max_write_zeroes_sectors = ...;

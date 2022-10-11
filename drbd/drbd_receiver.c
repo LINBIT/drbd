@@ -1663,7 +1663,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
 
-	max_discard_sectors = min(q->limits.max_discard_sectors, (1U << 22));
+	max_discard_sectors = min(bdev_max_discard_sectors(bdev), (1U << 22));
 	max_discard_sectors -= max_discard_sectors % granularity;
 	if (unlikely(!max_discard_sectors))
 		goto zero_out;
@@ -1687,7 +1687,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		start = tmp;
 	}
 	while (nr_sectors >= max_discard_sectors) {
-		err |= blkdev_issue_discard(bdev, start, max_discard_sectors, GFP_NOIO, 0);
+		err |= blkdev_issue_discard(bdev, start, max_discard_sectors, GFP_NOIO);
 		nr_sectors -= max_discard_sectors;
 		start += max_discard_sectors;
 	}
@@ -1699,7 +1699,7 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 		nr = nr_sectors;
 		nr -= (unsigned int)nr % granularity;
 		if (nr) {
-			err |= blkdev_issue_discard(bdev, start, nr, GFP_NOIO, 0);
+			err |= blkdev_issue_discard(bdev, start, nr, GFP_NOIO);
 			nr_sectors -= nr;
 			start += nr;
 		}
@@ -1714,14 +1714,13 @@ int drbd_issue_discard_or_zero_out(struct drbd_device *device, sector_t start, u
 
 static bool can_do_reliable_discards(struct drbd_device *device)
 {
-	struct request_queue *q = bdev_get_queue(device->ldev->backing_bdev);
 	struct disk_conf *dc;
 	bool can_do;
 
-	if (!blk_queue_discard(q))
+	if (!bdev_max_discard_sectors(device->ldev->backing_bdev))
 		return false;
 
-	if (queue_discard_zeroes_data(q))
+	if (queue_discard_zeroes_data(bdev_get_queue(device->ldev->backing_bdev)))
 		return true;
 
 	rcu_read_lock();
@@ -1742,17 +1741,6 @@ static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, stru
 
 	if (drbd_issue_discard_or_zero_out(device, peer_req->i.sector,
 	    peer_req->i.size >> 9, peer_req->flags & (EE_ZEROOUT|EE_TRIM)))
-		peer_req->flags |= EE_WAS_ERROR;
-	drbd_endio_write_sec_final(peer_req);
-}
-
-static void drbd_issue_peer_wsame(struct drbd_device *device,
-				  struct drbd_peer_request *peer_req)
-{
-	struct block_device *bdev = device->ldev->backing_bdev;
-	sector_t s = peer_req->i.sector;
-	sector_t nr = peer_req->i.size >> 9;
-	if (blkdev_issue_write_same(bdev, s, nr, GFP_NOIO, peer_req->page_chain.head))
 		peer_req->flags |= EE_WAS_ERROR;
 	drbd_endio_write_sec_final(peer_req);
 }
@@ -1827,14 +1815,11 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	 * Correctness first, performance later.  Next step is to code an
 	 * asynchronous variant of the same.
 	 */
-	if (peer_req->flags & (EE_TRIM|EE_WRITE_SAME|EE_ZEROOUT)) {
+	if (peer_req->flags & (EE_TRIM|EE_ZEROOUT)) {
 		peer_req->submit_jif = jiffies;
 		peer_req->flags |= EE_SUBMITTED;
 
-		if (peer_req->flags & (EE_TRIM|EE_ZEROOUT))
-			drbd_issue_peer_discard_or_zero_out(device, peer_req);
-		else /* EE_WRITE_SAME */
-			drbd_issue_peer_wsame(device, peer_req);
+		drbd_issue_peer_discard_or_zero_out(device, peer_req);
 		return 0;
 	}
 
@@ -1847,7 +1832,7 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	 * generated bio, but a bio allocated on behalf of the peer.
 	 */
 next_bio:
-	/* REQ_OP_WRITE_SAME, _DISCARD, _WRITE_ZEROES handled above.
+	/* _DISCARD, _WRITE_ZEROES handled above.
 	 * REQ_OP_FLUSH (empty flush) not expected,
 	 * should have been mapped to a "drbd protocol barrier".
 	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
@@ -2118,7 +2103,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 		struct drbd_peer_request_details *d, struct packet_info *pi)
 {
 	struct p_trim *p = pi->data;
-	bool is_trim_or_wsame = pi->cmd == P_TRIM || pi->cmd == P_WSAME || pi->cmd == P_ZEROES;
+	bool is_trim_or_zeroes = pi->cmd == P_TRIM || pi->cmd == P_ZEROES;
 	unsigned int digest_size =
 		pi->cmd != P_TRIM && connection->peer_integrity_tfm ?
 		crypto_shash_digestsize(connection->peer_integrity_tfm) : 0;
@@ -2128,7 +2113,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 	d->peer_seq = be64_to_cpu(p->p_data.seq_num);
 	d->dp_flags = be32_to_cpu(p->p_data.dp_flags);
 	d->length = pi->size;
-	d->bi_size = is_trim_or_wsame ? be32_to_cpu(p->size) : pi->size - digest_size;
+	d->bi_size = is_trim_or_zeroes ? be32_to_cpu(p->size) : pi->size - digest_size;
 	d->digest_size = digest_size;
 }
 
@@ -2161,7 +2146,15 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 
 	if (!expect(peer_device, IS_ALIGNED(d->bi_size, 512)))
 		return NULL;
-	if (d->dp_flags & (DP_WSAME|DP_DISCARD|DP_ZEROES)) {
+	/* The WSAME mechanism was removed in Linux 5.18,
+	 * and subsequently from drbd.
+	 * In theory, a "modern" drbd will never advertise support for
+	 * WRITE_SAME, so a compliant peer should never send a DP_WSAME
+	 * packet. If we receive one anyway, that's a protocol error.
+	 */
+	if (!expect(peer_device, (d->dp_flags & DP_WSAME) == 0))
+		return NULL;
+	if (d->dp_flags & (DP_DISCARD|DP_ZEROES)) {
 		if (!expect(peer_device, d->bi_size <= (DRBD_MAX_BBIO_SECTORS << 9)))
 			return NULL;
 	} else if (!expect(peer_device, d->bi_size <= DRBD_MAX_BIO_SIZE))
@@ -2696,10 +2689,7 @@ static unsigned long wire_flags_to_bio_op(u32 dpf)
 		return REQ_OP_WRITE_ZEROES;
 	if (dpf & DP_DISCARD)
 		return REQ_OP_DISCARD;
-	if (dpf & DP_WSAME)
-		return REQ_OP_WRITE_SAME;
-	else
-		return REQ_OP_WRITE;
+	return REQ_OP_WRITE;
 }
 
 /* see also bio_flags_to_wire() */
@@ -2908,8 +2898,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		peer_req->flags |= EE_TRIM;
 	else if (pi->cmd == P_ZEROES)
 		peer_req->flags |= EE_ZEROOUT;
-	else if (pi->cmd == P_WSAME)
-		peer_req->flags |= EE_WRITE_SAME;
 
 	peer_req->dagtag_sector = atomic64_read(&connection->last_dagtag_sector) + (peer_req->i.size >> 9);
 	atomic64_set(&connection->last_dagtag_sector, peer_req->dagtag_sector);
@@ -2937,10 +2925,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		/* Do (not) pass down BLKDEV_ZERO_NOUNMAP? */
 		if (d.dp_flags & DP_DISCARD)
 			peer_req->flags |= EE_TRIM;
-	} else if (pi->cmd == P_WSAME) {
-		D_ASSERT(peer_device, peer_req->i.size > 0);
-		D_ASSERT(peer_device, peer_req_op(peer_req) == REQ_OP_WRITE_SAME);
-		D_ASSERT(peer_device, peer_req->page_chain.head != NULL);
 	} else if (peer_req->page_chain.head == NULL) {
 		/* Actually, this must not happen anymore,
 		 * "empty" flushes are mapped to P_BARRIER,
@@ -7343,6 +7327,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
+	if (peer_state.quorum)
+		set_bit(PEER_QUORATE, &peer_device->flags);
+	else
+		clear_bit(PEER_QUORATE, &peer_device->flags);
+
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) ||
 	    test_bit(CURRENT_UUID_RECEIVED, &peer_device->flags)) {
 		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
@@ -7983,6 +7972,11 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	weak_nodes |= NODE_MASK(peer_device->node_id);
 	peer_device->current_uuid = current_uuid;
 
+	if (get_ldev(device)) {
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
+		peer_md->flags |= MDF_NODE_EXISTS;
+		put_ldev(device);
+	}
 	if (connection->peer_role[NOW] == R_PRIMARY)
 		check_resync_source(device, weak_nodes);
 
@@ -8127,7 +8121,6 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_TRIM]	    = { 0, sizeof(struct p_trim), receive_Data },
 	[P_ZEROES]	    = { 0, sizeof(struct p_trim), receive_Data },
 	[P_RS_DEALLOCATED]  = { 0, sizeof(struct p_block_desc), receive_rs_deallocated },
-	[P_WSAME]	    = { 1, sizeof(struct p_wsame), receive_Data },
 	[P_DISCONNECT]      = { 0, 0, receive_disconnect },
 };
 

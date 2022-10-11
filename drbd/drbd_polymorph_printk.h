@@ -2,7 +2,10 @@
 #define DRBD_POLYMORPH_PRINTK_H
 
 #if !defined(CONFIG_DYNAMIC_DEBUG)
-#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) const char *D = F
+#undef DEFINE_DYNAMIC_DEBUG_METADATA
+#undef __dynamic_pr_debug
+#undef DYNAMIC_DEBUG_BRANCH
+#define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) const char *D = F; ((void)D)
 #define __dynamic_pr_debug(D, F, args...) do { (void)(D); if (0) printk(F, ## args); } while(0)
 #define DYNAMIC_DEBUG_BRANCH(D) false
 #endif

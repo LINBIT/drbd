@@ -44,6 +44,7 @@ struct quorum_detail {
 	int diskless;
 	int missing_diskless;
 	int unknown;
+	int quorate_peers;
 };
 
 struct change_context {
@@ -81,6 +82,7 @@ static void sanitize_state(struct drbd_resource *resource);
 static void ensure_exposed_data_uuid(struct drbd_device *device);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
+static void check_wrongly_set_mdf_exists(struct drbd_device *);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -1311,6 +1313,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 	int node_id, up_to_date = 0, present = 0, outdated = 0, diskless = 0;
 	int missing_diskless = 0, unknown = 0;
 
+	check_wrongly_set_mdf_exists(device);
+
 	rcu_read_lock();
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
@@ -1331,6 +1335,13 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			continue;
 		}
 
+		/* Ignore non existing nodes.
+		   Note: a fresh (before connected once), intentional diskless peer
+		   gets ignored as well by this.
+		   A fresh diskful peer counts! (since it has MDF_HAVE_BITMAP) */
+		if (!(peer_md->flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS | MDF_PEER_DEVICE_SEEN)))
+			continue;
+
 		peer_device = peer_device_by_node_id(device, node_id);
 		is_intentional_diskless = peer_device && !want_bitmap(peer_device);
 
@@ -1342,14 +1353,6 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 				continue;
 			}
 		}
-
-		if (!(peer_md->flags & MDF_HAVE_BITMAP) && !(peer_md->flags & MDF_NODE_EXISTS) &&
-		    !is_intentional_diskless) {
-			continue;
-		}
-
-		if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN) && !is_intentional_diskless)
-			continue;
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
@@ -1433,6 +1436,10 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 				present++;
 		}
 
+		if (disk_state == D_UP_TO_DATE && test_bit(PEER_QUORATE, &peer_device->flags))
+			qd->quorate_peers++;
+
+
 	}
 	rcu_read_unlock();
 
@@ -1479,7 +1486,8 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
-	have_quorum = (qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at;
+	have_quorum = qd.quorate_peers ||
+		((qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at);
 
 	if (!have_quorum && voters != 0 && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&
 		/* It is an even number of nodes (think 2) and we failed by one vote.
@@ -1543,6 +1551,22 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
+		/* SS_NO_UP_TO_DATE_DISK is not quite accurate here. We may
+		 * have an up-to-date peer. However, we cannot trust that
+		 * information. TRY_BECOME_UP_TO_DATE_PENDING is set when we
+		 * have lost our connection to a primary peer. It is possible
+		 * that the "up-to-date peer" has also lost its connection to
+		 * the primary peer, but we have not yet received the
+		 * corresponding P_STATE packet.
+		 *
+		 * So return SS_NO_UP_TO_DATE_DISK conservatively. This causes
+		 * drbd_set_role() to release state_sem and wait, which gives
+		 * try_become_up_to_date() a chance to run. That will set our
+		 * disk state appropriately depending on whether our partition
+		 * is isolated from the original primary peer. */
+		if (test_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags))
+			return SS_NO_UP_TO_DATE_DISK;
+
 		for_each_connection_rcu(connection, resource) {
 			struct net_conf *nc;
 
@@ -1657,7 +1681,9 @@ handshake_found:
 
 			calc_quorum(device, &qi);
 
-			if (qi.up_to_date + qi.present < qi.quorum_at)
+			if (disk_state[NEW] <= D_ATTACHING)
+				drbd_state_err(resource, "no UpToDate peer with quorum");
+			else if (qi.up_to_date + qi.present < qi.quorum_at)
 				drbd_state_err(resource, "%d of %d nodes visible, need %d for quorum",
 					       qi.up_to_date + qi.present, qi.voters, qi.quorum_at);
 			else if (qi.up_to_date < qi.min_redundancy_at)
@@ -2403,6 +2429,13 @@ static bool has_starting_resyncs(struct drbd_connection *connection)
 	return false;
 }
 
+static bool should_try_become_up_to_date(struct drbd_device *device, enum drbd_disk_state *disk_state,
+		enum which_state which)
+{
+	return disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
+			may_return_to_up_to_date(device, which);
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  */
@@ -2726,7 +2759,16 @@ static void finish_state_change(struct drbd_resource *resource)
  * are not Primary ourselves, AND all previously received WRITE (peer-) requests
  * have been processed, NOTHING is in flight against our backend anymore,
  * AND we have successfully written out any dirty bitmap pages.
+ *
+ *
+ * MDF_PEER_DEVICE_SEEN ... The peer had a backing device at some point
+ * MDF_NODE_EXISTS ... We have seen evidence that this node exists in the cluster.
+ *   Note: This bit does **not** get set when a new peer/connection is created with
+ *   `drbdsetup new-peer ...`.  The bit gets set when we establish a connection
+ *   successfully for the first time or we learn via other nodes about the
+ *   existence.
  */
+
 			/* set, if someone is/becomes primary */
 			if (role[NEW] == R_PRIMARY || some_peer_is_primary)
 				mdf |= MDF_PRIMARY_IND;
@@ -2772,6 +2814,11 @@ static void finish_state_change(struct drbd_resource *resource)
 
 		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
 			clear_bit(NEW_CUR_UUID, &device->flags);
+
+		/* The NEW state version here is the same as the NOW version in
+		 * the context of w_after_state_change(). */
+		if (should_try_become_up_to_date(device, disk_state, NEW))
+			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -3015,7 +3062,7 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 	return state;
 }
 
-void notify_resource_state_change(struct sk_buff *skb,
+int notify_resource_state_change(struct sk_buff *skb,
 				  unsigned int seq,
 				  struct drbd_state_change *state_change,
 				  enum drbd_notification_type type)
@@ -3032,10 +3079,10 @@ void notify_resource_state_change(struct sk_buff *skb,
 		.res_fail_io = resource_state_change->fail_io[NEW],
 	};
 
-	notify_resource_state(skb, seq, resource, &resource_info, NULL, type);
+	return notify_resource_state(skb, seq, resource, &resource_info, NULL, type);
 }
 
-void notify_connection_state_change(struct sk_buff *skb,
+int notify_connection_state_change(struct sk_buff *skb,
 				    unsigned int seq,
 				    struct drbd_connection_state_change *connection_state_change,
 				    enum drbd_notification_type type)
@@ -3046,10 +3093,10 @@ void notify_connection_state_change(struct sk_buff *skb,
 		.conn_role = connection_state_change->peer_role[NEW],
 	};
 
-	notify_connection_state(skb, seq, connection, &connection_info, type);
+	return notify_connection_state(skb, seq, connection, &connection_info, type);
 }
 
-void notify_device_state_change(struct sk_buff *skb,
+int notify_device_state_change(struct sk_buff *skb,
 				unsigned int seq,
 				struct drbd_device_state_change *device_state_change,
 				enum drbd_notification_type type)
@@ -3058,10 +3105,10 @@ void notify_device_state_change(struct sk_buff *skb,
 	struct device_info device_info;
 	device_state_change_to_info(&device_info, device_state_change);
 
-	notify_device_state(skb, seq, device, &device_info, type);
+	return notify_device_state(skb, seq, device, &device_info, type);
 }
 
-void notify_peer_device_state_change(struct sk_buff *skb,
+int notify_peer_device_state_change(struct sk_buff *skb,
 				     unsigned int seq,
 				     struct drbd_peer_device_state_change *state_change,
 				     enum drbd_notification_type type)
@@ -3070,7 +3117,7 @@ void notify_peer_device_state_change(struct sk_buff *skb,
 	struct peer_device_info peer_device_info;
 	peer_device_state_change_to_info(&peer_device_info, state_change);
 
-	notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type);
+	return notify_peer_device_state(skb, seq, peer_device, &peer_device_info, type);
 }
 
 static void notify_state_change(struct drbd_state_change *state_change)
@@ -3078,7 +3125,7 @@ static void notify_state_change(struct drbd_state_change *state_change)
 	struct drbd_resource_state_change *resource_state_change = &state_change->resource[0];
 	bool resource_state_has_changed;
 	unsigned int n_device, n_connection, n_peer_device, n_peer_devices;
-	void (*last_func)(struct sk_buff *, unsigned int, void *,
+	int (*last_func)(struct sk_buff *, unsigned int, void *,
 			  enum drbd_notification_type) = NULL;
 	void *last_arg = NULL;
 
@@ -3720,6 +3767,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    !(role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY))
 				send_state = true;
 
+			/* diskless peers need to be informed about quorum changes, since they consider
+			   the quorum state of the diskfull nodes. */
+			if (have_quorum[OLD] != have_quorum[NEW] && disk_state[NEW] >= D_INCONSISTENT)
+				send_state = true;
+
 			/* Skipped resync with peer_device, tell others... */
 			if (send_state_others && send_state_others != peer_device)
 				send_state = true;
@@ -3767,7 +3819,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				put_ldev(device);
 			}
 
-			if (send_state)
+			if (send_state && cstate[NEW] == C_CONNECTED)
 				drbd_send_state(peer_device, new_state);
 
 			if (((!device_stable[OLD] && device_stable[NEW]) ||
@@ -3932,8 +3984,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_CONSISTENT &&
-		    may_return_to_up_to_date(device, NOW))
+		/* We cannot test the flag TRY_BECOME_UP_TO_DATE_PENDING here
+		 * because that would cause us to queue the work more often
+		 * than necessary. */
+		if (should_try_become_up_to_date(device, disk_state, NOW))
 			try_become_up_to_date = true;
 
 		if (test_bit(TRY_TO_GET_RESYNC, &device->flags)) {
@@ -5050,6 +5104,18 @@ static bool do_change_role(struct change_context *context, enum change_phase pha
 					__change_peer_disk_state(peer_device, D_OUTDATED);
 			}
 		}
+
+		if (role == R_PRIMARY && phase == PH_COMMIT) {
+			u64 reachable_nodes = resource->twopc_reply.reachable_nodes;
+			struct drbd_peer_device *peer_device;
+
+			for_each_peer_device_rcu(peer_device, device) {
+				if (NODE_MASK(peer_device->node_id) & reachable_nodes &&
+				    peer_device->disk_state[NEW] == D_UNKNOWN &&
+				    want_bitmap(peer_device))
+					__change_peer_disk_state(peer_device, D_OUTDATED);
+			}
+		}
 	}
 	rcu_read_unlock();
 
@@ -5685,4 +5751,47 @@ static void ensure_exposed_data_uuid(struct drbd_device *device)
 	if (changed)
 		drbd_info(device, "Setting exposed data uuid: %016llX\n",
 			  (unsigned long long)device->exposed_data_uuid);
+}
+
+/* Between 9.1.7 and 9.1.12 drbd was setting MDF_NODE_EXISTS for all peers.
+ * With that the flag got useless. It is a meta-data flag that persists.
+ * Clear it for all not configured nodes if we find it in every peer slot.
+ */
+static void check_wrongly_set_mdf_exists(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	const int my_node_id = resource->res_opts.node_id;
+	bool wrong = true;
+	int node_id;
+
+	if (!get_ldev(device))
+		return;
+
+	rcu_read_lock();
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+		if (!(peer_md->flags & MDF_NODE_EXISTS || peer_device || node_id == my_node_id)) {
+			wrong = false;
+			break;
+		}
+	}
+
+	if (wrong) {
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
+
+			if (!peer_device)
+				peer_md->flags &= ~MDF_NODE_EXISTS;
+		}
+		if (!test_bit(WRONG_MDF_EXISTS, &resource->flags)) {
+			set_bit(WRONG_MDF_EXISTS, &resource->flags);
+			drbd_warn(resource, "Clearing excess MDF_NODE_EXISTS flags\n");
+		}
+	}
+	rcu_read_unlock();
+	put_ldev(device);
 }

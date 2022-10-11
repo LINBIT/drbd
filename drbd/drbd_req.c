@@ -54,7 +54,6 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	spin_lock_init(&req->rq_lock);
 
 	req->local_rq_state = (bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0)
-	              | (bio_op(bio_src) == REQ_OP_WRITE_SAME ? RQ_WSAME : 0)
 	              | (bio_op(bio_src) == REQ_OP_WRITE_ZEROES ? RQ_ZEROES : 0)
 	              | (bio_op(bio_src) == REQ_OP_DISCARD ? RQ_UNMAP : 0);
 
@@ -601,15 +600,16 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	rcu_read_lock();
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
+		/* Found a request which is for this peer but not yet queued.
+		 * Do not skip past it. */
+		if (unlikely(s & RQ_NET_PENDING && !(s & (RQ_NET_QUEUED|RQ_NET_SENT))))
+			break;
+
 		connection->send.seen_dagtag_sector = req->dagtag_sector;
-		if (s & RQ_NET_QUEUED) {
+		if (likely(s & RQ_NET_QUEUED)) {
 			found_req = req;
 			break;
 		}
-		/* Found a request which is for this peer but not yet queued.
-		 * Do not skip past it. */
-		if (s & RQ_NET_PENDING && !(s & RQ_NET_SENT))
-			break;
 	}
 	rcu_read_unlock();
 	connection->todo.req_next = found_req;
@@ -1119,6 +1119,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		spin_lock_irqsave(&req->rq_lock, flags);
 		req->net_rq_state[idx] |= RQ_NET_SIS;
 		spin_unlock_irqrestore(&req->rq_lock, flags);
+		fallthrough;
 	case WRITE_ACKED_BY_PEER:
 		/* Normal operation protocol C: successfully written on peer.
 		 * During resync, even in protocol != C,
@@ -1275,8 +1276,10 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
 
 	switch (rbm) {
 	case RB_CONGESTED_REMOTE:
-		return bdi_read_congested(
-			device->ldev->backing_bdev->bd_disk->bdi);
+		/* originally, this used the bdi congestion framework,
+		 * but that was removed in linux 5.18.
+		 * so just never report the lower device as congested. */
+		return false;
 	case RB_LEAST_PENDING:
 		return atomic_read(&device->local_cnt) >
 			atomic_read(&peer_device->ap_pending_cnt) + atomic_read(&peer_device->rs_pending_cnt);
@@ -1717,7 +1720,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	req->start_jif = bio_start_io_acct(req->master_bio);
 
 	if (get_ldev(device)) {
-		req->private_bio  = bio_clone_fast(bio, GFP_NOIO, &drbd_io_bio_set);
+		req->private_bio = bio_alloc_clone(device->ldev->backing_bdev, bio, GFP_NOIO, &drbd_io_bio_set);
 		req->private_bio->bi_private = req;
 		req->private_bio->bi_end_io = drbd_request_endio;
 	}
