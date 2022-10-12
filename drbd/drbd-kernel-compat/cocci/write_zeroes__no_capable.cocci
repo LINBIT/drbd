@@ -32,4 +32,4 @@ expression e;
 @@
 expression qlim;
 @@
-- qlim.max_write_zeroes_sectors = ...;
+- blk_queue_max_write_zeroes_sectors(...);
