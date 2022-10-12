@@ -409,7 +409,7 @@ int main(int argc, char **argv)
 	patch(1, "nla_strscpy", true, false,
 	      COMPAT_HAVE_NLA_STRSCPY, "present");
 
-	patch(1, "queue_discard_zeroes_data", true, false,
+	patch(1, "queue_discard_zeroes_data", false, true,
 	      COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA, "present");
 
 #if !defined(COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE)
