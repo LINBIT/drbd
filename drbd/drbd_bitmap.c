@@ -891,7 +891,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		}
 	}
 
-	want = ALIGN(words*sizeof(long), PAGE_SIZE) >> PAGE_SHIFT;
+	want = PFN_UP(words * sizeof(long));
 	have = b->bm_number_of_pages;
 	if (drbd_md_dax_active(device->ldev)) {
 		bm_on_pmem = drbd_dax_bitmap(device, want);
