@@ -53,6 +53,7 @@ identifier p;
 identifier bdev;
 @@
 struct block_device *bdev = ...;
++ struct request_queue *q = bdev_get_queue(bdev);
 ...
 if (!bdev_max_discard_sectors(bdev)
 +	|| (!queue_discard_zeroes_data(q) && !disk_conf->discard_zeroes_if_aligned)
