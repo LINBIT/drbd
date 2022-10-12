@@ -2111,7 +2111,6 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 			       struct drbd_backing_dev *nbc)
 {
 	struct block_device *bdev = nbc->backing_bdev;
-	struct request_queue * const q = bdev->bd_disk->queue;
 
 	if (disk_conf->al_extents < DRBD_AL_EXTENTS_MIN)
 		disk_conf->al_extents = DRBD_AL_EXTENTS_MIN;
@@ -2134,33 +2133,35 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 	 * be particularly effective, or not effective at all.
 	 */
 	if (disk_conf->rs_discard_granularity) {
-		unsigned int rs_dg = disk_conf->rs_discard_granularity;
-		unsigned int mds = bdev_max_discard_sectors(nbc->backing_bdev);
-		/* compat:
-		 * old kernel has 0 granularity means "unknown" means one sector.
-		 * current kernel has 0 granularity means "discard not supported".
-		 * Not supported is checked above already with !blk_queue_discard(q).
-		 */
-		unsigned int ql_dg = q->limits.discard_granularity ?: 512;
+		unsigned int new_discard_granularity =
+			disk_conf->rs_discard_granularity;
+		unsigned int discard_sectors = bdev_max_discard_sectors(bdev);
+		unsigned int discard_granularity = bdev_discard_granularity(bdev);
 
-		/* should be at least the discard_granularity of the q limit,
+		/* should be at least the discard_granularity of the bdev,
 		 * and preferably a multiple (or the backend won't be able to
 		 * discard some of the "cuttings").
 		 * This also sanitizes nonsensical settings like "77 byte".
 		 */
-		rs_dg = roundup(rs_dg, ql_dg);
+		new_discard_granularity = roundup(new_discard_granularity,
+				discard_granularity);
 
 		/* more than the max resync request size won't work anyways */
-		mds = min_t(unsigned int, mds, DRBD_RS_DISCARD_GRANULARITY_MAX >> 9);
-		rs_dg = min(rs_dg, mds << 9);
-
+		discard_sectors = min(discard_sectors,
+				DRBD_RS_DISCARD_GRANULARITY_MAX >> SECTOR_SHIFT);
+		/* Avoid compiler warning about truncated integer.
+		 * The min() above made sure the result fits even after left shift. */
+		new_discard_granularity = min(
+				new_discard_granularity >> SECTOR_SHIFT,
+				discard_sectors) << SECTOR_SHIFT;
 		/* less than the backend discard granularity does not work either */
-		if (rs_dg < ql_dg)
-			rs_dg = 0;
+		if (new_discard_granularity < discard_granularity)
+			new_discard_granularity = 0;
 
-		if (disk_conf->rs_discard_granularity != rs_dg) {
-			drbd_info(device, "rs_discard_granularity changed to %d\n", rs_dg);
-			disk_conf->rs_discard_granularity = rs_dg;
+		if (disk_conf->rs_discard_granularity != new_discard_granularity) {
+			drbd_info(device, "rs_discard_granularity changed to %d\n",
+					new_discard_granularity);
+			disk_conf->rs_discard_granularity = new_discard_granularity;
 		}
 	}
 }
