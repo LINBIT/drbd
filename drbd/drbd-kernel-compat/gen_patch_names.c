@@ -483,6 +483,9 @@ int main(int argc, char **argv)
 	patch(1, "bdev_discard_granularity", true, false,
 	      COMPAT_HAVE_BDEV_DISCARD_GRANULARITY, "present");
 
+	patch(1, "bdevname", false, true,
+	      COMPAT_HAVE_BDEVNAME, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
