@@ -21,7 +21,6 @@
 #include <linux/drbd_config.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
-#include "drbd_wrappers.h"
 
 
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");

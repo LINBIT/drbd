@@ -13,7 +13,6 @@
 #include <linux/string.h> /* for memset */
 #include <linux/seq_file.h> /* for seq_printf */
 #include <linux/lru_cache.h>
-#include "drbd_wrappers.h"
 
 /* this is developers aid only.
  * it catches concurrent access (lack of locking on the users part) */

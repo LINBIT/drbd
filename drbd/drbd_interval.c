@@ -1,7 +1,6 @@
 #include <asm/bug.h>
 #include <linux/rbtree_augmented.h>
 #include "drbd_interval.h"
-#include "drbd_wrappers.h"
 
 /*
  * interval_end  -  return end of @node

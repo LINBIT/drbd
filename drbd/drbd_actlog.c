@@ -17,7 +17,6 @@
 #include <linux/drbd_limits.h>
 #include <linux/dynamic_debug.h>
 #include "drbd_int.h"
-#include "drbd_wrappers.h"
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
 
