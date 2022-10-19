@@ -2169,8 +2169,11 @@ static void sanitize_disk_conf(struct drbd_device *device, struct disk_conf *dis
 		new_discard_granularity = min(
 				new_discard_granularity >> SECTOR_SHIFT,
 				discard_sectors) << SECTOR_SHIFT;
-		/* less than the backend discard granularity does not work either */
-		if (new_discard_granularity < discard_granularity)
+		/* less than the backend discard granularity is allowed if
+		   the backend granularity is a multiple of the configured value */
+		if ((new_discard_granularity < discard_granularity &&
+		     discard_granularity % new_discard_granularity != 0) ||
+		    discard_granularity > DRBD_MAX_RS_DISCARD_SIZE)
 			new_discard_granularity = 0;
 
 		if (disk_conf->rs_discard_granularity != new_discard_granularity) {

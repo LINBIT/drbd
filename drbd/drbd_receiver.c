@@ -8596,8 +8596,7 @@ bool drbd_rs_discard_ready(struct drbd_peer_request *peer_req)
 {
 	static const int EE_RS_TRIM_LIMITED = EE_RS_TRIM_LIMITED_BEHIND | EE_RS_TRIM_LIMITED_FRONT;
 
-	return (peer_req->flags & EE_RS_TRIM_LIMITED) == EE_RS_TRIM_LIMITED ||
-		peer_req->i.size >= 1 << 27; /* 128 MiByte */
+	return (peer_req->flags & EE_RS_TRIM_LIMITED) == EE_RS_TRIM_LIMITED;
 }
 
 static bool interval_is_adjacent(const struct drbd_interval *i1, const struct drbd_interval *i2)
@@ -8715,6 +8714,13 @@ static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_peer_request *pr_tmp;
 	LIST_HEAD(work_list);
+
+	/* Limit the size of the merged requests. We want to allow the size to
+	 * increase up to DRBD_MAX_RS_DISCARD_SIZE. */
+	if (IS_ALIGNED(peer_req->i.sector, DRBD_MAX_RS_DISCARD_SIZE >> SECTOR_SHIFT))
+		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
+	if (IS_ALIGNED(peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT), DRBD_MAX_RS_DISCARD_SIZE >> SECTOR_SHIFT))
+		peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	_try_merge_rs_discard(peer_req, &work_list);
