@@ -8712,14 +8712,20 @@ static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
+	struct block_device *bdev = peer_device->device->ldev->backing_bdev;
+	unsigned int align = max(DRBD_MAX_RS_DISCARD_SIZE,
+				 bdev_discard_granularity(bdev)) >> SECTOR_SHIFT;
 	struct drbd_peer_request *pr_tmp;
 	LIST_HEAD(work_list);
 
 	/* Limit the size of the merged requests. We want to allow the size to
-	 * increase up to DRBD_MAX_RS_DISCARD_SIZE. */
-	if (IS_ALIGNED(peer_req->i.sector, DRBD_MAX_RS_DISCARD_SIZE >> SECTOR_SHIFT))
+	 * increase up to the backing discard granularity.  If that is smaller
+	 * than DRBD_MAX_RS_DISCARD_SIZE, then allow merging up to a size of
+	 * DRBD_MAX_RS_DISCARD_SIZE. */
+	if (IS_ALIGNED(peer_req->i.sector, align))
 		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-	if (IS_ALIGNED(peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT), DRBD_MAX_RS_DISCARD_SIZE >> SECTOR_SHIFT))
+
+	if (IS_ALIGNED(peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT), align))
 		peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 
 	spin_lock_irq(&connection->peer_reqs_lock);

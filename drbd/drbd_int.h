@@ -1811,6 +1811,7 @@ extern sector_t drbd_get_max_capacity(
 #define DRBD_MAX_BATCH_BIO_SIZE	 (AL_UPDATES_PER_TRANSACTION/2*AL_EXTENT_SIZE)
 #define DRBD_MAX_BBIO_SECTORS    (DRBD_MAX_BATCH_BIO_SIZE >> 9)
 
+/* This gets ignored if the backing device has a larger discard granularity */
 #define DRBD_MAX_RS_DISCARD_SIZE (1U << 27) /* 128MiB; arbitrary */
 
 /* how many activity log extents are touched by this interval? */
