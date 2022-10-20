@@ -724,6 +724,19 @@ static bool state_is_stable(struct drbd_device *device)
 	return stable;
 }
 
+static bool drbd_state_change_is_connect(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	for_each_connection(connection, resource) {
+		if (connection->cstate[NOW] == C_CONNECTING &&
+				connection->cstate[NEW] == C_CONNECTED)
+			return true;
+	}
+
+	return false;
+}
+
 static struct after_state_change_work *alloc_after_state_change_work(struct drbd_resource *resource)
 {
 	struct after_state_change_work *work;
@@ -763,6 +776,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	bool is_connect;
 	unsigned int pro_ver;
 	int vnr;
 	bool all_devs_have_quorum = true;
@@ -783,6 +797,9 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		goto out;
 
 	finish_state_change(resource);
+
+	/* Check whether we are establishing a connection before applying the change. */
+	is_connect = drbd_state_change_is_connect(resource);
 
 	/* This remembers the state change, so call before applying the change. */
 	work = alloc_after_state_change_work(resource);
@@ -855,9 +872,15 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		wake_up(&device->al_wait);
 		wake_up(&device->misc_wait);
 
-		for_each_peer_device(peer_device, device) {
-			if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
-				up_read_non_owner(&device->uuid_sem);
+		/* Due to the exclusivity of two-phase commits, there can only
+		 * be one connection being established at once. Hence it is OK
+		 * to release uuid_sem for all connections if the state change
+		 * is establishing any connection. */
+		if (is_connect) {
+			for_each_peer_device(peer_device, device) {
+				if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
+					up_read_non_owner(&device->uuid_sem);
+			}
 		}
 	}
 
