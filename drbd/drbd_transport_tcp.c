@@ -632,7 +632,7 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 	rcu_read_unlock();
 
 	timeo = connect_int * HZ;
-	timeo += (prandom_u32() & 1) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
+	timeo += prandom_u32_max(2) ? timeo / 7 : -timeo / 7; /* 28.5% random jitter */
 
 retry:
 	timeo = wait_event_interruptible_timeout(listener->wait,
@@ -1038,7 +1038,7 @@ retry:
 				kernel_sock_shutdown(s, SHUT_RDWR);
 				sock_release(s);
 randomize:
-				if (prandom_u32() & 1)
+				if (prandom_u32_max(2))
 					goto retry;
 			}
 		}
