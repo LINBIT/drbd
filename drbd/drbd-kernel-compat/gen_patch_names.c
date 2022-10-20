@@ -518,6 +518,12 @@ int main(int argc, char **argv)
 	patch(1, "nla_put_64bit", true, false,
 	      COMPAT_HAVE_NLA_PUT_64BIT, "present");
 
+	patch(1, "prandom_u32_max", true, false,
+	      COMPAT_HAVE_PRANDOM_U32_MAX, "present");
+
+	patch(1, "get_random_u32", true, false,
+	      COMPAT_HAVE_GET_RANDOM_U32, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
