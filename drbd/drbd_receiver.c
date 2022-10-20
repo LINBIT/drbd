@@ -10392,15 +10392,13 @@ void drbd_send_ping_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
 		container_of(ws, struct drbd_connection, send_ping_work);
+	int err;
 
-	int err = drbd_send_ping(connection);
-	if (err) {
-		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-		return;
-	}
-
-	set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	set_rcvtimeo(connection, PING_TIMEOUT);
+	set_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
+	err = drbd_send_ping(connection);
+	if (err)
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
 struct meta_sock_cmd {
