@@ -4821,8 +4821,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 		drbd_info(connection, "peer data-integrity-alg: %s\n",
 			  integrity_alg[0] ? integrity_alg : "(none)");
 
-	synchronize_rcu();
-	kfree(old_net_conf);
+	kvfree_rcu(old_net_conf);
 	return 0;
 
 disconnect_rcu_unlock:
@@ -5325,8 +5324,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 			new_disk_conf->disk_size = p_usize;
 
 			rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
-			synchronize_rcu();
-			kfree(old_disk_conf);
+			kvfree_rcu(old_disk_conf);
 
 			drbd_info(peer_device, "Peer sets u_size to %llu sectors (old: %llu)\n",
 				 (unsigned long long)p_usize, (unsigned long long)my_usize);
@@ -6504,8 +6502,7 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 		new_disk_conf->disk_size = tr->user_size;
 
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
-		synchronize_rcu();
-		kfree(old_disk_conf);
+		kvfree_rcu(old_disk_conf);
 
 		drbd_info(device, "New u_size %llu sectors\n",
 			  (unsigned long long)tr->user_size);
