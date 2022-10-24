@@ -491,6 +491,9 @@ int main(int argc, char **argv)
 	patch(1, "blkdev_issue_discard", false, true,
 	      COMPAT_BLKDEV_ISSUE_DISCARD_TAKES_FLAGS, "takes_flags");
 
+	patch(1, "drbd_wrappers", false, true,
+	      COMPAT_NEED_DRBD_WRAPPERS, "need");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

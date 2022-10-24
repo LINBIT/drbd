@@ -22,7 +22,6 @@
 #include <net/tcp.h>
 #include <drbd_protocol.h>
 #include <drbd_transport.h>
-#include "drbd_wrappers.h"
 
 
 MODULE_AUTHOR("Philipp Reisner <philipp.reisner@linbit.com>");
