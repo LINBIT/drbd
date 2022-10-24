@@ -1289,13 +1289,14 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct set_role_parms parms;
-	enum drbd_state_rv retcode;
+	enum drbd_state_rv rv;
+	enum drbd_ret_code retcode;
 	enum drbd_role new_role;
 	int err;
 
-	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
+	rv = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
 	if (!adm_ctx.reply_skb)
-		return retcode;
+		return rv;
 
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_SET_ROLE_PARMS]) {
@@ -1309,23 +1310,25 @@ int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&adm_ctx.resource->adm_mutex);
 
 	new_role = info->genlhdr->cmd == DRBD_ADM_PRIMARY ? R_PRIMARY : R_SECONDARY;
-	retcode = (enum drbd_ret_code) drbd_set_role(adm_ctx.resource,
+	rv = drbd_set_role(adm_ctx.resource,
 				new_role,
 				parms.force, adm_ctx.reply_skb);
 
 	if (new_role == R_PRIMARY) {
-		if (retcode >= SS_SUCCESS)
+		if (rv >= SS_SUCCESS)
 			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	} else {
-		if (retcode >= SS_SUCCESS)
+		if (rv >= SS_SUCCESS)
 			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
 	}
-	if (retcode == SS_DEVICE_IN_USE)
-		opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
+	if (rv == SS_DEVICE_IN_USE)
+		opener_info(adm_ctx.resource, adm_ctx.reply_skb, rv);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, rv);
+	return 0;
 out:
-	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
+	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
 
@@ -2882,7 +2885,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct drbd_resource *resource;
 	int err;
-	enum drbd_ret_code retcode;
+	unsigned int retcode;
 	enum determine_dev_size dd;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
@@ -3328,9 +3331,9 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 	return disk_state;
 }
 
-static enum drbd_state_rv adm_detach(struct drbd_device *device, bool force, bool intentional_diskless, struct sk_buff *reply_skb)
+static unsigned int adm_detach(struct drbd_device *device, bool force, bool intentional_diskless, struct sk_buff *reply_skb)
 {
-	enum drbd_state_rv retcode;
+	unsigned int retcode;
 	const char *err_str = NULL;
 	int ret;
 
@@ -4289,6 +4292,7 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
+	enum drbd_state_rv rv;
 	enum drbd_conn_state cstate;
 	int i, err;
 
@@ -4353,8 +4357,9 @@ int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 		drbd_md_mark_dirty(device);
 	}
 
-	retcode = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
-
+	rv = change_cstate(connection, C_UNCONNECTED, CS_VERBOSE);
+	drbd_adm_finish(&adm_ctx, info, rv);
+	return 0;
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
@@ -4721,7 +4726,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
 	struct resize_parms rs;
 	struct drbd_device *device;
-	enum drbd_ret_code retcode;
+	unsigned int retcode;
 	enum determine_dev_size dd;
 	bool change_al_layout = false;
 	enum dds_flags ddsf;
@@ -5951,6 +5956,7 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code retcode;
+	enum drbd_state_rv rv;
 	struct start_ov_parms parms;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_DEVICE);
@@ -5981,11 +5987,13 @@ int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	 * just being finished, wait for it before requesting a new resync. */
 	drbd_suspend_io(device, READ_AND_WRITE);
 	wait_event(device->misc_wait, !atomic_read(&device->pending_bitmap_work.n));
-	retcode = stable_change_repl_state(peer_device,
+	rv = stable_change_repl_state(peer_device,
 		L_VERIFY_S, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	drbd_resume_io(device);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, rv);
+	return 0;
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
@@ -7108,7 +7116,7 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	struct forget_peer_parms parms = { };
-	enum drbd_state_rv retcode;
+	enum drbd_ret_code retcode;
 	int vnr, peer_node_id, err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -7180,7 +7188,7 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	struct rename_resource_info rename_resource_info;
 	struct rename_resource_parms parms = { };
 	char *old_res_name, *new_res_name;
-	enum drbd_state_rv retcode;
+	enum drbd_ret_code retcode;
 	enum drbd_ret_code validate_err;
 	int err;
 	int vnr;
@@ -7241,6 +7249,6 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 
 out:
 	mutex_unlock(&resources_mutex);
-	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
+	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
