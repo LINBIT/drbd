@@ -34,7 +34,7 @@ set -e
 
 if test -e .compat_patches_applied; then
     echo "Removing compat patches"
-    patch -R -p0 --batch < .compat_patches_applied
+    patch -R -p0 --batch --reject-file=- < .compat_patches_applied
     rm -f .compat_patches_applied
 fi
 
