@@ -1555,14 +1555,12 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		struct request_queue *q = bdev_get_queue(bdev);
 
 		struct disk_conf *dc;
-		bool discard_zeroes_if_aligned;
 		bool disable_write_same;
 
 		d_size = drbd_get_max_capacity(device, device->ldev, false);
 		rcu_read_lock();
 		u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 		dc = rcu_dereference(device->ldev->disk_conf);
-		discard_zeroes_if_aligned = dc->discard_zeroes_if_aligned;
 		disable_write_same = dc->disable_write_same;
 		rcu_read_unlock();
 		q_order_type = drbd_queue_order_type(device);
@@ -1577,10 +1575,6 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		p->qlim->io_min = cpu_to_be32(bdev_io_min(bdev));
 		p->qlim->io_opt = cpu_to_be32(bdev_io_opt(bdev));
 		p->qlim->discard_enabled = !!bdev_max_discard_sectors(bdev);
-		p->qlim->discard_zeroes_data = discard_zeroes_if_aligned ||
-			queue_discard_zeroes_data(q)
-			/* but that is always false on recent kernels */
-			;
 		p->qlim->write_same_capable = 0;
 		put_ldev(device);
 	} else {
@@ -1594,7 +1588,6 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		p->qlim->io_min = cpu_to_be32(queue_io_min(q));
 		p->qlim->io_opt = cpu_to_be32(queue_io_opt(q));
 		p->qlim->discard_enabled = 0;
-		p->qlim->discard_zeroes_data = 0;
 		p->qlim->write_same_capable = 0;
 
 		d_size = 0;

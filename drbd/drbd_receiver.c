@@ -1757,9 +1757,6 @@ static bool can_do_reliable_discards(struct drbd_device *device)
 	if (!bdev_max_discard_sectors(device->ldev->backing_bdev))
 		return false;
 
-	if (queue_discard_zeroes_data(bdev_get_queue(device->ldev->backing_bdev)))
-		return true;
-
 	rcu_read_lock();
 	dc = rcu_dereference(device->ldev->disk_conf);
 	can_do = dc->discard_zeroes_if_aligned;
