@@ -448,7 +448,6 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	seq_printf(m, "%u total\n", count);
 }
 
-/* TODO: transfer_log and friends should be moved to resource */
 static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
@@ -458,15 +457,8 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	ktime_t now = ktime_get();
 	unsigned long jif = jiffies;
 
-	connection = first_connection(resource);
-	transport = &connection->transport;
-	/* This does not happen, actually.
-	 * But be robust and prepare for future code changes. */
-	if (!connection || !kref_get_unless_zero(&connection->kref))
-		return -ESTALE;
-
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	seq_puts(m, "oldest bitmap IO\n");
 	seq_print_resource_pending_bitmap_io(m, resource, jif);
@@ -477,14 +469,23 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	seq_putc(m, '\n');
 
 	seq_puts(m, "transport buffer stats\n");
-	/* for each connection ... once we have more than one */
+	seq_puts(m, "peer\ttransport class\tunread receive buffer\tunacked send buffer\n");
 	rcu_read_lock();
-	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
-		transport->ops->stats(transport, &transport_stats);
-		seq_printf(m, "unread receive buffer: %u Byte\n",
-				transport_stats.unread_received);
-		seq_printf(m, "unacked send buffer: %u Byte\n",
+	for_each_connection_rcu(connection, resource) {
+		char *name;
+
+		transport = &connection->transport;
+		name = rcu_dereference(transport->net_conf)->name;
+		seq_printf(m, "%s\t%s\t", name, transport->class->name);
+
+		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
+			transport->ops->stats(transport, &transport_stats);
+			seq_printf(m, "%u\t%u\n",
+				transport_stats.unread_received,
 				transport_stats.unacked_send);
+		} else {
+			seq_printf(m, "-\t-\n");
+		}
 	}
 	rcu_read_unlock();
 	seq_putc(m, '\n');
