@@ -7930,6 +7930,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
+	/* State change will be performed when the two-phase commit is committed. */
+	if (connection->cstate[NOW] == C_CONNECTING)
+		return 0;
+
 	begin_state_change(resource, &irq_flags, begin_state_chg_flags);
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
