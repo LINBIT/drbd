@@ -494,6 +494,9 @@ int main(int argc, char **argv)
 	patch(1, "drbd_wrappers", false, true,
 	      COMPAT_NEED_DRBD_WRAPPERS, "need");
 
+	patch(1, "bdev_discard_granularity", true, false,
+	      COMPAT_HAVE_BDEV_DISCARD_GRANULARITY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
