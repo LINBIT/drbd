@@ -799,10 +799,16 @@ void conn_connect2(struct drbd_connection *connection)
 		/* connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
 
-		down_read_non_owner(&device->uuid_sem);
-		set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
-		/* since drbd_connected() is also called from drbd_create_device()
-		   aquire lock here before calling drbd_connected(). */
+		/* In the compatibility case with protocol version < 110, that
+		 * is DRBD 8.4, we do not hold uuid_sem while exchanging the
+		 * initial UUID and state packets. There is no need because
+		 * there are no other peers which could interfere. */
+		if (connection->agreed_pro_version >= 110) {
+			down_read_non_owner(&device->uuid_sem);
+			set_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags);
+			/* since drbd_connected() is also called from drbd_create_device()
+			   aquire lock here before calling drbd_connected(). */
+		}
 		drbd_connected(peer_device);
 
 		rcu_read_lock();
@@ -7301,7 +7307,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		put_ldev(device);
 	}
 
-	if (test_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags)) {
+	if (test_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags) ||
+			connection->agreed_pro_version < 110) {
 		struct drbd_transport *transport = &connection->transport;
 		/* Last packet of handshake received, disarm receive timeout */
 		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
