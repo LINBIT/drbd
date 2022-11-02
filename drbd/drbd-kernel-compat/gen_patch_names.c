@@ -141,6 +141,9 @@ int main(int argc, char **argv)
 	patch(1, "ib_post", true, false,
 	      COMPAT_IB_POST_SEND_CONST_PARAMS, "const");
 
+	patch(1, "blk_cleanup_disk", false, true,
+	      COMPAT_HAVE_BLK_CLEANUP_DISK, "present");
+
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_HAVE_BLK_ALLOC_DISK, "present");
 
