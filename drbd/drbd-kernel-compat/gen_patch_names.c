@@ -503,6 +503,9 @@ int main(int argc, char **argv)
 	patch(1, "bdevname", false, true,
 	      COMPAT_HAVE_BDEVNAME, "present");
 
+	patch(1, "strscpy", true, false,
+	      COMPAT_HAVE_STRSCPY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
