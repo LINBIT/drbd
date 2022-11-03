@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 #include <drbd_kref_debug.h>
 #include "drbd_int.h"
 
