@@ -506,6 +506,9 @@ int main(int argc, char **argv)
 	patch(1, "strscpy", true, false,
 	      COMPAT_HAVE_STRSCPY, "present");
 
+	patch(1, "kvfree_rcu", true, false,
+	      COMPAT_HAVE_KVFREE_RCU, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
