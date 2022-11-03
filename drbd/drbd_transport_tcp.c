@@ -775,6 +775,7 @@ static void dtt_destroy_listener(struct drbd_listener *generic_listener)
 
 static int dtt_init_listener(struct drbd_transport *transport,
 			     const struct sockaddr *addr,
+			     struct net *net,
 			     struct drbd_listener *drbd_listener)
 {
 	int err, sndbuf_size, rcvbuf_size, addr_len;
@@ -783,6 +784,11 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what = "";
+
+	if (net != &init_net) {
+		tr_err(transport, "Network namespaces not supported\n");
+		return -EINVAL;
+	}
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);

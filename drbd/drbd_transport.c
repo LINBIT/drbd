@@ -168,7 +168,7 @@ static void generic_listener_destroy(struct drbd_listener *unused)
 }
 
 int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
-		      int (*init_listener)(struct drbd_transport *, const struct sockaddr *addr, struct drbd_listener *))
+		      int (*init_listener)(struct drbd_transport *, const struct sockaddr *, struct net *net, struct drbd_listener *))
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
@@ -203,7 +203,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	spin_unlock_bh(&resource->listeners_lock);
 
 	if (needs_init) {
-		err = init_listener(transport, addr, listener);
+		err = init_listener(transport, addr, &init_net, listener);
 		if (err)
 			drbd_put_listener(path);
 
