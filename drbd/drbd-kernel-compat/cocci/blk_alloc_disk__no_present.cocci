@@ -24,8 +24,12 @@ device->vdisk = disk;
 + disk->queue = q;
 ... when exists
 out_no_io_page:
+(
 -	blk_cleanup_disk(disk);
 +	put_disk(disk);
+|
+...
+)
 out_no_disk:
 +	blk_cleanup_queue(q);
 + out_no_q:
