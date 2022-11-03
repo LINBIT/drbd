@@ -3889,7 +3889,7 @@ static void connection_to_info(struct connection_info *info,
 }
 
 #define str_to_info(info, field, str) ({ \
-	strlcpy(info->field, str, sizeof(info->field)); \
+	strscpy(info->field, str, sizeof(info->field)); \
 	info->field ## _len = min(strlen(str), sizeof(info->field)); \
 })
 
@@ -6903,7 +6903,7 @@ void notify_helper(enum drbd_notification_type type,
 	struct drbd_genlmsghdr *dh;
 	int err;
 
-	strlcpy(helper_info.helper_name, name, sizeof(helper_info.helper_name));
+	strscpy(helper_info.helper_name, name, sizeof(helper_info.helper_name));
 	helper_info.helper_name_len = min(strlen(name), sizeof(helper_info.helper_name));
 	helper_info.helper_status = status;
 
@@ -7226,7 +7226,7 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_info(resource, "Renaming to %s\n", parms.new_resource_name);
 
-	strlcpy(rename_resource_info.res_new_name, parms.new_resource_name, sizeof(rename_resource_info.res_new_name));
+	strscpy(rename_resource_info.res_new_name, parms.new_resource_name, sizeof(rename_resource_info.res_new_name));
 	rename_resource_info.res_new_name_len = min(strlen(parms.new_resource_name), sizeof(rename_resource_info.res_new_name));
 
 	mutex_lock(&notification_mutex);
