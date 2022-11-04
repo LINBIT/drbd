@@ -1802,17 +1802,6 @@ extern sector_t drbd_get_max_capacity(
 #define DRBD_MAX_SECTORS (1UL << (50 - SECTOR_SHIFT))
 #endif
 
-/* BIO_MAX_SIZE is 256 * PAGE_SIZE,
- * so for typical PAGE_SIZE of 4k, that is (1<<20) Byte.
- * Since we may live in a mixed-platform cluster,
- * we limit us to a platform agnostic constant here for now.
- * A followup commit may allow even bigger BIO sizes,
- * once we thought that through. */
-#define DRBD_BIO_MAX_PAGES (BIO_MAX_VECS << PAGE_SHIFT)
-#if DRBD_MAX_BIO_SIZE > DRBD_BIO_MAX_PAGES
-#error Architecture not supported: DRBD_MAX_BIO_SIZE > (BIO_MAX_VECS << PAGE_SHIFT)
-#endif
-
 #define DRBD_MAX_SIZE_H80_PACKET (1U << 15) /* Header 80 only allows packets up to 32KiB data */
 #define DRBD_MAX_BIO_SIZE_P95    (1U << 17) /* Protocol 95 to 99 allows bios up to 128KiB */
 
