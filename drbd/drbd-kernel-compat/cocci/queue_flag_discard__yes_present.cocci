@@ -10,6 +10,17 @@ q->limits.max_discard_sectors = ...;
 )
 
 @@
+struct request_queue *q;
+@@
+(
+blk_queue_discard_granularity(q, 0);
++ blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
+|
+blk_queue_discard_granularity(q, 512);
++ blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
+)
+
+@@
 identifier q, device, fn;
 @@
 +static void fixup_discard_if_not_supported(struct request_queue *q)
