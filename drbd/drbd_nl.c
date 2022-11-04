@@ -1926,9 +1926,10 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 	 * our maximum supported batch bio size used for discards. */
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
-		if (!(connection->agreed_features & DRBD_FF_WSAME)) {
+		if (connection->cstate[NOW] == C_CONNECTED &&
+		    !(connection->agreed_features & DRBD_FF_WSAME)) {
 			/* before, with DRBD <= 8.4.6, we only allowed up to one AL_EXTENT_SIZE. */
-			s = AL_EXTENT_SIZE >> 9;
+			s = AL_EXTENT_SIZE >> SECTOR_SHIFT;
 			break;
 		}
 	}
