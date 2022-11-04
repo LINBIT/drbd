@@ -1970,7 +1970,6 @@ static void decide_on_discard_support(struct drbd_device *device,
 not_supported:
 	blk_queue_discard_granularity(q, 0);
 	blk_queue_max_discard_sectors(q, 0);
-	blk_queue_max_write_zeroes_sectors(q, 0);
 }
 
 static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
