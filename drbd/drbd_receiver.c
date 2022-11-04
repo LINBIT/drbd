@@ -10032,8 +10032,9 @@ static int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
-	drbd_err(device, "Got NegDReply; Sector %llus, len %u.\n",
-		 (unsigned long long)sector, be32_to_cpu(p->blksize));
+	if (drbd_ratelimit())
+		drbd_warn(peer_device, "Got NegDReply; Sector %llus, len %u.\n",
+				(unsigned long long)sector, be32_to_cpu(p->blksize));
 
 	return validate_req_change_req_state(peer_device, p->block_id, sector,
 					     INTERVAL_LOCAL_READ, __func__,
