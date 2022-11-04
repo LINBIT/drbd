@@ -3072,7 +3072,7 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 		device->bitmap = NULL;
 	}
 
-	blk_cleanup_disk(device->vdisk);
+	put_disk(device->vdisk);
 
 	kfree(device);
 
@@ -4036,7 +4036,7 @@ out_no_peer_device:
 out_no_bitmap:
 	__free_page(device->md_io.page);
 out_no_io_page:
-	blk_cleanup_disk(disk);
+	put_disk(disk);
 out_no_disk:
 	kref_put(&resource->kref, drbd_destroy_resource);
 	kref_debug_put(&resource->kref_debug, 4);
