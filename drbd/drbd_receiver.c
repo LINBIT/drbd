@@ -1154,8 +1154,10 @@ start:
 	atomic_set(&connection->rs_in_flight, 0);
 
 	if (connection->agreed_pro_version >= 110) {
-		/* Allow 5 seconds for the two-phase commits */
-		transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 10 * HZ);
+		/* Allow 10 times the ping_timeo for two-phase commits. That is
+		 * 5 seconds by default. The unit of ping_timeo is tenths of a
+		 * second. */
+		transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * HZ);
 
 		if (connection->agreed_pro_version == 117)
 			conn_connect2(connection);
