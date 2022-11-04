@@ -8,10 +8,10 @@
  },
  
  #define ZZZ_genl_ops		CONCAT_(GENL_MAGIC_FAMILY, _genl_ops)
-@@ -312,6 +311,7 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
- #ifdef COMPAT_HAVE_GENL_FAMILY_PARALLEL_OPS
- 	.parallel_ops = true,
+@@ -311,6 +310,7 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
  #endif
+ 	.netnsok = true,
+ 	.parallel_ops = true,
 +	.policy = CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),
  };
  
