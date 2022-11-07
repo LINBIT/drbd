@@ -8662,24 +8662,26 @@ _try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *work
 
 	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
-		bool adjacent = interval_is_adjacent(&peer_req->i, &next->i);
-		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM && adjacent) {
+		bool interval_mergeable = interval_is_adjacent(&peer_req->i, &next->i) &&
+			!(peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND);
+		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM && interval_mergeable) {
 			merge_second_into_first(peer_req, next);
-		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &next->i.flags)) {
+		} else if (!interval_mergeable || test_bit(INTERVAL_RECEIVED, &next->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
 		}
 	}
 
 	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
 		struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
-		bool adjacent = interval_is_adjacent(&prev->i, &peer_req->i);
-		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM && adjacent) {
+		bool interval_mergeable = interval_is_adjacent(&prev->i, &peer_req->i) &&
+			!(peer_req->flags & EE_RS_TRIM_LIMITED_FRONT);
+		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM && interval_mergeable) {
 			merge_second_into_first(prev, peer_req);
 			peer_req = prev;
 
 			if (list_is_first(&peer_req->recv_order, &peer_device->resync_requests))
 				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-		} else if (!adjacent || test_bit(INTERVAL_RECEIVED, &prev->i.flags)) {
+		} else if (!interval_mergeable || test_bit(INTERVAL_RECEIVED, &prev->i.flags)) {
 			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
 			if (prev->flags & EE_TRIM) {
 				/* The resync requests are issued at a specific rate. It might happen,
