@@ -2511,7 +2511,6 @@ void do_submit(struct work_struct *ws)
 static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
 {
 	struct drbd_resource *resource = device->resource;
-	unsigned int size = bio->bi_iter.bi_size;
 
 	/* If you "mount -o ro", then later "mount -o remount,rw", you can end
 	 * up with a DRBD "Secondary" receiving WRITE requests from the VFS.
@@ -2521,6 +2520,12 @@ static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
 		       drbd_err(device, "Rejected WRITE request, not in Primary role.\n");
 		return true;
 	}
+	return false;
+}
+
+static bool request_size_bad(struct drbd_device *device, struct bio *bio)
+{
+	unsigned int size = bio->bi_iter.bi_size;
 	if (!expect(device, size <= DRBD_MAX_BATCH_BIO_SIZE && IS_ALIGNED(size, SECTOR_SIZE)))
 		return true;
 	return false;
@@ -2567,7 +2572,7 @@ void drbd_submit_bio(struct bio *bio)
 
 	blk_queue_split(&bio);
 
-	if (device->cached_err_io) {
+	if (device->cached_err_io || request_size_bad(device, bio)) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 		return;
