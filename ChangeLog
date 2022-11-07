@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.12-rc.1 (api:genl2/proto:110-121/transport:17)
+--------
+ * fix a race that could result in connection attempts getting aborted
+   with the message "sock_recvmsg returned -11"
+ * rate limit messages in case the peer can not write the backing storage
+   and it does not finish the necessary state transitions
+ * reduced the receive timeout during connecting to the intended 5 seconds
+   (ten times ping-ack timeout)
+ * losing the connection at a specific point in time during establishing
+   a connection could cause a transition to StandAlone; fixed that, so
+   that it keeps trying to connect
+ * fix a race that could lead to a fence-peer handler being called
+   unexpectedly when the fencing policy is changed at the moment before
+   promoting
+
 9.1.11 (api:genl2/proto:110-121/transport:17)
 --------
  * The change introduced with 9.1.10 created another problem that might
