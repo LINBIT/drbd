@@ -43,14 +43,15 @@ complete_master_bio(...)
 }
 
 @@
+expression condition;
 struct bio *b;
 @@
 // specific, more readable variants
-- if (...)
+- if (condition)
 -	b->bi_status = BLK_STS_IOERR;
 ...
 - bio_endio(b);
-+ bio_endio(b, -EIO);
++ bio_endio(b, condition ? -EIO : 0);
 
 @@
 expression status;
