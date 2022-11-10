@@ -21,6 +21,10 @@ ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
 compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
 endif
 
+ifndef CONFIG_LRU_CACHE
+compat_objs += drbd-kernel-compat/lru_cache.o
+endif
+
 compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 ifdef CONFIG_DEV_DAX_PMEM
@@ -34,7 +38,7 @@ endif
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
-drbd-y += lru_cache.o drbd_main.o drbd_strings.o drbd_nl.o
+drbd-y += drbd_main.o drbd_strings.o drbd_nl.o
 drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
 drbd-y += drbd_nla.o drbd_transport.o
 
