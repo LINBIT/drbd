@@ -30,6 +30,13 @@ MODULE_DESCRIPTION("TCP (SDP, SSOCKS) transport layer for DRBD");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(REL_VERSION);
 
+static unsigned int drbd_keepcnt;
+module_param_named(keepcnt, drbd_keepcnt, uint, 0664);
+static unsigned int drbd_keepidle;
+module_param_named(keepidle, drbd_keepidle, uint, 0664);
+static unsigned int drbd_keepintvl;
+module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
+
 struct buffer {
 	void *base;
 	void *pos;
@@ -1090,6 +1097,13 @@ randomize:
 	csocket->sk->sk_sndtimeo = timeout;
 
 	sock_set_keepalive(dsocket->sk);
+
+	if (drbd_keepidle)
+		tcp_sock_set_keepidle(dsocket->sk, drbd_keepidle);
+	if (drbd_keepcnt)
+		tcp_sock_set_keepcnt(dsocket->sk, drbd_keepcnt);
+	if (drbd_keepintvl)
+		tcp_sock_set_keepintvl(dsocket->sk, drbd_keepintvl);
 
 	return 0;
 

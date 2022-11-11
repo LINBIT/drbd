@@ -366,6 +366,12 @@ int main(int argc, char **argv)
 	patch(1, "sock_set_keepalive", true, false,
 	      COMPAT_HAVE_SOCK_SET_KEEPALIVE, "present");
 
+	patch(1, "tcp_sock_set_keepidle", true, false,
+	      COMPAT_HAVE_TCP_SOCK_SET_KEEPIDLE, "present");
+
+	patch(1, "tcp_sock_set_keepcnt", true, false,
+	      COMPAT_HAVE_TCP_SOCK_SET_KEEPCNT, "present");
+
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
