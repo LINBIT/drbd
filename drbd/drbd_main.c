@@ -4825,7 +4825,8 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 			peer_device->current_uuid = val;
 			set_current = false;
 		}
-		if (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+		if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
+		    peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
 		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
 			recipients |= NODE_MASK(peer_device->node_id);
 
