@@ -99,7 +99,8 @@ check:check-compat:
 
 check:checkpatch.pl:
   stage: check
-  extends: [ .rules-build ]
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
   image: perl:5
   script:
     - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl
