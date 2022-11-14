@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.1-rc.1 (api:genl2/proto:110-121/transport:18)
+9.2.1 (api:genl2/proto:110-121/transport:18)
 --------
  * fix spurious PingAck timeout, a regression of ack-processing in bottom half
    (introduced with 9.2.0)
