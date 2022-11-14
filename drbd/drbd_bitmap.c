@@ -1661,12 +1661,6 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 		}
 		data_word = addr[word32_in_page(from_word_nr)];
 
-		if (word_nr == words32_total - bitmap->bm_max_peers) {
-			unsigned long lw = word_nr / bitmap->bm_max_peers;
-			if (bitmap->bm_bits < (lw + 1) * 32)
-			    data_word &= cpu_to_le32((1 << (bitmap->bm_bits - lw * 32)) - 1);
-		}
-
 		if (current_page_nr != to_page_nr) {
 			bm_unmap(bitmap, addr);
 			current_page_nr = to_page_nr;
