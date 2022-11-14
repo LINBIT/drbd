@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.12-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.12 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a race that could result in connection attempts getting aborted
    with the message "sock_recvmsg returned -11"
