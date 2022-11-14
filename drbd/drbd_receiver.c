@@ -8990,7 +8990,13 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &request_work_list, w.list) {
-		dec_rs_pending(peer_req->peer_device);
+		/*
+		 * When EE_TRIM is set, we have received a "deallocated" reply,
+		 * but have not yet tried to submit the request. Do not call
+		 * dec_rs_pending() again.
+		 */
+		if (!(peer_req->flags & EE_TRIM))
+			dec_rs_pending(peer_req->peer_device);
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
 	}
