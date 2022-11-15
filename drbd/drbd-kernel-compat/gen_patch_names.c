@@ -495,6 +495,9 @@ int main(int argc, char **argv)
 	patch(1, "kvfree_rcu", true, false,
 	      COMPAT_HAVE_KVFREE_RCU, "present");
 
+	patch(1, "list_next_entry", true, false,
+	      COMPAT_HAVE_LIST_NEXT_ENTRY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

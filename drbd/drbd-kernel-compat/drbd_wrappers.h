@@ -93,12 +93,6 @@
 #define RCU_INITIALIZER(v) (typeof(*(v)) *)(v)
 #endif
 
-#ifndef list_next_entry
-/* introduced in 008208c (v3.13-rc1) */
-#define list_next_entry(pos, member) \
-	list_entry((pos)->member.next, typeof(*(pos)), member)
-#endif
-
 /*
  * v4.12 fceb6435e852 netlink: pass extended ACK struct to parsing functions
  * and some preparation commits introduce a new "netlink extended ack" error
