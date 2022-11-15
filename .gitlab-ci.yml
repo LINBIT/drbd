@@ -107,7 +107,7 @@ check:checkpatch.pl:
     - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
-    - git diff ${base}...HEAD > merge_request.diff
+    - git diff --submodule=diff ${base}...HEAD -- drbd/{drbd-headers/{linux/,},linux/,}*\.[ch] > merge_request.diff
     - ./checkpatch.pl --no-tree --ignore FILE_PATH_CHANGES merge_request.diff
 
 build:for-tests:
