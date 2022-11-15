@@ -14,6 +14,7 @@ drbd/drbd.ko.unsigned
 drbd/drbd_transport_tcp.ko
 drbd/drbd_transport_tcp.ko.unsigned
 drbd/drbd_transport_tcp.mod.c
+drbd/*.mod
 drbd/.*.cmd
 drbd/.compat_test.*/
 drbd/.config.*.timestamp
