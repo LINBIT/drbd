@@ -28,6 +28,16 @@ stages:
           jq -r '.vms[].metadata | .BuildDistribution + " " + .BuildKernel'
       }
 
+      # parameters: [version]
+      # select all "build targets" for the given drbd version,
+      # ignoring some distros that always fail in CI anyway
+      all_kernels() {
+        local version="$1"
+        lbbuildctl build drbd -v $version --arch amd64 --debug debugSpecJson | \
+          jq -r '.[] | .image + " " + .aux_version' | \
+          grep -v ^sles12 | grep -v ^docker
+      }
+
       # parameters: [version] [release] [rel-version] [kernels]
       # kernels should be a string with lines with the format: "[distribution] [kernel version]"
       drbd_build () {
@@ -124,6 +134,28 @@ build:for-tests:
     - fi
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
+  artifacts:
+    reports:
+      dotenv: build.env
+    paths:
+      - drbd/drbd-kernel-compat/cocci_cache
+    when: always
+    expire_in: 1 week
+  needs: []
+
+build:all:
+  stage: build
+  extends: [ .setup-lbbuild ]
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+  allow_failure: true
+  image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
+  script:
+    - DRBD_VERSION=$DRBD_VERSION_BASE.$CI_COMMIT_SHA
+    - DRBD_RELEASE=1
+    - echo DRBD_VERSION=$DRBD_VERSION >> build.env
+    - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(all_kernels $DRBD_VERSION)"
   artifacts:
     reports:
       dotenv: build.env
