@@ -501,6 +501,9 @@ int main(int argc, char **argv)
 	patch(1, "sched_signal_h", true, false,
 	      COMPAT_HAVE_SCHED_SIGNAL_H, "present");
 
+	patch(1, "nla_put_64bit", true, false,
+	      COMPAT_HAVE_NLA_PUT_64BIT, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
