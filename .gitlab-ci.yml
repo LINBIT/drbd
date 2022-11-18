@@ -2,7 +2,7 @@ variables:
   RELEASE_BRANCH: drbd-9.1
   DRBD_VERSION_BASE: 9.1.0
   DRBD9_TESTS_REF: master
-  BUILD_HELPERS_VERSION: a87d4f95c35fa24eebe1a157408ef59cebd1f3f4
+  BUILD_HELPERS_VERSION: e8f5e41817c159cdbdab8b2102ed4ec1ce6f16e8
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -77,12 +77,20 @@ stages:
           --upload-file drbd-*.tar.gz \
           $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        echo "$kernels" | parallel --colsep ' ' -k -j24 \
+        local build_rc=0
+        echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog parallel.log \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" -l \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-            -d {1} -k {2}
+            -d {1} -k {2} \
+            || build_rc=$?
+
+        parse_joblog.py drbd parallel.log
+
+        if [ "$build_rc" -ne 0 ]; then
+          exit $build_rc
+        fi
 
         set +x
       }
@@ -147,8 +155,7 @@ build:all:
   stage: build
   extends: [ .setup-lbbuild ]
   rules:
-    - if: $CI_MERGE_REQUEST_ID
-      when: manual
+    - when: manual
   allow_failure: true
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
