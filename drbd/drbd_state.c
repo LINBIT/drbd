@@ -1366,15 +1366,17 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
-		is_intentional_diskless = peer_device && !want_bitmap(peer_device);
 
 		if (peer_device) {
+			is_intentional_diskless = !want_bitmap(peer_device);
 			nc = rcu_dereference(peer_device->connection->transport.net_conf);
 			if (nc && !nc->allow_remote_read) {
 				dynamic_drbd_dbg(peer_device,
 						 "Excluding from quorum calculation because allow-remote-read = no\n");
 				continue;
 			}
+		} else {
+			is_intentional_diskless = !(peer_md->flags & MDF_PEER_DEVICE_SEEN);
 		}
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
@@ -2625,7 +2627,7 @@ static void finish_state_change(struct drbd_resource *resource)
 				if (peer_device->bitmap_index != -1) {
 					enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
 					u32 mdf = device->ldev->md.peers[peer_device->node_id].flags;
-					/* Do NOT clear MDF_PEER_DEVICE_SEEN.
+					/* Do NOT clear MDF_PEER_DEVICE_SEEN here.
 					 * We want to be able to refuse a resize beyond "last agreed" size,
 					 * even if the peer is currently detached.
 					 */
@@ -2638,6 +2640,8 @@ static void finish_state_change(struct drbd_resource *resource)
 						if (pdsk != D_UNKNOWN)
 							mdf |= MDF_PEER_DEVICE_SEEN;
 					}
+					if (pdsk == D_DISKLESS && !want_bitmap(peer_device))
+						mdf &= ~MDF_PEER_DEVICE_SEEN;
 					if (peer_device->connection->fencing_policy != FP_DONT_CARE)
 						mdf |= MDF_PEER_FENCING;
 					if (mdf != device->ldev->md.peers[peer_device->node_id].flags) {
