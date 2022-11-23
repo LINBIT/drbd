@@ -83,6 +83,7 @@ static void ensure_exposed_data_uuid(struct drbd_device *device);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 static void check_wrongly_set_mdf_exists(struct drbd_device *);
+static void update_quorumless_nodes(struct drbd_resource *resource);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -797,6 +798,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		goto out;
 
 	finish_state_change(resource);
+	update_quorumless_nodes(resource);
 
 	/* Check whether we are establishing a connection before applying the change. */
 	is_connect = drbd_state_change_is_connect(resource);
@@ -2356,6 +2358,67 @@ void drbd_resume_al(struct drbd_device *device)
 {
 	if (test_and_clear_bit(AL_SUSPENDED, &device->flags))
 		drbd_info(device, "Resumed AL updates\n");
+}
+
+/*
+ * When our partition has quorum, we know that all other nodes can not have
+ * quorum. Remember that in quorumless_nodes. This knowledge allows us to keep
+ * qourum in the own partition should we lose more nodes.
+ * When such a node re-joins our partition, we witness that, since joining
+ * is a cluster-wide two-phase commit. At that point, we remove such nodes
+ * from quorumless_nodes
+ */
+static void update_quorumless_nodes(struct drbd_resource *resource)
+{
+	enum chg_state_flags flags = resource->state_change_flags;
+	struct twopc_reply *reply = &resource->twopc_reply;
+	const int my_node_id = resource->res_opts.node_id;
+	struct drbd_connection *connection;
+	struct drbd_device *device;
+	bool res_has_quorum = true;
+	int vnr;
+
+	if (resource->res_opts.quorum == QOU_OFF)
+		return;
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (!device->have_quorum[NEW]) {
+			res_has_quorum = false;
+			break;
+		}
+	}
+
+	if (!res_has_quorum) {
+		resource->quorumless_nodes = 0;
+		return;
+	}
+
+	/* in case we initiated 2PC we know the reachable nodes */
+	if (flags & CS_TWOPC && reply->initiator_node_id == my_node_id) {
+		u64 reachable_nodes = reply->reachable_nodes;
+
+		resource->quorumless_nodes = ~reachable_nodes;
+		return;
+	}
+
+	/* In case I am 2PC target of a connect or non-graceful disconnect */
+	for_each_connection(connection, resource) {
+		enum drbd_conn_state *cstate = connection->cstate;
+		const int peer_node_mask = NODE_MASK(connection->peer_node_id);
+
+		/* clear a fresh connection out of the quorumless_nodes */
+		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
+			resource->quorumless_nodes &= ~peer_node_mask;
+
+		/* A peer left. Either non-graceful, or I was target of the 2PC. */
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
+			drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+			/*
+			 * By triggering a 2PC we will come back to this function
+			 * as initiator and the we can rely on reachable_nodes
+			 */
+		}
+	}
 }
 
 static void set_ov_position(struct drbd_peer_device *peer_device,
@@ -5335,7 +5398,7 @@ enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
 		.mask = { },
 		.val = { },
 		.target_node_id = -1,
-		.flags = flags,
+		.flags = flags | (resource->res_opts.quorum != QOU_OFF ? CS_FORCE_RECALC : 0),
 		.change_local_state_last = false,
 	};
 
