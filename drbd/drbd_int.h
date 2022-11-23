@@ -867,6 +867,7 @@ struct drbd_resource {
 	struct dentry *debugfs_res_in_flight_summary;
 	struct dentry *debugfs_res_state_twopc;
 	struct dentry *debugfs_res_worker_pid;
+	struct dentry *debugfs_res_quorumless_nodes;
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;
