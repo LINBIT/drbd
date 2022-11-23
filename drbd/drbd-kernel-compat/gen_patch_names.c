@@ -498,6 +498,9 @@ int main(int argc, char **argv)
 	patch(1, "list_next_entry", true, false,
 	      COMPAT_HAVE_LIST_NEXT_ENTRY, "present");
 
+	patch(1, "sched_signal_h", true, false,
+	      COMPAT_HAVE_SCHED_SIGNAL_H, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
