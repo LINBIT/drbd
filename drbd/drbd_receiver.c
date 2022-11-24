@@ -6299,6 +6299,21 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 			rv = end_state_change(resource, &irq_flags);
 			kref_put(&affected_connection->kref, drbd_destroy_connection);
 			return rv;
+		} else if (flags & CS_PREPARED) {
+			struct drbd_device *device;
+			int iterate_vnr;
+
+			idr_for_each_entry(&resource->devices, device, iterate_vnr) {
+				struct drbd_peer_md *peer_md;
+
+				if (!get_ldev(device))
+					continue;
+
+				peer_md = &device->ldev->md.peers[initiator_node_id];
+				peer_md->flags |= MDF_PEER_OUTDATED;
+				put_ldev(device);
+				drbd_md_mark_dirty(device);
+			}
 		}
 	}
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
