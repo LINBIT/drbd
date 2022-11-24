@@ -4901,13 +4901,6 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	clear_bit(TWOPC_STATE_CHANGE_PENDING, &resource->flags);
 	if (rv >= SS_SUCCESS) {
 		change(context, PH_COMMIT);
-		if (target_connection &&
-		    target_connection->peer_role[NOW] == R_UNKNOWN) {
-			enum drbd_role target_role =
-				(reply->primary_nodes & NODE_MASK(context->target_node_id)) ?
-				R_PRIMARY : R_SECONDARY;
-			__change_peer_role(target_connection, target_role);
-		}
 		rv = end_state_change(resource, &irq_flags);
 		if (rv < SS_SUCCESS)
 			drbd_err(resource, "FATAL: Local commit of already committed %u failed! \n",
@@ -5564,6 +5557,8 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 	struct change_cstate_context *cstate_context =
 		container_of(context, struct change_cstate_context, context);
 	struct drbd_connection *connection = cstate_context->connection;
+	struct drbd_resource *resource = context->resource;
+	struct twopc_reply *reply = &resource->twopc_reply;
 
 	if (phase == PH_PREPARE) {
 		cstate_context->outdate_what = OUTDATE_NOTHING;
@@ -5595,13 +5590,19 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 		apply_connect(connection, phase == PH_COMMIT);
 
 	if (phase == PH_COMMIT) {
-		struct drbd_resource *resource = context->resource;
-		struct twopc_reply *reply = &resource->twopc_reply;
 		u64 directly_reachable = directly_connected_nodes(resource, NEW) |
 			NODE_MASK(resource->res_opts.node_id);
 
 		if (reply->primary_nodes & ~directly_reachable)
 			__outdate_myself(resource);
+	}
+
+	if (context->val.conn == C_CONNECTED && connection->peer_role[NOW] == R_UNKNOWN) {
+		enum drbd_role target_role =
+			(reply->primary_nodes & NODE_MASK(context->target_node_id)) ?
+			R_PRIMARY : R_SECONDARY;
+
+		__change_peer_role(connection, target_role);
 	}
 
 	return phase != PH_PREPARE ||
