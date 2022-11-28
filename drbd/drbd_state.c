@@ -1580,7 +1580,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
 		/* SS_NO_UP_TO_DATE_DISK is not quite accurate here. We may
 		 * have an up-to-date peer. However, we cannot trust that
-		 * information. TRY_BECOME_UP_TO_DATE_PENDING is set when we
+		 * information. TWO_PC_AFTER_LOST_PEER_PENDING is set when we
 		 * have lost our connection to a primary peer. It is possible
 		 * that the "up-to-date peer" has also lost its connection to
 		 * the primary peer, but we have not yet received the
@@ -1591,7 +1591,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		 * try_become_up_to_date() a chance to run. That will set our
 		 * disk state appropriately depending on whether our partition
 		 * is isolated from the original primary peer. */
-		if (test_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags))
+		if (test_bit(TWO_PC_AFTER_LOST_PEER_PENDING, &resource->flags))
 			return SS_NO_UP_TO_DATE_DISK;
 
 		for_each_connection_rcu(connection, resource) {
@@ -2412,7 +2412,7 @@ static void update_quorumless_nodes(struct drbd_resource *resource)
 
 		/* A peer left. Either non-graceful, or I was target of the 2PC. */
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
-			drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+			drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
 			/*
 			 * By triggering a 2PC we will come back to this function
 			 * as initiator and the we can rely on reachable_nodes
@@ -2908,7 +2908,7 @@ static void finish_state_change(struct drbd_resource *resource)
 		/* The NEW state version here is the same as the NOW version in
 		 * the context of w_after_state_change(). */
 		if (should_try_become_up_to_date(device, disk_state, NEW))
-			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
+			set_bit(TWO_PC_AFTER_LOST_PEER_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -4074,7 +4074,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		/* We cannot test the flag TRY_BECOME_UP_TO_DATE_PENDING here
+		/* We cannot test the flag TWO_PC_AFTER_LOST_PEER_PENDING here
 		 * because that would cause us to queue the work more often
 		 * than necessary. */
 		if (should_try_become_up_to_date(device, disk_state, NOW))
@@ -4140,7 +4140,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (try_become_up_to_date)
-		drbd_post_work(resource, TRY_BECOME_UP_TO_DATE);
+		drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
 	else
 		drbd_notify_peers_lost_primary(resource);
 
@@ -5366,7 +5366,7 @@ static void restore_outdated_in_pdsk(struct drbd_device *device)
 	put_ldev(device);
 }
 
-static bool do_change_from_consistent(struct change_context *context, enum change_phase phase)
+static bool do_twopc_after_lost_peer(struct change_context *context, enum change_phase phase)
 {
 	struct drbd_resource *resource = context->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
@@ -5389,7 +5389,7 @@ static bool do_change_from_consistent(struct change_context *context, enum chang
 	return phase != PH_PREPARE || reply->reachable_nodes != NODE_MASK(resource->res_opts.node_id);
 }
 
-enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
+enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource,
 					  enum chg_state_flags flags)
 {
 	struct change_context context = {
@@ -5405,7 +5405,7 @@ enum drbd_state_rv change_from_consistent(struct drbd_resource *resource,
 	/* The other nodes get the request for an empty state change. I.e. they
 	   will agree to this change request. At commit time we know where to
 	   go from the D_CONSISTENT, since we got the primary mask. */
-	return change_cluster_wide_state(do_change_from_consistent, &context);
+	return change_cluster_wide_state(do_twopc_after_lost_peer, &context);
 }
 
 static bool do_change_disk_state(struct change_context *context, enum change_phase phase)
