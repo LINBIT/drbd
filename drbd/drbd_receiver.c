@@ -1143,7 +1143,7 @@ start:
 	have_mutex = false;
 
 	connection->ack_sender =
-		alloc_ordered_workqueue("drbd_as_%s", WQ_MEM_RECLAIM, connection->resource->name);
+		alloc_ordered_workqueue("drbd_as_%s", WQ_MEM_RECLAIM, resource->name);
 	if (!connection->ack_sender) {
 		drbd_err(connection, "Failed to create workqueue ack_sender\n");
 		schedule_timeout_uninterruptible(HZ);
@@ -9869,7 +9869,7 @@ void twopc_connection_down(struct drbd_connection *connection)
 
 static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
-	schedule_work(&connection->send_ping_ack_work);
+	queue_work(ping_ack_sender, &connection->send_ping_ack_work);
 	return 0;
 }
 

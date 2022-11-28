@@ -153,6 +153,7 @@ struct list_head drbd_resources;
 static DEFINE_SPINLOCK(drbd_devices_lock);
 DEFINE_MUTEX(resources_mutex);
 
+struct workqueue_struct *ping_ack_sender;
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
 struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
@@ -3260,6 +3261,8 @@ static void drbd_cleanup(void)
 	unregister_pernet_device(&drbd_pernet_ops);
 
 	drbd_destroy_mempools();
+	if (ping_ack_sender)
+		destroy_workqueue(ping_ack_sender);
 	unregister_blkdev(DRBD_MAJOR, "drbd");
 
 	idr_destroy(&drbd_devices);
@@ -4215,6 +4218,11 @@ static int __init drbd_init(void)
 		pr_err("unable to register generic netlink family\n");
 		goto fail;
 	}
+
+	ping_ack_sender = alloc_workqueue("drbd_pas",
+			WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+	if (!ping_ack_sender)
+		goto fail;
 
 	err = drbd_create_mempools();
 	if (err)
