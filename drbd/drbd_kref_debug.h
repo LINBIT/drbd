@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef DRBD_KREF_DEBUG_H
 #define DRBD_KREF_DEBUG_H
 
