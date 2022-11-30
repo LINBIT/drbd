@@ -164,6 +164,44 @@ void lc_destroy(struct lru_cache *lc)
 }
 
 /**
+ * lc_reset - does a full reset for @lc and the hash table slots.
+ * @lc: the lru cache to operate on
+ *
+ * It is roughly the equivalent of re-allocating a fresh lru_cache object,
+ * basically a short cut to lc_destroy(lc); lc = lc_create(...);
+ */
+void lc_reset(struct lru_cache *lc)
+{
+	unsigned i;
+
+	INIT_LIST_HEAD(&lc->in_use);
+	INIT_LIST_HEAD(&lc->lru);
+	INIT_LIST_HEAD(&lc->free);
+	INIT_LIST_HEAD(&lc->to_be_changed);
+	lc->used = 0;
+	lc->hits = 0;
+	lc->misses = 0;
+	lc->starving = 0;
+	lc->locked = 0;
+	lc->changed = 0;
+	lc->pending_changes = 0;
+	lc->flags = 0;
+	memset(lc->lc_slot, 0, sizeof(struct hlist_head) * lc->nr_elements);
+
+	for (i = 0; i < lc->nr_elements; i++) {
+		struct lc_element *e = lc->lc_element[i];
+		void *p = e;
+		p = (unsigned char*)p - lc->element_off;
+		memset(p, 0, lc->element_size);
+		/* re-init it */
+		e->lc_index = i;
+		e->lc_number = LC_FREE;
+		e->lc_new_number = LC_FREE;
+		list_add(&e->list, &lc->free);
+	}
+}
+
+/**
  * lc_seq_printf_stats - print stats about @lc into @seq
  * @seq: the seq_file to print into
  * @lc: the lru cache to print statistics of
@@ -222,6 +260,22 @@ static struct lc_element *__lc_find(struct lru_cache *lc, unsigned int enr,
 struct lc_element *lc_find(struct lru_cache *lc, unsigned int enr)
 {
 	return __lc_find(lc, enr, 0);
+}
+
+/**
+ * lc_is_used - find element by label
+ * @lc: The lru_cache object
+ * @enr: element number
+ *
+ * Returns true, if the element with the requested "label" or element number is
+ * present in the hash table, and is used (refcnt > 0).
+ * Also finds elements that are not _currently_ used but only "about to be
+ * used", i.e. on the "to_be_changed" list, pending transaction commit.
+ */
+bool lc_is_used(struct lru_cache *lc, unsigned int enr)
+{
+	struct lc_element *e = __lc_find(lc, enr, 1);
+	return e && e->refcnt;
 }
 
 /**
@@ -393,7 +447,8 @@ static struct lc_element *__lc_get(struct lru_cache *lc, unsigned int enr, unsig
  *          In this case, the cache is marked %LC_DIRTY,
  *          so lc_try_lock() will no longer succeed.
  *          The returned element pointer is moved to the "to_be_changed" list,
- *          and registered with the new element number on the hash collision chains.
+ *          and registered with the new element number on the hash collision chains,
+ *          so it is possible to pick it up from lc_is_used().
  *          Up to "max_pending_changes" (see lc_create()) can be accumulated.
  *          The user now should do whatever housekeeping is necessary,
  *          typically serialize on lc_try_lock_for_transaction(), then call
