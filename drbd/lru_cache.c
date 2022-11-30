@@ -66,16 +66,17 @@ int lc_try_lock(struct lru_cache *lc)
  */
 struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 		unsigned max_pending_changes,
-		unsigned e_count)
+		unsigned e_count, size_t e_size, size_t e_off)
 {
 	struct hlist_head *slot = NULL;
 	struct lc_element **element = NULL;
 	struct lru_cache *lc;
+	struct lc_element *e;
 	unsigned cache_obj_size = kmem_cache_size(cache);
 	unsigned i;
 
-	WARN_ON(cache_obj_size < sizeof(struct lc_element));
-	if (cache_obj_size < sizeof(struct lc_element))
+	WARN_ON(cache_obj_size < e_size);
+	if (cache_obj_size < e_size)
 		return NULL;
 
 	/* e_count too big; would probably fail the allocation below anyways.
@@ -100,6 +101,8 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 	INIT_LIST_HEAD(&lc->to_be_changed);
 
 	lc->name = name;
+	lc->element_size = e_size;
+	lc->element_off = e_off;
 	lc->nr_elements = e_count;
 	lc->max_pending_changes = max_pending_changes;
 	lc->lc_cache = cache;
@@ -108,10 +111,11 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 
 	/* preallocate all objects */
 	for (i = 0; i < e_count; i++) {
-		struct lc_element *e = kmem_cache_alloc(cache, GFP_KERNEL);
-		if (!e)
+		unsigned char *p = kmem_cache_alloc(cache, GFP_KERNEL);
+		if (!p)
 			break;
-		memset(e, 0, sizeof(struct lc_element));
+		memset(p, 0, lc->element_size);
+		e = (struct lc_element *)(p + e_off);
 		e->lc_index = i;
 		e->lc_number = LC_FREE;
 		e->lc_new_number = LC_FREE;
@@ -123,8 +127,8 @@ struct lru_cache *lc_create(const char *name, struct kmem_cache *cache,
 
 	/* else: could not allocate all elements, give up */
 	while (i--) {
-		void *e = element[i];
-		kmem_cache_free(cache, e);
+		void *p = element[i];
+		kmem_cache_free(cache, (unsigned char *)p - e_off);
 	}
 	kfree(lc);
 out_fail:
@@ -135,10 +139,12 @@ out_fail:
 
 static void lc_free_by_index(struct lru_cache *lc, unsigned i)
 {
-	struct lc_element *e = lc->lc_element[i];
-	WARN_ON(!e);
-	if (e)
-		kmem_cache_free(lc->lc_cache, e);
+	void *p = lc->lc_element[i];
+	WARN_ON(!p);
+	if (p) {
+		p = (unsigned char*)p - lc->element_off;
+		kmem_cache_free(lc->lc_cache, p);
+	}
 }
 
 /**
