@@ -3308,6 +3308,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	int err;
 	bool wake_device_misc = false;
 	bool force_state_recalc = false;
+	bool recalc_quorumless = false;
 	unsigned long irq_flags;
 	struct res_opts *old_opts = &resource->res_opts;
 
@@ -3342,8 +3343,13 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		res_opts->nr_requests = DRBD_NR_REQUESTS_MIN;
 
 	if (old_opts->quorum != res_opts->quorum ||
-	    old_opts->on_no_quorum != res_opts->on_no_quorum)
+	    old_opts->on_no_quorum != res_opts->on_no_quorum) {
 		force_state_recalc = true;
+		if (old_opts->quorum == QOU_OFF && res_opts->quorum != QOU_OFF)
+			recalc_quorumless = true;
+		else if (res_opts->quorum == QOU_OFF)
+			resource->quorumless_nodes = 0;
+	}
 
 	if (resource->res_opts.nr_requests < res_opts->nr_requests)
 		wake_device_misc = true;
@@ -3365,8 +3371,12 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 	err = 0;
 
 	if (force_state_recalc) {
-		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
-		end_state_change(resource, &irq_flags);
+		if (recalc_quorumless) {
+			twopc_after_lost_peer(resource, CS_VERBOSE | CS_SERIALIZE | CS_DONT_RETRY);
+		} else {
+			begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
+			end_state_change(resource, &irq_flags);
+		}
 	}
 
 	if (wake_device_misc)
