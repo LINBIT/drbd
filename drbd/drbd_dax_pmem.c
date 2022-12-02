@@ -60,7 +60,7 @@ int drbd_dax_open(struct drbd_backing_dev *bdev)
 	int err;
 	u64 part_off;
 
-	dax_dev = fs_dax_get_by_bdev(bdev->md_bdev, &part_off);
+	dax_dev = fs_dax_get_by_bdev(bdev->md_bdev, &part_off, NULL, NULL);
 	if (!dax_dev)
 		return -ENODEV;
 
