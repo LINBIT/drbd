@@ -892,9 +892,6 @@ static int bm_e_weight(struct drbd_peer_device *peer_device, unsigned long enr)
 	start = enr << (BM_EXT_SHIFT - BM_BLOCK_SHIFT);
 	end = ((enr + 1) << (BM_EXT_SHIFT - BM_BLOCK_SHIFT)) - 1;
 	count = drbd_bm_count_bits(peer_device->device, peer_device->bitmap_index, start, end);
-#if DUMP_MD >= 3
-	drbd_info(peer_device, "enr=%lu weight=%d\n", enr, count);
-#endif
 	return count;
 }
 
