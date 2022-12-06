@@ -35,6 +35,11 @@ drbd-y += drbd_dax_pmem.o
 endif
 endif
 
+# enable fault injection by default
+ifndef CONFIG_DRBD_FAULT_INJECTION
+	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
+endif
+
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
