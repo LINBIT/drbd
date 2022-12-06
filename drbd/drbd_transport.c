@@ -5,7 +5,7 @@
 #include <linux/module.h>
 #include <net/ipv6.h>
 #include "drbd_transport.h"
-#include <drbd_int.h>
+#include "drbd_int.h"
 
 static LIST_HEAD(transport_classes);
 static DECLARE_RWSEM(transport_classes_lock);

@@ -19,7 +19,7 @@
 #include <linux/highmem.h>
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd_config.h>
-#include <drbd_protocol.h>
+#include "drbd_protocol.h"
 #include "drbd_transport.h"
 
 
