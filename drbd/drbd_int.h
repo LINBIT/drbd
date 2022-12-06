@@ -129,13 +129,6 @@ drbd_insert_fault(struct drbd_device *device, unsigned int type) {
  * our structs
  *************************/
 
-#define SET_MDEV_MAGIC(x) \
-	({ typecheck(struct drbd_device*, x); \
-	  (x)->magic = (long)(x) ^ DRBD_MAGIC; })
-#define IS_VALID_MDEV(x)  \
-	(typecheck(struct drbd_device*, x) && \
-	  ((x) ? (((x)->magic ^ DRBD_MAGIC) == (long)(x)) : 0))
-
 extern struct idr drbd_devices; /* RCU, updates: drbd_devices_lock */
 extern struct list_head drbd_resources; /* RCU, updates: resources_mutex */
 extern struct mutex resources_mutex;
@@ -1309,9 +1302,6 @@ struct opener {
 };
 
 struct drbd_device {
-#ifdef PARANOIA
-	long magic;
-#endif
 	struct drbd_resource *resource;
 
 	/* RCU list. Updates protected by adm_mutex, conf_update and state_rwlock. */

@@ -14,10 +14,6 @@ extern const char *drbd_buildtag(void);
 #define PRO_VERSION_MIN 86
 #define PRO_VERSION_MAX 121
 
-/* some extra checks
-#define PARANOIA
- */
-
 /* Enable fault insertion code */
 #ifndef CONFIG_DRBD_FAULT_INJECTION
 #define CONFIG_DRBD_FAULT_INJECTION 1
