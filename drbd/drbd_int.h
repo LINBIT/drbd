@@ -827,6 +827,7 @@ struct twopc_request {
 	int initiator_node_id;
 	int target_node_id;
 	int vnr;
+	u32 flags;
 };
 
 struct drbd_thread_timing_details {

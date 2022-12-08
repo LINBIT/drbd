@@ -39,7 +39,8 @@
 #include "drbd_req.h"
 #include "drbd_vli.h"
 
-#define PRO_FEATURES (DRBD_FF_TRIM|DRBD_FF_THIN_RESYNC|DRBD_FF_WSAME|DRBD_FF_WZEROES)
+#define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
+		      DRBD_FF_2PC_V2)
 
 enum ao_op {
 	OUTDATE_DISKS,
@@ -6250,12 +6251,15 @@ static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
 {
 	u64 directly_reachable = directly_connected_nodes(resource, NOW) |
 		NODE_MASK(resource->res_opts.node_id);
+	unsigned long irq_flags;
 
 	if (reply->primary_nodes & ~directly_reachable) {
-		unsigned long irq_flags;
-
 		begin_state_change(resource, &irq_flags, flags);
 		__outdate_myself(resource);
+		return end_state_change(resource, &irq_flags);
+	} else if (flags & CS_FORCE_RECALC) {
+		begin_state_change(resource, &irq_flags, flags);
+		/* CS_FORCE_RECALC is used here to reconsider quorum */
 		return end_state_change(resource, &irq_flags);
 	}
 
@@ -6446,8 +6450,13 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 
 	reply.vnr = pi->vnr;
 	reply.tid = be32_to_cpu(p->tid);
-	reply.initiator_node_id = be32_to_cpu(p->initiator_node_id);
-	reply.target_node_id = be32_to_cpu(p->target_node_id);
+	if (connection->agreed_features & DRBD_FF_2PC_V2) {
+		reply.initiator_node_id = p->s8_initiator_node_id;
+		reply.target_node_id = p->s8_target_node_id;
+	} else {
+		reply.initiator_node_id = be32_to_cpu(p->u32_initiator_node_id);
+		reply.target_node_id = be32_to_cpu(p->u32_target_node_id);
+	}
 	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
 
@@ -6624,6 +6633,31 @@ enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource)
 	return rv;
 }
 
+static bool any_neighbor_quorate(struct drbd_resource *resource)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
+	bool peer_with_quorum = false;
+	int vnr;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		peer_with_quorum = true;
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			if (test_bit(PEER_QUORATE, &peer_device->flags))
+				continue;
+			peer_with_quorum = false;
+			break;
+		}
+
+		if (peer_with_quorum)
+			break;
+	}
+	rcu_read_unlock();
+
+	return peer_with_quorum;
+}
+
 static void process_twopc(struct drbd_connection *connection,
 			 struct twopc_reply *reply,
 			 struct packet_info *pi,
@@ -6640,8 +6674,15 @@ static void process_twopc(struct drbd_connection *connection,
 	enum csc_rv csc_rv;
 
 	request.tid = be32_to_cpu(p->tid);
-	request.initiator_node_id = be32_to_cpu(p->initiator_node_id);
-	request.target_node_id = be32_to_cpu(p->target_node_id);
+	if (connection->agreed_features & DRBD_FF_2PC_V2) {
+		request.flags = be32_to_cpu(p->flags);
+		request.initiator_node_id = p->s8_initiator_node_id;
+		request.target_node_id = p->s8_target_node_id;
+	} else {
+		request.flags = 0;
+		request.initiator_node_id = be32_to_cpu(p->u32_initiator_node_id);
+		request.target_node_id = be32_to_cpu(p->u32_target_node_id);
+	}
 	request.nodes_to_reach = be64_to_cpu(p->nodes_to_reach);
 	request.cmd = pi->cmd;
 	request.vnr = pi->vnr;
@@ -6796,9 +6837,7 @@ static void process_twopc(struct drbd_connection *connection,
 			state_change->val.i = be32_to_cpu(p->val);
 		} else { /* P_TWOPC_COMMIT */
 			state_change->primary_nodes = be64_to_cpu(p->primary_nodes);
-			state_change->reachable_nodes =
-				connection->agreed_features & DRBD_FF_2PC_REACHABLE ?
-				be64_to_cpu(p->reachable_nodes) : 0;
+			state_change->reachable_nodes = be64_to_cpu(p->reachable_nodes);
 		}
 		break;
 	case TWOPC_RESIZE:
@@ -6890,9 +6929,25 @@ static void process_twopc(struct drbd_connection *connection,
 
 	switch (resource->twopc.type) {
 	case TWOPC_STATE_CHANGE:
-		if (flags & CS_PREPARED) {
-			reply->primary_nodes = be64_to_cpu(p->primary_nodes);
+		if (flags & CS_PREPARED && !(flags & CS_ABORT)) {
+			reply->primary_nodes = state_change->primary_nodes;
 			handle_neighbor_demotion(connection, state_change, reply);
+
+			if ((resource->cached_all_devices_have_quorum ||
+			     any_neighbor_quorate(resource)) &&
+			    request.flags & TWOPC_HAS_REACHABLE) {
+				resource->quorumless_nodes = ~state_change->reachable_nodes;
+				if (!resource->cached_all_devices_have_quorum)
+					flags |= CS_FORCE_RECALC;
+			}
+			if (state_change->mask.conn == conn_MASK &&
+			    state_change->val.conn == C_CONNECTED) {
+				/* Clear nodes connecting "far away" out of quorumless_nodes */
+				u64 clear_mask = NODE_MASK(reply->initiator_node_id) |
+					NODE_MASK(reply->target_node_id);
+
+				resource->quorumless_nodes &= ~clear_mask;
+			}
 		}
 
 		if (peer_device)
@@ -6929,13 +6984,6 @@ static void process_twopc(struct drbd_connection *connection,
 			nested_twopc_request(resource, &request);
 		}
 	} else {
-		if (state_change->mask.conn == conn_MASK && state_change->val.conn == C_CONNECTED) {
-			/* Also clear nodes connecting "far away" out of my quorumless_nodes */
-			u64 clear_mask = NODE_MASK(reply->initiator_node_id) |
-				NODE_MASK(reply->target_node_id);
-
-			resource->quorumless_nodes &= ~clear_mask;
-		}
 		if (flags & CS_PREPARED) {
 			if (rv < SS_SUCCESS)
 				drbd_err(resource, "FATAL: Local commit of prepared %u failed! \n",
@@ -8303,6 +8351,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(HAVE_SIZES, &peer_device->flags);
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
+	clear_bit(PEER_QUORATE, &peer_device->flags);
 
 	/* No need to start additional resyncs after reconnection. */
 	peer_device->resync_again = 0;
