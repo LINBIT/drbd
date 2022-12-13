@@ -1675,7 +1675,7 @@ handshake_found:
 			return SS_IS_DISKLESS;
 
 		if (disk_state[NEW] == D_OUTDATED && disk_state[OLD] < D_OUTDATED &&
-		    disk_state[OLD] != D_ATTACHING) {
+		    disk_state[OLD] != D_ATTACHING && disk_state[OLD] != D_NEGOTIATING) {
 			/* Do not allow outdate of inconsistent or diskless.
 			   But we have to allow Inconsistent -> Outdated if a resync
 			   finishes over one connection, and is paused on other connections */
