@@ -4063,11 +4063,11 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 
 	shutdown_connect_timer(connection);
 
-	rr = drbd_free_peer_reqs(connection, &connection->done_ee, false);
+	rr = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (rr)
 		drbd_err(connection, "%d EEs in done list found!\n", rr);
 
-	rr = drbd_free_peer_reqs(connection, &connection->net_ee, true);
+	rr = drbd_free_peer_reqs(connection, &connection->net_ee);
 	if (rr)
 		drbd_err(connection, "%d EEs in net list found!\n", rr);
 

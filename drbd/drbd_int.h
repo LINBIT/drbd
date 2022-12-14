@@ -481,6 +481,9 @@ enum {
 	/* Is set when net_conf had two_primaries set while creating this peer_req */
 	__EE_IN_INTERVAL_TREE,
 
+	/* in on connection->net_ee */
+	__EE_ON_NET_LIST,
+
 	/* for debugfs: */
 	/* has this been submitted, or does it still wait for something else? */
 	__EE_SUBMITTED,
@@ -504,6 +507,7 @@ enum {
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
 #define EE_IN_INTERVAL_TREE	(1<<__EE_IN_INTERVAL_TREE)
+#define EE_ON_NET_LIST		(1<<__EE_ON_NET_LIST)
 #define EE_SUBMITTED		(1<<__EE_SUBMITTED)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
@@ -2061,11 +2065,9 @@ extern bool drbd_rs_should_slow_down(struct drbd_peer_device *, sector_t,
 extern int drbd_submit_peer_request(struct drbd_peer_request *);
 extern void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
-extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
+extern int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *peer_reqs);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
-extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
-#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
-#define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
+extern void drbd_free_peer_req(struct drbd_peer_request *peer_req);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);
