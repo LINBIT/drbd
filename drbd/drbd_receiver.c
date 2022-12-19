@@ -9968,8 +9968,11 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 		LIST_HEAD(peer_reqs);
 
 		find_resync_requests(peer_device, &peer_reqs, sector, blksize);
-		if (list_empty(&peer_reqs))
+		if (list_empty(&peer_reqs)) {
+			drbd_err(peer_device, "Unexpected resync write ack at %llus+%u\n",
+					(unsigned long long) sector, blksize);
 			return -EIO;
+		}
 
 		drbd_set_in_sync(peer_device, sector, blksize);
 		atomic_sub(blksize >> 9, &connection->rs_in_flight);
