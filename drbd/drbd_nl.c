@@ -7030,16 +7030,26 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		err = free_bitmap_index(device, peer_node_id, 0);
-		if (err == -ENODEV) {
+		if (err == -ENODEV)
 			continue;
-		} else if (err == -ENOENT) {
-			retcode = ERR_INVALID_PEER_NODE_ID;
-			break;
+		/* ignoring err == -ENOENT == no bitmap for that peer */
+
+		if (get_ldev(device)) {
+			struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_node_id];
+
+			if (peer_md->flags != 0) {
+				peer_md->flags = 0; /* Clearing MDF_NODE_EXISTS */
+				drbd_md_mark_dirty(device);
+			}
+			put_ldev(device);
 		}
 	}
 out:
 	mutex_unlock(&resource->adm_mutex);
 out_no_adm:
+	idr_for_each_entry(&resource->devices, device, vnr)
+		drbd_md_sync_if_dirty(device);
+
 	drbd_adm_finish(&adm_ctx, info, (enum drbd_ret_code)retcode);
 	return 0;
 
