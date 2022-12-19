@@ -850,6 +850,12 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	}
 
 	max_bio_bits = queue_max_hw_sectors(device->rq_queue) >> (BM_BLOCK_SHIFT - SECTOR_SHIFT);
+	/*
+	 * Round down to power of 2 to avoid losing alignment when this is the
+	 * limiting factor for our request size.
+	 */
+	max_bio_bits = 1 << (fls(max_bio_bits) - 1);
+
 	number = drbd_rs_number_requests(peer_device);
 	if (number * BM_BLOCK_SIZE < discard_granularity)
 		number = discard_granularity / BM_BLOCK_SIZE;
