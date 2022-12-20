@@ -21,10 +21,26 @@ enum drbd_interval_type {
 };
 
 enum drbd_interval_flags {
-	/* Whether this resync write has been sent yet. */
+	/*
+	 * Whether this peer request has been sent yet. For resync writes, the
+	 * flag is set before sending.
+	 *
+	 * For resync reads, this flag is set after sending and is used to
+	 * manage the lifetime of the request. When INTERVAL_SENT is not set,
+	 * the sending path still has a reference to the request. This
+	 * reference counting is protected by peer_reqs_lock.
+	 */
 	INTERVAL_SENT,
 
-	/* Whether this resync write has been received yet. */
+	/*
+	 * Whether this peer request has been received yet.
+	 *
+	 * For resync reads, this flag is set when the corresponding ack has
+	 * been received and is used to manage the lifetime of the request.
+	 * When INTERVAL_RECEIVED is not set, the receiving path has a
+	 * reference to the request. This reference counting is protected by
+	 * peer_reqs_lock.
+	 */
 	INTERVAL_RECEIVED,
 
 	/* Whether this has been queued after conflict. */

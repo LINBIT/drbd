@@ -1953,6 +1953,31 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 	return err;
 }
 
+void
+drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_flags bit_to_set)
+{
+	const unsigned long done_mask = 1UL << INTERVAL_SENT | 1UL << INTERVAL_RECEIVED;
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	unsigned long nflags, oflags, new_flag;
+
+	new_flag = 1UL << bit_to_set;
+	if (!(new_flag & done_mask))
+		drbd_err(peer_device, "BUG: %s: Unexpected flag 0x%lx\n", __func__, new_flag);
+
+	do {
+		oflags = READ_ONCE(peer_req->i.flags);
+		nflags = oflags | new_flag;
+	} while (cmpxchg(&peer_req->i.flags, oflags, nflags) != oflags);
+
+	if (new_flag & oflags)
+		drbd_err(peer_device, "BUG: %s: Flag 0x%lx already set\n", __func__, new_flag);
+
+	if ((nflags & done_mask) == done_mask) {
+		drbd_remove_peer_req_interval(peer_req);
+		drbd_free_peer_req(peer_req);
+	}
+}
+
 static bool all_zero(struct drbd_peer_request *peer_req)
 {
 	struct page *page = peer_req->page_chain.head;
@@ -2031,13 +2056,23 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 * But needed to be properly balanced with
 		 * the atomic_sub() in got_BlockAck. */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
-		set_bit(INTERVAL_SENT, &peer_req->i.flags);
+
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_add_tail(&peer_req->w.list, &connection->resync_ack_ee);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+
 		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 			err = drbd_send_rs_deallocated(peer_device, peer_req);
 		} else {
 			err = drbd_send_block(peer_device, P_RS_DATA_REPLY, peer_req);
 		}
 		*expect_ack = true;
+
+		if (!drbd_peer_req_has_active_page(peer_req))
+			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, false);
+
+		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
+		peer_req = NULL;
 	}
 
 	return err;
@@ -2105,6 +2140,10 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 		} else {
 			err = drbd_rs_reply(peer_device, peer_req, &expect_ack);
+
+			/* If expect_ack is true, peer_req may already have been freed. */
+			if (expect_ack)
+				peer_req = NULL;
 		}
 	} else {
 		if (drbd_ratelimit())
@@ -2119,14 +2158,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 
 	dec_unacked(peer_device);
 
-	if (expect_ack) {
-		if (!drbd_peer_req_has_active_page(peer_req))
-			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, false);
-
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_add_tail(&peer_req->w.list, &connection->resync_ack_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-	} else {
+	if (!expect_ack) {
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
 	}

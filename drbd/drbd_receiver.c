@@ -2603,9 +2603,6 @@ static void find_resync_requests(struct drbd_peer_device *peer_device,
 		if (peer_req->peer_device != peer_device)
 			continue;
 
-		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
-			continue;
-
 		if (peer_req->i.sector >= sector &&
 		    peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= next_sector)
 			list_move_tail(&peer_req->w.list, matching);
@@ -9979,8 +9976,8 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 
 		list_for_each_entry_safe(peer_req, t, &peer_reqs, w.list) {
 			dec_rs_pending(peer_device);
-			drbd_remove_peer_req_interval(peer_req);
-			drbd_free_peer_req(peer_req);
+
+			drbd_resync_read_req_mod(peer_req, INTERVAL_RECEIVED);
 		}
 		return 0;
 	}

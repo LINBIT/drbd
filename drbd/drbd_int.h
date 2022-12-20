@@ -2026,6 +2026,9 @@ static inline void ov_skipped_print(struct drbd_peer_device *peer_device)
 
 extern void drbd_csum_bio(struct crypto_shash *, struct bio *, void *);
 extern void drbd_csum_pages(struct crypto_shash *, struct page *, void *);
+extern void drbd_resync_read_req_mod(struct drbd_peer_request *peer_req,
+		enum drbd_interval_flags bit_to_set);
+
 /* worker callbacks */
 extern int w_e_end_data_req(struct drbd_work *, int);
 extern int w_e_end_rsdata_req(struct drbd_work *, int);
