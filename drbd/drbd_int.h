@@ -898,12 +898,18 @@ struct drbd_resource {
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
 	wait_queue_head_t twopc_wait;
-	struct twopc_resize {
-		int dds_flags;            /* from prepare phase */
-		sector_t user_size;       /* from prepare phase */
-		u64 diskful_primary_nodes;/* added in commit phase */
-		u64 new_size;             /* added in commit phase */
-	} twopc_resize;
+	union {
+		struct twopc_resize {
+			int dds_flags;		   /* from prepare phase */
+			sector_t user_size;	   /* from prepare phase */
+			u64 diskful_primary_nodes; /* added in commit phase */
+			u64 new_size;		   /* added in commit phase */
+		} twopc_resize;
+		struct twopc_state_change {
+			union drbd_state mask;	/* from prepare phase */
+			union drbd_state val;	/* from prepare phase */
+		} twopc_state_change;
+	};
 
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */

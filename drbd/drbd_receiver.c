@@ -6005,13 +6005,14 @@ static void log_openers(struct drbd_resource *resource)
  */
 static enum drbd_state_rv
 change_connection_state(struct drbd_connection *connection,
-			union drbd_state mask,
-			union drbd_state val,
+			struct twopc_state_change *state_change,
 			struct twopc_reply *reply,
 			enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
+	union drbd_state mask = state_change->mask;
+	union drbd_state val = state_change->val;
 	bool is_disconnect = false;
 	bool is_connect = false;
 	bool abort = flags & CS_ABORT;
@@ -6094,11 +6095,12 @@ fail:
  */
 static enum drbd_state_rv
 change_peer_device_state(struct drbd_peer_device *peer_device,
-			 union drbd_state mask,
-			 union drbd_state val,
+			 struct twopc_state_change *state_change,
 			 enum chg_state_flags flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
+	union drbd_state mask = state_change->mask;
+	union drbd_state val = state_change->val;
 	unsigned long irq_flags;
 	enum drbd_state_rv rv;
 
@@ -6123,9 +6125,9 @@ fail:
 static int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
+	struct twopc_state_change *state_change = &resource->twopc_state_change;
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_req_state *p = pi->data;
-	union drbd_state mask, val;
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY | CS_TWOPC;
 	enum drbd_state_rv rv;
 	int vnr = -1;
@@ -6137,16 +6139,19 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 		return -EIO;
 	}
 
-	mask.i = be32_to_cpu(p->mask);
-	val.i = be32_to_cpu(p->val);
+	state_change->mask.i = be32_to_cpu(p->mask);
+	state_change->val.i = be32_to_cpu(p->val);
 
 	/* P_STATE_CHG_REQ packets must have a valid vnr.  P_CONN_ST_CHG_REQ
 	 * packets have an undefined vnr. */
 	if (pi->cmd == P_STATE_CHG_REQ) {
 		peer_device = conn_peer_device(connection, pi->vnr);
 		if (!peer_device) {
-			if (mask.i == ((union drbd_state){{.conn = conn_MASK}}).i &&
-			    val.i == ((union drbd_state){{.conn = L_OFF}}).i) {
+			const union drbd_state conn_mask = { .conn = conn_MASK };
+			const union drbd_state val_off = { .conn = L_OFF };
+
+			if (state_change->mask.i == conn_mask.i &&
+			    state_change->val.i == val_off.i) {
 				/* The peer removed this volume, we do not have it... */
 				drbd_send_sr_reply(connection, vnr, SS_NOTHING_TO_DO);
 				return 0;
@@ -6174,16 +6179,16 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	/* Send the reply before carrying out the state change: this is needed
 	 * for connection state changes which close the network connection.  */
 	if (peer_device) {
-		rv = change_peer_device_state(peer_device, mask, val, flags | CS_PREPARE);
+		rv = change_peer_device_state(peer_device, state_change, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
-		rv = change_peer_device_state(peer_device, mask, val, flags | CS_PREPARED);
+		rv = change_peer_device_state(peer_device, state_change, flags | CS_PREPARED);
 		if (rv >= SS_SUCCESS)
 			drbd_md_sync_if_dirty(peer_device->device);
 	} else {
 		flags |= CS_IGN_OUTD_FAIL;
-		rv = change_connection_state(connection, mask, val, NULL, flags | CS_PREPARE);
+		rv = change_connection_state(connection, state_change, NULL, flags | CS_PREPARE);
 		drbd_send_sr_reply(connection, vnr, rv);
-		change_connection_state(connection, mask, val, NULL, flags | CS_PREPARED);
+		change_connection_state(connection, state_change, NULL, flags | CS_PREPARED);
 	}
 
 	write_lock_irq(&resource->state_rwlock);
@@ -6274,11 +6279,14 @@ bool drbd_have_local_disk(struct drbd_resource *resource)
 }
 
 static enum drbd_state_rv
-far_away_change(struct drbd_connection *connection, union drbd_state mask,
-		union drbd_state val, struct twopc_reply *reply,
+far_away_change(struct drbd_connection *connection,
+		struct twopc_state_change *state_change,
+		struct twopc_reply *reply,
 		enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	union drbd_state mask = state_change->mask;
+	union drbd_state val = state_change->val;
 	int vnr = resource->twopc_reply.vnr;
 
 	if (mask.i == 0 && val.i == 0 &&
@@ -6338,8 +6346,9 @@ far_away_change(struct drbd_connection *connection, union drbd_state mask,
 	return outdate_if_weak(resource, reply, flags);
 }
 
-static void handle_neighbor_demotion(struct drbd_connection *connection, union drbd_state mask,
-				     union drbd_state val, struct twopc_reply *reply)
+static void handle_neighbor_demotion(struct drbd_connection *connection,
+				     struct twopc_state_change *state_change,
+				     struct twopc_reply *reply)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_device *device;
@@ -6347,7 +6356,7 @@ static void handle_neighbor_demotion(struct drbd_connection *connection, union d
 
 	if (reply->initiator_node_id != connection->peer_node_id ||
 	    connection->peer_role[NOW] != R_PRIMARY ||
-	    mask.role != role_MASK || val.role != R_SECONDARY)
+	    state_change->mask.role != role_MASK || state_change->val.role != R_SECONDARY)
 		return;
 
 	/* A directly connected neighbor that was primary demotes to secondary */
@@ -6625,7 +6634,7 @@ static void process_twopc(struct drbd_connection *connection,
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_twopc_request *p = pi->data;
-	union drbd_state mask = {}, val = {};
+	struct twopc_state_change *state_change = &resource->twopc_state_change;
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	enum csc_rv csc_rv;
@@ -6771,13 +6780,13 @@ static void process_twopc(struct drbd_connection *connection,
 		affected_connection = NULL;
 	}
 
-	if (resource->twopc_type == TWOPC_STATE_CHANGE) {
-		mask.i = be32_to_cpu(p->mask);
-		val.i = be32_to_cpu(p->val);
+	if (pi->cmd == P_TWOPC_PREPARE) {
+		state_change->mask.i = be32_to_cpu(p->mask);
+		state_change->val.i = be32_to_cpu(p->val);
 	}
 
 	if (affected_connection && affected_connection->cstate[NOW] < C_CONNECTED &&
-	    mask.conn == 0)
+	    state_change->mask.conn == 0)
 		affected_connection = NULL;
 
 	if (pi->vnr != -1 && affected_connection) {
@@ -6789,15 +6798,15 @@ static void process_twopc(struct drbd_connection *connection,
 		affected_connection = NULL; /* It is intended for a peer_device! */
 	}
 
-	if (mask.conn == conn_MASK) {
+	if (state_change->mask.conn == conn_MASK) {
 		u64 m = NODE_MASK(reply->initiator_node_id);
 
-		if (val.conn == C_CONNECTED) {
+		if (state_change->val.conn == C_CONNECTED) {
 			reply->reachable_nodes |= m;
 			if (affected_connection)
 				reply->is_connect = 1;
 		}
-		if (val.conn == C_DISCONNECTING) {
+		if (state_change->val.conn == C_DISCONNECTING) {
 			reply->reachable_nodes &= ~m;
 			reply->is_disconnect = 1;
 		}
@@ -6858,16 +6867,16 @@ static void process_twopc(struct drbd_connection *connection,
 	case TWOPC_STATE_CHANGE:
 		if (flags & CS_PREPARED) {
 			reply->primary_nodes = be64_to_cpu(p->primary_nodes);
-			handle_neighbor_demotion(connection, mask, val, reply);
+			handle_neighbor_demotion(connection, state_change, reply);
 		}
 
 		if (peer_device)
-			rv = change_peer_device_state(peer_device, mask, val, flags);
+			rv = change_peer_device_state(peer_device, state_change, flags);
 		else if (affected_connection)
-			rv = change_connection_state(affected_connection,
-						     mask, val, reply, flags | CS_IGN_OUTD_FAIL);
+			rv = change_connection_state(affected_connection, state_change, reply,
+						     flags | CS_IGN_OUTD_FAIL);
 		else
-			rv = far_away_change(connection, mask, val, reply, flags);
+			rv = far_away_change(connection, state_change, reply, flags);
 		break;
 	case TWOPC_RESIZE:
 		if (flags & CS_PREPARE)
@@ -6895,7 +6904,7 @@ static void process_twopc(struct drbd_connection *connection,
 			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		}
 	} else {
-		if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
+		if (state_change->mask.conn == conn_MASK && state_change->val.conn == C_CONNECTED) {
 			/* Also clear nodes connecting "far away" out of my quorumless_nodes */
 			u64 clear_mask = NODE_MASK(reply->initiator_node_id) |
 				NODE_MASK(reply->target_node_id);
@@ -6932,7 +6941,7 @@ static void process_twopc(struct drbd_connection *connection,
 		if (connection->agreed_pro_version < 117 &&
 		    rv >= SS_SUCCESS && !(flags & CS_ABORT) &&
 		    affected_connection &&
-		    mask.conn == conn_MASK && val.conn == C_CONNECTED)
+		    state_change->mask.conn == conn_MASK && state_change->val.conn == C_CONNECTED)
 			conn_connect2(connection);
 	}
 }
