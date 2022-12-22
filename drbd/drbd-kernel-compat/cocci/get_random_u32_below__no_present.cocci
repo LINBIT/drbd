@@ -1,5 +1,5 @@
 @@
 expression i;
 @@
-- prandom_u32_max(i)
+- get_random_u32_below(i)
 + (prandom_u32() % i)
