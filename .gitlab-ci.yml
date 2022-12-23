@@ -130,7 +130,15 @@ check:checkpatch.pl:
 
 build:for-tests:
   stage: build
-  extends: [ .rules-build, .setup-lbbuild ]
+  extends: [ .setup-lbbuild ]
+  rules:
+    - !reference [.rules-build, rules]
+    # Useful for building DRBD without opening a merge request
+    - if: $CI_PIPELINE_SOURCE == 'api'
+    # Used by the tests pipeline, if a DRBD branch build is required
+    - if: $CI_PIPELINE_SOURCE == 'pipeline'
+    # Useful for testing the downstream trigger used in the tests pipeline
+    - if: $CI_PIPELINE_SOURCE == 'trigger'
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
     - if [ "$CI_COMMIT_BRANCH" = "$RELEASE_BRANCH" ]; then
@@ -141,12 +149,23 @@ build:for-tests:
     -   DRBD_RELEASE=1
     - fi
     - echo DRBD_VERSION=$DRBD_VERSION >> build.env
+    - |
+      # If the build is conditional and some packages already exist, skip the build.
+      # Then the purpose of this job is just to generate build.env.
+      if [ "$DRBD_BUILD_CONDITIONAL" = true ]; then
+        curl -fsSL "$LINBIT_REGISTRY_URL/service/rest/v1/search?repository=ci-yum&version=$DRBD_VERSION*" \
+            | grep -q name \
+            && exit 0
+      fi
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   artifacts:
     reports:
       dotenv: build.env
     paths:
       - drbd/drbd-kernel-compat/cocci_cache
+      # Make the variables accessible through the API. See:
+      # https://stackoverflow.com/questions/72202825/download-dotenv-job-artifact-via-gitlab-api
+      - build.env
     when: always
     expire_in: 1 week
   needs: []
