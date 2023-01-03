@@ -394,6 +394,11 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 
 	inc_rs_pending(peer_device);
 
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_move_tail(&peer_req->w.list, &connection->resync_request_ee);
+	do_wake = list_empty(&connection->sync_ee);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
 	if (peer_req->flags & EE_HAS_DIGEST) {
 		enum drbd_packet cmd = connection->agreed_features & DRBD_FF_RESYNC_DAGTAG ?
 			P_RS_CSUM_DAGTAG_REQ : P_CSUM_RS_REQUEST;
@@ -427,11 +432,6 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 	}
 	if (err)
 		goto out_rs_pending;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_move_tail(&peer_req->w.list, &connection->resync_request_ee);
-	do_wake = list_empty(&connection->sync_ee);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (do_wake)
 		wake_up(&connection->ee_wait);
