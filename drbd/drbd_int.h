@@ -2709,7 +2709,8 @@ static inline bool drbd_interval_same_peer(struct drbd_interval *interval, struc
 }
 
 /*
- * drbd_resync_should_defer - determine whether "interval" should defer to "i"
+ * drbd_should_defer_to_resync - determine whether "interval" should defer to
+ * "i" in order to ensure that resync makes progress
  */
 static inline bool drbd_should_defer_to_resync(struct drbd_interval *interval, struct drbd_interval *i)
 {
@@ -2732,6 +2733,29 @@ static inline bool drbd_should_defer_to_resync(struct drbd_interval *interval, s
 	 * not necessary. The peer ensures that the data stream is correctly
 	 * ordered. */
 	return !drbd_interval_same_peer(interval, i);
+}
+
+/*
+ * drbd_should_defer_to_interval - determine whether "interval" should defer to "i"
+ */
+static inline bool drbd_should_defer_to_interval(struct drbd_interval *interval,
+		struct drbd_interval *i, bool defer_to_resync)
+{
+	if (test_bit(INTERVAL_SUBMITTED, &i->flags))
+		return true;
+
+	if (defer_to_resync && drbd_should_defer_to_resync(interval, i))
+		return true;
+
+	/*
+	 * We do not send conflicting resync requests because that causes
+	 * difficulties associating the replies to the requests.
+	 */
+	if (interval->type == INTERVAL_RESYNC_WRITE &&
+			i->type == INTERVAL_RESYNC_WRITE && test_bit(INTERVAL_SENT, &i->flags))
+		return true;
+
+	return false;
 }
 
 /* Find conflicts at application level instead of at disk level. */
@@ -2778,12 +2802,8 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 				continue;
 		}
 
-		/*
-		 * Ignore, if not yet submitted, unless we should defer to a
-		 * resync request.
-		 */
-		if (!test_bit(INTERVAL_SUBMITTED, &i->flags) &&
-				!(defer_to_resync && drbd_should_defer_to_resync(interval, i)))
+		/* Ignore, if there is no need to defer to it. */
+		if (!drbd_should_defer_to_interval(interval, i, defer_to_resync))
 			continue;
 
 		/*
