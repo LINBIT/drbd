@@ -2638,7 +2638,7 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
-	conflict = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_WRITE);
+	conflict = drbd_find_conflict(device, &peer_req->i, 0);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
@@ -3083,10 +3083,7 @@ static int drbd_peer_write_conflicts(struct drbd_peer_request *peer_req)
 	const unsigned int size = peer_req->i.size;
 	struct drbd_interval *i;
 
-	i = drbd_find_conflict(device, &peer_req->i,
-			CONFLICT_FLAG_WRITE |
-			CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED |
-			CONFLICT_FLAG_APPLICATION_ONLY);
+	i = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_APPLICATION_ONLY);
 
 	if (i) {
 		drbd_alert(device, "Concurrent writes detected: "
@@ -3196,9 +3193,7 @@ void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
-	conflict = drbd_find_conflict(device, &peer_req->i,
-			CONFLICT_FLAG_WRITE |
-			CONFLICT_FLAG_DEFER_TO_RESYNC);
+	conflict = drbd_find_conflict(device, &peer_req->i, 0);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
@@ -3456,8 +3451,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 			goto out_del_list;
 		}
 	}
-	conflict = drbd_find_conflict(device, &peer_req->i,
-			CONFLICT_FLAG_WRITE | CONFLICT_FLAG_DEFER_TO_RESYNC);
+	conflict = drbd_find_conflict(device, &peer_req->i, 0);
 	drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);

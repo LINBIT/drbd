@@ -2734,11 +2734,16 @@ static inline bool drbd_should_defer_to_resync(struct drbd_interval *interval, s
 	return !drbd_interval_same_peer(interval, i);
 }
 
-#define CONFLICT_FLAG_WRITE (1 << 0)
-#define CONFLICT_FLAG_DEFER_TO_RESYNC (1 << 1)
-#define CONFLICT_FLAG_IGNORE_SAME_PEER (1 << 2)
-#define CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED (1 << 3)
-#define CONFLICT_FLAG_APPLICATION_ONLY (1 << 4)
+/* Find conflicts at application level instead of at disk level. */
+#define CONFLICT_FLAG_APPLICATION_ONLY (1 << 0)
+
+/*
+ * Ignore peer writes from the peer that this request relates to. This is only
+ * used for determining whether to send a request. It must not be used for
+ * determining whether to submit a request, because that would allow concurrent
+ * writes to the backing disk.
+ */
+#define CONFLICT_FLAG_IGNORE_SAME_PEER (1 << 1)
 
 /*
  * drbd_find_conflict - find conflicting interval, if any
@@ -2749,11 +2754,12 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 	struct drbd_interval *i;
 	sector_t sector = interval->sector;
 	int size = interval->size;
-	bool write = flags & CONFLICT_FLAG_WRITE;
-	bool defer_to_resync = flags & CONFLICT_FLAG_DEFER_TO_RESYNC;
-	bool ignore_same_peer = flags & CONFLICT_FLAG_IGNORE_SAME_PEER;
-	bool exclusive_until_completed = flags & CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED;
 	bool application_only = flags & CONFLICT_FLAG_APPLICATION_ONLY;
+	bool defer_to_resync =
+		(interval->type == INTERVAL_LOCAL_WRITE || interval->type == INTERVAL_PEER_WRITE) &&
+		!application_only;
+	bool exclusive_until_completed = interval->type == INTERVAL_LOCAL_WRITE || application_only;
+	bool ignore_same_peer = flags & CONFLICT_FLAG_IGNORE_SAME_PEER;
 
 	lockdep_assert_held(&device->interval_lock);
 
@@ -2772,17 +2778,18 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 				continue;
 		}
 
-		/* Ignore, if not yet submitted, unless we should defer to a
-		 * resync request. */
+		/*
+		 * Ignore, if not yet submitted, unless we should defer to a
+		 * resync request.
+		 */
 		if (!test_bit(INTERVAL_SUBMITTED, &i->flags) &&
 				!(defer_to_resync && drbd_should_defer_to_resync(interval, i)))
 			continue;
 
-		/* Ignore peer writes from the peer that this request relates
-		 * to, if requested. This is only used for determining whether
-		 * to send a request. It must not be used for determining
-		 * whether to submit a request, because that would allow
-		 * concurrent writes to the backing disk. */
+		/*
+		 * Ignore peer writes from the peer that this request relates
+		 * to, if requested.
+		 */
 		if (ignore_same_peer && i->type == INTERVAL_PEER_WRITE && drbd_interval_same_peer(interval, i))
 			continue;
 
@@ -2792,9 +2799,11 @@ static inline struct drbd_interval *drbd_find_conflict(struct drbd_device *devic
 				continue;
 		}
 
-		if (write) {
-			/* Mark verify requests as conflicting rather than
-			 * treating them as conflicts for us. */
+		if (drbd_interval_is_write(interval)) {
+			/*
+			 * Mark verify requests as conflicting rather than
+			 * treating them as conflicts for us.
+			 */
 			if (drbd_interval_is_verify(i)) {
 				set_bit(INTERVAL_CONFLICT, &i->flags);
 				continue;

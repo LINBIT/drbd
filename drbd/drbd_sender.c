@@ -463,8 +463,7 @@ void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
-	conflict = drbd_find_conflict(device, &peer_req->i,
-			CONFLICT_FLAG_WRITE | CONFLICT_FLAG_IGNORE_SAME_PEER);
+	conflict = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_IGNORE_SAME_PEER);
 	if (drbd_interval_empty(&peer_req->i))
 		drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)

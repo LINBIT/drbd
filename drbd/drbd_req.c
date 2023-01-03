@@ -2088,10 +2088,7 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &req->i.flags);
-	conflict = drbd_find_conflict(device, &req->i,
-			CONFLICT_FLAG_WRITE |
-			CONFLICT_FLAG_DEFER_TO_RESYNC |
-			CONFLICT_FLAG_EXCLUSIVE_UNTIL_COMPLETED);
+	conflict = drbd_find_conflict(device, &req->i, 0);
 	if (drbd_interval_empty(&req->i))
 		drbd_insert_interval(&device->requests, &req->i);
 	if (!conflict)
