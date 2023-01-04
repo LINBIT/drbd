@@ -2421,6 +2421,8 @@ void drbd_submit_bio(struct bio *bio)
 	}
 
 	bio = bio_split_to_limits(bio);
+	if (!bio)
+		return;
 
 	if (device->cached_err_io) {
 		bio->bi_status = BLK_STS_IOERR;
