@@ -8272,6 +8272,9 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 
+	/* No need to start additional resyncs after reconnection. */
+	peer_device->resync_again = 0;
+
 	/* need to do it again, drbd_finish_peer_reqs() may have populated it
 	 * again via drbd_try_clear_on_disk_bm(). */
 	drbd_rs_cancel_all(peer_device);
