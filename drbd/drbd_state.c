@@ -1579,7 +1579,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
 		/* SS_NO_UP_TO_DATE_DISK is not quite accurate here. We may
 		 * have an up-to-date peer. However, we cannot trust that
-		 * information. TWO_PC_AFTER_LOST_PEER_PENDING is set when we
+		 * information. TWOPC_AFTER_LOST_PEER_PENDING is set when we
 		 * have lost our connection to a primary peer. It is possible
 		 * that the "up-to-date peer" has also lost its connection to
 		 * the primary peer, but we have not yet received the
@@ -1590,7 +1590,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		 * try_become_up_to_date() a chance to run. That will set our
 		 * disk state appropriately depending on whether our partition
 		 * is isolated from the original primary peer. */
-		if (test_bit(TWO_PC_AFTER_LOST_PEER_PENDING, &resource->flags))
+		if (test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags))
 			return SS_NO_UP_TO_DATE_DISK;
 
 		for_each_connection_rcu(connection, resource) {
@@ -2419,7 +2419,7 @@ static void update_quorumless_nodes(struct drbd_resource *resource)
 		 * solution for that:
 
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
-			drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
+			drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
 		 */
 	}
 }
@@ -2911,7 +2911,7 @@ static void finish_state_change(struct drbd_resource *resource)
 		/* The NEW state version here is the same as the NOW version in
 		 * the context of w_after_state_change(). */
 		if (should_try_become_up_to_date(device, disk_state, NEW))
-			set_bit(TWO_PC_AFTER_LOST_PEER_PENDING, &resource->flags);
+			set_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -4103,7 +4103,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		/* We cannot test the flag TWO_PC_AFTER_LOST_PEER_PENDING here
+		/* We cannot test the flag TWOPC_AFTER_LOST_PEER_PENDING here
 		 * because that would cause us to queue the work more often
 		 * than necessary. */
 		if (should_try_become_up_to_date(device, disk_state, NOW))
@@ -4177,7 +4177,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (try_become_up_to_date)
-		drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
+		drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
 	else
 		drbd_notify_peers_lost_primary(resource);
 

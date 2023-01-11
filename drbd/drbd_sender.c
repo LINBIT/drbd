@@ -2351,7 +2351,7 @@ static int do_md_sync(struct drbd_device *device)
 void repost_up_to_date_fn(struct timer_list *t)
 {
 	struct drbd_resource *resource = from_timer(resource, t, repost_up_to_date_timer);
-	drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
+	drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
 }
 
 static int try_become_up_to_date(struct drbd_resource *resource)
@@ -2372,7 +2372,7 @@ static int try_become_up_to_date(struct drbd_resource *resource)
 		up(&resource->state_sem);
 		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG)
 			goto repost;
-		clear_bit(TWO_PC_AFTER_LOST_PEER_PENDING, &resource->flags);
+		clear_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
 		wake_up_all(&resource->state_wait);
 		drbd_notify_peers_lost_primary(resource);
 	} else {
@@ -2498,7 +2498,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 }
 
 #define DRBD_RESOURCE_WORK_MASK	\
-	(1UL << TWO_PC_AFTER_LOST_PEER)
+	(1UL << TWOPC_AFTER_LOST_PEER)
 
 #define DRBD_DEVICE_WORK_MASK	\
 	((1UL << GO_DISKLESS)	\
@@ -2578,7 +2578,7 @@ static void do_unqueued_resource_work(struct drbd_resource *resource)
 {
 	unsigned long todo = get_work_bits(DRBD_RESOURCE_WORK_MASK, &resource->flags);
 
-	if (test_bit(TWO_PC_AFTER_LOST_PEER, &todo))
+	if (test_bit(TWOPC_AFTER_LOST_PEER, &todo))
 		try_become_up_to_date(resource);
 }
 
