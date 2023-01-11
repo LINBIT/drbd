@@ -820,6 +820,15 @@ struct twopc_reply {
 	unsigned int state_change_failed:1;
 };
 
+struct twopc_request {
+	u64 nodes_to_reach;
+	enum drbd_packet cmd;
+	unsigned int tid;
+	int initiator_node_id;
+	int target_node_id;
+	int vnr;
+};
+
 struct drbd_thread_timing_details {
 	unsigned long start_jif;
 	void *cb_addr;
@@ -2323,7 +2332,7 @@ extern int drbd_send_command(struct drbd_peer_device *, enum drbd_packet, enum d
 extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
-extern int conn_send_twopc_request(struct drbd_connection *, int vnr, enum drbd_packet, struct p_twopc_request *);
+extern int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_request *req);
 extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_peer_ack *);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
