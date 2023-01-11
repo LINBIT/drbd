@@ -820,8 +820,7 @@ struct twopc_reply {
 	unsigned int state_change_failed:1;
 };
 
-struct drbd_thread_timing_details
-{
+struct drbd_thread_timing_details {
 	unsigned long start_jif;
 	void *cb_addr;
 	const char *caller_fn;
@@ -904,13 +903,12 @@ struct drbd_resource {
 			sector_t user_size;	   /* from prepare phase */
 			u64 diskful_primary_nodes; /* added in commit phase */
 			u64 new_size;		   /* added in commit phase */
-		} twopc_resize;
+		} resize;
 		struct twopc_state_change {
 			union drbd_state mask;	/* from prepare phase */
 			union drbd_state val;	/* from prepare phase */
-		} twopc_state_change;
-	};
-
+		} state_change;
+	} twopc;
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */
 	bool susp_nod[2];		/* IO suspended because no data */
