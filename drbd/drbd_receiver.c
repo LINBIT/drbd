@@ -471,6 +471,8 @@ static void reclaim_from_resync_ack_ee(struct drbd_connection *connection,
 	struct drbd_peer_request *peer_req;
 
 	list_for_each_entry(peer_req, &connection->resync_ack_ee, w.list) {
+		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
+			break;
 		if (drbd_peer_req_has_active_page(peer_req))
 			break;
 		if (peer_req->page_chain.head) {
