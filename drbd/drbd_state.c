@@ -3529,6 +3529,32 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 	}
 }
 
+static bool drbd_should_unfence(struct drbd_state_change *state_change, int n_connection)
+{
+	bool some_peer_was_not_up_to_date = false;
+	int n_device;
+
+	for (n_device = 0; n_device < state_change->n_devices; n_device++) {
+		struct drbd_device_state_change *device_state_change =
+			&state_change->devices[n_device];
+		enum drbd_disk_state *disk_state = device_state_change->disk_state;
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[
+				n_device * state_change->n_connections + n_connection];
+		enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
+
+		/* Do not unfence if some volume is not yet up-to-date. */
+		if (disk_state[NEW] != D_UP_TO_DATE || peer_disk_state[NEW] != D_UP_TO_DATE)
+			return false;
+
+		/* Only unfence when the final volume becomes up-to-date. */
+		if (peer_disk_state[OLD] != D_UP_TO_DATE)
+			some_peer_was_not_up_to_date = true;
+	}
+
+	return some_peer_was_not_up_to_date;
+}
+
 static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
 {
 	bool csums_after_crash_only;
@@ -4110,6 +4136,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
 		enum drbd_role *peer_role = connection_state_change->peer_role;
 		bool *susp_fen = connection_state_change->susp_fen;
+		enum drbd_fencing_policy fencing_policy;
 
 		/* Upon network configuration, we need to start the receiver */
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
@@ -4123,6 +4150,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* A connection to a primary went down, notify other peers about that */
 			set_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
 		}
+
+		rcu_read_lock();
+		fencing_policy = connection->fencing_policy;
+		rcu_read_unlock();
+		if (fencing_policy != FP_DONT_CARE &&
+				drbd_should_unfence(state_change, n_connection))
+			drbd_maybe_khelper(NULL, connection, "unfence-peer");
 	}
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
