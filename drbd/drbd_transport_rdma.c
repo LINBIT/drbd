@@ -27,10 +27,10 @@
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_cm.h>
 #include <linux/drbd_genl_api.h>
-#include <drbd_protocol.h>
-#include <drbd_transport.h>
-#include <drbd_wrappers.h>
-#include <linux/drbd_config.h> /* for REL_VERSION */
+#include "drbd_protocol.h"
+#include "drbd_transport.h"
+#include "drbd_wrappers.h"
+#include "linux/drbd_config.h" /* for REL_VERSION */
 
 /* Nearly all data transfer uses the send/receive semantics. No need to
    actually use RDMA WRITE / READ.
