@@ -37,7 +37,7 @@ DOCKERIMAGESTARGETS = $(addprefix dockerimage.,$(DOCKERIMAGES))
 # Use the SPAAS (spatch as a service) online service
 # Have this as make variable for distributions.
 SPAAS ?= true
-SPAAS_URL ?= https://drbd.io:2020
+SPAAS_URL ?= https://spaas.drbd.io
 
 # default for KDIR/KVER
 ifndef KVER

@@ -125,7 +125,7 @@ else
     echo "  SPAAS    $chksum"
 
     # check if SPAAS is even reachable
-    SPAAS_URL=${SPAAS_URL:-https://drbd.io:2020}
+    SPAAS_URL=${SPAAS_URL:-https://spaas.drbd.io}
     if ! curl -fsS "${SPAAS_URL}/api/v1/hello"; then
         echo "  ERROR: SPAAS is not reachable! Please check if your network"
         echo "  configuration or some firewall prohibits access to "
