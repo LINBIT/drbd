@@ -165,10 +165,7 @@ else
 	( git ls-files ;						\
 	  git submodule foreach -q --recursive				\
 		'git ls-files | sed -e "s,^,$$displaypath/,"' ) |	\
-		ctags -L -						\
-		-I __initdata,__exitdata,__acquires,__releases		\
-		-I __must_hold,__protected_by,__protected_read_by	\
-		-I __protected_write_by,BIO_ENDIO_ARGS
+		ctags -L -
 
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
