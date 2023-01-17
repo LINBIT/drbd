@@ -20,7 +20,7 @@
 #include <linux/seq_file.h>
 #include <linux/drbd.h>
 #include "drbd_int.h"
-#include <drbd_transport.h>
+#include "drbd_transport.h"
 
 struct proc_dir_entry *drbd_proc;
 
