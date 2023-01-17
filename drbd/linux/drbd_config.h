@@ -28,9 +28,6 @@ extern const char *drbd_buildtag(void);
 #define DBG_ALL_SYMBOLS /* no static functs, improves quality of OOPS traces */
 #endif
 
-/* Dump all cstate changes */
-#define DUMP_MD 2
-
 /* some extra checks
 #define PARANOIA
  */
