@@ -1678,21 +1678,50 @@ int conn_send_state_req(struct drbd_connection *connection, int vnr, enum drbd_p
 	return send_command(connection, vnr, cmd, DATA_STREAM);
 }
 
-int conn_send_twopc_request(struct drbd_connection *connection, int vnr, enum drbd_packet cmd,
-			    struct p_twopc_request *request)
+int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_request *request)
 {
+	struct drbd_resource *resource = connection->resource;
 	struct p_twopc_request *p;
 
 	dynamic_drbd_dbg(connection, "Sending %s request for state change %u\n",
-		   drbd_packet_name(cmd),
-		   be32_to_cpu(request->tid));
+			 drbd_packet_name(request->cmd),
+			 request->tid);
 
 	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
-	memcpy(p, request, sizeof(*request));
-
-	return send_command(connection, vnr, cmd, DATA_STREAM);
+	p->tid = cpu_to_be32(request->tid);
+	p->initiator_node_id = cpu_to_be32(request->initiator_node_id);
+	p->target_node_id = cpu_to_be32(request->target_node_id);
+	p->nodes_to_reach = cpu_to_be64(request->nodes_to_reach);
+	switch (resource->twopc.type) {
+	case TWOPC_STATE_CHANGE:
+		if (request->cmd == P_TWOPC_PREPARE) {
+			p->_compat_pad = 0;
+			p->mask = cpu_to_be32(resource->twopc.state_change.mask.i);
+			p->val = cpu_to_be32(resource->twopc.state_change.val.i);
+		} else { /* P_TWOPC_COMMIT */
+			p->primary_nodes = cpu_to_be64(resource->twopc.state_change.primary_nodes);
+			if (connection->agreed_features & DRBD_FF_2PC_REACHABLE) {
+				p->reachable_nodes = cpu_to_be64(
+					resource->twopc.state_change.reachable_nodes);
+			} else {
+				p->mask = cpu_to_be32(resource->twopc.state_change.mask.i);
+				p->val = cpu_to_be32(resource->twopc.state_change.val.i);
+			}
+		}
+		break;
+	case TWOPC_RESIZE:
+		if (request->cmd == P_TWOPC_PREP_RSZ) {
+			p->user_size = cpu_to_be64(resource->twopc.resize.user_size);
+			p->dds_flags = cpu_to_be16(resource->twopc.resize.dds_flags);
+		} else { /* P_TWOPC_COMMIT */
+			p->diskful_primary_nodes =
+				cpu_to_be64(resource->twopc.resize.diskful_primary_nodes);
+			p->exposed_size = cpu_to_be64(resource->twopc.resize.new_size);
+		}
+	}
+	return send_command(connection, request->vnr, request->cmd, DATA_STREAM);
 }
 
 void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)

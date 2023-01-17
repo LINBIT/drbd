@@ -7046,23 +7046,22 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	return 0;
 }
 
-static void nested_twopc_abort(struct drbd_resource *resource, int vnr, enum drbd_packet cmd,
-			       struct p_twopc_request *request)
+static void nested_twopc_abort(struct drbd_resource *resource, struct twopc_request *request)
 {
 	struct drbd_connection *connection;
 	u64 nodes_to_reach, reach_immediately, im;
 
 	read_lock_irq(&resource->state_rwlock);
-	nodes_to_reach = be64_to_cpu(request->nodes_to_reach);
+	nodes_to_reach = request->nodes_to_reach;
 	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
-	request->nodes_to_reach = cpu_to_be64(nodes_to_reach);
+	request->nodes_to_reach = nodes_to_reach;
 	read_unlock_irq(&resource->state_rwlock);
 
 	for_each_connection_ref(connection, im, resource) {
 		u64 mask = NODE_MASK(connection->peer_node_id);
 		if (reach_immediately & mask)
-			conn_send_twopc_request(connection, vnr, cmd, request);
+			conn_send_twopc_request(connection, request);
 	}
 }
 
@@ -7211,7 +7210,15 @@ static void process_twopc(struct drbd_connection *connection,
 	struct twopc_state_change *state_change = &resource->twopc.state_change;
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv = SS_SUCCESS;
+	struct twopc_request request;
 	enum csc_rv csc_rv;
+
+	request.tid = be32_to_cpu(p->tid);
+	request.initiator_node_id = be32_to_cpu(p->initiator_node_id);
+	request.target_node_id = be32_to_cpu(p->target_node_id);
+	request.nodes_to_reach = be64_to_cpu(p->nodes_to_reach);
+	request.cmd = pi->cmd;
+	request.vnr = pi->vnr;
 
 	/* Check for concurrent transactions and duplicate packets. */
 	write_lock_irq(&resource->state_rwlock);
@@ -7281,7 +7288,7 @@ static void process_twopc(struct drbd_connection *connection,
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
 		write_unlock_irq(&resource->state_rwlock);
-		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
+		nested_twopc_abort(resource, &request);
 		return;
 	} else {
 		write_unlock_irq(&resource->state_rwlock);
@@ -7356,9 +7363,27 @@ static void process_twopc(struct drbd_connection *connection,
 		affected_connection = NULL;
 	}
 
-	if (pi->cmd == P_TWOPC_PREPARE) {
-		state_change->mask.i = be32_to_cpu(p->mask);
-		state_change->val.i = be32_to_cpu(p->val);
+	switch (resource->twopc.type) {
+	case TWOPC_STATE_CHANGE:
+		if (pi->cmd == P_TWOPC_PREPARE) {
+			state_change->mask.i = be32_to_cpu(p->mask);
+			state_change->val.i = be32_to_cpu(p->val);
+		} else { /* P_TWOPC_COMMIT */
+			state_change->primary_nodes = be64_to_cpu(p->primary_nodes);
+			state_change->reachable_nodes =
+				connection->agreed_features & DRBD_FF_2PC_REACHABLE ?
+				be64_to_cpu(p->reachable_nodes) : 0;
+		}
+		break;
+	case TWOPC_RESIZE:
+		if (request.cmd == P_TWOPC_PREP_RSZ) {
+			resource->twopc.resize.user_size = be64_to_cpu(p->user_size);
+			resource->twopc.resize.dds_flags = be16_to_cpu(p->dds_flags);
+		} else { /* P_TWOPC_COMMIT */
+			resource->twopc.resize.diskful_primary_nodes =
+				be64_to_cpu(p->diskful_primary_nodes);
+			resource->twopc.resize.new_size = be64_to_cpu(p->exposed_size);
+		}
 	}
 
 	if (affected_connection && affected_connection->cstate[NOW] < C_CONNECTED &&
@@ -7408,8 +7433,6 @@ static void process_twopc(struct drbd_connection *connection,
 			reply->max_possible_size = DRBD_MAX_SECTORS;
 			reply->diskful_primary_nodes = 0;
 		}
-		resource->twopc.resize.dds_flags = be16_to_cpu(p->dds_flags);
-		resource->twopc.resize.user_size = be64_to_cpu(p->user_size);
 	}
 
 	resource->twopc_reply = *reply;
@@ -7477,7 +7500,7 @@ static void process_twopc(struct drbd_connection *connection,
 			drbd_send_twopc_reply(connection, P_TWOPC_RETRY, reply);
 		} else {
 			resource->twopc_reply.state_change_failed = rv < SS_SUCCESS;
-			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+			nested_twopc_request(resource, &request);
 		}
 	} else {
 		if (state_change->mask.conn == conn_MASK && state_change->val.conn == C_CONNECTED) {
@@ -7495,18 +7518,15 @@ static void process_twopc(struct drbd_connection *connection,
 			del_timer(&resource->twopc_timer);
 		}
 
-		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
+		nested_twopc_request(resource, &request);
 
 		if (resource->twopc.type == TWOPC_RESIZE && flags & CS_PREPARED &&
 		    !(flags & CS_ABORT)) {
-			struct twopc_resize *tr = &resource->twopc.resize;
 			struct drbd_device *device;
 
-			tr->diskful_primary_nodes = be64_to_cpu(p->diskful_primary_nodes);
-			tr->new_size = be64_to_cpu(p->exposed_size);
 			device = (peer_device ?: conn_peer_device(connection, pi->vnr))->device;
 
-			drbd_commit_size_change(device, NULL, be64_to_cpu(p->nodes_to_reach));
+			drbd_commit_size_change(device, NULL, request.nodes_to_reach);
 			rv = SS_SUCCESS;
 		}
 
