@@ -1335,6 +1335,7 @@ static int calc_quorum_at(s32 setting, int voters)
 static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
 	const int my_node_id = device->resource->res_opts.node_id;
+	const u64 quorumless_nodes = device->resource->quorumless_nodes;
 	int node_id, up_to_date = 0, present = 0, outdated = 0, diskless = 0;
 	int missing_diskless = 0, unknown = 0;
 
@@ -1388,7 +1389,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			if (is_intentional_diskless)
 				/* device should be diskless but is absent */
 				missing_diskless++;
-			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED)
+			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED ||
+				 NODE_MASK(node_id) & quorumless_nodes)
 				outdated++;
 			else
 				unknown++;
