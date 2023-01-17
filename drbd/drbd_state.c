@@ -43,6 +43,7 @@ struct quorum_detail {
 	int outdated;
 	int diskless;
 	int missing_diskless;
+	int quorumless;
 	int unknown;
 	int quorate_peers;
 };
@@ -1337,7 +1338,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 	const int my_node_id = device->resource->res_opts.node_id;
 	const u64 quorumless_nodes = device->resource->quorumless_nodes;
 	int node_id, up_to_date = 0, present = 0, outdated = 0, diskless = 0;
-	int missing_diskless = 0, unknown = 0;
+	int missing_diskless = 0, unknown = 0, quorumless = 0;
 
 	check_wrongly_set_mdf_exists(device);
 
@@ -1389,9 +1390,10 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			if (is_intentional_diskless)
 				/* device should be diskless but is absent */
 				missing_diskless++;
-			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED ||
-				 NODE_MASK(node_id) & quorumless_nodes)
+			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED)
 				outdated++;
+			else if (NODE_MASK(node_id) & quorumless_nodes)
+				quorumless++;
 			else
 				unknown++;
 		} else {
@@ -1410,11 +1412,13 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 	qd->outdated = outdated;
 	qd->diskless = diskless;
 	qd->missing_diskless = missing_diskless;
+	qd->quorumless = quorumless;
 	qd->unknown = unknown;
 }
 
 static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
+	const u64 quorumless_nodes = device->resource->quorumless_nodes;
 	int up_to_date = 0, present = 0, outdated = 0, unknown = 0, diskless = 0;
 	int missing_diskless = 0;
 	bool is_intentional_diskless;
@@ -1454,6 +1458,8 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 				missing_diskless++;
 			else if (disk_state <= D_OUTDATED)
 				outdated++;
+			else if (NODE_MASK(peer_device->node_id) & quorumless_nodes)
+				qd->quorumless++;
 			else
 				unknown++;
 		} else {
@@ -1494,11 +1500,20 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		__calc_quorum_no_disk(device, &qd);
 	}
 
+	/* Check if a partition containing all missing nodes might have quorum */
+	voters = qd.outdated + qd.quorumless + qd.unknown + qd.up_to_date + qd.present;
+	quorum_at = calc_quorum_at(resource->res_opts.quorum, voters);
+	if (qd.outdated + qd.quorumless + qd.unknown >= quorum_at) {
+		/* when the missing nodes have the quorum, give up the quorumless */
+		qd.unknown += qd.quorumless;
+		qd.quorumless = 0;
+	}
+
 	/* When all the absent nodes are D_OUTDATED (no one D_UNKNOWN), we can be
 	   sure that the other partition is not able to promote. ->
 	   We remove them from the voters. -> We have quorum */
 	if (qd.unknown)
-		voters = qd.outdated + qd.unknown + qd.up_to_date + qd.present;
+		voters = qd.outdated + qd.quorumless + qd.unknown + qd.up_to_date + qd.present;
 	else
 		voters = qd.up_to_date + qd.present;
 
@@ -1705,7 +1720,11 @@ handshake_found:
 		if (disk_state[NEW] == D_NEGOTIATING)
 			nr_negotiating++;
 
-		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && !device->have_quorum[NEW]) {
+		/* Prevent promote when there is no quorum and
+		 * prevent graceful disconnect/detach that would kill quorum
+		 */
+		if ((role[OLD] == R_SECONDARY || device->have_quorum[OLD]) &&
+		    role[NEW] == R_PRIMARY && !device->have_quorum[NEW]) {
 			struct quorum_info qi;
 
 			calc_quorum(device, &qi);
