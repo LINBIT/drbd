@@ -220,6 +220,7 @@ modprobe_deps() {
 	# we are not too strict about these, not all are required everywhere
 	#
 	# libcrc32c: dependency for DRBD
+	# lru_cache: dependency for DRBD (starting with 9.1.13/9.2.2; built in for RHEL9)
 	# nvmet_rdma, nvme_rdma: LINSTOR NVME layer
 	# loop: LINSTOR when using loop devices as backing disks
 	# dm_writecache: LINSTOR writecache layer
@@ -229,7 +230,7 @@ modprobe_deps() {
 	# dm_crypt: LINSTOR encrypted volumes
 
 	local s;
-	for m in libcrc32c nvmet_rdma nvme_rdma loop dm_writecache dm_cache dm_thin_pool dm_snapshot dm_crypt; do
+	for m in libcrc32c lru_cache nvmet_rdma nvme_rdma loop dm_writecache dm_cache dm_thin_pool dm_snapshot dm_crypt; do
 		modprobe "$m" 2>/dev/null && s=success || s=failed
 		debug "Loading ${m}: ${s}"
 	done
