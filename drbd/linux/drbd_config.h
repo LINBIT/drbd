@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
   drbd_config.h
   DRBD's compile time configuration.
