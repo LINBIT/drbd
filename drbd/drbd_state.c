@@ -2412,14 +2412,14 @@ static void update_quorumless_nodes(struct drbd_resource *resource)
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			resource->quorumless_nodes &= ~peer_node_mask;
 
-		/* A peer left. Either non-graceful, or I was target of the 2PC. */
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
+		/* A peer left. Either non-graceful, or I was target of the 2PC. *
+		 * Triggering a dedicated 2PC to determine if that node is
+		 * without quorum now causes too many 2PCs. We need another
+		 * solution for that:
+
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
 			drbd_post_work(resource, TWO_PC_AFTER_LOST_PEER);
-			/*
-			 * By triggering a 2PC we will come back to this function
-			 * as initiator and the we can rely on reachable_nodes
-			 */
-		}
+		 */
 	}
 }
 
