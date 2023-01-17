@@ -7454,6 +7454,13 @@ static void process_twopc(struct drbd_connection *connection,
 			nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 		}
 	} else {
+		if (mask.conn == conn_MASK && val.conn == C_CONNECTED) {
+			/* Also clear nodes connecting "far away" out of my quorumless_nodes */
+			u64 clear_mask = NODE_MASK(reply->initiator_node_id) |
+				NODE_MASK(reply->target_node_id);
+
+			resource->quorumless_nodes &= ~clear_mask;
+		}
 		if (flags & CS_PREPARED) {
 			if (rv < SS_SUCCESS)
 				drbd_err(resource, "FATAL: Local commit of prepared %u failed! \n",

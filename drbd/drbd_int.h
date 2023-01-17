@@ -903,6 +903,7 @@ struct drbd_resource {
 	u64 dagtag_sector;		/* Protected by tl_update_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
+	u64 quorumless_nodes;		/* nodes that can not have quorum at the moment */
 	unsigned long flags;
 
 	/* Protects updates to the transfer log and related counters. */
