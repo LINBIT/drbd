@@ -84,7 +84,7 @@ static void ensure_exposed_data_uuid(struct drbd_device *device);
 static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union drbd_state,
 					    union drbd_state, unsigned long *);
 static void check_wrongly_set_mdf_exists(struct drbd_device *);
-static void update_quorumless_nodes(struct drbd_resource *resource);
+static void update_members(struct drbd_resource *resource);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -799,7 +799,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		goto out;
 
 	finish_state_change(resource);
-	update_quorumless_nodes(resource);
+	update_members(resource);
 
 	/* Check whether we are establishing a connection before applying the change. */
 	is_connect = drbd_state_change_is_connect(resource);
@@ -1335,8 +1335,9 @@ static int calc_quorum_at(s32 setting, int voters)
 
 static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
-	const int my_node_id = device->resource->res_opts.node_id;
-	const u64 quorumless_nodes = device->resource->quorumless_nodes;
+	struct drbd_resource *resource = device->resource;
+	const u64 quorumless_nodes = device->have_quorum[NOW] ? ~resource->members : 0;
+	const int my_node_id = resource->res_opts.node_id;
 	int node_id;
 
 	check_wrongly_set_mdf_exists(device);
@@ -1409,7 +1410,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 
 static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_detail *qd)
 {
-	const u64 quorumless_nodes = device->resource->quorumless_nodes;
+	struct drbd_resource *resource = device->resource;
+	const u64 quorumless_nodes = device->have_quorum[NOW] ? ~resource->members : 0;
 	struct drbd_peer_device *peer_device;
 	bool is_intentional_diskless;
 
@@ -2364,43 +2366,22 @@ void drbd_resume_al(struct drbd_device *device)
 }
 
 /*
- * When our partition has quorum, we know that all other nodes can not have
- * quorum. Remember that in quorumless_nodes. This knowledge allows us to keep
- * qourum in the own partition should we lose more nodes.
- * When such a node re-joins our partition, we witness that, since joining
- * is a cluster-wide two-phase commit. At that point, we remove such nodes
- * from quorumless_nodes
+ * We cache a node mask of the online members of the cluster. It might
+ * be off because a node is still marked as online immediately after
+ * it crashes. That means it might have an online mark for an already
+ * offline node. On the other hand, we guarantee that it never has
+ * a zero for an online node.
  */
-static void update_quorumless_nodes(struct drbd_resource *resource)
+static void update_members(struct drbd_resource *resource)
 {
 	enum chg_state_flags flags = resource->state_change_flags;
 	struct twopc_reply *reply = &resource->twopc_reply;
 	const int my_node_id = resource->res_opts.node_id;
 	struct drbd_connection *connection;
-	struct drbd_device *device;
-	bool res_has_quorum = true;
-	int vnr;
-
-	if (resource->res_opts.quorum == QOU_OFF)
-		return;
-
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (!device->have_quorum[NEW]) {
-			res_has_quorum = false;
-			break;
-		}
-	}
-
-	if (!res_has_quorum) {
-		resource->quorumless_nodes = 0;
-		return;
-	}
 
 	/* in case we initiated 2PC we know the reachable nodes */
 	if (flags & CS_TWOPC && reply->initiator_node_id == my_node_id) {
-		u64 reachable_nodes = reply->reachable_nodes;
-
-		resource->quorumless_nodes = ~reachable_nodes;
+		resource->members = reply->reachable_nodes;
 		return;
 	}
 
@@ -2409,9 +2390,9 @@ static void update_quorumless_nodes(struct drbd_resource *resource)
 		enum drbd_conn_state *cstate = connection->cstate;
 		const int peer_node_mask = NODE_MASK(connection->peer_node_id);
 
-		/* clear a fresh connection out of the quorumless_nodes */
+		/* add a fresh connection to the members */
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
-			resource->quorumless_nodes &= ~peer_node_mask;
+			resource->members |= peer_node_mask;
 
 		/* A peer left. Either non-graceful, or I was target of the 2PC. *
 		 * Triggering a dedicated 2PC to determine if that node is

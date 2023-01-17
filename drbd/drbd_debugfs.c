@@ -588,11 +588,11 @@ static int resource_worker_pid_show(struct seq_file *m, void *pos)
 	return 0;
 }
 
-static int resource_quorumless_nodes_show(struct seq_file *m, void *pos)
+static int resource_members_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
 
-	seq_printf(m, "0x%016llX\n", resource->quorumless_nodes);
+	seq_printf(m, "0x%016llX\n", resource->members);
 	return 0;
 }
 
@@ -651,7 +651,7 @@ static const struct file_operations resource_ ## name ## _fops = {	\
 drbd_debugfs_resource_attr(in_flight_summary)
 drbd_debugfs_resource_attr(state_twopc)
 drbd_debugfs_resource_attr(worker_pid)
-drbd_debugfs_resource_attr(quorumless_nodes)
+drbd_debugfs_resource_attr(members)
 
 #define drbd_dcf(top, obj, attr, perm) do {			\
 	dentry = debugfs_create_file(#attr, perm,		\
@@ -688,7 +688,7 @@ void drbd_debugfs_resource_add(struct drbd_resource *resource)
 	res_dcf(in_flight_summary);
 	res_dcf(state_twopc);
 	res_dcf(worker_pid);
-	res_dcf(quorumless_nodes);
+	res_dcf(members);
 }
 
 static void drbd_debugfs_remove(struct dentry **dp)
@@ -707,7 +707,7 @@ void drbd_debugfs_resource_cleanup(struct drbd_resource *resource)
 	 * and call debugfs_remove on all of them separately.
 	 */
 	/* it is ok to call debugfs_remove(NULL) */
-	drbd_debugfs_remove(&resource->debugfs_res_quorumless_nodes);
+	drbd_debugfs_remove(&resource->debugfs_res_members);
 	drbd_debugfs_remove(&resource->debugfs_res_worker_pid);
 	drbd_debugfs_remove(&resource->debugfs_res_state_twopc);
 	drbd_debugfs_remove(&resource->debugfs_res_in_flight_summary);

@@ -6936,17 +6936,17 @@ static void process_twopc(struct drbd_connection *connection,
 			if ((resource->cached_all_devices_have_quorum ||
 			     any_neighbor_quorate(resource)) &&
 			    request.flags & TWOPC_HAS_REACHABLE) {
-				resource->quorumless_nodes = ~state_change->reachable_nodes;
+				resource->members = state_change->reachable_nodes;
 				if (!resource->cached_all_devices_have_quorum)
 					flags |= CS_FORCE_RECALC;
 			}
 			if (state_change->mask.conn == conn_MASK &&
 			    state_change->val.conn == C_CONNECTED) {
-				/* Clear nodes connecting "far away" out of quorumless_nodes */
-				u64 clear_mask = NODE_MASK(reply->initiator_node_id) |
+				/* Add nodes connecting "far away" to members */
+				u64 add_mask = NODE_MASK(reply->initiator_node_id) |
 					NODE_MASK(reply->target_node_id);
 
-				resource->quorumless_nodes &= ~clear_mask;
+				resource->members |= add_mask;
 			}
 		}
 

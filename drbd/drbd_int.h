@@ -779,7 +779,7 @@ enum resource_flag {
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
 
         /* to be used in drbd_post_work() */
-	TWOPC_AFTER_LOST_PEER,  /* try to become D_UP_TO_DATE and/or update quorumless_nodes */
+	TWOPC_AFTER_LOST_PEER,  /* try to become D_UP_TO_DATE and/or update resource->members */
 	R_UNREGISTERED,
 	DOWN_IN_PROGRESS,
 	CHECKING_PEERS,
@@ -857,7 +857,7 @@ struct drbd_resource {
 	struct dentry *debugfs_res_in_flight_summary;
 	struct dentry *debugfs_res_state_twopc;
 	struct dentry *debugfs_res_worker_pid;
-	struct dentry *debugfs_res_quorumless_nodes;
+	struct dentry *debugfs_res_members;
 #endif
 	struct kref kref;
 	struct kref_debug_info kref_debug;
@@ -879,7 +879,7 @@ struct drbd_resource {
 	u64 dagtag_sector;		/* Protected by tl_update_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
-	u64 quorumless_nodes;		/* nodes that can not have quorum at the moment */
+	u64 members;			/* mask of online nodes */
 	unsigned long flags;
 
 	/* Protects updates to the transfer log and related counters. */
