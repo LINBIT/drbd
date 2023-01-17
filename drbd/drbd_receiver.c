@@ -7232,7 +7232,8 @@ static void process_twopc(struct drbd_connection *connection,
 			return;
 		}
 		resource->remote_state_change = true;
-		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
+		resource->twopc.type =
+			pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_prepare_reply_cmd = 0;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
@@ -7272,7 +7273,8 @@ static void process_twopc(struct drbd_connection *connection,
 			return;
 		}
 		resource->remote_state_change = true;
-		resource->twopc_type = pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
+		resource->twopc.type =
+			pi->cmd == P_TWOPC_PREPARE ? TWOPC_STATE_CHANGE : TWOPC_RESIZE;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		resource->twopc_prepare_reply_cmd = 0;
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
@@ -7437,7 +7439,7 @@ static void process_twopc(struct drbd_connection *connection,
 		BUG();
 	}
 
-	switch (resource->twopc_type) {
+	switch (resource->twopc.type) {
 	case TWOPC_STATE_CHANGE:
 		if (flags & CS_PREPARED) {
 			reply->primary_nodes = be64_to_cpu(p->primary_nodes);
@@ -7495,7 +7497,8 @@ static void process_twopc(struct drbd_connection *connection,
 
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 
-		if (resource->twopc_type == TWOPC_RESIZE && flags & CS_PREPARED && !(flags & CS_ABORT)) {
+		if (resource->twopc.type == TWOPC_RESIZE && flags & CS_PREPARED &&
+		    !(flags & CS_ABORT)) {
 			struct twopc_resize *tr = &resource->twopc.resize;
 			struct drbd_device *device;
 
@@ -9814,7 +9817,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			u64 reachable_nodes;
 			u64 max_size;
 
-			switch (resource->twopc_type) {
+			switch (resource->twopc.type) {
 			case TWOPC_STATE_CHANGE:
 				reachable_nodes =
 					be64_to_cpu(p->reachable_nodes);

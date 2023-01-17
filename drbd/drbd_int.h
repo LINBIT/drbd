@@ -904,7 +904,6 @@ struct drbd_resource {
 	enum chg_state_flags state_change_flags;
 	const char **state_change_err_str;
 	bool remote_state_change;  /* remote state change in progress */
-	enum twopc_type twopc_type; /* from prepare phase */
 	enum drbd_packet twopc_prepare_reply_cmd; /* this node's answer to the prepare phase or 0 */
 	struct list_head twopc_parents;  /* prepared on behalf of peer */
 	u64 twopc_parent_nodes;
@@ -912,17 +911,22 @@ struct drbd_resource {
 	struct timer_list twopc_timer;
 	struct drbd_work twopc_work;
 	wait_queue_head_t twopc_wait;
-	union {
-		struct twopc_resize {
-			int dds_flags;		   /* from prepare phase */
-			sector_t user_size;	   /* from prepare phase */
-			u64 diskful_primary_nodes; /* added in commit phase */
-			u64 new_size;		   /* added in commit phase */
-		} resize;
-		struct twopc_state_change {
-			union drbd_state mask;	/* from prepare phase */
-			union drbd_state val;	/* from prepare phase */
-		} state_change;
+	struct {
+		enum twopc_type type;
+		union {
+			struct twopc_resize {
+				int dds_flags;		   /* from prepare phase */
+				sector_t user_size;	   /* from prepare phase */
+				u64 diskful_primary_nodes; /* added in commit phase */
+				u64 new_size;		   /* added in commit phase */
+			} resize;
+			struct twopc_state_change {
+				union drbd_state mask;	/* from prepare phase */
+				union drbd_state val;	/* from prepare phase */
+				u64 primary_nodes;	/* added in commit phase */
+				u64 reachable_nodes;	/* added in commit phase */
+			} state_change;
+		};
 	} twopc;
 	enum drbd_role role[2];
 	bool susp_user[2];			/* IO suspended by user */
