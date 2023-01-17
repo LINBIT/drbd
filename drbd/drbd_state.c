@@ -5094,7 +5094,7 @@ retry:
 		twopc_phase2(resource, device->vnr, commit_it, &request, reach_immediately);
 
 	if (commit_it) {
-		struct twopc_resize *tr = &resource->twopc_resize;
+		struct twopc_resize *tr = &resource->twopc.resize;
 
 		tr->diskful_primary_nodes = reply->diskful_primary_nodes;
 		tr->new_size = new_size;

@@ -6699,7 +6699,7 @@ fail:
 static int receive_req_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
-	struct twopc_state_change *state_change = &resource->twopc_state_change;
+	struct twopc_state_change *state_change = &resource->twopc.state_change;
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_req_state *p = pi->data;
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY | CS_TWOPC;
@@ -7075,7 +7075,7 @@ static bool is_prepare(enum drbd_packet cmd)
 enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach)
 {
-	struct twopc_resize *tr = &device->resource->twopc_resize;
+	struct twopc_resize *tr = &device->resource->twopc.resize;
 	enum determine_dev_size dd;
 	uint64_t my_usize;
 
@@ -7208,7 +7208,7 @@ static void process_twopc(struct drbd_connection *connection,
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
 	struct p_twopc_request *p = pi->data;
-	struct twopc_state_change *state_change = &resource->twopc_state_change;
+	struct twopc_state_change *state_change = &resource->twopc.state_change;
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	enum csc_rv csc_rv;
@@ -7406,8 +7406,8 @@ static void process_twopc(struct drbd_connection *connection,
 			reply->max_possible_size = DRBD_MAX_SECTORS;
 			reply->diskful_primary_nodes = 0;
 		}
-		resource->twopc_resize.dds_flags = be16_to_cpu(p->dds_flags);
-		resource->twopc_resize.user_size = be64_to_cpu(p->user_size);
+		resource->twopc.resize.dds_flags = be16_to_cpu(p->dds_flags);
+		resource->twopc.resize.user_size = be64_to_cpu(p->user_size);
 	}
 
 	resource->twopc_reply = *reply;
@@ -7496,7 +7496,7 @@ static void process_twopc(struct drbd_connection *connection,
 		nested_twopc_request(resource, pi->vnr, pi->cmd, p);
 
 		if (resource->twopc_type == TWOPC_RESIZE && flags & CS_PREPARED && !(flags & CS_ABORT)) {
-			struct twopc_resize *tr = &resource->twopc_resize;
+			struct twopc_resize *tr = &resource->twopc.resize;
 			struct drbd_device *device;
 
 			tr->diskful_primary_nodes = be64_to_cpu(p->diskful_primary_nodes);
