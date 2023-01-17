@@ -3850,9 +3850,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->minor = minor;
 	device->vnr = vnr;
 	device->device_conf = *device_conf;
-#ifdef PARANOIA
-	SET_MDEV_MAGIC(device);
-#endif
 
 	drbd_set_defaults(device);
 
