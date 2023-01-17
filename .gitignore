@@ -8,6 +8,7 @@
 *.gcda
 *.gcno
 *.o
+*.o.*
 
 drbd/drbd.ko
 drbd/drbd.ko.unsigned
