@@ -88,22 +88,28 @@ int main(int argc, char **argv)
 	patch(1, "tcp_input", false, true,
 	      COMPAT_NEED_SKB_ABORT_SEQ_READ, "need_skb_abort_seq_read");
 
-#if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_BIO)
-	/* "modern" version (>=5.9) with only 1 argument. nothing to do */
-#elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO)
+#if defined(COMPAT_HAVE_BIO_SPLIT_TO_LIMITS)
+	/* "modern" version (>=6.0). nothing to do */
+#else
+	patch(1, "bio_split_to_limits", true, false,
+	      NO, "present");
+# if defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_BIO)
+	/* >=5.9, the function is called blk_queue_split with 1 argument. nothing more to do */
+# elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO)
 	/* older version with 2 arguments */
 	patch(1, "blk_queue_split", false, true,
 	      YES, "has_two_parameters");
-#elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
+# elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
 	/* even older version with 3 arguments */
 	patch(1, "blk_queue_split", false, true,
 	      YES, "has_three_parameters");
 	patch(1, "make_request", false, true,
 	      COMPAT_NEED_MAKE_REQUEST_RECURSION, "need_recursion");
-#else
+# else
 	/* ancient version, blk_queue_split not defined at all */
 	patch(1, "blk_queue_split", true, false,
 	      NO, "present");
+# endif
 #endif
 
 	patch(1, "sge_max_send_and_recv", true, false,
