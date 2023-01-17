@@ -4794,6 +4794,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	request.nodes_to_reach = ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request.vnr = context->vnr;
 	request.cmd = P_TWOPC_PREPARE;
+	request.flags = TWOPC_HAS_REACHABLE;
 
 	resource->twopc.type = TWOPC_STATE_CHANGE;
 	resource->twopc.state_change.mask = context->mask;
@@ -4915,6 +4916,8 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 			}
 
 			resource->twopc.state_change.primary_nodes = reply->primary_nodes;
+			resource->twopc.state_change.reachable_nodes =
+				reply->target_reachable_nodes;
 		}
 
 		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&

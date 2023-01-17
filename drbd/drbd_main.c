@@ -1691,8 +1691,15 @@ int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_req
 	if (!p)
 		return -EIO;
 	p->tid = cpu_to_be32(request->tid);
-	p->initiator_node_id = cpu_to_be32(request->initiator_node_id);
-	p->target_node_id = cpu_to_be32(request->target_node_id);
+	if (connection->agreed_features & DRBD_FF_2PC_V2) {
+		p->flags = cpu_to_be32(TWOPC_HAS_FLAGS | request->flags);
+		p->_pad = 0;
+		p->s8_initiator_node_id = request->initiator_node_id;
+		p->s8_target_node_id = request->target_node_id;
+	} else {
+		p->u32_initiator_node_id = cpu_to_be32(request->initiator_node_id);
+		p->u32_target_node_id = cpu_to_be32(request->target_node_id);
+	}
 	p->nodes_to_reach = cpu_to_be64(request->nodes_to_reach);
 	switch (resource->twopc.type) {
 	case TWOPC_STATE_CHANGE:
@@ -1702,7 +1709,8 @@ int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_req
 			p->val = cpu_to_be32(resource->twopc.state_change.val.i);
 		} else { /* P_TWOPC_COMMIT */
 			p->primary_nodes = cpu_to_be64(resource->twopc.state_change.primary_nodes);
-			if (connection->agreed_features & DRBD_FF_2PC_REACHABLE) {
+			if (request->flags & TWOPC_HAS_REACHABLE &&
+			    connection->agreed_features & DRBD_FF_2PC_V2) {
 				p->reachable_nodes = cpu_to_be64(
 					resource->twopc.state_change.reachable_nodes);
 			} else {
