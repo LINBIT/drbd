@@ -9127,6 +9127,9 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
 	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
 
+	/* No need to start additional resyncs after reconnection. */
+	peer_device->resync_again = 0;
+
 	if (!drbd_suspended(device)) {
 		struct drbd_resource *resource = device->resource;
 
