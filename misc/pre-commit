@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Script based on https://github.com/ofi-cray/fab-utils/blob/master/git/hooks/pre-commit-linux-coding-style
+
+# Pre-commit hook for running the Linux coding style checker
+# Available at:
+#  https://github.com/torvalds/linux/blob/master/scripts/checkpatch.pl
+#  https://github.com/torvalds/linux/blob/master/scripts/spelling.txt
+
+if [ "$CHECKPATCH" == "" ]; then
+    CHECKPATCH=`command -v checkpatch.pl`
+    if [ $? == 1 ]; then
+	echo "checkpatch.pl not found"
+	exit -1
+    fi
+fi
+
+git diff --cached HEAD -- drbd/{drbd-headers/{linux/,},linux/,}*\.[ch] | \
+	$CHECKPATCH --no-tree --ignore FILE_PATH_CHANGES -
+
+if [ $? -ne 0 ]; then
+    echo "Coding style check failed. Please fix warnings or commit with \"--no-verify\"." >&2
+    exit -1
+fi
+
+exit 0

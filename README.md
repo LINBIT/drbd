@@ -18,6 +18,20 @@ For further products and professional support, please
 Development is coordinated via [mailing lists](http://lists.linbit.com). Currently, we do not intend to use
 github issue tracking/github PRs.
 
+## Style checking
+Since the code of this module is intended for the Linux kernel tree, we apply
+the corresponding code style checks. You should ensure that your contributions
+pass these checks. This can be easily achieved by installing a pre-commit hook,
+as follows:
+
+```
+curl -L https://github.com/torvalds/linux/raw/master/scripts/checkpatch.pl | sudo tee /usr/local/bin/checkpatch.pl | wc
+sudo chmod +x /usr/local/bin/checkpatch.pl
+curl -L https://github.com/torvalds/linux/raw/master/scripts/spelling.txt | sudo tee /usr/local/bin/spelling.txt | wc
+sudo echo > /usr/local/bin/const_structs.checkpatch
+cp misc/pre-commit .git/hooks/
+```
+
 # Building DRBD
 
 Since version 9.0.20, DRBD has been using a kernel backwards compatibility system
