@@ -471,12 +471,26 @@ int main(int argc, char **argv)
 	patch(1, "bio_max_vecs", true, false,
 	      COMPAT_HAVE_BIO_MAX_VECS, "present");
 
+/* fs_dax_get_by_bdev does not exist <4.13.
+ * Initially it only had one parameter for the device.
+ * Starting with 5.16, it gained a second parameter for returing the partition offest.
+ * Starting with 6.0, it gained another two parameters, which opionally configure some callbacks.
+ * So we check:
+ * 1. Does fs_dax_get_by_bdev exist?
+ * 2. If yes, does it take 4 parameters?
+ * 3. If no, does it take 2 parameters?
+ * This covers all 4 possibilities */
 	patch(1, "fs_dax_get_by_bdev", true, false,
 	      COMPAT_HAVE_FS_DAX_GET_BY_BDEV, "present");
 
 #if defined(COMPAT_HAVE_FS_DAX_GET_BY_BDEV)
 	patch(1, "fs_dax_get_by_bdev", true, false,
+	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF_AND_HOLDER, "takes_start_off_and_holder");
+
+#if !defined(COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF_AND_HOLDER)
+	patch(1, "fs_dax_get_by_bdev", true, false,
 	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF, "takes_start_off");
+#endif
 #endif
 
 	patch(1, "add_disk", true, false,
