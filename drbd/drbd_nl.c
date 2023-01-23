@@ -3248,7 +3248,13 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	}
 
-	dd = drbd_determine_dev_size(device, 0, 0, NULL);
+	/*
+	 * If we are attaching to a disk that is marked as being up-to-date,
+	 * then we do not need to set the bitmap bits.
+	 */
+	dd = drbd_determine_dev_size(device, 0,
+			disk_state_from_md(device) == D_UP_TO_DATE ? DDSF_NO_RESYNC : 0,
+			NULL);
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
