@@ -2,6 +2,17 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.13-rc.1 (api:genl2/proto:110-121/transport:17)
+--------
+ * when calculating if a partition has quorum, take into account if
+   the missing nodes might have a quorum
+ * fix forget-peer for diskless peers
+ * clear the resync_again counter upon disconnect
+ * also call the unfence handler when no resync happens
+ * do not set bitmap bits when attaching to an up-to-date disk (late)
+ * work on bringing the out-of-tree DRBD9 closer to DRBD in the upstream
+   kernel; Use lru_cahche.ko from the installed kernel whenever possible
+
 9.1.12 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a race that could result in connection attempts getting aborted
