@@ -1026,10 +1026,7 @@ retry:
 		rv = stable_state_change(resource,
 			change_role(resource, role, flags, &err_str));
 
-		if (rv == SS_CONCURRENT_ST_CHG)
-			continue;
-
-		if (rv == SS_TIMEOUT) {
+		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 			long timeout = twopc_retry_timeout(resource, try);
 			/* It might be that the receiver tries to start resync, and
 			   sleeps on state_sem. Give it up, and retry in a short
