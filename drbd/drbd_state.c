@@ -2394,14 +2394,13 @@ static void update_members(struct drbd_resource *resource)
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			resource->members |= peer_node_mask;
 
-		/* A peer left. Either non-graceful, or I was target of the 2PC. *
-		 * Triggering a dedicated 2PC to determine if that node is
-		 * without quorum now causes too many 2PCs. We need another
-		 * solution for that:
-
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
+		/* A peer left. Check if we should remove it from the members */
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED &&
+		    !test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags) &&
+		    resource->members & peer_node_mask) {
+			set_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
 			drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
-		 */
+		}
 	}
 }
 
