@@ -2518,13 +2518,19 @@ static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 
-	/* The interval is no longer in the tree, but use this flag
-	 * anyway, since it has an appropriate meaning. */
-	set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
-
-	/* Free the pages now but leave the peer request until the
-	 * corresponding peers-in-sync has been scheduled. */
+	/*
+	 * Free the pages now but leave the peer request until the
+	 * corresponding peers-in-sync has been scheduled.
+	 */
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+
+	/*
+	 * The interval is no longer in the tree, but use this flag anyway,
+	 * since it has an appropriate meaning. After setting the flag,
+	 * peer_req may be freed by another thread.
+	 */
+	set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
+	peer_req = NULL;
 
 	drbd_check_peers_in_sync_progress(peer_device);
 }

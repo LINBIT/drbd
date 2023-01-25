@@ -1061,7 +1061,7 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
  *                   +--       |          drbd_endio_read_sec_final
  *                             |                     |
  *                             V                    ...
- *                   +-- drbd_create_resync_request  |
+ *                   +-- make_one_resync_request     |
  *                   |         |                     v
  *                   |         +---------------- w_e_send_csum
  *           sync_ee |         |
