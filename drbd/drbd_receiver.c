@@ -3256,8 +3256,10 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 	/* Tell target to have a retry, waiting for the rescheduled
 	 * drbd_start_resync to complete. Otherwise the concurrency
 	 * of send oos and resync may lead to a data lose. */
-	if ((pi->cmd == P_RS_DATA_REQUEST || pi->cmd == P_CSUM_RS_REQUEST) &&
-	    peer_device->repl_state[NOW] == L_WF_BITMAP_S) {
+	if ((pi->cmd == P_RS_THIN_REQ || pi->cmd == P_RS_DATA_REQUEST ||
+				pi->cmd == P_CSUM_RS_REQUEST) &&
+	    (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
+				peer_device->repl_state[NOW] == L_STARTING_SYNC_S)) {
 		drbd_send_ack_rp(peer_device, P_RS_CANCEL, p);
 		return ignore_remaining_packet(connection, pi->size);
 	}
