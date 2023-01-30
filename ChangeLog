@@ -2,10 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.13-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.13 (api:genl2/proto:110-121/transport:17)
 --------
  * when calculating if a partition has quorum, take into account if
-   the missing nodes might have a quorum
+   the missing nodes might have quorum
  * fix forget-peer for diskless peers
  * clear the resync_again counter upon disconnect
  * also call the unfence handler when no resync happens
