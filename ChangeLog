@@ -2,15 +2,16 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.2-rc.1 (api:genl2/proto:110-121/transport:18)
+9.2.2 (api:genl2/proto:110-121/transport:18)
 --------
  * fix spurious PingAck timeout a second time; we need to use a drbd
    owned workqueue to guarantee the required low-latency replies
  * Fix connection abort during resync with log message
    "Unexpected resync write ack at ..." a regression of drbd-9.2
+ * fix a race condition that can lead to NULL-ptr deref during resync
  * merged changes from drbd-9.1.13
   - when calculating if a partition has quorum, take into account if
-    the missing nodes might have a quorum
+    the missing nodes might have quorum
   - fix forget-peer for diskless peers
   - clear the resync_again counter upon disconnect
   - also call the unfence handler when no resync happens
