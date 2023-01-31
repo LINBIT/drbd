@@ -3842,7 +3842,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	/* Tell target to have a retry, waiting for the rescheduled
 	 * drbd_start_resync to complete. Otherwise the concurrency
 	 * of send oos and resync may lead to a data lose. */
-	if (peer_device->repl_state[NOW] == L_WF_BITMAP_S) {
+	if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
+			peer_device->repl_state[NOW] == L_STARTING_SYNC_S) {
 		switch (pi->cmd) {
 			case P_RS_DATA_REQUEST:
 			case P_RS_DAGTAG_REQ:
