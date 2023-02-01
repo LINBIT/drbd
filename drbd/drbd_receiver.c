@@ -6673,6 +6673,7 @@ static void process_twopc(struct drbd_connection *connection,
 	enum chg_state_flags flags = CS_VERBOSE | CS_LOCAL_ONLY;
 	enum drbd_state_rv rv = SS_SUCCESS;
 	struct twopc_request request;
+	bool waiting_allowed = true;
 	enum csc_rv csc_rv;
 
 	request.tid = be32_to_cpu(p->tid);
@@ -6690,6 +6691,7 @@ static void process_twopc(struct drbd_connection *connection,
 	request.vnr = pi->vnr;
 
 	/* Check for concurrent transactions and duplicate packets. */
+retry:
 	write_lock_irq(&resource->state_rwlock);
 
 	csc_rv = check_concurrent_transactions(resource, reply);
@@ -6762,8 +6764,23 @@ static void process_twopc(struct drbd_connection *connection,
 	} else {
 		write_unlock_irq(&resource->state_rwlock);
 
-		if (csc_rv == CSC_REJECT) {
-		reject:
+		if (csc_rv == CSC_TID_MISS && is_prepare(pi->cmd) && waiting_allowed) {
+			/* CSC_TID_MISS implies the two transactions are from the same initiator */
+			if (!(resource->twopc_parent_nodes & NODE_MASK(connection->peer_node_id))) {
+				long timeout = twopc_timeout(resource) / 20; /* usually 1.5 sec */
+				/*
+				 * We are expecting the P_TWOPC_COMMIT or P_TWOPC_ABORT through
+				 * another connection. So we can wait without deadlocking.
+				 */
+				wait_event_interruptible_timeout(resource->twopc_wait,
+						!resource->remote_state_change, timeout);
+				waiting_allowed = false; /* retry only once */
+				goto retry;
+			}
+		}
+
+		if (csc_rv == CSC_REJECT ||
+		    (csc_rv == CSC_TID_MISS && is_prepare(pi->cmd))) {
 			drbd_info(connection, "Rejecting concurrent "
 				  "remote state change %u because of "
 				  "state change %u\n",
@@ -6774,9 +6791,7 @@ static void process_twopc(struct drbd_connection *connection,
 		}
 
 		if (is_prepare(pi->cmd)) {
-			if (csc_rv == CSC_TID_MISS) {
-				goto reject;
-			} else if (csc_rv == CSC_MATCH) {
+			if (csc_rv == CSC_MATCH) {
 				/* We have prepared this transaction already. */
 				enum drbd_packet reply_cmd;
 
