@@ -356,7 +356,6 @@ static void seq_print_resource_pending_peer_requests(struct seq_file *m,
 
 static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 	struct drbd_resource *resource,
-	struct drbd_connection *connection,
 	ktime_t now, unsigned long jif)
 {
 	struct drbd_request *req;
@@ -479,13 +478,12 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 	seq_putc(m, '\n');
 
 	seq_puts(m, "oldest application requests\n");
-	seq_print_resource_transfer_log_summary(m, resource, connection, now, jif);
+	seq_print_resource_transfer_log_summary(m, resource, now, jif);
 	seq_putc(m, '\n');
 
 	jif = jiffies - jif;
 	if (jif)
 		seq_printf(m, "generated in %d ms\n", jiffies_to_msecs(jif));
-	kref_put(&connection->kref, drbd_destroy_connection);
 	return 0;
 }
 
