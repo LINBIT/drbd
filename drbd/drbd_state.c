@@ -1647,8 +1647,16 @@ handshake_found:
 				return SS_TWO_PRIMARIES;
 			if (!fail_io[NEW]) {
 				idr_for_each_entry(&resource->devices, device, vnr) {
-					if (device->open_ro_cnt || device->open_rw_cnt)
+					if (device->open_ro_cnt)
 						return SS_PRIMARY_READER;
+					/*
+					 * One might be tempted to add "|| open_rw_cont" here.
+					 * That is wrong. The promotion of a rw opener will be
+					 * handled in its own two-phase commit.
+					 * Returning SS_PRIMARY_READER for a rw_opener might
+					 * causes confusion for the caller, if that then waits
+					 * for the read-only openers to go away.
+					 */
 				}
 			}
 		}
@@ -4520,12 +4528,9 @@ check_ro_cnt_and_primary(struct drbd_resource *resource)
 	struct twopc_reply *reply = &resource->twopc_reply;
 	struct drbd_connection *connection;
 	enum drbd_state_rv rv = SS_SUCCESS;
-	int rw_count, ro_count;
 	struct net_conf *nc;
 
-	drbd_open_counts(resource, &rw_count, &ro_count);
-
-	if (!rw_count && !ro_count)
+	if (drbd_open_ro_count(resource) == 0)
 		return rv;
 
 	rcu_read_lock();
