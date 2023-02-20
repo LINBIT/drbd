@@ -211,6 +211,12 @@ load_from_ram() {
 		die "Could not find the expexted *.ko, see stderr for more details"
 	fi
 
+	if [ -d "$LB_SIGN" ]; then
+		# guess we could source the whole thing, but...
+		eval "$(grep CONFIG_MODULE_SIG_HASH= "/lib/modules/$(uname -r)/build/.config")"
+		find . -name "*.ko" -print0 | xargs -0 -n1 "/lib/modules/$(uname -r)/build/scripts/sign-file" "$CONFIG_MODULE_SIG_HASH" "${LB_SIGN}/signing_key.pem" "${LB_SIGN}/signing_key.x509" 
+	fi
+
 	insmod ./drbd.ko usermode_helper=disabled
 	insmod ./drbd_transport_tcp.ko
 	insmod ./drbd_transport_rdma.ko 2>/dev/null || true
