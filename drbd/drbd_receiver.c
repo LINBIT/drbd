@@ -8054,8 +8054,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		__change_disk_state(device, new_disk_state);
 	if (device->disk_state[NOW] != D_NEGOTIATING)
 		__change_repl_state(peer_device, new_repl_state);
-	if (connection->peer_role[NOW] == R_UNKNOWN || peer_state.role == R_SECONDARY)
-		__change_peer_role(connection, peer_state.role);
+	__change_peer_role(connection, peer_state.role);
 	if (peer_state.disk != D_NEGOTIATING)
 		__change_peer_disk_state(peer_device, peer_disk_state);
 	__change_resync_susp_peer(peer_device, peer_state.aftr_isp | peer_state.user_isp);
