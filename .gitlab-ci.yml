@@ -240,25 +240,3 @@ test:
   rules:
     - if: $CI_MERGE_REQUEST_ID
   script: run_test
-
-test-all:
-  stage: test
-  extends: [ .test ]
-  variables:
-    DRBD_TEST_REPEATS: 1
-    DRBD_TEST_VMSHED_ARGS: ""
-  rules:
-    - if: $CI_MERGE_REQUEST_ID
-      when: manual
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-  allow_failure: true
-  script:
-    - |
-      export VMSHED_TEST_SELECTION=all
-      run_test \
-        --repeats="$DRBD_TEST_REPEATS" \
-        --error-details=false \
-        --quiet \
-        $DRBD_TEST_VMSHED_ARGS || true
-      ./virter/elasticsearch/elasticsearch-insert.sh https://es01.at.linbit.com ../tests-out/results.json
-      cat ../.gitlab/kibana-version-comparison-url | tr -d '\n' | sed s/{{drbd_version}}/$DRBD_VERSION/
