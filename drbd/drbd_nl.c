@@ -2891,8 +2891,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	struct drbd_device *device;
 	struct drbd_resource *resource;
-	int err;
-	unsigned int retcode;
+	int err, retcode;
 	enum determine_dev_size dd;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
@@ -3352,11 +3351,11 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 	return disk_state;
 }
 
-static unsigned int adm_detach(struct drbd_device *device, bool force, bool intentional_diskless, struct sk_buff *reply_skb)
+static int adm_detach(struct drbd_device *device, bool force, bool intentional_diskless,
+		      struct sk_buff *reply_skb)
 {
-	unsigned int retcode;
 	const char *err_str = NULL;
-	int ret;
+	int ret, retcode;
 
 	device->device_conf.intentional_diskless = intentional_diskless;
 	if (force) {
@@ -4697,12 +4696,11 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
 	struct resize_parms rs;
 	struct drbd_device *device;
-	unsigned int retcode;
 	enum determine_dev_size dd;
 	bool change_al_layout = false;
 	enum dds_flags ddsf;
 	sector_t u_size;
-	int err;
+	int err, retcode;
 	struct drbd_peer_device *peer_device;
 	bool resolve_by_node_id = true;
 	bool has_up_to_date_primary;
