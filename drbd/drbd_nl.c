@@ -1065,9 +1065,10 @@ retry:
 
 		if (rv == SS_NO_UP_TO_DATE_DISK && !(flags & CS_FP_LOCAL_UP_TO_DATE)) {
 			struct drbd_connection *connection;
+			bool any_fencing_failed = false;
 			u64 im;
 
-			fenced_peers = true;
+			fenced_peers = false;
 			up(&resource->state_sem); /* Allow connect while fencing */
 			for_each_connection_ref(connection, im, resource) {
 				struct drbd_peer_device *peer_device;
@@ -1082,12 +1083,14 @@ retry:
 					if (device->disk_state[NOW] != D_CONSISTENT)
 						continue;
 
-					if (!conn_try_outdate_peer(connection))
-						fenced_peers = false;
+					if (conn_try_outdate_peer(connection))
+						fenced_peers = true;
+					else
+						any_fencing_failed = true;
 				}
 			}
 			down(&resource->state_sem);
-			if (fenced_peers) {
+			if (fenced_peers && !any_fencing_failed) {
 				flags |= CS_FP_LOCAL_UP_TO_DATE;
 				continue;
 			}
