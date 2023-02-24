@@ -1150,8 +1150,9 @@ retry:
 			if (timeout == 0)
 				timeout = 1;
 
+			up(&resource->state_sem);
 			schedule_timeout_interruptible(timeout);
-			continue;
+			goto retry;
 		}
 
 		break;
