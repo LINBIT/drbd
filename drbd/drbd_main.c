@@ -1031,22 +1031,37 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	return err;
 }
 
-int __send_command(struct drbd_connection *connection, int vnr,
-			  enum drbd_packet cmd, enum drbd_stream drbd_stream)
+/*
+ * SFLAG_FLUSH makes sure the packet (and everything queued in front
+ * of it) gets sent immediately independently if it is currently
+ * corked.
+ *
+ * This is used for P_PING, P_PING_ACK, P_TWOPC_PREPARE, P_TWOPC_ABORT,
+ * P_TWOPC_YES, P_TWOPC_NO, P_TWOPC_RETRY and P_TWOPC_COMMIT.
+ *
+ * This quirk is necessary because it is corked while the worker
+ * thread processes work items. When it stops processing items, it
+ * uncorks. That works perfectly to coalesce ack packets etc..
+ * A work item doing two-phase commits needs to override that behavior.
+ */
+#define SFLAG_FLUSH 0x10
+#define DRBD_STREAM_FLAGS (SFLAG_FLUSH)
+
+static inline enum drbd_stream extract_stream(int stream_and_flags)
 {
+	return stream_and_flags & ~DRBD_STREAM_FLAGS;
+}
+
+int __send_command(struct drbd_connection *connection, int vnr,
+		   enum drbd_packet cmd, int stream_and_flags)
+{
+	enum drbd_stream drbd_stream = extract_stream(stream_and_flags);
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
 	bool corked = test_bit(CORKED + drbd_stream, &connection->flags);
-	bool flush = (cmd == P_PING || cmd == P_PING_ACK || cmd == P_TWOPC_PREPARE);
+	bool flush = stream_and_flags & SFLAG_FLUSH;
 	int err;
-
-	/* send P_PING and P_PING_ACK immediately, they need to be delivered as
-	   fast as possible.
-	   P_TWOPC_PREPARE might be used from the worker context while corked.
-	   The work item (connect_work) calls change_cluster_wide_state() which
-	   in turn waits for reply packets. -> Need to send it regardless of
-	   corking.  */
 
 	if (connection->cstate[NOW] < C_CONNECTING)
 		return -EIO;
@@ -1100,11 +1115,12 @@ void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 }
 
 int send_command(struct drbd_connection *connection, int vnr,
-		 enum drbd_packet cmd, enum drbd_stream drbd_stream)
+		 enum drbd_packet cmd, int stream_and_flags)
 {
+	enum drbd_stream drbd_stream = extract_stream(stream_and_flags);
 	int err;
 
-	err = __send_command(connection, vnr, cmd, drbd_stream);
+	err = __send_command(connection, vnr, cmd, stream_and_flags);
 	mutex_unlock(&connection->mutex[drbd_stream]);
 	return err;
 }
@@ -1120,7 +1136,7 @@ int drbd_send_ping(struct drbd_connection *connection)
 {
 	if (!conn_prepare_command(connection, 0, CONTROL_STREAM))
 		return -EIO;
-	return send_command(connection, -1, P_PING, CONTROL_STREAM);
+	return send_command(connection, -1, P_PING, CONTROL_STREAM | SFLAG_FLUSH);
 }
 
 void drbd_send_ping_ack_wf(struct work_struct *ws)
@@ -1131,7 +1147,7 @@ void drbd_send_ping_ack_wf(struct work_struct *ws)
 
 	err = conn_prepare_command(connection, 0, CONTROL_STREAM) ? 0 : -EIO;
 	if (!err)
-		err = send_command(connection, -1, P_PING_ACK, CONTROL_STREAM);
+		err = send_command(connection, -1, P_PING_ACK, CONTROL_STREAM | SFLAG_FLUSH);
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
@@ -1729,7 +1745,7 @@ int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_req
 			p->exposed_size = cpu_to_be64(resource->twopc.resize.new_size);
 		}
 	}
-	return send_command(connection, request->vnr, request->cmd, DATA_STREAM);
+	return send_command(connection, request->vnr, request->cmd, DATA_STREAM | SFLAG_FLUSH);
 }
 
 void drbd_send_sr_reply(struct drbd_connection *connection, int vnr, enum drbd_state_rv retcode)
@@ -1768,7 +1784,7 @@ void drbd_send_twopc_reply(struct drbd_connection *connection,
 			p->max_possible_size = cpu_to_be64(reply->max_possible_size);
 			break;
 		}
-		send_command(connection, reply->vnr, cmd, CONTROL_STREAM);
+		send_command(connection, reply->vnr, cmd, CONTROL_STREAM | SFLAG_FLUSH);
 	}
 }
 

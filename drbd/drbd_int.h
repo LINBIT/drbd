@@ -2371,8 +2371,10 @@ extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
 extern void *__conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
 extern void *conn_prepare_command(struct drbd_connection *, int, enum drbd_stream);
 extern void *drbd_prepare_command(struct drbd_peer_device *, int, enum drbd_stream);
-extern int __send_command(struct drbd_connection *, int, enum drbd_packet, enum drbd_stream);
-extern int send_command(struct drbd_connection *, int, enum drbd_packet, enum drbd_stream);
+extern int __send_command(struct drbd_connection *connection, int vnr,
+			  enum drbd_packet cmd, int stream_and_flags);
+extern int send_command(struct drbd_connection *connection, int vnt,
+			enum drbd_packet cmd, int stream_and_flags);
 extern int drbd_send_command(struct drbd_peer_device *, enum drbd_packet, enum drbd_stream);
 
 extern int drbd_send_ping(struct drbd_connection *connection);
