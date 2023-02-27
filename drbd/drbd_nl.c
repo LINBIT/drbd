@@ -1997,16 +1997,35 @@ static void fixup_discard_support(struct drbd_device *device, struct request_que
 }
 
 static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backing_dev *bdev,
-				   unsigned int max_bio_size, struct o_qlim *o)
+				   unsigned int max_bio_size)
 {
 	struct request_queue * const q = device->rq_queue;
 	unsigned int max_hw_sectors = max_bio_size >> 9;
+	struct queue_limits common_limits = { 0 }; /* sizeof(struct queue_limits) ~ 110 bytes */
+	struct queue_limits peer_limits = { 0 };
+	struct drbd_peer_device *peer_device;
 	struct request_queue *b = NULL;
+
+	blk_set_stacking_limits(&common_limits);
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (!test_bit(HAVE_SIZES, &peer_device->flags) &&
+		    peer_device->repl_state[NOW] < L_ESTABLISHED)
+			continue;
+		blk_set_stacking_limits(&peer_limits);
+		peer_limits.logical_block_size = peer_device->q_limits.logical_block_size;
+		peer_limits.physical_block_size = peer_device->q_limits.physical_block_size;
+		peer_limits.alignment_offset = peer_device->q_limits.alignment_offset;
+		peer_limits.io_min = peer_device->q_limits.io_min;
+		peer_limits.io_opt = peer_device->q_limits.io_opt;
+		blk_stack_limits(&common_limits, &peer_limits, 0);
+	}
+	rcu_read_unlock();
 
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
 		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
-		blk_set_stacking_limits(&q->limits);
 	}
 
 	blk_queue_max_hw_sectors(q, max_hw_sectors);
@@ -2015,14 +2034,15 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 	decide_on_discard_support(device, bdev);
 
 	if (b) {
-		blk_stack_limits(&q->limits, &b->limits, 0);
+		blk_stack_limits(&common_limits, &b->limits, 0);
 		disk_update_readahead(device->vdisk);
 	}
+	q->limits = common_limits;
 	fixup_write_zeroes(device, q);
 	fixup_discard_support(device, q);
 }
 
-void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev, struct o_qlim *o)
+void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
 	unsigned int max_bio_size = device->device_conf.max_bio_size;
 	struct drbd_peer_device *peer_device;
@@ -2039,7 +2059,7 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 	}
 	read_unlock_irq(&device->resource->state_rwlock);
 
-	drbd_setup_queue_param(device, bdev, max_bio_size, o);
+	drbd_setup_queue_param(device, bdev, max_bio_size);
 }
 
 /* Make sure IO is suspended before calling this function(). */
@@ -2287,7 +2307,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	if (old_disk_conf->discard_zeroes_if_aligned !=
 	    new_disk_conf->discard_zeroes_if_aligned)
-		drbd_reconsider_queue_parameters(device, device->ldev, NULL);
+		drbd_reconsider_queue_parameters(device, device->ldev);
 
 	drbd_md_sync_if_dirty(device);
 
@@ -3230,7 +3250,7 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
-	drbd_reconsider_queue_parameters(device, device->ldev, NULL);
+	drbd_reconsider_queue_parameters(device, device->ldev);
 
 	/* If I am currently not R_PRIMARY,
 	 * but meta data primary indicator is set,

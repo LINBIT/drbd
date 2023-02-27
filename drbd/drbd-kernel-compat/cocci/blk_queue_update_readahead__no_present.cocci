@@ -1,7 +1,8 @@
 @@
+expression e;
 struct request_queue *q, b;
 @@
-blk_stack_limits(&q->limits, &b->limits, 0);
+blk_stack_limits(e, &b->limits, 0);
 - blk_queue_update_readahead(q);
 + if (q->backing_dev_info->ra_pages !=
 +     b->backing_dev_info->ra_pages) {
