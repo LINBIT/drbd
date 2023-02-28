@@ -1966,14 +1966,16 @@ static bool drbd_resume_next(struct drbd_device *device)
 void resume_next_sg(struct drbd_device *device)
 {
 	lock_all_resources();
-	drbd_resume_next(device);
+	while (drbd_resume_next(device))
+		; /* Iterate if some state changed. */
 	unlock_all_resources();
 }
 
 void suspend_other_sg(struct drbd_device *device)
 {
 	lock_all_resources();
-	drbd_pause_after(device);
+	while (drbd_pause_after(device))
+		; /* Iterate if some state changed. */
 	unlock_all_resources();
 }
 
