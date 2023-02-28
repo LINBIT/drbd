@@ -1,0 +1,18 @@
+FROM amazonlinux:2
+
+# amazonlinux/eks ships different kernel series, so we install all (i.e., 2) the gccs
+RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
+	yum install -y python2-setuptools gcc gcc10 make tar gzip patch util-linux kmod cpio && \
+	yum clean all -y && \
+	cd /tmp && curl -fsSLO https://github.com/LINBIT/python-lbdist/archive/master.tar.gz && \
+	tar xzvf master.tar.gz && \
+	( cd python-lbdist-master && python2 setup.py install ) && \
+	rm -rf python-lbdist-master master.tar.gz
+
+COPY /drbd.tar.gz /
+
+COPY /pkgs /pkgs
+
+COPY /entry.sh /
+RUN chmod +x /entry.sh
+ENTRYPOINT /entry.sh
