@@ -494,14 +494,8 @@ enum {
 	/* Hold reference in activity log */
 	__EE_IN_ACTLOG,
 
-	/* On resync target: This is a DISCARD and we can not merge it with requests behind */
-	__EE_RS_TRIM_LIMITED_BEHIND,
-
-	/* On resync target: This is a DISCARD and we can not merge it with requests before */
-	__EE_RS_TRIM_LIMITED_FRONT,
-
-	/* On resync target: This is a DISCARD was submitted */
-	__EE_RS_TRIM_SUBMITTED,
+	/* SyncTarget: This is the last resync request. */
+	__EE_LAST_RESYNC_REQUEST,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -515,9 +509,7 @@ enum {
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
-#define EE_RS_TRIM_LIMITED_BEHIND	(1<<__EE_RS_TRIM_LIMITED_BEHIND)
-#define EE_RS_TRIM_LIMITED_FRONT	(1<<__EE_RS_TRIM_LIMITED_FRONT)
-#define EE_RS_TRIM_SUBMITTED	(1<<__EE_RS_TRIM_SUBMITTED)
+#define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 
 /* flag bits per device */
 enum device_flag {
@@ -1256,6 +1248,17 @@ struct drbd_peer_device {
 
 	/* Protected by connection->peer_reqs_lock */
 	struct list_head resync_requests; /* Resync requests in the order we sent them */
+	/*
+	 * If not NULL, all requests in resync_requests until this one have
+	 * been received. Discards are only counted as "received" once merging
+	 * is complete.
+	 */
+	struct drbd_peer_request *received_last;
+	/*
+	 * If not NULL, all requests in resync_requests after received_last
+	 * until this one are discards.
+	 */
+	struct drbd_peer_request *discard_last;
 
 	/* use checksums for *this* resync */
 	bool use_csums;
@@ -2095,7 +2098,7 @@ extern void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
 		sector_t sector_start, sector_t sector_end);
 extern int drbd_issue_discard_or_zero_out(struct drbd_device *device,
 		sector_t start, unsigned int nr_sectors, int flags);
-extern void drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
+extern int drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		      sector_t sector, int size, u64 block_id);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
@@ -2134,9 +2137,8 @@ extern enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource
 extern enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach);
 extern void drbd_try_to_get_resynced(struct drbd_device *device);
-extern bool drbd_rs_discard_ready(struct drbd_peer_request *peer_req);
-extern void drbd_submit_rs_discard(struct drbd_peer_request *peer_req);
-extern void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device);
+extern void drbd_process_rs_discards(struct drbd_peer_device *peer_device, bool submit_all);
+extern void drbd_last_resync_request(struct drbd_peer_device *peer_device, bool submit_all);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
@@ -2687,6 +2689,17 @@ static inline struct net *drbd_net_assigned_to_connection(struct drbd_connection
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
+
+static inline void drbd_list_del_resync_request(struct drbd_peer_request *peer_req)
+{
+	list_del(&peer_req->recv_order);
+
+	if (peer_req == peer_req->peer_device->received_last)
+		peer_req->peer_device->received_last = NULL;
+
+	if (peer_req == peer_req->peer_device->discard_last)
+		peer_req->peer_device->discard_last = NULL;
+}
 
 /*
  * drbd_interval_same_peer - determine whether "interval" is for the same peer as "i"

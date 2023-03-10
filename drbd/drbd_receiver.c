@@ -275,7 +275,6 @@ static int decode_header(struct drbd_connection *, const void *, struct packet_i
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
-static void check_rs_discards(struct drbd_peer_request *peer_req);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -2503,13 +2502,13 @@ static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_devi
 		if (!test_bit(INTERVAL_COMPLETED, &peer_req->i.flags))
 			break;
 
-		list_move_tail(&peer_req->recv_order, &completed);
+		drbd_list_del_resync_request(peer_req);
+		list_add_tail(&peer_req->recv_order, &completed);
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
 		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
-		list_del(&peer_req->recv_order);
 		drbd_free_peer_req(peer_req);
 	}
 }
@@ -2535,6 +2534,46 @@ static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
 	drbd_check_peers_in_sync_progress(peer_device);
 }
 
+static bool drbd_peer_request_is_merged(struct drbd_peer_request *peer_req,
+		sector_t main_sector, sector_t main_sector_end)
+{
+	/*
+	 * We do not send overlapping resync requests. So any request which is
+	 * in the corresponding range and for which we have received a reply
+	 * must be a merged request. EE_TRIM implies that we have received a
+	 * reply.
+	 */
+	return peer_req->i.sector >= main_sector &&
+		peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= main_sector_end &&
+			(peer_req->flags & EE_TRIM);
+}
+
+static int drbd_send_ack_range(struct drbd_peer_device *peer_device,
+		struct drbd_peer_request *peer_req_main)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_peer_request *peer_req = peer_req_main;
+	sector_t main_sector = peer_req_main->i.sector;
+	sector_t main_sector_end = main_sector + (peer_req_main->i.size >> SECTOR_SHIFT);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
+		if (!drbd_peer_request_is_merged(peer_req, main_sector, main_sector_end))
+			break;
+
+		list_del_init(&peer_req->w.list);
+		/*
+		 * This peer request will be freed at the earliest when
+		 * drbd_resync_request_complete() is called for the main
+		 * request.
+		 */
+		set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	return drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req_main);
+}
+
 /*
  * e_end_resync_block() is called in ack_sender context via
  * drbd_finish_peer_reqs().
@@ -2545,22 +2584,29 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	sector_t sector = peer_req->i.sector;
+	unsigned int size = peer_req->i.size;
 	int err;
 
-	drbd_remove_peer_req_interval(peer_req);
-
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
-		drbd_set_in_sync(peer_device, sector, peer_req->i.size);
-		err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
-
+		drbd_set_in_sync(peer_device, sector, size);
+		if (peer_req->flags & EE_TRIM)
+			err = drbd_send_ack_range(peer_device, peer_req);
+		else
+			err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
 	} else {
 		/* Record failure to sync */
-		drbd_rs_failed_io(peer_device, sector, peer_req->i.size);
+		drbd_rs_failed_io(peer_device, sector, size);
 
 		err  = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
 	}
 	dec_unacked(peer_device);
 
+	/*
+	 * Remove the interval after sending the ack to ensure that we do not
+	 * send any additional requests in this range before we have determined
+	 * which requests we can ack.
+	 */
+	drbd_remove_peer_req_interval(peer_req);
 	drbd_resync_request_complete(peer_req);
 	return err;
 }
@@ -2628,7 +2674,7 @@ static void drbd_cleanup_after_failed_submit_resync_request(struct drbd_peer_req
 	drbd_err(device, "submit failed, triggering re-connect\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	list_del(&peer_req->recv_order);
+	drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_remove_peer_req_interval(peer_req);
@@ -2690,7 +2736,6 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	peer_req->w.cb = e_end_resync_block;
 	peer_req->opf = REQ_OP_WRITE;
 	peer_req->submit_jif = jiffies;
-	check_rs_discards(peer_req);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_move_tail(&peer_req->w.list, &connection->sync_ee);
@@ -2707,6 +2752,8 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	drbd_conflict_submit_resync_request(peer_req);
 	peer_req = NULL; /* since submitted, might be destroyed already */
+
+	drbd_process_rs_discards(peer_device, false);
 
 	for_each_peer_device_ref(peer_device, im, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
@@ -2803,10 +2850,10 @@ static int drbd_send_ack_dp(struct drbd_peer_device *peer_device, enum drbd_pack
 }
 
 /* Send an ack packet wih a block ID that is already in big endian byte order. */
-void drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
+int drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		      sector_t sector, int size, u64 block_id)
 {
-	_drbd_send_ack(peer_device, cmd, cpu_to_be64(sector), cpu_to_be32(size), block_id);
+	return _drbd_send_ack(peer_device, cmd, cpu_to_be64(sector), cpu_to_be32(size), block_id);
 }
 
 /**
@@ -8708,153 +8755,95 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	return 0;
 }
 
-bool drbd_rs_discard_ready(struct drbd_peer_request *peer_req)
-{
-	static const int EE_RS_TRIM_LIMITED = EE_RS_TRIM_LIMITED_BEHIND | EE_RS_TRIM_LIMITED_FRONT;
-
-	return (peer_req->flags & EE_RS_TRIM_LIMITED) == EE_RS_TRIM_LIMITED;
-}
-
 static bool interval_is_adjacent(const struct drbd_interval *i1, const struct drbd_interval *i2)
 {
 	return i1->sector + (i1->size >> SECTOR_SHIFT) == i2->sector;
 }
 
-static void check_rs_discards(struct drbd_peer_request *peer_req)
+/* Advance caching pointers received_last and discard_last. Return next discard to be submitted. */
+static struct drbd_peer_request *drbd_advance_to_next_rs_discard(
+		struct drbd_peer_device *peer_device, unsigned int align, bool submit_all)
 {
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_peer_request *next = NULL, *prev = NULL;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_request *peer_req;
+	struct drbd_peer_request *discard_last = peer_device->discard_last;
+	bool discard_range_end = false;
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
-		next = list_next_entry(peer_req, recv_order);
-		if (next->flags & EE_TRIM)
-			next->flags |= EE_RS_TRIM_LIMITED_FRONT;
-		if (drbd_rs_discard_ready(next) && !(next->flags & EE_RS_TRIM_SUBMITTED))
-			next->flags |= EE_RS_TRIM_SUBMITTED;
-		else
-			next = NULL;
+	/* Advance received_last. */
+	peer_req = list_prepare_entry(peer_device->received_last,
+			&peer_device->resync_requests, recv_order);
+	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
+		if (!test_bit(INTERVAL_RECEIVED, &peer_req->i.flags) && !submit_all)
+			break;
+
+		if (peer_req->flags & EE_TRIM)
+			break;
+
+		peer_device->received_last = peer_req;
 	}
 
-	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
-		prev = list_prev_entry(peer_req, recv_order);
-		if (prev->flags & EE_TRIM)
-			prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-		if (drbd_rs_discard_ready(prev) && !(prev->flags & EE_RS_TRIM_SUBMITTED))
-			prev->flags |= EE_RS_TRIM_SUBMITTED;
-		else
-			prev = NULL;
+	/* Advance discard_last. */
+	peer_req = discard_last ? discard_last :
+		list_prepare_entry(peer_device->received_last,
+				&peer_device->resync_requests, recv_order);
+	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
+		if (!(peer_req->flags & EE_TRIM)) {
+			discard_range_end =
+				test_bit(INTERVAL_RECEIVED, &peer_req->i.flags) || submit_all;
+			break;
+		}
+
+		/* Consider submitting previous discards. */
+		if (discard_last && !interval_is_adjacent(&discard_last->i, &peer_req->i)) {
+			discard_range_end = true;
+			break;
+		}
+
+		discard_last = peer_req;
+
+		if (IS_ALIGNED(peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT), align)) {
+			discard_range_end = true;
+			break;
+		}
 	}
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	if (next)
-		drbd_submit_rs_discard(next);
-	if (prev)
-		drbd_submit_rs_discard(prev);
-}
+	/*
+	 * If we haven't found a discard range, or that range is not
+	 * finished, then there is nothing to submit.
+	 */
+	if (!discard_last || !(discard_range_end || discard_last->flags & EE_LAST_RESYNC_REQUEST)) {
+		peer_device->discard_last = discard_last;
+		return NULL;
+	}
 
-static void
-merge_second_into_first(struct drbd_peer_request *first, struct drbd_peer_request *second)
-{
-	struct drbd_device *device = first->peer_device->device;
+	/* Find start of discard range. */
+	peer_req = list_next_entry(list_prepare_entry(peer_device->received_last,
+				&peer_device->resync_requests, recv_order), recv_order);
 
 	spin_lock(&device->interval_lock); /* irqs already disabled */
-	drbd_update_interval_size(&first->i, first->i.size + second->i.size);
-	first->flags |= second->flags; /* preserve LIMITED_BEHIND */
+	if (peer_req != discard_last) {
+		struct drbd_peer_request *peer_req_merged = peer_req;
 
-	list_del(&second->recv_order);
-	list_del(&second->w.list);
-	drbd_remove_interval(&device->requests, &second->i);
-	drbd_clear_interval(&second->i);
+		list_for_each_entry_continue(peer_req_merged,
+				&peer_device->resync_requests, recv_order) {
+			drbd_remove_interval(&device->requests, &peer_req_merged->i);
+			drbd_clear_interval(&peer_req_merged->i);
+			if (peer_req_merged == discard_last)
+				break;
+		}
+	}
+	drbd_update_interval_size(&peer_req->i,
+			discard_last->i.size +
+			((discard_last->i.sector - peer_req->i.sector) << SECTOR_SHIFT));
 	spin_unlock(&device->interval_lock);
-	drbd_free_peer_req(second);
+
+	peer_device->received_last = discard_last;
+	peer_device->discard_last = NULL;
+
+	return peer_req;
 }
 
-static void
-_try_merge_rs_discard(struct drbd_peer_request *peer_req, struct list_head *work_list)
-{
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-
-	if (!list_is_last(&peer_req->recv_order, &peer_device->resync_requests)) {
-		struct drbd_peer_request *next = list_next_entry(peer_req, recv_order);
-		bool interval_mergeable = interval_is_adjacent(&peer_req->i, &next->i) &&
-			!(peer_req->flags & EE_RS_TRIM_LIMITED_BEHIND);
-		if (!(next->flags & EE_RS_TRIM_SUBMITTED) && next->flags & EE_TRIM && interval_mergeable) {
-			merge_second_into_first(peer_req, next);
-		} else if (!interval_mergeable || test_bit(INTERVAL_RECEIVED, &next->i.flags)) {
-			peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-		}
-	}
-
-	if (!list_is_first(&peer_req->recv_order, &peer_device->resync_requests)) {
-		struct drbd_peer_request *prev = list_prev_entry(peer_req, recv_order);
-		bool interval_mergeable = interval_is_adjacent(&prev->i, &peer_req->i) &&
-			!(peer_req->flags & EE_RS_TRIM_LIMITED_FRONT);
-		if (!(prev->flags & EE_RS_TRIM_SUBMITTED) && prev->flags & EE_TRIM && interval_mergeable) {
-			merge_second_into_first(prev, peer_req);
-			peer_req = prev;
-
-			if (list_is_first(&peer_req->recv_order, &peer_device->resync_requests))
-				peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-		} else if (!interval_mergeable || test_bit(INTERVAL_RECEIVED, &prev->i.flags)) {
-			peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-			if (prev->flags & EE_TRIM) {
-				/* The resync requests are issued at a specific rate. It might happen,
-				   when we get a reply for the request that is the last on the list.
-
-				   When this function is called for the last on the list, it can
-				   not merge with the entry behind, nor can it set the
-				   EE_RS_TRIM_LIMITED_BEHIND on that last entry.
-
-				   So, when we get the reply for the next element, we check if the
-				   previous one might lack the EE_RS_TRIM_LIMITED_BEHIND here. */
-				prev->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-				if (drbd_rs_discard_ready(prev) && !(prev->flags & EE_RS_TRIM_SUBMITTED)) {
-					prev->flags |= EE_RS_TRIM_SUBMITTED;
-					list_move(&prev->w.list, work_list);
-				}
-			}
-		}
-	} else {
-		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-	}
-
-	if (drbd_rs_discard_ready(peer_req)) {
-		peer_req->flags |= EE_RS_TRIM_SUBMITTED;
-		list_move(&peer_req->w.list, work_list);
-	}
-}
-
-static void try_merge_rs_discard(struct drbd_peer_request *peer_req)
-{
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
-	struct block_device *bdev = peer_device->device->ldev->backing_bdev;
-	unsigned int align = max(DRBD_MAX_RS_DISCARD_SIZE,
-				 bdev_discard_granularity(bdev)) >> SECTOR_SHIFT;
-	struct drbd_peer_request *pr_tmp;
-	LIST_HEAD(work_list);
-
-	/* Limit the size of the merged requests. We want to allow the size to
-	 * increase up to the backing discard granularity.  If that is smaller
-	 * than DRBD_MAX_RS_DISCARD_SIZE, then allow merging up to a size of
-	 * DRBD_MAX_RS_DISCARD_SIZE. */
-	if (IS_ALIGNED(peer_req->i.sector, align))
-		peer_req->flags |= EE_RS_TRIM_LIMITED_FRONT;
-
-	if (IS_ALIGNED(peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT), align))
-		peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	_try_merge_rs_discard(peer_req, &work_list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	list_for_each_entry_safe(peer_req, pr_tmp, &work_list, w.list)
-		drbd_submit_rs_discard(peer_req); /* removes it from the work_list */
-}
-
-void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
+static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -8882,6 +8871,42 @@ void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 	}
 }
 
+/* Find and submit discards in resync_requests which are ready. */
+void drbd_process_rs_discards(struct drbd_peer_device *peer_device, bool submit_all)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_request *peer_req;
+	struct drbd_peer_request *pr_tmp;
+	unsigned int align = DRBD_MAX_RS_DISCARD_SIZE;
+	LIST_HEAD(work_list);
+
+	if (get_ldev(device)) {
+		/*
+		 * Limit the size of the merged requests. We want to allow the size to
+		 * increase up to the backing discard granularity.  If that is smaller
+		 * than DRBD_MAX_RS_DISCARD_SIZE, then allow merging up to a size of
+		 * DRBD_MAX_RS_DISCARD_SIZE.
+		 */
+		align = max(DRBD_MAX_RS_DISCARD_SIZE, bdev_discard_granularity(
+					device->ldev->backing_bdev)) >> SECTOR_SHIFT;
+		put_ldev(device);
+	}
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	while (true) {
+		peer_req = drbd_advance_to_next_rs_discard(peer_device, align, submit_all);
+		if (!peer_req)
+			break;
+
+		list_move(&peer_req->w.list, &work_list);
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(peer_req, pr_tmp, &work_list, w.list)
+		drbd_submit_rs_discard(peer_req); /* removes it from the work_list */
+}
+
 static int receive_rs_deallocated(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -8906,29 +8931,30 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	dec_rs_pending(peer_device);
 	atomic_add(size >> 9, &device->rs_sect_ev);
 	peer_req->flags |= EE_TRIM;
-	try_merge_rs_discard(peer_req);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_move_tail(&peer_req->w.list, &connection->sync_ee);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	drbd_process_rs_discards(peer_device, false);
 	rs_sectors_came_in(peer_device, size);
 
 	return err;
 }
 
-void drbd_flush_queued_rs_discards(struct drbd_peer_device *peer_device)
+void drbd_last_resync_request(struct drbd_peer_device *peer_device, bool submit_all)
 {
 	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_peer_request *peer_req, *tmp;
-	LIST_HEAD(work_list);
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_for_each_entry_safe(peer_req, tmp, &peer_device->resync_requests, recv_order) {
-		if (peer_req->flags & EE_TRIM && !(peer_req->flags & EE_RS_TRIM_SUBMITTED)) {
-			peer_req->flags |= EE_RS_TRIM_SUBMITTED;
-			list_move_tail(&peer_req->w.list, &work_list);
-		}
+	if (!list_empty(&peer_device->resync_requests)) {
+		struct drbd_peer_request *peer_req = list_last_entry(&peer_device->resync_requests,
+				struct drbd_peer_request, recv_order);
+		peer_req->flags |= EE_LAST_RESYNC_REQUEST;
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	list_for_each_entry_safe(peer_req, tmp, &work_list, w.list)
-		drbd_submit_rs_discard(peer_req);
+	drbd_process_rs_discards(peer_device, submit_all);
 }
 
 static int receive_disconnect(struct drbd_connection *connection, struct packet_info *pi)
@@ -9102,7 +9128,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 	list_splice_init(&connection->dagtag_wait_ee, &dagtag_wait_work_list);
 
 	list_for_each_entry(peer_req, &request_work_list, w.list)
-		list_del(&peer_req->recv_order);
+		drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &request_work_list, w.list) {
@@ -9151,6 +9177,12 @@ static void drain_resync_activity(struct drbd_connection *connection)
 
 	/* Wait for w_resync_timer to finish, if running. */
 	drbd_flush_workqueue(&connection->sender_work);
+
+	rcu_read_lock();
+	/* Cause remaining discards to be submitted. */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		drbd_last_resync_request(peer_device, true);
+	rcu_read_unlock();
 
 	/* Verify or resync related peer requests are read_ee or sync_ee,
 	 * drain them. */
@@ -9201,13 +9233,14 @@ static void drbd_free_completed_resync_requests(struct drbd_peer_device *peer_de
 	struct drbd_peer_request *peer_req, *t;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_splice_init(&peer_device->resync_requests, &resync_requests);
+	list_for_each_entry_safe(peer_req, t, &peer_device->resync_requests, recv_order) {
+		drbd_list_del_resync_request(peer_req);
+		list_add_tail(&peer_req->recv_order, &resync_requests);
+	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	list_for_each_entry_safe(peer_req, t, &resync_requests, recv_order) {
-		list_del(&peer_req->recv_order);
+	list_for_each_entry_safe(peer_req, t, &resync_requests, recv_order)
 		drbd_free_peer_req(peer_req);
-	}
 }
 
 static void peer_device_disconnected(struct drbd_peer_device *peer_device)
@@ -10193,7 +10226,7 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
-		list_del(&peer_req->recv_order);
+		drbd_list_del_resync_request(peer_req);
 	list_del(&peer_req->w.list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 

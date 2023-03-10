@@ -443,7 +443,7 @@ out_rs_pending:
 out:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	list_del(&peer_req->recv_order);
+	drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	/* We may have just emptied sync_ee. */
@@ -563,7 +563,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 
 out:
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del_init(&peer_req->recv_order);
+	drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 	drbd_free_peer_req(peer_req);
 
@@ -616,7 +616,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * If it does not, you may need to force disconnect. */
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_del(&peer_req->w.list);
-	list_del(&peer_req->recv_order);
+	drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 defer2:
@@ -1282,23 +1282,7 @@ skip_request:
 	 * until then resync "work" is "inactive" ...
 	 */
 	if (last_request_sent) {
-		if (!list_empty(&peer_device->resync_requests)) {
-			struct drbd_peer_request *peer_req, *to_submit = NULL;
-			spin_lock_irq(&connection->peer_reqs_lock);
-			list_for_each_entry_reverse(peer_req, &peer_device->resync_requests, recv_order) {
-				if (peer_req->flags & EE_RS_THIN_REQ) {
-					peer_req->flags |= EE_RS_TRIM_LIMITED_BEHIND;
-					if (drbd_rs_discard_ready(peer_req) && !(peer_req->flags & EE_RS_TRIM_SUBMITTED)) {
-						to_submit = peer_req;
-						to_submit->flags |= EE_RS_TRIM_SUBMITTED;
-					}
-					break;
-				}
-			}
-			spin_unlock_irq(&connection->peer_reqs_lock);
-			if (to_submit)
-				drbd_submit_rs_discard(to_submit);
-		}
+		drbd_last_resync_request(peer_device, false);
 	} else {
 		/* and in case that raced with the receiver, reschedule ourselves right now */
 		if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight && request_ok) {

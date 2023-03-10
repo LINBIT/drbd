@@ -3998,7 +3998,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_run_resync(peer_device, repl_state[NEW]);
 
 			if (repl_is_sync(repl_state[OLD]) && !repl_is_sync(repl_state[NEW]))
-				drbd_flush_queued_rs_discards(peer_device);
+				drbd_last_resync_request(peer_device, false);
 
 			if (!peer_device_state_change->resync_active[OLD] && peer_device_state_change->resync_active[NEW])
 				drbd_queue_work_if_unqueued(
