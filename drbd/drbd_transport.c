@@ -178,13 +178,14 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	struct drbd_listener *listener;
 	bool needs_init = false;
 	int err;
+	unsigned long irq_flags;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_irqsave(&resource->listeners_lock, irq_flags);
 	listener = find_listener(connection, (struct sockaddr_storage *)addr);
 	if (!listener) {
 		listener = kmalloc(transport->class->listener_instance_size, GFP_ATOMIC);
 		if (!listener) {
-			spin_unlock_bh(&resource->listeners_lock);
+			spin_unlock_irqrestore(&resource->listeners_lock, irq_flags);
 			return -ENOMEM;
 		}
 		kref_init(&listener->kref);
@@ -203,7 +204,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	list_add(&path->listener_link, &listener->waiters);
 	path->listener = listener;
 	spin_unlock(&listener->waiters_lock);
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_irqrestore(&resource->listeners_lock, irq_flags);
 
 	if (needs_init) {
 		err = init_listener(transport, addr, path->net, listener);
@@ -227,10 +228,11 @@ static void drbd_listener_destroy(struct kref *kref)
 {
 	struct drbd_listener *listener = container_of(kref, struct drbd_listener, kref);
 	struct drbd_resource *resource = listener->resource;
+	unsigned long irq_flags;
 
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_irqsave(&resource->listeners_lock, irq_flags);
 	list_del(&listener->list);
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_irqrestore(&resource->listeners_lock, irq_flags);
 
 	listener->destroy(listener);
 }
@@ -238,14 +240,15 @@ static void drbd_listener_destroy(struct kref *kref)
 void drbd_put_listener(struct drbd_path *path)
 {
 	struct drbd_listener *listener;
+	unsigned long irq_flags;
 
 	listener = xchg(&path->listener, NULL);
 	if (!listener)
 		return;
 
-	spin_lock_bh(&listener->waiters_lock);
+	spin_lock_irqsave(&resource->listeners_lock, irq_flags);
 	list_del(&path->listener_link);
-	spin_unlock_bh(&listener->waiters_lock);
+	spin_unlock_irqrestore(&resource->listeners_lock, irq_flags);
 	kref_put(&listener->kref, drbd_listener_destroy);
 }
 

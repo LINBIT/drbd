@@ -5137,9 +5137,10 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	struct drbd_connection *twopc_parent;
 	u64 im;
 	struct twopc_reply twopc_reply;
+	unsigned long irq_flags;
 	u64 twopc_parent_nodes = 0;
 
-	write_lock_irq(&resource->state_rwlock);
+	write_lock_irqsave(&resource->state_rwlock, irq_flags);
 	twopc_reply = resource->twopc_reply;
 	/* Only send replies if we are in a twopc and have not yet sent replies. */
 	if (twopc_reply.tid && resource->twopc_prepare_reply_cmd == 0) {
@@ -5148,7 +5149,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	}
 	if (as_work)
 		resource->twopc_work.cb = NULL;
-	write_unlock_irq(&resource->state_rwlock);
+	write_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	if (!twopc_reply.tid)
 		return;
@@ -5198,13 +5199,14 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 	enum drbd_packet cmd = request->cmd;
 	enum drbd_state_rv rv;
 	bool have_peers;
+	unsigned long irq_flags;
 
-	write_lock_irq(&resource->state_rwlock);
+	write_lock_irqsave(&resource->state_rwlock, irq_flags);
 	nodes_to_reach = request->nodes_to_reach;
 	reach_immediately = directly_connected_nodes(resource, NOW) & nodes_to_reach;
 	nodes_to_reach &= ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request->nodes_to_reach = nodes_to_reach;
-	write_unlock_irq(&resource->state_rwlock);
+	write_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	rv = __cluster_wide_request(resource, request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;

@@ -122,15 +122,16 @@ void drbd_dax_al_update(struct drbd_device *device, struct lc_element *al_ext)
 void drbd_dax_al_begin_io_commit(struct drbd_device *device)
 {
 	struct lc_element *e;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 
 	list_for_each_entry(e, &device->act_log->to_be_changed, list)
 		drbd_dax_al_update(device, e);
 
 	lc_committed(device->act_log);
 
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 }
 
 int drbd_dax_al_initialize(struct drbd_device *device)

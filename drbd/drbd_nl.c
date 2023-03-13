@@ -781,10 +781,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	int r;
 	unsigned long irq_flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, irq_flags);
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		drbd_err(connection, "Expected cstate < C_CONNECTED\n");
-		read_unlock_irq(&resource->state_rwlock);
+		read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 		return false;
 	}
 
@@ -796,10 +796,10 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 		begin_state_change_locked(resource, CS_VERBOSE | CS_HARD);
 		__change_io_susp_fencing(connection, false);
 		end_state_change_locked(resource);
-		read_unlock_irq(&resource->state_rwlock);
+		read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 		return false;
 	}
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	fencing_policy = connection->fencing_policy;
 	if (fencing_policy == FP_DONT_CARE)
@@ -1878,6 +1878,7 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 	struct lc_element *e;
 	unsigned int in_use;
 	int i;
+	unsigned long irq_flags;
 
 	if (device->act_log &&
 	    device->act_log->nr_elements == dc->al_extents)
@@ -1892,7 +1893,7 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 		drbd_err(device, "Cannot allocate act_log lru!\n");
 		return -ENOMEM;
 	}
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	if (t) {
 		for (i = 0; i < t->nr_elements; i++) {
 			e = lc_element_by_index(t, i);
@@ -1904,7 +1905,7 @@ static int drbd_check_al_size(struct drbd_device *device, struct disk_conf *dc)
 	}
 	if (!in_use)
 		device->act_log = n;
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 	if (in_use) {
 		drbd_err(device, "Activity log still in use!\n");
 		lc_destroy(n);
@@ -2073,6 +2074,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 	bool suspend = true;
 	int max_peers = device->bitmap->bm_max_peers, bitmap_index;
+	unsigned long irq_flags;
 
 	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
 		if (_drbd_bm_total_weight(device, bitmap_index) !=
@@ -2086,7 +2088,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 	}
 
 	drbd_al_shrink(device);
-	read_lock_irq(&device->resource->state_rwlock);
+	read_lock_irqsave(&device->resource->state_rwlock, irq_flags);
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
 			suspend = false;
@@ -2095,7 +2097,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 	}
 	if (suspend)
 		suspend = !test_and_set_bit(AL_SUSPENDED, &device->flags);
-	read_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irqrestore(&device->resource->state_rwlock, irq_flags);
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
 
@@ -3394,10 +3396,11 @@ static enum drbd_disk_state get_disk_state(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	enum drbd_disk_state disk_state;
+	unsigned long irq_flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, irq_flags);
 	disk_state = device->disk_state[NOW];
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 	return disk_state;
 }
 
@@ -4082,6 +4085,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	int i, err;
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
+	unsigned long irq_flags;
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
@@ -4188,9 +4192,9 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		peer_devices++;
 		peer_device->node_id = connection->peer_node_id;
 	}
-	write_lock_irq(&adm_ctx->resource->state_rwlock);
+	write_lock_irqsave(&adm_ctx->resource->state_rwlock, irq_flags);
 	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
-	write_unlock_irq(&adm_ctx->resource->state_rwlock);
+	write_unlock_irqrestore(&adm_ctx->resource->state_rwlock, irq_flags);
 
 	old_net_conf = connection->transport.net_conf;
 	if (old_net_conf) {
@@ -4562,11 +4566,12 @@ int drbd_open_ro_count(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	int vnr, open_ro_cnt = 0;
+	unsigned long irq_flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, irq_flags);
 	idr_for_each_entry(&resource->devices, device, vnr)
 		open_ro_cnt += device->open_ro_cnt;
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	return open_ro_cnt;
 }
@@ -4580,15 +4585,16 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	enum chg_state_flags flags = (force ? CS_HARD : 0) | CS_VERBOSE;
 	const char *err_str = NULL;
 	long t;
+	unsigned long irq_flags;
 
     repeat:
 	rv = change_cstate_es(connection, C_DISCONNECTING, flags, &err_str);
 	switch (rv) {
 	case SS_CW_FAILED_BY_PEER:
 	case SS_NEED_CONNECTION:
-		read_lock_irq(&resource->state_rwlock);
+		read_lock_irqsave(&resource->state_rwlock, irq_flags);
 		cstate = connection->cstate[NOW];
-		read_unlock_irq(&resource->state_rwlock);
+		read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 		if (cstate < C_CONNECTED)
 			goto repeat;
 		break;
@@ -5523,14 +5529,15 @@ static void device_to_statistics(struct device_statistics *s,
 		struct drbd_md *md = &device->ldev->md;
 		u64 *history_uuids = (u64 *)s->history_uuids;
 		int n;
+		unsigned long irq_flags;
 
-		spin_lock_irq(&md->uuid_lock);
+		spin_lock_irqsave(&md->uuid_lock, irq_flags);
 		s->dev_current_uuid = md->current_uuid;
 		BUILD_BUG_ON(sizeof(s->history_uuids) != sizeof(md->history_uuids));
 		for (n = 0; n < ARRAY_SIZE(md->history_uuids); n++)
 			history_uuids[n] = md->history_uuids[n];
 		s->history_uuids_len = sizeof(s->history_uuids);
-		spin_unlock_irq(&md->uuid_lock);
+		spin_unlock_irqrestore(&md->uuid_lock, irq_flags);
 
 		s->dev_disk_flags = md->flags;
 		/* originally, this used the bdi congestion framework,
@@ -5872,10 +5879,11 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	if (get_ldev(device)) {
 		struct drbd_md *md = &device->ldev->md;
 		struct drbd_peer_md *peer_md = &md->peers[pd->node_id];
+		unsigned long irq_flags;
 
-		spin_lock_irq(&md->uuid_lock);
+		spin_lock_irqsave(&md->uuid_lock, irq_flags);
 		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
-		spin_unlock_irq(&md->uuid_lock);
+		spin_unlock_irqrestore(&md->uuid_lock, irq_flags);
 		s->peer_dev_flags = peer_md->flags;
 		put_ldev(device);
 	}
@@ -6469,13 +6477,14 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 	enum drbd_ret_code ret;
 	u64 im;
+	unsigned long irq_flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, irq_flags);
 	if (device->disk_state[NOW] == D_DISKLESS)
 		ret = test_and_set_bit(UNREGISTERED, &device->flags) ? ERR_MINOR_INVALID : NO_ERROR;
 	else
 		ret = ERR_MINOR_CONFIGURED;
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	if (ret != NO_ERROR)
 		return ret;
@@ -7156,10 +7165,11 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	mutex_lock(&resources_mutex);
 	for_each_resource(resource, &drbd_resources) {
 		struct drbd_state_change *state_change;
+		unsigned long irq_flags;
 
-		read_lock_irq(&resource->state_rwlock);
+		read_lock_irqsave(&resource->state_rwlock, irq_flags);
 		state_change = remember_state_change(resource, GFP_ATOMIC);
-		read_unlock_irq(&resource->state_rwlock);
+		read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 		if (!state_change) {
 			if (!list_empty(&head))
 				free_state_changes(&head);

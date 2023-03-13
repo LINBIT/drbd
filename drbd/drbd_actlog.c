@@ -161,8 +161,9 @@ bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int si
 	unsigned last = size == 0 ? first : (sector + (size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;
 	bool active = false;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
 		al_ext = lc_find(device->act_log, enr);
@@ -171,7 +172,7 @@ bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int si
 			break;
 		}
 	}
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return active;
 }
@@ -180,10 +181,11 @@ static
 struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr)
 {
 	struct lc_element *al_ext;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	al_ext = lc_try_get(device->act_log, enr);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return al_ext;
 }
@@ -192,10 +194,11 @@ static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 {
 	struct lc_element *al_ext;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	al_ext = lc_get(device->act_log, enr);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return al_ext;
 }
@@ -302,6 +305,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	unsigned extent_nr;
 	unsigned crc = 0;
 	int err = 0;
+	unsigned long irq_flags;
 	ktime_var_for_accounting(start_kt);
 
 	memset(buffer, 0, sizeof(*buffer));
@@ -316,7 +320,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	 * once we set the LC_LOCKED -- from drbd_al_begin_io(),
 	 * lc_try_lock_for_transaction() --, someone may still
 	 * be in the process of changing it. */
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	list_for_each_entry(e, &device->act_log->to_be_changed, list) {
 		if (i == AL_UPDATES_PER_TRANSACTION) {
 			i++;
@@ -333,7 +337,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 		}
 		i++;
 	}
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 	BUG_ON(i > AL_UPDATES_PER_TRANSACTION);
 
 	buffer->n_updates = cpu_to_be16(i);
@@ -430,10 +434,11 @@ static int al_write_transaction(struct drbd_device *device)
 bool drbd_al_try_lock(struct drbd_device *device)
 {
 	bool locked;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	locked = lc_try_lock(device->act_log);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return locked;
 }
@@ -441,10 +446,11 @@ bool drbd_al_try_lock(struct drbd_device *device)
 bool drbd_al_try_lock_for_transaction(struct drbd_device *device)
 {
 	bool locked;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	locked = lc_try_lock_for_transaction(device->act_log);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return locked;
 }
@@ -468,6 +474,7 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 		 * while we were waiting for the lock. */
 		if (device->act_log->pending_changes) {
 			bool write_al_updates;
+			unsigned long irq_flags;
 
 			rcu_read_lock();
 			write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
@@ -475,13 +482,13 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 
 			if (write_al_updates)
 				al_write_transaction(device);
-			spin_lock_irq(&device->al_lock);
+			spin_lock_irqsave(&device->al_lock, irq_flags);
 			/* FIXME
 			if (err)
 				we need an "lc_cancel" here;
 			*/
 			lc_committed(device->act_log);
-			spin_unlock_irq(&device->al_lock);
+			spin_unlock_irqrestore(&device->al_lock, irq_flags);
 		}
 		lc_unlock(device->act_log);
 		wake_up(&device->al_wait);
@@ -634,12 +641,13 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 static int _try_lc_del(struct drbd_device *device, struct lc_element *al_ext)
 {
 	int rv;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	rv = (al_ext->refcnt == 0);
 	if (likely(rv))
 		lc_del(device->act_log, al_ext);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	return rv;
 }
@@ -676,15 +684,16 @@ int drbd_al_initialize(struct drbd_device *device, void *buffer)
 	struct drbd_md *md = &device->ldev->md;
 	int al_size_4k = md->al_stripes * md->al_stripe_size_4k;
 	int i;
+	unsigned long irq_flags;
 
 	if (drbd_md_dax_active(device->ldev))
 		return drbd_dax_al_initialize(device);
 
 	__al_write_transaction(device, al);
 	/* There may or may not have been a pending transaction. */
-	spin_lock_irq(&device->al_lock);
+	spin_lock_irqsave(&device->al_lock, irq_flags);
 	lc_committed(device->act_log);
-	spin_unlock_irq(&device->al_lock);
+	spin_unlock_irqrestore(&device->al_lock, irq_flags);
 
 	/* The rest of the transactions will have an empty "updates" list, and
 	 * are written out only to provide the context, and to initialize the

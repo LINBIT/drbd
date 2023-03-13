@@ -208,14 +208,15 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 		struct drbd_request *req;
 		int n = atomic_read(&device->ap_actlog_cnt);
 		if (n) {
-			spin_lock_irq(&device->pending_completion_lock);
+			unsigned long irq_flags;
+			spin_lock_irqsave(&device->pending_completion_lock, irq_flags);
 			req = list_first_entry_or_null(&device->pending_master_completion[1],
 				struct drbd_request, req_pending_master_completion);
 			/* if the oldest request does not wait for the activity log
 			 * it is not interesting for us here */
 			if (req && (req->local_rq_state & RQ_IN_ACT_LOG))
 				req = NULL;
-			spin_unlock_irq(&device->pending_completion_lock);
+			spin_unlock_irqrestore(&device->pending_completion_lock, irq_flags);
 		}
 		if (n) {
 			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
@@ -239,7 +240,8 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 	unsigned long start_jif;
 	unsigned int in_flight;
 	unsigned int flags;
-	spin_lock_irq(&device->pending_bmio_lock);
+	unsigned long irq_flags;
+	spin_lock_irqsave(&device->pending_bmio_lock, irq_flags);
 	ctx = list_first_entry_or_null(&device->pending_bitmap_io, struct drbd_bm_aio_ctx, list);
 	if (ctx && ctx->done)
 		ctx = NULL;
@@ -248,7 +250,7 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 		in_flight = atomic_read(&ctx->in_flight);
 		flags = ctx->flags;
 	}
-	spin_unlock_irq(&device->pending_bmio_lock);
+	spin_unlock_irqrestore(&device->pending_bmio_lock, irq_flags);
 	if (ctx) {
 		seq_printf(m, "%u\t%u\t%c\t%u\t%u\n",
 			device->minor, device->vnr,
@@ -376,9 +378,10 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 {
 	struct drbd_peer_device *peer_device;
 	int i;
+	unsigned long irq_flags;
 
 	seq_printf(m, "list\t\tminor\tvnr\tsector\tsize\ttype\t\tage\tflags\n");
-	spin_lock_irq(&connection->peer_reqs_lock);
+	spin_lock_irqsave(&connection->peer_reqs_lock, irq_flags);
 	seq_print_peer_request_w(m, connection, &connection->done_ee, "done\t", jif);
 	seq_print_peer_request_w(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
 	seq_print_peer_request_w(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
@@ -388,7 +391,7 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
 		seq_print_peer_request(m, connection, &peer_device->resync_requests,
 				"resync_requests", jif);
-	spin_unlock_irq(&connection->peer_reqs_lock);
+	spin_unlock_irqrestore(&connection->peer_reqs_lock, irq_flags);
 }
 
 static void seq_print_device_peer_flushes(struct seq_file *m,
@@ -441,6 +444,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		struct drbd_peer_device *peer_device;
 		unsigned int tmp = 0;
 		unsigned int s;
+		unsigned long irq_flags;
 
 		/* don't disable preemption "forever" */
 		if ((count & 0x1ff) == 0x1ff) {
@@ -462,7 +466,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		}
 		++count;
 
-		spin_lock_irq(&req->rq_lock);
+		spin_lock_irqsave(&req->rq_lock, irq_flags);
 		s = req->local_rq_state;
 
 		/* This is meant to summarize timing issues, to be able to tell
@@ -485,7 +489,7 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 					tmp |= 16;
 			}
 		}
-		spin_unlock_irq(&req->rq_lock);
+		spin_unlock_irqrestore(&req->rq_lock, irq_flags);
 
 		if ((tmp & show_state) == tmp)
 			continue;
@@ -563,13 +567,14 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 	struct twopc_reply twopc;
 	bool active = false;
 	unsigned long jif;
+	unsigned long irq_flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, irq_flags);
 	if (resource->remote_state_change) {
 		twopc = resource->twopc_reply;
 		active = true;
 	}
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 
 	seq_printf(m, "v: %u\n\n", 1);
 	if (active) {
@@ -955,12 +960,13 @@ static void pid_show(struct seq_file *m, struct drbd_thread *thi)
 {
 	struct task_struct *task = NULL;
 	pid_t pid;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&thi->t_lock);
+	spin_lock_irqsave(&thi->t_lock, irq_flags);
 	task = thi->task;
 	if (task)
 		pid = task->pid;
-	spin_unlock_irq(&thi->t_lock);
+	spin_unlock_irqrestore(&thi->t_lock, irq_flags);
 	if (task)
 		seq_printf(m, "%d\n", pid);
 }
@@ -1113,12 +1119,13 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 	unsigned long jif = jiffies;
 	struct drbd_request *r1, *r2;
 	int i;
+	unsigned long irq_flags;
 
 	/* BUMP me if you change the file format/content/presentation */
 	seq_printf(m, "v: %u\n\n", 0);
 
 	seq_puts(m, RQ_HDR);
-	spin_lock_irq(&device->pending_completion_lock);
+	spin_lock_irqsave(&device->pending_completion_lock, irq_flags);
 	/* WRITE, then READ */
 	for (i = 1; i >= 0; --i) {
 		r1 = list_first_entry_or_null(&device->pending_master_completion[i],
@@ -1130,7 +1137,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 		if (r2 && r2 != r1)
 			seq_print_one_request(m, r2, now, jif);
 	}
-	spin_unlock_irq(&device->pending_completion_lock);
+	spin_unlock_irqrestore(&device->pending_completion_lock, irq_flags);
 	return 0;
 }
 
@@ -1187,14 +1194,15 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 static int device_interval_tree_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&device->interval_lock);
+	spin_lock_irqsave(&device->interval_lock, irq_flags);
 	seq_puts(m, "Write requests:\n");
 	seq_printf_interval_tree(m, &device->requests);
 	seq_putc(m, '\n');
 	seq_puts(m, "Read requests:\n");
 	seq_printf_interval_tree(m, &device->read_requests);
-	spin_unlock_irq(&device->interval_lock);
+	spin_unlock_irqrestore(&device->interval_lock, irq_flags);
 
 	return 0;
 }
@@ -1204,13 +1212,14 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 	struct drbd_device *device = m->private;
 	struct drbd_md *md;
 	int node_id, i = 0;
+	unsigned long irq_flags;
 
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
 
 	md = &device->ldev->md;
 
-	spin_lock_irq(&md->uuid_lock);
+	spin_lock_irqsave(&md->uuid_lock, irq_flags);
 	seq_printf(m, "0x%016llX\n", drbd_current_uuid(device));
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -1223,7 +1232,7 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 
 	for (i = 0; i < HISTORY_UUIDS; i++)
 		seq_printf(m, "0x%016llX\n", drbd_history_uuid(device, i));
-	spin_unlock_irq(&md->uuid_lock);
+	spin_unlock_irqrestore(&md->uuid_lock, irq_flags);
 	put_ldev(device);
 	return 0;
 }
