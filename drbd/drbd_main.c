@@ -3696,6 +3696,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->q_limits.alignment_offset = 0;
 	peer_device->q_limits.io_min = SECTOR_SIZE;
 	peer_device->q_limits.io_opt = PAGE_SIZE;
+	peer_device->q_limits.max_bio_size = DRBD_MAX_BIO_SIZE;
 
 	return peer_device;
 }

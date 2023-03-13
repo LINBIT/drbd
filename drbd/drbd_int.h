@@ -1183,7 +1183,6 @@ struct drbd_peer_device {
 	atomic_t packet_seq;
 	unsigned int peer_seq;
 	spinlock_t peer_seq_lock;
-	unsigned int max_bio_size;
 	uint64_t d_size;  /* size of disk */
 	uint64_t u_size;  /* user requested size */
 	uint64_t c_size;  /* current exported size */
@@ -1295,6 +1294,7 @@ struct drbd_peer_device {
 		unsigned int	alignment_offset;
 		unsigned int	io_min;
 		unsigned int	io_opt;
+		unsigned int	max_bio_size;
 	} q_limits;
 };
 
