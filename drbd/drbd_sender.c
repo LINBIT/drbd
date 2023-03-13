@@ -190,7 +190,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		/* In protocol != C, we usually do not send write acks.
 		 * In case of a write error, send the neg ack anyways.
 		 * This only applies to to application writes, not to resync. */
-		if (block_id != ID_SYNCER) {
+		if (peer_req->i.type == INTERVAL_PEER_WRITE) {
 			if (!__test_and_set_bit(__EE_SEND_WRITE_ACK, &peer_req->flags))
 				inc_unacked(peer_device);
 		}
@@ -213,7 +213,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	 * cleanup functions if the connection is lost.
 	 */
 
-	if (block_id == ID_SYNCER)
+	if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
 		do_wake = list_empty(&connection->sync_ee);
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
@@ -463,7 +463,7 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 			cmd = peer_req->flags & EE_RS_THIN_REQ ? P_RS_THIN_REQ : P_RS_DATA_REQUEST;
 
 		err = drbd_send_rs_request(peer_device, cmd,
-				peer_req->i.sector, peer_req->i.size,
+				peer_req->i.sector, peer_req->i.size, peer_req->block_id,
 				dagtag_result.node_id, dagtag_result.dagtag);
 	}
 	if (err)
@@ -632,7 +632,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	/* This will be a resync write once we receive the data back from the
 	 * peer, assuming the checksums differ. */
 	peer_req->i.type = INTERVAL_RESYNC_WRITE;
-	peer_req->block_id = ID_SYNCER; /* unused */
 	peer_req->requested_size = size;
 
 	peer_req->w.cb = w_e_send_csum;
@@ -1349,7 +1348,7 @@ static void send_ov_request(struct drbd_peer_request *peer_req)
 	inc_rs_pending(peer_device);
 
 	if (drbd_send_rs_request(peer_device, cmd,
-				peer_req->i.sector, peer_req->i.size,
+				peer_req->i.sector, peer_req->i.size, peer_req->block_id,
 				dagtag_result.node_id, dagtag_result.dagtag))
 		goto out;
 
@@ -2045,7 +2044,6 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 
 		peer_req->flags &= ~EE_HAS_DIGEST; /* This peer request no longer has a digest pointer */
 		kfree(di);
-		peer_req->block_id = ID_SYNCER; /* By setting block_id, digest pointer becomes invalid! */
 	}
 
 	if (eq) {
@@ -2222,7 +2220,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 		} else {
 			drbd_verify_skipped_block(peer_device, sector, size);
 			verify_progress(peer_device, sector, size);
-			drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, ID_SYNCER);
+			drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 			goto out;
 		}
 	}
@@ -2266,7 +2264,6 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 		goto out_rs_pending;
 
 	dec_unacked(peer_device);
-	drbd_remove_peer_req_interval(peer_req);
 	return 0;
 
 out_rs_pending:
@@ -2343,7 +2340,8 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	struct drbd_connection *connection = peer_device->connection;
 	sector_t sector = peer_req->i.sector;
 	unsigned int size = peer_req->i.size;
-	u64 block_id;
+	u64 block_id = peer_req->block_id;
+	enum ov_result result;
 	bool al_conflict = false;
 	int err;
 
@@ -2374,15 +2372,15 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 
 	if (test_bit(INTERVAL_CONFLICT, &peer_req->i.flags) || al_conflict) {
 		/* DRBD versions without DRBD_FF_RESYNC_DAGTAG do not know about
-		 * ID_SKIP, but they treat it the same as ID_IN_SYNC which is
+		 * OV_RESULT_SKIP, but they treat it the same as OV_RESULT_IN_SYNC which is
 		 * the best we can do here anyway. */
-		block_id = ID_SKIP;
+		result = OV_RESULT_SKIP;
 		drbd_verify_skipped_block(peer_device, sector, size);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0) && digest_equal(peer_req)) {
-		block_id = ID_IN_SYNC;
+		result = OV_RESULT_IN_SYNC;
 		ov_out_of_sync_print(peer_device);
 	} else {
-		block_id = ID_OUT_OF_SYNC;
+		result = OV_RESULT_OUT_OF_SYNC;
 		drbd_ov_out_of_sync_found(peer_device, sector, size);
 	}
 
@@ -2395,7 +2393,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 	drbd_free_peer_req(peer_req);
 	peer_req = NULL;
 
-	err = drbd_send_ack_ex(peer_device, P_OV_RESULT, sector, size, block_id);
+	err = drbd_send_ov_result(peer_device, sector, size, block_id, result);
 
 	dec_unacked(peer_device);
 

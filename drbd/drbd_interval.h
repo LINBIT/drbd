@@ -20,6 +20,8 @@ enum drbd_interval_type {
 	INTERVAL_PEERS_IN_SYNC_LOCK,
 };
 
+#define INTERVAL_TYPE_MASK(type) (1 << (type))
+
 enum drbd_interval_flags {
 	/*
 	 * Whether this peer request has been sent yet. For resync writes, the

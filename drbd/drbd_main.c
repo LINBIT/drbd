@@ -2058,15 +2058,28 @@ int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_d
 int drbd_send_rs_deallocated(struct drbd_peer_device *peer_device,
 			     struct drbd_peer_request *peer_req)
 {
-	struct p_block_desc *p;
+	struct p_block_ack *p_id;
 
-	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
-	if (!p)
+	if (peer_device->connection->agreed_pro_version < 122) {
+		struct p_block_desc *p;
+
+		p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+		if (!p)
+			return -EIO;
+		p->sector = cpu_to_be64(peer_req->i.sector);
+		p->blksize = cpu_to_be32(peer_req->i.size);
+		p->pad = 0;
+		return drbd_send_command(peer_device, P_RS_DEALLOCATED, DATA_STREAM);
+	}
+
+	p_id = drbd_prepare_command(peer_device, sizeof(*p_id), DATA_STREAM);
+	if (!p_id)
 		return -EIO;
-	p->sector = cpu_to_be64(peer_req->i.sector);
-	p->blksize = cpu_to_be32(peer_req->i.size);
-	p->pad = 0;
-	return drbd_send_command(peer_device, P_RS_DEALLOCATED, DATA_STREAM);
+	p_id->sector = cpu_to_be64(peer_req->i.sector);
+	p_id->blksize = cpu_to_be32(peer_req->i.size);
+	p_id->block_id = peer_req->block_id;
+	p_id->seq_num = 0;
+	return drbd_send_command(peer_device, P_RS_DEALLOCATED_ID, DATA_STREAM);
 }
 
 int drbd_send_drequest(struct drbd_peer_device *peer_device,
@@ -2085,7 +2098,7 @@ int drbd_send_drequest(struct drbd_peer_device *peer_device,
 }
 
 static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd_packet cmd, int payload_size,
-		sector_t sector, int blksize, unsigned int dagtag_node_id, u64 dagtag)
+		sector_t sector, int blksize, u64 block_id, unsigned int dagtag_node_id, u64 dagtag)
 {
 	void *payload;
 	struct p_block_req_common *req_common;
@@ -2117,16 +2130,18 @@ static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd
 	}
 
 	req_common->sector = cpu_to_be64(sector);
-	req_common->block_id = ID_SYNCER;
+	req_common->block_id = block_id;
 	req_common->blksize = cpu_to_be32(blksize);
 
 	return payload;
 }
 
 int drbd_send_rs_request(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
-		       sector_t sector, int size, unsigned int dagtag_node_id, u64 dagtag)
+		       sector_t sector, int size, u64 block_id,
+		       unsigned int dagtag_node_id, u64 dagtag)
 {
-	if (!drbd_prepare_rs_req(peer_device, cmd, 0, sector, size, dagtag_node_id, dagtag))
+	if (!drbd_prepare_rs_req(peer_device, cmd, 0,
+				sector, size, block_id, dagtag_node_id, dagtag))
 		return -EIO;
 	return drbd_send_command(peer_device, cmd, DATA_STREAM);
 }
@@ -2136,7 +2151,8 @@ void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_p
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	return drbd_prepare_rs_req(peer_device, cmd, digest_size,
-			peer_req->i.sector, peer_req->i.size, dagtag_node_id, dagtag);
+			peer_req->i.sector, peer_req->i.size, peer_req->block_id,
+			dagtag_node_id, dagtag);
 }
 
 /* The idea of sendpage seems to be to put some kind of reference
@@ -2425,6 +2441,11 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	p->block_id = peer_req->block_id;
 	p->seq_num = 0;  /* unused */
 	p->dp_flags = 0;
+
+	/* Older peers expect block_id for P_RS_DATA_REPLY to be ID_SYNCER. */
+	if (peer_device->connection->agreed_pro_version < 122 && cmd == P_RS_DATA_REPLY)
+		p->block_id = ID_SYNCER;
+
 	if (digest_size)
 		drbd_csum_pages(peer_device->connection->integrity_tfm, peer_req->page_chain.head, p + 1);
 	additional_size_command(peer_device->connection, DATA_STREAM, peer_req->i.size);

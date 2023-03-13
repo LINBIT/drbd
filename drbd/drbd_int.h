@@ -72,10 +72,35 @@ enum {
  */
 #define DRBD_SIGKILL SIGHUP
 
+/* For compatibility with protocol < 122 */
 #define ID_SKIP         (4710ULL)
 #define ID_IN_SYNC      (4711ULL)
 #define ID_OUT_OF_SYNC  (4712ULL)
 #define ID_SYNCER (-1ULL)
+
+static inline enum ov_result drbd_block_id_to_ov_result(u64 block_id)
+{
+	switch (block_id) {
+	case ID_IN_SYNC:
+		return OV_RESULT_IN_SYNC;
+	case ID_OUT_OF_SYNC:
+		return OV_RESULT_OUT_OF_SYNC;
+	default:
+		return OV_RESULT_SKIP;
+	}
+}
+
+static inline u64 drbd_ov_result_to_block_id(enum ov_result result)
+{
+	switch (result) {
+	case OV_RESULT_IN_SYNC:
+		return ID_IN_SYNC;
+	case OV_RESULT_OUT_OF_SYNC:
+		return ID_OUT_OF_SYNC;
+	default:
+		return ID_SKIP;
+	}
+}
 
 #define UUID_NEW_BM_OFFSET ((u64)0x0001000000000000ULL)
 
@@ -430,10 +455,8 @@ struct drbd_peer_request {
 		struct { /* regular peer_request */
 			struct drbd_epoch *epoch; /* for writes */
 			unsigned long submit_jif;
-			union {
-				u64 block_id;
-				struct digest_info *digest;
-			};
+			u64 block_id;
+			struct digest_info *digest;
 			u64 dagtag_sector;
 
 		};
@@ -1645,7 +1668,8 @@ extern int drbd_send_dblock(struct drbd_peer_device *, struct drbd_request *req)
 extern int drbd_send_drequest(struct drbd_peer_device *,
 			      sector_t sector, int size, u64 block_id);
 extern int drbd_send_rs_request(struct drbd_peer_device *, enum drbd_packet cmd,
-			      sector_t sector, int size, unsigned int dagtag_node_id, u64 dagtag);
+			      sector_t sector, int size, u64 block_id,
+			      unsigned int dagtag_node_id, u64 dagtag);
 extern void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_packet cmd,
 		int digest_size, unsigned int dagtag_node_id, u64 dagtag);
 
@@ -2116,8 +2140,8 @@ extern int drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_pack
 		      sector_t sector, int size, u64 block_id);
 extern int drbd_send_ack(struct drbd_peer_device *, enum drbd_packet,
 			 struct drbd_peer_request *);
-extern int drbd_send_ack_ex(struct drbd_peer_device *, enum drbd_packet,
-			    sector_t sector, int blksize, u64 block_id);
+extern int drbd_send_ov_result(struct drbd_peer_device *peer_device, sector_t sector, int blksize,
+		u64 block_id, enum ov_result result);
 extern int drbd_receiver(struct drbd_thread *thi);
 extern void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed);
 extern void drbd_send_ping_wf(struct work_struct *ws);
