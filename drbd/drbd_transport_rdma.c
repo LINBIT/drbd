@@ -1137,7 +1137,7 @@ static void dtr_remove_cm_from_path(struct dtr_path *path, struct dtr_cm *failed
 	struct dtr_cm *cm;
 
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
-	if (cm == failed_cm) {
+	if (cm == failed_cm && cm->id && cm->id->qp) {
 		struct drbd_transport *transport = &path->rdma_transport->transport;
 		struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 		int err;
