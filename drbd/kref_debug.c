@@ -100,8 +100,9 @@ void print_kref_debug_info(struct seq_file *seq)
 {
 	struct kref_debug_info *debug_info;
 	int i;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&kref_debug_lock);
+	spin_lock_irqsave(&kref_debug_lock, irq_flags);
 	list_for_each_entry(debug_info, &kref_debug_objects, objects) {
 		int debug_refs, refs;
 		char obj_name[80];
@@ -122,6 +123,6 @@ void print_kref_debug_info(struct seq_file *seq)
 		}
 		seq_putc(seq, '\n');
 	}
-	spin_unlock_irq(&kref_debug_lock);
+	spin_unlock_irqrestore(&kref_debug_lock, irq_flags);
 }
 

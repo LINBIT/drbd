@@ -845,6 +845,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	void *bm_on_pmem = NULL;
 	int err = 0;
 	bool growing;
+	unsigned long irq_flags;
 
 	if (!expect(device, b))
 		return -ENOMEM;
@@ -860,7 +861,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	if (capacity == 0) {
 		unsigned int bitmap_index;
 
-		spin_lock_irq(&b->bm_lock);
+		spin_lock_irqsave(&b->bm_lock, irq_flags);
 		opages = b->bm_pages;
 		onpages = b->bm_number_of_pages;
 		b->bm_pages = NULL;
@@ -870,7 +871,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		b->bm_bits = 0;
 		b->bm_words = 0;
 		b->bm_dev_capacity = 0;
-		spin_unlock_irq(&b->bm_lock);
+		spin_unlock_irqrestore(&b->bm_lock, irq_flags);
 		if (!(b->bm_flags & BM_ON_DAX_PMEM)) {
 			bm_free_pages(opages, onpages);
 			kvfree(opages);
@@ -912,7 +913,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		}
 	}
 
-	spin_lock_irq(&b->bm_lock);
+	spin_lock_irqsave(&b->bm_lock, irq_flags);
 	obits  = b->bm_bits;
 
 	growing = bits > obits;
@@ -961,7 +962,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		bm_free_pages(opages + want, have - want);
 	}
 
-	spin_unlock_irq(&b->bm_lock);
+	spin_unlock_irqrestore(&b->bm_lock, irq_flags);
 	if (opages != npages)
 		kvfree(opages);
 	if (!growing)
@@ -1230,6 +1231,7 @@ static int bm_rw_range(struct drbd_device *device,
 	unsigned int i, count = 0;
 	unsigned long now;
 	int err = 0;
+	unsigned long irq_flags;
 
 	if (b->bm_flags & BM_ON_DAX_PMEM) {
 		if (flags & (BM_AIO_WRITE_HINTED | BM_AIO_WRITE_ALL_PAGES | BM_AIO_WRITE_LAZY))
@@ -1279,9 +1281,9 @@ static int bm_rw_range(struct drbd_device *device,
 	if (end_page >= b->bm_number_of_pages)
 		end_page = b->bm_number_of_pages -1;
 
-	spin_lock_irq(&device->pending_bmio_lock);
+	spin_lock_irqsave(&device->pending_bmio_lock, irq_flags);
 	list_add_tail(&ctx->list, &device->pending_bitmap_io);
-	spin_unlock_irq(&device->pending_bmio_lock);
+	spin_unlock_irqrestore(&device->pending_bmio_lock, irq_flags);
 
 	now = jiffies;
 
@@ -1524,8 +1526,9 @@ __bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigne
 {
 	struct drbd_bitmap *bitmap = device->bitmap;
 	unsigned long bit = start;
+	unsigned long irq_flags;
 
-	spin_lock_irq(&bitmap->bm_lock);
+	spin_lock_irqsave(&bitmap->bm_lock, irq_flags);
 
 	if (end >= bitmap->bm_bits)
 		end = bitmap->bm_bits - 1;
@@ -1538,12 +1541,12 @@ __bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigne
 
 		__bm_op(device, bitmap_index, bit, last_bit, op, NULL);
 		bit = last_bit + 1;
-		spin_unlock_irq(&bitmap->bm_lock);
+		spin_unlock_irqrestore(&bitmap->bm_lock, irq_flags);
 		if (need_resched())
 			cond_resched();
-		spin_lock_irq(&bitmap->bm_lock);
+		spin_lock_irqsave(&bitmap->bm_lock, irq_flags);
 	}
-	spin_unlock_irq(&bitmap->bm_lock);
+	spin_unlock_irqrestore(&bitmap->bm_lock, irq_flags);
 }
 
 void drbd_bm_set_many_bits(struct drbd_peer_device *peer_device, unsigned long start, unsigned long end)
@@ -1633,9 +1636,10 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 	unsigned long word_nr, from_word_nr, to_word_nr, words32_total;
 	unsigned int from_page_nr, to_page_nr, current_page_nr;
 	u32 data_word, *addr;
+	unsigned long irq_flags;
 
 	words32_total = bitmap->bm_words * sizeof(unsigned long) / sizeof(u32);
-	spin_lock_irq(&bitmap->bm_lock);
+	spin_lock_irqsave(&bitmap->bm_lock, irq_flags);
 
 	bitmap->bm_set[to_index] = 0;
 	current_page_nr = 0;
@@ -1648,10 +1652,10 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 
 		if (current_page_nr != from_page_nr) {
 			bm_unmap(bitmap, addr);
-			spin_unlock_irq(&bitmap->bm_lock);
+			spin_unlock_irqrestore(&bitmap->bm_lock, irq_flags);
 			if (need_resched())
 				cond_resched();
-			spin_lock_irq(&bitmap->bm_lock);
+			spin_lock_irqsave(&bitmap->bm_lock, irq_flags);
 			current_page_nr = from_page_nr;
 			addr = bm_map(bitmap, current_page_nr);
 		}
@@ -1670,5 +1674,5 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 	}
 	bm_unmap(bitmap, addr);
 
-	spin_unlock_irq(&bitmap->bm_lock);
+	spin_unlock_irqrestore(&bitmap->bm_lock, irq_flags);
 }

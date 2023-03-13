@@ -321,10 +321,11 @@ static inline void req_mod(struct drbd_request *req,
 {
 	struct drbd_device *device = req->device;
 	struct bio_and_error m;
+	unsigned long irq_flags;
 
-	read_lock_irq(&device->resource->state_rwlock);
+	read_lock_irqsave(&device->resource->state_rwlock, irq_flags);
 	__req_mod(req, what, peer_device, &m);
-	read_unlock_irq(&device->resource->state_rwlock);
+	read_unlock_irqrestore(&device->resource->state_rwlock, irq_flags);
 
 	if (m.bio)
 		complete_master_bio(device, &m);

@@ -599,12 +599,13 @@ static struct dtt_path *dtt_wait_connect_cond(struct drbd_transport *transport)
 
 	spin_lock(&tcp_transport->paths_lock);
 	list_for_each_entry(drbd_path, &transport->paths, list) {
+		unsigned long irq_flags;
 		path = container_of(drbd_path, struct dtt_path, path);
 		listener = drbd_path->listener;
 
-		spin_lock_bh(&listener->waiters_lock);
+		spin_lock_irqsave(&listener->waiters_lock, irq_flags);
 		rv = listener->pending_accepts > 0 || !list_empty(&path->sockets);
-		spin_unlock_bh(&listener->waiters_lock);
+		spin_unlock_irqrestore(&listener->waiters_lock, irq_flags);
 
 		if (rv)
 			break;
@@ -635,6 +636,7 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 	struct drbd_path *drbd_path2;
 	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
 	struct dtt_path *path = NULL;
+	unsigned long irq_flags;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -655,7 +657,7 @@ retry:
 	if (timeo <= 0)
 		return -EAGAIN;
 
-	spin_lock_bh(&listener->listener.waiters_lock);
+	spin_lock_irqsave(&listener->listener.waiters_lock, irq_flags);
 	socket_c = list_first_entry_or_null(&path->sockets, struct dtt_socket_container, list);
 	if (socket_c) {
 		s_estab = socket_c->socket;
@@ -663,7 +665,7 @@ retry:
 		kfree(socket_c);
 	} else if (listener->listener.pending_accepts > 0) {
 		listener->listener.pending_accepts--;
-		spin_unlock_bh(&listener->listener.waiters_lock);
+		spin_unlock_irqrestore(&listener->listener.waiters_lock, irq_flags);
 
 		s_estab = NULL;
 		err = kernel_accept(listener->s_listen, &s_estab, O_NONBLOCK);
@@ -676,7 +678,7 @@ retry:
 
 		s_estab->ops->getname(s_estab, (struct sockaddr *)&peer_addr, 2);
 
-		spin_lock_bh(&listener->listener.waiters_lock);
+		spin_lock_irqsave(&listener->listener.waiters_lock, irq_flags);
 		drbd_path2 = drbd_find_path_by_addr(&listener->listener, &peer_addr);
 		if (!drbd_path2) {
 			struct sockaddr_in6 *from_sin6;
@@ -717,13 +719,13 @@ retry:
 		if (s_estab->sk->sk_state != TCP_ESTABLISHED)
 			goto retry_locked;
 	}
-	spin_unlock_bh(&listener->listener.waiters_lock);
+	spin_unlock_irqrestore(&listener->listener.waiters_lock, irq_flags);
 	*socket = s_estab;
 	*ret_path = path;
 	return 0;
 
 retry_locked:
-	spin_unlock_bh(&listener->listener.waiters_lock);
+	spin_unlock_irqrestore(&listener->listener.waiters_lock, irq_flags);
 	if (s_estab) {
 		kernel_sock_shutdown(s_estab, SHUT_RDWR);
 		sock_release(s_estab);
