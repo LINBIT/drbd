@@ -295,6 +295,7 @@ struct dtr_cm {
 	struct work_struct disconnect_work;
 
 	struct list_head error_rx_descs;
+	spinlock_t error_rx_descs_lock;
 	struct work_struct end_rx_work;
 	struct work_struct end_tx_work;
 
@@ -988,6 +989,7 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
 	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
+	spin_lock_init(&cm->error_rx_descs_lock);
 	timer_setup(&cm->tx_timeout, dtr_tx_timeout_fn, 0);
 
 	kref_get(&path->path.kref);
@@ -1704,6 +1706,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
 		struct drbd_transport *transport = &rdma_transport->transport;
+		unsigned long irq_flags;
 
 		switch (wc.status) {
 		case IB_WC_WR_FLUSH_ERR:
@@ -1733,7 +1736,9 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		   should not be called from IRQ context. This callback executes
 		   in the context of the timer interrupt.
 		 */
+		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
 		list_add_tail(&rx_desc->list, &cm->error_rx_descs);
+		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
 		dtr_dec_rx_descs(cm);
 		set_bit(DSB_ERROR, &cm->state);
 
@@ -1782,14 +1787,18 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 	int err, rc;
 
 	do {
+		unsigned long irq_flags;
 		do {
 			err = dtr_handle_rx_cq_event(cq, cm);
 		} while (!err);
 
+		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
 		if (!list_empty(&cm->error_rx_descs)) {
-			schedule_work(&cm->end_rx_work);
-			break;
+			kref_get(&cm->kref);
+			if (!schedule_work(&cm->end_rx_work))
+				kref_put(&cm->kref, dtr_destroy_cm);
 		}
+		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
 
 		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 		if (unlikely(rc < 0)) {
@@ -2577,9 +2586,15 @@ static void dtr_end_rx_work_fn(struct work_struct *work)
 {
 	struct dtr_cm *cm = container_of(work, struct dtr_cm, end_rx_work);
 	struct dtr_rx_desc *rx_desc, *tmp;
+	unsigned long irq_flags;
+	LIST_HEAD(rx_descs);
 
-	list_for_each_entry_safe(rx_desc, tmp, &cm->error_rx_descs, list)
+	spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
+	list_splice_init(&cm->error_rx_descs, &rx_descs);
+	spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+	list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
 		dtr_free_rx_desc(rx_desc);
+	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void dtr_end_tx_work_fn(struct work_struct *work)
