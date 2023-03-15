@@ -1786,7 +1786,10 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
 		if (!list_empty(&cm->error_rx_descs)) {
-			schedule_work(&cm->end_rx_work);
+			kref_get(&cm->kref);
+			if (!schedule_work(&cm->end_rx_work)) {
+				kref_put(&cm->kref, dtr_destroy_cm);
+			}
 			error_rx_descs_empty = false;
 		}
 		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
@@ -2587,6 +2590,7 @@ static void dtr_end_rx_work_fn(struct work_struct *work)
 		dtr_free_rx_desc(rx_desc);
 	}
 	spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void dtr_end_tx_work_fn(struct work_struct *work)
