@@ -2534,46 +2534,6 @@ static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
 	drbd_check_peers_in_sync_progress(peer_device);
 }
 
-static bool drbd_peer_request_is_merged(struct drbd_peer_request *peer_req,
-		sector_t main_sector, sector_t main_sector_end)
-{
-	/*
-	 * We do not send overlapping resync requests. So any request which is
-	 * in the corresponding range and for which we have received a reply
-	 * must be a merged request. EE_TRIM implies that we have received a
-	 * reply.
-	 */
-	return peer_req->i.sector >= main_sector &&
-		peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= main_sector_end &&
-			(peer_req->flags & EE_TRIM);
-}
-
-static int drbd_send_ack_range(struct drbd_peer_device *peer_device,
-		struct drbd_peer_request *peer_req_main)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_peer_request *peer_req = peer_req_main;
-	sector_t main_sector = peer_req_main->i.sector;
-	sector_t main_sector_end = main_sector + (peer_req_main->i.size >> SECTOR_SHIFT);
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
-		if (!drbd_peer_request_is_merged(peer_req, main_sector, main_sector_end))
-			break;
-
-		list_del_init(&peer_req->w.list);
-		/*
-		 * This peer request will be freed at the earliest when
-		 * drbd_resync_request_complete() is called for the main
-		 * request.
-		 */
-		set_bit(INTERVAL_COMPLETED, &peer_req->i.flags);
-	}
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	return drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req_main);
-}
-
 /*
  * e_end_resync_block() is called in ack_sender context via
  * drbd_finish_peer_reqs().
@@ -2584,29 +2544,29 @@ static int e_end_resync_block(struct drbd_work *w, int unused)
 		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	sector_t sector = peer_req->i.sector;
-	unsigned int size = peer_req->i.size;
+	unsigned int size = peer_req->requested_size;
+	u64 block_id = peer_req->block_id;
 	int err;
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		drbd_set_in_sync(peer_device, sector, size);
-		if (peer_req->flags & EE_TRIM)
-			err = drbd_send_ack_range(peer_device, peer_req);
-		else
-			err = drbd_send_ack(peer_device, P_RS_WRITE_ACK, peer_req);
+		err = drbd_send_ack_be(peer_device, P_RS_WRITE_ACK, sector, size, block_id);
 	} else {
 		/* Record failure to sync */
 		drbd_rs_failed_io(peer_device, sector, size);
 
-		err  = drbd_send_ack(peer_device, P_NEG_ACK, peer_req);
+		err = drbd_send_ack_be(peer_device, P_NEG_ACK, sector, size, block_id);
 	}
+
 	dec_unacked(peer_device);
 
 	/*
-	 * Remove the interval after sending the ack to ensure that we do not
-	 * send any additional requests in this range before we have determined
-	 * which requests we can ack.
+	 * If INTERVAL_SUBMITTED is not set, this request was merged into
+	 * another discard. It has already been removed from the interval tree.
 	 */
-	drbd_remove_peer_req_interval(peer_req);
+	if (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
+		drbd_remove_peer_req_interval(peer_req);
+
 	drbd_resync_request_complete(peer_req);
 	return err;
 }
@@ -8838,6 +8798,7 @@ static struct drbd_peer_request *drbd_advance_to_next_rs_discard(
 				&peer_device->resync_requests, recv_order) {
 			drbd_remove_interval(&device->requests, &peer_req_merged->i);
 			drbd_clear_interval(&peer_req_merged->i);
+			peer_req_merged->w.cb = e_end_resync_block;
 			if (peer_req_merged == discard_last)
 				break;
 		}
@@ -8860,8 +8821,6 @@ static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 	struct drbd_device *device = peer_device->device;
 
 	if (get_ldev(device)) {
-		inc_unacked(peer_device);
-
 		peer_req->block_id = ID_SYNCER;
 		peer_req->w.cb = e_end_resync_block;
 		peer_req->opf = REQ_OP_DISCARD;
@@ -8939,6 +8898,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		return -EIO;
 
 	dec_rs_pending(peer_device);
+	inc_unacked(peer_device);
 	atomic_add(size >> 9, &device->rs_sect_ev);
 	peer_req->flags |= EE_TRIM;
 

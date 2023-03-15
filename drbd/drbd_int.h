@@ -411,8 +411,15 @@ struct drbd_peer_request {
 	 * * Writes that are blocked on the activity log */
 	struct list_head submit_list;
 
-	unsigned int depend_dagtag_node_id;
-	u64 depend_dagtag;
+	union {
+		struct { /* read requests */
+			unsigned int depend_dagtag_node_id;
+			u64 depend_dagtag;
+		};
+		struct { /* resync target requests */
+			unsigned int requested_size;
+		};
+	};
 
 	struct drbd_page_chain_head page_chain;
 	unsigned int opf; /* to be used as bi_opf */

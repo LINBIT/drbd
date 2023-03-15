@@ -116,6 +116,40 @@ static int is_failed_barrier(int ee_flags)
 		== (EE_IS_BARRIER|EE_WAS_ERROR);
 }
 
+static bool drbd_peer_request_is_merged(struct drbd_peer_request *peer_req,
+		sector_t main_sector, sector_t main_sector_end)
+{
+	/*
+	 * We do not send overlapping resync requests. So any request which is
+	 * in the corresponding range and for which we have received a reply
+	 * must be a merged request. EE_TRIM implies that we have received a
+	 * reply.
+	 */
+	return peer_req->i.sector >= main_sector &&
+		peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= main_sector_end &&
+			(peer_req->flags & EE_TRIM);
+}
+
+static void drbd_unmerge_discard(struct drbd_peer_request *peer_req_main)
+{
+	struct drbd_peer_device *peer_device = peer_req_main->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_peer_request *peer_req = peer_req_main;
+	sector_t main_sector = peer_req_main->i.sector;
+	sector_t main_sector_end = main_sector + (peer_req_main->i.size >> SECTOR_SHIFT);
+	int merged_count = 0;
+
+	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
+		if (!drbd_peer_request_is_merged(peer_req, main_sector, main_sector_end))
+			break;
+
+		merged_count++;
+		list_move_tail(&peer_req->w.list, &connection->done_ee);
+	}
+
+	atomic_add(merged_count, &connection->done_ee_cnt);
+}
+
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver, final stage.  */
 void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(local)
@@ -168,6 +202,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	device->writ_cnt += peer_req->i.size >> 9;
 	atomic_inc(&connection->done_ee_cnt);
 	list_move_tail(&peer_req->w.list, &connection->done_ee);
+	if (peer_req->flags & EE_TRIM)
+		drbd_unmerge_discard(peer_req);
 
 	/*
 	 * Do not remove from the requests tree here: we did not send the
@@ -597,6 +633,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * peer, assuming the checksums differ. */
 	peer_req->i.type = INTERVAL_RESYNC_WRITE;
 	peer_req->block_id = ID_SYNCER; /* unused */
+	peer_req->requested_size = size;
 
 	peer_req->w.cb = w_e_send_csum;
 	peer_req->opf = REQ_OP_READ;
@@ -643,6 +680,7 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
 	peer_req->i.type = INTERVAL_RESYNC_WRITE;
+	peer_req->requested_size = size;
 
 	if (size == discard_granularity)
 		peer_req->flags |= EE_RS_THIN_REQ;
