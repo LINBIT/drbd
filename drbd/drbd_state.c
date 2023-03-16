@@ -4117,6 +4117,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		if (new_current_uuid)
 			drbd_uuid_new_current(device, false);
+
+		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)
+			drbd_reconsider_queue_parameters(device, NULL);
 	}
 
 	if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)

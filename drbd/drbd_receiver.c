@@ -8523,6 +8523,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 		rcu_read_unlock();
 
 		peer_device_disconnected(peer_device);
+		drbd_reconsider_queue_parameters(device, device->ldev);
 
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
