@@ -2009,6 +2009,9 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 	common_limits.seg_boundary_mask = PAGE_SIZE - 1;
 	common_limits.max_hw_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
 	common_limits.max_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
+	common_limits.physical_block_size = device->device_conf.block_size;
+	common_limits.logical_block_size = device->device_conf.block_size;
+	common_limits.io_min = device->device_conf.block_size;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -6230,6 +6233,12 @@ int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 	}
 	if (adm_ctx.volume > DRBD_VOLUME_MAX) {
 		drbd_msg_put_info(adm_ctx.reply_skb, "requested volume id out of range");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
+	if (device_conf.block_size != 512 && device_conf.block_size != 1024 &&
+	    device_conf.block_size != 2048 && device_conf.block_size != 4096) {
+		drbd_msg_put_info(adm_ctx.reply_skb, "block_size not 512, 1024, 2048, or 4096");
 		retcode = ERR_INVALID_REQUEST;
 		goto out;
 	}
