@@ -1171,9 +1171,8 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
-static void dtr_cma_connect_work_fn(struct work_struct *work)
+static void dtr_cma_connect_work_fn_inner(struct dtr_cm *cm)
 {
-	struct dtr_cm *cm = container_of(work, struct dtr_cm, connect_work);
 	struct dtr_path *path = cm->path;
 	struct drbd_transport *transport = &path->rdma_transport->transport;
 	enum connect_state_enum p;
@@ -1204,6 +1203,14 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 out:
 	kref_put(&cm->kref, dtr_destroy_cm);
 	dtr_cma_retry_connect(path, cm);
+}
+
+static void dtr_cma_connect_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, connect_work);
+	kref_get(&cm->kref);
+	dtr_cma_connect_work_fn_inner(cm);
+	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static void dtr_cma_disconnect_work_fn(struct work_struct *work)
