@@ -1800,7 +1800,7 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
 			break;
 		}
-		if (!error_rx_descs_empty && rc == 0) {
+		if (rc == 0) {
 			break;
 		}
 	} while (rc);
@@ -2584,12 +2584,13 @@ static void dtr_end_rx_work_fn(struct work_struct *work)
 	struct dtr_cm *cm = container_of(work, struct dtr_cm, end_rx_work);
 	struct dtr_rx_desc *rx_desc, *tmp;
 	unsigned long irq_flags;
+	LIST_HEAD(rx_descs);
 
 	spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
-	list_for_each_entry_safe(rx_desc, tmp, &cm->error_rx_descs, list) {
-		dtr_free_rx_desc(rx_desc);
-	}
+	list_splice_init(&cm->error_rx_descs, &rx_descs);
 	spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+	list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list)
+		dtr_free_rx_desc(rx_desc);
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
