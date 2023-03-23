@@ -1579,22 +1579,6 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	/* See drbd_state_sw_errors in drbd_strings.c */
 
 	if (role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY) {
-		/* SS_NO_UP_TO_DATE_DISK is not quite accurate here. We may
-		 * have an up-to-date peer. However, we cannot trust that
-		 * information. TWOPC_AFTER_LOST_PEER_PENDING is set when we
-		 * have lost our connection to a primary peer. It is possible
-		 * that the "up-to-date peer" has also lost its connection to
-		 * the primary peer, but we have not yet received the
-		 * corresponding P_STATE packet.
-		 *
-		 * So return SS_NO_UP_TO_DATE_DISK conservatively. This causes
-		 * drbd_set_role() to release state_sem and wait, which gives
-		 * try_become_up_to_date() a chance to run. That will set our
-		 * disk state appropriately depending on whether our partition
-		 * is isolated from the original primary peer. */
-		if (test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags))
-			return SS_NO_UP_TO_DATE_DISK;
-
 		for_each_connection_rcu(connection, resource) {
 			struct net_conf *nc;
 
