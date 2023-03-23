@@ -1333,6 +1333,13 @@ struct drbd_peer_device {
 		bool was_ahead;
 	} todo;
 	union drbd_state connect_state;
+	struct {
+		unsigned int	physical_block_size;
+		unsigned int	logical_block_size;
+		unsigned int	alignment_offset;
+		unsigned int	io_min;
+		unsigned int	io_opt;
+	} q_limits;
 };
 
 struct conflict_worker {
@@ -1966,7 +1973,7 @@ drbd_determine_dev_size(struct drbd_device *, sector_t peer_current_size,
 			enum dds_flags, struct resize_parms *) __must_hold(local);
 extern void resync_after_online_grow(struct drbd_peer_device *);
 extern void drbd_reconsider_queue_parameters(struct drbd_device *device,
-			struct drbd_backing_dev *bdev, struct o_qlim *o);
+			struct drbd_backing_dev *bdev);
 extern bool barrier_pending(struct drbd_resource *resource);
 extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool, struct sk_buff *);
 extern bool conn_try_outdate_peer(struct drbd_connection *connection);

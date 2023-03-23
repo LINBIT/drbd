@@ -5823,7 +5823,6 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	struct drbd_peer_device *peer_device, *peer_device_it = NULL;
 	struct drbd_device *device;
 	struct p_sizes *p = pi->data;
-	struct o_qlim *o = (connection->agreed_features & DRBD_FF_WSAME) ? p->qlim : NULL;
 	uint64_t p_size, p_usize, p_csize;
 	uint64_t my_usize, my_max_size, cur_size;
 	enum determine_dev_size dd = DS_UNCHANGED;
@@ -5964,13 +5963,23 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		}
 	}
 
+	if (connection->agreed_features & DRBD_FF_WSAME) {
+		struct o_qlim *qlim = p->qlim;
+
+		peer_device->q_limits.physical_block_size = be32_to_cpu(qlim->physical_block_size);
+		peer_device->q_limits.logical_block_size = be32_to_cpu(qlim->logical_block_size);
+		peer_device->q_limits.alignment_offset = be32_to_cpu(qlim->alignment_offset);
+		peer_device->q_limits.io_min = be32_to_cpu(qlim->io_min);
+		peer_device->q_limits.io_opt = be32_to_cpu(qlim->io_opt);
+	}
+
 	/* Leave drbd_reconsider_queue_parameters() before drbd_determine_dev_size().
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_queue_parameters(), we can be sure that after
 	   drbd_determine_dev_size() no REQ_OP_DISCARDs are in the queue. */
 	if (have_ldev) {
 		enum dds_flags local_ddsf = ddsf;
-		drbd_reconsider_queue_parameters(device, device->ldev, o);
+		drbd_reconsider_queue_parameters(device, device->ldev);
 
 		/* To support thinly provisioned nodes (partial resync) joining later,
 		   clear all bitmap slots, including the unused ones. */
@@ -5990,7 +5999,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	} else {
 		uint64_t new_size = 0;
 
-		drbd_reconsider_queue_parameters(device, NULL, o);
+		drbd_reconsider_queue_parameters(device, NULL);
 		/* In case I am diskless, need to accept the peer's *current* size.
 		 *
 		 * At this point, the peer knows more about my disk, or at

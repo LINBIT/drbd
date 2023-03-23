@@ -3811,6 +3811,12 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->bitmap_index = -1;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;
 
+	peer_device->q_limits.physical_block_size = SECTOR_SIZE;
+	peer_device->q_limits.logical_block_size = SECTOR_SIZE;
+	peer_device->q_limits.alignment_offset = 0;
+	peer_device->q_limits.io_min = SECTOR_SIZE;
+	peer_device->q_limits.io_opt = PAGE_SIZE;
+
 	return peer_device;
 }
 
