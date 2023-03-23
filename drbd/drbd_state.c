@@ -2357,6 +2357,25 @@ void drbd_resume_al(struct drbd_device *device)
 		drbd_info(device, "Resumed AL updates\n");
 }
 
+static bool drbd_need_twopc_after_lost_peer(struct drbd_connection *connection)
+{
+	enum drbd_conn_state *cstate = connection->cstate;
+
+	/* Is the state change a disconnect? */
+	if (!(cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED))
+		return false;
+
+	/*
+	 * The peer did not provide reachable_nodes when disconnecting, so
+	 * trigger a twopc ourselves.
+	 */
+	if (!(connection->agreed_features & DRBD_FF_2PC_V2))
+		return true;
+
+	/* Trigger a twopc if it was a non-graceful disconnect. */
+	return cstate[NEW] != C_TEAR_DOWN;
+}
+
 /*
  * We cache a node mask of the online members of the cluster. It might
  * be off because a node is still marked as online immediately after
@@ -2386,10 +2405,10 @@ static void update_members(struct drbd_resource *resource)
 		if (cstate[OLD] < C_CONNECTED && cstate[NEW] == C_CONNECTED)
 			resource->members |= peer_node_mask;
 
-		/* A peer left. Check if we should remove it from the members */
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED &&
-		    !test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags) &&
-		    resource->members & peer_node_mask) {
+		/* Connection to peer lost. Check if we should remove it from the members */
+		if (drbd_need_twopc_after_lost_peer(connection) &&
+				!test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags) &&
+				resource->members & peer_node_mask) {
 			set_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
 			drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
 		}
