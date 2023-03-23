@@ -1757,10 +1757,12 @@ handshake_found:
 				  peer_device->connection->agreed_pro_version < 88)
 				return SS_NOT_SUPPORTED;
 
-			if (repl_state[OLD] == L_SYNC_SOURCE && repl_state[NEW] == L_WF_BITMAP_S)
+			if (repl_is_sync_source(repl_state[OLD]) &&
+					repl_state[NEW] == L_WF_BITMAP_S)
 				return SS_RESYNC_RUNNING;
 
-			if (repl_state[OLD] == L_SYNC_TARGET && repl_state[NEW] == L_WF_BITMAP_T)
+			if (repl_is_sync_target(repl_state[OLD]) &&
+					repl_state[NEW] == L_WF_BITMAP_T)
 				return SS_RESYNC_RUNNING;
 
 			if (repl_state[NEW] != repl_state[OLD] &&
