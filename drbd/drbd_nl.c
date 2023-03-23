@@ -1999,17 +1999,19 @@ static void fixup_discard_support(struct drbd_device *device, struct request_que
 	}
 }
 
-static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backing_dev *bdev,
-				   unsigned int max_bio_size)
+void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
 	struct request_queue * const q = device->rq_queue;
-	unsigned int max_hw_sectors = max_bio_size >> 9;
 	struct queue_limits common_limits = { 0 }; /* sizeof(struct queue_limits) ~ 110 bytes */
 	struct queue_limits peer_limits = { 0 };
 	struct drbd_peer_device *peer_device;
 	struct request_queue *b = NULL;
 
 	blk_set_stacking_limits(&common_limits);
+	/* This is the workaround for "bio would need to, but cannot, be split" */
+	common_limits.seg_boundary_mask = PAGE_SIZE - 1;
+	common_limits.max_hw_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
+	common_limits.max_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -2022,47 +2024,23 @@ static void drbd_setup_queue_param(struct drbd_device *device, struct drbd_backi
 		peer_limits.alignment_offset = peer_device->q_limits.alignment_offset;
 		peer_limits.io_min = peer_device->q_limits.io_min;
 		peer_limits.io_opt = peer_device->q_limits.io_opt;
+		peer_limits.max_hw_sectors = peer_device->q_limits.max_bio_size >> SECTOR_SHIFT;
+		peer_limits.max_sectors = peer_device->q_limits.max_bio_size >> SECTOR_SHIFT;
 		blk_stack_limits(&common_limits, &peer_limits, 0);
 	}
 	rcu_read_unlock();
 
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
-		max_hw_sectors = min(queue_max_hw_sectors(b), max_bio_size >> 9);
-	}
-
-	blk_queue_max_hw_sectors(q, max_hw_sectors);
-	/* This is the workaround for "bio would need to, but cannot, be split" */
-	blk_queue_segment_boundary(q, PAGE_SIZE-1);
-	decide_on_discard_support(device, bdev);
-
-	if (b) {
 		blk_stack_limits(&common_limits, &b->limits, 0);
 		disk_update_readahead(device->vdisk);
 	}
 	q->limits = common_limits;
+	blk_queue_max_hw_sectors(q, common_limits.max_hw_sectors);
+	decide_on_discard_support(device, bdev);
+
 	fixup_write_zeroes(device, q);
 	fixup_discard_support(device, q);
-}
-
-void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
-{
-	unsigned int max_bio_size = device->device_conf.max_bio_size;
-	struct drbd_peer_device *peer_device;
-
-	if (bdev) {
-		max_bio_size = min(max_bio_size,
-			queue_max_hw_sectors(bdev->backing_bdev->bd_disk->queue) << 9);
-	}
-
-	read_lock_irq(&device->resource->state_rwlock);
-	for_each_peer_device(peer_device, device) {
-		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
-			max_bio_size = min(max_bio_size, peer_device->max_bio_size);
-	}
-	read_unlock_irq(&device->resource->state_rwlock);
-
-	drbd_setup_queue_param(device, bdev, max_bio_size);
 }
 
 /* Make sure IO is suspended before calling this function(). */

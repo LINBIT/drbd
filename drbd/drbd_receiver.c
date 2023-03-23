@@ -5880,7 +5880,8 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	 * multiple bios; their reported max_bio_size is a hard limit.
 	 */
 	protocol_max_bio_size = conn_max_bio_size(connection);
-	peer_device->max_bio_size = min(be32_to_cpu(p->max_bio_size), protocol_max_bio_size);
+	peer_device->q_limits.max_bio_size = min(be32_to_cpu(p->max_bio_size),
+						 protocol_max_bio_size);
 	ddsf = be16_to_cpu(p->dds_flags);
 
 	is_handshake = (peer_device->repl_state[NOW] == L_OFF);
@@ -6049,10 +6050,10 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 
 	if (device->device_conf.max_bio_size > protocol_max_bio_size ||
 	    (connection->agreed_pro_version < 94 &&
-	     device->device_conf.max_bio_size > peer_device->max_bio_size)) {
+	     device->device_conf.max_bio_size > peer_device->q_limits.max_bio_size)) {
 		drbd_err(device, "Peer cannot deal with requests bigger than %u. "
 			 "Please reduce max_bio_size in the configuration.\n",
-			 peer_device->max_bio_size);
+			 peer_device->q_limits.max_bio_size);
 		goto disconnect;
 	}
 
