@@ -5015,6 +5015,7 @@ retry:
 	request.nodes_to_reach = ~(reach_immediately | NODE_MASK(resource->res_opts.node_id));
 	request.vnr = device->vnr;
 	request.cmd = P_TWOPC_PREP_RSZ;
+	request.flags = 0;
 	resource->twopc.type = TWOPC_RESIZE;
 	resource->twopc.resize.dds_flags = dds_flags;
 	resource->twopc.resize.user_size = new_user_size;
