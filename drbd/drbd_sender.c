@@ -2120,8 +2120,7 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 	if (atomic_read(&peer_device->unacked_cnt) ||
 	    atomic_read(&peer_device->rs_pending_cnt)) {
 		drbd_warn(peer_device, "postponing start_resync ...\n");
-		peer_device->start_resync_timer.expires = jiffies + HZ/10;
-		add_timer(&peer_device->start_resync_timer);
+		mod_timer(&peer_device->start_resync_timer, jiffies + HZ/10);
 		return;
 	}
 
@@ -2239,8 +2238,7 @@ skip_helper:
 		 * meantime; two-phase commits depend on that.  */
 		set_bit(B_RS_H_DONE, &peer_device->flags);
 		peer_device->start_resync_side = side;
-		peer_device->start_resync_timer.expires = jiffies + HZ/5;
-		add_timer(&peer_device->start_resync_timer);
+		mod_timer(&peer_device->start_resync_timer, jiffies + HZ/5);
 		return;
 	}
 

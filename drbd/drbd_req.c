@@ -841,8 +841,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 				if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &pd->flags))
 					continue; /* already done */
 				pd->start_resync_side = L_SYNC_SOURCE;
-				pd->start_resync_timer.expires = jiffies + HZ;
-				add_timer(&pd->start_resync_timer);
+				mod_timer(&pd->start_resync_timer, jiffies + HZ);
 			}
 		}
 
