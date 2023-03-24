@@ -2553,6 +2553,14 @@ static void finish_state_change(struct drbd_resource *resource)
 			if (did != should)
 				start_new_epoch = true;
 
+			if (peer_device->repl_state[OLD] != L_WF_BITMAP_S &&
+					peer_device->repl_state[NEW] == L_WF_BITMAP_S)
+				clear_bit(B_RS_H_DONE, &peer_device->flags);
+
+			if (peer_device->repl_state[OLD] != L_WF_BITMAP_T &&
+					peer_device->repl_state[NEW] == L_WF_BITMAP_T)
+				clear_bit(B_RS_H_DONE, &peer_device->flags);
+
 			if (!is_sync_state(peer_device, NOW) &&
 			    is_sync_state(peer_device, NEW)) {
 				clear_bit(RS_DONE, &peer_device->flags);

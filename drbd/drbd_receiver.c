@@ -7858,7 +7858,10 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 
 	drbd_bm_slot_unlock(peer_device);
 
-	if (repl_state == L_WF_BITMAP_S) {
+	if (test_bit(B_RS_H_DONE, &peer_device->flags)) {
+		/* We have entered drbd_start_resync() since starting the bitmap exchange. */
+		drbd_warn(peer_device, "Received bitmap more than once; ignoring\n");
+	} else if (repl_state == L_WF_BITMAP_S) {
 		drbd_start_resync(peer_device, L_SYNC_SOURCE);
 	} else if (repl_state == L_WF_BITMAP_T) {
 		if (connection->agreed_pro_version < 110) {
