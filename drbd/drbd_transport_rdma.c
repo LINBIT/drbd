@@ -1603,14 +1603,14 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	}
 
 out:
-	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
+	kref_put(&cm->kref, dtr_destroy_cm); /* for work (armed timer) */
 }
 
 static void dtr_tx_timeout_fn(struct timer_list *t)
 {
 	struct dtr_cm *cm = from_timer(cm, t, tx_timeout);
 
-	kref_get(&cm->kref);
+	/* cm->kref for armed timer becomes a ref for the work */
 	schedule_work(&cm->tx_timeout_work);
 }
 
@@ -1889,7 +1889,11 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	if (tx_desc)
 		dtr_free_tx_desc(cm, tx_desc);
 	if (atomic_dec_and_test(&cm->tx_descs_posted)) {
-		del_timer(&cm->tx_timeout);
+		bool was_active = del_timer(&cm->tx_timeout);
+
+		if (was_active)
+			kref_put(&cm->kref, dtr_destroy_cm);
+
 		if (cm->state == DSM_CONNECTED)
 			kref_put(&cm->kref, dtr_destroy_cm); /* this is _not_ the last ref */
 		else
@@ -2148,6 +2152,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		struct drbd_transport *transport = &rdma_transport->transport;
 		unsigned long timeout;
 		struct net_conf *nc;
+		bool was_active;
 
 		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
 			kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
@@ -2156,7 +2161,9 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		nc = rcu_dereference(transport->net_conf);
 		timeout = nc->ping_timeo;
 		rcu_read_unlock();
-		mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
+		was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
+		if (!was_active)
+			kref_get(&cm->kref);
 	} else {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 	}
