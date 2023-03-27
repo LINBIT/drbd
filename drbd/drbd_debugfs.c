@@ -277,9 +277,20 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	unsigned long f = peer_req->flags;
 	char sep = 0;
 
-	seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags), &sep, "submit-conflict-queued");
-	seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags), &sep, "submitted");
-	seq_print_rq_state_bit(m, test_bit(INTERVAL_CONFLICT, &peer_req->i.flags), &sep, "conflict");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags),
+			&sep, "submit-conflict-queued");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags),
+			&sep, "submitted");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_CONFLICT, &peer_req->i.flags),
+			&sep, "conflict");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_SENT, &peer_req->i.flags),
+			&sep, "sent");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_RECEIVED, &peer_req->i.flags),
+			&sep, "received");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_BACKING_COMPLETED, &peer_req->i.flags),
+			&sep, "backing-completed");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_COMPLETED, &peer_req->i.flags),
+			&sep, "completed");
 	seq_print_rq_state_bit(m, f & EE_IS_BARRIER, &sep, "barr");
 	seq_print_rq_state_bit(m, f & EE_SEND_WRITE_ACK, &sep, "C");
 	seq_print_rq_state_bit(m, f & EE_MAY_SET_IN_SYNC, &sep, "set-in-sync");
