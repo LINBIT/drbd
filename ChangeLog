@@ -2,6 +2,25 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.3-rc.1 (api:genl2/proto:110-122/transport:18)
+--------
+ * improve matching ACKs to in-memory request objects;
+   inexact matches were a source of unexpected connection losses
+ * merge changes from drbd-9.1.14
+  - fix a race with concurrent promotion and demotion, which can
+    lead to an unexpected "split-brain" later on
+  - fix a specific case where promotion was allowed where it should not
+  - fix a race condition between auto-promote and a second two-phase
+    commit that can lead to a DRBD thread locking up in an endless loop
+  - fix several bugs with "resync-after":
+   - missing resync-resume when minor numbers run in opposite
+     direction as the resync-after dependencies
+   - a race that might lead to an OOPS in add_timer()
+  - fix an OOPS when reading from in_flight_summary in debugfs
+  - fix a race that might lead to an endless loop of printing
+    "postponing start_resync" while starting a resync
+  - fix diskless node with a diskfull with a 4KiB backend
+
 9.2.2 (api:genl2/proto:110-121/transport:18)
 --------
  * fix spurious PingAck timeout a second time; we need to use a drbd
