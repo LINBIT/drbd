@@ -1615,8 +1615,9 @@ static void dtr_tx_timeout_fn(struct timer_list *t)
 {
 	struct dtr_cm *cm = from_timer(cm, t, tx_timeout);
 
-	kref_get(&cm->kref);
-	schedule_work(&cm->tx_timeout_work);
+	if (kref_get_unless_zero(&cm->kref))
+		if (!schedule_work(&cm->tx_timeout_work))
+			kref_put(&cm->kref, dtr_destroy_cm);
 }
 
 static bool higher_in_sequence(unsigned int higher, unsigned int base)
