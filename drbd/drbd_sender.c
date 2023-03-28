@@ -127,6 +127,7 @@ static bool drbd_peer_request_is_merged(struct drbd_peer_request *peer_req,
 	 */
 	return peer_req->i.sector >= main_sector &&
 		peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT) <= main_sector_end &&
+			peer_req->i.type == INTERVAL_RESYNC_WRITE &&
 			(peer_req->flags & EE_TRIM);
 }
 
@@ -202,7 +203,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	device->writ_cnt += peer_req->i.size >> 9;
 	atomic_inc(&connection->done_ee_cnt);
 	list_move_tail(&peer_req->w.list, &connection->done_ee);
-	if (peer_req->flags & EE_TRIM)
+	if (peer_req->i.type == INTERVAL_RESYNC_WRITE && peer_req->flags & EE_TRIM)
 		drbd_unmerge_discard(peer_req);
 
 	/*
