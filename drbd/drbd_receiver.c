@@ -6207,7 +6207,7 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	write_lock_irq(&resource->state_rwlock);
 	resource->remote_state_change = false;
 	write_unlock_irq(&resource->state_rwlock);
-	wake_up(&resource->twopc_wait);
+	wake_up_all(&resource->twopc_wait);
 
 	return 0;
 }
@@ -6228,7 +6228,7 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 	}
 	resource->twopc_work.cb = NULL;
 	write_unlock_irq(&resource->state_rwlock);
-	wake_up(&resource->twopc_wait);
+	wake_up_all(&resource->twopc_wait);
 
 	if (prepared)
 		abort_prepared_state_change(resource);
