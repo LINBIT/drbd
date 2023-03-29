@@ -844,7 +844,7 @@ void wait_initial_states_received(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
-	timeout = nc->ping_timeo * 4 * HZ/10;
+	timeout = nc->ping_timeo * HZ/10;
 	rcu_read_unlock();
 	wait_event_interruptible_timeout(connection->ee_wait,
 					 initial_states_received(connection),
@@ -6440,10 +6440,17 @@ static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int f
 
 	return ALT_TIMEOUT;
 }
-static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsigned int for_tid)
+static enum alt_rv abort_local_transaction(struct drbd_connection *connection, unsigned int for_tid)
 {
-	long t = twopc_timeout(resource) / 8;
+	struct drbd_resource *resource = connection->resource;
+	struct net_conf *nc;
 	enum alt_rv rv;
+	long t;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	t = nc->ping_timeo * HZ/10 * 3 / 2;
+	rcu_read_unlock();
 
 	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
 	write_unlock_irq(&resource->state_rwlock);
@@ -6742,7 +6749,7 @@ retry:
 			  "state change %u.\n",
 			  resource->twopc_reply.tid,
 			  reply->tid);
-		alt_rv = abort_local_transaction(resource, reply->tid);
+		alt_rv = abort_local_transaction(connection, reply->tid);
 		if (alt_rv == ALT_MATCH) {
 			/* abort_local_transaction() comes back unlocked in this case... */
 			goto match;
@@ -8451,7 +8458,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		if (remote) {
 			__clear_remote_state_change(resource);
 		} else {
-			enum alt_rv alt_rv = abort_local_transaction(resource, 0);
+			enum alt_rv alt_rv = abort_local_transaction(connection, 0);
 			if (alt_rv != ALT_LOCKED)
 				return;
 		}
