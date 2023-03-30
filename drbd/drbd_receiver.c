@@ -10089,6 +10089,10 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
+	/* Do not rely on the block_id from older peers. */
+	if (connection->agreed_pro_version < 122)
+		p->block_id = ID_SYNCER;
+
 	peer_req = find_resync_request(peer_device, INTERVAL_TYPE_MASK(INTERVAL_RESYNC_WRITE),
 			sector, blksize, p->block_id);
 	if (!peer_req)
