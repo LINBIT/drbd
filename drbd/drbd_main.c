@@ -3083,14 +3083,9 @@ void drbd_destroy_resource(struct kref *kref)
 void drbd_reclaim_resource(struct rcu_head *rp)
 {
 	struct drbd_resource *resource = container_of(rp, struct drbd_resource, rcu);
-	struct drbd_connection *connection, *tmp;
 
 	drbd_thread_stop_nowait(&resource->worker);
 
-	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
-		kref_debug_put(&connection->kref_debug, 9);
-		kref_put(&connection->kref, drbd_destroy_connection);
-	}
 	mempool_free(resource->peer_ack_req, &drbd_request_mempool);
 	kref_debug_put(&resource->kref_debug, 8);
 	kref_put(&resource->kref, drbd_destroy_resource);
@@ -3473,7 +3468,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	init_waitqueue_head(&resource->state_wait);
 	init_waitqueue_head(&resource->twopc_wait);
 	init_waitqueue_head(&resource->barrier_wait);
-	INIT_LIST_HEAD(&resource->twopc_parents);
 	timer_setup(&resource->twopc_timer, twopc_timer_fn, 0);
 	INIT_LIST_HEAD(&resource->twopc_work.list);
 	drbd_init_workqueue(&resource->work);

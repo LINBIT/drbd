@@ -6220,14 +6220,9 @@ int abort_nested_twopc_work(struct drbd_work *work, int cancel)
 
 	write_lock_irq(&resource->state_rwlock);
 	if (resource->twopc_reply.initiator_node_id != -1) {
-		struct drbd_connection *connection, *tmp;
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
-		list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
-			kref_debug_put(&connection->kref_debug, 9);
-			kref_put(&connection->kref, drbd_destroy_connection);
-		}
-		INIT_LIST_HEAD(&resource->twopc_parents);
+		resource->twopc_parent_nodes = 0;
 
 		prepared = true;
 	}
@@ -6813,15 +6808,12 @@ retry:
 				enum drbd_packet reply_cmd;
 
 			match:
+				drbd_info(connection,
+						"Duplicate prepare for remote state change %u\n",
+						reply->tid);
 				write_lock_irq(&resource->state_rwlock);
 				resource->twopc_parent_nodes |= NODE_MASK(connection->peer_node_id);
 				reply_cmd = resource->twopc_prepare_reply_cmd;
-				if (!reply_cmd) {
-					kref_get(&connection->kref);
-					kref_debug_get(&connection->kref_debug, 9);
-					list_add(&connection->twopc_parent_list,
-						 &resource->twopc_parents);
-				}
 				write_unlock_irq(&resource->state_rwlock);
 
 				if (reply_cmd) {
@@ -6999,12 +6991,7 @@ retry:
 	}
 
 	if (flags & CS_PREPARE) {
-		write_lock_irq(&resource->state_rwlock);
-		kref_get(&connection->kref);
-		kref_debug_get(&connection->kref_debug, 9);
-		list_add(&connection->twopc_parent_list, &resource->twopc_parents);
 		mod_timer(&resource->twopc_timer, receive_jif + twopc_timeout(resource));
-		write_unlock_irq(&resource->state_rwlock);
 
 		/* Retry replies can be sent immediately. Otherwise use the
 		 * nested twopc path. This waits for the state handshake to

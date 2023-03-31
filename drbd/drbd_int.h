@@ -900,7 +900,6 @@ struct drbd_resource {
 	const char **state_change_err_str;
 	bool remote_state_change;  /* remote state change in progress */
 	enum drbd_packet twopc_prepare_reply_cmd; /* this node's answer to the prepare phase or 0 */
-	struct list_head twopc_parents;  /* prepared on behalf of peer */
 	u64 twopc_parent_nodes;
 	struct twopc_reply twopc_reply;
 	struct timer_list twopc_timer;
@@ -1151,7 +1150,6 @@ struct drbd_connection {
 	} after_reconciliation;
 
 	unsigned int peer_node_id;
-	struct list_head twopc_parent_list;
 	struct rcu_head rcu;
 
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
