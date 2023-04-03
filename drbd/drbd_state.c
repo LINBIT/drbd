@@ -638,7 +638,6 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 
 void __clear_remote_state_change(struct drbd_resource *resource)
 {
-	struct drbd_connection *connection, *tmp;
 	bool is_connect = resource->twopc_reply.is_connect;
 	int initiator_node_id = resource->twopc_reply.initiator_node_id;
 
@@ -646,13 +645,15 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
 
-	list_for_each_entry_safe(connection, tmp, &resource->twopc_parents, twopc_parent_list) {
-		if (is_connect && connection->peer_node_id == initiator_node_id)
+	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
+		struct drbd_connection *connection;
+
+		rcu_read_lock();
+		connection = drbd_connection_by_node_id(resource, initiator_node_id);
+		if (connection)
 			abort_connect(connection);
-		kref_debug_put(&connection->kref_debug, 9);
-		kref_put(&connection->kref, drbd_destroy_connection);
+		rcu_read_unlock();
 	}
-	INIT_LIST_HEAD(&resource->twopc_parents);
 
 	wake_up(&resource->twopc_wait);
 
@@ -5130,15 +5131,17 @@ retry:
 
 static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd, bool as_work)
 {
-	struct drbd_connection *twopc_parent, *tmp;
+	struct drbd_connection *twopc_parent;
+	u64 im;
 	struct twopc_reply twopc_reply;
-	LIST_HEAD(parents);
+	u64 twopc_parent_nodes = 0;
 
 	write_lock_irq(&resource->state_rwlock);
 	twopc_reply = resource->twopc_reply;
-	if (twopc_reply.tid) {
+	/* Only send replies if we are in a twopc and have not yet sent replies. */
+	if (twopc_reply.tid && resource->twopc_prepare_reply_cmd == 0) {
 		resource->twopc_prepare_reply_cmd = cmd;
-		list_splice_init(&resource->twopc_parents, &parents);
+		twopc_parent_nodes = resource->twopc_parent_nodes;
 	}
 	if (as_work)
 		resource->twopc_work.cb = NULL;
@@ -5147,7 +5150,10 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	if (!twopc_reply.tid)
 		return;
 
-	list_for_each_entry_safe(twopc_parent, tmp, &parents, twopc_parent_list) {
+	for_each_connection_ref(twopc_parent, im, resource) {
+		if (!(twopc_parent_nodes & NODE_MASK(twopc_parent->peer_node_id)))
+			continue;
+
 		if (twopc_reply.is_disconnect)
 			set_bit(DISCONNECT_EXPECTED, &twopc_parent->flags);
 
@@ -5155,8 +5161,6 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 			   twopc_reply.tid, drbd_packet_name(cmd));
 
 		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
-		kref_debug_put(&twopc_parent->kref_debug, 9);
-		kref_put(&twopc_parent->kref, drbd_destroy_connection);
 	}
 	wake_up(&resource->twopc_wait);
 }
