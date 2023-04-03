@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.14-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.14 (api:genl2/proto:110-121/transport:17)
 --------
  * fix a race with concurrent promotion and demotion, which can
    lead to an unexpected "split-brain" later on
@@ -17,6 +17,8 @@ Latest:
  * fix a race that might lead to an endless loop of printing
    "postponing start_resync" while starting a resync
  * fix diskless node with a diskfull with a 4KiB backend
+ * simplify remembering two-pc parents, maybe fixing a one-time-seen bug
+ * derive abort_local_transaction timeout from ping-timeout
 
 9.1.13 (api:genl2/proto:110-121/transport:17)
 --------
