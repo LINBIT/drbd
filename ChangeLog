@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.3-rc.1 (api:genl2/proto:110-122/transport:18)
+9.2.3 (api:genl2/proto:110-122/transport:18)
 --------
  * improve matching ACKs to in-memory request objects;
    inexact matches were a source of unexpected connection losses
@@ -20,6 +20,8 @@ Latest:
   - fix a race that might lead to an endless loop of printing
     "postponing start_resync" while starting a resync
   - fix diskless node with a diskfull with a 4KiB backend
+  - simplify remembering two-pc parents, maybe fixing a one-time-seen bug
+  - derive abort_local_transaction timeout from ping-timeout
 
 9.2.2 (api:genl2/proto:110-121/transport:18)
 --------
