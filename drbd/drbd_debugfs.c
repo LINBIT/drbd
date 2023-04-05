@@ -302,45 +302,92 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 	seq_putc(m, '\n');
 }
 
+enum drbd_peer_request_state {
+	PRS_NEW,
+	PRS_SENT,
+	PRS_SUBMITTED,
+	PRS_LAST,
+};
+
+static enum drbd_peer_request_state drbd_get_peer_request_state(struct drbd_peer_request *peer_req)
+{
+	unsigned long interval_flags = peer_req->i.flags;
+
+	if (interval_flags & INTERVAL_SUBMITTED)
+		return PRS_SUBMITTED;
+
+	if (interval_flags & INTERVAL_SENT)
+		return PRS_SENT;
+
+	return PRS_NEW;
+}
+
+static void seq_print_peer_request_one(struct seq_file *m,
+	struct drbd_peer_request *peer_req,
+	const char *list_name, unsigned long jif)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device ? peer_device->device : NULL;
+
+	seq_printf(m, "%s\t", list_name);
+
+	if (device)
+		seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
+
+	seq_printf(m, "%llu\t%u\t%s\t%u\t",
+			(unsigned long long)peer_req->i.sector, peer_req->i.size >> 9,
+			drbd_interval_type_str(&peer_req->i),
+			jiffies_to_msecs(jif - peer_req->submit_jif));
+	seq_print_peer_request_flags(m, peer_req);
+}
+
+static void seq_print_peer_request_w(struct seq_file *m,
+	struct drbd_connection *connection, struct list_head *lh,
+	const char *list_name, unsigned long jif)
+{
+	int count[PRS_LAST] = {0};
+	struct drbd_peer_request *peer_req;
+
+	list_for_each_entry(peer_req, lh, w.list) {
+		enum drbd_peer_request_state state = drbd_get_peer_request_state(peer_req);
+
+		count[state]++;
+		if (count[state] <= 16)
+			seq_print_peer_request_one(m, peer_req, list_name, jif);
+	}
+}
+
 static void seq_print_peer_request(struct seq_file *m,
 	struct drbd_connection *connection, struct list_head *lh,
 	const char *list_name, unsigned long jif)
 {
-	bool reported_preparing = false;
+	int count = 0;
 	struct drbd_peer_request *peer_req;
-	list_for_each_entry(peer_req, lh, w.list) {
-		struct drbd_peer_device *peer_device = peer_req->peer_device;
-		struct drbd_device *device = peer_device ? peer_device->device : NULL;
 
-		if (reported_preparing && !test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
-			continue;
-
-		seq_printf(m, "%s\t", list_name);
-
-		if (device)
-			seq_printf(m, "%u\t%u\t", device->minor, device->vnr);
-
-		seq_printf(m, "%llu\t%u\t%s\t%u\t",
-			(unsigned long long)peer_req->i.sector, peer_req->i.size >> 9,
-			drbd_interval_type_str(&peer_req->i),
-			jiffies_to_msecs(jif - peer_req->submit_jif));
-		seq_print_peer_request_flags(m, peer_req);
-		if (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags))
-			break;
-		else
-			reported_preparing = true;
+	list_for_each_entry(peer_req, lh, recv_order) {
+		count++;
+		if (count <= 16)
+			seq_print_peer_request_one(m, peer_req, list_name, jif);
 	}
 }
 
 static void seq_print_connection_peer_requests(struct seq_file *m,
 	struct drbd_connection *connection, unsigned long jif)
 {
+	struct drbd_peer_device *peer_device;
+	int i;
+
 	seq_printf(m, "list\t\tminor\tvnr\tsector\tsize\ttype\t\tage\tflags\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
-	seq_print_peer_request(m, connection, &connection->done_ee, "done\t", jif);
-	seq_print_peer_request(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
-	seq_print_peer_request(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
-	seq_print_peer_request(m, connection, &connection->net_ee, "net\t", jif);
+	seq_print_peer_request_w(m, connection, &connection->done_ee, "done\t", jif);
+	seq_print_peer_request_w(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
+	seq_print_peer_request_w(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
+	seq_print_peer_request_w(m, connection, &connection->net_ee, "net\t", jif);
+	seq_print_peer_request(m, connection, &connection->peer_requests, "peer_requests", jif);
+	seq_print_peer_request(m, connection, &connection->peer_reads, "peer_reads", jif);
+	idr_for_each_entry(&connection->peer_devices, peer_device, i)
+		seq_print_peer_request(m, connection, &peer_device->resync_requests,
+				"resync_requests", jif);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 }
 
