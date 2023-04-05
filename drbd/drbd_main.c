@@ -3688,13 +3688,10 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->sender.connection = connection;
 	spin_lock_init(&connection->peer_reqs_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
+	INIT_LIST_HEAD(&connection->peer_reads);
 	INIT_LIST_HEAD(&connection->connections);
-	INIT_LIST_HEAD(&connection->resync_request_ee);
-	INIT_LIST_HEAD(&connection->active_ee);
-	INIT_LIST_HEAD(&connection->sync_ee);
 	INIT_LIST_HEAD(&connection->done_ee);
 	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
-	INIT_LIST_HEAD(&connection->read_ee);
 	INIT_LIST_HEAD(&connection->resync_ack_ee);
 	INIT_LIST_HEAD(&connection->net_ee);
 	INIT_LIST_HEAD(&connection->remove_net_list);

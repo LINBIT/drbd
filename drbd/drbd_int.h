@@ -430,7 +430,7 @@ struct digest_info {
 struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
-	struct list_head recv_order; /* peer writes, resync requests initiated locally */
+	struct list_head recv_order; /* see peer_requests, peer_reads, resync_requests */
 	/* Used by the submitter workqueues for:
 	 * * Processing conflicts
 	 * * Writes that are blocked on the activity log */
@@ -1085,23 +1085,21 @@ struct drbd_connection {
 
 	atomic64_t last_dagtag_sector;
 
-	atomic_t active_ee_cnt;
+	atomic_t active_ee_cnt; /* Peer write requests waiting for activity log or backing disk. */
+	atomic_t backing_ee_cnt; /* Other peer requests waiting for conflicts or backing disk. */
+	atomic_t done_ee_cnt;
 	spinlock_t peer_reqs_lock;
 
-	/* Write/SyncTarget peer requests */
+	/* Lists using drbd_peer_request.recv_order (see also drbd_peer_device.resync_requests) */
 	struct list_head peer_requests; /* All peer writes in the order we received them */
-	struct list_head resync_request_ee; /* Resync request (L_SYNC_TARGET/L_VERIFY_S) waiting for reply */
-	struct list_head active_ee; /* IO in progress (P_DATA gets written to disk) */
-	struct list_head sync_ee;   /* IO in progress (P_RS_DATA_REPLY gets written to disk), or resync request waiting for conflicts. */
-	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
+	struct list_head peer_reads; /* All reads in the order we received them */
 
-	/* Read/SyncSource peer requests */
+	/* Lists using drbd_peer_request.w.list */
+	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
 	struct list_head dagtag_wait_ee; /* Resync read waiting for dagtag to be reached */
-	struct list_head read_ee;   /* P_DATA_REQUEST/P_RS_DATA_REQUEST/P_OV_REQUEST/P_OV_REPLY being read */
 	struct list_head resync_ack_ee;   /* P_RS_DATA_REPLY sent, waiting for P_RS_WRITE_ACK */
 	struct list_head net_ee;    /* zero-copy network send in progress */
 
-	atomic_t done_ee_cnt;
 	struct work_struct send_acks_work;
 	struct work_struct send_ping_ack_work;
 	struct work_struct send_ping_work;
@@ -2158,9 +2156,11 @@ extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct li
 extern void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
-extern void __drbd_free_peer_req(struct drbd_peer_request *, int);
-#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, 0)
-#define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, 1)
+extern void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order,
+		bool is_net);
+#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, true, false)
+#define drbd_free_peer_req_no_list(pr) __drbd_free_peer_req(pr, false, false)
+#define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, true, true)
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);

@@ -635,9 +635,19 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	return peer_req;
 }
 
-void __drbd_free_peer_req(struct drbd_peer_request *peer_req, int is_net)
+void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order, bool is_net)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+
+	if (on_recv_order) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
+			drbd_list_del_resync_request(peer_req);
+		else
+			list_del(&peer_req->recv_order);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+	}
 
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
@@ -658,7 +668,7 @@ int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *li
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
-		__drbd_free_peer_req(peer_req, is_net_ee);
+		__drbd_free_peer_req(peer_req, true, is_net_ee);
 		count++;
 	}
 	return count;
@@ -1790,25 +1800,6 @@ static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, stru
 	drbd_endio_write_sec_final(peer_req);
 }
 
-static bool conn_wait_ee_cond(struct drbd_connection *connection, struct list_head *head)
-{
-	bool done;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	done = list_empty(head);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	if (!done)
-		drbd_unplug_all_devices(connection);
-
-	return done;
-}
-
-static void conn_wait_ee_empty(struct drbd_connection *connection, struct list_head *head)
-{
-	wait_event(connection->ee_wait, conn_wait_ee_cond(connection, head));
-}
-
 static int peer_request_fault_type(struct drbd_peer_request *peer_req)
 {
 	if (peer_req_op(peer_req) == REQ_OP_READ) {
@@ -2031,9 +2022,6 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	default:
 		/* forget the object,
 		 * and cause a "Network failure" */
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_del(&peer_req->w.list);
-		spin_unlock_irq(&connection->peer_reqs_lock);
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
@@ -2101,9 +2089,11 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 		if (rv == FE_RECYCLED)
 			return 0;
 
-		/* The ack_sender will send all the ACKs and barrier ACKs out, since
-		   all EEs moved from the active_ee to the done_ee. We need to
-		   provide a new epoch object for the EEs that come in soon */
+		/*
+		 * The ack_sender will send all the ACKs and barrier ACKs out,
+		 * since all EEs added to done_ee. We need to provide a new
+		 * epoch object for the EEs that come in soon.
+		 */
 		break;
 	}
 
@@ -2510,7 +2500,7 @@ static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_devi
 
 	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
 		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
-		drbd_free_peer_req(peer_req);
+		drbd_free_peer_req_no_list(peer_req);
 	}
 }
 
@@ -2646,11 +2636,6 @@ static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_re
 	struct drbd_connection* connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	drbd_list_del_resync_request(peer_req);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
 	drbd_remove_peer_req_interval(peer_req);
 
 	atomic_sub(peer_req->i.size >> SECTOR_SHIFT, &device->rs_sect_ev);
@@ -2659,8 +2644,8 @@ static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_re
 	drbd_free_peer_req(peer_req);
 	put_ldev(device);
 
-	/* We may have just emptied sync_ee. */
-	wake_up(&connection->ee_wait);
+	if (atomic_dec_and_test(&connection->backing_ee_cnt))
+		wake_up(&connection->ee_wait);
 }
 
 void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
@@ -2726,10 +2711,6 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	peer_req->opf = REQ_OP_WRITE;
 	peer_req->submit_jif = jiffies;
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_move_tail(&peer_req->w.list, &connection->sync_ee);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
 	atomic_add(d->bi_size >> 9, &device->rs_sect_ev);
 
 	/* Setting all peer out of sync here. Sync source peer will be set
@@ -2739,6 +2720,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	size = peer_req->i.size;
 	drbd_set_all_out_of_sync(device, sector, size);
 
+	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_submit_resync_request(peer_req);
 	peer_req = NULL; /* since submitted, might be destroyed already */
 
@@ -2977,8 +2959,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 
 	drbd_remove_peer_req_interval(peer_req);
 
-	if (list_empty(&peer_req->recv_order)) {
-		/* Compatibility with protocol version < 110 (that is, DRBD 8.4). */
+	if (connection->agreed_pro_version < 110) {
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		drbd_free_peer_req(peer_req);
@@ -3213,7 +3194,7 @@ static struct drbd_peer_request *find_released_peer_request(struct drbd_resource
 					(unsigned long long) peer_req->depend_dagtag,
 					peer_req->depend_dagtag_node_id);
 
-			list_move_tail(&peer_req->w.list, &connection->read_ee);
+			list_del(&peer_req->w.list);
 			released_peer_req = peer_req;
 			break;
 		}
@@ -3231,8 +3212,10 @@ static void release_dagtag_wait(struct drbd_resource *resource, unsigned int nod
 {
 	struct drbd_peer_request *peer_req;
 
-	while ((peer_req = find_released_peer_request(resource, node_id, dagtag)))
+	while ((peer_req = find_released_peer_request(resource, node_id, dagtag))) {
+		atomic_inc(&peer_req->peer_device->connection->backing_ee_cnt);
 		drbd_conflict_submit_peer_read(peer_req);
+	}
 }
 
 static void set_connection_dagtag(struct drbd_connection *connection, u64 dagtag)
@@ -3284,52 +3267,52 @@ void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
  *
  * Request handling flow:
  *
- *                                    conflict
- *           +-- receive_Data -----------------------+
- * active_ee |         |                             |
- *           |         |                            ...
- *           |         |                             |
- *           |         |                             v
- *           |         |                   drbd_do_submit_conflict
- *           |         |                             |
- *           |         |                             v
- *           |         +------------------ drbd_conflict_submit_peer_write
- *           |         |
- *           |         v                         wait for AL
- *           |   submit_peer_request_activity_log --------> drbd_queue_peer_request
- *           |         |                                         |
- *           |         |                                        ...
- *           |         |                                         |
- *           |         |                                         v    AL extent active
- *           |         |                                    do_submit ----------------+
- *           |         |                                         |                    |
- *           |         |                                         v                    v
- *           |         |                              send_and_submit_pending   submit_fast_path
- *           |         |                                         |                    |
- *           |         v                                         v                    |
- *           |   drbd_submit_peer_request <-------- __drbd_submit_peer_request <------+
- *           |         |
- *           |        ...
- *           |         |
- *           |         v
- *           |   drbd_peer_request_endio
- *           |         |
- *           |         v
- *           +-- drbd_endio_write_sec_final
- *   done_ee |         |
- *           |        ...
- *           |         |
- *           |         v
- *           +-- drbd_finish_peer_reqs
- *                     |
- *                     v
- *               e_end_block
- *                     |
- *                    ... via peer
- *                     |
- *                     v
- *               got_peer_ack
- * */
+ *                      conflict
+ * receive_Data -----------------------+
+ *       |                             |
+ *       |                            ...
+ *       |                             |
+ *       |                             v
+ *       |                   drbd_do_submit_conflict
+ *       |                             |
+ *       |                             v
+ *       +------------------ drbd_conflict_submit_peer_write
+ *       |
+ *       v                         wait for AL
+ * submit_peer_request_activity_log --------> drbd_queue_peer_request
+ *       |                                         |
+ *       |                                        ...
+ *       |                                         |
+ *       |                                         v    AL extent active
+ *       |                                    do_submit ----------------+
+ *       |                                         |                    |
+ *       |                                         v                    v
+ *       |                              send_and_submit_pending   submit_fast_path
+ *       |                                         |                    |
+ *       v                                         v                    |
+ * drbd_submit_peer_request <-------- __drbd_submit_peer_request <------+
+ *       |
+ *      ... backing device
+ *       |
+ *       v
+ * drbd_peer_request_endio
+ *       |
+ *       v
+ * drbd_endio_write_sec_final
+ *       |
+ *      ... done_ee
+ *       |
+ *       v
+ * drbd_finish_peer_reqs
+ *       |
+ *       v
+ * e_end_block
+ *       |
+ *      ... via peer
+ *       |
+ *       v
+ * got_peer_ack
+ */
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -3380,7 +3363,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	err = read_in_block(peer_req, &d);
 	if (err) {
-		drbd_free_peer_req(peer_req);
+		drbd_free_peer_req_no_list(peer_req);
 		put_ldev(device);
 		return -EIO;
 	}
@@ -3500,11 +3483,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	drbd_wait_for_activity_log_extents(peer_req);
 
-	spin_lock_irq(&connection->peer_reqs_lock);
 	atomic_inc(&connection->active_ee_cnt);
-	list_add_tail(&peer_req->w.list, &connection->active_ee);
-	if (connection->agreed_pro_version >= 110)
-		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	/* Note: this now may or may not be "hot" in the activity log.
@@ -3546,11 +3528,10 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 out_del_list:
 	spin_lock_irq(&connection->peer_reqs_lock);
-	atomic_dec(&connection->active_ee_cnt);
-	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
+	atomic_dec(&connection->active_ee_cnt);
 	atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
 
 out:
@@ -3558,7 +3539,7 @@ out:
 		dec_unacked(peer_device);
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
-	drbd_free_peer_req(peer_req);
+	drbd_free_peer_req_no_list(peer_req);
 	return err;
 }
 
@@ -3576,11 +3557,6 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 
 	if (peer_req->flags & EE_IN_ACTLOG)
 		drbd_al_complete_io(device, &peer_req->i);
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	list_del_init(&peer_req->recv_order);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_remove_peer_req_interval(peer_req);
 
@@ -3601,9 +3577,7 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 
 	write_lock_irq(&device->resource->state_rwlock);
 	list_for_each_entry(peer_req, cleanup, submit_list) {
-		list_del(&peer_req->w.list); /* should be on the "->active_ee" list */
 		atomic_dec(&peer_req->peer_device->connection->active_ee_cnt);
-		list_del_init(&peer_req->recv_order);
 		drbd_remove_peer_req_interval(peer_req);
 	}
 	write_unlock_irq(&device->resource->state_rwlock);
@@ -3618,8 +3592,10 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
 		drbd_free_peer_req(peer_req);
 		put_ldev(device);
 	}
-	/* We changed (likely: cleared out) active_ee for "at least one" connection.
-	 * We should wake potential waiters, just in case. */
+	/*
+	 * We changed (likely: cleared) active_ee_cnt for "at least one" connection.
+	 * We should wake potential waiters, just in case.
+	 */
 	for_each_connection(connection, device->resource)
 		wake_up(&connection->ee_wait);
 }
@@ -3701,10 +3677,6 @@ static void drbd_cleanup_peer_read(
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
 	if (in_interval_tree)
 		drbd_remove_peer_req_interval(peer_req);
 
@@ -3715,8 +3687,8 @@ static void drbd_cleanup_peer_read(
 	drbd_free_peer_req(peer_req);
 	put_ldev(device);
 
-	/* We may have just emptied read_ee. */
-	wake_up(&connection->ee_wait);
+	if (atomic_dec_and_test(&connection->backing_ee_cnt))
+		wake_up(&connection->ee_wait);
 }
 
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
@@ -3812,6 +3784,9 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 		/* P_RS_DATA_REQUEST etc */
 		drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, block_id);
 	}
+
+	drbd_remove_peer_req_interval(peer_req);
+	drbd_free_peer_req(peer_req);
 }
 
 static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
@@ -3858,7 +3833,7 @@ static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 						(unsigned long long) peer_req->depend_dagtag,
 						peer_req->depend_dagtag_node_id);
 				spin_lock_irq(&connection->peer_reqs_lock);
-				list_move_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
+				list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
 				spin_unlock_irq(&connection->peer_reqs_lock);
 				return 0;
 			case PEER_REQUEST_DAGTAG_RECEIVED:
@@ -3869,6 +3844,7 @@ static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 		}
 	}
 
+	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_submit_peer_read(peer_req);
 	return 0;
 }
@@ -4091,24 +4067,25 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	}
 
 submit:
-	/* Even though this may be a resync request, we do add to "read_ee";
-	 * "resync_request_ee" is only used for resync requests that we
-	 * initiate. Add to list early, so debugfs can find this request even
-	 * if we have to sleep due to c_min_rate. */
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_add_tail(&peer_req->w.list, &connection->read_ee);
+	list_add_tail(&peer_req->recv_order, &connection->peer_reads);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (pi->cmd == P_DATA_REQUEST) {
+		atomic_inc(&connection->backing_ee_cnt);
 		drbd_conflict_submit_peer_read(peer_req);
 	} else {
 		err = drbd_peer_resync_read(peer_req);
 		if (err)
-			goto fail2;
+			goto fail_on_list;
 	}
 	return 0;
+fail_on_list:
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_del(&peer_req->recv_order);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 fail2:
-	drbd_free_peer_req(peer_req);
+	drbd_free_peer_req_no_list(peer_req);
 fail:
 	dec_unacked(peer_device);
 	put_ldev(device);
@@ -4129,46 +4106,46 @@ static int receive_data_request(struct drbd_connection *connection, struct packe
  *
  * Request handling flow:
  *
- *                    receive_dagtag_data_request
- *                           |
- *                           V
- *                +-- receive_common_data_request
- *        read_ee |          |
- *                |          v              dagtag waiting
- *                +-- drbd_peer_resync_read --------------+
- * dagtag_wait_ee |          |                            |
- *                |          |                           ...
- *                |          |                            |
- *                |          |                            v
- *                +--        +--------------- release_dagtag_wait
- *        read_ee |          |
- *                |          v                       conflict (resync only)
- *                |   drbd_conflict_submit_peer_read -----+
- *                |          |          ^                 |
- *                |          |          |                ...
- *                |          |          |                 |
- *                |          |          |                 v
- *                |          |          +---- drbd_do_submit_conflict
- *                |          v
- *                |   drbd_submit_peer_request
- *                |          |
- *                |         ...
- *                |          |
- *                |          v
- *                |   drbd_peer_request_endio
- *                |          |
- *                |          v                  online verify request
- *                +-- drbd_endio_read_sec_final -------+
- *                           |                         |
- *                          ...                       ...
- *                           |                         |
- *                           v                         v
- *                +-- w_e_end_rsdata_req         w_e_end_ov_req
- *  resync_ack_ee |          |                         |
- *                |         ... via peer              ... via peer
- *                |          |                         |
- *                |          v                         v
- *                +-- got_BlockAck                got_OVResult
+ * receive_dagtag_data_request
+ *        |
+ *        V
+ * receive_common_data_request
+ *        |
+ *        v              dagtag waiting
+ * drbd_peer_resync_read --------------+
+ *        |                            |
+ *        |                           ... dagtag_wait_ee
+ *        |                            |
+ *        |                            v
+ *        +--------------- release_dagtag_wait
+ *        |
+ *        v                       conflict (resync only)
+ * drbd_conflict_submit_peer_read -----+
+ *        |          ^                 |
+ *        |          |                ...
+ *        |          |                 |
+ *        |          |                 v
+ *        |          +---- drbd_do_submit_conflict
+ *        v
+ * drbd_submit_peer_request
+ *        |
+ *       ... backing device
+ *        |
+ *        v
+ * drbd_peer_request_endio
+ *        |
+ *        v                  online verify request
+ * drbd_endio_read_sec_final ------------------+
+ *        |                                    |
+ *       ... sender_work                      ... sender_work
+ *        |                                    |
+ *        v                                    v
+ * w_e_end_rsdata_req                    w_e_end_ov_req
+ *        |                                    |
+ *       ... via peer (on resync_ack_ee)      ... via peer
+ *        |                                    |
+ *        v                                    v
+ * got_RSWriteAck                         got_OVResult
  */
 static int receive_dagtag_data_request(struct drbd_connection *connection, struct packet_info *pi)
 {
@@ -4204,8 +4181,6 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	if (!get_ldev_if_state(device, D_OUTDATED)) {
 		drbd_peer_resync_read_cancel(peer_req);
-		drbd_remove_peer_req_interval(peer_req);
-		drbd_free_peer_req(peer_req);
 
 		/* drain payload */
 		return ignore_remaining_packet(connection, pi->size);
@@ -4233,10 +4208,6 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	/* track progress, we may need to throttle */
 	rs_sectors_came_in(peer_device, size);
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_move_tail(&peer_req->w.list, &connection->read_ee);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	err = drbd_peer_resync_read(peer_req);
 	if (err)
@@ -8893,13 +8864,12 @@ static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 	struct drbd_device *device = peer_device->device;
 
 	if (get_ldev(device)) {
+		list_del(&peer_req->w.list);
+
 		peer_req->w.cb = e_end_resync_block;
 		peer_req->opf = REQ_OP_DISCARD;
 
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_move_tail(&peer_req->w.list, &connection->sync_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-
+		atomic_inc(&connection->backing_ee_cnt);
 		drbd_conflict_submit_resync_request(peer_req);
 
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
@@ -8919,10 +8889,8 @@ static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 		drbd_unmerge_discard(peer_req, &free_list);
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
-		list_for_each_entry_safe(peer_req, t, &free_list, w.list) {
-			drbd_list_del_resync_request(peer_req);
+		list_for_each_entry_safe(peer_req, t, &free_list, w.list)
 			drbd_free_peer_req(peer_req);
-		}
 	}
 }
 
@@ -8954,7 +8922,7 @@ void drbd_process_rs_discards(struct drbd_peer_device *peer_device, bool submit_
 		if (!peer_req)
 			break;
 
-		list_move(&peer_req->w.list, &work_list);
+		list_add_tail(&peer_req->w.list, &work_list);
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
@@ -8999,10 +8967,6 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	inc_unacked(peer_device);
 	atomic_add(size >> 9, &device->rs_sect_ev);
 	peer_req->flags |= EE_TRIM;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_move_tail(&peer_req->w.list, &connection->sync_ee);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	drbd_process_rs_discards(peer_device, false);
 	rs_sectors_came_in(peer_device, size);
@@ -9207,7 +9171,7 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 {
 	struct drbd_connection *connection;
 	LIST_HEAD(work_list);
-	struct drbd_peer_request *peer_req;
+	struct drbd_peer_request *peer_req, *t;
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
@@ -9229,11 +9193,8 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 	}
 	rcu_read_unlock();
 
-	list_for_each_entry(peer_req, &work_list, w.list) {
+	list_for_each_entry_safe(peer_req, t, &work_list, w.list)
 		drbd_peer_resync_read_cancel(peer_req);
-		drbd_remove_peer_req_interval(peer_req);
-		drbd_free_peer_req(peer_req);
-	}
 }
 
 static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
@@ -9249,36 +9210,54 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 
 static void free_waiting_resync_requests(struct drbd_connection *connection)
 {
-	LIST_HEAD(request_work_list);
-	LIST_HEAD(ack_work_list);
+	LIST_HEAD(free_list);
+	struct drbd_peer_device *peer_device;
 	struct drbd_peer_request *peer_req, *t;
+	int vnr;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_splice_init(&connection->resync_request_ee, &request_work_list);
-	list_splice_init(&connection->resync_ack_ee, &ack_work_list);
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		list_for_each_entry_safe(peer_req, t, &peer_device->resync_requests, recv_order) {
+			drbd_list_del_resync_request(peer_req);
+			list_add_tail(&peer_req->w.list, &free_list);
+		}
+	}
+	rcu_read_unlock();
 
-	list_for_each_entry(peer_req, &request_work_list, w.list)
-		drbd_list_del_resync_request(peer_req);
+	list_for_each_entry_safe(peer_req, t, &connection->peer_reads, recv_order) {
+		if (peer_req->i.type == INTERVAL_PEER_READ)
+			continue;
+
+		list_del(&peer_req->recv_order);
+
+		if (peer_req->i.type == INTERVAL_RESYNC_READ)
+			list_move_tail(&peer_req->w.list, &free_list); /* from resync_ack_ee */
+		else
+			list_add_tail(&peer_req->w.list, &free_list);
+	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	list_for_each_entry_safe(peer_req, t, &request_work_list, w.list) {
+	list_for_each_entry_safe(peer_req, t, &free_list, w.list) {
 		/*
-		 * When EE_TRIM is set, we have received a "deallocated" reply,
-		 * but have not yet tried to submit the request. Do not call
-		 * dec_rs_pending() again.
+		 * Resync write requests waiting for peers-in-sync to be sent
+		 * just need to be freed.
 		 */
-		if (!(peer_req->flags & EE_TRIM))
-			dec_rs_pending(peer_req->peer_device);
-		drbd_remove_peer_req_interval(peer_req);
-		drbd_free_peer_req(peer_req);
-	}
+		if (test_bit(INTERVAL_COMPLETED, &peer_req->i.flags)) {
+			drbd_free_peer_req_no_list(peer_req);
+			continue;
+		}
 
-	list_for_each_entry_safe(peer_req, t, &ack_work_list, w.list) {
-		dec_rs_pending(peer_req->peer_device);
-		if (!drbd_interval_is_verify(&peer_req->i))
+		D_ASSERT(connection, test_bit(INTERVAL_SENT, &peer_req->i.flags));
+		D_ASSERT(connection, !test_bit(INTERVAL_RECEIVED, &peer_req->i.flags));
+		D_ASSERT(connection, !(peer_req->flags & EE_TRIM));
+
+		if (peer_req->i.type == INTERVAL_RESYNC_READ)
 			atomic_sub(peer_req->i.size >> 9, &connection->rs_in_flight);
+
+		dec_rs_pending(peer_req->peer_device);
 		drbd_remove_peer_req_interval(peer_req);
-		drbd_free_peer_req(peer_req);
+		drbd_free_peer_req_no_list(peer_req);
 	}
 }
 
@@ -9312,6 +9291,12 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	int vnr;
 
 	/*
+	 * In order to understand this function, refer to the flow diagrams in
+	 * the comments for make_resync_request(), make_ov_request() and
+	 * receive_dagtag_data_request().
+	 */
+
+	/*
 	 * We could receive data from a peer at any point. This might release a
 	 * request that is waiting for a dagtag. That would cause it to
 	 * progress to waiting for conflicts or the backing disk. So we need to
@@ -9319,7 +9304,7 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	 */
 	free_dagtag_wait_requests(connection);
 
-	/* Wait for w_resync_timer to finish, if running. */
+	/* Wait for w_resync_timer/w_e_send_csum to finish, if running. */
 	drbd_flush_workqueue(&connection->sender_work);
 
 	rcu_read_lock();
@@ -9331,20 +9316,19 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	}
 	rcu_read_unlock();
 
-	/* Verify or resync related peer requests are read_ee or sync_ee,
-	 * drain them. */
-	conn_wait_ee_empty(connection, &connection->read_ee);
-	conn_wait_ee_empty(connection, &connection->sync_ee);
+	/* Drain conflicting and backing requests. */
+	wait_event(connection->ee_wait, atomic_read(&connection->backing_ee_cnt) == 0);
 
-	/* Wait for work queued while emptying read_ee/sync_ee to finish. */
+	/* Wait for work queued when backing requests finished. */
 	drbd_flush_workqueue(&connection->sender_work);
 
-	/* Clear up and remove requests that have progressed from sync_ee to
-	 * done_ee. */
+	/* Clear up and remove requests that have progressed to done_ee. */
 	drbd_finish_peer_reqs(connection);
 
-	/* Requests that are waiting for a dagtag or resync reply must be
-	 * removed from the interval tree and then freed. */
+	/*
+	 * Requests that are waiting for a resync reply must be removed from
+	 * the interval tree and then freed.
+	 */
 	free_waiting_resync_requests(connection);
 
 	/* Requests that are waiting for a dagtag on this connection must be
@@ -9360,40 +9344,15 @@ static void drain_resync_activity(struct drbd_connection *connection)
 
 		cleanup_resync_leftovers(peer_device);
 
-		/* There is a wait for rs_pending_cnt to reach 0, so wake up. */
-		wake_up(&device->misc_wait);
-
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
 }
 
-static void drbd_free_completed_resync_requests(struct drbd_peer_device *peer_device)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	LIST_HEAD(resync_requests);
-	struct drbd_peer_request *peer_req, *t;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_for_each_entry_safe(peer_req, t, &peer_device->resync_requests, recv_order) {
-		drbd_list_del_resync_request(peer_req);
-		list_add_tail(&peer_req->recv_order, &resync_requests);
-	}
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	list_for_each_entry_safe(peer_req, t, &resync_requests, recv_order)
-		drbd_free_peer_req(peer_req);
-}
-
 static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-
-	/* Requests waiting for the peer (resync_request_ee), disk (sync_ee) or
-	 * for processing on the ack sender (done_ee) have been flushed.
-	 * Remaining requests just waiting for peers-in-sync to be sent. */
-	drbd_free_completed_resync_requests(peer_device);
 
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&device->uuid_sem);
@@ -9522,7 +9481,8 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	/* Wait for current activity to cease.  This includes waiting for
 	 * peer_request queued to the submitter workqueue. */
-	conn_wait_ee_empty(connection, &connection->active_ee);
+	wait_event(connection->ee_wait,
+		atomic_read(&connection->active_ee_cnt) == 0);
 
 	/* wait for all w_e_end_data_req, w_e_end_rsdata_req, w_send_barrier,
 	 * etc. which may still be on the worker queue to be "canceled" */
@@ -9556,24 +9516,12 @@ static void conn_disconnect(struct drbd_connection *connection)
 	tl_walk(connection, &connection->req_not_net_done,
 			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
 
-	i = drbd_free_peer_reqs(connection, &connection->resync_request_ee, true);
-	if (i)
-		drbd_info(connection, "resync_request_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->active_ee, true);
-	if (i)
-		drbd_info(connection, "active_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->sync_ee, true);
-	if (i)
-		drbd_info(connection, "sync_ee not empty, killed %u entries\n", i);
 	i = drbd_free_peer_reqs(connection, &connection->done_ee, true);
 	if (i)
 		drbd_info(connection, "done_ee not empty, killed %u entries\n", i);
 	i = drbd_free_peer_reqs(connection, &connection->dagtag_wait_ee, true);
 	if (i)
 		drbd_info(connection, "dagtag_wait_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->read_ee, true);
-	if (i)
-		drbd_info(connection, "read_ee not empty, killed %u entries\n", i);
 	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee, true);
 	if (i)
 		drbd_info(connection, "resync_ack_ee not empty, killed %u entries\n", i);
@@ -10403,13 +10351,6 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_connection *connection = peer_device->connection;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
-		drbd_list_del_resync_request(peer_req);
-	list_del(&peer_req->w.list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (get_ldev_if_state(device, D_DETACHING)) {
 		if (failed) {
@@ -10532,10 +10473,6 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 
 	drbd_remove_peer_req_interval(peer_req);
 
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->w.list);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
 	/* This may be a request that we could not cancel because the peer does
 	 * not understand P_RS_CANCEL. Treat it as a skipped block. */
 	if (connection->agreed_pro_version < 110 && test_bit(INTERVAL_CONFLICT, &peer_req->i.flags))
@@ -10616,7 +10553,7 @@ static int w_send_out_of_sync(struct drbd_work *w, int cancel)
 		}
 	}
 	rcu_read_unlock();
-	drbd_free_peer_req(peer_req);
+	drbd_free_peer_req_no_list(peer_req);
 
 	return err;
 }
@@ -10641,7 +10578,7 @@ static void notify_sync_targets_or_free(struct drbd_peer_request *peer_req, u64 
 		}
 	}
 	rcu_read_unlock();
-	drbd_free_peer_req(peer_req);
+	drbd_free_peer_req_no_list(peer_req);
 }
 
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)

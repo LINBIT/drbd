@@ -337,12 +337,8 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 {
 	seq_printf(m, "list\t\tminor\tvnr\tsector\tsize\ttype\t\tage\tflags\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
-	seq_print_peer_request(m, connection, &connection->resync_request_ee, "resync_request", jif);
-	seq_print_peer_request(m, connection, &connection->active_ee, "active\t", jif);
-	seq_print_peer_request(m, connection, &connection->sync_ee, "sync\t", jif);
 	seq_print_peer_request(m, connection, &connection->done_ee, "done\t", jif);
 	seq_print_peer_request(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
-	seq_print_peer_request(m, connection, &connection->read_ee, "read\t", jif);
 	seq_print_peer_request(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
 	seq_print_peer_request(m, connection, &connection->net_ee, "net\t", jif);
 	spin_unlock_irq(&connection->peer_reqs_lock);
@@ -899,9 +895,11 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "            rs_in_flight: %d KiB (%d sectors)\n", in_flight / 2, in_flight);
 
 	seq_printf(m, "             done_ee_cnt: %d\n"
-	              "           active_ee_cnt: %d\n",
-		atomic_read(&connection->done_ee_cnt),
-		atomic_read(&connection->active_ee_cnt));
+			"          backing_ee_cnt: %d\n"
+			"           active_ee_cnt: %d\n",
+			atomic_read(&connection->done_ee_cnt),
+			atomic_read(&connection->backing_ee_cnt),
+			atomic_read(&connection->active_ee_cnt));
 	seq_printf(m, "      agreed_pro_version: %d\n", connection->agreed_pro_version);
 	return 0;
 }
