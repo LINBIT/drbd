@@ -283,7 +283,7 @@ void drbd_request_endio(struct bio *bio)
 
 	/* to avoid recursion in __req_mod */
 	if (unlikely(status)) {
-		unsigned int op = bio_op(bio);
+		enum req_op op = bio_op(bio);
 		if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;

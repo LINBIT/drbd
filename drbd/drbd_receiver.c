@@ -2686,7 +2686,7 @@ static int wait_for_and_update_peer_seq(struct drbd_peer_device *peer_device, co
 	return ret;
 }
 
-static unsigned long wire_flags_to_bio_op(u32 dpf)
+static enum req_op wire_flags_to_bio_op(u32 dpf)
 {
 	if (dpf & DP_ZEROES)
 		return REQ_OP_WRITE_ZEROES;
@@ -2696,9 +2696,9 @@ static unsigned long wire_flags_to_bio_op(u32 dpf)
 }
 
 /* see also bio_flags_to_wire() */
-static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 dpf)
+static blk_opf_t wire_flags_to_bio(struct drbd_connection *connection, u32 dpf)
 {
-	unsigned long opf = wire_flags_to_bio_op(dpf) |
+	blk_opf_t opf = wire_flags_to_bio_op(dpf) |
 		(dpf & DP_RW_SYNC ? REQ_SYNC : 0);
 
 	/* we used to communicate one bit only in older DRBD */
