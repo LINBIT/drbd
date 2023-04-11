@@ -307,6 +307,9 @@ int main(int argc, char **argv)
 # endif
 #endif
 
+	patch(1, "enum_req_op", true, false,
+	      COMPAT_HAVE_ENUM_REQ_OP, "present");
+
 #if defined(COMPAT_HAVE_REQ_WRITE)
 	/* This is the oldest version, using REQ_* flags. The bio ops
 	 * and flags are separated, and it's using bio->bi_rw and bi_flags,
