@@ -369,6 +369,7 @@ int main(int argc, char **argv)
 	patch(1, "submit_bio_noacct", true, false,
 	      COMPAT_HAVE_SUBMIT_BIO_NOACCT, "present");
 
+#if defined(COMPAT_HAVE_BDI_CONGESTED)
 	patch(1, "bdi_congested", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED, "present");
 
@@ -377,6 +378,7 @@ int main(int argc, char **argv)
 
 	patch(1, "wb_congested_enum", true, false,
 	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
+#endif
 
 	patch(1, "disk_update_readahead", true, false,
 	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
