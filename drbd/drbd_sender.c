@@ -495,11 +495,14 @@ out:
 void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_req->peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	bool conflict;
+	bool canceled;
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
+	canceled = test_bit(INTERVAL_CANCELED, &peer_req->i.flags);
 	conflict = drbd_find_conflict(device, &peer_req->i, CONFLICT_FLAG_IGNORE_SAME_PEER);
 	if (drbd_interval_empty(&peer_req->i))
 		drbd_insert_interval(&device->requests, &peer_req->i);
@@ -507,8 +510,20 @@ void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 		set_bit(INTERVAL_SENT, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
-	if (!conflict)
+	if (!conflict) {
 		send_resync_request(peer_req);
+	} else if (canceled) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_del_init(&peer_req->w.list);
+		drbd_list_del_resync_request(peer_req);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+
+		drbd_remove_peer_req_interval(peer_req);
+		drbd_free_peer_req(peer_req);
+
+		/* We may have just emptied sync_ee. */
+		wake_up(&connection->ee_wait);
+	}
 }
 
 void drbd_csum_pages(struct crypto_shash *tfm, struct page *page, void *digest)

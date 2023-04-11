@@ -59,6 +59,9 @@ enum drbd_interval_flags {
 
 	/* For verify requests: whether this has conflicts. */
 	INTERVAL_CONFLICT,
+
+	/* For resync requests: whether this was canceled while waiting for conflict resolution. */
+	INTERVAL_CANCELED,
 };
 
 /* Intervals used to manage conflicts between application requests and various

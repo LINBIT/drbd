@@ -1132,6 +1132,7 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMITTED, &i->flags), &sep, "submitted");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_BACKING_COMPLETED, &i->flags), &sep, "backing-completed");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_COMPLETED, &i->flags), &sep, "completed");
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_CANCELED, &i->flags), &sep, "canceled");
 		seq_putc(m, '\n');
 
 		node = rb_next(node);
