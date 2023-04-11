@@ -1497,7 +1497,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 		struct drbd_peer_device *peer_device;
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+			if (test_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags) &&
 			    peer_device->repl_state[NOW] == L_OFF) {
 				in_handshake = true;
 				goto handshake_found;
