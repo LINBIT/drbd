@@ -1570,8 +1570,10 @@ static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_des
 	/* If we get a lot of flow control messages in, but no data on this
 	   path, we need to tell the peer that we recycled all these buffers */
 	if (n < atomic_read(&flow->rx_descs_posted) / 8) {
-		struct dtr_stream *rdma_stream = &path->rdma_transport->stream[rx_desc_stolen_from];
-		wake_up_interruptible(&rdma_stream->recv_wq); /* No packet, send flow_control! */
+		// Don't simply wake the recv_wq, because it seems under some conditions it's
+		// not actively polled and therefor it can cause a flow control deadlock
+		// Instead send the flow control message inline, right here:
+		dtr_send_flow_control_msg(path, GFP_NOIO);
 	}
 }
 
