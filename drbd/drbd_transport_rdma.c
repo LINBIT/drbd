@@ -223,6 +223,7 @@ struct dtr_path {
 	struct dtr_flow flow[2];
 	int nr;
 	spinlock_t send_flow_control_lock;
+	struct tasklet_struct flow_control_tasklet;
 };
 
 struct dtr_stream {
@@ -1555,6 +1556,13 @@ static int dtr_got_flow_control_msg(struct dtr_path *path,
 	return be32_to_cpu(msg->rx_desc_stolen_from_stream);
 }
 
+static void dtr_flow_control_tasklet_fn(struct tasklet_struct *t)
+{
+	struct dtr_path *path = from_tasklet(path, t, flow_control_tasklet);
+
+	dtr_send_flow_control_msg(path, GFP_ATOMIC);
+}
+
 static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_desc_stolen_from)
 {
 	struct dtr_flow *flow;
@@ -1563,11 +1571,10 @@ static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_des
 	flow = &path->flow[rx_desc_stolen_from];
 	n = atomic_dec_return(&flow->rx_descs_known_to_peer);
 	/* If we get a lot of flow control messages in, but no data on this
-	   path, we need to tell the peer that we recycled all these buffers */
-	if (n < atomic_read(&flow->rx_descs_posted) / 8) {
-		struct dtr_stream *rdma_stream = &path->rdma_transport->stream[rx_desc_stolen_from];
-		wake_up_interruptible(&rdma_stream->recv_wq); /* No packet, send flow_control! */
-	}
+	 * path, we need to tell the peer that we recycled all these buffers
+	 */
+	if (n < atomic_read(&flow->rx_descs_posted) / 8)
+		tasklet_schedule(&path->flow_control_tasklet);
 }
 
 static void dtr_tx_timeout_work_fn(struct work_struct *work)
@@ -1667,6 +1674,11 @@ static void dtr_control_data_ready(struct dtr_stream *rdma_stream, struct dtr_rx
 	struct drbd_transport *transport = &rdma_transport->transport;
 	struct drbd_const_buffer buffer;
 	struct dtr_cm *cm = rx_desc->cm;
+	struct dtr_path *path = cm->path;
+	struct dtr_flow *flow = &path->flow[CONTROL_STREAM];
+
+	if (atomic_read(&flow->rx_descs_known_to_peer) < atomic_read(&flow->rx_descs_posted) / 8)
+		dtr_send_flow_control_msg(path, GFP_ATOMIC);
 
 	ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
 				   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
@@ -3299,6 +3311,7 @@ static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_
 	atomic_set(&path->cs.passive_state, PCS_INACTIVE);
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 	spin_lock_init(&path->send_flow_control_lock);
+	tasklet_setup(&path->flow_control_tasklet, dtr_flow_control_tasklet_fn);
 	INIT_DELAYED_WORK(&path->cs.retry_connect_work, dtr_cma_retry_connect_work_fn);
 
 	if (rdma_transport->active) {
