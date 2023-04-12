@@ -930,17 +930,6 @@ void state_change_unlock(struct drbd_resource *resource, unsigned long *irq_flag
 	__state_change_unlock(resource, irq_flags, NULL);
 }
 
-/**
- * abort_prepared_state_change
- *
- * Use when a remote state change request was prepared but neither committed
- * nor aborted; the remote state change still "holds the state mutex".
- */
-void abort_prepared_state_change(struct drbd_resource *resource)
-{
-	up(&resource->state_sem);
-}
-
 void begin_state_change_locked(struct drbd_resource *resource, enum chg_state_flags flags)
 {
 	BUG_ON(flags & (CS_SERIALIZE | CS_WAIT_COMPLETE | CS_PREPARE | CS_ABORT));

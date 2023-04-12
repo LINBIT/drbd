@@ -6209,26 +6209,40 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	return 0;
 }
 
-int abort_nested_twopc_work(struct drbd_work *work, int cancel)
+static int abort_twopc_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
-	bool prepared = false;
+	struct drbd_connection *connection;
+	int initiator_node_id;
+	bool is_connect;
 
 	write_lock_irq(&resource->state_rwlock);
-	if (resource->twopc_reply.initiator_node_id != -1) {
+	initiator_node_id = resource->twopc_reply.initiator_node_id;
+	if (initiator_node_id != -1) {
+		connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
+		is_connect = resource->twopc_reply.is_connect &&
+			resource->twopc_reply.target_node_id == resource->res_opts.node_id;
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
 		resource->twopc_parent_nodes = 0;
-
-		prepared = true;
 	}
 	resource->twopc_work.cb = NULL;
 	write_unlock_irq(&resource->state_rwlock);
-	wake_up_all(&resource->twopc_wait);
 
-	if (prepared)
-		abort_prepared_state_change(resource);
+	if (initiator_node_id != -1) {
+		if (connection) {
+			if (is_connect)
+				abort_connect(connection);
+			kref_put(&connection->kref, drbd_destroy_connection);
+			connection = NULL;
+		}
+
+		/* Aborting a prepared state change. Give up the state mutex! */
+		up(&resource->state_sem);
+	}
+
+	wake_up_all(&resource->twopc_wait);
 	return 0;
 }
 
@@ -6241,7 +6255,7 @@ void twopc_timer_fn(struct timer_list *t)
 	if (resource->twopc_work.cb == NULL) {
 		drbd_err(resource, "Two-phase commit %u timeout\n",
 			   resource->twopc_reply.tid);
-		resource->twopc_work.cb = abort_nested_twopc_work;
+		resource->twopc_work.cb = &abort_twopc_work;
 		drbd_queue_work(&resource->work, &resource->twopc_work);
 	} else {
 		mod_timer(&resource->twopc_timer, jiffies + HZ/10);
