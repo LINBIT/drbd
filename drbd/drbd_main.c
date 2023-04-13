@@ -4000,7 +4000,7 @@ void drbd_unregister_device(struct drbd_device *device)
 
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
-	del_timer_sync(&device->request_timer);
+	timer_shutdown_sync(&device->request_timer);
 }
 
 void drbd_reclaim_device(struct rcu_head *rp)
@@ -4064,7 +4064,7 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 
 void del_connect_timer(struct drbd_connection *connection)
 {
-	if (del_timer_sync(&connection->connect_timer)) {
+	if (timer_shutdown_sync(&connection->connect_timer)) {
 		kref_debug_put(&connection->kref_debug, 11);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
