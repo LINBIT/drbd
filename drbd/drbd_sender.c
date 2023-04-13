@@ -579,6 +579,10 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
+	/* Do not add to interval tree if already disconnected. */
+	if (connection->cstate[NOW] < C_CONNECTED)
+		goto out;
+
 	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))
 		goto out;
 
@@ -617,6 +621,8 @@ out:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	drbd_list_del_resync_request(peer_req);
 	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	atomic_sub(peer_req->i.size >> SECTOR_SHIFT, &peer_device->device->rs_sect_ev);
 	drbd_free_peer_req(peer_req);
 
 	if (unlikely(err))

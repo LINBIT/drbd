@@ -9308,10 +9308,6 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	/* Wait for work queued while emptying read_ee/sync_ee to finish. */
 	drbd_flush_workqueue(&connection->sender_work);
 
-	/* Wait for conflicts which might be in tree after draining read_ee and
-	 * flushing sender_work. */
-	conn_wait_ee_empty(connection, &connection->sync_ee);
-
 	/* Clear up and remove requests that have progressed from sync_ee to
 	 * done_ee. */
 	drbd_finish_peer_reqs(connection);
