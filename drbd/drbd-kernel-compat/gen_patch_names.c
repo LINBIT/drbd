@@ -541,6 +541,9 @@ int main(int argc, char **argv)
 	patch(1, "sk_use_task_frag", true, false,
 	      COMPAT_HAVE_SK_USE_TASK_FRAG, "present");
 
+	patch(1, "timer_shutdown", true, false,
+	      COMPAT_HAVE_TIMER_SHUTDOWN, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
