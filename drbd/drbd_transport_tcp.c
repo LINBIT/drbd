@@ -1060,6 +1060,9 @@ randomize:
 	dsocket->sk->sk_allocation = GFP_NOIO;
 	csocket->sk->sk_allocation = GFP_NOIO;
 
+	dsocket->sk->sk_use_task_frag = false;
+	csocket->sk->sk_use_task_frag = false;
+
 	dsocket->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
 	csocket->sk->sk_priority = TC_PRIO_INTERACTIVE;
 
