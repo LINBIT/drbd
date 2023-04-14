@@ -79,6 +79,8 @@ int allocation_size;
 /* If we can send less than 8 packets, we consider the transport as congested. */
 #define DESCS_LOW_LEVEL 8
 
+#define CONTROL_STREAM_BUFFER_COUNT_DIVISOR 2
+
 /* Assuming that a singe 4k write should be at the highest scatterd over 8
    pages. I.e. has no parts smaller than 512 bytes.
    Arbitrary assumption. It seems that Mellanox hardware can do up to 29
@@ -2376,8 +2378,8 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 		sndbuf_size = nc->sndbuf_size;
 
 	if (stream == CONTROL_STREAM) {
-		rcvbuf_size = max(rcvbuf_size / 64, alloc_size * 8);
-		sndbuf_size = max(sndbuf_size / 64, alloc_size * 8);
+		rcvbuf_size = max(rcvbuf_size / CONTROL_STREAM_BUFFER_COUNT_DIVISOR, alloc_size * 8);
+		sndbuf_size = max(sndbuf_size / CONTROL_STREAM_BUFFER_COUNT_DIVISOR, alloc_size * 8);
 	}
 
 	if (rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
