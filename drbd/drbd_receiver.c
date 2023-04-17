@@ -7165,12 +7165,16 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 {
 	bool data_successor = peer_data_is_successor_of_mine(peer_device);
 	bool data_ancestor = peer_data_is_ancestor_of_mine(peer_device);
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_device *device = peer_device->device;
+	unsigned long irq_flags;
 
-	if (resource->cached_susp && data_successor &&
-	    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
-		if (!resource->fail_io[NOW]) {
-			drbd_warn(peer_device,
-				  "Remote node has more recent data; force secondary!\n");
+	if (data_successor && resource->role[NOW] == R_PRIMARY) {
+		drbd_warn(peer_device, "Remote node has more recent data\n");
+		if (!resource->fail_io[NOW] && resource->cached_susp &&
+		    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
+			drbd_warn(peer_device, "force secondary!\n");
 			begin_state_change(resource, &irq_flags,
 					   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
 			resource->role[NEW] = R_SECONDARY;
@@ -7178,10 +7182,17 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 			end_state_change(resource, &irq_flags);
 		}
 		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+	} else if (data_successor && resource->role[NOW] == R_SECONDARY) {
+		u64 peer_current_uuid = peer_device->current_uuid;
+		bool changed = drbd_set_exposed_data_uuid(device, peer_current_uuid);
+
+		if (changed)
+			drbd_info(device, "Setting exposed data uuid: %016llX\n",
+				  (unsigned long long)device->exposed_data_uuid);
 	} else if (data_ancestor) {
 		drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
-		if (*peer_disk_state >= D_CONSISTENT)
-			*peer_disk_state = D_CONSISTENT;
+		if (*peer_disk_state > D_OUTDATED)
+			*peer_disk_state = D_OUTDATED;
 			/* See "Do not trust this guy!" in sanitize_state() */
 	} else {
 		drbd_warn(peer_device, "Current UUID of peer does not match my exposed UUID.");
@@ -7412,17 +7423,17 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_device->repl_state[NOW] == L_OFF && device->disk_state[NOW] == D_DISKLESS) {
+		u64 exposed_data_uuid = device->exposed_data_uuid;
+		u64 peer_current_uuid = peer_device->current_uuid;
 
-		drbd_info(peer_device, "my exposed UUID: %016llX\n", device->exposed_data_uuid);
+		drbd_info(peer_device, "my exposed UUID: %016llX\n", exposed_data_uuid);
 		drbd_uuid_dump_peer(peer_device, peer_device->dirty_bits, peer_device->uuid_flags);
 
-		/* I am diskless primary connecting to a peer with disk, check that UUID match
+		/* I am diskless connecting to a peer with disk, check that UUID match
 		   We only check if the peer claims to have D_UP_TO_DATE data. Only then is the
 		   peer a source for my data anyways. */
-		if (resource->role[NOW] == R_PRIMARY &&
-		    ((device->exposed_data_uuid & ~UUID_PRIMARY) !=
-		     (peer_device->current_uuid & ~UUID_PRIMARY)) &&
-		    peer_state.disk == D_UP_TO_DATE)
+		if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
+		    (exposed_data_uuid & ~UUID_PRIMARY) != (peer_current_uuid & ~UUID_PRIMARY))
 			diskless_with_peers_different_current_uuids(peer_device, &peer_disk_state);
 	}
 	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS && get_ldev(device)) {
