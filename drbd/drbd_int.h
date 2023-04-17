@@ -540,6 +540,7 @@ enum device_flag {
 	TIEBREAKER_QUORUM,	/* Tiebreaker keeps quorum; used to avoid too verbose logging */
 	DESTROYING_DEV,
 	TRY_TO_GET_RESYNC,
+	OUTDATE_ON_2PC_COMMIT,
 };
 
 /* flag bits per peer device */

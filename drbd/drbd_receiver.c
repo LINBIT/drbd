@@ -799,6 +799,8 @@ void conn_connect2(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		kref_get(&device->kref);
+		peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
+
 		/* connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
 
@@ -6280,7 +6282,10 @@ far_away_change(struct drbd_connection *connection,
 	union drbd_state mask = state_change->mask;
 	union drbd_state val = state_change->val;
 	int vnr = resource->twopc_reply.vnr;
+	struct drbd_device *device;
 	unsigned long irq_flags;
+	int iterate_vnr;
+
 
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NOW] == R_PRIMARY) {
@@ -6317,9 +6322,6 @@ far_away_change(struct drbd_connection *connection,
 			__downgrade_peer_disk_states(affected_connection, D_OUTDATED);
 			kref_put(&affected_connection->kref, drbd_destroy_connection);
 		} else if (flags & CS_PREPARED) {
-			struct drbd_device *device;
-			int iterate_vnr;
-
 			idr_for_each_entry(&resource->devices, device, iterate_vnr) {
 				struct drbd_peer_md *peer_md;
 
@@ -6336,6 +6338,13 @@ far_away_change(struct drbd_connection *connection,
 
 	if (reply->primary_nodes & ~directly_reachable)
 		__outdate_myself(resource);
+
+	idr_for_each_entry(&resource->devices, device, iterate_vnr) {
+		if (test_bit(OUTDATE_ON_2PC_COMMIT, &device->flags) &&
+		    device->disk_state[NEW] > D_OUTDATED)
+			__change_disk_state(device, D_OUTDATED);
+	}
+
 	/* even if no outdate happens, CS_FORCE_RECALC might be set here */
 	return end_state_change(resource, &irq_flags);
 }
@@ -6692,6 +6701,9 @@ retry:
 	csc_rv = check_concurrent_transactions(resource, reply);
 
 	if (csc_rv == CSC_CLEAR && pi->cmd != P_TWOPC_ABORT) {
+		struct drbd_device *device;
+		int iterate_vnr;
+
 		if (!is_prepare(pi->cmd)) {
 			/* We have committed or aborted this transaction already. */
 			write_unlock_irq(&resource->state_rwlock);
@@ -6710,6 +6722,8 @@ retry:
 		resource->twopc_prepare_reply_cmd = 0;
 		resource->twopc_parent_nodes = NODE_MASK(connection->peer_node_id);
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
+		idr_for_each_entry(&resource->devices, device, iterate_vnr)
+			clear_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
 	} else if (csc_rv == CSC_MATCH && !is_prepare(pi->cmd)) {
 		flags |= CS_PREPARED;
 
@@ -7144,6 +7158,18 @@ static bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
 	return rv;
 }
 
+static void propagate_exposed_uuid(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 im;
+
+	for_each_peer_device_ref(peer_device, im, device) {
+		if (peer_device->connection->cstate[NOW] < C_CONNECTING)
+			continue;
+		drbd_send_current_uuid(peer_device, device->exposed_data_uuid, 0);
+	}
+}
+
 static void diskless_with_peers_different_current_uuids(struct drbd_peer_device *peer_device,
 							enum drbd_disk_state *peer_disk_state)
 {
@@ -7168,6 +7194,7 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 	} else if (data_successor && resource->role[NOW] == R_SECONDARY) {
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
+		propagate_exposed_uuid(device);
 	} else if (data_ancestor) {
 		drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
 		if (*peer_disk_state > D_OUTDATED)
@@ -7187,7 +7214,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	struct drbd_device *device = NULL;
 	struct p_state *p = pi->data;
 	union drbd_state old_peer_state, peer_state;
-	enum drbd_disk_state peer_disk_state, new_disk_state = D_MASK;
+	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
 	bool peer_was_resync_target;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
@@ -7414,6 +7441,10 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
 		    (exposed_data_uuid & ~UUID_PRIMARY) != (peer_current_uuid & ~UUID_PRIMARY))
 			diskless_with_peers_different_current_uuids(peer_device, &peer_disk_state);
+		if (!exposed_data_uuid && peer_state.disk == D_UP_TO_DATE) {
+			drbd_uuid_set_exposed(device, peer_current_uuid, true);
+			propagate_exposed_uuid(device);
+		}
 	}
 	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS && get_ldev(device)) {
 		u64 uuid_flags = 0;
@@ -7470,12 +7501,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		if (connection->cstate[NOW] == C_CONNECTING) {
 			/* Since protocol 117 state comes before change on the cstate */
-			peer_device->connect_state = (union drbd_state)
-				{ { .disk = new_disk_state,
-				    .conn = new_repl_state,
-				    .peer = peer_state.role,
-				    .pdsk = peer_disk_state,
-				    .peer_isp = peer_state.aftr_isp | peer_state.user_isp } };
+			peer_device->connect_state.conn = new_repl_state;
+			peer_device->connect_state.peer = peer_state.role;
+			peer_device->connect_state.pdsk = peer_disk_state;
+			peer_device->connect_state.peer_isp =
+				peer_state.aftr_isp | peer_state.user_isp;
 
 			wake_up(&connection->ee_wait);
 
@@ -7496,8 +7526,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
-	if (new_disk_state != D_MASK)
-		__change_disk_state(device, new_disk_state);
 	if (device->disk_state[NOW] != D_NEGOTIATING)
 		__change_repl_state(peer_device, new_repl_state);
 	__change_peer_role(connection, peer_state.role);
@@ -8098,7 +8126,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_current_uuid *p = pi->data;
-	u64 current_uuid, weak_nodes;
+	u64 current_uuid, weak_nodes, previous;
+	bool moved_on, from_the_past = false;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -8108,6 +8137,17 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	current_uuid = be64_to_cpu(p->uuid);
 	weak_nodes = be64_to_cpu(p->weak_nodes);
 	weak_nodes |= NODE_MASK(peer_device->node_id);
+	previous = peer_device->current_uuid;
+	if (get_ldev(device)) {
+		from_the_past =
+			drbd_find_bitmap_by_uuid(peer_device, current_uuid & ~UUID_PRIMARY) != -1;
+		if (!from_the_past)
+			from_the_past =	uuid_in_my_history(device, current_uuid & ~UUID_PRIMARY);
+		put_ldev(device);
+	}
+	moved_on = current_uuid && previous != current_uuid && !from_the_past &&
+		(previous & ~UUID_PRIMARY) == (drbd_current_uuid(device) & ~UUID_PRIMARY);
+
 	peer_device->current_uuid = current_uuid;
 
 	if (get_ldev(device)) {
@@ -8120,6 +8160,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	if (connection->peer_role[NOW] == R_UNKNOWN) {
 		set_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
+		if (moved_on && device->disk_state[NOW] > D_OUTDATED)
+			peer_device->connect_state.disk = D_OUTDATED;
 		return 0;
 	}
 
@@ -8133,6 +8175,11 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 				  "weak_nodes=%016llX\n", current_uuid, weak_nodes);
 			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
 			drbd_md_sync_if_dirty(device);
+		} else if (moved_on) {
+			if (resource->remote_state_change)
+				set_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
+			else
+				change_disk_state(device, D_OUTDATED, CS_VERBOSE, NULL);
 		}
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
