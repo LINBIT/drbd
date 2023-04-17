@@ -5863,9 +5863,13 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
 		if (nc && !nc->allow_remote_read)
 			continue;
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
-			uuid = peer_device->current_uuid;
-			break;
+		if (peer_device->disk_state[NOW] == D_UP_TO_DATE &&
+		    uuid != peer_device->current_uuid) {
+			if (!uuid) {
+				uuid = peer_device->current_uuid;
+				continue;
+			}
+			drbd_err(device, "Multiple UpToDate peers have different current UUIDs\n");
 		}
 	}
 	rcu_read_unlock();
