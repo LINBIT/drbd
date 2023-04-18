@@ -4348,7 +4348,7 @@ static void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 		val &= ~UUID_PRIMARY;
 
 	device->ldev->md.current_uuid = val;
-	drbd_set_exposed_data_uuid(device, val);
+	drbd_uuid_set_exposed(device, val, false);
 }
 
 static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
@@ -4670,7 +4670,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 			current_uuid |= UUID_PRIMARY;
 		else
 			current_uuid &= ~UUID_PRIMARY;
-		drbd_set_exposed_data_uuid(device, current_uuid);
+		drbd_uuid_set_exposed(device, current_uuid, false);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
 
 		weak_nodes = drbd_weak_nodes_device(device);
@@ -4888,6 +4888,20 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 
 	return newer;
+}
+
+bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log)
+{
+	if ((device->exposed_data_uuid & ~UUID_PRIMARY) == (val & ~UUID_PRIMARY) ||
+	    val == UUID_JUST_CREATED)
+		return false;
+
+	device->exposed_data_uuid = val;
+
+	if (log)
+		drbd_info(device, "Setting exposed data uuid: %016llX\n", (unsigned long long)val);
+
+	return true;
 }
 
 static const char* name_of_node_id(struct drbd_resource *resource, int node_id)

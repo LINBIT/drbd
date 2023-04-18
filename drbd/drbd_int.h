@@ -1611,6 +1611,7 @@ extern u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_
 extern void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device); __must_hold(local);
 extern u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
 extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
+extern bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 extern u64 drbd_weak_nodes_device(struct drbd_device *device);
 extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
@@ -2575,13 +2576,6 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	if (atomic_read(&device->pending_bitmap_work.n))
 		return false;
 	return true;
-}
-
-static inline bool drbd_set_exposed_data_uuid(struct drbd_device *device, u64 val)
-{
-	bool changed = (device->exposed_data_uuid & ~UUID_PRIMARY) != (val & ~UUID_PRIMARY);
-	device->exposed_data_uuid = val;
-	return changed;
 }
 
 static inline u64 drbd_current_uuid(struct drbd_device *device)

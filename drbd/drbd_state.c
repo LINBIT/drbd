@@ -625,7 +625,7 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 		if (!nedu)
 			continue;
 		if (device->disk_state[NOW] < D_INCONSISTENT)
-			changed = drbd_set_exposed_data_uuid(device, nedu);
+			changed = drbd_uuid_set_exposed(device, nedu, false);
 
 		device->next_exposed_data_uuid = 0;
 		if (changed)
@@ -2876,7 +2876,7 @@ static void finish_state_change(struct drbd_resource *resource)
 				drbd_md_mark_dirty(device);
 			}
 			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)
-				drbd_set_exposed_data_uuid(device, device->ldev->md.current_uuid);
+				drbd_uuid_set_exposed(device, device->ldev->md.current_uuid, true);
 			put_ldev(device);
 		}
 
@@ -3574,7 +3574,7 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 			(unsigned long) peer_device->rs_total);
 
 	if (side == L_SYNC_TARGET)
-		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+		drbd_uuid_set_exposed(device, peer_device->current_uuid, false);
 
 	/* Forget potentially stale cached per resync extent bit-counts. */
 	drbd_rs_cancel_all(peer_device);
@@ -5883,14 +5883,10 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 static void ensure_exposed_data_uuid(struct drbd_device *device)
 {
 	u64 uuid = exposable_data_uuid(device);
-	bool changed = false;
 
 	if (uuid)
-		changed = drbd_set_exposed_data_uuid(device, uuid);
+		drbd_uuid_set_exposed(device, uuid, true);
 
-	if (changed)
-		drbd_info(device, "Setting exposed data uuid: %016llX\n",
-			  (unsigned long long)device->exposed_data_uuid);
 }
 
 /* Between 9.1.7 and 9.1.12 drbd was setting MDF_NODE_EXISTS for all peers.

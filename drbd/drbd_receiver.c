@@ -5646,7 +5646,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			drbd_info(peer_device, "Delaying update of exposed data uuid\n");
 			device->next_exposed_data_uuid = peer_device->current_uuid;
 		} else
-			updated_uuids = drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+			updated_uuids =
+				drbd_uuid_set_exposed(device, peer_device->current_uuid, false);
 		write_unlock_irq(&resource->state_rwlock);
 
 	}
@@ -7183,12 +7184,7 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 		}
 		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 	} else if (data_successor && resource->role[NOW] == R_SECONDARY) {
-		u64 peer_current_uuid = peer_device->current_uuid;
-		bool changed = drbd_set_exposed_data_uuid(device, peer_current_uuid);
-
-		if (changed)
-			drbd_info(device, "Setting exposed data uuid: %016llX\n",
-				  (unsigned long long)device->exposed_data_uuid);
+		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
 	} else if (data_ancestor) {
 		drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
 		if (*peer_disk_state > D_OUTDATED)
@@ -8157,7 +8153,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		}
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
-		drbd_set_exposed_data_uuid(device, peer_device->current_uuid);
+		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
 	}
 
 	return 0;
