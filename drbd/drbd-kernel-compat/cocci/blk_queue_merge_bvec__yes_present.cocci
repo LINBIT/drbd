@@ -46,7 +46,7 @@ do_submit(...)
 
 @@
 symbol true;
-identifier q, resource;
+identifier q, resource, dev;
 @@
 drbd_create_device(...)
 {
@@ -66,8 +66,8 @@ struct request_queue *q;
 //     struct drbd_device *device = bio->bi_disk->private_data;
 // This is still valid, since we still store the device in private_data, we just
 // also want to store it in queuedata for the compat.
-device->rq_queue = q;
-+ q->queuedata = device;
+dev->rq_queue = q;
++ q->queuedata = dev;
 <...
 blk_queue_write_cache(q, true, true);
 + blk_queue_merge_bvec(q, drbd_merge_bvec);

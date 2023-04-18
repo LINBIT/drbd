@@ -1,7 +1,7 @@
 @@
-identifier q, bio;
+identifier q, b;
 @@
-drbd_make_request(struct request_queue *q, struct bio *bio)
+drbd_make_request(struct request_queue *q, struct bio *b)
 {
 + struct bio_list *current_bio_list;
 ...

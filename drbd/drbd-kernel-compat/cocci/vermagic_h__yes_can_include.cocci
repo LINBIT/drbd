@@ -1,7 +1,4 @@
 @ add_double_check @
-type T;
-identifier x;
-statement S;
 @@
 +static int __init double_check_for_kabi_breakage(void)
 +{
