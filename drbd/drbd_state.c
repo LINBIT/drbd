@@ -1257,22 +1257,22 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 	}
 }
 
-static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_state which)
+static bool local_disk_may_be_outdated(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 
-	if (device->resource->role[which] == R_PRIMARY) {
+	if (device->resource->role[NEW] == R_PRIMARY) {
 		for_each_peer_device(peer_device, device) {
-			if (peer_device->disk_state[which] == D_UP_TO_DATE &&
-			    peer_device->repl_state[which] == L_WF_BITMAP_T)
+			if (peer_device->disk_state[NEW] == D_UP_TO_DATE &&
+			    peer_device->repl_state[NEW] == L_WF_BITMAP_T)
 				return true;
 		}
 		return false;
 	}
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->peer_role[which] == R_PRIMARY &&
-		    peer_device->repl_state[which] > L_OFF)
+		if (peer_device->connection->peer_role[NEW] == R_PRIMARY &&
+		    peer_device->repl_state[NEW] > L_OFF)
 			goto have_primary_neighbor;
 	}
 
@@ -1280,7 +1280,7 @@ static bool local_disk_may_be_outdated(struct drbd_device *device, enum which_st
 
 have_primary_neighbor:
 	for_each_peer_device(peer_device, device) {
-		enum drbd_repl_state repl_state = peer_device->repl_state[which];
+		enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
 		switch(repl_state) {
 		case L_WF_BITMAP_S:
 		case L_STARTING_SYNC_S:
@@ -1731,7 +1731,7 @@ handshake_found:
 				return SS_NO_REMOTE_DISK;
 
 			if (disk_state[OLD] > D_OUTDATED && disk_state[NEW] == D_OUTDATED &&
-			    !local_disk_may_be_outdated(device, NEW))
+			    !local_disk_may_be_outdated(device))
 				return SS_CONNECTED_OUTDATES;
 
 			if (!(repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
