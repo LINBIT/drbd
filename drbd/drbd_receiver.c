@@ -9236,13 +9236,11 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 {
 	LIST_HEAD(request_work_list);
 	LIST_HEAD(ack_work_list);
-	LIST_HEAD(dagtag_wait_work_list);
 	struct drbd_peer_request *peer_req, *t;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_splice_init(&connection->resync_request_ee, &request_work_list);
 	list_splice_init(&connection->resync_ack_ee, &ack_work_list);
-	list_splice_init(&connection->dagtag_wait_ee, &dagtag_wait_work_list);
 
 	list_for_each_entry(peer_req, &request_work_list, w.list)
 		drbd_list_del_resync_request(peer_req);
@@ -9267,6 +9265,16 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
 	}
+}
+
+static void free_dagtag_wait_requests(struct drbd_connection *connection)
+{
+	LIST_HEAD(dagtag_wait_work_list);
+	struct drbd_peer_request *peer_req, *t;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_splice_init(&connection->dagtag_wait_ee, &dagtag_wait_work_list);
+	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &dagtag_wait_work_list, w.list) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -9287,6 +9295,14 @@ static void drain_resync_activity(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
+
+	/*
+	 * We could receive data from a peer at any point. This might release a
+	 * request that is waiting for a dagtag. That would cause it to
+	 * progress to waiting for conflicts or the backing disk. So we need to
+	 * remove these requests before flushing the other stages.
+	 */
+	free_dagtag_wait_requests(connection);
 
 	/* Wait for w_resync_timer to finish, if running. */
 	drbd_flush_workqueue(&connection->sender_work);
