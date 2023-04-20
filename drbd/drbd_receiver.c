@@ -5565,16 +5565,17 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
 	int updated_uuids = 0, err = 0;
-	bool bad_server;
+	bool bad_server, uuid_match;
 	struct net_conf *nc;
 	bool two_primaries_allowed;
 
+	uuid_match =
+		(device->exposed_data_uuid & ~UUID_PRIMARY) ==
+		(peer_device->current_uuid & ~UUID_PRIMARY);
 	bad_server =
 		repl_state < L_ESTABLISHED &&
 		device->disk_state[NOW] < D_INCONSISTENT &&
-		device->resource->role[NOW] == R_PRIMARY &&
-		(device->exposed_data_uuid & ~UUID_PRIMARY) !=
-		(peer_device->current_uuid & ~UUID_PRIMARY);
+		device->resource->role[NOW] == R_PRIMARY && !uuid_match;
 
 	if (peer_device->connection->agreed_pro_version < 110 && bad_server) {
 		drbd_err(device, "Can only connect to data with current UUID=%016llX\n",
@@ -5623,11 +5624,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 
 		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
-	} else if (device->disk_state[NOW] < D_INCONSISTENT &&
-		   repl_state >= L_ESTABLISHED &&
-		   peer_device->disk_state[NOW] == D_UP_TO_DATE &&
-		   (peer_device->current_uuid & ~UUID_PRIMARY) !=
-		   (device->exposed_data_uuid & ~UUID_PRIMARY) &&
+	} else if (device->disk_state[NOW] < D_INCONSISTENT && repl_state >= L_ESTABLISHED &&
+		   peer_device->disk_state[NOW] == D_UP_TO_DATE && !uuid_match &&
 		   (resource->role[NOW] == R_SECONDARY ||
 		    (two_primaries_allowed && test_and_clear_bit(NEW_CUR_UUID, &device->flags)))) {
 
@@ -5640,6 +5638,12 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 				drbd_uuid_set_exposed(device, peer_device->current_uuid, false);
 		write_unlock_irq(&resource->state_rwlock);
 
+	}
+
+	if (device->disk_state[NOW] == D_DISKLESS && uuid_match &&
+	    peer_device->disk_state[NOW] == D_CONSISTENT) {
+		drbd_info(peer_device, "Peer is on same UUID now\n");
+		change_peer_disk_state(peer_device, D_UP_TO_DATE, CS_VERBOSE);
 	}
 
 	if (updated_uuids)
