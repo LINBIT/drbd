@@ -431,10 +431,6 @@ struct drbd_peer_request {
 	struct drbd_work w;
 	struct drbd_peer_device *peer_device;
 	struct list_head recv_order; /* see peer_requests, peer_reads, resync_requests */
-	/* Used by the submitter workqueues for:
-	 * * Processing conflicts
-	 * * Writes that are blocked on the activity log */
-	struct list_head submit_list;
 
 	union {
 		struct { /* read requests */
