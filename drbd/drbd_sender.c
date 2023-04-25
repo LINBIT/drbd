@@ -131,10 +131,9 @@ static bool drbd_peer_request_is_merged(struct drbd_peer_request *peer_req,
 			(peer_req->flags & EE_TRIM);
 }
 
-static void drbd_unmerge_discard(struct drbd_peer_request *peer_req_main)
+int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main, struct list_head *list)
 {
 	struct drbd_peer_device *peer_device = peer_req_main->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_peer_request *peer_req = peer_req_main;
 	sector_t main_sector = peer_req_main->i.sector;
 	sector_t main_sector_end = main_sector + (peer_req_main->i.size >> SECTOR_SHIFT);
@@ -145,10 +144,10 @@ static void drbd_unmerge_discard(struct drbd_peer_request *peer_req_main)
 			break;
 
 		merged_count++;
-		list_move_tail(&peer_req->w.list, &connection->done_ee);
+		list_move_tail(&peer_req->w.list, list);
 	}
 
-	atomic_add(merged_count, &connection->done_ee_cnt);
+	return merged_count;
 }
 
 /* writes on behalf of the partner, or resync writes,
@@ -203,8 +202,15 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	device->writ_cnt += peer_req->i.size >> 9;
 	atomic_inc(&connection->done_ee_cnt);
 	list_move_tail(&peer_req->w.list, &connection->done_ee);
-	if (peer_req->i.type == INTERVAL_RESYNC_WRITE && peer_req->flags & EE_TRIM)
-		drbd_unmerge_discard(peer_req);
+	if (peer_req->i.type == INTERVAL_RESYNC_WRITE && peer_req->flags & EE_TRIM) {
+		LIST_HEAD(merged);
+		int merged_count;
+
+		merged_count = drbd_unmerge_discard(peer_req, &merged);
+		list_splice_tail(&merged, &connection->done_ee);
+		atomic_add(merged_count, &connection->done_ee_cnt);
+	}
+	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
 	/*
 	 * Do not remove from the requests tree here: we did not send the

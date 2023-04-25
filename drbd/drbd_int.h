@@ -2082,6 +2082,7 @@ extern int w_send_uuids(struct drbd_work *, int);
 extern void resync_timer_fn(struct timer_list *t);
 extern void start_resync_timer_fn(struct timer_list *t);
 
+extern int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main, struct list_head *list);
 extern void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req);
 
 /* bi_end_io handlers */

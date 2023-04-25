@@ -8904,10 +8904,25 @@ static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(). */
 	} else {
+		LIST_HEAD(free_list);
+		struct drbd_peer_request *t;
+
 		if (drbd_ratelimit())
 			drbd_err(device, "Cannot discard on local disk.\n");
 
 		drbd_send_ack(peer_device, P_RS_NEG_ACK, peer_req);
+
+		drbd_remove_peer_req_interval(peer_req);
+		list_move_tail(&peer_req->w.list, &free_list);
+
+		spin_lock_irq(&connection->peer_reqs_lock);
+		drbd_unmerge_discard(peer_req, &free_list);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+
+		list_for_each_entry_safe(peer_req, t, &free_list, w.list) {
+			drbd_list_del_resync_request(peer_req);
+			drbd_free_peer_req(peer_req);
+		}
 	}
 }
 
