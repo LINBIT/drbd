@@ -9308,10 +9308,18 @@ static void drain_resync_activity(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
+		kref_get(&device->kref);
+		rcu_read_unlock();
+
 		/* Cause remaining discards to be submitted. */
 		drbd_last_resync_request(peer_device, true);
 		/* Cause requests waiting due to conflicts to be canceled. */
 		drbd_cancel_conflicting_resync_requests(peer_device);
+
+		kref_put(&device->kref, drbd_destroy_device);
+		rcu_read_lock();
 	}
 	rcu_read_unlock();
 
