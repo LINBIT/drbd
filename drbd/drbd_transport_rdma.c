@@ -2165,7 +2165,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		nc = rcu_dereference(transport->net_conf);
 		timeout = nc->ping_timeo;
 		rcu_read_unlock();
-		mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
+		mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 10);
 	} else {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 	}
