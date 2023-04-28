@@ -31,7 +31,7 @@ ARCH ?= amd64
 ifneq ($(strip $(ARCH)),)
 DOCKERREGISTRY := $(DOCKERREGISTRY)/$(ARCH)
 endif
-DOCKERIMAGES = rhel8 rhel9 focal jammy flatcar amzn2
+DOCKERIMAGES = rhel7 rhel8 rhel9 focal jammy flatcar amzn2
 DOCKERIMAGESTARGETS = $(addprefix dockerimage.,$(DOCKERIMAGES))
 
 # Use the SPAAS (spatch as a service) online service
@@ -165,7 +165,7 @@ check check_changelogs_up2date:
 	then									\
 	   printf "\nChangeLog:3:\tneeds update\n"; 				\
 	   up2date=false; fi ; 							\
-	for df in 8 9 ; do							\
+	for df in 7 8 9 ; do							\
 	if ! grep "^ENV DRBD_VERSION $$dver" docker/Dockerfile.rhel$$df ;	\
 	then 									\
 		printf "\nDockerfile.rhel$$df: needs update\n"; 		\
