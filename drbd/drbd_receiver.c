@@ -2623,7 +2623,7 @@ static void find_resync_requests(struct drbd_peer_device *peer_device,
 		/* With agreed_pro_version < 122, block_id is always ID_SYNCER. */
 		if (peer_req->peer_device == peer_device &&
 				(block_id == ID_SYNCER || peer_req->block_id == block_id))
-			list_move_tail(&peer_req->w.list, matching);
+			list_move_tail(&peer_req->w.list, matching); /* from resync_ack_ee */
 	}
 	spin_unlock(&device->interval_lock);
 	spin_unlock_irq(&connection->peer_reqs_lock);

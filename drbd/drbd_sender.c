@@ -1964,7 +1964,6 @@ drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_
 {
 	const unsigned long done_mask = 1UL << INTERVAL_SENT | 1UL << INTERVAL_RECEIVED;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection *connection = peer_device->connection;
 	unsigned long nflags, oflags, new_flag;
 
 	new_flag = 1UL << bit_to_set;
@@ -1980,10 +1979,6 @@ drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_
 		drbd_err(peer_device, "BUG: %s: Flag 0x%lx already set\n", __func__, new_flag);
 
 	if ((nflags & done_mask) == done_mask) {
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_del(&peer_req->w.list); /* Remove from resync_ack_ee. */
-		spin_unlock_irq(&connection->peer_reqs_lock);
-
 		drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
 	}
