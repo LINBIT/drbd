@@ -160,9 +160,8 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	sector_t sector;
+	enum drbd_interval_type type;
 	bool do_wake;
-	u64 block_id;
 
 	/* if this is a failed barrier request, disable use of barriers,
 	 * and schedule for resubmission */
@@ -184,8 +183,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	 * we may no longer access it,
 	 * it may be freed/reused already!
 	 * (as soon as we release the peer_reqs_lock) */
-	sector = peer_req->i.sector;
-	block_id = peer_req->block_id;
+	type = peer_req->i.type;
 
 	if (peer_req->flags & EE_WAS_ERROR) {
 		/* In protocol != C, we usually do not send write acks.
@@ -211,6 +209,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		list_splice_tail(&merged, &connection->done_ee);
 		atomic_add(merged_count, &connection->done_ee_cnt);
 	}
+	peer_req = NULL; /* may be freed after unlock */
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
 	/*
@@ -224,7 +223,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	if (connection->cstate[NOW] == C_CONNECTED)
 		queue_work(connection->ack_sender, &connection->send_acks_work);
 
-	if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
+	if (type == INTERVAL_RESYNC_WRITE)
 		do_wake = atomic_dec_and_test(&connection->backing_ee_cnt);
 	else
 		do_wake = atomic_dec_and_test(&connection->active_ee_cnt);
