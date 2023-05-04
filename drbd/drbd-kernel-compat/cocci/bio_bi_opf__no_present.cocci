@@ -1,7 +1,7 @@
 @@
 struct bio *b;
 @@
--b->bi_opf = REQ_OP_FLUSH | REQ_PREFLUSH;
+-b->bi_opf = REQ_OP_WRITE | REQ_PREFLUSH;
 +submit_bio(WRITE_FLUSH, bio);
 <...
 -submit_bio(b);
