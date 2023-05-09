@@ -4018,6 +4018,22 @@ void drbd_reclaim_device(struct rcu_head *rp)
 	}
 }
 
+static void shutdown_connect_timer(struct drbd_connection *connection)
+{
+	if (timer_shutdown_sync(&connection->connect_timer)) {
+		kref_debug_put(&connection->kref_debug, 11);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
+void del_connect_timer(struct drbd_connection *connection)
+{
+	if (del_timer_sync(&connection->connect_timer)) {
+		kref_debug_put(&connection->kref_debug, 11);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 /**
  * drbd_unregister_connection()  -  make a connection "invisible"
  *
@@ -4043,7 +4059,7 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 
 	drbd_debugfs_connection_cleanup(connection);
 
-	del_connect_timer(connection);
+	shutdown_connect_timer(connection);
 
 	rr = drbd_free_peer_reqs(connection, &connection->done_ee, false);
 	if (rr)
@@ -4056,14 +4072,6 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 	drbd_put_send_buffers(connection);
 	conn_free_crypto(connection);
-}
-
-void del_connect_timer(struct drbd_connection *connection)
-{
-	if (timer_shutdown_sync(&connection->connect_timer)) {
-		kref_debug_put(&connection->kref_debug, 11);
-		kref_put(&connection->kref, drbd_destroy_connection);
-	}
 }
 
 void drbd_reclaim_connection(struct rcu_head *rp)
