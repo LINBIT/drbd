@@ -1,6 +1,12 @@
 // PART 0: General fixups
 @@
 @@
+// we may or may not have enum req_op. handle both cases by "normalizing" everything to unsigned int.
+- enum req_op
++ unsigned int
+
+@@
+@@
 struct drbd_peer_request {
 ...
 unsigned int
@@ -152,7 +158,7 @@ wire_flags_to_bio(...)
 @@
 @@
 drbd_md_sync_page_io(...
--, int op
+-, unsigned int op
 +, int rw
  )
 {
@@ -166,12 +172,12 @@ drbd_md_sync_page_io(...
 @@
 @@
 _drbd_md_sync_page_io(...
--, int op
+-, unsigned int op
 +, int rw
  )
 {
 ...
--int op_flags = ...;
+-unsigned int op_flags = ...;
 <...
 (
 -op_flags |=
