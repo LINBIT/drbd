@@ -2302,7 +2302,7 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 			drbd_send_sync_param(peer_device);
 	}
 
-	kvfree_rcu(old_disk_conf);
+	kvfree_rcu_mightsleep(old_disk_conf);
 	mod_timer(&device->request_timer, jiffies + HZ);
 	goto success;
 
@@ -3726,7 +3726,7 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
 	mutex_unlock(&connection->resource->conf_update);
-	kvfree_rcu(old_net_conf);
+	kvfree_rcu_mightsleep(old_net_conf);
 
 	if (connection->cstate[NOW] >= C_CONNECTED) {
 		struct drbd_peer_device *peer_device;
@@ -3858,7 +3858,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 
 	rcu_assign_pointer(peer_device->conf, new_peer_device_conf);
 
-	kvfree_rcu(old_peer_device_conf);
+	kvfree_rcu_mightsleep(old_peer_device_conf);
 	kfree(old_plan);
 
 	/* No need to call drbd_send_sync_param() here. The values in
@@ -4878,7 +4878,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		new_disk_conf->disk_size = (sector_t)rs.resize_size;
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
 		mutex_unlock(&device->resource->conf_update);
-		kvfree_rcu(old_disk_conf);
+		kvfree_rcu_mightsleep(old_disk_conf);
 		new_disk_conf = NULL;
 	}
 
@@ -7273,7 +7273,7 @@ int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 	}
 	old_res_name = resource->name;
 	resource->name = new_res_name;
-	kvfree_rcu(old_res_name);
+	kvfree_rcu_mightsleep(old_res_name);
 
 	drbd_debugfs_resource_rename(resource, new_res_name);
 
