@@ -2340,7 +2340,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	int digest_size = 0;
 	int err;
 	const unsigned s = req->net_rq_state[peer_device->node_id];
-	const int op = bio_op(req->master_bio);
+	const enum req_op op = bio_op(req->master_bio);
 
 	if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 		trim = drbd_prepare_command(peer_device, sizeof(*trim), DATA_STREAM);

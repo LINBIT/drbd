@@ -443,7 +443,7 @@ struct drbd_peer_request {
 	};
 
 	struct drbd_page_chain_head page_chain;
-	unsigned int opf; /* to be used as bi_opf */
+	blk_opf_t opf; /* to be used as bi_opf */
 	atomic_t pending_bios;
 	struct drbd_interval i;
 	unsigned long flags;	/* see comments on ee flag bits below */
@@ -2021,7 +2021,7 @@ extern void verify_progress(struct drbd_peer_device *peer_device,
 extern void *drbd_md_get_buffer(struct drbd_device *device, const char *intent);
 extern void drbd_md_put_buffer(struct drbd_device *device);
 extern int drbd_md_sync_page_io(struct drbd_device *device,
-		struct drbd_backing_dev *bdev, sector_t sector, int op);
+		struct drbd_backing_dev *bdev, sector_t sector, enum req_op op);
 extern bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size);
 extern void drbd_ov_out_of_sync_found(struct drbd_peer_device *, sector_t, int);
 extern void wait_until_done_or_force_detached(struct drbd_device *device,
