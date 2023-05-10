@@ -4073,9 +4073,7 @@ out_destroy_submitter:
 	destroy_workqueue(device->submit.wq);
 	device->submit.wq = NULL;
 out_remove_peer_device:
-	list_add_rcu(&tmp, &device->peer_devices);
-	list_del_init(&device->peer_devices);
-	synchronize_rcu();
+	list_splice_init_rcu(&device->peer_devices, &tmp, synchronize_rcu);
 	list_for_each_entry_safe(peer_device, tmp_peer_device, &tmp, peer_devices) {
 		struct drbd_connection *connection = peer_device->connection;
 
