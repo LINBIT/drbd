@@ -1043,7 +1043,7 @@ static bool conn_connect(struct drbd_connection *connection)
 {
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_resource *resource = connection->resource;
-	int ping_timeo, ping_int, h, err, vnr, timeout;
+	int ping_timeo, ping_int, h, err, vnr;
 	struct drbd_peer_device *peer_device;
 	enum drbd_stream stream;
 	struct net_conf *nc;
@@ -1178,10 +1178,7 @@ start:
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 11);
 			connection->connect_timer_work.cb = connect_work;
-			timeout = twopc_retry_timeout(resource, 0);
-			dynamic_drbd_dbg(connection, "Waiting for %ums to avoid transaction "
-					"conflicts\n", jiffies_to_msecs(timeout));
-			arm_connect_timer(connection, jiffies + timeout);
+			arm_connect_timer(connection, jiffies);
 		}
 	} else {
 		enum drbd_state_rv rv;
