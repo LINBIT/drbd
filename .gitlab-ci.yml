@@ -55,7 +55,7 @@ stages:
           $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
         echo "$kernels" | parallel --colsep ' ' -k -j24 \
-          lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only -l \
+          lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
@@ -79,7 +79,7 @@ stages:
 
         local build_rc=0
         echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog parallel.log \
-          lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" -l \
+          lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
