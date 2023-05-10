@@ -34,7 +34,7 @@ stages:
       all_kernels() {
         local version="$1"
         lbbuildctl build drbd -v $version --arch amd64 --debug debugSpecJson | \
-          jq -r '.[] | .image + " " + .aux_version' | \
+          jq -r 'map(.image + " " + .aux_version) | unique[]' | \
           grep -v ^sles12 | grep -v ^docker
       }
 
