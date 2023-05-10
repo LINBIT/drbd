@@ -2,10 +2,10 @@
 // bi_opf. Hence we need to shift bits around appropriately.
 
 @@
-expression opf;
+expression _opf;
 @@
--opf & REQ_OP_MASK
-+opf >> BIO_OP_SHIFT
+-_opf & REQ_OP_MASK
++_opf >> BIO_OP_SHIFT
 
 @@
 expression e;

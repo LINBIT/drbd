@@ -10,24 +10,24 @@
 - struct bvec_iter iter;
 + int iter;
 
-@@ local idexpression struct bio *bio; @@
+@@ local idexpression struct bio *b; @@
 (
-- bio->bi_iter.bi_sector
-+ bio->bi_sector
+- b->bi_iter.bi_sector
++ b->bi_sector
 |
-- bio->bi_iter.bi_size
-+ bio->bi_size
+- b->bi_iter.bi_size
++ b->bi_size
 )
 
 @@
-identifier bio;
+identifier b;
 expression bvec, iter;
 identifier fn;
 @@
-fn(..., struct bio *bio, ...) {
+fn(..., struct bio *b, ...) {
 <...
 - bio_iter_last(bvec, iter)
-+ ((iter) == bio->bi_vcnt - 1)
++ ((iter) == b->bi_vcnt - 1)
 ...>
 }
 

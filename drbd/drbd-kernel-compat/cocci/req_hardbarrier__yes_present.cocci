@@ -18,6 +18,7 @@ spin_lock(&conn->epoch_lock);
 }
 
 @@
+symbol start_jif;
 @@
 drbd_make_request(...)
 {

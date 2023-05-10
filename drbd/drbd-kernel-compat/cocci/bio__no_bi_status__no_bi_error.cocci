@@ -55,7 +55,6 @@ struct bio *b;
 
 @@
 expression status;
-expression err;
 struct bio *b;
 @@
 (

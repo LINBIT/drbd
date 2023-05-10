@@ -12,13 +12,13 @@ identifier device, q;
 -fixup_write_zeroes(device, q);
 
 @@
-expression op;
+expression _op;
 @@
 (
-- (op == REQ_OP_WRITE_ZEROES)
+- (_op == REQ_OP_WRITE_ZEROES)
 + (false) /* WRITE_ZEROES not supported on this kernel */
 |
-- (op != REQ_OP_WRITE_ZEROES)
+- (_op != REQ_OP_WRITE_ZEROES)
 + (true) /* WRITE_ZEROES not supported on this kernel */
 )
 
@@ -30,6 +30,5 @@ expression e;
 +WARN_ON_ONCE(e); /* WRITE_ZEROES not supported on this kernel */
 
 @@
-expression qlim;
 @@
 - blk_queue_max_write_zeroes_sectors(...);

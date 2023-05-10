@@ -69,6 +69,7 @@ identifier dpf;
 
 @ disable bitand_comm, not_int1, not_int2, commeq, ptr_to_array @
 struct bio *b;
+symbol ok;
 @@
 static void drbd_req_complete(...)
 {
@@ -80,6 +81,7 @@ static void drbd_req_complete(...)
 }
 
 @@
+symbol op;
 @@
 bm_page_io_async(...)
 {
@@ -156,6 +158,7 @@ wire_flags_to_bio(...)
 //------------------------------------------------------------------------------
 // PART 2: drbd_md_sync_page_io
 @@
+symbol op;
 @@
 drbd_md_sync_page_io(...
 -, unsigned int op
@@ -170,6 +173,7 @@ drbd_md_sync_page_io(...
 }
 
 @@
+symbol op, op_flags;
 @@
 _drbd_md_sync_page_io(...
 -, unsigned int op
@@ -194,6 +198,7 @@ _drbd_md_sync_page_io(...
 }
 
 @@
+symbol op;
 @@
 _drbd_md_sync_page_io(...
 -, op

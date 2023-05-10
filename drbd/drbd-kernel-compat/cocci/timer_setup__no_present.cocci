@@ -15,7 +15,7 @@ void
 
 
 @@
-//local idexpression struct drbd_peer_device *peer_device;
+local idexpression struct drbd_peer_device *peer_device;
 @@
 -	resync_timer_fn(&peer_device->resync_timer)
 +	resync_timer_fn((unsigned long) peer_device)
