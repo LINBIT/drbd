@@ -4182,21 +4182,19 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
-	LIST_HEAD(work_list);
 	int vnr, rr;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		drbd_debugfs_peer_device_cleanup(peer_device);
 
 	write_lock_irq(&resource->state_rwlock);
 	set_bit(C_UNREGISTERED, &connection->flags);
 	smp_wmb();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 		list_del_rcu(&peer_device->peer_devices);
-		list_add(&peer_device->peer_devices, &work_list);
-	}
 	list_del_rcu(&connection->connections);
 	write_unlock_irq(&resource->state_rwlock);
 
-	list_for_each_entry(peer_device, &work_list, peer_devices)
-		drbd_debugfs_peer_device_cleanup(peer_device);
 	drbd_debugfs_connection_cleanup(connection);
 
 	del_connect_timer(connection);
