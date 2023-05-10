@@ -63,7 +63,6 @@ extern void abort_state_change_locked(struct drbd_resource *resource);
 extern void begin_state_change_locked(struct drbd_resource *, enum chg_state_flags);
 extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
 
-extern void abort_prepared_state_change(struct drbd_resource *);
 extern void clear_remote_state_change(struct drbd_resource *resource);
 extern void __clear_remote_state_change(struct drbd_resource *resource);
 
@@ -131,7 +130,6 @@ extern void __change_resync_susp_dependency(struct drbd_peer_device *, bool);
 extern void apply_connect(struct drbd_connection *, bool);
 
 struct drbd_work;
-extern int abort_nested_twopc_work(struct drbd_work *, int);
 
 extern bool resource_is_suspended(struct drbd_resource *resource, enum which_state which);
 extern bool is_suspended_fen(struct drbd_resource *resource, enum which_state which);
