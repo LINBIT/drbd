@@ -655,7 +655,7 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 		rcu_read_unlock();
 	}
 
-	wake_up(&resource->twopc_wait);
+	wake_up_all(&resource->twopc_wait);
 
 	/* Do things that where postponed to after two-phase commits finished */
 	apply_update_to_exposed_data_uuid(resource);
@@ -5162,7 +5162,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 
 		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
 	}
-	wake_up(&resource->twopc_wait);
+	wake_up_all(&resource->twopc_wait);
 }
 
 static void __nested_twopc_work(struct drbd_work *work, bool as_work)
