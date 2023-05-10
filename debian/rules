@@ -47,12 +47,16 @@ kdist_clean:
 	dh_clean
 	-$(MAKE) -C drbd clean
 
+ifneq (,$(findstring gcov,$(DEB_BUILD_OPTIONS)))
+extra_make_flags = GCOV_PROFILE=y
+endif
+
 DEB_BUILD_ARCH := $(shell dpkg --print-architecture)
 binary-modules: prep-deb-files
 	dh_testdir
 	dh_testroot
 	dh_clean -k
-	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC)
+	$(MAKE) -C drbd KERNEL_SOURCES=$(KSRC) MODVERSIONS=detect KERNEL=linux-$(KVERS) KDIR=$(KSRC) $(extra_make_flags)
 	$(MAKE) -C $(KSRC) M=$(CURDIR)/drbd modules_install INSTALL_MOD_PATH=$(CURDIR)/debian/$(PKGNAME) INSTALL_MOD_DIR=updates CONFIG_MODULE_SIG_ALL=y CONFIG_MODULE_SIG_KEY=certs/signing_key.pem
 	install -m644 -b -D drbd/Module.symvers $(DEB_DESTDIR)/Module.symvers.$(KVERS).$(DEB_BUILD_ARCH)
 	dh_installdocs
