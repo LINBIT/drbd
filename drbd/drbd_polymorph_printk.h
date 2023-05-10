@@ -7,18 +7,17 @@
 #undef __dynamic_pr_debug
 #undef DYNAMIC_DEBUG_BRANCH
 #define DEFINE_DYNAMIC_DEBUG_METADATA(D, F) const char *D = F; ((void)D)
-#define __dynamic_pr_debug(D, F, args...) do { (void)(D); if (0) printk(F, ## args); } while(0)
+#define __dynamic_pr_debug(D, F, args...) do { (void)(D); if (0) printk(F, ## args); } while (0)
 #define DYNAMIC_DEBUG_BRANCH(D) false
 #endif
 
 
 #define __drbd_printk_drbd_device_prep(device) \
 	const struct drbd_device *__d = (device);		\
-	const struct drbd_resource *__r = __d->resource;
+	const struct drbd_resource *__r = __d->resource
 #define __drbd_printk_drbd_device_fmt(fmt)	"drbd %s/%u drbd%u: " fmt
 #define __drbd_printk_drbd_device_args()	__r->name, __d->vnr, __d->minor
 #define __drbd_printk_drbd_device_unprep()
-
 
 #define __drbd_printk_drbd_peer_device_prep(peer_device)		\
 	const struct drbd_device *__d;				\
@@ -29,16 +28,16 @@
 	__d = (peer_device)->device;				\
 	__c = (peer_device)->connection;			\
 	__r = __d->resource;					\
-	__cn = rcu_dereference(__c->transport.net_conf)->name;
+	__cn = rcu_dereference(__c->transport.net_conf)->name
 #define __drbd_printk_drbd_peer_device_fmt(fmt) \
 	"drbd %s/%u drbd%u %s: " fmt
 #define __drbd_printk_drbd_peer_device_args() \
 	__r->name, __d->vnr, __d->minor, __cn
 #define __drbd_printk_drbd_peer_device_unprep() \
-	rcu_read_unlock();
+	rcu_read_unlock()
 
 #define __drbd_printk_drbd_resource_prep(resource) \
-	const struct drbd_resource *__r = resource;
+	const struct drbd_resource *__r = resource
 #define __drbd_printk_drbd_resource_fmt(fmt) "drbd %s: " fmt
 #define __drbd_printk_drbd_resource_args()	__r->name
 #define __drbd_printk_drbd_resource_unprep(resource)
@@ -48,13 +47,13 @@
 	const struct drbd_resource *__r = __c->resource;	\
 	const char *__cn;					\
 	rcu_read_lock();					\
-	__cn = rcu_dereference(__c->transport.net_conf)->name;
+	__cn = rcu_dereference(__c->transport.net_conf)->name
 #define __drbd_printk_drbd_connection_fmt(fmt)			\
 	"drbd %s %s: " fmt
 #define __drbd_printk_drbd_connection_args()			\
 	__r->name, __cn
 #define __drbd_printk_drbd_connection_unprep()			\
-	rcu_read_unlock();					\
+	rcu_read_unlock()					\
 
 void drbd_printk_with_wrong_object_type(void);
 void drbd_dyn_dbg_with_wrong_object_type(void);
@@ -65,10 +64,10 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 #define __drbd_printk_if_same_type(obj, struct_name, level, fmt, args...) \
 	__drbd_printk_choose_cond(obj, struct_name), \
 ({ \
-	__drbd_printk_ ## struct_name ## _prep((const struct struct_name *)(obj)) \
+	__drbd_printk_ ## struct_name ## _prep((const struct struct_name *)(obj)); \
 	printk(level __drbd_printk_ ## struct_name ## _fmt(fmt), \
 		__drbd_printk_ ## struct_name ## _args(), ## args); \
-	__drbd_printk_ ## struct_name ## _unprep() \
+	__drbd_printk_ ## struct_name ## _unprep(); \
 })
 
 #define drbd_printk(level, obj, fmt, args...) \
@@ -87,10 +86,10 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 ({ \
 	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);		\
 	if (DYNAMIC_DEBUG_BRANCH(descriptor)) {			\
-		__drbd_printk_ ## struct_name ## _prep((const struct struct_name *)(obj)) \
+		__drbd_printk_ ## struct_name ## _prep((const struct struct_name *)(obj)); \
 		__dynamic_pr_debug(&descriptor, __drbd_printk_ ## struct_name ## _fmt(fmt), \
 			__drbd_printk_ ## struct_name ## _args(), ## args); \
-		__drbd_printk_ ## struct_name ## _unprep()	\
+		__drbd_printk_ ## struct_name ## _unprep();	\
 	}							\
 })
 
