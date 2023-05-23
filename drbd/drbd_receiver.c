@@ -7791,6 +7791,35 @@ static bool peer_data_is_ancestor_of_mine(struct drbd_peer_device *peer_device)
 	return rv;
 }
 
+static void diskless_with_peers_different_current_uuids(struct drbd_peer_device *peer_device,
+							enum drbd_disk_state *peer_disk_state)
+{
+	bool data_successor = peer_data_is_successor_of_mine(peer_device);
+	bool data_ancestor = peer_data_is_ancestor_of_mine(peer_device);
+
+	if (resource->cached_susp && data_successor &&
+	    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
+		if (!resource->fail_io[NOW]) {
+			drbd_warn(peer_device,
+				  "Remote node has more recent data; force secondary!\n");
+			begin_state_change(resource, &irq_flags,
+					   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
+			resource->role[NEW] = R_SECONDARY;
+			/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
+			end_state_change(resource, &irq_flags);
+		}
+		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+	} else if (data_ancestor) {
+		drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
+		if (*peer_disk_state >= D_CONSISTENT)
+			*peer_disk_state = D_CONSISTENT;
+			/* See "Do not trust this guy!" in sanitize_state() */
+	} else {
+		drbd_warn(peer_device, "Current UUID of peer does not match my exposed UUID.");
+		set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+	}
+}
+
 static int receive_state(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -8024,32 +8053,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (resource->role[NOW] == R_PRIMARY &&
 		    ((device->exposed_data_uuid & ~UUID_PRIMARY) !=
 		     (peer_device->current_uuid & ~UUID_PRIMARY)) &&
-		    peer_state.disk == D_UP_TO_DATE) {
-			bool data_successor = peer_data_is_successor_of_mine(peer_device);
-			bool data_ancestor = peer_data_is_ancestor_of_mine(peer_device);
-
-			if (resource->cached_susp && data_successor &&
-			    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
-				if (!resource->fail_io[NOW]) {
-					drbd_warn(peer_device, "Remote node has more recent data;"
-						  " force secondary!\n");
-					begin_state_change(resource, &irq_flags,
-							   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
-					resource->role[NEW] = R_SECONDARY;
-					/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
-					end_state_change(resource, &irq_flags);
-				}
-				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
-			} else if (data_ancestor) {
-				drbd_warn(peer_device, "Downgrading joining peer's disk as its data is older\n");
-				if (peer_disk_state >= D_CONSISTENT)
-					peer_disk_state = D_CONSISTENT; /* See "Do not trust this guy!" in sanitize_state() */
-			} else {
-				drbd_warn(peer_device, "Current UUID of peer does not match my"
-					  " exposed UUID.");
-				set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
-			}
-		}
+		    peer_state.disk == D_UP_TO_DATE)
+			diskless_with_peers_different_current_uuids(peer_device, &peer_disk_state);
 	}
 	if (peer_device->repl_state[NOW] == L_OFF && peer_state.disk == D_DISKLESS && get_ldev(device)) {
 		u64 uuid_flags = 0;
