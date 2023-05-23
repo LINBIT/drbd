@@ -275,6 +275,8 @@ static int decode_header(struct drbd_connection *, const void *, struct packet_i
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
+static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid);
+static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -4824,15 +4826,8 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 		return SYNC_SOURCE_COPY_BITMAP;
 	}
 
-	my_current_in_peers_history = false;
 	self = resolved_uuid;
-	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++) {
-		peer = peer_device->history_uuids[i] & ~UUID_PRIMARY;
-		if (self == peer) {
-			my_current_in_peers_history = true;
-			break;
-		}
-	}
+	my_current_in_peers_history = uuid_in_peer_history(peer_device, self);
 
 	if (connection->agreed_pro_version < 110) {
 		enum sync_strategy rv = uuid_fixup_resync_start2(peer_device, rule);
@@ -4840,15 +4835,8 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			return rv;
 	}
 
-	peers_current_in_my_history = false;
 	peer = peer_device->current_uuid & ~UUID_PRIMARY;
-	for (i = 0; i < HISTORY_UUIDS; i++) {
-		self = drbd_history_uuid(device, i) & ~UUID_PRIMARY;
-		if (self == peer) {
-			peers_current_in_my_history = true;
-			break;
-		}
-	}
+	peers_current_in_my_history = uuid_in_my_history(device, peer);
 
 	if (my_current_in_peers_history && !peers_current_in_my_history) {
 		*rule = RULE_HISTORY_PEER;
@@ -7736,6 +7724,18 @@ static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid)
 	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 		if ((peer_device->history_uuids[i] & ~UUID_PRIMARY) == uuid)
 			return true;
+
+	return false;
+}
+
+static bool uuid_in_my_history(struct drbd_device *device, u64 uuid)
+{
+	int i;
+
+	for (i = 0; i < HISTORY_UUIDS; i++) {
+		if ((drbd_history_uuid(device, i) & ~UUID_PRIMARY) == uuid)
+			return true;
+	}
 
 	return false;
 }
