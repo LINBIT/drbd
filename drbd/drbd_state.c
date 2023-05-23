@@ -3715,9 +3715,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* connect without resync or remote attach without resync */
 			if (disk_state[NOW] >= D_OUTDATED && repl_state[NEW] == L_ESTABLISHED &&
-			    ((repl_state[OLD] == L_OFF &&
-			      (peer_disk_state[NEW] >= D_OUTDATED ||
-			       (peer_disk_state[NEW] == D_DISKLESS && !want_bitmap(peer_device)))) ||
+			    ((repl_state[OLD] == L_OFF && peer_disk_state[NEW] >= D_OUTDATED) ||
 			     (peer_disk_state[OLD] == D_DISKLESS && peer_disk_state[NEW] >= D_OUTDATED))) {
 				u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 				u64 my_current_uuid = drbd_current_uuid(device) & ~UUID_PRIMARY;
