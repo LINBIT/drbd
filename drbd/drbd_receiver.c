@@ -6895,27 +6895,6 @@ void twopc_timer_fn(struct timer_list *t)
 	write_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 }
 
-static enum drbd_state_rv outdate_if_weak(struct drbd_resource *resource,
-					  struct twopc_reply *reply,
-					  enum chg_state_flags flags)
-{
-	u64 directly_reachable = directly_connected_nodes(resource, NOW) |
-		NODE_MASK(resource->res_opts.node_id);
-	unsigned long irq_flags;
-
-	if (reply->primary_nodes & ~directly_reachable) {
-		begin_state_change(resource, &irq_flags, flags);
-		__outdate_myself(resource);
-		return end_state_change(resource, &irq_flags);
-	} else if (flags & CS_FORCE_RECALC) {
-		begin_state_change(resource, &irq_flags, flags);
-		/* CS_FORCE_RECALC is used here to reconsider quorum */
-		return end_state_change(resource, &irq_flags);
-	}
-
-	return SS_NOTHING_TO_DO;
-}
-
 bool drbd_have_local_disk(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
@@ -6939,28 +6918,47 @@ far_away_change(struct drbd_connection *connection,
 		enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	u64 directly_reachable = directly_connected_nodes(resource, NOW) |
+		NODE_MASK(resource->res_opts.node_id);
 	union drbd_state mask = state_change->mask;
 	union drbd_state val = state_change->val;
 	int vnr = resource->twopc_reply.vnr;
+	unsigned long irq_flags;
 
+	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
+	    resource->role[NOW] == R_PRIMARY) {
+		struct net_conf *nc;
+		bool two_primaries_allowed = false;
+
+		rcu_read_lock();
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (nc)
+			two_primaries_allowed = nc->two_primaries;
+		rcu_read_unlock();
+		if (!two_primaries_allowed)
+			return SS_TWO_PRIMARIES;
+
+		/* A node further away wants to become primary. In case I am primary allow it only
+		 * when I am diskless. See also check_primaries_distances() in drbd_state.c
+		 */
+		if (drbd_have_local_disk(resource))
+			return SS_WEAKLY_CONNECTED;
+	}
+
+	begin_state_change(resource, &irq_flags, flags);
 	if (mask.i == 0 && val.i == 0 &&
 	    resource->role[NOW] == R_PRIMARY && vnr == -1) {
-		/* A node far away test if there are primaries. I am the guy he
-		   is concerned about... He learned about me in the CS_PREPARE phase.
-		   Since he is committing it I know that he is outdated now... */
+		/* A node far away test if there are primaries. I am the guy he is concerned
+		 * about... He learned about me in the CS_PREPARE phase. Since he is committing it
+		 * I know that he is outdated now...
+		 */
 		struct drbd_connection *affected_connection;
 		int initiator_node_id = resource->twopc_reply.initiator_node_id;
 
 		affected_connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
 		if (affected_connection) {
-			unsigned long irq_flags;
-			enum drbd_state_rv rv;
-
-			begin_state_change(resource, &irq_flags, flags);
 			__downgrade_peer_disk_states(affected_connection, D_OUTDATED);
-			rv = end_state_change(resource, &irq_flags);
 			kref_put(&affected_connection->kref, drbd_destroy_connection);
-			return rv;
 		} else if (flags & CS_PREPARED) {
 			struct drbd_device *device;
 			int iterate_vnr;
@@ -6978,26 +6976,11 @@ far_away_change(struct drbd_connection *connection,
 			}
 		}
 	}
-	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
-	    resource->role[NOW] == R_PRIMARY) {
-		struct net_conf *nc;
-		bool two_primaries_allowed = false;
 
-		rcu_read_lock();
-		nc = rcu_dereference(connection->transport.net_conf);
-		if (nc)
-			two_primaries_allowed = nc->two_primaries;
-		rcu_read_unlock();
-		if (!two_primaries_allowed)
-			return SS_TWO_PRIMARIES;
-
-		/* A node further away wants to become primary. In case I am
-		   primary allow it only when I am diskless. See
-		   also check_primaries_distances() in drbd_state.c */
-		if (drbd_have_local_disk(resource))
-			return SS_WEAKLY_CONNECTED;
-	}
-	return outdate_if_weak(resource, reply, flags);
+	if (reply->primary_nodes & ~directly_reachable)
+		__outdate_myself(resource);
+	/* even if no outdate happens, CS_FORCE_RECALC might be set here */
+	return end_state_change(resource, &irq_flags);
 }
 
 static void handle_neighbor_demotion(struct drbd_connection *connection,
