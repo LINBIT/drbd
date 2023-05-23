@@ -872,6 +872,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 			clear_bit(__NEW_CUR_UUID, &device->flags);
 			set_bit(NEW_CUR_UUID, &device->flags);
 		}
+		ensure_exposed_data_uuid(device);
 
 		wake_up(&device->al_wait);
 		wake_up(&device->misc_wait);
@@ -1279,6 +1280,11 @@ static bool local_disk_may_be_outdated(struct drbd_device *device)
 	return true;	/* No neighbor primary, I might be outdated*/
 
 have_primary_neighbor:
+	/* Allow self outdating while connecting to a diskless primary. */
+	if (peer_device->disk_state[NEW] == D_DISKLESS &&
+	    peer_device->repl_state[OLD] == L_OFF && peer_device->repl_state[NEW] == L_ESTABLISHED)
+		return true;
+
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
 		switch(repl_state) {
@@ -1976,6 +1982,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
+	bool have_good_peer = false;
 	bool maybe_crashed_primary = false;
 	bool volume_lost_data_access = false;
 	bool volumes_have_data_access = true;
@@ -2076,6 +2083,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
 			enum drbd_conn_state *cstate = connection->cstate;
+
+			if (peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    (device->exposed_data_uuid & ~UUID_PRIMARY) ==
+			    (peer_device->current_uuid & ~UUID_PRIMARY))
+				have_good_peer = true;
 
 			if (repl_state[NEW] < L_ESTABLISHED) {
 				peer_device->resync_susp_peer[NEW] = false;
@@ -2279,16 +2291,14 @@ static void sanitize_state(struct drbd_resource *resource)
 					}
 				}
 			}
-			if (disk_state[NEW] == D_DISKLESS && device->exposed_data_uuid &&
-			    peer_disk_state[OLD] < D_UP_TO_DATE &&
+			if (disk_state[NEW] == D_DISKLESS && have_good_peer &&
 			    peer_disk_state[NEW] == D_UP_TO_DATE &&
 			    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
 			    (peer_device->current_uuid & ~UUID_PRIMARY)) {
 				/* Do not trust this guy!
-				   He pretends to be D_UP_TO_DATE, but has a different current UUID. Do not
-				   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
-				   do the same. We need to do it here to avoid that the peer is visible as
-				   D_UP_TO_DATE at all. Otherwise we could ship read requests to it!
+				   He wants to be D_UP_TO_DATE, but has a different current
+				   UUID. Do not accept him as D_UP_TO_DATE but downgrade that to
+				   D_CONSISTENT here.
 				*/
 				peer_disk_state[NEW] = D_CONSISTENT;
 			}
@@ -2818,10 +2828,6 @@ static void finish_state_change(struct drbd_resource *resource)
 
 		if (create_new_uuid)
 			set_bit(__NEW_CUR_UUID, &device->flags);
-
-		if (!(role[OLD] == R_PRIMARY && disk_state[OLD] < D_INCONSISTENT) &&
-		     (role[NEW] == R_PRIMARY && disk_state[NEW] < D_INCONSISTENT))
-			ensure_exposed_data_uuid(device);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
 			u32 mdf = device->ldev->md.flags;
@@ -5878,7 +5884,7 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 	u64 uuid = 0;
 
-	if (device->disk_state[NOW] == D_UP_TO_DATE && get_ldev(device)) {
+	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		uuid = device->ldev->md.current_uuid;
 		put_ldev(device);
 		return uuid;
