@@ -6088,6 +6088,8 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 					set_bit(CONSIDER_RESYNC, &peer_device->flags);
 					drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
 					drbd_send_current_state(peer_device);
+				} else {
+					drbd_send_uuids(peer_device, 0, 0);
 				}
 
 				drbd_print_uuids(peer_device, "forced resync UUID");
@@ -6107,8 +6109,7 @@ int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		for_each_peer_device(peer_device, device) {
 			if (NODE_MASK(peer_device->node_id) & nodes) {
 				_drbd_uuid_set_bitmap(peer_device, 0);
-				if (NODE_MASK(peer_device->node_id) & diskful)
-					drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
+				drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
 			}
 		}

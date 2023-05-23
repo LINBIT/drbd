@@ -6191,6 +6191,17 @@ static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int
 	peer_device->bitmap_uuids[node_id] = bitmap_uuid;
 }
 
+static void propagate_skip_initial_to_diskless(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	u64 im;
+
+	for_each_peer_device_ref(peer_device, im, device) {
+		if (peer_device->disk_state[NOW] == D_DISKLESS)
+			drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
+	}
+}
+
 static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 {
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
@@ -6222,7 +6233,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	rcu_read_unlock();
 
 	if (get_ldev(device)) {
-		int skip_initial_sync =
+		bool skip_initial_sync =
 			repl_state == L_ESTABLISHED &&
 			peer_device->connection->agreed_pro_version >= 90 &&
 			drbd_current_uuid(device) == UUID_JUST_CREATED &&
@@ -6244,6 +6255,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
 			end_state_change(device->resource, &irq_flags);
 			updated_uuids = 1;
+			propagate_skip_initial_to_diskless(device);
 		}
 
 		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
@@ -6265,9 +6277,10 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 		if (resource->remote_state_change) {
 			drbd_info(peer_device, "Delaying update of exposed data uuid\n");
 			device->next_exposed_data_uuid = peer_device->current_uuid;
-		} else
+		} else {
 			updated_uuids =
 				drbd_uuid_set_exposed(device, peer_device->current_uuid, false);
+		}
 		write_unlock_irq(&resource->state_rwlock);
 
 	}
