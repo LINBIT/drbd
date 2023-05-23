@@ -2279,8 +2279,11 @@ static void sanitize_state(struct drbd_resource *resource)
 					}
 				}
 			}
-			if (peer_disk_state[OLD] == D_UNKNOWN && peer_disk_state[NEW] == D_UP_TO_DATE &&
-			    role[NEW] == R_PRIMARY && disk_state[NEW] == D_DISKLESS && !uuids_match) {
+			if (disk_state[NEW] == D_DISKLESS && device->exposed_data_uuid &&
+			    peer_disk_state[OLD] < D_UP_TO_DATE &&
+			    peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
+			    (peer_device->current_uuid & ~UUID_PRIMARY)) {
 				/* Do not trust this guy!
 				   He pretends to be D_UP_TO_DATE, but has a different current UUID. Do not
 				   accept him as D_UP_TO_DATE but downgrade that to D_CONSISTENT here. He will
