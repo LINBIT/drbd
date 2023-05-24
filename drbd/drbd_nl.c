@@ -2413,7 +2413,8 @@ static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == my_node_id)
 			continue;
-		if (peer_md[node_id].bitmap_index == -1)
+		/* Only totally unused slots definitely contain the day0 UUID. */
+		if (peer_md[node_id].bitmap_index == -1 && !peer_md[node_id].flags)
 			return &peer_md[node_id];
 	}
 	return NULL;
