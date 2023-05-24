@@ -2134,7 +2134,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 			enum drbd_role *peer_role = connection->peer_role;
-			bool uuids_match;
+			bool uuids_match, cond;
 
 			/* Pause a SyncSource until it finishes resync as target on other connections */
 			if (repl_state[OLD] != L_SYNC_SOURCE && repl_state[NEW] == L_SYNC_SOURCE &&
@@ -2291,10 +2291,17 @@ static void sanitize_state(struct drbd_resource *resource)
 					}
 				}
 			}
-			if (disk_state[NEW] == D_DISKLESS && have_good_peer &&
-			    peer_disk_state[NEW] == D_UP_TO_DATE &&
-			    (device->exposed_data_uuid & ~UUID_PRIMARY) !=
-			    (peer_device->current_uuid & ~UUID_PRIMARY)) {
+
+			if (connection->agreed_features & DRBD_FF_RS_SKIP_UUID)
+				cond = have_good_peer &&
+					(device->exposed_data_uuid & ~UUID_PRIMARY) !=
+					(peer_device->current_uuid & ~UUID_PRIMARY);
+			else
+				cond = peer_disk_state[OLD] == D_UNKNOWN &&
+					role[NEW] == R_PRIMARY && !uuids_match;
+
+			if (disk_state[NEW] == D_DISKLESS && peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    cond) {
 				/* Do not trust this guy!
 				   He wants to be D_UP_TO_DATE, but has a different current
 				   UUID. Do not accept him as D_UP_TO_DATE but downgrade that to

@@ -40,7 +40,7 @@
 #include "drbd_vli.h"
 
 #define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
-		      DRBD_FF_2PC_V2)
+		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID)
 
 enum ao_op {
 	OUTDATE_DISKS,
