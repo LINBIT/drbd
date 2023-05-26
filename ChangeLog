@@ -2,6 +2,30 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.4-rc.1 (api:genl2/proto:110-122/transport:18)
+--------
+ * fix a possible deadlock when disconnecting during a resync
+ * changes merged from drbd-9.1.15
+  - fix how flush requests are marked when submitted to the Linux IO
+    stack on the secondary node
+  - when establishing a connection failed with a two-pc timeout, a
+    receiver thread deadlocked, causing drbdsetup calls to block on
+    that resource (difficult to trigger)
+  - fixed a NULL-ptr deref (a OOPS) caused by a rare race condition
+    while taking a resource down
+  - updated kernel compatibility to at least Linux head and also fixed
+    a bug in the compat checks/rules that caused OOPSes of the previous
+    drbd releases when compiled with Linux-6.2 (or on RHEL 9.2 kernel).
+  - fix an aspect of the data-generation (UUID) handling where DRBD
+    failed to do a resync when a diskless node in the remaining
+    partition promotes and demotes while a diskful node is isolated
+  - fix an aspect of the data-generation (UUID) handling where DRBD
+    considered a node to have unrelated data; this bug was triggered by
+    a sequence involving removing two nodes from a cluster and readding
+    one with the "day-0" UUIDs.
+  - do not block specific state changes (promote, demote, attach, and
+    detach) when only some nodes add a new minor
+
 9.2.3 (api:genl2/proto:110-122/transport:18)
 --------
  * improve matching ACKs to in-memory request objects;
