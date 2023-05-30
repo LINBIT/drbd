@@ -1889,7 +1889,7 @@ out_unlock:
 
 	/* Potentially send final P_PEERS_IN_SYNC. */
 	drbd_queue_update_peers(peer_device,
-			peer_device->last_peers_in_sync_end, BM_BIT_TO_SECT(drbd_bm_bits(device)));
+			peer_device->last_peers_in_sync_end, get_capacity(device->vdisk));
 
 out:
 	/* reset start sector, if we reached end of device */
