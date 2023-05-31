@@ -3574,6 +3574,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
 	INIT_WORK(&connection->send_acks_work, drbd_send_acks_wf);
 
+	spin_lock_init(&connection->advance_cache_ptr_lock);
+
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;

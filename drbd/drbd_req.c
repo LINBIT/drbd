@@ -637,11 +637,7 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
  * this will advance it to the next request fulfilling the condition.
  *
  * set_cache_ptr_if_null() may be called concurrently with itself and with
- * advance_cache_ptr(). However, advance_cache_ptr() must not be called
- * concurrently for a given caching pointer. If it were, the call for the older
- * request may advance the pointer to the newer request, although the newer
- * request has concurrently been modified such that it no longer fulfils the
- * condition.
+ * advance_cache_ptr().
  */
 static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
 {
@@ -666,10 +662,20 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 	struct drbd_request *old_req;
 	struct drbd_request *found_req = NULL;
 
+	/*
+	 * Prevent concurrent updates of the same caching pointer. Otherwise if
+	 * this function is called concurrently for a given caching pointer,
+	 * the call for the older request may advance the pointer to the newer
+	 * request, although the newer request has concurrently been modified
+	 * such that it no longer fulfils the condition.
+	 */
+	spin_lock(&connection->advance_cache_ptr_lock); /* local IRQ already disabled */
+
 	rcu_read_lock();
 	old_req = rcu_dereference(*cache_ptr);
 	if (old_req != req) {
 		rcu_read_unlock();
+		spin_unlock(&connection->advance_cache_ptr_lock);
 		return;
 	}
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
@@ -684,6 +690,8 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 
 	cmpxchg(cache_ptr, old_req, found_req);
 	rcu_read_unlock();
+
+	spin_unlock(&connection->advance_cache_ptr_lock);
 }
 
 /* for wsame, discard, and zero-out requests, the payload (amount of data we

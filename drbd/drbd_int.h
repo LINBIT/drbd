@@ -1116,6 +1116,8 @@ struct drbd_connection {
 	/* The oldest request that is or was queued for this peer, but is not
 	 * done towards it. */
 	struct drbd_request *req_not_net_done;
+	/* Protects the caching pointers from being advanced concurrently. */
+	spinlock_t advance_cache_ptr_lock;
 
 	unsigned int s_cb_nr; /* keeps counting up */
 	unsigned int r_cb_nr; /* keeps counting up */
