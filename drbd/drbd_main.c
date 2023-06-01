@@ -3708,6 +3708,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_LIST_HEAD(&connection->send_dagtag_work.list);
 	connection->send_dagtag_work.cb = w_send_dagtag;
 
+	spin_lock_init(&connection->advance_cache_ptr_lock);
+
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
