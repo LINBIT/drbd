@@ -217,6 +217,10 @@ load_from_ram() {
 		find . -name "*.ko" -print0 | xargs -0 -n1 "/lib/modules/$(uname -r)/build/scripts/sign-file" "$CONFIG_MODULE_SIG_HASH" "${LB_SIGN}/signing_key.pem" "${LB_SIGN}/signing_key.x509" 
 	fi
 
+ 	chcon -t modules_object_t ./drbd.ko || true
+ 	chcon -t modules_object_t ./drbd_transport_tcp.ko || true
+ 	chcon -t modules_object_t ./drbd_transport_rdma.ko || true
+
 	insmod ./drbd.ko usermode_helper=disabled
 	insmod ./drbd_transport_tcp.ko
 	insmod ./drbd_transport_rdma.ko 2>/dev/null || true
