@@ -2,9 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.4-rc.1 (api:genl2/proto:110-122/transport:18)
+9.2.4 (api:genl2/proto:110-122/transport:18)
 --------
  * fix a possible deadlock when disconnecting during a resync
+ * fix a possible hard kernel-lockup
  * changes merged from drbd-9.1.15
   - fix how flush requests are marked when submitted to the Linux IO
     stack on the secondary node

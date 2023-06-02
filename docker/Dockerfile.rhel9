@@ -8,7 +8,7 @@ RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-
 FROM registry.access.redhat.com/ubi9/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
 
-ENV DRBD_VERSION 9.2.4-rc.1
+ENV DRBD_VERSION 9.2.4
 
 ARG release=1
 LABEL name="DRBD Kernel module load container" \
