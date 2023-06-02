@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.15-rc.1 (api:genl2/proto:110-121/transport:17)
+9.1.15 (api:genl2/proto:110-121/transport:17)
 --------
  * fix how flush requests are marked when submitted to the Linux IO
    stack on the secondary node
@@ -11,6 +11,8 @@ Latest:
    that resource (difficult to trigger)
  * fixed a NULL-ptr deref (a OOPS) caused by a rare race condition
    while taking a resource down
+ * fix a possible hard kernel-lockup, can only be triggerd when a
+   CPU-mask is configured
  * updated kernel compatibility to at least Linux head and also fixed
    a bug in the compat checks/rules that caused OOPSes of the previous
    drbd releases when compiled with Linux-6.2 (or on RHEL 9.2 kernel).
