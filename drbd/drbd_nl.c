@@ -2420,49 +2420,64 @@ static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
 	return NULL;
 }
 
-static int free_bitmap_index(struct drbd_device *device, int peer_node_id, u32 md_flags)
+/*
+ * Clear the slot for this peer in the metadata. If md_flags is empty, clear
+ * the slot completely. Otherwise make it a slot for a diskless peer. Also
+ * clear any bitmap associated with this peer.
+ */
+static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_flags)
 {
 	struct drbd_peer_md *peer_md, *day0_md;
-	int freed_index, from_index;
 
 	if (!get_ldev(device))
 		return -ENODEV;
 
-	from_index = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
+	drbd_suspend_io(device, WRITE_ONLY);
 
 	peer_md = &device->ldev->md.peers[peer_node_id];
-	if (!(peer_md->flags & MDF_HAVE_BITMAP)) {
-		put_ldev(device);
-		return -ENOENT;
+	if (peer_md->flags & MDF_HAVE_BITMAP) {
+		int from_index, freed_index;
+
+		/*
+		 * Unallocated slots are considered to track writes to the
+		 * device since day 0. In order to keep that promise, copy the
+		 * bitmap from an unallocated slot to this one, or set it to
+		 * all out-of-sync.
+		 */
+
+		from_index = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
+		freed_index = peer_md->bitmap_index;
+
+		drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
+
+		if (from_index != -1)
+			drbd_bm_copy_slot(device, from_index, freed_index);
+		else
+			_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
+
+		drbd_bm_write(device, NULL);
+		drbd_bm_unlock(device);
 	}
 
-	freed_index = peer_md->bitmap_index;
-
-	/* unallocated slots are considered to track writes to the device since day 0.
-	   In order to keep that promise, copy the bitmap from an other unallocated slot
-	   to this one, or set it to all out-of-sync */
-
-	drbd_suspend_io(device, WRITE_ONLY);
-	drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
-
-	if (from_index != -1)
-		drbd_bm_copy_slot(device, from_index, freed_index);
-	else
-		_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
-
-	drbd_bm_write(device, NULL);
-	drbd_bm_unlock(device);
-
+	/* Look for day0 UUID before changing this peer slot to a day0 slot. */
 	day0_md = day0_peer_md(device);
-	if (day0_md) {
+
+	peer_md->flags &= md_flags & ~MDF_HAVE_BITMAP;
+	peer_md->bitmap_index = -1;
+
+	/*
+	 * When we forget a peer, we clear the flags. In this case, reset the
+	 * bitmap UUID to the day0 UUID. Peer slots without any bitmap index or
+	 * any flags set should always contain the day0 UUID.
+	 */
+	if (!peer_md->flags && day0_md) {
 		peer_md->bitmap_uuid = day0_md->bitmap_uuid;
 		peer_md->bitmap_dagtag = day0_md->bitmap_dagtag;
 	} else {
 		peer_md->bitmap_uuid = 0;
 		peer_md->bitmap_dagtag = 0;
 	}
-	peer_md->flags = md_flags & ~MDF_HAVE_BITMAP;
-	peer_md->bitmap_index = -1;
+
 	drbd_md_sync(device);
 	drbd_resume_io(device);
 
@@ -3843,7 +3858,7 @@ int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_INVALID_REQUEST;
 			goto fail_ret_set;
 		}
-		err = free_bitmap_index(device, peer_device->node_id, MDF_NODE_EXISTS);
+		err = clear_peer_slot(device, peer_device->node_id, MDF_NODE_EXISTS);
 		if (!err) {
 			peer_device->bitmap_index = -1;
 			notify = true;
@@ -7042,22 +7057,8 @@ int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		err = free_bitmap_index(device, peer_node_id, 0);
-		if (err == -ENODEV)
-			continue;
-		/* ignoring err == -ENOENT == no bitmap for that peer */
-
-		if (get_ldev(device)) {
-			struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_node_id];
-
-			if (peer_md->flags != 0) {
-				peer_md->flags = 0; /* Clearing MDF_NODE_EXISTS */
-				drbd_md_mark_dirty(device);
-			}
-			put_ldev(device);
-		}
-	}
+	idr_for_each_entry(&resource->devices, device, vnr)
+		clear_peer_slot(device, peer_node_id, 0);
 out:
 	mutex_unlock(&resource->adm_mutex);
 out_no_adm:
