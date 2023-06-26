@@ -7575,6 +7575,13 @@ retry:
 	resource->twopc_reply = *reply;
 	write_unlock_irq(&resource->state_rwlock);
 
+	if (affected_connection && affected_connection != connection &&
+	    affected_connection->cstate[NOW] == C_CONNECTED) {
+		drbd_ping_peer(affected_connection);
+		if (affected_connection->cstate[NOW] < C_CONNECTED)
+			affected_connection = NULL;
+	}
+
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
 		drbd_info(connection, "Preparing remote state change %u\n", reply->tid);
