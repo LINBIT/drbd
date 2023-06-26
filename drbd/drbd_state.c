@@ -3776,8 +3776,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    peer_device->comm_current_uuid != drbd_resolved_uuid(peer_device, NULL))
 				send_uuids = true;
 
-			if (calc_device_stable(state_change, n_device, OLD) !=
-					calc_device_stable(state_change, n_device, NEW))
+			if (repl_state[NEW] > L_OFF && device_stable[OLD] != device_stable[NEW])
 				send_uuids = true;
 
 			if (send_uuids)
