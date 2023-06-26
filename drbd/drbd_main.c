@@ -4911,7 +4911,8 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		}
 		if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
 		    peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
-		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S)
+		    peer_device->repl_state[NOW] == L_PAUSED_SYNC_S ||
+		    peer_device->repl_state[NOW] == L_ESTABLISHED)
 			recipients |= NODE_MASK(peer_device->node_id);
 
 		if (peer_device->disk_state[NOW] == D_DISKLESS)
