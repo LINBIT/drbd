@@ -4987,6 +4987,18 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 				     BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device);
 		if (err)
 			return err;
+
+		if (drbd_current_uuid(device) != UUID_JUST_CREATED &&
+				strategy == SYNC_SOURCE_SET_BITMAP) {
+			/*
+			 * We have just written the bitmap slot. Update the
+			 * bitmap UUID so that the resync does not start from
+			 * the beginning again if we disconnect and reconnect.
+			 */
+			drbd_uuid_set_bitmap(peer_device, peer_device->current_uuid);
+			drbd_print_uuids(peer_device, "updated bitmap UUID");
+			drbd_md_sync(device);
+		}
 	}
 	return 0;
 }
