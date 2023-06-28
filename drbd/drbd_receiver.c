@@ -8165,7 +8165,7 @@ static bool drbd_diskless_moved_on(struct drbd_peer_device *peer_device, u64 cur
 		return false;
 
 	/* Same as last time => did not move on. */
-	if (previous == current_uuid)
+	if ((previous & ~UUID_PRIMARY) == (current_uuid & ~UUID_PRIMARY))
 		return false;
 
 	/* Only consider the peer to have moved on if we were on the same UUID. */
