@@ -8154,6 +8154,39 @@ out:
 	return 0;
 }
 
+static bool drbd_diskless_moved_on(struct drbd_peer_device *peer_device, u64 current_uuid)
+{
+	struct drbd_device *device = peer_device->device;
+	u64 previous = peer_device->current_uuid;
+	bool from_the_past = false;
+
+	/* No exposed UUID => did not move on. */
+	if (!current_uuid)
+		return false;
+
+	/* Same as last time => did not move on. */
+	if (previous == current_uuid)
+		return false;
+
+	/* Only consider the peer to have moved on if we were on the same UUID. */
+	if ((previous & ~UUID_PRIMARY) != (drbd_current_uuid(device) & ~UUID_PRIMARY))
+		return false;
+
+	if (get_ldev(device)) {
+		from_the_past =
+			drbd_find_bitmap_by_uuid(peer_device, current_uuid & ~UUID_PRIMARY) != -1;
+		if (!from_the_past)
+			from_the_past = uuid_in_my_history(device, current_uuid & ~UUID_PRIMARY);
+		put_ldev(device);
+	}
+
+	/* It is an old UUID => did not move on. */
+	if (from_the_past)
+		return false;
+
+	return true;
+}
+
 /* Accept a new current UUID generated on a diskless node, that just became primary
    (or during handshake) */
 static int receive_current_uuid(struct drbd_connection *connection, struct packet_info *pi)
@@ -8162,8 +8195,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct p_current_uuid *p = pi->data;
-	u64 current_uuid, weak_nodes, previous;
-	bool moved_on, from_the_past = false;
+	u64 current_uuid, weak_nodes;
+	bool moved_on;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -8173,16 +8206,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	current_uuid = be64_to_cpu(p->uuid);
 	weak_nodes = be64_to_cpu(p->weak_nodes);
 	weak_nodes |= NODE_MASK(peer_device->node_id);
-	previous = peer_device->current_uuid;
-	if (get_ldev(device)) {
-		from_the_past =
-			drbd_find_bitmap_by_uuid(peer_device, current_uuid & ~UUID_PRIMARY) != -1;
-		if (!from_the_past)
-			from_the_past =	uuid_in_my_history(device, current_uuid & ~UUID_PRIMARY);
-		put_ldev(device);
-	}
-	moved_on = current_uuid && previous != current_uuid && !from_the_past &&
-		(previous & ~UUID_PRIMARY) == (drbd_current_uuid(device) & ~UUID_PRIMARY);
+	moved_on = drbd_diskless_moved_on(peer_device, current_uuid);
 
 	peer_device->current_uuid = current_uuid;
 
