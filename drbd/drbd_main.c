@@ -4899,6 +4899,11 @@ bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log)
 	    val == UUID_JUST_CREATED)
 		return false;
 
+	if (device->resource->role[NOW] == R_PRIMARY)
+		val |= UUID_PRIMARY;
+	else
+		val &= ~UUID_PRIMARY;
+
 	device->exposed_data_uuid = val;
 
 	if (log)
