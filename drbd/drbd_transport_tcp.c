@@ -514,22 +514,15 @@ out:
 }
 
 static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
-			     enum drbd_packet cmd, enum drbd_stream stream)
+				 enum drbd_packet cmd)
 {
 	struct p_header80 h;
-	int msg_flags = 0;
-	int err;
-
-	if (!socket)
-		return -EIO;
 
 	h.magic = cpu_to_be32(DRBD_MAGIC);
 	h.command = cpu_to_be16(cmd);
 	h.length = 0;
 
-	err = _dtt_send(tcp_transport, socket, &h, sizeof(h), msg_flags);
-
-	return err;
+	return _dtt_send(tcp_transport, socket, &h, sizeof(h), 0);
 }
 
 /**
@@ -1052,14 +1045,20 @@ static int dtt_connect(struct drbd_transport *transport)
 				use_for_data = false;
 			}
 
-			if (use_for_data) {
-				dsocket = s;
-				dtt_send_first_packet(tcp_transport, dsocket, P_INITIAL_DATA, DATA_STREAM);
-			} else {
+			if (!use_for_data)
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
+
+			err = dtt_send_first_packet(tcp_transport,
+						    s,
+						    use_for_data ? P_INITIAL_DATA : P_INITIAL_META);
+
+			if (err < 0) {
+				tr_warn(transport, "Error sending initial packet: %d\n", err);
+				dtt_socket_free(&s);
+			} else if (use_for_data)
+				dsocket = s;
+			else
 				csocket = s;
-				dtt_send_first_packet(tcp_transport, csocket, P_INITIAL_META, CONTROL_STREAM);
-			}
 		} else if (!first_path)
 			connect_to_path = dtt_next_path(tcp_transport, connect_to_path);
 
@@ -1108,7 +1107,7 @@ retry:
 				csocket = s;
 				break;
 			default:
-				tr_warn(transport, "Error receiving initial packet\n");
+				tr_warn(transport, "Error receiving initial packet: %d\n", fp);
 				kernel_sock_shutdown(s, SHUT_RDWR);
 				sock_release(s);
 randomize:
