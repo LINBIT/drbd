@@ -15,11 +15,16 @@
 #include <linux/pkt_sched.h>
 #include <linux/sched/signal.h>
 #include <linux/net.h>
+#include <linux/file.h>
 #include <linux/tcp.h>
 #include <linux/highmem.h>
 #include <linux/drbd_genl_api.h>
 #include <linux/drbd_config.h>
+#include <linux/tls.h>
 #include <net/tcp.h>
+#include <net/handshake.h>
+#include <net/tls.h>
+#include <net/tls_prot.h>
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
 
@@ -44,6 +49,7 @@ struct buffer {
 };
 
 #define DTT_CONNECTING 1
+#define DTT_DATA_READY_ARMED 2
 
 struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
@@ -52,7 +58,9 @@ struct drbd_tcp_transport {
 	struct socket *stream[2];
 	struct buffer rbuf[2];
 	struct timer_list control_timer;
+	struct work_struct control_data_ready_work;
 	void (*original_control_sk_state_change)(struct sock *sk);
+	void (*original_control_sk_data_ready)(struct sock *sk);
 };
 
 struct dtt_listener {
@@ -198,6 +206,14 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
 
+	clear_bit(DTT_DATA_READY_ARMED, &tcp_transport->flags);
+
+	if (tcp_transport->control_data_ready_work.func) {
+		cancel_work_sync(&tcp_transport->control_data_ready_work);
+		tcp_transport->control_data_ready_work.func = NULL;
+	}
+
+
 	synchronize_rcu();
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		dtt_socket_free(&tcp_transport->stream[i]);
@@ -284,11 +300,39 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 		.iov_base = buf,
 		.iov_len = size,
 	};
+	union {
+		struct cmsghdr cmsg;
+		u8 buf[CMSG_SPACE(sizeof(u8))];
+	} u;
 	struct msghdr msg = {
-		.msg_flags = (flags ? flags : MSG_WAITALL | MSG_NOSIGNAL)
+		.msg_control = &u,
+		.msg_controllen = sizeof(u),
 	};
+	int ret;
+	u8 level, description;
 
-	return kernel_recvmsg(socket, &msg, &iov, 1, size, msg.msg_flags);
+	flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
+
+	ret = kernel_recvmsg(socket, &msg, &iov, 1, size, flags);
+
+	if (msg.msg_controllen != sizeof(u)) {
+		switch (tls_get_record_type(socket->sk, &u.cmsg)) {
+		case 0:
+			fallthrough;
+		case TLS_RECORD_TYPE_DATA:
+			break;
+		case TLS_RECORD_TYPE_ALERT:
+			tls_alert_recv(socket->sk, &msg, &level, &description);
+			ret = (level == TLS_ALERT_LEVEL_FATAL) ? -EACCES : -EAGAIN;
+			break;
+		default:
+			/* discard this record type */
+			ret = -EAGAIN;
+			break;
+		}
+	}
+
+	return ret;
 }
 
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
@@ -503,6 +547,66 @@ out:
 	return err;
 }
 
+typedef int (*tls_hello_func)(const struct tls_handshake_args *, gfp_t);
+
+struct tls_handshake_wait {
+	struct completion done;
+	int status;
+};
+
+static void tls_handshake_done(void *data, int status, key_serial_t peerid)
+{
+	struct tls_handshake_wait *wait = data;
+
+	wait->status = status;
+	complete(&wait->done);
+}
+
+static int tls_init_hello(struct socket *sock, const char *peername,
+			  key_serial_t keyring, key_serial_t privkey,
+			  key_serial_t certificate, tls_hello_func hello,
+			  struct tls_handshake_wait *tls_wait)
+{
+	int err;
+	struct tls_handshake_args tls_args = {
+			.ta_sock = sock,
+			.ta_done = tls_handshake_done,
+			.ta_data = tls_wait,
+			.ta_peername = peername,
+			.ta_keyring = keyring,
+			.ta_my_privkey = privkey,
+			.ta_my_cert = certificate,
+	};
+
+	if (IS_ERR(sock_alloc_file(sock, O_NONBLOCK, NULL)))
+		return -EIO;
+
+	do {
+		err = hello(&tls_args, GFP_KERNEL);
+	} while (err == -EAGAIN);
+
+	return err;
+}
+
+static int tls_wait_hello(struct tls_handshake_wait *csocket_tls_wait,
+			  struct tls_handshake_wait *dsocket_tls_wait,
+			  unsigned long timeout)
+{
+	unsigned long remaining = wait_for_completion_timeout(
+		&csocket_tls_wait->done, timeout);
+	if (!remaining)
+		return -ETIMEDOUT;
+
+	if (!wait_for_completion_timeout(&dsocket_tls_wait->done, remaining))
+		return -ETIMEDOUT;
+
+	if (csocket_tls_wait->status < 0)
+		return csocket_tls_wait->status;
+
+	return dsocket_tls_wait->status;
+}
+
+
 static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 				 enum drbd_packet cmd)
 {
@@ -524,8 +628,14 @@ static void dtt_socket_free(struct socket **socket)
 	if (!*socket)
 		return;
 
+	tls_handshake_cancel((*socket)->sk);
 	kernel_sock_shutdown(*socket, SHUT_RDWR);
-	sock_release(*socket);
+
+	if ((*socket)->file)
+		sockfd_put((*socket));
+	else
+		sock_release(*socket);
+
 	*socket = NULL;
 }
 
@@ -769,6 +879,26 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	return consumed;
 }
 
+static void dtt_control_data_ready_work(struct work_struct *item)
+{
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(item, struct drbd_tcp_transport, control_data_ready_work);
+	struct socket *csocket = tcp_transport->stream[CONTROL_STREAM];
+	struct drbd_const_buffer drbd_buffer;
+	int n;
+
+	while (true) {
+		n = dtt_recv_short(csocket, tcp_transport->rbuf[CONTROL_STREAM].base, PAGE_SIZE,
+				   MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n <= 0)
+			break;
+
+		drbd_buffer.buffer = tcp_transport->rbuf[CONTROL_STREAM].base;
+		drbd_buffer.avail = n;
+		drbd_control_data_ready(&tcp_transport->transport, &drbd_buffer);
+	}
+}
+
 static void dtt_control_data_ready(struct sock *sock)
 {
 	struct drbd_transport *transport = sock->sk_user_data;
@@ -780,8 +910,24 @@ static void dtt_control_data_ready(struct sock *sock)
 		.arg = { .data = transport },
 	};
 
+	if (!test_bit(DTT_DATA_READY_ARMED, &tcp_transport->flags)
+	    && tcp_transport->original_control_sk_data_ready)
+		return tcp_transport->original_control_sk_data_ready(sock);
+
+	/* We have two different paths depending on if TLS is enabled or not.
+	 * If TLS is enabled, we can't use read_sock, firstly because it's not implemented for the
+	 * TLS protocol on most kernels, secondly the implementation that does exist is not safe
+	 * to call from SOFTIRQ context. Instead, we schedule a work and increment the counter of
+	 * "pending" ready events.
+	 *
+	 * In normal TCP mode, we can simply use tcp_read_sock, as that is safe to call from SOFTIRQ
+	 * contexts.
+	 */
 	mod_timer(&tcp_transport->control_timer, jiffies + sock->sk_rcvtimeo);
-	tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
+	if (tcp_transport->control_data_ready_work.func)
+		queue_work(system_highpri_wq, &tcp_transport->control_data_ready_work);
+	else
+		tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
 }
 
 static void dtt_control_state_change(struct sock *sock)
@@ -963,12 +1109,14 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct dtt_path *connect_to_path, *first_path = NULL;
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
+	bool tls, dsocket_is_server = false, csocket_is_server = false;
+	char peername[64];
+	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
 	bool ok;
 
 	dsocket = NULL;
 	csocket = NULL;
-
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
@@ -1046,10 +1194,13 @@ static int dtt_connect(struct drbd_transport *transport)
 			if (err < 0) {
 				tr_warn(transport, "Error sending initial packet: %d\n", err);
 				dtt_socket_free(&s);
-			} else if (use_for_data)
+			} else if (use_for_data) {
 				dsocket = s;
-			else
+				dsocket_is_server = false;
+			} else {
 				csocket = s;
+				csocket_is_server = false;
+			}
 		} else if (!first_path)
 			connect_to_path = dtt_next_path(tcp_transport, connect_to_path);
 
@@ -1081,9 +1232,11 @@ retry:
 					tr_warn(transport, "initial packet S crossed\n");
 					dtt_socket_free(&dsocket);
 					dsocket = s;
+					dsocket_is_server = true;
 					goto randomize;
 				}
 				dsocket = s;
+				dsocket_is_server = true;
 				break;
 			case P_INITIAL_META:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
@@ -1091,9 +1244,11 @@ retry:
 					tr_warn(transport, "initial packet M crossed\n");
 					dtt_socket_free(&csocket);
 					csocket = s;
+					csocket_is_server = true;
 					goto randomize;
 				}
 				csocket = s;
+				csocket_is_server = true;
 				break;
 			default:
 				tr_warn(transport, "Error receiving initial packet: %d\n", fp);
@@ -1109,6 +1264,52 @@ randomize:
 
 		ok = dtt_connection_established(transport, &dsocket, &csocket, &first_path);
 	} while (!ok);
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	timeout = nc->timeout * HZ / 10;
+	tls = nc->tls;
+	memcpy(peername, nc->name, 64);
+	tls_keyring = nc->tls_keyring;
+	tls_privkey = nc->tls_privkey;
+	tls_certificate = nc->tls_certificate;
+	rcu_read_unlock();
+
+	write_lock_bh(&csocket->sk->sk_callback_lock);
+	clear_bit(DTT_DATA_READY_ARMED, &tcp_transport->flags);
+	tcp_transport->original_control_sk_data_ready = csocket->sk->sk_data_ready;
+	csocket->sk->sk_user_data = transport;
+	csocket->sk->sk_data_ready = dtt_control_data_ready;
+	write_unlock_bh(&csocket->sk->sk_callback_lock);
+
+	if (tls) {
+		struct tls_handshake_wait csocket_tls_wait = {
+			.done = COMPLETION_INITIALIZER_ONSTACK(csocket_tls_wait.done),
+		};
+		struct tls_handshake_wait dsocket_tls_wait = {
+			.done = COMPLETION_INITIALIZER_ONSTACK(dsocket_tls_wait.done),
+		};
+
+		err = tls_init_hello(
+			csocket, peername, tls_keyring, tls_privkey, tls_certificate,
+			csocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
+			&csocket_tls_wait);
+		if (err < 0)
+			goto out;
+
+		err = tls_init_hello(
+			dsocket, peername, tls_keyring, tls_privkey, tls_certificate,
+			dsocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
+			&dsocket_tls_wait);
+		if (err < 0)
+			goto out;
+
+		err = tls_wait_hello(&csocket_tls_wait, &dsocket_tls_wait, timeout);
+		if (err < 0)
+			goto out;
+
+		INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
+	}
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	connect_to_path->path.established = true;
@@ -1141,12 +1342,6 @@ randomize:
 	tcp_transport->stream[DATA_STREAM] = dsocket;
 	tcp_transport->stream[CONTROL_STREAM] = csocket;
 
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-
-	timeout = nc->timeout * HZ / 10;
-	rcu_read_unlock();
-
 	dsocket->sk->sk_sndtimeo = timeout;
 	csocket->sk->sk_sndtimeo = timeout;
 
@@ -1161,9 +1356,8 @@ randomize:
 
 	write_lock_bh(&csocket->sk->sk_callback_lock);
 	tcp_transport->original_control_sk_state_change = csocket->sk->sk_state_change;
-	csocket->sk->sk_user_data = transport;
-	csocket->sk->sk_data_ready = dtt_control_data_ready;
 	csocket->sk->sk_state_change = dtt_control_state_change;
+	set_bit(DTT_DATA_READY_ARMED, &tcp_transport->flags);
 	write_unlock_bh(&csocket->sk->sk_callback_lock);
 
 	return 0;
