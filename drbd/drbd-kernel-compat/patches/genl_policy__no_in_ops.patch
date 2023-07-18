@@ -16,3 +16,43 @@
  };
  
  /*
+
+--- drbd-kernel-compat/handshake/genl.c
++++ drbd-kernel-compat/handshake/genl.c
+@@ -10,14 +10,6 @@
+
+ #include <uapi/linux/handshake.h>
+
+-
+-/* HANDSHAKE_CMD_ACCEPT - do */
+-static const struct nla_policy handshake_accept_nl_policy[HANDSHAKE_A_DONE_REMOTE_AUTH + 1] = {
+-	[HANDSHAKE_A_DONE_STATUS] = { .type = NLA_UNSPEC, },
+-	[HANDSHAKE_A_ACCEPT_HANDLER_CLASS] = { .type = NLA_U32, },
+-	[HANDSHAKE_A_DONE_REMOTE_AUTH] = { .type = NLA_UNSPEC, },
+-};
+-
+ /* HANDSHAKE_CMD_DONE - do */
+ static const struct nla_policy handshake_done_nl_policy[HANDSHAKE_A_DONE_REMOTE_AUTH + 1] = {
+ 	[HANDSHAKE_A_DONE_STATUS] = { .type = NLA_U32, },
+@@ -30,13 +22,11 @@ static const struct genl_ops handshake_nl_ops[] = {
+ 	{
+ 		.cmd		= HANDSHAKE_CMD_ACCEPT,
+ 		.doit		= handshake_nl_accept_doit,
+-		.policy		= handshake_accept_nl_policy,
+ 		.flags		= GENL_ADMIN_PERM | GENL_CMD_CAP_DO,
+ 	},
+ 	{
+ 		.cmd		= HANDSHAKE_CMD_DONE,
+ 		.doit		= handshake_nl_done_doit,
+-		.policy		= handshake_done_nl_policy,
+ 		.flags		= GENL_CMD_CAP_DO,
+ 	},
+ };
+@@ -55,6 +45,7 @@ struct genl_family handshake_nl_family __ro_after_init = {
+ 	.ops		= handshake_nl_ops,
+ 	.n_ops		= ARRAY_SIZE(handshake_nl_ops),
+ 	.mcgrps		= handshake_nl_mcgrps,
++	.policy		= handshake_done_nl_policy,
+ 	.maxattr	= HANDSHAKE_A_DONE_REMOTE_AUTH,
+ 	.n_mcgrps	= ARRAY_SIZE(handshake_nl_mcgrps),
+ };

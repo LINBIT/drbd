@@ -14,6 +14,7 @@
 #include <linux/skbuff.h>
 #include <linux/mm.h>
 #include <linux/netlink.h>
+#include <linux/file.h>
 
 #include <net/sock.h>
 #include <net/genetlink.h>
