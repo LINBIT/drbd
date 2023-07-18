@@ -979,9 +979,30 @@ static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 	return true;
 }
 
+static long drbd_max_ping_timeout(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+	long ping_timeout = 0;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource)
+		ping_timeout = max(ping_timeout, (long) connection->transport.net_conf->ping_timeo);
+	rcu_read_unlock();
+
+	return ping_timeout;
+}
+
 static bool wait_up_to_date(struct drbd_resource *resource)
 {
-	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	/*
+	 * Adding ping-timeout is necessary to ensure that we do not proceed
+	 * while the loss of some connection has not yet been detected. Ideally
+	 * we would use the maximum ping timeout from the entire cluster. Since
+	 * we do not have that, use the maximum from our connections on a
+	 * best-effort basis.
+	 */
+	long timeout = (resource->res_opts.auto_promote_timeout +
+			drbd_max_ping_timeout(resource)) * HZ / 10;
 	int initial_up_to_date, up_to_date;
 
 	initial_up_to_date = count_up_to_date(resource);
