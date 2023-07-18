@@ -27,6 +27,15 @@ ifndef CONFIG_LRU_CACHE
 compat_objs += drbd-kernel-compat/lru_cache.o
 endif
 
+ifeq ($(shell test $(VERSION) -ge 4; echo $$?),0)
+ifeq ($(shell test $(VERSION) -gt 4 || test $(PATCHLEVEL) -ge 17; echo $$?),0)
+ifndef CONFIG_NET_HANDSHAKE
+obj-$(CONFIG_TLS) += drbd-kernel-compat/handshake/
+$(obj)/drbd-kernel-compat/handshake: $(obj)/compat.h $(src)/.compat_patches_applied
+endif
+endif
+endif
+
 compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 ifdef CONFIG_DEV_DAX_PMEM

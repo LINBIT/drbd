@@ -152,6 +152,7 @@ else
   clean: unpatch
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
 	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
+	rm -f drbd-kernel-compat/handshake/*.[oas] drbd-kernel-compat/handshake/*.ko drbd-kernel-compat/handshake/.*.cmd drbd-kernel-compat/handshake/.*.d drbd-kernel-compat/handshake/.*.tmp drbd-kernel-compat/handshake/*.mod.c drbd-kernel-compat/handshake/.*.flags drbd-kernel-compat/handshake/.depend drbd-kernel-compat/handshake/.kernel*
 	rm -f dummy-for-compat-h.c
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
@@ -182,6 +183,7 @@ else
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .drbd_kernelrelease
     MODOBJS := drbd.ko drbd_transport_tcp.ko drbd_transport_rdma.ko
+    MODOBJS += $(wildcard drbd-kernel-compat/handshake/handshake.ko)
     MODSUBDIR := updates
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
 
