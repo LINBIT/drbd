@@ -600,6 +600,10 @@ int main(int argc, char **argv)
 	patch(1, "tls_tx_rx", true, false,
 	      COMPAT_HAVE_TLS_TX_RX, "present");
 
+	patch(2, "tls_get_record_type", true, false,
+	      COMPAT_HAVE_TLS_GET_RECORD_TYPE, "present",
+	      COMPAT_HAVE_TLS_TX_RX, "present");
+
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
