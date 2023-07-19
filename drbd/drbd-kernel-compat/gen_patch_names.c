@@ -597,6 +597,10 @@ int main(int argc, char **argv)
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
 
+	patch(1, "tls_tx_rx", true, false,
+	      COMPAT_HAVE_TLS_TX_RX, "present");
+
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
