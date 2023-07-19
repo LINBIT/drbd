@@ -199,8 +199,10 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		list_add(&listener->list, &resource->listeners);
 		needs_init = true;
 	}
+	spin_lock(&listener->waiters_lock);
 	list_add(&path->listener_link, &listener->waiters);
 	path->listener = listener;
+	spin_unlock(&listener->waiters_lock);
 	spin_unlock_bh(&resource->listeners_lock);
 
 	if (needs_init) {
@@ -235,17 +237,15 @@ static void drbd_listener_destroy(struct kref *kref)
 
 void drbd_put_listener(struct drbd_path *path)
 {
-	struct drbd_resource *resource;
 	struct drbd_listener *listener;
 
 	listener = xchg(&path->listener, NULL);
 	if (!listener)
 		return;
 
-	resource = listener->resource;
-	spin_lock_bh(&resource->listeners_lock);
+	spin_lock_bh(&listener->waiters_lock);
 	list_del(&path->listener_link);
-	spin_unlock_bh(&resource->listeners_lock);
+	spin_unlock_bh(&listener->waiters_lock);
 	kref_put(&listener->kref, drbd_listener_destroy);
 }
 
