@@ -2025,11 +2025,11 @@ static void sanitize_state(struct drbd_resource *resource)
 			bool up_to_date_neighbor = false;
 
 			for_each_peer_device_rcu(peer_device, device) {
-				enum drbd_conn_state cstate = peer_device->connection->cstate[NEW];
+				enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
 				enum drbd_repl_state nr = peer_device->negotiation_result;
 				enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
 
-				if (pdsk < D_NEGOTIATING || cstate < C_CONNECTED)
+				if (pdsk < D_NEGOTIATING || repl_state == L_OFF)
 					continue;
 
 				if (pdsk == D_UP_TO_DATE)
