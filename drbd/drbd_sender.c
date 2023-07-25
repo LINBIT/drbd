@@ -100,12 +100,12 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __rele
 	if (list_empty(&connection->read_ee))
 		wake_up(&connection->ee_wait);
 	io_error = test_bit(__EE_WAS_ERROR, &peer_req->flags);
+	drbd_queue_work(&connection->sender_work, &peer_req->w);
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 
 	if (io_error)
 		drbd_handle_io_error(device, DRBD_READ_ERROR);
 
-	drbd_queue_work(&connection->sender_work, &peer_req->w);
 	put_ldev(device);
 }
 
