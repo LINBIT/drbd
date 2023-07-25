@@ -3983,7 +3983,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (!repl_is_sync(repl_state[OLD]) && repl_is_sync(repl_state[NEW]))
 				drbd_run_resync(peer_device, repl_state[NEW]);
 
-			if (!peer_device_state_change->resync_active[OLD] && peer_device_state_change->resync_active[NEW])
+			if (peer_device_state_change->repl_state[OLD] != L_SYNC_TARGET &&
+					peer_device_state_change->repl_state[NEW] == L_SYNC_TARGET)
 				drbd_queue_work_if_unqueued(
 						&peer_device->connection->sender_work,
 						&peer_device->resync_work);
