@@ -3840,7 +3840,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				some_peer_demoted = true;
 
 			/* Last part of the attaching process ... */
-			if (repl_state[NEW] >= L_ESTABLISHED &&
+			if (cstate[NEW] == C_CONNECTED && /* repl_state[NEW] might still be L_OFF */
 			    disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING) {
 				drbd_send_sizes(peer_device, 0, 0);  /* to start sync... */
 				drbd_send_uuids(peer_device, 0, 0);
