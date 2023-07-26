@@ -5859,6 +5859,30 @@ void __change_resync_susp_dependency(struct drbd_peer_device *peer_device,
 	peer_device->resync_susp_dependency[NEW] = value;
 }
 
+static void log_current_uuids(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
+	char msg[120];
+	int ret, pos = 0;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+			continue;
+		connection = peer_device->connection;
+		ret = snprintf(msg + pos, 120 - pos, "%s: %016llX ",
+			       rcu_dereference(connection->transport.net_conf)->name,
+			       peer_device->current_uuid);
+		if (ret > 0)
+			pos += ret;
+		if (pos >= 120)
+			break;
+	}
+	rcu_read_unlock();
+	drbd_warn(device, "%s", msg);
+}
+
 bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
@@ -5907,6 +5931,7 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 				continue;
 			}
 			drbd_err(device, "Multiple UpToDate peers have different current UUIDs\n");
+			log_current_uuids(device);
 		}
 	}
 	rcu_read_unlock();
