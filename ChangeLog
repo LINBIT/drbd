@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.15 (api:genl2/proto:110-121/transport:17)
+9.1.15 (api:genl2/proto:86-121/transport:18)
 --------
  * fix how flush requests are marked when submitted to the Linux IO
    stack on the secondary node
@@ -26,7 +26,7 @@ Latest:
  * do not block specific state changes (promote, demote, attach, and
    detach) when only some nodes add a new minor
 
-9.1.14 (api:genl2/proto:110-121/transport:17)
+9.1.14 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a race with concurrent promotion and demotion, which can
    lead to an unexpected "split-brain" later on
@@ -44,7 +44,7 @@ Latest:
  * simplify remembering two-pc parents, maybe fixing a one-time-seen bug
  * derive abort_local_transaction timeout from ping-timeout
 
-9.1.13 (api:genl2/proto:110-121/transport:17)
+9.1.13 (api:genl2/proto:86-121/transport:18)
 --------
  * when calculating if a partition has quorum, take into account if
    the missing nodes might have quorum
@@ -55,7 +55,7 @@ Latest:
  * work on bringing the out-of-tree DRBD9 closer to DRBD in the upstream
    kernel; Use lru_cahche.ko from the installed kernel whenever possible
 
-9.1.12 (api:genl2/proto:110-121/transport:17)
+9.1.12 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a race that could result in connection attempts getting aborted
    with the message "sock_recvmsg returned -11"
@@ -70,18 +70,18 @@ Latest:
    unexpectedly when the fencing policy is changed at the moment before
    promoting
 
-9.1.11 (api:genl2/proto:110-121/transport:17)
+9.1.11 (api:genl2/proto:86-121/transport:18)
 --------
  * The change introduced with 9.1.10 created another problem that might
    lead to premature request completion (kernel crash); reverted that
    change and fix it in another way
 
-9.1.10 (api:genl2/proto:110-121/transport:17)
+9.1.10 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a regression introduced with 9.1.9; using protocol A on SMP
    with heavy IO can might cause kernel crash
 
-9.1.9 (api:genl2/proto:110-121/transport:17)
+9.1.9 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a mistake in the compat generation code; it broke DRBD on
    partitions on kernel older than linux 5.10 (this was introduced
@@ -98,7 +98,7 @@ Latest:
    connected resource
  * fix online attach when the connection to a 3rd node is down
 
-9.1.8 (api:genl2/proto:110-121/transport:17)
+9.1.8 (api:genl2/proto:86-121/transport:18)
 --------
  * restore protocol compatibility with drbd-8.4
  * detect peers that died silently when starting a two-phase-commit
@@ -113,7 +113,7 @@ Latest:
  * build fixes for RHEL9
  * following upstream changes to DRBD up to Linux 5.17 and updated compat
 
-9.1.7 (api:genl2/proto:110-121/transport:17)
+9.1.7 (api:genl2/proto:110-121/transport:18)
 --------
  * avoid deadlock upon trying to down an io-frozen DRBD device that
    has a file system mounted
