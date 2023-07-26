@@ -5925,7 +5925,7 @@ static u64 exposable_data_uuid(struct drbd_device *device)
 		if (nc && !nc->allow_remote_read)
 			continue;
 		if (peer_device->disk_state[NOW] == D_UP_TO_DATE &&
-		    uuid != peer_device->current_uuid) {
+		    (uuid & ~UUID_PRIMARY) != (peer_device->current_uuid & ~UUID_PRIMARY)) {
 			if (!uuid) {
 				uuid = peer_device->current_uuid;
 				continue;
