@@ -2,7 +2,7 @@ variables:
   RELEASE_BRANCH: drbd-9.1
   DRBD_VERSION_BASE: 9.1.0
   DRBD9_TESTS_REF: master
-  BUILD_HELPERS_VERSION: 4847343a16f5f9500f7c53ed7aa681962706d8ba
+  BUILD_HELPERS_VERSION: cad23b57db14b7676808fa645c4561bc66c3e204
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -17,7 +17,7 @@ stages:
 
 .setup-lbbuild:
   before_script:
-    - . gitlab-utils.sh && . .gitlab/gitlab-utils.sh
+    - . gitlab-utils.sh
     - ci_prepare_tools
     - ci_fetch_rq
     - ci_fetch_lbbuildctl
@@ -48,7 +48,7 @@ stages:
 
         set -x
 
-        drbd_dummy_release "$version" "$release" "$rel_version"
+        ./.gitlab/drbd-prepare-release.sh "$version" "$release" "$rel_version"
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
         curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD \
           --upload-file drbd-*.tar.gz \
