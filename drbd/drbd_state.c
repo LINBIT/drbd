@@ -1982,7 +1982,6 @@ static void sanitize_state(struct drbd_resource *resource)
 	enum drbd_role *role = resource->role;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
-	bool have_good_peer = false;
 	bool maybe_crashed_primary = false;
 	bool volume_lost_data_access = false;
 	bool volumes_have_data_access = true;
@@ -2011,6 +2010,7 @@ static void sanitize_state(struct drbd_resource *resource)
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state *disk_state = device->disk_state;
 		bool lost_connection = false;
+		bool have_good_peer = false;
 
 		if (disk_state[OLD] == D_DISKLESS && disk_state[NEW] == D_DETACHING)
 			disk_state[NEW] = D_DISKLESS;
