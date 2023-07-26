@@ -510,6 +510,9 @@ enum {
 	/* The peer wants a write ACK for this (wire proto C) */
 	__EE_SEND_WRITE_ACK,
 
+	/* in on connection->net_ee */
+	__EE_ON_NET_LIST,
+
 	/* this is/was a write same request */
 	__EE_WRITE_SAME,
 
@@ -532,6 +535,7 @@ enum {
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
+#define EE_ON_NET_LIST		(1<<__EE_ON_NET_LIST)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
@@ -2154,13 +2158,11 @@ extern int drbd_submit_peer_request(struct drbd_peer_request *);
 extern void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);
 extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head *cleanup);
 extern void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
-extern int drbd_free_peer_reqs(struct drbd_connection *, struct list_head *, bool is_net_ee);
+extern int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *peer_reqs);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
-extern void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order,
-		bool is_net);
-#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, true, false)
-#define drbd_free_peer_req_no_list(pr) __drbd_free_peer_req(pr, false, false)
-#define drbd_free_net_peer_req(pr) __drbd_free_peer_req(pr, true, true)
+extern void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order);
+#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, true)
+#define drbd_free_peer_req_no_list(pr) __drbd_free_peer_req(pr, false)
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);

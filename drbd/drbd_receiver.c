@@ -499,7 +499,7 @@ static void drbd_reclaim_net_peer_reqs(struct drbd_connection *connection)
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_net_peer_req(peer_req);
+		drbd_free_peer_req(peer_req);
 
 	if (page_chain)
 		drbd_free_pages(&connection->transport, page_chain, false);
@@ -637,10 +637,11 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	return peer_req;
 }
 
-void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order, bool is_net)
+void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
+	bool is_net = peer_req->flags & EE_ON_NET_LIST;
 
 	if (on_recv_order) {
 		spin_lock_irq(&connection->peer_reqs_lock);
@@ -659,7 +660,7 @@ void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order
 	mempool_free(peer_req, &drbd_ee_mempool);
 }
 
-int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *list, bool is_net_ee)
+int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *list)
 {
 	LIST_HEAD(work_list);
 	struct drbd_peer_request *peer_req, *t;
@@ -670,7 +671,7 @@ int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *li
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
-		__drbd_free_peer_req(peer_req, true, is_net_ee);
+		__drbd_free_peer_req(peer_req, true);
 		count++;
 	}
 	return count;
@@ -693,7 +694,7 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_net_peer_req(peer_req);
+		drbd_free_peer_req(peer_req);
 
 	/* possible callbacks here:
 	 * e_end_block, and e_end_resync_block.
@@ -9646,16 +9647,16 @@ static void conn_disconnect(struct drbd_connection *connection)
 	tl_walk(connection, &connection->req_not_net_done,
 			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
 
-	i = drbd_free_peer_reqs(connection, &connection->done_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (i)
 		drbd_info(connection, "done_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->dagtag_wait_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->dagtag_wait_ee);
 	if (i)
 		drbd_info(connection, "dagtag_wait_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee);
 	if (i)
 		drbd_info(connection, "resync_ack_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->net_ee, true);
+	i = drbd_free_peer_reqs(connection, &connection->net_ee);
 	if (i)
 		drbd_info(connection, "net_ee not empty, killed %u entries\n", i);
 
