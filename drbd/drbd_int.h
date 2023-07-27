@@ -525,6 +525,9 @@ enum {
 
 	/* SyncTarget: This is the last resync request. */
 	__EE_LAST_RESYNC_REQUEST,
+
+	/* This peer_req->recv_order is on some list */
+	__EE_ON_RECV_ORDER,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -540,6 +543,7 @@ enum {
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
+#define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
 
 /* flag bits per device */
 enum device_flag {
@@ -2160,9 +2164,7 @@ extern void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct li
 extern void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 extern int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *peer_reqs);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
-extern void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order);
-#define drbd_free_peer_req(pr) __drbd_free_peer_req(pr, true)
-#define drbd_free_peer_req_no_list(pr) __drbd_free_peer_req(pr, false)
+extern void drbd_free_peer_req(struct drbd_peer_request *peer_req);
 extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);
@@ -2724,6 +2726,7 @@ static inline struct net *drbd_net_assigned_to_connection(struct drbd_connection
 
 static inline void drbd_list_del_resync_request(struct drbd_peer_request *peer_req)
 {
+	peer_req->flags &= ~EE_ON_RECV_ORDER;
 	list_del(&peer_req->recv_order);
 
 	if (peer_req == peer_req->peer_device->received_last)

@@ -637,13 +637,13 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	return peer_req;
 }
 
-void __drbd_free_peer_req(struct drbd_peer_request *peer_req, bool on_recv_order)
+void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
 	bool is_net = peer_req->flags & EE_ON_NET_LIST;
 
-	if (on_recv_order) {
+	if (peer_req->flags & EE_ON_RECV_ORDER) {
 		spin_lock_irq(&connection->peer_reqs_lock);
 		if (peer_req->i.type == INTERVAL_RESYNC_WRITE)
 			drbd_list_del_resync_request(peer_req);
@@ -671,7 +671,7 @@ int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *li
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
-		__drbd_free_peer_req(peer_req, true);
+		drbd_free_peer_req(peer_req);
 		count++;
 	}
 	return count;
@@ -2502,7 +2502,7 @@ static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_devi
 
 	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
 		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
-		drbd_free_peer_req_no_list(peer_req);
+		drbd_free_peer_req(peer_req);
 	}
 }
 
@@ -3365,7 +3365,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	err = read_in_block(peer_req, &d);
 	if (err) {
-		drbd_free_peer_req_no_list(peer_req);
+		drbd_free_peer_req(peer_req);
 		put_ldev(device);
 		return -EIO;
 	}
@@ -3489,6 +3489,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->recv_order, &connection->peer_requests);
+	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	/* Note: this now may or may not be "hot" in the activity log.
@@ -3530,7 +3531,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 out_del_list:
 	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del_init(&peer_req->recv_order);
+	peer_req->flags &= ~EE_ON_RECV_ORDER;
+	list_del(&peer_req->recv_order);
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	atomic_dec(&connection->active_ee_cnt);
@@ -3541,7 +3543,7 @@ out:
 		dec_unacked(peer_device);
 	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
 	put_ldev(device);
-	drbd_free_peer_req_no_list(peer_req);
+	drbd_free_peer_req(peer_req);
 	return err;
 }
 
@@ -4071,6 +4073,7 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 submit:
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->recv_order, &connection->peer_reads);
+	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (pi->cmd == P_DATA_REQUEST) {
@@ -4079,15 +4082,11 @@ submit:
 	} else {
 		err = drbd_peer_resync_read(peer_req);
 		if (err)
-			goto fail_on_list;
+			goto fail2;
 	}
 	return 0;
-fail_on_list:
-	spin_lock_irq(&connection->peer_reqs_lock);
-	list_del(&peer_req->recv_order);
-	spin_unlock_irq(&connection->peer_reqs_lock);
 fail2:
-	drbd_free_peer_req_no_list(peer_req);
+	drbd_free_peer_req(peer_req);
 fail:
 	dec_unacked(peer_device);
 	put_ldev(device);
@@ -9352,6 +9351,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 		if (peer_req->i.type == INTERVAL_PEER_READ)
 			continue;
 
+		peer_req->flags &= ~EE_ON_RECV_ORDER;
 		list_del(&peer_req->recv_order);
 
 		if (peer_req->i.type == INTERVAL_RESYNC_READ)
@@ -9367,7 +9367,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 		 * just need to be freed.
 		 */
 		if (test_bit(INTERVAL_COMPLETED, &peer_req->i.flags)) {
-			drbd_free_peer_req_no_list(peer_req);
+			drbd_free_peer_req(peer_req);
 			continue;
 		}
 
@@ -9380,7 +9380,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 
 		dec_rs_pending(peer_req->peer_device);
 		drbd_remove_peer_req_interval(peer_req);
-		drbd_free_peer_req_no_list(peer_req);
+		drbd_free_peer_req(peer_req);
 	}
 }
 
@@ -10684,7 +10684,7 @@ static int w_send_out_of_sync(struct drbd_work *w, int cancel)
 		}
 	}
 	rcu_read_unlock();
-	drbd_free_peer_req_no_list(peer_req);
+	drbd_free_peer_req(peer_req);
 
 	return err;
 }
@@ -10709,7 +10709,7 @@ static void notify_sync_targets_or_free(struct drbd_peer_request *peer_req, u64 
 		}
 	}
 	rcu_read_unlock();
-	drbd_free_peer_req_no_list(peer_req);
+	drbd_free_peer_req(peer_req);
 }
 
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
@@ -10756,6 +10756,7 @@ found:
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
+		peer_req->flags &= ~EE_ON_RECV_ORDER;
 		list_del(&peer_req->recv_order);
 		notify_sync_targets_or_free(peer_req, in_sync);
 	}
@@ -10798,6 +10799,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
+		peer_req->flags &= ~EE_ON_RECV_ORDER;
 		list_del(&peer_req->recv_order);
 		notify_sync_targets_or_free(peer_req, 0);
 	}

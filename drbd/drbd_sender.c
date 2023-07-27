@@ -622,6 +622,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->recv_order, &peer_device->resync_requests);
+	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	if (size) {
@@ -681,6 +682,7 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_add_tail(&peer_req->recv_order, &peer_device->resync_requests);
+	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	atomic_inc(&connection->backing_ee_cnt);
@@ -1483,6 +1485,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 		spin_lock_irq(&connection->peer_reqs_lock);
 		list_add_tail(&peer_req->recv_order, &connection->peer_reads);
+		peer_req->flags |= EE_ON_RECV_ORDER;
 		spin_unlock_irq(&connection->peer_reqs_lock);
 
 		drbd_conflict_send_ov_request(peer_req);
