@@ -2449,15 +2449,17 @@ static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
 static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_flags)
 {
 	struct drbd_peer_md *peer_md, *day0_md;
+	struct meta_data_on_disk_9 *buffer;
+	int from_index, freed_index;
+	bool free_bitmap_slot;
 
 	if (!get_ldev(device))
 		return -ENODEV;
 
-	drbd_suspend_io(device, WRITE_ONLY);
-
 	peer_md = &device->ldev->md.peers[peer_node_id];
-	if (peer_md->flags & MDF_HAVE_BITMAP) {
-		int from_index, freed_index;
+	free_bitmap_slot = peer_md->flags & MDF_HAVE_BITMAP;
+	if (free_bitmap_slot) {
+		drbd_suspend_io(device, WRITE_ONLY);
 
 		/*
 		 * Unallocated slots are considered to track writes to the
@@ -2468,23 +2470,28 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 
 		from_index = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
 		freed_index = peer_md->bitmap_index;
-
-		drbd_bm_lock(device, "copy_bitmap()", BM_LOCK_ALL);
-
-		if (from_index != -1)
-			drbd_bm_copy_slot(device, from_index, freed_index);
-		else
-			_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
-
-		drbd_bm_write(device, NULL);
-		drbd_bm_unlock(device);
 	}
+	buffer = drbd_md_get_buffer(device, __func__); /* lock meta-data IO to superblock */
 
 	/* Look for day0 UUID before changing this peer slot to a day0 slot. */
 	day0_md = day0_peer_md(device);
 
 	peer_md->flags &= md_flags & ~MDF_HAVE_BITMAP;
 	peer_md->bitmap_index = -1;
+
+	if (free_bitmap_slot) {
+		/*
+		 * No drbd_bm_lock() here, as bitmap OPs might happen in parallel,
+		 * and this is no issue as new dirty bits will already go to
+		 * the slot we are copying to.
+		 */
+		if (from_index != -1)
+			drbd_bm_copy_slot(device, from_index, freed_index);
+		else
+			_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
+
+		drbd_bm_write(device, NULL);
+	}
 
 	/*
 	 * When we forget a peer, we clear the flags. In this case, reset the
@@ -2499,8 +2506,12 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 		peer_md->bitmap_dagtag = 0;
 	}
 
-	drbd_md_sync(device);
-	drbd_resume_io(device);
+	clear_bit(MD_DIRTY, &device->flags);
+	drbd_md_write(device, buffer);
+	drbd_md_put_buffer(device);
+
+	if (free_bitmap_slot)
+		drbd_resume_io(device);
 
 	put_ldev(device);
 
