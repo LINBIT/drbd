@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.4 (api:genl2/proto:110-122/transport:18)
+9.2.4 (api:genl2/proto:86-122/transport:18)
 --------
  * fix a possible deadlock when disconnecting during a resync
  * fix a possible hard kernel-lockup
@@ -27,7 +27,7 @@ Latest:
   - do not block specific state changes (promote, demote, attach, and
     detach) when only some nodes add a new minor
 
-9.2.3 (api:genl2/proto:110-122/transport:18)
+9.2.3 (api:genl2/proto:86-122/transport:18)
 --------
  * improve matching ACKs to in-memory request objects;
    inexact matches were a source of unexpected connection losses
@@ -48,7 +48,7 @@ Latest:
   - simplify remembering two-pc parents, maybe fixing a one-time-seen bug
   - derive abort_local_transaction timeout from ping-timeout
 
-9.2.2 (api:genl2/proto:110-121/transport:18)
+9.2.2 (api:genl2/proto:86-121/transport:18)
 --------
  * fix spurious PingAck timeout a second time; we need to use a drbd
    owned workqueue to guarantee the required low-latency replies
@@ -65,7 +65,7 @@ Latest:
   - work on bringing the out-of-tree DRBD9 closer to DRBD in the upstream
     kernel; Use lru_cahche.ko from the installed kernel whenever possible
 
-9.2.1 (api:genl2/proto:110-121/transport:18)
+9.2.1 (api:genl2/proto:86-121/transport:18)
 --------
  * fix spurious PingAck timeout, a regression of ack-processing in bottom half
    (introduced with 9.2.0)
@@ -85,7 +85,7 @@ Latest:
     unexpectedly when the fencing policy is changed at the moment before
     promoting
 
-9.2.0 (api:genl2/proto:110-121/transport:18)
+9.2.0 (api:genl2/proto:86-121/transport:18)
 --------
  * merged changes from the drbd-9.1 branch, including
   - fix a race that could lead to an unexpected loss of connection
@@ -95,7 +95,7 @@ Latest:
     if a node in the quorate partition promotes (too) quickly
   - follow upstream and compat code for up to Linux 5.19
 
-9.2.0-rc.8 (api:genl2/proto:110-121/transport:18)
+9.2.0-rc.8 (api:genl2/proto:86-121/transport:18)
 --------
  * fix the RDMA transport to work on more recent kernels (like RHEL9)
  * improve transmit timeout handling of the RDMA transport
@@ -105,7 +105,7 @@ Latest:
   - fix quorum when fresh nodes join a quorate but incomplete partition
   - minor state handling fixes/improvements
 
-9.2.0-rc.7 (api:genl2/proto:110-121/transport:18)
+9.2.0-rc.7 (api:genl2/proto:86-121/transport:18)
 --------
  * support for network namespaces
  * multiple fixes to the merge-discards-during-resync functionality
@@ -113,7 +113,7 @@ Latest:
  * stricter limit for the set of characters allowed in resource names
  * merge changes from the drbd 9.1.9 release
 
-9.2.0-rc.6 (api:genl2/proto:110-121/transport:18)
+9.2.0-rc.6 (api:genl2/proto:86-121/transport:18)
 --------
  * fixes to the new way of coordinating resync and application IO
  * merge discard requests during resync on a resync target node;
