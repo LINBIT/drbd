@@ -1538,11 +1538,10 @@ __bm_many_bits_op(struct drbd_device *device, unsigned int bitmap_index, unsigne
 
 		__bm_op(device, bitmap_index, bit, last_bit, op, NULL);
 		bit = last_bit + 1;
-		if (need_resched()) {
-			spin_unlock_irq(&bitmap->bm_lock);
+		spin_unlock_irq(&bitmap->bm_lock);
+		if (need_resched())
 			cond_resched();
-			spin_lock_irq(&bitmap->bm_lock);
-		}
+		spin_lock_irq(&bitmap->bm_lock);
 	}
 	spin_unlock_irq(&bitmap->bm_lock);
 }
@@ -1649,11 +1648,10 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 
 		if (current_page_nr != from_page_nr) {
 			bm_unmap(bitmap, addr);
-			if (need_resched()) {
-				spin_unlock_irq(&bitmap->bm_lock);
+			spin_unlock_irq(&bitmap->bm_lock);
+			if (need_resched())
 				cond_resched();
-				spin_lock_irq(&bitmap->bm_lock);
-			}
+			spin_lock_irq(&bitmap->bm_lock);
 			current_page_nr = from_page_nr;
 			addr = bm_map(bitmap, current_page_nr);
 		}
