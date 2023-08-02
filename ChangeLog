@@ -2,6 +2,26 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.5-rc.1 (api:genl2/proto:86-122/transport:18)
+--------
+ * changes merged from drbd-9.1.16
+  - shorten times DRBD keeps IRQs on one CPU disabled. Could lead
+    to connection interruption under specific conditions
+  - fix a corner case where resync did not start after resync-pause
+    state flapped
+  - fix online adding of volumes/minors to an already connected resource
+  - fix a possible split-brain situation with quorum enabled with
+    ping-timeout set to (unusual) high value
+  - fix a locking problem that could lead to kernel OOPS
+  - ensure resync can continue (bitmap-based) after interruption
+    also when it started as a full-resync first
+  - correctly handle meta-data when forgetting diskless peers
+  - fix a possibility of getting a split-brain although quorum enabled
+  - correctly propagate UUIDs after resync following a resize operation.
+    Consequence could be a full resync instead of a bitmap-based one
+  - fix a rare race condition that can cause a drbd device to end up
+    with WFBitMapS/Established replication states
+
 9.2.4 (api:genl2/proto:86-122/transport:18)
 --------
  * fix a possible deadlock when disconnecting during a resync
