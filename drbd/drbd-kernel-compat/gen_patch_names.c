@@ -604,6 +604,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_TLS_GET_RECORD_TYPE, "present",
 	      COMPAT_HAVE_TLS_TX_RX, "present");
 
+	patch(1, "lookup_user_key", true, false,
+	      COMPAT_HAVE_LOOKUP_USER_KEY, "present");
+
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
