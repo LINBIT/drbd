@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.5-rc.1 (api:genl2/proto:86-122/transport:18)
+9.2.5 (api:genl2/proto:86-122/transport:18)
 --------
  * changes merged from drbd-9.1.16
   - shorten times DRBD keeps IRQs on one CPU disabled. Could lead
