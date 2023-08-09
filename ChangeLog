@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.16-rc.1 (api:genl2/proto:86-121/transport:18)
+9.1.16 (api:genl2/proto:86-121/transport:18)
 --------
  * shorten times DRBD keeps IRQs on one CPU disabled. Could lead
    to connection interruption under specific conditions
