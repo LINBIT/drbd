@@ -653,7 +653,7 @@ struct drbd_bitmap {
 	unsigned int al_bitmap_hints[2*AL_UPDATES_PER_TRANSACTION];
 
 	/* debugging aid, in case we are still racy somewhere */
-	char          *bm_why;
+	const char    *bm_why;
 	char          bm_task_comm[TASK_COMM_LEN];
 	pid_t         bm_task_pid;
 	struct drbd_peer_device *bm_locked_peer;
@@ -1868,7 +1868,7 @@ extern void drbd_bm_merge_lel(struct drbd_peer_device *peer_device, size_t offse
 extern void drbd_bm_get_lel(struct drbd_peer_device *peer_device, size_t offset,
 		size_t number, unsigned long *buffer);
 
-extern void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags);
+extern void drbd_bm_lock(struct drbd_device *device, const char *why, enum bm_flag flags);
 extern void drbd_bm_unlock(struct drbd_device *device);
 extern void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why, enum bm_flag flags);
 extern void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
