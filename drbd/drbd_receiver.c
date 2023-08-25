@@ -2212,7 +2212,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 
 	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length - d->digest_size);
 	if (err)
-		return -ENOMEM;
+		return err;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 		struct page *page;
@@ -3368,7 +3368,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (err) {
 		drbd_free_peer_req(peer_req);
 		put_ldev(device);
-		return -EIO;
+		return err;
 	}
 
 	if (pi->cmd == P_TRIM)
