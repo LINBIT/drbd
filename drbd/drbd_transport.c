@@ -223,7 +223,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	return err;
 }
 
-static void drbd_listener_destroy(struct kref *kref)
+void drbd_listener_destroy(struct kref *kref)
 {
 	struct drbd_listener *listener = container_of(kref, struct drbd_listener, kref);
 	struct drbd_resource *resource = listener->resource;
@@ -327,3 +327,4 @@ EXPORT_SYMBOL_GPL(drbd_find_path_by_addr);
 EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);
 EXPORT_SYMBOL_GPL(drbd_should_abort_listening);
 EXPORT_SYMBOL_GPL(drbd_path_event);
+EXPORT_SYMBOL_GPL(drbd_listener_destroy);
