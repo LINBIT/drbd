@@ -224,6 +224,7 @@ load_from_ram() {
 	insmod ./drbd.ko usermode_helper=disabled
         insmod ./handshake.ko 2>/dev/null || true
 	insmod ./drbd_transport_tcp.ko
+	insmod ./drbd_transport_lb-tcp.ko
 	insmod ./drbd_transport_rdma.ko 2>/dev/null || true
 }
 
@@ -330,6 +331,7 @@ if [[ $how_get == "$HOW_FROMSRC" ]] && [[ $how_load == "$HOW_INSTALL" ]]; then
 	make install
 	modprobe drbd usermode_helper=disabled
 	modprobe drbd_transport_tcp
+	modprobe drbd_transport_lb-tcp
 	modprobe drbd_transport_rdma 2>/dev/null || true
 else
 	load_from_ram "$pkgdir" "$kodir"

@@ -131,7 +131,7 @@ done
 rm -f drbd.conf
 %else
 mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
-printf "override %s * weak-updates/drbd\n" drbd drbd_transport_tcp drbd_transport_rdma\
+printf "override %s * weak-updates/drbd\n" drbd drbd_transport_tcp drbd_transport_lb-tcp drbd_transport_rdma\
     > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
 install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
 %endif

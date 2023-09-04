@@ -183,7 +183,7 @@ else
   ifneq ($(wildcard .drbd_kernelrelease),)
     # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
     include .drbd_kernelrelease
-    MODOBJS := drbd.ko drbd_transport_tcp.ko drbd_transport_rdma.ko
+    MODOBJS := drbd.ko drbd_transport_tcp.ko drbd_transport_lb-tcp.ko drbd_transport_rdma.ko
     MODOBJS += $(wildcard drbd-kernel-compat/handshake/handshake.ko)
     MODSUBDIR := updates
     LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
