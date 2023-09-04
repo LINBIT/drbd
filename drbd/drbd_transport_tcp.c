@@ -80,6 +80,7 @@ struct dtt_path {
 
 static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
+static void dtt_socket_free(struct socket **sock);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
@@ -188,15 +189,6 @@ fail:
 	return -ENOMEM;
 }
 
-static void dtt_free_one_sock(struct socket *socket)
-{
-	if (socket) {
-		synchronize_rcu();
-		kernel_sock_shutdown(socket, SHUT_RDWR);
-		sock_release(socket);
-	}
-}
-
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -206,11 +198,9 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	/* free the socket specific stuff,
 	 * mutexes are handled by caller */
 
+	synchronize_rcu();
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		if (tcp_transport->stream[i]) {
-			dtt_free_one_sock(tcp_transport->stream[i]);
-			tcp_transport->stream[i] = NULL;
-		}
+		dtt_socket_free(&tcp_transport->stream[i]);
 	}
 
 	for_each_path_ref(drbd_path, transport) {
@@ -717,11 +707,7 @@ retry:
 
 retry_locked:
 	spin_unlock_bh(&listener->listener.waiters_lock);
-	if (s_estab) {
-		kernel_sock_shutdown(s_estab, SHUT_RDWR);
-		sock_release(s_estab);
-		s_estab = NULL;
-	}
+	dtt_socket_free(&s_estab);
 	goto retry;
 }
 
@@ -925,8 +911,7 @@ static void dtt_cleanup_accepted_sockets(struct dtt_path *path)
 			list_first_entry(&path->sockets, struct dtt_socket_container, list);
 
 		list_del(&socket_c->list);
-		kernel_sock_shutdown(socket_c->socket, SHUT_RDWR);
-		sock_release(socket_c->socket);
+		dtt_socket_free(&socket_c->socket);
 		kfree(socket_c);
 	}
 }
@@ -1088,8 +1073,7 @@ retry:
 			case P_INITIAL_DATA:
 				if (dsocket) {
 					tr_warn(transport, "initial packet S crossed\n");
-					kernel_sock_shutdown(dsocket, SHUT_RDWR);
-					sock_release(dsocket);
+					dtt_socket_free(&dsocket);
 					dsocket = s;
 					goto randomize;
 				}
@@ -1099,8 +1083,7 @@ retry:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
 				if (csocket) {
 					tr_warn(transport, "initial packet M crossed\n");
-					kernel_sock_shutdown(csocket, SHUT_RDWR);
-					sock_release(csocket);
+					dtt_socket_free(&csocket);
 					csocket = s;
 					goto randomize;
 				}
@@ -1108,8 +1091,7 @@ retry:
 				break;
 			default:
 				tr_warn(transport, "Error receiving initial packet: %d\n", fp);
-				kernel_sock_shutdown(s, SHUT_RDWR);
-				sock_release(s);
+				dtt_socket_free(&s);
 randomize:
 				if (get_random_u32_below(2))
 					goto retry;
@@ -1186,14 +1168,8 @@ out_eagain:
 out:
 	dtt_put_listeners(transport);
 
-	if (dsocket) {
-		kernel_sock_shutdown(dsocket, SHUT_RDWR);
-		sock_release(dsocket);
-	}
-	if (csocket) {
-		kernel_sock_shutdown(csocket, SHUT_RDWR);
-		sock_release(csocket);
-	}
+	dtt_socket_free(&dsocket);
+	dtt_socket_free(&csocket);
 
 	return err;
 }
