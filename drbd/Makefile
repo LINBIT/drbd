@@ -170,7 +170,7 @@ else
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
 
-  sources := $(filter-out drbd_strings.c drbd_buildtag.c,$(wildcard *.c))
+  sources := $(filter-out drbd_strings.c drbd_buildtag.c drbd%.mod.c,$(wildcard *.c))
   sources += $(wildcard drbd-headers/linux/*.h)
 
   $(compat_patches): $(sources)

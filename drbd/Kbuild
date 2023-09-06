@@ -110,6 +110,7 @@ filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
 $(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
 	@$(kecho) '  PATCH'
 	@patch -d $(src) -p0 --batch --forward --reject-file=- < $(src)/drbd-kernel-compat/compat.patch
+	@cd $(src) && p=drbd-kernel-compat/compat.patch && sed -ne 's/^--- //p' < $$p | xargs -r -- touch -r $$p
 	@cp -d $(src)/drbd-kernel-compat/compat.patch $(src)/.compat_patches_applied
 
 $(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
