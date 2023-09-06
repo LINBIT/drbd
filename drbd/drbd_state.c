@@ -2489,15 +2489,24 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 /* Is there a primary with access to up to date data known */
 static bool primary_and_data_present(struct drbd_device *device)
 {
-	bool up_to_date_data = device->disk_state[NOW] == D_UP_TO_DATE;
-	bool primary = device->resource->role[NOW] == R_PRIMARY;
+	bool up_to_date_data = device->disk_state[NEW] == D_UP_TO_DATE;
+	struct drbd_resource *resource = device->resource;
+	bool primary = resource->role[NEW] == R_PRIMARY;
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->connection->peer_role[NOW] == R_PRIMARY)
+		struct drbd_connection *connection = peer_device->connection;
+
+		/* Do not consider the peer if we are disconnecting. */
+		if (resource->remote_state_change &&
+				drbd_twopc_between_peer_and_me(connection) &&
+				resource->twopc_reply.is_disconnect)
+			continue;
+
+		if (connection->peer_role[NEW] == R_PRIMARY)
 			primary = true;
 
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
 			up_to_date_data = true;
 	}
 
@@ -4808,6 +4817,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	} else if (context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) {
 		reply->target_reachable_nodes = NODE_MASK(context->target_node_id);
 		reply->reachable_nodes &= ~reply->target_reachable_nodes;
+		reply->is_disconnect = 1;
 	} else {
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
