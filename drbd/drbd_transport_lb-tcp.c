@@ -818,8 +818,13 @@ static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_t
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 
 		flow = &path->flow[CONTROL_STREAM];
-		if (flow->recv_sequence == stream->recv_sequence + 1 && flow->recv_bytes > 0)
-			goto found;
+		if (flow->recv_sequence == stream->recv_sequence + 1 && flow->recv_bytes > 0) {
+			struct sock *sk = flow->socket->sk;
+			struct tcp_sock *tp = tcp_sk(sk);
+
+			if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq))
+				goto found;
+		}
 	}
 	flow = NULL;
 found:
@@ -893,6 +898,7 @@ static void dtl_control_data_ready(struct sock *sock)
 	/* in case another flow became the next in sequence */
 	while ((flow = dtl_control_next_flow_in_seq(dtl_transport))) {
 		sock = flow->socket->sk;
+		rd_desc.arg.data = flow;
 		tcp_read_sock(sock, &rd_desc, dtl_control_tcp_input);
 	}
 }
