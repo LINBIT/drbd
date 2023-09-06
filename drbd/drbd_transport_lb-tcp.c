@@ -395,6 +395,7 @@ static int dtl_wait_data_cond(struct dtl_transport *dtl_transport,
 		}
 		flow->recv_sequence = be32_to_cpu(header.sequence);
 		flow->recv_bytes = be32_to_cpu(header.bytes);
+		TR_ASSERT(transport, flow->recv_bytes > 0);
 
 		if (flow->recv_sequence == stream->recv_sequence + 1)
 			goto found;
@@ -484,11 +485,36 @@ dtl_recv(struct drbd_transport *transport, enum drbd_stream st, void **buf, size
 }
 
 static int
+_dtl_recv_page(struct dtl_transport *dtl_transport, struct page *page, int size)
+{
+	void *data = kmap_local_page(page);
+	void *pos = data;
+	struct dtl_flow *flow;
+	int err;
+
+	while (size) {
+		err = dtl_select_recv_flow(dtl_transport, DATA_STREAM, &flow);
+		if (err)
+			goto out;
+
+		err = dtl_recv_short(flow->socket, data, min(size, flow->recv_bytes), 0);
+		if (err < 0)
+			goto out;
+		size -= err;
+		pos += err;
+		dtl_received(dtl_transport, flow, err);
+	}
+	err = pos - data;
+out:
+	kunmap_local(data);
+	return err;
+}
+
+static int
 dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
-	struct dtl_flow *flow;
 	struct page *page;
 	int err;
 
@@ -499,18 +525,12 @@ dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *ch
 
 	page_chain_for_each(page) {
 		size_t len = min_t(int, size, PAGE_SIZE);
-		void *data = kmap(page);
 
-		err = dtl_select_recv_flow(dtl_transport, DATA_STREAM, &flow);
-		if (err)
-			goto fail;
-		err = dtl_recv_short(flow->socket, data, len, 0);
-		kunmap(page);
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, len);
+		err = _dtl_recv_page(dtl_transport, page, len);
 		if (err < 0)
 			goto fail;
-		dtl_received(dtl_transport, flow, err);
+		set_page_chain_offset(page, 0);
+		set_page_chain_size(page, len);
 		size -= err;
 	}
 	if (unlikely(size)) {
