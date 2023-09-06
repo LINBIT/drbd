@@ -89,6 +89,7 @@ struct dtl_flow {
 struct dtl_path {
 	struct drbd_path path;
 	struct dtl_flow flow[2];
+	spinlock_t control_recv_lock;
 
 	struct dtl_transport *dtl_transport;
 };
@@ -840,19 +841,20 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	struct dtl_transport *dtl_transport = path->dtl_transport;
 	struct dtl_stream *stream = &dtl_transport->streams[CONTROL_STREAM];
 	struct drbd_transport *transport = &dtl_transport->transport;
+	struct drbd_const_buffer buffer;
 	struct skb_seq_state seq;
 	unsigned int consumed = 0;
+	int avail;
 
+	if (flow->recv_bytes &&
+	    flow->recv_sequence != READ_ONCE(stream->recv_sequence) + 1)
+		return 0;
+
+	spin_lock(&path->control_recv_lock);
 	skb_prepare_seq_read(skb, offset, skb->len, &seq);
-	while (true) {
-		struct drbd_const_buffer buffer;
-		int avail = skb_seq_read(consumed, &buffer.buffer, &seq);
-
-		if (avail == 0)
-			break;
-
+	while ((avail = skb_seq_read(consumed, &buffer.buffer, &seq))) {
 		while (avail) {
-			if (flow->recv_sequence != stream->recv_sequence + 1) {
+			if (flow->recv_bytes == 0) {
 				const struct dtl_header *hdr = (struct dtl_header *)buffer.buffer;
 
 				flow->recv_sequence = be32_to_cpu(hdr->sequence);
@@ -861,23 +863,24 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 				consumed += sizeof(struct dtl_header);
 				if (flow->recv_sequence != stream->recv_sequence + 1) {
 					skb_abort_seq_read(&seq);
-					return consumed;
+					goto out;
 				}
 
-				stream->recv_sequence++;
 				buffer.buffer += sizeof(struct dtl_header);
 				avail -= sizeof(struct dtl_header);
 			}
 			buffer.avail = min(flow->recv_bytes, avail);
-			if (buffer.avail == 0)
-				return consumed;
 			consumed += buffer.avail;
 			avail -= buffer.avail;
 			flow->recv_bytes -= buffer.avail;
-			drbd_control_data_ready(transport, &buffer);
+			if (flow->recv_bytes == 0)
+				stream->recv_sequence++;
+			if (buffer.avail)
+				drbd_control_data_ready(transport, &buffer);
 		}
 	}
-
+out:
+	spin_unlock(&path->control_recv_lock);
 	return consumed;
 }
 
@@ -1755,6 +1758,7 @@ static int dtl_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 
 	drbd_path->established = false;
 	path->dtl_transport = dtl_transport;
+	spin_lock_init(&path->control_recv_lock);
 
 	err = dtl_path_adjust_listener(path, active);
 
