@@ -1642,6 +1642,9 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	struct sock *sk;
 	int chunk, wmem_available, err;
 
+	if (!bio_has_data(bio)) /* e.g. REQ_OP_DISCARD */
+		return 0;
+
 	do {
 		err = dtl_select_send_flow(dtl_transport, DATA_STREAM, &flow);
 		if (err)
@@ -1653,11 +1656,11 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		if (iter.bi_size > wmem_available) {
 			chunk = 0;
 			__bio_for_each_segment(bvec, bio, iter_scan, iter_scan) {
-				if (chunk + bvec.bv_len > wmem_available) {
+				chunk += bvec.bv_len;
+				if (chunk >= wmem_available) {
 					bio_advance_iter_single(bio, &iter_scan, bvec.bv_len);
 					break;
 				}
-				chunk += bvec.bv_len;
 			}
 		} else {
 			chunk = iter.bi_size;
