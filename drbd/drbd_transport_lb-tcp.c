@@ -45,7 +45,6 @@ struct buffer {
 };
 
 struct dtl_stream {
-	struct buffer rbuf;
 	unsigned int send_sequence;
 	struct dtl_flow *recv_flow;
 	unsigned int recv_sequence;
@@ -61,6 +60,7 @@ struct dtl_transport {
 	wait_queue_head_t data_ready;
 	wait_queue_head_t write_space;
 	struct dtl_stream streams[2];
+	struct buffer rbuf;
 	int connected_paths;
 	wait_queue_head_t connected_paths_change;
 	int err;
@@ -199,7 +199,6 @@ static int dtl_init(struct drbd_transport *transport)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
-	enum drbd_stream i;
 
 	spin_lock_init(&dtl_transport->paths_lock);
 	dtl_transport->transport.ops = &dtl_ops;
@@ -213,14 +212,10 @@ static int dtl_init(struct drbd_transport *transport)
 	dtl_transport->flags = 0;
 	init_waitqueue_head(&dtl_transport->connected_paths_change);
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		void *buffer = (void *)__get_free_page(GFP_KERNEL);
-		if (!buffer)
-			return -ENOMEM;
-
-		dtl_transport->streams[i].rbuf.base = buffer;
-		dtl_transport->streams[i].rbuf.pos = buffer;
-	}
+	dtl_transport->rbuf.base = (void *)__get_free_page(GFP_KERNEL);
+	dtl_transport->rbuf.pos = dtl_transport->rbuf.base;
+	if (!dtl_transport->rbuf.base)
+		return -ENOMEM;
 
 	return 0;
 }
@@ -250,7 +245,6 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
-	enum drbd_stream i;
 	struct drbd_path *drbd_path;
 	/* free the socket specific stuff, mutexes are handled by caller */
 
@@ -279,10 +273,8 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		}
 		spin_unlock_bh(&dtl_transport->paths_lock);
 
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			free_page((unsigned long)dtl_transport->streams[i].rbuf.base);
-			dtl_transport->streams[i].rbuf.base = NULL;
-		}
+		free_page((unsigned long)dtl_transport->rbuf.base);
+		dtl_transport->rbuf.base = NULL;
 	}
 }
 
@@ -450,7 +442,6 @@ dtl_recv(struct drbd_transport *transport, enum drbd_stream st, void **buf, size
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
-	struct dtl_stream *stream = &dtl_transport->streams[st];
 	struct dtl_flow *flow;
 	void *buffer;
 	int err;
@@ -463,13 +454,13 @@ dtl_recv(struct drbd_transport *transport, enum drbd_stream st, void **buf, size
 		buffer = *buf;
 		err = dtl_recv_short(flow->socket, buffer, size, flags & ~CALLER_BUFFER);
 	} else if (flags & GROW_BUFFER) {
-		TR_ASSERT(transport, *buf == stream->rbuf.base);
-		buffer = stream->rbuf.pos;
+		TR_ASSERT(transport, *buf == dtl_transport->rbuf.base);
+		buffer = dtl_transport->rbuf.pos;
 		TR_ASSERT(transport, (buffer - *buf) + size <= PAGE_SIZE);
 
 		err = dtl_recv_short(flow->socket, buffer, size, flags & ~GROW_BUFFER);
 	} else {
-		buffer = stream->rbuf.base;
+		buffer = dtl_transport->rbuf.base;
 
 		err = dtl_recv_short(flow->socket, buffer, size, flags);
 		if (err > 0)
@@ -478,7 +469,7 @@ dtl_recv(struct drbd_transport *transport, enum drbd_stream st, void **buf, size
 
 	if (err > 0) {
 		dtl_received(dtl_transport, flow, err);
-		stream->rbuf.pos = buffer + err;
+		dtl_transport->rbuf.pos = buffer + err;
 	}
 
 	return err;
