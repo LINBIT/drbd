@@ -642,9 +642,9 @@ int drbd_thread_start(struct drbd_thread *thi)
 
 		if (IS_ERR(nt)) {
 			if (connection)
-				drbd_err(connection, "Couldn't start thread\n");
+				drbd_err(connection, "Couldn't start thread: %ld\n", PTR_ERR(nt));
 			else
-				drbd_err(resource, "Couldn't start thread\n");
+				drbd_err(resource, "Couldn't start thread: %ld\n", PTR_ERR(nt));
 
 			return false;
 		}
