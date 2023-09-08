@@ -207,11 +207,11 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 
 	if (needs_init) {
 		err = init_listener(transport, addr, path->net, listener);
+		listener->err = err;
+		complete_all(&listener->ready);
 		if (err)
 			drbd_put_listener(path);
 
-		listener->err = err;
-		complete_all(&listener->ready);
 		return err;
 	}
 
