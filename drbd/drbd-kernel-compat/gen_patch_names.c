@@ -610,6 +610,9 @@ int main(int argc, char **argv)
 	patch(1, "bio_advance_iter_single", true, false,
 	      COMPAT_HAVE_BIO_ADVANCE_ITER_SINGLE, "present");
 
+	patch(1, "kmap_local_page", true, false,
+	      COMPAT_HAVE_KMAP_LOCAL_PAGE, "present");
+
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
