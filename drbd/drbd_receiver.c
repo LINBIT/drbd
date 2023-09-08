@@ -983,8 +983,8 @@ static int connect_work(struct drbd_work *work, int cancel)
 		drbd_send_disconnect(connection);
 		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT, force_demote);
 	} else {
-		drbd_info(connection, "Failure to connect %d %s; retrying\n",
-			  rv, drbd_set_st_err_str(rv));
+		drbd_info(connection, "Failure to connect: %s (%d); retrying\n",
+			  drbd_set_st_err_str(rv), rv);
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
 
@@ -6107,7 +6107,7 @@ out:
 	}
 
 	if (rv < SS_SUCCESS) {
-		drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
+		drbd_err(resource, "State change failed: %s (%d)\n", drbd_set_st_err_str(rv), rv);
 		if (rv == SS_PRIMARY_READER)
 			log_openers(resource);
 	}

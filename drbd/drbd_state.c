@@ -791,7 +791,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		rv = try_state_change(resource);
 	if (rv < SS_SUCCESS) {
 		if (flags & CS_VERBOSE) {
-			drbd_err(resource, "State change failed: %s\n", drbd_set_st_err_str(rv));
+			drbd_err(resource, "State change failed: %s (%d)\n",
+					drbd_set_st_err_str(rv), rv);
 			print_state_change(resource, "Failed: ");
 		}
 		goto out;
