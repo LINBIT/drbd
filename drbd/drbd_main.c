@@ -52,7 +52,7 @@
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
 
-static int drbd_open(struct block_device *bdev, fmode_t mode);
+static int drbd_open(struct gendisk *gd, fmode_t mode);
 static void drbd_release(struct gendisk *gd, fmode_t mode);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
@@ -2646,9 +2646,9 @@ out:
 	spin_unlock(&device->openers_lock);
 }
 
-static int drbd_open(struct block_device *bdev, fmode_t mode)
+static int drbd_open(struct gendisk *gd, fmode_t mode)
 {
-	struct drbd_device *device = bdev->bd_disk->private_data;
+	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	enum ioc_rv r;
@@ -2664,7 +2664,7 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 
 	/* Fail read-write open early,
 	 * in case someone explicitly set us read-only (blockdev --setro) */
-	if (bdev_read_only(bdev) && (mode & FMODE_WRITE))
+	if (bdev_read_only(gd->part0) && (mode & FMODE_WRITE))
 		return -EACCES;
 
 	if (resource->fail_io[NOW])
@@ -2740,7 +2740,7 @@ out:
 
 	mutex_unlock(&resource->open_release);
 	if (err) {
-		drbd_release(bdev->bd_disk, mode);
+		drbd_release(gd, mode);
 		if (err == -EAGAIN && !(mode & FMODE_NDELAY))
 			err = -EMEDIUMTYPE;
 	}
