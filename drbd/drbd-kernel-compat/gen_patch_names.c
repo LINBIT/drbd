@@ -607,6 +607,9 @@ int main(int argc, char **argv)
 	patch(1, "lookup_user_key", true, false,
 	      COMPAT_HAVE_LOOKUP_USER_KEY, "present");
 
+	patch(1, "bio_advance_iter_single", true, false,
+	      COMPAT_HAVE_BIO_ADVANCE_ITER_SINGLE, "present");
+
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
