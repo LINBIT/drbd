@@ -562,6 +562,9 @@ int main(int argc, char **argv)
 	patch(1, "block_device_operations_open", true, false,
 	      COMPAT_BLOCK_DEVICE_OPERATIONS_OPEN_TAKES_GENDISK, "takes_gendisk");
 
+	patch(1, "blkdev_put", true, false,
+	      COMPAT_BLKDEV_PUT_HAS_HOLDER, "has_holder");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

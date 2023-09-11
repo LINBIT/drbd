@@ -2536,13 +2536,13 @@ bool want_bitmap(struct drbd_peer_device *peer_device)
 }
 
 static void close_backing_dev(struct drbd_device *device, struct block_device *bdev,
-	bool do_bd_unlink)
+	void *holder, bool do_bd_unlink)
 {
 	if (!bdev)
 		return;
 	if (do_bd_unlink)
 		bd_unlink_disk_holder(bdev, device->vdisk);
-	blkdev_put(bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);
+	blkdev_put(bdev, holder);
 }
 
 void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev)
@@ -2552,8 +2552,11 @@ void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *
 
 	drbd_dax_close(ldev);
 
-	close_backing_dev(device, ldev->md_bdev, ldev->md_bdev != ldev->backing_bdev);
-	close_backing_dev(device, ldev->backing_bdev, true);
+	close_backing_dev(device,
+			  ldev->md_bdev,
+			  ldev->md.meta_dev_idx < 0 ? (void *)device : (void *)drbd_m_holder,
+			  ldev->md_bdev != ldev->backing_bdev);
+	close_backing_dev(device, ldev->backing_bdev, device, true);
 
 	kfree(ldev->disk_conf);
 	kfree(ldev);
@@ -2563,7 +2566,7 @@ static struct block_device *open_backing_dev(struct drbd_device *device,
 		const char *bdev_path, void *claim_ptr)
 {
 	struct block_device *bdev = blkdev_get_by_path(bdev_path,
-				  FMODE_READ | FMODE_WRITE | FMODE_EXCL,
+				  FMODE_READ | FMODE_WRITE,
 				  claim_ptr, NULL);
 	if (IS_ERR(bdev)) {
 		drbd_err(device, "open(\"%s\") failed with %ld\n",
@@ -2588,6 +2591,7 @@ static int open_backing_devices(struct drbd_device *device,
 		struct drbd_backing_dev *nbc)
 {
 	struct block_device *bdev;
+	void *meta_claim_ptr;
 	int err;
 
 	bdev = open_backing_dev(device, new_disk_conf->backing_dev, device);
@@ -2597,12 +2601,17 @@ static int open_backing_devices(struct drbd_device *device,
 	err = link_backing_dev(device, new_disk_conf->backing_dev, bdev);
 	if (err) {
 		/* close without unlinking; otherwise error path will try to unlink */
-		close_backing_dev(device, bdev, false);
+		close_backing_dev(device, bdev, device, false);
 		return ERR_OPEN_DISK;
 	}
 
 	nbc->backing_bdev = bdev;
 
+	/* meta_claim_ptr: device, if claimed exclusively; shared drbd_m_holder,
+	 * if potentially shared with other drbd minors
+	 */
+	meta_claim_ptr = (new_disk_conf->meta_dev_idx < 0) ?
+		(void *)device : (void *)drbd_m_holder;
 	/*
 	 * meta_dev_idx >= 0: external fixed size, possibly multiple
 	 * drbd sharing one meta device.  TODO in that case, paranoia
@@ -2611,10 +2620,7 @@ static int open_backing_devices(struct drbd_device *device,
 	 * should check it for you already; but if you don't, or
 	 * someone fooled it, we need to double check here)
 	 */
-	bdev = open_backing_dev(device, new_disk_conf->meta_dev,
-		/* claim ptr: device, if claimed exclusively; shared drbd_m_holder,
-		 * if potentially shared with other drbd minors */
-			(new_disk_conf->meta_dev_idx < 0) ? (void*)device : (void*)drbd_m_holder);
+	bdev = open_backing_dev(device, new_disk_conf->meta_dev, meta_claim_ptr);
 	if (IS_ERR(bdev))
 		return ERR_OPEN_MD_DISK;
 
@@ -2624,7 +2630,7 @@ static int open_backing_devices(struct drbd_device *device,
 		err = link_backing_dev(device, new_disk_conf->meta_dev, bdev);
 		if (err) {
 			/* close without unlinking; otherwise error path will try to unlink */
-			close_backing_dev(device, bdev, false);
+			close_backing_dev(device, bdev, meta_claim_ptr, false);
 			return ERR_OPEN_MD_DISK;
 		}
 	}
