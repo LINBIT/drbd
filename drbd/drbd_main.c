@@ -4614,6 +4614,9 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->connection->agreed_pro_version < 110)
+			continue;
+
 		/* Only an up-to-date peer persists a new current uuid! */
 		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
