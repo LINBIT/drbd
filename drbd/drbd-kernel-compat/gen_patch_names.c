@@ -579,6 +579,9 @@ int main(int argc, char **argv)
 	patch(1, "block_device_operations_open", true, false,
 	      COMPAT_BLOCK_DEVICE_OPERATIONS_OPEN_TAKES_GENDISK, "takes_gendisk");
 
+	patch(1, "tasklet_setup", true, false,
+	      COMPAT_HAVE_TASKLET_SETUP, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
