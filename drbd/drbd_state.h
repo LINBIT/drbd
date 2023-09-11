@@ -56,12 +56,13 @@ extern void state_change_lock(struct drbd_resource *, unsigned long *, enum chg_
 extern void state_change_unlock(struct drbd_resource *, unsigned long *);
 
 extern void begin_state_change(struct drbd_resource *, unsigned long *, enum chg_state_flags);
-extern enum drbd_state_rv end_state_change(struct drbd_resource *, unsigned long *);
+extern enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags,
+		const char *tag);
 extern void abort_state_change(struct drbd_resource *, unsigned long *);
 extern void abort_state_change_locked(struct drbd_resource *resource);
 
 extern void begin_state_change_locked(struct drbd_resource *, enum chg_state_flags);
-extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *);
+extern enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource, const char *tag);
 
 extern void clear_remote_state_change(struct drbd_resource *resource);
 extern void __clear_remote_state_change(struct drbd_resource *resource);
@@ -89,7 +90,11 @@ extern enum drbd_state_rv nested_twopc_request(struct drbd_resource *res, struct
 extern bool drbd_twopc_between_peer_and_me(struct drbd_connection *connection);
 extern bool cluster_wide_reply_ready(struct drbd_resource *);
 
-extern enum drbd_state_rv change_role(struct drbd_resource *, enum drbd_role, enum chg_state_flags, const char **);
+extern enum drbd_state_rv change_role(struct drbd_resource *resource,
+			       enum drbd_role role,
+			       enum chg_state_flags flags,
+			       const char *tag,
+			       const char **err_str);
 
 extern void __change_io_susp_user(struct drbd_resource *, bool);
 extern enum drbd_state_rv change_io_susp_user(struct drbd_resource *, bool, enum chg_state_flags);
@@ -99,27 +104,44 @@ extern void __change_io_susp_quorum(struct drbd_resource *, bool);
 
 extern void __change_disk_state(struct drbd_device *, enum drbd_disk_state);
 extern void __downgrade_disk_states(struct drbd_resource *, enum drbd_disk_state);
-extern enum drbd_state_rv change_disk_state(struct drbd_device *, enum drbd_disk_state, enum chg_state_flags, const char **);
+extern enum drbd_state_rv change_disk_state(struct drbd_device *device,
+				     enum drbd_disk_state disk_state,
+				     enum chg_state_flags flags,
+				     const char *tag,
+				     const char **err_str);
 
 extern void __change_cstate(struct drbd_connection *, enum drbd_conn_state);
-extern enum drbd_state_rv change_cstate_es(struct drbd_connection *, enum drbd_conn_state, enum chg_state_flags, const char **);
+extern enum drbd_state_rv change_cstate_tag(struct drbd_connection *connection,
+				    enum drbd_conn_state cstate,
+				    enum chg_state_flags flags,
+				    const char *tag,
+				    const char **err_str);
 static inline enum drbd_state_rv change_cstate(struct drbd_connection *connection,
 					       enum drbd_conn_state cstate,
 					       enum chg_state_flags flags)
 {
-	return change_cstate_es(connection, cstate, flags, NULL);
+	return change_cstate_tag(connection, cstate, flags, NULL, NULL);
 }
 
 extern void __change_peer_role(struct drbd_connection *, enum drbd_role);
 
 extern void __change_repl_state(struct drbd_peer_device *, enum drbd_repl_state);
-extern enum drbd_state_rv change_repl_state(struct drbd_peer_device *, enum drbd_repl_state, enum chg_state_flags);
-extern enum drbd_state_rv stable_change_repl_state(struct drbd_peer_device *, enum drbd_repl_state, enum chg_state_flags);
+extern enum drbd_state_rv change_repl_state(struct drbd_peer_device *peer_device,
+				     enum drbd_repl_state new_repl_state,
+				     enum chg_state_flags flags,
+				     const char *tag);
+extern enum drbd_state_rv stable_change_repl_state(struct drbd_peer_device *peer_device,
+					    enum drbd_repl_state repl_state,
+					    enum chg_state_flags flags,
+					    const char *tag);
 
 extern void __change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state);
 extern void __downgrade_peer_disk_states(struct drbd_connection *, enum drbd_disk_state);
 extern void __outdate_myself(struct drbd_resource *resource);
-extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *, enum drbd_disk_state, enum chg_state_flags);
+extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *peer_device,
+					  enum drbd_disk_state disk_state,
+					  enum chg_state_flags flags,
+					  const char *tag);
 
 enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource, enum chg_state_flags);
 

@@ -2688,7 +2688,7 @@ void request_timer_fn(struct timer_list *t)
 			continue;
 		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_HARD);
 		__change_cstate(connection, C_TIMEOUT);
-		end_state_change(resource, &irq_flags);
+		end_state_change(resource, &irq_flags, "timeout");
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
 
@@ -2723,7 +2723,7 @@ void drbd_handle_io_error_(struct drbd_device *device,
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
 				begin_state_change_locked(device->resource, CS_HARD);
 				__change_disk_state(device, D_INCONSISTENT);
-				end_state_change_locked(device->resource);
+				end_state_change_locked(device->resource, "local-io-error");
 			}
 			break;
 		}
@@ -2740,7 +2740,7 @@ void drbd_handle_io_error_(struct drbd_device *device,
 		if (device->disk_state[NOW] > D_FAILED) {
 			begin_state_change_locked(device->resource, CS_HARD);
 			__change_disk_state(device, D_FAILED);
-			end_state_change_locked(device->resource);
+			end_state_change_locked(device->resource, "local-io-error");
 			drbd_err(device,
 				"Local IO failed in %s. Detaching...\n", where);
 		}
