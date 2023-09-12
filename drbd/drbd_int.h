@@ -1399,7 +1399,8 @@ struct drbd_device {
 
 	struct drbd_bitmap *bitmap;
 
-	int open_rw_cnt, open_ro_cnt;
+	int open_cnt;
+	bool writable;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 
