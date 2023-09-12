@@ -577,14 +577,18 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 				*buffer++ = *p;
 				break;
 			case BM_OP_FIND_BIT:
-				count = find_next_bit_le(addr, bit_in_page + 32, bit_in_page);
-				if (count < bit_in_page + 32)
+				count = find_next_bit_le(p, 32, 0);
+				if (count < 32) {
+					count += bit_in_page;
 					goto found;
+				}
 				break;
 			case BM_OP_FIND_ZERO_BIT:
-				count = find_next_zero_bit_le(addr, bit_in_page + 32, bit_in_page);
-				if (count < bit_in_page + 32)
+				count = find_next_zero_bit_le(p, 32, 0);
+				if (count < 32) {
+					count += bit_in_page;
 					goto found;
+				}
 				break;
 			}
 			start += 32;
