@@ -768,7 +768,7 @@ static bool intentional_diskless(struct drbd_resource *resource)
 	return intentional_diskless;
 }
 
-bool conn_try_outdate_peer(struct drbd_connection *connection)
+static bool conn_try_outdate_peer(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	unsigned long last_reconnect_jif;
