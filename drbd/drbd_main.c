@@ -2757,8 +2757,8 @@ static int drbd_open(struct block_device *bdev, fmode_t mode)
 			if (resource->role[NOW] == R_SECONDARY) {
 				rv = try_to_promote(device, timeout, (mode & FMODE_NDELAY));
 				if (rv < SS_SUCCESS)
-					drbd_info(resource, "Auto-promote failed: %s\n",
-						  drbd_set_st_err_str(rv));
+					drbd_info(resource, "Auto-promote failed: %s (%d)\n",
+						  drbd_set_st_err_str(rv), rv);
 			}
 		} else if ((mode & FMODE_NDELAY) == 0) {
 			/* Double check peers
@@ -2915,8 +2915,8 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
 			rv = drbd_set_role(resource, R_SECONDARY, false, NULL);
 			if (rv < SS_SUCCESS)
-				drbd_warn(resource, "Auto-demote failed: %s\n",
-					  drbd_set_st_err_str(rv));
+				drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
+					  drbd_set_st_err_str(rv), rv);
 		}
 	}
 
