@@ -52,7 +52,7 @@
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
 
-static int drbd_open(struct gendisk *gd, fmode_t mode);
+static int drbd_open(struct gendisk *gd, blk_mode_t mode);
 static void drbd_release(struct gendisk *gd);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
@@ -2566,10 +2566,10 @@ enum ioc_rv {
 	IOC_ABORT = 2,
 };
 
-static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
+static enum ioc_rv inc_open_count(struct drbd_device *device, blk_mode_t mode)
 {
 	struct drbd_resource *resource = device->resource;
-	enum ioc_rv r = mode & FMODE_NDELAY ? IOC_ABORT : IOC_SLEEP;
+	enum ioc_rv r = mode & BLK_OPEN_NDELAY ? IOC_ABORT : IOC_SLEEP;
 
 	if (test_bit(DOWN_IN_PROGRESS, &resource->flags))
 		return IOC_ABORT;
@@ -2580,7 +2580,7 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 	else if (!resource->remote_state_change) {
 		r = IOC_OK;
 		device->open_cnt++;
-		if (mode & FMODE_WRITE)
+		if (mode & BLK_OPEN_WRITE)
 			device->writable = true;
 	}
 	read_unlock_irq(&resource->state_rwlock);
@@ -2646,7 +2646,7 @@ out:
 	spin_unlock(&device->openers_lock);
 }
 
-static int drbd_open(struct gendisk *gd, fmode_t mode)
+static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
@@ -2655,7 +2655,7 @@ static int drbd_open(struct gendisk *gd, fmode_t mode)
 	int err = 0;
 
 	/* Fail read-only open from systemd-udev (version <= 238) */
-	if (!(mode & FMODE_WRITE) && !drbd_allow_oos) {
+	if (!(mode & BLK_OPEN_WRITE) && !drbd_allow_oos) {
 		char comm[TASK_COMM_LEN];
 		get_task_comm(comm, current);
 		if (!strcmp("systemd-udevd", comm))
@@ -2664,7 +2664,7 @@ static int drbd_open(struct gendisk *gd, fmode_t mode)
 
 	/* Fail read-write open early,
 	 * in case someone explicitly set us read-only (blockdev --setro) */
-	if (bdev_read_only(gd->part0) && (mode & FMODE_WRITE))
+	if (bdev_read_only(gd->part0) && (mode & BLK_OPEN_WRITE))
 		return -EACCES;
 
 	if (resource->fail_io[NOW])
@@ -2693,14 +2693,14 @@ static int drbd_open(struct gendisk *gd, fmode_t mode)
 		   This avoids split brain when the drbd volume gets opened
 		   temporarily by udev while it scans for PV signatures. */
 
-		if (mode & FMODE_WRITE) {
+		if (mode & BLK_OPEN_WRITE) {
 			if (resource->role[NOW] == R_SECONDARY) {
-				rv = try_to_promote(device, timeout, (mode & FMODE_NDELAY));
+				rv = try_to_promote(device, timeout, (mode & BLK_OPEN_NDELAY));
 				if (rv < SS_SUCCESS)
 					drbd_info(resource, "Auto-promote failed: %s (%d)\n",
 						  drbd_set_st_err_str(rv), rv);
 			}
-		} else if ((mode & FMODE_NDELAY) == 0) {
+		} else if ((mode & BLK_OPEN_NDELAY) == 0) {
 			/* Double check peers
 			 *
 			 * Some services may try to first open ro, and only if that
@@ -2720,14 +2720,14 @@ static int drbd_open(struct gendisk *gd, fmode_t mode)
 			}
 		}
 	} else if (resource->role[NOW] != R_PRIMARY &&
-			!(mode & FMODE_WRITE) && !drbd_allow_oos) {
+			!(mode & BLK_OPEN_WRITE) && !drbd_allow_oos) {
 		err = -EMEDIUMTYPE;
 		goto out;
 	}
 
 	if (test_bit(UNREGISTERED, &device->flags)) {
 		err = -ENODEV;
-	} else if (mode & FMODE_WRITE) {
+	} else if (mode & BLK_OPEN_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
 			err = -EROFS;
 	} else /* READ access only */ {
@@ -2741,7 +2741,7 @@ out:
 	mutex_unlock(&resource->open_release);
 	if (err) {
 		drbd_release(gd);
-		if (err == -EAGAIN && !(mode & FMODE_NDELAY))
+		if (err == -EAGAIN && !(mode & BLK_OPEN_NDELAY))
 			err = -EMEDIUMTYPE;
 	}
 
