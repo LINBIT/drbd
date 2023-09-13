@@ -37,7 +37,6 @@
 #include <linux/notifier.h>
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
-#define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/device.h>

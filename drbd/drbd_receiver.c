@@ -26,7 +26,6 @@
 #include <linux/slab.h>
 #include <linux/pkt_sched.h>
 #include <uapi/linux/sched/types.h>
-#define __KERNEL_SYSCALLS__
 #include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/random.h>
