@@ -201,7 +201,7 @@ static struct drbd_path *first_path(struct drbd_connection *connection)
 static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 	struct sk_buff *skb, struct genl_info *info, unsigned flags)
 {
-	struct drbd_genlmsghdr *d_in = info->userhdr;
+	struct drbd_genlmsghdr *d_in = genl_info_userhdr(info);
 	const u8 cmd = info->genlhdr->cmd;
 	int err;
 
@@ -2104,7 +2104,7 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 
 static bool should_set_defaults(struct genl_info *info)
 {
-	unsigned flags = ((struct drbd_genlmsghdr*)info->userhdr)->flags;
+	unsigned int flags = ((struct drbd_genlmsghdr *)genl_info_userhdr(info))->flags;
 	return 0 != (flags & DRBD_GENL_F_SET_DEFAULTS);
 }
 
@@ -6409,7 +6409,7 @@ out_no_unlock:
 static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
-	struct drbd_genlmsghdr *dh = info->userhdr;
+	struct drbd_genlmsghdr *dh = genl_info_userhdr(info);
 	struct device_conf device_conf;
 	struct drbd_resource *resource;
 	struct drbd_device *device;
