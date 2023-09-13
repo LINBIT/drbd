@@ -9655,9 +9655,15 @@ static void conn_disconnect(struct drbd_connection *connection)
 	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee);
 	if (i)
 		drbd_info(connection, "resync_ack_ee not empty, killed %u entries\n", i);
+
+	/*
+	 * tcp_close and release of sendpage pages can be deferred. We don't
+	 * care for exactly when the network stack does its put_page(), but
+	 * release our reference on these pages right here.
+	 */
 	i = drbd_free_peer_reqs(connection, &connection->net_ee);
 	if (i)
-		drbd_info(connection, "net_ee not empty, killed %u entries\n", i);
+		dynamic_drbd_dbg(connection, "net_ee not empty, killed %u entries\n", i);
 
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);
