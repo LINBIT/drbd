@@ -1956,7 +1956,8 @@ extern void drbd_destroy_resource(struct kref *kref);
 
 extern void drbd_destroy_device(struct kref *kref);
 
-extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts);
+extern int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts,
+		const char *tag);
 extern struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 						      struct drbd_transport_class *tc);
 extern void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op);
@@ -2012,7 +2013,9 @@ extern void resync_after_online_grow(struct drbd_peer_device *);
 extern void drbd_reconsider_queue_parameters(struct drbd_device *device,
 			struct drbd_backing_dev *bdev);
 extern bool barrier_pending(struct drbd_resource *resource);
-extern enum drbd_state_rv drbd_set_role(struct drbd_resource *, enum drbd_role, bool, struct sk_buff *);
+extern enum drbd_state_rv
+drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, const char *tag,
+		struct sk_buff *reply_skb);
 extern void conn_try_outdate_peer_async(struct drbd_connection *connection);
 extern int drbd_maybe_khelper(struct drbd_device *, struct drbd_connection *, char *);
 extern int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device);
@@ -2024,7 +2027,8 @@ extern int drbd_worker(struct drbd_thread *thi);
 enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int o_minor);
 void drbd_resync_after_changed(struct drbd_device *device);
 extern bool drbd_stable_sync_source_present(struct drbd_peer_device *, enum which_state);
-extern void drbd_start_resync(struct drbd_peer_device *, enum drbd_repl_state);
+extern void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state side,
+		const char *tag);
 extern void resume_next_sg(struct drbd_device *device);
 extern void suspend_other_sg(struct drbd_device *device);
 extern void drbd_resync_finished(struct drbd_peer_device *, enum drbd_disk_state);

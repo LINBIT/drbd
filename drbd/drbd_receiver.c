@@ -968,7 +968,7 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 			resource->role[NEW] = R_SECONDARY;
 		}
 	}
-	end_state_change(resource, &irq_flags);
+	end_state_change(resource, &irq_flags, "connect-failed");
 }
 
 static int connect_work(struct drbd_work *work, int cancel)
@@ -993,8 +993,9 @@ static int connect_work(struct drbd_work *work, int cancel)
 			rv = SS_CONCURRENT_ST_CHG;
 			break;
 		}
-		rv = change_cstate(connection, C_CONNECTED, CS_SERIALIZE |
-				   CS_ALREADY_SERIALIZED | CS_VERBOSE | CS_DONT_RETRY);
+		rv = change_cstate_tag(connection, C_CONNECTED, CS_SERIALIZE |
+				   CS_ALREADY_SERIALIZED | CS_VERBOSE | CS_DONT_RETRY,
+				   "connected", NULL);
 		up(&resource->state_sem);
 		if (rv != SS_PRIMARY_READER)
 			break;
@@ -1059,7 +1060,8 @@ static bool conn_connect(struct drbd_connection *connection)
 start:
 	have_mutex = false;
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
-	if (change_cstate(connection, C_CONNECTING, CS_VERBOSE) < SS_SUCCESS) {
+	if (change_cstate_tag(connection, C_CONNECTING, CS_VERBOSE, "connecting", NULL)
+			< SS_SUCCESS) {
 		/* We do not have a network config. */
 		return false;
 	}
@@ -4371,7 +4373,8 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE, NULL);
+			rv2 = change_role(resource, R_SECONDARY, CS_VERBOSE,
+					"after-sb-1pri", NULL);
 			if (rv2 != SS_SUCCESS) {
 				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
@@ -4424,7 +4427,8 @@ static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_devi
 			 /* drbd_change_state() does not sleep while in SS_IN_TRANSIENT_STATE,
 			  * we might be here in L_OFF which is transient.
 			  * we do not need to wait for the after state change work either. */
-			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE, NULL);
+			rv2 = change_role(device->resource, R_SECONDARY, CS_VERBOSE,
+					"after-sb-2pri", NULL);
 			if (rv2 != SS_SUCCESS) {
 				drbd_maybe_khelper(device, connection, "pri-lost-after-sb");
 			} else {
@@ -6132,6 +6136,7 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 	enum sync_rule rule;
 	int peer_node_id;
 	enum drbd_state_rv rv;
+	const char *tag = reason == AFTER_UNSTABLE ? "after-unstable" : "diskless-primary";
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, reason == DISKLESS_PRIMARY);
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && reason == AFTER_UNSTABLE)
@@ -6161,11 +6166,11 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		   as well. */
 		drbd_info(peer_device, "Upgrading local disk to %s after unstable/weak (and no resync).\n",
 			  drbd_disk_str(peer_disk_state));
-		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE, NULL);
+		change_disk_state(peer_device->device, peer_disk_state, CS_VERBOSE, tag, NULL);
 		return;
 	}
 
-	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE);
+	rv = change_repl_state(peer_device, new_repl_state, CS_VERBOSE, tag);
 	if ((rv == SS_NOTHING_TO_DO || rv == SS_RESYNC_RUNNING) &&
 	    (new_repl_state == L_WF_BITMAP_S || new_repl_state == L_WF_BITMAP_T)) {
 		/* Those events might happen very quickly. In case we are still processing
@@ -6265,7 +6270,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			begin_state_change(device->resource, &irq_flags, CS_VERBOSE);
 			__change_disk_state(device, D_UP_TO_DATE);
 			__change_peer_disk_state(peer_device, D_UP_TO_DATE);
-			end_state_change(device->resource, &irq_flags);
+			end_state_change(device->resource, &irq_flags, "skip-initial-sync");
 			updated_uuids = 1;
 			propagate_skip_initial_to_diskless(device);
 		}
@@ -6300,7 +6305,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	if (device->disk_state[NOW] == D_DISKLESS && uuid_match &&
 	    peer_device->disk_state[NOW] == D_CONSISTENT) {
 		drbd_info(peer_device, "Peer is on same UUID now\n");
-		change_peer_disk_state(peer_device, D_UP_TO_DATE, CS_VERBOSE);
+		change_peer_disk_state(peer_device, D_UP_TO_DATE, CS_VERBOSE, "receive-uuids");
 	}
 
 	if (updated_uuids)
@@ -6487,7 +6492,7 @@ static void check_resync_source(struct drbd_device *device, u64 weak_nodes)
 	return;
 abort:
 	drbd_info(peer_device, "My sync source became a weak node, aborting resync!\n");
-	change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE);
+	change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "abort-resync");
 	drbd_flush_workqueue(&device->resource->work);
 
 	wait_event_interruptible(device->misc_wait,
@@ -6722,7 +6727,7 @@ retry:
 
 	if (is_connect && connection->agreed_pro_version >= 117)
 		apply_connect(connection, (flags & CS_PREPARED) && !abort);
-	rv = end_state_change(resource, &irq_flags);
+	rv = end_state_change(resource, &irq_flags, "remote");
 out:
 
 	if ((rv == SS_NO_UP_TO_DATE_DISK && resource->role[NOW] != R_PRIMARY) ||
@@ -6775,7 +6780,7 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 	rv = __change_connection_state(connection, mask, val, flags);
 	if (rv < SS_SUCCESS)
 		goto fail;
-	rv = end_state_change(connection->resource, &irq_flags);
+	rv = end_state_change(connection->resource, &irq_flags, "remote");
 out:
 	return rv;
 fail:
@@ -7006,7 +7011,7 @@ far_away_change(struct drbd_connection *connection,
 	}
 
 	/* even if no outdate happens, CS_FORCE_RECALC might be set here */
-	return end_state_change(resource, &irq_flags);
+	return end_state_change(resource, &irq_flags, "far-away");
 }
 
 static void handle_neighbor_demotion(struct drbd_connection *connection,
@@ -7261,17 +7266,18 @@ cont:
 						/* peer is secondary */
 						resync = L_SYNC_SOURCE;
 					}
-					drbd_start_resync(peer_device, resync);
+					drbd_start_resync(peer_device, resync, "resize");
 				} else {
 					if (tr->diskful_primary_nodes & NODE_MASK(peer_device->node_id))
-						drbd_start_resync(peer_device, L_SYNC_TARGET);
+						drbd_start_resync(peer_device, L_SYNC_TARGET,
+								"resize");
 					/* else  no resync */
 				}
 			} else {
 				if (resource->twopc_parent_nodes & NODE_MASK(peer_device->node_id))
-					drbd_start_resync(peer_device, L_SYNC_TARGET);
+					drbd_start_resync(peer_device, L_SYNC_TARGET, "resize");
 				else if (nodes_to_reach & NODE_MASK(peer_device->node_id))
-					drbd_start_resync(peer_device, L_SYNC_SOURCE);
+					drbd_start_resync(peer_device, L_SYNC_SOURCE, "resize");
 				/* else  no resync */
 			}
 		}
@@ -7732,7 +7738,7 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 	peer_device = best_peer_device;
 
 	if (best_strategy == NO_SYNC) {
-		change_disk_state(device, D_UP_TO_DATE, CS_VERBOSE, NULL);
+		change_disk_state(device, D_UP_TO_DATE, CS_VERBOSE, "get-resync", NULL);
 	} else if (peer_device) {
 		drbd_resync(peer_device, DISKLESS_PRIMARY);
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
@@ -7856,7 +7862,7 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 					   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
 			resource->role[NEW] = R_SECONDARY;
 			/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
-			end_state_change(resource, &irq_flags);
+			end_state_change(resource, &irq_flags, "peer-state");
 		}
 		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 	} else if (data_successor && resource->role[NOW] == R_SECONDARY) {
@@ -7909,7 +7915,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		if (peer_state.role == R_SECONDARY) {
 			begin_state_change(resource, &irq_flags, CS_HARD | CS_VERBOSE);
 			__change_peer_role(connection, R_SECONDARY);
-			rv = end_state_change(resource, &irq_flags);
+			rv = end_state_change(resource, &irq_flags, "peer-state");
 			if (rv < SS_SUCCESS)
 				goto fail;
 		}
@@ -8005,7 +8011,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	/* Start resync after AHEAD/BEHIND */
 	if (connection->agreed_pro_version >= 110 &&
 	    peer_state.conn == L_SYNC_SOURCE && old_peer_state.conn == L_BEHIND) {
-		drbd_start_resync(peer_device, L_SYNC_TARGET);
+		drbd_start_resync(peer_device, L_SYNC_TARGET, "resync-after-behind");
 		return 0;
 	}
 
@@ -8150,7 +8156,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);
-		end_state_change(resource, &irq_flags);
+		end_state_change(resource, &irq_flags, "abort-connect");
 		return -EIO;
 	}
 
@@ -8212,7 +8218,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED)
 		resource->state_change_flags |= CS_HARD;
 
-	rv = end_state_change(resource, &irq_flags);
+	rv = end_state_change(resource, &irq_flags, "peer-state");
 	new_repl_state = peer_device->repl_state[NOW];
 
 	if (rv < SS_SUCCESS)
@@ -8266,7 +8272,7 @@ static int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 		_drbd_uuid_set_bitmap(peer_device, 0UL);
 
 		drbd_print_uuids(peer_device, "updated sync uuid");
-		drbd_start_resync(peer_device, L_SYNC_TARGET);
+		drbd_start_resync(peer_device, L_SYNC_TARGET, "peer-sync-uuid");
 
 		put_ldev(device);
 	} else
@@ -8566,17 +8572,18 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		/* We have entered drbd_start_resync() since starting the bitmap exchange. */
 		drbd_warn(peer_device, "Received bitmap more than once; ignoring\n");
 	} else if (repl_state == L_WF_BITMAP_S) {
-		drbd_start_resync(peer_device, L_SYNC_SOURCE);
+		drbd_start_resync(peer_device, L_SYNC_SOURCE, "receive-bitmap");
 	} else if (repl_state == L_WF_BITMAP_T) {
 		if (connection->agreed_pro_version < 110) {
 			enum drbd_state_rv rv;
 
 			/* Omit CS_WAIT_COMPLETE and CS_SERIALIZE with this state
 			 * transition to avoid deadlocks. */
-			rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE);
+			rv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE,
+					"receive-bitmap");
 			D_ASSERT(device, rv == SS_SUCCESS);
 		} else {
-			drbd_start_resync(peer_device, L_SYNC_TARGET);
+			drbd_start_resync(peer_device, L_SYNC_TARGET, "receive-bitmap");
 		}
 	} else {
 		/* admin may have requested C_DISCONNECTING,
@@ -8770,7 +8777,7 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			__change_repl_state(peer_device, new_repl_state);
 			set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
 		}
-		rv = end_state_change(resource, &irq_flags);
+		rv = end_state_change(resource, &irq_flags, "receive-peer-dagtag");
 		if (rv == SS_SUCCESS)
 			drbd_info(connection, "Reconciliation resync because \'%s\' disappeared. (o=%d)\n",
 				  lost_peer->transport.net_conf->name, (int)dagtag_offset);
@@ -8879,7 +8886,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 			if (resource->remote_state_change)
 				set_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
 			else
-				change_disk_state(device, D_OUTDATED, CS_VERBOSE, NULL);
+				change_disk_state(device, D_OUTDATED, CS_VERBOSE,
+						"receive-current-uuid", NULL);
 		}
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
@@ -9112,7 +9120,7 @@ void drbd_last_resync_request(struct drbd_peer_device *peer_device, bool submit_
 
 static int receive_disconnect(struct drbd_connection *connection, struct packet_info *pi)
 {
-	change_cstate(connection, C_DISCONNECTING, CS_HARD);
+	change_cstate_tag(connection, C_DISCONNECTING, CS_HARD, "receive-disconnect", NULL);
 	return 0;
 }
 
@@ -9586,7 +9594,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	 * Usually we should be in some network failure state already,
 	 * but just in case we are not, we fix it up here.
 	 */
-	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+	change_cstate_tag(connection, C_NETWORK_FAILURE, CS_HARD, "disconnected", NULL);
 
 	del_connect_timer(connection);
 
@@ -9710,10 +9718,11 @@ static void conn_disconnect(struct drbd_connection *connection)
 		/* drbd_receiver() has to be restarted after it returns */
 		drbd_thread_restart_nowait(&connection->receiver);
 	}
-	end_state_change(resource, &irq_flags);
+	end_state_change(resource, &irq_flags, "disconnected");
 
 	if (oc == C_DISCONNECTING)
-		change_cstate(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY);
+		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,
+				"disconnected", NULL);
 }
 
 /*

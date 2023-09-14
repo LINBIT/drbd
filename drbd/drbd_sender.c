@@ -708,7 +708,7 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 			unsigned long irq_flags;
 			begin_state_change(resource, &irq_flags, 0);
 			peer_device->resync_active[NEW] = false;
-			end_state_change(resource, &irq_flags);
+			end_state_change(resource, &irq_flags, "resync-inactive");
 		}
 		break;
 	}
@@ -1612,7 +1612,7 @@ static void resync_again(struct drbd_device *device, u64 source_m, u64 target_m)
 				peer_device->resync_again--;
 				begin_state_change_locked(device->resource, CS_VERBOSE);
 				__change_repl_state(peer_device, new_repl_state);
-				end_state_change_locked(device->resource);
+				end_state_change_locked(device->resource, "resync-again");
 			}
 		}
 	}
@@ -1682,7 +1682,7 @@ found:
 	}
 
 	drbd_send_uuids(peer_device, 0, 0);
-	drbd_start_resync(peer_device, L_SYNC_TARGET);
+	drbd_start_resync(peer_device, L_SYNC_TARGET, "resync-from-primary");
 }
 
 static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drbd_disk_state new_peer_disk_state)
@@ -1871,7 +1871,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	}
 
 out_unlock:
-	end_state_change_locked(device->resource);
+	end_state_change_locked(device->resource, "resync-finished");
 
 	put_ldev(device);
 
@@ -2527,7 +2527,8 @@ static bool drbd_pause_after(struct drbd_device *device)
 			if (!__drbd_may_sync_now(other_peer_device))
 				__change_resync_susp_dependency(other_peer_device, true);
 		}
-		if (end_state_change_locked(other_device->resource) != SS_NOTHING_TO_DO)
+		if (end_state_change_locked(other_device->resource, "resync-after") !=
+				SS_NOTHING_TO_DO)
 			changed = true;
 	}
 	rcu_read_unlock();
@@ -2564,7 +2565,8 @@ static bool drbd_resume_next(struct drbd_device *device)
 			    __drbd_may_sync_now(other_peer_device))
 				__change_resync_susp_dependency(other_peer_device, false);
 		}
-		if (end_state_change_locked(other_device->resource) != SS_NOTHING_TO_DO)
+		if (end_state_change_locked(other_device->resource, "resync-after") !=
+				SS_NOTHING_TO_DO)
 			changed = true;
 	}
 	rcu_read_unlock();
@@ -2736,7 +2738,7 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 		return;
 	}
 
-	drbd_start_resync(peer_device, peer_device->start_resync_side);
+	drbd_start_resync(peer_device, peer_device->start_resync_side, "postponed-resync");
 	clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
 }
 
@@ -2760,7 +2762,7 @@ static void handle_congestion(struct drbd_peer_device *peer_device)
 			else if (on_congestion == OC_DISCONNECT)
 				__change_cstate(peer_device->connection, C_DISCONNECTING);
 		}
-		end_state_change(resource, &irq_flags);
+		end_state_change(resource, &irq_flags, "congestion");
 	}
 	rcu_read_unlock();
 
@@ -2774,7 +2776,8 @@ static void handle_congestion(struct drbd_peer_device *peer_device)
  * This function might bring you directly into one of the
  * C_PAUSED_SYNC_* states.
  */
-void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state side)
+void drbd_start_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state side,
+		const char *tag)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -2869,7 +2872,7 @@ skip_helper:
 		init_resync_stable_bits(peer_device);
 	finished_resync_pdsk = peer_device->resync_finished_pdsk;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;
-	r = end_state_change_locked(device->resource);
+	r = end_state_change_locked(device->resource, tag);
 	repl_state = peer_device->repl_state[NOW];
 
 	if (repl_state < L_ESTABLISHED)
@@ -2950,7 +2953,7 @@ static void go_diskless(struct drbd_device *device)
 	}
 
 	drbd_md_sync_if_dirty(device);
-	change_disk_state(device, D_DISKLESS, CS_HARD, NULL);
+	change_disk_state(device, D_DISKLESS, CS_HARD, "go-diskless", NULL);
 }
 
 static int do_md_sync(struct drbd_device *device)

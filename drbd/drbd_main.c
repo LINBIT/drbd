@@ -2564,7 +2564,7 @@ static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 		unsigned long start = jiffies;
 		long t;
 
-		rv = drbd_set_role(resource, R_PRIMARY, false, NULL);
+		rv = drbd_set_role(resource, R_PRIMARY, false, "auto-promote", NULL);
 		timeout -= jiffies - start;
 
 		if (ndelay || rv >= SS_SUCCESS || timeout <= 0) {
@@ -2913,7 +2913,7 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 		    open_rw_cnt == 0 &&
 		    resource->role[NOW] == R_PRIMARY &&
 		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
-			rv = drbd_set_role(resource, R_SECONDARY, false, NULL);
+			rv = drbd_set_role(resource, R_SECONDARY, false, "auto-demote", NULL);
 			if (rv < SS_SUCCESS)
 				drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
 					  drbd_set_st_err_str(rv), rv);
@@ -2925,7 +2925,7 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
 		resource->fail_io[NEW] = false;
-		end_state_change(resource, &irq_flags);
+		end_state_change(resource, &irq_flags, "release");
 	}
 
 	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */
@@ -3479,7 +3479,7 @@ static void wake_all_device_misc(struct drbd_resource *resource)
 	rcu_read_unlock();
 }
 
-int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts)
+int set_resource_options(struct drbd_resource *resource, struct res_opts *res_opts, const char *tag)
 {
 	struct drbd_connection *connection;
 	cpumask_var_t new_cpu_mask;
@@ -3543,7 +3543,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 
 	if (force_state_recalc) {
 		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
-		end_state_change(resource, &irq_flags);
+		end_state_change(resource, &irq_flags, tag);
 	}
 
 	if (wake_device_misc)
@@ -3620,7 +3620,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	}
 	resource->pp_vacant = page_pool_count;
 
-	if (set_resource_options(resource, res_opts))
+	if (set_resource_options(resource, res_opts, "create-resource"))
 		goto fail_free_pages;
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
