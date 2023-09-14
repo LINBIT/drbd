@@ -26,6 +26,7 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_cm.h>
+#include <linux/interrupt.h>
 #include <linux/drbd_genl_api.h>
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
