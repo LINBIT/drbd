@@ -1244,6 +1244,9 @@ struct drbd_connection {
 
 	struct rcu_head rcu;
 
+	unsigned int ctl_packets;
+	unsigned int ctl_bytes;
+
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
 					    implementation might have more members than the
 					    abstract one. */

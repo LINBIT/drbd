@@ -43,6 +43,7 @@
 #include <linux/dynamic_debug.h>
 #include <linux/libnvdimm.h>
 #include <linux/swab.h>
+#include <linux/overflow.h>
 
 #include <linux/drbd_limits.h>
 #include "drbd_int.h"
@@ -1005,11 +1006,20 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
-	int flags, err, offset, size;
+	unsigned int flags, offset, size;
+	int err;
 
 	size = sbuf->pos - sbuf->unsent + sbuf->allocated_size;
 	if (size == 0)
 		return 0;
+
+	if (drbd_stream == CONTROL_STREAM) {
+		connection->ctl_packets++;
+		if (check_add_overflow(connection->ctl_bytes, size, &connection->ctl_bytes)) {
+			connection->ctl_bytes = size;
+			connection->ctl_packets = 1;
+		}
+	}
 
 	if (drbd_stream == DATA_STREAM) {
 		rcu_read_lock();

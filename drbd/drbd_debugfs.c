@@ -950,6 +950,9 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 			atomic_read(&connection->backing_ee_cnt),
 			atomic_read(&connection->active_ee_cnt));
 	seq_printf(m, "      agreed_pro_version: %d\n", connection->agreed_pro_version);
+	seq_printf(m, "            send control: %u bytes/pckt (%u bytes, %u pckts)\n",
+		   connection->ctl_bytes / (connection->ctl_packets ?: 1),
+		   connection->ctl_bytes, connection->ctl_packets);
 	return 0;
 }
 
