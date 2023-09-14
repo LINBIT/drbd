@@ -1058,6 +1058,7 @@ int __send_command(struct drbd_connection *connection, int vnr,
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = transport->ops;
+	/* CORKED + drbd_stream is either DATA_CORKED or CONTROL_CORKED */
 	bool corked = test_bit(CORKED + drbd_stream, &connection->flags);
 	bool flush = stream_and_flags & SFLAG_FLUSH;
 	int err;
