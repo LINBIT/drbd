@@ -3726,6 +3726,11 @@ int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	if (should_set_defaults(info))
 		set_net_conf_defaults(new_net_conf);
 
+	/* The transport_name is immutable taking precedence over set_net_conf_defaults() */
+	memcpy(new_net_conf->transport_name, old_net_conf->transport_name,
+	       old_net_conf->transport_name_len);
+	new_net_conf->transport_name_len = old_net_conf->transport_name_len;
+
 	err = net_conf_from_attrs_for_change(new_net_conf, info);
 	if (err && err != -ENOMSG) {
 		retcode = ERR_MANDATORY_TAG;
