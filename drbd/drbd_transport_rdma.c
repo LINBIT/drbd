@@ -1193,7 +1193,7 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 		return;
 	}
 
-	/* kref_put()/kref_get(&cm->kref) Recycling reference for work for path->cm */
+	kref_get(&cm->kref); /* for the path->cm pointer */
 	err = dtr_path_prepare(path, cm, true);
 	if (err) {
 		tr_err(transport, "dtr_path_prepare() = %d\n", err);
@@ -1207,6 +1207,7 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 		goto out;
 	}
 
+	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 	return;
 out:
 	kref_put(&cm->kref, dtr_destroy_cm);
