@@ -11032,12 +11032,13 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 			schedule_work(&connection->send_ping_work);
 			return;
 		} else {
-			drbd_warn(connection, "PingAck did not arrive in time.\n");
+			if (connection->cstate[NOW] == C_CONNECTED)
+				drbd_warn(connection, "PingAck did not arrive in time.\n");
 		}
-	} else if (connection->cstate[NOW] == C_CONNECTED) /* && event == CLOSED_BY_PEER */ {
-		drbd_warn(connection, "meta connection shut down by peer.\n");
-		if (disconnect_expected(connection))
+	} else /* event == CLOSED_BY_PEER */ {
+		if (connection->cstate[NOW] == C_CONNECTED && disconnect_expected(connection))
 			return;
+		drbd_warn(connection, "meta connection shut down by peer.\n");
 	}
 
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
