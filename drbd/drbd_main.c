@@ -2910,17 +2910,30 @@ static void drbd_release(struct gendisk *gd)
 	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
 		call_rcu(&device->rcu, drbd_reclaim_device);
 
-	if (resource->res_opts.auto_promote) {
-		enum drbd_state_rv rv;
+	if (resource->res_opts.auto_promote &&
+			open_rw_cnt == 0 &&
+			resource->role[NOW] == R_PRIMARY &&
+			!test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
+		sigset_t mask, oldmask;
+		int rv;
 
-		if (was_writable && open_rw_cnt == 0 &&
-		    resource->role[NOW] == R_PRIMARY &&
-		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
-			rv = drbd_set_role(resource, R_SECONDARY, false, "auto-demote", NULL);
-			if (rv < SS_SUCCESS)
-				drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
-					  drbd_set_st_err_str(rv), rv);
-		}
+		/*
+		 * Auto-demote is triggered by the last opener releasing the
+		 * DRBD device. However, it is an implicit action, so it should
+		 * not be affected by the state of the process. In particular,
+		 * it should ignore any pending signals. It may be the case
+		 * that the process is releasing DRBD because it is being
+		 * terminated using a signal.
+		 */
+		sigfillset(&mask);
+		sigprocmask(SIG_BLOCK, &mask, &oldmask);
+
+		rv = drbd_set_role(resource, R_SECONDARY, false, "auto-demote", NULL);
+		if (rv < SS_SUCCESS)
+			drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
+					drbd_set_st_err_str(rv), rv);
+
+		sigprocmask(SIG_SETMASK, &oldmask, NULL);
 	}
 
 	if (open_ro_cnt == 0 && open_rw_cnt == 0 && resource->fail_io[NOW]) {
