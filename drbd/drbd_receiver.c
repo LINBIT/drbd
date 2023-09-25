@@ -7837,7 +7837,7 @@ static void propagate_exposed_uuid(struct drbd_device *device)
 	u64 im;
 
 	for_each_peer_device_ref(peer_device, im, device) {
-		if (peer_device->connection->cstate[NOW] < C_CONNECTING)
+		if (!test_bit(INITIAL_STATE_SENT, &peer_device->flags))
 			continue;
 		drbd_send_current_uuid(peer_device, device->exposed_data_uuid, 0);
 	}
