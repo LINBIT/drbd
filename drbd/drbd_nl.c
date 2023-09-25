@@ -4579,8 +4579,10 @@ int drbd_open_ro_count(struct drbd_resource *resource)
 	int vnr, open_ro_cnt = 0;
 
 	read_lock_irq(&resource->state_rwlock);
-	idr_for_each_entry(&resource->devices, device, vnr)
-		open_ro_cnt += device->open_ro_cnt;
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (!device->writable)
+			open_ro_cnt += device->open_cnt;
+	}
 	read_unlock_irq(&resource->state_rwlock);
 
 	return open_ro_cnt;
@@ -6524,8 +6526,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 
-	if (device->open_ro_cnt == 0 && device->open_rw_cnt == 0 &&
-	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
+	if (device->open_cnt == 0 && !test_and_set_bit(DESTROYING_DEV, &device->flags))
 		call_rcu(&device->rcu, drbd_reclaim_device);
 
 	return ret;

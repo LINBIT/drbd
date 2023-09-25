@@ -2638,10 +2638,9 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, fmode_t mode)
 		r = IOC_ABORT;
 	else if (!resource->remote_state_change) {
 		r = IOC_OK;
+		device->open_cnt++;
 		if (mode & FMODE_WRITE)
-			device->open_rw_cnt++;
-		else
-			device->open_ro_cnt++;
+			device->writable = true;
 	}
 	read_unlock_irq(&resource->state_rwlock);
 
@@ -2815,8 +2814,10 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		rw_count += device->open_rw_cnt;
-		ro_count += device->open_ro_cnt;
+		if (device->writable)
+			rw_count += device->open_cnt;
+		else
+			ro_count += device->open_cnt;
 	}
 	rcu_read_unlock();
 	*rw_count_ptr = rw_count;
@@ -2884,33 +2885,35 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
+	bool was_writable = device->writable;
 	int open_rw_cnt, open_ro_cnt;
 
 	mutex_lock(&resource->open_release);
-	if (mode & FMODE_WRITE)
-		device->open_rw_cnt--;
-	else
-		device->open_ro_cnt--;
+	device->open_cnt--;
 
 	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
-	/* last one to close will be responsible for write-out of all dirty pages */
-	if (mode & FMODE_WRITE && device->open_rw_cnt == 0)
+	/* last one to close will be responsible for write-out of all dirty pages.
+	 * We also reset the writable flag for this device here:  later code may
+	 * check if the device is still opened for writes to determine things
+	 * like auto-demote.
+	 */
+	if (was_writable && device->open_cnt == 0) {
 		drbd_fsync_device(device);
+		device->writable = false;
+	}
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
 
-	if (test_bit(UNREGISTERED, &device->flags) &&
-	    device->open_rw_cnt == 0 && device->open_ro_cnt == 0 &&
+	if (test_bit(UNREGISTERED, &device->flags) && device->open_cnt == 0 &&
 	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
 		call_rcu(&device->rcu, drbd_reclaim_device);
 
 	if (resource->res_opts.auto_promote) {
 		enum drbd_state_rv rv;
 
-		if (mode & FMODE_WRITE &&
-		    open_rw_cnt == 0 &&
+		if (was_writable && open_rw_cnt == 0 &&
 		    resource->role[NOW] == R_PRIMARY &&
 		    !test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
 			rv = drbd_set_role(resource, R_SECONDARY, false, "auto-demote", NULL);
@@ -2928,9 +2931,10 @@ static void drbd_release(struct gendisk *gd, fmode_t mode)
 		end_state_change(resource, &irq_flags, "release");
 	}
 
-	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */
+	/* if the open count is 0, we free the whole list, otherwise we remove the specific pid */
 	prune_or_free_openers(device,
-			(open_ro_cnt == 0 && open_rw_cnt == 0) ? 0 : task_pid_nr(current));
+			      (open_ro_cnt == 0 && open_rw_cnt == 0) ?
+			      0 : task_pid_nr(current));
 
 	mutex_unlock(&resource->open_release);
 
