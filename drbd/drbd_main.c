@@ -54,7 +54,7 @@
 #include "drbd_dax_pmem.h"
 
 static int drbd_open(struct gendisk *gd, fmode_t mode);
-static void drbd_release(struct gendisk *gd, fmode_t mode);
+static void drbd_release(struct gendisk *gd);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
@@ -2799,7 +2799,7 @@ out:
 
 	mutex_unlock(&resource->open_release);
 	if (err) {
-		drbd_release(gd, mode);
+		drbd_release(gd);
 		if (err == -EAGAIN && !(mode & FMODE_NDELAY))
 			err = -EMEDIUMTYPE;
 	}
@@ -2881,7 +2881,7 @@ void drbd_fsync_device(struct drbd_device *device)
 	drbd_flush_peer_acks(resource);
 }
 
-static void drbd_release(struct gendisk *gd, fmode_t mode)
+static void drbd_release(struct gendisk *gd)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
