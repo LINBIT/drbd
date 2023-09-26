@@ -71,6 +71,7 @@ struct kref_debug_class kref_class_connection = {
 		[14] = "w_update_peers",
 		[15] = "for_each_peer_device_ref()",
 		[16] = "queue_twopc",
+		[17] = "path",
 	}
 };
 

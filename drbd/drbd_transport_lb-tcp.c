@@ -90,8 +90,6 @@ struct dtl_path {
 	struct drbd_path path;
 	struct dtl_flow flow[2];
 	spinlock_t control_recv_lock;
-
-	struct dtl_transport *dtl_transport;
 };
 
 struct dtl_header {
@@ -340,7 +338,8 @@ static void dtl_data_ready(struct sock *sock)
 {
 	struct dtl_flow *flow = sock->sk_user_data;
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
-	struct dtl_transport *dtl_transport = path->dtl_transport;
+	struct dtl_transport *dtl_transport =
+		container_of(path->path.transport, struct dtl_transport, transport);
 
 	wake_up(&dtl_transport->data_ready);
 
@@ -849,7 +848,8 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 {
 	struct dtl_flow *flow = rd_desc->arg.data;
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
-	struct dtl_transport *dtl_transport = path->dtl_transport;
+	struct dtl_transport *dtl_transport =
+		container_of(path->path.transport, struct dtl_transport, transport);
 	struct dtl_stream *stream = &dtl_transport->streams[CONTROL_STREAM];
 	struct drbd_transport *transport = &dtl_transport->transport;
 	struct drbd_const_buffer buffer;
@@ -899,7 +899,8 @@ static void dtl_control_data_ready(struct sock *sock)
 {
 	struct dtl_flow *flow = sock->sk_user_data;
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
-	struct dtl_transport *dtl_transport = path->dtl_transport;
+	struct dtl_transport *dtl_transport =
+		container_of(path->path.transport, struct dtl_transport, transport);
 
 	read_descriptor_t rd_desc = {
 		.count = 1,
@@ -921,7 +922,8 @@ static void dtl_control_state_change(struct sock *sock)
 {
 	struct dtl_flow *flow = sock->sk_user_data;
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
-	struct dtl_transport *dtl_transport = path->dtl_transport;
+	struct dtl_transport *dtl_transport =
+		container_of(path->path.transport, struct dtl_transport, transport);
 	struct drbd_transport *transport = &dtl_transport->transport;
 
 	switch (sock->sk_state) {
@@ -1158,7 +1160,6 @@ static void dtl_accept_work_fn(struct work_struct *work)
 {
 	struct dtl_listener *listener = container_of(work, struct dtl_listener, accept_work);
 	struct dtl_transport *dtl_transport;
-	struct drbd_transport *transport;
 	struct drbd_path *drbd_path;
 	struct dtl_path *path;
 	struct socket *s;
@@ -1208,8 +1209,7 @@ static void dtl_accept_work_fn(struct work_struct *work)
 		}
 
 		path = container_of(drbd_path, struct dtl_path, path);
-		dtl_transport = path->dtl_transport;
-		transport = &dtl_transport->transport;
+		dtl_transport = container_of(path->path.transport, struct dtl_transport, transport);
 
 		dtl_do_first_packet(dtl_transport, path, s);
 		kref_put(&drbd_path->kref, drbd_destroy_path);
@@ -1306,8 +1306,7 @@ static void dtl_connect_work_fn(struct work_struct *work)
 
 static int dtl_path_adjust_listener(struct dtl_path *path, bool active)
 {
-	struct dtl_transport *dtl_transport = path->dtl_transport;
-	struct drbd_transport *transport = &dtl_transport->transport;
+	struct drbd_transport *transport = path->path.transport;
 	struct drbd_path *drbd_path = &path->path;
 	struct drbd_listener *listener = READ_ONCE(drbd_path->listener);
 	int err = 0;
@@ -1463,7 +1462,8 @@ static void dtl_write_space(struct sock *sock)
 {
 	struct dtl_flow *flow = sock->sk_user_data;
 	struct dtl_path *path = container_of(flow, struct dtl_path, flow[flow->stream_nr]);
-	struct dtl_transport *dtl_transport = path->dtl_transport;
+	struct dtl_transport *dtl_transport =
+		container_of(path->path.transport, struct dtl_transport, transport);
 
 	flow->original_sk_write_space(sock);
 	wake_up(&dtl_transport->write_space);
@@ -1756,7 +1756,6 @@ static int dtl_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 		path->flow[i].stream_nr = i;
 
 	drbd_path->established = false;
-	path->dtl_transport = dtl_transport;
 	spin_lock_init(&path->control_recv_lock);
 
 	err = dtl_path_adjust_listener(path, active);

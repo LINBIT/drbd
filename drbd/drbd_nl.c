@@ -4368,6 +4368,10 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	path->peer_addr_len = nla_len(peer_addr);
 	memcpy(&path->peer_addr, nla_data(peer_addr), path->peer_addr_len);
 
+	kref_get(&adm_ctx->connection->kref);
+	kref_debug_get(&adm_ctx->connection->kref_debug, 17);
+	path->transport = transport;
+
 	kref_init(&path->kref);
 
 	err = transport->ops->add_path(transport, path);
