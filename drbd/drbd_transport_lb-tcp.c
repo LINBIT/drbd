@@ -1162,7 +1162,6 @@ static void dtl_accept_work_fn(struct work_struct *work)
 	struct drbd_path *drbd_path;
 	struct dtl_path *path;
 	struct socket *s;
-	bool no_path;
 	int err;
 
 	while (listener->listener.pending_accepts) {
@@ -1183,42 +1182,28 @@ static void dtl_accept_work_fn(struct work_struct *work)
 
 		spin_lock_bh(&listener->listener.waiters_lock);
 		drbd_path = drbd_find_path_by_addr(&listener->listener, &peer_addr);
-		if (drbd_path) {
-			no_path = false;
-		} else {
-			no_path = true;
-			drbd_path = list_first_entry(&listener->listener.waiters, struct drbd_path,
-						     listener_link);
-		}
-		kref_get(&drbd_path->kref);
+		if (drbd_path)
+			kref_get(&drbd_path->kref);
 		spin_unlock_bh(&listener->listener.waiters_lock);
 
-		if (no_path) {
-			/* use the first (=a random) connection for printing that message */
-			path = container_of(drbd_path, struct dtl_path, path);
-			dtl_transport = path->dtl_transport;
-			transport = &dtl_transport->transport;
-
+		if (!drbd_path) {
 			switch (peer_addr.ss_family) {
 				struct sockaddr_in6 *from_sin6;
 				struct sockaddr_in *from_sin;
 
 			case AF_INET6:
 				from_sin6 = (struct sockaddr_in6 *)&peer_addr;
-				tr_notice(transport,
-					  "Closing unexpected connection from %pI6\n",
+				pr_notice("drbd: Closing unexpected connection from %pI6\n",
 					  &from_sin6->sin6_addr);
 				break;
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
-				tr_notice(transport,
-					  "Closing unexpected connection from %pI4\n",
+				pr_notice("drbd: Closing unexpected connection from %pI4\n",
 					  &from_sin->sin_addr);
 				break;
 			}
 			kernel_sock_shutdown(s, SHUT_RDWR);
 			sock_release(s);
-			kref_put(&drbd_path->kref, drbd_destroy_path);
 			continue;
 		}
 
