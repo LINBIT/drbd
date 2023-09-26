@@ -3677,7 +3677,10 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 void drbd_destroy_path(struct kref *kref)
 {
 	struct drbd_path *path = container_of(kref, struct drbd_path, kref);
+	struct drbd_connection *connection =
+		container_of(path->transport, struct drbd_connection, transport);
 
+	kref_put(&connection->kref, drbd_destroy_connection);
 	kfree(path);
 }
 
