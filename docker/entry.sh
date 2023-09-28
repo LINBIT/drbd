@@ -218,12 +218,11 @@ load_from_ram() {
 	fi
 
 	if [ -n "$LB_SELINUX_AS" ]; then
-		for m in drbd.ko drbd_transport_tcp.ko drbd_transport_rdma.ko; do
-			chcon -t "$LB_SELINUX_AS" ./${m} || true
-		done
+                find . -name "*.ko" -print0 | xargs -0 chcon -t "$LB_SELINUX_AS" || true
 	fi
 
 	insmod ./drbd.ko usermode_helper=disabled
+        insmod ./handshake.ko 2>/dev/null || true
 	insmod ./drbd_transport_tcp.ko
 	insmod ./drbd_transport_rdma.ko 2>/dev/null || true
 }
