@@ -195,6 +195,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		init_completion(&listener->ready);
 		listener->listen_addr = *(struct sockaddr_storage *)addr;
 		listener->destroy = generic_listener_destroy;
+		listener->transport_class = NULL;
 
 		list_add(&listener->list, &resource->listeners);
 		needs_init = true;
@@ -206,7 +207,12 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	spin_unlock_bh(&resource->listeners_lock);
 
 	if (needs_init) {
-		err = init_listener(transport, addr, path->net, listener);
+		if (try_module_get(transport->class->module)) {
+			listener->transport_class = transport->class;
+			err = init_listener(transport, addr, path->net, listener);
+		} else {
+			err = -ENODEV;
+		}
 		listener->err = err;
 		complete_all(&listener->ready);
 		if (err)
@@ -233,6 +239,8 @@ void drbd_listener_destroy(struct kref *kref)
 	spin_unlock_bh(&resource->listeners_lock);
 
 	listener->destroy(listener);
+	if (listener->transport_class)
+		module_put(listener->transport_class->module);
 }
 
 void drbd_put_listener(struct drbd_path *path)
