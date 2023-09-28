@@ -750,11 +750,17 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	struct skb_seq_state seq;
 	unsigned int consumed = 0;
 
-	skb_prepare_seq_read(skb, offset, skb->len, &seq);
+	skb_prepare_seq_read(skb, offset, offset + len, &seq);
 	while (true) {
 		struct drbd_const_buffer buffer;
 
+		/*
+		 * skb_seq_read() returns the length of the block assigned to buffer. This might
+		 * be more than is actually ready, so we ensure we only mark as available what
+		 * is ready.
+		 */
 		buffer.avail = skb_seq_read(consumed, &buffer.buffer, &seq);
+		buffer.avail = min_t(unsigned int, buffer.avail, len - consumed);
 		if (buffer.avail == 0)
 			break;
 		consumed += buffer.avail;
