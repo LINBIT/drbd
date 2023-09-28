@@ -1162,9 +1162,9 @@ static void dtl_accept_work_fn(struct work_struct *work)
 	struct drbd_path *drbd_path;
 	struct dtl_path *path;
 	struct socket *s;
-	int err;
+	int err, tries = 5;
 
-	while (listener->listener.pending_accepts) {
+	while (listener->listener.pending_accepts && tries > 0) {
 		struct sockaddr_storage peer_addr;
 
 		s = NULL;
@@ -1172,15 +1172,15 @@ static void dtl_accept_work_fn(struct work_struct *work)
 		if (err != -EAGAIN && !dtl_transport->err)
 			dtl_transport->err = err;
 
+		tries--;
 		if (!s)
 			continue;
 
-		listener->listener.pending_accepts--;
 		unregister_state_change(s->sk, listener);
-
 		s->ops->getname(s, (struct sockaddr *)&peer_addr, 2);
 
 		spin_lock_bh(&listener->listener.waiters_lock);
+		listener->listener.pending_accepts--;
 		drbd_path = drbd_find_path_by_addr(&listener->listener, &peer_addr);
 		if (drbd_path)
 			kref_get(&drbd_path->kref);
