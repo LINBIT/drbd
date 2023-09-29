@@ -38,53 +38,49 @@
 #include "drbd_meta_data.h"
 
 /* .doit */
-// int drbd_adm_create_resource(struct sk_buff *skb, struct genl_info *info);
-// int drbd_adm_delete_resource(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info);
 
-int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info);
 
-int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_down(struct sk_buff *skb, struct genl_info *info);
-
-int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_get_status(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info);
-int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info);
+static int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info);
 /* .dumpit */
-int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_devices_done(struct netlink_callback *cb);
-int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_connections_done(struct netlink_callback *cb);
-int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb);
-int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
-int drbd_adm_get_initial_state_done(struct netlink_callback *cb);
+static int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_dump_devices_done(struct netlink_callback *cb);
+static int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_dump_connections_done(struct netlink_callback *cb);
+static int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb);
+static int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_get_initial_state_done(struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
 #include "drbd_nla.h"
@@ -1305,7 +1301,7 @@ static const char *from_attrs_err_to_txt(int err)
 		"invalid attribute value";
 }
 
-int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct set_role_parms parms;
@@ -2228,7 +2224,7 @@ out:
 	return err;
 }
 
-int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -2949,7 +2945,7 @@ int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing_dev *b
 	return rv;
 }
 
-int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_device *device;
@@ -3460,7 +3456,7 @@ out:
  * Then we transition to D_DISKLESS, and wait for put_ldev() to return all
  * internal references as well.
  * Only then we have finally detached. */
-int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_detach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -3687,7 +3683,7 @@ static void free_crypto(struct crypto *crypto)
 	crypto_free_shash(crypto->verify_tfm);
 }
 
-int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -3840,7 +3836,7 @@ static int adjust_resync_fifo(struct drbd_peer_device *peer_device,
 	return 0;
 }
 
-int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -4333,7 +4329,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	return NO_ERROR;
 }
 
-int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_connect(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct connect_parms parms = { 0, };
@@ -4407,7 +4403,7 @@ out:
 	return 0;
 }
 
-int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
@@ -4435,7 +4431,7 @@ int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -4517,7 +4513,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	return ERR_INVALID_REQUEST;
 }
 
-int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_del_path(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -4704,12 +4700,12 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 	return 0;
 }
 
-int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_disconnect(struct sk_buff *skb, struct genl_info *info)
 {
 	return adm_disconnect(skb, info, 0);
 }
 
-int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_del_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	return adm_disconnect(skb, info, 1);
 }
@@ -4761,7 +4757,7 @@ sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local)
 	return s;
 }
 
-int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct disk_conf *old_disk_conf, *new_disk_conf = NULL;
@@ -4950,7 +4946,7 @@ int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	goto fail;
 }
 
-int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -5034,7 +5030,7 @@ static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device) __mus
 	return rv;
 }
 
-int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_invalidate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_peer_device *sync_from_peer_device = NULL;
@@ -5184,7 +5180,7 @@ static int full_sync_from_peer(struct drbd_peer_device *peer_device)
 }
 
 
-int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_invalidate_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_peer_device *peer_device;
@@ -5248,7 +5244,7 @@ out:
 	return 0;
 }
 
-int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_peer_device *peer_device;
@@ -5270,7 +5266,7 @@ int drbd_adm_pause_sync(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_peer_device *peer_device;
@@ -5304,7 +5300,7 @@ int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
@@ -5325,7 +5321,7 @@ int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
@@ -5358,7 +5354,7 @@ int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_outdate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -5431,7 +5427,7 @@ static struct nlattr *find_cfg_context_attr(const struct nlmsghdr *nlh, int attr
 
 static void resource_to_info(struct resource_info *, struct drbd_resource *);
 
-int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
+static int drbd_adm_dump_resources(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_genlmsghdr *dh;
 	struct drbd_resource *resource;
@@ -5540,11 +5536,12 @@ static int put_resource_in_arg0(struct netlink_callback *cb, int holder_nr)
 	return 0;
 }
 
-int drbd_adm_dump_devices_done(struct netlink_callback *cb) {
+static int drbd_adm_dump_devices_done(struct netlink_callback *cb)
+{
 	return put_resource_in_arg0(cb, 7);
 }
 
-int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
+static int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
 	struct drbd_resource *resource;
@@ -5631,7 +5628,7 @@ out:
 	return skb->len;
 }
 
-int drbd_adm_dump_connections_done(struct netlink_callback *cb)
+static int drbd_adm_dump_connections_done(struct netlink_callback *cb)
 {
 	return put_resource_in_arg0(cb, 6);
 }
@@ -5668,7 +5665,7 @@ static void connection_to_statistics(struct connection_statistics *s, struct drb
 
 enum { SINGLE_RESOURCE, ITERATE_RESOURCES };
 
-int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
+static int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
 	struct drbd_resource *resource = NULL, *next_resource;
@@ -5860,12 +5857,12 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_uuid_flags = pd->uuid_flags;
 }
 
-int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
+static int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)
 {
 	return put_resource_in_arg0(cb, 9);
 }
 
-int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
+static int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *resource_filter;
 	struct drbd_resource *resource;
@@ -5966,7 +5963,7 @@ out:
 	return skb->len;
 }
 
-int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_peer_device *peer_device;
@@ -5994,7 +5991,7 @@ int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_device *device;
@@ -6050,7 +6047,7 @@ static bool should_skip_initial_sync(struct drbd_peer_device *peer_device)
 	       drbd_current_uuid(peer_device->device) == UUID_JUST_CREATED;
 }
 
-int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_device *device;
@@ -6212,7 +6209,7 @@ static void resource_to_info(struct resource_info *info,
 	info->res_fail_io = resource->fail_io[NOW];
 }
 
-int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
@@ -6276,7 +6273,7 @@ out_no_unlock:
 	return 0;
 }
 
-int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_genlmsghdr *dh = info->userhdr;
@@ -6402,7 +6399,7 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	return ret;
 }
 
-int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -6466,7 +6463,7 @@ out:
 	return err;
 }
 
-int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
@@ -6541,7 +6538,7 @@ out:
 	return 0;
 }
 
-int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_del_resource(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	enum drbd_ret_code retcode;
@@ -7018,7 +7015,7 @@ out:
 	return skb->len;
 }
 
-int drbd_adm_get_initial_state_done(struct netlink_callback *cb)
+static int drbd_adm_get_initial_state_done(struct netlink_callback *cb)
 {
 	LIST_HEAD(head);
 	if (cb->args[0]) {
@@ -7033,7 +7030,7 @@ int drbd_adm_get_initial_state_done(struct netlink_callback *cb)
 	return 0;
 }
 
-int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
+static int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct drbd_resource *resource;
 	LIST_HEAD(head);
@@ -7076,7 +7073,7 @@ int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb)
 	return get_initial_state(skb, cb);
 }
 
-int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
@@ -7142,7 +7139,7 @@ static enum drbd_ret_code validate_new_resource_name(const struct drbd_resource 
 	return retcode;
 }
 
-int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
+static int drbd_adm_rename_resource(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
