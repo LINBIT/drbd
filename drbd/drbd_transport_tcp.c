@@ -43,6 +43,8 @@ module_param_named(keepidle, drbd_keepidle, uint, 0664);
 static unsigned int drbd_keepintvl;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
 
+static struct workqueue_struct *dtt_csocket_recv;
+
 struct buffer {
 	void *base;
 	void *pos;
@@ -925,7 +927,7 @@ static void dtt_control_data_ready(struct sock *sock)
 	 */
 	mod_timer(&tcp_transport->control_timer, jiffies + sock->sk_rcvtimeo);
 	if (tcp_transport->control_data_ready_work.func)
-		queue_work(system_highpri_wq, &tcp_transport->control_data_ready_work);
+		queue_work(dtt_csocket_recv, &tcp_transport->control_data_ready_work);
 	else
 		tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
 }
@@ -1628,6 +1630,10 @@ static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *d
 
 static int __init dtt_initialize(void)
 {
+	dtt_csocket_recv = alloc_workqueue("dtt_csocket_recv",
+					   WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+	if (!dtt_csocket_recv)
+		return -ENOMEM;
 	return drbd_register_transport_class(&tcp_transport_class,
 					     DRBD_TRANSPORT_API_VERSION,
 					     sizeof(struct drbd_transport));
@@ -1635,6 +1641,7 @@ static int __init dtt_initialize(void)
 
 static void __exit dtt_cleanup(void)
 {
+	destroy_workqueue(dtt_csocket_recv);
 	drbd_unregister_transport_class(&tcp_transport_class);
 }
 
