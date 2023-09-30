@@ -1211,7 +1211,13 @@ static void dtl_accept_work_fn(struct work_struct *work)
 		path = container_of(drbd_path, struct dtl_path, path);
 		dtl_transport = container_of(path->path.transport, struct dtl_transport, transport);
 
-		dtl_do_first_packet(dtl_transport, path, s);
+		/* Do not add sockets to a path after DTL_CONNECTING was cleared! */
+		if (test_bit(DTL_CONNECTING, &dtl_transport->flags)) {
+			dtl_do_first_packet(dtl_transport, path, s);
+		} else {
+			kernel_sock_shutdown(s, SHUT_RDWR);
+			sock_release(s);
+		}
 		kref_put(&drbd_path->kref, drbd_destroy_path);
 	}
 	kref_put(&listener->listener.kref, drbd_listener_destroy);
