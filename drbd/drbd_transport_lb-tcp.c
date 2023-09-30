@@ -1170,11 +1170,9 @@ static void dtl_accept_work_fn(struct work_struct *work)
 
 		s = NULL;
 		err = kernel_accept(listener->s_listen, &s, O_NONBLOCK);
-		if (err != -EAGAIN && !dtl_transport->err)
-			dtl_transport->err = err;
 
 		tries--;
-		if (!s)
+		if (err || !s)
 			continue;
 
 		unregister_state_change(s->sk, listener);
