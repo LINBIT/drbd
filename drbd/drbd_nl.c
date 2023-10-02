@@ -80,6 +80,8 @@ static int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callbac
 static int drbd_adm_dump_connections_done(struct netlink_callback *cb);
 static int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callback *cb);
 static int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb);
+static int drbd_adm_dump_paths(struct sk_buff *skb, struct netlink_callback *cb);
+static int drbd_adm_dump_paths_done(struct netlink_callback *cb);
 static int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callback *cb);
 static int drbd_adm_get_initial_state_done(struct netlink_callback *cb);
 
@@ -6004,6 +6006,137 @@ put_result:
 
 out:
 	rcu_read_unlock();
+	if (err)
+		return err;
+	return skb->len;
+}
+
+static int drbd_adm_dump_paths_done(struct netlink_callback *cb)
+{
+	return put_resource_in_arg0(cb, 10);
+}
+
+static int drbd_adm_dump_paths(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	struct nlattr *resource_filter;
+	struct drbd_resource *resource = NULL, *next_resource;
+	struct drbd_connection *connection = NULL;
+	struct drbd_path *path = NULL;
+	int err = 0, retcode;
+	struct drbd_genlmsghdr *dh;
+
+	rcu_read_lock();
+	resource = (struct drbd_resource *)cb->args[0];
+	if (!cb->args[0]) {
+		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
+		if (resource_filter) {
+			retcode = ERR_RES_NOT_KNOWN;
+			resource = drbd_find_resource(nla_data(resource_filter));
+			if (!resource)
+				goto put_result;
+			kref_debug_get(&resource->kref_debug, 10);
+			cb->args[0] = (long)resource;
+			cb->args[1] = SINGLE_RESOURCE;
+		}
+	}
+	if (!resource) {
+		if (list_empty(&drbd_resources))
+			goto out;
+		resource = list_first_entry(&drbd_resources, struct drbd_resource, resources);
+		kref_get(&resource->kref);
+		kref_debug_get(&resource->kref_debug, 10);
+		cb->args[0] = (long)resource;
+		cb->args[1] = ITERATE_RESOURCES;
+	}
+
+next_resource:
+	rcu_read_unlock();
+	mutex_lock(&resource->conf_update);
+	rcu_read_lock();
+	if (cb->args[2]) {
+		for_each_connection_rcu(connection, resource) {
+			list_for_each_entry_rcu(path, &connection->transport.paths, list)
+				if (path == (struct drbd_path *)cb->args[2])
+					goto found_path;
+		}
+		/* path was probably deleted */
+		goto no_more_paths;
+	}
+
+	connection = first_connection(resource);
+	if (!connection)
+		goto no_more_paths;
+
+	path = list_entry(&connection->transport.paths, struct drbd_path, list);
+
+found_path:
+	/* Advance to next path in connection. */
+	list_for_each_entry_continue_rcu(path, &connection->transport.paths, list) {
+		retcode = NO_ERROR;
+		goto put_result;  /* only one iteration */
+	}
+
+	/* Advance to next connection. */
+	list_for_each_entry_continue_rcu(connection, &resource->connections, connections) {
+		path = first_path(connection);
+		if (!path)
+			continue;
+		retcode = NO_ERROR;
+		goto put_result;
+	}
+
+no_more_paths:
+	if (cb->args[1] == ITERATE_RESOURCES) {
+		for_each_resource_rcu(next_resource, &drbd_resources) {
+			if (next_resource == resource)
+				goto found_resource;
+		}
+		/* resource was probably deleted */
+	}
+	goto out;
+
+found_resource:
+	list_for_each_entry_continue_rcu(next_resource, &drbd_resources, resources) {
+		mutex_unlock(&resource->conf_update);
+		kref_debug_put(&resource->kref_debug, 10);
+		kref_put(&resource->kref, drbd_destroy_resource);
+		resource = next_resource;
+		kref_get(&resource->kref);
+		kref_debug_get(&resource->kref_debug, 10);
+		cb->args[0] = (long)resource;
+		cb->args[2] = 0;
+		goto next_resource;
+	}
+	goto out;  /* no more resources */
+
+put_result:
+	dh = genlmsg_put(skb, NETLINK_CB(cb->skb).portid,
+			cb->nlh->nlmsg_seq, &drbd_genl_family,
+			NLM_F_MULTI, DRBD_ADM_GET_PATHS);
+	err = -ENOMEM;
+	if (!dh)
+		goto out;
+	dh->ret_code = retcode;
+	dh->minor = -1U;
+	if (retcode == NO_ERROR && connection && path) {
+		struct drbd_path_info path_info;
+
+		err = nla_put_drbd_cfg_context(skb, resource, connection, NULL, path);
+		if (err)
+			goto out;
+		path_info.path_established = path->established;
+		err = drbd_path_info_to_skb(skb, &path_info, !capable(CAP_SYS_ADMIN));
+		if (err)
+			goto out;
+		cb->args[2] = (long)path;
+	}
+	genlmsg_end(skb, dh);
+	err = 0;
+
+out:
+	rcu_read_unlock();
+	if (resource)
+		mutex_unlock(&resource->conf_update);
 	if (err)
 		return err;
 	return skb->len;
