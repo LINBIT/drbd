@@ -588,6 +588,9 @@ int main(int argc, char **argv)
 	patch(1, "block_device_operations_release", true, false,
 	      COMPAT_BLOCK_DEVICE_OPERATIONS_RELEASE_TAKES_SINGLE_ARGUMENT, "takes_single_argument");
 
+	patch(1, "blk_mode_t", true, false,
+	      COMPAT_HAVE_BLK_MODE_T, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
