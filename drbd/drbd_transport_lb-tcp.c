@@ -218,26 +218,6 @@ static int dtl_init(struct drbd_transport *transport)
 	return 0;
 }
 
-static void dtl_restore_socket_callbacks(struct dtl_flow *flow)
-{
-	struct socket *socket = flow->socket;
-
-	if (!socket)
-		return;
-
-	write_lock_bh(&socket->sk->sk_callback_lock);
-	if (flow->original_sk_data_ready) {
-		socket->sk->sk_data_ready = flow->original_sk_data_ready;
-		if (flow->stream_nr == DATA_STREAM)
-			socket->sk->sk_write_space = flow->original_sk_write_space;
-		else /* flow->stream_nr == CONTROL_STREAM */
-			socket->sk->sk_state_change = flow->original_sk_state_change;
-		flow->original_sk_state_change = NULL;
-		flow->original_sk_data_ready = NULL;
-		flow->original_sk_write_space = NULL;
-	}
-	write_unlock_bh(&socket->sk->sk_callback_lock);
-}
 
 static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op)
 {
@@ -1120,14 +1100,12 @@ static void dtl_do_first_packet(struct dtl_transport *dtl_transport, struct dtl_
 	case P_INITIAL_DATA:
 		if (path->flow[DATA_STREAM].socket)
 			tr_warn(transport, "initial packet S crossed\n");
-		dtl_restore_socket_callbacks(&path->flow[DATA_STREAM]);
 		dtl_socket_free(transport, &path->flow[DATA_STREAM].socket);
 		dtl_setup_socket(dtl_transport, s, &path->flow[DATA_STREAM]);
 		break;
 	case P_INITIAL_META:
 		if (path->flow[CONTROL_STREAM].socket)
 			tr_warn(transport, "initial packet M crossed\n");
-		dtl_restore_socket_callbacks(&path->flow[CONTROL_STREAM]);
 		dtl_socket_free(transport, &path->flow[CONTROL_STREAM].socket);
 		dtl_setup_socket(dtl_transport, s, &path->flow[CONTROL_STREAM]);
 		break;
@@ -1339,10 +1317,8 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 		enum drbd_stream i;
 		int err;
 
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			dtl_restore_socket_callbacks(&path->flow[i]);
+		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
 			dtl_socket_free(transport, &path->flow[i].socket);
-		}
 
 		err = dtl_path_adjust_listener(path, active);
 
