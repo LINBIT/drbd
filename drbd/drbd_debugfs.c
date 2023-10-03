@@ -1078,6 +1078,7 @@ static int device_oldest_requests_show(struct seq_file *m, void *ignored)
 static int device_openers_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+	struct drbd_resource *resource = device->resource;
 	ktime_t now = ktime_get_real();
 	struct opener *tmp;
 
@@ -1086,6 +1087,16 @@ static int device_openers_show(struct seq_file *m, void *ignored)
 		seq_printf(m, "%s\t%d\t%lld\n", tmp->comm, tmp->pid,
 			ktime_to_ms(ktime_sub(now, tmp->opened)));
 	spin_unlock(&device->openers_lock);
+	if (mutex_trylock(&resource->open_release)) {
+		if (resource->auto_promoted_by.pid != 0
+		&&  device->minor == resource->auto_promoted_by.minor) {
+			seq_printf(m, "+%s\t%d\t%lld\n",
+				resource->auto_promoted_by.comm,
+				resource->auto_promoted_by.pid,
+				ktime_to_ms(ktime_sub(now, resource->auto_promoted_by.opened)));
+		}
+		mutex_unlock(&resource->open_release);
+	}
 
 	return 0;
 }
