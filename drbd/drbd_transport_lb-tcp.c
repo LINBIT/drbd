@@ -39,6 +39,11 @@ module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
 
 struct dtl_flow;
 
+struct dtl_header {
+	u32 sequence;
+	u32 bytes;
+} __packed;
+
 struct buffer {
 	void *base;
 	void *pos;
@@ -78,6 +83,13 @@ struct dtl_flow {
 	struct socket *socket;
 	unsigned int recv_sequence;
 	int recv_bytes; /* The number of bytes to receive before the next dtl_header */
+	struct {
+		union {
+			struct dtl_header header;
+			u8 bytes[8];
+		};
+		int avail;
+	} control_reassemble;
 
 	void (*original_sk_state_change)(struct sock *sk);
 	void (*original_sk_data_ready)(struct sock *sk);
@@ -91,11 +103,6 @@ struct dtl_path {
 	struct dtl_flow flow[2];
 	spinlock_t control_recv_lock;
 };
-
-struct dtl_header {
-	u32 sequence;
-	u32 bytes;
-} __packed;
 
 
 static int dtl_init(struct drbd_transport *transport);
@@ -847,18 +854,32 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 		while (avail) {
 			if (flow->recv_bytes == 0) {
 				const struct dtl_header *hdr = (struct dtl_header *)buffer.buffer;
+				int size = sizeof(struct dtl_header);
+				bool hdr_frag = flow->control_reassemble.avail || avail < size;
+
+				if (hdr_frag) {
+					int cra = flow->control_reassemble.avail;
+
+					size = min(size - cra, avail);
+					memcpy(flow->control_reassemble.bytes + cra, hdr, size);
+					flow->control_reassemble.avail += size;
+				}
+				consumed += size;
+				avail -= size;
+				buffer.buffer += size;
+				if (hdr_frag) {
+					if (flow->control_reassemble.avail < sizeof(*hdr))
+						continue;
+					hdr = &flow->control_reassemble.header;
+					flow->control_reassemble.avail = 0;
+				}
 
 				flow->recv_sequence = be32_to_cpu(hdr->sequence);
 				flow->recv_bytes = be32_to_cpu(hdr->bytes);
-
-				consumed += sizeof(struct dtl_header);
 				if (flow->recv_sequence != stream->recv_sequence + 1) {
 					skb_abort_seq_read(&seq);
 					goto out;
 				}
-
-				buffer.buffer += sizeof(struct dtl_header);
-				avail -= sizeof(struct dtl_header);
 			}
 			buffer.avail = min(flow->recv_bytes, avail);
 			consumed += buffer.avail;
