@@ -46,6 +46,13 @@ expression s;
 - tls_handshake_cancel(s);
 
 @@
+@@
+  tls_key_lookup(...) {
+- 	...
++ 	return ERR_CAST(-EINVAL);
+  }
+
+@@
 symbol tls;
 @@
   if (tls) {
