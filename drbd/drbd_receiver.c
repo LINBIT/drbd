@@ -271,7 +271,8 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
-static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
+static int decode_header(struct drbd_connection *, const void *, struct packet_info *,
+			 enum drbd_stream drbd_stream);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
@@ -1213,7 +1214,8 @@ abort:
 	return false;
 }
 
-static int decode_header(struct drbd_connection *connection, const void *header, struct packet_info *pi)
+static int decode_header(struct drbd_connection *connection, const void *header,
+			 struct packet_info *pi, enum drbd_stream drbd_stream)
 {
 	unsigned int header_size = drbd_header_size(connection);
 
@@ -1243,9 +1245,10 @@ static int decode_header(struct drbd_connection *connection, const void *header,
 		pi->size = be16_to_cpu(h->length);
 		pi->vnr = 0;
 	} else {
-		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d\n",
+		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d [%s]\n",
 			 be32_to_cpu(*(__be32 *)header),
-			 connection->agreed_pro_version);
+			 connection->agreed_pro_version,
+			 drbd_stream == DATA_STREAM ? "data" : "control");
 		return -EINVAL;
 	}
 	pi->data = (void *)(header + header_size); /* casting away 'const'! */
@@ -1269,7 +1272,7 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 	if (err)
 		return err;
 
-	err = decode_header(connection, buffer, pi);
+	err = decode_header(connection, buffer, pi, DATA_STREAM);
 	connection->last_received = jiffies;
 
 	return err;
@@ -1310,7 +1313,7 @@ static int drbd_recv_header_maybe_unplug(struct drbd_connection *connection, str
 			return err;
 	}
 
-	err = decode_header(connection, buffer, pi);
+	err = decode_header(connection, buffer, pi, DATA_STREAM);
 	connection->last_received = jiffies;
 
 	return err;
@@ -10927,7 +10930,7 @@ static int decode_meta_cmd(struct drbd_connection *connection, const u8 *pos, st
 {
 	struct meta_sock_cmd *cmd;
 	int payload_size;
-	int err = decode_header(connection, pos, pi);
+	int err = decode_header(connection, pos, pi, CONTROL_STREAM);
 
 	if (err)
 		return err;
