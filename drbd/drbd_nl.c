@@ -3818,7 +3818,13 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	/* Call before updating net_conf in case the transport needs to compare
 	 * old and new configurations. */
-	transport->ops->net_conf_change(transport, new_net_conf);
+	err = transport->ops->net_conf_change(transport, new_net_conf);
+	if (err) {
+		drbd_msg_sprintf_info(adm_ctx.reply_skb, "transport net_conf_change failed: %d",
+				      err);
+		retcode = ERR_INVALID_REQUEST;
+		goto fail;
+	}
 
 	rcu_assign_pointer(transport->net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
@@ -4238,6 +4244,15 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		retcode = ERR_NET_CONFIGURED;
 		goto unlock_fail_free_connection;
 	}
+
+	err = connection->transport.ops->net_conf_change(&connection->transport, new_net_conf);
+	if (err) {
+		drbd_msg_sprintf_info(adm_ctx->reply_skb, "transport net_conf_change failed: %d",
+				      err);
+		retcode = ERR_INVALID_REQUEST;
+		goto unlock_fail_free_connection;
+	}
+
 	rcu_assign_pointer(connection->transport.net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
 
