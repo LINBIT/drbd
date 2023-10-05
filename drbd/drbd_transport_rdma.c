@@ -316,7 +316,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
 static int dtr_connect(struct drbd_transport *transport);
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
-static void dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
+static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
@@ -2945,9 +2945,28 @@ abort:
 	return err;
 }
 
-static void dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
 {
-	tr_warn(transport, "online change of sndbuf_size of recvbuf_size not supported\n");
+	struct net_conf *old_net_conf;
+	struct dtr_transport *dtr_transport = container_of(transport,
+		struct dtr_transport, transport);
+	int ret = 0;
+
+	rcu_read_lock();
+	old_net_conf = rcu_dereference(transport->net_conf);
+	if (old_net_conf && dtr_transport->active) {
+		if (old_net_conf->sndbuf_size != new_net_conf->sndbuf_size) {
+			tr_warn(transport, "online change of sndbuf_size not supported\n");
+			ret = -EINVAL;
+		}
+		if (old_net_conf->rcvbuf_size != new_net_conf->rcvbuf_size) {
+			tr_warn(transport, "online change of rcvbuf_size not supported\n");
+			ret = -EINVAL;
+		}
+	}
+	rcu_read_unlock();
+
+	return ret;
 }
 
 static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)

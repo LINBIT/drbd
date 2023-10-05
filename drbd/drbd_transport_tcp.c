@@ -85,7 +85,7 @@ static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
-static void dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
+static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long dtt_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream, struct page *page,
@@ -1180,7 +1180,7 @@ out:
 	return err;
 }
 
-static void dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
+static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -1194,6 +1194,8 @@ static void dtt_net_conf_change(struct drbd_transport *transport, struct net_con
 	if (control_socket) {
 		dtt_setbufsize(control_socket, new_net_conf->sndbuf_size, new_net_conf->rcvbuf_size);
 	}
+
+	return 0;
 }
 
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)
