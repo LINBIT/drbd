@@ -1250,6 +1250,51 @@ out:
 	return rv;
 }
 
+/* suggested buffer size: 128 byte */
+void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, size_t len)
+{
+	struct timespec64 ts;
+	struct tm tm;
+	struct opener *first;
+	struct opener *last;
+	int cnt;
+
+	buf[0] = '\0';
+	/* Do we have opener information? */
+	if (!device->open_cnt)
+		return;
+	cnt = snprintf(buf, len, " open_cnt:%d", device->open_cnt);
+	if (cnt > 0 && cnt < len) {
+		buf += cnt;
+		len -= cnt;
+	} else
+		return;
+	spin_lock(&device->openers_lock);
+	if (!list_empty(&device->openers)) {
+		first = list_first_entry(&device->openers, struct opener, list);
+		ts = ktime_to_timespec64(first->opened);
+		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
+		cnt = snprintf(buf, len, " [%s:%d:%04ld-%02d-%02d_%02d:%02d:%02d.%03ld]",
+			      first->comm, first->pid,
+			      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			      tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / NSEC_PER_MSEC);
+		last = list_last_entry(&device->openers, struct opener, list);
+		if (cnt > 0 && cnt < len && last != first) {
+			/* append, overwriting the previously added ']' */
+			buf += cnt-1;
+			len -= cnt-1;
+			ts = ktime_to_timespec64(last->opened);
+			time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
+			snprintf(buf, len, "%s%s:%d:%04ld-%02d-%02d_%02d:%02d:%02d.%03ld]",
+			      device->open_cnt > 2 ? ", ..., " : ", ",
+			      last->comm, last->pid,
+			      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			      tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / NSEC_PER_MSEC);
+		}
+	}
+	spin_unlock(&device->openers_lock);
+}
+
 static int put_device_opener_info(struct drbd_device *device, struct sk_buff *reply_skb)
 {
 	struct timespec64 ts;
