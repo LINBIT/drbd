@@ -854,6 +854,11 @@ struct drbd_send_buffer {
 };
 
 
+enum drbd_per_resource_ratelimit {
+	D_RL_R_NOLIMIT = -1,
+	D_RL_R_GENERIC,
+};
+
 struct drbd_resource {
 	char *name;
 #ifdef CONFIG_DEBUG_FS
@@ -870,6 +875,8 @@ struct drbd_resource {
 
 	/* Volume number to device mapping. Updates protected by conf_update. */
 	struct idr devices;
+
+	struct ratelimit_state ratelimit[1];
 
 	/* RCU list. Updates protected by adm_mutex, conf_update and state_rwlock. */
 	struct list_head connections;
@@ -993,6 +1000,11 @@ struct drbd_resource {
 	wait_queue_head_t pp_wait;
 };
 
+enum drbd_per_connection_ratelimit {
+	D_RL_C_NOLIMIT = -1,
+	D_RL_C_GENERIC,
+};
+
 struct drbd_connection {
 	struct list_head connections;
 	struct drbd_resource *resource;
@@ -1012,6 +1024,8 @@ struct drbd_connection {
 	enum drbd_conn_state cstate[2];
 	enum drbd_role peer_role[2];
 	bool susp_fen[2];		/* IO suspended because fence peer handler runs */
+
+	struct ratelimit_state ratelimit[1];
 
 	unsigned long flags;
 	enum drbd_fencing_policy fencing_policy;
@@ -1178,6 +1192,11 @@ enum drbd_neighbor {
 	NEXT_HIGHER
 };
 
+enum drbd_per_peer_device_ratelimit {
+	D_RL_PD_NOLIMIT = -1,
+	D_RL_PD_GENERIC,
+};
+
 struct drbd_peer_device {
 	struct list_head peer_devices;
 	struct drbd_device *device;
@@ -1202,6 +1221,8 @@ struct drbd_peer_device {
 	uint64_t max_size;
 	int bitmap_index;
 	int node_id;
+
+	struct ratelimit_state ratelimit[1];
 
 	unsigned long flags;
 
@@ -1327,6 +1348,11 @@ struct opener {
 	ktime_t opened;
 };
 
+enum drbd_per_device_ratelimit {
+	D_RL_D_NOLIMIT = -1,
+	D_RL_D_GENERIC,
+};
+
 struct drbd_device {
 	struct drbd_resource *resource;
 
@@ -1353,6 +1379,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_req_timing;
 #endif
 #endif
+	struct ratelimit_state ratelimit[1];
 
 	unsigned int vnr;	/* volume number within the resource */
 	unsigned int minor;	/* device minor number */

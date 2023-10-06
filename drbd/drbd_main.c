@@ -3532,6 +3532,8 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
 
+	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
+
 	/* drbd's page pool */
 	init_waitqueue_head(&resource->pp_wait);
 
@@ -3574,6 +3576,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection = kzalloc(size, GFP_KERNEL);
 	if (!connection)
 		return NULL;
+
+	ratelimit_state_init(&connection->ratelimit[D_RL_C_GENERIC], 5*HZ, /* no burst */ 1);
 
 	if (drbd_alloc_send_buffers(connection))
 		goto fail;
@@ -3716,6 +3720,8 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->repl_state[NOW] = L_OFF;
 	spin_lock_init(&peer_device->peer_seq_lock);
 
+	ratelimit_state_init(&peer_device->ratelimit[D_RL_PD_GENERIC], 5*HZ, /* no burst */ 1);
+
 	err = drbd_create_peer_device_default_config(peer_device);
 	if (err) {
 		kfree(peer_device);
@@ -3817,6 +3823,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		return ERR_NOMEM;
 	kref_init(&device->kref);
 	kref_debug_init(&device->kref_debug, &device->kref, &kref_class_device);
+
+	ratelimit_state_init(&device->ratelimit[D_RL_D_GENERIC], 5*HZ, /* no burst */ 1);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 4);
