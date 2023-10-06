@@ -2862,18 +2862,20 @@ static void drbd_release(struct gendisk *gd)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
-	bool was_writable = device->writable;
+	bool was_writable;
 	int open_rw_cnt, open_ro_cnt;
 
 	mutex_lock(&resource->open_release);
+	was_writable = device->writable;
 	device->open_cnt--;
-
 	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
-	/* last one to close will be responsible for write-out of all dirty pages.
+	/* Last one to close will be responsible for write-out of all dirty pages.
 	 * We also reset the writable flag for this device here:  later code may
 	 * check if the device is still opened for writes to determine things
 	 * like auto-demote.
+	 * Don't do the "fsync_device" if it was not marked writeable before,
+	 * or we risk a deadlock in drbd_reject_write_early().
 	 */
 	if (was_writable && device->open_cnt == 0) {
 		drbd_fsync_device(device);

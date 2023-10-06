@@ -1250,6 +1250,42 @@ out:
 	return rv;
 }
 
+static int put_device_opener_info(struct drbd_device *device, struct sk_buff *reply_skb)
+{
+	struct timespec64 ts;
+	struct opener *o;
+	struct tm tm;
+	int cnt = 0;
+	char *dotdotdot = "";
+
+	spin_lock(&device->openers_lock);
+	if (!device->open_cnt) {
+		spin_unlock(&device->openers_lock);
+		return cnt;
+	}
+	drbd_msg_sprintf_info(reply_skb,
+		"/dev/drbd%d open_cnt:%d, writable:%d; list of openers follows",
+		device->minor, device->open_cnt, device->writable);
+	list_for_each_entry(o, &device->openers, list) {
+		ts = ktime_to_timespec64(o->opened);
+		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
+
+		if (++cnt >= 10 && !list_is_last(&o->list, &device->openers)) {
+			o = list_last_entry(&device->openers, struct opener, list);
+			dotdotdot = "[...]\n";
+		}
+		drbd_msg_sprintf_info(reply_skb,
+			"%sdrbd%d opened by %s (pid %d) at %04ld-%02d-%02d %02d:%02d:%02d.%03ld",
+			dotdotdot,
+			device->minor, o->comm, o->pid,
+			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			tm.tm_hour, tm.tm_min, tm.tm_sec,
+			ts.tv_nsec / NSEC_PER_MSEC);
+	}
+	spin_unlock(&device->openers_lock);
+	return cnt;
+}
+
 static void opener_info(struct drbd_resource *resource,
 			struct sk_buff *reply_skb,
 			enum drbd_state_rv rv)
@@ -1257,42 +1293,11 @@ static void opener_info(struct drbd_resource *resource,
 	struct drbd_device *device;
 	int i;
 
-	if (rv != SS_DEVICE_IN_USE) {
-		drbd_msg_put_info(reply_skb, "failed to demote");
+	if (rv != SS_DEVICE_IN_USE && rv != SS_NO_UP_TO_DATE_DISK)
 		return;
-	}
 
-	idr_for_each_entry(&resource->devices, device, i) {
-		struct timespec64 ts;
-		struct opener *o;
-		struct tm tm;
-
-		spin_lock(&device->openers_lock);
-		o = list_first_entry_or_null(&device->openers, struct opener, list);
-		if (!o) {
-			spin_unlock(&device->openers_lock);
-			continue;
-		}
-
-		ts = ktime_to_timespec64(o->opened);
-		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
-
-		drbd_msg_sprintf_info(reply_skb,
-				      "/dev/drbd%d opened by %s (pid %d) "
-				      "at %04ld-%02d-%02d %02d:%02d:%02d.%03ld",
-				      device->minor,
-				      o->comm, o->pid,
-				      tm.tm_year + 1900,
-				      tm.tm_mon + 1,
-				      tm.tm_mday,
-				      tm.tm_hour,
-				      tm.tm_min,
-				      tm.tm_sec,
-				      ts.tv_nsec / NSEC_PER_MSEC);
-
-		spin_unlock(&device->openers_lock);
-		break;
-	}
+	idr_for_each_entry(&resource->devices, device, i)
+		put_device_opener_info(device, reply_skb);
 }
 
 static const char *from_attrs_err_to_txt(int err)
@@ -3447,7 +3452,8 @@ out:
 	if (err_str) {
 		drbd_msg_put_info(reply_skb, err_str);
 		kfree(err_str);
-	}
+	} else if (retcode == SS_NO_UP_TO_DATE_DISK)
+		put_device_opener_info(device, reply_skb);
 	return retcode;
 }
 
@@ -6616,7 +6622,7 @@ static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* demote */
 	retcode = drbd_set_role(resource, R_SECONDARY, false, "down", adm_ctx.reply_skb);
 	if (retcode < SS_SUCCESS) {
-		opener_info(adm_ctx.resource, adm_ctx.reply_skb, retcode);
+		drbd_msg_put_info(adm_ctx.reply_skb, "failed to demote");
 		goto out;
 	}
 
@@ -6663,6 +6669,7 @@ static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 	/* holding a reference to resource in adm_crx until drbd_adm_finish() */
 	mutex_unlock(&resource->conf_update);
 out:
+	opener_info(adm_ctx.resource, adm_ctx.reply_skb, (enum drbd_state_rv)retcode);
 	clear_bit(DOWN_IN_PROGRESS, &resource->flags);
 	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, retcode);
