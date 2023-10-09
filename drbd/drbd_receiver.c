@@ -3789,9 +3789,6 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 		/* P_RS_DATA_REQUEST etc */
 		drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, block_id);
 	}
-
-	drbd_remove_peer_req_interval(peer_req);
-	drbd_free_peer_req(peer_req);
 }
 
 static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
@@ -4183,6 +4180,8 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	if (!get_ldev_if_state(device, D_OUTDATED)) {
 		drbd_peer_resync_read_cancel(peer_req);
+		drbd_remove_peer_req_interval(peer_req);
+		drbd_free_peer_req(peer_req);
 
 		/* drain payload */
 		return ignore_remaining_packet(connection, pi->size);
@@ -9322,8 +9321,10 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 	}
 	rcu_read_unlock();
 
-	list_for_each_entry_safe(peer_req, t, &work_list, w.list)
+	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
 		drbd_peer_resync_read_cancel(peer_req);
+		drbd_free_peer_req(peer_req);
+	}
 }
 
 static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
