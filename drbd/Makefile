@@ -27,6 +27,28 @@
 # note: if you get strange make errors when ARCH=um, you
 # probably need to "make mrproper" in the KDIR first...
 
+ifeq ($(BUILD_OFED),1)
+ OFED_KERNEL_DIR ?= $(wildcard /usr/src/ofa_kernel/default)
+ ifneq ($(OFED_KERNEL_DIR),)
+  OFED_CFLAGS := -I$(OFED_KERNEL_DIR)/include -include linux/compat-2.6.h
+  OFED_MODULE_SYMVERS := $(OFED_KERNEL_DIR)/Module.symvers
+  PRE_CFLAGS := $(OFED_CFLAGS)
+ endif
+ ifneq ($(shell test -e "$(OFED_KERNEL_DIR)/include/linux/compat-2.6.h" && test -e "$(OFED_MODULE_SYMVERS)" && echo ok),ok)
+   $(error BUILD_OFED=1 set, but requirements not found)
+ else
+   $(info BUILDING FOR OFED:)
+   $(info ==================)
+   $(info : $(OFED_MODULE_SYMVERS))
+   $(info : $(OFED_CFLAGS))
+   $(info ===================================================================)
+ endif
+else
+ ifneq ($(OFED_KERNEL_DIR)$(OFED_MODULE_SYMVERS)$(OFED_CFLAGS),)
+  $(error "drop OFED_*, or set BUILD_OFED=1")
+ endif
+endif
+
 # The destination "root" directory. Meant to be overridden by
 # packaging scripts.
 DESTDIR ?= /
@@ -127,11 +149,13 @@ else
   compat.h:
 	@touch dummy-for-compat-h.c
 	@mkdir .tmp_versions
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) "PRE_CFLAGS=$(PRE_CFLAGS)" \
+		obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
 
   kbuild: fix-tar-timestamps
 	@rm -f .drbd_kernelrelease*
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
+	cat /dev/null $(KBUILD_EXTRA_SYMVERS) $(OFED_MODULE_SYMVERS) > Module.symvers
+	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules "PRE_CFLAGS=$(PRE_CFLAGS)"
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
 	@config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \

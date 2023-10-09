@@ -5,7 +5,8 @@ endif
 
 clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
 
-LINUXINCLUDE := -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
+# PRE_CFLAGS may contain (M)OFED header locations
+LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
 # in the drbd-kernel-compat directory.
