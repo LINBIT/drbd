@@ -1435,6 +1435,14 @@ static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf
 					 tcp_transport->tls_certificate);
 	rcu_read_unlock();
 
+	if (old_net_conf && old_net_conf->tls != new_net_conf->tls &&
+	    (data_socket || control_socket)) {
+		tr_warn(transport, "cannot switch tls (%s -> %s) while connected\n",
+			old_net_conf->tls ? "yes" : "no", new_net_conf->tls ? "yes" : "no");
+		ret = -EINVAL;
+		goto end;
+	}
+
 	if (IS_ERR(tls_keyring) || IS_ERR(tls_privkey) || IS_ERR(tls_certificate)) {
 		tr_warn(transport, "failed to configure keys: tls_keyring=%ld, tls_privkey=%ld, tls_certificate=%ld\n",
 			PTR_ERR(tls_keyring), PTR_ERR(tls_privkey), PTR_ERR(tls_certificate));
