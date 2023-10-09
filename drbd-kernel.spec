@@ -21,7 +21,8 @@ BuildRequires: redhat-rpm-config
 BuildRequires: %kernel_module_package_buildreqs
 %endif
 
-%define with_gcov %{?_with_gcov: 1} %{?!_with_gcov: 0}
+# rpmbuild --with gcov to set GCOV_PROFILE=y for make
+%bcond_with gcov
 
 %description
 This module is the kernel-dependent driver for DRBD.  This is split out so
@@ -75,12 +76,6 @@ installed kernel.
 rm -rf obj
 mkdir obj
 
-%if %{with_gcov}
-%define extra_make_flags GCOV_PROFILE=y
-%else
-%define extra_make_flags %{nil}
-%endif
-
 for flavor in %flavors_to_build; do
     cp -a -r drbd obj/$flavor
     #make -C %{kernel_source $flavor} M=$PWD/obj/$flavor
@@ -95,7 +90,8 @@ for flavor in %flavors_to_build; do
     # Since we are using spatch and shipping pre-computed patches, make sure
     # the timestamps are preserved by the cp
     ln -s $flavor obj/drbd
-    make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor} %{extra_make_flags}
+    make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor} \
+	%{?with_gcov:GCOV_PROFILE=y}
     rm obj/drbd
 done
 
