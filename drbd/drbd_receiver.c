@@ -3791,7 +3791,7 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 	}
 }
 
-static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
+static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -3823,11 +3823,17 @@ static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 				if (drbd_interval_is_verify(&peer_req->i))
 					break;
 
-				if (drbd_ratelimit())
-					drbd_warn(peer_device, "Request depends on dagtag from disconnected peer, cancelling\n");
+				dynamic_drbd_dbg(peer_device, "%s at %llus+%u: Depends on dagtag %llus from disconnected peer %u; canceling\n",
+						drbd_interval_type_str(&peer_req->i),
+						(unsigned long long) peer_req->i.sector, size,
+						(unsigned long long) peer_req->depend_dagtag,
+						peer_req->depend_dagtag_node_id);
 				drbd_peer_resync_read_cancel(peer_req);
 				atomic_sub(size >> 9, &device->rs_sect_ev);
-				return -EINVAL;
+				drbd_free_peer_req(peer_req);
+				dec_unacked(peer_device);
+				put_ldev(device);
+				return;
 			case PEER_REQUEST_DAGTAG_WAITING:
 				dynamic_drbd_dbg(peer_device, "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
 						drbd_interval_type_str(&peer_req->i),
@@ -3837,7 +3843,7 @@ static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 				spin_lock_irq(&connection->peer_reqs_lock);
 				list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
 				spin_unlock_irq(&connection->peer_reqs_lock);
-				return 0;
+				return;
 			case PEER_REQUEST_DAGTAG_RECEIVED:
 				/* Continue as normal */
 				break;
@@ -3848,7 +3854,6 @@ static int drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 
 	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_submit_peer_read(peer_req);
-	return 0;
 }
 
 static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
@@ -4078,9 +4083,7 @@ submit:
 		atomic_inc(&connection->backing_ee_cnt);
 		drbd_conflict_submit_peer_read(peer_req);
 	} else {
-		err = drbd_peer_resync_read(peer_req);
-		if (err)
-			goto fail2;
+		drbd_peer_resync_read(peer_req);
 	}
 	return 0;
 fail2:
@@ -4210,10 +4213,7 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 	/* track progress, we may need to throttle */
 	rs_sectors_came_in(peer_device, size);
 
-	err = drbd_peer_resync_read(peer_req);
-	if (err)
-		goto fail;
-
+	drbd_peer_resync_read(peer_req);
 	return 0;
 fail:
 	drbd_remove_peer_req_interval(peer_req);
