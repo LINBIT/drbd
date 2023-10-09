@@ -39,8 +39,12 @@ int drbd_register_transport_class(struct drbd_transport_class *transport_class, 
 	if (__find_transport_class(transport_class->name)) {
 		pr_err("transport class '%s' already registered\n", transport_class->name);
 		rv = -EEXIST;
-	} else
+	} else {
 		list_add_tail(&transport_class->list, &transport_classes);
+		pr_info("registered transport class '%s' (version:%s)\n",
+			transport_class->name,
+			transport_class->module->version ?: "N/A");
+	}
 	up_write(&transport_classes_lock);
 	return rv;
 }
@@ -54,6 +58,7 @@ void drbd_unregister_transport_class(struct drbd_transport_class *transport_clas
 		BUG();
 	}
 	list_del_init(&transport_class->list);
+	pr_info("unregistered transport class '%s'\n", transport_class->name);
 	up_write(&transport_classes_lock);
 }
 
