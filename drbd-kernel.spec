@@ -23,6 +23,16 @@ BuildRequires: %kernel_module_package_buildreqs
 # rpmbuild --with gcov to set GCOV_PROFILE=y for make
 %bcond_with gcov
 
+# rpmbuild --define "ofed_kernel_dir /usr/src/ofa_kernel/x86_64/4.18.0-147.5.1..."
+# to build against an some mlnx-ofa_kernel-devel
+%if %{defined ofed_kernel_dir}
+%global _ofed_version %(rpm -qf --qf '%%{VERSION}_%%{RELEASE}' '%{ofed_kernel_dir}')
+%if "%_ofed_version" == ""
+%{error:ofed_kernel_dir should belong to an rpm package}}
+%endif
+%global _ofed_version_nodash .ofed.%(echo %{?_ofed_version} | sed -r 'y/-/_/; s/\.el[0-9_]+\.%{_arch}$//;')
+%global dash_ofed -ofed
+%endif
 
 %description
 This package contains the kernel modules
@@ -98,7 +108,7 @@ for the DRBD core and various transports.
 %global kernel_version %_this_latest_kernel_devel
 %{warn: "XXX selected %kernel_version based on installed kernel-*devel packages"}
 %endif
-%global _this_kmp_version %{version}_%(echo %{kernel_version} | sed -r 'y/-/_/; s/\.el[0-9_]+\.%{_arch}$//;')
+%global _this_kmp_version %{version}_%(echo %{kernel_version} | sed -r 'y/-/_/; s/\.el[0-9_]+\.%{_arch}$//;')%{?_ofed_version_nodash}
 
 %kernel_module_package -n drbd -v %_this_kmp_version -f %{files_rh_kmod_drbd} %{?lb_flavors}
 
@@ -127,6 +137,9 @@ for flavor in %flavors_to_build; do
     # the timestamps are preserved by the cp
     ln -s $flavor obj/drbd
     make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor} \
+	%{?_ofed_version:BUILD_OFED=1} \
+	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
+	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y}
     rm obj/drbd
 done
@@ -150,6 +163,7 @@ export INSTALL_MOD_DIR=extra/drbd
 
 for flavor in %flavors_to_build ; do
     make -C %{kernel_source $flavor} modules_install \
+	cmd_depmod=: \
 	M=$PWD/obj/$flavor
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv obj/$flavor/.kernel.config.gz obj/k-config-$kernelrelease.gz
