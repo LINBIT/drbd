@@ -46,10 +46,14 @@ expression s;
 - tls_handshake_cancel(s);
 
 @@
+expression new_key, flags, perms;
+key_ref_t ref;
 @@
   tls_key_lookup(...) {
-- 	...
-+ 	return ERR_CAST(-EINVAL);
+  <...
+- ref = lookup_user_key(new_key, flags, perms)
++ ref = ERR_PTR(-ENOKEY);
+  ...>
   }
 
 @@
@@ -59,4 +63,21 @@ symbol tls;
 - 	...
 + 	err = -ENOTSUPP;
 + 	goto out;
+  }
+
+@@
+identifier transport, new_net_conf, ret;
+@@
+  dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf) {
+  	...
+  	int ret;
+  	...
+  	rcu_read_unlock();
+
++ 	if (new_net_conf->tls) {
++ 		tr_warn(transport, "kernel does not support kTLS\n");
++ 		ret = -EINVAL;
++ 		goto end;
++ 	}
+  	...
   }
