@@ -334,12 +334,11 @@ static void dtl_data_ready(struct sock *sock)
 }
 
 static int dtl_wait_data_cond(struct dtl_transport *dtl_transport,
-			      enum drbd_stream st)
+			      enum drbd_stream st, struct dtl_flow **rh_fl)
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
 	struct dtl_stream *stream = &dtl_transport->streams[st];
 	struct drbd_path *drbd_path;
-	struct dtl_header header;
 	struct dtl_flow *flow;
 	struct tcp_sock *tp;
 	struct sock *sk;
@@ -360,23 +359,15 @@ static int dtl_wait_data_cond(struct dtl_transport *dtl_transport,
 		if (flow->recv_sequence == stream->recv_sequence + 1)
 			goto found;
 		err = -EAGAIN;
-		if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq) < sizeof(header))
+		if (READ_ONCE(tp->rcv_nxt) - READ_ONCE(tp->copied_seq) < sizeof(struct dtl_header))
 			continue;
 		if (flow->recv_bytes)
 			continue;
-		err = dtl_recv_short(flow->socket, &header, sizeof(header), MSG_DONTWAIT);
-		if (err < 0)
-			goto out;
-		if (err < sizeof(header)) {
-			tr_warn(transport, "got too little %d\n", err);
-			goto out;
-		}
-		flow->recv_sequence = be32_to_cpu(header.sequence);
-		flow->recv_bytes = be32_to_cpu(header.bytes);
-		TR_ASSERT(transport, flow->recv_bytes > 0);
 
-		if (flow->recv_sequence == stream->recv_sequence + 1)
-			goto found;
+		*rh_fl = flow;
+		err = -EBFONT; /* Abusing strange errno to activate outer loop */
+		kref_put(&drbd_path->kref, drbd_destroy_path); /* aborting for_each_path_ref */
+		goto out;
 	}
 	if (err > 0)
 		err = -EAGAIN;
@@ -394,6 +385,7 @@ out:
 static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_stream st,
 				struct dtl_flow **flow)
 {
+	struct drbd_transport *transport = &dtl_transport->transport;
 	struct dtl_stream *stream = &dtl_transport->streams[st];
 	long rem, timeout = stream->rcvtimeo;
 	int err;
@@ -403,14 +395,35 @@ static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_s
 		return 0;
 	}
 
-	rem = wait_event_interruptible_timeout(dtl_transport->data_ready,
-			(err = dtl_wait_data_cond(dtl_transport, st)) != -EAGAIN,
-			timeout);
+	while (true) {
+		struct dtl_header header;
+		struct dtl_flow *rh_fl;
 
-	if (rem < 0)
-		return rem;
-	if (err)
-		return err;
+		rem = wait_event_interruptible_timeout(dtl_transport->data_ready,
+			(err = dtl_wait_data_cond(dtl_transport, st, &rh_fl)) != -EAGAIN,
+			timeout);
+		if (rem < 0)
+			return rem;
+		if (!err)
+			break;
+		if (err != -EBFONT)
+			return err;
+
+		err = dtl_recv_short(rh_fl->socket, &header, sizeof(header), 0);
+		if (err < 0)
+			return err;
+		if (err < sizeof(header)) {
+			tr_warn(transport, "got too little %d\n", err);
+			return -EIO;
+		}
+		rh_fl->recv_sequence = be32_to_cpu(header.sequence);
+		rh_fl->recv_bytes = be32_to_cpu(header.bytes);
+		if (rh_fl->recv_sequence == stream->recv_sequence + 1) {
+			stream->recv_sequence++;
+			stream->recv_flow = rh_fl;
+			break;
+		}
+	}
 
 	*flow = stream->recv_flow;
 	return 0;
