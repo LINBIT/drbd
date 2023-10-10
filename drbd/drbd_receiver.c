@@ -2517,8 +2517,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		if (err)
 			put_ldev(device);
 	} else {
-		if (drbd_ratelimit())
-			drbd_err(device, "Cannot write resync data to local disk.\n");
+		drbd_err_ratelimit(device, "Cannot write resync data to local disk.\n");
 
 		err = ignore_remaining_packet(connection, pi->size);
 
@@ -3070,8 +3069,7 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 
-	if (drbd_ratelimit())
-		drbd_err(peer_device, "submit failed, triggering re-connect\n");
+	drbd_err_ratelimit(peer_device, "submit failed, triggering re-connect\n");
 
 	if (peer_req->flags & EE_IN_ACTLOG)
 		drbd_al_complete_io(device, &peer_req->i);
@@ -3292,9 +3290,10 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 		default:
 			BUG();
 		}
-		if (verb && drbd_ratelimit())
-			drbd_err(peer_device, "Can not satisfy peer's read request, "
-			    "no local data.\n");
+
+		if (verb)
+			drbd_err_ratelimit(device,
+				"Can not satisfy peer's read request, no local data.\n");
 
 		/* drain possibly payload */
 		return ignore_remaining_packet(connection, pi->size);
@@ -3323,8 +3322,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			/* P_DATA_REQUEST originates from a Primary,
 			 * so if I am "Ahead", the Primary would be "Behind":
 			 * Can not happen. */
-			if (drbd_ratelimit())
-				drbd_err(peer_device, "received P_DATA_REQUEST while L_AHEAD\n");
+			drbd_err_ratelimit(peer_device, "received P_DATA_REQUEST while L_AHEAD\n");
 			err = -EINVAL;
 			goto fail2;
 		}
@@ -8311,7 +8309,8 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		err = drbd_submit_peer_request(peer_req);
 
 		if (err) {
-			drbd_err(device, "discard submit failed, triggering re-connect\n");
+			drbd_err_ratelimit(device,
+				"discard submit failed, triggering re-connect\n");
 			spin_lock_irq(&connection->peer_reqs_lock);
 			list_del(&peer_req->w.list);
 			spin_unlock_irq(&connection->peer_reqs_lock);
@@ -8323,8 +8322,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 		/* No put_ldev() here. Gets called in drbd_endio_write_sec_final(),
 		   as well as drbd_rs_complete_io() */
 	} else {
-		if (drbd_ratelimit())
-			drbd_err(device, "Cannot discard on local disk.\n");
+		drbd_err_ratelimit(device, "Cannot discard on local disk.\n");
 
 		drbd_send_ack_ex(peer_device, P_NEG_ACK, sector, size, ID_SYNCER);
 	}
@@ -9405,9 +9403,8 @@ static int got_NegDReply(struct drbd_connection *connection, struct packet_info 
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
-	if (drbd_ratelimit())
-		drbd_warn(peer_device, "Got NegDReply; Sector %llus, len %u.\n",
-				(unsigned long long)sector, be32_to_cpu(p->blksize));
+	drbd_warn_ratelimit(peer_device, "Got NegDReply; Sector %llus, len %u.\n",
+			(unsigned long long)sector, be32_to_cpu(p->blksize));
 
 	return validate_req_change_req_state(peer_device, p->block_id, sector,
 					     INTERVAL_LOCAL_READ, __func__,

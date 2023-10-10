@@ -1351,6 +1351,9 @@ struct opener {
 enum drbd_per_device_ratelimit {
 	D_RL_D_NOLIMIT = -1,
 	D_RL_D_GENERIC,
+	D_RL_D_METADATA,
+	D_RL_D_BACKEND,
+	__D_RL_D_N
 };
 
 struct drbd_device {
@@ -1379,7 +1382,7 @@ struct drbd_device {
 	struct dentry *debugfs_vol_req_timing;
 #endif
 #endif
-	struct ratelimit_state ratelimit[1];
+	struct ratelimit_state ratelimit[__D_RL_D_N];
 
 	unsigned int vnr;	/* volume number within the resource */
 	unsigned int minor;	/* device minor number */
