@@ -59,6 +59,7 @@ struct dtl_stream {
 struct dtl_transport {
 	struct drbd_transport transport; /* Must be first! */
 	spinlock_t paths_lock;
+	spinlock_t control_recv_lock;
 	unsigned long flags;
 	struct timer_list control_timer;
 	struct delayed_work connect_work;
@@ -101,7 +102,6 @@ struct dtl_flow {
 struct dtl_path {
 	struct drbd_path path;
 	struct dtl_flow flow[2];
-	spinlock_t control_recv_lock;
 };
 
 
@@ -206,6 +206,8 @@ static int dtl_init(struct drbd_transport *transport)
 		container_of(transport, struct dtl_transport, transport);
 
 	spin_lock_init(&dtl_transport->paths_lock);
+	spin_lock_init(&dtl_transport->control_recv_lock);
+
 	dtl_transport->transport.ops = &dtl_ops;
 	dtl_transport->transport.class = &dtl_transport_class;
 	timer_setup(&dtl_transport->control_timer, dtl_control_timer_fn, 0);
@@ -824,7 +826,7 @@ static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_t
 	struct drbd_path *drbd_path;
 	struct dtl_flow *flow;
 
-	spin_lock(&dtl_transport->paths_lock);
+	spin_lock(&dtl_transport->paths_lock); /* bh already disabled */
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 
@@ -861,7 +863,6 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	    flow->recv_sequence != READ_ONCE(stream->recv_sequence) + 1)
 		return 0;
 
-	spin_lock(&path->control_recv_lock);
 	skb_prepare_seq_read(skb, offset, skb->len, &seq);
 	while ((avail = skb_seq_read(consumed, &buffer.buffer, &seq))) {
 		while (avail) {
@@ -895,17 +896,17 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 				}
 			}
 			buffer.avail = min(flow->recv_bytes, avail);
+			if (!buffer.avail)
+				continue;
 			consumed += buffer.avail;
 			avail -= buffer.avail;
 			flow->recv_bytes -= buffer.avail;
+			drbd_control_data_ready(transport, &buffer);
 			if (flow->recv_bytes == 0)
 				stream->recv_sequence++;
-			if (buffer.avail)
-				drbd_control_data_ready(transport, &buffer);
 		}
 	}
 out:
-	spin_unlock(&path->control_recv_lock);
 	return consumed;
 }
 
@@ -922,6 +923,7 @@ static void dtl_control_data_ready(struct sock *sock)
 	};
 	mod_timer(&dtl_transport->control_timer, jiffies + sock->sk_rcvtimeo);
 
+	spin_lock_bh(&dtl_transport->control_recv_lock);
 	tcp_read_sock(sock, &rd_desc, dtl_control_tcp_input);
 
 	/* in case another flow became the next in sequence */
@@ -930,6 +932,7 @@ static void dtl_control_data_ready(struct sock *sock)
 		rd_desc.arg.data = flow;
 		tcp_read_sock(sock, &rd_desc, dtl_control_tcp_input);
 	}
+	spin_unlock_bh(&dtl_transport->control_recv_lock);
 }
 
 static void dtl_control_state_change(struct sock *sock)
@@ -1770,7 +1773,6 @@ static int dtl_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 		path->flow[i].stream_nr = i;
 
 	drbd_path->established = false;
-	spin_lock_init(&path->control_recv_lock);
 
 	err = dtl_path_adjust_listener(path, active);
 
