@@ -190,6 +190,52 @@ drbd/.drbd_git_revision:
 	@echo >&2 "Need a git checkout to regenerate $@"; test -s $@
 endif
 
+export define SPDX_TEMPLATE
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: drbd kernel module SBOM (software bill of materials)
+DocumentNamespace: https://linbit.org/spdx-docs/drbd-kmod-$(SPDX_VERSION)-$(SPDX_UUID)
+Creator: Person: Philipp Reisner (philipp.reisner@linbit.com)
+Created: $(SPDX_DATE)
+
+PackageName: $(SPDX_PKG_NAME)
+SPDXID: SPDXRef-Package-$(SPDX_PKG_NAME)
+PackageVersion: $(SPDX_VERSION)
+PackageSupplier: Organization: LINBIT HA-Solutions GmbH
+PackageDownloadLocation: https://github.com/LINBIT/drbd
+FilesAnalyzed: false
+PackageLicenseDeclared: GPL-2.0-only
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-$(SPDX_PKG_NAME)
+endef
+
+# only call this wrapper from drbd-kmod_{sles,rhel}.spdx
+.PHONY: spdx-file
+spdx-file:
+	@echo "$$SPDX_TEMPLATE" > $(SPDX_FILE_TMP)
+
+.PHONY: drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
+drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
+	@set -e; ( truncate -s0 $@.tmp; \
+		SPDX_DATE="$$(date --utc +%FT%TZ)"; \
+		SPDX_UUID="$$(cat /proc/sys/kernel/random/uuid)"; \
+		SPDX_VERSION="$(REL_VERSION)"; \
+		case "$@" in \
+			drbd-kmod_rhel.spdx) SPDX_PKG_NAME=kmod-drbd;; \
+			drbd-kmod_sles.spdx) SPDX_PKG_NAME=drbd-kmp-default;; \
+			*) false;; \
+		esac; \
+		test -n "$$SPDX_TEMPLATE"; \
+		test -n "$$SPDX_DATE"; \
+		test -n "$$SPDX_UUID"; \
+		test -n "$$SPDX_VERSION"; \
+		$(MAKE) spdx-file SPDX_UUID="$$SPDX_UUID" \
+			SPDX_DATE="$$SPDX_DATE" \
+			SPDX_FILE_TMP="$@.tmp" \
+			SPDX_PKG_NAME="$$SPDX_PKG_NAME" \
+			SPDX_VERSION="$$SPDX_VERSION"; \
+		mv $@.tmp $@; )
+
 # update of .filelist is forced:
 .PHONY: .filelist
 .filelist:
@@ -205,8 +251,10 @@ endif
 	@find drbd/drbd-kernel-compat/cocci_cache/ -type f -not -path '*/\.*' | \
 	 sed -e 's,^,drbd-$(DIST_VERSION)/,' >> .filelist
 	@[ -s .filelist ] # assert there is something in .filelist now
-	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist ; \
-	echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist ; \
+	@echo drbd-$(DIST_VERSION)/drbd-kmod_rhel.spdx     >> .filelist
+	@echo drbd-$(DIST_VERSION)/drbd-kmod_sles.spdx     >> .filelist
+	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist
+	@echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist
 	echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
@@ -251,6 +299,7 @@ debrelease:
 tarball:
 	$(MAKE) distclean
 	$(MAKE) check-submods check_all_committed drbd/.drbd_git_revision
+	$(MAKE) drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
 	$(MAKE) .filelist
 	$(MAKE) tgz
 
