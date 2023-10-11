@@ -594,6 +594,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_mode_t", true, false,
 	      COMPAT_HAVE_BLK_MODE_T, "present");
 
+	patch(1, "genl_info_userhdr", true, false,
+	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
