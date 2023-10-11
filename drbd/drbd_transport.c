@@ -157,8 +157,8 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 
 	list_for_each_entry(listener, &resource->listeners, list) {
 		if (addr_and_port_equal(&listener->listen_addr, addr)) {
-			kref_get(&listener->kref);
-			return listener;
+			if (kref_get_unless_zero(&listener->kref))
+				return listener;
 		}
 	}
 	return NULL;
