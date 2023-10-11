@@ -8699,6 +8699,10 @@ static void conn_disconnect(struct drbd_connection *connection)
 	connection->send.seen_any_write_yet = false;
 	connection->current_epoch->oldest_unconfirmed_peer_req = NULL;
 
+	/* Release any threads waiting for a barrier to be acked. */
+	clear_bit(BARRIER_ACK_PENDING, &connection->flags);
+	wake_up(&resource->barrier_wait);
+
 	drbd_info(connection, "Connection closed\n");
 
 	if (resource->role[NOW] == R_PRIMARY &&
