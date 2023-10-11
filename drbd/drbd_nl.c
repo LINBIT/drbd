@@ -3777,6 +3777,7 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 	memcpy(new_net_conf->transport_name, old_net_conf->transport_name,
 	       old_net_conf->transport_name_len);
 	new_net_conf->transport_name_len = old_net_conf->transport_name_len;
+	new_net_conf->load_balance_paths = old_net_conf->load_balance_paths;
 
 	err = net_conf_from_attrs_for_change(new_net_conf, info);
 	if (err && err != -ENOMSG) {
@@ -4171,7 +4172,8 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		goto fail;
 	}
 
-	transport_name = new_net_conf->transport_name[0] ? new_net_conf->transport_name : "tcp";
+	transport_name = new_net_conf->transport_name_len ? new_net_conf->transport_name :
+		new_net_conf->load_balance_paths ? "lb-tcp" : "tcp";
 	tr_class = drbd_get_transport_class(transport_name);
 	if (!tr_class) {
 		retcode = ERR_CREATE_TRANSPORT;

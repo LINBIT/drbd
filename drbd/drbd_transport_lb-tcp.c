@@ -36,6 +36,7 @@ static unsigned int drbd_keepintvl;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
 
 #define DTL_CONNECTING 1
+#define DTL_LOAD_BALANCE 2
 
 struct dtl_flow;
 
@@ -132,6 +133,7 @@ static void dtl_write_space(struct sock *sock);
 static void dtl_connect_work_fn(struct work_struct *work);
 static void dtl_accept_work_fn(struct work_struct *work);
 static int dtl_set_active(struct drbd_transport *transport, bool active);
+static int dtl_path_adjust_listener(struct dtl_path *path, bool active);
 
 static struct drbd_transport_class dtl_transport_class = {
 	.name = "lb-tcp",
@@ -204,6 +206,7 @@ static int dtl_init(struct drbd_transport *transport)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
+	struct net_conf *nc;
 
 	spin_lock_init(&dtl_transport->paths_lock);
 	spin_lock_init(&dtl_transport->control_recv_lock);
@@ -223,6 +226,12 @@ static int dtl_init(struct drbd_transport *transport)
 	dtl_transport->rbuf.pos = dtl_transport->rbuf.base;
 	if (!dtl_transport->rbuf.base)
 		return -ENOMEM;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc && nc->load_balance_paths)
+		__set_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -433,9 +442,11 @@ static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_s
 
 static void dtl_received(struct dtl_transport *dtl_transport, struct dtl_flow *flow, int size)
 {
-	flow->recv_bytes -= size;
-	if (flow->recv_bytes == 0)
-		dtl_transport->streams[flow->stream_nr].recv_flow = NULL;
+	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
+		flow->recv_bytes -= size;
+		if (flow->recv_bytes == 0)
+			dtl_transport->streams[flow->stream_nr].recv_flow = NULL;
+	}
 }
 
 static int
@@ -687,7 +698,6 @@ out:
 static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 				 struct dtl_flow *flow, enum drbd_packet cmd)
 {
-	struct dtl_header hdr;
 	struct p_header80 h;
 	int msg_flags = 0;
 	int err;
@@ -695,12 +705,13 @@ static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 	if (!flow->socket)
 		return -EIO;
 
-	hdr.sequence = 0;
-	hdr.bytes = cpu_to_be32(sizeof(h));
+	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
+		struct dtl_header hdr = { .sequence = 0, .bytes = cpu_to_be32(sizeof(h)) };
 
-	err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags);
-	if (err < 0)
-		return err;
+		err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags);
+		if (err < 0)
+			return err;
+	}
 
 	h.magic = cpu_to_be32(DRBD_MAGIC);
 	h.command = cpu_to_be16(cmd);
@@ -753,10 +764,27 @@ static bool _dtl_path_established(struct drbd_transport *transport, struct dtl_p
 		dtl_socket_ok_or_free(transport, &path->flow[CONTROL_STREAM].socket);
 }
 
+static bool dtl_deactivate_other_paths(struct dtl_path *path)
+{
+	struct drbd_transport *transport = path->path.transport;
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
+	bool active = test_and_clear_bit(DTL_CONNECTING, &dtl_transport->flags);
+	struct drbd_path *drbd_path;
+
+	if (active) {
+		for_each_path_ref(drbd_path, transport)
+			dtl_path_adjust_listener(path, false);
+	}
+
+	return active;
+}
+
 static bool dtl_path_established(struct drbd_transport *transport, struct dtl_path *path)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
+	bool lb = test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 	struct drbd_path *drbd_path = &path->path;
 	struct net_conf *nc;
 	enum drbd_stream i;
@@ -771,10 +799,25 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 
 	established = _dtl_path_established(transport, path);
 
+	if (established && !lb) {
+		established = dtl_deactivate_other_paths(path);
+
+		if (!established) {
+			dtl_socket_free(transport, &path->flow[DATA_STREAM].socket);
+			dtl_socket_free(transport, &path->flow[CONTROL_STREAM].socket);
+		}
+	}
+
 	if (established != drbd_path->established) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			path->flow[i].recv_sequence = 0;
-			path->flow[i].recv_bytes = 0;
+			if (lb) {
+				path->flow[i].recv_sequence = 0;
+				path->flow[i].recv_bytes = 0;
+			} else {
+				path->flow[i].recv_sequence = 1;
+				path->flow[i].recv_bytes = INT_MAX;
+				dtl_transport->streams[i].recv_flow = &path->flow[i];
+			}
 		}
 
 		drbd_path->established = established;
@@ -800,7 +843,6 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 				    struct socket *socket)
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
-	struct dtl_header hdr;
 	struct p_header80 header;
 	struct net_conf *nc;
 	int err;
@@ -814,11 +856,15 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 	socket->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
 	rcu_read_unlock();
 
-	err = dtl_recv_short(socket, &hdr, sizeof(hdr), 0);
-	if (err != sizeof(hdr)) {
-		if (err >= 0)
-			err = -EIO;
-		return err;
+	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
+		struct dtl_header hdr;
+
+		err = dtl_recv_short(socket, &hdr, sizeof(hdr), 0);
+		if (err != sizeof(hdr)) {
+			if (err >= 0)
+				err = -EIO;
+			return err;
+		}
 	}
 	err = dtl_recv_short(socket, &header, sizeof(header), 0);
 	if (err != sizeof(header)) {
@@ -846,7 +892,8 @@ static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_t
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 
 		flow = &path->flow[CONTROL_STREAM];
-		if (flow->recv_sequence == stream->recv_sequence + 1 && flow->recv_bytes > 0) {
+		if (flow->socket &&
+		    flow->recv_sequence == stream->recv_sequence + 1 && flow->recv_bytes > 0) {
 			struct sock *sk = flow->socket->sk;
 			struct tcp_sock *tp = tcp_sk(sk);
 
@@ -875,7 +922,7 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	int avail;
 
 	if (flow->recv_bytes &&
-	    flow->recv_sequence != READ_ONCE(stream->recv_sequence) + 1)
+	    flow->recv_sequence != stream->recv_sequence + 1)
 		return 0;
 
 	skb_prepare_seq_read(skb, offset, skb->len, &seq);
@@ -915,7 +962,8 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 				continue;
 			consumed += buffer.avail;
 			avail -= buffer.avail;
-			flow->recv_bytes -= buffer.avail;
+			if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags))
+				flow->recv_bytes -= buffer.avail;
 			drbd_control_data_ready(transport, &buffer);
 			if (flow->recv_bytes == 0)
 				stream->recv_sequence++;
@@ -1177,7 +1225,8 @@ static void dtl_do_first_packet(struct dtl_transport *dtl_transport, struct dtl_
 		dtl_set_socket_callbacks(dtl_transport, &path->flow[CONTROL_STREAM]);
 	} else {
 		/* successful accept, not yet both -> speed up next connect attempt */
-		mod_delayed_work(system_wq, &dtl_transport->connect_work, 1);
+		if (test_bit(DTL_CONNECTING, &dtl_transport->flags))
+			mod_delayed_work(system_wq, &dtl_transport->connect_work, 1);
 	}
 
 	if (!dtl_transport->err && fp < 0)
@@ -1386,6 +1435,7 @@ static int dtl_connect(struct drbd_transport *transport)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
+	bool lb = test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 	enum drbd_stream i;
 	int err;
 
@@ -1411,7 +1461,8 @@ static int dtl_connect(struct drbd_transport *transport)
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		dtl_transport->streams[i].send_sequence = 1;
 		dtl_transport->streams[i].recv_sequence = 0;
-		dtl_transport->streams[i].recv_flow = NULL;
+		if (lb)
+			dtl_transport->streams[i].recv_flow = NULL;
 	}
 
 	return 0;
@@ -1631,12 +1682,14 @@ static int dtl_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (err)
 		return err;
 
-	header.sequence = cpu_to_be32(dtl_transport->streams[stream].send_sequence++);
-	header.bytes = cpu_to_be32(size);
+	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
+		header.sequence = cpu_to_be32(dtl_transport->streams[stream].send_sequence++);
+		header.bytes = cpu_to_be32(size);
 
-	err = _dtl_send(dtl_transport, flow, &header, sizeof(header), msg_flags | MSG_MORE);
-	if (err < 0)
-		goto out;
+		err = _dtl_send(dtl_transport, flow, &header, sizeof(header), msg_flags | MSG_MORE);
+		if (err < 0)
+			goto out;
+	}
 	err = _dtl_send_page(dtl_transport, flow, page, offset, size, msg_flags);
 
 out:
@@ -1648,6 +1701,7 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 	struct dtl_stream *stream = &dtl_transport->streams[DATA_STREAM];
+	bool lb = test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 	struct bvec_iter iter_scan = bio->bi_iter;
 	struct bvec_iter iter = bio->bi_iter;
 	struct dtl_header header;
@@ -1667,7 +1721,7 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		sk = flow->socket->sk;
 		wmem_available = READ_ONCE(sk->sk_sndbuf) - READ_ONCE(sk->sk_wmem_queued);
 
-		if (iter.bi_size > wmem_available) {
+		if (lb && iter.bi_size > wmem_available) {
 			chunk = 0;
 			__bio_for_each_segment(bvec, bio, iter_scan, iter_scan) {
 				chunk += bvec.bv_len;
@@ -1680,11 +1734,13 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 			chunk = iter.bi_size;
 		}
 
-		header.sequence = cpu_to_be32(stream->send_sequence++);
-		header.bytes = cpu_to_be32(chunk);
-		err = _dtl_send(dtl_transport, flow, &header, sizeof(header), MSG_MORE);
-		if (err < 0)
-			goto out;
+		if (lb) {
+			header.sequence = cpu_to_be32(stream->send_sequence++);
+			header.bytes = cpu_to_be32(chunk);
+			err = _dtl_send(dtl_transport, flow, &header, sizeof(header), MSG_MORE);
+			if (err < 0)
+				goto out;
+		}
 		__bio_for_each_segment(bvec, bio, iter, iter) {
 			err = _dtl_send_page(dtl_transport, flow, bvec.bv_page,
 					     bvec.bv_offset, bvec.bv_len,
