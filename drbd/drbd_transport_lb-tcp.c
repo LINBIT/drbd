@@ -1508,10 +1508,16 @@ static int dtl_select_send_flow_cond(struct dtl_transport *dtl_transport,
 			int wmem = sk_stream_min_wspace(sk);
 			/* int wmem_queued = READ_ONCE(sk->sk_wmem_queued); */
 
-			if (wmem < best_wmem &&
-			    wmem < sk->sk_sndbuf) {
-				best = flow;
-				best_wmem = wmem;
+			if (st == DATA_STREAM) {
+				if (wmem < best_wmem && wmem < sk->sk_sndbuf) {
+					best = flow;
+					best_wmem = wmem;
+				}
+			} else {
+				if (wmem < sk->sk_sndbuf)
+					best = flow;
+				/* Only use first established control flow. */
+				break;
 			}
 		}
 	}
