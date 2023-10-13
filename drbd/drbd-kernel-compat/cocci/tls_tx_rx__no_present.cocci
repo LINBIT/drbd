@@ -81,3 +81,8 @@ identifier transport, new_net_conf, ret;
 + 	}
   	...
   }
+
+@@
+declarer MODULE_SOFTDEP;
+@@
+- MODULE_SOFTDEP("post: handshake");

@@ -71,6 +71,7 @@ MODULE_LICENSE("GPL");
 MODULE_PARM_DESC(minor_count, "Approximate number of drbd devices ("
 		 __stringify(DRBD_MINOR_COUNT_MIN) "-" __stringify(DRBD_MINOR_COUNT_MAX) ")");
 MODULE_ALIAS_BLOCKDEV_MAJOR(DRBD_MAJOR);
+MODULE_SOFTDEP("post: handshake");
 
 #include <linux/moduleparam.h>
 
