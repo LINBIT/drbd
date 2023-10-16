@@ -2950,9 +2950,7 @@ static void drbd_release(struct gendisk *gd)
 	}
 
 	/* if the open count is 0, we free the whole list, otherwise we remove the specific pid */
-	prune_or_free_openers(device,
-			      (open_ro_cnt == 0 && open_rw_cnt == 0) ?
-			      0 : task_pid_nr(current));
+	prune_or_free_openers(device, (device->open_cnt == 0) ? 0 : task_pid_nr(current));
 
 	mutex_unlock(&resource->open_release);
 
