@@ -320,7 +320,7 @@ void drbd_req_destroy(struct kref *kref)
 			if (get_ldev_if_state(device, D_DETACHING)) {
 				was_last_ref = drbd_al_complete_io(device, &req->i);
 				put_ldev(device);
-			} else if (drbd_ratelimit()) {
+			} else if (drbd_device_ratelimit(device, BACKEND)) {
 				drbd_warn(device, "Should have called drbd_al_complete_io(, %llu, %u), "
 					  "but my Disk seems to have failed :(\n",
 					  (unsigned long long) req->i.sector, req->i.size);
@@ -1002,7 +1002,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 static void drbd_report_io_error(struct drbd_device *device, struct drbd_request *req)
 {
-	if (!drbd_ratelimit())
+	if (!drbd_device_ratelimit(device, BACKEND))
 		return;
 
 	drbd_warn(device, "local %s IO error sector %llu+%u on %pg\n",
@@ -1390,9 +1390,7 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 		++n_checked;
 	}
 	if (n_checked == 0) {
-		if (drbd_ratelimit()) {
-			drbd_err(device, "No valid bitmap slots found to check!\n");
-		}
+		drbd_err_ratelimit(device, "No valid bitmap slots found to check!\n");
 		return false;
 	}
 	return true;
@@ -2060,11 +2058,13 @@ static void drbd_send_and_submit(struct drbd_request *req)
 		spin_unlock(&device->pending_completion_lock);
 		if (no_remote) {
 nodata:
-			if (drbd_ratelimit())
-				drbd_err(req->device, "IO ERROR: neither local nor remote data, sector %llu+%u\n",
-					 (unsigned long long)req->i.sector, req->i.size >> 9);
+			drbd_err_ratelimit(req->device,
+				"IO ERROR: neither local nor remote data, sector %llu+%u\n",
+				 (unsigned long long)req->i.sector, req->i.size >> 9);
 			/* A write may have been queued for send_oos, however.
-			 * So we can not simply free it, we must go through drbd_req_put_completion_ref() */
+			 * So we can not simply free it, we must go through
+			 * drbd_req_put_completion_ref()
+			 */
 		}
 	}
 
@@ -2897,7 +2897,7 @@ void drbd_handle_io_error_(struct drbd_device *device,
 	switch (ep) {
 	case EP_PASS_ON: /* FIXME would this be better named "Ignore"? */
 		if (df == DRBD_READ_ERROR ||  df == DRBD_WRITE_ERROR) {
-			if (drbd_ratelimit())
+			if (drbd_device_ratelimit(device, BACKEND))
 				drbd_err(device, "Local IO failed in %s.\n", where);
 			if (device->disk_state[NOW] > D_INCONSISTENT) {
 				begin_state_change_locked(device->resource, CS_HARD);

@@ -247,7 +247,7 @@ void drbd_peer_request_endio(struct bio *bio)
 
 	blk_status_t status = bio->bi_status;
 
-	if (status && drbd_ratelimit())
+	if (status && drbd_device_ratelimit(device, BACKEND))
 		drbd_warn(device, "%s: error=%d s=%llus\n",
 				is_write ? (is_discard ? "discard" : "write")
 					: "read", status,
@@ -314,7 +314,7 @@ void drbd_request_endio(struct bio *bio)
 	 * though we still will complain noisily about it.
 	 */
 	if (unlikely(req->local_rq_state & RQ_LOCAL_ABORTED)) {
-		if (drbd_ratelimit())
+		if (drbd_device_ratelimit(device, BACKEND))
 			drbd_emerg(device, "delayed completion of aborted local request; disk-timeout may be too aggressive\n");
 
 		if (!status)
@@ -1176,8 +1176,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		/* If a P_RS_CANCEL_AHEAD on control socket overtook the
 		 * already queued data and state change to Ahead/Behind,
 		 * don't add more resync requests, just wait it out. */
-		if (drbd_ratelimit())
-			drbd_info(peer_device, "peer pulled ahead during resync\n");
+		drbd_info_ratelimit(peer_device, "peer pulled ahead during resync\n");
 		return 0;
 	}
 
@@ -1946,8 +1945,7 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		err = drbd_send_block(peer_device, P_DATA_REPLY, peer_req);
 	} else {
-		if (drbd_ratelimit())
-			drbd_err(peer_device, "Sending NegDReply. sector=%llus.\n",
+		drbd_err_ratelimit(peer_device, "Sending NegDReply. sector=%llus.\n",
 			    (unsigned long long)peer_req->i.sector);
 
 		err = drbd_send_ack(peer_device, P_NEG_DREPLY, peer_req);
@@ -2117,9 +2115,8 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (unlikely(peer_device->disk_state[NOW] < D_INCONSISTENT)) {
-			if (drbd_ratelimit())
-				drbd_err(peer_device, "Sending RSCancel, "
-						"partner DISKLESS!\n");
+			drbd_err_ratelimit(peer_device,
+				"Not sending resync reply, partner DISKLESS!\n");
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 		} else if (connection->agreed_pro_version >= 110 &&
 				!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
@@ -2156,9 +2153,8 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 				peer_req = NULL;
 		}
 	} else {
-		if (drbd_ratelimit())
-			drbd_err(peer_device, "Sending NegRSDReply. sector %llus.\n",
-			    (unsigned long long)peer_req->i.sector);
+		drbd_err_ratelimit(peer_device, "Sending NegRSDReply. sector %llus.\n",
+		    (unsigned long long)peer_req->i.sector);
 
 		err = drbd_send_ack(peer_device, P_NEG_RS_DREPLY, peer_req);
 

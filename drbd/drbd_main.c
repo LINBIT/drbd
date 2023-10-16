@@ -3977,6 +3977,8 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	kref_debug_init(&device->kref_debug, &device->kref, &kref_class_device);
 
 	ratelimit_state_init(&device->ratelimit[D_RL_D_GENERIC], 5*HZ, /* no burst */ 1);
+	ratelimit_state_init(&device->ratelimit[D_RL_D_METADATA], 5*HZ, 10);
+	ratelimit_state_init(&device->ratelimit[D_RL_D_BACKEND], 5*HZ, 10);
 
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 4);
@@ -5897,8 +5899,7 @@ _drbd_insert_fault(struct drbd_device *device, unsigned int type)
 	if (ret) {
 		drbd_fault_count++;
 
-		if (drbd_ratelimit())
-			drbd_warn(device, "***Simulating %s failure\n",
+		drbd_warn_ratelimit(device, "***Simulating %s failure\n",
 				_drbd_fault_str(type));
 	}
 

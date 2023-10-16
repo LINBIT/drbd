@@ -130,8 +130,7 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	D_ASSERT(device, atomic_read(&device->md_io.in_use) == 1);
 
 	if (!bdev->md_bdev) {
-		if (drbd_ratelimit())
-			drbd_err(device, "bdev->md_bdev==NULL\n");
+		drbd_err_ratelimit(device, "bdev->md_bdev==NULL\n");
 		return -EIO;
 	}
 
