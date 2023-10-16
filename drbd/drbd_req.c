@@ -2512,17 +2512,49 @@ void do_submit(struct work_struct *ws)
 	}
 }
 
-static bool drbd_fail_request_early(struct drbd_device *device, struct bio *bio)
+static bool drbd_reject_write_early(struct drbd_device *device, struct bio *bio)
 {
 	struct drbd_resource *resource = device->resource;
 
 	/* If you "mount -o ro", then later "mount -o remount,rw", you can end
 	 * up with a DRBD "Secondary" receiving WRITE requests from the VFS.
 	 * We cannot have that. */
-	if (resource->role[NOW] != R_PRIMARY && bio_data_dir(bio) == WRITE) {
-		if (drbd_ratelimit())
-		       drbd_err(device, "Rejected WRITE request, not in Primary role.\n");
+
+	if (bio_data_dir(bio) == READ)
+		return false;
+
+	if (resource->role[NOW] != R_PRIMARY) {
+		/* You can fsync() on an O_RDONLY fd. Only be noisy
+		 * if there is data.  Ratelimit on per device "unspec"
+		 * ratelimit state before kmalloc / adding the specific
+		 * openers hint.
+		 */
+		if (bio_has_data(bio) && drbd_device_ratelimit(device, GENERIC)) {
+			char *buf = kmalloc(128, __GFP_NORETRY);
+
+			if (buf)
+				youngest_and_oldest_opener_to_str(device, buf, 128);
+			drbd_err(device,
+				"Rejected WRITE request, not in Primary role.%s\n", buf ?: "");
+			kfree(buf);
+		}
 		return true;
+	} else if (device->open_cnt == 0) {
+		drbd_err_ratelimit(device, "WRITE request, but open_cnt == 0!\n");
+	} else if (!device->writable && bio_has_data(bio)) {
+		/*
+		 * If the resource was (temporarily, auto) promoted,
+		 * a remount,rw may have succeeded without marking the device
+		 * open_cnt as "writable".  Once we let writes through, we need
+		 * _all_ openers to release(), before we attempt to auto-demote
+		 * again, so we mark it writable here.  Grab the open_release
+		 * mutex to protect against races with new openers.
+		 */
+		mutex_lock(&resource->open_release);
+		drbd_info(device, "open_cnt:%d, implicitly promoted to writable\n",
+			device->open_cnt);
+		device->writable = true;
+		mutex_unlock(&resource->open_release);
 	}
 	return false;
 }
@@ -2568,7 +2600,7 @@ void drbd_submit_bio(struct bio *bio)
 #endif
 	unsigned long start_jif;
 
-	if (drbd_fail_request_early(device, bio)) {
+	if (drbd_reject_write_early(device, bio)) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 		return;
