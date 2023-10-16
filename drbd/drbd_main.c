@@ -2711,6 +2711,7 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	bool was_writable;
 	enum ioc_rv r;
 	int err = 0;
 
@@ -2734,6 +2735,7 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	kref_debug_get(&device->kref_debug, 3);
 
 	mutex_lock(&resource->open_release);
+	was_writable = device->writable;
 
 	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
 						   (r = inc_open_count(device, mode)),
@@ -2797,6 +2799,8 @@ out:
 	/* still keep mutex, but release ASAP */
 	if (!err)
 		add_opener(device);
+	else
+		device->writable = was_writable;
 
 	mutex_unlock(&resource->open_release);
 	if (err) {
