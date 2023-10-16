@@ -580,11 +580,11 @@ static char **make_envp(struct env *env)
 #define magic_printk(level, fmt, args...)				\
 	do {								\
 		if (peer_device)					\
-			drbd_printk(level, peer_device, fmt, args);	\
+			drbd_printk(NOLIMIT, level, peer_device, fmt, args);	\
 		else if (device)					\
-			drbd_printk(level, device, fmt, args);		\
+			drbd_printk(NOLIMIT, level, device, fmt, args);	\
 		else							\
-			drbd_printk(level, connection, fmt, args);	\
+			drbd_printk(NOLIMIT, level, connection, fmt, args);	\
 	} while (0)
 
 static int drbd_khelper(struct drbd_device *device, struct drbd_connection *connection, char *cmd)
@@ -2783,7 +2783,6 @@ err:
 static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const char *format, ...)
 {
 	struct drbd_device *device = adm_ctx->device;
-	struct drbd_resource *resource = device->resource;
 	va_list args;
 	char *text;
 
@@ -2794,8 +2793,7 @@ static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const cha
 	if (!text)
 		return;
 
-	printk(KERN_ERR __drbd_printk_drbd_device_fmt("%s"),
-	       resource->name, device->vnr, device->minor, text);
+	drbd_err(device, "%s", text);
 	drbd_msg_put_info(adm_ctx->reply_skb, text);
 
 	kfree(text);
