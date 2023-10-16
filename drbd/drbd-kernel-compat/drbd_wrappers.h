@@ -214,4 +214,9 @@ void arch_wb_cache_pmem(void *addr, size_t size);
 void arch_wb_cache_pmem(void *addr, size_t size);
 #endif
 
+#ifndef list_last_entry
+#define list_last_entry(ptr, type, member) \
+        list_entry((ptr)->prev, type, member)
+#endif
+
 #endif
