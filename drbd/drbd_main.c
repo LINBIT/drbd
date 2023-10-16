@@ -2556,16 +2556,36 @@ static bool connection_state_may_improve_soon(struct drbd_resource *resource)
 	return ret;
 }
 
+/* TASK_COMM_LEN reserves one '\0', sizeof("") both include '\0',
+ * that's room enough for ':' and ' ' separators and the EOS.
+ */
+union comm_pid_tag_buf {
+	char comm[TASK_COMM_LEN];
+	char buf[TASK_COMM_LEN + sizeof("2147483647") + sizeof("auto-promote")];
+};
+
+static void snprintf_current_comm_pid_tag(union comm_pid_tag_buf *s, const char *tag)
+{
+	int len;
+
+	/* older kernel do not have __get_task_comm() yet */
+	get_task_comm(s->comm, current);
+	len = strlen(s->buf);
+	snprintf(s->buf + len, sizeof(s->buf)-len, ":%d %s", task_pid_nr(current), tag);
+}
+
 static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
 	int rv;
 
 	do {
+		union comm_pid_tag_buf tag;
 		unsigned long start = jiffies;
 		long t;
 
-		rv = drbd_set_role(resource, R_PRIMARY, false, "auto-promote", NULL);
+		snprintf_current_comm_pid_tag(&tag, "auto-promote");
+		rv = drbd_set_role(resource, R_PRIMARY, false, tag.buf, NULL);
 		timeout -= jiffies - start;
 
 		if (ndelay || rv >= SS_SUCCESS || timeout <= 0) {
@@ -2680,17 +2700,26 @@ static void prune_or_free_openers(struct drbd_device *device, pid_t pid)
 	spin_unlock(&device->openers_lock);
 }
 
-static void add_opener(struct drbd_device *device)
+static void add_opener(struct drbd_device *device, bool did_auto_promote)
 {
 	struct opener *opener, *tmp;
+	ktime_t now = ktime_get_real();
 	int len = 0;
 
+	if (did_auto_promote) {
+		struct drbd_resource *resource = device->resource;
+
+		resource->auto_promoted_by.minor = device->minor;
+		resource->auto_promoted_by.pid = task_pid_nr(current);
+		resource->auto_promoted_by.opened = now;
+		get_task_comm(resource->auto_promoted_by.comm, current);
+	}
 	opener = kmalloc(sizeof(*opener), GFP_NOIO);
 	if (!opener)
 		return;
 	get_task_comm(opener->comm, current);
 	opener->pid = task_pid_nr(current);
-	opener->opened = ktime_get_real();
+	opener->opened = now;
 
 	spin_lock(&device->openers_lock);
 	list_for_each_entry(tmp, &device->openers, list)
@@ -2712,6 +2741,7 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	bool was_writable;
+	bool did_auto_promote = false;
 	enum ioc_rv r;
 	int err = 0;
 
@@ -2761,6 +2791,8 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 				if (rv < SS_SUCCESS)
 					drbd_info(resource, "Auto-promote failed: %s (%d)\n",
 						  drbd_set_st_err_str(rv), rv);
+				else
+					did_auto_promote = true;
 			}
 		} else if ((mode & BLK_OPEN_NDELAY) == 0) {
 			/* Double check peers
@@ -2798,7 +2830,7 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 out:
 	/* still keep mutex, but release ASAP */
 	if (!err)
-		add_opener(device);
+		add_opener(device, did_auto_promote);
 	else
 		device->writable = was_writable;
 
@@ -2919,8 +2951,11 @@ static void drbd_release(struct gendisk *gd)
 			open_rw_cnt == 0 &&
 			resource->role[NOW] == R_PRIMARY &&
 			!test_bit(EXPLICIT_PRIMARY, &resource->flags)) {
+		union comm_pid_tag_buf tag;
 		sigset_t mask, oldmask;
 		int rv;
+
+		snprintf_current_comm_pid_tag(&tag, "auto-demote");
 
 		/*
 		 * Auto-demote is triggered by the last opener releasing the
@@ -2933,7 +2968,7 @@ static void drbd_release(struct gendisk *gd)
 		sigfillset(&mask);
 		sigprocmask(SIG_BLOCK, &mask, &oldmask);
 
-		rv = drbd_set_role(resource, R_SECONDARY, false, "auto-demote", NULL);
+		rv = drbd_set_role(resource, R_SECONDARY, false, tag.buf, NULL);
 		if (rv < SS_SUCCESS)
 			drbd_warn(resource, "Auto-demote failed: %s (%d)\n",
 					drbd_set_st_err_str(rv), rv);
@@ -2951,7 +2986,8 @@ static void drbd_release(struct gendisk *gd)
 
 	/* if the open count is 0, we free the whole list, otherwise we remove the specific pid */
 	prune_or_free_openers(device, (device->open_cnt == 0) ? 0 : task_pid_nr(current));
-
+	if (open_rw_cnt == 0 && open_ro_cnt == 0 && resource->auto_promoted_by.pid != 0)
+		memset(&resource->auto_promoted_by, 0, sizeof(resource->auto_promoted_by));
 	mutex_unlock(&resource->open_release);
 
 	kref_debug_put(&device->kref_debug, 3);

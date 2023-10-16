@@ -454,7 +454,6 @@ struct drbd_peer_request {
 			u64 block_id;
 			struct digest_info *digest;
 			u64 dagtag_sector;
-
 		};
 		struct { /* reused object to queue send OOS to other nodes */
 			u64 sent_oos_nodes; /* Used to notify L_SYNC_TARGETs about new out_of_sync bits */
@@ -919,6 +918,13 @@ struct drbd_resource {
 					   and devices, connection and peer_devices lists */
 	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
 	struct mutex open_release;	/* serialize open/release */
+	struct {
+		char comm[TASK_COMM_LEN];
+		unsigned int minor;
+		pid_t pid;
+		ktime_t opened;
+	} auto_promoted_by;
+
 	rwlock_t state_rwlock;          /* serialize state changes */
 	u64 dagtag_sector;		/* Protected by tl_update_lock.
 					 * See also dagtag_sector in
