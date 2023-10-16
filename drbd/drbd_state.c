@@ -1164,15 +1164,11 @@ static int scnprintf_io_suspend_flags(char *buffer, size_t size,
 static void print_state_change(struct drbd_resource *resource, const char *prefix, const char *tag)
 {
 	char buffer[150], *b, *end = buffer + sizeof(buffer);
-	char tag_buffer[30] = "";
 	struct drbd_connection *connection;
 	struct drbd_device *device;
 	enum drbd_role *role = resource->role;
 	bool *fail_io = resource->fail_io;
 	int vnr;
-
-	if (tag)
-		scnprintf(tag_buffer, 30, " [%s]", tag);
 
 	b = buffer;
 	if (role[OLD] != role[NEW])
@@ -1192,7 +1188,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 			       fail_io[NEW] ? "yes" : "no");
 	if (b != buffer) {
 		*(b-1) = 0;
-		drbd_info(resource, "%s%s%s\n", prefix, buffer, tag_buffer);
+		drbd_info(resource, "%s%s%s%s%s\n", prefix, buffer,
+			tag ? " [" : "", tag ?: "", tag ? "]" : "");
 	}
 
 	for_each_connection(connection, resource) {
@@ -1211,7 +1208,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 
 		if (b != buffer) {
 			*(b-1) = 0;
-			drbd_info(connection, "%s%s%s\n", prefix, buffer, tag_buffer);
+			drbd_info(connection, "%s%s%s%s%s\n", prefix, buffer,
+				tag ? " [" : "", tag ?: "", tag ? "]" : "");
 		}
 	}
 
@@ -1231,7 +1229,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 				       have_quorum[NEW] ? "yes" : "no");
 		if (b != buffer) {
 			*(b-1) = 0;
-			drbd_info(device, "%s%s%s\n", prefix, buffer, tag_buffer);
+			drbd_info(device, "%s%s%s%s%s\n", prefix, buffer,
+				tag ? " [" : "", tag ?: "", tag ? "]" : "");
 		}
 
 		for_each_peer_device(peer_device, device) {
@@ -1259,7 +1258,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 
 			if (b != buffer) {
 				*(b-1) = 0;
-				drbd_info(peer_device, "%s%s%s\n", prefix, buffer, tag_buffer);
+				drbd_info(peer_device, "%s%s%s%s%s\n", prefix, buffer,
+					tag ? " [" : "", tag ?: "", tag ? "]" : "");
 			}
 		}
 	}
