@@ -2,6 +2,35 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.6-rc.1 (api:genl2/proto:86-122/transport:19)
+--------
+ * a series of fixes to the RDMA transport, making it compatible with
+   more recent Mellanox cards and fixes in general to the RDMA code
+ * optional TLS encryption for the TCP transport, based on kTLS with
+   TLS handshakes in userspace
+ * a new load-balancing TCP transport "lb-tcp" that establises all
+   configured paths in paralle and distributes the packet load
+   over them
+ * changes merged from drbd-9.1.17
+  - fix a potential crash when configuring drbd to bind to a
+    non-existent local IP address (this is a regression of drbd-9.1.8)
+  - Cure a very seldom triggering race condition bug during
+    establishing connections; when you triggered it, you got an OOPS
+    hinting to list corruption
+  - Fix handling of unexpected (on a resource in secondary role) write
+    requests
+  - Fix a corner case that can cause a process to hang when closing the
+    DRBD device, while a connection gets re-established
+  - Correctly block signal delivery during auto-demote
+  - Improve the reliability of establishing connections
+  - Do not clear the transport with `net-options --set-defaults`. This
+    fix avoids unexpected disconnect/connect cycles upon an `adjust`
+    when using the 'lb-tcp' or 'rdma' transports in drbd-9.2.
+  - New netlink packet to report path status to drbdsetup
+  - Improvements to the content and rate-limiting of many log messages
+  - Update compatibility code and follow Linux upstream development
+    until Linux 6.5
+
 9.2.5 (api:genl2/proto:86-122/transport:18)
 --------
  * changes merged from drbd-9.1.16

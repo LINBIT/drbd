@@ -1,3 +1,9 @@
+drbd (9.2.6~rc.1-1) unstable; urgency=medium
+
+  * Release candidate
+
+ -- Philipp Reisner <philipp.reisner@linbit.com>  Mon, 16 Oct 2023 18:39:12 +0200
+
 drbd (9.2.5-1) unstable; urgency=medium
 
   * New upstream release
