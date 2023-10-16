@@ -687,12 +687,20 @@ out:
 static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 				 struct dtl_flow *flow, enum drbd_packet cmd)
 {
+	struct dtl_header hdr;
 	struct p_header80 h;
 	int msg_flags = 0;
 	int err;
 
 	if (!flow->socket)
 		return -EIO;
+
+	hdr.sequence = 0;
+	hdr.bytes = cpu_to_be32(sizeof(h));
+
+	err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags);
+	if (err < 0)
+		return err;
 
 	h.magic = cpu_to_be32(DRBD_MAGIC);
 	h.command = cpu_to_be16(cmd);
@@ -792,6 +800,7 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 				    struct socket *socket)
 {
 	struct drbd_transport *transport = &dtl_transport->transport;
+	struct dtl_header hdr;
 	struct p_header80 header;
 	struct net_conf *nc;
 	int err;
@@ -805,6 +814,12 @@ static int dtl_receive_first_packet(struct dtl_transport *dtl_transport, struct 
 	socket->sk->sk_rcvtimeo = nc->ping_timeo * 4 * HZ / 10;
 	rcu_read_unlock();
 
+	err = dtl_recv_short(socket, &hdr, sizeof(hdr), 0);
+	if (err != sizeof(hdr)) {
+		if (err >= 0)
+			err = -EIO;
+		return err;
+	}
 	err = dtl_recv_short(socket, &header, sizeof(header), 0);
 	if (err != sizeof(header)) {
 		if (err >= 0)
