@@ -64,7 +64,6 @@ struct drbd_tcp_transport {
 	struct work_struct control_data_ready_work;
 	void (*original_control_sk_state_change)(struct sock *sk);
 	void (*original_control_sk_data_ready)(struct sock *sk);
-	struct key *tls_keyring, *tls_privkey, *tls_certificate;
 };
 
 struct dtt_listener {
@@ -236,10 +235,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 	if (free_op == DESTROY_TRANSPORT) {
 		struct drbd_path *tmp;
-
-		key_put(tcp_transport->tls_keyring);
-		key_put(tcp_transport->tls_privkey);
-		key_put(tcp_transport->tls_certificate);
 
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
@@ -1122,7 +1117,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct net_conf *nc;
 	bool tls, dsocket_is_server = false, csocket_is_server = false;
 	char peername[64];
-	struct key *tls_keyring = NULL, *tls_privkey = NULL, *tls_certificate = NULL;
+	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
 	bool ok;
 
@@ -1281,9 +1276,9 @@ randomize:
 	timeout = nc->timeout * HZ / 10;
 	tls = nc->tls;
 	memcpy(peername, nc->name, 64);
-	tls_keyring = key_get(tcp_transport->tls_keyring);
-	tls_privkey = key_get(tcp_transport->tls_privkey);
-	tls_certificate = key_get(tcp_transport->tls_certificate);
+	tls_keyring = nc->tls_keyring;
+	tls_privkey = nc->tls_privkey;
+	tls_certificate = nc->tls_certificate;
 	rcu_read_unlock();
 
 	write_lock_bh(&csocket->sk->sk_callback_lock);
@@ -1302,16 +1297,14 @@ randomize:
 		};
 
 		err = tls_init_hello(
-			csocket, peername, key_serial(tls_keyring), key_serial(tls_privkey),
-			key_serial(tls_certificate),
+			csocket, peername, tls_keyring, tls_privkey, tls_certificate,
 			csocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
 			&csocket_tls_wait);
 		if (err < 0)
 			goto out;
 
 		err = tls_init_hello(
-			dsocket, peername, key_serial(tls_keyring), key_serial(tls_privkey),
-			key_serial(tls_certificate),
+			dsocket, peername, tls_keyring, tls_privkey, tls_certificate,
 			dsocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
 			&dsocket_tls_wait);
 		if (err < 0)
@@ -1379,44 +1372,12 @@ out_eagain:
 	err = -EAGAIN;
 
 out:
-	key_put(tls_keyring);
-	key_put(tls_privkey);
-	key_put(tls_certificate);
-
 	dtt_put_listeners(transport);
 
 	dtt_socket_free(&dsocket);
 	dtt_socket_free(&csocket);
 
 	return err;
-}
-
-static struct key *tls_key_lookup(key_serial_t old_key, key_serial_t new_key, struct key *existing)
-{
-	key_ref_t ref;
-
-	if (!new_key)
-		return NULL;
-
-	if (old_key == new_key)
-		return key_get(existing);
-
-	ref = lookup_user_key(new_key, 0, KEY_NEED_LINK);
-	if (!IS_ERR_OR_NULL(ref))
-		return key_ref_to_ptr(ref);
-	return ERR_CAST(ref);
-}
-
-static void swap_tls_key(struct key **dest, struct key *val)
-{
-	struct key *old_key;
-
-	rcu_read_lock();
-	old_key = rcu_dereference(*dest);
-	rcu_read_unlock();
-
-	rcu_assign_pointer(dest, val);
-	key_put(old_key);
 }
 
 static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
@@ -1426,38 +1387,17 @@ static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf
 	struct net_conf *old_net_conf;
 	struct socket *data_socket = tcp_transport->stream[DATA_STREAM];
 	struct socket *control_socket = tcp_transport->stream[CONTROL_STREAM];
-	struct key *tls_keyring, *tls_privkey, *tls_certificate;
-	int ret = 0;
 
 	rcu_read_lock();
 	old_net_conf = rcu_dereference(transport->net_conf);
-	tls_keyring = tls_key_lookup(old_net_conf ? old_net_conf->tls_keyring : 0,
-				     new_net_conf->tls_keyring, tcp_transport->tls_keyring);
-	tls_privkey = tls_key_lookup(old_net_conf ? old_net_conf->tls_privkey : 0,
-				     new_net_conf->tls_privkey, tcp_transport->tls_privkey);
-	tls_certificate = tls_key_lookup(old_net_conf ? old_net_conf->tls_certificate : 0,
-					 new_net_conf->tls_certificate,
-					 tcp_transport->tls_certificate);
 	rcu_read_unlock();
 
 	if (old_net_conf && old_net_conf->tls != new_net_conf->tls &&
 	    (data_socket || control_socket)) {
 		tr_warn(transport, "cannot switch tls (%s -> %s) while connected\n",
 			old_net_conf->tls ? "yes" : "no", new_net_conf->tls ? "yes" : "no");
-		ret = -EINVAL;
-		goto end;
+		return -EINVAL;
 	}
-
-	if (IS_ERR(tls_keyring) || IS_ERR(tls_privkey) || IS_ERR(tls_certificate)) {
-		tr_warn(transport, "failed to configure keys: tls_keyring=%ld, tls_privkey=%ld, tls_certificate=%ld\n",
-			PTR_ERR(tls_keyring), PTR_ERR(tls_privkey), PTR_ERR(tls_certificate));
-		ret = -EPERM;
-		goto end;
-	}
-
-	swap_tls_key(&tcp_transport->tls_keyring, tls_keyring);
-	swap_tls_key(&tcp_transport->tls_privkey, tls_privkey);
-	swap_tls_key(&tcp_transport->tls_certificate, tls_certificate);
 
 	if (data_socket) {
 		dtt_setbufsize(data_socket, new_net_conf->sndbuf_size, new_net_conf->rcvbuf_size);
@@ -1467,14 +1407,7 @@ static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf
 		dtt_setbufsize(control_socket, new_net_conf->sndbuf_size, new_net_conf->rcvbuf_size);
 	}
 
-end:
-	if (!IS_ERR_OR_NULL(tls_keyring))
-		key_put(tls_keyring);
-	if (!IS_ERR_OR_NULL(tls_privkey))
-		key_put(tls_privkey);
-	if (!IS_ERR_OR_NULL(tls_certificate))
-		key_put(tls_certificate);
-	return ret;
+	return 0;
 }
 
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)

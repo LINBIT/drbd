@@ -46,17 +46,6 @@ expression s;
 - tls_handshake_cancel(s);
 
 @@
-expression new_key, flags, perms;
-key_ref_t ref;
-@@
-  tls_key_lookup(...) {
-  <...
-- ref = lookup_user_key(new_key, flags, perms)
-+ ref = ERR_PTR(-ENOKEY);
-  ...>
-  }
-
-@@
 symbol tls;
 @@
   if (tls) {
