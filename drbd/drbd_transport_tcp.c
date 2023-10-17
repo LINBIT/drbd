@@ -56,6 +56,7 @@ struct buffer {
 struct drbd_tcp_transport {
 	struct drbd_transport transport; /* Must be first! */
 	spinlock_t paths_lock;
+	spinlock_t control_recv_lock;
 	unsigned long flags;
 	struct socket *stream[2];
 	struct buffer rbuf[2];
@@ -183,6 +184,7 @@ static int dtt_init(struct drbd_transport *transport)
 	enum drbd_stream i;
 
 	spin_lock_init(&tcp_transport->paths_lock);
+	spin_lock_init(&tcp_transport->control_recv_lock);
 	tcp_transport->transport.ops = &dtt_ops;
 	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
@@ -930,10 +932,13 @@ static void dtt_control_data_ready(struct sock *sock)
 	 * contexts.
 	 */
 	mod_timer(&tcp_transport->control_timer, jiffies + sock->sk_rcvtimeo);
-	if (tcp_transport->control_data_ready_work.func)
+	if (tcp_transport->control_data_ready_work.func) {
 		queue_work(dtt_csocket_recv, &tcp_transport->control_data_ready_work);
-	else
+	} else {
+		spin_lock_bh(&tcp_transport->control_recv_lock);
 		tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
+		spin_unlock_bh(&tcp_transport->control_recv_lock);
+	}
 }
 
 static void dtt_control_state_change(struct sock *sock)
