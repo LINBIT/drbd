@@ -87,15 +87,14 @@ void drbd_dyn_dbg_with_wrong_object_type(void);
 
 #define __drbd_obj_ratelimit(struct_name, obj, rlt)		\
 	({							\
-	struct ratelimit_state *__rs;				\
 	int __rlt = (rlt);					\
 	BUILD_BUG_ON(!__drbd_printk_choose_cond(obj, struct_name)); \
 	BUILD_BUG_ON(__rlt < -1);				\
 	BUILD_BUG_ON(__rlt >= (int)ARRAY_SIZE(obj->ratelimit)); \
-	__rs = /* unconst cast ratelimit state */		\
+	__rlt == -1 ? 1						\
+	: __ratelimit(/* unconst cast ratelimit state */	\
 		(struct ratelimit_state *)(unsigned long)	\
-		&obj->ratelimit[__rlt];				\
-	__rlt == -1 ? 1 : __ratelimit(__rs);			\
+		&obj->ratelimit[__rlt]);			\
 	})
 
 #define drbd_device_ratelimit(obj, rlt)		\
