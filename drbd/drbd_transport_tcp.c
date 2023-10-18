@@ -561,6 +561,12 @@ static void tls_handshake_done(void *data, int status, key_serial_t peerid)
 {
 	struct tls_handshake_wait *wait = data;
 
+	// Normalize the error to be negative: while the error _should_ be negative
+	// it is not guaranteed: the netlink interface allows any u32 value, which is
+	// then negated and cast to int, so who knows what will be returned.
+	if (status > 0)
+		status = -status;
+
 	wait->status = status;
 	complete(&wait->done);
 }
@@ -603,7 +609,7 @@ static int tls_wait_hello(struct tls_handshake_wait *csocket_tls_wait,
 	if (!wait_for_completion_timeout(&dsocket_tls_wait->done, remaining))
 		return -ETIMEDOUT;
 
-	if (csocket_tls_wait->status < 0)
+	if (csocket_tls_wait->status)
 		return csocket_tls_wait->status;
 
 	return dsocket_tls_wait->status;
