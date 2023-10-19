@@ -2412,8 +2412,8 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 		sndbuf_size = nc->sndbuf_size;
 
 	if (stream == CONTROL_STREAM) {
-		rcvbuf_size = max(rcvbuf_size / 64, alloc_size * 8);
-		sndbuf_size = max(sndbuf_size / 64, alloc_size * 8);
+		rcvbuf_size = nc->rdma_ctrl_rcvbuf_size ?: max(rcvbuf_size / 64, alloc_size * 8);
+		sndbuf_size = nc->rdma_ctrl_sndbuf_size ?: max(sndbuf_size / 64, alloc_size * 8);
 	}
 
 	if (rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
