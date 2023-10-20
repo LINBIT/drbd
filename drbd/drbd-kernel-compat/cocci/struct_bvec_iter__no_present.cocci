@@ -30,17 +30,6 @@ bio_for_each_segment(bvec, bio,
 
 @@
 expression iter;
-expression bvec;
-local idexpression struct bio *bio;
-iterator name __bio_for_each_segment;
-@@
-- __bio_for_each_segment(bvec, bio, iter, iter) {
-+ for (bvec = bio_iovec_idx(bio, (iter).bi_idx); (iter).bi_idx < bio->bi_vcnt; (iter).bi_size -= bvec->bv_len, bvec++, (iter).bi_idx++) {
-...
-}
-
-@@
-expression iter;
 local idexpression struct bio *bio;
 @@
 - bio_iter_iovec(bio, iter)

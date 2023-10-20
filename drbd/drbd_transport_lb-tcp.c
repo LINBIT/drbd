@@ -1694,6 +1694,42 @@ out:
 	return err;
 }
 
+static int dtl_bio_chunk_size_available(struct bio *bio, int wmem_available,
+		struct bvec_iter *iter_scan)
+{
+	struct bio_vec bvec;
+	int chunk = 0;
+
+	while (chunk < wmem_available && iter_scan->bi_size) {
+		bvec = bio_iter_iovec(bio, *iter_scan);
+		chunk += bvec.bv_len;
+		bio_advance_iter_single(bio, iter_scan, bvec.bv_len);
+	}
+
+	return chunk;
+}
+
+static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
+		struct bio *bio, struct bvec_iter *iter, int chunk)
+{
+	struct bio_vec bvec;
+
+	while (chunk > 0 && iter->bi_size) {
+		int err;
+
+		bvec = bio_iter_iovec(bio, *iter);
+		err = _dtl_send_page(dtl_transport, flow, bvec.bv_page,
+				bvec.bv_offset, bvec.bv_len,
+				bio_iter_last(bvec, *iter) ? 0 : MSG_MORE);
+		if (err)
+			return err;
+		chunk -= bvec.bv_len;
+		bio_advance_iter_single(bio, iter, bvec.bv_len);
+	}
+
+	return 0;
+}
+
 static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 {
 	struct dtl_transport *dtl_transport =
@@ -1702,16 +1738,16 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 	bool lb = test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 	struct bvec_iter iter_scan = bio->bi_iter;
 	struct bvec_iter iter = bio->bi_iter;
-	struct dtl_header header;
-	struct dtl_flow *flow;
-	struct bio_vec bvec;
-	struct sock *sk;
-	int chunk, wmem_available, err;
+	int err;
 
 	if (!bio_has_data(bio)) /* e.g. REQ_OP_DISCARD */
 		return 0;
 
 	do {
+		struct dtl_flow *flow;
+		struct sock *sk;
+		int chunk, wmem_available;
+
 		err = dtl_select_send_flow(dtl_transport, DATA_STREAM, &flow);
 		if (err)
 			goto out;
@@ -1720,37 +1756,24 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		wmem_available = READ_ONCE(sk->sk_sndbuf) - READ_ONCE(sk->sk_wmem_queued);
 
 		if (lb && iter.bi_size > wmem_available) {
-			chunk = 0;
-			__bio_for_each_segment(bvec, bio, iter_scan, iter_scan) {
-				chunk += bvec.bv_len;
-				if (chunk >= wmem_available) {
-					bio_advance_iter_single(bio, &iter_scan, bvec.bv_len);
-					break;
-				}
-			}
+			chunk = dtl_bio_chunk_size_available(bio, wmem_available, &iter_scan);
 		} else {
 			chunk = iter.bi_size;
 		}
 
 		if (lb) {
+			struct dtl_header header;
+
 			header.sequence = cpu_to_be32(stream->send_sequence++);
 			header.bytes = cpu_to_be32(chunk);
 			err = _dtl_send(dtl_transport, flow, &header, sizeof(header), MSG_MORE);
 			if (err < 0)
 				goto out;
 		}
-		__bio_for_each_segment(bvec, bio, iter, iter) {
-			err = _dtl_send_page(dtl_transport, flow, bvec.bv_page,
-					     bvec.bv_offset, bvec.bv_len,
-					     bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
-			if (err)
-				goto out;
-			chunk -= bvec.bv_len;
-			if (chunk == 0) {
-				bio_advance_iter_single(bio, &iter, bvec.bv_len);
-				break;
-			}
-		}
+
+		err = dtl_send_bio_pages(dtl_transport, flow, bio, &iter, chunk);
+		if (err)
+			goto out;
 	} while (iter.bi_size);
 out:
 	return err;
