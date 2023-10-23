@@ -701,7 +701,7 @@ static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 	if (test_bit(DTL_LOAD_BALANCE, &dtl_transport->flags)) {
 		struct dtl_header hdr = { .sequence = 0, .bytes = cpu_to_be32(sizeof(h)) };
 
-		err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags);
+		err = _dtl_send(dtl_transport, flow, &hdr, sizeof(hdr), msg_flags | MSG_MORE);
 		if (err < 0)
 			return err;
 	}
