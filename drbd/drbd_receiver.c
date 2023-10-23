@@ -11075,11 +11075,14 @@ void drbd_send_acks_wf(struct work_struct *ws)
 	tcp_cork = nc->tcp_cork;
 	rcu_read_unlock();
 
-	if (tcp_cork && !test_bit(CONTROL_CORKED, &connection->flags))
+	/* TODO: conditionally cork; it may hurt latency if we cork without
+	   much to send */
+	if (tcp_cork)
 		drbd_cork(connection, CONTROL_STREAM);
 	err = drbd_finish_peer_reqs(connection);
 
-	if (tcp_cork && atomic_read(&connection->active_ee_cnt) == 0)
+	/* but unconditionally uncork unless disabled */
+	if (tcp_cork)
 		drbd_uncork(connection, CONTROL_STREAM);
 
 	if (err)
