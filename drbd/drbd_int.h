@@ -626,7 +626,8 @@ struct drbd_bitmap {
 		struct page **bm_pages;
 		void *bm_on_pmem;
 	};
-	spinlock_t bm_lock;
+	spinlock_t bm_lock;		/* fine-grain lock (TODO: per slot) */
+	spinlock_t bm_all_slots_lock;	/* all bitmap slots lock */
 
 	unsigned long bm_set[DRBD_PEERS_MAX]; /* number of bits set */
 	unsigned long bm_bits;  /* bits per peer */

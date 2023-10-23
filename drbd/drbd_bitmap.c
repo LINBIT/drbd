@@ -404,6 +404,7 @@ struct drbd_bitmap *drbd_bm_alloc(void)
 		return NULL;
 
 	spin_lock_init(&b->bm_lock);
+	spin_lock_init(&b->bm_all_slots_lock);
 	mutex_init(&b->bm_change);
 	init_waitqueue_head(&b->bm_io_wait);
 
@@ -1635,7 +1636,8 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 	u32 data_word, *addr;
 
 	words32_total = bitmap->bm_words * sizeof(unsigned long) / sizeof(u32);
-	spin_lock_irq(&bitmap->bm_lock);
+	spin_lock_irq(&bitmap->bm_all_slots_lock);
+	spin_lock(&bitmap->bm_lock);
 
 	bitmap->bm_set[to_index] = 0;
 	current_page_nr = 0;
@@ -1648,10 +1650,12 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 
 		if (current_page_nr != from_page_nr) {
 			bm_unmap(bitmap, addr);
-			spin_unlock_irq(&bitmap->bm_lock);
+			spin_unlock(&bitmap->bm_lock);
+			spin_unlock_irq(&bitmap->bm_all_slots_lock);
 			if (need_resched())
 				cond_resched();
-			spin_lock_irq(&bitmap->bm_lock);
+			spin_lock_irq(&bitmap->bm_all_slots_lock);
+			spin_lock(&bitmap->bm_lock);
 			current_page_nr = from_page_nr;
 			addr = bm_map(bitmap, current_page_nr);
 		}
@@ -1670,5 +1674,6 @@ void drbd_bm_copy_slot(struct drbd_device *device, unsigned int from_index, unsi
 	}
 	bm_unmap(bitmap, addr);
 
-	spin_unlock_irq(&bitmap->bm_lock);
+	spin_unlock(&bitmap->bm_lock);
+	spin_unlock_irq(&bitmap->bm_all_slots_lock);
 }
