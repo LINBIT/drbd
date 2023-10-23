@@ -206,7 +206,6 @@ static int dtl_init(struct drbd_transport *transport)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
-	struct net_conf *nc;
 
 	spin_lock_init(&dtl_transport->paths_lock);
 	spin_lock_init(&dtl_transport->control_recv_lock);
@@ -226,12 +225,6 @@ static int dtl_init(struct drbd_transport *transport)
 	dtl_transport->rbuf.pos = dtl_transport->rbuf.base;
 	if (!dtl_transport->rbuf.base)
 		return -ENOMEM;
-
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-	if (nc && nc->load_balance_paths)
-		__set_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
-	rcu_read_unlock();
 
 	return 0;
 }
@@ -1470,7 +1463,12 @@ static int dtl_connect(struct drbd_transport *transport)
 
 static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
+
+	if (new_net_conf->load_balance_paths)
+		__set_bit(DTL_LOAD_BALANCE, &dtl_transport->flags);
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
