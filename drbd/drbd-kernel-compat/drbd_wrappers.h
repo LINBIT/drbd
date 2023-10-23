@@ -28,6 +28,14 @@
 #define ALIGN_DOWN(x, a)       __ALIGN_KERNEL((x) - ((a) - 1), (a))
 #endif
 
+/* introduced in v3.13-rc1-4-g4f024f3797c4 */
+#ifndef COMPAT_HAVE_STRUCT_BVEC_ITER
+struct bvec_iter {
+	int bi_size;
+	int bi_idx;
+};
+#endif
+
 /* introduced in v3.13-4220-g89a0714106aa */
 #ifndef U32_MAX
 #define U32_MAX ((u32)~0U)
@@ -218,5 +226,4 @@ void arch_wb_cache_pmem(void *addr, size_t size);
 #define list_last_entry(ptr, type, member) \
         list_entry((ptr)->prev, type, member)
 #endif
-
 #endif

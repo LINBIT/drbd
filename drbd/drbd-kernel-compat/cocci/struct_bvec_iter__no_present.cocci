@@ -6,48 +6,54 @@
 + bvec->f
 ...>
 
-@@ identifier iter; @@
-- struct bvec_iter iter;
-+ int iter;
-
 @@
 identifier iter;
-fresh identifier iter_btg = iter ## "_btg";
 local idexpression struct bio *bio;
 @@
-- struct bvec_iter iter = bio->bi_iter;
-+ int iter = bio->bi_idx;
-+ int iter_btg = bio->bi_size;
+struct bvec_iter iter =
+- bio->bi_iter
++ { bio->bi_size, bio->bi_idx }
+;
 
 @@
-identifier iter;
-identifier bvec;
-fresh identifier iter_btg = iter ## "_btg";
-local idexpression struct bio *bio;
-iterator name __bio_for_each_segment;
+expression iter;
+expression bvec;
+expression bio;
+iterator name bio_for_each_segment;
 @@
-- __bio_for_each_segment(bvec, bio, iter, iter) {
-+ for (bvec = bio_iovec_idx(bio, iter); iter < bio->bi_vcnt; iter_btg -= bvec->bv_len, bvec++, iter++) {
+bio_for_each_segment(bvec, bio,
+- iter
++ iter.bi_idx
+ ) {
 ...
 }
 
 @@
-identifier iter;
-expression len;
-fresh identifier iter_btg = iter ## "_btg";
+expression iter;
+expression bvec;
 local idexpression struct bio *bio;
+iterator name __bio_for_each_segment;
 @@
--  bio_advance_iter_single(bio, &iter, len);
-+  iter++;
-+  iter_btg -= len;
+- __bio_for_each_segment(bvec, bio, iter, iter) {
++ for (bvec = bio_iovec_idx(bio, (iter).bi_idx); (iter).bi_idx < bio->bi_vcnt; (iter).bi_size -= bvec->bv_len, bvec++, (iter).bi_idx++) {
+...
+}
 
 @@
-//local idexpression struct iter iter;
-identifier iter =~ "^iter";
-fresh identifier iter_btg = iter ## "_btg";
+expression iter;
+local idexpression struct bio *bio;
 @@
-- iter.bi_size
-+ iter_btg
+- bio_iter_iovec(bio, iter)
++ bio_iovec_idx(bio, (iter).bi_idx)
+
+@@
+expression iter;
+expression len;
+local idexpression struct bio *bio;
+@@
+-  bio_advance_iter_single(bio, iter, len);
++  (iter)->bi_idx++;
++  (iter)->bi_size -= len;
 
 
 @@ local idexpression struct bio *b; @@
@@ -67,7 +73,7 @@ identifier fn;
 fn(..., struct bio *b, ...) {
 <...
 - bio_iter_last(bvec, iter)
-+ ((iter) == b->bi_vcnt - 1)
++ ((iter).bi_idx == b->bi_vcnt - 1)
 ...>
 }
 
