@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.17-rc.2 (api:genl2/proto:86-121/transport:18)
+--------
+ * fix a UBSAN warning introduced in rc.1
+ * fix a race condition regarding operations on the bitmap while
+   forgetting a bitmap slot and a pointless warning
+
 9.1.17-rc.1 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a potential crash when configuring drbd to bind to a
