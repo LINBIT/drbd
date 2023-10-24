@@ -139,7 +139,7 @@ bm_print_lock_info(struct drbd_device *device, unsigned int bitmap_index, enum b
  */
 static void
 _drbd_bm_lock(struct drbd_device *device, struct drbd_peer_device *peer_device,
-	      char *why, enum bm_flag flags)
+	      const char *why, enum bm_flag flags)
 {
 	struct drbd_bitmap *b = device->bitmap;
 	int trylock_failed;
@@ -173,7 +173,7 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_peer_device *peer_device,
 	b->bm_locked_peer = peer_device;
 }
 
-void drbd_bm_lock(struct drbd_device *device, char *why, enum bm_flag flags)
+void drbd_bm_lock(struct drbd_device *device, const char *why, enum bm_flag flags)
 {
 	_drbd_bm_lock(device, NULL, why, flags);
 }

@@ -2536,10 +2536,15 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	peer_md->bitmap_index = -1;
 
 	if (free_bitmap_slot) {
+		drbd_bm_lock(device, __func__, BM_LOCK_BULK);
 		/*
-		 * No drbd_bm_lock() here, as bitmap OPs might happen in parallel,
-		 * and this is no issue as new dirty bits will already go to
-		 * the slot we are copying to.
+		 * Regular bitmap OPs (calling into bm_op()) can run in parallel to
+		 * drbd_bm_copy_slot() and interleave with it as drbd_bm_copy_slot()
+		 * gives up its locks when it moves on to the next source page.
+		 * The bitmap->bm_all_slots_lock ensures that drbd_set_sync()
+		 * (which iterates over multiple slots) does not interleave with
+		 * drbd_bm_copy_slot() while it copies data from one slot to another
+		 * one.
 		 */
 		if (from_index != -1)
 			drbd_bm_copy_slot(device, from_index, freed_index);
@@ -2547,6 +2552,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 			_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
 
 		drbd_bm_write(device, NULL);
+		drbd_bm_unlock(device);
 	}
 
 	/*
