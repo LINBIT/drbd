@@ -869,9 +869,10 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		   unsigned long bits, unsigned long mask)
 {
 	long set_start, set_end, clear_start, clear_end;
-	sector_t esector, nr_sectors;
-	int count = 0;
 	struct drbd_peer_device *peer_device;
+	sector_t esector, nr_sectors;
+	unsigned long irq_flags;
+	int count = 0;
 
 	mask &= (1 << device->bitmap->bm_max_peers) - 1;
 
@@ -906,6 +907,7 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	else
 		clear_end = BM_SECT_TO_BIT(esector + 1) - 1;
 
+	spin_lock_irqsave(&device->bitmap->bm_all_slots_lock, irq_flags);
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		int bitmap_index = peer_device->bitmap_index;
@@ -935,7 +937,7 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 						   clear_start, clear_end);
 		}
 	}
-
+	spin_unlock_irqrestore(&device->bitmap->bm_all_slots_lock, irq_flags);
 out:
 	put_ldev(device);
 
