@@ -395,6 +395,9 @@ static int dtl_select_recv_flow(struct dtl_transport *dtl_transport, enum drbd_s
 	int err;
 
 	if (stream->recv_flow) {
+		if (!stream->recv_flow->socket)
+			return -ENOTCONN;
+
 		*flow = stream->recv_flow;
 		return 0;
 	}
