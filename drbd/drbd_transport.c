@@ -246,6 +246,7 @@ void drbd_listener_destroy(struct kref *kref)
 	listener->destroy(listener);
 	if (listener->transport_class)
 		module_put(listener->transport_class->module);
+	kfree(listener);
 }
 
 void drbd_put_listener(struct drbd_path *path)

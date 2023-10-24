@@ -1048,7 +1048,6 @@ static void dtl_destroy_listener(struct drbd_listener *generic_listener)
 
 	unregister_state_change(listener->s_listen->sk, listener);
 	sock_release(listener->s_listen);
-	kfree(listener);
 }
 
 static int dtl_init_listener(struct drbd_transport *transport,
