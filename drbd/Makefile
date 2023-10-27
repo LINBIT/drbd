@@ -42,6 +42,32 @@ ifeq ($(BUILD_OFED),1)
    $(info : $(OFED_MODULE_SYMVERS))
    $(info : $(OFED_CFLAGS))
    $(info ===================================================================)
+
+   # kernel has changed its way to deal with "additional symbols from other external modules" around here:
+   # Linux 5.7-rc6
+   # ce2ddd6d6ab3b (modpost: allow to pass -i option multiple times to remove -e option, 2020-06-01)
+   # 52c3416db00d9 (modpost: track if the symbol origin is a dump file or ELF object, 2020-06-01)
+   #
+   # On older kernels,
+   # adding more than one dump file to KBUILD_EXTRA_SYMBOLS breaks modpost,
+   # but "accumulating" the external symbols in "our" Module.symvers works
+   # (see cat ... > Module.symvers in the kbuild target below).
+   #
+   # On newer kernels,
+   # accumulating like that is ineffective, but adding all external symbol
+   # dump files to KBUILD_EXTRA_SYMBOLS is the way to go.
+   #
+   # For compat with a wide range of kernel versions, we keep doing both.
+   #
+   ifeq ($(KBUILD_EXTRA_SYMBOLS),)
+     override KBUILD_EXTRA_SYMBOLS += $(OFED_MODULE_SYMVERS)
+     export KBUILD_EXTRA_SYMBOLS
+   else
+     ifeq ($(filter $(OFED_MODULE_SYMVERS),$(KBUILD_EXTRA_SYMBOLS)),)
+       $(warning KBUILD_EXTRA_SYMBOLS already set ($(KBUILD_EXTRA_SYMBOLS)), NOT adding $(OFED_MODULE_SYMVERS))
+     endif
+   endif
+
  endif
 else
  ifneq ($(OFED_KERNEL_DIR)$(OFED_MODULE_SYMVERS)$(OFED_CFLAGS),)
@@ -154,7 +180,7 @@ else
 
   kbuild: fix-tar-timestamps
 	@rm -f .drbd_kernelrelease*
-	cat /dev/null $(KBUILD_EXTRA_SYMVERS) $(OFED_MODULE_SYMVERS) > Module.symvers
+	cat /dev/null $(KBUILD_EXTRA_SYMBOLS) $(OFED_MODULE_SYMVERS) > Module.symvers
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules "PRE_CFLAGS=$(PRE_CFLAGS)"
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
 	@echo -n "Memorizing module configuration ... "
