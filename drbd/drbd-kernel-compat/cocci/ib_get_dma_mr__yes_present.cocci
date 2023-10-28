@@ -11,6 +11,7 @@ identifier kref, destroy_id, cm;
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
+	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
 +	if (cm->dma_mr) {
 +		ib_dereg_mr(cm->dma_mr);
