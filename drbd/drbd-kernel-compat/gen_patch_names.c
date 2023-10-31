@@ -532,8 +532,10 @@ int main(int argc, char **argv)
 	patch(1, "kvfree_rcu_mightsleep", true, false,
 	      COMPAT_HAVE_KVFREE_RCU_MIGHTSLEEP, "present");
 
+#if !defined(COMPAT_HAVE_KVFREE_RCU_MIGHTSLEEP)
 	patch(1, "kvfree_rcu", true, false,
 	      COMPAT_HAVE_KVFREE_RCU, "present");
+#endif
 
 	patch(1, "list_next_entry", true, false,
 	      COMPAT_HAVE_LIST_NEXT_ENTRY, "present");
