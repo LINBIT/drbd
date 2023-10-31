@@ -2,19 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.17-rc.2 (api:genl2/proto:86-121/transport:18)
---------
- * fix a UBSAN warning introduced in rc.1
- * fix a race condition regarding operations on the bitmap while
-   forgetting a bitmap slot and a pointless warning
-
-9.1.17-rc.1 (api:genl2/proto:86-121/transport:18)
+9.1.17 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a potential crash when configuring drbd to bind to a
    non-existent local IP address (this is a regression of drbd-9.1.8)
  * Cure a very seldom triggering race condition bug during
    establishing connections; when you triggered it, you got an OOPS
    hinting to list corruption
+ * fix a race condition regarding operations on the bitmap while
+   forgetting a bitmap slot and a pointless warning
  * Fix handling of unexpected (on a resource in secondary role) write
    requests
  * Fix a corner case that can cause a process to hang when closing the
