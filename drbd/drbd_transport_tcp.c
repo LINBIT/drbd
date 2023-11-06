@@ -94,8 +94,8 @@ static bool dtt_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtt_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *m);
 static void dtt_update_congested(struct drbd_tcp_transport *tcp_transport);
-static int dtt_add_path(struct drbd_transport *, struct drbd_path *path);
-static int dtt_remove_path(struct drbd_transport *, struct drbd_path *);
+static int dtt_add_path(struct drbd_path *path);
+static int dtt_remove_path(struct drbd_path *);
 
 static struct drbd_transport_class tcp_transport_class = {
 	.name = "tcp",
@@ -419,8 +419,9 @@ static bool dtt_path_cmp_addr(struct dtt_path *path)
 	return memcmp(&drbd_path->my_addr, &drbd_path->peer_addr, addr_size) > 0;
 }
 
-static int dtt_try_connect(struct drbd_transport *transport, struct dtt_path *path, struct socket **ret_socket)
+static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 {
+	struct drbd_transport *transport = path->path.transport;
 	const char *what;
 	struct socket *socket;
 	struct sockaddr_storage my_addr, peer_addr;
@@ -890,9 +891,11 @@ static void dtt_put_listeners(struct drbd_transport *transport)
 	}
 }
 
-static struct dtt_path *dtt_next_path(struct drbd_tcp_transport *tcp_transport, struct dtt_path *path)
+static struct dtt_path *dtt_next_path(struct dtt_path *path)
 {
-	struct drbd_transport *transport = &tcp_transport->transport;
+	struct drbd_transport *transport = path->path.transport;
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct drbd_path *drbd_path;
 
 	spin_lock(&tcp_transport->paths_lock);
@@ -939,7 +942,7 @@ static int dtt_connect(struct drbd_transport *transport)
 		if (!drbd_path->listener) {
 			kref_get(&drbd_path->kref);
 			spin_unlock(&tcp_transport->paths_lock);
-			err = drbd_get_listener(transport, drbd_path);
+			err = drbd_get_listener(drbd_path);
 			kref_put(&drbd_path->kref, drbd_destroy_path);
 			if (err)
 				goto out;
@@ -959,7 +962,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	do {
 		struct socket *s = NULL;
 
-		err = dtt_try_connect(transport, connect_to_path, &s);
+		err = dtt_try_connect(connect_to_path, &s);
 		if (err < 0 && err != -EAGAIN)
 			goto out;
 
@@ -995,7 +998,7 @@ static int dtt_connect(struct drbd_transport *transport)
 				dtt_send_first_packet(tcp_transport, csocket, P_INITIAL_META, CONTROL_STREAM);
 			}
 		} else if (!first_path)
-			connect_to_path = dtt_next_path(tcp_transport, connect_to_path);
+			connect_to_path = dtt_next_path(connect_to_path);
 
 		if (dtt_connection_established(transport, &dsocket, &csocket, &first_path))
 			break;
@@ -1331,8 +1334,9 @@ static void dtt_debugfs_show(struct drbd_transport *transport, struct seq_file *
 
 }
 
-static int dtt_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtt_add_path(struct drbd_path *drbd_path)
 {
+	struct drbd_transport *transport = drbd_path->transport;
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
@@ -1346,7 +1350,7 @@ retry:
 		drbd_put_listener(drbd_path);
 
 	if (active && !drbd_path->listener) {
-		int err = drbd_get_listener(transport, drbd_path);
+		int err = drbd_get_listener(drbd_path);
 		if (err)
 			return err;
 	}
@@ -1362,8 +1366,9 @@ retry:
 	return 0;
 }
 
-static int dtt_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtt_remove_path(struct drbd_path *drbd_path)
 {
+	struct drbd_transport *transport = drbd_path->transport;
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);

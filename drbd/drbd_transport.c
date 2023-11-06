@@ -164,8 +164,9 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 	return NULL;
 }
 
-int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path)
+int drbd_get_listener(struct drbd_path *path)
 {
+	struct drbd_transport *transport = path->transport;
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
 	struct sockaddr *addr = (struct sockaddr *)&path->my_addr;
