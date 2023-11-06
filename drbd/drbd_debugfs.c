@@ -457,8 +457,8 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 		name = rcu_dereference(transport->net_conf)->name;
 		seq_printf(m, "%s\t%s\t", name, transport->class->name);
 
-		if (transport->ops->stream_ok(transport, DATA_STREAM)) {
-			transport->ops->stats(transport, &transport_stats);
+		if (transport->class->ops.stream_ok(transport, DATA_STREAM)) {
+			transport->class->ops.stats(transport, &transport_stats);
 			seq_printf(m, "%u\t%u\n",
 				transport_stats.unread_received,
 				transport_stats.unacked_send);
@@ -795,7 +795,7 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_connection *connection = m->private;
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	enum drbd_stream i;
 
 	seq_printf(m, "v: %u\n\n", 0);

@@ -77,6 +77,9 @@ struct dtt_path {
 
 static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
+static int dtt_init_listener(struct drbd_transport *transport, const struct sockaddr *addr,
+			     struct net *net, struct drbd_listener *drbd_listener);
+static void dtt_destroy_listener(struct drbd_listener *generic_listener);
 static int dtt_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
@@ -99,27 +102,28 @@ static struct drbd_transport_class tcp_transport_class = {
 	.instance_size = sizeof(struct drbd_tcp_transport),
 	.path_instance_size = sizeof(struct dtt_path),
 	.listener_instance_size = sizeof(struct dtt_listener),
+	.ops = (struct drbd_transport_ops) {
+		.init = dtt_init,
+		.free = dtt_free,
+		.init_listener = dtt_init_listener,
+		.release_listener = dtt_destroy_listener,
+		.connect = dtt_connect,
+		.recv = dtt_recv,
+		.recv_pages = dtt_recv_pages,
+		.stats = dtt_stats,
+		.net_conf_change = dtt_net_conf_change,
+		.set_rcvtimeo = dtt_set_rcvtimeo,
+		.get_rcvtimeo = dtt_get_rcvtimeo,
+		.send_page = dtt_send_page,
+		.send_zc_bio = dtt_send_zc_bio,
+		.stream_ok = dtt_stream_ok,
+		.hint = dtt_hint,
+		.debugfs_show = dtt_debugfs_show,
+		.add_path = dtt_add_path,
+		.remove_path = dtt_remove_path,
+	},
 	.module = THIS_MODULE,
-	.init = dtt_init,
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
-};
-
-static struct drbd_transport_ops dtt_ops = {
-	.free = dtt_free,
-	.connect = dtt_connect,
-	.recv = dtt_recv,
-	.recv_pages = dtt_recv_pages,
-	.stats = dtt_stats,
-	.net_conf_change = dtt_net_conf_change,
-	.set_rcvtimeo = dtt_set_rcvtimeo,
-	.get_rcvtimeo = dtt_get_rcvtimeo,
-	.send_page = dtt_send_page,
-	.send_zc_bio = dtt_send_zc_bio,
-	.stream_ok = dtt_stream_ok,
-	.hint = dtt_hint,
-	.debugfs_show = dtt_debugfs_show,
-	.add_path = dtt_add_path,
-	.remove_path = dtt_remove_path,
 };
 
 /* Might restart iteration, if current element is removed from list!! */
@@ -167,7 +171,6 @@ static int dtt_init(struct drbd_transport *transport)
 	enum drbd_stream i;
 
 	spin_lock_init(&tcp_transport->paths_lock);
-	tcp_transport->transport.ops = &dtt_ops;
 	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 		void *buffer = (void *)__get_free_page(GFP_KERNEL);
@@ -841,7 +844,6 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	}
 
 	listener->listener.listen_addr = my_addr;
-	listener->listener.destroy = dtt_destroy_listener;
 	init_waitqueue_head(&listener->wait);
 
 	return 0;
@@ -937,7 +939,7 @@ static int dtt_connect(struct drbd_transport *transport)
 		if (!drbd_path->listener) {
 			kref_get(&drbd_path->kref);
 			spin_unlock(&tcp_transport->paths_lock);
-			err = drbd_get_listener(transport, drbd_path, dtt_init_listener);
+			err = drbd_get_listener(transport, drbd_path);
 			kref_put(&drbd_path->kref, drbd_destroy_path);
 			if (err)
 				goto out;
@@ -1344,7 +1346,7 @@ retry:
 		drbd_put_listener(drbd_path);
 
 	if (active && !drbd_path->listener) {
-		int err = drbd_get_listener(transport, drbd_path, dtt_init_listener);
+		int err = drbd_get_listener(transport, drbd_path);
 		if (err)
 			return err;
 	}

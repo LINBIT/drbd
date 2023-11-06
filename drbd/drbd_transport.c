@@ -164,17 +164,13 @@ static struct drbd_listener *find_listener(struct drbd_connection *connection,
 	return NULL;
 }
 
-static void generic_listener_destroy(struct drbd_listener *unused)
-{
-}
-
-int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
-		      int (*init_listener)(struct drbd_transport *, const struct sockaddr *, struct net *net, struct drbd_listener *))
+int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
 	struct sockaddr *addr = (struct sockaddr *)&path->my_addr;
 	struct drbd_resource *resource = connection->resource;
+	struct drbd_transport_class *tc = transport->class;
 	struct drbd_listener *listener;
 	bool needs_init = false;
 	int err;
@@ -182,7 +178,7 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	spin_lock_bh(&resource->listeners_lock);
 	listener = find_listener(connection, (struct sockaddr_storage *)addr);
 	if (!listener) {
-		listener = kmalloc(transport->class->listener_instance_size, GFP_ATOMIC);
+		listener = kmalloc(tc->listener_instance_size, GFP_ATOMIC);
 		if (!listener) {
 			spin_unlock_bh(&resource->listeners_lock);
 			return -ENOMEM;
@@ -194,7 +190,6 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 		spin_lock_init(&listener->waiters_lock);
 		init_completion(&listener->ready);
 		listener->listen_addr = *(struct sockaddr_storage *)addr;
-		listener->destroy = generic_listener_destroy;
 		listener->transport_class = NULL;
 
 		list_add(&listener->list, &resource->listeners);
@@ -207,9 +202,9 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 	spin_unlock_bh(&resource->listeners_lock);
 
 	if (needs_init) {
-		if (try_module_get(transport->class->module)) {
-			listener->transport_class = transport->class;
-			err = init_listener(transport, addr, &init_net, listener);
+		if (try_module_get(tc->module)) {
+			listener->transport_class = tc;
+			err = tc->ops.init_listener(transport, addr, &init_net, listener);
 		} else {
 			err = -ENODEV;
 		}
@@ -232,15 +227,17 @@ int drbd_get_listener(struct drbd_transport *transport, struct drbd_path *path,
 void drbd_listener_destroy(struct kref *kref)
 {
 	struct drbd_listener *listener = container_of(kref, struct drbd_listener, kref);
+	struct drbd_transport_class *tc = listener->transport_class;
 	struct drbd_resource *resource = listener->resource;
 
 	spin_lock_bh(&resource->listeners_lock);
 	list_del(&listener->list);
 	spin_unlock_bh(&resource->listeners_lock);
 
-	listener->destroy(listener);
-	if (listener->transport_class)
-		module_put(listener->transport_class->module);
+	if (tc) {
+		tc->ops.release_listener(listener);
+		module_put(tc->module);
+	}
 	kfree(listener);
 }
 
