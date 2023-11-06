@@ -1132,6 +1132,11 @@ static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf
 	struct socket *data_socket = tcp_transport->stream[DATA_STREAM];
 	struct socket *control_socket = tcp_transport->stream[CONTROL_STREAM];
 
+	if (new_net_conf->tls) {
+		tr_warn(transport, "TLS not supported\n");
+		return -EINVAL;
+	}
+
 	if (data_socket) {
 		dtt_setbufsize(data_socket, new_net_conf->sndbuf_size, new_net_conf->rcvbuf_size);
 	}
