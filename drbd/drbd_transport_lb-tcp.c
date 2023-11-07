@@ -126,8 +126,8 @@ static bool dtl_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtl_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		     enum drbd_tr_hints hint);
 static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *m);
-static int dtl_add_path(struct drbd_transport *, struct drbd_path *path);
-static int dtl_remove_path(struct drbd_transport *, struct drbd_path *);
+static int dtl_add_path(struct drbd_path *path);
+static int dtl_remove_path(struct drbd_path *);
 static void dtl_control_timer_fn(struct timer_list *t);
 static void dtl_write_space(struct sock *sock);
 static void dtl_connect_work_fn(struct work_struct *work);
@@ -1387,7 +1387,6 @@ static void dtl_connect_work_fn(struct work_struct *work)
 
 static int dtl_path_adjust_listener(struct dtl_path *path, bool active)
 {
-	struct drbd_transport *transport = path->path.transport;
 	struct drbd_path *drbd_path = &path->path;
 	struct drbd_listener *listener = READ_ONCE(drbd_path->listener);
 	int err = 0;
@@ -1395,7 +1394,7 @@ static int dtl_path_adjust_listener(struct dtl_path *path, bool active)
 	if (!active && listener)
 		drbd_put_listener(drbd_path);
 	else if (active && !listener)
-		err = drbd_get_listener(transport, drbd_path);
+		err = drbd_get_listener(drbd_path);
 
 	return err;
 }
@@ -1863,8 +1862,9 @@ static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	spin_unlock_bh(&dtl_transport->paths_lock);
 }
 
-static int dtl_add_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtl_add_path(struct drbd_path *drbd_path)
 {
+	struct drbd_transport *transport = drbd_path->transport;
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 	struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
@@ -1889,8 +1889,9 @@ static int dtl_add_path(struct drbd_transport *transport, struct drbd_path *drbd
 	return 0;
 }
 
-static int dtl_remove_path(struct drbd_transport *transport, struct drbd_path *drbd_path)
+static int dtl_remove_path(struct drbd_path *drbd_path)
 {
+	struct drbd_transport *transport = drbd_path->transport;
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 

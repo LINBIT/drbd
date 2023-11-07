@@ -325,8 +325,8 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
-static int dtr_add_path(struct drbd_transport *, struct drbd_path *path);
-static int dtr_remove_path(struct drbd_transport *, struct drbd_path *path);
+static int dtr_add_path(struct drbd_path *path);
+static int dtr_remove_path(struct drbd_path *path);
 
 static int dtr_create_cm_id(struct dtr_cm *cm_context, struct net *net);
 static bool dtr_path_ok(struct dtr_path *path);
@@ -2877,7 +2877,7 @@ static int dtr_activate_path(struct dtr_path *path)
 		tr_warn(transport, "ASSERTION FAILED: in dtr_activate_path() found listener, dropping it\n");
 		drbd_put_listener(&path->path);
 	}
-	err = drbd_get_listener(transport, &path->path);
+	err = drbd_get_listener(&path->path);
 	if (err)
 		goto out_no_put;
 
@@ -3331,8 +3331,9 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	rcu_read_unlock();
 }
 
-static int dtr_add_path(struct drbd_transport *transport, struct drbd_path *add_path)
+static int dtr_add_path(struct drbd_path *add_path)
 {
+	struct drbd_transport *transport = add_path->transport;
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_path *path;
@@ -3371,8 +3372,9 @@ abort:
 	return err;
 }
 
-static int dtr_remove_path(struct drbd_transport *transport, struct drbd_path *del_path)
+static int dtr_remove_path(struct drbd_path *del_path)
 {
+	struct drbd_transport *transport = del_path->transport;
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct drbd_path *drbd_path, *connected_path = NULL;

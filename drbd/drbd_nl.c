@@ -4433,7 +4433,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
-	err = transport->class->ops.add_path(transport, path);
+	err = transport->class->ops.add_path(path);
 	if (err) {
 		kref_put(&path->kref, drbd_destroy_path);
 		drbd_err(adm_ctx->connection, "add_path() failed with %d\n", err);
@@ -4614,7 +4614,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		if (!addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
 			continue;
 
-		err = transport->class->ops.remove_path(transport, path);
+		err = transport->class->ops.remove_path(path);
 		if (err)
 			break;
 

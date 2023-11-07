@@ -3069,7 +3069,7 @@ static void __net_exit __drbd_net_exit(struct net *net)
 		list_for_each_entry_safe(path, tmp, &connection->transport.paths, list) {
 			struct drbd_transport *transport = &connection->transport;
 
-			int err = transport->class->ops.remove_path(transport, path);
+			int err = transport->class->ops.remove_path(path);
 			if (err)
 				drbd_err(connection, "Failed to remove path after disconnect: %d\n", err);
 
