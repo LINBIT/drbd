@@ -718,7 +718,7 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 
 static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size, int flags)
 {
-	struct drbd_transport_ops *tr_ops = connection->transport.ops;
+	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
 	int rv;
 
 	rv = tr_ops->recv(&connection->transport, DATA_STREAM, buf, size, flags);
@@ -1071,7 +1071,7 @@ start:
 	 * protocol version; until we know better. */
 	connection->agreed_pro_version = drbd_protocol_version_min;
 
-	err = transport->ops->connect(transport);
+	err = transport->class->ops.connect(transport);
 	if (err == -EAGAIN) {
 		enum drbd_conn_state cstate;
 		read_lock_irq(&resource->state_rwlock); /* See commit message */
@@ -1126,8 +1126,8 @@ start:
 	 * or the challenge response authentication could be garbled. */
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	have_mutex = true;
-	transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
-	transport->ops->set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
+	transport->class->ops.set_rcvtimeo(transport, DATA_STREAM, ping_timeo * 4 * HZ/10);
+	transport->class->ops.set_rcvtimeo(transport, CONTROL_STREAM, ping_int * HZ);
 
 	h = drbd_do_features(connection);
 	if (h < 0)
@@ -1177,7 +1177,7 @@ start:
 		/* Allow 10 times the ping_timeo for two-phase commits. That is
 		 * 5 seconds by default. The unit of ping_timeo is tenths of a
 		 * second. */
-		transport->ops->set_rcvtimeo(transport, DATA_STREAM, ping_timeo * HZ);
+		transport->class->ops.set_rcvtimeo(transport, DATA_STREAM, ping_timeo * HZ);
 
 		if (connection->agreed_pro_version == 117)
 			conn_connect2(connection);
@@ -1280,7 +1280,7 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 
 static int drbd_recv_header_maybe_unplug(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_transport_ops *tr_ops = connection->transport.ops;
+	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
 	unsigned int size = drbd_header_size(connection);
 	void *buffer;
 	int err;
@@ -2058,7 +2058,7 @@ static void conn_wait_active_ee_empty_or_disconnect(struct drbd_connection *conn
 
 static int receive_Barrier(struct drbd_connection *connection, struct packet_info *pi)
 {
-	struct drbd_transport_ops *tr_ops = connection->transport.ops;
+	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
 	int rv, issue_flush;
 	struct p_barrier *p = pi->data;
 	struct drbd_epoch *epoch;
@@ -2175,7 +2175,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	void *dig_in = peer_device->connection->int_dig_in;
 	void *dig_vv = peer_device->connection->int_dig_vv;
 	struct drbd_transport *transport = &peer_device->connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 
 	if (d->digest_size) {
 		err = drbd_recv_into(peer_device->connection, dig_in, d->digest_size);
@@ -8142,7 +8142,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 			connection->agreed_pro_version < 110) {
 		struct drbd_transport *transport = &connection->transport;
 		/* Last packet of handshake received, disarm receive timeout */
-		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
+		transport->class->ops.set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 	}
 
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
@@ -8611,7 +8611,7 @@ static int receive_UnplugRemote(struct drbd_connection *connection, struct packe
 
 	/* Make sure we've acked all the data associated
 	 * with the data requests being unplugged */
-	transport->ops->hint(transport, DATA_STREAM, QUICKACK);
+	transport->class->ops.hint(transport, DATA_STREAM, QUICKACK);
 
 	/* just unplug all devices always, regardless which volume number */
 	drbd_unplug_all_devices(connection);
@@ -9542,8 +9542,8 @@ static bool any_connection_up(struct drbd_resource *resource)
 
 		if (cstate == C_CONNECTED ||
 		    (cstate == C_CONNECTING &&
-		     transport->ops->stream_ok(transport, DATA_STREAM) &&
-		     transport->ops->stream_ok(transport, CONTROL_STREAM))) {
+		     transport->class->ops.stream_ok(transport, DATA_STREAM) &&
+		     transport->class->ops.stream_ok(transport, CONTROL_STREAM))) {
 			rv = true;
 			break;
 		}
@@ -10847,7 +10847,7 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind)
 {
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	bool ping_timeout = kind == PING_TIMEOUT;
 	struct net_conf *nc;
 	long t;

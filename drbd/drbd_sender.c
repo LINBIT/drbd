@@ -1016,16 +1016,16 @@ static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
 	bool half_full = false;
 
 	mutex_lock(&connection->mutex[DATA_STREAM]);
-	if (transport->ops->stream_ok(transport, DATA_STREAM)) {
+	if (transport->class->ops.stream_ok(transport, DATA_STREAM)) {
 		struct drbd_transport_stats transport_stats;
 		int queued, sndbuf;
 
-		transport->ops->stats(transport, &transport_stats);
+		transport->class->ops.stats(transport, &transport_stats);
 		queued = transport_stats.send_buffer_used;
 		sndbuf = transport_stats.send_buffer_size;
 		if (queued > sndbuf / 2) {
 			half_full = true;
-			transport->ops->hint(transport, DATA_STREAM, NOSPACE);
+			transport->class->ops.hint(transport, DATA_STREAM, NOSPACE);
 		}
 	} else {
 		half_full = true;

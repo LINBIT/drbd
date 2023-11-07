@@ -134,33 +134,38 @@ static void dtl_connect_work_fn(struct work_struct *work);
 static void dtl_accept_work_fn(struct work_struct *work);
 static int dtl_set_active(struct drbd_transport *transport, bool active);
 static int dtl_path_adjust_listener(struct dtl_path *path, bool active);
+static int dtl_init_listener(struct drbd_transport *transport, const struct sockaddr *addr,
+			     struct net *net, struct drbd_listener *drbd_listener);
+static void dtl_destroy_listener(struct drbd_listener *generic_listener);
+
 
 static struct drbd_transport_class dtl_transport_class = {
 	.name = "lb-tcp",
 	.instance_size = sizeof(struct dtl_transport),
 	.path_instance_size = sizeof(struct dtl_path),
 	.listener_instance_size = sizeof(struct dtl_listener),
+	.ops = (struct drbd_transport_ops) {
+		.init = dtl_init,
+		.free = dtl_free,
+		.init_listener = dtl_init_listener,
+		.release_listener = dtl_destroy_listener,
+		.connect = dtl_connect,
+		.recv = dtl_recv,
+		.recv_pages = dtl_recv_pages,
+		.stats = dtl_stats,
+		.net_conf_change = dtl_net_conf_change,
+		.set_rcvtimeo = dtl_set_rcvtimeo,
+		.get_rcvtimeo = dtl_get_rcvtimeo,
+		.send_page = dtl_send_page,
+		.send_zc_bio = dtl_send_zc_bio,
+		.stream_ok = dtl_stream_ok,
+		.hint = dtl_hint,
+		.debugfs_show = dtl_debugfs_show,
+		.add_path = dtl_add_path,
+		.remove_path = dtl_remove_path,
+	},
 	.module = THIS_MODULE,
-	.init = dtl_init,
 	.list = LIST_HEAD_INIT(dtl_transport_class.list),
-};
-
-static struct drbd_transport_ops dtl_ops = {
-	.free = dtl_free,
-	.connect = dtl_connect,
-	.recv = dtl_recv,
-	.recv_pages = dtl_recv_pages,
-	.stats = dtl_stats,
-	.net_conf_change = dtl_net_conf_change,
-	.set_rcvtimeo = dtl_set_rcvtimeo,
-	.get_rcvtimeo = dtl_get_rcvtimeo,
-	.send_page = dtl_send_page,
-	.send_zc_bio = dtl_send_zc_bio,
-	.stream_ok = dtl_stream_ok,
-	.hint = dtl_hint,
-	.debugfs_show = dtl_debugfs_show,
-	.add_path = dtl_add_path,
-	.remove_path = dtl_remove_path,
 };
 
 /* Might restart iteration, if current element is removed from list!! */
@@ -210,7 +215,6 @@ static int dtl_init(struct drbd_transport *transport)
 	spin_lock_init(&dtl_transport->paths_lock);
 	spin_lock_init(&dtl_transport->control_recv_lock);
 
-	dtl_transport->transport.ops = &dtl_ops;
 	dtl_transport->transport.class = &dtl_transport_class;
 	timer_setup(&dtl_transport->control_timer, dtl_control_timer_fn, 0);
 
@@ -1109,7 +1113,6 @@ static int dtl_init_listener(struct drbd_transport *transport,
 	}
 
 	listener->listener.listen_addr = my_addr;
-	listener->listener.destroy = dtl_destroy_listener;
 
 	return 0;
 out:
@@ -1392,7 +1395,7 @@ static int dtl_path_adjust_listener(struct dtl_path *path, bool active)
 	if (!active && listener)
 		drbd_put_listener(drbd_path);
 	else if (active && !listener)
-		err = drbd_get_listener(transport, drbd_path, dtl_init_listener);
+		err = drbd_get_listener(transport, drbd_path);
 
 	return err;
 }

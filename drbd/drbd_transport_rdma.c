@@ -365,33 +365,38 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work);
 static void dtr_cma_connect_work_fn(struct work_struct *work);
 static struct dtr_rx_desc *dtr_next_rx_desc(struct dtr_stream *rdma_stream);
 static void dtr_control_tasklet_fn(struct tasklet_struct *t);
+static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr,
+			     struct net *net, struct drbd_listener *drbd_listener);
+static void dtr_destroy_listener(struct drbd_listener *generic_listener);
+
 
 static struct drbd_transport_class rdma_transport_class = {
 	.name = "rdma",
 	.instance_size = sizeof(struct dtr_transport),
 	.path_instance_size = sizeof(struct dtr_path),
 	.listener_instance_size = sizeof(struct dtr_listener),
+	.ops = (struct drbd_transport_ops) {
+		.init = dtr_init,
+		.free = dtr_free,
+		.init_listener = dtr_init_listener,
+		.release_listener = dtr_destroy_listener,
+		.connect = dtr_connect,
+		.recv = dtr_recv,
+		.stats = dtr_stats,
+		.net_conf_change = dtr_net_conf_change,
+		.set_rcvtimeo = dtr_set_rcvtimeo,
+		.get_rcvtimeo = dtr_get_rcvtimeo,
+		.send_page = dtr_send_page,
+		.send_zc_bio = dtr_send_zc_bio,
+		.recv_pages = dtr_recv_pages,
+		.stream_ok = dtr_stream_ok,
+		.hint = dtr_hint,
+		.debugfs_show = dtr_debugfs_show,
+		.add_path = dtr_add_path,
+		.remove_path = dtr_remove_path,
+	},
 	.module = THIS_MODULE,
-	.init = dtr_init,
 	.list = LIST_HEAD_INIT(rdma_transport_class.list),
-};
-
-static struct drbd_transport_ops dtr_ops = {
-	.free = dtr_free,
-	.connect = dtr_connect,
-	.recv = dtr_recv,
-	.stats = dtr_stats,
-	.net_conf_change = dtr_net_conf_change,
-	.set_rcvtimeo = dtr_set_rcvtimeo,
-	.get_rcvtimeo = dtr_get_rcvtimeo,
-	.send_page = dtr_send_page,
-	.send_zc_bio = dtr_send_zc_bio,
-	.recv_pages = dtr_recv_pages,
-	.stream_ok = dtr_stream_ok,
-	.hint = dtr_hint,
-	.debugfs_show = dtr_debugfs_show,
-	.add_path = dtr_add_path,
-	.remove_path = dtr_remove_path,
 };
 
 static struct rdma_conn_param dtr_conn_param = {
@@ -494,7 +499,6 @@ static int dtr_init(struct drbd_transport *transport)
 		container_of(transport, struct dtr_transport, transport);
 	int i;
 
-	transport->ops = &dtr_ops;
 	transport->class = &rdma_transport_class;
 
 	rdma_transport->rx_allocation_size = allocation_size;
@@ -2847,7 +2851,6 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 	}
 
 	listener->listener.listen_addr = *(struct sockaddr_storage *)addr;
-	listener->listener.destroy = dtr_destroy_listener;
 
 	return 0;
 out:
@@ -2874,7 +2877,7 @@ static int dtr_activate_path(struct dtr_path *path)
 		tr_warn(transport, "ASSERTION FAILED: in dtr_activate_path() found listener, dropping it\n");
 		drbd_put_listener(&path->path);
 	}
-	err = drbd_get_listener(transport, &path->path, dtr_init_listener);
+	err = drbd_get_listener(transport, &path->path);
 	if (err)
 		goto out_no_put;
 

@@ -3816,7 +3816,7 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 
 	/* Call before updating net_conf in case the transport needs to compare
 	 * old and new configurations. */
-	err = transport->ops->net_conf_change(transport, new_net_conf);
+	err = transport->class->ops.net_conf_change(transport, new_net_conf);
 	if (err) {
 		drbd_msg_sprintf_info(adm_ctx.reply_skb, "transport net_conf_change failed: %d",
 				      err);
@@ -4157,6 +4157,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	int i, err;
 	char *transport_name;
 	struct drbd_transport_class *tr_class;
+	struct drbd_transport *transport;
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
 	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
@@ -4268,13 +4269,14 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	write_unlock_irq(&adm_ctx->resource->state_rwlock);
 
-	old_net_conf = connection->transport.net_conf;
+	transport = &connection->transport;
+	old_net_conf = transport->net_conf;
 	if (old_net_conf) {
 		retcode = ERR_NET_CONFIGURED;
 		goto unlock_fail_free_connection;
 	}
 
-	err = connection->transport.ops->net_conf_change(&connection->transport, new_net_conf);
+	err = transport->class->ops.net_conf_change(transport, new_net_conf);
 	if (err) {
 		drbd_msg_sprintf_info(adm_ctx->reply_skb, "transport net_conf_change failed: %d",
 				      err);
@@ -4282,7 +4284,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		goto unlock_fail_free_connection;
 	}
 
-	rcu_assign_pointer(connection->transport.net_conf, new_net_conf);
+	rcu_assign_pointer(transport->net_conf, new_net_conf);
 	connection->fencing_policy = new_net_conf->fencing_policy;
 
 	connection->cram_hmac_tfm = crypto.cram_hmac_tfm;
@@ -4431,7 +4433,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
-	err = transport->ops->add_path(transport, path);
+	err = transport->class->ops.add_path(transport, path);
 	if (err) {
 		kref_put(&path->kref, drbd_destroy_path);
 		drbd_err(adm_ctx->connection, "add_path() failed with %d\n", err);
@@ -4612,7 +4614,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		if (!addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
 			continue;
 
-		err = transport->ops->remove_path(transport, path);
+		err = transport->class->ops.remove_path(transport, path);
 		if (err)
 			break;
 

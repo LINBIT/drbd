@@ -954,7 +954,7 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 	if (connection->cstate[NOW] < C_CONNECTING)
 		return NULL;
 
-	if (!transport->ops->stream_ok(transport, drbd_stream))
+	if (!transport->class->ops.stream_ok(transport, drbd_stream))
 		return NULL;
 
 	header_size = drbd_header_size(connection);
@@ -1005,7 +1005,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	unsigned int flags, offset, size;
 	int err;
 
@@ -1068,7 +1068,7 @@ int __send_command(struct drbd_connection *connection, int vnr,
 	enum drbd_stream drbd_stream = extract_stream(stream_and_flags);
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	/* CORKED + drbd_stream is either DATA_CORKED or CONTROL_CORKED */
 	bool corked = test_bit(CORKED + drbd_stream, &connection->flags);
 	bool flush = stream_and_flags & SFLAG_FLUSH;
@@ -1099,7 +1099,7 @@ int __send_command(struct drbd_connection *connection, int vnr,
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 
 	mutex_lock(&connection->mutex[stream]);
 	set_bit(CORKED + stream, &connection->flags);
@@ -1112,8 +1112,7 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
-
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 
 	mutex_lock(&connection->mutex[stream]);
 	flush_send_buffer(connection, stream);
@@ -2059,7 +2058,7 @@ int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_d
 	}
 
 	mutex_lock(&peer_device->connection->mutex[DATA_STREAM]);
-	if (peer_transport->ops->stream_ok(peer_transport, DATA_STREAM))
+	if (peer_transport->class->ops.stream_ok(peer_transport, DATA_STREAM))
 		err = !_drbd_send_bitmap(device, peer_device);
 	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
 
@@ -2192,7 +2191,7 @@ static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *pa
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = transport->ops;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	int err;
 
 	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
@@ -2279,7 +2278,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 	} else {
 		struct drbd_connection *connection = peer_device->connection;
 		struct drbd_transport *transport = &connection->transport;
-		struct drbd_transport_ops *tr_ops = transport->ops;
+		struct drbd_transport_ops *tr_ops = &transport->class->ops;
 		int err;
 
 		flush_send_buffer(connection, DATA_STREAM);
@@ -3068,7 +3067,9 @@ static void __net_exit __drbd_net_exit(struct net *net)
 
 		mutex_lock(&connection->resource->adm_mutex);
 		list_for_each_entry_safe(path, tmp, &connection->transport.paths, list) {
-			int err = connection->transport.ops->remove_path(&connection->transport, path);
+			struct drbd_transport *transport = &connection->transport;
+
+			int err = transport->class->ops.remove_path(transport, path);
 			if (err)
 				drbd_err(connection, "Failed to remove path after disconnect: %d\n", err);
 
@@ -3791,7 +3792,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 
 	INIT_LIST_HEAD(&connection->transport.paths);
 	connection->transport.log_prefix = resource->name;
-	if (tc->init(&connection->transport))
+	if (tc->ops.init(&connection->transport))
 		goto fail;
 
 	return connection;
@@ -3813,7 +3814,7 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	flush_send_buffer(connection, DATA_STREAM);
 	flush_send_buffer(connection, CONTROL_STREAM);
 
-	connection->transport.ops->free(&connection->transport, op);
+	connection->transport.class->ops.free(&connection->transport, op);
 	if (op == DESTROY_TRANSPORT)
 		drbd_put_transport_class(connection->transport.class);
 
