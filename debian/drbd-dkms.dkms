@@ -23,6 +23,11 @@ DEST_MODULE_LOCATION[$IDX]="/kernel/drivers/block/drbd"
 IDX=$(($IDX + 1))
 fi
 
+test -z $BUILD_OFED &&
+test -e /usr/src/ofa_kernel/default/Module.symvers &&
+modinfo mlx_compat &>/dev/null &&
+MAKE+=" BUILD_OFED=1"
+
 # See drbd/Kbuild: this is that check for the kernel version, but worse: check for kernel >= 4.17
 IFS=".-" read -ra KVER <<< "$kernelver"
 if [ "${KVER[0]}" -ge 4 ] && ( [ "${KVER[0]}" -gt 4 ] || [ "${KVER[1]}" -ge 17 ] ) ; then

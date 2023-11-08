@@ -28,7 +28,7 @@
 # probably need to "make mrproper" in the KDIR first...
 
 ifeq ($(BUILD_OFED),1)
- OFED_KERNEL_DIR ?= $(wildcard /usr/src/ofa_kernel/default)
+ OFED_KERNEL_DIR ?= $(firstword $(wildcard /usr/src/ofa_kernel/$(arch)/$(kernelver) /usr/src/ofa_kernel/default))
  ifneq ($(OFED_KERNEL_DIR),)
   OFED_CFLAGS := -I$(OFED_KERNEL_DIR)/include -include linux/compat-2.6.h
   OFED_MODULE_SYMVERS := $(OFED_KERNEL_DIR)/Module.symvers
