@@ -2820,7 +2820,8 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 	struct dtr_listener *listener =
 		container_of(generic_listener, struct dtr_listener, listener);
 
-	rdma_destroy_id(listener->cm.id);
+	if (listener->cm.id)
+		rdma_destroy_id(listener->cm.id);
 }
 
 static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct net *net, struct drbd_listener *drbd_listener)

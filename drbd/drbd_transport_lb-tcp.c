@@ -1050,6 +1050,8 @@ static void dtl_destroy_listener(struct drbd_listener *generic_listener)
 	struct dtl_listener *listener =
 		container_of(generic_listener, struct dtl_listener, listener);
 
+	if (!listener->s_listen)
+		return;
 	unregister_state_change(listener->s_listen->sk, listener);
 	sock_release(listener->s_listen);
 }
