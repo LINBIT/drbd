@@ -2181,9 +2181,13 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(cm->path->path.transport, struct dtr_transport, transport);
+	struct drbd_transport *transport = &rdma_transport->transport;
 	struct ib_send_wr send_wr;
 	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
+	bool was_active, extra_ref = false;
+	unsigned long timeout;
+	struct net_conf *nc;
 	int i, err = -EIO;
 
 	send_wr.next = NULL;
@@ -2194,28 +2198,36 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	timeout = nc->ping_timeo;
+	rcu_read_unlock();
+
 	for (i = 0; i < tx_desc->nr_sges; i++)
 		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
+
+	if (atomic_inc_return(&cm->tx_descs_posted) == 1) {
+		extra_ref = true;
+		kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
+	}
+
+	kref_get(&cm->kref);
+	was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
+	if (was_active)
+		kref_put(&cm->kref, dtr_destroy_cm);
+
 	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
-	if (!err) {
-		struct drbd_transport *transport = &rdma_transport->transport;
-		unsigned long timeout;
-		struct net_conf *nc;
-		bool was_active;
-
-		if (atomic_inc_return(&cm->tx_descs_posted) == 1)
-			kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
-
-		rcu_read_lock();
-		nc = rcu_dereference(transport->net_conf);
-		timeout = nc->ping_timeo;
-		rcu_read_unlock();
-		was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
-		if (!was_active)
-			kref_get(&cm->kref);
-	} else {
+	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
+		was_active = del_timer(&cm->tx_timeout);
+		if (!was_active)
+			was_active = cancel_work_sync(&cm->tx_timeout_work);
+		if (was_active)
+			kref_put(&cm->kref, dtr_destroy_cm);
+		if (extra_ref)
+			kref_put(&cm->kref, dtr_destroy_cm);
+		atomic_dec(&cm->tx_descs_posted);
 	}
 
 	return err;
