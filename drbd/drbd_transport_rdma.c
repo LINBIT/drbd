@@ -1677,9 +1677,22 @@ static void dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 static void dtr_dec_rx_descs(struct dtr_cm *cm)
 {
 	struct dtr_flow *flow = cm->path->flow;
+	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
-	if (atomic_dec_if_positive(&flow[DATA_STREAM].rx_descs_posted) < 0)
-		atomic_dec(&flow[CONTROL_STREAM].rx_descs_posted);
+	/* When we get the posted rx_descs back, we do not know if they
+	 * where accoutend for the data stream or the control stream...
+	 */
+	if (atomic_dec_if_positive(&flow[DATA_STREAM].rx_descs_posted) >= 0)
+		return;
+
+	if (atomic_dec_if_positive(&flow[CONTROL_STREAM].rx_descs_posted) >= 0)
+		return;
+
+	if (__ratelimit(&rdma_transport->rate_limit)) {
+		struct drbd_transport *transport = &rdma_transport->transport;
+
+		tr_warn(transport, "rx_descs_posted underflow avoided\n");
+	}
 }
 
 static void dtr_control_data_ready(struct dtr_stream *rdma_stream, struct dtr_rx_desc *rx_desc)
