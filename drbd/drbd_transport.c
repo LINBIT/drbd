@@ -179,7 +179,7 @@ int drbd_get_listener(struct drbd_path *path)
 	spin_lock_bh(&resource->listeners_lock);
 	listener = find_listener(connection, (struct sockaddr_storage *)addr);
 	if (!listener) {
-		listener = kmalloc(tc->listener_instance_size, GFP_ATOMIC);
+		listener = kzalloc(tc->listener_instance_size, GFP_ATOMIC);
 		if (!listener) {
 			spin_unlock_bh(&resource->listeners_lock);
 			return -ENOMEM;
