@@ -1176,6 +1176,10 @@ struct drbd_peer_device {
 	unsigned long rs_failed;
 	/* Syncer's start time [unit jiffies] */
 	unsigned long rs_start;
+	/* Bitmap extent that failed to be locked for 5 seconds. */
+	struct bm_extent *rs_last_bm_extent;
+	/* Timer for sync stall */
+	struct timer_list resync_stalled_timer;
 	/* cumulated time in PausedSyncX state [unit jiffies] */
 	unsigned long rs_paused;
 	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
@@ -2098,6 +2102,7 @@ extern int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sec
 extern void drbd_al_shrink(struct drbd_device *device);
 extern bool drbd_sector_has_priority(struct drbd_peer_device *, sector_t);
 extern int drbd_al_initialize(struct drbd_device *, void *);
+extern void resync_stalled_timer_fn(struct timer_list *t);
 
 /* drbd_nl.c */
 

@@ -8187,6 +8187,7 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 	del_timer_sync(&peer_device->resync_timer);
 	resync_timer_fn(&peer_device->resync_timer);
 	del_timer_sync(&peer_device->start_resync_timer);
+	del_timer_sync(&peer_device->resync_stalled_timer);
 }
 
 static void drain_resync_activity(struct drbd_connection *connection)

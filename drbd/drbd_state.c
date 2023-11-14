@@ -2298,9 +2298,13 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_last_sect_ev = 0;
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
+	peer_device->rs_last_bm_extent = NULL;
 	peer_device->rs_last_writeout = now;
 	initialize_resync_progress_marks(peer_device);
 	drbd_rs_controller_reset(peer_device);
+
+		/* In case resync is stalled at the beginning */
+	mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
 }
 
 /* Is there a primary with access to up to date data known */
@@ -2614,6 +2618,23 @@ static void finish_state_change(struct drbd_resource *resource, struct completio
 
 			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
 				clear_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
+
+			if ((repl_state[OLD] == L_SYNC_SOURCE || repl_state[OLD] == L_SYNC_TARGET) &&
+			   !(repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_SYNC_TARGET)) {
+				del_timer(&peer_device->resync_stalled_timer);
+				peer_device->rs_last_bm_extent = NULL;
+
+				windrbd_resume_application_io(peer_device->device->this_bdev,
+					"Resync state change syncing -> not syncing, resuming application I/O\n");
+			}
+			if ((repl_state[OLD] == L_PAUSED_SYNC_S || repl_state[OLD] == L_PAUSED_SYNC_T) &&
+			    (repl_state[NEW] == L_SYNC_SOURCE || repl_state[NEW] == L_SYNC_TARGET)) {
+			/* In case resync is stalled when resuming */
+				printk("Resuming sync, arming application suspension timer.\n");
+				mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
+				peer_device->rs_last_bm_extent = NULL;	/* We don't know where it was before. */
+			}
+
 		}
 
 		for_each_connection(connection, resource) {

@@ -1405,6 +1405,14 @@ retry:
 	return 0;
 }
 
+void resync_stalled_timer_fn(struct timer_list *t)
+{
+        struct drbd_peer_device *peer_device = from_timer(peer_device, t, resync_stalled_timer, struct drbd_peer_device);
+
+	windrbd_suspend_application_io(peer_device->device->this_bdev,
+		"Sync stalled, suspending application I/O.\n");
+}
+
 /**
  * drbd_try_rs_begin_io() - Gets an extent in the resync LRU cache, does not sleep
  *
@@ -1516,6 +1524,17 @@ check_al:
 	set_bit(BME_LOCKED, &bm_ext->flags);
 proceed:
 	peer_device->resync_wenr = LC_FREE;
+
+	if (peer_device->rs_last_bm_extent == NULL)	/* first extent */
+		peer_device->rs_last_bm_extent = bm_ext;
+
+	if (peer_device->rs_last_bm_extent != bm_ext) {
+		del_timer(&peer_device->resync_stalled_timer);
+
+		windrbd_resume_application_io(peer_device->device->this_bdev,
+			"Sync progress, resuming application I/O.\n");
+	}
+
 	spin_unlock_irq(&device->al_lock);
 	return 0;
 
@@ -1536,6 +1555,17 @@ try_again:
 		} else
 			peer_device->resync_wenr = enr;
 	}
+	/* If suspended do nothing. Wait until sync finishes,
+	 * makes progress or is aborted.
+	 */
+	if (!windrbd_application_io_suspended(peer_device->device->this_bdev)) {
+		if (!timer_pending(&peer_device->resync_stalled_timer))
+			mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
+		/* Else do not move it more into the future. */
+
+		peer_device->rs_last_bm_extent = bm_ext;
+	}
+
 	spin_unlock_irq(&device->al_lock);
 	return -EAGAIN;
 }
