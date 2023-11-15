@@ -2083,15 +2083,15 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 		goto out;
 	rx_desc->sge.length = alloc_size;
 
+	flow->rx_descs_allocated++;
+	atomic_inc(&flow->rx_descs_posted);
 	err = dtr_post_rx_desc(cm, rx_desc);
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
+		atomic_dec(&flow->rx_descs_posted);
+		flow->rx_descs_allocated--;
 		dtr_free_rx_desc(rx_desc);
-	} else {
-		flow->rx_descs_allocated++;
-		atomic_inc(&flow->rx_descs_posted);
 	}
-
 	return err;
 out:
 	kfree(rx_desc);
