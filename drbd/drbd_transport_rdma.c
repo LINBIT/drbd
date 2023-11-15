@@ -2040,7 +2040,7 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 	kfree(rx_desc);
 }
 
-static int dtr_create_rx_desc(struct dtr_flow *flow)
+static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 {
 	struct dtr_path *path = flow->path;
 	struct drbd_transport *transport = path->path.transport;
@@ -2052,7 +2052,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	int nr_pages = alloc_size / PAGE_SIZE;
 	struct dtr_cm *cm;
 
-	rx_desc = kzalloc(sizeof(*rx_desc), GFP_NOIO);
+	rx_desc = kzalloc(sizeof(*rx_desc), gfp_mask);
 	if (!rx_desc)
 		return -ENOMEM;
 
@@ -2060,7 +2060,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow)
 	 * Which means no other user may ever have requested and then given
 	 * back a highmem page!
 	 */
-	page = drbd_alloc_pages(transport, nr_pages, GFP_NOIO);
+	page = drbd_alloc_pages(transport, nr_pages, gfp_mask);
 	if (!page) {
 		kfree(rx_desc);
 		return -ENOMEM;
@@ -2109,8 +2109,16 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 	while (atomic_read(&flow->rx_descs_posted) < descs_want_posted &&
 	       flow->rx_descs_allocated < descs_max) {
-		int err = dtr_create_rx_desc(flow);
-		if (err) {
+		int err = dtr_create_rx_desc(flow, GFP_NOIO & ~__GFP_RECLAIM);
+		/*
+		 * drbd_alloc_pages() goes over the configured max_buffers, but throttles the
+		 * caller with sleeping 100ms for each of those excess pages.  By calling
+		 * without __GFP_RECLAIM we request to get a -ENOMEM instead of sleeping.
+		 * We simply stop refilling then.
+		 */
+		if (err == -ENOMEM) {
+			break;
+		} else if (err > 0) {
 			struct drbd_transport *transport = path->path.transport;
 			tr_err(transport, "dtr_create_rx_desc() = %d\n", err);
 			break;
@@ -2541,7 +2549,7 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 	}
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		dtr_create_rx_desc(&path->flow[i]);
+		dtr_create_rx_desc(&path->flow[i], GFP_NOIO);
 
 	return 0;
 
