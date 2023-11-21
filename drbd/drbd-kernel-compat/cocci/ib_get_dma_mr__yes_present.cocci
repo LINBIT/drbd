@@ -1,12 +1,12 @@
-@@
+@ ib_get_dma_mr__struct @
 @@
 struct dtr_cm {
 +      struct ib_mr *dma_mr;
        ...
 };
 
-@@
-identifier kref, destroy_id, cm;
+@ ib_get_dma_mr__free @
+identifier kref, destroy_id, cm, rdma_transport;
 @@
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
@@ -20,7 +20,7 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	...
 }
 
-@@
+@ ib_get_dma_mr__deref @
 identifier cm;
 type u32;
 @@
@@ -30,7 +30,7 @@ static u32 dtr_cm_to_lkey(struct dtr_cm *cm)
 -	return cm->pd->local_dma_lkey;
 }
 
-@@
+@ ib_get_dma_mr__alloc @
 identifier cm, cause, i, path;
 @@
 static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
@@ -52,8 +52,17 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 +	}
 +
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		dtr_create_rx_desc(&path->flow[i]);
+		dtr_create_rx_desc(...);
 
 	return 0;
 	...
 }
+
+@ script:python depends on !ib_get_dma_mr__struct || !ib_get_dma_mr__free || !ib_get_dma_mr__deref || !ib_get_dma_mr__alloc @
+@@
+import sys
+print('ERROR: A rule making an essential change was not executed!', file=sys.stderr)
+print('ERROR: This would not show up as a compiler error, but would still break DRBD.', file=sys.stderr)
+print('ERROR: Check ib_get_dma_mr__yes_present.cocci', file=sys.stderr)
+print('ERROR: As a precaution, the build will be aborted here.', file=sys.stderr)
+sys.exit(1)
