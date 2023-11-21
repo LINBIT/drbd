@@ -24,6 +24,7 @@
 #include <linux/scatterlist.h>
 #include <linux/overflow.h>
 #include <linux/part_stat.h>
+#include <linux/drbd_limits.h>
 
 #include "drbd_int.h"
 #include "drbd_protocol.h"
@@ -641,7 +642,10 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	rcu_read_lock();
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 	mxb = nc ? nc->max_buffers : 0;
-	if (rcu_dereference(peer_device->rs_plan_s)->size) {
+        if (windrbd_application_io_suspended(peer_device->device->this_bdev)) {
+		peer_device->c_sync_rate = DRBD_RESYNC_RATE_MAX;
+		number = RS_MAKE_REQS_INTV * peer_device->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
+	} else if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration)) >> (BM_BLOCK_SHIFT - 9);
 		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / RS_MAKE_REQS_INTV;
 	} else {
