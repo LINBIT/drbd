@@ -800,8 +800,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	if (flags & CS_PREPARE)
 		goto out;
 
-	finish_state_change(resource, tag);
 	update_members(resource);
+	finish_state_change(resource, tag);
 
 	/* Check whether we are establishing a connection before applying the change. */
 	is_connect = drbd_state_change_is_connect(resource);
@@ -2324,6 +2324,12 @@ static void sanitize_state(struct drbd_resource *resource)
 		else
 			device->have_quorum[NEW] = true;
 
+		if (!device->have_quorum[NEW] && disk_state[NEW] == D_UP_TO_DATE &&
+		    test_bit(RESTORE_QUORUM, &device->flags)) {
+			device->have_quorum[NEW] = true;
+			set_bit(RESTORING_QUORUM, &device->flags);
+		}
+
 		if (!device->have_quorum[NEW])
 			resource_has_quorum = false;
 
@@ -2620,6 +2626,16 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		struct drbd_peer_device *peer_device;
 		bool create_new_uuid = false;
 
+		if (test_bit(RESTORING_QUORUM, &device->flags) &&
+		    !device->have_quorum[OLD] && device->have_quorum[NEW]) {
+			clear_bit(RESTORING_QUORUM, &device->flags);
+			drbd_info(resource, "Restored quorum from before reboot\n");
+		}
+
+		if (test_bit(RESTORE_QUORUM, &device->flags) &&
+		    (device->have_quorum[NEW] || disk_state[NEW] < D_UP_TO_DATE))
+			clear_bit(RESTORE_QUORUM, &device->flags);
+
 		if (disk_state[OLD] != D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
 			for_each_peer_device(peer_device, device)
 				peer_device->negotiation_result = L_NEGOTIATING;
@@ -2902,10 +2918,16 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			      disk_state[NEW] >= D_INCONSISTENT)))
 				mdf &= ~MDF_PRIMARY_IND;
 
+			if (device->have_quorum[NEW])
+				mdf |= MDF_HAVE_QUORUM;
+			else
+				mdf &= ~MDF_HAVE_QUORUM;
 			/* apply changed flags to md.flags,
 			 * and "schedule" for write-out */
-			if (mdf != device->ldev->md.flags) {
+			if (mdf != device->ldev->md.flags ||
+			    device->ldev->md.members != resource->members) {
 				device->ldev->md.flags = mdf;
+				device->ldev->md.members = resource->members;
 				drbd_md_mark_dirty(device);
 			}
 			if (disk_state[OLD] < D_CONSISTENT && disk_state[NEW] >= D_CONSISTENT)

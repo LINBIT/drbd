@@ -2890,6 +2890,8 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 	bdev->md.effective_size = be64_to_cpu(buffer->effective_size);
 	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
 	bdev->md.flags = be32_to_cpu(buffer->flags);
+	bdev->md.prev_members = be64_to_cpu(buffer->members);
+
 	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
 	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
@@ -3322,6 +3324,11 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 	}
+
+	if (drbd_md_test_flag(device->ldev, MDF_HAVE_QUORUM) &&
+	    drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE) &&
+	    device->ldev->md.prev_members == NODE_MASK(resource->res_opts.node_id))
+		set_bit(RESTORE_QUORUM, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
 	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
