@@ -75,11 +75,11 @@ For a release tarball, these options should be handled transparently for the
 user. In other words, if you download a tarball and type "make", it should work
 in next to all cases.
 
-## Provided kernel compatibility / compatibility after a relese
+## Provided kernel compatibility / compatibility after a release
 
 With the usual exceptions compat work is usually done relatively late in the
 release cycle. When we then provide a new release tarball one can usually
-expect that this version compiles without compat for the latest Linux upstrem
+expect that this version compiles without compat for the latest Linux upstream
 kernel at the time. This is because our code is then in a shape that it does not
 require any compat for latest upstream. One can also expect that we ship
 pre-generated compat patches for the distributions (and distribution kernels)
