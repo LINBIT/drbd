@@ -193,7 +193,7 @@ struct dtr_flow {
 	atomic_t rx_descs_posted;
 	int rx_descs_max;  /* derived from net_conf->rcvbuf_size. Do not change after alloc. */
 
-	int rx_descs_allocated;  // keep in stream??
+	atomic_t rx_descs_allocated;
 	int rx_descs_want_posted;
 	atomic_t rx_descs_known_to_peer;
 };
@@ -224,6 +224,7 @@ struct dtr_path {
 	int nr;
 	spinlock_t send_flow_control_lock;
 	struct tasklet_struct flow_control_tasklet;
+	struct work_struct refill_rx_descs_work;
 };
 
 struct dtr_stream {
@@ -712,7 +713,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		set_page_chain_offset(page, 0);
 		set_page_chain_size(page, rx_desc->size);
 
-		rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated--;
+		atomic_dec(&rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated);
 		dtr_free_rx_desc(rx_desc);
 
 		i++;
@@ -1824,6 +1825,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 {
 	struct dtr_cm *cm = ctx;
+	struct dtr_path *path = cm->path;
 	int err, rc;
 
 	do {
@@ -1842,11 +1844,18 @@ static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
 
 		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
 		if (unlikely(rc < 0)) {
-			struct drbd_transport *transport = cm->path->path.transport;
+			struct drbd_transport *transport = path->path.transport;
 			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
 			break;
 		}
 	} while (rc);
+
+	if (dtr_path_ok(path)) {
+		struct dtr_flow *flow = &path->flow[DATA_STREAM];
+
+		if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2)
+			schedule_work(&path->refill_rx_descs_work);
+	}
 }
 
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
@@ -2083,13 +2092,13 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 		goto out;
 	rx_desc->sge.length = alloc_size;
 
-	flow->rx_descs_allocated++;
+	atomic_inc(&flow->rx_descs_allocated);
 	atomic_inc(&flow->rx_descs_posted);
 	err = dtr_post_rx_desc(cm, rx_desc);
 	if (err) {
 		tr_err(transport, "dtr_post_rx_desc() returned %d\n", err);
 		atomic_dec(&flow->rx_descs_posted);
-		flow->rx_descs_allocated--;
+		atomic_dec(&flow->rx_descs_allocated);
 		dtr_free_rx_desc(rx_desc);
 	}
 	return err;
@@ -2097,6 +2106,14 @@ out:
 	kfree(rx_desc);
 	drbd_free_pages(transport, page, 0);
 	return err;
+}
+
+static void dtr_refill_rx_descs_work_fn(struct work_struct *work)
+{
+	struct dtr_path *path = container_of(work, struct dtr_path, refill_rx_descs_work);
+
+	if (dtr_path_ok(path))
+		__dtr_refill_rx_desc(path, DATA_STREAM);
 }
 
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
@@ -2108,8 +2125,8 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 	descs_want_posted = flow->rx_descs_want_posted;
 
 	while (atomic_read(&flow->rx_descs_posted) < descs_want_posted &&
-	       flow->rx_descs_allocated < descs_max) {
-		int err = dtr_create_rx_desc(flow, GFP_NOIO & ~__GFP_RECLAIM);
+	       atomic_read(&flow->rx_descs_allocated) < descs_max) {
+		int err = dtr_create_rx_desc(flow, (GFP_NOIO & ~__GFP_RECLAIM) | __GFP_NOWARN);
 		/*
 		 * drbd_alloc_pages() goes over the configured max_buffers, but throttles the
 		 * caller with sleeping 100ms for each of those excess pages.  By calling
@@ -2473,7 +2490,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	atomic_set(&flow->rx_descs_known_to_peer, stream == CONTROL_STREAM ? 1 : 0);
 
 	atomic_set(&flow->rx_descs_posted, 0);
-	flow->rx_descs_allocated = 0;
+	atomic_set(&flow->rx_descs_allocated, 0);
 
 	flow->rx_descs_want_posted = flow->rx_descs_max / 2;
 
@@ -3309,7 +3326,8 @@ static void dtr_debugfs_show_flow(struct dtr_flow *flow, const char *name, struc
 	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&flow->tx_descs_posted), flow->tx_descs_max);
 	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&flow->peer_rx_descs));
 	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", atomic_read(&flow->rx_descs_posted),
-		   flow->rx_descs_allocated, flow->rx_descs_want_posted, flow->rx_descs_max);
+		   atomic_read(&flow->rx_descs_allocated),
+		   flow->rx_descs_want_posted, flow->rx_descs_max);
 	seq_printf(m, " rx_peer_knows: %5d (what the peer knows about my receive window)\n\n",
 		   atomic_read(&flow->rx_descs_known_to_peer));
 }
@@ -3392,6 +3410,7 @@ static int dtr_add_path(struct drbd_path *add_path)
 	atomic_set(&path->cs.active_state, PCS_INACTIVE);
 	spin_lock_init(&path->send_flow_control_lock);
 	tasklet_setup(&path->flow_control_tasklet, dtr_flow_control_tasklet_fn);
+	INIT_WORK(&path->refill_rx_descs_work, dtr_refill_rx_descs_work_fn);
 	INIT_DELAYED_WORK(&path->cs.retry_connect_work, dtr_cma_retry_connect_work_fn);
 
 	if (rdma_transport->active) {
