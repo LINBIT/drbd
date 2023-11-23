@@ -2353,7 +2353,8 @@ static void sanitize_state(struct drbd_resource *resource)
 	resource->susp_quorum[NEW] =
 		resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO ? !resource_has_quorum : false;
 
-	if (resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW)) {
+	if (!resource->susp_uuid[OLD] &&
+	    resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW)) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (test_bit(NEW_CUR_UUID, &device->flags)) {
 				resource->susp_uuid[NEW] = true;
@@ -2553,6 +2554,7 @@ static bool should_try_become_up_to_date(struct drbd_device *device, enum drbd_d
 static void finish_state_change(struct drbd_resource *resource, const char *tag)
 {
 	enum drbd_role *role = resource->role;
+	bool *susp_uuid = resource->susp_uuid;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	bool starting_resync = false;
@@ -2828,7 +2830,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
 			create_new_uuid = true;
 
-		if (create_new_uuid)
+		/* When susp_uuid goes from true to false, we just created a new
+		 * current-uuid, it is pointless to do this one more time
+		 */
+		if (create_new_uuid && !(susp_uuid[OLD] && !susp_uuid[NEW]))
 			set_bit(__NEW_CUR_UUID, &device->flags);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
@@ -4189,7 +4194,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			still_connected = true;
 	}
 
-	if (!susp_uuid[OLD] && susp_uuid[NEW]) {
+	if (susp_uuid[NEW]) {
 		unsigned long irq_flags;
 
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
