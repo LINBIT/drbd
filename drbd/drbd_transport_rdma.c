@@ -1472,7 +1472,7 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 
 			if (atomic_read(&flow->rx_descs_known_to_peer) <
 			    atomic_read(&flow->rx_descs_posted) / 8)
-				dtr_send_flow_control_msg(path, GFP_NOIO);
+				dtr_send_flow_control_msg(path, GFP_ATOMIC);
 		}
 		rcu_read_unlock();
 	}
