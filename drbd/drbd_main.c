@@ -1539,6 +1539,7 @@ int drbd_attach_peer_device(struct drbd_peer_device *const peer_device) __must_h
 int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		    uint64_t u_size_diskless, enum dds_flags flags)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	struct p_sizes *p;
 	sector_t d_size, u_size;
@@ -1547,7 +1548,7 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 	unsigned int packet_size;
 
 	packet_size = sizeof(*p);
-	if (peer_device->connection->agreed_features & DRBD_FF_WSAME)
+	if (connection->agreed_features & DRBD_FF_WSAME)
 		packet_size += sizeof(p->qlim[0]);
 
 	p = drbd_prepare_command(peer_device, packet_size, DATA_STREAM);
@@ -1601,10 +1602,14 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		max_bio_size = DRBD_MAX_BIO_SIZE; /* ... multiple BIOs per peer_request */
 	}
 
-	if (peer_device->connection->agreed_pro_version <= 94)
+	if (connection->agreed_pro_version <= 94)
 		max_bio_size = min(max_bio_size, DRBD_MAX_SIZE_H80_PACKET);
-	else if (peer_device->connection->agreed_pro_version < 100)
+	else if (connection->agreed_pro_version < 100)
 		max_bio_size = min(max_bio_size, DRBD_MAX_BIO_SIZE_P95);
+
+	/* 9.0.4 bumped pro_version to 112 and introduced 2PC resizes */
+	if (connection->agreed_pro_version >= 112)
+		d_size = drbd_partition_data_capacity(device);
 
 	p->d_size = cpu_to_be64(d_size);
 	p->u_size = cpu_to_be64(u_size);
@@ -5598,15 +5603,17 @@ static sector_t bm_sect_to_max_capacity(unsigned int bm_max_peers, sector_t bm_s
 	return BM_BIT_TO_SECT(bm_bits_per_peer);
 }
 
+
 /**
- * drbd_get_max_capacity() - Returns the capacity we announce to out peer
+ * drbd_get_max_capacity() - Returns the capacity for user-data on the local backing device
  * @device: The DRBD device.
  * @bdev: Meta data block device.
  * @warn: Whether to warn when size is clipped.
  *
- * returns the capacity we announce to out peer.  we clip ourselves at the
- * various MAX_SECTORS, because if we don't, current implementation will
- * oops sooner or later
+ * This function returns the capacity for user-data on the local backing
+ * device. In the case of internal meta-data, this is the backing disk size
+ * reduced by the meta-data size. In the case of external meta-data, this is
+ * the size of the backing disk.
  */
 sector_t drbd_get_max_capacity(
 		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn)
@@ -5662,6 +5669,30 @@ sector_t drbd_get_max_capacity(
 		max_capacity = metadata_limit;
 	}
 	return max_capacity;
+}
+
+/* this is about cluster partitions, not block device partitions */
+sector_t drbd_partition_data_capacity(struct drbd_device *device)
+{
+	struct drbd_backing_dev *bdev = device->ldev;
+	struct drbd_peer_device *peer_device;
+	sector_t capacity = (sector_t)(-1);
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (test_bit(HAVE_SIZES, &peer_device->flags))
+			capacity = min_not_zero(capacity, peer_device->d_size);
+	}
+	rcu_read_unlock();
+
+	if (bdev) {
+		sector_t local_capacity = drbd_get_max_capacity(device, bdev, false);
+
+		if (local_capacity < capacity)
+			capacity = local_capacity;
+	}
+
+	return capacity != (sector_t)(-1) ? capacity : 0;
 }
 
 #ifdef CONFIG_DRBD_FAULT_INJECTION

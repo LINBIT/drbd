@@ -1862,7 +1862,7 @@ drbd_new_dev_size(struct drbd_device *device,
 	if (flags & DDSF_2PC)
 		return resource->twopc.resize.new_size;
 
-	m_size = drbd_get_max_capacity(device, device->ldev, false);
+	m_size = drbd_partition_data_capacity(device);
 	all_known_connected = get_max_agreeable_size(device, &p_size);
 
 	if (all_known_connected) {

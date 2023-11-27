@@ -1701,6 +1701,7 @@ extern void tl_abort_disk_io(struct drbd_device *device);
 
 extern sector_t drbd_get_max_capacity(
 		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn);
+extern sector_t drbd_partition_data_capacity(struct drbd_device *device);
 
 /* Meta data layout
  *
