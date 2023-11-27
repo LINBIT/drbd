@@ -6548,8 +6548,21 @@ enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64 nodes_to_reach)
 {
 	struct twopc_resize *tr = &device->resource->twopc.resize;
+	struct drbd_peer_device *peer_device;
 	enum determine_dev_size dd;
 	uint64_t my_usize;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		/* update cached sizes, relevant for the next handshake */
+		peer_device->c_size = tr->new_size;
+		peer_device->u_size = tr->user_size;
+
+		if (peer_device->d_size)
+			peer_device->d_size = tr->new_size;
+		peer_device->max_size = tr->new_size;
+	}
+	rcu_read_unlock();
 
 	if (!get_ldev(device)) {
 		drbd_set_my_capacity(device, tr->new_size);
@@ -6581,35 +6594,6 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 	}
 cont:
 	dd = drbd_determine_dev_size(device, tr->new_size, tr->dds_flags | DDSF_2PC, rs);
-
-	if (dd > DS_UNCHANGED) { /* DS_SHRUNK, DS_GREW, DS_GREW_FROM_ZERO */
-		struct drbd_peer_device *peer_device;
-		u64 im;
-
-		for_each_peer_device_ref(peer_device, im, device) {
-			if (peer_device->repl_state[NOW] != L_ESTABLISHED ||
-			    peer_device->disk_state[NOW] < D_INCONSISTENT)
-				continue;
-
-			/* update cached sizes, relevant for the next handshake
-			 * of a currently unconnected peer. */
-			peer_device->c_size = tr->new_size;
-			peer_device->u_size = tr->user_size;
-			if (dd >= DS_GREW) {
-				if (tr->new_size > peer_device->d_size)
-					peer_device->d_size = tr->new_size;
-
-				if (tr->new_size > peer_device->max_size)
-					peer_device->max_size = tr->new_size;
-			} else if (dd == DS_SHRUNK) {
-				if (tr->new_size < peer_device->d_size)
-					peer_device->d_size = tr->new_size;
-
-				if (tr->new_size < peer_device->max_size)
-					peer_device->max_size = tr->new_size;
-			}
-		}
-	}
 
 	if (dd == DS_GREW && !(tr->dds_flags & DDSF_NO_RESYNC)) {
 		struct drbd_resource *resource = device->resource;
