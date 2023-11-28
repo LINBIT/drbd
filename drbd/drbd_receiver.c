@@ -5257,11 +5257,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 	peer_device->q_limits.max_bio_size = min(be32_to_cpu(p->max_bio_size),
 						 protocol_max_bio_size);
 	ddsf = be16_to_cpu(p->dds_flags);
-
 	is_handshake = (peer_device->repl_state[NOW] == L_OFF);
-	/* Maybe the peer knows something about peers I cannot currently see. */
-	ddsf |= DDSF_IGNORE_PEER_CONSTRAINTS;
-
 	set_bit(HAVE_SIZES, &peer_device->flags);
 
 	if (get_ldev(device)) {

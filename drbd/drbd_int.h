@@ -1586,7 +1586,7 @@ enum dds_flags {
 	 * See P_SIZES, struct p_sizes; */
 	DDSF_ASSUME_UNCONNECTED_PEER_HAS_SPACE    = 1,
 	DDSF_NO_RESYNC = 2, /* Do not run a resync for the new space */
-	DDSF_IGNORE_PEER_CONSTRAINTS = 4,
+	DDSF_IGNORE_PEER_CONSTRAINTS = 4, /* no longer used */
 	DDSF_2PC = 8, /* local only, not on the wire */
 };
 struct meta_data_on_disk_9;
