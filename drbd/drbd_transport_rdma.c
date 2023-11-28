@@ -2905,8 +2905,10 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 
 	return 0;
 out:
-	if (listener->cm.id)
+	if (listener->cm.id) {
 		rdma_destroy_id(listener->cm.id);
+		listener->cm.id = NULL;
+	}
 
 	return err;
 }
