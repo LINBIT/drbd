@@ -1356,6 +1356,7 @@ static const char *from_attrs_err_to_txt(int err)
 static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
+	struct drbd_resource *resource;
 	struct set_role_parms parms;
 	enum drbd_state_rv rv;
 	enum drbd_ret_code retcode;
@@ -1366,6 +1367,7 @@ static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 	if (!adm_ctx.reply_skb)
 		return rv;
 
+	resource = adm_ctx.resource;
 	memset(&parms, 0, sizeof(parms));
 	if (info->attrs[DRBD_NLA_SET_ROLE_PARMS]) {
 		err = set_role_parms_from_attrs(&parms, info);
@@ -1375,26 +1377,25 @@ static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 	}
-	mutex_lock(&adm_ctx.resource->adm_mutex);
+	mutex_lock(&resource->adm_mutex);
 
 	new_role = info->genlhdr->cmd == DRBD_ADM_PRIMARY ? R_PRIMARY : R_SECONDARY;
-	rv = drbd_set_role(adm_ctx.resource,
+	if (new_role == R_PRIMARY)
+		set_bit(EXPLICIT_PRIMARY, &resource->flags);
+
+	rv = drbd_set_role(resource,
 				new_role,
 				parms.force,
 				new_role == R_PRIMARY ? "primary" : "secondary",
 				adm_ctx.reply_skb);
 
-	if (new_role == R_PRIMARY) {
-		if (rv >= SS_SUCCESS)
-			set_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
-	} else {
-		if (rv >= SS_SUCCESS)
-			clear_bit(EXPLICIT_PRIMARY, &adm_ctx.resource->flags);
-	}
-	if (rv == SS_DEVICE_IN_USE)
-		opener_info(adm_ctx.resource, adm_ctx.reply_skb, rv);
+	if (resource->role[NOW] != R_PRIMARY)
+		clear_bit(EXPLICIT_PRIMARY, &resource->flags);
 
-	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	if (rv == SS_DEVICE_IN_USE)
+		opener_info(resource, adm_ctx.reply_skb, rv);
+
+	mutex_unlock(&resource->adm_mutex);
 	drbd_adm_finish(&adm_ctx, info, rv);
 	return 0;
 out:
