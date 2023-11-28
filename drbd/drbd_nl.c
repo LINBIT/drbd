@@ -1600,7 +1600,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		u32 al_stripes;
 		u32 al_stripe_size_4k;
 	} prev;
-	sector_t u_size, size;
+	sector_t u_size, size, prev_size;
 	struct drbd_md *md = &device->ldev->md;
 	char ppb[10];
 	void *buffer;
@@ -1631,6 +1631,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	prev.md_size_sect = md->md_size_sect;
 	prev.al_stripes = md->al_stripes;
 	prev.al_stripe_size_4k = md->al_stripe_size_4k;
+	prev_size = get_capacity(device->vdisk);
 
 	if (rs) {
 		/* rs is non NULL if we should change the AL layout only */
@@ -1755,9 +1756,9 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		wake_up(&device->al_wait);
 	}
 
-	if (size > prev.effective_size)
-		rv = prev.effective_size ? DS_GREW : DS_GREW_FROM_ZERO;
-	if (size < prev.effective_size)
+	if (size > prev_size)
+		rv = prev_size ? DS_GREW : DS_GREW_FROM_ZERO;
+	if (size < prev_size)
 		rv = DS_SHRUNK;
 
 	if (0) {
