@@ -2210,10 +2210,10 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	struct ib_send_wr send_wr;
 	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
-	bool was_active, extra_ref = false;
 	unsigned long timeout;
 	struct net_conf *nc;
 	int i, err = -EIO;
+	bool was_active;
 
 	send_wr.next = NULL;
 	send_wr.wr_id = (unsigned long)tx_desc;
@@ -2232,10 +2232,8 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 
-	if (atomic_inc_return(&cm->tx_descs_posted) == 1) {
-		extra_ref = true;
+	if (atomic_inc_return(&cm->tx_descs_posted) == 1)
 		kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
-	}
 
 	kref_get(&cm->kref);
 	was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
@@ -2250,9 +2248,8 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 			was_active = cancel_work_sync(&cm->tx_timeout_work);
 		if (was_active)
 			kref_put(&cm->kref, dtr_destroy_cm);
-		if (extra_ref)
+		if (atomic_dec_and_test(&cm->tx_descs_posted))
 			kref_put(&cm->kref, dtr_destroy_cm);
-		atomic_dec(&cm->tx_descs_posted);
 	}
 
 	return err;
