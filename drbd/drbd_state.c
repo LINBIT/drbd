@@ -4451,6 +4451,10 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 		rv = SS_CW_FAILED_BY_PEER;
 	}
 	rcu_read_unlock();
+
+	if (rv == SS_CW_SUCCESS && test_bit(TWOPC_RECV_SIZES_ERR, &resource->flags))
+		rv = SS_HANDSHAKE_DISCONNECT;
+
 	return rv;
 }
 
@@ -4788,6 +4792,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		reply->tid = get_random_u32();
 	while (!reply->tid);
 
+	clear_bit(TWOPC_RECV_SIZES_ERR, &resource->flags);
 	request.tid = reply->tid;
 	request.initiator_node_id = resource->res_opts.node_id;
 	request.target_node_id = context->target_node_id;
@@ -4922,8 +4927,12 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		}
 
 		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
-		    target_connection->agreed_pro_version >= 118)
+		    target_connection->agreed_pro_version >= 118) {
 			wait_initial_states_received(target_connection);
+
+			if (rv >= SS_SUCCESS && test_bit(TWOPC_RECV_SIZES_ERR, &resource->flags))
+				rv = SS_HANDSHAKE_DISCONNECT;
+		}
 	}
 
 	request.cmd = rv >= SS_SUCCESS ? P_TWOPC_COMMIT : P_TWOPC_ABORT;

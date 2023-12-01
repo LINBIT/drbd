@@ -5472,8 +5472,11 @@ out:
 disconnect:
 	/* don't let a rejected peer confuse future handshakes with different peers. */
 	peer_device->max_size = 0;
-	change_cstate(connection, C_DISCONNECTING, CS_HARD);
-	err = -EIO;
+
+	if (connection->resource->remote_state_change)
+		set_bit(TWOPC_RECV_SIZES_ERR, &connection->resource->flags);
+	else
+		err = -EIO;
 	goto out;
 }
 
@@ -6509,6 +6512,9 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 		clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
 	}
+
+	if (pi->cmd == P_TWOPC_PREPARE)
+		clear_bit(TWOPC_RECV_SIZES_ERR, &resource->flags);
 
 	process_twopc(connection, &reply, pi, jiffies);
 
