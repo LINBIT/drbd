@@ -2830,10 +2830,8 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
 			create_new_uuid = true;
 
-		/* When susp_uuid goes from true to false, we just created a new
-		 * current-uuid, it is pointless to do this one more time
-		 */
-		if (create_new_uuid && !(susp_uuid[OLD] && !susp_uuid[NEW]))
+		/* Only a single new current uuid when susp_uuid becomes true */
+		if (create_new_uuid && !susp_uuid[OLD])
 			set_bit(__NEW_CUR_UUID, &device->flags);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
