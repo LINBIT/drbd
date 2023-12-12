@@ -1532,13 +1532,8 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	/* allocate outside of all locks; */
 	req = drbd_req_new(device, bio);
 	if (!req) {
-		dec_ap_bio(device, rw);
-		/* only pass the error to the upper layers.
-		 * if user cannot handle io errors, that's not our business. */
 		drbd_err(device, "could not kmalloc() req\n");
-		bio->bi_status = BLK_STS_RESOURCE;
-		bio_endio(bio);
-		return ERR_PTR(-ENOMEM);
+		goto no_mem;
 	}
 
 	/* Update disk stats */
@@ -1546,6 +1541,11 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 
 	if (get_ldev(device)) {
 		req->private_bio  = bio_clone_fast(bio, GFP_NOIO, &drbd_io_bio_set);
+		if (!req->private_bio) {
+			kfree(req);
+			drbd_err(device, "could not bio_clone_fast() private_bio\n");
+			goto no_mem;
+		}
 		req->private_bio->bi_private = req;
 		req->private_bio->bi_end_io = drbd_request_endio;
 	}
@@ -1581,6 +1581,14 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 	ktime_aggregate_delta(device, req->start_kt, before_queue_kt);
 	drbd_queue_write(device, req);
 	return NULL;
+
+ no_mem:
+	dec_ap_bio(device, rw);
+	/* only pass the error to the upper layers.
+	 * if user cannot handle io errors, that's not our business. */
+	bio->bi_status = BLK_STS_RESOURCE;
+	bio_endio(bio);
+	return ERR_PTR(-ENOMEM);
 }
 
 /* Require at least one path to current data.
