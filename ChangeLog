@@ -2,6 +2,20 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.18-rc.1 (api:genl2/proto:86-121/transport:18)
+--------
+ * Fixed connecting nodes with differently sized backing disks,
+   specifically when the smaller node is primary, before establishing
+   the connections
+ * Fixed thawing a device that has I/O frozen after loss of quorum
+   when a configuration change eases its quorum requirements
+ * Properly fail TLS if requested (only available in drbd-9.2)
+ * Fixed a race condition that can cause auto-demote to trigger right
+   after an explicit promote
+ * Preserve "tiebreaker quorum" over a reboot of the last node (3-node
+   clusters only)
+ * Update compatibility code for Linux 6.6
+
 9.1.17 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a potential crash when configuring drbd to bind to a
