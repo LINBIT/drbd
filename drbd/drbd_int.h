@@ -824,6 +824,7 @@ enum resource_flag {
 	DOWN_IN_PROGRESS,
 	CHECKING_PEERS,
 	WRONG_MDF_EXISTS,	/* Warned about MDF_EXISTS flag on all peer slots */
+	TWOPC_RECV_SIZES_ERR,	/* Error processing sizes packet during 2PC connect */
 };
 
 enum which_state { NOW, OLD = NOW, NEW };
