@@ -1900,12 +1900,6 @@ drbd_new_dev_size(struct drbd_device *device,
 	if (size == 0)
 		drbd_err(device, "All nodes diskless!\n");
 
-	if (flags & DDSF_IGNORE_PEER_CONSTRAINTS) {
-		if (current_size > size
-		&&  current_size <= m_size)
-			size = current_size;
-	}
-
 	if (user_capped_size > size)
 		drbd_err(device, "Requested disk size is too big (%llu > %llu)kiB\n",
 		    (unsigned long long)user_capped_size>>1,
