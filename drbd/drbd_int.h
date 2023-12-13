@@ -576,6 +576,8 @@ enum device_flag {
 	DESTROYING_DEV,
 	TRY_TO_GET_RESYNC,
 	OUTDATE_ON_2PC_COMMIT,
+	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
+	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 };
 
 /* flag bits per peer device */
@@ -708,6 +710,8 @@ struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
 	u64 effective_size;	/* last agreed size (sectors) */
+	u64 prev_members;	/* read from the meta-data */
+	u64 members;		/* current member mask for writing meta-data */
 	spinlock_t uuid_lock;
 	u64 current_uuid;
 	u64 device_uuid;

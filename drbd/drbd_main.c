@@ -3679,6 +3679,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	spin_lock_init(&resource->current_tle_lock);
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
+	resource->members = NODE_MASK(res_opts->node_id);
 
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
 
@@ -4436,6 +4437,7 @@ void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buff
 
 	buffer->effective_size = cpu_to_be64(device->ldev->md.effective_size);
 	buffer->current_uuid = cpu_to_be64(device->ldev->md.current_uuid);
+	buffer->members = cpu_to_be64(device->ldev->md.members);
 	buffer->flags = cpu_to_be32(device->ldev->md.flags);
 	buffer->magic = cpu_to_be32(DRBD_MD_MAGIC_09);
 
