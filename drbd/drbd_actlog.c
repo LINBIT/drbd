@@ -1559,9 +1559,10 @@ try_again:
 	 * makes progress or is aborted.
 	 */
 	if (!windrbd_application_io_suspended(peer_device->device->this_bdev)) {
-		if (!timer_pending(&peer_device->resync_stalled_timer))
+		if (!timer_pending(&peer_device->resync_stalled_timer) &&
+		   (peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
+		    peer_device->repl_state[NOW] == L_SYNC_TARGET))
 			mod_timer(&peer_device->resync_stalled_timer, jiffies + 5*HZ);
-		/* Else do not move it more into the future. */
 
 		peer_device->rs_last_bm_extent = bm_ext;
 	}
