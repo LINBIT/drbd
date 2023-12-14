@@ -304,9 +304,19 @@ void drbd_request_endio(struct bio *bio)
 	req->private_bio = ERR_PTR(blk_status_to_errno(status));
 
 	/* not req_mod(), we need irqsave here! */
-	spin_lock_irqsave(&device->resource->req_lock, flags);
+
+	/* See request_timer_fn() we might be called with
+	 * req_lock already held.
+	 */
+
+	flags = 0;	/* to make vc compiler happy */
+	if (status != BLK_STS_TIMEOUT) {
+		spin_lock_irqsave(&device->resource->req_lock, flags);
+	}
 	__req_mod(req, what, NULL, &m);
-	spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	if (status != BLK_STS_TIMEOUT) {
+		spin_unlock_irqrestore(&device->resource->req_lock, flags);
+	}
 	put_ldev(device);
 
 	if (m.bio)
