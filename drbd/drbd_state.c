@@ -4381,13 +4381,13 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 
 bool drbd_twopc_between_peer_and_me(struct drbd_connection *connection)
 {
-	struct drbd_resource *resource = connection->resource;
-	struct twopc_reply *o = &resource->twopc_reply;
+	const int my_node_id = connection->resource->res_opts.node_id;
+	struct twopc_reply *o = &connection->resource->twopc_reply;
 
-	return (o->target_node_id == resource->res_opts.node_id &&
+	return ((o->target_node_id == my_node_id || o->target_node_id == -1) &&
 		o->initiator_node_id == connection->peer_node_id) ||
-		(o->target_node_id == connection->peer_node_id &&
-		 o->initiator_node_id == resource->res_opts.node_id);
+		((o->target_node_id == connection->peer_node_id || o->target_node_id == -1) &&
+		 o->initiator_node_id == my_node_id);
 }
 
 bool cluster_wide_reply_ready(struct drbd_resource *resource)
