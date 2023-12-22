@@ -4,7 +4,7 @@ Version: 9.1.18
 Release: 1
 
 # always require a suitable userland
-Requires: drbd-utils >= 9.2.0
+Requires: drbd-utils >= 9.27.0
 
 %global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,," -e "s,~,-,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
