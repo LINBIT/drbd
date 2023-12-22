@@ -7874,7 +7874,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	union drbd_state old_peer_state, peer_state;
 	enum drbd_disk_state peer_disk_state;
 	enum drbd_repl_state new_repl_state;
-	bool peer_was_resync_target;
+	bool peer_was_resync_target, do_handshake = false;
 	enum chg_state_flags begin_state_chg_flags = CS_VERBOSE | CS_WAIT_COMPLETE;
 	unsigned long irq_flags;
 	int rv;
@@ -8015,6 +8015,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.conn == L_AHEAD)
 		new_repl_state = L_BEHIND;
 
+	/* with protocol >= 118 uuid & state packets come after the 2PC prepare packet */
+	do_handshake =
+		(test_bit(UUIDS_RECEIVED, &peer_device->flags) ||
+			test_bit(CURRENT_UUID_RECEIVED, &peer_device->flags)) &&
+		(connection->agreed_pro_version < 118 ||
+			drbd_twopc_between_peer_and_me(connection)) &&
+		old_peer_state.conn < L_ESTABLISHED;
+
 	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) &&
 	    peer_state.disk >= D_NEGOTIATING &&
 	    get_ldev_if_state(device, D_NEGOTIATING)) {
@@ -8026,7 +8034,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		clear_bit(CONN_DISCARD_MY_DATA, &connection->flags);
 
 		/* if we established a new connection */
-		consider_resync = (old_peer_state.conn < L_ESTABLISHED);
+		consider_resync = do_handshake &&
+					!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 		/* if we have both been inconsistent, and the peer has been
 		 * forced to be UpToDate with --force */
 		consider_resync |= test_bit(CONSIDER_RESYNC, &peer_device->flags);
@@ -8153,22 +8162,22 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	else
 		clear_bit(PEER_QUORATE, &peer_device->flags);
 
-	if (test_bit(UUIDS_RECEIVED, &peer_device->flags) ||
-	    test_bit(CURRENT_UUID_RECEIVED, &peer_device->flags)) {
-		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	if (do_handshake) {
+		/* Ignoring state packets before the 2PC; they are from aborted 2PCs */
+		bool done = test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 
+		set_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
 		if (connection->cstate[NOW] == C_CONNECTING) {
-			/* Since protocol 117 state comes before change on the cstate */
-			peer_device->connect_state.conn = new_repl_state;
-			peer_device->connect_state.peer = peer_state.role;
-			peer_device->connect_state.pdsk = peer_disk_state;
 			peer_device->connect_state.peer_isp =
 				peer_state.aftr_isp | peer_state.user_isp;
 
+			if (!done) {
+				peer_device->connect_state.conn = new_repl_state;
+				peer_device->connect_state.peer = peer_state.role;
+				peer_device->connect_state.pdsk = peer_disk_state;
+			}
 			wake_up(&connection->ee_wait);
-
 			finish_nested_twopc(connection);
-			return 0;
 		}
 	}
 
