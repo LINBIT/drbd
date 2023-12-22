@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.18-rc.1 (api:genl2/proto:86-121/transport:18)
+9.1.18 (api:genl2/proto:86-121/transport:18)
 --------
  * Fixed connecting nodes with differently sized backing disks,
    specifically when the smaller node is primary, before establishing
@@ -12,6 +12,8 @@ Latest:
  * Properly fail TLS if requested (only available in drbd-9.2)
  * Fixed a race condition that can cause auto-demote to trigger right
    after an explicit promote
+ * Fixed a rare race condition that could mess up the handshake result
+   before it is committed to the replication state.
  * Preserve "tiebreaker quorum" over a reboot of the last node (3-node
    clusters only)
  * Update compatibility code for Linux 6.6
