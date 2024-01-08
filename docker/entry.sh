@@ -57,6 +57,12 @@ print_drbd_version_and_exit() {
 	exit 0
 }
 
+drbd_matches_min_version() {
+	[ -z "$1" ] && return 0
+
+	sort -C -V <(cat - /sys/module/drbd/version <<<"$1")
+}
+
 HOW_DEPSONLY=deps_only
 
 HOW_REPOFILE=repo_file; HOW_HASH=node_hash; HOW_FROMSRC=compile; HOW_FROMSHIPPED=shipped_modules
@@ -296,6 +302,9 @@ if grep -q '^drbd ' /proc/modules; then
 
 	[[ $LB_FAIL_IF_USERMODE_HELPER_NOT_DISABLED == yes ]] && ! grep -qw disabled /sys/module/drbd/parameters/usermode_helper &&
 		die "- load the drbd module on the host with the module parameter 'usermode_helper=disabled' OR\n- let this container handle that for you by not already loading the drbd module on the host"
+
+	drbd_matches_min_version "$LB_DRBD_MIN_LOADED_VERSION" ||
+		die "DRBD kernel module version loaded does not satisfy the minimum version requirements ('$LB_DRBD_MIN_LOADED_VERSION')"
 
 	exit 0
 fi
