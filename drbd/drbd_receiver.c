@@ -4364,18 +4364,24 @@ static enum sync_strategy drbd_disk_states_source_strategy(
 		struct drbd_peer_device *peer_device,
 		int *peer_node_id)
 {
-	struct drbd_device *device = peer_device->device;
-	const int node_id = device->resource->res_opts.node_id;
+	const int node_id = peer_device->device->resource->res_opts.node_id;
+	u64 bitmap_uuid;
 	int i = -1;
 
 	if (!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET))
 		return SYNC_SOURCE_USE_BITMAP;
 
+	/* A resync with identical current-UUIDs -> USE_BITMAP */
+	bitmap_uuid = peer_device->bitmap_uuids[node_id];
+	if (bitmap_uuid == peer_device->current_uuid &&
+	    bitmap_uuid == drbd_current_uuid(peer_device->device))
+		return SYNC_SOURCE_USE_BITMAP;
+
 	/* When the peer is already a sync target, we actually see its
 	 * current UUID in the bitmap UUID slot towards us. We may need
 	 * to pick a different bitmap as a result. */
-	if (peer_device->bitmap_uuids[node_id])
-		i = drbd_find_bitmap_by_uuid(peer_device, peer_device->bitmap_uuids[node_id]);
+	if (bitmap_uuid)
+		i = drbd_find_bitmap_by_uuid(peer_device, bitmap_uuid);
 
 	if (i == -1)
 		return SYNC_SOURCE_SET_BITMAP;
@@ -4391,17 +4397,22 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 		struct drbd_peer_device *peer_device,
 		int *peer_node_id)
 {
-	struct drbd_device *device = peer_device->device;
-	const int node_id = device->resource->res_opts.node_id;
+	const int node_id = peer_device->device->resource->res_opts.node_id;
+	u64 bitmap_uuid;
 	int i;
 
 	if (!(peer_device->comm_uuid_flags & UUID_FLAG_SYNC_TARGET))
 		return SYNC_TARGET_USE_BITMAP;
 
+	bitmap_uuid = drbd_bitmap_uuid(peer_device);
+	if (bitmap_uuid == peer_device->current_uuid &&
+	    bitmap_uuid == drbd_current_uuid(peer_device->device))
+		return SYNC_TARGET_USE_BITMAP;
+
 	/* When we are already a sync target, we need to choose our
 	 * strategy to mirror the peer's choice (see
 	 * drbd_disk_states_source_strategy). */
-	i = drbd_find_peer_bitmap_by_uuid(peer_device, drbd_bitmap_uuid(peer_device));
+	i = drbd_find_peer_bitmap_by_uuid(peer_device, bitmap_uuid);
 
 	if (i == -1)
 		return SYNC_TARGET_SET_BITMAP;
