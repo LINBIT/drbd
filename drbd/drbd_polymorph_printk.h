@@ -20,9 +20,13 @@
 ({									\
 	const struct drbd_device *__d =					\
 		(const struct drbd_device *)(device);			\
+	const struct drbd_resource *__r = __d->resource;		\
+	const char *__unregistered = "";				\
+	if (test_bit(UNREGISTERED, &__d->flags))			\
+		__unregistered = "/unregistered/";			\
 	if (drbd_device_ratelimit(__d, rlt))				\
-		prmacro(lvl_or_desc, "drbd %s/%u drbd%u: " fmt,		\
-			__d->resource->name, __d->vnr, __d->minor,	\
+		prmacro(lvl_or_desc, "drbd %s%s/%u drbd%u: " fmt,	\
+			__unregistered, __r->name, __d->vnr, __d->minor,\
 			## args);					\
 })
 
@@ -30,11 +34,16 @@
 ({									\
 	const struct drbd_resource *__r =				\
 		(const struct drbd_resource *)(resource);		\
+	const char *__unregistered = "";				\
+	if (test_bit(R_UNREGISTERED, &__r->flags))			\
+		__unregistered = "/unregistered/";			\
 	if (drbd_resource_ratelimit(__r, rlt))				\
-		prmacro(lvl_or_desc, "drbd %s: " fmt,			\
-			__r->name, ## args);				\
+		prmacro(lvl_or_desc, "drbd %s%s: " fmt,			\
+			__unregistered, __r->name, ## args);		\
 })
 
+// As long as the connection is still "registered", the resource
+// can not yet be "unregistered", no need to test R_UNREGISTERED
 #define ___drbd_printk_peer_device(prmacro, rlt, peer_device, lvl_or_desc, fmt, args...)\
 ({									\
 	const struct drbd_peer_device *__pd;				\
@@ -42,15 +51,18 @@
 	const struct drbd_connection *__c;				\
 	const struct drbd_resource *__r;				\
 	const char *__cn;						\
+	const char *__unregistered = "";				\
 	rcu_read_lock();						\
 	__pd = (const struct drbd_peer_device *)(peer_device);		\
 	__d = __pd->device;						\
 	__c = __pd->connection;						\
 	__r = __d->resource;						\
 	__cn = rcu_dereference(__c->transport.net_conf)->name;		\
+	if (test_bit(C_UNREGISTERED, &__c->flags))			\
+		__unregistered = "/unregistered/";			\
 	if (drbd_peer_device_ratelimit(__pd, rlt))			\
-		prmacro(lvl_or_desc, "drbd %s/%u drbd%u %s: " fmt,		\
-			__r->name, __d->vnr, __d->minor, __cn,		\
+		prmacro(lvl_or_desc, "drbd %s%s/%u drbd%u %s: " fmt,		\
+			__unregistered, __r->name, __d->vnr, __d->minor, __cn,	\
 			 ## args);					\
 	rcu_read_unlock();						\
 })
@@ -61,11 +73,14 @@
 		(const struct drbd_connection *)(connection);		\
 	const struct drbd_resource *__r = __c->resource;		\
 	const char *__cn;						\
+	const char *__unregistered = "";				\
 	rcu_read_lock();						\
 	__cn = rcu_dereference(__c->transport.net_conf)->name;		\
+	if (test_bit(C_UNREGISTERED, &__c->flags))			\
+		__unregistered = "/unregistered/";			\
 	if (drbd_connection_ratelimit(__c, rlt))			\
-		prmacro(lvl_or_desc, "drbd %s %s: " fmt,			\
-			__r->name, __cn, ## args);			\
+		prmacro(lvl_or_desc, "drbd %s%s %s: " fmt,		\
+			__unregistered, __r->name, __cn, ## args);	\
 	rcu_read_unlock();						\
 })
 
