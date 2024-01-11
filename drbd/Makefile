@@ -221,9 +221,8 @@ else
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
 
-  sources := $(filter-out drbd_strings.c drbd_buildtag.c drbd%.mod.c,$(wildcard *.c))
-  sources += $(wildcard drbd-headers/linux/*.h)
-  sources += $(wildcard drbd-kernel-compat/handshake/*.c)
+# files that are to be processed by coccinelle / spatch
+include Makefile.cocci-sources
 
   $(compat_patches): $(sources)
 	@. ./drbd-kernel-compat/gen_compat_patch.sh $@ $^
