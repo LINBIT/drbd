@@ -746,6 +746,13 @@ static struct after_state_change_work *alloc_after_state_change_work(struct drbd
 
 	lockdep_assert_held(&resource->state_rwlock);
 
+	/* If the resource is already "unregistered", the worker thread
+	 * is gone, there is no-one to consume the work item and release
+	 * the associated refcounts. Just don't even create it.
+	 */
+	if (test_bit(R_UNREGISTERED, &resource->flags))
+		return NULL;
+
 	work = kmalloc(sizeof(*work), GFP_ATOMIC);
 	if (work) {
 		work->state_change = remember_state_change(resource, GFP_ATOMIC);
