@@ -177,6 +177,32 @@ kos::deb::fromrepo() {
 	kos::deb::extract "$pkgdir"
 }
 
+kos::rpm::bestbyrpmprovides() {
+	local pkgdir="$1"
+	shift 1
+
+	sort > "$pkgdir/kernel.provides" \
+		<(find "/lib/modules/$(uname -r)" -name "symvers*" | /lib/rpm/kabi.sh) \
+		<(find "/lib/modules/$(uname -r)/kernel" -type f | /lib/rpm/redhat/find-provides.ksyms)
+
+	if [ ! -s "$pkgdir/kernel.provides" ]; then
+		debug "Failed to generate kernel provides"
+		return 1
+	fi
+
+	for RPM in "$@"; do
+		if [ -z "$(comm -13 "$pkgdir/kernel.provides" <(rpm -q -R "$RPM" | grep ^kernel))" ]; then
+			debug "Kernel module matching kernel provides: \"$RPM\""
+			echo "$RPM"
+			return 0
+		fi
+	done
+
+	debug "No kernel module matches kernel provides"
+
+	return 1
+}
+
 kos::rpm::fromshipped() {
 	local pkgdir="$1"
 	local family
@@ -184,7 +210,7 @@ kos::rpm::fromshipped() {
 
 	family="$(lbdisttool.py --family)"
 
-	best="$(lbdisttool.py --force-name "$family" -k "${PKGS}/${family}"*/*.rpm)"
+	best="$(kos::rpm::bestbyrpmprovides "$pkgdir" "${PKGS}/${family}"*/*.rpm || lbdisttool.py --force-name "$family" -k "${PKGS}/${family}"*/*.rpm)"
 	[ -n "$best" ] || die "Could not find matching rpm package for your kernel"
 	debug "Best kernel module package: \"$best\""
 	cp "$best" "$pkgdir"
