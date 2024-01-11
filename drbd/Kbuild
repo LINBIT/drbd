@@ -40,6 +40,9 @@ ifndef CONFIG_DRBD_FAULT_INJECTION
 	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
 endif
 
+$(obj)/drbd_strings.c: $(src)/drbd-headers/drbd_strings.c
+	$(call cmd,copy)
+
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
@@ -81,7 +84,7 @@ endif
 # E.g. linux/blk_types.h on RHEL 7.6 needs rh_kabi.h and errno.h
 # otherwise the compat test already fails in processing linux/blk_types.h
 RH_KABI_H := $(wildcard $(KDIR)/include/linux/rh_kabi.h)
-ifneq ($(RH_KABI_H),)
+ifdef RH_KABI_H
       COMPAT_CFLAGS := -include"linux/rh_kabi.h" -include"linux/errno.h"
 endif
 

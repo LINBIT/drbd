@@ -1,0 +1,70 @@
+# to be processed by coccinelle / spatch
+sources :=
+# not to be processed
+sources-ignored :=
+
+# convenience: should we add new source files, remind us to also double check here
+__git_ls_sources := $(shell			\
+  2>/dev/null					\
+  git ls-files --recurse			\
+	*.[ch]					\
+	drbd-headers/linux/*.h			\
+)
+
+# no need to patch our headers (yet)
+sources-ignored += drbd_dax_pmem.h
+sources-ignored += drbd_debugfs.h
+sources-ignored += drbd_int.h
+sources-ignored += drbd_interval.h
+sources-ignored += drbd_kref_debug.h
+sources-ignored += drbd_nla.h
+sources-ignored += drbd_polymorph_printk.h
+sources-ignored += drbd_req.h
+sources-ignored += drbd_state.h
+sources-ignored += drbd_state_change.h
+sources-ignored += drbd_vli.h
+sources-ignored += kref_debug.h
+
+sources += drbd_actlog.c
+sources += drbd_bitmap.c
+sources += drbd_dax_pmem.c
+sources += drbd_debugfs.c
+sources += drbd_interval.c
+sources += drbd_kref_debug.c
+sources += drbd_main.c
+sources += drbd_nl.c
+sources += drbd_nla.c
+sources += drbd_proc.c
+sources += drbd_receiver.c
+sources += drbd_req.c
+sources += drbd_sender.c
+sources += drbd_state.c
+sources += drbd_transport.c
+sources += drbd_transport_tcp.c
+sources += drbd_transport_template.c
+sources += kref_debug.c
+
+sources += drbd-headers/linux/drbd.h
+sources += drbd-headers/linux/drbd_genl.h
+sources += drbd-headers/linux/drbd_genl_api.h
+sources += drbd-headers/linux/drbd_limits.h
+sources += drbd-headers/linux/genl_magic_func-genl_register_family_with_ops_groups.h
+sources += drbd-headers/linux/genl_magic_func-genl_register_mc_group.h
+sources += drbd-headers/linux/genl_magic_func.h
+sources += drbd-headers/linux/genl_magic_struct.h
+
+__duplicates := $(shell printf "%s\n" $(sources) $(sources-ignored) | sort | uniq -d)
+$(if $(__duplicates),$(error duplicated entries found: $(__duplicates)))
+
+# only if we where able to generate git-ls output
+ifdef __git_ls_sources
+__unprocessed := $(shell printf "%s\n" $(sources) $(sources-ignored) $(__git_ls_sources) | sort | uniq -u)
+ifdef __unprocessed
+$(shell exec >&2; printf "%s\n" \
+	"=== FIX in Makefile.cocci-sources ===" \
+	$(__unprocessed) \
+	"^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+# you need to decide whether to add those to sources, or sources-ignored, or drop them.
+$(error please update Makefile.cocci-sources)
+endif
+endif
