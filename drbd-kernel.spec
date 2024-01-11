@@ -3,7 +3,8 @@ Summary: Kernel driver for DRBD
 Version: 9.2.7
 Release: 1
 
-Requires: drbd-utils >= 9.25.0
+# always require a suitable userland
+Requires: drbd-utils >= 9.27.0
 
 %global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,," -e "s,~,-,")
 Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
