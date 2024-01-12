@@ -4680,9 +4680,9 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	}
 
 	if (rv >= SS_SUCCESS)
-		wait_event_interruptible_timeout(resource->state_wait,
-						 connection->cstate[NOW] == C_STANDALONE,
-						 HZ);
+		wait_event(resource->state_wait,
+			   connection->cstate[NOW] == C_STANDALONE);
+
 	if (err_str) {
 		drbd_msg_put_info(reply_skb, err_str);
 		kfree(err_str);
