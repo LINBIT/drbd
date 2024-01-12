@@ -6589,6 +6589,9 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 	if (my_usize != tr->user_size) {
 		struct disk_conf *old_disk_conf, *new_disk_conf;
 
+		drbd_info(device, "New u_size %llu sectors\n",
+			  (unsigned long long)tr->user_size);
+
 		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
 		if (!new_disk_conf) {
 			device->ldev->disk_conf->disk_size = tr->user_size;
@@ -6601,9 +6604,6 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 
 		rcu_assign_pointer(device->ldev->disk_conf, new_disk_conf);
 		kvfree_rcu_mightsleep(old_disk_conf);
-
-		drbd_info(device, "New u_size %llu sectors\n",
-			  (unsigned long long)tr->user_size);
 	}
 cont:
 	dd = drbd_determine_dev_size(device, tr->new_size, tr->dds_flags | DDSF_2PC, rs);
