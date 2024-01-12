@@ -5676,22 +5676,29 @@ sector_t drbd_get_max_capacity(
 /* this is about cluster partitions, not block device partitions */
 sector_t drbd_partition_data_capacity(struct drbd_device *device)
 {
-	struct drbd_backing_dev *bdev = device->ldev;
 	struct drbd_peer_device *peer_device;
 	sector_t capacity = (sector_t)(-1);
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (test_bit(HAVE_SIZES, &peer_device->flags))
+		if (test_bit(HAVE_SIZES, &peer_device->flags)) {
+			dynamic_drbd_dbg(peer_device, "d_size: %llus\n",
+					(unsigned long long)peer_device->d_size);
 			capacity = min_not_zero(capacity, peer_device->d_size);
+		}
 	}
 	rcu_read_unlock();
 
-	if (bdev) {
-		sector_t local_capacity = drbd_get_max_capacity(device, bdev, false);
+	if (get_ldev_if_state(device, D_ATTACHING)) {
+		/* In case we somehow end up here while attaching, but before
+		 * we even assigned the ldev, pretend to still be diskless.
+		 */
+		if (device->ldev != NULL) {
+			sector_t local_capacity = drbd_local_max_size(device);
 
-		if (local_capacity < capacity)
-			capacity = local_capacity;
+			capacity = min_not_zero(capacity, local_capacity);
+		}
+		put_ldev(device);
 	}
 
 	return capacity != (sector_t)(-1) ? capacity : 0;
