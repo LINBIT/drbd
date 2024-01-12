@@ -5087,7 +5087,7 @@ retry:
 	rcu_read_unlock();
 	state_change_unlock(resource, &irq_flags);
 
-	drbd_info(resource, "Preparing cluster-wide state change %u "
+	drbd_info(device, "Preparing cluster-wide state change %u "
 		  "(local_max_size = %llu KB, user_cap = %llu KB)\n",
 		  request.tid,
 		  (unsigned long long)local_max_size >> 1,
@@ -5107,7 +5107,7 @@ retry:
 		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
 			long timeout = twopc_retry_timeout(resource, retries++);
 
-			drbd_info(resource, "Retrying cluster-wide state change after %ums\n",
+			drbd_info(device, "Retrying cluster-wide state change after %ums\n",
 				  jiffies_to_msecs(timeout));
 
 			request.cmd = P_TWOPC_ABORT;
@@ -5126,17 +5126,17 @@ retry:
 		if (commit_it) {
 			resource->twopc.resize.new_size = new_size;
 			resource->twopc.resize.diskful_primary_nodes = reply->diskful_primary_nodes;
-			drbd_info(resource, "Committing cluster-wide state change %u (%ums)\n",
+			drbd_info(device, "Committing cluster-wide state change %u (%ums)\n",
 				  request.tid,
 				  jiffies_to_msecs(jiffies - start_time));
 		} else {
-			drbd_info(resource, "Aborting cluster-wide state change %u (%ums) size unchanged\n",
+			drbd_info(device, "Aborting cluster-wide state change %u (%ums) size unchanged\n",
 				  request.tid,
 				  jiffies_to_msecs(jiffies - start_time));
 		}
 	} else {
 		commit_it = false;
-		drbd_info(resource, "Aborting cluster-wide state change %u (%ums) rv = %d\n",
+		drbd_info(device, "Aborting cluster-wide state change %u (%ums) rv = %d\n",
 			  request.tid,
 			  jiffies_to_msecs(jiffies - start_time),
 			  rv);
