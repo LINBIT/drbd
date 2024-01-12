@@ -4064,7 +4064,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (device->ldev->md.effective_size != size) {
 				char ppb[10];
 
-				drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
+				drbd_info(device, "persisting effective size = %s (%llu KB)\n",
+				     ppsize(ppb, size >> 1),
 				     (unsigned long long)size >> 1);
 				device->ldev->md.effective_size = size;
 				drbd_md_mark_dirty(device);

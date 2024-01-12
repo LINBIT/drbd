@@ -1606,7 +1606,6 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	} prev;
 	sector_t u_size, size, prev_size;
 	struct drbd_md *md = &device->ldev->md;
-	char ppb[10];
 	void *buffer;
 
 	int md_moved, la_size_changed;
@@ -1681,13 +1680,18 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 				    "Leaving size unchanged\n");
 			}
 			rv = DS_ERROR;
-		}
-		/* racy, see comments above. */
-		drbd_set_my_capacity(device, size);
-		if (effective_disk_size_determined(device)) {
-			md->effective_size = size;
-			drbd_info(device, "size = %s (%llu KB)\n", ppsize(ppb, size >> 1),
-			     (unsigned long long)size >> 1);
+		} else {
+			/* racy, see comments above. */
+			drbd_set_my_capacity(device, size);
+			if (effective_disk_size_determined(device)
+			&& md->effective_size != size) {
+				char ppb[10];
+
+				drbd_info(device, "persisting effective size = %s (%llu KB)\n",
+					ppsize(ppb, size >> 1),
+					(unsigned long long)size >> 1);
+				md->effective_size = size;
+			}
 		}
 	}
 	if (rv <= DS_ERROR)
