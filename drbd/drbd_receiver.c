@@ -271,8 +271,7 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
 static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
-static int decode_header(struct drbd_connection *, const void *, struct packet_info *,
-			 enum drbd_stream drbd_stream);
+static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind);
 static bool disconnect_expected(struct drbd_connection *connection);
@@ -1214,44 +1213,83 @@ abort:
 	return false;
 }
 
-static int decode_header(struct drbd_connection *connection, const void *header,
-			 struct packet_info *pi, enum drbd_stream drbd_stream)
+static unsigned int decode_header_size(const void *header)
 {
-	unsigned int header_size = drbd_header_size(connection);
+	const u32 first_dword = *(u32 *)header;
+	const u16 first_word = *(u16 *)header;
 
-	if (header_size == sizeof(struct p_header100) &&
-	    *(__be32 *)header == cpu_to_be32(DRBD_MAGIC_100)) {
+	return first_dword == cpu_to_be32(DRBD_MAGIC_100) ? sizeof(struct p_header100) :
+		first_word == cpu_to_be16(DRBD_MAGIC_BIG) ? sizeof(struct p_header95) :
+		sizeof(struct p_header80);
+}
+
+static int __decode_header(const void *header, struct packet_info *pi)
+{
+	const u32 first_dword = *(u32 *)header;
+	const u16 first_word = *(u16 *)header;
+	unsigned int header_size;
+	int header_version;
+
+	if (first_dword == cpu_to_be32(DRBD_MAGIC_100)) {
 		const struct p_header100 *h = header;
 		u16 vnr = be16_to_cpu(h->volume);
 
-		if (h->pad != 0) {
-			drbd_err(connection, "Header padding is not zero\n");
-			return -EINVAL;
-		}
+		if (h->pad != 0)
+			return -ENOENT;
+
 		pi->vnr = vnr == ((u16) 0xFFFF) ? -1 : vnr;
+		pi->cmd = be16_to_cpu(h->command);
+		pi->size = be32_to_cpu(h->length);
+		header_size = sizeof(*h);
+		header_version = 100;
+	} else if (first_word == cpu_to_be16(DRBD_MAGIC_BIG)) {
+		const struct p_header95 *h = header;
 
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be32_to_cpu(h->length);
-	} else if (header_size == sizeof(struct p_header95) &&
-		   *(__be16 *)header == cpu_to_be16(DRBD_MAGIC_BIG)) {
-		const struct p_header95 *h = header;
-		pi->cmd = be16_to_cpu(h->command);
-		pi->size = be32_to_cpu(h->length);
 		pi->vnr = 0;
-	} else if (header_size == sizeof(struct p_header80) &&
-		   *(__be32 *)header == cpu_to_be32(DRBD_MAGIC)) {
+		header_size = sizeof(*h);
+		header_version = 95;
+	} else if (first_dword == cpu_to_be32(DRBD_MAGIC)) {
 		const struct p_header80 *h = header;
+
 		pi->cmd = be16_to_cpu(h->command);
 		pi->size = be16_to_cpu(h->length);
 		pi->vnr = 0;
+		header_size = sizeof(*h);
+		header_version = 80;
 	} else {
-		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d [%s]\n",
-			 be32_to_cpu(*(__be32 *)header),
-			 connection->agreed_pro_version,
-			 drbd_stream == DATA_STREAM ? "data" : "control");
 		return -EINVAL;
 	}
+
 	pi->data = (void *)(header + header_size); /* casting away 'const'! */
+	return header_version;
+}
+
+static bool header_version_good(int header_version, int protocol_version)
+{
+	switch (header_version) {
+	case 100: return protocol_version >= 100;
+	case 95: return protocol_version < 100;
+	case 80: return protocol_version < 95;
+	default: return false;
+	}
+}
+
+static int decode_header(struct drbd_connection *connection, const void *header,
+			 struct packet_info *pi)
+{
+	const int agreed_pro_version = connection->agreed_pro_version;
+	int header_version = __decode_header(header, pi);
+
+	if (header_version == -ENOENT) {
+		drbd_err(connection, "Header padding is not zero\n");
+		return -EINVAL;
+	} else if (header_version < 0 || !header_version_good(header_version, agreed_pro_version)) {
+		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d, %d [data]\n",
+			 be32_to_cpu(*(__be32 *)header), agreed_pro_version, header_version);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -1272,7 +1310,7 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 	if (err)
 		return err;
 
-	err = decode_header(connection, buffer, pi, DATA_STREAM);
+	err = decode_header(connection, buffer, pi);
 	connection->last_received = jiffies;
 
 	return err;
@@ -1313,7 +1351,7 @@ static int drbd_recv_header_maybe_unplug(struct drbd_connection *connection, str
 			return err;
 	}
 
-	err = decode_header(connection, buffer, pi, DATA_STREAM);
+	err = decode_header(connection, buffer, pi);
 	connection->last_received = jiffies;
 
 	return err;
@@ -10930,12 +10968,21 @@ static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int
 
 static int decode_meta_cmd(struct drbd_connection *connection, const u8 *pos, struct packet_info *pi)
 {
+	int header_version, payload_size;
 	struct meta_sock_cmd *cmd;
-	int payload_size;
-	int err = decode_header(connection, pos, pi, CONTROL_STREAM);
 
-	if (err)
-		return err;
+	/*
+	 * A ping packet (via the control stream) can overtake the
+	 * feature packet. We might get it with a different header version
+	 * than expected since we will agree on the protocol version
+	 * by receiving the feature packet.
+	 */
+	header_version = __decode_header(pos, pi);
+	if (header_version < 0) {
+		drbd_err(connection, "Wrong magic value 0x%08x in protocol version %d [control]\n",
+			 be32_to_cpu(*(__be32 *)pos), header_version);
+		return -EINVAL;
+	}
 
 	if (pi->cmd >= ARRAY_SIZE(ack_receiver_tbl)) {
 		drbd_err(connection, "Unexpected meta packet %s (0x%04x)\n",
@@ -10957,11 +11004,16 @@ static int decode_meta_cmd(struct drbd_connection *connection, const u8 *pos, st
 static int process_previous_part(struct drbd_connection *connection, struct drbd_const_buffer *pool)
 {
 	struct drbd_mutable_buffer *buffer = &connection->reassemble_buffer;
-	const unsigned int header_size = drbd_header_size(connection);
-	struct packet_info pi;
 	int payload_size, packet_size;
+	unsigned int header_size;
+	struct packet_info pi;
 	int err;
 
+	fillup_buffer_from(buffer, sizeof(u32), pool);
+	if (buffer->avail < sizeof(u32))
+		return 0;
+
+	header_size = decode_header_size(buffer->buffer);
 	fillup_buffer_from(buffer, header_size, pool);
 	if (buffer->avail < header_size)
 		return 0;
@@ -10984,7 +11036,7 @@ void drbd_control_data_ready(struct drbd_transport *transport, struct drbd_const
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
-	const unsigned int header_size = drbd_header_size(connection);
+	unsigned int header_size;
 	int err;
 
 	/*	if (connection->cstate[NOW] < C_TEAR_DOWN)
@@ -10996,9 +11048,13 @@ void drbd_control_data_ready(struct drbd_transport *transport, struct drbd_const
 			goto reconnect;
 	}
 
-	while (pool->avail >= header_size) {
+	while (pool->avail >= sizeof(u32)) {
 		int payload_size, packet_size;
 		struct packet_info pi;
+
+		header_size = decode_header_size(pool->buffer);
+		if (header_size > pool->avail)
+			goto keep_part;
 
 		payload_size = decode_meta_cmd(connection, pool->buffer, &pi);
 		if (payload_size < 0)
