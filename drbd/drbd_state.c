@@ -578,7 +578,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 
 static void __begin_state_change(struct drbd_resource *resource)
 {
-	rcu_read_lock();
+	resource->windrbd_rcu_flags = rcu_read_lock();
 	___begin_state_change(resource);
 }
 
@@ -801,7 +801,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 	wake_up(&resource->state_wait);
 out:
-	rcu_read_unlock();
+	rcu_read_unlock(resource->windrbd_rcu_flags);
 
 	if ((flags & CS_TWOPC) && !(flags & CS_PREPARE))
 		__clear_remote_state_change(resource);
@@ -902,13 +902,13 @@ void abort_state_change_locked(struct drbd_resource *resource)
 
 static void begin_remote_state_change(struct drbd_resource *resource, unsigned long *irq_flags)
 {
-	rcu_read_unlock();
+	rcu_read_unlock(resource->windrbd_rcu_flags);
 	spin_unlock_irqrestore(&resource->req_lock, *irq_flags);
 }
 
 static void __end_remote_state_change(struct drbd_resource *resource, enum chg_state_flags flags)
 {
-	rcu_read_lock();
+	resource->windrbd_rcu_flags = rcu_read_lock();
 	resource->state_change_flags = flags;
 	___begin_state_change(resource);
 }

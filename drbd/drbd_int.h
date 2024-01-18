@@ -939,6 +939,11 @@ struct drbd_resource {
 	spinlock_t pp_lock;
 	int pp_vacant;
 	wait_queue_head_t pp_wait;
+
+	/* WinDRBD: This stores the IRQL across calls to begin_state_change
+	 * and end_state_change. Do not merge this into the Linux version.
+	 */
+	unsigned long windrbd_rcu_flags;
 };
 
 struct drbd_connection {
