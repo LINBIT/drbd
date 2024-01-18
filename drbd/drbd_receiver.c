@@ -11039,8 +11039,8 @@ void drbd_control_data_ready(struct drbd_transport *transport, struct drbd_const
 	unsigned int header_size;
 	int err;
 
-	/*	if (connection->cstate[NOW] < C_TEAR_DOWN)
-		return;*/
+	if (connection->cstate[NOW] < C_TEAR_DOWN)
+		return;
 
 	if (connection->reassemble_buffer.avail) {
 		err = process_previous_part(connection, pool);
