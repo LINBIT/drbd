@@ -8,7 +8,12 @@
 #include "drbd_int.h"
 
 static LIST_HEAD(transport_classes);
-static DECLARE_RWSEM(transport_classes_lock);
+static struct rw_semaphore transport_classes_lock;
+
+void init_transport(void)
+{
+	init_rwsem(&transport_classes_lock);
+}
 
 static struct drbd_transport_class *__find_transport_class(const char *transport_name)
 {
