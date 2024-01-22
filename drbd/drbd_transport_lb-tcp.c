@@ -1417,6 +1417,13 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 		enum drbd_stream i;
 		int err;
 
+		if (path->flow[CONTROL_STREAM].socket) {
+			write_lock_bh(&path->flow[CONTROL_STREAM].socket->sk->sk_callback_lock);
+			path->flow[CONTROL_STREAM].socket->sk->sk_state_change =
+				path->flow[CONTROL_STREAM].original_sk_state_change;
+			write_unlock_bh(&path->flow[CONTROL_STREAM].socket->sk->sk_callback_lock);
+		}
+
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
 			dtl_socket_free(transport, &path->flow[i].socket);
 
