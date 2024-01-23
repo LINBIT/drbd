@@ -134,8 +134,8 @@ module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protoco
  */
 struct idr drbd_devices;
 struct list_head drbd_resources;
-DEFINE_SPINLOCK(drbd_devices_lock);
-DEFINE_MUTEX(resources_mutex);
+spinlock_t drbd_devices_lock;
+struct mutex resources_mutex;
 
 struct kmem_cache *drbd_request_cache;
 struct kmem_cache *drbd_ee_cache;	/* peer requests */
@@ -4046,6 +4046,13 @@ static int __init drbd_init(void)
 	INIT_WORK(&retry.worker, do_retry);
 	spin_lock_init(&retry.lock);
 	INIT_LIST_HEAD(&retry.writes);
+
+	/* WinDRBD: initialize these at runtime since a Windows
+	 * function (KeInitializeSpinLock) has to be called.
+	 */
+	spin_lock_init(&drbd_devices_lock);
+	mutex_init(&resources_mutex);
+	mutex_init(&notification_mutex);        /* defined in drbd_nl.c */
 
 	drbd_debugfs_init();
 
