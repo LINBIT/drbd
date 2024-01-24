@@ -94,7 +94,7 @@ void drbd_enable_netns(void)
 
 atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
 
-DEFINE_MUTEX(notification_mutex);
+struct mutex notification_mutex;
 
 /* used bdev_open_by_path, to claim our meta data device(s) */
 static char *drbd_m_holder = "Hands off! this is DRBD's meta data device.";
