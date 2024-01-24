@@ -220,7 +220,8 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		tcp_transport->control_data_ready_work.func = NULL;
 	}
 
-	if (tcp_transport->stream[CONTROL_STREAM]) {
+	if (tcp_transport->stream[CONTROL_STREAM] &&
+	    tcp_transport->original_control_sk_state_change) {
 		write_lock_bh(&tcp_transport->stream[CONTROL_STREAM]->sk->sk_callback_lock);
 		tcp_transport->stream[CONTROL_STREAM]->sk->sk_state_change =
 			tcp_transport->original_control_sk_state_change;
