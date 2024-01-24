@@ -10578,6 +10578,7 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	struct drbd_peer_request *peer_req;
 	sector_t sector;
 	int size;
+	u64 block_id;
 	struct p_block_ack *p = pi->data;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
@@ -10588,11 +10589,14 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
 
+	/* Prior to protocol version 122, block_id may be meaningless. */
+	block_id = peer_device->connection->agreed_pro_version >= 122 ? p->block_id : ID_SYNCER;
+
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
 	peer_req = find_resync_request(peer_device, INTERVAL_TYPE_MASK(INTERVAL_RESYNC_WRITE) |
 			INTERVAL_TYPE_MASK(INTERVAL_OV_READ_SOURCE),
-			sector, size, p->block_id);
+			sector, size, block_id);
 	if (!peer_req)
 		return -EIO;
 
