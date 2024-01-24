@@ -2013,6 +2013,7 @@ extern void drbd_check_peers_new_current_uuid(struct drbd_device *);
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
 extern void repost_up_to_date_fn(struct timer_list *t);
+extern void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state which);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {
