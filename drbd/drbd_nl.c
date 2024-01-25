@@ -2280,6 +2280,89 @@ out:
 	return err;
 }
 
+static struct drbd_connection *the_only_peer_with_disk(struct drbd_device *device,
+						       enum which_state which)
+{
+	const int my_node_id = device->resource->res_opts.node_id;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	struct drbd_connection *connection = NULL;
+	struct drbd_peer_device *peer_device;
+	int node_id, peer_disks = 0;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (node_id == my_node_id)
+			continue;
+
+		if (peer_md[node_id].flags & MDF_PEER_DEVICE_SEEN)
+			peer_disks++;
+
+		if (peer_disks > 1)
+			return NULL;
+
+		peer_device = peer_device_by_node_id(device, node_id);
+		if (peer_device) {
+			enum drbd_disk_state pdsk = peer_device->disk_state[which];
+
+			if (pdsk >= D_INCONSISTENT && pdsk != D_UNKNOWN)
+				connection = peer_device->connection;
+		}
+	}
+	return connection;
+}
+
+static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates,
+				     enum which_state which)
+{
+	struct drbd_md *md = &device->ldev->md;
+	struct drbd_connection *peer = NULL;
+	bool al_updates_old = !(md->flags & MDF_AL_DISABLED);
+	bool optimized = false;
+
+	if (al_updates)
+		peer = the_only_peer_with_disk(device, which);
+
+	if (al_updates && peer && peer->peer_role[which] == R_PRIMARY &&
+	    device->resource->role[which] == R_SECONDARY) {
+		al_updates = false;
+		optimized = true;
+	}
+
+	if (al_updates_old == al_updates)
+		return;
+
+	if (al_updates) {
+		drbd_info(device, "Enabling local AL-updates\n");
+		md->flags &= ~MDF_AL_DISABLED;
+	} else {
+		drbd_info(device, "Disabling local AL-updates %s\n",
+			  optimized ? "(optimization)" : "(config)");
+		md->flags |= MDF_AL_DISABLED;
+	}
+	drbd_md_mark_dirty(device);
+}
+
+/**
+ * update_mdf_al_disabled() - update the MDF_AL_DISABLED bit in md.flags
+ *
+ * This function also optimizes performance by turning off al-updates when:
+ * - the cluster has only two nodes with backing disk
+ * - the other node with a backing disk is the primary
+ */
+void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state which)
+{
+	bool al_updates;
+
+	if (!get_ldev(device))
+		return;
+
+	rcu_read_lock();
+	al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
+	rcu_read_unlock();
+	__update_mdf_al_disabled(device, al_updates, which);
+
+	put_ldev(device);
+}
+
 static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -2352,10 +2435,7 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	mutex_unlock(&resource->conf_update);
 
-	if (new_disk_conf->al_updates)
-		device->ldev->md.flags &= ~MDF_AL_DISABLED;
-	else
-		device->ldev->md.flags |= MDF_AL_DISABLED;
+	__update_mdf_al_disabled(device, new_disk_conf->al_updates, NOW);
 
 	if (new_disk_conf->md_flushes)
 		clear_bit(MD_NO_FUA, &device->flags);
@@ -3415,12 +3495,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_try_suspend_al(device); /* IO is still suspended here... */
 
-	rcu_read_lock();
-	if (rcu_dereference(device->ldev->disk_conf)->al_updates)
-		device->ldev->md.flags &= ~MDF_AL_DISABLED;
-	else
-		device->ldev->md.flags |= MDF_AL_DISABLED;
-	rcu_read_unlock();
+	drbd_update_mdf_al_disabled(device, NOW);
 
 	/* change_disk_state uses disk_state_from_md(device); in case D_NEGOTIATING not
 	   necessary, and falls back to a local state change */

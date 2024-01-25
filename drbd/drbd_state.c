@@ -2841,6 +2841,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
 				clear_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
+
+			if (peer_role[OLD] != peer_role[NEW] || role[OLD] != role[NEW] ||
+			    peer_disk_state[OLD] != peer_disk_state[NEW])
+				drbd_update_mdf_al_disabled(device, NEW);
 		}
 
 		for_each_connection(connection, resource) {

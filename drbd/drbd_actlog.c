@@ -367,10 +367,7 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	if (drbd_bm_write_hinted(device))
 		err = -EIO;
 	else {
-		bool write_al_updates;
-		rcu_read_lock();
-		write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
-		rcu_read_unlock();
+		bool write_al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED);
 		if (write_al_updates) {
 			ktime_aggregate_delta(device, start_kt, al_mid_kt);
 			if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
@@ -466,11 +463,7 @@ void drbd_al_begin_io_commit(struct drbd_device *device)
 		/* Double check: it may have been committed by someone else
 		 * while we were waiting for the lock. */
 		if (device->act_log->pending_changes) {
-			bool write_al_updates;
-
-			rcu_read_lock();
-			write_al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
-			rcu_read_unlock();
+			bool write_al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED);
 
 			if (write_al_updates)
 				al_write_transaction(device);

@@ -2099,6 +2099,7 @@ extern void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
 extern void repost_up_to_date_fn(struct timer_list *t);
+extern void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state which);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
 {
