@@ -3459,9 +3459,9 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	change_disk_state(device, D_DISKLESS, CS_HARD, "attach", NULL);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
- out_no_adm_mutex:
 	drbd_backing_dev_free(device, nbc);
 	mutex_unlock(&resource->adm_mutex);
+ out_no_adm_mutex:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
