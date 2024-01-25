@@ -591,7 +591,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	/* Use the same drbd_peer_request for tracking resync request and for
 	 * writing, if that is necessary. */
 	peer_req->digest = di;
-	peer_req->flags = EE_HAS_DIGEST;
+	peer_req->flags |= EE_HAS_DIGEST;
 
 	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_send_resync_request(peer_req);
