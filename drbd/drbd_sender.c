@@ -416,7 +416,6 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
-	int err;
 	struct dagtag_find_result dagtag_result;
 
 	if (!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
@@ -429,11 +428,13 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 		return;
 	}
 
-	dagtag_result = find_current_dagtag(peer_device->device->resource);
-	if (dagtag_result.err)
-		goto out;
-
 	inc_rs_pending(peer_device);
+
+	dagtag_result = find_current_dagtag(peer_device->device->resource);
+	if (dagtag_result.err) {
+		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+		return;
+	}
 
 	if (peer_req->flags & EE_HAS_DIGEST) {
 		enum drbd_packet cmd = connection->agreed_features & DRBD_FF_RESYNC_DAGTAG ?
@@ -443,7 +444,7 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 				peer_req->digest->digest_size,
 				dagtag_result.node_id, dagtag_result.dagtag);
 		if (!digest)
-			goto out_rs_pending;
+			return;
 
 		memcpy(digest, peer_req->digest->digest, peer_req->digest->digest_size);
 
@@ -454,7 +455,7 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 		kfree(peer_req->digest);
 		peer_req->digest = NULL;
 
-		err = drbd_send_command(peer_device, cmd, DATA_STREAM);
+		drbd_send_command(peer_device, cmd, DATA_STREAM);
 	} else {
 		enum drbd_packet cmd;
 		if (connection->agreed_features & DRBD_FF_RESYNC_DAGTAG)
@@ -462,22 +463,10 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 		else
 			cmd = peer_req->flags & EE_RS_THIN_REQ ? P_RS_THIN_REQ : P_RS_DATA_REQUEST;
 
-		err = drbd_send_rs_request(peer_device, cmd,
+		drbd_send_rs_request(peer_device, cmd,
 				peer_req->i.sector, peer_req->i.size, peer_req->block_id,
 				dagtag_result.node_id, dagtag_result.dagtag);
 	}
-	if (err)
-		goto out_rs_pending;
-
-	return;
-
-out_rs_pending:
-	dec_rs_pending(peer_device);
-out:
-	drbd_remove_peer_req_interval(peer_req);
-	drbd_free_peer_req(peer_req);
-
-	change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
 }
 
 void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
@@ -1340,25 +1329,21 @@ skip_request:
 static void send_ov_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct dagtag_find_result dagtag_result;
 	enum drbd_packet cmd = peer_device->connection->agreed_features & DRBD_FF_RESYNC_DAGTAG ?
 		P_OV_DAGTAG_REQ : P_OV_REQUEST;
 
-	struct dagtag_find_result dagtag_result =
-		find_current_dagtag(peer_device->device->resource);
-	if (dagtag_result.err)
-		goto out;
-
 	inc_rs_pending(peer_device);
 
-	if (drbd_send_rs_request(peer_device, cmd,
-				peer_req->i.sector, peer_req->i.size, peer_req->block_id,
-				dagtag_result.node_id, dagtag_result.dagtag))
-		goto out;
+	dagtag_result = find_current_dagtag(peer_device->device->resource);
+	if (dagtag_result.err) {
+		change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+		return;
+	}
 
-	return;
-
-out:
-	change_cstate(peer_device->connection, C_DISCONNECTING, CS_HARD);
+	drbd_send_rs_request(peer_device, cmd,
+			peer_req->i.sector, peer_req->i.size, peer_req->block_id,
+			dagtag_result.node_id, dagtag_result.dagtag);
 }
 
 static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
