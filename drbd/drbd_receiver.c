@@ -2723,20 +2723,15 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 }
 
 static int recv_resync_read(struct drbd_peer_device *peer_device,
+			    struct drbd_peer_request *peer_req,
 			    struct drbd_peer_request_details *d) __releases(local)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_peer_request *peer_req;
 	unsigned int size;
 	sector_t sector;
 	int err;
 	u64 im;
-
-	peer_req = find_resync_request(peer_device, INTERVAL_TYPE_MASK(INTERVAL_RESYNC_WRITE),
-			d->sector, d->bi_size, d->block_id);
-	if (!peer_req)
-		return -EIO;
 
 	err = read_in_block(peer_req, d);
 	if (err)
@@ -2937,6 +2932,7 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	struct drbd_peer_request_details d;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
+	struct drbd_peer_request *peer_req;
 	int err;
 
 	p_req_detail_from_pi(connection, &d, pi);
@@ -2947,8 +2943,13 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		return -EIO;
 	device = peer_device->device;
 
+	peer_req = find_resync_request(peer_device, INTERVAL_TYPE_MASK(INTERVAL_RESYNC_WRITE),
+			d.sector, d.bi_size, d.block_id);
+	if (!peer_req)
+		return -EIO;
+
 	if (get_ldev(device)) {
-		err = recv_resync_read(peer_device, &d);
+		err = recv_resync_read(peer_device, peer_req, &d);
 		if (err)
 			put_ldev(device);
 	} else {
@@ -2957,6 +2958,10 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 		err = ignore_remaining_packet(connection, pi->size);
 
 		drbd_send_ack_dp(peer_device, P_RS_NEG_ACK, &d);
+
+		dec_rs_pending(peer_device);
+		drbd_remove_peer_req_interval(peer_req);
+		drbd_free_peer_req(peer_req);
 	}
 
 	rs_sectors_came_in(peer_device, d.bi_size);
