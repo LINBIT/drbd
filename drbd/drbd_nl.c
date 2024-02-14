@@ -3178,9 +3178,16 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	/* and no leftover from previously aborted resync or verify, either */
 	for_each_peer_device(peer_device, device) {
+		while (atomic_read(&peer_device->rs_pending_cnt)) {
+			drbd_info_ratelimit(peer_device, "wait for rs_pending_cnt to clear\n");
+			if (schedule_timeout_interruptible(HZ / 10)) {
+				retcode = ERR_INTR;
+				goto fail;
+			}
+		}
+
 		peer_device->rs_total = 0;
 		peer_device->rs_failed = 0;
-		atomic_set(&peer_device->rs_pending_cnt, 0);
 	}
 
 	if (!device->bitmap) {
