@@ -1694,7 +1694,7 @@ extern void drbd_thread_current_set_cpu(struct drbd_thread *thi);
 #else
 #define drbd_thread_current_set_cpu(A) ({})
 #endif
-extern void tl_release(struct drbd_connection *,
+extern int tl_release(struct drbd_connection *,
 			uint64_t o_block_id,
 			uint64_t y_block_id,
 			unsigned int barrier_nr,

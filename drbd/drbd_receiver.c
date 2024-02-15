@@ -10618,18 +10618,15 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 {
 	struct p_barrier_ack *p = pi->data;
 
-	tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
-
-	return 0;
+	return tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
 }
 
 static int got_confirm_stable(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_confirm_stable *p = pi->data;
 
-	tl_release(connection, p->oldest_block_id, p->youngest_block_id, 0, be32_to_cpu(p->set_size));
-
-	return 0;
+	return tl_release(connection, p->oldest_block_id, p->youngest_block_id, 0,
+			  be32_to_cpu(p->set_size));
 }
 
 static int got_OVResult(struct drbd_connection *connection, struct packet_info *pi)
@@ -11089,7 +11086,7 @@ keep_part:
 	return;
 
 reconnect:
-	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+	change_cstate(connection, err == -EPROTO ? C_PROTOCOL_ERROR : C_NETWORK_FAILURE, CS_HARD);
 }
 
 void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event event)

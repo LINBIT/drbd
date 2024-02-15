@@ -339,27 +339,24 @@ static void dump_epoch(struct drbd_resource *resource, int node_id, int epoch)
  * epoch of not yet barrier-acked requests, this function will cause a
  * termination of the connection.
  */
-void tl_release(struct drbd_connection *connection,
+int tl_release(struct drbd_connection *connection,
 		uint64_t o_block_id,
 		uint64_t y_block_id,
 		unsigned int barrier_nr,
 		unsigned int set_size)
 {
 	struct drbd_resource *resource = connection->resource;
+	const int idx = connection->peer_node_id;
 	struct drbd_request *r;
 	struct drbd_request *req = NULL;
 	struct drbd_request *req_y = NULL;
 	int expect_epoch = 0;
 	int expect_size = 0;
-	bool found_epoch = false;
 
 	rcu_read_lock();
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
 	list_for_each_entry_rcu(r, &resource->transfer_log, tl_requests) {
-		struct drbd_peer_device *peer_device =
-			conn_peer_device(connection, r->device->vnr);
-		const int idx = peer_device->node_id;
 		unsigned int local_rq_state, net_rq_state;
 
 		spin_lock_irq(&r->rq_lock);
@@ -376,7 +373,7 @@ void tl_release(struct drbd_connection *connection,
 				continue;
 			req = r;
 			expect_epoch = req->epoch;
-			expect_size ++;
+			expect_size++;
 		} else {
 			const u16 s = r->net_rq_state[idx];
 			if (r->epoch != expect_epoch)
@@ -453,22 +450,15 @@ void tl_release(struct drbd_connection *connection,
 	}
 
 	/* Clean up list of requests processed during current epoch. */
-	/* Walking the list from the start is paranoia,
-	 * to catch requests being barrier-acked "unexpectedly".
-	 * It usually should find the same req again, or some READ preceding it. */
-	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
-		if (!found_epoch && req->epoch == expect_epoch)
-			found_epoch = true;
+	list_for_each_entry_from_rcu(req, &resource->transfer_log, tl_requests) {
+		struct drbd_peer_device *peer_device;
 
-		if (found_epoch) {
-			struct drbd_peer_device *peer_device;
-			if (req->epoch != expect_epoch)
-				break;
-			peer_device = conn_peer_device(connection, req->device->vnr);
-			req_mod(req, BARRIER_ACKED, peer_device);
-			if (req == req_y)
-				break;
-		}
+		if (req->epoch != expect_epoch)
+			break;
+		peer_device = conn_peer_device(connection, req->device->vnr);
+		req_mod(req, BARRIER_ACKED, peer_device);
+		if (req == req_y)
+			break;
 	}
 	rcu_read_unlock();
 
@@ -480,11 +470,11 @@ void tl_release(struct drbd_connection *connection,
 		wake_up(&resource->barrier_wait);
 	}
 
-	return;
+	return 0;
 
 bail:
 	rcu_read_unlock();
-	change_cstate(connection, C_PROTOCOL_ERROR, CS_HARD);
+	return -EPROTO;
 }
 
 
