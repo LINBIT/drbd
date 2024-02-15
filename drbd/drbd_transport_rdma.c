@@ -1718,15 +1718,53 @@ static void dtr_control_data_ready(struct dtr_stream *rdma_stream, struct dtr_rx
 	dtr_recycle_rx_desc(transport, CONTROL_STREAM, &rx_desc, GFP_ATOMIC);
 }
 
+static void __dtr_order_rx_descs_front(struct dtr_stream *rdma_stream,
+				       struct dtr_rx_desc *rx_desc)
+{
+	struct dtr_rx_desc *pos;
+	unsigned int seq = rx_desc->sequence;
+
+	list_for_each_entry(pos, &rdma_stream->rx_descs, list) {
+		if (higher_in_sequence(seq, pos->sequence)) { /* think: seq > pos->sequence */
+			list_add(&rx_desc->list, &pos->list);
+			return;
+		}
+	}
+	list_add(&rx_desc->list, &rdma_stream->rx_descs);
+}
+
 static void dtr_control_tasklet_fn(struct tasklet_struct *t)
 {
 	struct dtr_transport *rdma_transport =
 		from_tasklet(rdma_transport, t, control_tasklet);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[CONTROL_STREAM];
-	struct dtr_rx_desc *rx_desc;
+	struct dtr_rx_desc *rx_desc, *tmp;
+	LIST_HEAD(rx_descs);
 
-	while ((rx_desc = dtr_next_rx_desc(rdma_stream)))
+	spin_lock_irq(&rdma_stream->rx_descs_lock);
+	list_splice_init(&rdma_stream->rx_descs, &rx_descs);
+	spin_unlock_irq(&rdma_stream->rx_descs_lock);
+
+	list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list) {
+		if (rx_desc->sequence != rdma_stream->rx_sequence)
+			goto abort;
+		list_del(&rx_desc->list);
+		rdma_stream->rx_sequence =
+			(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+		rdma_stream->unread -= rx_desc->size;
 		dtr_control_data_ready(rdma_stream, rx_desc);
+	}
+	return;
+
+abort:
+	spin_lock_irq(&rdma_stream->rx_descs_lock);
+	list_for_each_entry_safe(rx_desc, tmp, &rx_descs, list) {
+		list_del(&rx_desc->list);
+		__dtr_order_rx_descs_front(rdma_stream, rx_desc);
+	}
+	spin_unlock_irq(&rdma_stream->rx_descs_lock);
+
+	tasklet_schedule(&rdma_transport->control_tasklet);
 }
 
 static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
