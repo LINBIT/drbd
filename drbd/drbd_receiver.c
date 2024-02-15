@@ -9474,18 +9474,15 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 {
 	struct p_barrier_ack *p = pi->data;
 
-	tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
-
-	return 0;
+	return tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
 }
 
 static int got_confirm_stable(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_confirm_stable *p = pi->data;
 
-	tl_release(connection, p->oldest_block_id, p->youngest_block_id, 0, be32_to_cpu(p->set_size));
-
-	return 0;
+	return tl_release(connection, p->oldest_block_id, p->youngest_block_id, 0,
+			  be32_to_cpu(p->set_size));
 }
 
 static int got_OVResult(struct drbd_connection *connection, struct packet_info *pi)
