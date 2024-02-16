@@ -639,8 +639,10 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
  */
 static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
 {
-	if (*cache_ptr == NULL)
-		*cache_ptr = req;
+	if (*cache_ptr == NULL) {
+		smp_wmb(); /* make list_add_tail_rcu(req, transfer_log) visible before cache_ptr */
+		WRITE_ONCE(*cache_ptr, req);
+	}
 	/*
 	 * cmpxchg(cache_ptr, NULL, req);
 	 *

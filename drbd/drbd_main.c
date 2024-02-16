@@ -335,7 +335,14 @@ int tl_release(struct drbd_connection *connection,
 	rcu_read_lock();
 	/* find oldest not yet barrier-acked write request,
 	 * count writes in its epoch. */
-	list_for_each_entry_rcu(r, &resource->transfer_log, tl_requests) {
+	r = READ_ONCE(connection->req_not_net_done);
+	if (r == NULL) {
+		drbd_err(connection, "BarrierAck #%u received, but req_not_net_done = NULL\n",
+			 barrier_nr);
+		goto bail;
+	}
+	smp_rmb(); /* paired with smp_wmb() in set_cache_ptr_if_null() */
+	list_for_each_entry_from_rcu(r, &resource->transfer_log, tl_requests) {
 		unsigned int local_rq_state, net_rq_state;
 
 		spin_lock_irq(&r->rq_lock);
@@ -480,6 +487,7 @@ void __tl_walk(struct drbd_resource *const resource,
 		req = READ_ONCE(*from_req);
 	if (!req)
 		req = list_entry_rcu(resource->transfer_log.next, struct drbd_request, tl_requests);
+	smp_rmb(); /* paired with smp_wmb() in set_cache_ptr_if_null() */
 	list_for_each_entry_from_rcu(req, &resource->transfer_log, tl_requests) {
 		/* Skip if the request has already been destroyed. */
 		if (!kref_get_unless_zero(&req->kref))
