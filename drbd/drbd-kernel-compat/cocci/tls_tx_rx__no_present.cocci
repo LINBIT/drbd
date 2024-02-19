@@ -41,6 +41,10 @@ typedef gfp_t;
 - static int tls_wait_hello(...) { ... }
 
 @@
+@@
+- static void dtt_control_data_ready_work(...) { ... }
+
+@@
 expression s;
 @@
 - tls_handshake_cancel(s);

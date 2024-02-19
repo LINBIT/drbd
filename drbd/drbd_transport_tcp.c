@@ -323,13 +323,14 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 		.msg_controllen = sizeof(u),
 	};
 	int ret;
-	u8 level, description;
 
 	flags = flags ? flags : MSG_WAITALL | MSG_NOSIGNAL;
 
 	ret = kernel_recvmsg(socket, &msg, &iov, 1, size, flags);
 
 	if (msg.msg_controllen != sizeof(u)) {
+		u8 level, description;
+
 		switch (tls_get_record_type(socket->sk, &u.cmsg)) {
 		case 0:
 			fallthrough;
