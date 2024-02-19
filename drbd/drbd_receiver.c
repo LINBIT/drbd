@@ -11063,8 +11063,10 @@ void drbd_control_data_ready(struct drbd_transport *transport, struct drbd_const
 			goto keep_part;
 
 		payload_size = decode_meta_cmd(connection, pool->buffer, &pi);
-		if (payload_size < 0)
+		if (payload_size < 0) {
+			err = payload_size;
 			goto reconnect;
+		}
 
 		packet_size = header_size + payload_size;
 		if (packet_size > pool->avail)
