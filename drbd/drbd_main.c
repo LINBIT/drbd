@@ -2600,7 +2600,7 @@ static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 			   retry only if the timeout permits */
 			if (jiffies - start < HZ / 10) {
 				t = schedule_timeout_interruptible(HZ / 10);
-				if (t < 0)
+				if (t)
 					break;
 				timeout -= HZ / 10;
 			}
