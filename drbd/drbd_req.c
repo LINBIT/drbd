@@ -768,22 +768,24 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
  * must be called. If the caching pointer currently points to this request,
  * this will advance it to the next request fulfilling the condition.
  *
- * set_cache_ptr_if_null() may be called concurrently with itself and with
- * advance_cache_ptr().
+ * set_cache_ptr_if_null() may be called concurrently with advance_cache_ptr().
  */
 static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
 {
-	struct drbd_request *prev_req, *old_req = NULL;
-
-	rcu_read_lock();
-	prev_req = cmpxchg(cache_ptr, old_req, req);
-	while (prev_req != old_req) {
-		if (prev_req && req->dagtag_sector > prev_req->dagtag_sector)
-			break;
-		old_req = prev_req;
-		prev_req = cmpxchg(cache_ptr, old_req, req);
-	}
-	rcu_read_unlock();
+	if (*cache_ptr == NULL)
+		*cache_ptr = req;
+	/*
+	 * cmpxchg(cache_ptr, NULL, req);
+	 *
+	 * There is no need to make the compare-and-swap atomic. The req_not_net_done
+	 * cache pointer gets only set where the caller already holds the
+	 * tl_update_lock. The relevant request events are ADDED_TO_TRANSFER_LOG.
+	 * It sets the RQ_NET_QUEUED request state bit.
+	 *
+	 * Only the sender thread sets req_ack_pending cache pointer via the
+	 * HANDED_OVER_TO_NETWORK request event and the RQ_NET_SENT request
+	 * state bit.
+	 */
 }
 
 /* See set_cache_ptr_if_null(). */
