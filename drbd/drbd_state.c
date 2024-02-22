@@ -5144,7 +5144,8 @@ retry:
 	}
 
 	if (rv >= SS_SUCCESS) {
-		new_size = min_not_zero(reply->max_possible_size, new_user_size);
+		new_size = drbd_new_dev_size(device, reply->max_possible_size,
+						new_user_size, dds_flags | DDSF_2PC);
 		commit_it = new_size != get_capacity(device->vdisk);
 
 		if (commit_it) {

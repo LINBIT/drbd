@@ -1796,7 +1796,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
  * Check if all peer devices that have bitmap slots assigned in the metadata
  * are connected.
  */
-static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __must_hold(local)
+static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
+		uint64_t twopc_reachable_nodes) __must_hold(local)
 {
 	int node_id;
 	bool all_known;
@@ -1811,7 +1812,30 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max) __
 			dynamic_drbd_dbg(device, "my node_id: %u\n", node_id);
 			continue; /* skip myself... */
 		}
+		/* peer_device may be NULL if we don't have a connection to that node. */
 		peer_device = peer_device_by_node_id(device, node_id);
+		if (twopc_reachable_nodes & NODE_MASK(node_id)) {
+			uint64_t size = device->resource->twopc_reply.max_possible_size;
+
+			dynamic_drbd_dbg(device, "node_id: %u, twopc YES for max_size: %llu\n",
+					node_id, (unsigned long long)size);
+
+			/* Update our cached information, they said "yes".
+			 * Note:
+			 * d_size == 0 indicates diskless peer, or not directly
+			 * connected.  It will be ignored by the min_not_zero()
+			 * aggregation elsewhere.  Only reset if size > d_size
+			 * here.  Once we really commit the change, this will
+			 * also be assigned if it was a shrinkage.
+			 */
+			if (peer_device) {
+				if (peer_device->d_size && size > peer_device->d_size)
+					peer_device->d_size = size;
+				if (size > peer_device->max_size)
+					peer_device->max_size = size;
+			}
+			continue;
+		}
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
 			dynamic_drbd_dbg(peer_device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x max_size: %llu (%s)\n",
@@ -1871,11 +1895,15 @@ drbd_new_dev_size(struct drbd_device *device,
 	uint64_t size = 0;
 	bool all_known_connected;
 
-	if (flags & DDSF_2PC)
-		return resource->twopc.resize.new_size;
+	/* If there are reachable_nodes, get_max_agreeable_size() will
+	 * also aggregate the twopc.resize.new_size into their d_size
+	 * and max_size.  Do that first, so drbd_partition_data_capacity()
+	 * can use that new knowledge.
+	 */
 
+	all_known_connected = get_max_agreeable_size(device, &p_size,
+		flags & DDSF_2PC ? resource->twopc_reply.reachable_nodes : 0);
 	m_size = drbd_partition_data_capacity(device);
-	all_known_connected = get_max_agreeable_size(device, &p_size);
 
 	if (all_known_connected) {
 		/* If we currently can see all peer devices,

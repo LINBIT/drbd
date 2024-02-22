@@ -10231,11 +10231,10 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			u64 reachable_nodes;
 			u64 max_size;
 
+			reachable_nodes = be64_to_cpu(p->reachable_nodes);
+
 			switch (resource->twopc.type) {
 			case TWOPC_STATE_CHANGE:
-				reachable_nodes =
-					be64_to_cpu(p->reachable_nodes);
-
 				if (resource->res_opts.node_id ==
 				    resource->twopc_reply.initiator_node_id &&
 				    connection->peer_node_id ==
@@ -10252,6 +10251,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 					be64_to_cpu(p->weak_nodes);
 				break;
 			case TWOPC_RESIZE:
+				resource->twopc_reply.reachable_nodes |= reachable_nodes;
 				resource->twopc_reply.diskful_primary_nodes |=
 					be64_to_cpu(p->diskful_primary_nodes);
 				max_size = be64_to_cpu(p->max_possible_size);
