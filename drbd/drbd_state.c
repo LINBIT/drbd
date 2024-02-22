@@ -5113,7 +5113,7 @@ retry:
 
 	drbd_info(resource, "Preparing cluster-wide state change %u "
 		  "(local_max_size = %llu KB, user_cap = %llu KB)\n",
-		  be32_to_cpu(request.tid),
+		  request.tid,
 		  (unsigned long long)local_max_size >> 1,
 		  (unsigned long long)new_user_size >> 1);
 
