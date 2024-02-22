@@ -1,0 +1,11 @@
+--- drbd-headers/linux/genl_magic_struct.h
++++ drbd-headers/linux/genl_magic_struct.h
+@@ -98,7 +98,7 @@ static inline int nla_put_u64_0pad(struc
+ 			nla_get_u64, nla_put_u64_0pad, false)
+ #define __str_field(attr_nr, attr_flag, name, maxlen) \
+ 	__array(attr_nr, attr_flag, name, NLA_NUL_STRING, char, maxlen, \
+-			nla_strscpy, nla_put, false)
++			nla_strlcpy, nla_put, false)
+ #define __bin_field(attr_nr, attr_flag, name, maxlen) \
+ 	__array(attr_nr, attr_flag, name, NLA_BINARY, char, maxlen, \
+ 			nla_memcpy, nla_put, false)
