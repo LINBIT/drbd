@@ -8813,7 +8813,8 @@ int drbd_do_features(struct drbd_connection *connection)
 	}
 
 	connection->agreed_pro_version = min_t(int, PRO_VERSION_MAX, p->protocol_max);
-	connection->agreed_features = PRO_FEATURES & be32_to_cpu(p->feature_flags);
+	connection->feature_flags = be32_to_cpu(p->feature_flags);
+	connection->agreed_features = PRO_FEATURES & connection->feature_flags;
 
 	if (connection->agreed_pro_version < 110) {
 		struct drbd_connection *connection2;

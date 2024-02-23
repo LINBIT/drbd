@@ -1624,6 +1624,15 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (likely(peer_device->disk_state[NOW] >= D_INCONSISTENT)) {
 			err = drbd_rs_reply(peer_device, peer_req);
+		} else if (connection->feature_flags & DRBD_FF_RESYNC_DAGTAG) {
+			/*
+			 * We do not support DRBD_FF_RESYNC_DAGTAG, but our
+			 * peer does. Help that peer by sending P_RS_CANCEL
+			 * instead of just ignoring the request.
+			 */
+			drbd_err_ratelimit(peer_device,
+				"Sending P_RS_CANCEL, partner DISKLESS!\n");
+			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 		} else {
 			drbd_err_ratelimit(peer_device,
 				"Not sending resync reply, partner DISKLESS!\n");

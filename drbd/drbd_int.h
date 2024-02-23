@@ -1050,6 +1050,7 @@ struct drbd_connection {
 	} scratch_buffer;
 
 	int agreed_pro_version;		/* actually used protocol version */
+	u32 feature_flags;
 	u32 agreed_features;
 	unsigned long last_received;	/* in jiffies, either socket */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
