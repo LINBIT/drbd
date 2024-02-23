@@ -3858,7 +3858,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * make sure those things are properly reset. */
 				peer_device->rs_total = 0;
 				peer_device->rs_failed = 0;
-				atomic_set(&peer_device->rs_pending_cnt, 0);
 
 				drbd_send_uuids(peer_device, 0, 0);
 				drbd_send_state(peer_device, new_state);
