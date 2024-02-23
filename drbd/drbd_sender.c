@@ -2101,7 +2101,7 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (unlikely(peer_device->disk_state[NOW] < D_INCONSISTENT)) {
 			drbd_err_ratelimit(peer_device,
-				"Not sending resync reply, partner DISKLESS!\n");
+				"Sending P_RS_CANCEL, partner DISKLESS!\n");
 			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 		} else if (connection->agreed_pro_version >= 110 &&
 				!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
