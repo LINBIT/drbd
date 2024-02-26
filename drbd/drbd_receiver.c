@@ -8020,6 +8020,8 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 		unsigned long bit = BM_SECT_TO_BIT(sector);
 		if (bit < peer_device->resync_next_bit)
 			peer_device->resync_next_bit = bit;
+		if (!timer_pending(&peer_device->resync_timer))
+			mod_timer(&peer_device->resync_timer, jiffies + 1);
 	}
 
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));
