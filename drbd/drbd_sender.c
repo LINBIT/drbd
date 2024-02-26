@@ -2100,9 +2100,19 @@ int w_e_end_rsdata_req(struct drbd_work *w, int cancel)
 		err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
 	} else if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
 		if (unlikely(peer_device->disk_state[NOW] < D_INCONSISTENT)) {
-			drbd_err_ratelimit(peer_device,
-				"Sending P_RS_CANCEL, partner DISKLESS!\n");
-			err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+			if (connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) {
+				drbd_err_ratelimit(peer_device,
+						"Sending P_RS_CANCEL, partner DISKLESS!\n");
+				err = drbd_send_ack(peer_device, P_RS_CANCEL, peer_req);
+			} else {
+				/*
+				 * A peer that does not support DRBD_FF_RESYNC_DAGTAG does not
+				 * expect to receive P_RS_CANCEL after losing its disk.
+				 */
+				drbd_err_ratelimit(peer_device,
+						"Not sending resync reply, partner DISKLESS!\n");
+				err = 0;
+			}
 		} else if (connection->agreed_pro_version >= 110 &&
 				!(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG) &&
 				al_resync_extent_active(peer_device->device,
