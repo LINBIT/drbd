@@ -2,6 +2,24 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.19-rc.1 (api:genl2/proto:86-121/transport:18)
+--------
+ * Fix a resync decision case where drbd wrongly decided to do a full
+   resync, where a partial resync was sufficient; that happened in a
+   specific connect order when all nodes were on the same data
+   generation (UUID)
+ * Fix the online resize code to obey cached size information about
+   temporal unreachable nodes
+ * Fix a rare corner case in which DRBD on a diskless primary node
+   failed to re-issue a read request to another node with a backing
+   disk upon connection loss on the connection where it shipped the
+   read request initially
+ * Make timeout during promotion attempts interruptible
+ * No longer write activity-log updates on the secondary node in a
+   cluster with precisely two nodes with backing disk; this is a
+   performance optimization
+ * Reduce CPU usage of acknowledgment processing
+
 9.1.18 (api:genl2/proto:86-121/transport:18)
 --------
  * Fixed connecting nodes with differently sized backing disks,
