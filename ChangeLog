@@ -2,6 +2,33 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.8-rc.1 (api:genl2/proto:86-122/transport:19)
+--------
+ * Fix the not-terminating-resync phenomenon between two nodes with
+   backing disk in the presence of a diskless primary node under
+   heavy I/O
+ * Fix a rare race condition aborting connections claiming wrong
+   protocol magic
+ * Fix various problems of the checksum-based resync, including kernel
+   crashes
+ * Fix soft lockup messages in the RDMA transport under heavy I/O
+ * changes merged from drbd-9.1.19
+  - Fix a resync decision case where drbd wrongly decided to do a full
+    resync, where a partial resync was sufficient; that happened in a
+    specific connect order when all nodes were on the same data
+    generation (UUID)
+  - Fix the online resize code to obey cached size information about
+    temporal unreachable nodes
+  - Fix a rare corner case in which DRBD on a diskless primary node
+    failed to re-issue a read request to another node with a backing
+    disk upon connection loss on the connection where it shipped the
+    read request initially
+  - Make timeout during promotion attempts interruptible
+  - No longer write activity-log updates on the secondary node in a
+    cluster with precisely two nodes with backing disk; this is a
+    performance optimization
+  - Reduce CPU usage of acknowledgment processing
+
 9.2.7 (api:genl2/proto:86-122/transport:19)
 --------
  * Fixed wrong tx-timeouts in the RDMA transport
