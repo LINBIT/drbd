@@ -770,24 +770,15 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
  *
  * set_cache_ptr_if_null() may be called concurrently with advance_cache_ptr().
  */
-static void set_cache_ptr_if_null(struct drbd_request **cache_ptr, struct drbd_request *req)
+static void set_cache_ptr_if_null(struct drbd_connection *connection,
+		struct drbd_request **cache_ptr, struct drbd_request *req)
 {
+	spin_lock(&connection->advance_cache_ptr_lock); /* local IRQ already disabled */
 	if (*cache_ptr == NULL) {
 		smp_wmb(); /* make list_add_tail_rcu(req, transfer_log) visible before cache_ptr */
 		WRITE_ONCE(*cache_ptr, req);
 	}
-	/*
-	 * cmpxchg(cache_ptr, NULL, req);
-	 *
-	 * There is no need to make the compare-and-swap atomic. The req_not_net_done
-	 * cache pointer gets only set where the caller already holds the
-	 * tl_update_lock. The relevant request events are ADDED_TO_TRANSFER_LOG.
-	 * It sets the RQ_NET_QUEUED request state bit.
-	 *
-	 * Only the sender thread sets req_ack_pending cache pointer via the
-	 * HANDED_OVER_TO_NETWORK request event and the RQ_NET_SENT request
-	 * state bit.
-	 */
+	spin_unlock(&connection->advance_cache_ptr_lock);
 }
 
 /* See set_cache_ptr_if_null(). */
@@ -824,7 +815,7 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 		}
 	}
 
-	cmpxchg(cache_ptr, old_req, found_req);
+	WRITE_ONCE(*cache_ptr, found_req);
 	rcu_read_unlock();
 
 	spin_unlock(&connection->advance_cache_ptr_lock);
@@ -904,7 +895,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	}
 
 	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
-		set_cache_ptr_if_null(&connection->req_not_net_done, req);
+		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 		atomic_inc(&req->completion_ref);
 		/* This completion ref is necessary to avoid premature completion
 		   in case a WRITE_ACKED_BY_PEER comes in before the sender can do
@@ -919,7 +910,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		if (!(old_net & RQ_NET_DONE))
 			atomic_add(req_payload_sectors(req), &peer_device->connection->ap_in_flight);
 		if (req->net_rq_state[idx] & RQ_NET_PENDING)
-			set_cache_ptr_if_null(&connection->req_ack_pending, req);
+			set_cache_ptr_if_null(connection, &connection->req_ack_pending, req);
 	}
 
 	if (!(old_local & RQ_COMPLETION_SUSP) && (set_local & RQ_COMPLETION_SUSP))
