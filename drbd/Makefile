@@ -29,6 +29,10 @@
 
   Q := $(if $(V),,@)
 
+current_build_symlink  := build-current
+# We don't want a dangling symlink!
+$(shell test -e $(current_build_symlink) || rm -f $(current_build_symlink) 2>/dev/null)
+
 # The destination "root" directory. Meant to be overridden by
 # packaging scripts.
 DESTDIR ?= /
@@ -61,8 +65,6 @@ ifdef PATCHLEVEL
   endif
  endif
 
-  CONFIG_BLK_DEV_DRBD := m
-
   include $(src)/Kbuild
 
 else
@@ -76,8 +78,8 @@ ifdef non-install-targets
    # mixed targets!
    # have to do one level of recursion :-(
    # If we "source" (shell level) or even "include" (make level)
-   # the .drbd_kernelrelease,
-   # things may get confusing with KERNELRELEASE not matching KDIR
+   # the build-current/.drbd_kernelrelease,
+   # things may get confusing with KERNELRELEASE or O not matching KDIR
    # (for example KDIR=/usr/src/linux-headers-6.1.0-18-amd64, but an
    #  earlier build now leaks:  KERNELRELEASE=6.1.0-17-amd64)
    # and subtly wrong compat.h / compat.patches generated.
@@ -96,15 +98,16 @@ else
     update-current-build-symlink:
 	$(MAKE) -C $(CURDIR)
   else
-    current_build_drbd_kernelrelease := .drbd_kernelrelease
+    current_build_drbd_kernelrelease := $(current_build_symlink)/.drbd_kernelrelease
     -include $(current_build_drbd_kernelrelease)
   endif
   ifdef KDIR
     MODSUBDIR=updates
     .PHONY: install
     install:
+	test -d $(current_build_symlink) && \
 	$(MAKE) -C $(KDIR) $(if $(O),O=$(O)) $(if $(V),V=$(V)) \
-		M=$(CURDIR)			\
+		M=$(CURDIR)/$(current_build_symlink)	\
 		modules_install			\
 		INSTALL_MOD_PATH=$(DESTDIR)	\
 		INSTALL_MOD_DIR=$(MODSUBDIR)
@@ -138,13 +141,19 @@ else
     endif
   endif
 
-  .PHONY: drbd.o default all greeting clean kbuild install tags cscope unpatch compat
+  .PHONY: drbd.o default all greeting clean kbuild install tags cscope
+  .PHONY: prep compat spatch report distclean mrproper
+  .PHONY: compat.h
 
-  drbd.o: greeting kbuild
+  drbd.o: greeting kbuild report
   default: drbd.o
   all:     drbd.o
 
   export KDIR O V
+  # shorten kbuild invocations
+  KBUILD = \
+	-C $(if $(KDIR),$(KDIR),$(error missing KDIR)) \
+	$(if $(V),V=$(V)) $(if $(O),O=$(O)) $(ARCH_UM)
 
   greeting:
 	$(Q)echo "" ;\
@@ -156,18 +165,6 @@ else
 		false;\
 	fi
 
-  unpatch:
-	$(Q)if test -e .compat_patches_applied; then \
-	    echo "Removing compat patches"; \
-	    patch -R -p0 --batch --reject-file=- < .compat_patches_applied && \
-	    rm -f .compat_patches_applied; \
-	fi
-
-  .PHONY: test-compile
-  test-compile:
-	$(MAKE)
-	$(MAKE) unpatch
-
   # compat.h is built by Kbuild; I think the most easy way to trigger that
   # without trying to re-implement all the Kbuild magic badly, is to simply
   # tell it to compile our smallest, least complex .c file which still
@@ -175,43 +172,63 @@ else
   # Old kernel trees need a C file present to even read our Kbuild file.
   # To avoid .ko generation and the rest of the modpost step, pretend to be a
   # module with two object files, but ask to generate only one part now.
-  .PHONY: compat.h
   compat.h:
 	$(Q)> dummy-for-compat-h.c
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) \
-		obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
+	$(MAKE) $(KBUILD) M=$(DRBDSRC) obj-m=dummy-for-compat.o dummy-for-compat-h.o
 
-  kbuild: fix-tar-timestamps
-	$(Q)rm -f .drbd_kernelrelease*
-	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
-	-mv .drbd_kernelrelease.new .drbd_kernelrelease
-	$(Q)echo -n "Memorizing module configuration ... "
-	$(Q)config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \
-	       if test -e $$x ; then echo $$x ; exit 0; fi ; \
-	       done; echo $(KDIR)/.config) | sed -e 's,//,/,g') ; \
-	{ echo -e "#\n# drbd.o was compiled with"          ; \
-	  echo "#  `gcc -v 2>&1 | tail -1`"                 ; \
-	  echo "# against this kernelrelease:"              ; \
-	  sed 's/^/#  /' .drbd_kernelrelease                ; \
-	  echo    "# kernel .config from"                   ; \
-	  echo -n "#  $$config"                      ; \
-	  test -L "$${config%/.config}" && echo "	alias"   &&           \
-	  echo "#  $$(readlink $${config%/.config})/.config" || echo "" ; \
-	  echo -e "# follows\n#\n"                          ; \
-	  cat $$config ; } | gzip > .kernel.config.gz
-	$(Q)echo "done."
+  # same trick to only "patch"
+  prep: compat.h fix-tar-timestamps
+	$(Q)> dummy-for-patch.c
+	$(MAKE) $(KBUILD) M=$(DRBDSRC) obj-m=dummy-for-prep.o dummy-for-patch.o
 
-  clean: unpatch
-	rm -rf .tmp_versions Module.markers Module.symvers modules.order
-	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel* *.mod
-	rm -f dummy-for-compat-h.c
-	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
-	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
-	rm -f .timestamps_fixed
-	rm -rf .compat_test.* .cache.mk
+  # build the module(s) in the prep'd build directory
+  kbuild: prep
+	test -e $(current_build_symlink) && \
+	$(MAKE) $(KBUILD) M=$(CURDIR)/$(current_build_symlink) modules
 
+  # could also use "find"; whatever.
+  expected-modules = $(patsubst \
+		./$(current_build_symlink)/%,%,$(wildcard \
+		./$(current_build_symlink)/*.ko))
+
+  report: kbuild
+	$(Q)-set -e; . $(current_build_symlink)/.drbd_kernelrelease; \
+	printf ".%70s.\n" "" | tr ' ' '=';		\
+	printf "#  %-66s  #\n"				\
+		KDIR=$$KDIR 				\
+		$${O:+O=$$O}				\
+		KERNELVERSION=$$KERNELVERSION		\
+		KERNELRELEASE=$$KERNELRELEASE		\
+		""					\
+		$(realpath $(current_build_symlink))/;	\
+	printf "#    %-64s  #\n"			\
+		$(expected-modules);			\
+	printf "'%70s'\n" "" | tr ' ' '='
+
+  # clean _inside_ the current build directory only
+  # don't remove it yet, and don't remove too much,
+  # some CI pipelines expect to collect results.
+  clean-rf := .tmp_versions Module.markers Module.symvers modules.order
+  clean-rf += .compat_test.* .cache.mk
+
+  _clean-f  := *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
+  clean-f  := $(_clean-f)
+  clean-f  += $(addprefix drbd-kernel-compat/,$(_clean-f))
+  clean-f  += drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
+  clean-f  += .tmp_[0-9]*
+  clean:
+	rm -rf $(addprefix $(current_build_symlink)/,$(clean-rf))
+	rm -f $(addprefix $(current_build_symlink)/,$(clean-f))
+	rm -f dummy-for-compat-h.c dummy-for-patch.c
+
+  # in addition clean all build-*
   distclean: clean
-	rm -f drbd_buildtag.c .config*.timestamp compat*.h
+	$(Q)rm $(if $(V),-v) -rf build-* compat.*.h compat.*.patch .compat_test.* tags cscope.out
+	rm -f .timestamps_fixed
+
+  # in addition clean the cocci_cache
+  mrproper: distclean
+	$(Q)rm $(if $(V),-v) -rf drbd-kernel-compat/cocci_cache
 
   tags:
 	git ls-files --recurse | ctags -I__must_hold -L -
@@ -219,17 +236,17 @@ else
   cscope:
 	git ls-files --recurse | cscope -b -i -
 
-
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
+  $(compat_patches): FORCE
+	$(MAKE) -f Makefile.spatch $@
 
-# files that are to be processed by coccinelle / spatch
-include Makefile.cocci-sources
-
-  $(compat_patches): $(sources)
-	$(Q). ./drbd-kernel-compat/gen_compat_patch.sh $@ $^
-
+  # re-generate compat.patch for all compat.h in cocci cache:
   compat: $(compat_patches)
+
+  # re-generate compat.patch for the latest build only:
+  spatch: $(patsubst $(realpath $(CURDIR))/%,%,$(realpath $(wildcard $(current_build_symlink)/compat.patch)))
+	$(Q)echo $(if $<,$<,$(error No $(current_build_symlink)/compat.patch found; build it first. Or try make compat))
 
 .PHONY: fix-tar-timestamps
 fix-tar-timestamps:
@@ -244,4 +261,8 @@ spell:
 	done
 
 endif # install / non-install recursion
+
+.PHONY: FORCE
+FORCE:
+
 endif # Kbuild or command line

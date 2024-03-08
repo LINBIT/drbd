@@ -1,7 +1,12 @@
 #!/bin/bash
 
 MIN_SPATCH_VERSION=1.0.8
-[[ ${V:-0} != 0 ]] && set -x
+[[ ${V:-0} != [02] ]] && set -x
+
+# to be passed in via environment
+: ${sources[@]?}
+: ${compat_patch?}
+: ${chksum?}
 
 # test if the version $1 is greater (more recent) than $2.
 function version_gt() {
@@ -22,13 +27,7 @@ function die_no_spatch() {
 # or using spatch,
 # or using curl to fetch it from spatch-as-a-service
 
-compat_patch=$1
-shift
-
 [[ $compat_patch = drbd-kernel-compat/cocci_cache/*/compat.patch ]] || exit 1
-
-incdir=${compat_patch%/compat.patch}
-chksum=${incdir##*/}
 
 set -e
 
@@ -43,41 +42,41 @@ if ! spatch_is_recent; then
 fi
 
 if hash spatch && spatch_is_recent; then
-    K=$(cat $incdir/kernelrelease.txt)
+    K=$(cat $incdir/kernelrelease.txt || echo unknown kernel release)
     echo "  GENPATCHNAMES   "$K
     gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
     $incdir/gen_patch_names > $incdir/applied_cocci_files.txt
     rm $incdir/gen_patch_names
-    rm -f $incdir/.compat.cocci
-    rm -f $incdir/.compat.patch
+    # truncat them all
+    : > $incdir/.compat.cocci
+    : > $incdir/.compat.cocci.tmp
+    : > $incdir/.compat.patch
+    : > $incdir/.compat.patch.tmp
     rm -f $incdir/.spatch.tty.out
     for F in $(cat $incdir/applied_cocci_files.txt); do
-        F_cocci=drbd-kernel-compat/cocci/$F.cocci
+	F_cocci=drbd-kernel-compat/cocci/$F.cocci
 	if [ -e $F_cocci ] ; then
 	    (
 	    # so you can match spatch warnings to cocci source files
 	    dashes=${F_cocci//?/-}
 	    printf "\n// -%s-\n//  %s\n// -%s-\n" "$dashes" "$F_cocci" "$dashes"
 	    cat $F_cocci
-	    ) >> $incdir/.compat.cocci
+	    ) >> $incdir/.compat.cocci.tmp
 	else
-	    cat drbd-kernel-compat/patches/$F.patch >> $incdir/.compat.patch
+	    F_patch=drbd-kernel-compat/patches/$F.patch
+	    cat $F_patch >> $incdir/.compat.patch.tmp
 	fi
 	sed -e "s:@COMPAT_PATCH_NAME@:$F:g" \
 		< drbd-kernel-compat/cocci/debugfs_compat_template.cocci.in \
-		>> $incdir/.compat.cocci
+		>> $incdir/.compat.cocci.tmp
     done
-    if [ -e $incdir/.compat.cocci ]; then
-	echo "  SPATCH   $chksum  "$K
-	# Note: $* (or $@) is NOT make magic variable now, this is a shell script
-	# make $@, the target file, was passed as $1, and is now $compat_patch
-	# make $^, the source (and header) files spatch should operate on,
-	# are "the rest of the shell argument array", so after shifting the first
-	# argument away this is shell $@ respectively $* now.
-	# we know we don't have white-space in the argument list
-
+    mv $incdir/.compat.cocci.tmp $incdir/.compat.cocci
+    mv $incdir/.compat.patch.tmp $incdir/.compat.patch
+    if [ -s $incdir/.compat.cocci ]; then
+	# sources=( ... ) passed in via environment
+	echo "	SPATCH	 $chksum  "$K
 	set +e
-	spatch --sp-file "$incdir/.compat.cocci" "$@" \
+	spatch --sp-file "$incdir/.compat.cocci" "${sources[@]}" \
 		--macro-file drbd-kernel-compat/cocci_macros.h \
 		--very-quiet \
 		--all-includes \
@@ -85,17 +84,20 @@ if hash spatch && spatch_is_recent; then
 		> "$compat_patch.tmp" \
 		2> "$incdir/.spatch.stderr"
 	ex=$?
-	if [[ $ex != 0 ]] || [[ ${V-0} != 0 ]] ; then
-		echo "    $incdir/.compat.cocci" >&2
-		sed -e "s/^/    : /" < "$incdir/.spatch.stderr" >&2
+	# if [[ $ex != 0 ]] || [[ ${V-0} != 0 ]] ; then
+	# I want to see the spatch warnings, even without V=...
+	if test -s $incdir/.spatch.stderr ; then
+		echo "	  $incdir/.compat.cocci" >&2
+		sed -e "s/^/	: /" < "$incdir/.spatch.stderr" >&2
+		# spatch warnings fatal? not yet.
+		# exit 1
 	fi
 	[[ $ex != 0 ]] && exit $ex
 	set -e
     else
-	echo "  SPATCH   $chksum  "$K" - nothing to do"
-	touch $compat_patch.tmp
+	echo "	SPATCH	 $chksum  "$K" - nothing to do"
     fi
-    if [ -e $incdir/.compat.patch ]; then
+    if [ -s $incdir/.compat.patch ]; then
 	cat $incdir/.compat.patch >> $compat_patch.tmp
     fi
     mv $compat_patch.tmp $compat_patch
