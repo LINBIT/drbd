@@ -129,14 +129,11 @@ module: check-kdir check-submods
 install:
 	$(MAKE) -C drbd install
 
-unpatch:
-	$(MAKE) -C drbd unpatch
-
-clean: unpatch
+clean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i clean; done
-	rm -f *~
+	rm -f *~ ; rm -rf tmp.km-deb.*
 
-distclean: unpatch
+distclean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
 	rm -f *~ .filelist
 
@@ -338,7 +335,7 @@ endif
 ifdef DEBBUILD
 .PHONY: km-deb
 km-deb: check-submods distclean drbd/.drbd_git_revision
-	D=$$(mktemp -p . -d); 					\
+	D=$$(mktemp -p . -d tmp.km-deb.XXXXXXXXXX); 		\
 	( git ls-files --recurse-submodules ;			\
 	  echo drbd/.drbd_git_revision ) | cpio -pvmd "$$D" ;	\
 	( cd "$$D" && $(DEBBUILD) -i -us -uc -b ) && rm -rf "$$D"

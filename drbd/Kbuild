@@ -1,70 +1,59 @@
-obj-m += drbd.o drbd_transport_tcp.o drbd_transport_lb-tcp.o
-ifdef CONFIG_INFINIBAND
-obj-m += drbd_transport_rdma.o
-endif
+#!make -- for syntax highlighting
+# "make prep"
+# Generate that build-dir, the compat.h and compat.patch
+# and compat-patched sources, but without recursing into it yet.
 
-clean-files := compat.h $(wildcard .config.$(KERNELVERSION).timestamp)
+THIS_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 
-# PRE_CFLAGS may contain (M)OFED header locations
-LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
+# Apparently GNU Make 4.0 strips leading ./ from MAKEFILE_LIST. Yay.
+KBUILD_STAGE ?= $(if $(filter      scripts/Makefile.modpost \
+			$(srctree)/scripts/Makefile.modpost,\
+			$(MAKEFILE_LIST)),modpost)
 
-# Files in the standard include directories take precendence over files
-# in the drbd-kernel-compat directory.
-#
-# Add -I$(src) to EXTRA_CFLAGS again: some (rhel5, maybe other) kbuild does not
-# yet use LINUXINCLUDE like we expect it to ;( fortunately it does not contain
-# in-tree drbd either yet, so precedence of include files is not important.
-#
-# override: we absolutely need this, even if EXTRA_CFLAGS originates from make
-# command line or environment
-override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
+build-dir := build-$(KERNELRELEASE)
 
-ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
-		   $(objtree)/Module.symvers | wc -l),1)
-compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
-endif
-
-ifndef CONFIG_LRU_CACHE
-compat_objs += drbd-kernel-compat/lru_cache.o
-endif
-
-ifeq ($(shell test $(VERSION) -ge 4; echo $$?),0)
-ifeq ($(shell test $(VERSION) -gt 4 || test $(PATCHLEVEL) -ge 17; echo $$?),0)
-ifndef CONFIG_NET_HANDSHAKE
-obj-$(CONFIG_TLS) += drbd-kernel-compat/handshake/
-$(obj)/drbd-kernel-compat/handshake: $(obj)/compat.h $(src)/.compat_patches_applied
-endif
-endif
-endif
-
-compat_objs += drbd-kernel-compat/drbd_wrappers.o
-
-ifdef CONFIG_DEV_DAX_PMEM
-ifneq ($(shell grep -e '\<arch_wb_cache_pmem\>' $(objtree)/Module.symvers | wc -l),1)
-override EXTRA_CFLAGS += -DDAX_PMEM_IS_INCOMPLETE
+ifeq (modpost,$(KBUILD_STAGE))
+$(error MODPOST not expected)
 else
-drbd-y += drbd_dax_pmem.o
-endif
-endif
 
-# enable fault injection by default
-ifndef CONFIG_DRBD_FAULT_INJECTION
-	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
-endif
+SHELL := /bin/bash
 
-$(obj)/drbd_strings.c: $(src)/drbd-headers/drbd_strings.c
-	$(call cmd,copy)
+obj.build := $(obj)/$(build-dir)
+PHONY += $(obj.build)
 
-drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
-drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
-drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o
-drbd-y += drbd_main.o drbd_strings.o drbd_nl.o
-drbd-y += drbd_interval.o drbd_state.o $(compat_objs)
-drbd-y += drbd_nla.o drbd_transport.o
+# we don't have an official Kbuild entry point.  This is only used to generate
+# the compat.h and compat.patch, and prepare the patched sources in the
+# specific build directory, where the actual "make modules" will happen.
 
-ifdef CONFIG_KREF_DEBUG
-      drbd-y += kref_debug.o drbd_kref_debug.o
-endif
+# symlink pointing to the compat patch in the cocci cache,
+# if necessary, the compat.patch will be generated there first.
+compat.h         := $(obj.build)/compat.h
+compat.patch     := $(obj.build)/compat.patch
+current_build_symlink  := build-current
+
+CURRENT_BUILD_SYMLINKS := compat.h compat.patch .compat_test
+CURRENT_BUILD_SYMLINKS += compat.$(KERNELRELEASE).h
+CURRENT_BUILD_SYMLINKS += compat.$(KERNELRELEASE).patch
+CURRENT_BUILD_SYMLINKS += .compat_test.$(KERNELRELEASE)
+
+# symlinks, specific for current build KERNELRELEASE
+drop_KERNELRELEASE_from_filename = \
+	$(patsubst %.$(KERNELRELEASE),%,\
+	$(patsubst %.$(KERNELRELEASE)$(suffix $(@F)),%$(suffix $(@F)),$(@F)))
+symlink_target = $(filter-out $(current_build_symlink),$(drop_KERNELRELEASE_from_filename))
+cmd_symlink_from_current_build = \
+	set -- $(obj.build)/$(symlink_target) $@; \
+	target=$$1 link_name=$$2; \
+	test $$target -ef $$link_name || \
+	{ $(if $(V),,$(kecho) '  LN      $(@F) -> $(build-dir)/$(symlink_target)';) \
+	ln $(if $(V),-v) -s -r -f -T $(obj.build)/$(symlink_target) $@ ; }
+
+# how to create these symlink
+cur.symlinks := $(addprefix $(obj)/,$(CURRENT_BUILD_SYMLINKS))
+$(cur.symlinks) $(obj)/$(current_build_symlink): FORCE
+	$(call cmd,symlink_from_current_build)
+
+# ======================================================================
 
 #
 # run compat tests from inside Kbuild, and generate compat.h from that,
@@ -78,24 +67,21 @@ hostprogs := drbd-kernel-compat/gen_patch_names
 # for the "compat.h" step
 # make ... obj=dummy-for-compat.o dummy-for-compat-h.o
 dummy-for-compat-y += dummy-for-compat-h.o
-$(obj)/dummy-for-compat-h.o: $(obj)/compat.h
+# also ask for symlinks
+$(obj)/dummy-for-compat-h.o: | $(obj)/$(current_build_symlink)
+$(obj)/dummy-for-compat-h.o: | $(filter-out %.patch,$(cur.symlinks))
+$(obj)/dummy-for-compat-h.o: $(compat.h)
 	@true
-$(addprefix $(obj)/,$(drbd-y) drbd_transport_tcp.o drbd_transport_lb-tcp.o drbd_transport_rdma.o): $(obj)/compat.h $(src)/.compat_patches_applied
-$(obj)/drbd-kernel-compat/gen_patch_names: $(src)/drbd-kernel-compat/gen_patch_names.c $(obj)/compat.h
 
-obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
+# same trick for the prep / patch step
+# make ... obj=dummy-for-prep.o dummy-for-patch.o
+# more dependencies, and how to build them, further below.
+dummy-for-prep-y += dummy-for-patch.o
+patch-target := $(obj)/dummy-for-patch.o
+$(patch-target): $(obj)/dummy-for-compat-h.o
+	@true
 
-# ======================================================================
-
-# Are we in stage 2 of the build (modpost)?
-
-# Apparently GNU Make 4.0 strips leading ./ from MAKEFILE_LIST. Yay.
-
-KBUILD_STAGE ?= $(if $(filter      scripts/Makefile.modpost \
-			$(srctree)/scripts/Makefile.modpost,\
-			$(MAKEFILE_LIST)),modpost)
-
-ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj)/.config.$(KERNELVERSION).timestamp 2> /dev/null))
+ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj.build)/.config.timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
 endif
 
@@ -105,18 +91,19 @@ endif
 # otherwise the compat test already fails in processing linux/blk_types.h
 RH_KABI_H := $(wildcard $(KDIR)/include/linux/rh_kabi.h)
 ifdef RH_KABI_H
-      COMPAT_CFLAGS := -include"linux/rh_kabi.h" -include"linux/errno.h"
+      COMPAT_CFLAGS := -include "linux/rh_kabi.h" -include "linux/errno.h"
 endif
 
-ifneq ($(KBUILD_STAGE),modpost)
 TEST_C := $(sort $(wildcard $(src)/drbd-kernel-compat/tests/*.c))
-TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj)/.compat_test.$(KERNELVERSION)/%.result)
-$(obj)/.compat_test.$(KERNELVERSION)/%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
+$(if $(TEST_C),,$(error === Confused: No compat test cases found.))
+
+TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj.build)/.compat_test/%.result)
+$(obj.build)/.compat_test/%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
 	$(call cmd,compat_test_result)
 
 quiet_cmd_compat_test_result = COMPAT  $*
-      cmd_compat_test_result = \
-	mkdir -p $(@D)/ ; \
+      cmd_compat_test_result =							\
+	set -e ; mkdir -p $(@D)/ ;						\
 	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
 	if $(CC) $(c_flags) -Wno-error -Werror-implicit-function-declaration $(COMPAT_CFLAGS) \
 		-c -o $(@D)/.$*.o $< > $(@D)/$*.stdout 2> $(@D)/$*.stderr	\
@@ -125,38 +112,138 @@ quiet_cmd_compat_test_result = COMPAT  $*
 		echo "\#define $$var" ;						\
 	else									\
 		echo "/* \#undef $$var */" ;					\
-	fi > $@
+	fi > $@.tmp ; mv $@.tmp $@
 
-filechk_compat.$(KERNELVERSION).h = cat $(TEST_R)
-filechk_compat.h = cat $(obj)/compat.$(KERNELVERSION).h
+# funky trick with patsubst printf xarg to shorten the command line a bit
+# older kernel still redirects stdin from the first prerequisite,
+# and does not yet have an implicit { ; } command block,
+# which would override the pipe and have xargs feed from the first result file :-(
+filechk_compat.h = { printf '$(obj.build)/%s ' $(patsubst $(obj.build)/%,%,$(TEST_R)) | xargs cat; }
 
-$(src)/.compat_patches_applied: $(src)/drbd-kernel-compat/compat.patch
-	@$(kecho) '  PATCH'
-	@patch -d $(src) -p0 --batch --forward --reject-file=- < $(src)/drbd-kernel-compat/compat.patch
-	@cd $(src) && p=drbd-kernel-compat/compat.patch && sed -ne 's/^--- //p' < $$p | xargs -r -- touch -r $$p
-	@cp -d $(src)/drbd-kernel-compat/compat.patch $(src)/.compat_patches_applied
-
-$(src)/drbd-kernel-compat/compat.patch: $(obj)/compat.h
-	$(eval chksum := $(word 1, $(shell md5sum $(obj)/compat.h)))
-	$(eval dir := $(obj)/drbd-kernel-compat/cocci_cache/$(chksum))
-	@mkdir -p $(dir)
-	@test -e $(dir)/compat.h || cp -t $(dir) $(obj)/compat.h
-	@echo $(KERNELRELEASE) > $(dir)/kernelrelease.txt
-	@ln -f -s -T ../cocci_cache/$(chksum) $(obj)/drbd-kernel-compat/l/$(KERNELRELEASE)
-	@PATCHLEVEL="" $(MAKE) -C $(src) drbd-kernel-compat/cocci_cache/$(chksum)/compat.patch
-	@ln -f -s $(dir)/compat.patch $(src)/drbd-kernel-compat/compat.patch
-
-$(obj)/compat.$(KERNELVERSION).h: $(TEST_R) $(COMPAT_FORCE)
-	$(call filechk,compat.$(KERNELVERSION).h)
-
-$(obj)/compat.h: $(obj)/compat.$(KERNELVERSION).h FORCE
+$(compat.h): $(TEST_R) FORCE
 	$(call filechk,compat.h)
-	$(Q)touch -r $(objtree)/.config $(obj)/.config.$(KERNELVERSION).timestamp
-else
-# remember KERNELRELEASE for install target
-# .kernelversion can be included in Makefile as well as
-# sourced from shell
-$(shell printf "%s\n"				\
+	$(Q)touch -r $(objtree)/.config $(obj.build)/.config.timestamp
+
+# Generate / find from cache the compat.patch.
+# If we used an old compat.patch from the cache,
+# "backdate" the compat.h to the used compat.patch
+# to avoid spurious checks in future runs.
+$(compat.patch): $(compat.h)
+	$(MAKE) -C $(src) -f Makefile.spatch $@
+	-set -- $(addprefix $(obj.build)/compat,.patch .h);	\
+	test $$1 -nt $$2 || touch -r $$1 $$2
+
+# ======================================================================
+
+# list of known source files
+include $(src)/Kbuild.drbd-module-sources
+
+patches-dir := $(obj.build)/.patches
+build-patches :=
+build-sources :=
+
+# Modern patchutils could "splitdiff -a -D $(patches-dir)".
+# still won't work exactly the same, as cocci is inconsistent with its annotation
+# and sometimes has a './' prefix, but most of the time it has not.
+quiet_cmd_splitdiff = SPLIT   $<
+      cmd_splitdiff = \
+		mkdir -p $(patches-dir) \
+		&& cd $(patches-dir) \
+		&& $(PERL) $(src)/drbd-kernel-compat/splitdiff.pl < $<
+
+annotate-orig-pos := \
+	$(src)/drbd-kernel-compat/annotate-diff-with-original-file-position-pragmas.pl
+
+quiet_cmd_apply_compat_patch = PATCH   $@
+      cmd_apply_compat_patch =						\
+	set -e; set -- $^; out=$@ patch=$$1 orig=$$2;			\
+	mkdir -p $(@D);							\
+	if test -s $$patch ; then					\
+		patch --batch --forward --silent --reject-file=-	\
+			--output $$out.tmp --input $$patch $$orig;	\
+		diff -u $$orig $$out.tmp |				\
+		DRBDSRC=$(src)						\
+		OUTDIR=$(obj.build)					\
+		PATCHES_DIR=$(patches-dir)				\
+		$(PERL) $(annotate-orig-pos)				\
+		| patch --batch --forward --silent --reject-file=-	\
+			--output $$out --input - $$orig;		\
+		: rm -f $$out.tmp; 					\
+	else { echo "\# 1 \"$$orig\""; cat $$orig; } > $$out; fi
+
+orig-source = $(src)/$(s)
+build-source = $(obj.build)/$(s)
+patch-name = $(patches-dir)/$(subst /,_,$(s)).patch
+
+define apply-compat-patch-template
+build-patches += $(patch-name)
+build-sources += $(build-source)
+$(build-source): $(patch-name) $(orig-source)
+	$$(call cmd,apply_compat_patch)
+endef
+$(foreach s,$(filter %.c %.h,$(drbd-module-sources)),$(eval $(apply-compat-patch-template)))
+
+.ts.compat.patch := $(obj.build)/.ts.compat.patch
+$(build-sources): $(.ts.compat.patch)
+
+# We could use &: (a "grouped" target) to let make know that one execution of
+# the recipe will generate all of the target patches.
+# :-( but older make cannot do that yet :-(
+# So we have the "time stamp compat patch" target.
+$(build-patches): $(.ts.compat.patch)
+
+$(.ts.compat.patch): $(compat.patch)
+	$(call cmd,splitdiff)
+	$(Q)touch -r $< $(build-patches) $(.ts.compat.patch)
+
+# === build-$(KERNELRELEASE)/ (drbd with compat patches applied) ======
+
+ifndef cmd_copy
+quiet_cmd_copy = COPY    $@
+      cmd_copy = cat $< > $@
+endif
+
+$(obj.build)/Kbuild: $(src)/Kbuild.drbd
+	$(Q)mkdir -p $(@D)
+	$(call cmd,copy)
+
+$(obj.build)/Module.supported: $(src)/Module.supported
+	$(Q)mkdir -p $(@D)
+	$(call cmd,copy)
+
+# Ask for the "apply_compat_patch" rules above to run,
+# for the Kbuild template to be copied over,
+# for the buildtag, kernelrelease, kernel.config.gz to be generated,
+generate-these :=
+generate-these += $(build-sources)
+generate-these += $(obj.build)/Kbuild
+generate-these += $(obj.build)/drbd_buildtag.c
+generate-these += $(obj.build)/.drbd_kernelrelease
+generate-these += $(obj.build)/.kernel.config.gz
+generate-these += $(if $(wildcard $(src)/Module.supported),$(obj.build)/Module.supported)
+
+$(patch-target): $(generate-these)
+
+# Older kernels may need this when building against an OFED stack.
+# But no need to rebuild anything just because the build itself updated that
+# file, as it is expected to do. -=> order only prerequisite.
+$(patch-target): | $(obj.build)/Module.symvers
+$(obj.build)/Module.symvers:
+	$(Q)cat /dev/null $(KBUILD_EXTRA_SYMBOLS) $(OFED_MODULE_SYMVERS) > $@
+
+# === build-*/*/handshake (with compat patches applied) ===============
+
+# Copy handshake Kbuild.
+# Everything else is already handled by the "apply patches" rules.
+$(patch-target): $(obj.build)/drbd-kernel-compat/handshake/Kbuild
+$(obj.build)/drbd-kernel-compat/handshake/Kbuild: $(src)/drbd-kernel-compat/handshake/Kbuild
+	$(Q)mkdir -p $(@D)
+	$(call cmd,copy)
+
+# ======================================================================
+
+define filechk_.drbd_kernelrelease
+	printf "%s\n"				\
 	"KDIR=$(KDIR)"				\
 	$(if $(O),"O=$(O)")			\
 	"VERSION=$(VERSION)"			\
@@ -165,41 +252,54 @@ $(shell printf "%s\n"				\
 	"EXTRAVERSION=$(EXTRAVERSION)"		\
 	"LOCALVERSION=$(LOCALVERSION)"		\
 	"KERNELRELEASE=$(KERNELRELEASE)"	\
-	"KERNELVERSION=$(KERNELVERSION)"	\
-	> $(src)/.drbd_kernelrelease.new	\
-)
-endif
+	"KERNELVERSION=$(KERNELVERSION)"
+endef
 
+# older kernels unconditionally redirect stdin from first prerequisite ($<)
+$(obj.build)/.drbd_kernelrelease: /dev/null FORCE
+	$(call filechk,.drbd_kernelrelease)
+
+kconfig := $(realpath $(word 1,$(wildcard $(objtree)/.config $(srctree)/.config)))
+$(obj.build)/.kernel.config.gz: $(obj.build)/.drbd_kernelrelease $(kconfig)
+	@$(kecho) '  GEN     $@ $(echo-why)'
+	$(Q)config=$(kconfig)                                   ; \
+	{ echo -e "#\n# drbd.o was compiled with"           ; \
+	  echo "#  `$(CC) -v 2>&1 | tail -1`"               ; \
+	  echo "# against this kernelrelease:"              ; \
+	  sed 's/^/#  /' $<                                 ; \
+	  echo    "# kernel .config from"                   ; \
+	  echo    "#  $$config"                             ; \
+	  echo -e "# follows\n#\n"                          ; \
+	  cat $$config ; } | gzip > $@.new && mv $@.new $@
 
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
-SHELL=/bin/bash
-
-$(obj)/drbd_buildtag.c: $(addprefix $(obj)/,$(filter-out drbd_buildtag.o,$(drbd-y)))
+$(obj.build)/drbd_buildtag.c: $(orig-sources) $(THIS_MAKEFILE)
 	@$(kecho) '  GEN     $@ $(echo-why)'
-	@set -e; exec > $@.new;							\
-	echo -e "/* automatically generated. DO NOT EDIT. */";			\
-	echo -e "#include <linux/drbd.h>";					\
-	echo -e "#include <linux/drbd_config.h>";				\
-	echo -e "const char *drbd_buildtag(void)\n{";				\
-	if test -e $(src)/../.git &&						\
-	   GITHEAD=$$(cd $(src) && git rev-parse HEAD); then			\
-		GITDIFF=$$(cd $(src)/.. && git diff --name-only HEAD |		\
-			tr -s '\t\n' '  ' |					\
-			sed -e 's/^/ /;s/ *$$//');				\
-		echo -e "\treturn \"GIT-hash: $$GITHEAD$$GITDIFF\"";		\
-	elif test -e $(src)/.drbd_git_revision ; then				\
-		echo -e "\treturn \"$$(cat $(src)/.drbd_git_revision)\"";	\
-	elif test -e $@ ; then							\
-		grep return $@ ;						\
-	else									\
-		echo >&2 "Your DRBD source tree is broken. Unpack again.";      \
-		exit 1;								\
-	fi ;									\
+	@set -e;								\
 	if [ -z "${WANT_DRBD_REPRODUCIBLE_BUILD}" ] || [ -z "${SOURCE_DATE_EPOCH}" ] ; then	\
 		buildinfo="build by $$USER@$$HOSTNAME, `date "+%F %T"`" ;			\
 	else 											\
 		buildinfo="reproducible build, `date -u -d@${SOURCE_DATE_EPOCH} "+%F %T"`" ; 	\
 	fi ; 											\
-	echo -e "\t\t\" $$buildinfo\";\n}";							\
+	if test -e $(src)/../.git &&						\
+	   GITHEAD=$$(cd $(src) && git rev-parse HEAD); then			\
+		GITDIFF=$$(cd $(src)/.. && git diff --name-only HEAD |		\
+			tr -s '\t\n' '  ' |					\
+			sed -e 's/^/ /;s/ *$$//');				\
+		build_tag="GIT-hash: $$GITHEAD$$GITDIFF";			\
+	elif test -e $(src)/.drbd_git_revision ; then				\
+		build_tag=$$(cat $(src)/.drbd_git_revision);			\
+	else									\
+		echo >&2 "Your DRBD source tree is broken. Unpack again.";      \
+		exit 1;								\
+	fi ;									\
+	exec > $@.new;								\
+	echo -e "/* automatically generated. DO NOT EDIT. */";			\
+	echo -e "#include <linux/drbd.h>";					\
+	echo -e "#include <linux/drbd_config.h>";				\
+	echo -e "const char *drbd_buildtag(void)\n{";				\
+	echo -e "\treturn \"$$build_tag\"\n";					\
+	echo -e "\t\t\" $$buildinfo\";\n}";					\
 	mv -f $@.new $@
+endif

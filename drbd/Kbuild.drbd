@@ -1,0 +1,94 @@
+#!make # syntax highlighting
+
+# PRE_CFLAGS may contain (M)OFED header locations
+LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
+
+# Files in the standard include directories take precendence over files
+# in the drbd-kernel-compat directory.
+#
+# Add -I$(src) to EXTRA_CFLAGS again: some (rhel5, maybe other) kbuild does not
+# yet use LINUXINCLUDE like we expect it to ;( fortunately it does not contain
+# in-tree drbd either yet, so precedence of include files is not important.
+#
+# override: we absolutely need this, even if EXTRA_CFLAGS originates from make
+# command line or environment
+override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
+
+ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
+		   $(objtree)/Module.symvers | wc -l),1)
+compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
+endif
+
+ifndef CONFIG_LRU_CACHE
+compat_objs += drbd-kernel-compat/lru_cache.o
+endif
+
+compat_objs += drbd-kernel-compat/drbd_wrappers.o
+
+ifdef CONFIG_TLS
+ifeq ($(shell test $(VERSION) -ge 4; echo $$?),0)
+ifeq ($(shell test $(VERSION) -gt 4 || test $(PATCHLEVEL) -ge 17; echo $$?),0)
+ifndef CONFIG_NET_HANDSHAKE
+# TLS is enabled in the kernel,
+# the kernel is recent enough to support it,
+# but they did not enable NET_HANDSHAKE.
+# We need to provide it.
+COMPAT_NET_HANDHAKE := m
+endif
+endif
+endif
+endif
+
+# ================================================================
+CONFIG_BLK_DEV_DRBD := m
+obj-$(CONFIG_BLK_DEV_DRBD)       += drbd.o
+obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_tcp.o
+obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_lb-tcp.o
+obj-$(if $(CONFIG_INFINIBAND),m) += drbd_transport_rdma.o
+obj-$(COMPAT_NET_HANDHAKE)       += drbd-kernel-compat/handshake/
+# ================================================================
+
+ifdef CONFIG_DEV_DAX_PMEM
+ifneq ($(shell grep -e '\<arch_wb_cache_pmem\>' $(objtree)/Module.symvers | wc -l),1)
+override EXTRA_CFLAGS += -DDAX_PMEM_IS_INCOMPLETE
+else
+CONFIG_DRBD_DAX := y
+endif
+endif
+
+# enable fault injection by default
+ifndef CONFIG_DRBD_FAULT_INJECTION
+	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
+endif
+
+# For drbd_strings.c. Could also use drbd-y += drbd-headers/drbd_strings.o,
+# but I don't think we should produce .o files in that directory.
+# Older kernel trees may not have cmd_copy yet.
+ifndef cmd_copy
+quiet_cmd_copy = COPY    $@
+      cmd_copy = cat $< > $@
+endif
+
+$(obj)/drbd_strings.c: $(src)/drbd-headers/drbd_strings.c
+	$(call cmd,copy)
+
+drbd-y += drbd_buildtag.o
+drbd-y += drbd_bitmap.o
+drbd-y += drbd_proc.o
+drbd-y += drbd_sender.o
+drbd-y += drbd_receiver.o
+drbd-y += drbd_req.o
+drbd-y += drbd_actlog.o
+drbd-y += drbd_main.o
+drbd-y += drbd_strings.o
+drbd-y += drbd_nl.o
+drbd-y += drbd_interval.o
+drbd-y += drbd_state.o
+drbd-y += drbd_nla.o
+drbd-y += drbd_transport.o
+drbd-y += $(compat_objs)
+
+drbd-$(CONFIG_DRBD_DAX)   += drbd_dax_pmem.o
+drbd-$(CONFIG_KREF_DEBUG) += kref_debug.o drbd_kref_debug.o
+drbd-$(CONFIG_DEBUG_FS)   += drbd_debugfs.o
+

@@ -36,7 +36,9 @@ for F in $FILES; do
     done
 
     KERNELRELEASE=${F#*compat.h.}
-    echo "$KERNELRELEASE" >> cocci_cache/$MD5SUM/kernelrelease.txt
+    kernelrelease_txt=cocci_cache/$MD5SUM/kernelrelease.txt
+    grep -sqxFe "$KERNELRELEASE" "$kernelrelease_txt" ||
+    echo "$KERNELRELEASE" >> "$kernelrelease_txt"
 
     ln -f -s -T ../cocci_cache/$MD5SUM l/$KERNELRELEASE
 

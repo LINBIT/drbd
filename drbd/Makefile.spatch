@@ -1,0 +1,119 @@
+#
+# have coccinelle spatch generate the compat.patch from compat.h
+# and a subset of the source files.
+#
+MAKEFLAGS += -rR --no-print-directory
+
+SHELL := /bin/bash
+
+compat.patch := $(filter %/compat.patch,$(MAKECMDGOALS))
+compat.h := $(compat.patch:%.patch=%.h)
+
+# PARANOIA
+ifeq (,$(compat.patch))
+  $(error This Makefile can only make */compat.patch targets)
+endif
+ifneq (1,$(words $(MAKECMDGOALS)))
+  $(error This Makefile can only make a single compat.patch at a time)
+endif
+
+# Only a subset of Makefile.drbd-module-sources
+# to speed up spatch runs
+include Makefile.cocci-sources
+
+Q := @
+
+shell_check = $(shell $(1))$(if \
+	$(filter-out 0,$(.SHELLSTATUS)),\
+	$(error EXIT $(.SHELLSTATUS) from: $(1))))
+
+chksum    := $(word 1, $(call shell_check,md5sum $(compat.h) < /dev/null))
+cache_dir := drbd-kernel-compat/cocci_cache/$(chksum)
+
+cached_compat_h     := $(cache_dir)/compat.h
+cached_compat_patch := $(cache_dir)/compat.patch
+
+# Remember which kernel releases this supposedly works for.
+# If KERNELRELEASE is not known, will add an empty line (at most once).
+$(cache_dir)/kernelrelease.txt: $(compat_h) FORCE
+	$(Q)set -e;						\
+	grep -sqxFe "$(KERNELRELEASE)" $@ < /dev/null ||	\
+	echo $(KERNELRELEASE) >> $@;
+
+# Call our helper script to call spatch.
+$(cached_compat_patch): $(cached_compat_h) | $(cache_dir)/kernelrelease.txt
+	$(Q)			\
+	compat_patch=$@;	\
+	sources=($(sources));	\
+	incdir=$(cache_dir);	\
+	chksum=$(chksum);	\
+	. ./drbd-kernel-compat/gen_compat_patch.sh
+
+ifneq (,$(wildcard $(cached_compat_h)))
+  existing_chksum := $(word 1, $(call shell_check,md5sum $(cached_compat_h) < /dev/null))
+endif
+
+# Are we called to (re-)generate a compat.patch,
+# or call during a build to find one in the cache (or generate if missing)?
+what-for := $(if $(filter drbd-kernel-compat/cocci_cache/%/compat.h,$(compat.h)),re-generate,build)
+
+ifeq (build,$(what-for))
+  # Because spatch runs take some time,
+  # try to get away with a cached patch (and possibly some fuzz).
+  # If that does not work anylonger, you can ask for "make compat",
+  # which re-runs spatch for changed sources, see below.
+  # $(cached_compat_patch): $(sources)
+
+  # Put the compat.h in the cache.
+$(cached_compat_h): $(compat.h)
+	$(Q)mkdir -p $(@D) && cmp -s $< $@ || { cat $< > $@.new && mv $@.new $@; }
+
+  # Always update the symlink,
+  # no matter how old the current target of that symlink
+$(compat.patch): $(cached_compat_patch) FORCE
+	@echo '  CHK     $(patsubst $(CURDIR)/%,%,$@)'
+	$(Q)T=`readlink $@`; \
+	test "$$T" = "../$<" && exit 0; \
+	echo '  LN      $@ -> ../$<'; \
+	ln -f -s ../$< $@
+
+else # (re-generate,$(what-for))
+  # This is an explicit "regenerate" request.
+  # Re-run spatch, if there are changes in
+  # any source files,
+  # or .cocci files,
+  # or .patch files.
+  # Changes in test cases are handled by kbuild,
+  # and may or may produce a different compat.h,
+  # which will trigger a re-build there.
+  $(cached_compat_patch): $(sources)
+  $(cached_compat_patch): $(wildcard drbd-kernel-compat/cocci/*.cocci)
+  $(cached_compat_patch): $(wildcard drbd-kernel-compat/patches/*.patch)
+endif
+
+# PARANOIA
+ifeq (re-generate,$(what-for))
+  # We are asked to (re-)generate a compat.patch IN the cocci_cache.
+  # we are not here to try and use cached compat.patches,
+  # but asked to regenerate existing compat.patches.
+  # Double check given path against its checksum.
+
+  ifneq ($(cached_compat_h),$(compat.h))
+    # FIXME what now? only warn and rm -rf that cache?
+    # I decide to leave it in place and error out,
+    # so we can inspect how it is corrupt,
+    # and maybe figure out why that happened.
+    $(error corrupted cocci cache? $(compat.h): wrong checksum $(chksum))
+  endif
+
+else # (build,$(what-for))
+  # Double check cache if it exists:
+  ifneq (,$(existing_chksum))
+    ifneq ($(chksum),$(existing_chksum))
+      $(error corrupted cocci cache? $(cache_dir) vs $(existing_chksum))
+    endif
+  endif
+endif
+
+.PHONY: FORCE
+FORCE:
