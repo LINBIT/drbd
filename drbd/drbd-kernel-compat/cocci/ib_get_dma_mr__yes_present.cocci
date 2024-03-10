@@ -31,7 +31,7 @@ static u32 dtr_cm_to_lkey(struct dtr_cm *cm)
 }
 
 @ ib_get_dma_mr__alloc @
-identifier cm, cause, i, path;
+identifier cm, cause, i;
 @@
 static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 				    enum dtr_alloc_rdma_res_causes *cause)

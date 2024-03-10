@@ -4,14 +4,14 @@ identifier fn;
 @@
 b->bi_end_io = fn;
 
-@@ identifier find_endio.fn, b; @@
+@@ identifier find_endio.fn, b, bio = bio; @@
 - fn(struct bio* b)
 + fn(struct bio* b, int error)
 {
 ...
 }
 
-@@ identifier find_endio.fn, b, e; @@
+@@ identifier find_endio.fn, b, e, bio = bio; @@
 fn(struct bio *b, int e)
 {
 ...

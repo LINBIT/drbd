@@ -4,7 +4,6 @@
 
 @@
 typedef u8;
-identifier fn;
 @@
 + #define TLS_RECORD_TYPE_ALERT	0x15
 + #define TLS_RECORD_TYPE_DATA	0x17

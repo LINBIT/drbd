@@ -16,6 +16,7 @@ struct block_device_operations drbd_ops = {
 @@
 type T;
 identifier b;
+identifier bio = bio;
 @@
 T
 - drbd_submit_bio(
