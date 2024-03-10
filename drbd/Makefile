@@ -114,6 +114,53 @@ ifdef PATCHLEVEL
 else
   # called from command line in current directory
 
+#################################################################
+install-target := $(filter install,$(MAKECMDGOALS))
+non-install-targets := $(filter-out install,$(MAKECMDGOALS))
+ifdef install-target
+ifdef non-install-targets
+   # mixed targets!
+   # have to do one level of recursion :-(
+   # If we "source" (shell level) or even "include" (make level)
+   # the .drbd_kernelrelease,
+   # things may get confusing with KERNELRELEASE not matching KDIR
+   # (for example KDIR=/usr/src/linux-headers-6.1.0-18-amd64, but an
+   #  earlier build now leaks:  KERNELRELEASE=6.1.0-17-amd64)
+   # and subtly wrong compat.h / compat.patches generated.
+   # Separate the install target into its own make invokation,
+   # where it is then safe to just install whatever was built last.
+   .PHONY: $(non-install-targets) $(install-target)
+   $(non-install-targets):
+	$(MAKE) -C $(CURDIR) $(non-install-targets)
+   $(install-target): $(non-install-targets)
+	$(MAKE) -C $(CURDIR) $(install-target)
+else
+  # "install" is the only goal this time.
+  ifdef KDIR
+    .PHONY: update-current-build-symlink
+    install: update-current-build-symlink
+    update-current-build-symlink:
+	$(MAKE) -C $(CURDIR)
+  else
+    current_build_drbd_kernelrelease := .drbd_kernelrelease
+    -include $(current_build_drbd_kernelrelease)
+  endif
+  ifdef KDIR
+    MODSUBDIR=updates
+    .PHONY: install
+    install:
+	$(MAKE) -C $(KDIR) $(if $(O),O=$(O)) $(if $(V),V=$(V)) \
+		M=$(CURDIR)			\
+		modules_install			\
+		INSTALL_MOD_PATH=$(DESTDIR)	\
+		INSTALL_MOD_DIR=$(MODSUBDIR)
+  else
+    $(error No KDIR in $(current_build_drbd_kernelrelease) found. Do you need to 'make' the module first?)
+  endif
+endif
+else
+#################################################################
+
   # for some reason some of the commands below only work correctly in bash,
   # and not in e.g. dash. I'm too lazy to fix it to be compatible.
   SHELL=/bin/bash
@@ -142,6 +189,8 @@ else
   drbd.o: greeting kbuild
   default: drbd.o
   all:     drbd.o
+
+  export KDIR O V
 
   greeting:
 	@echo "" ;\
@@ -230,36 +279,6 @@ include Makefile.cocci-sources
 
   compat: $(compat_patches)
 
-  ifneq ($(wildcard .drbd_kernelrelease),)
-    # for VERSION, PATCHLEVEL, SUBLEVEL, EXTRAVERSION, KERNELRELEASE
-    include .drbd_kernelrelease
-    MODOBJS := drbd.ko drbd_transport_tcp.ko drbd_transport_lb-tcp.ko drbd_transport_rdma.ko
-    MODOBJS += $(wildcard drbd-kernel-compat/handshake/handshake.ko)
-    MODSUBDIR := updates
-    LINUX := $(wildcard /lib/modules/$(KERNELRELEASE)/build)
-
-    install:
-	@if ! [ -e $(MODOBJ) ] ; then \
-	  echo "No $(MODOBJ): nothing to install??"; false ; \
-	fi
-	install -d $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR)
-	set -e ; for ko in $(MODOBJS); do \
-		install -m 644 $$ko $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(MODSUBDIR); \
-	done
-    ifeq ($(DESTDIR),/)
-      ifeq ($(shell uname -r),$(KERNELRELEASE))
-		/sbin/depmod -a || :
-      else
-		@echo "Don't forget to depmod."
-      endif
-    endif
-  else
-    install:
-	@echo "No .drbd_kernelrelease found. Do you need to 'make' the module first?"
-	@false
-  endif
-endif
-
 .PHONY: fix-tar-timestamps
 fix-tar-timestamps:
 	@-test -e ../.git || test -e .timestamps_fixed || \
@@ -272,3 +291,5 @@ spell:
 	 	aspell --save-repl --dont-backup --personal=./../documentation/aspell.en.per check $$f; \
 	done
 
+endif # install / non-install recursion
+endif # Kbuild or command line

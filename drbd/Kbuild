@@ -157,6 +157,8 @@ else
 # .kernelversion can be included in Makefile as well as
 # sourced from shell
 $(shell printf "%s\n"				\
+	"KDIR=$(KDIR)"				\
+	$(if $(O),"O=$(O)")			\
 	"VERSION=$(VERSION)"			\
 	"PATCHLEVEL=$(PATCHLEVEL)"		\
 	"SUBLEVEL=$(SUBLEVEL)"			\
