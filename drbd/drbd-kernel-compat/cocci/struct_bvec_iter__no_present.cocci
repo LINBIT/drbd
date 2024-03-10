@@ -23,6 +23,7 @@
 identifier b;
 expression bvec, iter;
 identifier fn;
+identifier bio = bio;
 @@
 fn(..., struct bio *b, ...) {
 <...

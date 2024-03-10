@@ -6,6 +6,7 @@ expression flags;
 
 @@
 identifier bvec, page, len, offset, msg, socket;
+identifier sent = sent;
 @@
 - struct bio_vec bvec;
   ...

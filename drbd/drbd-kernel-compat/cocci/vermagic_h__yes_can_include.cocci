@@ -31,7 +31,7 @@ drbd_init(...)
 }
 
 @ call_double_check depends on ever add_double_check @
-symbol err;
+identifier err = err;
 @@
 // it would be much more logical to do something like:
 //
