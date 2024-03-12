@@ -52,6 +52,9 @@ ifndef CONFIG_DRBD_FAULT_INJECTION
 	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
 endif
 
+$(obj)/drbd_strings.c: $(src)/drbd-headers/drbd_strings.c
+	$(call cmd,copy)
+
 drbd-$(CONFIG_DEBUG_FS) += drbd_debugfs.o
 drbd-y += drbd_buildtag.o drbd_bitmap.o drbd_proc.o
 drbd-y += drbd_sender.o drbd_receiver.o drbd_req.o drbd_actlog.o

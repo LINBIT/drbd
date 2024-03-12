@@ -40,7 +40,6 @@ sources += drbd_receiver.c
 sources += drbd_req.c
 sources += drbd_sender.c
 sources += drbd_state.c
-sources-ignored += drbd_strings.c # do not process our enum to text mappings
 sources += drbd_transport.c
 sources += drbd_transport_lb-tcp.c
 sources += drbd_transport_rdma.c
