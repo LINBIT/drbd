@@ -72,8 +72,6 @@ else
 
   DRBDSRC := $(shell pwd)
 
-  # to be overridden on command line:
-  PREFIX := /
   ifneq ($(wildcard ../build-for-uml),)
     #### for Philipp's convenience :)
     ARCH_UM := "ARCH=um"
@@ -91,7 +89,7 @@ else
     endif
   endif
 
-  .PHONY: drbd.o default all greeting clean kbuild install dep tags unpatch compat
+  .PHONY: drbd.o default all greeting clean kbuild install tags cscope unpatch compat
 
   drbd.o: greeting kbuild
   default: drbd.o
@@ -162,10 +160,11 @@ else
 	rm -f drbd_buildtag.c .config*.timestamp compat*.h
 
   tags:
-	( git ls-files ;						\
-	  git submodule foreach -q --recursive				\
-		'git ls-files | sed -e "s,^,$$displaypath/,"' ) |	\
-		ctags -L -
+	git ls-files --recurse | ctags -I__must_hold -L -
+
+  cscope:
+	git ls-files --recurse | cscope -b -i -
+
 
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
