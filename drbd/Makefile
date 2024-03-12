@@ -149,7 +149,7 @@ else
 
   clean: unpatch
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
-	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel*
+	rm -f *.[oas] *.ko .*.cmd .*.d .*.tmp *.mod.c .*.flags .depend .kernel* *.mod
 	rm -f dummy-for-compat-h.c
 	rm -f drbd-kernel-compat/*.[oas] drbd-kernel-compat/.*.cmd
 	rm -f drbd-kernel-compat/compat.patch drbd-kernel-compat/.compat.cocci
