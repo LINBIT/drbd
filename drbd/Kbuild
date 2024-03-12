@@ -56,7 +56,6 @@ endif
 
 HOST_EXTRACFLAGS += -I$(src) -std=c11 $(EXTRA_CFLAGS)
 hostprogs := drbd-kernel-compat/gen_patch_names
-headers-to-apply-compat := drbd_int.h drbd_req.h drbd_interval.h
 
 $(obj)/dummy-for-compat-h.o: $(obj)/compat.h
 	@true
