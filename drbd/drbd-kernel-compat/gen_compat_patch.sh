@@ -81,6 +81,7 @@ if hash spatch && spatch_is_recent; then
 		--macro-file drbd-kernel-compat/cocci_macros.h \
 		--very-quiet \
 		--all-includes \
+		${SPATCH_DEBUG:+ --debug} \
 		> "$compat_patch.tmp" \
 		2> "$incdir/.spatch.stderr"
 	ex=$?
