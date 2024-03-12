@@ -54,9 +54,18 @@ ifdef CONFIG_KREF_DEBUG
       drbd-y += kref_debug.o drbd_kref_debug.o
 endif
 
+#
+# run compat tests from inside Kbuild, and generate compat.h from that,
+# To avoid a spurious modpost run, pretend to be a multi-object module,
+# but ask Kbuild to only build part of it.
+#
+
 HOST_EXTRACFLAGS += -I$(src) -std=c11 $(EXTRA_CFLAGS)
 hostprogs := drbd-kernel-compat/gen_patch_names
 
+# for the "compat.h" step
+# make ... obj=dummy-for-compat.o dummy-for-compat-h.o
+dummy-for-compat-y += dummy-for-compat-h.o
 $(obj)/dummy-for-compat-h.o: $(obj)/compat.h
 	@true
 $(addprefix $(obj)/,$(drbd-y) drbd_transport_tcp.o): $(obj)/compat.h $(src)/.compat_patches_applied
