@@ -69,11 +69,11 @@ __duplicates := $(shell printf "%s\n" $(sources) $(sources-ignored) | sort | uni
 $(if $(__duplicates),$(error duplicated entries found: $(__duplicates)))
 
 # only if we where able to generate git-ls output
-ifneq ($(__git_ls_sources),)
+ifdef __git_ls_sources
 __unprocessed := $(shell printf "%s\n" $(sources) $(sources-ignored) $(__git_ls_sources) | sort | uniq -u)
-ifneq ($(__unprocessed),)
+ifdef __unprocessed
 $(shell exec >&2; printf "%s\n" \
-	"=== add to Makefile.cocci-sources ===" \
+	"=== FIX in Makefile.cocci-sources ===" \
 	$(__unprocessed) \
 	"^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
 # you need to decide whether to add those to sources, or sources-ignored, or drop them.

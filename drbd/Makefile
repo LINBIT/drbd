@@ -29,7 +29,7 @@
 
 ifeq ($(BUILD_OFED),1)
  OFED_KERNEL_DIR ?= $(firstword $(wildcard /usr/src/ofa_kernel/$(arch)/$(kernelver) /usr/src/ofa_kernel/default))
- ifneq ($(OFED_KERNEL_DIR),)
+ ifdef OFED_KERNEL_DIR
   OFED_CFLAGS := -I$(OFED_KERNEL_DIR)/include -include linux/compat-2.6.h
   OFED_MODULE_SYMVERS := $(OFED_KERNEL_DIR)/Module.symvers
   PRE_CFLAGS := $(OFED_CFLAGS)
@@ -59,7 +59,7 @@ ifeq ($(BUILD_OFED),1)
    #
    # For compat with a wide range of kernel versions, we keep doing both.
    #
-   ifeq ($(KBUILD_EXTRA_SYMBOLS),)
+   ifndef KBUILD_EXTRA_SYMBOLS
      override KBUILD_EXTRA_SYMBOLS += $(OFED_MODULE_SYMVERS)
      export KBUILD_EXTRA_SYMBOLS
    else
@@ -96,7 +96,7 @@ export SPAAS_URL
 # e.g. when building against some (broken?) linux-header package.
 # Lets test on PATCHLEVEL, that won't change too soon...
 
-ifneq ($(PATCHLEVEL),)
+ifdef PATCHLEVEL
  # suffifiently new kernel will include Kbuild directly
  ifneq ($(VERSION),3)
   ifneq ($(VERSION),2)
