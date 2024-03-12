@@ -27,6 +27,8 @@
 # note: if you get strange make errors when ARCH=um, you
 # probably need to "make mrproper" in the KDIR first...
 
+  Q := $(if $(V),,@)
+
 # The destination "root" directory. Meant to be overridden by
 # packaging scripts.
 DESTDIR ?= /
@@ -145,17 +147,17 @@ else
   export KDIR O V
 
   greeting:
-	@echo "" ;\
+	$(Q)echo "" ;\
 	echo "    Calling toplevel makefile of kernel source tree, which I believe is in" ;\
 	echo "    KDIR=$(KDIR)" ; \
 	echo "";
-	@if ! test -e $(KDIR)/Makefile ; then \
+	$(Q)if ! test -e $(KDIR)/Makefile ; then \
 		echo -e "    SORRY, kernel makefile not found. You need to tell me a correct KDIR!\n" ;\
 		false;\
 	fi
 
   unpatch:
-	@if test -e .compat_patches_applied; then \
+	$(Q)if test -e .compat_patches_applied; then \
 	    echo "Removing compat patches"; \
 	    patch -R -p0 --batch --reject-file=- < .compat_patches_applied && \
 	    rm -f .compat_patches_applied; \
@@ -175,16 +177,16 @@ else
   # module with two object files, but ask to generate only one part now.
   .PHONY: compat.h
   compat.h:
-	@> dummy-for-compat-h.c
+	$(Q)> dummy-for-compat-h.c
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) \
 		obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
 
   kbuild: fix-tar-timestamps
-	@rm -f .drbd_kernelrelease*
+	$(Q)rm -f .drbd_kernelrelease*
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) modules
 	-mv .drbd_kernelrelease.new .drbd_kernelrelease
-	@echo -n "Memorizing module configuration ... "
-	@config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \
+	$(Q)echo -n "Memorizing module configuration ... "
+	$(Q)config=$$( (for x in $(KDIR)/.config $(O)/.config ; do \
 	       if test -e $$x ; then echo $$x ; exit 0; fi ; \
 	       done; echo $(KDIR)/.config) | sed -e 's,//,/,g') ; \
 	{ echo -e "#\n# drbd.o was compiled with"          ; \
@@ -197,7 +199,7 @@ else
 	  echo "#  $$(readlink $${config%/.config})/.config" || echo "" ; \
 	  echo -e "# follows\n#\n"                          ; \
 	  cat $$config ; } | gzip > .kernel.config.gz
-	@echo "done."
+	$(Q)echo "done."
 
   clean: unpatch
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
@@ -225,13 +227,13 @@ else
 include Makefile.cocci-sources
 
   $(compat_patches): $(sources)
-	@. ./drbd-kernel-compat/gen_compat_patch.sh $@ $^
+	$(Q). ./drbd-kernel-compat/gen_compat_patch.sh $@ $^
 
   compat: $(compat_patches)
 
 .PHONY: fix-tar-timestamps
 fix-tar-timestamps:
-	@-test -e ../.git || test -e .timestamps_fixed || \
+	$(Q)-test -e ../.git || test -e .timestamps_fixed || \
 	touch drbd-kernel-compat/cocci_cache/*/compat.patch .timestamps_fixed
 
 uninstall:
