@@ -169,12 +169,14 @@ else
   # without trying to re-implement all the Kbuild magic badly, is to simply
   # tell it to compile our smallest, least complex .c file which still
   # has a dependency on our compat.h
+  # Old kernel trees need a C file present to even read our Kbuild file.
+  # To avoid .ko generation and the rest of the modpost step, pretend to be a
+  # module with two object files, but ask to generate only one part now.
   .PHONY: compat.h
   compat.h:
-	@touch dummy-for-compat-h.c
-	@mkdir .tmp_versions
+	@> dummy-for-compat-h.c
 	$(MAKE) -C $(KDIR)  $(if $(O),O=$(O),) M=$(DRBDSRC) $(ARCH_UM) "PRE_CFLAGS=$(PRE_CFLAGS)" \
-		obj-m=dummy-for-compat-h.o dummy-for-compat-h.o
+		obj-m=dummy-for-compat.o dummy-for-compat-h.o
 
   kbuild: fix-tar-timestamps
 	@rm -f .drbd_kernelrelease*
