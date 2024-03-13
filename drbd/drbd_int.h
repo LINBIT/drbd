@@ -1722,7 +1722,7 @@ extern sector_t drbd_get_max_capacity(
 #else
 /* We allow up to 1 PiB on 64 bit architectures as long as our meta data
  * is large enough. */
-#define DRBD_MAX_SECTORS (1UL << (50 - SECTOR_SHIFT))
+#define DRBD_MAX_SECTORS (1ULL << (50 - SECTOR_SHIFT))
 #endif
 
 /* BIO_MAX_SIZE is 256 * PAGE_SIZE,
