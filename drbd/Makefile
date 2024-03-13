@@ -151,14 +151,15 @@ else
   endif
   ifdef KDIR
     MODSUBDIR=updates
+    INSTALL_MOD_PATH ?=   $(DESTDIR)
+    INSTALL_MOD_DIR  ?= $(MODSUBDIR)
+    export INSTALL_MOD_PATH INSTALL_MOD_DIR
     .PHONY: install
     install:
 	test -d $(current_build_symlink) && \
 	$(MAKE) -C $(KDIR) $(if $(O),O=$(O)) $(if $(V),V=$(V)) \
 		M=$(CURDIR)/$(current_build_symlink)	\
-		modules_install			\
-		INSTALL_MOD_PATH=$(DESTDIR)	\
-		INSTALL_MOD_DIR=$(MODSUBDIR)
+		modules_install
   else
     $(error No KDIR in $(current_build_drbd_kernelrelease) found. Do you need to 'make' the module first?)
   endif

@@ -58,14 +58,14 @@ for the DRBD core and various transports.
 	"/lib/modules/%%2-%%1" \
 	"%%doc COPYING" \
 	"%%doc ChangeLog" \
-	"%%doc obj/k-config-%%2-%%1.gz" \
+	"%%doc drbd/k-config-%%2-%%1.gz" \
 }
 %{shell_to_tmpfile -n files_rh_kmod_drbd printf "%%s\\n" \
 	"%%defattr(644,root,root,755)" \
 	"/lib/modules/%%verrel%%dotvariant/extra/drbd" \
 	"%%doc COPYING" \
 	"%%doc ChangeLog" \
-	"%%doc obj/k-config-%%verrel%%dotvariant.gz" \
+	"%%doc drbd/k-config-%%verrel%%dotvariant.gz" \
 	"%%config /etc/depmod.d/drbd.conf" \
 	"%%config /etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der" \
 }
@@ -120,29 +120,12 @@ rm -f %{?my_tmp_files_to_be_removed_in_prep}
 %setup -q -n drbd-%{tarball_version}
 
 %build
-rm -rf obj
-mkdir obj
-
 for flavor in %flavors_to_build; do
-    cp -a -r drbd obj/$flavor
-    #make -C %{kernel_source $flavor} M=$PWD/obj/$flavor
-    # Workaround: for the whole kernel compatibility patching concept to work,
-    # we need to be able to refer to the drbd sources as "drbd". We cannot
-    # change the target filenames of the patches, because they are pre-computed
-    # and shipped with the release tarball.
-    # As a "solution", create a symlink called "drbd" that points to the set of
-    # sources that are currently being built.
-    # Since we potentially have to build for multiple flavors, remove the link
-    # after each build and re-create it for the next one.
-    # Since we are using spatch and shipping pre-computed patches, make sure
-    # the timestamps are preserved by the cp
-    ln -s $flavor obj/drbd
-    make -C obj/$flavor %{_smp_mflags} all KDIR=%{kernel_source $flavor} \
+    make -C drbd %{_smp_mflags} all KDIR=%{kernel_source $flavor} \
 	%{?_ofed_version:BUILD_OFED=1} \
 	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y}
-    rm obj/drbd
 done
 
 %install
@@ -163,12 +146,14 @@ export INSTALL_MOD_DIR=extra/drbd
 [ $INSTALL_MOD_DIR = extra ] && INSTALL_MOD_DIR=extra/drbd
 
 for flavor in %flavors_to_build ; do
-    make -C %{kernel_source $flavor} modules_install \
-	cmd_depmod=: \
-	M=$PWD/obj/$flavor
+    make -C drbd install KDIR=%{kernel_source $flavor} \
+	%{?_ofed_version:BUILD_OFED=1} \
+	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
+	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
+	%{?with_gcov:GCOV_PROFILE=y} \
+	cmd_depmod=:
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
-    mv obj/$flavor/.kernel.config.gz obj/k-config-$kernelrelease.gz
-    mv obj/$flavor/Module.symvers ../../RPMS/Module.symvers.$kernelrelease.$flavor.%{_arch}
+    mv drbd/build-current/.kernel.config.gz drbd/k-config-$kernelrelease.gz
 done
 
 %if %{defined suse_kernel_module_package}
