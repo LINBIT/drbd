@@ -67,6 +67,9 @@ SHELL=/bin/bash
 SUBDIRS     = drbd
 
 REL_VERSION := $(shell sed -ne '/^\#define REL_VERSION/{s/^[^"]*"\([^ "]*\).*/\1/;p;q;}' drbd/linux/drbd_config.h)
+ifndef REL_VERSION
+$(error corrupt drbd/linux/drbd_config.h)
+endif
 override GITHEAD := $(shell test -e .git && $(GIT) rev-parse HEAD)
 
 # container image version tag. 'TAG', becasue we have this (too) generic name in other projects already
@@ -84,8 +87,8 @@ REL_VERSION := $(REL_VERSION)-$(GITHEAD)
 endif
 
 DIST_VERSION := $(REL_VERSION)
-FDIST_VERSION := $(shell test -s .filelist && sed -ne 's,^drbd-\([^/]*\)/.*,\1,p;q' < .filelist)
-ifeq ($(FDIST_VERSION),)
+FDIST_VERSION := $(strip $(shell test -s .fdist_version && cat .fdist_version))
+ifndef FDIST_VERSION
 FDIST_VERSION := $(DIST_VERSION)
 endif
 
@@ -135,7 +138,7 @@ clean:
 
 distclean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
-	rm -f *~ .filelist
+	rm -f *~ .filelist .fdist_version
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
@@ -175,15 +178,14 @@ check check_changelogs_up2date:
 	   up2date=false; fi ; 							\
 	$$up2date
 
-.PHONY: drbd/.drbd_git_revision
 ifdef GITHEAD
 override GITDIFF := $(shell $(GIT) diff --name-only HEAD 2>/dev/null |	\
 			tr -s '\t\n' '  ' |		\
 			sed -e 's/^/ /;s/ *$$//')
-drbd/.drbd_git_revision:
+drbd/.drbd_git_revision: FORCE
 	@echo GIT-hash: $(GITHEAD)$(GITDIFF) > $@
 else
-drbd/.drbd_git_revision:
+drbd/.drbd_git_revision: FORCE
 	@echo >&2 "Need a git checkout to regenerate $@"; test -s $@
 endif
 
@@ -234,38 +236,43 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 		mv $@.tmp $@; )
 
 # update of .filelist is forced:
-.PHONY: .filelist
-.filelist:
-	@set -e ; submodules=`$(GIT) submodule foreach --quiet 'echo $$path'`; \
-	$(GIT) ls-files | \
-	  grep -vxF -e "$$submodules" | \
-	  grep -v "^\.gitlab" | \
-	  sed '$(if $(PRESERVE_DEBIAN),,/^debian/d);s#^#drbd-$(DIST_VERSION)/#' | \
-	  grep -v "gitignore\|gitmodules" > .filelist
-	@$(GIT) submodule foreach --quiet 'git ls-files | sed -e "s,^,drbd-$(DIST_VERSION)/$$path/,"' | \
-	  grep -v "gitignore\|gitmodules" >> .filelist
+.fdist_version: FORCE
+	@test -s $@ && test "$$(cat $@)" = "$(FDIST_VERSION)" || echo "$(FDIST_VERSION)" > $@
+
+.filelist: .fdist_version FORCE
+	@$(GIT) ls-files --recurse -x '.git*' $(if $(PRESERVE_DEBIAN),,-x debian) > $@.new
 	@mkdir -p drbd/drbd-kernel-compat/cocci_cache/
-	@find drbd/drbd-kernel-compat/cocci_cache/ -type f -not -path '*/\.*' | \
-	 sed -e 's,^,drbd-$(DIST_VERSION)/,' >> .filelist
-	@[ -s .filelist ] # assert there is something in .filelist now
-	@echo drbd-$(DIST_VERSION)/drbd-kmod_rhel.spdx     >> .filelist
-	@echo drbd-$(DIST_VERSION)/drbd-kmod_sles.spdx     >> .filelist
-	@echo drbd-$(DIST_VERSION)/.filelist               >> .filelist
-	@echo drbd-$(DIST_VERSION)/drbd/.drbd_git_revision >> .filelist
-	echo "./.filelist updated."
+	@find drbd/drbd-kernel-compat/cocci_cache/ -type f -not -path '*/\.*' >> $@.new
+	@test -s $@.new # assert there is something in .filelist.new now
+	@mv $@.new $@
+	@echo "./.filelist updated."
 
 # tgz will no longer automatically update .filelist,
 # so the tgz and therefore rpm target will work within
 # an extracted tarball, too.
 # to generate a distribution tarball, use make tarball,
-# which will regenerate .filelist
+# which will regenerate .filelist.
+# If we tar up a clean working directory,
+# add a pax-option comment recognizable by git get-tar-commit-id,
+# even though this is not a git-archive.
+comma := ,
+backslash_comma := \,
+escape_comma = $(subst $(comma),$(backslash_comma),$(1))
+tgz-extra-files := \
+	.fdist_version drbd/.drbd_git_revision .filelist \
+	drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
 tgz:
-	test -s .filelist
-	rm -f drbd-$(FDIST_VERSION)
-	$(LN_S) . drbd-$(FDIST_VERSION)
-	for f in $$(<.filelist) ; do [ -e $$f ] && continue ; echo missing: $$f ; exit 1; done
-	tar --owner=0 --group=0 -czf - -T .filelist > drbd-$(FDIST_VERSION).tar.gz
-	rm drbd-$(FDIST_VERSION)
+	test -s .filelist          # .filelist must be present
+	test -n "$(FDIST_VERSION)" # FDIST_VERSION must be known
+	sed -i -e 's,^drbd-$(FDIST_VERSION)/,,' .filelist # drbd-<version>/ prefix no longer expected
+	@for f in $(tgz-extra-files); do test -s $$f && continue; echo missing content: $$f ; exit 1; done; \
+	for f in $$(<.filelist); do test -e $$f && continue; echo missing: $$f ; exit 1; done
+	tar --owner=0 --group=0 -czf - \
+		$(if $(GITHEAD),$(if $(GITDIFF),,--pax-option=comment=$(GITHEAD))) \
+		$(tgz-extra-files) \
+		-T .filelist \
+		--transform 's,^,drbd-$(FDIST_VERSION)/,' \
+		> drbd-$(FDIST_VERSION).tar.gz
 
 ifeq ($(FORCE),)
 tgz: check_changelogs_up2date
