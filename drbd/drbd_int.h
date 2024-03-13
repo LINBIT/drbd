@@ -1975,7 +1975,7 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #else
 /* We allow up to 1 PiB on 64 bit architectures as long as our meta data
  * is large enough. */
-#define DRBD_MAX_SECTORS (1UL << (50 - SECTOR_SHIFT))
+#define DRBD_MAX_SECTORS (1ULL << (50 - SECTOR_SHIFT))
 #endif
 
 #define DRBD_MAX_SIZE_H80_PACKET (1U << 15) /* Header 80 only allows packets up to 32KiB data */
