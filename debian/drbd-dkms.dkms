@@ -7,9 +7,9 @@ AUTOINSTALL="yes"
 BUILT_MODULE_NAME[0]="drbd"
 BUILT_MODULE_NAME[1]="drbd_transport_tcp"
 BUILT_MODULE_NAME[2]="drbd_transport_lb-tcp"
-BUILT_MODULE_LOCATION[0]="./src/drbd/"
-BUILT_MODULE_LOCATION[1]="./src/drbd/"
-BUILT_MODULE_LOCATION[2]="./src/drbd/"
+BUILT_MODULE_LOCATION[0]="./src/drbd/build-current/"
+BUILT_MODULE_LOCATION[1]="./src/drbd/build-current/"
+BUILT_MODULE_LOCATION[2]="./src/drbd/build-current/"
 DEST_MODULE_LOCATION[0]="/kernel/drivers/block/drbd"
 DEST_MODULE_LOCATION[1]="/kernel/drivers/block/drbd"
 DEST_MODULE_LOCATION[2]="/kernel/drivers/block/drbd"
@@ -18,7 +18,7 @@ IDX=3
 
 if grep -q ^CONFIG_INFINIBAND= /lib/modules/$kernelver/build/.config; then
 BUILT_MODULE_NAME[$IDX]="drbd_transport_rdma"
-BUILT_MODULE_LOCATION[$IDX]="./src/drbd/"
+BUILT_MODULE_LOCATION[$IDX]="./src/drbd/build-current/"
 DEST_MODULE_LOCATION[$IDX]="/kernel/drivers/block/drbd"
 IDX=$(($IDX + 1))
 fi
@@ -33,7 +33,7 @@ IFS=".-" read -ra KVER <<< "$kernelver"
 if [ "${KVER[0]}" -ge 4 ] && ( [ "${KVER[0]}" -gt 4 ] || [ "${KVER[1]}" -ge 17 ] ) ; then
 if grep -q ^CONFIG_TLS= /lib/modules/$kernelver/build/.config && ! grep -q ^CONFIG_NET_HANDSHAKE= /lib/modules/$kernelver/build/.config ; then
 BUILT_MODULE_NAME[$IDX]="handshake"
-BUILT_MODULE_LOCATION[$IDX]="./src/drbd/drbd-kernel-compat/handshake"
+BUILT_MODULE_LOCATION[$IDX]="./src/drbd/build-current/drbd-kernel-compat/handshake"
 DEST_MODULE_LOCATION[$IDX]="/kernel/net/handshake"
 fi
 fi
