@@ -1979,6 +1979,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	if (verify_done && peer_device->ov_skipped)
 		snprintf(tmp, sizeof(tmp), " but %lu %lluk blocks skipped",
 			peer_device->ov_skipped, bit_to_kb(1, bm_block_shift));
+
 	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
 		  aborted ? "aborted" : "done", tmp,
@@ -3442,7 +3443,7 @@ static void maybe_send_state_after_ahead(struct drbd_connection *connection)
  * It also moves all currently queued connection->sender_work
  * to connection->todo.work_list.
  */
-static bool check_sender_todo(struct drbd_connection *connection)
+static bool check_sender_todo(struct drbd_connection *connection, unsigned long *flags_p)
 {
 	rcu_read_lock();
 	tl_next_request_for_connection(connection, true);
@@ -3470,6 +3471,8 @@ static bool drbd_send_barrier_next_oos(struct drbd_connection *connection)
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
+	unsigned long spin_lock_irq_flags;
+
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
 	int uncork, cork;
@@ -3595,6 +3598,7 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 
 static int process_one_request(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
 	struct bio_and_error m;
 	struct drbd_request *req = connection->todo.req;
 	struct drbd_device *device = req->device;
@@ -3719,6 +3723,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 int drbd_sender(struct drbd_thread *thi)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
