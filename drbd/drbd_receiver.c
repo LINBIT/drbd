@@ -3286,6 +3286,7 @@ void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
  */
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct net_conf *nc;
@@ -6786,6 +6787,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
 {
+	unsigned long spin_lock_flags = 0;	/* silence warning */
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
 	int bitmap_uuids, history_uuids, rest, i, pos, err;
@@ -6826,7 +6828,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	if (get_ldev(device)) {
 		peer_md = device->ldev->md.peers;
-		spin_lock_irq(&device->ldev->md.uuid_lock);
+		spin_lock_irqsave(&device->ldev->md.uuid_lock, spin_lock_flags);
 	}
 
 	/* The condition below keeps a diskless primary's exposed current UUID
@@ -6877,7 +6879,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i++] = 0;
 	set_bit(UUIDS_RECEIVED, peer_device->flags);
 	if (peer_md) {
-		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		spin_unlock_irqrestore(&device->ldev->md.uuid_lock, spin_lock_flags);
 		put_ldev(device);
 	}
 
@@ -7410,7 +7412,6 @@ far_away_change(struct drbd_connection *connection,
 	unsigned long irq_flags;
 	int iterate_vnr;
 
-
 	if (flags & CS_PREPARE && mask.role == role_MASK && val.role == R_PRIMARY &&
 	    resource->role[NOW] == R_PRIMARY) {
 		struct net_conf *nc;
@@ -7580,7 +7581,7 @@ enum alt_rv {
 	ALT_TIMEOUT,
 };
 
-static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int for_tid)
+static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int for_tid, unsigned long *spin_lock_irq_flags_p)
 {
 	write_lock_irq(&resource->state_rwlock);
 	if (!resource->remote_state_change)
@@ -7591,7 +7592,8 @@ static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int f
 
 	return ALT_TIMEOUT;
 }
-static enum alt_rv abort_local_transaction(struct drbd_connection *connection, unsigned int for_tid)
+
+static enum alt_rv abort_local_transaction(struct drbd_connection *connection, unsigned int for_tid, unsigned long *spin_lock_irq_flags_p)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct net_conf *nc;
@@ -7607,7 +7609,7 @@ static enum alt_rv abort_local_transaction(struct drbd_connection *connection, u
 	write_unlock_irq(&resource->state_rwlock);
 	wake_up_all(&resource->state_wait);
 	wait_event_timeout(resource->twopc_wait,
-			   (rv = when_done_lock(resource, for_tid)) != ALT_TIMEOUT, t);
+			   (rv = when_done_lock(resource, for_tid, spin_lock_irq_flags_p)) != ALT_TIMEOUT, t);
 	clear_bit(TWOPC_ABORT_LOCAL, &resource->flags);
 	return rv;
 }
@@ -7805,6 +7807,7 @@ static void process_twopc(struct drbd_connection *connection,
 			 struct packet_info *pi,
 			 unsigned long receive_jif)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *affected_connection = connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
@@ -7865,6 +7868,7 @@ retry:
 
 		if (test_and_set_bit(TWOPC_EXECUTED, &resource->flags)) {
 			write_unlock_irq(&resource->state_rwlock);
+
 			drbd_info(connection, "Ignoring redundant %s packet %u.\n",
 				  drbd_packet_name(pi->cmd),
 				  reply->tid);
@@ -7877,7 +7881,7 @@ retry:
 			  "state change %u.\n",
 			  resource->twopc_reply.tid,
 			  reply->tid);
-		alt_rv = abort_local_transaction(connection, reply->tid);
+		alt_rv = abort_local_transaction(connection, reply->tid, &spin_lock_irq_flags);
 		if (alt_rv == ALT_MATCH) {
 			/* abort_local_transaction() comes back unlocked in this case... */
 			goto match;
@@ -7923,7 +7927,6 @@ retry:
 				goto retry;
 			}
 		}
-
 		if (csc_rv == CSC_REJECT ||
 		    (csc_rv == CSC_TID_MISS && is_prepare(pi->cmd))) {
 			drbd_info(connection, "Rejecting concurrent "
@@ -10296,6 +10299,7 @@ static bool initiator_can_commit_or_abort(struct drbd_connection *connection)
 
 static void cleanup_remote_state_change(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_resource *resource = connection->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
 	struct twopc_request request;
@@ -10321,7 +10325,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 			timer_delete(&resource->twopc_timer);
 			__clear_remote_state_change(resource);
 		} else {
-			enum alt_rv alt_rv = abort_local_transaction(connection, 0);
+			enum alt_rv alt_rv = abort_local_transaction(connection, 0, &spin_lock_irq_flags);
 			if (alt_rv != ALT_LOCKED)
 				return;
 		}
