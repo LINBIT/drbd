@@ -1893,7 +1893,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	{
 	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
 	if (verify_done && peer_device->ov_skipped)
-		snprintf(tmp, sizeof(tmp), " but %lu %dk blocks skipped",
+		snprintf(tmp, sizeof(tmp), " but %llu %dk blocks skipped",
 			peer_device->ov_skipped, Bit2KB(1));
 	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
@@ -3314,7 +3314,7 @@ static struct drbd_request *__next_request_for_connection(
 	return NULL;
 }
 
-static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
+static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection, unsigned long *flags_p)
 {
 	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
@@ -3366,7 +3366,7 @@ static void maybe_send_state_after_ahead(struct drbd_connection *connection)
  * It also moves all currently queued connection->sender_work
  * to connection->todo.work_list.
  */
-static bool check_sender_todo(struct drbd_connection *connection)
+static bool check_sender_todo(struct drbd_connection *connection, unsigned long *flags_p)
 {
 	rcu_read_lock();
 	tl_next_request_for_connection(connection);
@@ -3385,6 +3385,8 @@ static bool check_sender_todo(struct drbd_connection *connection)
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
+	unsigned long spin_lock_irq_flags;
+
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
 	int uncork, cork;
@@ -3540,6 +3542,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 
 static int process_one_request(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
 	struct bio_and_error m;
 	struct drbd_request *req = connection->todo.req;
 	struct drbd_device *device = req->device;
@@ -3690,6 +3693,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 int drbd_sender(struct drbd_thread *thi)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
