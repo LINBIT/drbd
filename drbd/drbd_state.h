@@ -56,8 +56,7 @@ extern void state_change_lock(struct drbd_resource *, unsigned long *, enum chg_
 extern void state_change_unlock(struct drbd_resource *, unsigned long *);
 
 extern void begin_state_change(struct drbd_resource *, unsigned long *, enum chg_state_flags);
-extern enum drbd_state_rv end_state_change(struct drbd_resource *resource, unsigned long *irq_flags,
-		const char *tag);
+extern enum drbd_state_rv end_state_change(struct drbd_resource * resource, unsigned long *irq_flags, const char *tag);
 extern void abort_state_change(struct drbd_resource *, unsigned long *);
 extern void abort_state_change_locked(struct drbd_resource *resource);
 

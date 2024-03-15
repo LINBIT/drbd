@@ -1307,7 +1307,7 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
  *
  * Only way out: remove the conflicting intervals from the tree.
  */
-static void complete_conflicting_writes(struct drbd_request *req)
+static void complete_conflicting_writes(struct drbd_request *req, unsigned long *flags_p)
 {
 	DEFINE_WAIT(wait);
 	struct drbd_device *device = req->device;
@@ -1867,6 +1867,7 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
 	bool submit_private_bio = false;
+	unsigned long flags;
 
 	read_lock_irq(&resource->state_rwlock);
 
