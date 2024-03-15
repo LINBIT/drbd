@@ -1221,7 +1221,7 @@ int drbd_resync_finished(struct drbd_peer_device *peer_device,
 	{
 	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
 	if (verify_done && peer_device->ov_skipped)
-		snprintf(tmp, sizeof(tmp), " but %lu %dk blocks skipped",
+		snprintf(tmp, sizeof(tmp), " but %llu %dk blocks skipped",
 			peer_device->ov_skipped, Bit2KB(1));
 	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
@@ -2504,7 +2504,7 @@ static struct drbd_request *__next_request_for_connection(
 }
 
 /* holds req_lock on entry, may give up and reacquire temporarily */
-static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection)
+static struct drbd_request *tl_mark_for_resend_by_connection(struct drbd_connection *connection, unsigned long *flags_p)
 {
 	struct bio_and_error m;
 	struct drbd_request *req;
@@ -2566,11 +2566,11 @@ restart:
 		 * RESEND actually caused this request to be finished off, we
 		 * complete the master bio, outside of the lock. */
 		if (m.bio || need_resched()) {
-			spin_unlock_irq(&connection->resource->req_lock);
+			spin_unlock_irqrestore(&connection->resource->req_lock, *flags_p);
 			if (m.bio)
 				complete_master_bio(device, &m);
 			cond_resched();
-			spin_lock_irq(&connection->resource->req_lock);
+			spin_lock_irqsave(&connection->resource->req_lock, *flags_p);
 			goto restart;
 		}
 		if (!req_oldest)
@@ -2579,10 +2579,10 @@ restart:
 	return req_oldest;
 }
 
-static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
+static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection, unsigned long *flags_p)
 {
 	if (connection->todo.req_next == TL_NEXT_REQUEST_RESEND)
-		connection->todo.req_next = tl_mark_for_resend_by_connection(connection);
+		connection->todo.req_next = tl_mark_for_resend_by_connection(connection, flags_p);
 
 	else if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection, NULL);
@@ -2617,9 +2617,9 @@ static void maybe_send_state_afer_ahead(struct drbd_connection *connection)
  * It also moves all currently queued connection->sender_work
  * to connection->todo.work_list.
  */
-static bool check_sender_todo(struct drbd_connection *connection)
+static bool check_sender_todo(struct drbd_connection *connection, unsigned long *flags_p)
 {
-	tl_next_request_for_connection(connection);
+	tl_next_request_for_connection(connection, flags_p);
 
 	/* we did lock_irq above already. */
 	/* FIXME can we get rid of this additional lock? */
@@ -2634,14 +2634,16 @@ static bool check_sender_todo(struct drbd_connection *connection)
 
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
+
 	DEFINE_WAIT(wait);
 	struct net_conf *nc;
 	int uncork, cork;
 	bool got_something = 0;
 
-	spin_lock_irq(&connection->resource->req_lock);
-	got_something = check_sender_todo(connection);
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_lock_irqsave(&connection->resource->req_lock, spin_lock_irq_flags);
+	got_something = check_sender_todo(connection, &spin_lock_irq_flags);
+	spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 	if (got_something)
 		return;
 
@@ -2662,9 +2664,9 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		int send_barrier;
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
-		spin_lock_irq(&connection->resource->req_lock);
-		if (check_sender_todo(connection) || signal_pending(current)) {
-			spin_unlock_irq(&connection->resource->req_lock);
+		spin_lock_irqsave(&connection->resource->req_lock, spin_lock_irq_flags);
+		if (check_sender_todo(connection, &spin_lock_irq_flags) || signal_pending(current)) {
+			spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 			break;
 		}
 
@@ -2677,7 +2679,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 */
 		send_barrier = should_send_barrier(connection,
 					atomic_read(&connection->resource->current_tle_nr));
-		spin_unlock_irq(&connection->resource->req_lock);
+		spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 
 		if (send_barrier) {
 			finish_wait(&connection->sender_work.q_wait, &wait);
@@ -2782,6 +2784,7 @@ static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd
 
 static int process_one_request(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
 	struct bio_and_error m;
 	struct drbd_request *req = connection->todo.req;
 	struct drbd_device *device = req->device;
@@ -2874,14 +2877,14 @@ static int process_one_request(struct drbd_connection *connection)
 		what = err ? SEND_FAILED : HANDED_OVER_TO_NETWORK;
 	}
 
-	spin_lock_irq(&connection->resource->req_lock);
+	spin_lock_irqsave(&connection->resource->req_lock, spin_lock_irq_flags);
 	__req_mod(req, what, peer_device, &m);
 
 	/* As we hold the request lock anyways here,
 	 * this is a convenient place to check for new things to do. */
-	check_sender_todo(connection);
+	check_sender_todo(connection, &spin_lock_irq_flags);
 
-	spin_unlock_irq(&connection->resource->req_lock);
+	spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
@@ -2940,6 +2943,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 int drbd_sender(struct drbd_thread *thi)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
@@ -2982,9 +2986,9 @@ int drbd_sender(struct drbd_thread *thi)
 
 	/* cleanup all currently unprocessed requests */
 	if (!connection->todo.req) {
-		spin_lock_irq(&connection->resource->req_lock);
-		tl_next_request_for_connection(connection);
-		spin_unlock_irq(&connection->resource->req_lock);
+		spin_lock_irqsave(&connection->resource->req_lock, spin_lock_irq_flags);
+		tl_next_request_for_connection(connection, &spin_lock_irq_flags);
+		spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 	}
 	while (connection->todo.req) {
 		struct bio_and_error m;
@@ -2992,10 +2996,10 @@ int drbd_sender(struct drbd_thread *thi)
 		struct drbd_device *device = req->device;
 		peer_device = conn_peer_device(connection, device->vnr);
 
-		spin_lock_irq(&connection->resource->req_lock);
+		spin_lock_irqsave(&connection->resource->req_lock, spin_lock_irq_flags);
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
-		tl_next_request_for_connection(connection);
-		spin_unlock_irq(&connection->resource->req_lock);
+		tl_next_request_for_connection(connection, &spin_lock_irq_flags);
+		spin_unlock_irqrestore(&connection->resource->req_lock, spin_lock_irq_flags);
 		if (m.bio)
 			complete_master_bio(device, &m);
 	}

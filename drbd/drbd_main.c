@@ -3649,6 +3649,7 @@ static int init_submitter(struct drbd_device *device)
 enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
+	unsigned long spin_lock_flags;
 	struct drbd_resource *resource = adm_ctx->resource;
 	struct drbd_connection *connection;
 	struct drbd_device *device;
@@ -3766,7 +3767,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_bitmap_io);
 
 	locked = true;
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irqsave(&resource->req_lock, spin_lock_flags);
 	spin_lock(&drbd_devices_lock);
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_NOWAIT);
 	spin_unlock(&drbd_devices_lock);
@@ -3800,7 +3801,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, spin_lock_flags);
 	locked = false;
 
 	if (init_submitter(device)) {
@@ -3849,7 +3850,7 @@ out_idr_remove_minor:
 	kref_debug_put(&device->kref_debug, 1);
 out_no_minor_idr:
 	if (locked)
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irqrestore(&resource->req_lock, spin_lock_flags);
 	synchronize_rcu();
 
 out_no_peer_device:
@@ -4802,7 +4803,7 @@ static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
 	return connection ? rcu_dereference(connection->transport.net_conf)->name : "";
 }
 
-static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
+static void forget_bitmap(struct drbd_device *device, int node_id, unsigned long *spin_lock_flags_p) __must_hold(local)
 {
 	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 	const char* name;
@@ -4810,7 +4811,7 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 	if (_drbd_bm_total_weight(device, bitmap_index) == 0)
 		return;
 
-	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, *spin_lock_flags_p);
 	rcu_read_lock();
 	name = name_of_node_id(device->resource, node_id);
 	drbd_info(device, "clearing bitmap UUID and content (%lu bits) for node %d (%s)(slot %d)\n",
@@ -4822,10 +4823,10 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 	drbd_bm_unlock(device);
 	drbd_resume_io(device);
 	drbd_md_mark_dirty(device);
-	spin_lock_irq(&device->ldev->md.uuid_lock);
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, *spin_lock_flags_p);
 }
 
-static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
+static void copy_bitmap(struct drbd_device *device, int from_id, int to_id, unsigned long *spin_lock_flags_p) __must_hold(local)
 {
 	struct drbd_peer_device *peer_device = peer_device_by_node_id(device, to_id);
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4843,7 +4844,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	if (peer_device && peer_device->comm_bitmap_uuid == previous_bitmap_uuid)
 		peer_device->comm_bitmap_uuid = peer_md[from_id].bitmap_uuid;
 
-	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, *spin_lock_flags_p);
 	rcu_read_lock();
 	from_name = name_of_node_id(device->resource, from_id);
 	to_name = name_of_node_id(device->resource, to_id);
@@ -4856,7 +4857,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	drbd_bm_unlock(device);
 	drbd_resume_io(device);
 	drbd_md_mark_dirty(device);
-	spin_lock_irq(&device->ldev->md.uuid_lock);
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, *spin_lock_flags_p);
 }
 
 static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) __must_hold(local)
@@ -4894,7 +4895,7 @@ static bool node_connected(struct drbd_resource *resource, int node_id)
 	return r;
 }
 
-static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device, unsigned long *spin_lock_irq_flags_p) __must_hold(local)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4948,13 +4949,13 @@ found:
 
 	if (from_id != node_id1 &&
 	    peer_md[node_id1].bitmap_uuid != peer_bm_uuid) {
-		copy_bitmap(device, from_id, node_id1);
+		copy_bitmap(device, from_id, node_id1, spin_lock_irq_flags_p);
 		modified = true;
 
 	}
 	if (from_id != node_id2 &&
 	    peer_md[node_id2].bitmap_uuid != peer_bm_uuid) {
-		copy_bitmap(device, from_id, node_id2);
+		copy_bitmap(device, from_id, node_id2, spin_lock_irq_flags_p);
 		modified = true;
 	}
 
@@ -4963,6 +4964,7 @@ found:
 
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
 {
+	unsigned long spin_lock_irq_flags;
 	u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4975,7 +4977,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 	current_equal = peer_current_uuid == (drbd_current_uuid(device) & ~UUID_PRIMARY) &&
 		!(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET);
 
-	spin_lock_irq(&device->ldev->md.uuid_lock);
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, spin_lock_irq_flags);
 
 	if (peer_device->repl_state[NOW] == L_OFF && current_equal) {
 		u64 bm_to_peer = peer_device->comm_bitmap_uuid & ~UUID_PRIMARY;
@@ -4991,7 +4993,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 			drbd_info(peer_device, "Missed end of resync as sync-source\n");
 			set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 		}
-		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		spin_unlock_irqrestore(&device->ldev->md.uuid_lock, spin_lock_irq_flags);
 		return;
 	}
 
@@ -5018,7 +5020,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 				if (node_id == peer_device->node_id)
 					drbd_print_uuids(peer_device, "updated UUIDs");
 				else if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
-					forget_bitmap(device, node_id);
+					forget_bitmap(device, node_id, &spin_lock_irq_flags);
 				else
 					drbd_info(device, "Clearing bitmap UUID for node %d\n",
 						  node_id);
@@ -5032,7 +5034,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 					 peer_md[node_id].bitmap_dagtag)) {
 				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&
 				    peer_md[from_node_id].flags & MDF_HAVE_BITMAP)
-					copy_bitmap(device, from_node_id, node_id);
+					copy_bitmap(device, from_node_id, node_id, &spin_lock_irq_flags);
 				else
 					drbd_info(device, "Node %d synced up to node %d.\n",
 						  node_id, from_node_id);
@@ -5042,8 +5044,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 		}
 	}
 
-	write_bm |= detect_copy_ops_on_peer(peer_device);
-	spin_unlock_irq(&device->ldev->md.uuid_lock);
+	write_bm |= detect_copy_ops_on_peer(peer_device, &spin_lock_irq_flags);
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, spin_lock_irq_flags);
 
 	if (write_bm || filled) {
 		u64 to_nodes = filled ? -1 : ~NODE_MASK(peer_device->node_id);
@@ -5357,7 +5359,7 @@ static void md_sync_timer_fn(struct timer_list *t)
  * @i:		the struct drbd_interval embedded in struct drbd_request or
  *		struct drbd_peer_request
  */
-int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_device, struct drbd_interval *i)
+int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_device, struct drbd_interval *i, unsigned long *spin_lock_irq_flags_p)
 {
 	DEFINE_WAIT(wait);
 	long timeout;
@@ -5380,10 +5382,10 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_dev
 	/* Indicate to wake up device->misc_wait on progress.  */
 	i->waiting = true;
 	prepare_to_wait(&device->misc_wait, &wait, TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irqrestore(&device->resource->req_lock, *spin_lock_irq_flags_p);
 	timeout = schedule_timeout(timeout);
 	finish_wait(&device->misc_wait, &wait);
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irqsave(&device->resource->req_lock, *spin_lock_irq_flags_p);
 	if (!timeout || (peer_device && peer_device->repl_state[NOW] < L_ESTABLISHED))
 		return -ETIMEDOUT;
 	if (signal_pending(current))

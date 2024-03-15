@@ -2761,7 +2761,7 @@ static unsigned long wire_flags_to_bio(struct drbd_connection *connection, u32 d
 	return opf;
 }
 
-static void fail_postponed_requests(struct drbd_peer_request *peer_req)
+static void fail_postponed_requests(struct drbd_peer_request *peer_req, unsigned long *spin_lock_irq_flags_p)
 {
 	struct drbd_device *device = peer_req->peer_device->device;
 	struct drbd_interval *i;
@@ -2780,15 +2780,15 @@ static void fail_postponed_requests(struct drbd_peer_request *peer_req)
 			continue;
 		req->local_rq_state &= ~RQ_POSTPONED;
 		__req_mod(req, NEG_ACKED, peer_req->peer_device, &m);
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irqrestore(&device->resource->req_lock, *spin_lock_irq_flags_p);
 		if (m.bio)
 			complete_master_bio(device, &m);
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irqsave(&device->resource->req_lock, *spin_lock_irq_flags_p);
 		goto repeat;
 	}
 }
 
-static int handle_write_conflicts(struct drbd_peer_request *peer_req)
+static int handle_write_conflicts(struct drbd_peer_request *peer_req, unsigned long *spin_lock_irq_flags_p)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -2820,7 +2820,7 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 			 * should not happen in a two-node setup.  Wait for the
 			 * earlier peer request to complete.
 			 */
-			err = drbd_wait_misc(device, peer_device, i);
+			err = drbd_wait_misc(device, peer_device, i, spin_lock_irq_flags_p);
 			if (err)
 				goto out;
 			goto repeat;
@@ -2875,12 +2875,12 @@ static int handle_write_conflicts(struct drbd_peer_request *peer_req)
 				 * request to finish locally before submitting
 				 * the conflicting peer request.
 				 */
-				err = drbd_wait_misc(device, NULL, &req->i);
+				err = drbd_wait_misc(device, NULL, &req->i, spin_lock_irq_flags_p);
 				if (err) {
 					begin_state_change_locked(connection->resource, CS_HARD);
 					__change_cstate(connection, C_TIMEOUT);
 					end_state_change_locked(connection->resource);
-					fail_postponed_requests(peer_req);
+					fail_postponed_requests(peer_req, spin_lock_irq_flags_p);
 					goto out;
 				}
 				goto repeat;
@@ -2985,6 +2985,7 @@ prepare_activity_log(struct drbd_peer_request *peer_req)
 /* mirrored write */
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct net_conf *nc;
@@ -3143,10 +3144,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		err = wait_for_and_update_peer_seq(peer_device, d.peer_seq);
 		if (err)
 			goto out_interrupted;
-		spin_lock_irq(&device->resource->req_lock);
-		err = handle_write_conflicts(peer_req);
+		spin_lock_irqsave(&device->resource->req_lock,
+				  spin_lock_irq_flags);
+		err = handle_write_conflicts(peer_req, &spin_lock_irq_flags);
 		if (err) {
-			spin_unlock_irq(&device->resource->req_lock);
+			spin_unlock_irqrestore(&device->resource->req_lock,
+				        spin_lock_irq_flags);
 			if (err == -ENOENT) {
 				put_ldev(device);
 				return 0;
@@ -3155,7 +3158,8 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		}
 	} else {
 		update_peer_seq(peer_device, d.peer_seq);
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irqsave(&device->resource->req_lock,
+			          spin_lock_irq_flags);
 	}
 	/* Added to list here already, so debugfs can find it.
 	 * NOTE: active_ee_cnt is only increased *after* we checked we won't
@@ -3164,7 +3168,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_add_tail(&peer_req->w.list, &connection->active_ee);
 	if (connection->agreed_pro_version >= 110)
 		list_add_tail(&peer_req->recv_order, &connection->peer_requests);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irqrestore(&device->resource->req_lock, spin_lock_irq_flags);
 
 	if (connection->agreed_pro_version < 110) {
 		/* If the peer is DRBD 8, a sync target may need to drain
@@ -3209,11 +3213,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	drbd_al_complete_io(device, &peer_req->i);
 
 disconnect_during_al_begin_io:
-	spin_lock_irq(&device->resource->req_lock);
+	spin_lock_irqsave(&device->resource->req_lock, spin_lock_irq_flags);
 	list_del(&peer_req->w.list);
 	list_del_init(&peer_req->recv_order);
 	drbd_remove_peer_req_interval(device, peer_req);
-	spin_unlock_irq(&device->resource->req_lock);
+	spin_unlock_irqrestore(&device->resource->req_lock,
+			       spin_lock_irq_flags);
 
 out_interrupted:
 	if (peer_req->flags & EE_SEND_WRITE_ACK)
@@ -5804,6 +5809,7 @@ static int receive_uuids(struct drbd_connection *connection, struct packet_info 
 
 static int receive_uuids110(struct drbd_connection *connection, struct packet_info *pi)
 {
+	unsigned long spin_lock_flags = 0;	/* silence warning */
 	struct drbd_peer_device *peer_device;
 	struct p_uuids110 *p = pi->data;
 	int bitmap_uuids, history_uuids, rest, i, pos, err;
@@ -5844,7 +5850,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 
 	if (get_ldev(device)) {
 		peer_md = device->ldev->md.peers;
-		spin_lock_irq(&device->ldev->md.uuid_lock);
+		spin_lock_irqsave(&device->ldev->md.uuid_lock, spin_lock_flags);
 	}
 	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
@@ -5877,7 +5883,7 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_device->history_uuids[i++] = 0;
 	set_bit(UUIDS_RECEIVED, &peer_device->flags);
 	if (peer_md) {
-		spin_unlock_irq(&device->ldev->md.uuid_lock);
+		spin_unlock_irqrestore(&device->ldev->md.uuid_lock, spin_lock_flags);
 		put_ldev(device);
 	}
 
@@ -6477,27 +6483,27 @@ enum alt_rv {
 	ALT_TIMEOUT,
 };
 
-static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int for_tid)
+static enum alt_rv when_done_lock(struct drbd_resource *resource, unsigned int for_tid, unsigned long *spin_lock_irq_flags_p)
 {
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irqsave(&resource->req_lock, *spin_lock_irq_flags_p);
 	if (!resource->remote_state_change)
 		return ALT_LOCKED;
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, *spin_lock_irq_flags_p);
 	if (resource->twopc_reply.tid == for_tid)
 		return ALT_MATCH;
 
 	return ALT_TIMEOUT;
 }
-static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsigned int for_tid)
+static enum alt_rv abort_local_transaction(struct drbd_resource *resource, unsigned int for_tid, unsigned long *spin_lock_irq_flags_p)
 {
 	long t = twopc_timeout(resource) / 8;
 	enum alt_rv rv;
 
 	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, *spin_lock_irq_flags_p);
 	wake_up(&resource->state_wait);
 	wait_event_timeout(resource->twopc_wait,
-			   (rv = when_done_lock(resource, for_tid)) != ALT_TIMEOUT, t);
+			   (rv = when_done_lock(resource, for_tid, spin_lock_irq_flags_p)) != ALT_TIMEOUT, t);
 	clear_bit(TWOPC_ABORT_LOCAL, &resource->flags);
 	return rv;
 }
@@ -6697,6 +6703,7 @@ static int process_twopc(struct drbd_connection *connection,
 			 struct packet_info *pi,
 			 unsigned long receive_jif)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *affected_connection = connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device = NULL;
@@ -6707,21 +6714,21 @@ static int process_twopc(struct drbd_connection *connection,
 	enum csc_rv csc_rv;
 
 	/* Check for concurrent transactions and duplicate packets. */
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irqsave(&resource->req_lock, spin_lock_irq_flags);
 
 	csc_rv = check_concurrent_transactions(resource, reply);
 
 	if (csc_rv == CSC_CLEAR && pi->cmd != P_TWOPC_ABORT) {
 		if (!is_prepare(pi->cmd)) {
 			/* We have committed or aborted this transaction already. */
-			spin_unlock_irq(&resource->req_lock);
+			spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 			drbd_debug(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
 				   reply->tid);
 			return 0;
 		}
 		if (reply->is_aborted) {
-			spin_unlock_irq(&resource->req_lock);
+			spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 			return 0;
 		}
 		resource->remote_state_change = true;
@@ -6733,7 +6740,7 @@ static int process_twopc(struct drbd_connection *connection,
 		flags |= CS_PREPARED;
 
 		if (test_and_set_bit(TWOPC_EXECUTED, &resource->flags)) {
-			spin_unlock_irq(&resource->req_lock);
+			spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 			drbd_info(connection, "Ignoring redundant %s packet %u.\n",
 				  drbd_packet_name(pi->cmd),
 				  reply->tid);
@@ -6746,7 +6753,7 @@ static int process_twopc(struct drbd_connection *connection,
 			  "state change %u.\n",
 			  resource->twopc_reply.tid,
 			  reply->tid);
-		alt_rv = abort_local_transaction(resource, reply->tid);
+		alt_rv = abort_local_transaction(resource, reply->tid, &spin_lock_irq_flags);
 		if (alt_rv == ALT_MATCH) {
 			/* abort_local_transaction() comes back unlocked in this case... */
 			goto match;
@@ -6761,7 +6768,7 @@ static int process_twopc(struct drbd_connection *connection,
 		}
 		/* abort_local_transaction() returned with the req_lock */
 		if (reply->is_aborted) {
-			spin_unlock_irq(&resource->req_lock);
+			spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 			return 0;
 		}
 		resource->remote_state_change = true;
@@ -6771,12 +6778,12 @@ static int process_twopc(struct drbd_connection *connection,
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 
 		nested_twopc_abort(resource, pi->vnr, pi->cmd, p);
 		return 0;
 	} else {
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 
 		if (csc_rv == CSC_REJECT) {
 		reject:
@@ -6797,7 +6804,7 @@ static int process_twopc(struct drbd_connection *connection,
 				enum drbd_packet reply_cmd;
 
 			match:
-				spin_lock_irq(&resource->req_lock);
+				spin_lock_irqsave(&resource->req_lock, spin_lock_irq_flags);
 				resource->twopc_parent_nodes |= NODE_MASK(connection->peer_node_id);
 				reply_cmd = resource->twopc_prepare_reply_cmd;
 				if (!reply_cmd) {
@@ -6806,7 +6813,7 @@ static int process_twopc(struct drbd_connection *connection,
 					list_add(&connection->twopc_parent_list,
 						 &resource->twopc_parents);
 				}
-				spin_unlock_irq(&resource->req_lock);
+				spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 
 				if (reply_cmd) {
 					drbd_send_twopc_reply(connection, reply_cmd,
@@ -6905,7 +6912,7 @@ static int process_twopc(struct drbd_connection *connection,
 	}
 
 	resource->twopc_reply = *reply;
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
@@ -6951,12 +6958,12 @@ static int process_twopc(struct drbd_connection *connection,
 	}
 
 	if (flags & CS_PREPARE) {
-		spin_lock_irq(&resource->req_lock);
+		spin_lock_irqsave(&resource->req_lock, spin_lock_irq_flags);
 		kref_get(&connection->kref);
 		kref_debug_get(&connection->kref_debug, 9);
 		list_add(&connection->twopc_parent_list, &resource->twopc_parents);
 		mod_timer(&resource->twopc_timer, receive_jif + twopc_timeout(resource));
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 
 		/* Retry replies can be sent immediately. Otherwise use the
 		 * nested twopc path. This waits for the state handshake to
@@ -7345,7 +7352,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
-		spin_unlock_irq(&resource->req_lock);
+		spin_unlock_irqrestore(&resource->req_lock, irq_flags);
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
@@ -8283,10 +8290,11 @@ static bool any_connection_up(struct drbd_resource *resource)
 
 static void cleanup_remote_state_change(struct drbd_connection *connection)
 {
+	unsigned long spin_lock_irq_flags;
 	struct drbd_resource *resource = connection->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irqsave(&resource->req_lock, spin_lock_irq_flags);
 	if (resource->remote_state_change &&
 	    (drbd_twopc_between_peer_and_me(connection) || !any_connection_up(resource))) {
 		bool remote = reply->initiator_node_id != resource->res_opts.node_id;
@@ -8296,12 +8304,12 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		if (remote) {
 			__clear_remote_state_change(resource);
 		} else {
-			enum alt_rv alt_rv = abort_local_transaction(resource, 0);
+			enum alt_rv alt_rv = abort_local_transaction(resource, 0, &spin_lock_irq_flags);
 			if (alt_rv != ALT_LOCKED)
 				return;
 		}
 	}
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, spin_lock_irq_flags);
 }
 
 static void conn_disconnect(struct drbd_connection *connection)

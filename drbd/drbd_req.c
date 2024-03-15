@@ -1185,7 +1185,7 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
  *
  * Only way out: remove the conflicting intervals from the tree.
  */
-static void complete_conflicting_writes(struct drbd_request *req)
+static void complete_conflicting_writes(struct drbd_request *req, unsigned long *flags_p)
 {
 	DEFINE_WAIT(wait);
 	struct drbd_device *device = req->device;
@@ -1208,9 +1208,9 @@ static void complete_conflicting_writes(struct drbd_request *req)
 		/* Indicate to wake up device->misc_wait on progress.  */
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		i->waiting = true;
-		spin_unlock_irq(&device->resource->req_lock);
+		spin_unlock_irqrestore(&device->resource->req_lock, *flags_p);
 		schedule();
-		spin_lock_irq(&device->resource->req_lock);
+		spin_lock_irqsave(&device->resource->req_lock, *flags_p);
 	}
 	finish_wait(&device->misc_wait, &wait);
 }
@@ -1667,13 +1667,14 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	struct bio_and_error m = { NULL, };
 	bool no_remote = false;
 	bool submit_private_bio = false;
+	unsigned long flags;
 
-	spin_lock_irq(&resource->req_lock);
+	spin_lock_irqsave(&resource->req_lock, flags);
 	if (rw == WRITE) {
 		/* This may temporarily give up the req_lock,
 		 * but will re-acquire it before it returns here.
 		 * Needs to be before the check on drbd_suspended() */
-		complete_conflicting_writes(req);
+		complete_conflicting_writes(req, &flags);
 		/* no more giving up req_lock from now on! */
 
 		/* check for congestion, and potentially stop sending
@@ -1790,7 +1791,7 @@ nodata:
 
 out:
 	drbd_req_put_completion_ref(req, &m, 1);
-	spin_unlock_irq(&resource->req_lock);
+	spin_unlock_irqrestore(&resource->req_lock, flags);
 
 	/* Even though above is a kref_put(), this is safe.
 	 * As long as we still need to submit our private bio,

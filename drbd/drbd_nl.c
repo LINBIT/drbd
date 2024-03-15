@@ -1293,7 +1293,7 @@ static void opener_info(struct drbd_resource *resource,
 
 		drbd_msg_sprintf_info(reply_skb,
 				      "/dev/drbd%d opened by %s (pid %d) "
-				      "at %04ld-%02d-%02d %02d:%02d:%02d.%03ld",
+				      "at %04lld-%02d-%02d %02d:%02d:%02d.%03lld",
 				      device->minor,
 				      o->comm, o->pid,
 				      tm.tm_year + 1900,
