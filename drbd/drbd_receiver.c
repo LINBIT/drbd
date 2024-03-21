@@ -6379,7 +6379,8 @@ far_away_change(struct drbd_connection *connection,
 		}
 	}
 
-	if (reply->primary_nodes & ~directly_reachable)
+	if (state_change->primary_nodes & ~directly_reachable &&
+	    !(request->flags & TWOPC_PRI_INCAPABLE))
 		__outdate_myself(resource);
 
 	idr_for_each_entry(&resource->devices, device, iterate_vnr) {
@@ -6936,7 +6937,9 @@ retry:
 		reply->primary_nodes = be64_to_cpu(p->primary_nodes);
 		if (resource->role[NOW] == R_PRIMARY) {
 			reply->primary_nodes |= NODE_MASK(resource->res_opts.node_id);
-			reply->weak_nodes = ~reply->reachable_nodes;
+
+			if (drbd_res_data_accessible(resource))
+				reply->weak_nodes = ~reply->reachable_nodes;
 		}
 	}
 	if (pi->cmd == P_TWOPC_PREP_RSZ) {
