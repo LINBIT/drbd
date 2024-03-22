@@ -116,7 +116,7 @@ repo::rpm::getsignkey() {
 	rpm --import $SIGN_KEY
 }
 repo::deb::getsignkey() {
-	wget -qO - $SIGN_KEY | apt-key add -
+	curl -fsSL $SIGN_KEY | apt-key add -
 }
 
 repo::rpm::createrepo() {
