@@ -116,7 +116,7 @@ repo::rpm::getsignkey() {
 	rpm --import $SIGN_KEY
 }
 repo::deb::getsignkey() {
-	curl -fsSL $SIGN_KEY | apt-key add -
+	curl -fsSL $SIGN_KEY | gpg -o /etc/apt/trusted.gpg.d/linbit-keyring.gpg --dearmor -
 }
 
 repo::rpm::createrepo() {
@@ -137,7 +137,7 @@ repo::deb::createrepo() {
 	local hash="$2"
 
 cat << EOF > "$(repo::deb::getrepofile)"
-deb http://packages.linbit.com/${hash}/ ${dist} drbd-9
+deb [signed-by=/etc/apt/trusted.gpg.d/linbit-keyring.gpg] http://packages.linbit.com/${hash}/ ${dist} drbd-9
 EOF
 }
 
