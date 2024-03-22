@@ -6564,7 +6564,7 @@ static union drbd_state convert_state(union drbd_state peer_state)
 {
 	union drbd_state state;
 
-	static enum drbd_conn_state c_tab[] = {
+	static unsigned int c_tab[] = {
 		[L_OFF] = L_OFF,
 		[L_ESTABLISHED] = L_ESTABLISHED,
 
@@ -6574,8 +6574,8 @@ static union drbd_state convert_state(union drbd_state peer_state)
 		[L_WF_BITMAP_T] = L_WF_BITMAP_S,
 		[C_DISCONNECTING] = C_TEAR_DOWN, /* C_NETWORK_FAILURE, */
 		[C_CONNECTING] = C_CONNECTING,
-		[L_VERIFY_S]       = L_VERIFY_T,
-		[C_MASK]   = C_MASK,
+		[L_VERIFY_S] = L_VERIFY_T,
+		[C_MASK] = C_MASK,
 	};
 
 	state.i = peer_state.i;
