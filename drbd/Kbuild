@@ -154,20 +154,31 @@ quiet_cmd_splitdiff = SPLIT   $<
 annotate-orig-pos := \
 	$(src)/drbd-kernel-compat/annotate-diff-with-original-file-position-pragmas.pl
 
+PATCH := patch --batch --forward --reject-file=- $(if $(V),--verbose,--silent)
+# - apply compat patch to tmp output, leave original unchanged,
+# - re-diff original and tmp output, annotate with line number pragma,
+# - apply annotated patch to final output
+#
+# patch --output will ignore both umask and original file permissions :-(
+# Even with --output=-, it tries to create (but not use) a temp file
+# named ./-.XXXXXXX in whatever current directory it is in,
+# which probably is the linux headers / source location, and may not be
+# writable for this user. And it would duplicated the original to stdout,
+# should there be more than one "header" in the patch file.
+# Use chmod, so a CI user != build user is able to collect resulting patched sources.
 quiet_cmd_apply_compat_patch = PATCH   $@
       cmd_apply_compat_patch =						\
 	set -e; set -- $^; out=$@ patch=$$1 orig=$$2;			\
-	mkdir -p $(@D);							\
+	test -d $(@D) || mkdir -p $(@D);				\
 	if test -s $$patch ; then					\
-		patch --batch --forward --silent --reject-file=-	\
-			--output $$out.tmp --input $$patch $$orig;	\
+		$(PATCH) --output $$out.tmp $$orig $$patch ;		\
 		diff -u $$orig $$out.tmp |				\
 		DRBDSRC=$(src)						\
 		OUTDIR=$(obj.build)					\
 		PATCHES_DIR=$(patches-dir)				\
 		$(PERL) $(annotate-orig-pos)				\
-		| patch --batch --forward --silent --reject-file=-	\
-			--output $$out --input - $$orig;		\
+		| $(PATCH) --output $$out $$orig ;			\
+		chmod --reference $$orig $$out ;			\
 		: rm -f $$out.tmp; 					\
 	else { echo "\# 1 \"$$orig\""; cat $$orig; } > $$out; fi
 
