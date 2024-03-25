@@ -6314,11 +6314,12 @@ bool drbd_have_local_disk(struct drbd_resource *resource)
 
 static enum drbd_state_rv
 far_away_change(struct drbd_connection *connection,
-		struct twopc_state_change *state_change,
+		struct twopc_request *request,
 		struct twopc_reply *reply,
 		enum chg_state_flags flags)
 {
 	struct drbd_resource *resource = connection->resource;
+	struct twopc_state_change *state_change = &resource->twopc.state_change;
 	u64 directly_reachable = directly_connected_nodes(resource, NOW) |
 		NODE_MASK(resource->res_opts.node_id);
 	union drbd_state mask = state_change->mask;
@@ -7016,7 +7017,7 @@ retry:
 			rv = change_connection_state(affected_connection, state_change, reply,
 						     flags | CS_IGN_OUTD_FAIL);
 		else
-			rv = far_away_change(connection, state_change, reply, flags);
+			rv = far_away_change(connection, &request, reply, flags);
 		break;
 	case TWOPC_RESIZE:
 		if (flags & CS_PREPARE)
