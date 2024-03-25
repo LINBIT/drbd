@@ -85,6 +85,8 @@ static enum drbd_state_rv change_peer_state(struct drbd_connection *, int, union
 					    union drbd_state, unsigned long *);
 static void check_wrongly_set_mdf_exists(struct drbd_device *);
 static void update_members(struct drbd_resource *resource);
+static bool calc_data_accessible(struct drbd_state_change *state_change, int n_device,
+				 enum which_state which);
 
 /* We need to stay consistent if we are neighbor of a diskless primary with
    different UUID. This function should be used if the device was D_UP_TO_DATE
@@ -3721,6 +3723,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool *have_quorum = device_state_change->have_quorum;
 		bool effective_disk_size_determined = false;
 		bool device_stable[2], resync_target[2];
+		bool data_accessible[2];
 		bool resync_finished = false;
 		bool some_peer_demoted = false;
 		bool new_current_uuid = false;
@@ -3729,6 +3732,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		for (which = OLD; which <= NEW; which++) {
 			device_stable[which] = calc_device_stable(state_change, n_device, which);
 			resync_target[which] = calc_resync_target(state_change, n_device, which);
+			data_accessible[which] =
+				calc_data_accessible(state_change, n_device, which);
 		}
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
@@ -3815,8 +3820,8 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if (peer_disk_state[NEW] == D_UP_TO_DATE)
 				effective_disk_size_determined = true;
 
-			if (!(role[OLD] == R_PRIMARY && !drbd_data_accessible(device, OLD)) &&
-			     (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, NEW)) &&
+			if (!(role[OLD] == R_PRIMARY && !data_accessible[OLD]) &&
+			     (role[NEW] == R_PRIMARY && !data_accessible[NEW]) &&
 			    !test_bit(UNREGISTERED, &device->flags))
 				drbd_maybe_khelper(device, connection, "pri-on-incon-degr");
 
@@ -5953,6 +5958,55 @@ bool drbd_res_data_accessible(struct drbd_resource *resource)
 	return data_accessible;
 }
 
+/**
+ * calc_data_accessible() - returns if up-to-data data is reachable
+ *
+ * @state_change: where to get the state information from
+ * @n_device:     index into the devices array
+ * @which:        OLD or NEW
+ *
+ * calc_data_accessible() returns true if either the local disk is up-to-date
+ * or of the peers. The related drbd_data_accessible() computes the same
+ * result from different inputs.
+ */
+static bool calc_data_accessible(struct drbd_state_change *state_change, int n_device,
+				 enum which_state which)
+{
+	struct drbd_device_state_change *device_state_change = &state_change->devices[n_device];
+	enum drbd_disk_state *disk_state = device_state_change->disk_state;
+	int n_connection;
+
+	if (disk_state[which] == D_UP_TO_DATE)
+		return true;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[
+				n_device * state_change->n_connections + n_connection];
+		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
+		enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
+		struct net_conf *nc;
+
+		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		if (nc && !nc->allow_remote_read)
+			continue;
+		if (peer_disk_state[which] == D_UP_TO_DATE)
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * drbd_data_accessible() - returns if up-to-data data is reachable
+ *
+ * @device: the device, the question is about
+ * @which:  OLD, NEW, or NOW (Only use OLD within a state change!)
+ *
+ * drbd_data_accessible() returns true if either the local disk is up-to-date
+ * or of the peers. The related calc_data_accessible() computes the same
+ * result from different inputs.
+ */
 bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
 {
 	struct drbd_peer_device *peer_device;
