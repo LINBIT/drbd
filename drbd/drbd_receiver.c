@@ -994,6 +994,26 @@ static int connect_work(struct drbd_work *work, int cancel)
 	return 0;
 }
 
+static int drbd_transport_connect(struct drbd_connection *connection)
+{
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_resource *resource = connection->resource;
+	int err = 0;
+
+	mutex_lock(&resource->conf_update);
+	err = transport->class->ops.prepare_connect(transport);
+	mutex_unlock(&resource->conf_update);
+
+	if (!err)
+		err = transport->class->ops.connect(transport);
+
+	mutex_lock(&resource->conf_update);
+	transport->class->ops.finish_connect(transport);
+	mutex_unlock(&resource->conf_update);
+
+	return err;
+}
+
 /*
  * Returns true if we have a valid connection.
  */
@@ -1022,7 +1042,7 @@ start:
 	 * protocol version; until we know better. */
 	connection->agreed_pro_version = drbd_protocol_version_min;
 
-	err = transport->class->ops.connect(transport);
+	err = drbd_transport_connect(connection);
 	if (err == -EAGAIN) {
 		enum drbd_conn_state cstate;
 		read_lock_irq(&resource->state_rwlock); /* See commit message */
@@ -8637,7 +8657,9 @@ static void conn_disconnect(struct drbd_connection *connection)
 	drbd_thread_stop(&connection->sender);
 	drbd_thread_start(&connection->sender);
 
+	mutex_lock(&resource->conf_update);
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+	mutex_unlock(&resource->conf_update);
 
 	cleanup_remote_state_change(connection);
 

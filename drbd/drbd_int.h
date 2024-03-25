@@ -901,8 +901,11 @@ struct drbd_resource {
 	struct list_head resources;     /* list entry in global resources list */
 	struct res_opts res_opts;
 	int max_node_id;
-	struct mutex conf_update;	/* for read-copy-update of net_conf and disk_conf
-					   and devices, connection and peer_devices lists */
+	/*
+	 * For read-copy-update of net_conf and disk_conf and devices,
+	 * connection, peer_devices and paths lists.
+	 */
+	struct mutex conf_update;
 	struct mutex adm_mutex;		/* mutex to serialize administrative requests */
 	struct mutex open_release;	/* serialize open/release */
 	struct {

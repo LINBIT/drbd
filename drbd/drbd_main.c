@@ -2939,6 +2939,31 @@ static void drbd_release(struct gendisk *gd)
 	kref_put(&device->kref, drbd_destroy_device);  /* might destroy the resource as well */
 }
 
+static void drbd_remove_all_paths(struct drbd_connection *connection)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_path *path, *tmp;
+
+	lockdep_assert_held(&resource->conf_update);
+
+	list_for_each_entry(path, &transport->paths, list)
+		set_bit(TR_UNREGISTERED, &path->flags);
+
+	/* Ensure flag visible before list manipulation. */
+	smp_wmb();
+
+	list_for_each_entry_safe(path, tmp, &transport->paths, list) {
+		/* Exclusive with reading state, in particular remember_state_change() */
+		write_lock_irq(&resource->state_rwlock);
+		list_del_rcu(&path->list);
+		write_unlock_irq(&resource->state_rwlock);
+
+		notify_path(connection, path, NOTIFY_DESTROY);
+		call_rcu(&path->rcu, drbd_reclaim_path);
+	}
+}
+
 void drbd_queue_unplug(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
@@ -3661,18 +3686,32 @@ fail:
 	return NULL;
 }
 
-/* free the transport specific members (e.g., sockets) of a connection */
+/**
+ * drbd_transport_shutdown() - Free the transport specific members (e.g., sockets) of a connection
+ *
+ * Must be called with conf_update held.
+ */
 void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_free_op op)
 {
+	struct drbd_transport *transport = &connection->transport;
+
+	lockdep_assert_held(&connection->resource->conf_update);
+
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
 	flush_send_buffer(connection, DATA_STREAM);
 	flush_send_buffer(connection, CONTROL_STREAM);
 
-	connection->transport.class->ops.free(&connection->transport, op);
-	if (op == DESTROY_TRANSPORT)
-		drbd_put_transport_class(connection->transport.class);
+	/* Holding conf_update ensures that paths list is not modified concurrently. */
+	transport->class->ops.free(transport, op);
+	if (op == DESTROY_TRANSPORT) {
+		drbd_remove_all_paths(connection);
+
+		/* Wait for the delayed drbd_reclaim_path() calls. */
+		rcu_barrier();
+		drbd_put_transport_class(transport->class);
+	}
 
 	mutex_unlock(&connection->mutex[CONTROL_STREAM]);
 	mutex_unlock(&connection->mutex[DATA_STREAM]);
@@ -3683,6 +3722,8 @@ void drbd_destroy_path(struct kref *kref)
 	struct drbd_path *path = container_of(kref, struct drbd_path, kref);
 	struct drbd_connection *connection =
 		container_of(path->transport, struct drbd_connection, transport);
+
+	connection->transport.class->ops.remove_path(path);
 
 	kref_put(&connection->kref, drbd_destroy_connection);
 	kfree(path);
