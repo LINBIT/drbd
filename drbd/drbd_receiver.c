@@ -7078,10 +7078,9 @@ retry:
 
 void drbd_try_to_get_resynced(struct drbd_device *device)
 {
-	int best_resync_peer_preference = 0;
-	struct drbd_peer_device *best_peer_device = NULL;
-	struct drbd_peer_device *peer_device;
+	struct drbd_peer_device *peer_device, *best_peer_device = NULL;
 	enum sync_strategy best_strategy = UNDETERMINED;
+	int best_preference = 0;
 
 	if (!get_ldev(device))
 		return;
@@ -7091,15 +7090,18 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 		enum sync_strategy strategy;
 		enum sync_rule rule;
 		int peer_node_id;
-		if (peer_device->disk_state[NOW] == D_UP_TO_DATE) {
-			strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
-			disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, rule, &peer_node_id);
-			drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
-			if (strategy_descriptor(strategy).resync_peer_preference > best_resync_peer_preference) {
-				best_resync_peer_preference = strategy_descriptor(strategy).resync_peer_preference;
-				best_peer_device = peer_device;
-				best_strategy = strategy;
-			}
+
+		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+			continue;
+
+		strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
+		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, rule,
+					&peer_node_id);
+		drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
+		if (strategy_descriptor(strategy).resync_peer_preference > best_preference) {
+			best_preference = strategy_descriptor(strategy).resync_peer_preference;
+			best_peer_device = peer_device;
+			best_strategy = strategy;
 		}
 	}
 	rcu_read_unlock();
