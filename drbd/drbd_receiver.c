@@ -7107,7 +7107,9 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 
 	if (best_strategy == NO_SYNC) {
 		change_disk_state(device, D_UP_TO_DATE, CS_VERBOSE, "get-resync", NULL);
-	} else if (peer_device) {
+	} else if (peer_device &&
+		   (!repl_is_sync_target(peer_device->repl_state[NOW]) ||
+		    test_bit(UNSTABLE_RESYNC, &peer_device->flags))) {
 		drbd_resync(peer_device, DISKLESS_PRIMARY);
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
 	}
