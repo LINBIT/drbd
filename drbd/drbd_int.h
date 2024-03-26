@@ -782,15 +782,23 @@ enum resource_flag {
 	TWOPC_ABORT_LOCAL,
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
-	TWOPC_AFTER_LOST_PEER_PENDING,  /* set when we change our disk state to
-		* D_CONSISTENT until we have determined whether we can return to
-		* being D_UP_TO_DATE */
+
+	/*
+	 * The side effects of an empty state change two-phase commit are:
+	 *
+	 * * A local consistent disk can upgrade to up-to-date when no primary is reachable
+	 *   (or become outdated if the prepare packets reach a primary).
+	 *
+	 * * resource->members are updates
+	 */
+	EMPTY_TWOPC_PENDING,
+
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
 
         /* to be used in drbd_post_work() */
-	TWOPC_AFTER_LOST_PEER,  /* try to become D_UP_TO_DATE and/or update resource->members */
+	EMPTY_TWOPC,  /* empty two-phase commit for its side effects */
 	R_UNREGISTERED,
 	DOWN_IN_PROGRESS,
 	CHECKING_PEERS,
