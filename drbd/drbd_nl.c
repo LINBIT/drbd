@@ -184,7 +184,7 @@ static struct drbd_path *first_path(struct drbd_connection *connection)
 	   It was introduced when replacing the single address pair
 	   with a list of address pairs (or paths). */
 
-	return list_first_entry_or_null(&connection->transport.paths, struct drbd_path, list);
+	return list_first_or_null_rcu(&connection->transport.paths, struct drbd_path, list);
 }
 
 /* This would be a good candidate for a "pre_doit" hook,
@@ -617,12 +617,17 @@ static int drbd_khelper(struct drbd_device *device, struct drbd_connection *conn
 		}
 	}
 	if (connection) {
-		struct drbd_path *path = first_path(connection);
+		struct drbd_path *path;
+
+		rcu_read_lock();
+		path = first_path(connection);
 		if (path) {
 			/* TO BE DELETED */
 			env_print_address(&env, "DRBD_MY_", &path->my_addr);
 			env_print_address(&env, "DRBD_PEER_", &path->peer_addr);
 		}
+		rcu_read_unlock();
+
 		env_print(&env, "DRBD_PEER_NODE_ID=%u", connection->peer_node_id);
 		env_print(&env, "DRBD_CSTATE=%s", drbd_conn_str(connection->cstate[NOW]));
 	}
@@ -5912,12 +5917,15 @@ static int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *
 		goto nla_put_failure;
 
 	/* array of such paths. */
-	list_for_each_entry(path, &connection->transport.paths, list) {
-		if (nla_put(skb, T_my_addr, path->my_addr_len, &path->my_addr))
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &connection->transport.paths, list) {
+		if (nla_put(skb, T_my_addr, path->my_addr_len, &path->my_addr) ||
+				nla_put(skb, T_peer_addr, path->peer_addr_len, &path->peer_addr)) {
+			rcu_read_unlock();
 			goto nla_put_failure;
-		if (nla_put(skb, T_peer_addr, path->peer_addr_len, &path->peer_addr))
-			goto nla_put_failure;
+		}
 	}
+	rcu_read_unlock();
 	nla_nest_end(skb, tla);
 	return 0;
 
