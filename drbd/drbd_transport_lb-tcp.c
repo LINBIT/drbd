@@ -59,7 +59,6 @@ struct dtl_stream {
 
 struct dtl_transport {
 	struct drbd_transport transport; /* Must be first! */
-	spinlock_t paths_lock;
 	spinlock_t control_recv_lock;
 	unsigned long flags;
 	struct timer_list control_timer;
@@ -179,7 +178,6 @@ static int dtl_init(struct drbd_transport *transport)
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 
-	spin_lock_init(&dtl_transport->paths_lock);
 	spin_lock_init(&dtl_transport->control_recv_lock);
 
 	dtl_transport->transport.class = &dtl_transport_class;
@@ -503,13 +501,11 @@ fail:
 
 static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
 {
-	struct dtl_transport *dtl_transport =
-		container_of(transport, struct dtl_transport, transport);
 	struct drbd_transport_stats s = {};
 	struct drbd_path *drbd_path;
 
-	spin_lock_bh(&dtl_transport->paths_lock);
-	list_for_each_entry(drbd_path, &transport->paths, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct dtl_flow *flow = &path->flow[DATA_STREAM];
 
@@ -523,7 +519,7 @@ static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_st
 			s.send_buffer_used += sk->sk_wmem_queued;
 		}
 	}
-	spin_unlock_bh(&dtl_transport->paths_lock);
+	rcu_read_unlock();
 
 	*stats = s;
 }
@@ -844,8 +840,8 @@ static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_t
 	struct drbd_path *drbd_path;
 	struct dtl_flow *flow;
 
-	spin_lock(&dtl_transport->paths_lock); /* bh already disabled */
-	list_for_each_entry(drbd_path, &transport->paths, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 
 		flow = &path->flow[CONTROL_STREAM];
@@ -860,7 +856,7 @@ static struct dtl_flow *dtl_control_next_flow_in_seq(struct dtl_transport *dtl_t
 	}
 	flow = NULL;
 found:
-	spin_unlock(&dtl_transport->paths_lock);
+	rcu_read_unlock();
 	return flow;
 }
 
@@ -1504,13 +1500,11 @@ static long dtl_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 
 static bool dtl_stream_ok(struct drbd_transport *transport, enum drbd_stream stream)
 {
-	struct dtl_transport *dtl_transport =
-		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 	bool established = false;
 
-	spin_lock_bh(&dtl_transport->paths_lock);
-	list_for_each_entry(drbd_path, &transport->paths, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct socket *socket = path->flow[stream].socket;
 
@@ -1518,7 +1512,7 @@ static bool dtl_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 		if (established)
 			break;
 	}
-	spin_unlock_bh(&dtl_transport->paths_lock);
+	rcu_read_unlock();
 
 	return established;
 }
@@ -1543,8 +1537,8 @@ static int dtl_select_send_flow_cond(struct dtl_transport *dtl_transport,
 	struct dtl_flow *best = NULL;
 	bool empty;
 
-	spin_lock_bh(&dtl_transport->paths_lock);
-	list_for_each_entry(drbd_path, &transport->paths, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct dtl_flow *flow = &path->flow[st];
 
@@ -1570,7 +1564,7 @@ static int dtl_select_send_flow_cond(struct dtl_transport *dtl_transport,
 		}
 	}
 	empty = list_empty(&transport->paths);
-	spin_unlock_bh(&dtl_transport->paths_lock);
+	rcu_read_unlock();
 
 	if (!best) {
 		if (empty)
@@ -1813,15 +1807,13 @@ static void dtl_debugfs_show_stream(struct seq_file *m, struct socket *socket)
 
 static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
 {
-	struct dtl_transport *dtl_transport =
-		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 
 	/* BUMP me if you change the file format/content/presentation */
 	seq_printf(m, "v: %u\n\n", 0);
 
-	spin_lock_bh(&dtl_transport->paths_lock);
-	list_for_each_entry(drbd_path, &transport->paths, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		enum drbd_stream i;
 
 		seq_printf(m, "%pI4 - %pI4:\n",
@@ -1839,7 +1831,7 @@ static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *
 		}
 		seq_puts(m, "\n");
 	}
-	spin_unlock_bh(&dtl_transport->paths_lock);
+	rcu_read_unlock();
 }
 
 static int dtl_add_path(struct drbd_path *drbd_path)
