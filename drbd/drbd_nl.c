@@ -4856,6 +4856,7 @@ static void del_connection(struct drbd_connection *connection, const char *tag)
 	 */
 	drbd_thread_stop(&connection->sender);
 
+	mutex_lock(&resource->conf_update);
 	drbd_unregister_connection(connection);
 
 	/*
@@ -4872,6 +4873,7 @@ static void del_connection(struct drbd_connection *connection, const char *tag)
 	notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 	call_rcu(&connection->rcu, drbd_reclaim_connection);
+	mutex_unlock(&resource->conf_update);
 }
 
 static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)
@@ -4904,9 +4906,7 @@ static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool dest
 	}
 	rv = conn_try_disconnect(connection, parms.force_disconnect, tag, adm_ctx.reply_skb);
 	if (rv >= SS_SUCCESS && destroy) {
-		mutex_lock(&connection->resource->conf_update);
 		del_connection(connection, tag);
-		mutex_unlock(&connection->resource->conf_update);
 	}
 	if (rv < SS_SUCCESS)
 		retcode = (enum drbd_ret_code)rv;
@@ -6889,9 +6889,7 @@ static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 		if (connection->cstate[NOW] > C_STANDALONE)
 			retcode = conn_try_disconnect(connection, 0, "down", adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS) {
-			mutex_lock(&resource->conf_update);
 			del_connection(connection, "down");
-			mutex_unlock(&resource->conf_update);
 		} else {
 			kref_debug_put(&connection->kref_debug, 13);
 			kref_put(&connection->kref, drbd_destroy_connection);
