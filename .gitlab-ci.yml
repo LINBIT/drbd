@@ -213,11 +213,11 @@ build:all:
         ci_fetch_binary virter virter-$VIRTER_VERSION https://github.com/LINBIT/virter/releases/download/$VIRTER_VERSION/virter-linux-amd64
         ci_fetch_binary vmshed vmshed-$VMSHED_VERSION https://github.com/LINBIT/vmshed/releases/download/$VMSHED_VERSION/vmshed-linux-amd64
 
-        docker image pull $LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
+        export DRBD_TEST_DOCKER_IMAGE=$LINBIT_DOCKER_REGISTRY/drbd9-tests:latest
+        docker image pull $DRBD_TEST_DOCKER_IMAGE
 
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
-        export DRBD9_TESTS_VERSION=latest
         cd drbd9-tests
         ./virter/run-test.sh --out-dir=../tests-out "$@"
       }
