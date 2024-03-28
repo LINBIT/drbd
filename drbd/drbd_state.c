@@ -4935,10 +4935,21 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 
 			if ((context->mask.role == role_MASK && context->val.role == R_PRIMARY) ||
 			    (context->mask.role != role_MASK && resource->role[NOW] == R_PRIMARY)) {
-				reply->primary_nodes |=
-					NODE_MASK(resource->res_opts.node_id);
-				reply->weak_nodes |= ~directly_reachable;
+				reply->primary_nodes |= NODE_MASK(resource->res_opts.node_id);
+				if (drbd_res_data_accessible(resource))
+					reply->weak_nodes |= ~directly_reachable;
 			}
+
+			/*
+			 * When a node is Primary and has access to UpToDate data, it sets
+			 * weak_nodes to the mask of those it is not connected to. This includes the
+			 * bits for nodes which are not configured, so will always have some set
+			 * bits. Thus if there is a Primary node and no bits are set in weak_nodes,
+			 * the Primary cannot have access to UpToDate data.
+			 */
+			if (reply->primary_nodes && !reply->weak_nodes)
+				request.flags |= TWOPC_PRI_INCAPABLE;
+
 			drbd_info(resource, "State change %u: primary_nodes=%lX, weak_nodes=%lX\n",
 				  reply->tid, (unsigned long)reply->primary_nodes,
 				  (unsigned long)reply->weak_nodes);
@@ -5947,6 +5958,22 @@ static void log_current_uuids(struct drbd_device *device)
 	}
 	rcu_read_unlock();
 	drbd_warn(device, "%s", msg);
+}
+
+bool drbd_res_data_accessible(struct drbd_resource *resource)
+{
+	bool data_accessible = false;
+	struct drbd_device *device;
+	int vnr;
+
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (drbd_data_accessible(device, NOW)) {
+			data_accessible = true;
+			break;
+		}
+	}
+
+	return data_accessible;
 }
 
 bool drbd_data_accessible(struct drbd_device *device, enum which_state which)
