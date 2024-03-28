@@ -2443,10 +2443,10 @@ static void update_members(struct drbd_resource *resource)
 
 		/* Connection to peer lost. Check if we should remove it from the members */
 		if (drbd_need_twopc_after_lost_peer(connection) &&
-				!test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags) &&
+				!test_bit(EMPTY_TWOPC_PENDING, &resource->flags) &&
 				resource->members & peer_node_mask) {
-			set_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
-			drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
+			set_bit(EMPTY_TWOPC_PENDING, &resource->flags);
+			drbd_post_work(resource, EMPTY_TWOPC);
 		}
 	}
 }
@@ -2995,7 +2995,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		/* The NEW state version here is the same as the NOW version in
 		 * the context of w_after_state_change(). */
 		if (should_try_become_up_to_date(device, disk_state, NEW))
-			set_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags);
+			set_bit(EMPTY_TWOPC_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -4187,9 +4187,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (disk_state[OLD] == D_UP_TO_DATE && disk_state[NEW] == D_INCONSISTENT)
 			send_new_state_to_all_peer_devices(state_change, n_device);
 
-		/* We cannot test the flag TWOPC_AFTER_LOST_PEER_PENDING here
-		 * because that would cause us to queue the work more often
-		 * than necessary. */
+		/* Testing EMPTY_TWOPC_PENDING would cause more queuing than necessary */
 		if (should_try_become_up_to_date(device, disk_state, NOW))
 			try_become_up_to_date = true;
 
@@ -4264,7 +4262,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (try_become_up_to_date)
-		drbd_post_work(resource, TWOPC_AFTER_LOST_PEER);
+		drbd_post_work(resource, EMPTY_TWOPC);
 	else
 		drbd_notify_peers_lost_primary(resource);
 

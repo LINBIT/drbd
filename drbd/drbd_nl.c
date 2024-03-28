@@ -962,7 +962,7 @@ static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr;
 
-	if (test_bit(TWOPC_AFTER_LOST_PEER_PENDING, &resource->flags))
+	if (test_bit(EMPTY_TWOPC_PENDING, &resource->flags))
 		return false;
 
 	rcu_read_lock();
