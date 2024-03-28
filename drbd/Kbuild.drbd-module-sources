@@ -99,5 +99,6 @@ __only_in_git    := $(filter-out $(drbd-module-sources),$(__drbd-module-sources)
 __only_in_kbuild := $(filter-out $(__drbd-module-sources),$(drbd-module-sources))
 __err := $(if $(__only_in_git),only-in-git   : $(__only_in_git))
 __err += $(if $(__only_in_kbuild),only-in-kbuild: $(__only_in_kbuild))
+__err := $(strip $(__err))
 $(if $(__err),$(error $(__err)))
 endif
