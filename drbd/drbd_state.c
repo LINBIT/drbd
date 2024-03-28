@@ -3731,6 +3731,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	int n_device, n_connection;
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
+	bool healed_primary = false;
 
 	notify_state_change(state_change);
 
@@ -3793,6 +3794,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				}
 			}
 		}
+
+		if (role[NEW] == R_PRIMARY && !data_accessible[OLD] && data_accessible[NEW])
+			healed_primary = true;
 
 		for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 			struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
@@ -4261,10 +4265,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		end_state_change(resource, &irq_flags, "susp-uuid");
 	}
 
-	if (try_become_up_to_date)
+	if (try_become_up_to_date || healed_primary)
 		drbd_post_work(resource, EMPTY_TWOPC);
-	else
-		drbd_notify_peers_lost_primary(resource);
+
+	drbd_notify_peers_lost_primary(resource);
 
 	if (!still_connected)
 		mod_timer_pending(&resource->twopc_timer, jiffies);

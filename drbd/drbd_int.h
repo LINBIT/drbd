@@ -823,6 +823,9 @@ enum resource_flag {
 	 *   (or become outdated if the prepare packets reach a primary).
 	 *
 	 * * resource->members are updates
+	 *
+	 * * Faraway nodes might outdate themselves if they learn about the existence of a primary
+	 *   (with access to data) node.
 	 */
 	EMPTY_TWOPC_PENDING,
 
