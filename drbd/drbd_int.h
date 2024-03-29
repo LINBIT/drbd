@@ -757,6 +757,7 @@ enum connection_flag {
 	CONN_HANDSHAKE_DISCONNECT,
 	CONN_HANDSHAKE_RETRY,
 	CONN_HANDSHAKE_READY,
+	FENCING_HANDLER_RUNNING,
 };
 
 /* flag bits per resource */
@@ -1105,6 +1106,9 @@ struct drbd_connection {
 	unsigned int peer_node_id;
 	struct list_head twopc_parent_list;
 	struct rcu_head rcu;
+
+	wait_queue_head_t fencing_handler_wait;
+	int retval_from_fencing_khelper;
 
 	struct drbd_transport transport; /* The transport needs to be the last member. The acutal
 					    implementation might have more members than the

@@ -3523,6 +3523,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->resource = resource;
 	connection->after_reconciliation.lost_node_id = -1;
 
+	init_waitqueue_head(&connection->fencing_handler_wait);
+
 	INIT_LIST_HEAD(&connection->transport.paths);
 	connection->transport.log_prefix = resource->name;
 	if (tc->init(&connection->transport))
@@ -3946,6 +3948,13 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	}
 	list_del_rcu(&connection->connections);
 	spin_unlock_irq(&resource->req_lock);
+
+		/* something invalid as process exit code */
+	connection->retval_from_fencing_khelper = 42 << 8;
+	if (test_and_clear_bit(FENCING_HANDLER_RUNNING, &connection->flags)) {
+		printk("Terminating threads waiting for fencing handler to exit (they will exit with 42)\n");
+		wake_up(&connection->fencing_handler_wait);
+	}
 
 	list_for_each_entry(peer_device, &work_list, peer_devices)
 		drbd_debugfs_peer_device_cleanup(peer_device);

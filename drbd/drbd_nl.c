@@ -807,9 +807,25 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	if (fencing_policy == FP_DONT_CARE)
 		return true;
 
-	r = drbd_maybe_khelper(NULL, connection, "fence-peer");
-	if (r == DRBD_UMH_DISABLED)
+	if (test_and_set_bit(FENCING_HANDLER_RUNNING, &connection->flags)) {
+		printk("fence-peer handler already running, waiting for it to exit and using its return value.\n");
+
+		wait_event(connection->fencing_handler_wait, !test_bit(FENCING_HANDLER_RUNNING, &connection->flags));
+		r = connection->retval_from_fencing_khelper;
+
+		printk("Ok, the one running fence-peer handler returned %d, using this for further actions.\n", (r>>8)&0xff);
+	} else {
+		printk("About to start fence-peer handler ...\n");
+
+		r = drbd_maybe_khelper(NULL, connection, "fence-peer");
+		connection->retval_from_fencing_khelper = r;
+	}
+	if (r == DRBD_UMH_DISABLED) {
+		clear_bit(FENCING_HANDLER_RUNNING, &connection->flags);
+		wake_up(&connection->fencing_handler_wait);
+
 		return true;
+	}
 
 	begin_state_change(resource, &irq_flags, CS_VERBOSE);
 	switch ((r>>8) & 0xff) {
@@ -848,12 +864,18 @@ bool conn_try_outdate_peer(struct drbd_connection *connection)
 	default:
 		/* The script is broken ... */
 		drbd_err(connection, "fence-peer helper broken, returned %d\n", (r>>8)&0xff);
+		clear_bit(FENCING_HANDLER_RUNNING, &connection->flags);
+		wake_up(&connection->fencing_handler_wait);
+
 		abort_state_change(resource, &irq_flags);
 		return false; /* Eventually leave IO frozen */
 	}
 
 	drbd_info(connection, "fence-peer helper returned %d (%s)\n",
 		  (r>>8) & 0xff, ex_to_string);
+
+	clear_bit(FENCING_HANDLER_RUNNING, &connection->flags);
+	wake_up(&connection->fencing_handler_wait);
 
 	if (connection->cstate[NOW] >= C_CONNECTED ||
 	    initial_states_pending(connection)) {
