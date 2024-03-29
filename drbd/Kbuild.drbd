@@ -26,16 +26,15 @@ endif
 compat_objs += drbd-kernel-compat/drbd_wrappers.o
 
 ifdef CONFIG_TLS
-ifeq ($(shell test $(VERSION) -ge 4; echo $$?),0)
-ifeq ($(shell test $(VERSION) -gt 4 || test $(PATCHLEVEL) -ge 17; echo $$?),0)
 ifndef CONFIG_NET_HANDSHAKE
 # TLS is enabled in the kernel,
-# the kernel is recent enough to support it,
 # but they did not enable NET_HANDSHAKE.
-# We need to provide it.
-COMPAT_NET_HANDHAKE := m
-endif
-endif
+# If our compat test case thinks the kernel is recent enough to support it,
+# we need to provide it.
+# Different versions of Make treat the '#' sign (in '#define') differently,
+# some want it escaped, others need it unescaped. Could use $(pound).
+# But just wildcard it.
+COMPAT_NET_HANDHAKE := $(shell set -x; grep -qe '^.define COMPAT_HAVE_TLS_TX_RX$$' $(src)/compat.h && echo m)
 endif
 endif
 
