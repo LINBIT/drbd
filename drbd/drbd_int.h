@@ -1923,6 +1923,7 @@ extern void drbd_unregister_device(struct drbd_device *);
 extern void drbd_reclaim_device(struct rcu_head *);
 extern void drbd_unregister_connection(struct drbd_connection *);
 extern void drbd_reclaim_connection(struct rcu_head *);
+extern void drbd_reclaim_path(struct rcu_head *rp);
 void del_connect_timer(struct drbd_connection *connection);
 
 extern struct drbd_resource *drbd_create_resource(const char *, struct res_opts *);

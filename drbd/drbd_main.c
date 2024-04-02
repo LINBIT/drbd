@@ -4165,6 +4165,14 @@ void drbd_reclaim_connection(struct rcu_head *rp)
 	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
+void drbd_reclaim_path(struct rcu_head *rp)
+{
+	struct drbd_path *path = container_of(rp, struct drbd_path, rcu);
+
+	INIT_LIST_HEAD(&path->list);
+	kref_put(&path->kref, drbd_destroy_path);
+}
+
 static int __init drbd_init(void)
 {
 	int err;
