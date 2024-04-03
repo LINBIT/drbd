@@ -551,8 +551,8 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	if (unlikely(cancel))
 		goto out;
 
-	/* Do not add to interval tree if already disconnected. */
-	if (connection->cstate[NOW] < C_CONNECTED)
+	/* Do not add to interval tree if already disconnected or resync aborted */
+	if (!repl_is_sync_target(peer_device->repl_state[NOW]))
 		goto out;
 
 	if (unlikely((peer_req->flags & EE_WAS_ERROR) != 0))

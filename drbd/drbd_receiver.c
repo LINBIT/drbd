@@ -277,6 +277,7 @@ static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kin
 static bool disconnect_expected(struct drbd_connection *connection);
 static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid);
 static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
+static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *peer_device);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -3787,28 +3788,25 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 	}
 }
 
-enum peer_request_dagtag_result {
-	PEER_REQUEST_DAGTAG_DISCONNECTED,
-	PEER_REQUEST_DAGTAG_RECEIVED,
-	PEER_REQUEST_DAGTAG_WAITING,
-};
-
-static enum peer_request_dagtag_result have_dagtag_for_peer_request(struct drbd_peer_request *peer_req)
+static bool need_to_wait_for_dagtag_of_peer_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
-	enum peer_request_dagtag_result ret = PEER_REQUEST_DAGTAG_DISCONNECTED;
+	bool ret = false;
 
 	rcu_read_lock();
 	connection = drbd_connection_by_node_id(resource, peer_req->depend_dagtag_node_id);
 	if (connection && connection->cstate[NOW] == C_CONNECTED) {
-		if (atomic64_read(&connection->last_dagtag_sector) >= peer_req->depend_dagtag)
-			ret = PEER_REQUEST_DAGTAG_RECEIVED;
-		else
-			ret = PEER_REQUEST_DAGTAG_WAITING;
+		if (atomic64_read(&connection->last_dagtag_sector) < peer_req->depend_dagtag)
+			ret = true;
 	}
+	/*
+	 * I am a weak node if the resync source (myself) is not connected to the
+	 * depend_dagtag_node_id. The resync target will abort this resync soon.
+	 * See check_resync_source().
+	 */
 	rcu_read_unlock();
 	return ret;
 }
@@ -3855,45 +3853,18 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 	 * the interval tree, so the read will wait until the interval tree
 	 * conflict is resolved before being submitted. */
 	if (peer_req->depend_dagtag &&
-			peer_req->depend_dagtag_node_id != device->resource->res_opts.node_id) {
-		switch (have_dagtag_for_peer_request(peer_req)) {
-			case PEER_REQUEST_DAGTAG_DISCONNECTED:
-				/* It is possible to have an "unstable online
-				 * verify". That is, verify where one of the
-				 * peers is connected to a Primary but the
-				 * other is not. If we are the peer without the
-				 * connection to the Primary then we cannot and
-				 * do not have to wait for the given dagtag. */
-				if (drbd_interval_is_verify(&peer_req->i))
-					break;
-
-				dynamic_drbd_dbg(peer_device, "%s at %llus+%u: Depends on dagtag %llus from disconnected peer %u; canceling\n",
-						drbd_interval_type_str(&peer_req->i),
-						(unsigned long long) peer_req->i.sector, size,
-						(unsigned long long) peer_req->depend_dagtag,
-						peer_req->depend_dagtag_node_id);
-				drbd_peer_resync_read_cancel(peer_req);
-				atomic_sub(size >> 9, &device->rs_sect_ev);
-				drbd_free_peer_req(peer_req);
-				dec_unacked(peer_device);
-				put_ldev(device);
-				return;
-			case PEER_REQUEST_DAGTAG_WAITING:
-				dynamic_drbd_dbg(peer_device, "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
-						drbd_interval_type_str(&peer_req->i),
-						(unsigned long long) peer_req->i.sector, size,
-						(unsigned long long) peer_req->depend_dagtag,
-						peer_req->depend_dagtag_node_id);
-				spin_lock_irq(&connection->peer_reqs_lock);
-				list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
-				spin_unlock_irq(&connection->peer_reqs_lock);
-				return;
-			case PEER_REQUEST_DAGTAG_RECEIVED:
-				/* Continue as normal */
-				break;
-			default:
-				BUG();
-		}
+	    peer_req->depend_dagtag_node_id != device->resource->res_opts.node_id &&
+	    need_to_wait_for_dagtag_of_peer_request(peer_req)) {
+		dynamic_drbd_dbg(peer_device,
+				 "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
+				 drbd_interval_type_str(&peer_req->i),
+				 (unsigned long long)peer_req->i.sector, size,
+				 (unsigned long long)peer_req->depend_dagtag,
+				 peer_req->depend_dagtag_node_id);
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+		return;
 	}
 
 	atomic_inc(&connection->backing_ee_cnt);
@@ -6515,21 +6486,26 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 	return err;
 }
 
-
-/* If a primary looses connection to a SYNC_SOURCE node from us, then we
+/**
+ * check_resync_source() - Abort resync if the source is weak
+ * @device: The device to check
+ * @weak_nodes: Mask of currently weak nodes in the cluster
+ *
+ * If a primary loses connection to a SYNC_SOURCE node from us, then we
  * need to abort that resync. Why?
  *
- * When the primary sends a write we get that and write that as well. With
- * the peer_ack packet we will set that as out-of-sync towards the sync
+ * When the primary sends a write, we get that and write that as well. With
+ * the peer_ack packet, we will set that as out-of-sync towards the sync
  * source node.
- * When the resync process finds such bits we will request outdated
+ * When the resync process finds such bits, we request outdated
  * data from the sync source!
- *
- * -> better stop a resync from such a source.
+ * We are stopping the resync from such an outdated source here and waiting
+ * until all the resync activity has drained (P_RS_DATA_REPLY packets).
  */
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes)
 {
 	struct drbd_peer_device *peer_device;
+	struct drbd_connection *connection;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -6543,12 +6519,17 @@ static void check_resync_source(struct drbd_device *device, u64 weak_nodes)
 	rcu_read_unlock();
 	return;
 abort:
+	connection = peer_device->connection;
 	drbd_info(peer_device, "My sync source became a weak node, aborting resync!\n");
 	change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "abort-resync");
-	drbd_flush_workqueue(&device->resource->work);
+	drbd_flush_workqueue(&connection->sender_work);
+	drbd_cancel_conflicting_resync_requests(peer_device);
 
+	wait_event_interruptible(connection->ee_wait,
+				 peer_device->repl_state[NOW] <= L_ESTABLISHED ||
+				 atomic_read(&connection->backing_ee_cnt) == 0);
 	wait_event_interruptible(device->misc_wait,
-				 peer_device->repl_state[NOW] <= L_ESTABLISHED  ||
+				 peer_device->repl_state[NOW] <= L_ESTABLISHED ||
 				 atomic_read(&peer_device->rs_pending_cnt) == 0);
 
 	peer_device->rs_total  = 0;
