@@ -4316,11 +4316,16 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 			return err;
 
 		if (drbd_current_uuid(device) != UUID_JUST_CREATED &&
-				strategy == SYNC_SOURCE_SET_BITMAP) {
+		    peer_device->current_uuid != UUID_JUST_CREATED &&
+		    strategy == SYNC_SOURCE_SET_BITMAP) {
 			/*
 			 * We have just written the bitmap slot. Update the
 			 * bitmap UUID so that the resync does not start from
 			 * the beginning again if we disconnect and reconnect.
+			 *
+			 * Initial resync continuation is handled in
+			 * drbd_start_resync() at comment:
+			 * prepare to continue an interrupted initial resync later
 			 */
 			drbd_uuid_set_bitmap(peer_device, peer_device->current_uuid);
 			drbd_print_uuids(peer_device, "updated bitmap UUID");
