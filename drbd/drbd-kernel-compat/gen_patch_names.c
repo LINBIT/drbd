@@ -127,8 +127,8 @@ int main(int argc, char **argv)
 	patch(1, "bvec_kmap_local", true, false,
 	      COMPAT_HAVE_BVEC_KMAP_LOCAL, "present");
 
-	patch(1, "msg_splice_pages", true, false,
-	      COMPAT_HAVE_MSG_SPLICE_PAGES, "present");
+	patch(1, "sendpage", false, true,
+	      COMPAT_HAVE_SENDPAGE, "present");
 
 	patch(1, "struct_bvec_iter", true, false,
 	      COMPAT_HAVE_STRUCT_BVEC_ITER, "present");
