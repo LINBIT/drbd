@@ -142,44 +142,6 @@ static struct drbd_transport_class tcp_transport_class = {
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
 };
 
-/* Might restart iteration, if current element is removed from list!! */
-#define for_each_path_ref(path, transport)			\
-	for (path = __drbd_next_path_ref(NULL, transport);	\
-	     path;						\
-	     path = __drbd_next_path_ref(path, transport))
-
-/* This is save as long you use list_del_init() everytime something is removed
-   from the list. */
-static struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,
-					      struct drbd_transport *transport)
-{
-	struct drbd_tcp_transport *tcp_transport =
-		container_of(transport, struct drbd_tcp_transport, transport);
-
-	spin_lock(&tcp_transport->paths_lock);
-	if (!drbd_path) {
-		drbd_path = list_first_entry_or_null(&transport->paths, struct drbd_path, list);
-	} else {
-		bool in_list = !list_empty(&drbd_path->list);
-		kref_put(&drbd_path->kref, drbd_destroy_path);
-		if (in_list) {
-			/* Element still on the list, ref count can not drop to zero! */
-			if (list_is_last(&drbd_path->list, &transport->paths))
-				drbd_path = NULL;
-			else
-				drbd_path = list_next_entry(drbd_path, list);
-		} else {
-			/* No longer on the list, element might be freed already, restart from the start */
-			drbd_path = list_first_entry_or_null(&transport->paths, struct drbd_path, list);
-		}
-	}
-	if (drbd_path)
-		kref_get(&drbd_path->kref);
-	spin_unlock(&tcp_transport->paths_lock);
-
-	return drbd_path;
-}
-
 static int dtt_init(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -253,7 +215,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		}
 		spin_lock(&tcp_transport->paths_lock);
 		list_for_each_entry_safe(drbd_path, tmp, &transport->paths, list) {
-			list_del_init(&drbd_path->list);
+			list_del_rcu(&drbd_path->list);
 			kref_put(&drbd_path->kref, drbd_destroy_path);
 		}
 		spin_unlock(&tcp_transport->paths_lock);
@@ -1643,7 +1605,7 @@ retry:
 		spin_unlock(&tcp_transport->paths_lock);
 		goto retry;
 	}
-	list_add_tail(&drbd_path->list, &transport->paths);
+	list_add_tail_rcu(&drbd_path->list, &transport->paths);
 	spin_unlock(&tcp_transport->paths_lock);
 
 	return 0;
@@ -1659,9 +1621,14 @@ static int dtt_remove_path(struct drbd_path *drbd_path)
 	if (test_bit(TR_ESTABLISHED, &drbd_path->flags))
 		return -EBUSY;
 
+	set_bit(TR_UNREGISTERED, &drbd_path->flags);
+	/* Ensure flag visible before list manipulation. */
+	smp_wmb();
+
 	spin_lock(&tcp_transport->paths_lock);
-	list_del_init(&drbd_path->list);
+	list_del_rcu(&drbd_path->list);
 	spin_unlock(&tcp_transport->paths_lock);
+	synchronize_rcu();
 	drbd_put_listener(&path->path);
 
 	return 0;
