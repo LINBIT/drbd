@@ -4336,17 +4336,17 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	 * prevent double cleanup. */
 	tr_class = NULL;
 
+	mutex_lock(&adm_ctx->resource->conf_update);
 	retcode = check_net_options(connection, new_net_conf);
 	if (retcode != NO_ERROR)
-		goto fail_free_connection;
+		goto unlock_fail_free_connection;
 
 	retcode = alloc_crypto(&crypto, new_net_conf, adm_ctx->reply_skb);
 	if (retcode != NO_ERROR)
-		goto fail_free_connection;
+		goto unlock_fail_free_connection;
 
 	((char *)new_net_conf->shared_secret)[SHARED_SECRET_MAX-1] = 0;
 
-	mutex_lock(&adm_ctx->resource->conf_update);
 	idr_for_each_entry(&adm_ctx->resource->devices, device, i) {
 		int id;
 
@@ -4458,9 +4458,8 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	return NO_ERROR;
 
 unlock_fail_free_connection:
-	mutex_unlock(&adm_ctx->resource->conf_update);
-fail_free_connection:
 	drbd_unregister_connection(connection);
+	mutex_unlock(&adm_ctx->resource->conf_update);
 	synchronize_rcu();
 	drbd_reclaim_connection(&connection->rcu);
 fail_put_transport:
