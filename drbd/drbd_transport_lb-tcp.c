@@ -211,7 +211,7 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		bool was_established = test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 
 		if (free_op == CLOSE_CONNECTION && was_established)
-			drbd_path_event(transport, drbd_path, false);
+			drbd_path_event(transport, drbd_path);
 	}
 
 	del_timer_sync(&dtl_transport->control_timer);
@@ -774,7 +774,7 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 			set_bit(TR_ESTABLISHED, &drbd_path->flags);
 		else
 			clear_bit(TR_ESTABLISHED, &drbd_path->flags);
-		drbd_path_event(transport, drbd_path, false);
+		drbd_path_event(transport, drbd_path);
 
 		if (established)
 			wake_up(&dtl_transport->data_ready);

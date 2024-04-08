@@ -203,7 +203,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		bool was_established = test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 
 		if (free_op == CLOSE_CONNECTION && was_established)
-			drbd_path_event(transport, drbd_path, false);
+			drbd_path_event(transport, drbd_path);
 	}
 
 	del_timer_sync(&tcp_transport->control_timer);
@@ -1308,7 +1308,7 @@ randomize:
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
-	drbd_path_event(transport, &connect_to_path->path, false);
+	drbd_path_event(transport, &connect_to_path->path);
 
 	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	csocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */

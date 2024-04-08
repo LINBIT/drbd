@@ -322,12 +322,12 @@ bool drbd_should_abort_listening(struct drbd_transport *transport)
 }
 
 /* Called by a transport if a path was established / disconnected */
-void drbd_path_event(struct drbd_transport *transport, struct drbd_path *path, bool destroyed)
+void drbd_path_event(struct drbd_transport *transport, struct drbd_path *path)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
 
-	notify_path(connection, path, destroyed ? NOTIFY_DESTROY : NOTIFY_CHANGE);
+	notify_path(connection, path, NOTIFY_CHANGE);
 }
 
 struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,

@@ -902,7 +902,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	}
 
 	set_bit(TR_ESTABLISHED, &path->path.flags);
-	drbd_path_event(transport, &path->path, false);
+	drbd_path_event(transport, &path->path);
 
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
@@ -1185,7 +1185,7 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 
 	destroyed = test_bit(TR_UNREGISTERED, &drbd_path->flags) || rdma_transport->active == false;
 	if (test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags) && !destroyed)
-		drbd_path_event(transport, drbd_path, false);
+		drbd_path_event(transport, drbd_path);
 
 	if (!dtr_transport_ok(transport))
 		drbd_control_event(transport, CLOSED_BY_PEER);
@@ -1558,7 +1558,7 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	kref_put(&cm->kref, dtr_destroy_cm);
 
 	clear_bit(TR_ESTABLISHED, &path->path.flags);
-	drbd_path_event(transport, &path->path, false);
+	drbd_path_event(transport, &path->path);
 
 	if (!dtr_transport_ok(transport)) {
 		struct dtr_transport *rdma_transport =
