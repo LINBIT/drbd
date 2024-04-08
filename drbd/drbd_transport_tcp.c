@@ -234,8 +234,8 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	}
 
 	for_each_path_ref(drbd_path, transport) {
-		bool was_established = drbd_path->established;
-		drbd_path->established = false;
+		bool was_established = test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags);
+
 		if (free_op == DESTROY_TRANSPORT)
 			drbd_path_event(transport, drbd_path, true);
 		else if (was_established)
@@ -1339,7 +1339,7 @@ randomize:
 	}
 
 	TR_ASSERT(transport, first_path == connect_to_path);
-	connect_to_path->path.established = true;
+	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
 	drbd_path_event(transport, &connect_to_path->path, false);
 	dtt_put_listeners(transport);
 
@@ -1625,7 +1625,7 @@ static int dtt_add_path(struct drbd_path *drbd_path)
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 	bool active;
 
-	drbd_path->established = false;
+	clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 	INIT_LIST_HEAD(&path->sockets);
 retry:
 	active = test_bit(DTT_CONNECTING, &tcp_transport->flags);
@@ -1656,7 +1656,7 @@ static int dtt_remove_path(struct drbd_path *drbd_path)
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
 
-	if (drbd_path->established)
+	if (test_bit(TR_ESTABLISHED, &drbd_path->flags))
 		return -EBUSY;
 
 	spin_lock(&tcp_transport->paths_lock);

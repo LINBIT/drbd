@@ -407,7 +407,7 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 			path_state->connection = connection;
 			kref_get(&path->kref);
 			path_state->path = path;
-			path_state->path_established = path->established;
+			path_state->path_established = test_bit(TR_ESTABLISHED, &path->flags);
 
 			path_state++;
 		}

@@ -243,9 +243,7 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 	dtl_set_active(transport, false);
 	for_each_path_ref(drbd_path, transport) {
-		bool was_established = drbd_path->established;
-
-		drbd_path->established = false;
+		bool was_established = test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 
 		if (free_op == DESTROY_TRANSPORT)
 			drbd_path_event(transport, drbd_path, true);
@@ -355,7 +353,7 @@ static int dtl_wait_data_cond(struct dtl_transport *dtl_transport,
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 
-		if (!drbd_path->established)
+		if (!test_bit(TR_ESTABLISHED, &drbd_path->flags))
 			continue;
 		flow = &path->flow[st];
 		if (!flow->socket)
@@ -808,7 +806,7 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 		}
 	}
 
-	if (established != drbd_path->established) {
+	if (established != test_bit(TR_ESTABLISHED, &drbd_path->flags)) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			if (lb) {
 				path->flow[i].recv_sequence = 0;
@@ -820,7 +818,10 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 			}
 		}
 
-		drbd_path->established = established;
+		if (established)
+			set_bit(TR_ESTABLISHED, &drbd_path->flags);
+		else
+			clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 		drbd_path_event(transport, drbd_path, false);
 
 		if (established)
@@ -1578,7 +1579,7 @@ static int dtl_select_send_flow_cond(struct dtl_transport *dtl_transport,
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 		struct dtl_flow *flow = &path->flow[st];
 
-		if (!drbd_path->established)
+		if (!test_bit(TR_ESTABLISHED, &drbd_path->flags))
 			continue;
 
 		if (flow->socket) {
@@ -1885,7 +1886,7 @@ static int dtl_add_path(struct drbd_path *drbd_path)
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		path->flow[i].stream_nr = i;
 
-	drbd_path->established = false;
+	clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 
 	err = dtl_path_adjust_listener(path, active);
 
@@ -1905,7 +1906,7 @@ static int dtl_remove_path(struct drbd_path *drbd_path)
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 
-	if (drbd_path->established)
+	if (test_bit(TR_ESTABLISHED, &drbd_path->flags))
 		return -EBUSY;
 
 	spin_lock_bh(&dtl_transport->paths_lock);

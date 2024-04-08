@@ -6379,7 +6379,7 @@ put_result:
 		err = nla_put_drbd_cfg_context(skb, resource, connection, NULL, path);
 		if (err)
 			goto out;
-		path_info.path_established = path->established;
+		path_info.path_established = test_bit(TR_ESTABLISHED, &path->flags);
 		err = drbd_path_info_to_skb(skb, &path_info, !capable(CAP_SYS_ADMIN));
 		if (err)
 			goto out;
@@ -7379,7 +7379,7 @@ int notify_path(struct drbd_connection *connection, struct drbd_path *path, enum
 	struct drbd_path_info path_info;
 	int err;
 
-	path_info.path_established = path->established;
+	path_info.path_established = test_bit(TR_ESTABLISHED, &path->flags);
 	mutex_lock(&notification_mutex);
 	err = notify_path_state(NULL, 0, connection, path, &path_info, type);
 	mutex_unlock(&notification_mutex);
