@@ -4525,6 +4525,8 @@ static enum drbd_ret_code
 adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
 	struct drbd_transport *transport = &adm_ctx->connection->transport;
+	struct drbd_resource *resource = adm_ctx->resource;
+	struct drbd_connection *connection = adm_ctx->connection;
 	struct nlattr **nested_attr_tb;
 	struct nlattr *my_addr, *peer_addr;
 	struct drbd_path *path;
@@ -4571,13 +4573,26 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
+	/* Exclusive with transport op "prepare_connect()" */
+	mutex_lock(&resource->conf_update);
+
 	err = transport->class->ops.add_path(path);
+
 	if (err) {
 		kref_put(&path->kref, drbd_destroy_path);
-		drbd_err(adm_ctx->connection, "add_path() failed with %d\n", err);
+		drbd_err(connection, "add_path() failed with %d\n", err);
 		drbd_msg_put_info(adm_ctx->reply_skb, "add_path on transport failed");
+		mutex_unlock(&resource->conf_update);
 		return ERR_INVALID_REQUEST;
 	}
+
+	/* Exclusive with reading state, in particular remember_state_change() */
+	write_lock_irq(&resource->state_rwlock);
+	list_add_tail_rcu(&path->list, &transport->paths);
+	write_unlock_irq(&resource->state_rwlock);
+
+	mutex_unlock(&resource->conf_update);
+
 	notify_path(adm_ctx->connection, path, NOTIFY_CREATE);
 	return NO_ERROR;
 }
@@ -4717,6 +4732,7 @@ static int drbd_adm_new_path(struct sk_buff *skb, struct genl_info *info)
 static enum drbd_ret_code
 adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
+	struct drbd_resource *resource = adm_ctx->resource;
 	struct drbd_connection *connection = adm_ctx->connection;
 	struct drbd_transport *transport = &connection->transport;
 	struct nlattr **nested_attr_tb;
@@ -4757,9 +4773,25 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		if (!addr_eq_nla(&path->peer_addr, path->peer_addr_len, peer_addr))
 			continue;
 
-		err = transport->class->ops.remove_path(path);
-		if (err)
+		/* Exclusive with transport op "prepare_connect()" */
+		mutex_lock(&resource->conf_update);
+
+		if (!transport->class->ops.may_remove_path(path)) {
+			err = -EBUSY;
+			mutex_unlock(&resource->conf_update);
 			break;
+		}
+
+		set_bit(TR_UNREGISTERED, &path->flags);
+		/* Ensure flag visible before list manipulation. */
+		smp_wmb();
+
+		/* Exclusive with reading state, in particular remember_state_change() */
+		write_lock_irq(&resource->state_rwlock);
+		list_del_rcu(&path->list);
+		write_unlock_irq(&resource->state_rwlock);
+
+		mutex_unlock(&resource->conf_update);
 
 		notify_path(connection, path, NOTIFY_DESTROY);
 		/* Transport modules might use RCU on the path list. */

@@ -313,7 +313,9 @@ struct dtr_listener {
 
 static int dtr_init(struct drbd_transport *transport);
 static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
+static int dtr_prepare_connect(struct drbd_transport *transport);
 static int dtr_connect(struct drbd_transport *transport);
+static void dtr_finish_connect(struct drbd_transport *transport);
 static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
 static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
@@ -327,7 +329,8 @@ static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream str
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
 static int dtr_add_path(struct drbd_path *path);
-static int dtr_remove_path(struct drbd_path *path);
+static bool dtr_may_remove_path(struct drbd_path *path);
+static void dtr_remove_path(struct drbd_path *path);
 
 static int dtr_create_cm_id(struct dtr_cm *cm_context, struct net *net);
 static bool dtr_path_ok(struct dtr_path *path);
@@ -381,7 +384,9 @@ static struct drbd_transport_class rdma_transport_class = {
 		.free = dtr_free,
 		.init_listener = dtr_init_listener,
 		.release_listener = dtr_destroy_listener,
+		.prepare_connect = dtr_prepare_connect,
 		.connect = dtr_connect,
+		.finish_connect = dtr_finish_connect,
 		.recv = dtr_recv,
 		.stats = dtr_stats,
 		.net_conf_change = dtr_net_conf_change,
@@ -394,6 +399,7 @@ static struct drbd_transport_class rdma_transport_class = {
 		.hint = dtr_hint,
 		.debugfs_show = dtr_debugfs_show,
 		.add_path = dtr_add_path,
+		.may_remove_path = dtr_may_remove_path,
 		.remove_path = dtr_remove_path,
 	},
 	.module = THIS_MODULE,
@@ -524,14 +530,16 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
-	struct dtr_path *path;
-	u32 im;
+	struct drbd_path *drbd_path;
 	int i;
 
 	rdma_transport->active = false;
 
-	for_each_path_ref(path, im, transport)
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
+
 		__dtr_disconnect_path(path);
+	}
 
 	/* Free the rx_descs that where received and not consumed. */
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
@@ -550,7 +558,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			dtr_free_rx_desc(rx_desc);
 	}
 
-	for_each_path_ref(path, im, transport) {
+	list_for_each_entry(drbd_path, &transport->paths, list) {
+		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 		struct dtr_cm *cm;
 
 		cm = xchg(&path->cm, NULL); // RCU xchg
@@ -561,21 +570,10 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	del_timer_sync(&rdma_transport->control_timer);
 
 	if (free_op == DESTROY_TRANSPORT) {
-		LIST_HEAD(work_list);
-		struct dtr_path *tmp;
+		list_for_each_entry(drbd_path, &transport->paths, list) {
+			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
-		rcu_read_lock();
-		list_for_each_entry_rcu(path, &transport->paths, path.list)
-			path->nr = -1;
-		rcu_read_unlock();
-
-		list_splice_init_rcu(&transport->paths, &work_list, synchronize_rcu);
-
-		list_for_each_entry_safe(path, tmp, &work_list, path.list) {
 			flush_delayed_work(&path->cs.retry_connect_work);
-			list_del_init(&path->path.list);
-
-			kref_put(&path->path.kref, drbd_destroy_path);
 		}
 
 		/* After returning from dtr_free() this module might get unloaded soon. Make
@@ -1236,8 +1234,8 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 		return;
 
 	destroyed = path->nr == -1 || rdma_transport->active == false;
-	if (test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags) || destroyed)
-		drbd_path_event(transport, drbd_path, destroyed);
+	if (test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags) && !destroyed)
+		drbd_path_event(transport, drbd_path, false);
 
 	if (!dtr_transport_ok(transport))
 		drbd_control_event(transport, CLOSED_BY_PEER);
@@ -2983,7 +2981,7 @@ out_no_put:
 	return err;
 }
 
-static int dtr_connect(struct drbd_transport *transport)
+static int dtr_prepare_connect(struct drbd_transport *transport)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -2991,7 +2989,7 @@ static int dtr_connect(struct drbd_transport *transport)
 	struct dtr_stream *data_stream = NULL, *control_stream = NULL;
 	struct dtr_path *path;
 	struct net_conf *nc;
-	int i, timeout, err = -ENOMEM;
+	int timeout, err = -ENOMEM;
 	u32 im;
 
 	flush_signals(current);
@@ -3027,6 +3025,19 @@ static int dtr_connect(struct drbd_transport *transport)
 		}
 	}
 
+	return 0;
+
+abort:
+	rdma_transport->active = false;
+	return err;
+}
+
+static int dtr_connect(struct drbd_transport *transport)
+{
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
+	int i, err = -ENOMEM;
+
 	err = wait_for_completion_interruptible(&rdma_transport->connected);
 	if (err) {
 		flush_signals(current);
@@ -3052,9 +3063,20 @@ static int dtr_connect(struct drbd_transport *transport)
 abort:
 	rdma_transport->active = false;
 
-	for_each_path_ref(path, im, transport)
-		dtr_disconnect_path(path);
 	return err;
+}
+
+static void dtr_finish_connect(struct drbd_transport *transport)
+{
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
+
+	if (!rdma_transport->active) {
+		struct dtr_path *path;
+
+		list_for_each_entry(path, &transport->paths, path.list)
+			dtr_disconnect_path(path);
+	}
 }
 
 static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf)
@@ -3424,7 +3446,6 @@ static int dtr_add_path(struct drbd_path *add_path)
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_path *path;
-	int err = 0;
 	u32 em = 0; /* existing paths mask */
 
 	rcu_read_lock();
@@ -3432,10 +3453,8 @@ static int dtr_add_path(struct drbd_path *add_path)
 		em |= (1 << path->nr);
 	rcu_read_unlock();
 
-	if (em == ~((u32)0)) {
-		err = ENOSPC;
-		goto abort;
-	}
+	if (em == ~((u32)0))
+		return -ENOSPC;
 
 	path = container_of(add_path, struct dtr_path, path);
 	path->nr = ffz(em);
@@ -3448,25 +3467,22 @@ static int dtr_add_path(struct drbd_path *add_path)
 	INIT_WORK(&path->refill_rx_descs_work, dtr_refill_rx_descs_work_fn);
 	INIT_DELAYED_WORK(&path->cs.retry_connect_work, dtr_cma_retry_connect_work_fn);
 
-	if (rdma_transport->active) {
-		err = dtr_activate_path(path);
-		if (err)
-			goto abort;
-	}
+	if (!rdma_transport->active)
+		return 0;
 
-	list_add_rcu(&path->path.list, &transport->paths);
-
-abort:
-	return err;
+	return dtr_activate_path(path);
 }
 
-static int dtr_remove_path(struct drbd_path *del_path)
+static bool dtr_may_remove_path(struct drbd_path *del_path)
 {
 	struct drbd_transport *transport = del_path->transport;
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct drbd_path *drbd_path, *connected_path = NULL;
-	int n = 0, connected = 0, match = 0;
+	int connected = 0;
+
+	if (!rdma_transport->active)
+		return true;
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
@@ -3475,29 +3491,17 @@ static int dtr_remove_path(struct drbd_path *del_path)
 			connected++;
 			connected_path = drbd_path;
 		}
-		if (del_path == drbd_path)
-			match++;
-		n++;
 	}
 
-	if (rdma_transport->active &&
-	    ((connected == 1 && connected_path == del_path) || n == 1))
-		return -EBUSY;
+	return connected > 1 || connected_path != del_path;
+}
 
-	if (match) {
-		struct dtr_path *path = container_of(del_path, struct dtr_path, path);
+static void dtr_remove_path(struct drbd_path *del_path)
+{
+	struct dtr_path *path = container_of(del_path, struct dtr_path, path);
 
-		path->nr = -1; /* mark it as unvisible */
-		smp_wmb();
-		list_del_rcu(&del_path->list);
-		synchronize_rcu();
-		INIT_LIST_HEAD(&del_path->list);
-		dtr_disconnect_path(path);
-
-		return 0;
-	}
-
-	return -ENOENT;
+	path->nr = -1; /* mark it as unvisible */
+	dtr_disconnect_path(path);
 }
 
 static int __init dtr_initialize(void)
