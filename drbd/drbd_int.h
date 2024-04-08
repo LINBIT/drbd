@@ -2781,14 +2781,14 @@ static inline struct drbd_connection *first_connection(struct drbd_resource *res
 static inline struct net *drbd_net_assigned_to_connection(struct drbd_connection *connection)
 {
 	struct drbd_path *path;
+	struct net *net;
 
-	path = list_first_entry_or_null(&connection->transport.paths, struct drbd_path, list);
+	rcu_read_lock();
+	path = list_first_or_null_rcu(&connection->transport.paths, struct drbd_path, list);
+	net = path ? path->net : NULL;
+	rcu_read_unlock();
 
-	if (path == NULL) {
-		return NULL;
-	}
-
-	return path->net;
+	return net;
 }
 
 #define NODE_MASK(id) ((u64)1 << (id))
