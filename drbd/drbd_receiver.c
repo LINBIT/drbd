@@ -7303,21 +7303,6 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		transport->ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
 	}
 
-	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
-	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
-	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
-		/* Do not allow RESEND for a rebooted peer. We can only allow this
-		   for temporary network outages! */
-		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		tl_walk(connection, CONNECTION_LOST_WHILE_PENDING);
-		drbd_uuid_new_current(device, false);
-		begin_state_change(resource, &irq_flags, CS_HARD);
-		__change_cstate(connection, C_PROTOCOL_ERROR);
-		__change_io_susp_user(resource, false);
-		end_state_change(resource, &irq_flags);
-		return -EIO;
-	}
-
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
