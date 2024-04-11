@@ -94,23 +94,37 @@ ifdef RH_KABI_H
       COMPAT_CFLAGS := -include "linux/rh_kabi.h" -include "linux/errno.h"
 endif
 
+CC_looks_sane := $(shell </dev/null $(CC) -P -x c -c -o /dev/null - >&2 && echo yep)
+ifndef CC_looks_sane
+$(error compiler not present or misbehaving)
+endif
+
 TEST_C := $(sort $(wildcard $(src)/drbd-kernel-compat/tests/*.c))
 $(if $(TEST_C),,$(error === Confused: No compat test cases found.))
 
-TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(obj.build)/.compat_test/%.result)
-$(obj.build)/.compat_test/%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
+test_result_prefix := $(obj.build)/.compat_test/
+TEST_R := $(TEST_C:$(src)/drbd-kernel-compat/tests/%.c=$(test_result_prefix)%.result)
+$(test_result_prefix)%.result: $(src)/drbd-kernel-compat/tests/%.c $(COMPAT_FORCE)
 	$(call cmd,compat_test_result)
+
+# check these first:
+$(filter-out $(test_result_prefix)have_sane_test_environment%,$(TEST_R)): $(filter $(test_result_prefix)have_sane_test_environment%,$(TEST_R))
 
 quiet_cmd_compat_test_result = COMPAT  $*
       cmd_compat_test_result =							\
 	set -e ; mkdir -p $(@D)/ ;						\
 	var=`echo COMPAT_$* | tr -- -a-z _A-Z | tr -dc A-Z0-9_` ;		\
 	if $(CC) $(c_flags) -Wno-error -Werror-implicit-function-declaration $(COMPAT_CFLAGS) \
-		-c -o $(@D)/.$*.o $< > $(@D)/$*.stdout 2> $(@D)/$*.stderr	\
+		-c -o /dev/null $< > $(@D)/$*.stdout 2> $(@D)/$*.stderr	\
 		-D"KBUILD_MODNAME=\"compat_dummy\"" ;				\
 	then									\
+		[[ $$var = COMPAT_HAVE_SANE_TEST_ENVIRONMENT_ALWAYS_FAIL ]] && exit 1;	\
 		echo "\#define $$var" ;						\
 	else									\
+		if [[ $$var = COMPAT_HAVE_SANE_TEST_ENVIRONMENT ]] ; then	\
+			cat $(@D)/$*.stderr >&2;				\
+			exit 1;							\
+		fi ;								\
 		echo "/* \#undef $$var */" ;					\
 	fi > $@.tmp ; mv $@.tmp $@
 
