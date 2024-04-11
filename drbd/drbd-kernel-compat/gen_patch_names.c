@@ -578,6 +578,9 @@ int main(int argc, char **argv)
 	patch(1, "__bio_add_page", true, false,
 	      COMPAT_HAVE___BIO_ADD_PAGE, "present");
 
+	patch(1, "bdev_open_by_path", true, false,
+	      COMPAT_HAVE_BDEV_OPEN_BY_PATH, "present");
+
 	patch(1, "blkdev_get_by_path", true, false,
 	      COMPAT_BLKDEV_GET_BY_PATH_HAS_HOLDER_OPS, "has_holder_ops");
 
