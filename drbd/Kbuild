@@ -67,7 +67,8 @@ hostprogs := drbd-kernel-compat/gen_patch_names
 # for the "compat.h" step
 # make ... obj=dummy-for-compat.o dummy-for-compat-h.o
 dummy-for-compat-y += dummy-for-compat-h.o
-# also ask for symlinks
+# also ask for "kernelrelease" and symlinks
+$(obj)/dummy-for-compat-h.o: | $(obj.build)/.drbd_kernelrelease
 $(obj)/dummy-for-compat-h.o: | $(obj)/$(current_build_symlink)
 $(obj)/dummy-for-compat-h.o: | $(filter-out %.patch,$(cur.symlinks))
 $(obj)/dummy-for-compat-h.o: $(compat.h)

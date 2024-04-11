@@ -9,6 +9,13 @@ SHELL := /bin/bash
 compat.patch := $(filter %/compat.patch,$(MAKECMDGOALS))
 compat.h := $(compat.patch:%.patch=%.h)
 
+ifndef KERNELRELEASE
+drbd_kernelrelease := $(wildcard $(dir $(compat.patch))/.drbd_kernelrelease)
+ifdef drbd_kernelrelease
+include $(drbd_kernelrelease)
+endif
+endif
+
 # PARANOIA
 ifeq (,$(compat.patch))
   $(error This Makefile can only make */compat.patch targets)
@@ -61,7 +68,7 @@ ifeq (build,$(what-for))
   # Because spatch runs take some time,
   # try to get away with a cached patch (and possibly some fuzz).
   # If that does not work anylonger, you can ask for "make compat",
-  # which re-runs spatch for changed sources, see below.
+  # or "make spatch", which re-runs spatch for changed sources, see below.
   # $(cached_compat_patch): $(sources)
 
   # Put the compat.h in the cache.
@@ -84,7 +91,7 @@ else # (re-generate,$(what-for))
   # or .cocci files,
   # or .patch files.
   # Changes in test cases are handled by kbuild,
-  # and may or may produce a different compat.h,
+  # and may or may not produce a different compat.h,
   # which will trigger a re-build there.
   $(cached_compat_patch): $(sources)
   $(cached_compat_patch): $(wildcard drbd-kernel-compat/cocci/*.cocci)

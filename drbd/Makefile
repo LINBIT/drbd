@@ -290,14 +290,16 @@ else
 
   compat_headers := $(wildcard drbd-kernel-compat/cocci_cache/*/compat.h)
   compat_patches := $(patsubst %.h,%.patch,$(compat_headers))
-  $(compat_patches): FORCE
+  current_compat_patch := $(current_build_symlink)/compat.patch
+  $(current_compat_patch) $(compat_patches): FORCE
 	$(MAKE) -f Makefile.spatch $@
 
   # re-generate compat.patch for all compat.h in cocci cache:
   compat: $(compat_patches)
 
   # re-generate compat.patch for the latest build only:
-  spatch: $(patsubst $(realpath $(CURDIR))/%,%,$(realpath $(wildcard $(current_build_symlink)/compat.patch)))
+  cached_compat_patch := $(patsubst $(realpath $(CURDIR))/%,%,$(realpath $(wildcard $(current_compat_patch))))
+  spatch: $(firstword $(cached_compat_patch) $(current_compat_patch))
 	$(Q)echo $(if $<,$<,$(error No $(current_build_symlink)/compat.patch found; build it first. Or try make compat))
 
 .PHONY: fix-tar-timestamps
