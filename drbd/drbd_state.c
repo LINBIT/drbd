@@ -5270,7 +5270,8 @@ static enum outdate_what outdate_on_disconnect(struct drbd_connection *connectio
 {
 	struct drbd_resource *resource = connection->resource;
 
-	if ((connection->fencing_policy >= FP_RESOURCE ||
+	if (connection->cstate[NOW] == C_CONNECTED &&
+	    (connection->fencing_policy >= FP_RESOURCE ||
 	     connection->resource->res_opts.quorum != QOU_OFF) &&
 	    resource->role[NOW] != connection->peer_role[NOW]) {
 		/* primary politely disconnects from secondary,
