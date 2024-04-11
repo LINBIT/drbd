@@ -564,8 +564,10 @@ int main(int argc, char **argv)
 	patch(1, "bdev_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_OPEN_BY_PATH, "present");
 
+#if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
 	patch(1, "blkdev_get_by_path", true, false,
 	      COMPAT_BLKDEV_GET_BY_PATH_HAS_HOLDER_OPS, "has_holder_ops");
+#endif
 
 	patch(1, "block_device_operations_open", true, false,
 	      COMPAT_BLOCK_DEVICE_OPERATIONS_OPEN_TAKES_GENDISK, "takes_gendisk");
@@ -576,8 +578,10 @@ int main(int argc, char **argv)
 	patch(1, "blk_mode_t", true, false,
 	      COMPAT_HAVE_BLK_MODE_T, "present");
 
+#if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
 	patch(1, "blkdev_put", true, false,
 	      COMPAT_BLKDEV_PUT_HAS_HOLDER, "has_holder");
+#endif
 
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
