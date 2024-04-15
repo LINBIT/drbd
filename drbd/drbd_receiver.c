@@ -631,6 +631,8 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must
 	drbd_clear_interval(&peer_req->i);
 	INIT_LIST_HEAD(&peer_req->recv_order);
 	peer_req->submit_jif = jiffies;
+	kref_get(&device->kref); /* this kref holds the peer_req->peer_device object alive */
+	kref_debug_get(&device->kref_debug, 9);
 	peer_req->peer_device = peer_device;
 	peer_req->block_id = (unsigned long) peer_req;
 
@@ -657,6 +659,8 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
 	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
+	kref_debug_put(&peer_device->device->kref_debug, 9);
+	kref_put(&peer_device->device->kref, drbd_destroy_device);
 	mempool_free(peer_req, &drbd_ee_mempool);
 }
 
