@@ -169,5 +169,5 @@ identifier handle;
 identifier nbc;
 @@
 // only this one comparison exists in the code, just special-case it instead of implementing the generic case
-- handle != nbc->backing_bdev_handle
+- handle->bdev != nbc->backing_bdev
 + bdev != nbc->backing_bdev

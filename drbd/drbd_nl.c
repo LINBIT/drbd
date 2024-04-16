@@ -2805,7 +2805,7 @@ static int open_backing_devices(struct drbd_device *device,
 
 	/* avoid double bd_claim_by_disk() for the same (source,target) tuple,
 	 * as would happen with internal metadata. */
-	if (handle != nbc->backing_bdev_handle) {
+	if (handle->bdev != nbc->backing_bdev) {
 		err = link_backing_dev(device, new_disk_conf->meta_dev, handle);
 		if (err) {
 			/* close without unlinking; otherwise error path will try to unlink */
