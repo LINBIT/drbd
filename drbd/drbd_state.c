@@ -5355,27 +5355,14 @@ enum drbd_state_rv change_role(struct drbd_resource *resource,
 	bool got_state_sem = false;
 
 	if (role == R_SECONDARY) {
-		struct drbd_device *device;
-		int vnr;
-
 		if (!(flags & CS_ALREADY_SERIALIZED)) {
 			down(&resource->state_sem);
 			got_state_sem = true;
 			role_context.flags |= CS_ALREADY_SERIALIZED;
 		}
-		idr_for_each_entry(&resource->devices, device, vnr) {
-			long t = wait_event_interruptible_timeout(device->misc_wait,
-						!atomic_read(&device->ap_bio_cnt[WRITE]),
-						twopc_timeout(resource));
-			if (t <= 0) {
-				rv = t == 0 ? SS_TIMEOUT : SS_INTERRUPTED;
-				goto out;
-			}
-		}
 		role_context.change_local_state_last = true;
 	}
 	rv = change_cluster_wide_state(do_change_role, &role_context, tag);
-out:
 	if (got_state_sem)
 		up(&resource->state_sem);
 	return rv;
