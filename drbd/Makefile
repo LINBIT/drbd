@@ -107,11 +107,20 @@ else
     INSTALL_MOD_DIR  ?= $(MODSUBDIR)
     export INSTALL_MOD_PATH INSTALL_MOD_DIR
     .PHONY: install
+    # Use KDIR modules_install target, if available.
+    # Otherwise, just copy over the .ko files.
+    # Logic not completely in the recipe,
+    # because recipes containing $(MAKE) are slightly special.
     install:
-	test -d $(current_build_symlink) && \
-	$(MAKE) -C $(KDIR) $(if $(O),O=$(O)) $(if $(V),V=$(V)) \
-		M=$(CURDIR)/$(current_build_symlink)	\
+    ifneq ($(wildcard $(KDIR)),)
+	test -d $(current_build_symlink) # assert that thing exists
+	$(MAKE) -C $(KDIR) $(if $(O),O=$(O)) $(if $(V),V=$(V))	\
+		M=$(CURDIR)/$(current_build_symlink)		\
 		modules_install
+    else
+	find $(current_build_symlink)/ -name "*.ko" |		\
+	cpio -puvmd $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(INSTALL_MOD_DIR)/
+    endif
   else
     $(error No KDIR in $(current_build_drbd_kernelrelease) found. Do you need to 'make' the module first?)
   endif
