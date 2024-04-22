@@ -2443,11 +2443,8 @@ static void update_members(struct drbd_resource *resource)
 
 		/* Connection to peer lost. Check if we should remove it from the members */
 		if (drbd_need_twopc_after_lost_peer(connection) &&
-				!test_bit(EMPTY_TWOPC_PENDING, &resource->flags) &&
-				resource->members & peer_node_mask) {
-			set_bit(EMPTY_TWOPC_PENDING, &resource->flags);
-			drbd_post_work(resource, EMPTY_TWOPC);
-		}
+				resource->members & peer_node_mask)
+			schedule_work(&resource->empty_twopc);
 	}
 }
 
@@ -2970,10 +2967,8 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
 			clear_bit(NEW_CUR_UUID, &device->flags);
 
-		/* The NEW state version here is the same as the NOW version in
-		 * the context of w_after_state_change(). */
 		if (should_try_become_up_to_date(device, disk_state, NEW))
-			set_bit(EMPTY_TWOPC_PENDING, &resource->flags);
+			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	}
 
 	for_each_connection(connection, resource) {
@@ -4242,7 +4237,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (try_become_up_to_date || healed_primary)
-		drbd_post_work(resource, EMPTY_TWOPC);
+		schedule_work(&resource->empty_twopc);
 
 	drbd_notify_peers_lost_primary(resource);
 
@@ -5518,8 +5513,8 @@ static bool do_twopc_after_lost_peer(struct change_context *context, enum change
 	return phase != PH_PREPARE || reply->reachable_nodes != NODE_MASK(resource->res_opts.node_id);
 }
 
-enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource,
-					  enum chg_state_flags flags)
+static enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource,
+						enum chg_state_flags flags)
 {
 	struct change_context context = {
 		.resource = resource,
@@ -5535,6 +5530,17 @@ enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource,
 	   will agree to this change request. At commit time we know where to
 	   go from the D_CONSISTENT, since we got the primary mask. */
 	return change_cluster_wide_state(do_twopc_after_lost_peer, &context, "lost-peer");
+}
+
+void drbd_empty_twopc_work_fn(struct work_struct *work)
+{
+	struct drbd_resource *resource = container_of(work, struct drbd_resource, empty_twopc);
+
+	twopc_after_lost_peer(resource, CS_VERBOSE | CS_SERIALIZE);
+
+	clear_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
+	wake_up_all(&resource->state_wait);
+	drbd_notify_peers_lost_primary(resource);
 }
 
 static bool do_change_disk_state(struct change_context *context, enum change_phase phase)

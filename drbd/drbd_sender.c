@@ -2357,41 +2357,6 @@ static int do_md_sync(struct drbd_device *device)
 	return 0;
 }
 
-void repost_up_to_date_fn(struct timer_list *t)
-{
-	struct drbd_resource *resource = from_timer(resource, t, repost_up_to_date_timer);
-	drbd_post_work(resource, EMPTY_TWOPC);
-}
-
-static int try_become_up_to_date(struct drbd_resource *resource)
-{
-	enum drbd_state_rv rv;
-
-	/* Doing a two_phase_commit from worker context is only possible
-	 * if twopc_work is not queued. Let it get executed first.
-	 *
-	 * Avoid deadlock on state_sem, in case someone holds it while
-	 * waiting for the completion of some after-state-change work.
-	 */
-	if (list_empty(&resource->twopc_work.list)) {
-		if (down_trylock(&resource->state_sem))
-			goto repost;
-		rv = twopc_after_lost_peer(resource, CS_ALREADY_SERIALIZED |
-			CS_VERBOSE | CS_SERIALIZE | CS_DONT_RETRY);
-		up(&resource->state_sem);
-		if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG)
-			goto repost;
-		clear_bit(EMPTY_TWOPC_PENDING, &resource->flags);
-		wake_up_all(&resource->state_wait);
-		drbd_notify_peers_lost_primary(resource);
-	} else {
-	repost:
-		mod_timer(&resource->repost_up_to_date_timer, jiffies + HZ/10);
-	}
-
-	return 0;
-}
-
 /* only called from drbd_worker thread, no locking */
 void __update_timing_details(
 		struct drbd_thread_timing_details *tdp,
@@ -2506,9 +2471,6 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 		handle_congestion(peer_device);
 }
 
-#define DRBD_RESOURCE_WORK_MASK	\
-	(1UL << EMPTY_TWOPC)
-
 #define DRBD_DEVICE_WORK_MASK	\
 	((1UL << GO_DISKLESS)	\
 	|(1UL << MD_SYNC)	\
@@ -2581,14 +2543,6 @@ static void do_unqueued_device_work(struct drbd_resource *resource)
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
-}
-
-static void do_unqueued_resource_work(struct drbd_resource *resource)
-{
-	unsigned long todo = get_work_bits(DRBD_RESOURCE_WORK_MASK, &resource->flags);
-
-	if (test_bit(EMPTY_TWOPC, &todo))
-		try_become_up_to_date(resource);
 }
 
 static bool dequeue_work_batch(struct drbd_work_queue *queue, struct list_head *work_list)
@@ -3070,15 +3024,14 @@ int drbd_worker(struct drbd_thread *thi)
 		drbd_thread_current_set_cpu(thi);
 
 		if (list_empty(&work_list)) {
-			bool w, r, d, p;
+			bool w, d, p;
 
 			update_worker_timing_details(resource, dequeue_work_batch);
 			wait_event_interruptible(resource->work.q_wait,
 				(w = dequeue_work_batch(&resource->work, &work_list),
-				 r = test_and_clear_bit(RESOURCE_WORK_PENDING, &resource->flags),
 				 d = test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags),
 				 p = test_and_clear_bit(PEER_DEVICE_WORK_PENDING, &resource->flags),
-				 w || r || d || p));
+				 w || d || p));
 
 			if (p) {
 				update_worker_timing_details(resource, do_unqueued_peer_device_work);
@@ -3088,10 +3041,6 @@ int drbd_worker(struct drbd_thread *thi)
 			if (d) {
 				update_worker_timing_details(resource, do_unqueued_device_work);
 				do_unqueued_device_work(resource);
-			}
-			if (r) {
-				update_worker_timing_details(resource, do_unqueued_resource_work);
-				do_unqueued_resource_work(resource);
 			}
 		}
 
@@ -3117,10 +3066,6 @@ int drbd_worker(struct drbd_thread *thi)
 	}
 
 	do {
-		if (test_and_clear_bit(RESOURCE_WORK_PENDING, &resource->flags)) {
-			update_worker_timing_details(resource, do_unqueued_resource_work);
-			do_unqueued_resource_work(resource);
-		}
 		if (test_and_clear_bit(DEVICE_WORK_PENDING, &resource->flags)) {
 			update_worker_timing_details(resource, do_unqueued_device_work);
 			do_unqueued_device_work(resource);

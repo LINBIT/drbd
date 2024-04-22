@@ -143,8 +143,6 @@ extern enum drbd_state_rv change_peer_disk_state(struct drbd_peer_device *peer_d
 					  enum chg_state_flags flags,
 					  const char *tag);
 
-enum drbd_state_rv twopc_after_lost_peer(struct drbd_resource *resource, enum chg_state_flags);
-
 extern void __change_resync_susp_user(struct drbd_peer_device *, bool);
 extern enum drbd_state_rv change_resync_susp_user(struct drbd_peer_device *, bool, enum chg_state_flags);
 extern void __change_resync_susp_peer(struct drbd_peer_device *, bool);
@@ -168,4 +166,6 @@ extern void drbd_notify_peers_lost_primary(struct drbd_resource *resource);
 extern bool drbd_data_accessible(struct drbd_device *, enum which_state);
 extern bool drbd_res_data_accessible(struct drbd_resource *resource);
 
+
+extern void drbd_empty_twopc_work_fn(struct work_struct *work);
 #endif

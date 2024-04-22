@@ -3539,7 +3539,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->peer_ack_work.list);
 	resource->peer_ack_work.cb = w_queue_peer_ack;
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);
-	timer_setup(&resource->repost_up_to_date_timer, repost_up_to_date_fn, 0);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	resource->max_node_id = res_opts->node_id;
@@ -3562,6 +3561,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
 	resource->members = NODE_MASK(res_opts->node_id);
+	INIT_WORK(&resource->empty_twopc, drbd_empty_twopc_work_fn);
 
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
 

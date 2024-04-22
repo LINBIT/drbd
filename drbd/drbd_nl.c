@@ -964,7 +964,7 @@ static bool after_primary_lost_events_settled(struct drbd_resource *resource)
 	struct drbd_device *device;
 	int vnr;
 
-	if (test_bit(EMPTY_TWOPC_PENDING, &resource->flags))
+	if (test_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags))
 		return false;
 
 	rcu_read_lock();
@@ -6869,7 +6869,6 @@ static int adm_del_resource(struct drbd_resource *resource)
 
 	timer_shutdown_sync(&resource->twopc_timer);
 	timer_shutdown_sync(&resource->peer_ack_timer);
-	timer_shutdown_sync(&resource->repost_up_to_date_timer);
 	call_rcu(&resource->rcu, drbd_reclaim_resource);
 
 	mutex_lock(&notification_mutex);
