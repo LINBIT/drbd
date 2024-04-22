@@ -118,7 +118,7 @@ else
 		M=$(CURDIR)/$(current_build_symlink)		\
 		modules_install
     else
-	find $(current_build_symlink)/ -name "*.ko" |		\
+	cd $(current_build_symlink) && find -name "*.ko" |	\
 	cpio -puvmd $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(INSTALL_MOD_DIR)/
     endif
   else
