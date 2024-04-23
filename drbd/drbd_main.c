@@ -134,8 +134,6 @@ unsigned int drbd_protocol_version_min = PRO_VERSION_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
 
 
-/* defined in drbd_nl.c, where it is used */
-int param_set_drbd_strict_names(const char *s, const struct kernel_param *kp);
 #define param_check_drbd_strict_names		param_check_bool
 #define param_get_drbd_strict_names		param_get_bool
 const struct kernel_param_ops param_ops_drbd_strict_names = {
@@ -2894,7 +2892,7 @@ restart:
 	rcu_read_unlock();
 }
 
-void drbd_fsync_device(struct drbd_device *device)
+static void drbd_fsync_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
