@@ -9626,15 +9626,28 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
+	struct twopc_request request;
+	bool remote = false;
 
 	write_lock_irq(&resource->state_rwlock);
 	if (resource->remote_state_change &&
 	    (drbd_twopc_between_peer_and_me(connection) || !any_connection_up(resource))) {
-		bool remote = reply->initiator_node_id != resource->res_opts.node_id;
+		remote = reply->initiator_node_id != resource->res_opts.node_id;
+
+		if (remote)
+			request = (struct twopc_request) {
+				.nodes_to_reach = ~0,
+				.cmd = P_TWOPC_ABORT,
+				.tid = reply->tid,
+				.initiator_node_id = reply->initiator_node_id,
+				.target_node_id = reply->target_node_id,
+				.vnr = reply->vnr,
+			};
 
 		drbd_info(connection, "Aborting %s state change %u commit not possible\n",
 			  remote ? "remote" : "local", reply->tid);
 		if (remote) {
+			del_timer(&resource->twopc_timer);
 			__clear_remote_state_change(resource);
 		} else {
 			enum alt_rv alt_rv = abort_local_transaction(connection, 0);
@@ -9643,6 +9656,9 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		}
 	}
 	write_unlock_irq(&resource->state_rwlock);
+
+	if (remote)
+		nested_twopc_abort(resource, &request);
 }
 
 static void conn_disconnect(struct drbd_connection *connection)
