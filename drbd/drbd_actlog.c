@@ -201,8 +201,7 @@ find_active_resync_extent(struct get_activity_log_ref_ctx *al_ctx)
 	return NULL;
 }
 
-void
-set_bme_priority(struct get_activity_log_ref_ctx *al_ctx)
+static void set_bme_priority(struct get_activity_log_ref_ctx *al_ctx)
 {
 	struct drbd_peer_device *peer_device;
 	struct lc_element *tmp;

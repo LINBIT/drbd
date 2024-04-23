@@ -3074,7 +3074,7 @@ err:
  * Called exactly once during drbd_adm_attach(), while still being D_DISKLESS,
  * even before @bdev is assigned to @device->ldev.
  */
-int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing_dev *bdev)
+static int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing_dev *bdev)
 {
 	struct drbd_device *device = adm_ctx->device;
 	struct meta_data_on_disk_9 *buffer;
@@ -7216,7 +7216,7 @@ void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device)
 	mutex_unlock(&notification_mutex);
 }
 
-int notify_path_state(struct sk_buff *skb,
+static int notify_path_state(struct sk_buff *skb,
 		       unsigned int seq,
 		       /* until we have a backpointer in drbd_path, we need an explicit connection: */
 		       struct drbd_connection *connection,

@@ -2825,7 +2825,7 @@ restart:
 	rcu_read_unlock();
 }
 
-void drbd_fsync_device(struct drbd_device *device)
+static void drbd_fsync_device(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
