@@ -818,25 +818,12 @@ enum resource_flag {
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
 
-	/*
-	 * The side effects of an empty state change two-phase commit are:
-	 *
-	 * * A local consistent disk can upgrade to up-to-date when no primary is reachable
-	 *   (or become outdated if the prepare packets reach a primary).
-	 *
-	 * * resource->members are updates
-	 *
-	 * * Faraway nodes might outdate themselves if they learn about the existence of a primary
-	 *   (with access to data) node.
-	 */
-	EMPTY_TWOPC_PENDING,
+	TRY_BECOME_UP_TO_DATE_PENDING,
 
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
-	RESOURCE_WORK_PENDING,  /* tell worker that some peer_device has pending work */
 
         /* to be used in drbd_post_work() */
-	EMPTY_TWOPC,  /* empty two-phase commit for its side effects */
 	R_UNREGISTERED,
 	DOWN_IN_PROGRESS,
 	CHECKING_PEERS,
@@ -1028,7 +1015,6 @@ struct drbd_resource {
 	spinlock_t listeners_lock;
 
 	struct timer_list peer_ack_timer; /* send a P_PEER_ACK after last completion */
-	struct timer_list repost_up_to_date_timer;
 
 	unsigned int w_cb_nr; /* keeps counting up */
 	struct drbd_thread_timing_details w_timing_details[DRBD_THREAD_DETAILS_HIST];
@@ -1057,6 +1043,19 @@ struct drbd_resource {
 	spinlock_t pp_lock;
 	int pp_vacant;
 	wait_queue_head_t pp_wait;
+
+	/*
+	 * The side effects of an empty state change two-phase commit are:
+	 *
+	 * * A local consistent disk can upgrade to up-to-date when no primary is reachable
+	 *   (or become outdated if the prepare packets reach a primary).
+	 *
+	 * * resource->members are updates
+	 *
+	 * * Faraway nodes might outdate themselves if they learn about the existence of a primary
+	 *   (with access to data) node.
+	 */
+	struct work_struct empty_twopc;
 };
 
 enum drbd_per_connection_ratelimit {
@@ -2115,7 +2114,6 @@ extern void drbd_check_peers_new_current_uuid(struct drbd_device *);
 extern void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req);
 extern void drbd_ping_peer(struct drbd_connection *connection);
 extern struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *, int);
-extern void repost_up_to_date_fn(struct timer_list *t);
 extern void drbd_update_mdf_al_disabled(struct drbd_device *device, enum which_state which);
 
 static inline void ov_out_of_sync_print(struct drbd_peer_device *peer_device)
@@ -2466,16 +2464,6 @@ drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
 		struct drbd_resource *resource = peer_device->device->resource;
 		struct drbd_work_queue *q = &resource->work;
 		if (!test_and_set_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
-			wake_up(&q->q_wait);
-	}
-}
-
-static inline void
-drbd_post_work(struct drbd_resource *resource, int work_bit)
-{
-	if (!test_and_set_bit(work_bit, &resource->flags)) {
-		struct drbd_work_queue *q = &resource->work;
-		if (!test_and_set_bit(RESOURCE_WORK_PENDING, &resource->flags))
 			wake_up(&q->q_wait);
 	}
 }
