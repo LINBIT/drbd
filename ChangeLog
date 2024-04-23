@@ -2,6 +2,25 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.20-rc.1 (api:genl2/proto:86-121/transport:18)
+--------
+ * Fix a kernel crash that is sometimes triggered when downing drbd
+   resources in a specific, unusual order (was triggered by the
+   Kubernetes CSI driver)
+ * Fix a rarely triggering kernel crash upon adding paths to a
+   connection by rehauling the path lists' locking
+ * Fix the continuation of an interrupted initial resync
+ * Fix the state engine so that an incapable primary does not outdate
+   indirectly reachable secondary nodes
+ * Fix a logic bug that caused drbd to pretend that a peer's disk is
+   outdated when doing a manual disconnect on a down connection; with
+   that cured impact on fencing and quorum.
+ * Fix forceful demotion of suspended devices
+ * Rehaul of the build system to apply compatibility patches out of
+   place that allows one to build for different target kernels from a
+   single drbd source tree
+ * Updated compability code for Linux 6.8
+
 9.1.19 (api:genl2/proto:86-121/transport:18)
 --------
  * Fix a resync decision case where drbd wrongly decided to do a full
