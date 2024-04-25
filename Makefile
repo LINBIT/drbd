@@ -240,7 +240,7 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 	@test -s $@ && test "$$(cat $@)" = "$(FDIST_VERSION)" || echo "$(FDIST_VERSION)" > $@
 
 .filelist: .fdist_version FORCE
-	@$(GIT) ls-files --recurse -x '.git*' $(if $(PRESERVE_DEBIAN),,-x debian) > $@.new
+	@$(GIT) ls-files --recurse -- ':!:.git*' $(if $(PRESERVE_DEBIAN),,':!:debian') > $@.new
 	@mkdir -p drbd/drbd-kernel-compat/cocci_cache/
 	@find drbd/drbd-kernel-compat/cocci_cache/ -type f -not -path '*/\.*' >> $@.new
 	@test -s $@.new # assert there is something in .filelist.new now
