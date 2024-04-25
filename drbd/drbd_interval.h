@@ -26,10 +26,13 @@ enum drbd_interval_flags {
 struct drbd_interval {
 	struct rb_node rb;
 	sector_t sector;		/* start sector of the interval */
+	sector_t end;			/* highest interval end in subtree */
 	unsigned int size;		/* size in bytes */
 	enum drbd_interval_type type;	/* what type of interval this is */
-	sector_t end;			/* highest interval end in subtree */
 	unsigned long flags;
+
+	/* to resume a partially successful drbd_al_begin_io_nonblock(); */
+	unsigned int partially_in_al_next_enr;
 };
 
 static inline bool drbd_interval_is_application(struct drbd_interval *i)
