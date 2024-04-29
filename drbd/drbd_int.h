@@ -2291,7 +2291,6 @@ extern bool drbd_al_try_lock_for_transaction(struct drbd_device *device);
 extern int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_al_begin_io_commit(struct drbd_device *device);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
-extern int drbd_al_begin_io_for_peer(struct drbd_peer_device *peer_device, struct drbd_interval *i);
 extern bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
 extern void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
