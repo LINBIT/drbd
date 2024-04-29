@@ -14,6 +14,9 @@ Group: System Environment/Kernel
 URL: http://www.drbd.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-XXXXXX)
 
+BuildRequires: diffutils
+BuildRequires: patch
+BuildRequires: /usr/bin/perl
 %if ! %{defined suse_version}
 BuildRequires: redhat-rpm-config
 %endif

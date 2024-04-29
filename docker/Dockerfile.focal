@@ -1,8 +1,20 @@
 FROM ubuntu:focal
 
 # note: py2 setuptools are a bit smaller than the py3 ones
-RUN apt-get update && apt-get install -y kmod gnupg make gcc patch elfutils curl && \
-	apt-get install -y python-setuptools && apt-get clean && \
+RUN apt-get update && \
+	apt-get install -y \
+		curl \
+		diffutils \
+		elfutils \
+		gcc \
+		gnupg \
+		kmod \
+		make \
+		patch \
+		perl \
+		python-setuptools \
+	&& \
+	apt-get clean && \
 	cd /tmp && \
 	curl -fsSL https://github.com/LINBIT/python-lbdist/archive/master.tar.gz | tar vxz && \
 	( cd python-lbdist-master && python2 setup.py install ) && \
