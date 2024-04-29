@@ -8580,27 +8580,26 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	}
 }
 
-static bool any_connection_up(struct drbd_resource *resource)
+static bool initiator_can_commit_or_abort(struct drbd_connection *connection)
 {
-	struct drbd_connection *connection;
-	bool rv = false;
+	struct drbd_resource *resource = connection->resource;
+	bool remote = resource->twopc_reply.initiator_node_id != resource->res_opts.node_id;
 
-	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
-		struct drbd_transport *transport = &connection->transport;
-		enum drbd_conn_state cstate = connection->cstate[NOW];
+	if (remote) {
+		u64 parents = resource->twopc_parent_nodes & ~NODE_MASK(connection->peer_node_id);
 
-		if (cstate == C_CONNECTED ||
-		    (cstate == C_CONNECTING &&
-		     transport->class->ops.stream_ok(transport, DATA_STREAM) &&
-		     transport->class->ops.stream_ok(transport, CONTROL_STREAM))) {
-			rv = true;
-			break;
-		}
+		if (!parents)
+			return false;
+		resource->twopc_parent_nodes = parents;
 	}
-	rcu_read_unlock();
 
-	return rv;
+	if (test_bit(TWOPC_PREPARED, &connection->flags) &&
+	    !(test_bit(TWOPC_YES, &connection->flags) ||
+	      test_bit(TWOPC_NO, &connection->flags) ||
+	      test_bit(TWOPC_RETRY, &connection->flags)))
+		return false;
+
+	return true;
 }
 
 static void cleanup_remote_state_change(struct drbd_connection *connection)
@@ -8611,8 +8610,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 	bool remote = false;
 
 	write_lock_irq(&resource->state_rwlock);
-	if (resource->remote_state_change &&
-	    (drbd_twopc_between_peer_and_me(connection) || !any_connection_up(resource))) {
+	if (resource->remote_state_change && !initiator_can_commit_or_abort(connection)) {
 		remote = reply->initiator_node_id != resource->res_opts.node_id;
 
 		if (remote)
@@ -8638,6 +8636,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 	}
 	write_unlock_irq(&resource->state_rwlock);
 
+	/* for a local transaction, change_cluster_wide_state() sends the P_TWOPC_ABORTs */
 	if (remote)
 		nested_twopc_abort(resource, &request);
 }
