@@ -20,7 +20,19 @@ LABEL name="DRBD Kernel module load container" \
 RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils/gpl-2.0.txt /licenses/
 
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
-	yum install -y gcc make patch curl kmod cpio python3 python3-pip && yum clean all -y && \
+	yum install -y \
+		cpio \
+		curl \
+		diffutils \
+		gcc \
+		kmod \
+		make \
+		patch \
+		perl \
+		python3 \
+		python3-pip \
+	&& \
+	yum clean all -y && \
 	alternatives --set python /usr/bin/python3 && \
 	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
 

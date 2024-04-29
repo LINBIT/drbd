@@ -237,6 +237,9 @@ else
 
   # same trick to only "patch"
   prep: compat.h fix-tar-timestamps
+	$(Q)diff -u /dev/null /dev/null || { echo >&2 'please install `diffutils`'; exit 127; }
+	$(Q)patch -p0 </dev/null        || { echo >&2 'please install `patch`'; exit 127; }
+	$(Q)perl -e1                    || { echo >&2 'please install `perl`'; exit 127; }
 	$(Q)> dummy-for-patch.c
 	$(MAKE) $(KBUILD) M=$(DRBDSRC) obj-m=dummy-for-prep.o dummy-for-patch.o
 

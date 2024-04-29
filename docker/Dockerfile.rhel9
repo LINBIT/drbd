@@ -20,7 +20,18 @@ LABEL name="DRBD Kernel module load container" \
 RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils/gpl-2.0.txt /licenses/
 
 RUN dnf -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
-	dnf install -y gcc make patch kmod cpio python3 python3-pip && dnf clean all -y && \
+	dnf install -y \
+		cpio \
+		diffutils \
+		gcc \
+		kmod \
+		make \
+		patch \
+		perl \
+		python3 \
+		python3-pip \
+	&& \
+	dnf clean all -y && \
 	pip-3 install https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
 
 COPY --from=extrapkgs /pkgs /pkgs

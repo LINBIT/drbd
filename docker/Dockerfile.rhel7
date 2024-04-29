@@ -13,7 +13,18 @@ LABEL name="DRBD Kernel module load container" \
 RUN mkdir /licenses && cp /usr/share/licenses/shadow-utils-4.6/gpl-2.0.txt /licenses/
 
 RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Critical && \
-	yum install -y gcc make patch curl kmod yum-utils redhat-rpm-config && yum clean all -y && \
+	yum install -y \
+		curl \
+		diffutils \
+		gcc \
+		kmod \
+		make \
+		patch \
+		perl \
+		redhat-rpm-config \
+		yum-utils \
+	&& \
+	yum clean all -y && \
 	cd /tmp && \
 	curl -fsSL https://github.com/LINBIT/python-lbdist/archive/master.tar.gz | tar vxz && \
 	( cd python-lbdist-master && python setup.py install ) && \
