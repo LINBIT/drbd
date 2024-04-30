@@ -2085,6 +2085,7 @@ extern int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_
 extern int drbd_unallocated_index(struct drbd_backing_dev *bdev, int bm_max_peers);
 extern void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, size_t len);
 extern int param_set_drbd_strict_names(const char *s, const struct kernel_param *kp);
+extern void drbd_enable_netns(void);
 
 /* drbd_sender.c */
 extern int drbd_sender(struct drbd_thread *thi);

@@ -89,6 +89,11 @@ static int drbd_adm_get_initial_state_done(struct netlink_callback *cb);
 #include "drbd_nla.h"
 #include <linux/genl_magic_func.h>
 
+void drbd_enable_netns(void)
+{
+	drbd_genl_family.netnsok = true;
+}
+
 atomic_t drbd_genl_seq = ATOMIC_INIT(2); /* two. */
 
 DEFINE_MUTEX(notification_mutex);

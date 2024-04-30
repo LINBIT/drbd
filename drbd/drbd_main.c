@@ -4406,6 +4406,7 @@ static int __init drbd_init(void)
 		goto fail;
 	}
 
+	drbd_enable_netns();
 	err = drbd_genl_register();
 	if (err) {
 		pr_err("unable to register generic netlink family\n");
