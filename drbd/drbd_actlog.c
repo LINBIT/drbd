@@ -187,6 +187,7 @@ struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr
 	return al_ext;
 }
 
+#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
 static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 {
@@ -199,7 +200,6 @@ struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 	return al_ext;
 }
 
-#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
 static bool
 drbd_dax_begin_io_fp(struct drbd_device *device, unsigned int first, unsigned int last)
 {
