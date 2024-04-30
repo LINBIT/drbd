@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.9-rc.1 (api:genl2/proto:86-122/transport:19)
+9.2.9 (api:genl2/proto:86-122/transport:19)
 --------
  * Allow resync operations between secondaries if the sync source is
    not connected with the primary node
