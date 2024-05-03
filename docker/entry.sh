@@ -185,19 +185,29 @@ kos::deb::fromrepo() {
 
 kos::rpm::bestbyrpmprovides() {
 	local pkgdir="$1"
+	local kernel_provides_file="$pkgdir/kernel.provides"
+	local drbd_requires_file
 	shift 1
 
-	sort > "$pkgdir/kernel.provides" \
+	sort > "$kernel_provides_file" \
 		<(find "/lib/modules/$(uname -r)" -name "symvers*" | /lib/rpm/kabi.sh) \
 		<(find "/lib/modules/$(uname -r)/kernel" -type f | /lib/rpm/redhat/find-provides.ksyms)
 
-	if [ ! -s "$pkgdir/kernel.provides" ]; then
+	if [ ! -s "$kernel_provides_file" ]; then
 		debug "Failed to generate kernel provides"
 		return 1
 	fi
 
 	for RPM in "$@"; do
-		if [ -z "$(comm -13 "$pkgdir/kernel.provides" <(rpm -q -R "$RPM" | grep ^kernel))" ]; then
+		drbd_requires_file="$pkgdir/$(basename "$RPM").requires"
+		rpm -q -R -p "$RPM" | grep ^kernel > "$drbd_requires_file"
+
+		if [ ! -s "$drbd_requires_file" ]; then
+			debug "Failed to parse drbd kernel requirements for $RPM"
+			continue
+		fi
+
+		if [ -z "$(comm -13 "$kernel_provides_file" "$drbd_requires_file")" ]; then
 			debug "Kernel module matching kernel provides: \"$RPM\""
 			echo "$RPM"
 			return 0
