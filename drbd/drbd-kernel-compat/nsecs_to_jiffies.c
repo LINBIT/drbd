@@ -1,6 +1,7 @@
 #include <asm/param.h>                  /* for HZ */
 #include <linux/time.h>                 /* for NSECS_PER_SEC */
 
+/* If it is not exported yet, use our own copy. */
 static u64 nsecs_to_jiffies64(u64 n)
 {
 #if (NSEC_PER_SEC % HZ) == 0
@@ -17,6 +18,11 @@ static u64 nsecs_to_jiffies64(u64 n)
 	return div_u64(n * 9, (9ull * NSEC_PER_SEC + HZ / 2) / HZ);
 #endif
 }
+
+/* Ged rid of "missing prototype" warning.
+ * The real prototype is in linux/jiffies.h,
+ * which we do not include here, for reasons I do not recall. */
+unsigned long nsecs_to_jiffies(u64 n);
 
 unsigned long nsecs_to_jiffies(u64 n)
 {
