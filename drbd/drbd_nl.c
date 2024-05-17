@@ -5981,7 +5981,14 @@ static int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callbac
 
     next_resource:
 	rcu_read_unlock();
-	mutex_lock(&resource->conf_update);
+	if (mutex_lock_interruptible(&resource->conf_update)) {
+		kref_debug_put(&resource->kref_debug, 6);
+		kref_put(&resource->kref, drbd_destroy_resource);
+		resource = NULL;
+		retcode = ERR_INTR;
+		rcu_read_lock();
+		goto put_result;
+	}
 	rcu_read_lock();
 	if (cb->args[2]) {
 		for_each_connection_rcu(connection, resource)
