@@ -2506,7 +2506,7 @@ static bool connection_state_may_improve_soon(struct drbd_resource *resource)
 	return ret;
 }
 
-static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
+int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
 	int rv, retry = timeout / (HZ / 5); /* One try every 200ms */
