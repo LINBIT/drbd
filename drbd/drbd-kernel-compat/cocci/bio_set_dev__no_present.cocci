@@ -1,6 +1,6 @@
 @@
 struct bio *b;
-expression bdev;
+expression ebdev;
 @@
-- bio_set_dev(b, bdev);
-+ b->bi_bdev = bdev;
+- bio_set_dev(b, ebdev);
++ b->bi_bdev = ebdev;

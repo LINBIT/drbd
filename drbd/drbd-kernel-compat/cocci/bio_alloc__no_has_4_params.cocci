@@ -1,20 +1,20 @@
 @@
 local idexpression struct bio *b;
-expression bdev, _opf, gfp_mask, nr_vecs, bioset;
+expression ebdev, _opf, gfp_mask, nr_vecs, bioset;
 @@
 b =
 (
 bio_alloc(
-- bdev, nr_vecs, _opf, gfp_mask
+- ebdev, nr_vecs, _opf, gfp_mask
 + gfp_mask, nr_vecs
  )
 |
 bio_alloc_bioset(
-- bdev, nr_vecs, _opf, gfp_mask, bioset
+- ebdev, nr_vecs, _opf, gfp_mask, bioset
 + gfp_mask, nr_vecs, bioset
  )
 );
-+ bio_set_dev(b, bdev);
++ bio_set_dev(b, ebdev);
 ...
 b->bi_end_io = ...;
 + b->bi_opf = _opf;
@@ -25,14 +25,14 @@ b->bi_end_io = ...;
 //    places
 @@
 identifier b;
-expression bdev, _opf, gfp_mask, nr_vecs;
+expression ebdev, _opf, gfp_mask, nr_vecs;
 @@
 struct bio *b = bio_alloc(
-- bdev, nr_vecs, _opf, gfp_mask
+- ebdev, nr_vecs, _opf, gfp_mask
 + gfp_mask, nr_vecs
  );
 ...
-+ bio_set_dev(b, bdev);
++ bio_set_dev(b, ebdev);
 b->bi_private = ...;
 ...
 + b->bi_opf = _opf;
