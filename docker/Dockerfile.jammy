@@ -24,5 +24,4 @@ COPY /drbd.tar.gz /
 COPY /pkgs /pkgs
 
 COPY /entry.sh /
-RUN chmod +x /entry.sh
 ENTRYPOINT /entry.sh

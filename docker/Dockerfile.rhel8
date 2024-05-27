@@ -51,5 +51,4 @@ RUN curl -fsSL https://pkg.linbit.com/downloads/drbd/9/drbd-${DRBD_VERSION}.tar.
 COPY /pkgs /pkgs
 
 COPY /entry.sh /
-RUN chmod +x /entry.sh
 ENTRYPOINT /entry.sh
