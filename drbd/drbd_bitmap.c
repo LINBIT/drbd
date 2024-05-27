@@ -477,6 +477,36 @@ static void bm_unmap(struct drbd_bitmap *bitmap, void *addr)
 		kunmap_atomic(addr);
 }
 
+
+/*
+ * find_next_bit() and find_next_zero_bit() expect an (unsigned long *),
+ * and will dereference it.
+ * When scanning our bitmap, we are interested in 32bit words of it.
+ * The "current 32 bit word pointer" may point to the last 32 bits in a page.
+ * For 64bit long, if the page after the current page is not mapped,
+ * this causes "page fault - not-present page".
+ * Duplicate the "fast path" of these functions,
+ * simplified for "size: 32, offset: 0".
+ * Little endian arch: le32_to_cpu is a no-op.
+ * Big endian arch: le32_to_cpu moves the least significant 32 bits around.
+ * __ffs / ffz do an implicit cast to (unsignd long). On 64bit, that fills up
+ * the most significant bits with 0; we are not interested in those anyways.
+ */
+static inline unsigned long find_next_bit_le32(const __le32 *addr)
+{
+	uint32_t val = *addr;
+
+	return val ? __ffs(le32_to_cpu(val)) : 32;
+}
+
+static inline unsigned long find_next_zero_bit_le32(const __le32 *addr)
+{
+	uint32_t val = *addr;
+
+	return val == ~0U ? 32 : ffz(le32_to_cpu(val));
+}
+
+
 static __always_inline unsigned long
 ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long start, unsigned long end,
 	 enum bitmap_operations op, __le32 *buffer)
@@ -577,14 +607,14 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 				*buffer++ = *p;
 				break;
 			case BM_OP_FIND_BIT:
-				count = find_next_bit_le(p, 32, 0);
+				count = find_next_bit_le32(p);
 				if (count < 32) {
 					count += bit_in_page;
 					goto found;
 				}
 				break;
 			case BM_OP_FIND_ZERO_BIT:
-				count = find_next_zero_bit_le(p, 32, 0);
+				count = find_next_zero_bit_le32(p);
 				if (count < 32) {
 					count += bit_in_page;
 					goto found;
