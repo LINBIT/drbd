@@ -9,10 +9,10 @@ expression path, mode;
   )
 
 @@
-expression bdev, holder;
+expression ebdev, holder;
 @@
   blkdev_put(
-  	bdev,
+  	ebdev,
 - 	holder
 + 	FMODE_READ | FMODE_WRITE | FMODE_EXCL
   )
@@ -28,11 +28,11 @@ identifier device, bdev, holder, do_bd_unlink;
   ) { ... }
 
 @@
-expression device, bdev, holder, do_bd_unlink;
+expression device, ebdev, holder, do_bd_unlink;
 @@
   close_backing_dev(
   	device,
-  	bdev,
+  	ebdev,
 - 	holder,
   	do_bd_unlink
   );
