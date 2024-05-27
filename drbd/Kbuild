@@ -300,7 +300,7 @@ $(obj.build)/.kernel.config.gz: $(obj.build)/.drbd_kernelrelease $(kconfig)
 
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
-$(obj.build)/drbd_buildtag.c: $(orig-sources) $(THIS_MAKEFILE)
+$(obj.build)/drbd_buildtag.c: $(addprefix $(src)/,$(drbd-module-sources)) $(THIS_MAKEFILE)
 	@$(kecho) '  GEN     $@ $(echo-why)'
 	@set -e;								\
 	if [ -z "${WANT_DRBD_REPRODUCIBLE_BUILD}" ] || [ -z "${SOURCE_DATE_EPOCH}" ] ; then	\
