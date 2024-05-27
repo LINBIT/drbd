@@ -4948,6 +4948,7 @@ static void del_connection(struct drbd_connection *connection, const char *tag)
 
 	mutex_lock(&resource->conf_update);
 	drbd_unregister_connection(connection);
+	mutex_unlock(&resource->conf_update);
 
 	/*
 	 * Flush the resource work queue to make sure that no more
@@ -4963,7 +4964,6 @@ static void del_connection(struct drbd_connection *connection, const char *tag)
 	notify_connection_state(NULL, 0, connection, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 	call_rcu(&connection->rcu, drbd_reclaim_connection);
-	mutex_unlock(&resource->conf_update);
 }
 
 static int adm_disconnect(struct sk_buff *skb, struct genl_info *info, bool destroy)
