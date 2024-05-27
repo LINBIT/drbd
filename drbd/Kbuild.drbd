@@ -14,8 +14,10 @@ LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
 # command line or environment
 override EXTRA_CFLAGS += -I$(src) -I$(src)/drbd-kernel-compat
 
-ifneq ($(shell grep -e '\<nsecs_to_jiffies\>' \
-		   $(objtree)/Module.symvers | wc -l),1)
+ifneq ($(strip $(shell \
+	grep -e '\<nsecs_to_jiffies\>' $(objtree)/Module.symvers || \
+	grep -q -e 'EXPORT_SYMBOL(nsecs_to_jiffies)' $(srctree)/kernel/time/time.c ; \
+	echo $$?)),0)
 compat_objs += drbd-kernel-compat/nsecs_to_jiffies.o
 endif
 
