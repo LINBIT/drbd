@@ -467,7 +467,7 @@ struct drbd_peer_request {
 	};
 
 	struct drbd_page_chain_head page_chain;
-	blk_opf_t opf; /* to be used as bi_opf */
+	struct bio *bio;
 	atomic_t pending_bios;
 	struct drbd_interval i;
 	unsigned long flags;	/* see comments on ee flag bits below */
@@ -484,10 +484,6 @@ struct drbd_peer_request {
 		};
 	};
 };
-
-/* Equivalent to bio_op and req_op. */
-#define peer_req_op(peer_req) \
-	((peer_req)->opf & REQ_OP_MASK)
 
 /* ee flag bits.
  * While corresponding bios are in flight, the only modification will be
@@ -2410,7 +2406,7 @@ void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 int drbd_free_peer_reqs(struct drbd_connection *connection,
 			struct list_head *list);
 struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_device,
-					      gfp_t gfp_mask) __must_hold(local);
+			gfp_t gfp_mask, size_t size, blk_opf_t opf) __must_hold(local);
 void drbd_free_peer_req(struct drbd_peer_request *peer_req);
 int drbd_connected(struct drbd_peer_device *peer_device);
 void conn_connect2(struct drbd_connection *connection);

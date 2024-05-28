@@ -604,7 +604,8 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 		return -EIO;
 
 	/* Do not wait if no memory is immediately available.  */
-	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM,
+				       size, REQ_OP_READ);
 	if (!peer_req)
 		goto defer;
 
@@ -627,7 +628,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	peer_req->requested_size = size;
 
 	peer_req->w.cb = w_e_send_csum;
-	peer_req->opf = REQ_OP_READ;
 
 	atomic_inc(&connection->backing_ee_cnt);
 	atomic_add(size >> 9, &device->rs_sect_ev);
@@ -653,7 +653,8 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 	struct drbd_peer_request *peer_req;
 
 	/* Do not wait if no memory is immediately available.  */
-	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM);
+	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM,
+				       size, REQ_OP_WRITE);
 	if (!peer_req) {
 		drbd_err(device, "Could not allocate resync request\n");
 		put_ldev(device);
@@ -1580,7 +1581,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 			size = (capacity-sector)<<9;
 
 		/* Do not wait if no memory is immediately available.  */
-		peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM);
+		peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM,
+					       size, REQ_OP_READ);
 		if (!peer_req) {
 			drbd_err(device, "Could not allocate online verify request\n");
 			put_ldev(device);
