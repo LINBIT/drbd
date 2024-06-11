@@ -2770,9 +2770,18 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	}
 out:
 	/* still keep mutex, but release ASAP */
-	if (!err)
+	if (!err) {
 		add_opener(device, did_auto_promote);
-	else
+		/* Only interested in first open and last close. */
+		if (device->open_cnt == 1) {
+			struct device_info info;
+
+			device_to_info(&info, device);
+			mutex_lock(&notification_mutex);
+			notify_device_state(NULL, 0, device, &info, NOTIFY_CHANGE);
+			mutex_unlock(&notification_mutex);
+		}
+	} else
 		device->writable = was_writable;
 
 	mutex_unlock(&resource->open_release);
@@ -2931,6 +2940,14 @@ static void drbd_release(struct gendisk *gd)
 	prune_or_free_openers(device, (device->open_cnt == 0) ? 0 : task_pid_nr(current));
 	if (open_rw_cnt == 0 && open_ro_cnt == 0 && resource->auto_promoted_by.pid != 0)
 		memset(&resource->auto_promoted_by, 0, sizeof(resource->auto_promoted_by));
+	if (device->open_cnt == 0) {
+		struct device_info info;
+
+		device_to_info(&info, device);
+		mutex_lock(&notification_mutex);
+		notify_device_state(NULL, 0, device, &info, NOTIFY_CHANGE);
+		mutex_unlock(&notification_mutex);
+	}
 	mutex_unlock(&resource->open_release);
 
 	kref_debug_put(&device->kref_debug, 3);
