@@ -2969,10 +2969,8 @@ static int dtr_prepare_connect(struct drbd_transport *transport)
 
 	list_for_each_entry(path, &transport->paths, path.list) {
 		err = dtr_activate_path(path);
-		if (err) {
-			kref_put(&path->path.kref, drbd_destroy_path);
+		if (err)
 			goto abort;
-		}
 	}
 
 	return 0;
