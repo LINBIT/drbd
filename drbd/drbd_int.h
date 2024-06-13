@@ -2141,6 +2141,9 @@ extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);
 extern void wait_initial_states_received(struct drbd_connection *);
 extern void abort_connect(struct drbd_connection *);
+extern void drbd_print_cluster_wide_state_change(struct drbd_resource *resource,
+		const char *message, unsigned int tid, unsigned int initiator_node_id,
+		int target_node_id, union drbd_state mask, union drbd_state val);
 extern void apply_unacked_peer_requests(struct drbd_connection *connection);
 extern struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *, int);
 extern struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *, int);
