@@ -154,6 +154,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_BLK_CLEANUP_DISK, "present");
 
 	patch(1, "blk_alloc_disk", true, false,
+	      COMPAT_BLK_ALLOC_DISK_TAKES_QUEUE_LIMITS, "takes_queue_limits");
+
+	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_HAVE_BLK_ALLOC_DISK, "present");
 
 /*******************************************************************************/
