@@ -6053,9 +6053,13 @@ static bool calc_data_accessible(struct drbd_state_change *state_change, int n_d
 		struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 		enum drbd_disk_state *peer_disk_state = peer_device_state_change->disk_state;
 		struct net_conf *nc;
+		bool allow_remote_read;
 
+		rcu_read_lock();
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		if (nc && !nc->allow_remote_read)
+		allow_remote_read = nc->allow_remote_read;
+		rcu_read_unlock();
+		if (nc && !allow_remote_read)
 			continue;
 		if (peer_disk_state[which] == D_UP_TO_DATE)
 			return true;
