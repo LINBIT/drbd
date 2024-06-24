@@ -3568,7 +3568,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	init_waitqueue_head(&resource->twopc_wait);
 	init_waitqueue_head(&resource->barrier_wait);
 	timer_setup(&resource->twopc_timer, twopc_timer_fn, 0);
-	INIT_LIST_HEAD(&resource->twopc_work.list);
+	INIT_WORK(&resource->twopc_work, nested_twopc_work);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
 	spin_lock_init(&resource->current_tle_lock);

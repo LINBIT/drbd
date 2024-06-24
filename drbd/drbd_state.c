@@ -4293,7 +4293,7 @@ static bool when_done_lock(struct drbd_resource *resource,
 			   unsigned long *irq_flags)
 {
 	write_lock_irqsave(&resource->state_rwlock, *irq_flags);
-	if (!resource->remote_state_change && resource->twopc_work.cb == NULL)
+	if (!resource->remote_state_change && !test_bit(TWOPC_WORK_PENDING, &resource->flags))
 		return true;
 	write_unlock_irqrestore(&resource->state_rwlock, *irq_flags);
 	return false;
@@ -4921,7 +4921,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		reply->target_reachable_nodes = reply->reachable_nodes;
 	}
 
-	D_ASSERT(resource, resource->twopc_work.cb == NULL);
+	D_ASSERT(resource, !test_bit(TWOPC_WORK_PENDING, &resource->flags));
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, &request, reach_immediately);
 
@@ -5233,7 +5233,7 @@ retry:
 	return dd;
 }
 
-static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd, bool as_work)
+static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
 {
 	struct drbd_connection *twopc_parent;
 	u64 im;
@@ -5247,8 +5247,7 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 		resource->twopc_prepare_reply_cmd = cmd;
 		twopc_parent_nodes = resource->twopc_parent_nodes;
 	}
-	if (as_work)
-		resource->twopc_work.cb = NULL;
+	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
 	write_unlock_irq(&resource->state_rwlock);
 
 	if (!twopc_reply.tid)
@@ -5269,10 +5268,8 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	wake_up_all(&resource->twopc_wait);
 }
 
-static void __nested_twopc_work(struct drbd_work *work, bool as_work)
+static void __nested_twopc_work(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource =
-		container_of(work, struct drbd_resource, twopc_work);
 	enum drbd_state_rv rv;
 	enum drbd_packet cmd;
 
@@ -5283,13 +5280,36 @@ static void __nested_twopc_work(struct drbd_work *work, bool as_work)
 		cmd = P_TWOPC_RETRY;
 	else
 		cmd = P_TWOPC_NO;
-	twopc_end_nested(resource, cmd, as_work);
+	twopc_end_nested(resource, cmd);
 }
 
-int nested_twopc_work(struct drbd_work *work, int cancel)
+void nested_twopc_work(struct work_struct *work)
 {
-	__nested_twopc_work(work, true);
-	return 0;
+	struct drbd_resource *resource =
+		container_of(work, struct drbd_resource, twopc_work);
+
+	__nested_twopc_work(resource);
+
+	kref_put(&resource->kref, drbd_destroy_resource);
+}
+
+void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource)
+{
+	lockdep_assert_held(&resource->state_rwlock);
+
+	if (!resource->remote_state_change || !cluster_wide_reply_ready(resource))
+		return;
+
+	if (resource->twopc_reply.initiator_node_id == resource->res_opts.node_id) {
+		wake_up_all(&resource->state_wait);
+		return;
+	}
+
+	if (test_and_set_bit(TWOPC_WORK_PENDING, &resource->flags))
+		return;
+
+	kref_get(&resource->kref);
+	schedule_work(&resource->twopc_work);
 }
 
 enum drbd_state_rv
@@ -5311,9 +5331,9 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 	have_peers = rv == SS_CW_SUCCESS;
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
 		if (rv < SS_SUCCESS)
-			twopc_end_nested(resource, P_TWOPC_NO, false);
+			twopc_end_nested(resource, P_TWOPC_NO);
 		else if (!have_peers && cluster_wide_reply_ready(resource)) /* no nested nodes */
-			__nested_twopc_work(&resource->twopc_work, false);
+			__nested_twopc_work(resource);
 	}
 	return rv;
 }

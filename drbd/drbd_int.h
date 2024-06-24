@@ -782,6 +782,7 @@ enum resource_flag {
 				 * pending, from drbd worker context.
 				 */
 	TWOPC_ABORT_LOCAL,
+	TWOPC_WORK_PENDING,     /* Set while work for sending reply is scheduled */
 	TWOPC_EXECUTED,         /* Commited or aborted */
 	TWOPC_STATE_CHANGE_PENDING, /* set between sending commit and changing local state */
 
@@ -932,7 +933,7 @@ struct drbd_resource {
 	u64 twopc_parent_nodes;
 	struct twopc_reply twopc_reply;
 	struct timer_list twopc_timer;
-	struct drbd_work twopc_work;
+	struct work_struct twopc_work;
 	wait_queue_head_t twopc_wait;
 	struct {
 		enum twopc_type type;
