@@ -4218,6 +4218,7 @@ static void __device_to_info(struct device_info *info,
 			     struct drbd_device *device)
 {
 	info->is_intentional_diskless = device->device_conf.intentional_diskless;
+	info->dev_is_open = device->open_cnt != 0;
 
 	rcu_read_lock();
 	if (get_ldev(device)) {
@@ -4232,7 +4233,7 @@ static void __device_to_info(struct device_info *info,
 	rcu_read_unlock();
 }
 
-static void device_to_info(struct device_info *info,
+void device_to_info(struct device_info *info,
 			   struct drbd_device *device)
 {
 	info->dev_disk_state = device->disk_state[NOW];

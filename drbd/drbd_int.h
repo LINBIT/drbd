@@ -2348,6 +2348,7 @@ extern void drbd_broadcast_peer_device_state(struct drbd_peer_device *);
 extern sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
 extern int drbd_open_ro_count(struct drbd_resource *resource);
 
+extern void device_to_info(struct device_info *info, struct drbd_device *device);
 extern void device_state_change_to_info(struct device_info *,
 					struct drbd_device_state_change *);
 extern void peer_device_state_change_to_info(struct peer_device_info *,
