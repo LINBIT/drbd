@@ -640,11 +640,11 @@ int drbd_thread_start(struct drbd_thread *thi)
 	switch (thi->t_state) {
 	case NONE:
 		if (connection)
-			drbd_info(connection, "Starting %s thread (from %s [%d])\n",
-				 thi->name, current->comm, current->pid);
+			drbd_info(connection, "Starting %s thread (peer-node-id %d)\n",
+				 thi->name, connection->peer_node_id);
 		else
-			drbd_info(resource, "Starting %s thread (from %s [%d])\n",
-				 thi->name, current->comm, current->pid);
+			drbd_info(resource, "Starting %s thread (node-id %d)\n",
+				 thi->name, resource->res_opts.node_id);
 
 		init_completion(&thi->stop);
 		D_ASSERT(resource, thi->task == NULL);
@@ -673,11 +673,9 @@ int drbd_thread_start(struct drbd_thread *thi)
 	case EXITING:
 		thi->t_state = RESTARTING;
 		if (connection)
-			drbd_info(connection, "Restarting %s thread (from %s [%d])\n",
-					thi->name, current->comm, current->pid);
+			drbd_info(connection, "Restarting %s thread\n", thi->name);
 		else
-			drbd_info(resource, "Restarting %s thread (from %s [%d])\n",
-					thi->name, current->comm, current->pid);
+			drbd_info(resource, "Restarting %s thread\n", thi->name);
 		fallthrough;
 	case RUNNING:
 	case RESTARTING:
@@ -3687,7 +3685,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->twopc_work.list);
 	drbd_init_workqueue(&resource->work);
 	drbd_thread_init(resource, &resource->worker, drbd_worker, "worker");
-	drbd_thread_start(&resource->worker);
 	spin_lock_init(&resource->current_tle_lock);
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
@@ -3712,6 +3709,8 @@ struct drbd_resource *drbd_create_resource(const char *name,
 
 	if (set_resource_options(resource, res_opts, "create-resource"))
 		goto fail_free_pages;
+
+	drbd_thread_start(&resource->worker);
 
 	list_add_tail_rcu(&resource->resources, &drbd_resources);
 
