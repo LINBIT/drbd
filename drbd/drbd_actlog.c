@@ -716,7 +716,7 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 
 /* clear the bit corresponding to the piece of storage in question:
  * size byte of data starting from sector.  Only clear a bits of the affected
- * one ore more _aligned_ BM_BLOCK_SIZE blocks.
+ * one or more _aligned_ BM_BLOCK_SIZE blocks.
  *
  * called by worker on L_SYNC_TARGET and receiver on SyncSource.
  *
