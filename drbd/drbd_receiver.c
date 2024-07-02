@@ -6962,7 +6962,7 @@ void twopc_timer_fn(struct timer_list *t)
 	unsigned long irq_flags;
 
 	write_lock_irqsave(&resource->state_rwlock, irq_flags);
-	if (resource->twopc_work.cb == NULL) {
+	if (!test_bit(TWOPC_WORK_PENDING, &resource->flags)) {
 		drbd_err(resource, "Two-phase commit %u timeout\n",
 			   resource->twopc_reply.tid);
 		drbd_abort_twopc(resource);
@@ -7527,14 +7527,10 @@ retry:
 				} else {
 					/* if a node sends us a prepare, that means he has
 					   prepared this himsilf successfully. */
+					write_lock_irq(&resource->state_rwlock);
 					set_bit(TWOPC_YES, &connection->flags);
-
-					if (cluster_wide_reply_ready(resource)) {
-						if (resource->twopc_work.cb == NULL) {
-							resource->twopc_work.cb = nested_twopc_work;
-							drbd_queue_work(&resource->work, &resource->twopc_work);
-						}
-					}
+					drbd_maybe_cluster_wide_reply(resource);
+					write_unlock_irq(&resource->state_rwlock);
 				}
 			}
 		} else {
@@ -7811,16 +7807,9 @@ static void finish_nested_twopc(struct drbd_connection *connection)
 
 	wake_up_all(&resource->state_wait);
 
-	if (!resource->remote_state_change)
-		return;
-
-	if (resource->twopc_parent_nodes == 0) /* we are the initiator, no nesting here */
-		return;
-
-	if (cluster_wide_reply_ready(resource) && resource->twopc_work.cb == NULL) {
-		resource->twopc_work.cb = nested_twopc_work;
-		drbd_queue_work(&resource->work, &resource->twopc_work);
-	}
+	write_lock_irq(&resource->state_rwlock);
+	drbd_maybe_cluster_wide_reply(resource);
+	write_unlock_irq(&resource->state_rwlock);
 }
 
 static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid)
@@ -10301,16 +10290,7 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 			set_bit(TWOPC_NO, &connection->flags);
 		else if (pi->cmd == P_TWOPC_RETRY)
 			set_bit(TWOPC_RETRY, &connection->flags);
-		if (cluster_wide_reply_ready(resource)) {
-			int my_node_id = resource->res_opts.node_id;
-			if (resource->twopc_reply.initiator_node_id == my_node_id) {
-				wake_up_all(&resource->state_wait);
-			} else if (resource->twopc_work.cb == NULL) {
-				/* in case the timeout timer was not quicker in queuing the work... */
-				resource->twopc_work.cb = nested_twopc_work;
-				drbd_queue_work(&resource->work, &resource->twopc_work);
-			}
-		}
+		drbd_maybe_cluster_wide_reply(resource);
 	} else {
 		dynamic_drbd_dbg(connection, "Ignoring %s reply for state change %u\n",
 			   drbd_packet_name(pi->cmd),
@@ -10328,16 +10308,7 @@ void twopc_connection_down(struct drbd_connection *connection)
 	if (resource->twopc_reply.initiator_node_id != -1 &&
 	    test_bit(TWOPC_PREPARED, &connection->flags)) {
 		set_bit(TWOPC_RETRY, &connection->flags);
-		if (cluster_wide_reply_ready(resource)) {
-			int my_node_id = resource->res_opts.node_id;
-			if (resource->twopc_reply.initiator_node_id == my_node_id) {
-				wake_up_all(&resource->state_wait);
-			} else if (resource->twopc_work.cb == NULL) {
-				/* in case the timeout timer was not quicker in queuing the work... */
-				resource->twopc_work.cb = nested_twopc_work;
-				drbd_queue_work(&resource->work, &resource->twopc_work);
-			}
-		}
+		drbd_maybe_cluster_wide_reply(resource);
 	}
 }
 
