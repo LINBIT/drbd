@@ -4086,9 +4086,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	init_rwsem(&device->uuid_sem);
 
-	disk = blk_alloc_disk(NUMA_NO_NODE);
-	if (!disk)
+	disk = blk_alloc_disk(NULL, NUMA_NO_NODE);
+	if (IS_ERR(disk)) {
+		err = PTR_ERR(disk);
 		goto out_no_disk;
+	}
 
 	INIT_WORK(&device->ldev_destroy_work, drbd_ldev_destroy);
 
