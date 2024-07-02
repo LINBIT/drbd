@@ -6927,15 +6927,12 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 	return 0;
 }
 
-static int abort_twopc_work(struct drbd_work *work, int cancel)
+static void drbd_abort_twopc(struct drbd_resource *resource)
 {
-	struct drbd_resource *resource =
-		container_of(work, struct drbd_resource, twopc_work);
 	struct drbd_connection *connection;
 	int initiator_node_id;
 	bool is_connect;
 
-	write_lock_irq(&resource->state_rwlock);
 	initiator_node_id = resource->twopc_reply.initiator_node_id;
 	if (initiator_node_id != -1) {
 		connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
@@ -6944,11 +6941,7 @@ static int abort_twopc_work(struct drbd_work *work, int cancel)
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
 		resource->twopc_parent_nodes = 0;
-	}
-	resource->twopc_work.cb = NULL;
-	write_unlock_irq(&resource->state_rwlock);
 
-	if (initiator_node_id != -1) {
 		if (connection) {
 			if (is_connect)
 				abort_connect(connection);
@@ -6961,7 +6954,6 @@ static int abort_twopc_work(struct drbd_work *work, int cancel)
 	}
 
 	wake_up_all(&resource->twopc_wait);
-	return 0;
 }
 
 void twopc_timer_fn(struct timer_list *t)
@@ -6973,8 +6965,7 @@ void twopc_timer_fn(struct timer_list *t)
 	if (resource->twopc_work.cb == NULL) {
 		drbd_err(resource, "Two-phase commit %u timeout\n",
 			   resource->twopc_reply.tid);
-		resource->twopc_work.cb = &abort_twopc_work;
-		drbd_queue_work(&resource->work, &resource->twopc_work);
+		drbd_abort_twopc(resource);
 	} else {
 		mod_timer(&resource->twopc_timer, jiffies + HZ/10);
 	}
