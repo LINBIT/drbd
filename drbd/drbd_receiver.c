@@ -7654,7 +7654,9 @@ retry:
 
 	switch(pi->cmd) {
 	case P_TWOPC_PREPARE:
-		drbd_info(connection, "Preparing remote state change %u\n", reply->tid);
+		drbd_print_cluster_wide_state_change(resource, "Preparing remote state change",
+				reply->tid, reply->initiator_node_id, reply->target_node_id,
+				state_change->mask, state_change->val);
 		flags |= CS_PREPARE;
 		break;
 	case P_TWOPC_PREP_RSZ:

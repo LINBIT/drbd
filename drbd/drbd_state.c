@@ -4704,6 +4704,60 @@ static void twopc_phase2(struct drbd_resource *resource,
 	}
 }
 
+void drbd_print_cluster_wide_state_change(struct drbd_resource *resource, const char *message,
+		unsigned int tid, unsigned int initiator_node_id, int target_node_id,
+		union drbd_state mask, union drbd_state val)
+{
+	char buffer[150], *b, *end = buffer + sizeof(buffer);
+
+	b = buffer;
+	b += scnprintf(b, end - b, "%u->", initiator_node_id);
+	if (target_node_id == -1)
+		b += scnprintf(b, end - b, "all");
+	else
+		b += scnprintf(b, end - b, "%d", target_node_id);
+
+	if (mask.role)
+		b += scnprintf(b, end - b, " role( %s )", drbd_role_str(val.role));
+
+	if (mask.peer)
+		b += scnprintf(b, end - b, " peer( %s )", drbd_role_str(val.peer));
+
+	if (mask.conn)
+		b += scnprintf(b, end - b, " conn( %s )", drbd_conn_str(val.conn));
+
+	if (mask.disk)
+		b += scnprintf(b, end - b, " disk( %s )", drbd_disk_str(val.disk));
+
+	if (mask.pdsk)
+		b += scnprintf(b, end - b, " pdsk( %s )", drbd_disk_str(val.pdsk));
+
+	// Any of "susp-io( user )", "susp-io( quorum )" or "susp-io( uuid )"
+	if (mask.susp)
+		b += scnprintf(b, end - b, " %ssusp-io", val.susp ? "+" : "-");
+
+	if (mask.susp_nod)
+		b += scnprintf(b, end - b, " susp-io( %sno-disk )", val.susp_nod ? "+" : "-");
+
+	if (mask.susp_fen)
+		b += scnprintf(b, end - b, " susp-io( %sfencing )", val.susp_fen ? "+" : "-");
+
+	if (mask.user_isp)
+		b += scnprintf(b, end - b, " resync-susp( %suser )", val.user_isp ? "+" : "-");
+
+	if (mask.peer_isp)
+		b += scnprintf(b, end - b, " resync-susp( %speer )", val.peer_isp ? "+" : "-");
+
+	if (mask.aftr_isp)
+		b += scnprintf(b, end - b, " resync-susp( %safter dependency )",
+				val.aftr_isp ? "+" : "-");
+
+	if (!mask.i)
+		b += scnprintf(b, end - b, " empty");
+
+	drbd_info(resource, "%s %u: %s\n", message, tid, buffer);
+}
+
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
  *
@@ -4866,12 +4920,9 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	resource->twopc_parent_nodes = 0;
 	resource->remote_state_change = true;
 
-	drbd_info(resource, "Preparing cluster-wide state change %u (%u->%d %u/%u)\n",
-		  request.tid,
-		  resource->res_opts.node_id,
-		  context->target_node_id,
-		  context->mask.i,
-		  context->val.i);
+	drbd_print_cluster_wide_state_change(resource, "Preparing cluster-wide state change",
+			request.tid, resource->res_opts.node_id, context->target_node_id,
+			context->mask, context->val);
 
 	reply->initiator_node_id = resource->res_opts.node_id;
 	reply->target_node_id = context->target_node_id;
