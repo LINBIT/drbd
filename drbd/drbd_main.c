@@ -4326,7 +4326,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_bitmap_io);
 
 	locked = true;
-	write_lock_irq(&resource->state_rwlock);
+	write_lock_irqsave(&resource->state_rwlock, spin_lock_flags);
 	spin_lock(&drbd_devices_lock);
 	id = idr_alloc(&drbd_devices, device, minor, minor + 1, GFP_NOWAIT);
 	spin_unlock(&drbd_devices_lock);
@@ -4360,7 +4360,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		kref_get(&device->kref);
 		kref_debug_get(&device->kref_debug, 1);
 	}
-	write_unlock_irq(&resource->state_rwlock);
+	write_unlock_irqrestore(&resource->state_rwlock, spin_lock_flags);
 	locked = false;
 
 	if (init_conflict_submitter(device)) {
@@ -4417,7 +4417,7 @@ out_idr_remove_minor:
 	kref_debug_put(&device->kref_debug, 1);
 out_no_minor_idr:
 	if (locked)
-		write_unlock_irq(&resource->state_rwlock);
+		write_unlock_irqrestore(&resource->state_rwlock, spin_lock_flags);
 	synchronize_rcu();
 
 out_no_peer_device:
