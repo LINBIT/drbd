@@ -1428,49 +1428,6 @@ static bool remote_due_to_read_balancing(struct drbd_device *device,
 	}
 }
 
-/*
- * complete_conflicting_writes  -  wait for any conflicting write requests
- *
- * The write_requests tree contains all active write requests which we
- * currently know about.  Wait for any requests to complete which conflict with
- * the new one.
- *
- * Only way out: remove the conflicting intervals from the tree.
- */
-/* TODO: not used any more? */
-static void complete_conflicting_writes(struct drbd_request *req, unsigned long *flags_p)
-{
-	DEFINE_WAIT(wait);
-	struct drbd_device *device = req->device;
-	struct drbd_resource *resource = device->resource;
-	struct drbd_interval *i;
-	sector_t sector = req->i.sector;
-	int size = req->i.size;
-
-	for (;;) {
-		drbd_for_each_overlap(i, &device->write_requests, sector, size) {
-			/* Ignore, if already completed to upper layers. */
-			if (test_bit(INTERVAL_COMPLETED, &i->flags))
-				continue;
-			/* Handle the first found overlap.  After the schedule
-			 * we have to restart the tree walk. */
-			break;
-		}
-		if (!i)	/* if any */
-			break;
-
-		/* Indicate to wake up device->misc_wait on progress.  */
-		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
-		set_bit(INTERVAL_WAITING, &i->flags);
-		spin_unlock(&device->interval_lock);
-		read_unlock_irqrestore(&resource->state_rwlock, *flags_p);
-		schedule();
-		read_lock_irqsave(&resource->state_rwlock, *flags_p);
-		spin_lock(&device->interval_lock);
-	}
-	finish_wait(&device->misc_wait, &wait);
-}
-
 static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connection *connection)
 {
 	struct net_conf *nc;
@@ -1982,7 +1939,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 	bool submit_private_bio = false;
 	unsigned long flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, flags);
 
 	if (rw == WRITE) {
 		/* check for congestion, and potentially stop sending
@@ -2120,7 +2077,7 @@ nodata:
 
 out:
 	drbd_req_put_completion_ref(req, &m, 1);
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, flags);
 
 	/* Even though above is a kref_put(), this is safe.
 	 * As long as we still need to submit our private bio,
