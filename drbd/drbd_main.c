@@ -3350,6 +3350,23 @@ void drbd_flush_workqueue(struct drbd_work_queue *work_queue)
 	wait_for_completion(&completion_work.done);
 }
 
+void drbd_flush_workqueue_interruptible(struct drbd_device *device)
+{
+	struct completion_work completion_work;
+	int err;
+
+	completion_work.w.cb = w_complete;
+	init_completion(&completion_work.done);
+	drbd_queue_work(&device->resource->work, &completion_work.w);
+	err = wait_for_completion_interruptible(&completion_work.done);
+	if (err == -ERESTARTSYS) {
+		set_bit(ABORT_MDIO, &device->flags);
+		wake_up_all(&device->misc_wait);
+		wait_for_completion(&completion_work.done);
+		clear_bit(ABORT_MDIO, &device->flags);
+	}
+}
+
 struct drbd_resource *drbd_find_resource(const char *name)
 {
 	struct drbd_resource *resource;

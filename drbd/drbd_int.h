@@ -521,6 +521,7 @@ enum device_flag {
 	MD_NO_FUA,		/* meta data device does not support barriers,
 				   so don't even try */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
+	ABORT_MDIO,		/* Interrupt ongoing meta-data I/O */
 	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
 	__NEW_CUR_UUID,		/* Set NEW_CUR_UUID as soon as state change visible */
 	WRITING_NEW_CUR_UUID,	/* Set while the new current ID gets generated. */
@@ -2379,6 +2380,7 @@ drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
 }
 
 extern void drbd_flush_workqueue(struct drbd_work_queue *work_queue);
+extern void drbd_flush_workqueue_interruptible(struct drbd_device *device);
 
 /* To get the ack_receiver out of the blocking network stack,
  * so it can change its sk_rcvtimeo from idle- to ping-timeout,
