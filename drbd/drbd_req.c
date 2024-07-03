@@ -1465,9 +1465,9 @@ static void complete_conflicting_writes(struct drbd_request *req, unsigned long 
 		prepare_to_wait(&device->misc_wait, &wait, TASK_UNINTERRUPTIBLE);
 		set_bit(INTERVAL_WAITING, &i->flags);
 		spin_unlock(&device->interval_lock);
-		read_unlock_irq(&resource->state_rwlock);
+		read_unlock_irqrestore(&resource->state_rwlock, *flags_p);
 		schedule();
-		read_lock_irq(&resource->state_rwlock);
+		read_lock_irqsave(&resource->state_rwlock, *flags_p);
 		spin_lock(&device->interval_lock);
 	}
 	finish_wait(&device->misc_wait, &wait);
