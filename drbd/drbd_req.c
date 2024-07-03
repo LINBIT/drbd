@@ -1869,14 +1869,14 @@ static void drbd_send_and_submit(struct drbd_device *device, struct drbd_request
 	bool submit_private_bio = false;
 	unsigned long flags;
 
-	read_lock_irq(&resource->state_rwlock);
+	read_lock_irqsave(&resource->state_rwlock, flags);
 
 	if (rw == WRITE) {
 		spin_lock(&device->interval_lock);
 		/* This may temporarily give up the state_rwlock and interval_lock,
 		 * but will re-acquire them before it returns here.
 		 * Needs to be before the check on drbd_suspended() */
-		complete_conflicting_writes(req);
+		complete_conflicting_writes(req, &flags);
 		/* no more giving up state_rwlock from now on! */
 		put_req_interval_into_tree(device, req);
 		spin_unlock(&device->interval_lock);
@@ -2016,7 +2016,7 @@ nodata:
 
 out:
 	drbd_req_put_completion_ref(req, &m, 1);
-	read_unlock_irq(&resource->state_rwlock);
+	read_unlock_irqrestore(&resource->state_rwlock, flags);
 
 	/* Even though above is a kref_put(), this is safe.
 	 * As long as we still need to submit our private bio,

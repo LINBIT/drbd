@@ -895,7 +895,7 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 	/* Although the connect failed, outdate local disks if we learn from the
 	 * handshake that the peer has more recent data */
 	struct drbd_resource *resource = connection->resource;
-	unsigned long irq_flags;
+	KIRQL irq_flags;
 	int vnr;
 
 	begin_state_change(resource, &irq_flags, CS_HARD | (force_demote ? CS_FS_IGN_OPENERS : 0));
@@ -2029,12 +2029,13 @@ int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
 	default:
 		/* forget the object,
 		 * and cause a "Network failure" */
-		spin_lock_irq(&connection->peer_reqs_lock);
+		KIRQL irql;
+		spin_lock_irqsave(&connection->peer_reqs_lock, irql);
 		list_del(&peer_req->w.list);
 		spin_unlock(&connection->peer_reqs_lock);
 		spin_lock(&device->interval_lock);
 		drbd_remove_peer_req_interval(device, peer_req);
-		spin_unlock_irq(&device->interval_lock);
+		spin_unlock_irqrestore(&device->interval_lock, irql);
 		drbd_al_complete_io(device, &peer_req->i);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT | EV_CLEANUP);
 		drbd_free_peer_req(peer_req);
@@ -6207,7 +6208,7 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	union drbd_state mask = state_change->mask;
 	union drbd_state val = state_change->val;
-	unsigned long irq_flags;
+	KIRQL irq_flags;
 	enum drbd_state_rv rv;
 
 	mask = convert_state(mask);
