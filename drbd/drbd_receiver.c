@@ -7118,7 +7118,7 @@ static enum alt_rv abort_local_transaction(struct drbd_connection *connection, u
 	rcu_read_unlock();
 
 	set_bit(TWOPC_ABORT_LOCAL, &resource->flags);
-	write_unlock_irq(&resource->state_rwlock);
+	write_unlock_irqrestore(&resource->state_rwlock, *spin_lock_irq_flags_p);
 	wake_up_all(&resource->state_wait);
 	wait_event_timeout(resource->twopc_wait,
 			   (rv = when_done_lock(resource, for_tid, spin_lock_irq_flags_p)) != ALT_TIMEOUT, t);
@@ -7347,7 +7347,7 @@ static void process_twopc(struct drbd_connection *connection,
 
 	/* Check for concurrent transactions and duplicate packets. */
 retry:
-	write_lock_irq(&resource->state_rwlock);
+	write_lock_irqsave(&resource->state_rwlock, spin_lock_irq_flags);
 
 	csc_rv = check_concurrent_transactions(resource, reply);
 
@@ -7357,14 +7357,14 @@ retry:
 
 		if (!is_prepare(pi->cmd)) {
 			/* We have committed or aborted this transaction already. */
-			write_unlock_irq(&resource->state_rwlock);
+			write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 			dynamic_drbd_dbg(connection, "Ignoring %s packet %u\n",
 				   drbd_packet_name(pi->cmd),
 				   reply->tid);
 			return;
 		}
 		if (reply->is_aborted) {
-			write_unlock_irq(&resource->state_rwlock);
+			write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 			return;
 		}
 		resource->remote_state_change = true;
@@ -7379,7 +7379,7 @@ retry:
 		flags |= CS_PREPARED;
 
 		if (test_and_set_bit(TWOPC_EXECUTED, &resource->flags)) {
-			write_unlock_irq(&resource->state_rwlock);
+			write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 
 			drbd_info(connection, "Ignoring redundant %s packet %u.\n",
 				  drbd_packet_name(pi->cmd),
@@ -7408,7 +7408,7 @@ retry:
 		}
 		/* abort_local_transaction() returned with the state_rwlock write lock */
 		if (reply->is_aborted) {
-			write_unlock_irq(&resource->state_rwlock);
+			write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 			return;
 		}
 		resource->remote_state_change = true;
@@ -7419,11 +7419,11 @@ retry:
 		clear_bit(TWOPC_EXECUTED, &resource->flags);
 	} else if (pi->cmd == P_TWOPC_ABORT) {
 		/* crc_rc != CRC_MATCH */
-		write_unlock_irq(&resource->state_rwlock);
+		write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 		nested_twopc_abort(resource, &request);
 		return;
 	} else {
-		write_unlock_irq(&resource->state_rwlock);
+		write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 
 		if (csc_rv == CSC_TID_MISS && is_prepare(pi->cmd) && waiting_allowed) {
 			/* CSC_TID_MISS implies the two transactions are from the same initiator */
@@ -7459,10 +7459,10 @@ retry:
 				drbd_info(connection,
 						"Duplicate prepare for remote state change %u\n",
 						reply->tid);
-				write_lock_irq(&resource->state_rwlock);
+				write_lock_irqsave(&resource->state_rwlock, spin_lock_irq_flags);
 				resource->twopc_parent_nodes |= NODE_MASK(connection->peer_node_id);
 				reply_cmd = resource->twopc_prepare_reply_cmd;
-				write_unlock_irq(&resource->state_rwlock);
+				write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 
 				if (reply_cmd) {
 					drbd_send_twopc_reply(connection, reply_cmd,
@@ -7470,10 +7470,10 @@ retry:
 				} else {
 					/* if a node sends us a prepare, that means he has
 					   prepared this himsilf successfully. */
-					write_lock_irq(&resource->state_rwlock);
+					write_lock_irqsave(&resource->state_rwlock, spin_lock_irq_flags);
 					set_bit(TWOPC_YES, &connection->flags);
 					drbd_maybe_cluster_wide_reply(resource);
-					write_unlock_irq(&resource->state_rwlock);
+					write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 				}
 			}
 		} else {
@@ -7577,7 +7577,7 @@ retry:
 	}
 
 	resource->twopc_reply = *reply;
-	write_unlock_irq(&resource->state_rwlock);
+	write_unlock_irqrestore(&resource->state_rwlock, spin_lock_irq_flags);
 
 	if (affected_connection && affected_connection != connection &&
 	    affected_connection->cstate[NOW] == C_CONNECTED) {
@@ -8199,7 +8199,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (old_peer_state.i != drbd_get_peer_device_state(peer_device, NOW).i) {
 		old_peer_state = drbd_get_peer_device_state(peer_device, NOW);
 		abort_state_change_locked(resource);
-		write_unlock_irq(&resource->state_rwlock);
+		write_unlock_irqrestore(&resource->state_rwlock, irq_flags);
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
