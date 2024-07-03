@@ -2895,7 +2895,7 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 static void handle_congestion(struct drbd_peer_device *peer_device)
 {
 	struct drbd_resource *resource = peer_device->device->resource;
-	unsigned long irq_flags;
+	KIRQL irq_flags;
 	struct net_conf *nc;
 	enum drbd_on_congestion on_congestion;
 
@@ -3438,7 +3438,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	int uncork, cork;
 	bool got_something = 0;
 
-	got_something = check_sender_todo(connection);
+	got_something = check_sender_todo(connection, &spin_lock_irq_flags);
 	if (got_something)
 		return;
 
@@ -3459,7 +3459,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		int send_barrier;
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
-		if (check_sender_todo(connection) || signal_pending(current)) {
+		if (check_sender_todo(connection, &spin_lock_irq_flags) || signal_pending(current)) {
 			break;
 		}
 
@@ -3625,7 +3625,7 @@ static int process_one_request(struct drbd_connection *connection)
 	__req_mod(req, what, peer_device, &m);
 	read_unlock_irq(&connection->resource->state_rwlock);
 
-	check_sender_todo(connection);
+	check_sender_todo(connection, &spin_lock_irq_flags);
 
 	if (m.bio)
 		complete_master_bio(device, &m);
