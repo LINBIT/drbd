@@ -736,7 +736,7 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 	/* Although the connect failed, outdate local disks if we learn from the
 	 * handshake that the peer has more recent data */
 	struct drbd_resource *resource = connection->resource;
-	unsigned long irq_flags;
+	KIRQL irq_flags;
 	int vnr;
 
 	begin_state_change(resource, &irq_flags, CS_HARD | (force_demote ? CS_FS_IGN_OPENERS : 0));
@@ -6744,7 +6744,7 @@ change_peer_device_state(struct drbd_peer_device *peer_device,
 	struct drbd_connection *connection = peer_device->connection;
 	union drbd_state mask = state_change->mask;
 	union drbd_state val = state_change->val;
-	unsigned long irq_flags;
+	KIRQL irq_flags;
 	enum drbd_state_rv rv;
 
 	mask = convert_state(mask);
