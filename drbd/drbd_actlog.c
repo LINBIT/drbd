@@ -36,12 +36,16 @@ void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
 			device->disk_state[NOW] <= D_FAILED,
 			HZ * 10);
 
-	if (t == 0)
-		drbd_err(device, "Waited 10 Seconds for md_buffer! BUG?\n");
-
 	if (r) {
-		drbd_err(device, "Failed to get md_buffer for %s, currently in use by %s\n",
-			 intent, device->md_io.current_use);
+		if (t == 0) {
+			drbd_err(device, "Waited 10 Seconds for md_buffer! BUG?\n");
+			drbd_err(device, "Failed to get md_buffer for %s, currently in use by %s\n",
+				 intent, device->md_io.current_use);
+		} else {
+			drbd_err(device, "Failed to get md_buffer for %s: disk state %s\n",
+				 intent, drbd_disk_str(device->disk_state[NOW]));
+		}
+
 		return NULL;
 	}
 
