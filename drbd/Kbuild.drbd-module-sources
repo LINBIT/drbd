@@ -12,6 +12,7 @@ __drbd-module-sources := $(sort $(shell     \
  	drbd-kernel-compat/*.[ch]           \
  	drbd-kernel-compat/linux/           \
  	drbd-kernel-compat/uapi/            \
+  | grep -vFe /gen_patch_names.c	    \
 ))
 
 define drbd-module-sources :=
@@ -33,7 +34,6 @@ drbd-headers/windrbd/windrbd_ioctl.h
 drbd-kernel-compat/cocci_macros.h
 drbd-kernel-compat/drbd_wrappers.c
 drbd-kernel-compat/drbd_wrappers.h
-drbd-kernel-compat/gen_patch_names.c
 drbd-kernel-compat/linux/lru_cache.h
 drbd-kernel-compat/linux/libnvdimm.h
 drbd-kernel-compat/lru_cache.c
