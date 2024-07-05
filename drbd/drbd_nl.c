@@ -2653,6 +2653,8 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 		freed_index = peer_md->bitmap_index;
 	}
 	buffer = drbd_md_get_buffer(device, __func__); /* lock meta-data IO to superblock */
+	if (buffer == NULL)
+		goto out_no_buffer;
 
 	/* Look for day0 UUID before changing this peer slot to a day0 slot. */
 	day0_md = day0_peer_md(device);
@@ -2697,6 +2699,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	drbd_md_write(device, buffer);
 	drbd_md_put_buffer(device);
 
+ out_no_buffer:
 	if (free_bitmap_slot)
 		drbd_resume_io(device);
 
