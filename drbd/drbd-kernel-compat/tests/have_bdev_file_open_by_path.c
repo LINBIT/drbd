@@ -5,5 +5,5 @@
 struct file *foo(const char *path, blk_mode_t mode, void *holder,
 		const struct blk_holder_ops *hops)
 {
-	return bdev_file_open_by_path(path, mode, holder, ops);
+	return bdev_file_open_by_path(path, mode, holder, hops);
 }

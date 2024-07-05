@@ -584,12 +584,14 @@ int main(int argc, char **argv)
 	patch(1, "bdev_file_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_FILE_OPEN_BY_PATH, "present");
 
+#if !defined(COMPAT_HAVE_BDEV_FILE_OPEN_BY_PATH)
 	patch(1, "bdev_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_OPEN_BY_PATH, "present");
 
-#if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
+# if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
 	patch(1, "blkdev_get_by_path", true, false,
 	      COMPAT_BLKDEV_GET_BY_PATH_HAS_HOLDER_OPS, "has_holder_ops");
+# endif
 #endif
 
 	patch(1, "block_device_operations_open", true, false,
