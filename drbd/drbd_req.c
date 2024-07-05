@@ -2885,7 +2885,8 @@ void request_timer_fn(struct timer_list *t)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	struct drbd_request *req_read, *req_write;
-	unsigned long oldest_submit_jif, irq_flags;
+	unsigned long oldest_submit_jif;
+	unsigned long irq_flags;
 	unsigned long disk_timeout = 0, effective_timeout = 0, now = jiffies, next_trigger_time = now;
 	bool restart_timer = false, io_error = false;
 	unsigned long timeout_peers = 0;
