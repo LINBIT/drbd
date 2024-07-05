@@ -3622,8 +3622,15 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 	drbd_suspend_io(device, READ_AND_WRITE); /* so no-one is stuck in drbd_al_begin_io */
 	retcode = stable_state_change(device->resource,
 		change_disk_state(device, D_DETACHING,
-			CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE, tag, &err_str));
-	/* D_DETACHING will transition to DISKLESS. */
+			CS_VERBOSE | CS_SERIALIZE, tag, &err_str));
+	/*
+	 * D_DETACHING will transition to DISKLESS.
+	 * I did not use CS_WAIT_COMPLETE above since that would deadlock on a backing device that
+	 * does not finish the I/O requests from writing to internal meta-data.  Instead, I
+	 * explicitly flush the worker queue here to ensure w_after_state_change() is completed.
+	 */
+	drbd_flush_workqueue_interruptible(device);
+
 	drbd_resume_io(device);
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_DETACHING);
