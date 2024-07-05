@@ -2022,8 +2022,7 @@ struct drbd_device {
 	 */
 	unsigned int last_bm_block_shift;
 
-	int open_cnt;
-	bool writable;
+	int open_rw_cnt, open_ro_cnt;
 	/* FIXME clean comments, restructure so it is more obvious which
 	 * members are protected by what */
 
