@@ -14,6 +14,7 @@ __drbd-module-sources := $(sort $(shell     \
  	drbd-kernel-compat/linux/           \
  	drbd-kernel-compat/net/handshake.h  \
  	drbd-kernel-compat/uapi/            \
+  | grep -vFe /gen_patch_names.c	    \
 ))
 
 define drbd-module-sources :=
@@ -35,7 +36,6 @@ drbd-headers/windrbd/windrbd_ioctl.h
 drbd-kernel-compat/cocci_macros.h
 drbd-kernel-compat/drbd_wrappers.c
 drbd-kernel-compat/drbd_wrappers.h
-drbd-kernel-compat/gen_patch_names.c
 drbd-kernel-compat/handshake/Kbuild
 drbd-kernel-compat/handshake/genl.c
 drbd-kernel-compat/handshake/genl.h

@@ -47,6 +47,9 @@ $(cache_dir)/kernelrelease.txt: $(compat_h) FORCE
 	grep -sqxFe "$(KERNELRELEASE)" $@ < /dev/null ||	\
 	echo $(KERNELRELEASE) >> $@;
 
+# always depends on the tool that defines selection of patches to apply
+$(cached_compat_patch): drbd-kernel-compat/gen_patch_names.c
+
 # Call our helper script to call spatch.
 $(cached_compat_patch): $(cached_compat_h) | $(cache_dir)/kernelrelease.txt
 	$(Q)			\
@@ -90,6 +93,7 @@ else # (re-generate,$(what-for))
   # any source files,
   # or .cocci files,
   # or .patch files.
+  # or in gen_patch_names.c, which selects the patches to apply.
   # Changes in test cases are handled by kbuild,
   # and may or may not produce a different compat.h,
   # which will trigger a re-build there.

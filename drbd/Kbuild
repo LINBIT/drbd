@@ -143,7 +143,7 @@ $(compat.h): $(TEST_R) FORCE
 # If we used an old compat.patch from the cache,
 # "backdate" the compat.h to the used compat.patch
 # to avoid spurious checks in future runs.
-$(compat.patch): $(compat.h)
+$(compat.patch): $(compat.h) $(src)/drbd-kernel-compat/gen_patch_names.c
 	$(MAKE) -C $(src) -f Makefile.spatch $@
 	-set -- $(addprefix $(obj.build)/compat,.patch .h);	\
 	test $$1 -nt $$2 || touch -r $$1 $$2
