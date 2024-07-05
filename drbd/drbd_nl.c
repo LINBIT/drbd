@@ -1274,9 +1274,10 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, si
 
 	buf[0] = '\0';
 	/* Do we have opener information? */
-	if (!device->open_cnt)
+	if (!(device->open_ro_cnt + device->open_rw_cnt))
 		return;
-	cnt = snprintf(buf, len, " open_cnt:%d", device->open_cnt);
+	cnt = snprintf(buf, len, " open_ro_cnt:%d open_rw_cnt:%d",
+		       device->open_ro_cnt, device->open_rw_cnt);
 	if (cnt > 0 && cnt < len) {
 		buf += cnt;
 		len -= cnt;
@@ -1299,7 +1300,7 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, si
 			ts = ktime_to_timespec64(last->opened);
 			time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
 			snprintf(buf, len, "%s%s:%d:%04ld-%02d-%02d_%02d:%02d:%02d.%03ld]",
-			      device->open_cnt > 2 ? ", ..., " : ", ",
+			      device->open_ro_cnt + device->open_rw_cnt > 2 ? ", ..., " : ", ",
 			      last->comm, last->pid,
 			      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			      tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / NSEC_PER_MSEC);
@@ -1317,13 +1318,13 @@ static int put_device_opener_info(struct drbd_device *device, struct sk_buff *re
 	char *dotdotdot = "";
 
 	spin_lock(&device->openers_lock);
-	if (!device->open_cnt) {
+	if (!(device->open_ro_cnt + device->open_rw_cnt)) {
 		spin_unlock(&device->openers_lock);
 		return cnt;
 	}
 	drbd_msg_sprintf_info(reply_skb,
-		"/dev/drbd%d open_cnt:%d, writable:%d; list of openers follows",
-		device->minor, device->open_cnt, device->writable);
+		"/dev/drbd%d open_ro_cnt:%d, open_rw_cnt:%d; list of openers follows",
+		device->minor, device->open_ro_cnt, device->open_rw_cnt);
 	list_for_each_entry(o, &device->openers, list) {
 		ts = ktime_to_timespec64(o->opened);
 		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
@@ -4225,7 +4226,7 @@ static void __device_to_info(struct device_info *info,
 			     struct drbd_device *device)
 {
 	info->is_intentional_diskless = device->device_conf.intentional_diskless;
-	info->dev_is_open = device->open_cnt != 0;
+	info->dev_is_open = device->open_ro_cnt + device->open_rw_cnt != 0;
 
 	rcu_read_lock();
 	if (get_ldev(device)) {
@@ -4850,10 +4851,8 @@ int drbd_open_ro_count(struct drbd_resource *resource)
 	int vnr, open_ro_cnt = 0;
 
 	read_lock_irq(&resource->state_rwlock);
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (!device->writable)
-			open_ro_cnt += device->open_cnt;
-	}
+	idr_for_each_entry(&resource->devices, device, vnr)
+		open_ro_cnt += device->open_ro_cnt;
 	read_unlock_irq(&resource->state_rwlock);
 
 	return open_ro_cnt;
@@ -6983,7 +6982,8 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	notify_device_state(NULL, 0, device, NULL, NOTIFY_DESTROY);
 	mutex_unlock(&notification_mutex);
 
-	if (device->open_cnt == 0 && !test_and_set_bit(DESTROYING_DEV, &device->flags))
+	if (device->open_ro_cnt == 0 && device->open_rw_cnt == 0 &&
+	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
 		call_rcu(&device->rcu, drbd_reclaim_device);
 
 	return ret;

@@ -2675,16 +2675,17 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, blk_mode_t mode)
 		r = IOC_ABORT;
 	else if (resource->remote_state_change &&
 		resource->role[NOW] != R_PRIMARY &&
-		(device->open_cnt == 0 || mode & BLK_OPEN_WRITE)) {
+		(device->open_ro_cnt == 0 || mode & BLK_OPEN_WRITE)) {
 		if (mode & BLK_OPEN_NDELAY)
 			r = IOC_ABORT;
 		else
 			r = IOC_SLEEP;
 	} else {
 		r = IOC_OK;
-		device->open_cnt++;
-		if (mode & BLK_OPEN_WRITE)
-			device->writable = true;
+		if (mode & FMODE_WRITE)
+			device->open_rw_cnt++;
+		else
+			device->open_ro_cnt++;
 	}
 	read_unlock_irq(&resource->state_rwlock);
 
@@ -2764,7 +2765,6 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
 	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
-	bool was_writable;
 	enum ioc_rv r;
 	int err = 0;
 
@@ -2788,7 +2788,6 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	kref_debug_get(&device->kref_debug, 3);
 
 	mutex_lock(&resource->open_release);
-	was_writable = device->writable;
 
 	timeout = wait_event_interruptible_timeout(resource->twopc_wait,
 						   (r = inc_open_count(device, mode)),
@@ -2852,7 +2851,7 @@ out:
 	if (!err) {
 		add_opener(device, rv >= SS_SUCCESS);
 		/* Only interested in first open and last close. */
-		if (device->open_cnt == 1) {
+		if (device->open_ro_cnt + device->open_rw_cnt == 1) {
 			struct device_info info;
 
 			device_to_info(&info, device);
@@ -2860,8 +2859,7 @@ out:
 			notify_device_state(NULL, 0, device, &info, NOTIFY_CHANGE);
 			mutex_unlock(&notification_mutex);
 		}
-	} else
-		device->writable = was_writable;
+	}
 
 	mutex_unlock(&resource->open_release);
 	if (err) {
@@ -2880,10 +2878,8 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		if (device->writable)
-			rw_count += device->open_cnt;
-		else
-			ro_count += device->open_cnt;
+		rw_count += device->open_rw_cnt;
+		ro_count += device->open_ro_cnt;
 	}
 	rcu_read_unlock();
 	*rw_count_ptr = rw_count;
@@ -2953,9 +2949,14 @@ static void drbd_release(struct gendisk *gd)
 	struct drbd_resource *resource = device->resource;
 	int open_rw_cnt, open_ro_cnt;
 
+	/* This is a workaround for kernels that do not pass in the fmode_t argument.*/
+	fmode_t mode = device->open_ro_cnt ? FMODE_READ : FMODE_WRITE;
+
 	mutex_lock(&resource->open_release);
 	/* The last one to close already called sync_blockdevice(), generic
 	 * bdev_release() respectively blkdev_put_whole() takes care of that.
+	 * But we need to already flush when the last writer disappears,
+	 * even if some readers are still present.
 	 * We still want our side effects of drbd_fsync_device():
 	 * wait until all peers confirmed they have all the data, regardless of
 	 * replication protocol, even if that is asynchronous.
@@ -2963,17 +2964,21 @@ static void drbd_release(struct gendisk *gd)
 	 * won't confuse drbd_reject_write_early() or other code paths that may
 	 * check for open_cnt != 0 when they see write requests.
 	 */
-	if (device->writable && device->open_cnt == 1) {
+	if (mode & FMODE_WRITE && device->open_rw_cnt == 1)
 		drbd_fsync_device(device);
-		device->writable = false;
-	}
-	device->open_cnt--;
+
+	if (mode & FMODE_WRITE)
+		device->open_rw_cnt--;
+	else
+		device->open_ro_cnt--;
+
 	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
 
-	if (test_bit(UNREGISTERED, &device->flags) && device->open_cnt == 0 &&
+	if (test_bit(UNREGISTERED, &device->flags) &&
+	    device->open_rw_cnt == 0 && device->open_ro_cnt == 0 &&
 	    !test_and_set_bit(DESTROYING_DEV, &device->flags))
 		call_rcu(&device->rcu, drbd_reclaim_device);
 
@@ -3014,11 +3019,12 @@ static void drbd_release(struct gendisk *gd)
 		end_state_change(resource, &irq_flags, "release");
 	}
 
-	/* if the open count is 0, we free the whole list, otherwise we remove the specific pid */
-	prune_or_free_openers(device, (device->open_cnt == 0) ? 0 : task_pid_nr(current));
+	/* if the open counts are 0, we free the whole list, otherwise we remove the specific pid */
+	prune_or_free_openers(device,
+			(open_ro_cnt == 0 && open_rw_cnt == 0) ? 0 : task_pid_nr(current));
 	if (open_rw_cnt == 0 && open_ro_cnt == 0 && resource->auto_promoted_by.pid != 0)
 		memset(&resource->auto_promoted_by, 0, sizeof(resource->auto_promoted_by));
-	if (device->open_cnt == 0) {
+	if (open_ro_cnt == 0 && open_rw_cnt == 0) {
 		struct device_info info;
 
 		device_to_info(&info, device);
