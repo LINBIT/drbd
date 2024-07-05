@@ -2852,7 +2852,7 @@ static void do_start_resync(struct drbd_peer_device *peer_device)
 static void handle_congestion(struct drbd_peer_device *peer_device)
 {
 	struct drbd_resource *resource = peer_device->device->resource;
-	KIRQL irq_flags;
+	unsigned long irq_flags;
 	struct net_conf *nc;
 	enum drbd_on_congestion on_congestion;
 
