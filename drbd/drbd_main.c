@@ -1557,14 +1557,9 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		struct block_device *bdev = device->ldev->backing_bdev;
 		struct request_queue *q = bdev_get_queue(bdev);
 
-		struct disk_conf *dc;
-		bool disable_write_same;
-
 		d_size = drbd_get_max_capacity(device, device->ldev, false);
 		rcu_read_lock();
 		u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
-		dc = rcu_dereference(device->ldev->disk_conf);
-		disable_write_same = dc->disable_write_same;
 		rcu_read_unlock();
 		q_order_type = drbd_queue_order_type(device);
 		max_bio_size = queue_max_hw_sectors(q) << 9;
