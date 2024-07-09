@@ -2584,7 +2584,7 @@ static void snprintf_current_comm_pid_tag(union comm_pid_tag_buf *s, const char 
 	snprintf(s->buf + len, sizeof(s->buf)-len, ":%d %s", task_pid_nr(current), tag);
 }
 
-static int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
+int try_to_promote(struct drbd_device *device, long timeout, bool ndelay)
 {
 	struct drbd_resource *resource = device->resource;
 	int rv;
