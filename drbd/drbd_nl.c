@@ -7840,3 +7840,47 @@ out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
+
+/* TODO: WinDRBD specific: we have several static variables which we
+ * can only access in here:
+ */
+
+/* For WINDRBD_NETLINK_FAMILY_ID: */
+#include "windrbd/windrbd_ioctl.h"
+
+/* Those two functions taken from netlink.c_inc, originally they
+ * are probably generated.
+ */
+
+int drbd_tla_parse(struct nlmsghdr *nlh, struct nlattr **attr)
+{
+		/* Since drbd_nl.c does not have an initialization
+		 * function and drbd_genl_family is static (we don't
+		 * want to change the header), we initialize that here.
+		 * This is 'our' function.
+		 */
+	drbd_genl_family.id = WINDRBD_NETLINK_FAMILY_ID;
+
+       return nla_parse(attr, ARRAY_SIZE(drbd_tla_nl_policy) - 1,
+               nlmsg_attrdata(nlh, GENL_HDRLEN + drbd_genl_family.hdrsize),
+               nlmsg_attrlen(nlh, GENL_HDRLEN + drbd_genl_family.hdrsize),
+               drbd_tla_nl_policy);
+}
+
+struct genl_ops *get_drbd_genl_ops(u8 cmd)
+{
+       int i;
+
+       for (i=0; i<sizeof(drbd_genl_ops)/sizeof((drbd_genl_ops)[0]); i++) {
+               if (drbd_genl_ops[i].cmd == cmd)
+                       return &drbd_genl_ops[i];
+       }
+       return NULL;
+}
+
+/* Don't want to touch magic func header, which declares this static */
+
+const char *windrbd_genl_cmd_to_str(u8 cmd)
+{
+       return drbd_genl_cmd_to_str(cmd);
+}
