@@ -432,17 +432,11 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	 * read-ahead may fail, and will not be retried.
 	 *
 	 * WRITE should have used all available paths already.
-	 *
-	 * Also for WinDRBD: do not postpone master bio completion
-	 * if this is a disk timeout. We make sure in the WinDRBD
-	 * engine that bi_endio isn't called after a disk timeout
-	 * any more.
 	 */
 	if (!ok &&
 	    bio_op(req->master_bio) == REQ_OP_READ &&
 	    !(req->master_bio->bi_opf & REQ_RAHEAD) &&
-	    !list_empty(&req->tl_requests) &&
-	    req->private_bio != ERR_PTR(blk_status_to_errno(BLK_STS_TIMEOUT)))
+	    !list_empty(&req->tl_requests))
 		req->local_rq_state |= RQ_POSTPONED;
 
 	if (!(req->local_rq_state & RQ_POSTPONED)) {
@@ -2380,18 +2374,6 @@ void request_timer_fn(struct timer_list *t)
 		    !time_in_range(now, device->last_reattach_jif, device->last_reattach_jif + dt)) {
 			drbd_warn(device, "Local backing device failed to meet the disk-timeout\n");
 			__drbd_chk_io_error(device, DRBD_FORCE_DETACH);
-
-			if (device->ldev != NULL) {
-
-				/* This will cause WinDRBD to call the bio_endio
-				 * function with a failed state. For DRBD it
-				 * looks like the local disk has failed. WinDRBD
-				 * has its own mechanism to track in-flight
-				 * bios.
-				 */
-
-				windrbd_fail_all_in_flight_bios(device->ldev->backing_bdev, BLK_STS_TIMEOUT);
-			}
 		}
 	}
 	for_each_connection(connection, device->resource) {
