@@ -87,25 +87,21 @@ void drbd_md_endio(struct bio *bio)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req, int status) __releases(local)
+static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 
-	if (status != BLK_STS_TIMEOUT) {
-		spin_lock_irqsave(&device->resource->req_lock, flags);
-	}
+	spin_lock_irqsave(&device->resource->req_lock, flags);
 	device->read_cnt += peer_req->i.size >> 9;
 	list_del(&peer_req->w.list);
 	if (list_empty(&connection->read_ee))
 		wake_up(&connection->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &peer_req->flags))
 		__drbd_chk_io_error(device, DRBD_READ_ERROR);
-	if (status != BLK_STS_TIMEOUT) {
-		spin_unlock_irqrestore(&device->resource->req_lock, flags);
-	}
+	spin_unlock_irqrestore(&device->resource->req_lock, flags);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
 	put_ldev(device);
@@ -133,7 +129,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 	 * and schedule for resubmission */
 	if (is_failed_barrier(peer_req->flags)) {
 		drbd_bump_write_ordering(device->resource, device->ldev, WO_BDEV_FLUSH);
-
 		spin_lock_irqsave(&device->resource->req_lock, flags);
 		list_del(&peer_req->w.list);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
@@ -225,7 +220,7 @@ void drbd_peer_request_endio(struct bio *bio)
 		if (is_write)
 			drbd_endio_write_sec_final(peer_req);
 		else
-			drbd_endio_read_sec_final(peer_req, status);
+			drbd_endio_read_sec_final(peer_req);
 	}
 }
 
