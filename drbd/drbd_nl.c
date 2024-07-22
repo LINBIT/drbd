@@ -2424,6 +2424,8 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 			drbd_send_sync_param(peer_device);
 	}
+	windrbd_set_disk_timeout(device->ldev->backing_bdev, new_disk_conf->disk_timeout * HZ / 10);
+	windrbd_set_disk_timeout(device->ldev->md_bdev, new_disk_conf->disk_timeout * HZ / 10);
 
 	synchronize_rcu();
 	kfree(old_disk_conf);
@@ -3456,6 +3458,9 @@ int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	device->device_conf.intentional_diskless = false; /* just in case... */
+
+	windrbd_set_disk_timeout(device->ldev->backing_bdev, device->ldev->disk_conf->disk_timeout * HZ / 10);
+	windrbd_set_disk_timeout(device->ldev->md_bdev, device->ldev->disk_conf->disk_timeout * HZ / 10);
 
 	mod_timer(&device->request_timer, jiffies + HZ);
 
