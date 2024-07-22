@@ -2339,13 +2339,6 @@ void request_timer_fn(struct timer_list *t)
 	unsigned long next_trigger_time = now;
 	bool restart_timer = false;
 
-	rcu_read_lock();
-	if (get_ldev(device)) { /* implicit state.disk >= D_INCONSISTENT */
-		dt = rcu_dereference(device->ldev->disk_conf)->disk_timeout * HZ / 10;
-		put_ldev(device);
-	}
-	rcu_read_unlock();
-
 	spin_lock_irq(&device->resource->req_lock);
 	if (dt) {
 		unsigned long write_pre_submit_jif = now, read_pre_submit_jif = now;

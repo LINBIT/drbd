@@ -63,12 +63,7 @@ void wait_until_done_or_force_detached(struct drbd_device *device, struct drbd_b
 {
 	long dt;
 
-	rcu_read_lock();
-	dt = rcu_dereference(bdev->disk_conf)->disk_timeout;
-	rcu_read_unlock();
-	dt = dt * HZ / 10;
-	if (dt == 0)
-		dt = MAX_SCHEDULE_TIMEOUT;
+	dt = MAX_SCHEDULE_TIMEOUT;
 
 	dt = wait_event_timeout(device->misc_wait,
 			*done || test_bit(FORCE_DETACH, &device->flags), dt);

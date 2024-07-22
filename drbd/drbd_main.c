@@ -5375,8 +5375,7 @@ int drbd_wait_misc(struct drbd_device *device, struct drbd_peer_device *peer_dev
 		timeout = net_conf->ko_count ? net_conf->timeout * HZ / 10 * net_conf->ko_count :
 					       MAX_SCHEDULE_TIMEOUT;
 	} else {
-		struct disk_conf *disk_conf = rcu_dereference(device->ldev->disk_conf);
-		timeout = disk_conf->disk_timeout * HZ / 10;
+		timeout = MAX_SCHEDULE_TIMEOUT;
 	}
 	rcu_read_unlock();
 
