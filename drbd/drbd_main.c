@@ -2676,8 +2676,8 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
 	long timeout = resource->res_opts.auto_promote_timeout * HZ / 10;
+	enum drbd_state_rv rv = SS_UNKNOWN_ERROR;
 	bool was_writable;
-	bool did_auto_promote = false;
 	enum ioc_rv r;
 	int err = 0;
 
@@ -2716,7 +2716,6 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 	}
 
 	if (resource->res_opts.auto_promote) {
-		enum drbd_state_rv rv;
 		/* Allow opening in read-only mode on an unconnected secondary.
 		   This avoids split brain when the drbd volume gets opened
 		   temporarily by udev while it scans for PV signatures. */
@@ -2727,8 +2726,6 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 				if (rv < SS_SUCCESS)
 					drbd_info(resource, "Auto-promote failed: %s (%d)\n",
 						  drbd_set_st_err_str(rv), rv);
-				else
-					did_auto_promote = true;
 			}
 		} else if ((mode & BLK_OPEN_NDELAY) == 0) {
 			/* Double check peers
@@ -2759,14 +2756,14 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 		err = -ENODEV;
 	} else if (mode & BLK_OPEN_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
-			err = -EROFS;
+			err = rv == SS_INTERRUPTED ? -EINTR : -EROFS;
 	} else /* READ access only */ {
 		err = ro_open_cond(device);
 	}
 out:
 	/* still keep mutex, but release ASAP */
 	if (!err) {
-		add_opener(device, did_auto_promote);
+		add_opener(device, rv >= SS_SUCCESS);
 		/* Only interested in first open and last close. */
 		if (device->open_cnt == 1) {
 			struct device_info info;
