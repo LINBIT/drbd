@@ -2,6 +2,10 @@
 #include <net/tls.h>
 #include <net/handshake.h>
 
+#if !IS_ENABLED(CONFIG_NET_HANDSHAKE)
+# error "TLS Handshake module not enabled"
+#endif
+
 u8 foo(struct sock *sk, struct cmsghdr *cmsg)
 {
 	return tls_get_record_type(sk, cmsg);

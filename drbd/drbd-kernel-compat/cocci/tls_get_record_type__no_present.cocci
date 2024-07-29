@@ -17,7 +17,7 @@ typedef u8;
 +  *
 +  * Returns zero or a TLS_RECORD_TYPE value.
 +  */
-+ static u8 tls_get_record_type(const struct sock *sk, const struct cmsghdr *cmsg)
++ u8 tls_get_record_type(const struct sock *sk, const struct cmsghdr *cmsg)
 + {
 + 	if (cmsg->cmsg_level != SOL_TLS)
 + 		return 0;
@@ -35,7 +35,7 @@ typedef u8;
 +  * @description: OUT - TLS AlertDescription value
 +  *
 +  */
-+ static void tls_alert_recv(const struct sock *sk, const struct msghdr *msg, u8 *level, u8 *description)
++ void tls_alert_recv(const struct sock *sk, const struct msghdr *msg, u8 *level, u8 *description)
 + {
 + 	const struct kvec *iov = msg->msg_iter.kvec;
 + 	u8 *data = iov->iov_base;
