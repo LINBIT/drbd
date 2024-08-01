@@ -1320,7 +1320,8 @@ static int bm_rw_range(struct drbd_device *device,
 
 	now = jiffies;
 
-	/* let the layers below us try to merge these bios... */
+	blk_start_plug(&ctx->bm_aio_plug);
+	/* implicit unplug if scheduled for whatever reason */
 
 	if (flags & BM_AIO_READ) {
 		for (i = start_page; i <= end_page; i++) {
@@ -1369,6 +1370,8 @@ static int bm_rw_range(struct drbd_device *device,
 			cond_resched();
 		}
 	}
+	/* explicit unplug, we are done submitting */
+	blk_finish_plug(&ctx->bm_aio_plug);
 
 	/*
 	 * We initialize ctx->in_flight to one to make sure drbd_bm_endio
@@ -1383,8 +1386,8 @@ static int bm_rw_range(struct drbd_device *device,
 	} else
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);
 
-	/* summary for global bitmap IO */
-	if (flags == 0 && count) {
+	/* summary stats for global bitmap IO */
+	if ((flags & BM_AIO_NO_STATS) == 0 && count) {
 		unsigned int ms = jiffies_to_msecs(jiffies - now);
 		if (ms > 5) {
 			drbd_info(device, "bitmap %s of %u pages took %u ms\n",
@@ -1403,10 +1406,13 @@ static int bm_rw_range(struct drbd_device *device,
 		err = -EIO; /* Disk timeout/force-detach during IO... */
 
 	if (flags & BM_AIO_READ) {
+		unsigned int ms;
 		now = jiffies;
 		bm_count_bits(device);
-		drbd_info(device, "recounting of set bits took additional %ums\n",
-		     jiffies_to_msecs(jiffies - now));
+		ms = jiffies_to_msecs(jiffies - now);
+		/* If we can count quickly, there is no need to report this either */
+		if (ms > 3)
+			drbd_info(device, "recounting of set bits took additional %ums\n", ms);
 	}
 
 	kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);
