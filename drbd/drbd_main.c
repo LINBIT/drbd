@@ -2823,7 +2823,7 @@ static int drbd_open(struct gendisk *gd, blk_mode_t mode)
 		err = -ENODEV;
 	} else if (mode & BLK_OPEN_WRITE) {
 		if (resource->role[NOW] != R_PRIMARY)
-			err = rv == SS_INTERRUPTED ? -EINTR : -EROFS;
+			err = rv == SS_INTERRUPTED ? -ERESTARTSYS : -EROFS;
 	} else /* READ access only */ {
 		err = ro_open_cond(device);
 	}
