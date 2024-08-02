@@ -594,6 +594,9 @@ int main(int argc, char **argv)
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
 
+	patch(1, "need_recalc_sigpending", false, true,
+		COMPAT_NEED_RECALC_SIGPENDING, "need");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
