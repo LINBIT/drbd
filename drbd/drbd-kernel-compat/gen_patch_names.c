@@ -614,6 +614,9 @@ int main(int argc, char **argv)
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
 
+	patch(1, "need_recalc_sigpending", false, true,
+		COMPAT_NEED_RECALC_SIGPENDING, "need");
+
 	patch(1, "tls_tx_rx", true, false,
 	      COMPAT_HAVE_TLS_TX_RX, "present");
 
@@ -630,7 +633,6 @@ int main(int argc, char **argv)
 
 	patch(1, "kmap_local_page", true, false,
 	      COMPAT_HAVE_KMAP_LOCAL_PAGE, "present");
-
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
