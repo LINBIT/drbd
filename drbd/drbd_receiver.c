@@ -5248,6 +5248,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 	enum drbd_disk_state peer_disk_state = peer_state.disk;
 	int required_protocol;
 	enum sync_strategy strategy_from_user = discard_my_data_to_strategy(peer_device);
+	bool need_full_sync_after_split_brain;
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
 
@@ -5280,10 +5281,14 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 	rr_conflict = nc->rr_conflict;
 	rcu_read_unlock();
 
+	/* Evaluate the original strategy,
+	 * before it is re-mapped by additional configuration below.
+	 */
+	need_full_sync_after_split_brain = (strategy == SPLIT_BRAIN_DISCONNECT);
+
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER || (strategy == SPLIT_BRAIN_DISCONNECT && always_asbp)) {
 		int pcount = (device->resource->role[NOW] == R_PRIMARY)
 			   + (peer_role == R_PRIMARY);
-		int forced = (strategy == SPLIT_BRAIN_DISCONNECT);
 
 		if (device->resource->res_opts.quorum != QOU_OFF &&
 		    connection->agreed_pro_version >= 113) {
@@ -5309,7 +5314,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 			drbd_warn(peer_device, "Split-Brain detected, %d primaries, "
 			     "automatically solved. Sync from %s node\n",
 			     pcount, strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
-			if (forced) {
+			if (need_full_sync_after_split_brain) {
 				if (!strategy_descriptor(strategy).full_sync_equivalent) {
 					drbd_alert(peer_device, "Want full sync but cannot decide direction, dropping connection!\n");
 					return SPLIT_BRAIN_DISCONNECT;
@@ -5322,9 +5327,17 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 	}
 
 	if (strategy == SPLIT_BRAIN_DISCONNECT && strategy_from_user != UNDETERMINED) {
-		strategy = strategy_from_user;
-		drbd_warn(peer_device, "Split-Brain detected, manually solved. "
-			  "Sync from %s node\n",
+		/* strategy_from_user via "--discard-my-data" is either
+		 * SYNC_TARGET_USE_BITMAP or SYNC_SOURCE_USE_BITMAP.
+		 * But here we do no longer have a relevant bitmap anymore.
+		 * Map to their "full sync equivalent".
+		 */
+		if (need_full_sync_after_split_brain)
+			strategy = strategy_descriptor(strategy_from_user).full_sync_equivalent;
+		else
+			strategy = strategy_from_user;
+		drbd_warn(peer_device, "Split-Brain detected, manually solved. %s from %s node\n",
+			  need_full_sync_after_split_brain ? "Full sync" : "Sync",
 			  strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
 	}
 
