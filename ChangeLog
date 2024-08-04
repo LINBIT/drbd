@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.22-rc.1 (api:genl2/proto:86-121/transport:18)
+--------
+ * Upgrade from partial resync to a full resync if necessary when the
+   user manually resolves a split-brain situation
+ * Fix a potential NULL deref when a disk fails while doing a
+   forget-peer operation.
+ * Fix a rcu_read_lock()/rcu_read_unlock() imbalance
+ * Restart the open() syscall when a process auto promoting a drbd device gets
+   interrupted by a signal
+ * Remove a deadlock that caused DRBD to connect sometimes
+   exceptionally slow
+ * Make detach operations interruptible
+ * Added dev_is_open to events2 status information
+ * Improve log readability for 2PC state changes and drbd-threads
+ * Updated compability code for Linux 6.9
+
 9.1.21 (api:genl2/proto:86-121/transport:18)
 --------
  * fix a deadlock that can trigger when deleting a connection and
