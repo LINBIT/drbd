@@ -235,6 +235,16 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 			SPDX_VERSION="$$SPDX_VERSION"; \
 		mv $@.tmp $@; )
 
+# only call this wrapper from drbd-kmod.cdx.json
+.PHONY: cdx-sub
+cdx-sub:
+	cat $(CDX_FILE).in | jq --args '.metadata.timestamp = "$(CDX_DATE)" | .metadata.component.version = "$(FDIST_VERSION)" | .metadata.component."bom-ref" = "https://github.com/LINBIT/drbd/releases/tag/drbd-$(FDIST_VERSION)"' > $(CDX_FILE)
+
+.PHONY: drbd-kmod.cdx.json
+drbd-kmod.cdx.json:
+	$(MAKE) -s cdx-sub CDX_DATE="$$(date --utc +%FT%TZ)" CDX_FILE="$@"
+	! grep -q __PLACEHOLDER__ $@
+
 # update of .filelist is forced:
 .fdist_version: FORCE
 	@test -s $@ && test "$$(cat $@)" = "$(FDIST_VERSION)" || echo "$(FDIST_VERSION)" > $@
@@ -260,7 +270,7 @@ backslash_comma := \,
 escape_comma = $(subst $(comma),$(backslash_comma),$(1))
 tgz-extra-files := \
 	.fdist_version drbd/.drbd_git_revision .filelist \
-	drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
+	drbd-kmod_rhel.spdx drbd-kmod_sles.spdx drbd-kmod.cdx.json
 tgz:
 	test -s .filelist          # .filelist must be present
 	test -n "$(FDIST_VERSION)" # FDIST_VERSION must be known
@@ -303,7 +313,7 @@ debrelease:
 tarball:
 	$(MAKE) distclean
 	$(MAKE) check-submods check_all_committed drbd/.drbd_git_revision
-	$(MAKE) drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
+	$(MAKE) drbd-kmod_rhel.spdx drbd-kmod_sles.spdx drbd-kmod.cdx.json
 	$(MAKE) .filelist
 	$(MAKE) tgz
 
