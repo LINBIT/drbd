@@ -99,7 +99,7 @@ module_param_named(allow_oos, drbd_allow_oos, bool, 0);
 unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
 /* Module parameter for setting the user mode helper program
  * to run. Default is /sbin/drbdadm */
-char drbd_usermode_helper[80] = "/sbin/drbdadm";
+char drbd_usermode_helper[80] = "/cygdrive/c/windrbd/usr/sbin/drbdadm";
 module_param_named(minor_count, drbd_minor_count, uint, 0444);
 module_param_string(usermode_helper, drbd_usermode_helper, sizeof(drbd_usermode_helper), 0644);
 
