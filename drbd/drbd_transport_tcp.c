@@ -761,6 +761,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what = "";
+	int val;
 
 	if (net != &init_net) {
 		tr_err(transport, "Network namespaces not supported\n");
@@ -786,7 +787,12 @@ static int dtt_init_listener(struct drbd_transport *transport,
 		goto out;
 	}
 
-	s_listen->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
+	val = 1;
+	err = kernel_setsockopt(s_listen, SOL_SOCKET, SO_REUSEADDR, (char *)&val, sizeof(val));
+	if (err < 0) {
+		what = "kernel_setsockopt SO_REUSEADDR";
+		goto out;
+	}
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
@@ -1036,9 +1042,16 @@ randomize:
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
 	drbd_path_event(transport, &connect_to_path->path);
 
-	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	csocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-
+	err = kernel_setsockopt(dsocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	if (err < 0) {
+		printk("kernel_setsockopt SO_REUSEADDR failed\n");
+		goto out;
+	}
+	err = kernel_setsockopt(csocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	if (err < 0) {
+		printk("kernel_setsockopt SO_REUSEADDR failed\n");
+		goto out;
+	}
 	dsocket->sk->sk_allocation = GFP_NOIO;
 	csocket->sk->sk_allocation = GFP_NOIO;
 
