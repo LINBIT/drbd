@@ -779,7 +779,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 
 	my_addr = *(struct sockaddr_storage *)addr;
 
-	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_STREAM, IPPROTO_TCP, &s_listen);
+	err = sock_create_kern(&init_net, my_addr.ss_family, SOCK_LISTEN, IPPROTO_TCP, &s_listen);
 	if (err) {
 		s_listen = NULL;
 		what = "sock_create_kern";
