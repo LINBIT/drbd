@@ -779,6 +779,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what = "";
+	int val;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -799,7 +800,12 @@ static int dtt_init_listener(struct drbd_transport *transport,
 		goto out;
 	}
 
-	s_listen->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
+	val = 1;
+	err = kernel_setsockopt(s_listen, SOL_SOCKET, SO_REUSEADDR, (char *)&val, sizeof(val));
+	if (err < 0) {
+		what = "kernel_setsockopt SO_REUSEADDR";
+		goto out;
+	}
 	dtt_setbufsize(s_listen, sndbuf_size, rcvbuf_size);
 
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
@@ -896,6 +902,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	int timeout, err;
+	int one = 1;
 	bool ok;
 
 	dsocket = NULL;
@@ -1044,9 +1051,16 @@ randomize:
 	drbd_path_event(transport, &connect_to_path->path, false);
 	dtt_put_listeners(transport);
 
-	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	csocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-
+	err = kernel_setsockopt(dsocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	if (err < 0) {
+		printk("kernel_setsockopt SO_REUSEADDR failed\n");
+		goto out;
+	}
+	err = kernel_setsockopt(csocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	if (err < 0) {
+		printk("kernel_setsockopt SO_REUSEADDR failed\n");
+		goto out;
+	}
 	dsocket->sk->sk_allocation = GFP_NOIO;
 	csocket->sk->sk_allocation = GFP_NOIO;
 
