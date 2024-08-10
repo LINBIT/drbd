@@ -1456,8 +1456,12 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 	spin_unlock_bh(&path->send_flow_control_lock);
 
 	if (rx_desc_stolen_from == -1) {
-		tr_err(path->path.transport,
-		       "Not sending flow_control mgs, no receive window!\n");
+		struct drbd_transport *transport = path->path.transport;
+		struct dtr_transport *rdma_transport =
+			container_of(transport, struct dtr_transport, transport);
+
+		if (__ratelimit(&rdma_transport->rate_limit))
+			tr_err(transport, "Not sending flow_control msg, no receive window!\n");
 		err = -ENOBUFS;
 		goto out_undo;
 	}
