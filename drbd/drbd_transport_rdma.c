@@ -30,7 +30,6 @@
 #include <linux/drbd_genl_api.h>
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
-#include "drbd_wrappers.h"
 #include "linux/drbd_config.h" /* for REL_VERSION */
 
 /* Nearly all data transfer uses the send/receive semantics. No need to
@@ -271,7 +270,6 @@ struct dtr_transport {
 	struct completion connected;
 
 	atomic_t cm_count;
-	wait_queue_head_t cm_count_wait;
 	struct tasklet_struct control_tasklet;
 };
 
@@ -469,7 +467,6 @@ static int dtr_init(struct drbd_transport *transport)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
 
 	atomic_set(&rdma_transport->cm_count, 0);
-	init_waitqueue_head(&rdma_transport->cm_count_wait);
 
 	tasklet_setup(&rdma_transport->control_tasklet, dtr_control_tasklet_fn);
 
@@ -525,11 +522,6 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 			flush_delayed_work(&path->cs.retry_connect_work);
 		}
-
-		/* After returning from dtr_free() this module might get unloaded soon. Make
-		   sure all dtr_tx_desc, dtr_rx_desc, dtr_cm objects ceased to exists. Otherwise
-		   we might get callbacks to an unloaded module. */
-		wait_event(rdma_transport->cm_count_wait, !atomic_read(&rdma_transport->cm_count));
 
 		/* The transport object itself is embedded into a conneciton.
 		   Do not free it here! The function should better be called
@@ -951,7 +943,17 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	kref_get(&path->path.kref);
 	cm->path = path;
 	cm->rdma_transport = container_of(path->path.transport, struct dtr_transport, transport);
-	atomic_inc(&cm->rdma_transport->cm_count);
+
+	/*
+	 * We need this module in core as long as a dtr_tx_desc, a dtr_rx_desc
+	 * or a dtr_cm object exists because they might have a callback
+	 * registered in the RDMA code that will call back into this module. The
+	 * rx and tx descs have a reference to the dtr_cm object, so taking an
+	 * extra reference to the module as long as at least one dtr_cm object
+	 * exists is sufficient.
+	 */
+	if (atomic_inc_return(&cm->rdma_transport->cm_count) == 1)
+		__module_get(THIS_MODULE);
 
 	return cm;
 }
@@ -2820,7 +2822,7 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
 
 	if (atomic_dec_and_test(&rdma_transport->cm_count))
-		wake_up(&rdma_transport->cm_count_wait);
+		module_put(THIS_MODULE);
 }
 
 static void dtr_destroy_cm(struct kref *kref)
@@ -3377,15 +3379,19 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 
 static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
 {
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
 	struct dtr_path *path;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(path, &transport->paths, path.list)
 		dtr_debugfs_show_path(path, m);
 	rcu_read_unlock();
+
+	seq_printf(m, "cm_count: %d\n", atomic_read(&rdma_transport->cm_count));
 }
 
 static int dtr_add_path(struct drbd_path *add_path)
