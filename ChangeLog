@@ -2,9 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.11-rc.1 (api:genl2/proto:86-122/transport:19)
+9.2.11 (api:genl2/proto:86-122/transport:19)
 --------
- * Changed merged rom 9.1.22
+ * Do not block del-minor or down operations if the RDMA/Infiniband
+   stack cleans up slowly.
+ * Changes merged from 9.1.22
   - Upgrade from partial resync to a full resync if necessary when the
     user manually resolves a split-brain situation
   - Fix a potential NULL deref when a disk fails while doing a
