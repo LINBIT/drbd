@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.22-rc.1 (api:genl2/proto:86-121/transport:18)
+9.1.22 (api:genl2/proto:86-121/transport:18)
 --------
  * Upgrade from partial resync to a full resync if necessary when the
    user manually resolves a split-brain situation
