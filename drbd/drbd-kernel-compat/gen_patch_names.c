@@ -564,14 +564,17 @@ int main(int argc, char **argv)
 	patch(1, "__bio_add_page", true, false,
 	      COMPAT_HAVE___BIO_ADD_PAGE, "present");
 
+	/* blkdev_put is oldest, then bdev_open_by_path, then bdev_file_open_by_path */
 	patch(1, "bdev_file_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_FILE_OPEN_BY_PATH, "present");
-
 #if !defined(COMPAT_HAVE_BDEV_FILE_OPEN_BY_PATH)
+	/* middle ground: bdev_open_by_path */
 	patch(1, "bdev_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_OPEN_BY_PATH, "present");
-
 # if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
+	/* old: blkdev_get_by_* and blkdev_put */
+	patch(1, "blkdev_put", true, false,
+	      COMPAT_BLKDEV_PUT_HAS_HOLDER, "has_holder");
 	patch(1, "blkdev_get_by_path", true, false,
 	      COMPAT_BLKDEV_GET_BY_PATH_HAS_HOLDER_OPS, "has_holder_ops");
 # endif
@@ -585,11 +588,6 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_mode_t", true, false,
 	      COMPAT_HAVE_BLK_MODE_T, "present");
-
-#if !defined(COMPAT_HAVE_BDEV_OPEN_BY_PATH)
-	patch(1, "blkdev_put", true, false,
-	      COMPAT_BLKDEV_PUT_HAS_HOLDER, "has_holder");
-#endif
 
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
