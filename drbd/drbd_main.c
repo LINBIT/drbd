@@ -4827,7 +4827,10 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 			current_uuid |= UUID_PRIMARY;
 		else
 			current_uuid &= ~UUID_PRIMARY;
+
+		down_write(&device->uuid_sem);
 		drbd_uuid_set_exposed(device, current_uuid, false);
+		downgrade_write(&device->uuid_sem);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
 
 		weak_nodes = drbd_weak_nodes_device(device);
@@ -4837,6 +4840,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 				peer_device->current_uuid = current_uuid;
 			}
 		}
+		up_read(&device->uuid_sem);
 	}
 }
 
