@@ -3409,6 +3409,7 @@ static int receive_DataRequest(struct drbd_connection *connection, struct packet
 			peer_device->ov_skipped = 0;
 			peer_device->rs_total = ov_left;
 			peer_device->rs_last_writeout = now;
+			peer_device->rs_last_progress_report_ts = now;
 			for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 				peer_device->rs_mark_left[i] = ov_left;
 				peer_device->rs_mark_time[i] = now;

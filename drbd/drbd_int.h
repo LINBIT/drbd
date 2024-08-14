@@ -1285,6 +1285,7 @@ struct drbd_peer_device {
 	unsigned long rs_paused;
 	/* skipped because csum was equal [unit BM_BLOCK_SIZE] */
 	unsigned long rs_same_csum;
+	unsigned long rs_last_progress_report_ts;
 #define DRBD_SYNC_MARKS 8
 #define DRBD_SYNC_MARK_STEP (3*HZ)
 	/* block not up-to-date at mark [unit BM_BLOCK_SIZE] */
