@@ -5815,7 +5815,15 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		peer_md = device->ldev->md.peers;
 		spin_lock_irq(&device->ldev->md.uuid_lock);
 	}
-	peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+
+	if (device->resource->role[NOW] != R_PRIMARY ||
+	    device->disk_state[NOW] != D_DISKLESS ||
+	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
+						(device->exposed_data_uuid & ~UUID_PRIMARY) ||
+	    (peer_device->comm_current_uuid & ~UUID_PRIMARY) !=
+						(device->exposed_data_uuid & ~UUID_PRIMARY))
+		peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	if (peer_device->uuid_flags & UUID_FLAG_HAS_UNALLOC) {
