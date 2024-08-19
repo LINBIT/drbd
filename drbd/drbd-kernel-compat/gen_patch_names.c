@@ -155,9 +155,10 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_BLK_ALLOC_DISK_TAKES_QUEUE_LIMITS, "takes_queue_limits");
-
+#if !defined(COMPAT_BLK_ALLOC_DISK_TAKES_QUEUE_LIMITS)
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_HAVE_BLK_ALLOC_DISK, "present");
+#endif
 
 /*******************************************************************************/
 	/*
