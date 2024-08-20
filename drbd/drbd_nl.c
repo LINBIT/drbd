@@ -34,7 +34,7 @@
 #include <linux/kthread.h>
 #include <linux/security.h>
 #include <net/genetlink.h>
-
+#include "windrbd.h"
 #include "drbd_meta_data.h"
 
 /* .doit */
@@ -1028,6 +1028,14 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, c
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 	bool fenced_peers = false;
+	struct block_device *bdev = NULL;
+	enum drbd_role old_role = resource->role[NOW];
+
+	if (old_role == R_PRIMARY && role == R_SECONDARY) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			windrbd_become_secondary(device, &err_str);
+		}
+	}
 
 retry:
 
@@ -1242,6 +1250,12 @@ retry:
 		drbd_md_sync_if_dirty(device);
 		if (!resource->res_opts.auto_promote && role == R_PRIMARY)
 			kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
+	}
+
+	if (old_role == R_SECONDARY && role == R_PRIMARY) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			windrbd_become_primary(device, &err_str);
+		}
 	}
 
 out:
