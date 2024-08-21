@@ -51,6 +51,7 @@
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
 #include "drbd_dax_pmem.h"
+#include "windrbd.h"
 
 static int drbd_open(struct block_device *bdev, fmode_t mode);
 static void drbd_release(struct gendisk *gd, fmode_t mode);
@@ -3824,6 +3825,15 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	drbd_debugfs_device_add(device);
 	*p_device = device;
+
+		/* From here we consider the DRBD device as valid.
+		 * drbd_open and I/O will be called.
+		 */
+	device->vdisk->part0->drbd_device = device;
+
+		/* Tell the PnP manager that we are there ... */
+	windrbd_rescan_bus();
+
 	return NO_ERROR;
 
 out_remove_peer_device:
