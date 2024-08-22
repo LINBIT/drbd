@@ -21,7 +21,7 @@ struct device_statistics *s;
 @ script:python depends on !(add_bdi_read_congested_congested_remote && add_bdi_read_congested_device_to_statistics) @
 @@
 import sys
-print('ERROR: A rule making an essential change was not executed!', file=sys.stderr)
+print('ERROR: A rule making an essential change was not executed! (bdi_read_congested)', file=sys.stderr)
 print('ERROR: This would not show up as a compiler error, but would still break DRBD.', file=sys.stderr)
 print('ERROR: Check bdi_congested__yes_present.cocci', file=sys.stderr)
 print('ERROR: As a precaution, the build will be aborted here.', file=sys.stderr)
