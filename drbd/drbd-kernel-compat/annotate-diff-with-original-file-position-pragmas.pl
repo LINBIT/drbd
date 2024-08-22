@@ -91,6 +91,7 @@ m{^--- (?:\./)?(\S+)$} and do {
 			$chunk .= qq{+# $. "$patch_name"\n};
 			$chunk .= qq{+# $o_pos "$ABS_NAME"\n};
 			$n_count += 2;
+			$n_pos += 2;
 			$extra_ncount += 2;
 			$file_line_context_points_to_orig = 1;
 			$state = ' ';
