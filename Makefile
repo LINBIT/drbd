@@ -238,11 +238,11 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 # only call this wrapper from drbd-kmod.cdx.json
 .PHONY: cdx-sub
 cdx-sub:
-	cat $(CDX_FILE).in | jq --args '.metadata.timestamp = "$(CDX_DATE)" | .metadata.component.version = "$(FDIST_VERSION)" | .metadata.component."bom-ref" = "https://github.com/LINBIT/drbd/releases/tag/drbd-$(FDIST_VERSION)"' > $(CDX_FILE)
+	cat $(CDX_FILE).in | jq --args '.metadata.timestamp = "$(CDX_DATE)" | .metadata.component.version = "$(FDIST_VERSION)" | .metadata.component."bom-ref" = "$(PURL)" | .metadata.component.purl = "$(PURL)"' > $(CDX_FILE)
 
 .PHONY: drbd-kmod.cdx.json
 drbd-kmod.cdx.json:
-	$(MAKE) -s cdx-sub CDX_DATE="$$(date --utc +%FT%TZ)" CDX_FILE="$@"
+	$(MAKE) -s cdx-sub CDX_DATE="$$(date --utc +%FT%TZ)" PURL="pkg:github/LINBIT/drbd@drbd-$(FDIST_VERSION)" CDX_FILE="$@"
 	! grep -q __PLACEHOLDER__ $@
 
 # update of .filelist is forced:

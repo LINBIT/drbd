@@ -18,6 +18,7 @@
       "name": "kmod-drbd",
       "version": "__PLACEHOLDER__",
       "bom-ref": "__PLACEHOLDER__",
+      "purl": "__PLACEHOLDER__",
       "licenses": [
         {
           "licenses": {
