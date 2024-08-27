@@ -1521,6 +1521,7 @@ int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uui
 	if (!p)
 		return -EIO;
 
+	peer_device->comm_current_uuid = current_uuid;
 	p->uuid = cpu_to_be64(current_uuid);
 	p->weak_nodes = cpu_to_be64(weak_nodes);
 	return drbd_send_command(peer_device, P_CURRENT_UUID, DATA_STREAM);
