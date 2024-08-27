@@ -2483,6 +2483,7 @@ static void initialize_resync_progress_marks(struct drbd_peer_device *peer_devic
 	unsigned long now = jiffies;
 	int i;
 
+	peer_device->rs_last_progress_report_ts = now;
 	for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 		peer_device->rs_mark_left[i] = tw;
 		peer_device->rs_mark_time[i] = now;
@@ -2752,6 +2753,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				peer_device->ov_last_skipped_size = 0;
 				peer_device->ov_last_skipped_start = 0;
 				peer_device->rs_last_writeout = now;
+				peer_device->rs_last_progress_report_ts = now;
 				for (i = 0; i < DRBD_SYNC_MARKS; i++) {
 					peer_device->rs_mark_left[i] = peer_device->rs_total;
 					peer_device->rs_mark_time[i] = now;

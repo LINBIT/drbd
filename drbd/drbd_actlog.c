@@ -629,19 +629,30 @@ int drbd_al_initialize(struct drbd_device *device, void *buffer)
 
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long still_to_go)
 {
-	unsigned long now = jiffies;
-	unsigned long last = peer_device->rs_mark_time[peer_device->rs_last_mark];
-	int next = (peer_device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
-	if (time_after_eq(now, last + DRBD_SYNC_MARK_STEP)) {
-		if (peer_device->rs_mark_left[peer_device->rs_last_mark] != still_to_go &&
-		    peer_device->repl_state[NOW] != L_PAUSED_SYNC_T &&
-		    peer_device->repl_state[NOW] != L_PAUSED_SYNC_S) {
-			peer_device->rs_mark_time[next] = now;
-			peer_device->rs_mark_left[next] = still_to_go;
-			peer_device->rs_last_mark = next;
-		}
-		drbd_peer_device_post_work(peer_device, RS_PROGRESS);
+	unsigned long now;
+	int next;
+
+	/* report progress and advance marks only if we made progress */
+	if (peer_device->rs_mark_left[peer_device->rs_last_mark] == still_to_go)
+		return;
+
+	/* report progress and advance marks at most once every DRBD_SYNC_MARK_STEP (3 seconds) */
+	now = jiffies;
+	if (!time_after_eq(now, peer_device->rs_last_progress_report_ts + DRBD_SYNC_MARK_STEP))
+		return;
+
+	/* Do not advance marks if we are "paused" */
+	if (peer_device->repl_state[NOW] != L_PAUSED_SYNC_T &&
+	    peer_device->repl_state[NOW] != L_PAUSED_SYNC_S) {
+		next = (peer_device->rs_last_mark + 1) % DRBD_SYNC_MARKS;
+		peer_device->rs_mark_time[next] = now;
+		peer_device->rs_mark_left[next] = still_to_go;
+		peer_device->rs_last_mark = next;
 	}
+
+	/* But still report progress even if paused. */
+	peer_device->rs_last_progress_report_ts = now;
+	drbd_peer_device_post_work(peer_device, RS_PROGRESS);
 }
 
 /* It is called lazy update, so don't do write-out too often. */
