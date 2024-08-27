@@ -5197,11 +5197,22 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
+	int i;
 	u64 ss_nz_bm; /* sync_source has non zero bitmap for. expressed as nodemask */
 	u64 pwcu; /* peers with current uuid */
 	u64 newer;
 
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+	// Inherit history from the sync source
+	for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
+		_drbd_uuid_push_history(device, peer_device->history_uuids[i] & ~UUID_PRIMARY);
+
+	// Inherit history in bitmap UUIDs from the sync source
+	for (i = 0; i < DRBD_PEERS_MAX; i++)
+		if (peer_device->bitmap_uuids[i] != -1)
+			_drbd_uuid_push_history(device,
+					peer_device->bitmap_uuids[i] & ~UUID_PRIMARY);
+
 	ss_nz_bm = __test_bitmap_slots_of_peer(peer_device);
 	pwcu = peers_with_current_uuid(device, peer_device->current_uuid);
 
