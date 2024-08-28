@@ -205,6 +205,8 @@ PackageSupplier: Organization: LINBIT HA-Solutions GmbH
 PackageDownloadLocation: https://github.com/LINBIT/drbd
 FilesAnalyzed: false
 PackageLicenseDeclared: GPL-2.0-only
+PackageCopyrightText: <text>2001-2008, LINBIT Information Technologies GmbH
+2008-$(SPDX_YEAR), LINBIT HA-Solutions GmbH</text>
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-$(SPDX_PKG_NAME)
 endef
 
@@ -219,6 +221,7 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 		SPDX_DATE="$$(date --utc +%FT%TZ)"; \
 		SPDX_UUID="$$(cat /proc/sys/kernel/random/uuid)"; \
 		SPDX_VERSION="$(REL_VERSION)"; \
+		SPDX_YEAR="$$(date --utc +%Y)"; \
 		case "$@" in \
 			drbd-kmod_rhel.spdx) SPDX_PKG_NAME=kmod-drbd;; \
 			drbd-kmod_sles.spdx) SPDX_PKG_NAME=drbd-kmp-default;; \
@@ -228,11 +231,13 @@ drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
 		test -n "$$SPDX_DATE"; \
 		test -n "$$SPDX_UUID"; \
 		test -n "$$SPDX_VERSION"; \
+		test -n "$$SPDX_YEAR"; \
 		$(MAKE) spdx-file SPDX_UUID="$$SPDX_UUID" \
 			SPDX_DATE="$$SPDX_DATE" \
 			SPDX_FILE_TMP="$@.tmp" \
 			SPDX_PKG_NAME="$$SPDX_PKG_NAME" \
-			SPDX_VERSION="$$SPDX_VERSION"; \
+			SPDX_VERSION="$$SPDX_VERSION" \
+			SPDX_YEAR="$$SPDX_YEAR"; \
 		mv $@.tmp $@; )
 
 # only call this wrapper from drbd-kmod.cdx.json
