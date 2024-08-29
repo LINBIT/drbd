@@ -296,6 +296,9 @@ int main(int argc, char **argv)
 	patch(1, "write_zeroes", true, false,
 	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "capable");
 
+	patch(1, "queue_limits", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_DISCARD_SECTORS, "has_max_hw_discard_sectors");
+
 	patch(1, "bio_bi_opf", true, false,
 	      COMPAT_HAVE_BIO_BI_OPF, "present");
 
