@@ -30,5 +30,6 @@ expression e;
 +WARN_ON_ONCE(e); /* WRITE_ZEROES not supported on this kernel */
 
 @@
+struct queue_limits lim;
 @@
-- blk_queue_max_write_zeroes_sectors(...);
+- lim.max_write_zeroes_sectors = ...;
