@@ -190,7 +190,7 @@ rm -rf %{buildroot}
 * Tue Mar 05 2024 Philipp Reisner <phil@linbit.com> - 9.2.8
 -  New upstream release.
 
-* Wed Dec 22 2023 Philipp Reisner <phil@linbit.com> - 9.2.7
+* Fri Dec 22 2023 Philipp Reisner <phil@linbit.com> - 9.2.7
 -  New upstream release.
 
 * Tue Oct 31 2023 Philipp Reisner <phil@linbit.com> - 9.2.6
