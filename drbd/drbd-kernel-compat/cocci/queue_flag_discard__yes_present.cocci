@@ -1,27 +1,19 @@
 @@
-struct request_queue *q;
+struct queue_limits lim;
+identifier q;
 @@
+struct request_queue *q = device->rq_queue;
+...
 (
-q->limits.max_discard_sectors = 0;
+lim.max_hw_discard_sectors = 0;
 + blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
 |
-q->limits.max_discard_sectors = ...;
+lim.max_hw_discard_sectors = ...;
 + blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
 )
 
 @@
-struct request_queue *q;
-@@
-(
-blk_queue_discard_granularity(q, 0);
-+ blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
-|
-blk_queue_discard_granularity(q, 512);
-+ blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
-)
-
-@@
-identifier q, device, fn;
+identifier q, device;
 @@
 +static void fixup_discard_if_not_supported(struct request_queue *q)
 +{
@@ -31,18 +23,14 @@ identifier q, device, fn;
 +	 * */
 +	if (!blk_queue_discard(q)) {
 +		blk_queue_max_discard_sectors(q, 0);
-+		blk_queue_discard_granularity(q, 0);
++		q->limits.discard_granularity = 0;
 +	}
 +}
 
-fn (struct drbd_device *device, ...)
+void drbd_reconsider_queue_parameters(struct drbd_device *device, ...)
 {
 ...
 struct request_queue *q = device->rq_queue;
 ...
-decide_on_discard_support(...);
-<+...
-blk_stack_limits(...);
-...+>
 + fixup_discard_if_not_supported(q);
 }
