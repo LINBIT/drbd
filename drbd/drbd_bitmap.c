@@ -336,7 +336,7 @@ static void bm_free_pages(struct page **pages, unsigned long number)
 				 i, number);
 			continue;
 		}
-		__free_page(pages[i]);
+		put_page(pages[i]);
 		pages[i] = NULL;
 	}
 }
