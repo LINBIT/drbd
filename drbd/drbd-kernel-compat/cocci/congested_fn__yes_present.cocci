@@ -63,14 +63,15 @@ drbd_cleanup(...)
 
 @@
 identifier dev;
+struct gendisk *disk;
 @@
 drbd_create_device(...)
 {
 ...
 	struct drbd_device *dev;
 ...
+	disk->private_data = ...;
 +	q->backing_dev_info->congested_fn = drbd_congested;
 +	q->backing_dev_info->congested_data = dev;
-	blk_queue_write_cache(...);
 ...
 }

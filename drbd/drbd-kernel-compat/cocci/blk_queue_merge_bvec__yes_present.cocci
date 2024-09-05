@@ -1,10 +1,10 @@
-@@
+@ add_drbd_merge_bvec_definition @
 identifier ws;
 @@
 +extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
 extern void do_submit(struct work_struct *ws);
 
-@@
+@ add_drbd_merge_bvec @
 @@
 +/* This is called by bio_add_page().
 + *
@@ -44,9 +44,10 @@ extern void do_submit(struct work_struct *ws);
 do_submit(...)
 { ... }
 
-@@
+@ add_blk_queue_merge_bvec @
 symbol true;
 identifier q, resource, dev;
+struct gendisk *disk;
 @@
 drbd_create_device(...)
 {
@@ -68,9 +69,17 @@ struct request_queue *q;
 // also want to store it in queuedata for the compat.
 dev->rq_queue = q;
 + q->queuedata = dev;
-<...
-blk_queue_write_cache(q, true, true);
+...
+disk->private_data = ...;
 + blk_queue_merge_bvec(q, drbd_merge_bvec);
-...>
+...
 }
+
+@ script:python depends on !(add_drbd_merge_bvec_definition && add_drbd_merge_bvec && add_blk_queue_merge_bvec) @
+@@
+import sys
+print('ERROR: A rule making an essential change was not executed! (blk_queue_merge_bvec)', file=sys.stderr)
+print('ERROR: This would not show up as a compiler error, but would still break DRBD.', file=sys.stderr)
+print('ERROR: As a precaution, the build will be aborted here.', file=sys.stderr)
+sys.exit(1)
 

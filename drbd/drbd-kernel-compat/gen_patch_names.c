@@ -153,6 +153,9 @@ int main(int argc, char **argv)
 	patch(1, "blk_cleanup_disk", false, true,
 	      COMPAT_HAVE_BLK_CLEANUP_DISK, "present");
 
+	patch(1, "queue_limits_features", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_FEATURES, "present");
+
 	patch(1, "blk_alloc_disk", true, false,
 	      COMPAT_BLK_ALLOC_DISK_TAKES_QUEUE_LIMITS, "takes_queue_limits");
 #if !defined(COMPAT_BLK_ALLOC_DISK_TAKES_QUEUE_LIMITS)
@@ -267,13 +270,13 @@ int main(int argc, char **argv)
 	patch(1, "security_netlink_recv", false, true,
 	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
-#if defined(COMPAT_HAVE_QUEUE_FLAG_STABLE_WRITES)
-	/* in versions >=5.9, there is QUEUE_FLAG_STABLE_WRITES */
-#else
-	/* for <5.9 but >=3.9, fall back to BDI_CAP_STABLE_WRITES */
+	/*
+	 * >= 6.10:  BLK_FEAT_STABLE_WRITES
+	 * 5.9-6.10: QUEUE_FLAG_STABLE_WRITES
+	 * <5.9:     BDI_CAP_STABLE_WRITES
+	 */
 	patch(1, "queue_flag_stable_writes", true, false,
-	      NO, "present");
-#endif
+	      COMPAT_HAVE_QUEUE_FLAG_STABLE_WRITES, "present");
 
 	patch(1, "queue_flag_discard", false, true,
 	      COMPAT_HAVE_QUEUE_FLAG_DISCARD, "present");
