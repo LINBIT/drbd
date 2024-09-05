@@ -3453,7 +3453,7 @@ void drbd_destroy_device(struct kref *kref)
 		free_peer_device(peer_device);
 	}
 
-	__free_page(device->md_io.page);
+	put_page(device->md_io.page);
 	kref_debug_destroy(&device->kref_debug);
 
 	INIT_WORK(&device->finalize_work, drbd_device_finalize_work_fn);
@@ -4435,8 +4435,8 @@ out_no_peer_device:
 		list_del(&peer_device->peer_devices);
 		kfree(peer_device);
 	}
+	put_page(device->md_io.page);
 
-	__free_page(device->md_io.page);
 out_no_io_page:
 	put_disk(disk);
 out_no_disk:
