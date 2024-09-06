@@ -3212,10 +3212,11 @@ static union drbd_state state_change_word(struct drbd_state_change *state_change
 
 int notify_resource_state_change(struct sk_buff *skb,
 				  unsigned int seq,
-				  struct drbd_state_change *state_change,
+				  void *state_change,
 				  enum drbd_notification_type type)
 {
-	struct drbd_resource_state_change *resource_state_change = state_change->resource;
+	struct drbd_resource_state_change *resource_state_change =
+		((struct drbd_state_change *)state_change)->resource;
 	struct drbd_resource *resource = resource_state_change->resource;
 	struct resource_info resource_info = {
 		.res_role = resource_state_change->role[NEW],
@@ -3232,9 +3233,10 @@ int notify_resource_state_change(struct sk_buff *skb,
 
 int notify_connection_state_change(struct sk_buff *skb,
 				    unsigned int seq,
-				    struct drbd_connection_state_change *connection_state_change,
+				    void *state_change,
 				    enum drbd_notification_type type)
 {
+	struct drbd_connection_state_change *connection_state_change = state_change;
 	struct drbd_connection *connection = connection_state_change->connection;
 	struct connection_info connection_info = {
 		.conn_connection_state = connection_state_change->cstate[NEW],
@@ -3246,9 +3248,10 @@ int notify_connection_state_change(struct sk_buff *skb,
 
 int notify_device_state_change(struct sk_buff *skb,
 				unsigned int seq,
-				struct drbd_device_state_change *device_state_change,
+				void *state_change,
 				enum drbd_notification_type type)
 {
+	struct drbd_device_state_change *device_state_change = state_change;
 	struct drbd_device *device = device_state_change->device;
 	struct device_info device_info;
 	device_state_change_to_info(&device_info, device_state_change);
@@ -3258,10 +3261,11 @@ int notify_device_state_change(struct sk_buff *skb,
 
 int notify_peer_device_state_change(struct sk_buff *skb,
 				     unsigned int seq,
-				     struct drbd_peer_device_state_change *state_change,
+				     void *state_change,
 				     enum drbd_notification_type type)
 {
-	struct drbd_peer_device *peer_device = state_change->peer_device;
+	struct drbd_peer_device_state_change *peer_device_state_change = state_change;
+	struct drbd_peer_device *peer_device = peer_device_state_change->peer_device;
 	struct peer_device_info peer_device_info;
 	peer_device_state_change_to_info(&peer_device_info, state_change);
 
