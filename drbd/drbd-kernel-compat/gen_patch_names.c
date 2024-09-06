@@ -605,6 +605,9 @@ int main(int argc, char **argv)
 	patch(1, "need_recalc_sigpending", false, true,
 		COMPAT_NEED_RECALC_SIGPENDING, "need");
 
+	patch(1, "counted_by", true, false,
+		COMPAT_HAVE_COUNTED_BY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
