@@ -5523,6 +5523,7 @@ int drbd_bmio_set_all_n_write(struct drbd_device *device,
 /**
  * drbd_bmio_set_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
  * @device:	DRBD device.
+ * @peer_device: Peer DRBD device.
  *
  * Sets all bits in the bitmap towards one peer and writes the whole bitmap to stable storage.
  */
@@ -5575,6 +5576,7 @@ int drbd_bmio_set_allocated_n_write(struct drbd_device *device,
 /**
  * drbd_bmio_clear_all_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
  * @device:	DRBD device.
+ * @peer_device: Peer DRBD device.
  *
  * Clears all bits in the bitmap and writes the whole bitmap to stable storage.
  */
@@ -5641,6 +5643,7 @@ void drbd_queue_pending_bitmap_work(struct drbd_device *device)
  * @io_fn:	IO callback to be called when bitmap IO is possible
  * @done:	callback to be called after the bitmap IO was performed
  * @why:	Descriptive text of the reason for doing the IO
+ * @peer_device: Peer DRBD device.
  *
  * While IO on the bitmap happens we freeze application IO thus we ensure
  * that drbd_set_out_of_sync() can not be called. This function MAY ONLY be
@@ -5716,6 +5719,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
  * @device:	DRBD device.
  * @io_fn:	IO callback to be called when bitmap IO is possible
  * @why:	Descriptive text of the reason for doing the IO
+ * @peer_device: Peer DRBD device.
  *
  * freezes application IO while that the actual IO operations runs. This
  * functions MAY NOT be called from sender context.
