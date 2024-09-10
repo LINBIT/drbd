@@ -288,7 +288,7 @@ static const char *drbd_sync_rule_str(enum sync_rule rule)
 	return sync_rule_names[rule];
 }
 
-static const struct sync_descriptor strategy_descriptor(enum sync_strategy strategy)
+static struct sync_descriptor strategy_descriptor(enum sync_strategy strategy)
 {
 	if (strategy < 0 || strategy > ARRAY_SIZE(sync_descriptors)) {
 		WARN_ON(true);
