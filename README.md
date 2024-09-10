@@ -38,7 +38,7 @@ Since version 9.0.20, DRBD has been using a kernel backwards compatibility syste
 based on [Coccinelle](https://github.com/coccinelle/coccinelle) semantic patches.
 While this has many advantages, it also makes it a little harder for "casual"
 developers to build DRBD from the git sources. The problem is that we require a
-very recent version of `spatch` (at least 1.0.8 at time of writing), and most
+very recent version of `spatch` (at least 1.1.1 at time of writing), and most
 distributions only have relatively old versions in their repositories.
 
 ## From git
@@ -48,10 +48,9 @@ For users wishing to build DRBD from its git sources, here are a few options:
    chances are you won't even have to use any of the compat features, which
    means you won't require compatibility patches and in turn don't need spatch
    installed.
-2. On Ubuntu 18.04 and newer, use a recent spatch version from the
-   [Coccinelle PPA](https://launchpad.net/~npalix/+archive/ubuntu/coccinelle).
-   This provides (at time of writing) version 1.0.8, which is recent enough to
-   build DRBD.
+2. Fedora >=39 packages Coccinelle 1.1.1, which is recent enough to build DRBD. **Warning**: while
+   Ubuntu also ships Coccinelle with supposedly the same version number (1.1.1), this version
+   is *not* able to build DRBD.
 3. Build and install spatch from source. This will also give you a version that
    is recent enough to build DRBD.
 

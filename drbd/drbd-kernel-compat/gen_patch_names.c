@@ -642,6 +642,9 @@ int main(int argc, char **argv)
 	patch(1, "kmap_local_page", true, false,
 	      COMPAT_HAVE_KMAP_LOCAL_PAGE, "present");
 
+	patch(1, "counted_by", true, false,
+		COMPAT_HAVE_COUNTED_BY, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
