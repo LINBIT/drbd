@@ -585,6 +585,9 @@ int main(int argc, char **argv)
 	patch(1, "__bio_add_page", true, false,
 	      COMPAT_HAVE___BIO_ADD_PAGE, "present");
 
+	patch(1, "blk_mode_t", true, false,
+	      COMPAT_HAVE_BLK_MODE_T, "present");
+
 	/* blkdev_put is oldest, then bdev_open_by_path, then bdev_file_open_by_path */
 	patch(1, "bdev_file_open_by_path", true, false,
 	      COMPAT_HAVE_BDEV_FILE_OPEN_BY_PATH, "present");
@@ -609,9 +612,6 @@ int main(int argc, char **argv)
 
 	patch(1, "block_device_operations_release", true, false,
 	      COMPAT_BLOCK_DEVICE_OPERATIONS_RELEASE_TAKES_SINGLE_ARGUMENT, "takes_single_argument");
-
-	patch(1, "blk_mode_t", true, false,
-	      COMPAT_HAVE_BLK_MODE_T, "present");
 
 	patch(1, "genl_info_userhdr", true, false,
 	      COMPAT_HAVE_GENL_INFO_USERHDR, "present");
