@@ -57,7 +57,7 @@ combine_opf(wire_flags_to_bio_op(dpf),
 @ script:python depends on !combine_wire_flags @
 @@
 import sys
-print('ERROR: A rule making an essential change was not executed!', file=sys.stderr)
+print('ERROR: A rule making an essential change was not executed! (combine_opf)', file=sys.stderr)
 print('ERROR: This would not show up as a compiler error, but would still break DRBD.', file=sys.stderr)
 print('ERROR: As a precaution, the build will be aborted here.', file=sys.stderr)
 sys.exit(1)
