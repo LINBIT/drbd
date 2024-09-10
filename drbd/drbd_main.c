@@ -4034,6 +4034,11 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	int vnr = adm_ctx->volume;
 	enum drbd_ret_code err = ERR_NOMEM;
 	bool locked = false;
+	struct queue_limits lim = {
+		.features = BLK_FEAT_WRITE_CACHE | BLK_FEAT_FUA |
+			    BLK_FEAT_ROTATIONAL |
+			    BLK_FEAT_STABLE_WRITES,
+	};
 
 	lockdep_assert_held(&resource->conf_update);
 
@@ -4096,7 +4101,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 
 	init_rwsem(&device->uuid_sem);
 
-	disk = blk_alloc_disk(NULL, NUMA_NO_NODE);
+	disk = blk_alloc_disk(&lim, NUMA_NO_NODE);
 	if (IS_ERR(disk)) {
 		err = PTR_ERR(disk);
 		goto out_no_disk;
@@ -4114,9 +4119,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	disk->flags |= GENHD_FL_NO_PART;
 	sprintf(disk->disk_name, "drbd%d", minor);
 	disk->private_data = device;
-
-	blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, disk->queue);
-	blk_queue_write_cache(disk->queue, true, true);
 
 	device->md_io.page = alloc_page(GFP_KERNEL);
 	if (!device->md_io.page)
