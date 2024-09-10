@@ -2,7 +2,7 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
   "metadata": {
-    "timestamp": "__PLACEHOLDER__",
+    "timestamp": "\(env.SPDX_DATE)",
     "authors": [
       {
         "name": "Philipp Reisner",
@@ -16,9 +16,9 @@
     "component": {
       "type": "application",
       "name": "kmod-drbd",
-      "version": "__PLACEHOLDER__",
-      "bom-ref": "__PLACEHOLDER__",
-      "purl": "__PLACEHOLDER__",
+      "version": "\(env.FDIST_VERSION)",
+      "bom-ref": "pkg:github/LINBIT/drbd@drbd-\(env.FDIST_VERSION)",
+      "purl": "pkg:github/LINBIT/drbd@drbd-\(env.FDIST_VERSION)",
       "licenses": [
         {
           "licenses": {

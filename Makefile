@@ -92,6 +92,8 @@ ifndef FDIST_VERSION
 FDIST_VERSION := $(DIST_VERSION)
 endif
 
+export REL_VERSION FDIST_VERSION
+
 all: module tools
 
 .PHONY: all tools module
@@ -189,76 +191,15 @@ drbd/.drbd_git_revision: FORCE
 	@echo >&2 "Need a git checkout to regenerate $@"; test -s $@
 endif
 
-export define SPDX_TEMPLATE
-SPDXVersion: SPDX-2.3
-DataLicense: CC0-1.0
-SPDXID: SPDXRef-DOCUMENT
-DocumentName: drbd kernel module SBOM (software bill of materials)
-DocumentNamespace: https://linbit.org/spdx-docs/drbd-kmod-$(SPDX_VERSION)-$(SPDX_UUID)
-Creator: Person: Philipp Reisner (philipp.reisner@linbit.com)
-Created: $(SPDX_DATE)
-
-PackageName: $(SPDX_PKG_NAME)
-SPDXID: SPDXRef-Package-$(SPDX_PKG_NAME)
-PackageVersion: $(SPDX_VERSION)
-PackageSupplier: Organization: LINBIT HA-Solutions GmbH
-PackageDownloadLocation: https://github.com/LINBIT/drbd
-FilesAnalyzed: false
-PackageLicenseDeclared: GPL-2.0-only
-PackageCopyrightText: <text>2001-2008, LINBIT Information Technologies GmbH
-2008-$(SPDX_YEAR), LINBIT HA-Solutions GmbH</text>
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-$(SPDX_PKG_NAME)
-endef
-
-# only call this wrapper from drbd-kmod_{sles,rhel}.spdx
-.PHONY: spdx-file
-spdx-file:
-	@echo "$$SPDX_TEMPLATE" > $(SPDX_FILE_TMP)
-
-.PHONY: drbd-kmod_rhel.spdx drbd-kmod_sles.spdx
-drbd-kmod_rhel.spdx drbd-kmod_sles.spdx:
-	@set -e; ( truncate -s0 $@.tmp; \
-		SPDX_DATE="$$(date --utc +%FT%TZ)"; \
-		SPDX_UUID="$$(cat /proc/sys/kernel/random/uuid)"; \
-		SPDX_VERSION="$(REL_VERSION)"; \
-		SPDX_YEAR="$$(date --utc +%Y)"; \
-		case "$@" in \
-			drbd-kmod_rhel.spdx) SPDX_PKG_NAME=kmod-drbd;; \
-			drbd-kmod_sles.spdx) SPDX_PKG_NAME=drbd-kmp-default;; \
-			*) false;; \
-		esac; \
-		test -n "$$SPDX_TEMPLATE"; \
-		test -n "$$SPDX_DATE"; \
-		test -n "$$SPDX_UUID"; \
-		test -n "$$SPDX_VERSION"; \
-		test -n "$$SPDX_YEAR"; \
-		$(MAKE) spdx-file SPDX_UUID="$$SPDX_UUID" \
-			SPDX_DATE="$$SPDX_DATE" \
-			SPDX_FILE_TMP="$@.tmp" \
-			SPDX_PKG_NAME="$$SPDX_PKG_NAME" \
-			SPDX_VERSION="$$SPDX_VERSION" \
-			SPDX_YEAR="$$SPDX_YEAR"; \
-		mv $@.tmp $@; )
-
-# only call this wrapper from drbd-kmod.cdx.json
-.PHONY: cdx-sub
-cdx-sub:
-	cat $(CDX_FILE).in | jq --args '.metadata.timestamp = "$(CDX_DATE)" | .metadata.component.version = "$(FDIST_VERSION)" | .metadata.component."bom-ref" = "$(PURL)" | .metadata.component.purl = "$(PURL)"' > $(CDX_FILE)
-
-.PHONY: drbd-kmod.cdx.json
-drbd-kmod.cdx.json:
-	$(MAKE) -s cdx-sub CDX_DATE="$$(date --utc +%FT%TZ)" PURL="pkg:github/LINBIT/drbd@drbd-$(FDIST_VERSION)" CDX_FILE="$@"
-	! grep -q __PLACEHOLDER__ $@
-
 # update of .filelist is forced:
 .fdist_version: FORCE
 	@test -s $@ && test "$$(cat $@)" = "$(FDIST_VERSION)" || echo "$(FDIST_VERSION)" > $@
 
 .filelist: .fdist_version FORCE
 	@$(GIT) ls-files --recurse -- ':!:.git*' $(if $(PRESERVE_DEBIAN),,':!:debian') > $@.new
+	@test -s $@.new # assert there is something in .filelist.new now
 	@mkdir -p drbd/drbd-kernel-compat/cocci_cache/
 	@find drbd/drbd-kernel-compat/cocci_cache/ -type f -not -path '*/\.*' >> $@.new
-	@test -s $@.new # assert there is something in .filelist.new now
 	@mv $@.new $@
 	@echo "./.filelist updated."
 
@@ -273,9 +214,10 @@ drbd-kmod.cdx.json:
 comma := ,
 backslash_comma := \,
 escape_comma = $(subst $(comma),$(backslash_comma),$(1))
-tgz-extra-files := \
-	.fdist_version drbd/.drbd_git_revision .filelist \
-	drbd-kmod_rhel.spdx drbd-kmod_sles.spdx drbd-kmod.cdx.json
+tgz-extra-files := .fdist_version drbd/.drbd_git_revision .filelist
+tgz-extra-files += sbom/drbd-kmod_rhel.spdx.json
+tgz-extra-files += sbom/drbd-kmod_sles.spdx.json
+tgz-extra-files += sbom/drbd-kmod.cdx.json
 tgz:
 	test -s .filelist          # .filelist must be present
 	test -n "$(FDIST_VERSION)" # FDIST_VERSION must be known
@@ -318,7 +260,7 @@ debrelease:
 tarball:
 	$(MAKE) distclean
 	$(MAKE) check-submods check_all_committed drbd/.drbd_git_revision
-	$(MAKE) drbd-kmod_rhel.spdx drbd-kmod_sles.spdx drbd-kmod.cdx.json
+	$(MAKE) -C sbom drbd-kmod_rhel.spdx.json drbd-kmod_sles.spdx.json drbd-kmod.cdx.json
 	$(MAKE) .filelist
 	$(MAKE) tgz
 

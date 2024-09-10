@@ -1,0 +1,32 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "\(env.SPDX_DATE)",
+    "creators": [
+      "Person: Philipp Reisner (philipp.reisner@linbit.com)"
+    ]
+  },
+  "name": "drbd kernel module SBOM (software bill of materials)",
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://linbit.org/spdx-docs/drbd-kmod-\(env.SPDX_VERSION)-\(env.SPDX_UUID)",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-\(env.SPDX_PKG_NAME)",
+      "copyrightText": "2001-2008, LINBIT Information Technologies GmbH\n2008-\(env.SPDX_YEAR), LINBIT HA-Solutions GmbH",
+      "downloadLocation": "https://github.com/LINBIT/drbd",
+      "filesAnalyzed": false,
+      "licenseDeclared": "GPL-2.0-only",
+      "name": "\(env.SPDX_PKG_NAME)",
+      "supplier": "Organization: LINBIT HA-Solutions GmbH",
+      "versionInfo": "\(env.SPDX_VERSION)"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-\(env.SPDX_PKG_NAME)"
+    }
+  ]
+}
