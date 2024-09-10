@@ -6787,6 +6787,25 @@ static void process_twopc(struct drbd_connection *connection,
 	bool waiting_allowed = true;
 	enum csc_rv csc_rv;
 
+		/* Under Windows, queriing a block device's size must
+		 * happen at IRQL < DISPATCH_LEVEL. Since holding a
+		 * spinlock raises the IRQL to DISPATCH_LEVEL we have
+		 * to query the backing device size before we take
+		 * the spinlock. A later query of the get_capacity()
+		 * function inside the spinlock will then return the
+		 * value we cached here.
+		 */
+
+	if (pi->cmd == P_TWOPC_PREP_RSZ) {
+		struct drbd_device *device;
+
+		device = conn_peer_device(connection, pi->vnr)->device;
+		if (get_ldev(device)) {
+			(void) drbd_get_capacity(device->ldev->backing_bdev);
+			put_ldev(device);
+		}
+	}
+
 	request.tid = be32_to_cpu(p->tid);
 	if (connection->agreed_features & DRBD_FF_2PC_V2) {
 		request.flags = be32_to_cpu(p->flags);
