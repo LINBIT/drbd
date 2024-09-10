@@ -2052,19 +2052,31 @@ static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 	return s;
 }
 
+static bool drbd_discard_supported(struct drbd_device *device,
+		struct drbd_backing_dev *bdev)
+{
+	if (bdev && !bdev_max_discard_sectors(bdev->backing_bdev))
+		return false;
+
+	if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
+		drbd_info(device,
+			"peer DRBD too old, does not support TRIM: disabling discards\n");
+		return false;
+	}
+
+	return true;
+}
+
 static void decide_on_discard_support(struct drbd_device *device,
 		struct drbd_backing_dev *bdev)
 {
 	struct request_queue *q = device->rq_queue;
 	unsigned int max_discard_sectors;
 
-	if (bdev && !bdev_max_discard_sectors(bdev->backing_bdev))
-		goto not_supported;
-
-	if (!(common_connection_features(device->resource) & DRBD_FF_TRIM)) {
-		drbd_info(device,
-			"peer DRBD too old, does not support TRIM: disabling discards\n");
-		goto not_supported;
+	if (!drbd_discard_supported(device, bdev)) {
+		blk_queue_discard_granularity(q, 0);
+		blk_queue_max_discard_sectors(q, 0);
+		return;
 	}
 
 	/*
@@ -2078,11 +2090,6 @@ static void decide_on_discard_support(struct drbd_device *device,
 	blk_queue_discard_granularity(q, 512);
 	max_discard_sectors = drbd_max_discard_sectors(device->resource);
 	blk_queue_max_discard_sectors(q, max_discard_sectors);
-	return;
-
-not_supported:
-	blk_queue_discard_granularity(q, 0);
-	blk_queue_max_discard_sectors(q, 0);
 }
 
 static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
