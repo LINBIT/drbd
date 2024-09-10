@@ -407,6 +407,9 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
 #endif
 
+	patch(1, "queue_limits_start_update", true, false,
+	      COMPAT_HAVE_QUEUE_LIMITS_START_UPDATE, "present");
+
 	patch(1, "disk_update_readahead", true, false,
 	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
 
