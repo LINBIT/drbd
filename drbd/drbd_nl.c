@@ -2026,11 +2026,6 @@ static u32 common_connection_features(struct drbd_resource *resource)
 	return features;
 }
 
-static void blk_queue_discard_granularity(struct request_queue *q, unsigned int granularity)
-{
-	q->limits.discard_granularity = granularity;
-}
-
 static unsigned int drbd_max_discard_sectors(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
@@ -2067,73 +2062,20 @@ static bool drbd_discard_supported(struct drbd_device *device,
 	return true;
 }
 
-static void decide_on_discard_support(struct drbd_device *device,
-		struct drbd_backing_dev *bdev)
+static void get_common_queue_limits(struct queue_limits *common_limits,
+		struct drbd_device *device)
 {
-	struct request_queue *q = device->rq_queue;
-	unsigned int max_discard_sectors;
-
-	if (!drbd_discard_supported(device, bdev)) {
-		blk_queue_discard_granularity(q, 0);
-		blk_queue_max_discard_sectors(q, 0);
-		return;
-	}
-
-	/*
-	 * We don't care for the granularity, really.
-	 *
-	 * Stacking limits below should fix it for the local device.  Whether or
-	 * not it is a suitable granularity on the remote device is not our
-	 * problem, really. If you care, you need to use devices with similar
-	 * topology on all peers.
-	 */
-	blk_queue_discard_granularity(q, 512);
-	max_discard_sectors = drbd_max_discard_sectors(device->resource);
-	blk_queue_max_discard_sectors(q, max_discard_sectors);
-}
-
-static void fixup_write_zeroes(struct drbd_device *device, struct request_queue *q)
-{
-	/* Fixup max_write_zeroes_sectors after blk_stack_limits():
-	 * if we can handle "zeroes" efficiently on the protocol,
-	 * we want to do that, even if our backend does not announce
-	 * max_write_zeroes_sectors itself. */
-
-	/* If all peers announce WZEROES support, use it.  Otherwise, rather
-	 * send explicit zeroes than rely on some discard-zeroes-data magic. */
-	if (common_connection_features(device->resource) & DRBD_FF_WZEROES)
-		q->limits.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
-	else
-		q->limits.max_write_zeroes_sectors = 0;
-}
-
-static void fixup_discard_support(struct drbd_device *device, struct request_queue *q)
-{
-	unsigned int max_discard = device->rq_queue->limits.max_discard_sectors;
-	unsigned int discard_granularity = device->rq_queue->limits.discard_granularity >> SECTOR_SHIFT;
-
-	if (discard_granularity > max_discard) {
-		blk_queue_discard_granularity(q, 0);
-		blk_queue_max_discard_sectors(q, 0);
-	}
-}
-
-void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
-{
-	struct request_queue * const q = device->rq_queue;
-	struct queue_limits common_limits = { 0 }; /* sizeof(struct queue_limits) ~ 110 bytes */
-	struct queue_limits peer_limits = { 0 };
 	struct drbd_peer_device *peer_device;
-	struct request_queue *b = NULL;
+	struct queue_limits peer_limits = { 0 };
 
-	blk_set_stacking_limits(&common_limits);
+	blk_set_stacking_limits(common_limits);
 	/* This is the workaround for "bio would need to, but cannot, be split" */
-	common_limits.seg_boundary_mask = PAGE_SIZE - 1;
-	common_limits.max_hw_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
-	common_limits.max_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
-	common_limits.physical_block_size = device->device_conf.block_size;
-	common_limits.logical_block_size = device->device_conf.block_size;
-	common_limits.io_min = device->device_conf.block_size;
+	common_limits->seg_boundary_mask = PAGE_SIZE - 1;
+	common_limits->max_hw_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
+	common_limits->max_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
+	common_limits->physical_block_size = device->device_conf.block_size;
+	common_limits->logical_block_size = device->device_conf.block_size;
+	common_limits->io_min = device->device_conf.block_size;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -2148,21 +2090,63 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 		peer_limits.io_opt = peer_device->q_limits.io_opt;
 		peer_limits.max_hw_sectors = peer_device->q_limits.max_bio_size >> SECTOR_SHIFT;
 		peer_limits.max_sectors = peer_device->q_limits.max_bio_size >> SECTOR_SHIFT;
-		blk_stack_limits(&common_limits, &peer_limits, 0);
+		blk_stack_limits(common_limits, &peer_limits, 0);
 	}
 	rcu_read_unlock();
+}
+
+void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_backing_dev *bdev)
+{
+	struct request_queue * const q = device->rq_queue;
+	struct queue_limits lim;
+	struct request_queue *b = NULL;
+
+	lim = queue_limits_start_update(q);
+	get_common_queue_limits(&lim, device);
+
+	/*
+	 * We don't care for the granularity, really.
+	 * Stacking limits below should fix it for the local device. Whether or
+	 * not it is a suitable granularity on the remote device is not our
+	 * problem, really. If you care, you need to use devices with similar
+	 * topology on all peers.
+	 */
+	if (drbd_discard_supported(device, bdev)) {
+		lim.discard_granularity = 512;
+		lim.max_hw_discard_sectors = drbd_max_discard_sectors(device->resource);
+	} else {
+		lim.discard_granularity = 0;
+		lim.max_hw_discard_sectors = 0;
+	}
 
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
-		blk_stack_limits(&common_limits, &b->limits, 0);
-		disk_update_readahead(device->vdisk);
+		blk_stack_limits(&lim, &b->limits, 0);
 	}
-	q->limits = common_limits;
-	blk_queue_max_hw_sectors(q, common_limits.max_hw_sectors);
-	decide_on_discard_support(device, bdev);
 
-	fixup_write_zeroes(device, q);
-	fixup_discard_support(device, q);
+	/*
+	 * If we can handle "zeroes" efficiently on the protocol,
+	 * we want to do that, even if our backend does not announce
+	 * max_write_zeroes_sectors itself.
+	 */
+	if (common_connection_features(device->resource) & DRBD_FF_WZEROES)
+		lim.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
+	else
+		lim.max_write_zeroes_sectors = 0;
+
+	if ((lim.discard_granularity >> SECTOR_SHIFT) >
+	    lim.max_hw_discard_sectors) {
+		/*
+		 * discard_granularity is the smallest supported unit of a
+		 * discard. If that is larger than the maximum supported discard
+		 * size, we need to disable discards altogether.
+		 */
+		lim.discard_granularity = 0;
+		lim.max_hw_discard_sectors = 0;
+	}
+
+	if (queue_limits_commit_update(q, &lim))
+		drbd_err(device, "setting new queue limits failed\n");
 }
 
 /* Make sure IO is suspended before calling this function(). */
