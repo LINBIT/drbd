@@ -24,11 +24,11 @@ struct xxx_waiter {
 	/* xxx */
 };
 
-static struct drbd_transport *xxx_create(struct drbd_connection* connection);
+static struct drbd_transport *xxx_create(struct drbd_connection *connection);
 static void xxx_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static int xxx_connect(struct drbd_transport *transport);
 static int xxx_recv(struct drbd_transport *transport, enum drbd_stream stream, void *buf, size_t size, int flags);
-static void xxx_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats);
+static void xxx_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static void xxx_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
 static long xxx_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int xxx_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
@@ -56,7 +56,7 @@ static struct drbd_transport_ops xxx_ops = {
 };
 
 
-static struct drbd_transport *xxx_create(struct drbd_connection* connection)
+static struct drbd_transport *xxx_create(struct drbd_connection *connection)
 {
 	struct drbd_xxx_transport *xxx_transport;
 
@@ -104,7 +104,7 @@ static int xxx_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	return 0;
 }
 
-static void xxx_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats)
+static void xxx_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
 {
 }
 

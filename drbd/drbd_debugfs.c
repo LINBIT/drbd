@@ -616,7 +616,8 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 				seq_printf(m, "%s ret, ", name);
 			else if (test_bit(TWOPC_YES, &connection->flags))
 				seq_printf(m, "%s yes, ", name);
-			else seq_printf(m, "%s ___, ", name);
+			else
+				seq_printf(m, "%s ___, ", name);
 		}
 		rcu_read_unlock();
 		seq_puts(m, "\n");
@@ -1295,11 +1296,12 @@ static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
-#define show_per_peer(M)						\
-	seq_printf(m, "%-16s", #M ":");					\
-	for_each_peer_device(peer_device, device)			\
-		seq_printf(m, " %12lld", ktime_to_ns(peer_device->M)); \
-	seq_printf(m, "\n")
+#define show_per_peer(M) do {							\
+		seq_printf(m, "%-16s", #M ":");					\
+		for_each_peer_device(peer_device, device)			\
+			seq_printf(m, " %12lld", ktime_to_ns(peer_device->M));	\
+		seq_printf(m, "\n");						\
+	} while (0);
 
 #define PRId64 "lld"
 

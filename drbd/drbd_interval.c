@@ -33,8 +33,8 @@ const char *drbd_interval_type_str(struct drbd_interval *i)
 	unsigned int size = sizeof drbd_interval_type_names / sizeof drbd_interval_type_names[0];
 
 	return (type < 0 || type >= size ||
-	        !drbd_interval_type_names[type]) ?
-	       "?" : drbd_interval_type_names[type];
+		!drbd_interval_type_names[type]) ?
+		       "?" : drbd_interval_type_names[type];
 }
 
 /*

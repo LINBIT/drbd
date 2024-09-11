@@ -1554,6 +1554,7 @@ void drbd_resume_io(struct drbd_device *device)
 
 /**
  * effective_disk_size_determined()  -  is the effective disk size "fixed" already?
+ * @device: DRBD device.
  *
  * When a device is configured in a cluster, the size of the replicated disk is
  * determined by the minimum size of the disks on all nodes.  Additional nodes
@@ -1801,7 +1802,10 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 }
 
 /**
- * all_known_peer_devices_connected()
+ * get_max_agreeable_size()
+ * @device: DRBD device
+ * @max: Pointer to store the maximum agreeable size in
+ * @twopc_reachable_nodes: Bitmap of reachable nodes from two-phase-commit reply
  *
  * Check if all peer devices that have bitmap slots assigned in the metadata
  * are connected.
@@ -2374,7 +2378,9 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 }
 
 /**
- * update_mdf_al_disabled() - update the MDF_AL_DISABLED bit in md.flags
+ * drbd_update_mdf_al_disabled() - update the MDF_AL_DISABLED bit in md.flags
+ * @device: DRBD device
+ * @which: OLD or NEW
  *
  * This function also optimizes performance by turning off al-updates when:
  * - the cluster has only two nodes with backing disk
@@ -2955,6 +2961,7 @@ err:
 	return -EINVAL;
 }
 
+__attribute__ ((format (gnu_printf, 2, 3)))
 static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const char *format, ...)
 {
 	struct drbd_device *device = adm_ctx->device;
@@ -3068,7 +3075,7 @@ err:
 
 /**
  * drbd_md_read() - Reads in the meta data super block
- * @device:	DRBD device.
+ * @adm_ctx:	DRBD config context.
  * @bdev:	Device from which the meta data should be read in.
  *
  * Return NO_ERROR on success, and an enum drbd_ret_code in case
@@ -3628,9 +3635,9 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 		/* wait for completion of drbd_ldev_destroy() */
 		wait_event_interruptible(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
 		drbd_cleanup_device(device);
-	}
-	else
+	} else {
 		device->device_conf.intentional_diskless = false;
+	}
 	if (retcode == SS_IS_DISKLESS)
 		retcode = SS_NOTHING_TO_DO;
 	if (ret)
@@ -3848,7 +3855,7 @@ alloc_crypto(struct crypto *crypto, struct net_conf *new_net_conf, struct sk_buf
 		return ERR_INTEGRITY_ALG;
 
 	if (crypto->integrity_tfm) {
-		const int max_digest_size = sizeof(((struct drbd_connection*)0)->scratch_buffer.d.before);
+		const int max_digest_size = sizeof(((struct drbd_connection *)0)->scratch_buffer.d.before);
 		digest_size = crypto_shash_digestsize(crypto->integrity_tfm);
 		if (digest_size > max_digest_size) {
 			drbd_msg_sprintf_info(reply_skb,
@@ -6622,7 +6629,7 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		err = drbd_bitmap_io(device, &drbd_bmio_clear_all_n_write,
 			"clear_n_write from new_c_uuid", BM_LOCK_ALL, NULL);
 		if (err) {
-			drbd_err(device, "Writing bitmap failed with %d\n",err);
+			drbd_err(device, "Writing bitmap failed with %d\n", err);
 			retcode = ERR_IO_MD_DISK;
 		}
 		for_each_peer_device(peer_device, device) {
@@ -6672,7 +6679,8 @@ out_no_adm_mutex:
  * Otherwise, we don't care, it may be any tag that makes sense to userland,
  * we do not enforce strict ascii or any other "encoding".
  */
-static enum drbd_ret_code drbd_check_name_str(const char *name, const bool strict) {
+static enum drbd_ret_code drbd_check_name_str(const char *name, const bool strict)
+{
 	unsigned char c;
 	if (name == NULL || name[0] == 0)
 		return ERR_MANDATORY_TAG;
@@ -6899,7 +6907,7 @@ static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 
 	resource = adm_ctx.resource;
 	mutex_lock(&resource->conf_update);
-	for(;;) {
+	for (;;) {
 		retcode = drbd_create_device(&adm_ctx, dh->minor, &device_conf, &device);
 		if (retcode != ERR_NOMEM ||
 		    schedule_timeout_interruptible(HZ / 10))

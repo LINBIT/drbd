@@ -2045,8 +2045,7 @@ void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req)
 
 /**
  * w_e_reissue() - Worker callback; Resubmit a bio
- * @device:	DRBD device.
- * @dw:		work object.
+ * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
 int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
@@ -2702,7 +2701,7 @@ static void find_resync_requests(struct drbd_peer_device *peer_device,
 static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection* connection = peer_device->connection;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 
 	drbd_remove_peer_req_interval(peer_req);
@@ -2851,7 +2850,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 
 /**
  * _drbd_send_ack() - Sends an ack packet
- * @device:	DRBD device.
+ * @peer_device: DRBD peer device.
  * @cmd:	Packet command code.
  * @sector:	sector, needs to be in big endian byte order
  * @blksize:	size in byte, needs to be in big endian byte order
@@ -2911,7 +2910,7 @@ int drbd_send_ack_be(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 
 /**
  * drbd_send_ack() - Sends an ack packet
- * @device:	DRBD device
+ * @peer_device: DRBD peer device
  * @cmd:	packet command code
  * @peer_req:	peer request
  */
@@ -3172,7 +3171,7 @@ static blk_opf_t wire_flags_to_bio(struct drbd_connection *connection, u32 dpf)
 static void drbd_wait_for_activity_log_extents(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_connection* connection = peer_device->connection;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	struct lru_cache *al;
 	int nr_al_extents;
@@ -3948,16 +3947,16 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
 			peer_device->repl_state[NOW] == L_STARTING_SYNC_S) {
 		switch (pi->cmd) {
-			case P_RS_DATA_REQUEST:
-			case P_RS_DAGTAG_REQ:
-			case P_CSUM_RS_REQUEST:
-			case P_RS_CSUM_DAGTAG_REQ:
-			case P_RS_THIN_REQ:
-			case P_RS_THIN_DAGTAG_REQ:
-				drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, p->block_id);
-				return ignore_remaining_packet(connection, pi->size);
-			default:
-				break;
+		case P_RS_DATA_REQUEST:
+		case P_RS_DAGTAG_REQ:
+		case P_CSUM_RS_REQUEST:
+		case P_RS_CSUM_DAGTAG_REQ:
+		case P_RS_THIN_REQ:
+		case P_RS_THIN_DAGTAG_REQ:
+			drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, p->block_id);
+			return ignore_remaining_packet(connection, pi->size);
+		default:
+			break;
 		}
 	}
 
@@ -4338,8 +4337,14 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 				? SYNC_TARGET_USE_BITMAP : SYNC_SOURCE_USE_BITMAP;
 			break;
 		} else {
-			if (ch_peer == 0) { rv = SYNC_SOURCE_USE_BITMAP; break; }
-			if (ch_self == 0) { rv = SYNC_TARGET_USE_BITMAP; break; }
+			if (ch_peer == 0) {
+				rv = SYNC_SOURCE_USE_BITMAP;
+				break;
+			}
+			if (ch_self == 0) {
+				rv = SYNC_TARGET_USE_BITMAP;
+				break;
+			}
 		}
 		if (after_sb_0p == ASB_DISCARD_ZERO_CHG)
 			break;
@@ -6749,6 +6754,10 @@ static void log_openers(struct drbd_resource *resource)
 
 /**
  * change_connection_state()  -  change state of a connection and all its peer devices
+ * @connection: DRBD connection to operate on
+ * @state_change: Prepared state change
+ * @reply: Two phase commit reply
+ * @flags: State change flags
  *
  * Also changes the state of the peer devices' devices and of the resource.
  * Cluster-wide state changes are not supported.
@@ -6839,6 +6848,9 @@ fail:
 
 /**
  * change_peer_device_state()  -  change state of a peer and its connection
+ * @peer_device: DRBD peer device
+ * @state_change: Prepared state change
+ * @flags: State change flags
  *
  * Also changes the state of the peer device's device and of the resource.
  * Cluster-wide state changes are not supported.
@@ -7112,7 +7124,7 @@ static void handle_neighbor_demotion(struct drbd_connection *connection,
 		rcu_read_unlock();
 		if (get_ldev(device)) {
 			drbd_bitmap_io(device, &drbd_bm_write, "peer demote",
-				       BM_LOCK_SET| BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
+				       BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK, NULL);
 			put_ldev(device);
 		}
 		rcu_read_lock();
@@ -7661,7 +7673,7 @@ retry:
 			affected_connection = NULL;
 	}
 
-	switch(pi->cmd) {
+	switch (pi->cmd) {
 	case P_TWOPC_PREPARE:
 		drbd_print_cluster_wide_state_change(resource, "Preparing remote state change",
 				reply->tid, reply->initiator_node_id, reply->target_node_id,
@@ -7981,7 +7993,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				goto fail;
 		}
 		return 0;
-        }
+	}
 
 	peer_disk_state = peer_state.disk;
 
@@ -10461,7 +10473,6 @@ static int got_BlockAck(struct drbd_connection *connection, struct packet_info *
 static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
 	struct p_block_ack *p = pi->data;
 	bool is_neg_ack = pi->cmd == P_NEG_ACK || pi->cmd == P_RS_NEG_ACK;
 	sector_t sector = be64_to_cpu(p->sector);
@@ -10478,7 +10489,6 @@ static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return -EIO;
-	device = peer_device->device;
 
 	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
 
@@ -10601,7 +10611,6 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 static int got_NegRSDReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
-	struct drbd_device *device;
 	struct drbd_peer_request *peer_req;
 	sector_t sector;
 	int size;
@@ -10611,7 +10620,6 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
 		return -EIO;
-	device = peer_device->device;
 
 	sector = be64_to_cpu(p->sector);
 	size = be32_to_cpu(p->blksize);
@@ -10955,31 +10963,31 @@ struct meta_sock_cmd {
 };
 
 static struct meta_sock_cmd ack_receiver_tbl[] = {
-	[P_PING]	    = { 0, got_Ping },
-	[P_PING_ACK]	    = { 0, got_PingAck },
-	[P_RECV_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
-	[P_WRITE_ACK]	    = { sizeof(struct p_block_ack), got_BlockAck },
+	[P_PING]	      = { 0, got_Ping },
+	[P_PING_ACK]	      = { 0, got_PingAck },
+	[P_RECV_ACK]	      = { sizeof(struct p_block_ack), got_BlockAck },
+	[P_WRITE_ACK]	      = { sizeof(struct p_block_ack), got_BlockAck },
 	[P_WRITE_ACK_IN_SYNC] = { sizeof(struct p_block_ack), got_BlockAck },
-	[P_NEG_ACK]	    = { sizeof(struct p_block_ack), got_NegAck },
-	[P_NEG_DREPLY]	    = { sizeof(struct p_block_ack), got_NegDReply },
-	[P_NEG_RS_DREPLY]   = { sizeof(struct p_block_ack), got_NegRSDReply },
-	[P_RS_WRITE_ACK]    = { sizeof(struct p_block_ack), got_RSWriteAck },
-	[P_RS_NEG_ACK]      = { sizeof(struct p_block_ack), got_RSWriteAck },
-	[P_OV_RESULT]	    = { sizeof(struct p_block_ack), got_OVResult },
-	[P_OV_RESULT_ID]    = { sizeof(struct p_ov_result), got_OVResult },
-	[P_BARRIER_ACK]	    = { sizeof(struct p_barrier_ack), got_BarrierAck },
-	[P_CONFIRM_STABLE]  = { sizeof(struct p_confirm_stable), got_confirm_stable },
-	[P_STATE_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
-	[P_RS_IS_IN_SYNC]   = { sizeof(struct p_block_ack), got_IsInSync },
-	[P_DELAY_PROBE]     = { sizeof(struct p_delay_probe93), got_skip },
-	[P_RS_CANCEL]       = { sizeof(struct p_block_ack), got_NegRSDReply },
-	[P_RS_CANCEL_AHEAD] = { sizeof(struct p_block_ack), got_NegRSDReply },
-	[P_CONN_ST_CHG_REPLY]={ sizeof(struct p_req_state_reply), got_RqSReply },
-	[P_PEER_ACK]	    = { sizeof(struct p_peer_ack), got_peer_ack },
-	[P_PEERS_IN_SYNC]   = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
-	[P_TWOPC_YES]       = { sizeof(struct p_twopc_reply), got_twopc_reply },
-	[P_TWOPC_NO]        = { sizeof(struct p_twopc_reply), got_twopc_reply },
-	[P_TWOPC_RETRY]     = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_NEG_ACK]	      = { sizeof(struct p_block_ack), got_NegAck },
+	[P_NEG_DREPLY]	      = { sizeof(struct p_block_ack), got_NegDReply },
+	[P_NEG_RS_DREPLY]     = { sizeof(struct p_block_ack), got_NegRSDReply },
+	[P_RS_WRITE_ACK]      = { sizeof(struct p_block_ack), got_RSWriteAck },
+	[P_RS_NEG_ACK]	      = { sizeof(struct p_block_ack), got_RSWriteAck },
+	[P_OV_RESULT]	      = { sizeof(struct p_block_ack), got_OVResult },
+	[P_OV_RESULT_ID]      = { sizeof(struct p_ov_result), got_OVResult },
+	[P_BARRIER_ACK]	      = { sizeof(struct p_barrier_ack), got_BarrierAck },
+	[P_CONFIRM_STABLE]    = { sizeof(struct p_confirm_stable), got_confirm_stable },
+	[P_STATE_CHG_REPLY]   = { sizeof(struct p_req_state_reply), got_RqSReply },
+	[P_RS_IS_IN_SYNC]     = { sizeof(struct p_block_ack), got_IsInSync },
+	[P_DELAY_PROBE]	      = { sizeof(struct p_delay_probe93), got_skip },
+	[P_RS_CANCEL]	      = { sizeof(struct p_block_ack), got_NegRSDReply },
+	[P_RS_CANCEL_AHEAD]   = { sizeof(struct p_block_ack), got_NegRSDReply },
+	[P_CONN_ST_CHG_REPLY] = { sizeof(struct p_req_state_reply), got_RqSReply },
+	[P_PEER_ACK]	      = { sizeof(struct p_peer_ack), got_peer_ack },
+	[P_PEERS_IN_SYNC]     = { sizeof(struct p_peer_block_desc), got_peers_in_sync },
+	[P_TWOPC_YES]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_NO]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_TWOPC_RETRY]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 };
 
 static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)

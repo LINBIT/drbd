@@ -276,7 +276,7 @@ struct drbd_path *drbd_find_path_by_addr(struct drbd_listener *listener, struct 
 
 /**
  * drbd_stream_send_timed_out() - Tells transport if the connection should stay alive
- * @connection:	DRBD connection to operate on.
+ * @transport:	DRBD transport to operate on.
  * @stream:     DATA_STREAM or CONTROL_STREAM
  *
  * When it returns true, the transport should return -EAGAIN to its caller of the

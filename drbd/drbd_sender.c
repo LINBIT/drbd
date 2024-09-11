@@ -1274,23 +1274,25 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			err = make_one_resync_request(peer_device, discard_granularity, sector, size);
 
 		switch (err) {
-			case -EIO: /* Disk failure */
-				put_ldev(device);
-				return -EIO;
-			case -EAGAIN: /* allocation failed, or ldev busy */
-				spin_lock_bh(&peer_device->resync_next_bit_lock);
-				/* Set resync_next_bit back, but make sure that
-				 * it really moves backwards. If a negative
-				 * reply has been received in the meantime it
-				 * may already be further back. */
-				peer_device->resync_next_bit = min(peer_device->resync_next_bit, (unsigned long) BM_SECT_TO_BIT(sector));
-				i = rollback_i;
-				goto request_done;
-			case 0:
-				/* everything ok */
-				break;
-			default:
-				BUG();
+		case -EIO: /* Disk failure */
+			put_ldev(device);
+			return -EIO;
+		case -EAGAIN: /* allocation failed, or ldev busy */
+			spin_lock_bh(&peer_device->resync_next_bit_lock);
+			/* Set resync_next_bit back, but make sure that
+			 * it really moves backwards. If a negative
+			 * reply has been received in the meantime it
+			 * may already be further back. */
+			peer_device->resync_next_bit =
+				min(peer_device->resync_next_bit,
+				    (unsigned long)BM_SECT_TO_BIT(sector));
+			i = rollback_i;
+			goto request_done;
+		case 0:
+			/* everything ok */
+			break;
+		default:
+			BUG();
 		}
 
 		spin_lock_bh(&peer_device->resync_next_bit_lock);
@@ -2762,7 +2764,10 @@ static void handle_congestion(struct drbd_peer_device *peer_device)
 
 /**
  * drbd_start_resync() - Start the resync process
- * @side:	Either L_SYNC_SOURCE or L_SYNC_TARGET
+ * @peer_device: The DRBD peer device to start the resync on.
+ * @side: Direction of the resync; which side am I? Either L_SYNC_SOURCE or
+ * 	  L_SYNC_TARGET.
+ * @tag: State change tag to print in status messages.
  *
  * This function might bring you directly into one of the
  * C_PAUSED_SYNC_* states.
@@ -3500,8 +3505,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 	if (!connection->todo.req) {
 		update_sender_timing_details(connection, maybe_send_unplug_remote);
 		maybe_send_unplug_remote(connection, false);
-	}
-	else if (list_empty(&connection->todo.work_list)) {
+	} else if (list_empty(&connection->todo.work_list)) {
 		update_sender_timing_details(connection, process_one_request);
 		return process_one_request(connection);
 	}

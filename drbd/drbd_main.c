@@ -314,7 +314,7 @@ static void dump_epoch(struct drbd_resource *resource, int node_id, int epoch)
 
 /**
  * tl_release() - mark as BARRIER_ACKED all requests in the corresponding transfer log epoch
- * @device:	DRBD device.
+ * @connection:	DRBD connection.
  * @o_block_id: "block id" aka expected pointer address of the oldest request
  * @y_block_id: "block id" aka expected pointer address of the youngest request
  *		confirmed to be on stable storage.
@@ -399,7 +399,7 @@ int tl_release(struct drbd_connection *connection,
 			}
 			expect_size++;
 		}
-		if (y_block_id && (struct drbd_request*)(unsigned long)y_block_id == r) {
+		if (y_block_id && (struct drbd_request *)(unsigned long)y_block_id == r) {
 			req_y = r;
 			break;
 		}
@@ -407,14 +407,14 @@ int tl_release(struct drbd_connection *connection,
 
 	/* first some paranoia code */
 	if (o_block_id) {
-		if ((struct drbd_request*)(unsigned long)o_block_id != req) {
+		if ((struct drbd_request *)(unsigned long)o_block_id != req) {
 			drbd_err(connection, "BAD! ConfirmedStable: expected %p, found %p\n",
-				(struct drbd_request*)(unsigned long)o_block_id, req);
+				(struct drbd_request *)(unsigned long)o_block_id, req);
 			goto bail;
 		}
 		if (!req_y) {
 			drbd_err(connection, "BAD! ConfirmedStable: expected youngest request %p NOT found\n",
-				(struct drbd_req*)(unsigned long)y_block_id);
+				(struct drbd_req *)(unsigned long)y_block_id);
 			goto bail;
 		}
 		/* A P_CONFIRM_STABLE cannot tell me the to-be-expected barrier nr,
@@ -484,9 +484,10 @@ bail:
 
 
 /**
- * _tl_walk() - Walks the transfer log, and applies an action to all requests
+ * __tl_walk() - Walks the transfer log, and applies an action to all requests
+ * @resource:	DRBD resource to opterate on
  * @connection: DRBD connection to operate on
- * @from_req    If set, the walk starts from the request that this points to
+ * @from_req:    If set, the walk starts from the request that this points to
  * @what:       The action/event to perform with all request objects
  *
  * @what might be one of CONNECTION_LOST, CONNECTION_LOST_WHILE_SUSPENDED,
@@ -534,22 +535,22 @@ void tl_walk(struct drbd_connection *connection, struct drbd_request **from_req,
  */
 void tl_abort_disk_io(struct drbd_device *device)
 {
-        struct drbd_resource *resource = device->resource;
-        struct drbd_request *req;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_request *req;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
-                if (!(READ_ONCE(req->local_rq_state) & RQ_LOCAL_PENDING))
-                        continue;
-                if (req->device != device)
-                        continue;
+		if (!(READ_ONCE(req->local_rq_state) & RQ_LOCAL_PENDING))
+			continue;
+		if (req->device != device)
+			continue;
 		/* Skip if the request has already been destroyed. */
 		if (!kref_get_unless_zero(&req->kref))
 			continue;
 
-                req_mod(req, ABORT_DISK_IO, NULL);
+		req_mod(req, ABORT_DISK_IO, NULL);
 		kref_put(&req->kref, drbd_req_destroy);
-        }
+	}
 	rcu_read_unlock();
 }
 
@@ -957,9 +958,9 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 
 /**
  * conn_prepare_command() - Allocate a send buffer for a packet/command
- * @connection:	the connections the packet will be sent through
+ * @connection: the connections the packet will be sent through
  * @size:	number of bytes to allocate
- * @stream:	DATA_STREAM or CONTROL_STREAM
+ * @drbd_stream: DATA_STREAM or CONTROL_STREAM
  *
  * This allocates a buffer with capacity to hold the header, and
  * the requested size. Upon success is return a pointer that points
@@ -981,9 +982,9 @@ void *conn_prepare_command(struct drbd_connection *connection, int size,
 
 /**
  * drbd_prepare_command() - Allocate a send buffer for a packet/command
- * @connection:	the connections the packet will be sent through
- * @size:	number of bytes to allocate
- * @stream:	DATA_STREAM or CONTROL_STREAM
+ * @peer_device: the DRBD peer device the packet will be sent to
+ * @size: number of bytes to allocate
+ * @drbd_stream: DATA_STREAM or CONTROL_STREAM
  *
  * This allocates a buffer with capacity to hold the header, and
  * the requested size. Upon success is return a pointer that points
@@ -1671,8 +1672,8 @@ int conn_send_state(struct drbd_connection *connection, union drbd_state state)
 
 /**
  * drbd_send_state() - Sends the drbd state to the peer
- * @device:	DRBD device.
- * @state:	state to send
+ * @peer_device: Peer DRBD device to send the state to.
+ * @state: state to send
  */
 int drbd_send_state(struct drbd_peer_device *peer_device, union drbd_state state)
 {
@@ -2322,7 +2323,7 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 			(bio_op(bio) == REQ_OP_DISCARD ? DP_DISCARD : 0) |
 			(bio_op(bio) == REQ_OP_WRITE_ZEROES ?
 			 ((connection->agreed_features & DRBD_FF_WZEROES) ?
-			  (DP_ZEROES |(!(bio->bi_opf & REQ_NOUNMAP) ? DP_DISCARD : 0))
+			  (DP_ZEROES | (!(bio->bi_opf & REQ_NOUNMAP) ? DP_DISCARD : 0))
 			  : DP_DISCARD)
 			 : 0);
 
@@ -3852,6 +3853,8 @@ fail:
 
 /**
  * drbd_transport_shutdown() - Free the transport specific members (e.g., sockets) of a connection
+ * @connection: The connection to shut down
+ * @op: The operation. Only close the connection or destroy the whole transport
  *
  * Must be called with conf_update held.
  */
@@ -4270,6 +4273,7 @@ out_no_disk:
 
 /**
  * drbd_unregister_device()  -  make a device "invisible"
+ * @device: DRBD device to unregister
  *
  * Remove the device from the drbd object model and unregister it in the
  * kernel.  Keep reference counts on device->kref; they are dropped in
@@ -4338,6 +4342,7 @@ void del_connect_timer(struct drbd_connection *connection)
 
 /**
  * drbd_unregister_connection()  -  make a connection "invisible"
+ * @connection: DRBD connection to unregister
  *
  * Remove the connection from the drbd object model.  Keep reference counts on
  * connection->kref; they are dropped in drbd_reclaim_connection().
@@ -4453,7 +4458,7 @@ static int __init drbd_init(void)
 		goto fail;
 
 	err = -ENOMEM;
-	drbd_proc = proc_create_single("drbd", S_IFREG | 0444 , NULL,
+	drbd_proc = proc_create_single("drbd", S_IFREG | 0444, NULL,
 			drbd_seq_show);
 
 	if (!drbd_proc)	{
@@ -4743,7 +4748,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		node_id = peer_device->node_id;
 		node_mask |= NODE_MASK(node_id);
 		if (peer_device->bitmap_index != -1)
-			__set_bit(peer_device->bitmap_index, (unsigned long*)&slot_mask);
+			__set_bit(peer_device->bitmap_index, (unsigned long *)&slot_mask);
 		bm_uuid = peer_md[node_id].bitmap_uuid;
 		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
@@ -4772,16 +4777,16 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			continue;
 		slot_nr = peer_md[node_id].bitmap_index;
 		if (slot_nr != -1) {
-			if (test_bit(slot_nr, (unsigned long*)&slot_mask))
+			if (test_bit(slot_nr, (unsigned long *)&slot_mask))
 				continue;
-			__set_bit(slot_nr, (unsigned long*)&slot_mask);
+			__set_bit(slot_nr, (unsigned long *)&slot_mask);
 		}
 		bm_uuid = peer_md[node_id].bitmap_uuid;
 		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
 		if (slot_nr == -1) {
-			slot_nr = find_first_zero_bit((unsigned long*)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
-			__set_bit(slot_nr, (unsigned long*)&slot_mask);
+			slot_nr = find_first_zero_bit((unsigned long *)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
+			__set_bit(slot_nr, (unsigned long *)&slot_mask);
 		}
 		peer_md[node_id].bitmap_uuid = prev_c_uuid;
 		peer_md[node_id].bitmap_dagtag = dagtag;
@@ -4977,6 +4982,7 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 /**
  * drbd_uuid_new_current() - Creates a new current UUID
  * @device:	DRBD device.
+ * @forced:	Force UUID creation
  *
  * Creates a new current UUID, and rotates the old current UUID into
  * the bitmap slot. Causes an incremental resync upon next connect.
@@ -5251,7 +5257,7 @@ bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log)
 	return true;
 }
 
-static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
+static const char *name_of_node_id(struct drbd_resource *resource, int node_id)
 {
 	/* Caller need to hold rcu_read_lock */
 	struct drbd_connection *connection = drbd_connection_by_node_id(resource, node_id);
@@ -5262,7 +5268,7 @@ static const char* name_of_node_id(struct drbd_resource *resource, int node_id)
 static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
 {
 	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
-	const char* name;
+	const char *name;
 
 	if (_drbd_bm_total_weight(device, bitmap_index) == 0)
 		return;
@@ -5549,6 +5555,7 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 /**
  * drbd_bmio_set_allocated_n_write() - io_fn for drbd_queue_bitmap_io() or drbd_bitmap_io()
  * @device:	DRBD device.
+ * @peer_device: parameter ignored
  *
  * Sets all bits in all allocated bitmap slots and writes it to stable storage.
  */
@@ -5643,6 +5650,7 @@ void drbd_queue_pending_bitmap_work(struct drbd_device *device)
  * @io_fn:	IO callback to be called when bitmap IO is possible
  * @done:	callback to be called after the bitmap IO was performed
  * @why:	Descriptive text of the reason for doing the IO
+ * @flags:	Bitmap operation flags
  * @peer_device: Peer DRBD device.
  *
  * While IO on the bitmap happens we freeze application IO thus we ensure
@@ -5719,6 +5727,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
  * @device:	DRBD device.
  * @io_fn:	IO callback to be called when bitmap IO is possible
  * @why:	Descriptive text of the reason for doing the IO
+ * @flags:	Bitmap operation flags
  * @peer_device: Peer DRBD device.
  *
  * freezes application IO while that the actual IO operations runs. This

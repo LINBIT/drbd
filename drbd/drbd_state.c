@@ -113,6 +113,8 @@ static bool may_return_to_up_to_date(struct drbd_device *device, enum which_stat
 
 /**
  * may_be_up_to_date()  -  check if transition from D_CONSISTENT to D_UP_TO_DATE is allowed
+ * @device: DRBD device.
+ * @which: OLD or NEW
  *
  * When fencing is enabled, it may only transition from D_CONSISTENT to D_UP_TO_DATE
  * when ether all peers are connected, or outdated.
@@ -173,7 +175,8 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 			   a connection we do not need to insist that the peer was
 			   outdated. */
 			continue;
-		case D_MASK: ;
+		case D_MASK:
+			break;
 		}
 
 		all_peers_outdated = false;
@@ -203,6 +206,7 @@ static bool stable_up_to_date_neighbor(struct drbd_device *device)
 
 /**
  * disk_state_from_md()  -  determine initial disk state
+ * @device: DRBD device.
  *
  * When a disk is attached to a device, we set the disk state to D_NEGOTIATING.
  * We then wait for all connected peers to send the peer disk state.  Once that
@@ -301,7 +305,7 @@ static struct drbd_state_change *alloc_state_change(struct drbd_state_change_obj
 	state_change->devices = (void *)(state_change + 1);
 	state_change->connections = (void *)&state_change->devices[ocnt->n_devices];
 	state_change->peer_devices = (void *)&state_change->connections[ocnt->n_connections];
-	state_change->paths = (void*)&state_change->peer_devices[ocnt->n_devices*ocnt->n_connections];
+	state_change->paths = (void *)&state_change->peer_devices[ocnt->n_devices*ocnt->n_connections];
 	return state_change;
 }
 
@@ -1013,7 +1017,8 @@ static void end_remote_state_change(struct drbd_resource *resource, unsigned lon
 	__end_remote_state_change(resource, flags);
 }
 
-void clear_remote_state_change(struct drbd_resource *resource) {
+void clear_remote_state_change(struct drbd_resource *resource)
+{
 	unsigned long irq_flags;
 
 	write_lock_irqsave(&resource->state_rwlock, irq_flags);
@@ -1303,7 +1308,7 @@ have_primary_neighbor:
 
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
-		switch(repl_state) {
+		switch (repl_state) {
 		case L_WF_BITMAP_S:
 		case L_STARTING_SYNC_S:
 		case L_SYNC_SOURCE:
@@ -1780,7 +1785,7 @@ handshake_found:
 
 			if (repl_state[NEW] != repl_state[OLD] &&
 			    (repl_state[NEW] == L_STARTING_SYNC_T || repl_state[NEW] == L_STARTING_SYNC_S) &&
-			    repl_state[OLD] > L_ESTABLISHED )
+			    repl_state[OLD] > L_ESTABLISHED)
 				return SS_RESYNC_RUNNING;
 
 			if ((repl_state[NEW] == L_VERIFY_S || repl_state[NEW] == L_VERIFY_T) && repl_state[OLD] < L_ESTABLISHED)
@@ -1865,6 +1870,7 @@ is_valid_conn_transition(enum drbd_conn_state oc, enum drbd_conn_state nc)
  * This limits hard state transitions. Hard state transitions are facts there are
  * imposed on DRBD by the environment. E.g. disk broke or network broke down.
  * But those hard state transitions are still not allowed to do everything.
+ * @resource: DRBD resource.
  */
 static enum drbd_state_rv is_valid_transition(struct drbd_resource *resource)
 {
@@ -2564,6 +2570,8 @@ static bool should_try_become_up_to_date(struct drbd_device *device, enum drbd_d
 
 /**
  * finish_state_change  -  carry out actions triggered by a state change
+ * @resource: DBRD resource.
+ * @tag: State change tag to print in status messages.
  */
 static void finish_state_change(struct drbd_resource *resource, const char *tag)
 {
@@ -2944,12 +2952,12 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				mdf |= MDF_PRIMARY_IND;
 			/* clear, if */
 			else if (/* NO peer requests in flight, AND */
-			    !some_peer_request_in_flight &&
-			    (graceful_detach ||
-			     /* or everyone secondary ... */
-			     (role[NEW] == R_SECONDARY && !some_peer_is_primary &&
-			        /* ... and not detaching because of IO error. */
-			      disk_state[NEW] >= D_INCONSISTENT)))
+				 !some_peer_request_in_flight &&
+				 (graceful_detach ||
+				  /* or everyone secondary ... */
+				  (role[NEW] == R_SECONDARY && !some_peer_is_primary &&
+				   /* ... and not detaching because of IO error. */
+				   disk_state[NEW] >= D_INCONSISTENT)))
 				mdf &= ~MDF_PRIMARY_IND;
 
 			if (device->have_quorum[NEW])
@@ -4331,6 +4339,8 @@ static bool when_done_lock(struct drbd_resource *resource,
 
 /**
  * complete_remote_state_change  -  Wait for other remote state changes to complete
+ * @resource: DRBD resource.
+ * @irq_flags: IRQ flags from begin_state_change.
  */
 static void complete_remote_state_change(struct drbd_resource *resource,
 					 unsigned long *irq_flags)
@@ -4339,7 +4349,7 @@ static void complete_remote_state_change(struct drbd_resource *resource,
 		enum chg_state_flags flags = resource->state_change_flags;
 
 		begin_remote_state_change(resource, irq_flags);
-		for(;;) {
+		for (;;) {
 			long t = twopc_timeout(resource);
 
 			t = wait_event_timeout(resource->twopc_wait,
@@ -4766,6 +4776,9 @@ void drbd_print_cluster_wide_state_change(struct drbd_resource *resource, const 
 
 /**
  * change_cluster_wide_state  -  Cluster-wide two-phase commit
+ * @change: The callback function that does the actual state change.
+ * @context: State change context.
+ * @tag: State change tag to print in status messages.
  *
  * Perform a two-phase commit transaction among all (reachable) nodes in the
  * cluster.  In our transaction model, the initiator of a transaction is also
@@ -5124,7 +5137,7 @@ change_cluster_wide_device_size(struct drbd_device *device,
 				sector_t local_max_size,
 				uint64_t new_user_size,
 				enum dds_flags dds_flags,
-				struct resize_parms * rs)
+				struct resize_parms *rs)
 {
 	struct drbd_resource *resource = device->resource;
 	struct twopc_reply *reply = &resource->twopc_reply;
@@ -5736,15 +5749,15 @@ static void __change_cstate_and_outdate(struct drbd_connection *connection,
 					enum outdate_what outdate_what)
 {
 	__change_cstate(connection, cstate);
-	switch(outdate_what) {
-		case OUTDATE_DISKS:
-			__downgrade_disk_states(connection->resource, D_OUTDATED);
-			break;
-		case OUTDATE_PEER_DISKS:
-			__downgrade_peer_disk_states(connection, D_OUTDATED);
-			break;
-		case OUTDATE_NOTHING:
-			break;
+	switch (outdate_what) {
+	case OUTDATE_DISKS:
+		__downgrade_disk_states(connection->resource, D_OUTDATED);
+		break;
+	case OUTDATE_PEER_DISKS:
+		__downgrade_peer_disk_states(connection, D_OUTDATED);
+		break;
+	case OUTDATE_NOTHING:
+		break;
 	}
 }
 
@@ -5794,7 +5807,7 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 		if (context->val.conn == C_DISCONNECTING && !(context->flags & CS_HARD)) {
 			cstate_context->outdate_what =
 				outdate_on_disconnect(connection);
-			switch(cstate_context->outdate_what) {
+			switch (cstate_context->outdate_what) {
 			case OUTDATE_DISKS:
 				context->mask.disk = disk_MASK;
 				context->val.disk = D_OUTDATED;
@@ -5841,7 +5854,12 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 }
 
 /**
- * change_cstate()  -  change the connection state of a connection
+ * change_cstate_tag()  -  change the connection state of a connection
+ * @connection: DRBD connection.
+ * @cstate: The connection state to change to.
+ * @flags: State change flags.
+ * @tag: State change tag to print in status messages.
+ * @err_str: Pointer to save the error string to.
  *
  * When disconnecting from a peer, we may also need to outdate the local or
  * peer disks depending on the fencing policy.  This cannot easily be split

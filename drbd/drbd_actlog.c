@@ -163,7 +163,8 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	return err;
 }
 
-bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size) {
+bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size)
+{
 	unsigned first = sector >> (AL_EXTENT_SHIFT-9);
 	unsigned last = size == 0 ? first : (sector + (size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 	unsigned enr;

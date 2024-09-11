@@ -756,7 +756,7 @@ static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	return err;
 }
 
-static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_stats *stats)
+static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -997,7 +997,7 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	/* Expecting RDMA_CM_EVENT_ESTABLISHED, after rdma_accept(). Get
 	   the ref before dtr_path_prepare(), since that exposes the cm
 	   to the path, and the path might get destroyed, and with that
-           going to put the cm */
+	   going to put the cm */
 	kref_get(&cm->kref);
 
 	/* Gifting the initial kref to the path->cm pointer */
@@ -1348,8 +1348,8 @@ static int dtr_new_rx_descs(struct dtr_flow *flow)
 	known = atomic_read(&flow->rx_descs_known_to_peer);
 
 	/* If the two decrements in dtr_handle_rx_cq_event() execute in
-           parallel our result might be one too low, that does not matter.
-	   Only make sure to never return a -1 because that would matter! */
+	 * parallel our result might be one too low, that does not matter.
+	 * Only make sure to never return a -1 because that would matter! */
 	return max(posted - known, 0);
 }
 

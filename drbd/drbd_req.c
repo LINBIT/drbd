@@ -54,8 +54,8 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 	spin_lock_init(&req->rq_lock);
 
 	req->local_rq_state = (bio_data_dir(bio_src) == WRITE ? RQ_WRITE : 0)
-	              | (bio_op(bio_src) == REQ_OP_WRITE_ZEROES ? RQ_ZEROES : 0)
-	              | (bio_op(bio_src) == REQ_OP_DISCARD ? RQ_UNMAP : 0);
+			      | (bio_op(bio_src) == REQ_OP_WRITE_ZEROES ? RQ_ZEROES : 0)
+			      | (bio_op(bio_src) == REQ_OP_DISCARD ? RQ_UNMAP : 0);
 
 	return req;
 }
@@ -371,7 +371,8 @@ void drbd_req_destroy(struct kref *kref)
 	}
 }
 
-static void wake_all_senders(struct drbd_resource *resource) {
+static void wake_all_senders(struct drbd_resource *resource)
+{
 	struct drbd_connection *connection;
 	/* We need make sure any update is visible before we wake up the
 	 * threads that may check the values in their wait_event() condition.
@@ -488,20 +489,20 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 		 * remain. The conflict submitter will only actually submit the
 		 * request if there are no conflicts. */
 		switch (i->type) {
-			case INTERVAL_LOCAL_WRITE:
-				queue_conflicting_write(submit_conflict, i);
-				break;
-			case INTERVAL_PEER_WRITE:
-				queue_conflicting_peer_write(submit_conflict, i);
-				break;
-			case INTERVAL_RESYNC_WRITE:
-				queue_conflicting_resync_write(submit_conflict, i);
-				break;
-			case INTERVAL_RESYNC_READ:
-				queue_conflicting_resync_read(submit_conflict, i);
-				break;
-			default:
-				BUG();
+		case INTERVAL_LOCAL_WRITE:
+			queue_conflicting_write(submit_conflict, i);
+			break;
+		case INTERVAL_PEER_WRITE:
+			queue_conflicting_peer_write(submit_conflict, i);
+			break;
+		case INTERVAL_RESYNC_WRITE:
+			queue_conflicting_resync_write(submit_conflict, i);
+			break;
+		case INTERVAL_RESYNC_READ:
+			queue_conflicting_resync_read(submit_conflict, i);
+			break;
+		default:
+			BUG();
 		}
 		spin_unlock(&submit_conflict->lock);
 
@@ -749,6 +750,7 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 
 /**
  * set_cache_ptr_if_null() - Set caching pointer to given request if not currently set.
+ * @connection: DRBD connection to operate on.
  * @cache_ptr: Pointer to set.
  * @req: Request to potentially set the pointer to.
  *
@@ -1776,7 +1778,7 @@ static void drbd_req_in_actlog(struct drbd_request *req)
  * Returns ERR_PTR(-ENOMEM) if we cannot allocate a drbd_request.
  */
 #ifndef CONFIG_DRBD_TIMING_STATS
-#define drbd_request_prepare(d,b,k,j) drbd_request_prepare(d,b,j)
+#define drbd_request_prepare(d, b, k, j) drbd_request_prepare(d, b, j)
 #endif
 static struct drbd_request *
 drbd_request_prepare(struct drbd_device *device, struct bio *bio,
@@ -2314,14 +2316,14 @@ static void submit_fast_path(struct drbd_device *device, struct waiting_for_act_
 static struct drbd_request *wfa_next_request(struct waiting_for_act_log *wfa)
 {
 	struct list_head *lh = !list_empty(&wfa->requests.more_incoming) ?
-			&wfa->requests.more_incoming: &wfa->requests.incoming;
+			&wfa->requests.more_incoming : &wfa->requests.incoming;
 	return list_first_entry_or_null(lh, struct drbd_request, list);
 }
 
 static struct drbd_peer_request *wfa_next_peer_request(struct waiting_for_act_log *wfa)
 {
 	struct list_head *lh = !list_empty(&wfa->peer_requests.more_incoming) ?
-			&wfa->peer_requests.more_incoming: &wfa->peer_requests.incoming;
+			&wfa->peer_requests.more_incoming : &wfa->peer_requests.incoming;
 	return list_first_entry_or_null(lh, struct drbd_peer_request, w.list);
 }
 
@@ -2769,8 +2771,8 @@ void request_timer_fn(struct timer_list *t)
 			read_pre_submit_jif = req_read->pre_submit_jif;
 		oldest_submit_jif =
 			(req_write && req_read)
-			? ( time_before(write_pre_submit_jif, read_pre_submit_jif)
-			  ? write_pre_submit_jif : read_pre_submit_jif )
+			? (time_before(write_pre_submit_jif, read_pre_submit_jif)
+			  ? write_pre_submit_jif : read_pre_submit_jif)
 			: req_write ? write_pre_submit_jif
 			: req_read ? read_pre_submit_jif : now;
 

@@ -22,17 +22,18 @@ fi
 
 pushd drbd > /dev/null
 
-cp drbd_sender.c $KDIR/drivers/block/drbd/drbd_worker.c
-
 cp drbd_actlog.c drbd_bitmap.c drbd_dax_pmem.[ch] drbd_debugfs.[ch] \
 	drbd_interval.[ch] drbd_int.h drbd_kref_debug.[ch] \
 	drbd_main.c drbd_nla.[ch] drbd_nl.c \
 	drbd_polymorph_printk.h drbd_proc.c drbd_receiver.c drbd_req.[ch] \
-	drbd_state.[ch] drbd_state_change.h drbd_transport.c \
-	drbd_transport_tcp.c drbd_transport_template.c drbd_vli.h \
+	drbd_sender.c drbd_state.[ch] drbd_state_change.h drbd_transport.c \
+	drbd_transport_tcp.c drbd_transport_rdma.c drbd_transport_lb-tcp.c \
+	drbd_transport_template.c drbd_vli.h \
 	drbd-headers/drbd_transport.h drbd-headers/drbd_strings.[ch] \
 	drbd-headers/drbd_protocol.h drbd-headers/drbd_meta_data.h \
 	$KDIR/drivers/block/drbd/
+
+sed -i 's/drbd_worker.o/drbd_sender.o/' $KDIR/drivers/block/drbd/Makefile
 
 hl=drbd-headers/linux
 cp $hl/drbd_genl_api.h $hl/drbd_genl.h $hl/drbd_limits.h $hl/drbd.h \

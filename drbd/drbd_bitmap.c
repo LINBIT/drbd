@@ -532,10 +532,10 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		if (((start & 31) && (start | 31) <= end) || op == BM_OP_TEST) {
 			unsigned int last = bit_in_page | 31;
 
-			switch(op) {
+			switch (op) {
 			default:
 				do {
-					switch(op) {
+					switch (op) {
 					case BM_OP_CLEAR:
 						if (__test_and_clear_bit_le(bit_in_page, addr))
 							count++;
@@ -584,7 +584,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		while (start + 31 <= end) {
 			__le32 *p = (__le32 *)addr + (bit_in_page >> 5);
 
-			switch(op) {
+			switch (op) {
 			case BM_OP_CLEAR:
 				count += hweight32(*p);
 				*p = 0;
@@ -632,10 +632,10 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		if (start > end)
 			goto next_page;
 
-		switch(op) {
+		switch (op) {
 		default:
 			while (start <= end) {
-				switch(op) {
+				switch (op) {
 				case BM_OP_CLEAR:
 					if (__test_and_clear_bit_le(bit_in_page, addr))
 						count++;
@@ -698,7 +698,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 	    next_page:
 		bm_unmap(bitmap, addr);
 		bit_in_page -= BITS_PER_PAGE;
-		switch(op) {
+		switch (op) {
 		case BM_OP_CLEAR:
 			if (count) {
 				bm_set_page_lazy_writeout(bitmap, page);
@@ -721,7 +721,7 @@ ____bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long s
 		bm_unmap(bitmap, addr);
 		return start + count - bit_in_page;
 	}
-	switch(op) {
+	switch (op) {
 	case BM_OP_CLEAR:
 		if (total)
 			bitmap->bm_set[bitmap_index] -= total;
@@ -757,7 +757,7 @@ __bm_op(struct drbd_device *device, unsigned int bitmap_index, unsigned long sta
 		return 0;
 
 	if (bitmap->bm_task_pid != task_pid_nr(current)) {
-		switch(op) {
+		switch (op) {
 		case BM_OP_CLEAR:
 			if (bitmap->bm_flags & BM_LOCK_CLEAR)
 				bm_print_lock_info(device, bitmap_index, op);
@@ -983,9 +983,9 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			if (set_new_bits) {
 				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
 				bm_set += bits - obits;
-			}
-			else
+			} else {
 				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL);
+			}
 
 			b->bm_set[bitmap_index] = bm_set;
 		}
@@ -1243,8 +1243,8 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
 /**
  * bm_rw_range() - read/write the specified range of bitmap pages
  * @device: drbd device this bitmap is associated with
- * @rw:	READ or WRITE
- * @start_page, @end_page: inclusive range of bitmap page indices to process
+ * @start_page: start of bitmap page indices to process
+ * @end_page: end of bitmap page indices to process
  * @flags: BM_AIO_*, see struct bm_aio_ctx.
  *
  * Silently limits end_page to the current bitmap size.
@@ -1312,7 +1312,7 @@ static int bm_rw_range(struct drbd_device *device,
 		WARN_ON(!(b->bm_flags & BM_LOCK_ALL));
 
 	if (end_page >= b->bm_number_of_pages)
-		end_page = b->bm_number_of_pages -1;
+		end_page = b->bm_number_of_pages - 1;
 
 	spin_lock_irq(&device->pending_bmio_lock);
 	list_add_tail(&ctx->list, &device->pending_bitmap_io);
@@ -1427,6 +1427,7 @@ static int bm_rw(struct drbd_device *device, unsigned flags)
 /**
  * drbd_bm_read() - Read the whole bitmap from its on disk location.
  * @device:	DRBD device.
+ * @peer_device: parameter ignored
  */
 int drbd_bm_read(struct drbd_device *device,
 		 struct drbd_peer_device *peer_device) __must_hold(local)
@@ -1446,6 +1447,8 @@ static void push_al_bitmap_hint(struct drbd_device *device, unsigned int page_nr
 /**
  * drbd_bm_mark_range_for_writeout() - mark with a "hint" to be considered for writeout
  * @device:	DRBD device.
+ * @start: 	Start index of the range to mark.
+ * @end:	End index of the range to mark.
  *
  * From within an activity log transaction, we mark a few pages with these
  * hints, then call drbd_bm_write_hinted(), which will only write out changed
@@ -1472,6 +1475,7 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
 /**
  * drbd_bm_write() - Write the whole bitmap to its on disk location.
  * @device:	DRBD device.
+ * @peer_device: parameter ignored
  *
  * Will only write pages that have changed since last IO.
  */
@@ -1508,6 +1512,7 @@ int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_ho
 /**
  * drbd_bm_write_copy_pages() - Write the whole bitmap to its on disk location.
  * @device:	DRBD device.
+ * @peer_device: parameter ignored
  *
  * Will only write pages that have changed since last IO.
  * In contrast to drbd_bm_write(), this will copy the bitmap pages
