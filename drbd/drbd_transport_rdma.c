@@ -1735,7 +1735,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 
 	rx_desc = (struct dtr_rx_desc *) (unsigned long) wc.wr_id;
 
-	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV) {
+	if (wc.status != IB_WC_SUCCESS || !(wc.opcode & IB_WC_RECV)) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 		unsigned long irq_flags;
 
@@ -1754,7 +1754,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 				tr_warn(transport,
 					"wc.status = %d (%s), wc.opcode = %d (%s)\n",
 					wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
-					wc.opcode, wc.opcode == IB_WC_RECV ? "ok": "bad");
+					wc.opcode, wc.opcode & IB_WC_RECV ? "ok" : "bad");
 
 				tr_warn(transport,
 					"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
