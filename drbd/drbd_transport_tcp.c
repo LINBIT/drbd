@@ -625,8 +625,10 @@ retry:
 
 		s_estab = NULL;
 		err = kernel_accept(listener->s_listen, &s_estab, O_NONBLOCK);
-		if (err < 0)
+		if (err < 0) {
+			kref_put(&path->path.kref, drbd_destroy_path);
 			return err;
+		}
 
 		/* The established socket inherits the sk_state_change callback
 		   from the listening socket. */
