@@ -490,7 +490,7 @@ dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *ch
 		size -= err;
 	}
 	if (unlikely(size)) {
-		tr_warn(transport, "Not enough data received; missing %lu bytes\n", size);
+		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
 		err = -ENODATA;
 		goto fail;
 	}
