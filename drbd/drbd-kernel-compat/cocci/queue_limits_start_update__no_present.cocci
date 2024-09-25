@@ -12,8 +12,9 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 +	q->limits;
 ...
 -	if (queue_limits_commit_update(q, &lim)) { ... }
-+	blk_queue_max_hw_sectors(q, lim.max_hw_sectors);
 +	q->limits = lim;
++	blk_queue_max_hw_sectors(q, lim.max_hw_sectors);
++	blk_queue_max_discard_sectors(q, lim.max_hw_discard_sectors);
 +	if (bdev)
 +		disk_update_readahead(device->vdisk);
 ...
