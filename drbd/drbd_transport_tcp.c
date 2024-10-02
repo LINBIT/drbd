@@ -1146,6 +1146,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	char peername[64];
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
+	int one = 1;
 	bool ok;
 
 	dsocket = NULL;
