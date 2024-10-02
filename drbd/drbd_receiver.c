@@ -803,8 +803,8 @@ void conn_connect2(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
+
 		kref_get(&device->kref);
-		peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
 
 		/* connection cannot go away: caller holds a reference. */
 		rcu_read_unlock();
@@ -6475,6 +6475,21 @@ static void handle_neighbor_demotion(struct drbd_connection *connection,
 	rcu_read_unlock();
 }
 
+
+void drbd_init_connect_state(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
+	rcu_read_unlock();
+	clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
+	clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
+	clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
+}
+
 enum csc_rv {
 	CSC_CLEAR,
 	CSC_REJECT,
@@ -6573,9 +6588,7 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 		 * the flags is harmless. The peer will never initiate a
 		 * concurrent two-phase commit while a connection attempt is
 		 * ongoing. */
-		clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
-		clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
-		clear_bit(CONN_HANDSHAKE_READY, &connection->flags);
+		drbd_init_connect_state(connection);
 	}
 
 	if (pi->cmd == P_TWOPC_PREPARE)
