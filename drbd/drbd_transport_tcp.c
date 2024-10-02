@@ -906,6 +906,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
 	int timeout, err;
+	int one = 1;
 	bool ok;
 
 	dsocket = NULL;
