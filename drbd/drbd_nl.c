@@ -1037,7 +1037,6 @@ drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force, c
 	const char *err_str = NULL;
 	enum chg_state_flags flags = CS_ALREADY_SERIALIZED | CS_DONT_RETRY | CS_WAIT_COMPLETE;
 	bool fenced_peers = false;
-	struct block_device *bdev = NULL;
 	enum drbd_role old_role = resource->role[NOW];
 
 	if (old_role == R_PRIMARY && role == R_SECONDARY) {
