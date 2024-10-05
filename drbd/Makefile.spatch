@@ -42,7 +42,7 @@ cached_compat_patch := $(cache_dir)/compat.patch
 
 # Remember which kernel releases this supposedly works for.
 # If KERNELRELEASE is not known, will add an empty line (at most once).
-$(cache_dir)/kernelrelease.txt: $(compat_h) FORCE
+$(cache_dir)/kernelrelease.txt: $(cached_compat_h) FORCE
 	$(Q)set -e;						\
 	grep -sqxFe "$(KERNELRELEASE)" $@ < /dev/null ||	\
 	echo $(KERNELRELEASE) >> $@;
