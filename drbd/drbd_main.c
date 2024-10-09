@@ -2883,25 +2883,24 @@ static void drbd_release(struct gendisk *gd)
 {
 	struct drbd_device *device = gd->private_data;
 	struct drbd_resource *resource = device->resource;
-	bool was_writable;
 	int open_rw_cnt, open_ro_cnt;
 
 	mutex_lock(&resource->open_release);
-	was_writable = device->writable;
-	device->open_cnt--;
-	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
-
-	/* Last one to close will be responsible for write-out of all dirty pages.
-	 * We also reset the writable flag for this device here:  later code may
-	 * check if the device is still opened for writes to determine things
-	 * like auto-demote.
-	 * Don't do the "fsync_device" if it was not marked writeable before,
-	 * or we risk a deadlock in drbd_reject_write_early().
+	/* The last one to close already called sync_blockdevice(), generic
+	 * bdev_release() respectively blkdev_put_whole() takes care of that.
+	 * We still want our side effects of drbd_fsync_device():
+	 * wait until all peers confirmed they have all the data, regardless of
+	 * replication protocol, even if that is asynchronous.
+	 * Still, do it before decreasing the open_cnt, just in case, so we
+	 * won't confuse drbd_reject_write_early() or other code paths that may
+	 * check for open_cnt != 0 when they see write requests.
 	 */
-	if (was_writable && device->open_cnt == 0) {
+	if (device->writable && device->open_cnt == 1) {
 		drbd_fsync_device(device);
 		device->writable = false;
 	}
+	device->open_cnt--;
+	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
 	if (open_ro_cnt == 0)
 		wake_up_all(&resource->state_wait);
