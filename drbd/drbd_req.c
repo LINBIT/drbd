@@ -2565,7 +2565,7 @@ static bool drbd_reject_write_early(struct drbd_device *device, struct bio *bio)
 		return true;
 	} else if (device->open_rw_cnt + device->open_ro_cnt == 0) {
 		drbd_err_ratelimit(device, "WRITE request, but open_cnt == 0!\n");
-	} else if (device->open_rw_cnt == 0 && bio_has_data(bio)) {
+	} else if (device->open_rw_cnt == 0 && !device->ro_cnt_is_write && bio_has_data(bio)) {
 		/*
 		 * If the resource was (temporarily, auto) promoted,
 		 * a remount,rw may have succeeded without marking the device
@@ -2577,8 +2577,7 @@ static bool drbd_reject_write_early(struct drbd_device *device, struct bio *bio)
 		mutex_lock(&resource->open_release);
 		drbd_info(device, "open_ro_cnt:%d, implicitly promoted to writable\n",
 			device->open_ro_cnt);
-		device->open_rw_cnt++;
-		device->open_ro_cnt--;
+		device->ro_cnt_is_write = true;
 		mutex_unlock(&resource->open_release);
 	}
 	return false;
