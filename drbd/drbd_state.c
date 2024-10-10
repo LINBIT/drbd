@@ -1641,7 +1641,7 @@ handshake_found:
 				return SS_TWO_PRIMARIES;
 			if (!fail_io[NEW]) {
 				idr_for_each_entry(&resource->devices, device, vnr) {
-					if (device->open_ro_cnt)
+					if (!device->ro_cnt_is_write && device->open_ro_cnt)
 						return SS_PRIMARY_READER;
 					/*
 					 * One might be tempted to add "|| open_rw_cont" here.
@@ -1668,7 +1668,8 @@ handshake_found:
 		     (disk_state[OLD] > D_DETACHING && disk_state[NEW] == D_DETACHING)))
 			return SS_IN_TRANSIENT_STATE;
 
-		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY && device->open_rw_cnt &&
+		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY &&
+		    (device->open_rw_cnt || (device->ro_cnt_is_write && device->open_ro_cnt)) &&
 		    !(resource->state_change_flags & CS_FS_IGN_OPENERS))
 			return SS_DEVICE_IN_USE;
 
