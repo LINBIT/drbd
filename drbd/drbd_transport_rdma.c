@@ -801,13 +801,16 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 
 static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool active)
 {
-	int i, err = -ENOENT;
 	struct dtr_cm *cm2;
+	int i, err;
 
-	kref_get(&cm->kref); /* hold it for dtr_cm_alloc_rdma_res()... */
 	cm2 = cmpxchg(&path->cm, NULL, cm); // RCU xchg
 	if (cm2) {
-		/* Due to the cmpxchg() path->cm was not changed! */
+		/*
+		 * The caller needs to hold a ref on cm. dtr_path_prepare()
+		 * gifts that reference to the path. If setting the pointer in
+		 * the path fails, we have to put one ref of cm.
+		 */
 		kref_put(&cm->kref, dtr_destroy_cm);
 		return -ENOENT;
 	}
@@ -817,7 +820,6 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 		dtr_init_flow(path, i);
 
 	err = dtr_cm_alloc_rdma_res(cm);
-	kref_put(&cm->kref, dtr_destroy_cm);
 
 	return err;
 }
