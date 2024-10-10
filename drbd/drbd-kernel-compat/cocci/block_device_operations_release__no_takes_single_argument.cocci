@@ -23,7 +23,14 @@ drbd_release(...)
 symbol drbd_release;
 expression gd;
 @@
-  drbd_release(
-  	gd
-+ 	, 0
-  )
+drbd_open(...)
+{
+...
+  if (err) {
+    drbd_release(gd
++ , mode
+    );
+    ...
+  }
+...
+}
