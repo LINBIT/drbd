@@ -269,7 +269,6 @@ struct dtr_transport {
 	atomic_t first_path_connect_err;
 	struct completion connected;
 
-	atomic_t cm_count;
 	struct tasklet_struct control_tasklet;
 };
 
@@ -465,8 +464,6 @@ static int dtr_init(struct drbd_transport *transport)
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
-
-	atomic_set(&rdma_transport->cm_count, 0);
 
 	tasklet_setup(&rdma_transport->control_tasklet, dtr_control_tasklet_fn);
 
@@ -951,11 +948,9 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	 * or a dtr_cm object exists because they might have a callback
 	 * registered in the RDMA code that will call back into this module. The
 	 * rx and tx descs have a reference to the dtr_cm object, so taking an
-	 * extra reference to the module as long as at least one dtr_cm object
-	 * exists is sufficient.
+	 * extra reference to the module for each dtr_cm object is sufficient.
 	 */
-	if (atomic_inc_return(&cm->rdma_transport->cm_count) == 1)
-		__module_get(THIS_MODULE);
+	__module_get(THIS_MODULE);
 
 	return cm;
 }
@@ -2791,12 +2786,13 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 	struct dtr_cm *cm = container_of(rcu_head, struct dtr_cm, rcu);
 
 	kfree(cm);
+	module_put(THIS_MODULE);
 }
 
+/* dtr_destroy_cm() might run after the transport was destroyed */
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
-	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
 	if (cm->id) {
 		if (cm->id->qp)
@@ -2833,9 +2829,6 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	}
 
 	call_rcu(&cm->rcu, dtr_reclaim_cm);
-
-	if (atomic_dec_and_test(&rdma_transport->cm_count))
-		module_put(THIS_MODULE);
 }
 
 static void dtr_destroy_cm(struct kref *kref)
@@ -3392,8 +3385,6 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 
 static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *m)
 {
-	struct dtr_transport *rdma_transport =
-		container_of(transport, struct dtr_transport, transport);
 	struct dtr_path *path;
 
 	/* BUMP me if you change the file format/content/presentation */
@@ -3403,8 +3394,6 @@ static void dtr_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	list_for_each_entry_rcu(path, &transport->paths, path.list)
 		dtr_debugfs_show_path(path, m);
 	rcu_read_unlock();
-
-	seq_printf(m, "cm_count: %d\n", atomic_read(&rdma_transport->cm_count));
 }
 
 static int dtr_add_path(struct drbd_path *add_path)
