@@ -2879,7 +2879,10 @@ void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr, int *ro
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		rw_count += device->open_rw_cnt;
-		ro_count += device->open_ro_cnt;
+		if (device->ro_cnt_is_write)
+			rw_count += device->open_ro_cnt;
+		else
+			ro_count += device->open_ro_cnt;
 	}
 	rcu_read_unlock();
 	*rw_count_ptr = rw_count;
@@ -2952,25 +2955,36 @@ static void drbd_release(struct gendisk *gd)
 	/* This is a workaround for kernels that do not pass in the fmode_t argument.*/
 	fmode_t mode = device->open_ro_cnt ? FMODE_READ : FMODE_WRITE;
 
-	mutex_lock(&resource->open_release);
-	/* The last one to close already called sync_blockdevice(), generic
-	 * bdev_release() respectively blkdev_put_whole() takes care of that.
-	 * But we need to already flush when the last writer disappears,
-	 * even if some readers are still present.
-	 * We still want our side effects of drbd_fsync_device():
-	 * wait until all peers confirmed they have all the data, regardless of
-	 * replication protocol, even if that is asynchronous.
-	 * Still, do it before decreasing the open_cnt, just in case, so we
-	 * won't confuse drbd_reject_write_early() or other code paths that may
-	 * check for open_cnt != 0 when they see write requests.
+	/* Last writer to close will be responsible for write-out of all dirty pages.
+	 * If someone did a --remount,rw or similar, then we can no longer rely
+	 * on "ro_cnt" actually meaning read-only.
+	 * Do it before decreasing the open count to not confuse code paths
+	 * that check for open_*_cnt != 0 during write requests.
+	 * If we have a read-only opener that managed to "silently convert"
+	 * to write (mount -o remount,rw), and we have dirty pages, but not
+	 * seen any write yet with open_rw_cnt == 0, ro_cnt_is_write is still
+	 * false, and holding the mutex during fsync will run right into the
+	 * "mutex_lock" case in drbd_reject_write_early(), causing a deadlock.
 	 */
-	if (mode & FMODE_WRITE && device->open_rw_cnt == 1)
+	mutex_lock(&resource->open_release);
+	if (device->open_rw_cnt + device->open_ro_cnt == 1
+	|| (mode & FMODE_WRITE && device->open_rw_cnt == 1)) {
+		mutex_unlock(&resource->open_release);
+		/* If someone re-opened meanwhile, that's not a problem.
+		 * We can sync more than once.
+		 * But we must not miss the last one.
+		 */
 		drbd_fsync_device(device);
+		mutex_lock(&resource->open_release);
+	}
 
 	if (mode & FMODE_WRITE)
 		device->open_rw_cnt--;
 	else
 		device->open_ro_cnt--;
+
+	if (device->ro_cnt_is_write && device->open_ro_cnt == 0)
+		device->ro_cnt_is_write = false;
 
 	drbd_open_counts(resource, &open_rw_cnt, &open_ro_cnt);
 
