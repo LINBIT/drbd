@@ -1122,15 +1122,22 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct dtr_connect_state *cs = &path->cs;
 	long connect_int = 10 * HZ;
 	struct net_conf *nc;
+	int a;
 
 	dtr_remove_cm_from_path(path, failed_cm);
 
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-	if (nc)
-		connect_int = nc->connect_int * HZ;
-	rcu_read_unlock();
-
+	a = atomic_read(&cs->active_state);
+	if (a == PCS_INACTIVE) {
+		return;
+	} else if (a == PCS_CONNECTING) {
+		rcu_read_lock();
+		nc = rcu_dereference(transport->net_conf);
+		if (nc)
+			connect_int = nc->connect_int * HZ;
+		rcu_read_unlock();
+	} else {
+		connect_int = 1;
+	}
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
 }
 
