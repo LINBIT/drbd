@@ -2,6 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.3.5-xen.1 (api:genl2/proto:86-101,118-125/transport:23)
+--------
+ * With DRBD tracking exact open counts for Linux 6.3 (or older) only
+
 9.3.5 (api:genl2/proto:86-101,118-125/transport:23)
 --------
  * Track changed blocks for incremental backups: a tracking bitmap slot
