@@ -201,10 +201,6 @@ int drbd_get_listener(struct drbd_path *path)
 		list_add(&listener->list, &resource->listeners);
 		needs_init = true;
 	}
-	spin_lock(&listener->waiters_lock);
-	list_add(&path->listener_link, &listener->waiters);
-	path->listener = listener;
-	spin_unlock(&listener->waiters_lock);
 	spin_unlock_bh(&resource->listeners_lock);
 
 	if (needs_init) {
@@ -216,18 +212,23 @@ int drbd_get_listener(struct drbd_path *path)
 		}
 		listener->err = err;
 		complete_all(&listener->ready);
-		if (err)
-			drbd_put_listener(path);
+	} else {
+		wait_for_completion(&listener->ready);
+		err = listener->err;
+	}
 
+	if (err) {
+		kref_put(&listener->kref, drbd_listener_destroy);
 		return err;
 	}
 
-	wait_for_completion(&listener->ready);
-	err = listener->err;
-	if (err)
-		drbd_put_listener(path);
+	spin_lock_bh(&listener->waiters_lock);
+	list_add(&path->listener_link, &listener->waiters);
+	path->listener = listener;
+	spin_unlock_bh(&listener->waiters_lock);
+	/* After exposing the listener on a path, drbd_put_listenr() can destroy it. */
 
-	return err;
+	return 0;
 }
 
 void drbd_listener_destroy(struct kref *kref)
