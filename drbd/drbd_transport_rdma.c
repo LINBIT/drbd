@@ -783,7 +783,7 @@ static void dtr_stats(struct drbd_transport* transport, struct drbd_transport_st
 }
 
 /* The following functions (at least)
-   dtr_path_established_work_fn(), dtr_path_established(),
+   dtr_path_established_work_fn(),
    dtr_cma_accept_work_fn(), dtr_cma_accept(),
    dtr_cma_retry_connect_work_fn(),
    dtr_cma_retry_connect(),
@@ -858,13 +858,8 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 		return;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
-	if (p < PCS_CONNECTING) {
-		if (path->cs.active) {
-			atomic_set(&cs->active_state, PCS_INACTIVE);
-			wake_up(&cs->wq);
-		}
-		return;
-	}
+	if (p < PCS_CONNECTING)
+		goto out;
 
 	path->cm->state = DSM_CONNECTED;
 
@@ -895,29 +890,13 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	set_bit(TR_ESTABLISHED, &path->path.flags);
 	drbd_path_event(transport, &path->path);
 
+out:
 	atomic_set(&cs->active_state, PCS_INACTIVE);
 	p = atomic_xchg(&cs->passive_state, PCS_INACTIVE);
 	if (p > PCS_INACTIVE)
 		drbd_put_listener(&path->path);
 
 	wake_up(&cs->wq);
-}
-
-static void dtr_path_established(struct dtr_cm *cm)
-{
-	struct dtr_path *path = cm->path;
-	struct dtr_connect_state *cs = &path->cs;
-
-	if (atomic_read(&cs->passive_state) < PCS_CONNECTING) {
-		if (path->cs.active) {
-			atomic_set(&cs->active_state, PCS_INACTIVE);
-			wake_up(&cs->wq);
-		}
-		return;
-	}
-
-	kref_get(&cm->kref);
-	schedule_work(&cm->establish_work);
 }
 
 static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
@@ -1294,8 +1273,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* This is called for active and passive connections */
 
 		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
-
-		dtr_path_established(cm);
+		kref_get(&cm->kref); /* for the work */
+		schedule_work(&cm->establish_work);
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
