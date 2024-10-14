@@ -1021,12 +1021,11 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
            going to put the cm */
 	kref_get(&cm->kref);
 
+	/* Gifting the initial kref to the path->cm pointer */
 	err = dtr_path_prepare(path, cm, false);
 	if (err) {
 		rdma_reject(new_cm_id, NULL, 0, IB_CM_REJ_CONSUMER_DEFINED);
-		kref_put(&cm->kref, dtr_destroy_cm);
-		/* after this kref_put() it has a count of 1. Returning it in ret_cm and
-		   returning an error causes the caller to drop the final reference */
+		/* Returning the cm via ret_cm and an error causes the caller to put one ref */
 
 		return -EAGAIN;
 	}
