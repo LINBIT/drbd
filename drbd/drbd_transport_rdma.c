@@ -1201,7 +1201,7 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 
 	/* in dtr_disconnect_path() -> __dtr_uninit_path() we free the previous
 	   cm. That causes the reference on the path to be dropped.
-	   In dtr_activeate_path() -> dtr_start_try_connect() we allocate a new
+	   In dtr_activate_path() -> dtr_start_try_connect() we allocate a new
 	   cm, that holds a reference on the path again.
 
 	   Bridge the gap with a reference here!
@@ -2923,6 +2923,16 @@ static int dtr_activate_path(struct dtr_path *path)
 	err = drbd_get_listener(&path->path);
 	if (err)
 		goto out_no_put;
+
+	/*
+	 * Check passive_state after drbd_get_listener() completed.
+	 * __dtr_disconnect_path() sets passive_state before calling
+	 * drbd_put_listener(). That drbd_put_listner() might return
+	 * before the drbd_get_listner() here started.
+	 */
+	if (atomic_read(&cs->passive_state) != PCS_CONNECTING ||
+	    atomic_read(&cs->active_state) != PCS_CONNECTING)
+		goto out;
 
 	err = dtr_start_try_connect(cs);
 	if (err)
