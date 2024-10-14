@@ -1275,10 +1275,12 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		   pointer from the listening rdma_cm_id. The new context gets created in
 		   dtr_cma_accept() and is put into &cm here.
 		   cm now contains the accepted connection (no longer the listener); */
-		if (!err || cm == NULL)
-			return 0; /* do not touch kref of new connection/listener */
-
-		break; /* in case of error drop the last ref of cm upon function exit */
+		if (err) {
+			if (!cm)
+				return 1; /* caller destroy the cm_id */
+			break; /* drop the last ref of cm at function exit */
+		}
+		return 0; /* do not touch kref of the new connection */
 
 	case RDMA_CM_EVENT_CONNECT_RESPONSE:
 		// pr_info("%s: RDMA_CM_EVENT_CONNECT_RESPONSE\n", cm->name);
