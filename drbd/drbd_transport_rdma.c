@@ -139,11 +139,13 @@ union dtr_immediate {
 
 enum dtr_state_bits {
 	DSB_CONNECT_REQ,
+	DSB_CONNECTING,
 	DSB_CONNECTED,
 	DSB_ERROR,
 };
 
 #define DSM_CONNECT_REQ   (1 << DSB_CONNECT_REQ)
+#define DSM_CONNECTING    (1 << DSB_CONNECTING)
 #define DSM_CONNECTED     (1 << DSB_CONNECTED)
 #define DSM_ERROR         (1 << DSB_ERROR)
 
@@ -1137,9 +1139,11 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 	}
 
 	kref_get(&cm->kref); /* Expecting RDMA_CM_EVENT_ESTABLISHED */
+	set_bit(DSB_CONNECTING, &cm->state);
 	err = rdma_connect(cm->id, &dtr_conn_param);
 	if (err) {
-		kref_put(&cm->kref, dtr_destroy_cm); /* no RDMA_CM_EVENT_ESTABLISHED */
+		if (test_and_clear_bit(DSB_CONNECTING, &cm->state))
+			kref_put(&cm->kref, dtr_destroy_cm); /* no _EVENT_ESTABLISHED */
 		tr_err(transport, "rdma_connect error %d\n", err);
 		goto out;
 	}
@@ -1218,6 +1222,7 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 	/* context comes from rdma_create_id() */
 	struct dtr_cm *cm = cm_id->context;
 	struct dtr_listener *listener;
+	bool connecting;
 
 	if (!cm) {
 		pr_err("id %p event %d, but no context!\n", cm_id, event->event);
@@ -1272,9 +1277,14 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* cm->state = DSM_CONNECTED; is set later in the work item */
 		/* This is called for active and passive connections */
 
+		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state);
+		connecting |= test_bit(DSB_CONNECT_REQ, &cm->state);
 		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
+
+		if (!connecting)
+			return 0; /* keep ref; __dtr_disconnect_path() won */
 		break;
 
 	case RDMA_CM_EVENT_ADDR_ERROR:
@@ -1291,6 +1301,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		set_bit(DSB_ERROR, &cm->state);
 
 		dtr_cma_retry_connect(cm->path, cm);
+		if (!test_and_clear_bit(DSB_CONNECTING, &cm->state))
+			return 0; /* keep ref; __dtr_disconnect_path() won */
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
@@ -2728,9 +2740,6 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	if (!cm)
 		return;
 
-	if (!(cm->state & (DSM_CONNECTED | DSM_ERROR)))
-		goto out;
-
 	err = rdma_disconnect(cm->id);
 	if (err) {
 		tr_warn(transport, "failed to disconnect, id %p context %p err %d\n",
@@ -2757,6 +2766,17 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 		if (err)
 			tr_err(transport, "ib_modify_qp failed %d\n", err);
 	}
+
+	/*
+	 * We are expecting one of RDMA_CM_EVENT_ESTABLISHED, _UNREACHABLE,
+	 * _CONNECT_ERROR, or _REJECTED on this cm. Some RDMA drivers report
+	 * these error events after unexpectedly long timeouts, while others do
+	 * not report it at all. We are no longer interested in these
+	 * events. Destroy the cm and cm_id to avoid leaking it.
+	 * This is racing with the event delivery, which drops a reference.
+	 */
+	if (test_and_clear_bit(DSB_CONNECTING, &cm->state))
+		kref_put(&cm->kref, dtr_destroy_cm);
 
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
@@ -3344,12 +3364,22 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 	static const char *state_names[] = {
 		[0] = "not connected",
 		[DSM_CONNECT_REQ] = "CONNECT_REQ",
+		[DSM_CONNECTING] = "CONNECTING",
+		[DSM_CONNECTING|DSM_CONNECT_REQ] = "CONNECTING|DSM_CONNECT_REQ",
 		[DSM_CONNECTED] = "CONNECTED",
 		[DSM_CONNECTED|DSM_CONNECT_REQ] = "CONNECTED|CONNECT_REQ",
+		[DSM_CONNECTED|DSM_CONNECTING] = "CONNECTED|CONNECTING",
+		[DSM_CONNECTED|DSM_CONNECTING|DSM_CONNECT_REQ] =
+			"CONNECTED|CONNECTING|DSM_CONNECT_REQ",
 		[DSM_ERROR] = "ERROR",
 		[DSM_ERROR|DSM_CONNECT_REQ] = "ERROR|CONNECT_REQ",
+		[DSM_ERROR|DSM_CONNECTING] = "ERROR|CONNECTING",
+		[DSM_ERROR|DSM_CONNECTING|DSM_CONNECT_REQ] = "ERROR|CONNECTING|CONNECT_REQ",
 		[DSM_ERROR|DSM_CONNECTED] = "ERROR|CONNECTED",
 		[DSM_ERROR|DSM_CONNECTED|DSM_CONNECT_REQ] = "ERROR|CONNECTED|CONNECT_REQ",
+		[DSM_ERROR|DSM_CONNECTED|DSM_CONNECTING] = "ERROR|CONNECTED|CONNECTING|",
+		[DSM_ERROR|DSM_CONNECTED|DSM_CONNECTING|DSM_CONNECT_REQ] =
+			"ERROR|CONNECTED|CONNECTING|CONNECT_REQ",
 	};
 
 	enum drbd_stream i;
