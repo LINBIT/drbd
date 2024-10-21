@@ -608,6 +608,9 @@ int main(int argc, char **argv)
 	patch(1, "counted_by", true, false,
 		COMPAT_HAVE_COUNTED_BY, "present");
 
+	patch(1, "linux_unaligned_h", true, false,
+		COMPAT_HAVE_LINUX_UNALIGNED_H, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
