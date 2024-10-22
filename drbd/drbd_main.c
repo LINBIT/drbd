@@ -2651,10 +2651,21 @@ enum ioc_rv {
 	IOC_ABORT = 2,
 };
 
+/* If we are in the middle of a cluster wide state change, we don't want
+ * to change (open_cnt == 0), as that then could cause a failure to commit
+ * some already promised peer auto-promote locally.
+ * So we wait until the pending remote_state_change is finalized,
+ * or give up when the timeout is reached.
+ *
+ * But we don't want to fail an open on a Primary just because it happens
+ * during some unrelated remote state change.
+ * If we are already Primary, or already have an open count != 0,
+ * we don't need to wait, it won't change anything.
+ */
 static enum ioc_rv inc_open_count(struct drbd_device *device, blk_mode_t mode)
 {
 	struct drbd_resource *resource = device->resource;
-	enum ioc_rv r = mode & BLK_OPEN_NDELAY ? IOC_ABORT : IOC_SLEEP;
+	enum ioc_rv r;
 
 	if (test_bit(DOWN_IN_PROGRESS, &resource->flags))
 		return IOC_ABORT;
@@ -2662,7 +2673,14 @@ static enum ioc_rv inc_open_count(struct drbd_device *device, blk_mode_t mode)
 	read_lock_irq(&resource->state_rwlock);
 	if (test_bit(UNREGISTERED, &device->flags))
 		r = IOC_ABORT;
-	else if (!resource->remote_state_change) {
+	else if (resource->remote_state_change &&
+		resource->role[NOW] != R_PRIMARY &&
+		(device->open_cnt == 0 || mode & BLK_OPEN_WRITE)) {
+		if (mode & BLK_OPEN_NDELAY)
+			r = IOC_ABORT;
+		else
+			r = IOC_SLEEP;
+	} else {
 		r = IOC_OK;
 		device->open_cnt++;
 		if (mode & BLK_OPEN_WRITE)
