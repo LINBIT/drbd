@@ -29,7 +29,7 @@
 #include "drbd_debugfs.h"
 #include "drbd_transport.h"
 #include "drbd_dax_pmem.h"
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
 #include <linux/security.h>
