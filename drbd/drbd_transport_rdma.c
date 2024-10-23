@@ -23,6 +23,7 @@
 
 #include <linux/module.h>
 #include <linux/sched/signal.h>
+#include <linux/bio.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_cm.h>
