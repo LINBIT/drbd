@@ -498,6 +498,9 @@ int main(int argc, char **argv)
 	      NO, "is_block_device");
 #endif
 
+	patch(1, "bio_max_segs", true, false,
+	      COMPAT_HAVE_BIO_MAX_SEGS, "present");
+
 	patch(1, "bio_max_vecs", true, false,
 	      COMPAT_HAVE_BIO_MAX_VECS, "present");
 
