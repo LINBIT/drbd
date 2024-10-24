@@ -16,6 +16,7 @@
 #include <linux/uaccess.h>
 #include <net/sock.h>
 
+#include <linux/bio.h>
 #include <linux/drbd.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -1836,6 +1837,7 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	unsigned data_size = peer_req->i.size;
 	unsigned n_bios = 0;
 	unsigned nr_pages = peer_req->page_chain.nr_pages;
+	unsigned int bio_nr_iovecs;
 	int err;
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
@@ -1877,9 +1879,17 @@ next_bio:
 		goto fail;
 	}
 
+	/*
+	 * Peer may have sent more pages in one request than bio_alloc can
+	 * handle. Even when (nr_pages > bio_nr_iovecs), we may only need one
+	 * bio because bio_add_page may be able to merge consecutive pages into
+	 * one bio_vec.
+	 */
+	bio_nr_iovecs = bio_max_segs(nr_pages);
+
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio = bio_alloc(device->ldev->backing_bdev, nr_pages, peer_req->opf,
+	bio = bio_alloc(device->ldev->backing_bdev, bio_nr_iovecs, peer_req->opf,
 			GFP_NOIO);
 	/* > peer_req->i.sector, unless this is the first bio */
 	bio->bi_iter.bi_sector = sector;
