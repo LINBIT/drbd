@@ -2217,13 +2217,6 @@ read_in_block(struct drbd_peer_device *peer_device, struct drbd_peer_request_det
 	if (err)
 		goto fail;
 
-	if (peer_req->page_chain.nr_pages > BIO_MAX_VECS) {
-		drbd_err(peer_device, "too many pages from recv_pages transport=%s nr_pages=%u sector=%llus dp_flags=%x length=%u bi_size=%u digest_size=%u\n",
-				transport->class->name, peer_req->page_chain.nr_pages,
-				d->sector, d->dp_flags, d->length, d->bi_size, d->digest_size);
-		return -EINVAL;
-	}
-
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 		struct page *page;
 		unsigned long *data;
