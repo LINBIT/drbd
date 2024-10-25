@@ -982,7 +982,7 @@ void begin_state_change(struct drbd_resource *resource, unsigned long *irq_flags
 }
 
 static enum drbd_state_rv __end_state_change(struct drbd_resource *resource,
-					     unsigned long **irq_flags,
+					     unsigned long *irq_flags,
 					     enum drbd_state_rv rv,
 					     const char *tag)
 {
