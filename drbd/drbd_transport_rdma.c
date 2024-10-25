@@ -182,7 +182,7 @@ struct dtr_tx_desc {
 	} type;
 	int nr_sges;
 	union dtr_immediate imm;
-	struct ib_sge sge[0]; /* must be last! */
+	struct ib_sge sge[]; /* must be last! */
 };
 
 struct dtr_flow {
