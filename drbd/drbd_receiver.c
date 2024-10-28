@@ -6475,7 +6475,31 @@ static void handle_neighbor_demotion(struct drbd_connection *connection,
 	rcu_read_unlock();
 }
 
+static void peer_device_init_connect_state(struct drbd_peer_device *peer_device)
+{
+	clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
+	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
+	clear_bit(HAVE_SIZES, &peer_device->flags);
+	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
+	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
+	clear_bit(PEER_QUORATE, &peer_device->flags);
+	peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
+}
 
+
+/**
+ * drbd_init_connect_state() - Prepare twopc that establishes the connection
+ * @connection:	The connection this is about
+ *
+ * After a transport implementation has established the lower-level aspects
+ * of a connection, DRBD executes a two-phase commit so that the membership
+ * information changes in a cluster-wide, consistent way. During that
+ * two-phase commit, DRBD exchanges the UUIDs, size information, and the
+ * initial state. A two-phase commit might be aborted, which needs to be
+ * retried. This function re-initializes the struct members for this. The
+ * callsites are at the beginning of a two-phase connect commit, active and
+ * passive side.
+ */
 void drbd_init_connect_state(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -6483,7 +6507,7 @@ void drbd_init_connect_state(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		peer_device->connect_state = (union drbd_state) {{ .disk = D_MASK }};
+		peer_device_init_connect_state(peer_device);
 	rcu_read_unlock();
 	clear_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
 	clear_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
@@ -6576,20 +6600,6 @@ static int receive_twopc(struct drbd_connection *connection, struct packet_info 
 	}
 	reply.reachable_nodes = directly_connected_nodes(resource, NOW) |
 				NODE_MASK(resource->res_opts.node_id);
-
-	if (pi->cmd == P_TWOPC_PREPARE &&
-			reply.initiator_node_id == connection->peer_node_id &&
-			reply.target_node_id == resource->res_opts.node_id) {
-		/* Clear the relevant flags at the start of a connection
-		 * attempt from this peer. They must be cleared before we
-		 * receive any more packets, because the state packets follow
-		 * after this one even when this two-phase commit is queued. If
-		 * the two-phase commit is not a connection attempt, clearing
-		 * the flags is harmless. The peer will never initiate a
-		 * concurrent two-phase commit while a connection attempt is
-		 * ongoing. */
-		drbd_init_connect_state(connection);
-	}
 
 	if (pi->cmd == P_TWOPC_PREPARE)
 		clear_bit(TWOPC_RECV_SIZES_ERR, &resource->flags);
@@ -6985,8 +6995,12 @@ retry:
 
 		if (state_change->val.conn == C_CONNECTED) {
 			reply->reachable_nodes |= m;
-			if (affected_connection)
+			if (affected_connection) {
 				reply->is_connect = 1;
+
+				if (pi->cmd == P_TWOPC_PREPARE)
+					drbd_init_connect_state(connection);
+			}
 		}
 		if (state_change->val.conn == C_DISCONNECTING) {
 			reply->reachable_nodes &= ~m;
@@ -8569,12 +8583,7 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&device->uuid_sem);
 
-	clear_bit(INITIAL_STATE_SENT, &peer_device->flags);
-	clear_bit(INITIAL_STATE_RECEIVED, &peer_device->flags);
-	clear_bit(HAVE_SIZES, &peer_device->flags);
-	clear_bit(UUIDS_RECEIVED, &peer_device->flags);
-	clear_bit(CURRENT_UUID_RECEIVED, &peer_device->flags);
-	clear_bit(PEER_QUORATE, &peer_device->flags);
+	peer_device_init_connect_state(peer_device);
 
 	/* No need to start additional resyncs after reconnection. */
 	peer_device->resync_again = 0;
