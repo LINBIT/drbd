@@ -2412,6 +2412,16 @@ static bool drbd_need_twopc_after_lost_peer(struct drbd_connection *connection)
 	return cstate[NEW] != C_TEAR_DOWN;
 }
 
+static void drbd_schedule_empty_twopc(struct drbd_resource *resource)
+{
+	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 11);
+	if (!schedule_work(&resource->empty_twopc)) {
+		kref_debug_put(&resource->kref_debug, 11);
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
+}
+
 /*
  * We cache a node mask of the online members of the cluster. It might
  * be off because a node is still marked as online immediately after
@@ -2444,7 +2454,7 @@ static void update_members(struct drbd_resource *resource)
 		/* Connection to peer lost. Check if we should remove it from the members */
 		if (drbd_need_twopc_after_lost_peer(connection) &&
 				resource->members & peer_node_mask)
-			schedule_work(&resource->empty_twopc);
+			drbd_schedule_empty_twopc(resource);
 	}
 }
 
@@ -4243,7 +4253,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	}
 
 	if (try_become_up_to_date || healed_primary)
-		schedule_work(&resource->empty_twopc);
+		drbd_schedule_empty_twopc(resource);
 
 	drbd_notify_peers_lost_primary(resource);
 
@@ -5605,6 +5615,9 @@ void drbd_empty_twopc_work_fn(struct work_struct *work)
 	clear_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	wake_up_all(&resource->state_wait);
 	drbd_notify_peers_lost_primary(resource);
+
+	kref_debug_put(&resource->kref_debug, 11);
+	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
 static bool do_change_disk_state(struct change_context *context, enum change_phase phase)
