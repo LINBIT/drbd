@@ -3017,6 +3017,17 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		enum drbd_conn_state *cstate = connection->cstate;
 		enum drbd_role *peer_role = connection->peer_role;
 
+		/*
+		 * If we lose connection to a Primary node then we need to
+		 * inform our peers so that we can potentially do a
+		 * reconciliation resync. The function conn_disconnect()
+		 * informs the peers. So we must set the flag before stopping
+		 * the receiver.
+		 */
+		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED &&
+				peer_role[OLD] == R_PRIMARY)
+			set_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
+
 		/* Receiver should clean up itself */
 		if (cstate[OLD] != C_DISCONNECTING && cstate[NEW] == C_DISCONNECTING)
 			drbd_thread_stop_nowait(&connection->receiver);
@@ -3441,58 +3452,6 @@ static void send_new_state_to_all_peer_devices(struct drbd_state_change *state_c
 
 		if (new_state.conn >= C_CONNECTED)
 			drbd_send_state(peer_device, new_state);
-	}
-}
-
-static bool receiver_exited_main_loop(struct drbd_connection *connection)
-{
-	enum drbd_conn_state cstate = connection->cstate[NOW];
-
-	return cstate == C_STANDALONE || cstate == C_UNCONNECTED ||
-		cstate == C_CONNECTING || cstate == C_CONNECTED;
-}
-
-void drbd_notify_peers_lost_primary(struct drbd_resource *resource)
-{
-	struct drbd_connection *connection, *lost_peer;
-	u64 im;
-
-	rcu_read_lock();
-	for_each_connection_rcu(lost_peer, resource) {
-		if (test_and_clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &lost_peer->flags)) {
-			rcu_read_unlock();
-			goto found;
-		}
-	}
-	rcu_read_unlock();
-	return;
-found:
-
-	wait_event(resource->state_wait, receiver_exited_main_loop(lost_peer));
-	for_each_connection_ref(connection, im, resource) {
-		if (connection == lost_peer)
-			continue;
-		if (connection->cstate[NOW] == C_CONNECTED) {
-			struct drbd_peer_device *peer_device;
-			bool send_dagtag = false;
-			int vnr;
-
-			idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-				struct drbd_device *device = peer_device->device;
-				u64 current_uuid = drbd_current_uuid(device);
-				u64 weak_nodes = drbd_weak_nodes_device(device);
-
-				if (device->disk_state[NOW] < D_INCONSISTENT ||
-				    peer_device->disk_state[NOW] < D_INCONSISTENT)
-					continue; /* Ignore if one side is diskless */
-
-				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
-				send_dagtag = true;
-			}
-
-			if (send_dagtag)
-				drbd_send_peer_dagtag(connection, lost_peer);
-		}
 	}
 }
 
@@ -4243,7 +4202,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		struct drbd_connection_state_change *connection_state_change = &state_change->connections[n_connection];
 		struct drbd_connection *connection = connection_state_change->connection;
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
-		enum drbd_role *peer_role = connection_state_change->peer_role;
 		bool *susp_fen = connection_state_change->susp_fen;
 		enum drbd_fencing_policy fencing_policy;
 
@@ -4253,12 +4211,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 		if (susp_fen[NEW])
 			check_may_resume_io_after_fencing(state_change, n_connection);
-
-		if (peer_role[OLD] == R_PRIMARY &&
-		    cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED) {
-			/* A connection to a primary went down, notify other peers about that */
-			set_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
-		}
 
 		rcu_read_lock();
 		fencing_policy = connection->fencing_policy;
@@ -4286,8 +4238,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 	if (try_become_up_to_date || healed_primary)
 		drbd_schedule_empty_twopc(resource);
-
-	drbd_notify_peers_lost_primary(resource);
 
 	if (!still_connected)
 		mod_timer_pending(&resource->twopc_timer, jiffies);
@@ -5652,7 +5602,6 @@ void drbd_empty_twopc_work_fn(struct work_struct *work)
 
 	clear_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	wake_up_all(&resource->state_wait);
-	drbd_notify_peers_lost_primary(resource);
 
 	kref_debug_put(&resource->kref_debug, 11);
 	kref_put(&resource->kref, drbd_destroy_resource);

@@ -9710,6 +9710,40 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		nested_twopc_abort(resource, &request);
 }
 
+static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
+{
+	struct drbd_resource *resource = lost_peer->resource;
+	struct drbd_connection *connection;
+	u64 im;
+
+	for_each_connection_ref(connection, im, resource) {
+		struct drbd_peer_device *peer_device;
+		bool send_dagtag = false;
+		int vnr;
+
+		if (connection == lost_peer)
+			continue;
+		if (connection->cstate[NOW] != C_CONNECTED)
+			continue;
+
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			struct drbd_device *device = peer_device->device;
+			u64 current_uuid = drbd_current_uuid(device);
+			u64 weak_nodes = drbd_weak_nodes_device(device);
+
+			if (device->disk_state[NOW] < D_INCONSISTENT ||
+			    peer_device->disk_state[NOW] < D_INCONSISTENT)
+				continue; /* Ignore if one side is diskless */
+
+			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+			send_dagtag = true;
+		}
+
+		if (send_dagtag)
+			drbd_send_peer_dagtag(connection, lost_peer);
+	}
+}
+
 static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -9865,6 +9899,9 @@ static void conn_disconnect(struct drbd_connection *connection)
 		drbd_thread_restart_nowait(&connection->receiver);
 	}
 	end_state_change(resource, &irq_flags, "disconnected");
+
+	if (test_and_clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
+		drbd_notify_peers_lost_primary(connection);
 
 	if (oc == C_DISCONNECTING)
 		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,

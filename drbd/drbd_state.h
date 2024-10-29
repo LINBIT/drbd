@@ -163,7 +163,6 @@ extern enum determine_dev_size
 change_cluster_wide_device_size(struct drbd_device *, sector_t, uint64_t, enum dds_flags,
 				struct resize_parms *);
 
-extern void drbd_notify_peers_lost_primary(struct drbd_resource *resource);
 extern bool drbd_data_accessible(struct drbd_device *, enum which_state);
 extern bool drbd_res_data_accessible(struct drbd_resource *resource);
 
