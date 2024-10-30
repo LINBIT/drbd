@@ -111,7 +111,7 @@ static int param_set_drbd_protocol_version(const char *s, const struct kernel_pa
 	rv = kstrtoull(s, 0, &tmp);
 	if (rv < 0)
 		return rv;
-	if (tmp < PRO_VERSION_MIN || tmp > PRO_VERSION_MAX)
+	if (!drbd_protocol_version_acceptable(tmp))
 		return -ERANGE;
 	*res = tmp;
 	return 0;
@@ -125,9 +125,15 @@ static const struct kernel_param_ops param_ops_drbd_protocol_version = {
 	.get = param_get_drbd_protocol_version,
 };
 
-unsigned int drbd_protocol_version_min = PRO_VERSION_MIN;
+unsigned int drbd_protocol_version_min = PRO_VERSION_8_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
-
+#define protocol_version_min_desc								\
+	"\n\t\tReject DRBD dialects older than this.\n\t\t"					\
+	"Supported: "										\
+	"DRBD 8 [" __stringify(PRO_VERSION_8_MIN) "-" __stringify(PRO_VERSION_8_MAX) "]; "	\
+	"DRBD 9 [" __stringify(PRO_VERSION_MIN) "-" __stringify(PRO_VERSION_MAX) "].\n\t\t"	\
+	"Default: " __stringify(PRO_VERSION_8_MIN)
+MODULE_PARM_DESC(protocol_version_min, protocol_version_min_desc);
 
 /* in 2.6.x, our device mapping and config info contains our virtual gendisks
  * as member "struct gendisk *vdisk;"

@@ -47,6 +47,12 @@
 extern unsigned int drbd_minor_count;
 extern unsigned int drbd_protocol_version_min;
 
+static inline bool drbd_protocol_version_acceptable(unsigned int pv)
+{
+	return	/* DRBD 9 */ (pv >= PRO_VERSION_MIN && pv <= PRO_VERSION_MAX) ||
+		/* DRBD 8 */ (pv >= PRO_VERSION_8_MIN && pv <= PRO_VERSION_8_MAX);
+}
+
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 extern int drbd_enable_faults;
 extern int drbd_fault_rate;
