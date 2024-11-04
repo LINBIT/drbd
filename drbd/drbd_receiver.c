@@ -2221,7 +2221,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 
 	d->sector = be64_to_cpu(p->p_data.sector);
 	d->block_id = p->p_data.block_id;
-	d->peer_seq = be64_to_cpu(p->p_data.seq_num);
+	d->peer_seq = be32_to_cpu(p->p_data.seq_num);
 	d->dp_flags = be32_to_cpu(p->p_data.dp_flags);
 	d->length = pi->size;
 	d->bi_size = is_trim_or_zeroes ? be32_to_cpu(p->size) : pi->size - digest_size;
