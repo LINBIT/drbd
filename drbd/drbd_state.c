@@ -4749,8 +4749,12 @@ void drbd_print_cluster_wide_state_change(struct drbd_resource *resource, const 
 	if (mask.peer)
 		b += scnprintf(b, end - b, " peer( %s )", drbd_role_str(val.peer));
 
-	if (mask.conn)
-		b += scnprintf(b, end - b, " conn( %s )", drbd_conn_str(val.conn));
+	if (mask.conn) {
+		if (val.conn > C_CONNECTED)
+			b += scnprintf(b, end - b, " repl( %s )", drbd_repl_str(val.conn));
+		else
+			b += scnprintf(b, end - b, " conn( %s )", drbd_conn_str(val.conn));
+	}
 
 	if (mask.disk)
 		b += scnprintf(b, end - b, " disk( %s )", drbd_disk_str(val.disk));
