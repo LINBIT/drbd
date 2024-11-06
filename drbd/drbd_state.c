@@ -4962,9 +4962,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		reply->reachable_nodes |= NODE_MASK(context->target_node_id);
 		reply->target_reachable_nodes = reply->reachable_nodes;
 		reply->is_connect = 1;
-		clear_bit(CONN_HANDSHAKE_DISCONNECT, &target_connection->flags);
-		clear_bit(CONN_HANDSHAKE_RETRY, &target_connection->flags);
-		clear_bit(CONN_HANDSHAKE_READY, &target_connection->flags);
+		drbd_init_connect_state(target_connection);
 	} else if (context->mask.conn == conn_MASK && context->val.conn == C_DISCONNECTING) {
 		reply->target_reachable_nodes = NODE_MASK(context->target_node_id);
 		reply->reachable_nodes &= ~reply->target_reachable_nodes;

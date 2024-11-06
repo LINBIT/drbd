@@ -2267,6 +2267,7 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 extern void drbd_try_to_get_resynced(struct drbd_device *device);
 extern void drbd_process_rs_discards(struct drbd_peer_device *peer_device, bool submit_all);
 extern void drbd_last_resync_request(struct drbd_peer_device *peer_device, bool submit_all);
+extern void drbd_init_connect_state(struct drbd_connection *connection);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
