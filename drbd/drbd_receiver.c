@@ -9848,13 +9848,15 @@ static void conn_disconnect(struct drbd_connection *connection)
 }
 
 /*
- * We support PRO_VERSION_MIN to PRO_VERSION_MAX. The protocol version
- * we can agree on is stored in agreed_pro_version.
+ * We support PRO_VERSION_MIN to PRO_VERSION_MAX.
+ * But see also drbd_protocol_version_acceptable() and module parameter
+ * drbd_protocol_version_min.
+ * The protocol version we can agree on is stored in agreed_pro_version.
  *
  * feature flags and the reserved array should be enough room for future
  * enhancements of the handshake protocol, and possible plugins...
+ * See also PRO_FEATURES.
  *
- * for now, they are expected to be zero, but ignored.
  */
 static int drbd_send_features(struct drbd_connection *connection)
 {
@@ -9925,6 +9927,17 @@ int drbd_do_features(struct drbd_connection *connection)
 		drbd_err(connection, "incompatible DRBD dialects: "
 		    "I support %d-%d, peer supports %d-%d\n",
 		    drbd_protocol_version_min, PRO_VERSION_MAX,
+		    p->protocol_min, p->protocol_max);
+		return -1;
+	}
+	/* Older DRBD will always expect us to agree to their max,
+	 * if it falls within our [min, max] range.
+	 * But we have a gap in there that we do not support.
+	 */
+	if (p->protocol_max > PRO_VERSION_8_MAX &&
+	    p->protocol_max < PRO_VERSION_MIN) {
+		drbd_err(connection, "incompatible DRBD 9 dialects: I support %u-%u, peer supports %u-%u\n",
+		    PRO_VERSION_MIN, PRO_VERSION_MAX,
 		    p->protocol_min, p->protocol_max);
 		return -1;
 	}
