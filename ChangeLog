@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.1.23-rc.1 (api:genl2/proto:86-101,118-121/transport:18)
+--------
+ * Fix a corner case that can happen when DRBD establishes multiple
+   connections in parallel, which could lead one connection to end up in
+   an inconsistent replication state of WFBitMapT/Established
+ * Fix a corner case in which a reconciliation resync ends up in
+   WFBitMapT/Established
+ * Restrict protocol compatibility to the most recent 8.4 and 9.0 releases
+ * Fix a corner case causing a module ref leak on drbd_transport_tcp;
+   if it hits, you can not rmmod it
+ * rate-limit resync progress while resync is paused
+ * resync-target inherits history UUIDs when resync finishes,
+   this can prevent unexpected "unrelared data" events later
+ * Updated compatibility code for Linux 6.11 and 6.12-rc6
+
 9.1.22 (api:genl2/proto:86-121/transport:18)
 --------
  * Upgrade from partial resync to a full resync if necessary when the
