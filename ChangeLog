@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.1.23-rc.1 (api:genl2/proto:86-101,118-121/transport:18)
+9.1.23 (api:genl2/proto:86-101,118-121/transport:18)
 --------
  * Fix a corner case that can happen when DRBD establishes multiple
    connections in parallel, which could lead one connection to end up in
@@ -15,7 +15,7 @@ Latest:
  * rate-limit resync progress while resync is paused
  * resync-target inherits history UUIDs when resync finishes,
    this can prevent unexpected "unrelared data" events later
- * Updated compatibility code for Linux 6.11 and 6.12-rc6
+ * Updated compatibility code for Linux 6.11 and 6.12
 
 9.1.22 (api:genl2/proto:86-121/transport:18)
 --------
