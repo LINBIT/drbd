@@ -986,7 +986,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	struct socket *s_listen;
 	struct net_conf *nc;
 	const char *what = "";
-	int val;
+	char val;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -1008,7 +1008,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	}
 
 	val = 1;
-	err = kernel_setsockopt(s_listen, SOL_SOCKET, SO_REUSEADDR, (char *)&val, sizeof(val));
+	err = kernel_setsockopt(s_listen, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
 	if (err < 0) {
 		what = "kernel_setsockopt SO_REUSEADDR";
 		goto out;
@@ -1127,7 +1127,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	char peername[64];
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
-	int one = 1;
+	char one = 1;
 	bool ok;
 
 	dsocket = NULL;
@@ -1321,12 +1321,12 @@ randomize:
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
 	drbd_path_event(transport, &connect_to_path->path);
 
-	err = kernel_setsockopt(dsocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	err = kernel_setsockopt(dsocket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	if (err < 0) {
 		printk("kernel_setsockopt SO_REUSEADDR failed\n");
 		goto out;
 	}
-	err = kernel_setsockopt(csocket, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+	err = kernel_setsockopt(csocket, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	if (err < 0) {
 		printk("kernel_setsockopt SO_REUSEADDR failed\n");
 		goto out;
