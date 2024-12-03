@@ -334,6 +334,14 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	if (!socket)
 		return -ENOTCONN;
 
+		/* If this should be non-blocking, pretend that we
+		 * haven't received anything. DRBD then will redo
+		 * the call without this flag set.
+		 */
+
+	if (flags & MSG_DONTWAIT)
+		return 0;
+
 	if (flags & CALLER_BUFFER) {
 		buffer = *buf;
 		rv = dtt_recv_short(socket, buffer, size, flags & ~CALLER_BUFFER);
