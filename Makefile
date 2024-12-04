@@ -228,7 +228,7 @@ tgz:
 		$(if $(GITHEAD),$(if $(GITDIFF),,--pax-option=comment=$(GITHEAD))) \
 		$(tgz-extra-files) \
 		-T .filelist \
-		--transform 's,^,drbd-$(FDIST_VERSION)/,' \
+		--transform 's,^,drbd-$(FDIST_VERSION)/,S' \
 		> drbd-$(FDIST_VERSION).tar.gz
 
 ifeq ($(FORCE),)

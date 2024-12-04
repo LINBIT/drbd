@@ -6,8 +6,10 @@ Release: 1
 # always require a suitable userland
 Requires: drbd-utils >= 9.27.0
 
+# Store the version, as later macros may mangle it
+%global drbd_version %version
 %global tarball_version %(echo "%{version}" | sed -e "s,%{?dist}$,," -e "s,~,-,")
-Source: http://oss.linbit.com/drbd/drbd-%{tarball_version}.tar.gz
+Source: http://pkg.linbit.com/downloads/drbd/9/drbd-%{tarball_version}.tar.gz
 
 License: GPLv2+
 Group: System Environment/Kernel
@@ -27,6 +29,9 @@ BuildRequires: %kernel_module_package_buildreqs
 # rpmbuild --with gcov to set GCOV_PROFILE=y for make
 %bcond_with gcov
 
+# rpmbuild --with dkms to build drbd-dkms package
+%bcond_with dkms
+
 # rpmbuild --define "ofed_kernel_dir /usr/src/ofa_kernel/x86_64/4.18.0-147.5.1..."
 # to build against an some mlnx-ofa_kernel-devel
 %if %{defined ofed_kernel_dir}
@@ -36,6 +41,19 @@ BuildRequires: %kernel_module_package_buildreqs
 %endif
 %global _ofed_version_nodash .ofed.%(echo %{?_ofed_version} | sed -r 'y/-/_/; s/\.el[0-9_]+\.%{_arch}$//;')
 %global dash_ofed -ofed
+%endif
+
+%if %{with dkms}
+# Define this package here before kernel macros mess with the version
+%package -n drbd-dkms
+Summary: %{summary}
+BuildArch: noarch
+Requires: dkms
+Requires: /usr/bin/diff
+Requires: /usr/bin/patch
+
+%description -n drbd-dkms
+This package contains the sources for DRBD for building with DKMS.
 %endif
 
 %description
@@ -174,8 +192,33 @@ xargs -r printf "override %%-16s * weak-updates/%%s\n" \
 install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
 %endif
 
+%if %{with dkms}
+# For DKMS, install the original source
+%{__install} -d %{buildroot}%{_usrsrc}/drbd-%{drbd_version}-%{release}/src
+%{__install} misc/dkms.conf %{buildroot}%{_usrsrc}/drbd-%{drbd_version}-%{release}/dkms.conf
+tar -xvf %{S:0} -C %{buildroot}%{_usrsrc}/drbd-%{drbd_version}-%{release}/src --strip-components=1 drbd-%{tarball_version}/drbd
+%endif
+
 %clean
 rm -rf %{buildroot}
+
+%if %{with dkms}
+%files -n drbd-dkms
+%{_usrsrc}/drbd-%{drbd_version}-%{release}
+
+%post -n drbd-dkms
+DKMS_NAME=drbd
+DKMS_VERSION=%{drbd_version}-%{release}
+if [ $1 -gt 1 ] ; then
+	UPGRADE="1"
+fi
+/usr/lib/dkms/common.postinst $DKMS_NAME $DKMS_VERSION /usr/share/$DKMS_NAME-$DKMS_VERSION "" $UPGRADE
+
+%preun -n drbd-dkms
+DKMS_NAME=drbd
+DKMS_VERSION=%{drbd_version}-%{release}
+dkms remove -m $DKMS_NAME -v $DKMS_VERSION --all
+%endif
 
 %changelog
 * Mon Nov 18 2024 Philipp Reisner <phil@linbit.com> - 9.2.12
