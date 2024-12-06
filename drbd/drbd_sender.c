@@ -2593,7 +2593,7 @@ static void maybe_send_unplug_remote(struct drbd_connection *connection, bool se
 		/* Paranoia: to avoid a continuous stream of unplug-hints,
 		 * in case we never get any unplug events */
 		connection->todo.unplug_dagtag_sector[connection->todo.unplug_slot] =
-			connection->send.current_dagtag_sector + (1ULL << 63);
+			connection->send.current_dagtag_sector + (1ULL << 62);
 		/* advance the current unplug slot */
 		connection->todo.unplug_slot ^= 1;
 	} else if (!send_anyways)
