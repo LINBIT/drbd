@@ -1085,6 +1085,7 @@ static bool conn_connect(struct drbd_connection *connection)
 
 start:
 	have_mutex = false;
+	clear_bit(PING_PENDING, &connection->flags);
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
 	if (change_cstate_tag(connection, C_CONNECTING, CS_VERBOSE, "connecting", NULL)
 			< SS_SUCCESS) {
@@ -10459,8 +10460,8 @@ static int got_PingAck(struct drbd_connection *connection, struct packet_info *p
 	clear_bit(PING_TIMEOUT_ACTIVE, &connection->flags);
 	set_rcvtimeo(connection, REGULAR_TIMEOUT);
 
-	if (!test_bit(GOT_PING_ACK, &connection->flags)) {
-		set_bit(GOT_PING_ACK, &connection->flags);
+	if (test_bit(PING_PENDING, &connection->flags)) {
+		clear_bit(PING_PENDING, &connection->flags);
 		wake_up_all(&connection->resource->state_wait);
 	}
 

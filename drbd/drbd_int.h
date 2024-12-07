@@ -790,7 +790,7 @@ extern struct fifo_buffer *fifo_alloc(unsigned int fifo_size);
 
 /* flag bits per connection */
 enum connection_flag {
-	GOT_PING_ACK,		/* set when we receive a ping_ack packet, state_wait gets woken */
+	PING_PENDING,		/* cleared upon receiveing a ping_ack packet, wakes state_wait */
 	TWOPC_PREPARED,
 	TWOPC_YES,
 	TWOPC_NO,

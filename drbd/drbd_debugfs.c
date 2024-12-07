@@ -901,7 +901,7 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "flags: 0x%04lx :", flags);
 #define pretty_print_bit(n) \
 	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n);
-	pretty_print_bit(GOT_PING_ACK);
+	pretty_print_bit(PING_PENDING);
 	pretty_print_bit(TWOPC_PREPARED);
 	pretty_print_bit(TWOPC_YES);
 	pretty_print_bit(TWOPC_NO);

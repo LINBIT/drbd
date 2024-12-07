@@ -1512,13 +1512,51 @@ static int w_resync_finished(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+static long ping_timeout(struct drbd_connection *connection)
+{
+	struct net_conf *nc;
+	long timeout;
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	timeout = nc->ping_timeo * HZ / 10;
+	rcu_read_unlock();
+
+	return timeout;
+}
+
+static int send_ping_peer(struct drbd_connection *connection)
+{
+	bool was_pending = test_and_set_bit(PING_PENDING, &connection->flags);
+	int err = 0;
+
+	if (!was_pending) {
+		err = drbd_send_ping(connection);
+		if (err)
+			change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+	}
+
+	return err;
+}
+
 void drbd_ping_peer(struct drbd_connection *connection)
 {
-	clear_bit(GOT_PING_ACK, &connection->flags);
-	schedule_work(&connection->send_ping_work);
-	wait_event(connection->resource->state_wait,
-		   test_bit(GOT_PING_ACK, &connection->flags) ||
-		   connection->cstate[NOW] < C_CONNECTED);
+	long r, timeout = ping_timeout(connection);
+	int err;
+
+	err = send_ping_peer(connection);
+	if (err)
+		return;
+
+	r = wait_event_timeout(connection->resource->state_wait,
+			       !test_bit(PING_PENDING, &connection->flags) ||
+			       connection->cstate[NOW] < C_CONNECTED,
+			       timeout);
+	if (r > 0)
+		return;
+
+	drbd_warn(connection, "PingAck did not arrive in time\n");
+	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
 /* caller needs to hold rcu_read_lock, state_rwlock, adm_mutex or conf_update */
@@ -2982,7 +3020,7 @@ void __update_timing_details(
 	++(*cb_nr);
 }
 
-static bool all_peers_responded(struct drbd_resource *resource)
+static bool all_responded(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 	bool all_responded = true;
@@ -2995,9 +3033,11 @@ static bool all_peers_responded(struct drbd_resource *resource)
 			clear_bit(CHECKING_PEER, &connection->flags);
 			continue;
 		}
-		if (!test_bit(GOT_PING_ACK, &connection->flags)) {
+		if (test_bit(PING_PENDING, &connection->flags)) {
 			all_responded = false;
-			break;
+			continue;
+		} else {
+			clear_bit(CHECKING_PEER, &connection->flags);
 		}
 	}
 	rcu_read_unlock();
@@ -3008,6 +3048,8 @@ static bool all_peers_responded(struct drbd_resource *resource)
 void drbd_check_peers(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
+	long t, timeo = LONG_MAX;
+	unsigned long start;
 	bool check_ongoing;
 	u64 im;
 
@@ -3018,15 +3060,37 @@ void drbd_check_peers(struct drbd_resource *resource)
 		return;
 	}
 
+	start = jiffies;
 	for_each_connection_ref(connection, im, resource) {
 		if (connection->cstate[NOW] < C_CONNECTED)
 			continue;
-		clear_bit(GOT_PING_ACK, &connection->flags);
 		set_bit(CHECKING_PEER, &connection->flags);
-		schedule_work(&connection->send_ping_work);
+		send_ping_peer(connection);
+		t = ping_timeout(connection);
+		if (t < timeo)
+			timeo = t;
 	}
 
-	wait_event(resource->state_wait, all_peers_responded(resource));
+	while (!wait_event_timeout(resource->state_wait, all_responded(resource), timeo)) {
+		unsigned long waited = jiffies - start;
+
+		timeo = LONG_MAX;
+		rcu_read_lock();
+		for_each_connection_rcu(connection, resource) {
+			if (!test_bit(CHECKING_PEER, &connection->flags))
+				continue;
+			t = ping_timeout(connection);
+			if (waited >= t) {
+				drbd_warn(connection, "peer failed to send PingAck in time\n");
+				change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+				clear_bit(CHECKING_PEER, &connection->flags);
+				continue;
+			}
+			if (t - waited < timeo)
+				timeo = t - waited;
+		}
+		rcu_read_unlock();
+	}
 
 	clear_bit(CHECKING_PEERS, &resource->flags);
 	wake_up_all(&resource->state_wait);
