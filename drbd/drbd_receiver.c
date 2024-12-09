@@ -8867,10 +8867,13 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		}
 	}
 
-	/* Need to wait until the other receiver thread has called the
-	   cleanup_unacked_peer_requests() function */
+	/* We must wait until the other receiver thread has called the
+	 * cleanup_unacked_peer_requests() and drbd_notify_peers_lost_primary() functions. If we
+	 * become a resync target, the peer would complain about being in the wrong state when he
+	 * gets the bitmap before the P_PEER_DAGTAG packet.
+	 */
 	wait_event(resource->state_wait,
-		   lost_peer->cstate[NOW] <= C_UNCONNECTED || lost_peer->cstate[NOW] == C_CONNECTING);
+		   !test_bit(NOTIFY_PEERS_LOST_PRIMARY, &lost_peer->flags));
 
 	dagtag_offset = atomic64_read(&lost_peer->last_dagtag_sector) - (s64)be64_to_cpu(p->dagtag);
 	if (strategy == SYNC_SOURCE_USE_BITMAP)  {
@@ -9900,8 +9903,10 @@ static void conn_disconnect(struct drbd_connection *connection)
 	}
 	end_state_change(resource, &irq_flags, "disconnected");
 
-	if (test_and_clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags))
+	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags)) {
 		drbd_notify_peers_lost_primary(connection);
+		clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
+	}
 
 	if (oc == C_DISCONNECTING)
 		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,
