@@ -4830,7 +4830,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 		return __end_state_change(resource, &irq_flags, rv, tag);
 	}
 
-	if (!expect(resource, context->flags & CS_SERIALIZE)) {
+	if (!expect(resource, context->flags & CS_SERIALIZE || context->mask.i == 0)) {
 		rv = SS_CW_FAILED_BY_PEER;
 		return __end_state_change(resource, &irq_flags, rv, tag);
 	}
@@ -5598,7 +5598,7 @@ void drbd_empty_twopc_work_fn(struct work_struct *work)
 {
 	struct drbd_resource *resource = container_of(work, struct drbd_resource, empty_twopc);
 
-	twopc_after_lost_peer(resource, CS_VERBOSE | CS_SERIALIZE);
+	twopc_after_lost_peer(resource, CS_VERBOSE);
 
 	clear_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	wake_up_all(&resource->state_wait);
