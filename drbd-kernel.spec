@@ -209,15 +209,16 @@ rm -rf %{buildroot}
 %post -n drbd-dkms
 DKMS_NAME=drbd
 DKMS_VERSION=%{drbd_version}-%{release}
-if [ $1 -gt 1 ] ; then
-	UPGRADE="1"
-fi
-/usr/lib/dkms/common.postinst $DKMS_NAME $DKMS_VERSION /usr/share/$DKMS_NAME-$DKMS_VERSION "" $UPGRADE
+dkms add -m $DKMS_NAME -v $DKMS_VERSION -q --rpm_safe_upgrade || :
+# Rebuild and make available for the currently running kernel:
+dkms build -m $DKMS_NAME -v $DKMS_VERSION -q || :
+dkms install -m $DKMS_NAME -v $DKMS_VERSION -q --force || :
 
 %preun -n drbd-dkms
 DKMS_NAME=drbd
 DKMS_VERSION=%{drbd_version}-%{release}
-dkms remove -m $DKMS_NAME -v $DKMS_VERSION --all
+dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
+
 %endif
 
 %changelog
