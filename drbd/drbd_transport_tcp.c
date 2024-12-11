@@ -545,6 +545,8 @@ out:
 	return err;
 }
 
+#if 0
+
 typedef int (*tls_hello_func)(const struct tls_handshake_args *, gfp_t);
 
 struct tls_handshake_wait {
@@ -610,6 +612,8 @@ static int tls_wait_hello(struct tls_handshake_wait *csocket_tls_wait,
 	return dsocket_tls_wait->status;
 }
 
+#endif
+
 
 static int dtt_send_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket,
 				 enum drbd_packet cmd)
@@ -632,7 +636,9 @@ static void dtt_socket_free(struct socket **socket)
 	if (!*socket)
 		return;
 
+#if 0
 	tls_handshake_cancel((*socket)->sk);
+#endif
 	kernel_sock_shutdown(*socket, SHUT_RDWR);
 
 	if ((*socket)->file)
@@ -864,6 +870,7 @@ static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, st
 	return be16_to_cpu(h->command);
 }
 
+#if 0
 
 static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb,
 				 unsigned int offset, size_t len)
@@ -893,6 +900,8 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 	return consumed;
 }
 
+#endif
+
 static void dtt_control_data_ready_work(struct work_struct *item)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -919,10 +928,12 @@ static void dtt_control_data_ready(struct sock *sock)
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 
+#if 0
 	read_descriptor_t rd_desc = {
 		.count = 1,
 		.arg = { .data = transport },
 	};
+#endif
 
 	if (!test_bit(DTT_DATA_READY_ARMED, &tcp_transport->flags)
 	    && tcp_transport->original_control_sk_data_ready)
@@ -941,9 +952,12 @@ static void dtt_control_data_ready(struct sock *sock)
 	if (tcp_transport->control_data_ready_work.func) {
 		queue_work(dtt_csocket_recv, &tcp_transport->control_data_ready_work);
 	} else {
+		printk("Warning: tcp_read_sock not implemented.\n");
+#if 0
 		spin_lock_bh(&tcp_transport->control_recv_lock);
 		tcp_read_sock(sock, &rd_desc, dtt_control_tcp_input);
 		spin_unlock_bh(&tcp_transport->control_recv_lock);
+#endif
 	}
 }
 
@@ -1150,9 +1164,15 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct dtt_path *connect_to_path, *first_path = NULL;
 	struct socket *dsocket, *csocket;
 	struct net_conf *nc;
+#if 0
 	bool tls, dsocket_is_server = false, csocket_is_server = false;
+#else
+	bool tls;
+#endif
 	char peername[64];
+#if 0
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
+#endif
 	int timeout, err;
 	char one = 1;
 	bool ok;
@@ -1214,10 +1234,14 @@ static int dtt_connect(struct drbd_transport *transport)
 				dtt_socket_free(&s);
 			} else if (use_for_data) {
 				dsocket = s;
+#if 0
 				dsocket_is_server = false;
+#endif
 			} else {
 				csocket = s;
+#if 0
 				csocket_is_server = false;
+#endif
 			}
 		} else if (!first_path) {
 			connect_to_path = dtt_next_path(connect_to_path, transport);
@@ -1265,11 +1289,15 @@ retry:
 					tr_warn(transport, "initial packet S crossed\n");
 					dtt_socket_free(&dsocket);
 					dsocket = s;
+#if 0
 					dsocket_is_server = true;
+#endif
 					goto randomize;
 				}
 				dsocket = s;
+#if 0
 				dsocket_is_server = true;
+#endif
 				break;
 			case P_INITIAL_META:
 				set_bit(RESOLVE_CONFLICTS, &transport->flags);
@@ -1277,11 +1305,15 @@ retry:
 					tr_warn(transport, "initial packet M crossed\n");
 					dtt_socket_free(&csocket);
 					csocket = s;
+#if 0
 					csocket_is_server = true;
+#endif
 					goto randomize;
 				}
 				csocket = s;
+#if 0
 				csocket_is_server = true;
+#endif
 				break;
 			default:
 				tr_warn(transport, "Error receiving initial packet: %d\n", fp);
@@ -1303,9 +1335,11 @@ randomize:
 	timeout = nc->timeout * HZ / 10;
 	tls = nc->tls;
 	memcpy(peername, nc->name, 64);
+#if 0
 	tls_keyring = nc->tls_keyring;
 	tls_privkey = nc->tls_privkey;
 	tls_certificate = nc->tls_certificate;
+#endif
 	rcu_read_unlock();
 
 	write_lock_bh(&csocket->sk->sk_callback_lock);
@@ -1316,6 +1350,8 @@ randomize:
 	write_unlock_bh(&csocket->sk->sk_callback_lock);
 
 	if (tls) {
+		printk("Warning: TLS not supported on this platform.\n");
+#if 0
 		struct tls_handshake_wait csocket_tls_wait = {
 			.done = COMPLETION_INITIALIZER_ONSTACK(csocket_tls_wait.done),
 		};
@@ -1348,7 +1384,9 @@ randomize:
 		}
 
 		INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
+#endif
 	}
+	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
