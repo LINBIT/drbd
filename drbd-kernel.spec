@@ -176,6 +176,9 @@ for flavor in %flavors_to_build ; do
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv drbd/build-current/.kernel.config.gz drbd/k-config-$kernelrelease.gz
 done
+%if %{with dkms}
+sed -e s/#MODULE_VERSION#/%{drbd_version}-%{release}/ -i misc/dkms.conf
+%endif
 
 %if %{defined suse_kernel_module_package}
 # On SUSE, putting the modules into the default path determined by
