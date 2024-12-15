@@ -1557,10 +1557,13 @@ static __printf(2, 3) void _drbd_state_err(struct change_context *context, const
 	va_end(args);
 	if (!err_str)
 		return;
-	if (context->err_str)
-		*context->err_str = err_str;
 	if (context->flags & CS_VERBOSE)
 		drbd_err(resource, "%s\n", err_str);
+
+	if (context->err_str)
+		*context->err_str = err_str;
+	else
+		kfree(err_str);
 }
 
 static __printf(2, 3) void drbd_state_err(struct drbd_resource *resource, const char *fmt, ...)
@@ -1573,10 +1576,13 @@ static __printf(2, 3) void drbd_state_err(struct drbd_resource *resource, const 
 	va_end(args);
 	if (!err_str)
 		return;
-	if (resource->state_change_err_str)
-		*resource->state_change_err_str = err_str;
 	if (resource->state_change_flags & CS_VERBOSE)
 		drbd_err(resource, "%s\n", err_str);
+
+	if (resource->state_change_err_str)
+		*resource->state_change_err_str = err_str;
+	else
+		kfree(err_str);
 }
 
 static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resource)
