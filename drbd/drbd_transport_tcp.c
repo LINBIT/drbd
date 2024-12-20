@@ -285,6 +285,7 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 
 	ret = kernel_recvmsg(socket, &msg, &iov, 1, size, flags);
 
+#if 0
 	if (msg.msg_controllen != sizeof(u)) {
 		u8 level, description;
 
@@ -303,6 +304,7 @@ static int dtt_recv_short(struct socket *socket, void *buf, size_t size, int fla
 			break;
 		}
 	}
+#endif
 
 	return ret;
 }
