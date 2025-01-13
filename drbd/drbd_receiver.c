@@ -8844,7 +8844,8 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 
 		if (peer_device->repl_state[NOW] > L_ESTABLISHED)
 			goto out;
-		if (peer_device->device->disk_state[NOW] != D_CONSISTENT)
+		if (peer_device->device->disk_state[NOW] != D_CONSISTENT &&
+		    peer_device->device->disk_state[NOW] != D_UP_TO_DATE)
 			goto out;
 		if (!get_ldev(peer_device->device))
 			continue;
