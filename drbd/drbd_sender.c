@@ -1893,7 +1893,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	{
 	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
 	if (verify_done && peer_device->ov_skipped)
-		snprintf(tmp, sizeof(tmp), " but %llu %dk blocks skipped",
+		snprintf(tmp, sizeof(tmp), " but %" PRI_ULONG_PTR " %dk blocks skipped",
 			peer_device->ov_skipped, Bit2KB(1));
 	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
