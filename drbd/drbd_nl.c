@@ -1306,7 +1306,7 @@ static void opener_info(struct drbd_resource *resource,
 
 		drbd_msg_sprintf_info(reply_skb,
 				      "/dev/drbd%d opened by %s (pid %d) "
-				      "at %04lld-%02d-%02d %02d:%02d:%02d.%03lld",
+				      "at %04" PRI_LONG_PTR "-%02d-%02d %02d:%02d:%02d.%03" PRI_LONG_PTR,
 				      device->minor,
 				      o->comm, o->pid,
 				      tm.tm_year + 1900,
