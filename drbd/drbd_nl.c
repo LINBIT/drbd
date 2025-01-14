@@ -1299,7 +1299,7 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, si
 		first = list_first_entry(&device->openers, struct opener, list);
 		ts = ktime_to_timespec64(first->opened);
 		time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
-		cnt = snprintf(buf, len, " [%s:%d:%04lld-%02d-%02d_%02d:%02d:%02d.%03lld]",
+		cnt = snprintf(buf, len, " [%s:%d:%04" PRI_LONG_PTR "-%02d-%02d_%02d:%02d:%02d.%03" PRI_LONG_PTR "]",
 			      first->comm, first->pid,
 			      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			      tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / NSEC_PER_MSEC);
@@ -1310,7 +1310,7 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf, si
 			len -= cnt-1;
 			ts = ktime_to_timespec64(last->opened);
 			time64_to_tm(ts.tv_sec, -sys_tz.tz_minuteswest * 60, &tm);
-			snprintf(buf, len, "%s%s:%d:%04lld-%02d-%02d_%02d:%02d:%02d.%03lld]",
+			snprintf(buf, len, "%s%s:%d:%04" PRI_LONG_PTR "-%02d-%02d_%02d:%02d:%02d.%03" PRI_LONG_PTR "]",
 			      device->open_cnt > 2 ? ", ..., " : ", ",
 			      last->comm, last->pid,
 			      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
@@ -1345,7 +1345,7 @@ static int put_device_opener_info(struct drbd_device *device, struct sk_buff *re
 			dotdotdot = "[...]\n";
 		}
 		drbd_msg_sprintf_info(reply_skb,
-			"%sdrbd%d opened by %s (pid %d) at %04lld-%02d-%02d %02d:%02d:%02d.%03lld",
+			"%sdrbd%d opened by %s (pid %d) at %04" PRI_LONG_PTR "-%02d-%02d %02d:%02d:%02d.%03" PRI_LONG_PTR,
 			dotdotdot,
 			device->minor, o->comm, o->pid,
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
