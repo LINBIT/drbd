@@ -2646,7 +2646,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 {
 	struct drbd_peer_md *peer_md, *day0_md;
 	struct meta_data_on_disk_9 *buffer;
-	int from_index, freed_index;
+	int from_index, freed_index = -1;
 	bool free_bitmap_slot;
 
 	if (!get_ldev(device))
