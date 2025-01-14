@@ -8820,8 +8820,6 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	struct p_peer_dagtag *p = pi->data;
 	struct drbd_connection *lost_peer;
 	enum sync_strategy strategy = NO_SYNC;
-	unsigned long irq_flags;
-	enum drbd_state_rv rv;
 	s64 dagtag_offset;
 	int vnr = 0;
 
@@ -8894,6 +8892,9 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	}
 
 	if (new_repl_state != L_ESTABLISHED) {
+		unsigned long irq_flags;
+		enum drbd_state_rv rv;
+
 		if (new_repl_state == L_WF_BITMAP_T) {
 			connection->after_reconciliation.dagtag_sector = be64_to_cpu(p->dagtag);
 			connection->after_reconciliation.lost_node_id = be32_to_cpu(p->node_id);
@@ -8917,15 +8918,6 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	} else {
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
-		begin_state_change(resource, &irq_flags, CS_VERBOSE);
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-			struct drbd_device *device = peer_device->device;
-			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
-
-			if (pdsk > device->disk_state[NOW])
-				__change_disk_state(peer_device->device, pdsk);
-		}
-		end_state_change(resource, &irq_flags, "receive-peer-dagtag");
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
 			drbd_bm_clear_many_bits(peer_device, 0, -1UL);

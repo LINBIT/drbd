@@ -2283,6 +2283,13 @@ static void sanitize_state(struct drbd_resource *resource)
 			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device, NEW))
 				disk_state[NEW] = D_UP_TO_DATE;
 
+			/* Follow a neighbor that goes from D_CONSISTENT TO D_UP_TO_DATE */
+			if (disk_state[NEW] == D_CONSISTENT &&
+			    peer_disk_state[OLD] == D_CONSISTENT &&
+			    peer_disk_state[NEW] == D_UP_TO_DATE &&
+			    peer_device->uuid_flags & UUID_FLAG_STABLE)
+				disk_state[NEW] = D_UP_TO_DATE;
+
 			peer_device->uuid_flags &= ~UUID_FLAG_GOT_STABLE;
 
 			uuids_match =
