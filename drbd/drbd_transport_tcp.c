@@ -1292,19 +1292,25 @@ randomize:
 			csocket, peername, tls_keyring, tls_privkey, tls_certificate,
 			csocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
 			&csocket_tls_wait);
-		if (err < 0)
+		if (err < 0) {
+			tr_warn(transport, "Error from control socket tls handshake: %d\n", err);
 			goto out_release_sockets;
+		}
 
 		err = tls_init_hello(
 			dsocket, peername, tls_keyring, tls_privkey, tls_certificate,
 			dsocket_is_server ? tls_server_hello_x509 : tls_client_hello_x509,
 			&dsocket_tls_wait);
-		if (err < 0)
+		if (err < 0) {
+			tr_warn(transport, "Error from data socket tls handshake: %d\n", err);
 			goto out_release_sockets;
+		}
 
 		err = tls_wait_hello(&csocket_tls_wait, &dsocket_tls_wait, timeout);
-		if (err < 0)
+		if (err < 0) {
+			tr_warn(transport, "Error from tls handshake: %d\n", err);
 			goto out_release_sockets;
+		}
 
 		INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 	}
