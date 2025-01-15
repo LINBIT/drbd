@@ -2471,28 +2471,12 @@ static bool drbd_any_peer_device_up_to_date(struct drbd_connection *connection)
 	return false;
 }
 
-void drbd_check_all_resync_done(struct drbd_resource *resource)
-{
-	struct drbd_device *device;
-	int vnr;
-
-	rcu_read_lock();
-	idr_for_each_entry(&resource->devices, device, vnr) {
-		struct drbd_peer_device *peer_device;
-
-		for_each_peer_device_rcu(peer_device, device)
-			drbd_check_resync_done(peer_device);
-	}
-	rcu_read_unlock();
-}
-
 static void drbd_determine_flush_pending(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
 	struct drbd_connection *primary_connection;
 	struct drbd_connection *up_to_date_connection;
 	int vnr;
-	bool any_flush_bits_cleared = false;
 	bool send_flush_requests = false;
 
 	/* Clear any bits if we no longer expect or require a flush ack */
@@ -2505,10 +2489,8 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 		 * to loss of connection to the Primary peer.
 		 */
 		if (primary_connection->cstate[NEW] != C_CONNECTED) {
-			if (*pending_flush_mask) {
-				any_flush_bits_cleared = true;
+			if (*pending_flush_mask)
 				*pending_flush_mask = 0;
-			}
 			continue;
 		}
 
@@ -2523,17 +2505,11 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 			if (drbd_any_peer_device_up_to_date(up_to_date_connection))
 				continue;
 
-			if (*pending_flush_mask & up_to_date_mask) {
-				any_flush_bits_cleared = true;
+			if (*pending_flush_mask & up_to_date_mask)
 				*pending_flush_mask &= ~up_to_date_mask;
-			}
 		}
 	}
 	spin_unlock(&resource->initiator_flush_lock);
-
-	/* Potentially finish resync if we cleared flush pending bits */
-	if (any_flush_bits_cleared)
-		drbd_check_all_resync_done(resource);
 
 	/* Check if we need a new flush */
 	idr_for_each_entry(&resource->devices, device, vnr) {

@@ -2449,7 +2449,6 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device,
 			   unsigned long still_to_go);
 bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device);
-void drbd_check_resync_done(struct drbd_peer_device *peer_device);
 int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector,
 			     int size);
 int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,

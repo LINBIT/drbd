@@ -4342,8 +4342,6 @@ static int receive_flush_requests_ack(struct drbd_connection *connection, struct
 		primary_connection->pending_flush_mask &= ~NODE_MASK(connection->peer_node_id);
 	rcu_read_unlock();
 	spin_unlock_irq(&resource->initiator_flush_lock);
-
-	drbd_check_all_resync_done(resource);
 	return 0;
 }
 
@@ -8819,19 +8817,7 @@ static int receive_out_of_sync(struct drbd_connection *connection, struct packet
 	conn_wait_active_ee_empty_or_disconnect(connection);
 	conn_wait_done_ee_empty_or_disconnect(connection);
 
-	spin_lock_bh(&peer_device->resync_next_bit_lock);
-
-	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
-		unsigned long bit = BM_SECT_TO_BIT(sector);
-		if (bit < peer_device->resync_next_bit)
-			peer_device->resync_next_bit = bit;
-		if (!timer_pending(&peer_device->resync_timer))
-			mod_timer(&peer_device->resync_timer, jiffies + 1);
-	}
-
 	drbd_set_out_of_sync(peer_device, sector, be32_to_cpu(p->blksize));
-
-	spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
 	return 0;
 }
@@ -10814,13 +10800,7 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 				drbd_verify_skipped_block(peer_device, peer_req->i.sector, peer_req->i.size);
 				verify_progress(peer_device, peer_req->i.sector, peer_req->i.size);
 			} else {
-				unsigned long bit;
-
 				set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
-				bit = BM_SECT_TO_BIT(peer_req->i.sector);
-				spin_lock_bh(&peer_device->resync_next_bit_lock);
-				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);
-				spin_unlock_bh(&peer_device->resync_next_bit_lock);
 			}
 		}
 

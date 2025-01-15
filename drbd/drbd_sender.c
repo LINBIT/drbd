@@ -1011,6 +1011,42 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 		mod_timer(&peer_device->resync_timer, jiffies + (interval - latency));
 }
 
+/* Returns whether whole resync is finished. */
+static bool drbd_resync_check_finished(struct drbd_peer_device *peer_device)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_resource *resource = connection->resource;
+	bool resync_requests_complete;
+	unsigned long bitmap_weight;
+
+	if (drbd_bm_find_next(peer_device, peer_device->resync_next_bit) < DRBD_END_OF_BITMAP)
+		return false;
+
+	if (drbd_any_flush_pending(resource))
+		return false;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	resync_requests_complete = list_empty(&peer_device->resync_requests);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	if (!resync_requests_complete)
+		return false;
+
+	bitmap_weight = drbd_bm_total_weight(peer_device);
+
+	drbd_info(peer_device, "Resync pass complete out-of-sync:%lu failed:%lu\n",
+			bitmap_weight, peer_device->rs_failed);
+
+	if (bitmap_weight > 0 && peer_device->rs_failed == 0) {
+		/* Resync pass finished. Start next pass. */
+		peer_device->resync_next_bit = 0;
+		return false;
+	}
+
+	drbd_resync_finished(peer_device, D_MASK);
+	return true;
+}
+
 static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
 {
 	struct drbd_connection *connection = peer_device->connection;
@@ -1168,13 +1204,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	if (unlikely(cancel))
 		return 0;
 
-	if (peer_device->rs_total == 0) {
-		/* empty resync? */
-		if (!drbd_any_flush_pending(connection->resource))
-			drbd_resync_finished(peer_device, D_MASK);
-		return 0;
-	}
-
 	if (test_bit(SYNC_TARGET_TO_BEHIND, &peer_device->flags)) {
 		/* If a P_RS_CANCEL_AHEAD on control socket overtook the
 		 * already queued data and state change to Ahead/Behind,
@@ -1182,6 +1211,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		drbd_info_ratelimit(peer_device, "peer pulled ahead during resync\n");
 		return 0;
 	}
+
+	if (drbd_resync_check_finished(peer_device))
+		return 0;
 
 	if (!get_ldev(device)) {
 		/* Since we only need to access device->rsync a
@@ -1315,13 +1347,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		case -EAGAIN: /* allocation failed, or ldev busy */
 			set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
 			spin_lock_bh(&peer_device->resync_next_bit_lock);
-			/* Set resync_next_bit back, but make sure that
-			 * it really moves backwards. If a negative
-			 * reply has been received in the meantime it
-			 * may already be further back. */
-			peer_device->resync_next_bit =
-				min(peer_device->resync_next_bit,
-				    (unsigned long)BM_SECT_TO_BIT(sector));
+			peer_device->resync_next_bit = (unsigned long) BM_SECT_TO_BIT(sector);
 			i = rollback_i;
 			goto request_done;
 		case 0:
@@ -1341,23 +1367,29 @@ request_done:
 	last_request_sent = peer_device->resync_next_bit >= drbd_bm_bits(device);
 	spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
-skip_request:
-	/* If the last syncer _request_ was sent,
-	 * but the P_RS_DATA_REPLY not yet received.  sync will end (and
-	 * next sync group will resume), as soon as we receive the last
-	 * resync data block, and the last bit is cleared.
-	 * until then resync "work" is "inactive" ...
-	 */
 	if (last_request_sent) {
+		/*
+		 * Last resync request sent in this pass. There will be no
+		 * replies for subsequent sectors so discard merging should
+		 * stop here.
+		 */
 		drbd_last_resync_request(peer_device, false);
-	} else {
-		/* and in case that raced with the receiver, reschedule ourselves right now */
-		if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight && request_ok) {
-			drbd_queue_work_if_unqueued(
-					&connection->sender_work,
-					&peer_device->resync_work);
-		} else {
-			mod_timer(&peer_device->resync_timer, jiffies + resync_delay(request_ok, number, i));
+	}
+
+skip_request:
+	/* Always reschedule ourselves as a form of polling to detect the end of a resync pass. */
+	mod_timer(&peer_device->resync_timer, jiffies + resync_delay(request_ok, number, i));
+
+	if (i > 0 && request_ok) {
+		int rs_sect_in = atomic_read(&peer_device->rs_sect_in);
+
+		if (rs_sect_in >= peer_device->rs_in_flight) {
+			/*
+			 * In case replies were received before correction to
+			 * rs_in_flight, consider whether to schedule ourselves
+			 * early.
+			 */
+			drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
 		}
 	}
 	put_ldev(device);
