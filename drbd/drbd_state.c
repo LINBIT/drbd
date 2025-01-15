@@ -5559,8 +5559,9 @@ static bool do_twopc_after_lost_peer(struct change_context *context, enum change
 	struct twopc_reply *reply = &resource->twopc_reply;
 	u64 directly_reachable = directly_connected_nodes(resource, NEW) |
 		NODE_MASK(resource->res_opts.node_id);
+	bool pri_incapable = reply->primary_nodes && !reply->weak_nodes; /* TWOPC_PRI_INCAPABLE */
 
-	if (phase == PH_COMMIT && (reply->primary_nodes & ~directly_reachable)) {
+	if (phase == PH_COMMIT && (reply->primary_nodes & ~directly_reachable && !pri_incapable)) {
 		__outdate_myself(resource);
 	} else {
 		struct drbd_device *device;
