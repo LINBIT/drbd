@@ -985,16 +985,12 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 	/* interval holds the ideal pace in which we should request max_bio_size */
 
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
-		bool progress;
-		spin_lock_bh(&peer_device->resync_next_bit_lock);
 		/* Only run resync_work early if we are definitely making
 		 * progress. Otherwise we might continually lock a resync
 		 * extent even when all the requests are canceled. This can
 		 * cause application IO to be blocked for an indefinitely long
 		 * time. */
-		progress = peer_device->resync_next_bit > peer_device->last_resync_next_bit;
-		spin_unlock_bh(&peer_device->resync_next_bit_lock);
-		if (!progress)
+		if (test_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags))
 			return;
 	}
 
@@ -1224,7 +1220,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	 * resolved in an arbitrary order, leading to an unexpected ordering of
 	 * requests being completed.
 	 */
-	if (peer_device->resync_next_bit <= peer_device->last_resync_next_bit &&
+	if (test_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags) &&
 			peer_device->rs_in_flight > 0) {
 		spin_unlock_bh(&peer_device->resync_next_bit_lock);
 
@@ -1244,13 +1240,14 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
+	clear_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
 	for (; i < number; i++) {
 		int err;
 
 		/* If we are aborting the requests or the peer is canceling
 		 * them, there is no need to flood the connection with
 		 * requests. Back off now. */
-		if (i > 0 && peer_device->resync_next_bit <= peer_device->last_resync_next_bit) {
+		if (i > 0 && test_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags)) {
 			request_ok = false;
 			goto request_done;
 		}
@@ -1297,8 +1294,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			i++;
 		}
 
-		peer_device->last_resync_next_bit = peer_device->resync_next_bit;
-
 		/* set the offset to start the next drbd_bm_find_next from */
 		peer_device->resync_next_bit = bit + 1;
 
@@ -1318,6 +1313,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			put_ldev(device);
 			return -EIO;
 		case -EAGAIN: /* allocation failed, or ldev busy */
+			set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
 			spin_lock_bh(&peer_device->resync_next_bit_lock);
 			/* Set resync_next_bit back, but make sure that
 			 * it really moves backwards. If a negative

@@ -10816,6 +10816,7 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool f
 			} else {
 				unsigned long bit;
 
+				set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
 				bit = BM_SECT_TO_BIT(peer_req->i.sector);
 				spin_lock_bh(&peer_device->resync_next_bit_lock);
 				peer_device->resync_next_bit = min(peer_device->resync_next_bit, bit);

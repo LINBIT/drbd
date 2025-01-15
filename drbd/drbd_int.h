@@ -625,6 +625,7 @@ enum peer_device_flag {
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 	PEER_QUORATE,		/* Peer has quorum */
+	RS_REQUEST_UNSUCCESSFUL, /* Some resync request was unsuccessful in current cycle */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1380,7 +1381,6 @@ struct drbd_peer_device {
 	int resync_again; /* decided to resync again while resync running */
 	sector_t last_peers_in_sync_end; /* sector after end of last scheduled peers-in-sync */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
-	unsigned long last_resync_next_bit; /* resync_next_bit from before last resync request */
 	spinlock_t resync_next_bit_lock;
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected (RQ_NET_PENDING set) */
