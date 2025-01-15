@@ -1849,10 +1849,8 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			khelper_cmd = "out-of-sync";
 		}
 	} else {
-		if (!aborted && (n_oos - peer_device->rs_failed != 0)) {
-			drbd_warn(peer_device, "expected n_oos:%lu to be equal to rs_failed:%lu\n",
-				n_oos, peer_device->rs_failed);
-		}
+		if (!aborted && peer_device->rs_failed == 0 && n_oos != 0)
+			drbd_warn(peer_device, "expected n_oos:%lu to be 0\n", n_oos);
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
 			khelper_cmd = "after-resync-target";
