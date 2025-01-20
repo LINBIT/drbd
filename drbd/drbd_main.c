@@ -4027,8 +4027,6 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	INIT_LIST_HEAD(&peer_device->propagate_uuids_work.list);
 	peer_device->propagate_uuids_work.cb = w_send_uuids;
 
-	spin_lock_init(&peer_device->resync_next_bit_lock);
-
 	atomic_set(&peer_device->ap_pending_cnt, 0);
 	atomic_set(&peer_device->unacked_cnt, 0);
 	atomic_set(&peer_device->rs_pending_cnt, 0);

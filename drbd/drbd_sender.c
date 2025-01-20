@@ -1196,7 +1196,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
-	bool last_request_sent = false;
 	bool request_ok = true;
 	unsigned long bit;
 	sector_t sector, prev_sector = 0;
@@ -1246,7 +1245,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	if (number * BM_BLOCK_SIZE < discard_granularity)
 		number = discard_granularity / BM_BLOCK_SIZE;
 
-	spin_lock_bh(&peer_device->resync_next_bit_lock);
 	/*
 	 * Drain resync requests when we jump back to avoid conflicts that are
 	 * resolved in an arbitrary order, leading to an unexpected ordering of
@@ -1254,8 +1252,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	 */
 	if (test_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags) &&
 			peer_device->rs_in_flight > 0) {
-		spin_unlock_bh(&peer_device->resync_next_bit_lock);
-
 		/*
 		 * The rs_in_flight counter does not include discards waiting
 		 * to be merged. Hence we may jump back while there are
@@ -1329,8 +1325,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		/* set the offset to start the next drbd_bm_find_next from */
 		peer_device->resync_next_bit = bit + 1;
 
-		spin_unlock_bh(&peer_device->resync_next_bit_lock);
-
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
@@ -1346,7 +1340,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			return -EIO;
 		case -EAGAIN: /* allocation failed, or ldev busy */
 			set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
-			spin_lock_bh(&peer_device->resync_next_bit_lock);
 			peer_device->resync_next_bit = (unsigned long) BM_SECT_TO_BIT(sector);
 			i = rollback_i;
 			goto request_done;
@@ -1356,18 +1349,13 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		default:
 			BUG();
 		}
-
-		spin_lock_bh(&peer_device->resync_next_bit_lock);
 	}
 
 request_done:
 	/* ... but do a correction, in case we had to break/goto request_done; */
 	peer_device->rs_in_flight -= (number - i) * BM_SECT_PER_BIT;
 
-	last_request_sent = peer_device->resync_next_bit >= drbd_bm_bits(device);
-	spin_unlock_bh(&peer_device->resync_next_bit_lock);
-
-	if (last_request_sent) {
+	if (peer_device->resync_next_bit >= drbd_bm_bits(device)) {
 		/*
 		 * Last resync request sent in this pass. There will be no
 		 * replies for subsequent sectors so discard merging should

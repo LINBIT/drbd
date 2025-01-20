@@ -1381,7 +1381,6 @@ struct drbd_peer_device {
 	int resync_again; /* decided to resync again while resync running */
 	sector_t last_peers_in_sync_end; /* sector after end of last scheduled peers-in-sync */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
-	spinlock_t resync_next_bit_lock;
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected (RQ_NET_PENDING set) */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
