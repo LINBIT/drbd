@@ -1894,13 +1894,18 @@ static int dtl_add_path(struct drbd_path *drbd_path)
 	struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
 	bool active = test_bit(DTL_CONNECTING, &dtl_transport->flags);
 	enum drbd_stream i;
+	int err;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		path->flow[i].stream_nr = i;
 
 	clear_bit(TR_ESTABLISHED, &drbd_path->flags);
 
-	return dtl_path_adjust_listener(path, active);
+	err = dtl_path_adjust_listener(path, active);
+	if (!err && active)
+		mod_delayed_work(system_wq, &dtl_transport->connect_work, 1);
+
+	return err;
 }
 
 static bool dtl_may_remove_path(struct drbd_path *drbd_path)
