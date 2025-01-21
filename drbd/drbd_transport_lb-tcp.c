@@ -156,6 +156,7 @@ static int dtl_path_adjust_listener(struct dtl_path *path, bool active);
 static int dtl_init_listener(struct drbd_transport *transport, const struct sockaddr *addr,
 			     struct net *net, struct drbd_listener *drbd_listener);
 static void dtl_destroy_listener(struct drbd_listener *generic_listener);
+static void dtl_set_socket_callbacks(struct dtl_transport *dtl_transport, struct dtl_flow *flow);
 
 
 static struct drbd_transport_class dtl_transport_class = {
@@ -777,7 +778,14 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 		}
 	}
 
-	if (established != test_bit(TR_ESTABLISHED, &drbd_path->flags)) {
+	if (!established) {
+		if (test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags)) {
+			dtl_transport->connected_paths--;
+			drbd_path_event(transport, drbd_path);
+		}
+	} else if (!test_and_set_bit(TR_ESTABLISHED, &drbd_path->flags)) {
+		dtl_transport->connected_paths++;
+
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			if (lb) {
 				path->flow[i].recv_sequence = 0;
@@ -788,15 +796,11 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 				dtl_transport->streams[i].recv_flow = &path->flow[i];
 			}
 		}
-
-		if (established)
-			set_bit(TR_ESTABLISHED, &drbd_path->flags);
-		else
-			clear_bit(TR_ESTABLISHED, &drbd_path->flags);
+		wake_up(&dtl_transport->data_ready);
+		drbd_put_listener(drbd_path);
+		dtl_set_socket_callbacks(dtl_transport, &path->flow[DATA_STREAM]);
+		dtl_set_socket_callbacks(dtl_transport, &path->flow[CONTROL_STREAM]);
 		drbd_path_event(transport, drbd_path);
-
-		if (established)
-			wake_up(&dtl_transport->data_ready);
 	}
 
 	return established;
@@ -1202,12 +1206,8 @@ static void dtl_do_first_packet(struct dtl_transport *dtl_transport, struct dtl_
 	}
 
 	if (dtl_path_established(transport, path)) {
-		drbd_put_listener(&path->path);
-		dtl_transport->connected_paths++;
 		if (dtl_transport->connected_paths == 1 && fp == P_INITIAL_META)
 			set_bit(RESOLVE_CONFLICTS, &transport->flags);
-		dtl_set_socket_callbacks(dtl_transport, &path->flow[DATA_STREAM]);
-		dtl_set_socket_callbacks(dtl_transport, &path->flow[CONTROL_STREAM]);
 	} else {
 		/* successful accept, not yet both -> speed up next connect attempt */
 		if (test_bit(DTL_CONNECTING, &dtl_transport->flags))
@@ -1343,12 +1343,8 @@ static void dtl_connect_work_fn(struct work_struct *work)
 		}
 
 		if (dtl_path_established(transport, path)) {
-			drbd_put_listener(drbd_path);
-			dtl_transport->connected_paths++;
 			if (dtl_transport->connected_paths == 1 && !use_for_data)
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
-			dtl_set_socket_callbacks(dtl_transport, &path->flow[DATA_STREAM]);
-			dtl_set_socket_callbacks(dtl_transport, &path->flow[CONTROL_STREAM]);
 		}
 	}
 
