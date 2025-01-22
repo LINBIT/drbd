@@ -75,6 +75,7 @@ void __clear_remote_state_change(struct drbd_resource *resource);
 
 
 enum which_state;
+bool drbd_all_peer_replication(struct drbd_device *device, enum which_state which);
 union drbd_state drbd_get_device_state(struct drbd_device *device,
 				       enum which_state which);
 union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device,

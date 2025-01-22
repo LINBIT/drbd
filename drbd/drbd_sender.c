@@ -1011,14 +1011,30 @@ void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device, int r
 		mod_timer(&peer_device->resync_timer, jiffies + (interval - latency));
 }
 
+static void drbd_enable_peer_replication(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	unsigned long irq_flags;
+	struct drbd_peer_device *peer_device;
+
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
+	for_each_peer_device(peer_device, device)
+		peer_device->peer_replication[NEW] = true;
+	end_state_change(resource, &irq_flags, "enable-peer-replication");
+}
+
 /* Returns whether whole resync is finished. */
 static bool drbd_resync_check_finished(struct drbd_peer_device *peer_device)
 {
 	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = connection->resource;
 	bool resync_requests_complete;
 	unsigned long bitmap_weight;
+	unsigned long last_resync_pass_bits;
+	bool peer_replication;
 
+	/* Test whether resync pass finished */
 	if (drbd_bm_find_next(peer_device, peer_device->resync_next_bit) < DRBD_END_OF_BITMAP)
 		return false;
 
@@ -1032,13 +1048,29 @@ static bool drbd_resync_check_finished(struct drbd_peer_device *peer_device)
 	if (!resync_requests_complete)
 		return false;
 
+	last_resync_pass_bits = peer_device->last_resync_pass_bits;
 	bitmap_weight = drbd_bm_total_weight(peer_device);
+	peer_device->last_resync_pass_bits = bitmap_weight;
 
-	drbd_info(peer_device, "Resync pass complete out-of-sync:%lu failed:%lu\n",
-			bitmap_weight, peer_device->rs_failed);
+	peer_replication = drbd_all_peer_replication(device, NOW);
+	dynamic_drbd_dbg(peer_device, "Resync pass complete last:%lu out-of-sync:%lu failed:%lu replication:%s\n",
+			last_resync_pass_bits, bitmap_weight, peer_device->rs_failed,
+			peer_replication ? "enabled" : "disabled");
 
-	if (bitmap_weight > 0 && peer_device->rs_failed == 0) {
-		/* Resync pass finished. Start next pass. */
+	if (!peer_replication) {
+		if (peer_device->rs_failed == 0 && bitmap_weight > 0 &&
+				bitmap_weight < last_resync_pass_bits / 2) {
+			/* Start next pass with replication still disabled */
+			peer_device->resync_next_bit = 0;
+			return false;
+		}
+
+		drbd_enable_peer_replication(device);
+		return false;
+	}
+
+	if (peer_device->rs_failed == 0 && bitmap_weight > 0) {
+		/* Start next pass. Replication is enabled. */
 		peer_device->resync_next_bit = 0;
 		return false;
 	}

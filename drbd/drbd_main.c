@@ -1853,6 +1853,36 @@ int drbd_send_flush_requests_ack(struct drbd_connection *connection, u64 flush_s
 	return send_command(connection, -1, P_FLUSH_REQUESTS_ACK, DATA_STREAM);
 }
 
+int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device, bool enable)
+{
+	struct p_enable_replication *p;
+
+	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	if (!p)
+		return -EIO;
+
+	p->enable = enable;
+	p->_pad1 = 0;
+	p->_pad2 = 0;
+
+	return drbd_send_command(peer_device, P_ENABLE_REPLICATION_NEXT, DATA_STREAM);
+}
+
+int drbd_send_enable_replication(struct drbd_peer_device *peer_device, bool enable)
+{
+	struct p_enable_replication *p;
+
+	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
+	if (!p)
+		return -EIO;
+
+	p->enable = enable;
+	p->_pad1 = 0;
+	p->_pad2 = 0;
+
+	return drbd_send_command(peer_device, P_ENABLE_REPLICATION, DATA_STREAM);
+}
+
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
 {
 	BUG_ON(code & ~0xf);
@@ -4008,6 +4038,8 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	peer_device->device = device;
 	peer_device->disk_state[NOW] = D_UNKNOWN;
 	peer_device->repl_state[NOW] = L_OFF;
+	peer_device->replication[NOW] = true;
+	peer_device->peer_replication[NOW] = true;
 	spin_lock_init(&peer_device->peer_seq_lock);
 
 	ratelimit_state_init(&peer_device->ratelimit[D_RL_PD_GENERIC], 5*HZ, /* no burst */ 1);

@@ -1456,8 +1456,8 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (on_congestion == OC_BLOCK)
 		return;
 
-	if (on_congestion == OC_PULL_AHEAD && peer_device->repl_state[NOW] == L_AHEAD)
-		return; /* nothing to do ... */
+	if (!drbd_should_do_remote(peer_device, NOW))
+		return; /* Ignore congestion if we are not replicating writes */
 
 	/* If I don't even have good local storage, we can not reasonably try
 	 * to pull ahead of the peer. We also need the local reference to make
@@ -1512,9 +1512,10 @@ bool drbd_should_do_remote(struct drbd_peer_device *peer_device, enum which_stat
 {
 	enum drbd_disk_state peer_disk_state = peer_device->disk_state[which];
 	enum drbd_repl_state repl_state = peer_device->repl_state[which];
+	bool replication = peer_device->replication[which];
 
 	return peer_disk_state == D_UP_TO_DATE ||
-		(peer_disk_state == D_INCONSISTENT &&
+		(peer_disk_state == D_INCONSISTENT && replication &&
 		 (repl_state == L_ESTABLISHED ||
 		  (repl_state >= L_WF_BITMAP_T && repl_state < L_AHEAD)));
 	/* Before proto 96 that was >= CONNECTED instead of >= L_WF_BITMAP_T.
@@ -1526,10 +1527,13 @@ static bool drbd_should_send_out_of_sync(struct drbd_peer_device *peer_device)
 {
 	enum drbd_disk_state peer_disk_state = peer_device->disk_state[NOW];
 	enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+	bool replication = peer_device->replication[NOW];
 
 	return repl_state == L_AHEAD ||
 		repl_state == L_WF_BITMAP_S ||
-		(peer_disk_state == D_OUTDATED && repl_state >= L_ESTABLISHED);
+		(repl_state >= L_ESTABLISHED &&
+		 (peer_disk_state == D_OUTDATED ||
+		  (peer_disk_state == D_INCONSISTENT && !replication)));
 
 	/* proto 96 check omitted, there was no L_AHEAD back then,
 	 * peer disk was never Outdated while connection was established,

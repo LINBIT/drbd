@@ -626,6 +626,8 @@ enum peer_device_flag {
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 	PEER_QUORATE,		/* Peer has quorum */
 	RS_REQUEST_UNSUCCESSFUL, /* Some resync request was unsuccessful in current cycle */
+	REPLICATION_NEXT, /* If unset, do not replicate writes when next Inconsistent */
+	PEER_REPLICATION_NEXT, /* We have instructed peer not to replicate writes */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1353,6 +1355,8 @@ struct drbd_peer_device {
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
 	bool resync_active[2];
+	bool replication[2]; /* Only while peer is Inconsistent: Is replication enabled? */
+	bool peer_replication[2]; /* Whether we have instructed peer to replicate to us */
 	enum drbd_repl_state negotiation_result; /* To find disk state after attach */
 	unsigned int send_cnt;
 	unsigned int recv_cnt;
@@ -1381,6 +1385,7 @@ struct drbd_peer_device {
 	int resync_again; /* decided to resync again while resync running */
 	sector_t last_peers_in_sync_end; /* sector after end of last scheduled peers-in-sync */
 	unsigned long resync_next_bit; /* bitmap bit to search from for next resync request */
+	unsigned long last_resync_pass_bits; /* bitmap weight at end of previous pass */
 
 	atomic_t ap_pending_cnt; /* AP data packets on the wire, ack expected (RQ_NET_PENDING set) */
 	atomic_t unacked_cnt;	 /* Need to send replies for */
@@ -1822,6 +1827,8 @@ int drbd_send_flush_forward(struct drbd_connection *connection,
 			    u64 flush_sequence, int initiator_node_id);
 int drbd_send_flush_requests_ack(struct drbd_connection *connection,
 				 u64 flush_sequence, int primary_node_id);
+int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device, bool enable);
+int drbd_send_enable_replication(struct drbd_peer_device *peer_device, bool enable);
 int drbd_send_current_uuid(struct drbd_peer_device *peer_device,
 			   u64 current_uuid, u64 weak_nodes);
 void drbd_backing_dev_free(struct drbd_device *device,

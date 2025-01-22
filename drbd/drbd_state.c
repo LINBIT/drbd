@@ -379,6 +379,12 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 			memcpy(peer_device_state_change->resync_active,
 			       peer_device->resync_active,
 			       sizeof(peer_device->resync_active));
+			memcpy(peer_device_state_change->replication,
+			       peer_device->replication,
+			       sizeof(peer_device->replication));
+			memcpy(peer_device_state_change->peer_replication,
+			       peer_device->peer_replication,
+			       sizeof(peer_device->peer_replication));
 			peer_device_state_change++;
 		}
 		device_state_change++;
@@ -463,6 +469,8 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 		OLD_TO_NEW(p->resync_susp_dependency);
 		OLD_TO_NEW(p->resync_susp_other_c);
 		OLD_TO_NEW(p->resync_active);
+		OLD_TO_NEW(p->replication);
+		OLD_TO_NEW(p->peer_replication);
 	}
 
 #undef OLD_TO_NEW
@@ -549,6 +557,10 @@ static bool state_has_changed(struct drbd_resource *resource)
 				peer_device->resync_susp_other_c[NEW] ||
 			    peer_device->resync_active[OLD] !=
 				peer_device->resync_active[NEW] ||
+			    peer_device->replication[OLD] !=
+				peer_device->replication[NEW] ||
+			    peer_device->peer_replication[OLD] !=
+				peer_device->peer_replication[NEW] ||
 			    peer_device->uuid_flags & UUID_FLAG_GOT_STABLE)
 				return true;
 		}
@@ -594,6 +606,10 @@ static void ___begin_state_change(struct drbd_resource *resource)
 				peer_device->resync_susp_other_c[NOW];
 			peer_device->resync_active[NEW] =
 				peer_device->resync_active[NOW];
+			peer_device->replication[NEW] =
+				peer_device->replication[NOW];
+			peer_device->peer_replication[NEW] =
+				peer_device->peer_replication[NOW];
 		}
 	}
 }
@@ -868,6 +884,10 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_susp_other_c[NEW];
 			peer_device->resync_active[NOW] =
 				peer_device->resync_active[NEW];
+			peer_device->replication[NOW] =
+				peer_device->replication[NEW];
+			peer_device->peer_replication[NOW] =
+				peer_device->peer_replication[NEW];
 		}
 		device->cached_state_unstable = !state_is_stable(device);
 		device->cached_err_io =
@@ -1238,6 +1258,8 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 		for_each_peer_device(peer_device, device) {
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
+			bool *replication = peer_device->replication;
+			bool *peer_replication = peer_device->peer_replication;
 
 			b = buffer;
 			if (peer_disk_state[OLD] != peer_disk_state[NEW])
@@ -1257,6 +1279,16 @@ static void print_state_change(struct drbd_resource *resource, const char *prefi
 				b += scnprintf_resync_suspend_flags(b, end - b, peer_device, NEW);
 				b += scnprintf(b, end - b, " ) ");
 			}
+
+			if (replication[OLD] != replication[NEW])
+				b += scnprintf(b, end - b, "replication( %s -> %s ) ",
+					       replication[OLD] ? "yes" : "no",
+					       replication[NEW] ? "yes" : "no");
+
+			if (peer_replication[OLD] != peer_replication[NEW])
+				b += scnprintf(b, end - b, "peer_replication( %s -> %s ) ",
+					       peer_replication[OLD] ? "yes" : "no",
+					       peer_replication[NEW] ? "yes" : "no");
 
 			if (b != buffer) {
 				*(b-1) = 0;
@@ -2326,6 +2358,46 @@ static void sanitize_state(struct drbd_resource *resource)
 				*/
 				peer_disk_state[NEW] = D_CONSISTENT;
 			}
+
+			/*
+			 * Determine whether peer will disable replication due to this transition.
+			 *
+			 * This matches the condition on the peer below.
+			 */
+			if ((disk_state[OLD] != D_INCONSISTENT &&
+					disk_state[NEW] == D_INCONSISTENT) ||
+					(!repl_is_sync_target(repl_state[OLD]) &&
+					 repl_is_sync_target(repl_state[NEW])))
+				peer_device->peer_replication[NEW] =
+					test_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
+
+			/*
+			 * Decide whether to disable replication when the peer
+			 * transitions to Inconsistent.
+			 *
+			 * Also re-evaluate whether to disable replication when
+			 * we become SyncSource, even when the peer's disk was
+			 * already Inconsistent. This is relevant when
+			 * switching between Ahead-Behind+Inconsistent and
+			 * SyncSource-SyncTarget.
+			 *
+			 * This matches the condition on the peer above.
+			 */
+			if ((peer_disk_state[OLD] != D_INCONSISTENT &&
+					peer_disk_state[NEW] == D_INCONSISTENT) ||
+					(!repl_is_sync_source(repl_state[OLD]) &&
+					 repl_is_sync_source(repl_state[NEW])))
+				peer_device->replication[NEW] =
+					test_bit(REPLICATION_NEXT, &peer_device->flags);
+
+			/*
+			 * Not strictly necessary, since "replication" is only
+			 * considered when the peer disk is Inconsistent, but
+			 * it makes the logs clearer.
+			 */
+			if (peer_disk_state[OLD] == D_INCONSISTENT &&
+					peer_disk_state[NEW] != D_INCONSISTENT)
+				peer_device->replication[NEW] = true;
 		}
 
 		if (resource->res_opts.quorum != QOU_OFF)
@@ -2471,6 +2543,40 @@ static bool drbd_any_peer_device_up_to_date(struct drbd_connection *connection)
 	return false;
 }
 
+/* Whether replication is enabled on all peers for this device */
+bool drbd_all_peer_replication(struct drbd_device *device, enum which_state which)
+{
+	struct drbd_peer_device *peer_device;
+	bool all_peer_replication = true;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (!peer_device->peer_replication[which])
+			all_peer_replication = false;
+	}
+	rcu_read_unlock();
+
+	return all_peer_replication;
+}
+
+/* As drbd_all_peer_replication() but takes a state change object */
+static bool drbd_all_peer_replication_change(struct drbd_state_change *state_change, int n_device,
+		enum which_state which)
+{
+	int n_connection;
+
+	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
+		struct drbd_peer_device_state_change *peer_device_state_change =
+			&state_change->peer_devices[
+				n_device * state_change->n_connections + n_connection];
+
+		if (!peer_device_state_change->peer_replication[which])
+			return false;
+	}
+
+	return true;
+}
+
 static void drbd_determine_flush_pending(struct drbd_resource *resource)
 {
 	struct drbd_device *device;
@@ -2516,8 +2622,10 @@ static void drbd_determine_flush_pending(struct drbd_resource *resource)
 		struct drbd_peer_device *peer_device;
 
 		for_each_peer_device(peer_device, device) {
-			if (!is_sync_target_state(peer_device, NOW) &&
-					is_sync_target_state(peer_device, NEW))
+			if (!(is_sync_target_state(peer_device, NOW) &&
+					drbd_all_peer_replication(device, NOW)) &&
+					is_sync_target_state(peer_device, NEW) &&
+					drbd_all_peer_replication(device, NEW))
 				send_flush_requests = true;
 		}
 	}
@@ -2602,6 +2710,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 
 	peer_device->last_peers_in_sync_end = 0;
 	peer_device->resync_next_bit = 0;
+	peer_device->last_resync_pass_bits = tw;
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
 	peer_device->rs_same_csum = 0;
@@ -3815,6 +3924,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool effective_disk_size_determined = false;
 		bool device_stable[2], resync_target[2];
 		bool data_accessible[2];
+		bool all_peer_replication[2];
 		bool resync_finished = false;
 		bool some_peer_demoted = false;
 		bool new_current_uuid = false;
@@ -3825,6 +3935,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			resync_target[which] = calc_resync_target(state_change, n_device, which);
 			data_accessible[which] =
 				calc_data_accessible(state_change, n_device, which);
+			all_peer_replication[which] =
+				drbd_all_peer_replication_change(state_change, n_device, which);
+
 		}
 
 		if (disk_state[NEW] == D_UP_TO_DATE)
@@ -4150,9 +4263,15 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 						&peer_device->connection->sender_work,
 						&peer_device->resync_work);
 
-			if (!repl_is_sync_target(repl_state[OLD]) &&
-					repl_is_sync_target(repl_state[NEW]))
+			if (!(repl_is_sync_target(repl_state[OLD]) &&
+					all_peer_replication[OLD]) &&
+					repl_is_sync_target(repl_state[NEW]) &&
+					all_peer_replication[NEW])
 				send_flush_requests = true;
+
+			if (!peer_device_state_change->peer_replication[OLD] &&
+					peer_device_state_change->peer_replication[NEW])
+				drbd_send_enable_replication(peer_device, true);
 		}
 
 		if (((role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) || some_peer_demoted) &&

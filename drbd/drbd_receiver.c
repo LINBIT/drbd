@@ -34,7 +34,8 @@
 
 #define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
 		      DRBD_FF_RESYNC_DAGTAG | \
-		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID)
+		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID | \
+		      DRBD_FF_RESYNC_WITHOUT_REPLICATION)
 
 enum ao_op {
 	OUTDATE_DISKS,
@@ -822,6 +823,23 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 		weak_nodes = drbd_weak_nodes_device(device);
 
 	err = drbd_send_sync_param(peer_device);
+
+	set_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
+	if (!err && peer_device->connection->agreed_features & DRBD_FF_RESYNC_WITHOUT_REPLICATION) {
+		struct peer_device_conf *pdc;
+		bool resync_without_replication;
+
+		rcu_read_lock();
+		pdc = rcu_dereference(peer_device->conf);
+		resync_without_replication = pdc->resync_without_replication;
+		rcu_read_unlock();
+
+		if (resync_without_replication)
+			clear_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
+
+		err = drbd_send_enable_replication_next(peer_device, !resync_without_replication);
+	}
+
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)
@@ -1171,6 +1189,7 @@ start:
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		set_bit(REPLICATION_NEXT, &peer_device->flags);
 		if (discard_my_data)
 			set_bit(DISCARD_MY_DATA, &peer_device->flags);
 		else
@@ -4342,6 +4361,41 @@ static int receive_flush_requests_ack(struct drbd_connection *connection, struct
 		primary_connection->pending_flush_mask &= ~NODE_MASK(connection->peer_node_id);
 	rcu_read_unlock();
 	spin_unlock_irq(&resource->initiator_flush_lock);
+	return 0;
+}
+
+static int receive_enable_replication_next(struct drbd_connection *connection,
+		struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct p_enable_replication *p_enable_replication = pi->data;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+
+	if (p_enable_replication->enable)
+		set_bit(REPLICATION_NEXT, &peer_device->flags);
+	else
+		clear_bit(REPLICATION_NEXT, &peer_device->flags);
+
+	return 0;
+}
+
+static int receive_enable_replication(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_peer_device *peer_device;
+	struct p_enable_replication *p_enable_replication = pi->data;
+	unsigned long irq_flags;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+
+	begin_state_change(resource, &irq_flags, CS_VERBOSE);
+	peer_device->replication[NEW] = p_enable_replication->enable;
+	end_state_change(resource, &irq_flags, "enable-replication");
 	return 0;
 }
 
@@ -9361,6 +9415,10 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_OV_DAGTAG_REPLY]   = { 1, sizeof(struct p_rs_req), receive_dagtag_ov_reply },
 	[P_FLUSH_REQUESTS]  = { 0, sizeof(struct p_flush_requests), receive_flush_requests },
 	[P_FLUSH_REQUESTS_ACK] = { 0, sizeof(struct p_flush_ack), receive_flush_requests_ack },
+	[P_ENABLE_REPLICATION_NEXT] = { 0, sizeof(struct p_enable_replication),
+		receive_enable_replication_next },
+	[P_ENABLE_REPLICATION] = { 0, sizeof(struct p_enable_replication),
+		receive_enable_replication },
 };
 
 static void drbdd(struct drbd_connection *connection)
