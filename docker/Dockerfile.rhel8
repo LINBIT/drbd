@@ -3,7 +3,7 @@ FROM $EXTRAPKGS as extrapkgs
 # by checking for /pkgs we can cache that step
 # and prepare images that already contain the packages.
 RUN mkdir /pkgs
-RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-libelf-devel kernel-rpm-macros && rm -f *.i686.rpm # !lbbuild
+RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-libelf-devel && rm -f *.i686.rpm # !lbbuild
 
 FROM registry.access.redhat.com/ubi8/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
@@ -39,7 +39,7 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 COPY --from=extrapkgs /pkgs /pkgs
 RUN yum install -y /pkgs/*.rpm # !lbbuild
 # or
-# =lbbuild RUN curl -fsSL https://nexus.at.linbit.com/repository/lbbuild/from_rhel_repos.sh | bash -s -- elfutils-libelf-devel kernel-rpm-macros
+# =lbbuild RUN curl -fsSL https://nexus.at.linbit.com/repository/lbbuild/from_rhel_repos.sh | bash -s -- elfutils-libelf-devel
 
 RUN rm -rf /pkgs
 

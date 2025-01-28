@@ -189,9 +189,26 @@ kos::rpm::bestbyrpmprovides() {
 	local drbd_requires_file
 	shift 1
 
-	sort > "$kernel_provides_file" \
-		<(find "/lib/modules/$(uname -r)" -name "symvers*" | /lib/rpm/kabi.sh) \
-		<(find "/lib/modules/$(uname -r)/kernel" -type f | /lib/rpm/redhat/find-provides.ksyms)
+	local kernel_symvers
+	local cat_prog
+	if [ -e "/lib/modules/"$(uname -r)"/symvers" ]; then
+		kernel_symvers="/lib/modules/"$(uname -r)"/symvers"
+		cat_prog=cat
+	elif [ -e "/lib/modules/"$(uname -r)"/symvers.gz" ]; then
+		kernel_symvers="/lib/modules/"$(uname -r)"/symvers.gz"
+		cat_prog=zcat
+	elif [ -e "/lib/modules/"$(uname -r)"/symvers.xz" ]; then
+		kernel_symvers="/lib/modules/"$(uname -r)"/symvers.xz"
+		cat_prog=xzcat
+	else
+		debug "Failed to find kernel symvers file"
+		return 1
+	fi
+
+	"$cat_prog" "$kernel_symvers" \
+		| awk -F"\t" '{ print "kernel(" $2 ") = " $1 }' \
+		| sort \
+		> "$kernel_provides_file"
 
 	if [ ! -s "$kernel_provides_file" ]; then
 		debug "Failed to generate kernel provides"

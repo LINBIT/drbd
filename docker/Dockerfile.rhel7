@@ -21,7 +21,6 @@ RUN yum -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 		make \
 		patch \
 		perl \
-		redhat-rpm-config \
 		yum-utils \
 	&& \
 	yum clean all -y && \
