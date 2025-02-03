@@ -3639,7 +3639,6 @@ void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
-	unsigned long irql;
 
 	drbd_err_ratelimit(peer_device, "submit failed, triggering re-connect\n");
 
