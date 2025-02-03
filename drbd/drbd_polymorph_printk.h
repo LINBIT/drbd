@@ -21,8 +21,7 @@
 	const struct drbd_connection *__c;			\
 	const struct drbd_resource *__r;			\
 	const char *__cn;					\
-	unsigned long __flags;					\
-	__flags = rcu_read_lock();				\
+	rcu_read_lock();					\
 	__d = (peer_device)->device;				\
 	__c = (peer_device)->connection;			\
 	__r = __d->resource;					\
@@ -32,7 +31,7 @@
 #define __drbd_printk_drbd_peer_device_args() \
 	__r->name, __d->vnr, __d->minor, __cn
 #define __drbd_printk_drbd_peer_device_unprep() \
-	rcu_read_unlock(__flags);
+	rcu_read_unlock();
 
 #define __drbd_printk_drbd_resource_prep(resource) \
 	const struct drbd_resource *__r = resource;
@@ -44,15 +43,14 @@
 	const struct drbd_connection *__c = (connection);	\
 	const struct drbd_resource *__r = __c->resource;	\
 	const char *__cn;					\
-	unsigned long __flags;					\
-	__flags = rcu_read_lock();				\
+	rcu_read_lock();					\
 	__cn = rcu_dereference(__c->transport.net_conf)->name;
 #define __drbd_printk_drbd_connection_fmt(fmt)			\
 	"drbd %s %s: " fmt
 #define __drbd_printk_drbd_connection_args()			\
 	__r->name, __cn
 #define __drbd_printk_drbd_connection_unprep()			\
-	rcu_read_unlock(__flags);					\
+	rcu_read_unlock();					\
 
 void drbd_printk_with_wrong_object_type(void);
 void drbd_dyn_dbg_with_wrong_object_type(void);
