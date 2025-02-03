@@ -2896,7 +2896,6 @@ out:
 /* mirrored write */
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
-	unsigned long spin_lock_irq_flags;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 	struct net_conf *nc;
