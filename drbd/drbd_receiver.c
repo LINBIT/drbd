@@ -2558,7 +2558,8 @@ static void drbd_peers_in_sync_progress(struct drbd_peer_device *peer_device, se
 
 	/* Also consider scheduling a bitmap update to reduce the size of the
 	 * next resync if this one is disrupted. */
-	drbd_maybe_schedule_on_disk_bitmap_update(peer_device, false, is_sync_target_state(peer_device, NOW));
+	if (drbd_lazy_bitmap_update_due(peer_device))
+		drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
 }
 
 static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_device)
@@ -4290,6 +4291,70 @@ static int receive_dagtag_ov_reply(struct drbd_connection *connection, struct pa
 	return receive_common_ov_reply(connection, pi,
 			&p_rs_req->req_common,
 			be32_to_cpu(p_rs_req->dagtag_node_id), be64_to_cpu(p_rs_req->dagtag));
+}
+
+static int receive_flush_requests(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_connection *other_connection;
+	struct p_flush_requests *p_flush_requests = pi->data;
+	u64 flush_requests_dagtag;
+
+	spin_lock_irq(&resource->tl_update_lock);
+	/*
+	 * If the current dagtag was read from the metadata then there is no
+	 * associated request. Hence there is nothing to flush. Flush up to the
+	 * preceding dagtag instead.
+	 */
+	if (resource->dagtag_sector == resource->dagtag_from_backing_dev)
+		flush_requests_dagtag = resource->dagtag_before_attach;
+	else
+		flush_requests_dagtag = resource->dagtag_sector;
+	spin_unlock_irq(&resource->tl_update_lock);
+
+	spin_lock_irq(&connection->primary_flush_lock);
+	connection->flush_requests_dagtag = flush_requests_dagtag;
+	connection->flush_sequence = be64_to_cpu(p_flush_requests->flush_sequence);
+	connection->flush_forward_sent_mask = 0;
+	spin_unlock_irq(&connection->primary_flush_lock);
+
+	/* Queue any request waiting for peer ack to be sent */
+	drbd_flush_peer_acks(resource);
+
+	/* For each peer, check if peer ack for this dagtag has already been sent */
+	rcu_read_lock();
+	for_each_connection_rcu(other_connection, resource) {
+		if (other_connection->cstate[NOW] == C_CONNECTED)
+			queue_work(other_connection->ack_sender, &other_connection->peer_ack_work);
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int receive_flush_requests_ack(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_connection *primary_connection;
+	struct p_flush_ack *p_flush_ack = pi->data;
+	u64 flush_sequence = be64_to_cpu(p_flush_ack->flush_sequence);
+	int primary_node_id = be32_to_cpu(p_flush_ack->primary_node_id);
+
+	spin_lock_irq(&resource->initiator_flush_lock);
+	if (flush_sequence < resource->current_flush_sequence) {
+		spin_unlock_irq(&resource->initiator_flush_lock);
+		return 0;
+	}
+
+	rcu_read_lock();
+	primary_connection = drbd_connection_by_node_id(resource, primary_node_id);
+	if (primary_connection)
+		primary_connection->pending_flush_mask &= ~NODE_MASK(connection->peer_node_id);
+	rcu_read_unlock();
+	spin_unlock_irq(&resource->initiator_flush_lock);
+
+	drbd_check_all_resync_done(resource);
+	return 0;
 }
 
 /*
@@ -9318,6 +9383,8 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_RS_THIN_DAGTAG_REQ]   = { 0, sizeof(struct p_rs_req), receive_dagtag_data_request },
 	[P_OV_DAGTAG_REQ]   = { 0, sizeof(struct p_rs_req), receive_dagtag_data_request },
 	[P_OV_DAGTAG_REPLY]   = { 1, sizeof(struct p_rs_req), receive_dagtag_ov_reply },
+	[P_FLUSH_REQUESTS]  = { 0, sizeof(struct p_flush_requests), receive_flush_requests },
+	[P_FLUSH_REQUESTS_ACK] = { 0, sizeof(struct p_flush_ack), receive_flush_requests_ack },
 };
 
 static void drbdd(struct drbd_connection *connection)
@@ -10292,6 +10359,45 @@ int drbd_receiver(struct drbd_thread *thi)
 
 /* ********* acknowledge sender ******** */
 
+static void drbd_check_flush_dagtag_reached(struct drbd_connection *peer_ack_connection)
+{
+	struct drbd_resource *resource = peer_ack_connection->resource;
+	struct drbd_connection *flush_requests_connection;
+	u64 peer_ack_node_mask = NODE_MASK(peer_ack_connection->peer_node_id);
+	u64 last_peer_ack_dagtag_seen = peer_ack_connection->last_peer_ack_dagtag_seen;
+	u64 im;
+
+	for_each_connection_ref(flush_requests_connection, im, resource) {
+		u64 flush_sequence;
+		u64 *sent_mask;
+		u64 flush_requests_dagtag;
+
+		spin_lock_irq(&flush_requests_connection->primary_flush_lock);
+		flush_requests_dagtag = flush_requests_connection->flush_requests_dagtag;
+		flush_sequence = flush_requests_connection->flush_sequence;
+		sent_mask = &flush_requests_connection->flush_forward_sent_mask;
+
+		if (!flush_sequence || /* Active flushes use non-zero sequence numbers */
+				*sent_mask & peer_ack_node_mask ||
+				last_peer_ack_dagtag_seen < flush_requests_dagtag) {
+			spin_unlock_irq(&flush_requests_connection->primary_flush_lock);
+			continue;
+		}
+
+		*sent_mask |= peer_ack_node_mask;
+		spin_unlock_irq(&flush_requests_connection->primary_flush_lock);
+
+		if (peer_ack_connection == flush_requests_connection)
+			drbd_send_flush_requests_ack(peer_ack_connection,
+					flush_sequence,
+					resource->res_opts.node_id);
+		else
+			drbd_send_flush_forward(peer_ack_connection,
+					flush_sequence,
+					flush_requests_connection->peer_node_id);
+	}
+}
+
 static int process_peer_ack_list(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -10304,23 +10410,44 @@ static int process_peer_ack_list(struct drbd_connection *connection)
 	spin_lock_irq(&resource->peer_ack_lock);
 	peer_ack = list_first_entry(&resource->peer_ack_list, struct drbd_peer_ack, list);
 	while (&peer_ack->list != &resource->peer_ack_list) {
-		if (!(peer_ack->pending_mask & node_id_mask)) {
-			peer_ack = list_next_entry(peer_ack, list);
+		u64 pending_mask = peer_ack->pending_mask;
+		u64 mask = peer_ack->mask;
+		u64 dagtag_sector = peer_ack->dagtag_sector;
+
+		tmp = list_next_entry(peer_ack, list);
+
+		if (!(peer_ack->queued_mask & node_id_mask)) {
+			peer_ack = tmp;
 			continue;
 		}
+
+		/*
+		 * After disconnecting, queue_peer_ack_send() sets
+		 * last_peer_ack_dagtag_seen directly. Do not jump back if we
+		 * process a peer ack with a lower dagtag here shortly after.
+		 */
+		connection->last_peer_ack_dagtag_seen =
+			max(connection->last_peer_ack_dagtag_seen, dagtag_sector);
+
+		peer_ack->queued_mask &= ~node_id_mask;
+		drbd_destroy_peer_ack_if_done(peer_ack);
+		peer_ack = tmp;
+
+		if (!(pending_mask & node_id_mask))
+			continue;
 		spin_unlock_irq(&resource->peer_ack_lock);
 
-		err = drbd_send_peer_ack(connection, peer_ack);
+		err = drbd_send_peer_ack(connection, mask, dagtag_sector);
 
 		spin_lock_irq(&resource->peer_ack_lock);
-		tmp = list_next_entry(peer_ack, list);
-		peer_ack->pending_mask &= ~node_id_mask;
-		drbd_destroy_peer_ack_if_done(peer_ack);
 		if (err)
 			break;
-		peer_ack = tmp;
 	}
 	spin_unlock_irq(&resource->peer_ack_lock);
+
+	if (!err && connection->agreed_pro_version >= 123)
+		drbd_check_flush_dagtag_reached(connection);
+
 	return err;
 }
 
@@ -11093,15 +11220,60 @@ static void cleanup_peer_ack_list(struct drbd_connection *connection)
 
 	spin_lock_irq(&resource->peer_ack_lock);
 	list_for_each_entry_safe(peer_ack, tmp, &resource->peer_ack_list, list) {
-		if (!(peer_ack->pending_mask & node_id_mask))
+		if (!(peer_ack->queued_mask & node_id_mask))
 			continue;
-		peer_ack->pending_mask &= ~node_id_mask;
+		peer_ack->queued_mask &= ~node_id_mask;
 		drbd_destroy_peer_ack_if_done(peer_ack);
 	}
 	req = resource->peer_ack_req;
 	if (req)
 		req->net_rq_state[idx] &= ~RQ_NET_SENT;
 	spin_unlock_irq(&resource->peer_ack_lock);
+}
+
+int drbd_flush_ack_wf(struct drbd_work *w, int unused)
+{
+	struct drbd_connection *connection =
+		container_of(w, struct drbd_connection, flush_ack_work);
+	int primary_node_id;
+
+	for (primary_node_id = 0; primary_node_id < DRBD_PEERS_MAX; primary_node_id++) {
+		u64 flush_sequence;
+
+		spin_lock_irq(&connection->flush_ack_lock);
+		flush_sequence = connection->flush_ack_sequence[primary_node_id];
+		connection->flush_ack_sequence[primary_node_id] = 0;
+		spin_unlock_irq(&connection->flush_ack_lock);
+
+		if (flush_sequence) /* Active flushes use non-zero sequence numbers */
+			drbd_send_flush_requests_ack(connection, flush_sequence, primary_node_id);
+	}
+
+	return 0;
+}
+
+static int got_flush_forward(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_connection *initiator_connection;
+	struct p_flush_forward *p = pi->data;
+	u64 flush_sequence = be64_to_cpu(p->flush_sequence);
+	int initiator_node_id = be32_to_cpu(p->initiator_node_id);
+
+	rcu_read_lock();
+	initiator_connection = drbd_connection_by_node_id(resource, initiator_node_id);
+	if (!initiator_connection) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	spin_lock_irq(&initiator_connection->flush_ack_lock);
+	initiator_connection->flush_ack_sequence[connection->peer_node_id] = flush_sequence;
+	drbd_queue_work_if_unqueued(&initiator_connection->sender_work,
+			&initiator_connection->flush_ack_work);
+	spin_unlock_irq(&initiator_connection->flush_ack_lock);
+	rcu_read_unlock();
+	return 0;
 }
 
 static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kind kind)
@@ -11168,6 +11340,7 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_TWOPC_YES]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_NO]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_RETRY]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
+	[P_FLUSH_FORWARD]     = { sizeof(struct p_flush_forward), got_flush_forward },
 };
 
 static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)

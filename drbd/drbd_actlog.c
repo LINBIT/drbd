@@ -657,26 +657,45 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device, unsigned long s
 }
 
 /* It is called lazy update, so don't do write-out too often. */
-static bool lazy_bitmap_update_due(struct drbd_peer_device *peer_device)
+bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device)
 {
 	return time_after(jiffies, peer_device->rs_last_writeout + 2*HZ);
 }
 
-void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
-						 bool rs_done, bool is_sync_target)
+void drbd_check_resync_done(struct drbd_peer_device *peer_device)
 {
-	if (rs_done) {
-		if (peer_device->connection->agreed_pro_version <= 95 || is_sync_target)
-			set_bit(RS_DONE, &peer_device->flags);
+	struct drbd_device *device = peer_device->device;
+	bool is_sync_target;
+	unsigned long still_to_go;
 
+	is_sync_target = is_sync_target_state(peer_device, NOW);
+
+	/* Evaluate is_sync_target_state before getting the bm
+	 * total weight. We only want to finish a sync if we
+	 * were in a sync target state and then clear the last
+	 * bits.
+	 *
+	 * Use an explicit read barrier to ensure that the
+	 * state is read before the bitmap is checked. The
+	 * corresponding release is implied when the bitmap is
+	 * unlocked after it is received.
+	 */
+	smp_rmb();
+	still_to_go = drbd_bm_total_weight(peer_device);
+	drbd_advance_rs_marks(peer_device, still_to_go);
+
+	if (peer_device->connection->agreed_pro_version > 95 && !is_sync_target) {
 		/* If sync source: rather wait for explicit notification via
 		 * receive_state, to avoid uuids-rotated-too-fast causing full
 		 * resync in next handshake, in case the replication link
 		 * breaks at the most unfortunate time... */
+
+		return;
 	}
 
-	if (rs_done || lazy_bitmap_update_due(peer_device))
-		drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
+	if (still_to_go <= peer_device->rs_failed &&
+			!drbd_any_flush_pending(device->resource))
+		drbd_peer_device_post_work(peer_device, RS_DONE);
 }
 
 
@@ -702,26 +721,10 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 
 	if (count) {
 		if (mode == SET_IN_SYNC) {
-			bool is_sync_target, rs_is_done;
-			unsigned long still_to_go;
+			if (drbd_lazy_bitmap_update_due(peer_device))
+				drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
 
-			is_sync_target = is_sync_target_state(peer_device, NOW);
-			/* Evaluate is_sync_target_state before getting the bm
-			 * total weight. We only want to finish a sync if we
-			 * were in a sync target state and then clear the last
-			 * bits.
-			 *
-			 * Use an explicit read barrier to ensure that the
-			 * state is read before the bitmap is checked. The
-			 * corresponding release is implied when the bitmap is
-			 * unlocked after it is received.
-			 */
-			smp_rmb();
-			still_to_go = drbd_bm_total_weight(peer_device);
-			rs_is_done = (still_to_go <= peer_device->rs_failed);
-			drbd_advance_rs_marks(peer_device, still_to_go);
-			if (rs_is_done)
-				drbd_maybe_schedule_on_disk_bitmap_update(peer_device, rs_is_done, is_sync_target);
+			drbd_check_resync_done(peer_device);
 		} else if (mode == RECORD_RS_FAILED) {
 			peer_device->rs_failed += count;
 		} else /* if (mode == SET_OUT_OF_SYNC) */ {

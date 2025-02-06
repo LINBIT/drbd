@@ -750,6 +750,26 @@ int w_send_uuids(struct drbd_work *w, int cancel)
 	return 0;
 }
 
+bool drbd_any_flush_pending(struct drbd_resource *resource)
+{
+	unsigned long flags;
+	struct drbd_connection *primary_connection;
+	bool any_flush_pending = false;
+
+	spin_lock_irqsave(&resource->initiator_flush_lock, flags);
+	rcu_read_lock();
+	for_each_connection_rcu(primary_connection, resource) {
+		if (primary_connection->pending_flush_mask) {
+			any_flush_pending = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	spin_unlock_irqrestore(&resource->initiator_flush_lock, flags);
+
+	return any_flush_pending;
+}
+
 void resync_timer_fn(struct timer_list *t)
 {
 	struct drbd_peer_device *peer_device = from_timer(peer_device, t, resync_timer);
@@ -1157,7 +1177,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	if (peer_device->rs_total == 0) {
 		/* empty resync? */
-		drbd_resync_finished(peer_device, D_MASK);
+		if (!drbd_any_flush_pending(connection->resource))
+			drbd_resync_finished(peer_device, D_MASK);
 		return 0;
 	}
 
@@ -3623,10 +3644,6 @@ static int process_sender_todo(struct drbd_connection *connection)
 		if (err)
 			return err;
 
-		/* If we would need strict ordering for work items, we could
-		 * add a dagtag member to struct drbd_work, and serialize based on that.
-		 * && !dagtag_newer(connection->todo.req->dagtag_sector, w->dagtag_sector))
-		 * to the following condition. */
 		if (connection->todo.req) {
 			update_sender_timing_details(connection, process_one_request);
 			err = process_one_request(connection);

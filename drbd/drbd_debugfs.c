@@ -26,6 +26,22 @@ static struct dentry *drbd_debugfs_resources;
 static struct dentry *drbd_debugfs_minors;
 static struct dentry *drbd_debugfs_compat;
 
+static void seq_print_node_mask(struct seq_file *m, struct drbd_resource *resource, u64 nodes)
+{
+	struct drbd_connection *connection;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (NODE_MASK(connection->peer_node_id) & nodes) {
+			char *name = rcu_dereference((connection)->transport.net_conf)->name;
+
+			seq_printf(m, "%s, ", name);
+		}
+	}
+	rcu_read_unlock();
+	seq_puts(m, "\n");
+}
+
 #ifdef CONFIG_DRBD_TIMING_STATS
 static void seq_print_age_or_dash(struct seq_file *m, bool valid, ktime_t dt)
 {
@@ -584,15 +600,7 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 
 		if (twopc.initiator_node_id != resource->res_opts.node_id) {
 			seq_puts(m, "  parent node mask: ");
-			rcu_read_lock();
-			for_each_connection_rcu(connection, resource) {
-				if (NODE_MASK(connection->peer_node_id) & resource->twopc_parent_nodes) {
-					char *name = rcu_dereference((connection)->transport.net_conf)->name;
-					seq_printf(m, "%s, ", name);
-				}
-			}
-			rcu_read_unlock();
-			seq_puts(m, "\n");
+			seq_print_node_mask(m, resource, resource->twopc_parent_nodes);
 
 			if (resource->twopc_prepare_reply_cmd)
 				seq_printf(m,
@@ -933,6 +941,32 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 	seq_printf(m, " send.current_dagtag_sec: %llu (%lld)\n", ull2, (long long)(ull2 - ull1));
 	ull2 = atomic64_read(&connection->last_dagtag_sector);
 	seq_printf(m, "      last_dagtag_sector: %llu\n", ull2);
+	seq_printf(m, "last_peer_ack_dagtag_seen: %llu\n",
+			(unsigned long long) connection->last_peer_ack_dagtag_seen);
+
+	spin_lock_irq(&resource->initiator_flush_lock);
+	seq_printf(m, "resource->current_flush_sequence: %llu\n",
+			(unsigned long long) resource->current_flush_sequence);
+	seq_puts(m, "      pending_flush_mask: ");
+	seq_print_node_mask(m, resource, connection->pending_flush_mask);
+	spin_unlock_irq(&resource->initiator_flush_lock);
+
+	spin_lock_irq(&connection->primary_flush_lock);
+	seq_printf(m, "   flush_requests_dagtag: %llu\n",
+			(unsigned long long) connection->flush_requests_dagtag);
+	seq_printf(m, "          flush_sequence: %llu\n",
+			(unsigned long long) connection->flush_sequence);
+	seq_puts(m, " flush_forward_sent_mask: ");
+	seq_print_node_mask(m, resource, connection->flush_forward_sent_mask);
+	spin_unlock_irq(&connection->primary_flush_lock);
+
+	spin_lock_irq(&connection->flush_ack_lock);
+	for (u1 = 0; u1 < DRBD_PEERS_MAX; u1++) {
+		if (connection->flush_ack_sequence[u1])
+			seq_printf(m, "      flush_ack_sequence[%u]: %llu\n", u1,
+					(unsigned long long) connection->flush_ack_sequence[u1]);
+	}
+	spin_unlock_irq(&connection->flush_ack_lock);
 
 	in_flight = atomic_read(&connection->ap_in_flight);
 	seq_printf(m, "            ap_in_flight: %d KiB (%d sectors)\n", in_flight / 2, in_flight);

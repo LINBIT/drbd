@@ -402,8 +402,14 @@ struct drbd_request {
 struct drbd_peer_ack {
 	struct drbd_resource *resource;
 	struct list_head list;
-	u64 pending_mask;
-	u64 mask;
+	/*
+	 * Keeps track of which connections have not yet processed this peer
+	 * ack. Peer acks are queued for connections on which they are not sent
+	 * so that last_peer_ack_dagtag_seen is updated at the correct moment.
+	 */
+	u64 queued_mask;
+	u64 pending_mask; /* Peer ack is sent to these nodes */
+	u64 mask; /* Nodes which successfully wrote the requests covered by this peer ack */
 	u64 dagtag_sector;
 };
 
@@ -951,6 +957,8 @@ struct drbd_resource {
 	u64 dagtag_sector;		/* Protected by tl_update_lock.
 					 * See also dagtag_sector in
 					 * &drbd_request */
+	u64 dagtag_from_backing_dev;
+	u64 dagtag_before_attach;
 	u64 members;			/* mask of online nodes */
 	unsigned long flags;
 
@@ -965,6 +973,10 @@ struct drbd_resource {
 	struct drbd_work peer_ack_work;
 	u64 last_peer_acked_dagtag;  /* dagtag of last PEER_ACK'ed request */
 	struct drbd_request *peer_ack_req;  /* last request not yet PEER_ACK'ed */
+
+	/* Protects current_flush_sequence and pending_flush_mask (connection) */
+	spinlock_t initiator_flush_lock;
+	u64 current_flush_sequence;
 
 	struct semaphore state_sem;
 	wait_queue_head_t state_wait;  /* upon each state change. */
@@ -1147,6 +1159,23 @@ struct drbd_connection {
 	unsigned long send_oos_from_mask;
 
 	atomic64_t last_dagtag_sector;
+	u64 last_peer_ack_dagtag_seen;
+
+	/* Mask of nodes from which we are waiting for a flush ack corresponding to this Primary */
+	u64 pending_flush_mask;
+
+	/* Protects the flush members below for this connection */
+	spinlock_t primary_flush_lock;
+	/* For handling P_FLUSH_REQUESTS from this peer */
+	u64 flush_requests_dagtag;
+	u64 flush_sequence;
+	u64 flush_forward_sent_mask;
+
+	/* For handling forwarded flushes. On connection to initiator node. */
+	spinlock_t flush_ack_lock;
+	struct drbd_work flush_ack_work;
+	/* For forwarded flushes. On connection to initiator node. Indexed by primary node ID */
+	u64 flush_ack_sequence[DRBD_PEERS_MAX];
 
 	atomic_t active_ee_cnt; /* Peer write requests waiting for activity log or backing disk. */
 	atomic_t backing_ee_cnt; /* Other peer requests waiting for conflicts or backing disk. */
@@ -1777,6 +1806,11 @@ extern void drbd_send_twopc_reply(struct drbd_connection *connection,
 				  enum drbd_packet, struct twopc_reply *);
 extern void drbd_send_peers_in_sync(struct drbd_peer_device *, u64, sector_t, int);
 extern int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connection *lost_peer);
+extern int drbd_send_flush_requests(struct drbd_connection *connection, u64 flush_sequence);
+extern int drbd_send_flush_forward(struct drbd_connection *connection, u64 flush_sequence,
+		int initiator_node_id);
+extern int drbd_send_flush_requests_ack(struct drbd_connection *connection, u64 flush_sequence,
+		int primary_node_id);
 extern int drbd_send_current_uuid(struct drbd_peer_device *peer_device, u64 current_uuid, u64 weak_nodes);
 extern void drbd_backing_dev_free(struct drbd_device *device, struct drbd_backing_dev *ldev);
 extern void drbd_cleanup_device(struct drbd_device *device);
@@ -2184,6 +2218,7 @@ extern int w_restart_disk_io(struct drbd_work *, int);
 extern int w_send_dagtag(struct drbd_work *w, int cancel);
 extern int w_send_uuids(struct drbd_work *, int);
 
+extern bool drbd_any_flush_pending(struct drbd_resource *resource);
 extern void resync_timer_fn(struct timer_list *t);
 extern void start_resync_timer_fn(struct timer_list *t);
 
@@ -2249,6 +2284,7 @@ extern int drbd_send_ov_result(struct drbd_peer_device *peer_device, sector_t se
 extern int drbd_receiver(struct drbd_thread *thi);
 extern void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed);
 extern int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel);
+extern int drbd_flush_ack_wf(struct drbd_work *w, int unused);
 extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
@@ -2327,8 +2363,8 @@ extern void drbd_al_begin_io_commit(struct drbd_device *device);
 extern bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval *i);
 extern bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 extern void drbd_advance_rs_marks(struct drbd_peer_device *, unsigned long);
-extern void drbd_maybe_schedule_on_disk_bitmap_update(struct drbd_peer_device *peer_device,
-		 bool rs_done, bool is_sync_target);
+extern bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device);
+extern void drbd_check_resync_done(struct drbd_peer_device *peer_device);
 extern int drbd_set_all_out_of_sync(struct drbd_device *, sector_t, int);
 extern int drbd_set_sync(struct drbd_device *, sector_t, int, unsigned long, unsigned long);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
@@ -2519,7 +2555,7 @@ extern int drbd_send_ping(struct drbd_connection *connection);
 extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
 extern int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_request *req);
-extern int drbd_send_peer_ack(struct drbd_connection *, struct drbd_peer_ack *);
+extern int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_sector);
 
 static inline void drbd_thread_stop(struct drbd_thread *thi)
 {
