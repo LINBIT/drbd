@@ -1094,7 +1094,13 @@ static void dtl_setup_socket(struct dtl_transport *dtl_transport, struct socket 
 	long timeout = HZ;
 
 	socket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
-	socket->sk->sk_allocation = GFP_NOIO;
+	/* We are a block device, we are in the write-out path,
+	 * we may need memory to facilitate memory reclaim
+	 */
+	socket->sk->sk_use_task_frag = false;
+	socket->sk->sk_allocation = GFP_ATOMIC;
+	sk_set_memalloc(socket->sk);
+
 	socket->sk->sk_priority = use_for_data ? TC_PRIO_INTERACTIVE_BULK : TC_PRIO_INTERACTIVE;
 	tcp_sock_set_nodelay(socket->sk);
 

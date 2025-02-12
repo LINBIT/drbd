@@ -1322,11 +1322,17 @@ randomize:
 	dsocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 	csocket->sk->sk_reuse = SK_CAN_REUSE; /* SO_REUSEADDR */
 
-	dsocket->sk->sk_allocation = GFP_NOIO;
-	csocket->sk->sk_allocation = GFP_NOIO;
+	/* We are a block device, we are in the write-out path,
+	 * we may need memory to facilitate memory reclaim
+	 */
+	dsocket->sk->sk_allocation = GFP_ATOMIC;
+	csocket->sk->sk_allocation = GFP_ATOMIC;
 
 	dsocket->sk->sk_use_task_frag = false;
 	csocket->sk->sk_use_task_frag = false;
+
+	sk_set_memalloc(dsocket->sk);
+	sk_set_memalloc(csocket->sk);
 
 	dsocket->sk->sk_priority = TC_PRIO_INTERACTIVE_BULK;
 	csocket->sk->sk_priority = TC_PRIO_INTERACTIVE;
