@@ -19,42 +19,50 @@ can_do_reliable_discards(struct drbd_device *dev)
 	...
 }
 
-// These next two hunks are for drbd_send_sizes()
 @@
-identifier p, x, dc, dev;
-type T;
-symbol queue_discard_zeroes_data;
+sector_t u_size;
+identifier p, dev;
+fresh identifier dc = "dc";
 @@
+int drbd_send_sizes(...)
+{
 	...
 	struct drbd_device *dev = ...;
-	<...
-	T x;
 +	bool discard_zeroes_if_aligned;
 	...
-	rcu_read_lock();
+	if (...) {
++		struct disk_conf *dc;
+		...
+		rcu_read_lock();
+-		u_size = rcu_dereference(dev->ldev->disk_conf)->disk_size;
++		dc = rcu_dereference(dev->ldev->disk_conf);
++		u_size = dc->disk_size;
++		discard_zeroes_if_aligned = dc->discard_zeroes_if_aligned;
+		rcu_read_unlock();
+		...
+		p->qlim->discard_enabled = ...;
++		p->qlim->discard_zeroes_data = discard_zeroes_if_aligned || queue_discard_zeroes_data(q);
+		...
+	} else {
+		...
+		p->qlim->discard_enabled = 0;
++		p->qlim->discard_zeroes_data = 0;
+		...
+	}
 	...
-	dc = rcu_dereference(dev->ldev->disk_conf);
-	...
-+	discard_zeroes_if_aligned = dc->discard_zeroes_if_aligned;
-	rcu_read_unlock();
-	...
-	p->qlim->discard_enabled = ...;
-+	p->qlim->discard_zeroes_data = discard_zeroes_if_aligned || queue_discard_zeroes_data(q);
-	...>
+}
 
-@@
-identifier p;
-@@
-	p->qlim->discard_enabled = 0;
-+	p->qlim->discard_zeroes_data = 0;
 
-// And for sanitize_disk_conf()
 @@
 identifier bdev;
 @@
-struct block_device *bdev = ...;
-+ struct request_queue *q = bdev_get_queue(bdev);
-...
-if (!bdev_max_discard_sectors(bdev)
-+	|| (!queue_discard_zeroes_data(q) && !disk_conf->discard_zeroes_if_aligned)
- ) { ... }
+sanitize_disk_conf(...)
+{
+	struct block_device *bdev = ...;
++	struct request_queue *q = bdev_get_queue(bdev);
+	...
+	if (!bdev_max_discard_sectors(bdev)
++		|| (!queue_discard_zeroes_data(q) && !disk_conf->discard_zeroes_if_aligned)
+	) {...}
+	...
+}
