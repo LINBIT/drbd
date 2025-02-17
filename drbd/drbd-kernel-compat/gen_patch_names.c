@@ -205,8 +205,6 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_make_request", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
 
-	patch(1, "req_hardbarrier", false, true,
-	      COMPAT_HAVE_REQ_HARDBARRIER, "present");
 # if defined(COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST)
 	/* older version (v4.3-v5.9): make_request function pointer
 	 * with blk_qc_t return value. most modern make_request based version,
@@ -278,9 +276,6 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_merge_bvec", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC, "present");
 
-	patch(1, "security_netlink_recv", false, true,
-	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
-
 	/*
 	 * >= 6.10:  BLK_FEAT_STABLE_WRITES
 	 * 5.9-6.10: QUEUE_FLAG_STABLE_WRITES
@@ -347,12 +342,6 @@ int main(int argc, char **argv)
 #else
 # warning "Unknown bio rw flags, check compat layer"
 #endif
-
-	patch(1, "blk_check_plugged", true, false,
-	      COMPAT_HAVE_BLK_CHECK_PLUGGED, "present");
-
-	patch(1, "security_netlink_recv", false, true,
-	      COMPAT_HAVE_SECURITY_NETLINK_RECV, "present");
 
 	patch(1, "nla_nest_start_noflag", true, false,
 	      COMPAT_HAVE_NLA_NEST_START_NOFLAG, "present");
@@ -465,16 +454,8 @@ int main(int argc, char **argv)
 	patch(1, "queue_discard_zeroes_data", false, true,
 	      COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA, "present");
 
-#if !defined(COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE)
-	patch(2, "blk_queue_write_cache", true, false,
-	      COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE, "present",
-# if defined(COMPAT_HAVE_REQ_HARDBARRIER)
-	      NO, "flush"
-# else
-	      YES, "flush"
-# endif
-	);
-#endif
+	patch(1, "blk_queue_write_cache", true, false,
+	      COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE, "present");
 
 	patch(1, "crypto_tfm_need_key", true, false,
 	      COMPAT_HAVE_CRYPTO_TFM_NEED_KEY, "present");
@@ -533,7 +514,7 @@ int main(int argc, char **argv)
 	      COMPAT_HAVE_GENHD_FL_NO_PART, "present");
 
 	patch(1, "list_is_first", true, false,
-	      COMPAT_HAVE_NLA_STRSCPY, "present");
+	      COMPAT_HAVE_LIST_IS_FIRST, "present");
 
 	patch(1, "dax_direct_access", true, false,
 	      COMPAT_DAX_DIRECT_ACCESS_TAKES_MODE, "takes_mode");
