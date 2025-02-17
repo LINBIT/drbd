@@ -7,7 +7,7 @@ UNKNOWN, TOGGLED = range(2)
 UNDEFINED, DEFINED = 'undefined', 'defined'
 
 defines = {}
-for dirpath, _, fnames in os.walk('./all'):
+for dirpath, _, fnames in os.walk('../cocci_cache'):
     for compat in fnames:
         if not compat.startswith("compat.h"):
             continue
@@ -22,6 +22,10 @@ for dirpath, _, fnames in os.walk('./all'):
                 elif sp[0] == '#define':
                     what, result = sp[1], DEFINED
                 else:
+                    continue
+
+                if what == 'COMPAT_HAVE_SANE_TEST_ENVIRONMENT' or what == 'COMPAT_HAVE_SANE_TEST_ENVIRONMENT_ALWAYS_FAIL':
+                    # these are obviously "always (un)defined", but we don't want to flag them for removal
                     continue
 
                 current = defines.get(what, UNKNOWN)
