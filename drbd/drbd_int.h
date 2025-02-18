@@ -1474,7 +1474,7 @@ struct drbd_peer_device {
 	ktime_t net_done_kt;
 
 	struct {/* sender todo per peer_device */
-		bool was_ahead;
+		bool was_sending_out_of_sync;
 	} todo;
 	union drbd_state connect_state;
 	struct {

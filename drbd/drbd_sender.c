@@ -3362,7 +3362,7 @@ static struct drbd_request *tl_next_request_for_cleanup(struct drbd_connection *
 	return connection->todo.req;
 }
 
-static void maybe_send_state_afer_ahead(struct drbd_connection *connection)
+static void maybe_send_state_after_ahead(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
@@ -3370,7 +3370,7 @@ static void maybe_send_state_afer_ahead(struct drbd_connection *connection)
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags)) {
-			peer_device->todo.was_ahead = false;
+			peer_device->todo.was_sending_out_of_sync = false;
 			rcu_read_unlock();
 			drbd_send_current_state(peer_device);
 			rcu_read_lock();
@@ -3464,7 +3464,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 
 		if (test_and_clear_bit(SEND_STATE_AFTER_AHEAD_C, &connection->flags)) {
 			finish_wait(&connection->sender_work.q_wait, &wait);
-			maybe_send_state_afer_ahead(connection);
+			maybe_send_state_after_ahead(connection);
 			continue;
 		}
 
@@ -3586,9 +3586,9 @@ static int process_one_request(struct drbd_connection *connection)
 			connection->send.current_epoch_writes++;
 			connection->send.current_dagtag_sector = req->dagtag_sector;
 
-			if (peer_device->todo.was_ahead) {
+			if (peer_device->todo.was_sending_out_of_sync) {
 				clear_bit(SEND_STATE_AFTER_AHEAD, &peer_device->flags);
-				peer_device->todo.was_ahead = false;
+				peer_device->todo.was_sending_out_of_sync = false;
 				drbd_send_current_state(peer_device);
 			}
 
@@ -3603,8 +3603,8 @@ static int process_one_request(struct drbd_connection *connection)
 
 			/* make sure the state change to L_AHEAD/L_BEHIND
 			 * arrives before the first set-out-of-sync information */
-			if (!peer_device->todo.was_ahead) {
-				peer_device->todo.was_ahead = true;
+			if (!peer_device->todo.was_sending_out_of_sync) {
+				peer_device->todo.was_sending_out_of_sync = true;
 				drbd_send_current_state(peer_device);
 			}
 
