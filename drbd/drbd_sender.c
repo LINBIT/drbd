@@ -1845,6 +1845,14 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	   of application IO), and against connectivity loss just before we arrive here. */
 	if (peer_device->repl_state[NOW] <= L_ESTABLISHED)
 		goto out_unlock;
+
+	/*
+	 * This protects us against a race with the peer when finishing a
+	 * resync at the same time as entering Ahead-Behind mode.
+	 */
+	if (peer_device->repl_state[NOW] == L_BEHIND)
+		goto out_unlock;
+
 	peer_device->resync_active[NEW] = false;
 	__change_repl_state(peer_device, L_ESTABLISHED);
 
