@@ -3273,6 +3273,23 @@ static struct drbd_request *tl_next_request_for_connection(struct drbd_connectio
 	return connection->todo.req;
 }
 
+static struct drbd_request *tl_next_request_for_cleanup(struct drbd_connection *connection)
+{
+	struct drbd_request *req, *found_req = NULL;
+
+	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
+		unsigned int s = req->net_rq_state[connection->peer_node_id];
+
+		if (s & RQ_NET_QUEUED) {
+			found_req = req;
+			break;
+		}
+	}
+
+	connection->todo.req = found_req;
+	return connection->todo.req;
+}
+
 static void maybe_send_state_afer_ahead(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -3666,7 +3683,7 @@ int drbd_sender(struct drbd_thread *thi)
 	/* cleanup all currently unprocessed requests */
 	if (!connection->todo.req) {
 		rcu_read_lock();
-		tl_next_request_for_connection(connection);
+		tl_next_request_for_cleanup(connection);
 		rcu_read_unlock();
 	}
 	while (connection->todo.req) {
@@ -3682,7 +3699,7 @@ int drbd_sender(struct drbd_thread *thi)
 			complete_master_bio(device, &m);
 
 		rcu_read_lock();
-		tl_next_request_for_connection(connection);
+		tl_next_request_for_cleanup(connection);
 		rcu_read_unlock();
 	}
 
