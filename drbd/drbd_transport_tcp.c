@@ -844,11 +844,11 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 				 unsigned int offset, size_t len)
 {
 	struct drbd_transport *transport = rd_desc->arg.data;
+	unsigned int avail, consumed = 0;
 	struct skb_seq_state seq;
-	unsigned int consumed = 0;
 
 	skb_prepare_seq_read(skb, offset, offset + len, &seq);
-	while (true) {
+	do {
 		struct drbd_const_buffer buffer;
 
 		/*
@@ -856,13 +856,15 @@ static int dtt_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 		 * be more than is actually ready, so we ensure we only mark as available what
 		 * is ready.
 		 */
-		buffer.avail = skb_seq_read(consumed, &buffer.buffer, &seq);
-		buffer.avail = min_t(unsigned int, buffer.avail, len - consumed);
-		if (buffer.avail == 0)
+		avail = skb_seq_read(consumed, &buffer.buffer, &seq);
+		if (!avail)
 			break;
+		buffer.avail = min_t(unsigned int, avail, len - consumed);
 		consumed += buffer.avail;
 		drbd_control_data_ready(transport, &buffer);
-	}
+	} while (consumed < len);
+	skb_abort_seq_read(&seq);
+
 	return consumed;
 }
 
