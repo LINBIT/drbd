@@ -85,9 +85,6 @@ int main(int argc, char **argv)
 	patch(1, "timer_setup", true, false,
 	      COMPAT_HAVE_TIMER_SETUP, "present");
 
-	patch(1, "tcp_input", false, true,
-	      COMPAT_NEED_SKB_ABORT_SEQ_READ, "need_skb_abort_seq_read");
-
 #if defined(COMPAT_HAVE_BIO_SPLIT_TO_LIMITS)
 	/* "modern" version (>=6.0). nothing to do */
 #else

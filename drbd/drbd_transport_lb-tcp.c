@@ -872,17 +872,25 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 		container_of(path->path.transport, struct dtl_transport, transport);
 	struct dtl_stream *stream = &dtl_transport->streams[CONTROL_STREAM];
 	struct drbd_transport *transport = &dtl_transport->transport;
+	int overall_avail, avail, consumed = 0;
 	struct drbd_const_buffer buffer;
 	struct skb_seq_state seq;
-	unsigned int consumed = 0;
-	int avail;
 
 	if (flow->recv_bytes &&
 	    flow->recv_sequence != stream->recv_sequence + 1)
 		return 0;
 
 	skb_prepare_seq_read(skb, offset, skb->len, &seq);
-	while ((avail = skb_seq_read(consumed, &buffer.buffer, &seq))) {
+	do {
+		/*
+		 * skb_seq_read() returns the length of the block assigned to buffer. This might
+		 * be more than is actually ready, so we ensure we only mark as available what
+		 * is ready.
+		 */
+		overall_avail = skb_seq_read(consumed, &buffer.buffer, &seq);
+		if (!overall_avail)
+			break;
+		avail = min_t(int, overall_avail, len - consumed);
 		while (avail) {
 			if (flow->recv_bytes == 0) {
 				const struct dtl_header *hdr = (struct dtl_header *)buffer.buffer;
@@ -908,10 +916,8 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 
 				flow->recv_sequence = be32_to_cpu(hdr->sequence);
 				flow->recv_bytes = be32_to_cpu(hdr->bytes);
-				if (flow->recv_sequence != stream->recv_sequence + 1) {
-					skb_abort_seq_read(&seq);
+				if (flow->recv_sequence != stream->recv_sequence + 1)
 					goto out;
-				}
 			}
 			buffer.avail = min(flow->recv_bytes, avail);
 			if (!buffer.avail)
@@ -924,8 +930,9 @@ static int dtl_control_tcp_input(read_descriptor_t *rd_desc, struct sk_buff *skb
 			if (flow->recv_bytes == 0)
 				stream->recv_sequence++;
 		}
-	}
+	} while (consumed < len);
 out:
+	skb_abort_seq_read(&seq);
 	return consumed;
 }
 
