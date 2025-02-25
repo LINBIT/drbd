@@ -28,14 +28,6 @@
 #define ALIGN_DOWN(x, a)       __ALIGN_KERNEL((x) - ((a) - 1), (a))
 #endif
 
-/* introduced in v3.13-rc1-4-g4f024f3797c4 */
-#ifndef COMPAT_HAVE_STRUCT_BVEC_ITER
-struct bvec_iter {
-	int bi_size;
-	int bi_idx;
-};
-#endif
-
 /* introduced in v3.13-4220-g89a0714106aa */
 #ifndef U32_MAX
 #define U32_MAX ((u32)~0U)
@@ -128,66 +120,6 @@ struct bvec_iter {
 #define blkdev_issue_zeroout(BDEV, SS, NS, GFP, discard) \
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
 #endif
-
-#ifndef COMPAT_HAVE_SIMPLE_POSITIVE
-#include <linux/dcache.h>
-static inline int simple_positive(struct dentry *dentry)
-{
-        return dentry->d_inode && !d_unhashed(dentry);
-}
-#endif
-
-#if !(defined(COMPAT_HAVE_SHASH_DESC_ON_STACK) &&    \
-      defined COMPAT_HAVE_SHASH_DESC_ZERO)
-#include <crypto/hash.h>
-
-/* introduced in a0a77af14117 (v3.17-9284) */
-#ifndef COMPAT_HAVE_SHASH_DESC_ON_STACK
-#define SHASH_DESC_ON_STACK(shash, ctx)				  \
-	char __##shash##_desc[sizeof(struct shash_desc) +	  \
-		crypto_shash_descsize(ctx)] CRYPTO_MINALIGN_ATTR; \
-	struct shash_desc *shash = (struct shash_desc *)__##shash##_desc
-#endif
-
-/* introduced in e67ffe0af4d4 (v4.5-rc1-24) */
-#ifndef COMPAT_HAVE_SHASH_DESC_ZERO
-#ifndef barrier_data
-#define barrier_data(ptr) barrier()
-#endif
-static inline void shash_desc_zero(struct shash_desc *desc)
-{
-	/* memzero_explicit(...) */
-	memset(desc, 0, sizeof(*desc) + crypto_shash_descsize(desc->tfm));
-	barrier_data(desc);
-}
-#endif
-#endif
-
-/* RDMA related */
-#ifndef COMPAT_HAVE_IB_CQ_INIT_ATTR
-#include <rdma/ib_verbs.h>
-
-struct ib_cq_init_attr {
-	unsigned int    cqe;
-	int             comp_vector;
-	u32             flags;
-};
-
-static inline struct ib_cq *
-drbd_ib_create_cq(struct ib_device *device,
-		  ib_comp_handler comp_handler,
-		  void (*event_handler)(struct ib_event *, void *),
-		  void *cq_context,
-		  const struct ib_cq_init_attr *cq_attr)
-{
-	return ib_create_cq(device, comp_handler, event_handler, cq_context,
-			    cq_attr->cqe, cq_attr->comp_vector);
-}
-
-#define ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR) \
-	drbd_ib_create_cq(DEV, COMP_H, EVENT_H, CTX, ATTR)
-#endif
-/* RDMA */
 
 #ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
 extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,

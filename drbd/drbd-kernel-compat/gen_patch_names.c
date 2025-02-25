@@ -80,11 +80,6 @@ int main(int argc, char **argv)
 	/* 		COMPAT_HAVE_ATOMIC_IN_FLIGHT, "atomic_in_flight", */
 	/* 		COMPAT_HAVE_BD_CLAIM_BY_DISK, "bd_claim_by_disk"); */
 
-	patch(1, "sk_data_ready", true, false, COMPAT_SK_DATA_READY_HAS_1_PARAM, "has_1_param");
-
-	patch(1, "timer_setup", true, false,
-	      COMPAT_HAVE_TIMER_SETUP, "present");
-
 #if defined(COMPAT_HAVE_BIO_SPLIT_TO_LIMITS)
 	/* "modern" version (>=6.0). nothing to do */
 #else
@@ -96,24 +91,13 @@ int main(int argc, char **argv)
 	/* older version with 2 arguments */
 	patch(1, "blk_queue_split", false, true,
 	      YES, "has_two_parameters");
-# elif defined(COMPAT_HAVE_BLK_QUEUE_SPLIT_Q_BIO_BIOSET)
-	/* even older version with 3 arguments */
-	patch(1, "blk_queue_split", false, true,
-	      YES, "has_three_parameters");
-	patch(1, "make_request", false, true,
-	      COMPAT_NEED_MAKE_REQUEST_RECURSION, "need_recursion");
 # else
-	/* ancient version, blk_queue_split not defined at all */
-	patch(1, "blk_queue_split", true, false,
-	      NO, "present");
+# error "compat: blk_queue_split not found, kernel probably too old"
 # endif
 #endif
 
 	patch(1, "sge_max_send_and_recv", true, false,
 	      COMPAT_HAVE_MAX_SEND_RECV_SGE, "present");
-
-	patch(1, "ib_get_dma_mr", false, true,
-	      COMPAT_HAVE_IB_GET_DMA_MR, "present");
 
 	patch(1, "rdma_reject", true, false,
 	      COMPAT_RDMA_REJECT_HAS_REASON_ARG, "4-arguments");
@@ -124,16 +108,8 @@ int main(int argc, char **argv)
 	patch(1, "bio_alloc_clone", true, false,
 	      COMPAT_HAVE_BIO_ALLOC_CLONE, "present");
 
-#if !defined(COMPAT_HAVE_BIO_SET_DEV)
-	patch(1, "bio_set_dev", true, false,
-	      COMPAT_HAVE_BIO_SET_DEV, "present");
-#endif
-
 	patch(1, "bio_bi_bdev", true, false,
 	      COMPAT_HAVE_BIO_BI_BDEV, "present");
-
-	patch(1, "refcount_inc", true, false,
-	      COMPAT_HAVE_REFCOUNT_INC, "present");
 
 	patch(1, "bvec_kmap_local", true, false,
 	      COMPAT_HAVE_BVEC_KMAP_LOCAL, "present");
@@ -141,22 +117,8 @@ int main(int argc, char **argv)
 	patch(1, "sendpage", false, true,
 	      COMPAT_HAVE_SENDPAGE, "present");
 
-	patch(1, "struct_bvec_iter", true, false,
-	      COMPAT_HAVE_STRUCT_BVEC_ITER, "present");
-
-	patch(1, "rdma_create_id", true, false,
-	      COMPAT_RDMA_CREATE_ID_HAS_NET_NS, "has_net_ns");
-
 	patch(1, "ib_device", true, false,
 	      COMPAT_IB_DEVICE_HAS_OPS, "has_ops");
-
-#ifndef COMPAT_IB_DEVICE_HAS_OPS
-	patch(1, "ib_query_device", true, false,
-	      COMPAT_IB_QUERY_DEVICE_HAS_3_PARAMS, "has_3_params");
-#endif
-
-	patch(1, "ib_alloc_pd", true, false,
-	      COMPAT_IB_ALLOC_PD_HAS_2_PARAMS, "has_2_params");
 
 	patch(1, "ib_post", true, false,
 	      COMPAT_IB_POST_SEND_CONST_PARAMS, "const");
@@ -204,31 +166,8 @@ int main(int argc, char **argv)
 
 	patch(1, "blk_queue_make_request", false, true,
 	      COMPAT_HAVE_BLK_QUEUE_MAKE_REQUEST, "present");
-
-# if defined(COMPAT_HAVE_BLK_QC_T_MAKE_REQUEST)
-	/* older version (v4.3-v5.9): make_request function pointer
-	 * with blk_qc_t return value. most modern make_request based version,
-	 * so nothing more to do. */
-# elif defined(COMPAT_HAVE_VOID_MAKE_REQUEST)
-	/* even older version (v3.1-v4.3): void return value */
-	patch(1, "make_request", false, true,
-	      YES, "returns_void");
-# else
-	/* ancient version (<v3.1): int return value */
-	patch(1, "make_request", false, true,
-	      YES, "returns_int");
-# endif
 #endif
 /*******************************************************************************/
-
-#if !defined(COMPAT_HAVE_BIO_BI_STATUS)
-	patch(2, "bio", false, false,
-	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status",
-	      COMPAT_HAVE_BIO_BI_ERROR, "bi_error");
-
-	patch(1, "bio", false, false,
-	      COMPAT_HAVE_BIO_BI_STATUS, "bi_status");
-#endif
 
 	patch(1, "kernel_read", false, true,
 	      COMPAT_BEFORE_4_13_KERNEL_READ, "before_4_13");
@@ -236,45 +175,11 @@ int main(int argc, char **argv)
 	patch(1, "sock_ops", true, false,
 	      COMPAT_SOCK_OPS_RETURNS_ADDR_LEN, "returns_addr_len");
 
-	patch(1, "idr_is_empty", true, false,
-	      COMPAT_HAVE_IDR_IS_EMPTY, "present");
-
-	patch(1, "sock_create_kern", true, false,
-	      COMPAT_SOCK_CREATE_KERN_HAS_NETNS_PARAMETER, "has_netns_parameter");
-
-	patch(1, "time64_to_tm", true, false,
-	      COMPAT_HAVE_TIME64_TO_TM, "present");
-
-	patch(1, "ktime_to_timespec64", true, false,
-	      COMPAT_HAVE_KTIME_TO_TIMESPEC64, "present");
-
-	patch(1, "d_inode", true, false,
-	      COMPAT_HAVE_D_INODE, "present");
-
-	patch(1, "inode_lock", true, false,
-	      COMPAT_HAVE_INODE_LOCK, "present");
-
-#ifndef COMPAT_HAVE_BIOSET_INIT
 	patch(1, "bioset_init", true, false,
 	      COMPAT_HAVE_BIOSET_INIT, "present");
 
-	patch(2, "bioset_init", true, false,
-	      COMPAT_HAVE_BIOSET_INIT, "present",
-	      COMPAT_HAVE_BIO_CLONE_FAST, "bio_clone_fast");
-
-	patch(2, "bioset_init", true, false,
-	      COMPAT_HAVE_BIOSET_INIT, "present",
-	      COMPAT_HAVE_BIOSET_NEED_BVECS, "need_bvecs");
-#endif
-
-	patch(1, "kvfree", true, false,
-	      COMPAT_HAVE_KVFREE, "present");
-
 	patch(1, "genl_policy", true, false,
 	      COMPAT_GENL_POLICY_IN_OPS, "in_ops");
-
-	patch(1, "blk_queue_merge_bvec", false, true,
-	      COMPAT_HAVE_BLK_QUEUE_MERGE_BVEC, "present");
 
 	/*
 	 * >= 6.10:  BLK_FEAT_STABLE_WRITES
@@ -290,58 +195,14 @@ int main(int argc, char **argv)
 	patch(1, "blk_queue_flag_set", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_FLAG_SET, "present");
 
-	patch(1, "req_noidle", false, true,
-	      COMPAT_HAVE_REQ_NOIDLE, "present");
-
-	patch(1, "req_nounmap", true, false,
-	      COMPAT_HAVE_REQ_NOUNMAP, "present");
-
 	patch(1, "blk_opf_t", true, false,
 	      COMPAT_HAVE_BLK_OPF_T, "present");
 
-	patch(1, "bio_op_shift", false, true,
-	      COMPAT_HAVE_BIO_OP_SHIFT, "present");
-
-	patch(1, "write_zeroes", true, false,
-	      COMPAT_HAVE_REQ_OP_WRITE_ZEROES, "capable");
-
-	patch(1, "bio_bi_opf", true, false,
-	      COMPAT_HAVE_BIO_BI_OPF, "present");
-
-#if defined(COMPAT_HAVE_BIO_START_IO_ACCT)
-	/* good, newest version */
-#else
 	patch(1, "bio_start_io_acct", true, false,
-	      NO, "present");
-# if defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_Q_RW_SECT_PART)
-	/* older version, 4 params */
-# elif defined(COMPAT_HAVE_GENERIC_START_IO_ACCT_RW_SECT_PART)
-	/* even, older version, 3 params */
-	patch(1, "generic_start_io_acct", true, false,
-	      NO, "has_four_params");
-# else
-	/* not present at all */
-	patch(1, "generic_start_io_acct", true, false,
-	      NO, "present");
-# endif
-#endif
+	      COMPAT_HAVE_BIO_START_IO_ACCT, "present");
 
 	patch(1, "enum_req_op", true, false,
 	      COMPAT_HAVE_ENUM_REQ_OP, "present");
-
-#if defined(COMPAT_HAVE_REQ_WRITE)
-	/* This is the oldest version, using REQ_* flags. The bio ops
-	 * and flags are separated, and it's using bio->bi_rw and bi_flags,
-	 * respectively */
-	patch(1, "req_write", false, true,
-	      YES, "present");
-#elif defined(COMPAT_HAVE_REQ_OP_WRITE)
-	/* We're dealing with a "modern" kernel which has REQ_OP_* flags.
-	 * It has separate bio operations (bio->bi_opf) and flags
-	 * (bio->bi_flags). */
-#else
-# warning "Unknown bio rw flags, check compat layer"
-#endif
 
 	patch(1, "nla_nest_start_noflag", true, false,
 	      COMPAT_HAVE_NLA_NEST_START_NOFLAG, "present");
@@ -391,9 +252,6 @@ int main(int argc, char **argv)
 
 	patch(1, "congested_fn", false, true,
 	      COMPAT_HAVE_BDI_CONGESTED_FN, "present");
-
-	patch(1, "wb_congested_enum", true, false,
-	      COMPAT_HAVE_WB_CONGESTED_ENUM, "present");
 #endif
 
 	patch(1, "queue_limits_start_update", true, false,
@@ -415,11 +273,6 @@ int main(int argc, char **argv)
 
 	patch(1, "struct_gendisk", true, false,
 	      COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO, "has_backing_dev_info");
-
-#if !defined(COMPAT_STRUCT_GENDISK_HAS_BACKING_DEV_INFO)
-	patch(1, "backing_dev_info", true, false,
-	      COMPAT_HAVE_POINTER_BACKING_DEV_INFO, "is_pointer");
-#endif
 
 	patch(1, "sendpage_ok", true, false,
 	      COMPAT_HAVE_SENDPAGE_OK, "present");
@@ -451,15 +304,6 @@ int main(int argc, char **argv)
 	patch(1, "nla_strscpy", true, false,
 	      COMPAT_HAVE_NLA_STRSCPY, "present");
 
-	patch(1, "queue_discard_zeroes_data", false, true,
-	      COMPAT_QUEUE_LIMITS_HAS_DISCARD_ZEROES_DATA, "present");
-
-	patch(1, "blk_queue_write_cache", true, false,
-	      COMPAT_HAVE_BLK_QUEUE_WRITE_CACHE, "present");
-
-	patch(1, "crypto_tfm_need_key", true, false,
-	      COMPAT_HAVE_CRYPTO_TFM_NEED_KEY, "present");
-
 	patch(1, "part_stat_read", true, false,
 	      COMPAT_PART_STAT_READ_TAKES_BLOCK_DEVICE, "takes_block_device");
 
@@ -482,26 +326,19 @@ int main(int argc, char **argv)
 	patch(1, "bio_max_vecs", true, false,
 	      COMPAT_HAVE_BIO_MAX_VECS, "present");
 
-/* fs_dax_get_by_bdev does not exist <4.13.
- * Initially it only had one parameter for the device.
+/* fs_dax_get_by_bdev: Initially it only had one parameter for the device.
  * Starting with 5.16, it gained a second parameter for returing the partition offest.
  * Starting with 6.0, it gained another two parameters, which opionally configure some callbacks.
  * So we check:
- * 1. Does fs_dax_get_by_bdev exist?
- * 2. If yes, does it take 4 parameters?
- * 3. If no, does it take 2 parameters?
- * This covers all 4 possibilities */
-	patch(1, "fs_dax_get_by_bdev", true, false,
-	      COMPAT_HAVE_FS_DAX_GET_BY_BDEV, "present");
-
-#if defined(COMPAT_HAVE_FS_DAX_GET_BY_BDEV)
+ * 1. Does fs_dax_get_by_bdev take 4 parameters?
+ * 2. If no, does it take 2 parameters?
+ * This covers all 3 possibilities */
 	patch(1, "fs_dax_get_by_bdev", true, false,
 	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF_AND_HOLDER, "takes_start_off_and_holder");
 
 #if !defined(COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF_AND_HOLDER)
 	patch(1, "fs_dax_get_by_bdev", true, false,
 	      COMPAT_FS_DAX_GET_BY_BDEV_TAKES_START_OFF, "takes_start_off");
-#endif
 #endif
 
 	patch(1, "add_disk", true, false,
@@ -537,9 +374,6 @@ int main(int argc, char **argv)
 	patch(1, "bdevname", false, true,
 	      COMPAT_HAVE_BDEVNAME, "present");
 
-	patch(1, "strscpy", true, false,
-	      COMPAT_HAVE_STRSCPY, "present");
-
 	patch(1, "kvfree_rcu_mightsleep", true, false,
 	      COMPAT_HAVE_KVFREE_RCU_MIGHTSLEEP, "present");
 
@@ -547,15 +381,6 @@ int main(int argc, char **argv)
 	patch(1, "kvfree_rcu", true, false,
 	      COMPAT_HAVE_KVFREE_RCU, "present");
 #endif
-
-	patch(1, "list_next_entry", true, false,
-	      COMPAT_HAVE_LIST_NEXT_ENTRY, "present");
-
-	patch(1, "sched_signal_h", true, false,
-	      COMPAT_HAVE_SCHED_SIGNAL_H, "present");
-
-	patch(1, "nla_put_64bit", true, false,
-	      COMPAT_HAVE_NLA_PUT_64BIT, "present");
 
 	patch(1, "get_random_u32_below", true, false,
 	      COMPAT_HAVE_GET_RANDOM_U32_BELOW, "present");
