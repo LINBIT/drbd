@@ -25,7 +25,9 @@ stages:
     - |
       kernels_from_vms() {
         rq -t < drbd9-tests/virter/vms.toml | \
-          jq -r '.vms[].metadata | .BuildDistribution + " " + .BuildKernel'
+          jq -r '.vms[].metadata
+            | select(has("BuildDistribution"))
+            | .BuildDistribution + " " + .BuildKernel'
       }
 
       # parameters: [version]
