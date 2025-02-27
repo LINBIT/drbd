@@ -56,12 +56,20 @@ stages:
           --upload-file drbd-*.tar.gz \
           $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
 
-        echo "$kernels" | parallel --colsep ' ' -k -j24 \
+        local compat_rc=0  
+        echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog compat.log \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only \
             -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
             -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
             -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
-            -d {1} -k {2}
+            -d {1} -k {2} \
+            || compat_rc=$?
+
+        if [ "$compat_rc" -ne 0 ]; then
+          echo "Error: compat build failed" >&2
+          parse_joblog.py drbd compat.log
+          exit $compat_rc
+        fi
 
         pushd drbd/drbd-kernel-compat
         local compat_hs
