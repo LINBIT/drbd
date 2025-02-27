@@ -164,7 +164,7 @@ quiet_cmd_splitdiff = SPLIT   $<
       cmd_splitdiff = \
 		mkdir -p $(patches-dir) \
 		&& cd $(patches-dir) \
-		&& $(PERL) $(src)/drbd-kernel-compat/splitdiff.pl < $<
+		&& $(PERL) $(abspath $(src))/drbd-kernel-compat/splitdiff.pl < $(abspath $<)
 
 annotate-orig-pos := \
 	$(src)/drbd-kernel-compat/annotate-diff-with-original-file-position-pragmas.pl
@@ -188,13 +188,14 @@ quiet_cmd_apply_compat_patch = PATCH   $@
 	if test -s $$patch ; then					\
 		$(PATCH) --output $$out.tmp $$orig $$patch ;		\
 		diff -u $$orig $$out.tmp |				\
-		DRBDSRC=$(src)						\
-		OUTDIR=$(obj.build)					\
-		PATCHES_DIR=$(patches-dir)				\
-		$(PERL) $(annotate-orig-pos)				\
-		| $(PATCH) --output $$out $$orig ;			\
+		DRBDSRC=$(abspath $(src))				\
+		OUTDIR=$(abspath $(obj.build))				\
+		PATCHES_DIR=$(abspath $(patches-dir))			\
+		$(PERL) $(annotate-orig-pos) > $$out.annotated;		\
+		$(PATCH) --output $$out $$orig < $$out.annotated;	\
 		chmod --reference $$orig $$out ;			\
 		: rm -f $$out.tmp; 					\
+		: rm -f $$out.annotated; 				\
 	else { echo "\# 1 \"$$orig\""; cat $$orig; } > $$out; fi
 
 orig-source = $(src)/$(s)
