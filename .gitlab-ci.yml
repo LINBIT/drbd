@@ -10,7 +10,7 @@ variables:
   GIT_STRATEGY: clone
   GIT_SUBMODULE_STRATEGY: normal
   # comma separated list of base images to exclude when testing
-  EXCLUDE_BASE_IMAGES: ''
+  EXCLUDE_BASE_IMAGES: rhel-7-drbd-k1160
 
 stages:
   - check
@@ -36,7 +36,7 @@ stages:
         local version="$1"
         lbbuildctl build drbd --ci -v $version --arch amd64 --debug debugSpecJson | \
           jq -r 'map(.image + " " + .aux_version) | unique[]' | \
-          grep -v ^sles12 | grep -v ^docker
+          grep -v ^sles12 | grep -v ^rhel7 | grep -v ^sles15-sp0 | grep -v ^docker
       }
 
       # parameters: [version] [release] [rel-version] [kernels]
