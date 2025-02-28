@@ -1200,12 +1200,32 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	if (number * BM_BLOCK_SIZE < discard_granularity)
 		number = discard_granularity / BM_BLOCK_SIZE;
 
+	spin_lock_bh(&peer_device->resync_next_bit_lock);
+	/*
+	 * Drain resync requests when we jump back to avoid conflicts that are
+	 * resolved in an arbitrary order, leading to an unexpected ordering of
+	 * requests being completed.
+	 */
+	if (peer_device->resync_next_bit <= peer_device->last_resync_next_bit &&
+			peer_device->rs_in_flight > 0) {
+		spin_unlock_bh(&peer_device->resync_next_bit_lock);
+
+		/*
+		 * The rs_in_flight counter does not include discards waiting
+		 * to be merged. Hence we may jump back while there are
+		 * discards waiting to be merged. In this situation, we may
+		 * make a resync request that conflicts with a discard. Allow
+		 * the discard to be merged here so that the conflict is
+		 * resolved.
+		 */
+		drbd_process_rs_discards(peer_device, false);
+		goto skip_request;
+	}
+
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
-	spin_lock_bh(&peer_device->resync_next_bit_lock);
-	peer_device->last_resync_next_bit = peer_device->resync_next_bit;
 	for (; i < number; i++) {
 		int err;
 
@@ -1258,6 +1278,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			bit++;
 			i++;
 		}
+
+		peer_device->last_resync_next_bit = peer_device->resync_next_bit;
 
 		/* set the offset to start the next drbd_bm_find_next from */
 		peer_device->resync_next_bit = bit + 1;
