@@ -2,13 +2,15 @@ variables:
   RELEASE_BRANCH: master
   DRBD_VERSION_BASE: 9.2.0
   DRBD9_TESTS_REF: master
-  BUILD_HELPERS_VERSION: 2c873ab6e6e6bb6ec83f571eeada63d54ff805b5
+  BUILD_HELPERS_VERSION: 01525254f2e841c1c67d9a57cad859955340b1e7
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
   GIT_DEPTH: 0
   GIT_STRATEGY: clone
   GIT_SUBMODULE_STRATEGY: normal
+  # comma separated list of base images to exclude when testing
+  EXCLUDE_BASE_IMAGES: ''
 
 stages:
   - check
@@ -24,10 +26,7 @@ stages:
     - git clone --branch ${DRBD9_TESTS_REF} https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd9-tests.git
     - |
       kernels_from_vms() {
-        rq -t < drbd9-tests/virter/vms.toml | \
-          jq -r '.vms[].metadata
-            | select(has("BuildDistribution"))
-            | .BuildDistribution + " " + .BuildKernel'
+        python3 .gitlab/kernels-from-vms.py < drbd9-tests/virter/vms.toml
       }
 
       # parameters: [version]
@@ -229,7 +228,7 @@ build:all:
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
         cd drbd9-tests
-        ./virter/run-test.sh --out-dir=../tests-out "$@"
+        ./virter/run-test.sh --out-dir=../tests-out "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
       }
   dependencies:
     - build:for-tests
