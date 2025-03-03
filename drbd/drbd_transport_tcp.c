@@ -37,12 +37,28 @@ MODULE_DESCRIPTION("TCP (SDP, SSOCKS) transport layer for DRBD");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(REL_VERSION);
 
-static unsigned int drbd_keepcnt;
+/* TCP keepalive has proven to be vital in many deployment scenarios.
+ * Without keepalive, after a device has seen a sufficiently long period of
+ * idle time, packets on our "bulk data" socket may be dropped because an
+ * overly "smart" network infrastructure decided that TCP session was stale.
+ * Note that we don't try to use this to detect "broken" tcp sessions here,
+ * these will still be handled by the DRBD effective network timeout via
+ * timeout / ko-count settings.
+ * We use this to try to keep "idle" TCP sessions "alive".
+ * Default to send a probe every 23 seconds.
+ */
+#define DRBD_KEEP_IDLE	(23*HZ)
+#define DRBD_KEEP_INTVL (23*HZ)
+#define DRBD_KEEP_CNT	9
+static unsigned int drbd_keepcnt = DRBD_KEEP_CNT;
 module_param_named(keepcnt, drbd_keepcnt, uint, 0664);
-static unsigned int drbd_keepidle;
+MODULE_PARM_DESC(keepcnt, "see tcp(7) tcp_keepalive_probes; set TCP_KEEPCNT for data sockets; default: 9");
+static unsigned int drbd_keepidle = DRBD_KEEP_IDLE;
 module_param_named(keepidle, drbd_keepidle, uint, 0664);
-static unsigned int drbd_keepintvl;
+MODULE_PARM_DESC(keepidle, "see tcp(7) tcp_keepalive_time; set TCP_KEEPIDLE for data sockets; default: 23s");
+static unsigned int drbd_keepintvl = DRBD_KEEP_INTVL;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
+MODULE_PARM_DESC(keepintvtl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
 
 static struct workqueue_struct *dtt_csocket_recv;
 
