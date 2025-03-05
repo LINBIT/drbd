@@ -9057,15 +9057,15 @@ static struct drbd_peer_request *drbd_advance_to_next_rs_discard(
 		list_prepare_entry(peer_device->received_last,
 				&peer_device->resync_requests, recv_order);
 	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
-		if (!(peer_req->flags & EE_TRIM)) {
-			discard_range_end =
-				test_bit(INTERVAL_RECEIVED, &peer_req->i.flags) || submit_all;
-			break;
-		}
-
 		/* Consider submitting previous discards. */
 		if (discard_last && !interval_is_adjacent(&discard_last->i, &peer_req->i)) {
 			discard_range_end = true;
+			break;
+		}
+
+		if (!(peer_req->flags & EE_TRIM)) {
+			discard_range_end =
+				test_bit(INTERVAL_RECEIVED, &peer_req->i.flags) || submit_all;
 			break;
 		}
 
