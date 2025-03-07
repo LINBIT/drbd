@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MIN_SPATCH_VERSION=1.0.8
+MIN_SPATCH_VERSION=1.2
 [[ ${V:-0} != [02] ]] && set -x
 
 # to be passed in via environment
@@ -14,8 +14,8 @@ function version_gt() {
 }
 
 function spatch_is_recent() {
-	ver=$(spatch --version | head -1 | sed -rn 's/^spatch version ([[:digit:]]\.[[:digit:]]\.[[:digit:]]).*/\1/p')
-	! version_gt $MIN_SPATCH_VERSION $ver
+	ver=$(spatch --version | sed -rn '1 s/^spatch version ([[:digit:]]+\.[^[:space:]]).*/\1/p')
+	! version_gt $MIN_SPATCH_VERSION "${ver:-0.bad.spatch.version.or.not.installed}"
 }
 
 function die_no_spatch() {
@@ -120,7 +120,7 @@ else
 	if test -e ../.git; then
 		echo "  INFO: not trying spatch-as-a-service because you are trying"
 		echo "  to build DRBD from a git checkout. Please install a suitable"
-		echo "  version of coccinelle (>1.0.8) or try building from a"
+		echo "  version of coccinelle (>$MIN_SPATCH_VERSION) or try building from a"
 		echo "  release tarball."
 		die_no_spatch
 	fi
@@ -128,7 +128,7 @@ else
 	if [[ $SPAAS != true ]]; then
 		echo "  INFO: spatch-as-a-service was disabled by your package"
 		echo "  maintainer (\$SPAAS = false). Install a suitable version"
-		echo "  of coccinelle (>1.0.8) or allow spatch-as-a-service by"
+		echo "  of coccinelle (>$MIN_SPATCH_VERSION) or allow spatch-as-a-service by"
 		echo "  setting \$SPAAS = true"
 		die_no_spatch
 	fi
