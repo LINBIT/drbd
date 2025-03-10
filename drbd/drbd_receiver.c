@@ -2787,11 +2787,13 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	atomic_add(d->bi_size >> 9, &device->rs_sect_ev);
 
-	/* Setting all peer out of sync here. Sync source peer will be set
-	   in sync when the write completes. Other peers will be set in
-	   sync by the sync source with a P_PEERS_IN_SYNC packet soon. */
 	sector = peer_req->i.sector;
 	size = peer_req->i.size;
+
+	/* Setting all peers out of sync here. The sync source peer will be
+	 * set in sync when the write completes. The sync source will soon
+	 * set other peers in sync with a P_PEERS_IN_SYNC packet.
+	 */
 	drbd_set_all_out_of_sync(device, sector, size);
 
 	atomic_inc(&connection->backing_ee_cnt);
@@ -2802,7 +2804,8 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	for_each_peer_device_ref(peer_device, im, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
-		if (repl_state == L_WF_BITMAP_S || repl_state == L_SYNC_SOURCE || repl_state == L_PAUSED_SYNC_S)
+
+		if (repl_is_sync_source(repl_state) || repl_state == L_WF_BITMAP_S)
 			drbd_send_out_of_sync(peer_device, sector, size);
 	}
 	return 0;
@@ -9195,6 +9198,7 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	sector_t sector;
 	int size, err = 0;
 	u64 block_id;
+	u64 im;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -9225,8 +9229,20 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 	atomic_add(size >> 9, &device->rs_sect_ev);
 	peer_req->flags |= EE_TRIM;
 
+	/* Setting all peers out of sync here. The sync source peer will be
+	 * set in sync when the discard completes. The sync source will soon
+	 * set other peers in sync with a P_PEERS_IN_SYNC packet.
+	 */
+	drbd_set_all_out_of_sync(device, sector, size);
 	drbd_process_rs_discards(peer_device, false);
 	rs_sectors_came_in(peer_device, size);
+
+	for_each_peer_device_ref(peer_device, im, device) {
+		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+
+		if (repl_is_sync_source(repl_state) || repl_state == L_WF_BITMAP_S)
+			drbd_send_out_of_sync(peer_device, sector, size);
+	}
 
 	return err;
 }
