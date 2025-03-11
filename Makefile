@@ -347,4 +347,12 @@ check-compat:
 		drbd/drbd-kernel-compat/check_patch_names.cocci \
 		drbd/drbd-kernel-compat/gen_patch_names.c
 
+COCCI_PATCHES := $(patsubst drbd/drbd-kernel-compat/cocci/%.cocci,%,$(wildcard drbd/drbd-kernel-compat/cocci/*.cocci))
+
+.PHONY: cocci-syntax
+cocci-syntax: $(addprefix cocci-syntax-,$(COCCI_PATCHES))
+
+cocci-syntax-%: drbd/drbd-kernel-compat/cocci/%.cocci
+	@spatch --very-quiet --parse-cocci $^ >/dev/null && echo "  COCCISYNTAX  OK  $$(basename $^)" || { echo "  COCCISYNTAX FAIL $$(basename $^)" ; exit 1 ; }
+
 Makefile: ;
