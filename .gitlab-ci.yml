@@ -113,21 +113,21 @@ stages:
 check:coccicheck:
   stage: check
   extends: [ .rules-build ]
-  image: szeder/coccinelle:1.1.0-1
+  image: linbit/coccinelle:1.2
   script:
     - make coccicheck
 
 check:cocci-syntax:
   stage: check
   extends: [ .rules-build ]
-  image: szeder/coccinelle:1.1.0-1
+  image: linbit/coccinelle:1.2
   script:
     - make cocci-syntax
 
 check:check-compat:
   stage: check
   extends: [ .rules-build ]
-  image: szeder/coccinelle:1.1.0-1
+  image: linbit/coccinelle:1.2
   script:
     - make check-compat
 
