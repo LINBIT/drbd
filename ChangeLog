@@ -2,6 +2,32 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.13-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+--------
+ * Fix a bug in the rs-discard-granularity feature; when having three
+   or more replicas and after a particular resync scenario in the
+   final consequence, it led to inconsistencies in the mirroring aka
+   data corruption
+ * Fix a bug that causes drbd not to finish a write request; DRBD
+   noticed that the request did not finish and abandoned the
+   connection; it happened only on resync-target primaries
+ * Fix a bug that causes machine freeze (without OOPS message) under
+   particular heavy network load conditions (a missing call to
+   skb_abort_seq_read())
+ * An up-to-date node no longer gets outdated by a far (not a
+   neighbor) primary that is incapable (I.e. has an inconsistent disk
+   and no access to up-to-date data)
+ * Fix a (never observed) race condition that causes false ping timeouts
+ * Fix a minor memory leak; it failed to free the memory allocated for
+   a specific class of state change log messages
+ * Fix a reference counting bug in the RDMA transport upon address or
+   route resolution errors
+ * Fix detecting dead peers on idle connections in the RDMA transport
+ * Enable TCP keepalive packets by default in the TCP transports
+ * Add a DKMS package for RPM-based Linux distributions
+ * Compatibility with coccinelle 1.2
+ * Compatibility with Linux 6.13
+
 9.2.12 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fix a complicated distributed deadlock corner case that caused
