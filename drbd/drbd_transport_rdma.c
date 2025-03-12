@@ -1292,6 +1292,11 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("%s: RDMA_CM_EVENT_ADDR_ERROR\n", cm->name);
 	case RDMA_CM_EVENT_ROUTE_ERROR:
 		// pr_info("%s: RDMA_CM_EVENT_ROUTE_ERROR\n", cm->name);
+		set_bit(DSB_ERROR, &cm->state);
+
+		dtr_cma_retry_connect(cm->path, cm);
+		break;
+
 	case RDMA_CM_EVENT_CONNECT_ERROR:
 		// pr_info("%s: RDMA_CM_EVENT_CONNECT_ERROR\n", cm->name);
 	case RDMA_CM_EVENT_UNREACHABLE:
