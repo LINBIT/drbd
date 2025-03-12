@@ -3081,6 +3081,9 @@ static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 		container_of(transport, struct dtr_transport, transport);
 
 	rdma_transport->stream[stream].recv_timeout = timeout;
+
+	if (stream == CONTROL_STREAM)
+		mod_timer(&rdma_transport->control_timer, jiffies + timeout);
 }
 
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream)
