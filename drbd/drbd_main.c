@@ -2579,7 +2579,6 @@ static void snprintf_current_comm_pid_tag(union comm_pid_tag_buf *s, const char 
 {
 	int len;
 
-	/* older kernel do not have __get_task_comm() yet */
 	get_task_comm(s->comm, current);
 	len = strlen(s->buf);
 	snprintf(s->buf + len, sizeof(s->buf)-len, ":%d %s", task_pid_nr(current), tag);
