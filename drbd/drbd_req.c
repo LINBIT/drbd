@@ -2816,7 +2816,7 @@ void request_timer_fn(struct timer_list *t)
 		/* maybe the oldest request waiting for the peer is in fact still
 		 * blocking in tcp sendmsg.  That's ok, though, that's handled via the
 		 * socket send timeout, requesting a ping, and bumping ko-count in
-		 * we_should_drop_the_connection().
+		 * drbd_stream_send_timed_out().
 		 */
 
 		/* check the oldest request we did successfully sent,
