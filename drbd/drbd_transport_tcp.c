@@ -613,6 +613,8 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 	write_unlock_bh(&sock->sk_callback_lock);
 }
 
+extern char *my_inet_ntoa(struct in_addr *addr);
+
 static int dtt_wait_for_connect(struct drbd_transport *transport,
 				struct drbd_listener *drbd_listener, struct socket **socket,
 				struct dtt_path **ret_path)
@@ -682,7 +684,7 @@ retry:
 			default:
 				from_sin = (struct sockaddr_in *)&peer_addr;
 				tr_notice(transport, "Closing unexpected connection from "
-					 "%pI4\n", &from_sin->sin_addr);
+					 "%s\n", my_inet_ntoa(&from_sin->sin_addr));
 				break;
 			}
 
