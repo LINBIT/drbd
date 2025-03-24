@@ -2,14 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.13-rc.2 (api:genl2/proto:86-101,118-122/transport:19)
---------
- * Fix for a race condition between new writes getting submitted and a
-   connection getting abandoned due to a send error; when it triggered,
-   DRBD failed to complete a (or multiple) write request(s)
- * Add a docker recipe for sles15
-
-9.2.13-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.13 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fix a bug in the rs-discard-granularity feature; when having three
    or more replicas and after a particular resync scenario in the
@@ -24,6 +17,9 @@ Latest:
  * An up-to-date node no longer gets outdated by a far (not a
    neighbor) primary that is incapable (I.e. has an inconsistent disk
    and no access to up-to-date data)
+ * Fix for a race condition between new writes getting submitted and a
+   connection getting abandoned due to a send error; when it triggered,
+   DRBD failed to complete a (or multiple) write request(s)
  * Fix a (never observed) race condition that causes false ping timeouts
  * Fix a minor memory leak; it failed to free the memory allocated for
    a specific class of state change log messages
@@ -32,6 +28,7 @@ Latest:
  * Fix detecting dead peers on idle connections in the RDMA transport
  * Enable TCP keepalive packets by default in the TCP transports
  * Add a DKMS package for RPM-based Linux distributions
+ * Add a docker recipe for sles15
  * Compatibility with coccinelle 1.2
  * Compatibility with Linux 6.13
 
