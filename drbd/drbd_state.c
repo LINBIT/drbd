@@ -2675,6 +2675,33 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 	if (!resource->fail_io[OLD] && resource->fail_io[NEW])
 		drbd_warn(resource, "Failing IOs\n");
 
+	for_each_connection(connection, resource) {
+		enum drbd_role *peer_role = connection->peer_role;
+		enum drbd_conn_state *cstate = connection->cstate;
+
+		if (peer_role[NEW] == R_PRIMARY)
+			some_peer_is_primary = true;
+
+		switch (cstate[NEW]) {
+		case C_CONNECTED:
+			if (atomic_read(&connection->active_ee_cnt)
+					|| atomic_read(&connection->done_ee_cnt))
+				some_peer_request_in_flight = true;
+			break;
+		case C_STANDALONE:
+		case C_UNCONNECTED:
+		case C_CONNECTING:
+			/* maybe others are safe as well? which ones? */
+			break;
+		default:
+			/* if we just disconnected, there may still be some request in flight. */
+			some_peer_request_in_flight = true;
+		}
+
+		if (some_peer_is_primary && some_peer_request_in_flight)
+			break;
+	}
+
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
@@ -2871,31 +2898,6 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			if (peer_role[OLD] != peer_role[NEW] || role[OLD] != role[NEW] ||
 			    peer_disk_state[OLD] != peer_disk_state[NEW])
 				drbd_update_mdf_al_disabled(device, NEW);
-		}
-
-		for_each_connection(connection, resource) {
-			enum drbd_role *peer_role = connection->peer_role;
-			enum drbd_conn_state *cstate = connection->cstate;
-			if (peer_role[NEW] == R_PRIMARY)
-				some_peer_is_primary = true;
-			switch (cstate[NEW]) {
-			case C_CONNECTED:
-				if (atomic_read(&connection->active_ee_cnt)
-				 || atomic_read(&connection->done_ee_cnt))
-					some_peer_request_in_flight = true;
-				break;
-			case C_STANDALONE:
-			case C_UNCONNECTED:
-			case C_CONNECTING:
-				/* maybe others are safe as well? which ones? */
-				break;
-			default:
-				/* if we are connected, or just now disconnected,
-				 * there may still be some request in flight. */
-				some_peer_request_in_flight = true;
-			}
-			if (some_peer_is_primary && some_peer_request_in_flight)
-				break;
 		}
 
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
