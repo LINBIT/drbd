@@ -3643,7 +3643,6 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 int drbd_sender(struct drbd_thread *thi)
 {
-	unsigned long spin_lock_irq_flags;
 	struct drbd_connection *connection = thi->connection;
 	struct drbd_work *w;
 	struct drbd_peer_device *peer_device;
