@@ -1,16 +1,13 @@
 #!/bin/bash
 
+# actually, the 1.1 in fedora 40 seems to have the relevant patches backported.
+SUGGESTED_SPATCH_VERSION=1.2
 [[ ${V:-0} != [02] ]] && set -x
 
 # to be passed in via environment
 : ${sources[@]?}
 : ${compat_patch?}
 : ${chksum?}
-
-function die_no_spatch() {
-	echo "ERROR: no suitable spatch found in \$PATH. Install package 'coccinelle'!"
-	exit 1
-}
 
 # generate compat patches by using the cache,
 # or using spatch,
@@ -20,17 +17,17 @@ function die_no_spatch() {
 
 set -e
 
+# compat with older checkouts
 if test -e .compat_patches_applied; then
 	echo "Removing compat patches"
 	patch -R -p0 --batch --reject-file=- < .compat_patches_applied
 	rm -f .compat_patches_applied
 fi
 
-if ! drbd-kernel-compat/spatch_works.sh drbd-kernel-compat/cocci/*.cocci >/dev/null 2>&1 ; then
-	echo "INFO: available spatch is not compatible with at least one patch"
-fi
+try_spatch()
+{
+	tried_spatch=false
 
-if hash spatch && drbd-kernel-compat/spatch_works.sh drbd-kernel-compat/cocci/*.cocci >/dev/null 2>&1 ; then
 	K=$(cat $incdir/kernelrelease.txt || echo unknown kernel release)
 	echo "  GENPATCHNAMES   "$K
 	gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
@@ -66,7 +63,15 @@ if hash spatch && drbd-kernel-compat/spatch_works.sh drbd-kernel-compat/cocci/*.
 
 	if [ -s $incdir/.compat.cocci ]; then
 		# sources=( ... ) passed in via environment
-		echo "	SPATCH	 $chksum  "$K
+
+		hash spatch || return 1
+		echo "  COCCISYN  $chksum  "$K
+		if ! spatch --very-quiet --parse-cocci "$incdir/.compat.cocci" >/dev/null 2>&1 ; then
+			return 1
+		fi
+
+		tried_spatch=true
+		echo "  SPATCH  $chksum  "$K
 		set +e
 		spatch --sp-file "$incdir/.compat.cocci" "${sources[@]}" \
 			--macro-file drbd-kernel-compat/cocci_macros.h \
@@ -84,8 +89,8 @@ if hash spatch && drbd-kernel-compat/spatch_works.sh drbd-kernel-compat/cocci/*.
 			# spatch warnings fatal? not yet.
 			# exit 1
 		fi
-		[[ $ex != 0 ]] && exit $ex
 		set -e
+		[[ $ex != 0 ]] && return $ex
 	else
 		echo "	SPATCH	 $chksum  "$K" - nothing to do"
 	fi
@@ -105,26 +110,38 @@ if hash spatch && drbd-kernel-compat/spatch_works.sh drbd-kernel-compat/cocci/*.
 	# to better be able to match the "stderr" warnings to their source files
 	# rm -f $incdir/.compat.cocci
 	rm -f $incdir/.compat.patch
+	return 0
+}
+
+if try_spatch ; then
+	: local spatch run successful or not necessary.
 else
+	if $tried_spatch; then
+		echo "  local spatch run failed; see above."
+	else
+		echo "  ERROR: no (suitable) spatch found in \$PATH."
+	fi
+	# but still try spatch-as-a-service, maybe?
+		
 	if test -e ../.git; then
 		echo "  INFO: not trying spatch-as-a-service because you are trying"
 		echo "  to build DRBD from a git checkout. Please install a suitable"
-		echo "  version of coccinelle (>=1.2) or try building from a"
+		echo "  version of coccinelle (>$SUGGESTED_SPATCH_VERSION) or try building from a"
 		echo "  release tarball."
-		die_no_spatch
+		exit 1
 	fi
 
 	if [[ $SPAAS != true ]]; then
 		echo "  INFO: spatch-as-a-service was disabled by your package"
 		echo "  maintainer (\$SPAAS = false). Install a suitable version"
-		echo "  of coccinelle (>=1.2) or allow spatch-as-a-service by"
+		echo "  of coccinelle (>$SUGGESTED_SPATCH_VERSION) or allow spatch-as-a-service by"
 		echo "  setting \$SPAAS = true"
-		die_no_spatch
+		exit 1
 	fi
 
-	echo "  INFO: no suitable spatch found; trying spatch-as-a-service;"
-	echo "  be patient, may take up to 10 minutes"
-	echo "  if it is in the server side cache it might only take a second"
+	echo "  INFO: spatch failed, or no suitable spatch found; trying spatch-as-a-service;"
+	echo "  be patient, may take up to 10 minutes."
+	echo "  If it is in the server side cache it might only take a second."
 	echo "  SPAAS    $chksum"
 
 	# check if SPAAS is even reachable
@@ -152,6 +169,8 @@ else
 	else
 		mv $compat_patch.tmp $compat_patch
 	fi
-	echo "  You can create a new .tgz including this pre-computed compat patch"
-	echo "  by calling \"echo drbd/$compat_patch >>.filelist ; make tgz\""
 fi
+
+# still here?
+echo "  You can create a new .tgz including this pre-computed compat patch"
+echo "  by calling \"echo drbd/$compat_patch >>.filelist ; make tgz\""
