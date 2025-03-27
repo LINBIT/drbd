@@ -1,0 +1,42 @@
+ARG BASE=docker.io/opensuse/leap:15 # !lbbuild
+# =lbbuild ARG BASE=registry.suse.com/suse/sle15
+FROM $BASE
+
+LABEL org.opencontainers.image.authors="Moritz Wanzenböck <moritz.wanzenboeck@linbit.com>"
+
+ENV DRBD_VERSION 9.2.13-rc.1
+
+ARG release=1
+LABEL name="DRBD Kernel module load container" \
+      vendor="LINBIT" \
+      version="$DRBD_VERSION" \
+      release="$release" \
+      summary="DRBD's kernel component" \
+      description="DRBD's kernel component"
+
+# =lbbuild ARG TARGETARCH
+RUN \
+    --mount=type=cache,target=/var/cache/zypp,sharing=private \
+# =lbbuild --mount=type=tmpfs,target=/run/secrets/credentials.d \
+# =lbbuild curl -fsSL "https://nexus.at.linbit.com/repository/lbbuild/suse-secrets/15/SCCcredentials.$TARGETARCH" -o /run/secrets/credentials.d/SCCcredentials && \
+    zypper install -y \
+      awk \
+      cpio \
+      diffutils \
+      gcc \
+      kmod \
+      make \
+      patch \
+      perl \
+      python3 \
+      python3-pip \
+      tar \
+    && pip3 install --no-cache-dir https://github.com/LINBIT/python-lbdist/archive/master.tar.gz
+
+RUN curl -fsSL https://pkg.linbit.com/downloads/drbd/9/drbd-${DRBD_VERSION}.tar.gz -o /drbd.tar.gz # !lbbuild
+# =lbbuild COPY /drbd.tar.gz /
+
+COPY /pkgs /pkgs
+
+COPY --chmod=0755 /entry.sh /
+ENTRYPOINT ["/entry.sh"]
