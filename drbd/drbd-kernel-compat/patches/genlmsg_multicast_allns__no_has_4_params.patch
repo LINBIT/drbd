@@ -1,13 +1,14 @@
 --- drbd-headers/linux/genl_magic_func-genl_register_family_with_ops_groups.h
 +++ drbd-headers/linux/genl_magic_func-genl_register_family_with_ops_groups.h
-@@ -18,8 +18,11 @@ static int CONCAT_(GENL_MAGIC_FAMILY, _genl_multicast_ ## group)(	\
+@@ -18,8 +18,12 @@ static int CONCAT_(GENL_MAGIC_FAMILY, _genl_multicast_ ## group)(	\
  {									\
  	unsigned int group_id =						\
  		CONCAT_(GENL_MAGIC_FAMILY, _group_ ## group);		\
 -	return genlmsg_multicast_allns(&ZZZ_genl_family, skb, 0,	\
 -				 group_id);				\
++	int ret;		 					\
 +	rcu_read_lock();						\
-+	int ret = genlmsg_multicast_allns(&ZZZ_genl_family, skb, 0,	\
++	ret = genlmsg_multicast_allns(&ZZZ_genl_family, skb, 0,		\
 +			 group_id, GFP_ATOMIC);				\
 +	rcu_read_unlock();						\
 +	return ret;							\
