@@ -2,7 +2,7 @@ variables:
   RELEASE_BRANCH: master
   DRBD_VERSION_BASE: 9.3.0
   DRBD9_TESTS_REF: master
-  BUILD_HELPERS_VERSION: 01525254f2e841c1c67d9a57cad859955340b1e7
+  BUILD_HELPERS_VERSION: 04d2651f29fb4166b22e58c1f336899cc7603ce4
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
