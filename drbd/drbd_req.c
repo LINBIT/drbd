@@ -1803,6 +1803,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 		if (!req->private_bio) {
 			drbd_err(device, "could not bio_alloc_clone() req->private_bio\n");
 			kfree(req);
+			put_ldev(device);
 			goto no_mem;
 		}
 		req->private_bio->bi_private = req;
