@@ -2097,7 +2097,7 @@ out:
 static void drbd_conflict_submit_write(struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
-	bool conflict = false;
+	struct drbd_interval *conflict;
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &req->i.flags);
@@ -2108,10 +2108,27 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 		set_bit(INTERVAL_SUBMITTED, &req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
-	/* If there is a conflict, the request will be submitted once the
-	 * conflict has cleared. */
-	if (!conflict)
+	if (conflict) {
+		if (drbd_interval_is_local(conflict)) {
+			struct drbd_request *conflicting_req =
+				container_of(conflict, struct drbd_request, i);
+
+			if (conflicting_req->local_rq_state & RQ_POSTPONED) {
+				req->local_rq_state |= RQ_POSTPONED;
+				if (req->private_bio) {
+					bio_put(req->private_bio);
+					req->private_bio = NULL;
+					put_ldev(device);
+				}
+				drbd_req_put_completion_ref(req, NULL, 1);
+			}
+		}
+		/* If there is a conflict, the request will be submitted once the
+		 * conflict has cleared.
+		 */
+	} else {
 		drbd_send_and_submit(req);
+	}
 }
 
 static bool inc_ap_bio_cond(struct drbd_device *device, int rw)

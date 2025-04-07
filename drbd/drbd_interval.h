@@ -127,6 +127,11 @@ static inline bool drbd_interval_is_verify(struct drbd_interval *i)
 	return i->type == INTERVAL_OV_READ_SOURCE || i->type == INTERVAL_OV_READ_TARGET;
 }
 
+static inline bool drbd_interval_is_local(struct drbd_interval *i)
+{
+	return i->type == INTERVAL_LOCAL_READ || i->type == INTERVAL_LOCAL_WRITE;
+}
+
 static inline void drbd_clear_interval(struct drbd_interval *i)
 {
 	RB_CLEAR_NODE(&i->rb);
