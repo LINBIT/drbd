@@ -2080,6 +2080,7 @@ static void get_common_queue_limits(struct queue_limits *common_limits,
 	common_limits->physical_block_size = device->device_conf.block_size;
 	common_limits->logical_block_size = device->device_conf.block_size;
 	common_limits->io_min = device->device_conf.block_size;
+	common_limits->max_hw_zone_append_sectors = 0;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {

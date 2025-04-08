@@ -635,6 +635,15 @@ int main(int argc, char **argv)
 	patch(1, "debugfs_change_name", true, false,
 	      COMPAT_HAVE_DEBUGFS_CHANGE_NAME, "present");
 
+	patch(1, "queue_limits_max_hw_zone_append_sectors", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_ZONE_APPEND_SECTORS, "present");
+
+#if !defined(COMPAT_QUEUE_LIMITS_HAS_MAX_HW_ZONE_APPEND_SECTORS)
+	/* if we don't have max_hw_discard_sectors, check for the older variant too */
+	patch(1, "queue_limits_max_zone_append_sectors", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_ZONE_APPEND_SECTORS, "present");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
