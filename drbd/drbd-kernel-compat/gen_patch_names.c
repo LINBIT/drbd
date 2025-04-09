@@ -632,6 +632,9 @@ int main(int argc, char **argv)
 	patch(1, "genlmsg_multicast_allns", true, false,
 	      COMPAT_GENLMSG_MULTICAST_ALLNS_HAS_4_PARAMS, "has_4_params");
 
+	patch(1, "debugfs_change_name", true, false,
+	      COMPAT_HAVE_DEBUGFS_CHANGE_NAME, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
