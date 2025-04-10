@@ -10857,6 +10857,76 @@ static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_h
 	return bitmap_bits;
 }
 
+static struct drbd_peer_request *drbd_send_oos_next_req(struct drbd_connection *peer_ack_connection,
+		int oos_node_id, struct drbd_peer_request *peer_req)
+{
+	lockdep_assert_held(&peer_ack_connection->send_oos_lock);
+
+	if (peer_req == NULL)
+		peer_req = list_entry(&peer_ack_connection->send_oos,
+				struct drbd_peer_request, recv_order);
+
+	list_for_each_entry_continue(peer_req, &peer_ack_connection->send_oos, recv_order) {
+		if (NODE_MASK(oos_node_id) & peer_req->send_oos_pending)
+			return peer_req;
+	}
+
+	return NULL;
+}
+
+static void drbd_send_oos_from(struct drbd_connection *oos_connection, int peer_ack_node_id)
+{
+	int oos_node_id = oos_connection->peer_node_id;
+	struct drbd_resource *resource = oos_connection->resource;
+	struct drbd_connection *peer_ack_connection;
+	struct drbd_peer_request *peer_req;
+
+	rcu_read_lock();
+	peer_ack_connection = drbd_connection_by_node_id(resource, peer_ack_node_id);
+	/* Valid to use peer_ack_connection after unlock because we have kref */
+	rcu_read_unlock();
+
+	spin_lock_irq(&peer_ack_connection->send_oos_lock);
+	peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, NULL);
+	spin_unlock_irq(&peer_ack_connection->send_oos_lock);
+
+	while (peer_req) {
+		struct drbd_peer_device *peer_device =
+			conn_peer_device(oos_connection, peer_req->peer_device->device->vnr);
+		struct drbd_peer_request *next_peer_req;
+
+		/* Ignore errors and keep iterating to clear up list */
+		drbd_send_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
+
+		spin_lock_irq(&peer_ack_connection->send_oos_lock);
+		next_peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
+
+		peer_req->send_oos_pending &= ~oos_node_id;
+		if (!peer_req->send_oos_pending)
+			drbd_free_peer_req(peer_req);
+
+		peer_req = next_peer_req;
+		spin_unlock_irq(&peer_ack_connection->send_oos_lock);
+	}
+
+	kref_debug_put(&peer_ack_connection->kref_debug, 18);
+	kref_put(&peer_ack_connection->kref, drbd_destroy_connection);
+}
+
+int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel)
+{
+	struct drbd_connection *oos_connection = container_of(w, struct drbd_connection,
+			send_oos_work);
+	unsigned long send_oos_from_mask = READ_ONCE(oos_connection->send_oos_from_mask);
+	int peer_ack_node_id;
+
+	for_each_set_bit(peer_ack_node_id, &send_oos_from_mask, sizeof(unsigned long)) {
+		clear_bit(peer_ack_node_id, &oos_connection->send_oos_from_mask);
+		drbd_send_oos_from(oos_connection, peer_ack_node_id);
+	}
+
+	return 0;
+}
 
 static bool is_sync_source(struct drbd_peer_device *peer_device)
 {
@@ -10864,57 +10934,50 @@ static bool is_sync_source(struct drbd_peer_device *peer_device)
 		peer_device->repl_state[NOW] == L_WF_BITMAP_S;
 }
 
-static int w_send_out_of_sync(struct drbd_work *w, int cancel)
+static u64 drbd_calculate_send_oos_pending(struct drbd_device *device, u64 in_sync)
 {
-	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
-	struct drbd_peer_device *peer_device = peer_req->send_oos_peer_device;
-	struct drbd_device *device = peer_device->device;
-	u64 in_sync = peer_req->send_oos_in_sync;
-	int err;
-
-	err = drbd_send_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
-	peer_req->sent_oos_nodes |= NODE_MASK(peer_device->node_id);
+	struct drbd_peer_device *peer_device;
+	u64 send_oos_pending = 0;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		if (!(NODE_MASK(peer_device->node_id) & in_sync) &&
-		    is_sync_source(peer_device) &&
-		    !(peer_req->sent_oos_nodes & NODE_MASK(peer_device->node_id))) {
-			rcu_read_unlock();
-			peer_req->send_oos_peer_device = peer_device;
-			drbd_queue_work(&peer_device->connection->sender_work,
-					&peer_req->w);
-			return err;
-		}
+				is_sync_source(peer_device))
+			send_oos_pending |= NODE_MASK(peer_device->node_id);
 	}
 	rcu_read_unlock();
-	drbd_free_peer_req(peer_req);
 
-	return err;
+	return send_oos_pending;
 }
 
-static void notify_sync_targets_or_free(struct drbd_peer_request *peer_req, u64 in_sync)
+static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connection,
+		struct list_head *send_oos_peer_req_list, u64 any_send_oos_pending)
 {
-	struct drbd_device *device = peer_req->peer_device->device;
-	struct drbd_peer_device *peer_device;
+	struct drbd_resource *resource = peer_ack_connection->resource;
+	int peer_ack_node_id = peer_ack_connection->peer_node_id;
+	struct drbd_connection *oos_connection;
 
-	rcu_read_lock();
-	for_each_peer_device_rcu(peer_device, device) {
-		if (!(NODE_MASK(peer_device->node_id) & in_sync) &&
-		    is_sync_source(peer_device)) {
-			rcu_read_unlock();
-			peer_req->sent_oos_nodes = 0;
-			peer_req->send_oos_peer_device = peer_device;
-			peer_req->send_oos_in_sync = in_sync;
-			peer_req->w.cb = w_send_out_of_sync;
-			drbd_queue_work(&peer_device->connection->sender_work,
-					&peer_req->w);
-			return;
-		}
+	if (!any_send_oos_pending)
+		return;
+
+	spin_lock_irq(&peer_ack_connection->send_oos_lock);
+	list_splice_tail(send_oos_peer_req_list, &peer_ack_connection->send_oos);
+	spin_unlock_irq(&peer_ack_connection->send_oos_lock);
+
+	/* Take state_rwlock to ensure work is queued on sender that is still running */
+	read_lock_irq(&resource->state_rwlock);
+	for_each_connection(oos_connection, resource) {
+		if (!(NODE_MASK(oos_connection->peer_node_id) & any_send_oos_pending) ||
+				oos_connection->cstate[NOW] < C_CONNECTED)
+			continue;
+
+		kref_get(&peer_ack_connection->kref);
+		kref_debug_get(&peer_ack_connection->kref_debug, 18);
+		set_bit(peer_ack_node_id, &oos_connection->send_oos_from_mask);
+		drbd_queue_work_if_unqueued(&oos_connection->sender_work,
+				&oos_connection->send_oos_work);
 	}
-	rcu_read_unlock();
-	drbd_free_peer_req(peer_req);
+	read_unlock_irq(&resource->state_rwlock);
 }
 
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
@@ -10923,6 +10986,7 @@ static int got_peer_ack(struct drbd_connection *connection, struct packet_info *
 	u64 dagtag, in_sync;
 	struct drbd_peer_request *peer_req, *tmp;
 	struct list_head work_list;
+	u64 any_send_oos_pending = 0;
 
 	dagtag = be64_to_cpu(p->dagtag);
 	in_sync = be64_to_cpu(p->mask);
@@ -10961,10 +11025,14 @@ found:
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
-		peer_req->flags &= ~EE_ON_RECV_ORDER;
-		list_del(&peer_req->recv_order);
-		notify_sync_targets_or_free(peer_req, in_sync);
+
+		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, in_sync);
+		any_send_oos_pending |= peer_req->send_oos_pending;
+		if (!peer_req->send_oos_pending)
+			drbd_free_peer_req(peer_req);
 	}
+
+	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
 	return 0;
 }
 
@@ -10987,6 +11055,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 {
 	struct drbd_peer_request *peer_req, *tmp;
 	LIST_HEAD(work_list);
+	u64 any_send_oos_pending = 0;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_splice_init(&connection->peer_requests, &work_list);
@@ -11004,10 +11073,14 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
-		peer_req->flags &= ~EE_ON_RECV_ORDER;
-		list_del(&peer_req->recv_order);
-		notify_sync_targets_or_free(peer_req, 0);
+
+		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, 0);
+		any_send_oos_pending |= peer_req->send_oos_pending;
+		if (!peer_req->send_oos_pending)
+			drbd_free_peer_req(peer_req);
 	}
+
+	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
 }
 
 static void cleanup_peer_ack_list(struct drbd_connection *connection)
