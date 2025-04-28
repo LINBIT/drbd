@@ -24,13 +24,22 @@ if test -e .compat_patches_applied; then
 	rm -f .compat_patches_applied
 fi
 
+# Because we are running under "set -e" aka "errexit",
+# this must not be called as a condition command inside an "if" or similar,
+# short-circuit returns are "return 0",
+# and the state propagation happens via variables:
+gcc_success=false
+need_spatch=false
+tried_spatch=false
+spatch_success=false
+compat_patch_generated=false
 try_spatch()
 {
-	tried_spatch=false
 
 	K=$(cat $incdir/kernelrelease.txt || echo unknown kernel release)
 	echo "  GENPATCHNAMES   "$K
 	gcc -I $incdir -o $incdir/gen_patch_names -std=c99 drbd-kernel-compat/gen_patch_names.c
+	gcc_success=true
 	$incdir/gen_patch_names > $incdir/applied_cocci_files.txt
 	rm $incdir/gen_patch_names
 	# truncat them all
@@ -62,17 +71,20 @@ try_spatch()
 	mv $incdir/.compat.patch.tmp $incdir/.compat.patch
 
 	if [ -s $incdir/.compat.cocci ]; then
-		# sources=( ... ) passed in via environment
-
-		hash spatch || return 1
+		need_spatch=true
+		if ! hash spatch >&/dev/null ; then
+			echo "    No local spatch found."
+			return 0
+		fi
 		echo "  COCCISYN  $chksum  "$K
 		if ! spatch --very-quiet --parse-cocci "$incdir/.compat.cocci" >/dev/null 2>&1 ; then
-			return 1
+			echo "    Local spatch found, but cannot parse our .cocci rules."
+			return 0
 		fi
-
 		tried_spatch=true
 		echo "  SPATCH  $chksum  "$K
 		set +e
+		# sources=( ... ) passed in via environment
 		spatch --sp-file "$incdir/.compat.cocci" "${sources[@]}" \
 			--macro-file drbd-kernel-compat/cocci_macros.h \
 			--very-quiet \
@@ -90,7 +102,8 @@ try_spatch()
 			# exit 1
 		fi
 		set -e
-		[[ $ex != 0 ]] && return $ex
+		[[ $ex != 0 ]] && return 0
+		spatch_success=true
 	else
 		echo "	SPATCH	 $chksum  "$K" - nothing to do"
 	fi
@@ -110,16 +123,27 @@ try_spatch()
 	# to better be able to match the "stderr" warnings to their source files
 	# rm -f $incdir/.compat.cocci
 	rm -f $incdir/.compat.patch
+	compat_patch_generated=true
 	return 0
 }
 
-if try_spatch ; then
+try_spatch
+if $compat_patch_generated ; then
 	: local spatch run successful or not necessary.
 else
-	if $tried_spatch; then
-		echo "  local spatch run failed; see above."
+	if $spatch_success; then
+		echo "  Local spatch run was successful, but we still had problems generating the final compat patch; see above."
+	elif $need_spatch; then
+		if $tried_spatch; then
+			echo "  Local spatch run failed; see above."
+		else
+			echo "  No (suitable) spatch found in \$PATH."
+		fi
+	elif $gcc_success; then
+		echo "  Problem generating the compat patch locally."
 	else
-		echo "  ERROR: no (suitable) spatch found in \$PATH."
+		echo "  Problem translating compat.h to the list of necessary patches."
+		echo "  We expect a standard build environment, including gcc and glibc-headers|libc-dev."
 	fi
 	# but still try spatch-as-a-service, maybe?
 		
