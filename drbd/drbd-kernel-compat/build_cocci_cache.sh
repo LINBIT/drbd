@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LC_ALL=C LANG=C LANGUAGE=C
+
 FILES=$@
 
 mkdir -p cocci_cache

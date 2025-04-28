@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LC_ALL=C LANG=C LANGUAGE=C
+
 # actually, the 1.1 in fedora 40 seems to have the relevant patches backported.
 SUGGESTED_SPATCH_VERSION=1.2
 [[ ${V:-0} != [02] ]] && set -x
