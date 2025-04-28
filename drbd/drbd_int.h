@@ -1052,6 +1052,7 @@ struct drbd_resource {
 	int pp_vacant;
 	wait_queue_head_t pp_wait;
 
+	struct list_head suspended_reqs;
 	/*
 	 * The side effects of an empty state change two-phase commit are:
 	 *

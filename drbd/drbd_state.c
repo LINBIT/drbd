@@ -3109,6 +3109,9 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		}
 	}
 
+	if (resource_suspended[OLD] && !resource_suspended[NEW])
+		drbd_restart_suspended_reqs(resource);
+
 	if ((resource_suspended[OLD] && !resource_suspended[NEW]) || unfreeze_io)
 		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
 }

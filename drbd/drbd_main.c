@@ -3412,9 +3412,13 @@ static void do_retry(struct work_struct *ws)
 /* called via drbd_req_put_completion_ref() */
 void drbd_restart_request(struct drbd_request *req)
 {
+	struct drbd_device *device = req->device;
+	struct drbd_resource *resource = device->resource;
+	bool susp = drbd_suspended(device);
 	unsigned long flags;
+
 	spin_lock_irqsave(&retry.lock, flags);
-	list_move_tail(&req->list, &retry.writes);
+	list_move_tail(&req->list, susp ? &resource->suspended_reqs : &retry.writes);
 	spin_unlock_irqrestore(&retry.lock, flags);
 
 	/* Drop the extra reference that would otherwise
@@ -3422,9 +3426,20 @@ void drbd_restart_request(struct drbd_request *req)
 	 * do_retry() needs to grab a new one. */
 	dec_ap_bio(req->device, bio_data_dir(req->master_bio));
 
-	queue_work(retry.wq, &retry.worker);
+	if (!susp)
+		queue_work(retry.wq, &retry.worker);
 }
 
+void drbd_restart_suspended_reqs(struct drbd_resource *resource)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&retry.lock, flags);
+	list_splice_init(&resource->suspended_reqs, &retry.writes);
+	spin_unlock_irqrestore(&retry.lock, flags);
+
+	queue_work(retry.wq, &retry.worker);
+}
 
 static void drbd_cleanup(void)
 {
@@ -3740,6 +3755,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
 	resource->members = NODE_MASK(res_opts->node_id);
 	INIT_WORK(&resource->empty_twopc, drbd_empty_twopc_work_fn);
+	INIT_LIST_HEAD(&resource->suspended_reqs);
 
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
 

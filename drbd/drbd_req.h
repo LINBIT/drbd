@@ -297,6 +297,7 @@ extern void drbd_reclaim_req(struct rcu_head *rp);
 
 /* this is in drbd_main.c */
 extern void drbd_restart_request(struct drbd_request *req);
+extern void drbd_restart_suspended_reqs(struct drbd_resource *resource);
 
 /* use this if you don't want to deal with calling complete_master_bio()
  * outside the spinlock, e.g. when walking some list on cleanup. */

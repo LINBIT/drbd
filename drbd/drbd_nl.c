@@ -5649,11 +5649,32 @@ static int drbd_adm_resume_sync(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static bool io_drained(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool drained = true;
+
+	if (atomic_read(&device->local_cnt))
+		return false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (atomic_read(&peer_device->ap_pending_cnt)) {
+			drained = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return drained;
+}
+
 static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
-	enum drbd_ret_code retcode;
+	struct drbd_device *device;
+	int retcode, i;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5661,12 +5682,17 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 	resource = adm_ctx.device->resource;
 	if (mutex_lock_interruptible(&resource->adm_mutex)) {
 		retcode = ERR_INTR;
-	} else {
-		retcode = stable_state_change(resource,
-			change_io_susp_user(resource, true,
-				      CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
-		mutex_unlock(&resource->adm_mutex);
+		goto out;
 	}
+	retcode = stable_state_change(resource, change_io_susp_user(resource, true,
+						CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
+	mutex_unlock(&resource->adm_mutex);
+	if (retcode < SS_SUCCESS)
+		goto out;
+
+	idr_for_each_entry(&resource->devices, device, i)
+		wait_event_interruptible(device->misc_wait, io_drained(device));
+out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 }
