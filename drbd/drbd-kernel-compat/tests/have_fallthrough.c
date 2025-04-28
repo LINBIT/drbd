@@ -2,10 +2,17 @@
 
 #include <linux/compiler_attributes.h>
 
-void foo(void)
+int foo(int i); /* Avoid warning about missing function prototype */
+int foo(int i)
 {
-	switch(0) {
+	int y = 0;
+
+	switch(i) {
 	case 0:
 		fallthrough;
+	case 1:
+		y = i;
 	}
+
+	return y;
 }
