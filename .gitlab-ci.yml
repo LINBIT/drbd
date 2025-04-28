@@ -190,7 +190,16 @@ build:all:
   stage: build
   extends: [ .setup-lbbuild ]
   rules:
-    - when: manual
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+    - if: $CI_COMMIT_BRANCH == $RELEASE_BRANCH
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == 'api'
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == 'pipeline'
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == 'trigger'
+      when: manual
   allow_failure: true
   image: $LINBIT_DOCKER_REGISTRY/build-helpers:$BUILD_HELPERS_VERSION
   script:
