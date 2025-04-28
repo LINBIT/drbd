@@ -2537,8 +2537,14 @@ static void update_resource_dagtag(struct drbd_resource *resource, struct drbd_b
 		if (peer_md->bitmap_uuid)
 			dagtag = max(peer_md->bitmap_dagtag, dagtag);
 	}
-	if (dagtag > resource->dagtag_sector)
-		resource->dagtag_sector = dagtag;
+
+	spin_lock_irq(&resource->tl_update_lock);
+	if (dagtag > resource->dagtag_sector) {
+		resource->dagtag_before_attach = resource->dagtag_sector;
+		resource->dagtag_from_backing_dev = dagtag;
+		WRITE_ONCE(resource->dagtag_sector, dagtag);
+	}
+	spin_unlock_irq(&resource->tl_update_lock);
 }
 
 static int used_bitmap_slots(struct drbd_backing_dev *bdev)

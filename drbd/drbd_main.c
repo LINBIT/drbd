@@ -1163,16 +1163,15 @@ void drbd_send_ping_ack_wf(struct work_struct *ws)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
-int drbd_send_peer_ack(struct drbd_connection *connection,
-		struct drbd_peer_ack *peer_ack)
+int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_sector)
 {
 	struct p_peer_ack *p;
 
 	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
 	if (!p)
 		return -EIO;
-	p->mask = cpu_to_be64(peer_ack->mask);
-	p->dagtag = cpu_to_be64(peer_ack->dagtag_sector);
+	p->mask = cpu_to_be64(mask);
+	p->dagtag = cpu_to_be64(dagtag_sector);
 
 	return send_command(connection, -1, P_PEER_ACK, CONTROL_STREAM);
 }
@@ -1826,6 +1825,49 @@ int drbd_send_peer_dagtag(struct drbd_connection *connection, struct drbd_connec
 	p->node_id = cpu_to_be32(lost_peer->peer_node_id);
 
 	return send_command(connection, -1, P_PEER_DAGTAG, DATA_STREAM);
+}
+
+int drbd_send_flush_requests(struct drbd_connection *connection, u64 flush_sequence)
+{
+	struct p_flush_requests *p;
+
+	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
+	if (!p)
+		return -EIO;
+
+	p->flush_sequence = cpu_to_be64(flush_sequence);
+
+	return send_command(connection, -1, P_FLUSH_REQUESTS, DATA_STREAM);
+}
+
+int drbd_send_flush_forward(struct drbd_connection *connection, u64 flush_sequence,
+		int initiator_node_id)
+{
+	struct p_flush_forward *p;
+
+	p = conn_prepare_command(connection, sizeof(*p), CONTROL_STREAM);
+	if (!p)
+		return -EIO;
+
+	p->flush_sequence = cpu_to_be64(flush_sequence);
+	p->initiator_node_id = cpu_to_be32(initiator_node_id);
+
+	return send_command(connection, -1, P_FLUSH_FORWARD, CONTROL_STREAM);
+}
+
+int drbd_send_flush_requests_ack(struct drbd_connection *connection, u64 flush_sequence,
+		int primary_node_id)
+{
+	struct p_flush_ack *p;
+
+	p = conn_prepare_command(connection, sizeof(*p), DATA_STREAM);
+	if (!p)
+		return -EIO;
+
+	p->flush_sequence = cpu_to_be64(flush_sequence);
+	p->primary_node_id = cpu_to_be32(primary_node_id);
+
+	return send_command(connection, -1, P_FLUSH_REQUESTS_ACK, DATA_STREAM);
 }
 
 static void dcbp_set_code(struct p_compressed_bm *p, enum drbd_bitmap_code code)
@@ -3733,6 +3775,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	INIT_LIST_HEAD(&resource->peer_ack_work.list);
 	resource->peer_ack_work.cb = w_queue_peer_ack;
 	timer_setup(&resource->peer_ack_timer, peer_ack_timer_fn, 0);
+	spin_lock_init(&resource->initiator_flush_lock);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
 	resource->max_node_id = res_opts->node_id;
@@ -3843,6 +3886,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	connection->receiver.connection = connection;
 	drbd_thread_init(resource, &connection->sender, drbd_sender, "sender");
 	connection->sender.connection = connection;
+	spin_lock_init(&connection->primary_flush_lock);
+	spin_lock_init(&connection->flush_ack_lock);
 	spin_lock_init(&connection->peer_reqs_lock);
 	spin_lock_init(&connection->send_oos_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
@@ -3862,6 +3907,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
 	INIT_LIST_HEAD(&connection->send_oos_work.list);
 	connection->send_oos_work.cb = drbd_send_out_of_sync_wf;
+	INIT_LIST_HEAD(&connection->flush_ack_work.list);
+	connection->flush_ack_work.cb = drbd_flush_ack_wf;
 	INIT_WORK(&connection->send_acks_work, drbd_send_acks_wf);
 	INIT_WORK(&connection->send_ping_ack_work, drbd_send_ping_ack_wf);
 	INIT_WORK(&connection->send_ping_work, drbd_send_ping_wf);

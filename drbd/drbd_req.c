@@ -98,11 +98,15 @@ static void queue_peer_ack_send(struct drbd_resource *resource,
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
 		if (connection->agreed_pro_version < 110 ||
-				connection->cstate[NOW] != C_CONNECTED ||
-				!(req->net_rq_state[node_id] & RQ_NET_SENT))
+				connection->cstate[NOW] != C_CONNECTED) {
+			connection->last_peer_ack_dagtag_seen = peer_ack->dagtag_sector;
 			continue;
+		}
 
-		peer_ack->pending_mask |= NODE_MASK(node_id);
+		if (req->net_rq_state[node_id] & RQ_NET_SENT)
+			peer_ack->pending_mask |= NODE_MASK(node_id);
+
+		peer_ack->queued_mask |= NODE_MASK(node_id);
 		queue_work(connection->ack_sender, &connection->peer_ack_work);
 	}
 	rcu_read_unlock();
@@ -114,7 +118,7 @@ void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack)
 
 	lockdep_assert_held(&resource->peer_ack_lock);
 
-	if (peer_ack->pending_mask)
+	if (peer_ack->queued_mask)
 		return;
 
 	list_del(&peer_ack->list);

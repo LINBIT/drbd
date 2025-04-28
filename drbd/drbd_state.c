@@ -2471,6 +2471,125 @@ static void update_members(struct drbd_resource *resource)
 	}
 }
 
+static bool drbd_any_peer_device_up_to_date(struct drbd_connection *connection)
+{
+	int vnr;
+	struct drbd_peer_device *peer_device;
+
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (peer_device->disk_state[NEW] == D_UP_TO_DATE)
+			return true;
+	}
+
+	return false;
+}
+
+void drbd_check_all_resync_done(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device_rcu(peer_device, device)
+			drbd_check_resync_done(peer_device);
+	}
+	rcu_read_unlock();
+}
+
+static void drbd_determine_flush_pending(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	struct drbd_connection *primary_connection;
+	struct drbd_connection *up_to_date_connection;
+	int vnr;
+	bool any_flush_bits_cleared = false;
+	bool send_flush_requests = false;
+
+	/* Clear any bits if we no longer expect or require a flush ack */
+	spin_lock(&resource->initiator_flush_lock);
+	for_each_connection(primary_connection, resource) {
+		u64 *pending_flush_mask = &primary_connection->pending_flush_mask;
+
+		/*
+		 * Clear bits if we no longer expect or require a flush ack due
+		 * to loss of connection to the Primary peer.
+		 */
+		if (primary_connection->cstate[NEW] != C_CONNECTED) {
+			if (*pending_flush_mask) {
+				any_flush_bits_cleared = true;
+				*pending_flush_mask = 0;
+			}
+			continue;
+		}
+
+		/*
+		 * Clear bits if we no longer expect or require a flush ack
+		 * because the peer that was UpToDate is no longer UpToDate.
+		 * For instance, if we lose the connection to that peer.
+		 */
+		for_each_connection(up_to_date_connection, resource) {
+			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
+
+			if (drbd_any_peer_device_up_to_date(up_to_date_connection))
+				continue;
+
+			if (*pending_flush_mask & up_to_date_mask) {
+				any_flush_bits_cleared = true;
+				*pending_flush_mask &= ~up_to_date_mask;
+			}
+		}
+	}
+	spin_unlock(&resource->initiator_flush_lock);
+
+	/* Potentially finish resync if we cleared flush pending bits */
+	if (any_flush_bits_cleared)
+		drbd_check_all_resync_done(resource);
+
+	/* Check if we need a new flush */
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		struct drbd_peer_device *peer_device;
+
+		for_each_peer_device(peer_device, device) {
+			if (!is_sync_target_state(peer_device, NOW) &&
+					is_sync_target_state(peer_device, NEW))
+				send_flush_requests = true;
+		}
+	}
+
+	if (!send_flush_requests)
+		return;
+
+	/* We need a new flush. Mark which acks we are waiting for. */
+	spin_lock(&resource->initiator_flush_lock);
+	resource->current_flush_sequence++;
+
+	for_each_connection(primary_connection, resource) {
+		primary_connection->pending_flush_mask = 0;
+
+		if (primary_connection->peer_role[NEW] != R_PRIMARY)
+			continue;
+
+		if (primary_connection->agreed_pro_version < 123)
+			continue;
+
+		for_each_connection(up_to_date_connection, resource) {
+			u64 up_to_date_mask = NODE_MASK(up_to_date_connection->peer_node_id);
+
+			if (!drbd_any_peer_device_up_to_date(up_to_date_connection))
+				continue;
+
+			if (up_to_date_connection->agreed_pro_version < 123)
+				continue;
+
+			primary_connection->pending_flush_mask |= up_to_date_mask;
+		}
+	}
+	spin_unlock(&resource->initiator_flush_lock);
+}
+
 static void set_ov_position(struct drbd_peer_device *peer_device,
 			    enum drbd_repl_state repl_state)
 {
@@ -2671,6 +2790,8 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		resource->peer_ack_req = NULL;
 	}
 	spin_unlock(&resource->peer_ack_lock);
+
+	drbd_determine_flush_pending(resource);
 
 	if (!resource->fail_io[OLD] && resource->fail_io[NEW])
 		drbd_warn(resource, "Failing IOs\n");
@@ -3722,6 +3843,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	bool still_connected = false;
 	bool try_become_up_to_date = false;
 	bool healed_primary = false;
+	bool send_flush_requests = false;
 
 	notify_state_change(state_change);
 
@@ -4068,6 +4190,10 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_queue_work_if_unqueued(
 						&peer_device->connection->sender_work,
 						&peer_device->resync_work);
+
+			if (!repl_is_sync_target(repl_state[OLD]) &&
+					repl_is_sync_target(repl_state[NEW]))
+				send_flush_requests = true;
 		}
 
 		if (((role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) || some_peer_demoted) &&
@@ -4216,6 +4342,18 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		enum drbd_conn_state *cstate = connection_state_change->cstate;
 		bool *susp_fen = connection_state_change->susp_fen;
 		enum drbd_fencing_policy fencing_policy;
+
+		if (connection_state_change->peer_role[NEW] == R_PRIMARY && send_flush_requests &&
+				connection->agreed_pro_version >= 123) {
+			u64 current_flush_sequence;
+
+			spin_lock_irq(&resource->initiator_flush_lock);
+			/* Requirement: At least the value from the corresponding state change */
+			current_flush_sequence = resource->current_flush_sequence;
+			spin_unlock_irq(&resource->initiator_flush_lock);
+
+			drbd_send_flush_requests(connection, current_flush_sequence);
+		}
 
 		/* Upon network configuration, we need to start the receiver */
 		if (cstate[OLD] == C_STANDALONE && cstate[NEW] == C_UNCONNECTED)
