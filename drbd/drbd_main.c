@@ -3844,8 +3844,10 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	drbd_thread_init(resource, &connection->sender, drbd_sender, "sender");
 	connection->sender.connection = connection;
 	spin_lock_init(&connection->peer_reqs_lock);
+	spin_lock_init(&connection->send_oos_lock);
 	INIT_LIST_HEAD(&connection->peer_requests);
 	INIT_LIST_HEAD(&connection->peer_reads);
+	INIT_LIST_HEAD(&connection->send_oos);
 	INIT_LIST_HEAD(&connection->connections);
 	INIT_LIST_HEAD(&connection->done_ee);
 	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
@@ -3858,6 +3860,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_debug_init(&connection->kref_debug, &connection->kref, &kref_class_connection);
 
 	INIT_WORK(&connection->peer_ack_work, drbd_send_peer_ack_wf);
+	INIT_LIST_HEAD(&connection->send_oos_work.list);
+	connection->send_oos_work.cb = drbd_send_out_of_sync_wf;
 	INIT_WORK(&connection->send_acks_work, drbd_send_acks_wf);
 	INIT_WORK(&connection->send_ping_ack_work, drbd_send_ping_ack_wf);
 	INIT_WORK(&connection->send_ping_work, drbd_send_ping_wf);

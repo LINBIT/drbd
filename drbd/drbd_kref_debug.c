@@ -73,6 +73,7 @@ struct kref_debug_class kref_class_connection = {
 		[15] = "for_each_peer_device_ref()",
 		[16] = "queue_twopc",
 		[17] = "path",
+		[18] = "drbd_send_out_of_sync_wf",
 	}
 };
 

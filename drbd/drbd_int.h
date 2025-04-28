@@ -461,10 +461,8 @@ struct drbd_peer_request {
 			struct digest_info *digest;
 			u64 dagtag_sector;
 		};
-		struct { /* reused object to queue send OOS to other nodes */
-			u64 sent_oos_nodes; /* Used to notify L_SYNC_TARGETs about new out_of_sync bits */
-			struct drbd_peer_device *send_oos_peer_device;
-			u64 send_oos_in_sync;
+		struct { /* reused object for sending OOS to other nodes */
+			u64 send_oos_pending;
 		};
 	};
 };
@@ -1140,16 +1138,32 @@ struct drbd_connection {
 	struct workqueue_struct *ack_sender;
 	struct work_struct peer_ack_work;
 
+	/* Work for sending P_OUT_OF_SYNC due to P_PEER_ACK */
+	struct drbd_work send_oos_work;
+	/*
+	 * These peers have sent us a P_PEER_ACK for which we need to send
+	 * P_OUT_OF_SYNC on this connection.
+	 */
+	unsigned long send_oos_from_mask;
+
 	atomic64_t last_dagtag_sector;
 
 	atomic_t active_ee_cnt; /* Peer write requests waiting for activity log or backing disk. */
 	atomic_t backing_ee_cnt; /* Other peer requests waiting for conflicts or backing disk. */
 	atomic_t done_ee_cnt;
 	spinlock_t peer_reqs_lock;
+	spinlock_t send_oos_lock; /* Protects send_oos list */
 
 	/* Lists using drbd_peer_request.recv_order (see also drbd_peer_device.resync_requests) */
 	struct list_head peer_requests; /* All peer writes in the order we received them */
 	struct list_head peer_reads; /* All reads in the order we received them */
+	/*
+	 * Peer writes for which we need to send some P_OUT_OF_SYNC. These peer
+	 * writes continue to be stored on the connection over which the writes
+	 * and the P_PEER_ACK are received. They are accessed by the sender for
+	 * each relevant peer. Protected by send_oos_lock on this connection.
+	 */
+	struct list_head send_oos;
 
 	/* Lists using drbd_peer_request.w.list */
 	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
@@ -2234,6 +2248,7 @@ extern int drbd_send_ov_result(struct drbd_peer_device *peer_device, sector_t se
 		u64 block_id, enum ov_result result);
 extern int drbd_receiver(struct drbd_thread *thi);
 extern void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req, bool failed);
+extern int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel);
 extern void drbd_send_ping_wf(struct work_struct *ws);
 extern void drbd_send_acks_wf(struct work_struct *ws);
 extern void drbd_send_peer_ack_wf(struct work_struct *ws);
