@@ -5,6 +5,9 @@
 
 #include "drbd_int.h"
 
+int drbd_seq_print_peer_device_proc_drbd(struct seq_file *m,
+					 struct drbd_peer_device *peer_device);
+
 #ifdef CONFIG_DEBUG_FS
 void __init drbd_debugfs_init(void);
 void drbd_debugfs_cleanup(void);
