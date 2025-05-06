@@ -2036,8 +2036,7 @@ extern void drbd_try_to_get_resynced(struct drbd_device *device);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
-	/* return bdev ? get_capacity(bdev->bd_disk) : 0; */
-	return bdev ? i_size_read(bdev->bd_inode) >> 9 : 0;
+	return bdev ? get_capacity(bdev->bd_disk) : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
