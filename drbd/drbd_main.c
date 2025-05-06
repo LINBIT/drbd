@@ -4423,7 +4423,7 @@ static void shutdown_connect_timer(struct drbd_connection *connection)
 
 void del_connect_timer(struct drbd_connection *connection)
 {
-	if (del_timer_sync(&connection->connect_timer)) {
+	if (timer_delete_sync(&connection->connect_timer)) {
 		kref_debug_put(&connection->kref_debug, 11);
 		kref_put(&connection->kref, drbd_destroy_connection);
 	}
@@ -4671,7 +4671,7 @@ static int __drbd_md_sync(struct drbd_device *device, bool maybe)
 	if (!buffer)
 		goto out;
 
-	del_timer(&device->md_sync_timer);
+	timer_delete(&device->md_sync_timer);
 	/* timer may be rearmed by drbd_md_mark_dirty() now. */
 
 	if (test_and_clear_bit(MD_DIRTY, &device->flags) || !maybe) {

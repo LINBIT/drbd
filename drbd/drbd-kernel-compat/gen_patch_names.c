@@ -644,6 +644,9 @@ int main(int argc, char **argv)
 	      COMPAT_QUEUE_LIMITS_HAS_MAX_ZONE_APPEND_SECTORS, "present");
 #endif
 
+	patch(1, "timer_delete", true, false,
+	      COMPAT_HAVE_TIMER_DELETE, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 

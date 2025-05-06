@@ -231,7 +231,7 @@ static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			drbd_path_event(transport, drbd_path);
 	}
 
-	del_timer_sync(&dtl_transport->control_timer);
+	timer_delete_sync(&dtl_transport->control_timer);
 	cancel_delayed_work_sync(&dtl_transport->connect_work);
 
 	if (free_op == DESTROY_TRANSPORT) {
@@ -1431,7 +1431,7 @@ static int dtl_prepare_connect(struct drbd_transport *transport)
 	dtl_transport->connected_paths = 0;
 	dtl_transport->err = 0;
 	flush_signals(current);
-	del_timer_sync(&dtl_transport->control_timer);
+	timer_delete_sync(&dtl_transport->control_timer);
 	dtl_transport->err = dtl_set_active(transport, true);
 
 	return dtl_transport->err;

@@ -223,7 +223,7 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			drbd_path_event(transport, drbd_path);
 	}
 
-	del_timer_sync(&tcp_transport->control_timer);
+	timer_delete_sync(&tcp_transport->control_timer);
 
 	if (free_op == DESTROY_TRANSPORT) {
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
