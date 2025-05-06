@@ -2169,7 +2169,7 @@ extern void drbd_init_connect_state(struct drbd_connection *connection);
 
 static inline sector_t drbd_get_capacity(struct block_device *bdev)
 {
-	return bdev ? bdev_nr_sectors(bdev) : 0;
+	return bdev ? get_capacity(bdev->bd_disk) : 0;
 }
 
 /* sets the number of 512 byte sectors of our virtual device */
