@@ -1278,8 +1278,8 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		/* cm->state = DSM_CONNECTED; is set later in the work item */
 		/* This is called for active and passive connections */
 
-		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state);
-		connecting |= test_bit(DSB_CONNECT_REQ, &cm->state);
+		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
+			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
 		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
@@ -1307,7 +1307,9 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		set_bit(DSB_ERROR, &cm->state);
 
 		dtr_cma_retry_connect(cm->path, cm);
-		if (!test_and_clear_bit(DSB_CONNECTING, &cm->state))
+		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
+			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
+		if (!connecting)
 			return 0; /* keep ref; __dtr_disconnect_path() won */
 		break;
 
@@ -2787,7 +2789,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	 * events. Destroy the cm and cm_id to avoid leaking it.
 	 * This is racing with the event delivery, which drops a reference.
 	 */
-	if (test_and_clear_bit(DSB_CONNECTING, &cm->state))
+	if (test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
+	    test_and_clear_bit(DSB_CONNECT_REQ, &cm->state))
 		kref_put(&cm->kref, dtr_destroy_cm);
 
 	kref_put(&cm->kref, dtr_destroy_cm);
