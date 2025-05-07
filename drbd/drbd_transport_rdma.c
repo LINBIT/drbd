@@ -2080,8 +2080,10 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 	rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page), alloc_size,
 					      DMA_FROM_DEVICE);
 	err = ib_dma_mapping_error(cm->id->device, rx_desc->sge.addr);
-	if (err)
-		goto out;
+	if (err) {
+		tr_err(transport, "ib_dma_map_single() failed %d\n", err);
+		goto out_put;
+	}
 	rx_desc->sge.length = alloc_size;
 
 	atomic_inc(&flow->rx_descs_allocated);
@@ -2094,6 +2096,9 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 		dtr_free_rx_desc(rx_desc);
 	}
 	return err;
+
+out_put:
+	kref_put(&cm->kref, dtr_destroy_cm);
 out:
 	kfree(rx_desc);
 	drbd_free_pages(transport, page, 0);
@@ -2396,9 +2401,10 @@ retry:
 		return -EINTR;
 
 	flow = &cm->path->flow[stream];
-	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
+	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0) {
+		kref_put(&cm->kref, dtr_destroy_cm);
 		goto retry;
-
+	}
 	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
