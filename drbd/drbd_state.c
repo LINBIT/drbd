@@ -4294,7 +4294,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 					drbd_disk_str(device->disk_state[NOW]));
 
 			/* we may need to cancel the md_sync timer */
-			del_timer_sync(&device->md_sync_timer);
+			timer_delete_sync(&device->md_sync_timer);
 
 			if (have_ldev)
 				send_new_state_to_all_peer_devices(state_change, n_device);

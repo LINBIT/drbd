@@ -514,7 +514,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			kref_put(&cm->kref, dtr_destroy_cm);
 	}
 
-	del_timer_sync(&rdma_transport->control_timer);
+	timer_delete_sync(&rdma_transport->control_timer);
 
 	if (free_op == DESTROY_TRANSPORT) {
 		list_for_each_entry(drbd_path, &transport->paths, list) {
@@ -1933,7 +1933,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 	if (tx_desc)
 		dtr_free_tx_desc(cm, tx_desc);
 	if (atomic_dec_and_test(&cm->tx_descs_posted)) {
-		bool was_active = del_timer(&cm->tx_timeout);
+		bool was_active = timer_delete(&cm->tx_timeout);
 
 		if (was_active)
 			kref_put(&cm->kref, dtr_destroy_cm);
@@ -2243,7 +2243,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
 	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
-		was_active = del_timer(&cm->tx_timeout);
+		was_active = timer_delete(&cm->tx_timeout);
 		if (!was_active)
 			was_active = cancel_work_sync(&cm->tx_timeout_work);
 		if (was_active)

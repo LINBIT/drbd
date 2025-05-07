@@ -7862,7 +7862,7 @@ retry:
 				drbd_err(resource, "FATAL: Local commit of prepared %u failed! \n",
 					 reply->tid);
 
-			del_timer(&resource->twopc_timer);
+			timer_delete(&resource->twopc_timer);
 		}
 
 		nested_twopc_request(resource, &request);
@@ -9545,9 +9545,9 @@ static void cleanup_resync_leftovers(struct drbd_peer_device *peer_device)
 	peer_device->rs_failed = 0;
 	D_ASSERT(peer_device, atomic_read(&peer_device->rs_pending_cnt) == 0);
 
-	del_timer_sync(&peer_device->resync_timer);
+	timer_delete_sync(&peer_device->resync_timer);
 	resync_timer_fn(&peer_device->resync_timer);
-	del_timer_sync(&peer_device->start_resync_timer);
+	timer_delete_sync(&peer_device->start_resync_timer);
 }
 
 static void free_waiting_resync_requests(struct drbd_connection *connection)
@@ -9783,7 +9783,7 @@ static void cleanup_remote_state_change(struct drbd_connection *connection)
 		drbd_info(connection, "Aborting %s state change %u commit not possible\n",
 			  remote ? "remote" : "local", reply->tid);
 		if (remote) {
-			del_timer(&resource->twopc_timer);
+			timer_delete(&resource->twopc_timer);
 			__clear_remote_state_change(resource);
 		} else {
 			enum alt_rv alt_rv = abort_local_transaction(connection, 0);
