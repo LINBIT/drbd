@@ -19,7 +19,6 @@
 #include <linux/module.h>
 #include <linux/jiffies.h>
 #include <linux/drbd.h>
-#include <linux/uaccess.h>
 #include <asm/types.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
@@ -29,17 +28,12 @@
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/mm.h>
-#include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
-#include <linux/crc32c.h>
-#include <linux/reboot.h>
 #include <linux/notifier.h>
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
-#include <linux/unistd.h>
 #include <linux/vmalloc.h>
-#include <linux/device.h>
 #include <linux/dynamic_debug.h>
 #include <linux/libnvdimm.h>
 #include <linux/swab.h>
@@ -1280,17 +1274,6 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	rcu_read_unlock();
 
 	return __send_command(connection, -1, cmd, DATA_STREAM);
-}
-
-int drbd_send_protocol(struct drbd_connection *connection)
-{
-	int err;
-
-	mutex_lock(&connection->mutex[DATA_STREAM]);
-	err = __drbd_send_protocol(connection, P_PROTOCOL);
-	mutex_unlock(&connection->mutex[DATA_STREAM]);
-
-	return err;
 }
 
 static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags)
@@ -5854,14 +5837,6 @@ int drbd_bitmap_io(struct drbd_device *device,
 	return rv;
 }
 
-void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag flag) __must_hold(local)
-{
-	if ((device->ldev->md.flags & flag) != flag) {
-		drbd_md_mark_dirty(device);
-		device->ldev->md.flags |= flag;
-	}
-}
-
 void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
 			   enum mdf_peer_flag flag) __must_hold(local)
 {
@@ -5871,14 +5846,6 @@ void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
 	if (!(md->peers[peer_device->node_id].flags & flag)) {
 		drbd_md_mark_dirty(device);
 		md->peers[peer_device->node_id].flags |= flag;
-	}
-}
-
-void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag flag) __must_hold(local)
-{
-	if ((device->ldev->md.flags & flag) != 0) {
-		drbd_md_mark_dirty(device);
-		device->ldev->md.flags &= ~flag;
 	}
 }
 

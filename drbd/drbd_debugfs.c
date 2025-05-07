@@ -4,7 +4,6 @@
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
-#include <linux/stat.h>
 #include <linux/jiffies.h>
 #include <linux/list.h>
 #include <generated/utsrelease.h>

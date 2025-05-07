@@ -72,7 +72,6 @@ extern void __clear_remote_state_change(struct drbd_resource *resource);
 enum which_state;
 extern union drbd_state drbd_get_device_state(struct drbd_device *, enum which_state);
 extern union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *, enum which_state);
-extern union drbd_state drbd_get_connection_state(struct drbd_connection *, enum which_state);
 
 #define stable_state_change(resource, change_state) ({				\
 		enum drbd_state_rv rv;						\

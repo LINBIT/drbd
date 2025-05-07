@@ -11,14 +11,8 @@
 
  */
 
-#include <linux/module.h>
-
-#include <linux/uaccess.h>
-#include <linux/fs.h>
-#include <linux/file.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/drbd.h>
 #include "drbd_int.h"
 #include "drbd_transport.h"
 

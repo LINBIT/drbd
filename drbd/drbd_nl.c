@@ -19,17 +19,14 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/slab.h>
-#include <linux/blkpg.h>
 #include <linux/cpumask.h>
 #include <linux/random.h>
 #include "drbd_int.h"
 #include "drbd_protocol.h"
-#include "drbd_req.h"
 #include "drbd_state_change.h"
 #include "drbd_debugfs.h"
 #include "drbd_transport.h"
 #include "drbd_dax_pmem.h"
-#include <linux/unaligned.h>
 #include <linux/drbd_limits.h>
 #include <linux/kthread.h>
 #include <linux/security.h>

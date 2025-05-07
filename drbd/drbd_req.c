@@ -2278,10 +2278,6 @@ static void wfa_init(struct waiting_for_act_log *wfa)
 
 #define wfa_lists_empty(_wfa, name)	\
 	(list_empty(&(_wfa)->requests.name) && list_empty(&(_wfa)->peer_requests.name))
-#define wfa_splice_init(_wfa, from, to) do { \
-	list_splice_init(&(_wfa)->requests.from, &(_wfa)->requests.to); \
-	list_splice_init(&(_wfa)->peer_requests.from, &(_wfa)->peer_requests.to); \
-	} while (0)
 #define wfa_splice_tail_init(_wfa, from, to) do { \
 	list_splice_tail_init(&(_wfa)->requests.from, &(_wfa)->requests.to); \
 	list_splice_tail_init(&(_wfa)->peer_requests.from, &(_wfa)->peer_requests.to); \

@@ -10,10 +10,6 @@
 
  */
 
-
-#include <linux/module.h>
-
-#include <linux/uaccess.h>
 #include <net/sock.h>
 
 #include <linux/bio.h>
@@ -22,16 +18,13 @@
 #include <linux/file.h>
 #include <linux/in.h>
 #include <linux/mm.h>
-#include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/pkt_sched.h>
 #include <uapi/linux/sched/types.h>
-#include <linux/unistd.h>
 #include <linux/vmalloc.h>
 #include <linux/random.h>
 #include <net/ipv6.h>
-#include <linux/scatterlist.h>
 #include <linux/part_stat.h>
 
 #include "drbd_int.h"
@@ -1132,7 +1125,6 @@ start:
 		goto abort;
 	}
 
-	connection->last_received = jiffies;
 	connection->reassemble_buffer.avail = 0;
 
 	rcu_read_lock();
@@ -1338,7 +1330,6 @@ static int drbd_recv_header(struct drbd_connection *connection, struct packet_in
 		return err;
 
 	err = decode_header(connection, buffer, pi);
-	connection->last_received = jiffies;
 
 	return err;
 }
@@ -1379,7 +1370,6 @@ static int drbd_recv_header_maybe_unplug(struct drbd_connection *connection, str
 	}
 
 	err = decode_header(connection, buffer, pi);
-	connection->last_received = jiffies;
 
 	return err;
 }
