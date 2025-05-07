@@ -1,8 +1,8 @@
 @ add_drbd_merge_bvec_definition @
 identifier ws;
 @@
-+extern int drbd_merge_bvec(struct request_queue *, struct bvec_merge_data *, struct bio_vec *);
-extern void do_submit(struct work_struct *ws);
++int drbd_merge_bvec(struct request_queue *q, struct bvec_merge_data *bvm, struct bio_vec *bvec);
+void do_submit(struct work_struct *ws);
 
 @ add_drbd_merge_bvec @
 @@

@@ -273,31 +273,31 @@ struct bio_and_error {
 	int error;
 };
 
-extern bool start_new_tl_epoch(struct drbd_resource *resource);
-extern void drbd_req_destroy(struct kref *kref);
-extern void __req_mod(struct drbd_request *req, enum drbd_req_event what,
-		struct drbd_peer_device *peer_device,
-		struct bio_and_error *m);
-extern void complete_master_bio(struct drbd_device *device,
-		struct bio_and_error *m);
-extern void drbd_release_conflicts(struct drbd_device *device,
-		struct drbd_interval *release_interval);
-extern void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device);
-extern void request_timer_fn(struct timer_list *t);
-extern void tl_walk(struct drbd_connection *connection, struct drbd_request **from_req, enum drbd_req_event what);
-extern void __tl_walk(struct drbd_resource *const resource,
-		struct drbd_connection *const connection,
-		struct drbd_request **from_req,
-		const enum drbd_req_event what);
-extern void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack);
-extern int w_queue_peer_ack(struct drbd_work *w, int cancel);
-extern void drbd_queue_peer_ack(struct drbd_resource *resource, struct drbd_request *req);
-extern bool drbd_should_do_remote(struct drbd_peer_device *, enum which_state);
-extern void drbd_reclaim_req(struct rcu_head *rp);
+bool start_new_tl_epoch(struct drbd_resource *resource);
+void drbd_req_destroy(struct kref *kref);
+void __req_mod(struct drbd_request *req, enum drbd_req_event what,
+	       struct drbd_peer_device *peer_device, struct bio_and_error *m);
+void complete_master_bio(struct drbd_device *device, struct bio_and_error *m);
+void drbd_release_conflicts(struct drbd_device *device,
+			    struct drbd_interval *release_interval);
+void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device);
+void request_timer_fn(struct timer_list *t);
+void tl_walk(struct drbd_connection *connection,
+	     struct drbd_request **from_req, enum drbd_req_event what);
+void __tl_walk(struct drbd_resource * const resource,
+	       struct drbd_connection * const connection,
+	       struct drbd_request **from_req, const enum drbd_req_event what);
+void drbd_destroy_peer_ack_if_done(struct drbd_peer_ack *peer_ack);
+int w_queue_peer_ack(struct drbd_work *w, int cancel);
+void drbd_queue_peer_ack(struct drbd_resource *resource,
+			 struct drbd_request *req);
+bool drbd_should_do_remote(struct drbd_peer_device *peer_device,
+			   enum which_state which);
+void drbd_reclaim_req(struct rcu_head *rp);
 
 /* this is in drbd_main.c */
-extern void drbd_restart_request(struct drbd_request *req);
-extern void drbd_restart_suspended_reqs(struct drbd_resource *resource);
+void drbd_restart_request(struct drbd_request *req);
+void drbd_restart_suspended_reqs(struct drbd_resource *resource);
 
 /* use this if you don't want to deal with calling complete_master_bio()
  * outside the spinlock, e.g. when walking some list on cleanup. */
