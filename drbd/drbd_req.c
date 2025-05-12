@@ -2693,11 +2693,25 @@ static bool drbd_reject_write_early(struct drbd_device *device, struct bio *bio)
 	return false;
 }
 
-static bool request_size_bad(struct drbd_device *device, struct bio *bio)
+/* Check if bio is "bad", likely to be rejected by lower layers or peers:
+ * Must not be too large, must not be unaligned.
+ */
+static bool bio_bad(struct drbd_device *device, struct bio *bio)
 {
+	unsigned int bss_mask = queue_logical_block_size(device->rq_queue) / SECTOR_SIZE - 1;
+	unsigned int bs_mask = queue_logical_block_size(device->rq_queue) - 1;
+	unsigned long long sector = bio->bi_iter.bi_sector;
 	unsigned int size = bio->bi_iter.bi_size;
-	if (!expect(device, size <= DRBD_MAX_BATCH_BIO_SIZE && IS_ALIGNED(size, SECTOR_SIZE)))
+
+	if (size > DRBD_MAX_BATCH_BIO_SIZE || (size & bs_mask) || (sector & bss_mask)) {
+		char comm[TASK_COMM_LEN];
+
+		get_task_comm(comm, current);
+		drbd_warn(device, "bad bio: %llu +%u 0x%x submitted by %s[%u]\n",
+			sector, size, bio->bi_opf, comm, task_pid_nr(current));
 		return true;
+	}
+
 	return false;
 }
 
@@ -2744,7 +2758,7 @@ void drbd_submit_bio(struct bio *bio)
 	if (!bio)
 		return;
 
-	if (device->cached_err_io || request_size_bad(device, bio)) {
+	if (device->cached_err_io || bio_bad(device, bio)) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 		return;
