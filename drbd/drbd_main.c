@@ -3089,6 +3089,7 @@ static void drbd_remove_all_paths(struct drbd_connection *connection)
 		list_del_rcu(&path->list);
 		write_unlock_irq(&resource->state_rwlock);
 
+		transport->class->ops.remove_path(path);
 		notify_path(connection, path, NOTIFY_DESTROY);
 		call_rcu(&path->rcu, drbd_reclaim_path);
 	}
@@ -3940,8 +3941,6 @@ void drbd_destroy_path(struct kref *kref)
 	struct drbd_path *path = container_of(kref, struct drbd_path, kref);
 	struct drbd_connection *connection =
 		container_of(path->transport, struct drbd_connection, transport);
-
-	connection->transport.class->ops.remove_path(path);
 
 	kref_debug_put(&connection->kref_debug, 17);
 	kref_put(&connection->kref, drbd_destroy_connection);
