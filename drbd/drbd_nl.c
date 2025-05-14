@@ -2969,7 +2969,7 @@ err:
 	return -EINVAL;
 }
 
-__attribute__ ((format (gnu_printf, 2, 3)))
+__printf(2, 3)
 static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const char *format, ...)
 {
 	struct drbd_device *device = adm_ctx->device;
