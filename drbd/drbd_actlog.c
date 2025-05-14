@@ -14,7 +14,6 @@
 #include <linux/slab.h>
 #include <linux/crc32c.h>
 #include <linux/drbd.h>
-#include <linux/drbd_limits.h>
 #include <linux/dynamic_debug.h>
 #include "drbd_int.h"
 #include "drbd_meta_data.h"

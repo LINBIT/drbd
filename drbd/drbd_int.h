@@ -1121,7 +1121,6 @@ struct drbd_connection {
 
 	int agreed_pro_version;		/* actually used protocol version */
 	u32 agreed_features;
-	unsigned long last_received;	/* in jiffies, either socket */
 	atomic_t ap_in_flight; /* App sectors in flight (waiting for ack) */
 	atomic_t rs_in_flight; /* Resync sectors in flight */
 
@@ -1436,7 +1435,6 @@ struct drbd_peer_device {
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer __rcu *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
-	int rs_last_sect_ev; /* counter to compare with */
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
@@ -1460,7 +1458,6 @@ struct drbd_peer_device {
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_peer_dev;
-	struct dentry *debugfs_peer_dev_resync_extents;
 	struct dentry *debugfs_peer_dev_proc_drbd;
 #endif
 	ktime_t pre_send_kt;
@@ -1683,8 +1680,6 @@ struct drbd_config_context {
 	/* pointer into the request skb,
 	 * limited lifetime! */
 	char *resource_name;
-	struct nlattr *my_addr;
-	struct nlattr *peer_addr;
 
 	/* network namespace of the sending socket */
 	struct net *net;
@@ -1772,10 +1767,8 @@ extern int tl_release(struct drbd_connection *,
 			uint64_t y_block_id,
 			unsigned int barrier_nr,
 			unsigned int set_size);
-extern void drbd_free_sock(struct drbd_connection *connection);
 
 extern int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd);
-extern int drbd_send_protocol(struct drbd_connection *connection);
 extern u64 drbd_collect_local_uuid_flags(struct drbd_peer_device *peer_device, u64 *authoritative_mask);
 extern u64 drbd_resolved_uuid(struct drbd_peer_device *peer_device_base, u64 *uuid_flags);
 extern int drbd_send_uuids(struct drbd_peer_device *, u64 uuid_flags, u64 weak_nodes);
@@ -1836,8 +1829,6 @@ extern u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __mus
 extern void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
 extern bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 extern u64 drbd_weak_nodes_device(struct drbd_device *device);
-extern void drbd_md_set_flag(struct drbd_device *device, enum mdf_flag) __must_hold(local);
-extern void drbd_md_clear_flag(struct drbd_device *device, enum mdf_flag)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, enum mdf_flag);
 extern void drbd_md_set_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
 extern void drbd_md_clear_peer_flag(struct drbd_peer_device *, enum mdf_peer_flag);
@@ -2211,10 +2202,7 @@ extern int w_e_end_rsdata_req(struct drbd_work *, int);
 extern int w_e_end_ov_reply(struct drbd_work *, int);
 extern int w_e_end_ov_req(struct drbd_work *, int);
 extern int w_resync_timer(struct drbd_work *, int);
-extern int w_send_dblock(struct drbd_work *, int);
-extern int w_send_read_req(struct drbd_work *, int);
 extern int w_e_reissue(struct drbd_work *, int);
-extern int w_restart_disk_io(struct drbd_work *, int);
 extern int w_send_dagtag(struct drbd_work *w, int cancel);
 extern int w_send_uuids(struct drbd_work *, int);
 
@@ -2301,7 +2289,6 @@ extern void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 extern int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *peer_reqs);
 extern struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *, gfp_t) __must_hold(local);
 extern void drbd_free_peer_req(struct drbd_peer_request *peer_req);
-extern void _drbd_clear_done_ee(struct drbd_device *device, struct list_head *to_be_freed);
 extern int drbd_connected(struct drbd_peer_device *);
 extern void conn_connect2(struct drbd_connection *);
 extern void wait_initial_states_received(struct drbd_connection *);
@@ -2552,7 +2539,6 @@ extern int send_command(struct drbd_connection *connection, int vnt,
 extern int drbd_send_command(struct drbd_peer_device *, enum drbd_packet, enum drbd_stream);
 
 extern int drbd_send_ping(struct drbd_connection *connection);
-extern int drbd_send_ping_ack(struct drbd_connection *connection);
 extern int conn_send_state_req(struct drbd_connection *, int vnr, enum drbd_packet, union drbd_state, union drbd_state);
 extern int conn_send_twopc_request(struct drbd_connection *connection, struct twopc_request *req);
 extern int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_sector);
@@ -2624,13 +2610,6 @@ static inline void inc_unacked(struct drbd_peer_device *peer_device)
 static inline int __dec_unacked(struct drbd_peer_device *peer_device)
 {
 	return atomic_dec_return(&peer_device->unacked_cnt);
-}
-
-#define sub_unacked(peer_device, n) \
-	((void)expect(peer_device, __sub_unacked(peer_device) >= 0))
-static inline int __sub_unacked(struct drbd_peer_device *peer_device, int n)
-{
-	return atomic_sub_return(n, &peer_device->unacked_cnt);
 }
 
 static inline bool repl_is_sync_target(enum drbd_repl_state repl_state)

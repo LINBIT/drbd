@@ -13,7 +13,6 @@
 
  */
 
-#include <linux/drbd_limits.h>
 #include <linux/random.h>
 #include <linux/jiffies.h>
 #include "drbd_int.h"
@@ -33,7 +32,6 @@ struct quorum_info {
 	int present;
 	int voters;
 	int quorum_at;
-	int diskless_majority_at;
 	int min_redundancy_at;
 };
 
@@ -1069,16 +1067,6 @@ union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device
 	return rv;
 }
 
-union drbd_state drbd_get_connection_state(struct drbd_connection *connection, enum which_state which)
-{
-	union drbd_state rv = drbd_get_resource_state(connection->resource, which);
-
-	rv.conn = connection->cstate[which];
-	rv.peer = connection->peer_role[which];
-
-	return rv;
-}
-
 enum drbd_disk_state conn_highest_disk(struct drbd_connection *connection)
 {
 	enum drbd_disk_state disk_state = D_DISKLESS;
@@ -1527,7 +1515,6 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		qi->up_to_date = qd.up_to_date;
 		qi->present = qd.present;
 		qi->quorum_at = quorum_at;
-		qi->diskless_majority_at = diskless_majority_at;
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
@@ -2643,7 +2630,6 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	peer_device->rs_failed = 0;
 	peer_device->rs_paused = 0;
 	peer_device->rs_same_csum = 0;
-	peer_device->rs_last_sect_ev = 0;
 	peer_device->rs_total = tw;
 	peer_device->rs_start = now;
 	peer_device->rs_last_writeout = now;
@@ -2920,7 +2906,6 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 				set_ov_position(peer_device, repl_state[NEW]);
 				peer_device->rs_start = now;
-				peer_device->rs_last_sect_ev = 0;
 				peer_device->ov_last_oos_size = 0;
 				peer_device->ov_last_oos_start = 0;
 				peer_device->ov_last_skipped_size = 0;

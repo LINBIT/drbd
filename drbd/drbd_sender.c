@@ -11,17 +11,14 @@
 
  */
 
-#include <linux/module.h>
 #include <linux/drbd.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/wait.h>
 #include <linux/mm.h>
-#include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>
-#include <linux/scatterlist.h>
 #include <linux/overflow.h>
 #include <linux/part_stat.h>
 
