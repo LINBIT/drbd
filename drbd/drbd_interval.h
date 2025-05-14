@@ -142,16 +142,17 @@ static inline bool drbd_interval_empty(struct drbd_interval *i)
 	return RB_EMPTY_NODE(&i->rb);
 }
 
-extern const char *drbd_interval_type_str(struct drbd_interval *i);
-extern bool drbd_insert_interval(struct rb_root *, struct drbd_interval *);
-extern bool drbd_contains_interval(struct rb_root *, sector_t,
-				   struct drbd_interval *);
-extern void drbd_remove_interval(struct rb_root *, struct drbd_interval *);
-extern struct drbd_interval *drbd_find_overlap(struct rb_root *, sector_t,
-					unsigned int);
-extern struct drbd_interval *drbd_next_overlap(struct drbd_interval *, sector_t,
-					unsigned int);
-extern void drbd_update_interval_size(struct drbd_interval *, unsigned int);
+const char *drbd_interval_type_str(struct drbd_interval *i);
+bool drbd_insert_interval(struct rb_root *root, struct drbd_interval *this);
+bool drbd_contains_interval(struct rb_root *root, sector_t sector,
+			    struct drbd_interval *interval);
+void drbd_remove_interval(struct rb_root *root, struct drbd_interval *this);
+struct drbd_interval *drbd_find_overlap(struct rb_root *root, sector_t sector,
+					unsigned int size);
+struct drbd_interval *drbd_next_overlap(struct drbd_interval *i,
+					sector_t sector, unsigned int size);
+void drbd_update_interval_size(struct drbd_interval *this,
+			       unsigned int new_size);
 
 #define drbd_for_each_overlap(i, root, sector, size)		\
 	for (i = drbd_find_overlap(root, sector, size);		\
