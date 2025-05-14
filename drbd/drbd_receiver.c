@@ -1121,6 +1121,15 @@ start:
 		if (t || connection->cstate[NOW] == C_DISCONNECTING)
 			return false;
 		goto start;
+	} else if (err == -EDESTADDRREQ) {
+		/*
+		 * No destination address, we cannot possibly make a connection.
+		 * Maybe a resource was partially left over due to some other bug?
+		 * Either way, abort here and go StandAlone to prevent reconnection.
+		 */
+		drbd_err(connection, "No destination address, err=%d\n", err);
+		change_cstate_tag(connection, C_STANDALONE, CS_HARD, "no-dest-addr", NULL);
+		return false;
 	} else if (err < 0) {
 		drbd_warn(connection, "Failed to initiate connection, err=%d\n", err);
 		goto abort;
