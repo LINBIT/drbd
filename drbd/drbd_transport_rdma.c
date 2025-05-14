@@ -2728,6 +2728,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       HZ * 60);
 		if (t == 0)
 			tr_warn(transport, "passive_state still %d\n", atomic_read(&path->cs.passive_state));
+		fallthrough;
 	case PCS_INACTIVE:
 		break;
 	}
@@ -2746,6 +2747,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       HZ * 60);
 		if (t == 0)
 			tr_warn(transport, "active_state still %d\n", atomic_read(&path->cs.active_state));
+		fallthrough;
 	case PCS_INACTIVE:
 		break;
 	}
