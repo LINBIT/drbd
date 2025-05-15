@@ -21,7 +21,7 @@ dummy-release.sh drbd "$version" "$release" drbd-kernel.spec --source-online ${D
 sed -re "s/(#define REL_VERSION) .*/\1 \"$rel_version\"/g" drbd/linux/drbd_config.h > drbd/linux/drbd_config.h.tmp
 mv drbd/linux/drbd_config.h{.tmp,}
 
-for i in 7 8 9; do
+for i in 7 8 9 10; do
 	sed -re "s/(ENV DRBD_VERSION) .*/\1 $rel_version/g" docker/Dockerfile.rhel${i} > docker/Dockerfile.rhel${i}.tmp
 	mv docker/Dockerfile.rhel${i}{.tmp,}
 done

@@ -167,7 +167,7 @@ check check_changelogs_up2date:
 	then									\
 	   printf "\nChangeLog:3:\tneeds update\n"; 				\
 	   up2date=false; fi ; 							\
-	for df in 7 8 9 ; do							\
+	for df in 7 8 9 10; do							\
 	if ! grep "^ENV DRBD_VERSION $$dver" docker/Dockerfile.rhel$$df ;	\
 	then 									\
 		printf "\nDockerfile.rhel$$df: needs update\n"; 		\
