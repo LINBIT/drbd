@@ -9,6 +9,7 @@ config BLK_DEV_DRBD
 	tristate "DRBD Distributed Replicated Block Device support"
 	depends on PROC_FS && INET
 	select LRU_CACHE
+	select CRC32
 	default n
 	help
 
