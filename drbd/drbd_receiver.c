@@ -8410,6 +8410,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	if (peer_state.conn == L_OFF) {
 		/* device/minor hot add on the peer of a minor already locally known */
 		if (peer_device->repl_state[NOW] == L_NEGOTIATING) {
+			drbd_send_enable_replication_next(peer_device);
 			drbd_send_sizes(peer_device, 0, 0);
 			drbd_send_uuids(peer_device, 0, 0);
 		}
