@@ -4364,6 +4364,24 @@ static int receive_flush_requests_ack(struct drbd_connection *connection, struct
 	return 0;
 }
 
+/*
+ * config_unknown_volume  -  device configuration command for unknown volume
+ *
+ * When a device is added to an existing connection, the node on which the
+ * device is added first will send configuration commands to its peer but the
+ * peer will not know about the device yet.  It will warn and ignore these
+ * commands.  Once the device is added on the second node, the second node will
+ * send the same device configuration commands, but in the other direction.
+ *
+ * (We can also end up here if drbd is misconfigured.)
+ */
+static int config_unknown_volume(struct drbd_connection *connection, struct packet_info *pi)
+{
+	drbd_warn(connection, "%s packet received for volume %d, which is not configured locally\n",
+		  drbd_packet_name(pi->cmd), pi->vnr);
+	return ignore_remaining_packet(connection, pi->size);
+}
+
 static int receive_enable_replication_next(struct drbd_connection *connection,
 		struct packet_info *pi)
 {
@@ -5730,24 +5748,6 @@ static struct crypto_shash *drbd_crypto_alloc_digest_safe(const struct drbd_devi
 		return tfm;
 	}
 	return tfm;
-}
-
-/*
- * config_unknown_volume  -  device configuration command for unknown volume
- *
- * When a device is added to an existing connection, the node on which the
- * device is added first will send configuration commands to its peer but the
- * peer will not know about the device yet.  It will warn and ignore these
- * commands.  Once the device is added on the second node, the second node will
- * send the same device configuration commands, but in the other direction.
- *
- * (We can also end up here if drbd is misconfigured.)
- */
-static int config_unknown_volume(struct drbd_connection *connection, struct packet_info *pi)
-{
-	drbd_warn(connection, "%s packet received for volume %d, which is not configured locally\n",
-		  drbd_packet_name(pi->cmd), pi->vnr);
-	return ignore_remaining_packet(connection, pi->size);
 }
 
 /* Receive P_SYNC_PARAM89 and the older P_SYNC_PARAM. The peer_device fields
