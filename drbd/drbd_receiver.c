@@ -4390,7 +4390,7 @@ static int receive_enable_replication_next(struct drbd_connection *connection,
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
-		return -EIO;
+		return config_unknown_volume(connection, pi);
 
 	if (p_enable_replication->enable)
 		set_bit(REPLICATION_NEXT, &peer_device->flags);
