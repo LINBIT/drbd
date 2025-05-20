@@ -824,22 +824,8 @@ int drbd_connected(struct drbd_peer_device *peer_device)
 
 	err = drbd_send_sync_param(peer_device);
 
-	set_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
-	if (!err && peer_device->connection->agreed_features & DRBD_FF_RESYNC_WITHOUT_REPLICATION) {
-		struct peer_device_conf *pdc;
-		bool resync_without_replication;
-
-		rcu_read_lock();
-		pdc = rcu_dereference(peer_device->conf);
-		resync_without_replication = pdc->resync_without_replication;
-		rcu_read_unlock();
-
-		if (resync_without_replication)
-			clear_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
-
-		err = drbd_send_enable_replication_next(peer_device, !resync_without_replication);
-	}
-
+	if (!err)
+		err = drbd_send_enable_replication_next(peer_device);
 	if (!err)
 		err = drbd_send_sizes(peer_device, 0, 0);
 	if (!err)

@@ -1827,7 +1827,7 @@ int drbd_send_flush_forward(struct drbd_connection *connection,
 			    u64 flush_sequence, int initiator_node_id);
 int drbd_send_flush_requests_ack(struct drbd_connection *connection,
 				 u64 flush_sequence, int primary_node_id);
-int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device, bool enable);
+int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device);
 int drbd_send_enable_replication(struct drbd_peer_device *peer_device, bool enable);
 int drbd_send_current_uuid(struct drbd_peer_device *peer_device,
 			   u64 current_uuid, u64 weak_nodes);

@@ -1853,15 +1853,29 @@ int drbd_send_flush_requests_ack(struct drbd_connection *connection, u64 flush_s
 	return send_command(connection, -1, P_FLUSH_REQUESTS_ACK, DATA_STREAM);
 }
 
-int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device, bool enable)
+int drbd_send_enable_replication_next(struct drbd_peer_device *peer_device)
 {
 	struct p_enable_replication *p;
+	struct peer_device_conf *pdc;
+	bool resync_without_replication;
+
+	set_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
+	if (!(peer_device->connection->agreed_features & DRBD_FF_RESYNC_WITHOUT_REPLICATION))
+		return 0;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p), DATA_STREAM);
 	if (!p)
 		return -EIO;
 
-	p->enable = enable;
+	rcu_read_lock();
+	pdc = rcu_dereference(peer_device->conf);
+	resync_without_replication = pdc->resync_without_replication;
+	rcu_read_unlock();
+
+	if (resync_without_replication)
+		clear_bit(PEER_REPLICATION_NEXT, &peer_device->flags);
+
+	p->enable = !resync_without_replication;
 	p->_pad1 = 0;
 	p->_pad2 = 0;
 
