@@ -2025,6 +2025,13 @@ static void drbd_select_sync_target(struct drbd_device *device)
 	}
 }
 
+static bool drbd_change_to_inconsistent(enum drbd_disk_state *disk_state,
+		enum drbd_conn_state *cstate)
+{
+	return !(disk_state[OLD] == D_INCONSISTENT && cstate[OLD] == C_CONNECTED) &&
+		(disk_state[NEW] == D_INCONSISTENT && cstate[NEW] == C_CONNECTED);
+}
+
 static void sanitize_state(struct drbd_resource *resource)
 {
 	enum drbd_role *role = resource->role;
@@ -2179,6 +2186,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			enum drbd_repl_state *repl_state = peer_device->repl_state;
 			enum drbd_disk_state *peer_disk_state = peer_device->disk_state;
 			struct drbd_connection *connection = peer_device->connection;
+			enum drbd_conn_state *cstate = connection->cstate;
 			enum drbd_disk_state min_disk_state, max_disk_state;
 			enum drbd_disk_state min_peer_disk_state, max_peer_disk_state;
 			enum drbd_role *peer_role = connection->peer_role;
@@ -2364,8 +2372,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			 *
 			 * This matches the condition on the peer below.
 			 */
-			if ((disk_state[OLD] != D_INCONSISTENT &&
-					disk_state[NEW] == D_INCONSISTENT) ||
+			if (drbd_change_to_inconsistent(disk_state, cstate) ||
 					(!repl_is_sync_target(repl_state[OLD]) &&
 					 repl_is_sync_target(repl_state[NEW])))
 				peer_device->peer_replication[NEW] =
@@ -2373,7 +2380,12 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			/*
 			 * Decide whether to disable replication when the peer
-			 * transitions to Inconsistent.
+			 * transitions to Inconsistent. Only consider the disk
+			 * state when we are Connected because we want to wait
+			 * until we know whether replication should be enabled
+			 * on the next transition to Inconsistent. This is
+			 * communicated with the P_ENABLE_REPLICATION_NEXT
+			 * packet.
 			 *
 			 * Also re-evaluate whether to disable replication when
 			 * we become SyncSource, even when the peer's disk was
@@ -2383,8 +2395,7 @@ static void sanitize_state(struct drbd_resource *resource)
 			 *
 			 * This matches the condition on the peer above.
 			 */
-			if ((peer_disk_state[OLD] != D_INCONSISTENT &&
-					peer_disk_state[NEW] == D_INCONSISTENT) ||
+			if (drbd_change_to_inconsistent(peer_disk_state, cstate) ||
 					(!repl_is_sync_source(repl_state[OLD]) &&
 					 repl_is_sync_source(repl_state[NEW])))
 				peer_device->replication[NEW] =
