@@ -56,4 +56,9 @@ mempool_alloc(
 - &mp
 + mp
 , F)
+|
+mempool_is_saturated(
+- &mp
++ mp
+ )
 )
