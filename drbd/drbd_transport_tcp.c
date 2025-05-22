@@ -391,7 +391,7 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	}
 	return 0;
 fail:
-	drbd_free_page_chain(transport, chain, 0);
+	drbd_free_page_chain(transport, chain);
 	return err;
 }
 

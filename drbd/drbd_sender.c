@@ -573,7 +573,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
 
 	/* Use the same drbd_peer_request for tracking resync request and for
 	 * writing, if that is necessary. */
@@ -1973,23 +1973,6 @@ out:
 		try_to_get_resynced_from_primary(device);
 }
 
-/* helper */
-static void move_to_net_ee_or_free(struct drbd_connection *connection, struct drbd_peer_request *peer_req)
-{
-	if (drbd_peer_req_has_active_page(peer_req)) {
-		/* This might happen if sendpage() has not finished */
-		struct drbd_resource *resource = connection->resource;
-		int i = DIV_ROUND_UP(peer_req->i.size, PAGE_SIZE);
-		atomic_add(i, &connection->pp_in_use_by_net);
-		atomic_sub(i, &connection->pp_in_use);
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_add_tail(&peer_req->w.list, &peer_req->peer_device->connection->net_ee);
-		peer_req->flags |= EE_ON_NET_LIST;
-		spin_unlock_irq(&connection->peer_reqs_lock);
-		wake_up(&resource->pp_wait);
-	} else
-		drbd_free_peer_req(peer_req);
-}
 
 /**
  * w_e_end_data_req() - Worker callback, to send a P_DATA_REPLY packet in response to a P_DATA_REQUEST
@@ -2003,9 +1986,8 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 	int err;
 
 	if (unlikely(cancel)) {
-		drbd_free_peer_req(peer_req);
-		dec_unacked(peer_device);
-		return 0;
+		err = 0;
+		goto out;
 	}
 
 	if (likely((peer_req->flags & EE_WAS_ERROR) == 0)) {
@@ -2016,13 +1998,13 @@ int w_e_end_data_req(struct drbd_work *w, int cancel)
 
 		err = drbd_send_ack(peer_device, P_NEG_DREPLY, peer_req);
 	}
-
-	dec_unacked(peer_device);
-
-	move_to_net_ee_or_free(peer_device->connection, peer_req);
-
 	if (unlikely(err))
 		drbd_err(peer_device, "drbd_send_block() failed\n");
+
+out:
+	dec_unacked(peer_device);
+	drbd_free_peer_req(peer_req);
+
 	return err;
 }
 
@@ -2142,8 +2124,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		}
 		*expect_ack = true;
 
-		if (!drbd_peer_req_has_active_page(peer_req))
-			drbd_free_page_chain(&connection->transport, &peer_req->page_chain, false);
+		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
 
 		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
 		peer_req = NULL;
@@ -2331,7 +2312,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
 
 	inc_rs_pending(peer_device);
 

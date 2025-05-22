@@ -160,6 +160,7 @@ struct kmem_cache *drbd_al_ext_cache;	/* activity log extents */
 mempool_t drbd_request_mempool;
 mempool_t drbd_ee_mempool;
 mempool_t drbd_md_io_page_pool;
+mempool_t drbd_buffer_page_pool;
 struct bio_set drbd_md_io_bio_set;
 struct bio_set drbd_io_bio_set;
 
@@ -2322,6 +2323,7 @@ static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *b
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
 {
+	bool use_sendpage = !(peer_req->flags & EE_RELEASE_TO_MEMPOOL);
 	struct page *page = peer_req->page_chain.head;
 	unsigned len = peer_req->i.size;
 	int err;
@@ -2336,8 +2338,12 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 				page, page_chain_offset(page), page_chain_size(page));
 		}
 
-		err = _drbd_send_page(peer_device, page, 0, l,
-				      page_chain_next(page) ? MSG_MORE : 0);
+		if (likely(use_sendpage))
+			err = _drbd_send_page(peer_device, page, 0, l,
+					      page_chain_next(page) ? MSG_MORE : 0);
+		else
+			err = _drbd_no_send_page(peer_device, page, 0, l,
+						 page_chain_next(page) ? MSG_MORE : 0);
 		if (err)
 			return err;
 		len -= l;
@@ -3204,6 +3210,7 @@ static void drbd_destroy_mempools(void)
 {
 	bioset_exit(&drbd_io_bio_set);
 	bioset_exit(&drbd_md_io_bio_set);
+	mempool_exit(&drbd_buffer_page_pool);
 	mempool_exit(&drbd_md_io_page_pool);
 	mempool_exit(&drbd_ee_mempool);
 	mempool_exit(&drbd_request_mempool);
@@ -3253,6 +3260,9 @@ static int drbd_create_mempools(void)
 		goto Enomem;
 
 	ret = mempool_init_page_pool(&drbd_md_io_page_pool, DRBD_MIN_POOL_PAGES, 0);
+	if (ret)
+		goto Enomem;
+	ret = mempool_init_page_pool(&drbd_buffer_page_pool, number, 0);
 	if (ret)
 		goto Enomem;
 
@@ -3325,23 +3335,10 @@ void drbd_destroy_device(struct kref *kref)
 	schedule_work(&device->finalize_work);
 }
 
-static void free_page_pool(struct drbd_resource *resource)
-{
-	struct page *page;
-
-	while (resource->pp_pool) {
-		page = resource->pp_pool;
-		resource->pp_pool = page_chain_next(page);
-		__free_page(page);
-		resource->pp_vacant--;
-	}
-}
-
 void drbd_destroy_resource(struct kref *kref)
 {
 	struct drbd_resource *resource = container_of(kref, struct drbd_resource, kref);
 
-	free_page_pool(resource);
 	idr_destroy(&resource->devices);
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
@@ -3735,9 +3732,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 					   struct res_opts *res_opts)
 {
 	struct drbd_resource *resource;
-	struct page *page;
-	const int page_pool_count = DRBD_MAX_BIO_SIZE/PAGE_SIZE;
-	int i;
 
 	resource = kzalloc(sizeof(struct drbd_resource), GFP_KERNEL);
 	if (!resource)
@@ -3786,22 +3780,9 @@ struct drbd_resource *drbd_create_resource(const char *name,
 
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
 
-	/* drbd's page pool */
-	init_waitqueue_head(&resource->pp_wait);
-
-	spin_lock_init(&resource->pp_lock);
-
-	for (i = 0; i < page_pool_count; i++) {
-		page = alloc_page(GFP_HIGHUSER);
-		if (!page)
-			goto fail_free_pages;
-		set_page_chain_next_offset_size(page, resource->pp_pool, 0, 0);
-		resource->pp_pool = page;
-	}
-	resource->pp_vacant = page_pool_count;
 
 	if (set_resource_options(resource, res_opts, "create-resource"))
-		goto fail_free_pages;
+		goto fail_free_name;
 
 	drbd_thread_start(&resource->worker);
 
@@ -3809,8 +3790,6 @@ struct drbd_resource *drbd_create_resource(const char *name,
 
 	return resource;
 
-fail_free_pages:
-	free_page_pool(resource);
 fail_free_name:
 	kfree(resource->name);
 fail_free_resource:
@@ -3881,7 +3860,6 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_LIST_HEAD(&connection->done_ee);
 	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
 	INIT_LIST_HEAD(&connection->resync_ack_ee);
-	INIT_LIST_HEAD(&connection->net_ee);
 	INIT_LIST_HEAD(&connection->remove_net_list);
 	init_waitqueue_head(&connection->ee_wait);
 
@@ -4444,10 +4422,6 @@ void drbd_unregister_connection(struct drbd_connection *connection)
 	rr = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (rr)
 		drbd_err(connection, "%d EEs in done list found!\n", rr);
-
-	rr = drbd_free_peer_reqs(connection, &connection->net_ee);
-	if (rr)
-		drbd_err(connection, "%d EEs in net list found!\n", rr);
 
 	drbd_transport_shutdown(connection, DESTROY_TRANSPORT);
 	drbd_put_send_buffers(connection);
