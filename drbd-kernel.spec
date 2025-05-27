@@ -190,8 +190,10 @@ rm -f drbd.conf
 mkdir -p $RPM_BUILD_ROOT/etc/depmod.d
 find $RPM_BUILD_ROOT/lib/modules/*/ -name "*.ko"  -printf "%%P\n" |
 sort | sed -ne 's,^extra/\(.*\)/\([^/]*\)\.ko$,\2 \1,p' |
-xargs -r printf "override %%-16s * weak-updates/%%s\n" \
-> $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
+while read -r mod path; do
+	printf "override %%-16s * weak-updates/%%s\n" $mod $path
+	printf "override %%-16s %%s extra/%%s\n" $mod $kernelrelease $path
+done > $RPM_BUILD_ROOT/etc/depmod.d/drbd.conf
 install -D misc/SECURE-BOOT-KEY-linbit.com.der $RPM_BUILD_ROOT/etc/pki/linbit/SECURE-BOOT-KEY-linbit.com.der
 %endif
 
