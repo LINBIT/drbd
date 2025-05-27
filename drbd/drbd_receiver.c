@@ -2303,10 +2303,8 @@ static int w_update_peers(struct drbd_work *w, int unused)
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 
-	if (peer_device->connection->agreed_pro_version < 110)
-		return 0;
-
-	update_peers_for_range(peer_device, upw->sector_start, upw->sector_end);
+	if (connection->agreed_pro_version >= 110)
+		update_peers_for_range(peer_device, upw->sector_start, upw->sector_end);
 
 	kfree(upw);
 
