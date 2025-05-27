@@ -618,7 +618,7 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 			 * (More reason why we only have one rx_desc per page,
 			 * and don't get_page() in dtr_create_rx_desc).
 			 */
-			drbd_free_pages(transport, head, 0);
+			drbd_free_pages(transport, head);
 			return t == 0 ? -EAGAIN : -EINTR;
 		}
 
@@ -2038,7 +2038,7 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 
 		/* put_page(), if we had more than one rx_desc per page,
 		 * but see comments in dtr_create_rx_desc */
-		drbd_free_pages(transport, rx_desc->page, 0);
+		drbd_free_pages(transport, rx_desc->page);
 	}
 	kfree(rx_desc);
 }
@@ -2103,7 +2103,7 @@ out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);
 out:
 	kfree(rx_desc);
-	drbd_free_pages(transport, page, 0);
+	drbd_free_pages(transport, page);
 	return err;
 }
 

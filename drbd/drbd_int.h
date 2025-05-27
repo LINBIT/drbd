@@ -521,8 +521,8 @@ enum {
 	/* The peer wants a write ACK for this (wire proto C) */
 	__EE_SEND_WRITE_ACK,
 
-	/* in on connection->net_ee */
-	__EE_ON_NET_LIST,
+	/* hand back using mempool_free(e, drbd_buffer_page_pool) */
+	__EE_RELEASE_TO_MEMPOOL,
 
 	/* this is/was a write same request */
 	__EE_WRITE_SAME,
@@ -549,7 +549,7 @@ enum {
 #define EE_WAS_ERROR           (1<<__EE_WAS_ERROR)
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 #define EE_SEND_WRITE_ACK	(1<<__EE_SEND_WRITE_ACK)
-#define EE_ON_NET_LIST		(1<<__EE_ON_NET_LIST)
+#define EE_RELEASE_TO_MEMPOOL	(1<<__EE_RELEASE_TO_MEMPOOL)
 #define EE_WRITE_SAME		(1<<__EE_WRITE_SAME)
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
@@ -1047,29 +1047,6 @@ struct drbd_resource {
 	wait_queue_head_t barrier_wait;  /* upon each state change. */
 	struct rcu_head rcu;
 
-	/* drbd's page pool, used to buffer data received from the peer, or
-	 * data requested by the peer.
-	 *
-	 * This does not have an emergency reserve.
-	 *
-	 * When allocating from this pool, it first takes pages from the pool.
-	 * Only if the pool is depleted will try to allocate from the system.
-	 *
-	 * The assumption is that pages taken from this pool will be processed,
-	 * and given back, "quickly", and then can be recycled, so we can avoid
-	 * frequent calls to alloc_page(), and still will be able to make
-	 * progress even under memory pressure.
-	 *
-	 * We do not use a standard mempool, because we want to hand out the
-	 * pre-allocated objects first.
-	 *
-	 * Note: This is a single linked list, the next pointer is the private
-	 *       member of struct page. */
-	struct page *pp_pool;
-	spinlock_t pp_lock;
-	int pp_vacant;
-	wait_queue_head_t pp_wait;
-
 	struct list_head suspended_reqs;
 	/*
 	 * The side effects of an empty state change two-phase commit are:
@@ -1205,7 +1182,6 @@ struct drbd_connection {
 	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
 	struct list_head dagtag_wait_ee; /* Resync read waiting for dagtag to be reached */
 	struct list_head resync_ack_ee;   /* P_RS_DATA_REPLY sent, waiting for P_RS_WRITE_ACK */
-	struct list_head net_ee;    /* zero-copy network send in progress */
 
 	struct work_struct send_acks_work;
 	struct work_struct send_ping_ack_work;
@@ -2114,6 +2090,7 @@ extern mempool_t drbd_ee_mempool;
  */
 #define DRBD_MIN_POOL_PAGES	128
 extern mempool_t drbd_md_io_page_pool;
+extern mempool_t drbd_buffer_page_pool;
 
 /* We also need to make sure we get a bio
  * when we need it for housekeeping purposes */
@@ -2512,16 +2489,6 @@ void peer_device_state_change_to_info(struct peer_device_info *info,
 /*
  * inline helper functions
  *************************/
-
-static inline bool drbd_peer_req_has_active_page(struct drbd_peer_request *peer_req)
-{
-	struct page *page = peer_req->page_chain.head;
-	page_chain_for_each(page) {
-		if (page_count(page) > 1)
-			return true;
-	}
-	return false;
-}
 
 /*
  * When a device has a replication state above L_OFF, it must be

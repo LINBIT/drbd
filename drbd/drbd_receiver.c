@@ -311,128 +311,24 @@ static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, str
 	return prev;
 }
 
-/*
- * some helper functions to deal with single linked page lists,
- * page->private being our "next" pointer.
- */
-
-/* If at least n pages are linked at head, get n pages off.
- * Otherwise, don't modify head, and return NULL.
- * Locking is the responsibility of the caller.
- */
-static struct page *page_chain_del(struct page **head, int n)
-{
-	struct page *page;
-	struct page *tmp;
-
-	BUG_ON(!n);
-	BUG_ON(!head);
-
-	page = *head;
-
-	if (!page)
-		return NULL;
-
-	while (page) {
-		tmp = page_chain_next(page);
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, 0);
-		if (--n == 0)
-			break; /* found sufficient pages */
-		if (tmp == NULL)
-			/* insufficient pages, don't use any of them. */
-			return NULL;
-		page = tmp;
-	}
-
-	/* add end of list marker for the returned list */
-	set_page_chain_next(page, NULL);
-	/* actual return value, and adjustment of head */
-	page = *head;
-	*head = tmp;
-	return page;
-}
-
-/* may be used outside of locks to find the tail of a (usually short)
- * "private" page chain, before adding it back to a global chain head
- * with page_chain_add() under a spinlock. */
-static struct page *page_chain_tail(struct page *page, int *len)
-{
-	struct page *tmp;
-	int i = 1;
-	while ((tmp = page_chain_next(page))) {
-		++i;
-		page = tmp;
-	}
-	if (len)
-		*len = i;
-	return page;
-}
-
-static int page_chain_free(struct page *page)
-{
-	struct page *tmp;
-	int i = 0;
-	page_chain_for_each_safe(page, tmp) {
-		set_page_chain_next_offset_size(page, NULL, 0, 0);
-		put_page(page);
-		++i;
-	}
-	return i;
-}
-
-static void page_chain_add(struct page **head,
-		struct page *chain_first, struct page *chain_last)
-{
-#if 1
-	struct page *tmp;
-	tmp = page_chain_tail(chain_first, NULL);
-	BUG_ON(tmp != chain_last);
-#endif
-
-	/* add chain to head */
-	set_page_chain_next(chain_last, *head);
-	*head = chain_first;
-}
-
 static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned int number, gfp_t gfp_mask)
 {
 	struct page *page = NULL;
 	struct page *tmp = NULL;
 	unsigned int i = 0;
 
-	/* Yes, testing drbd_pp_vacant outside the lock is racy.
-	 * So what. It saves a spin_lock. */
-	if (resource->pp_vacant >= number) {
-		spin_lock_bh(&resource->pp_lock);
-		page = page_chain_del(&resource->pp_pool, number);
-		if (page)
-			resource->pp_vacant -= number;
-		spin_unlock_bh(&resource->pp_lock);
-		if (page)
-			return page;
-	}
-
 	for (i = 0; i < number; i++) {
-		tmp = alloc_page(gfp_mask);
+		tmp = mempool_alloc(&drbd_buffer_page_pool, gfp_mask);
 		if (!tmp)
-			break;
+			goto fail;
 		set_page_chain_next_offset_size(tmp, page, 0, 0);
 		page = tmp;
 	}
-
-	if (i == number)
-		return page;
-
-	/* Not enough pages immediately available this time.
-	 * No need to jump around here, drbd_alloc_pages will retry this
-	 * function "soon". */
-	if (page) {
-		tmp = page_chain_tail(page, NULL);
-		spin_lock_bh(&resource->pp_lock);
-		page_chain_add(&resource->pp_pool, page, tmp);
-		resource->pp_vacant += i;
-		spin_unlock_bh(&resource->pp_lock);
+	return page;
+fail:
+	page_chain_for_each_safe(page, tmp) {
+		set_page_chain_next_offset_size(page, NULL, 0, 0);
+		mempool_free(page, &drbd_buffer_page_pool);
 	}
 	return NULL;
 }
@@ -445,60 +341,6 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 	 * resync_work early. */
 	if (rs_sect_in >= peer_device->rs_in_flight)
 		drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
-}
-
-static void reclaim_finished_net_peer_reqs(struct drbd_connection *connection,
-					   struct list_head *to_be_freed)
-{
-	struct drbd_peer_request *peer_req, *tmp;
-
-	/* The EEs are always appended to the end of the list. Since
-	   they are sent in order over the wire, they have to finish
-	   in order. As soon as we see the first not finished we can
-	   stop to examine the list... */
-
-	list_for_each_entry_safe(peer_req, tmp, &connection->net_ee, w.list) {
-		if (drbd_peer_req_has_active_page(peer_req))
-			break;
-		list_move(&peer_req->w.list, to_be_freed);
-	}
-}
-
-static void reclaim_from_resync_ack_ee(struct drbd_connection *connection,
-				       struct page **page_chain)
-{
-	struct drbd_peer_request *peer_req;
-
-	list_for_each_entry(peer_req, &connection->resync_ack_ee, w.list) {
-		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
-			break;
-		if (drbd_peer_req_has_active_page(peer_req))
-			break;
-		if (peer_req->page_chain.head) {
-			*page_chain = peer_req->page_chain.head;
-			peer_req->page_chain.head = NULL;
-			peer_req->page_chain.nr_pages = 0;
-			return;
-		}
-	}
-}
-
-static void drbd_reclaim_net_peer_reqs(struct drbd_connection *connection)
-{
-	LIST_HEAD(reclaimed);
-	struct drbd_peer_request *peer_req, *t;
-	struct page *page_chain = NULL;
-
-	spin_lock_irq(&connection->peer_reqs_lock);
-	reclaim_finished_net_peer_reqs(connection, &reclaimed);
-	reclaim_from_resync_ack_ee(connection, &page_chain);
-	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_peer_req(peer_req);
-
-	if (page_chain)
-		drbd_free_pages(&connection->transport, page_chain, false);
 }
 
 /**
@@ -527,45 +369,16 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
 	struct drbd_resource *resource = connection->resource;
-	struct page *page = NULL;
-	DEFINE_WAIT(wait);
+	struct page *page;
 	unsigned int mxb;
 
 	rcu_read_lock();
 	mxb = rcu_dereference(transport->net_conf)->max_buffers;
 	rcu_read_unlock();
 
-	if (atomic_read(&connection->pp_in_use) < mxb)
-		page = __drbd_alloc_pages(resource, number, gfp_mask & ~__GFP_RECLAIM);
-
-	/* Try to keep the fast path fast, but occasionally we need
-	 * to reclaim the pages we lent to the network stack. */
-	if (page && atomic_read(&connection->pp_in_use_by_net) > 512)
-		drbd_reclaim_net_peer_reqs(connection);
-
-	while (page == NULL) {
-		prepare_to_wait(&resource->pp_wait, &wait, TASK_INTERRUPTIBLE);
-
-		drbd_reclaim_net_peer_reqs(connection);
-
-		if (atomic_read(&connection->pp_in_use) < mxb) {
-			page = __drbd_alloc_pages(resource, number, gfp_mask);
-			if (page)
-				break;
-		}
-
-		if (!(gfp_mask & __GFP_RECLAIM))
-			break;
-
-		if (signal_pending(current)) {
-			drbd_warn(connection, "drbd_alloc_pages interrupted!\n");
-			break;
-		}
-
-		if (schedule_timeout(HZ/10) == 0)
-			mxb = UINT_MAX;
-	}
-	finish_wait(&resource->pp_wait, &wait);
+	if (atomic_read(&connection->pp_in_use) >= mxb)
+		schedule_timeout_interruptible(HZ / 10);
+	page = __drbd_alloc_pages(resource, number, gfp_mask);
 
 	if (page)
 		atomic_add(number, &connection->pp_in_use);
@@ -575,32 +388,27 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 /* Must not be used from irq, as that may deadlock: see drbd_alloc_pages.
  * Either links the page chain back to the pool of free pages,
  * or returns all pages to the system. */
-void drbd_free_pages(struct drbd_transport *transport, struct page *page, int is_net)
+void drbd_free_pages(struct drbd_transport *transport, struct page *page)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
-	struct drbd_resource *resource = connection->resource;
-	atomic_t *a = is_net ? &connection->pp_in_use_by_net : &connection->pp_in_use;
-	int i;
+	struct page *tmp;
+	int i = 0;
 
 	if (page == NULL)
 		return;
 
-	if (resource->pp_vacant > DRBD_MAX_BIO_SIZE/PAGE_SIZE)
-		i = page_chain_free(page);
-	else {
-		struct page *tmp;
-		tmp = page_chain_tail(page, &i);
-		spin_lock_bh(&resource->pp_lock);
-		page_chain_add(&resource->pp_pool, page, tmp);
-		resource->pp_vacant += i;
-		spin_unlock_bh(&resource->pp_lock);
+	page_chain_for_each_safe(page, tmp) {
+		set_page_chain_next_offset_size(page, NULL, 0, 0);
+		if (page_count(page) == 1)
+			mempool_free(page, &drbd_buffer_page_pool);
+		else
+			put_page(page);
+		i++;
 	}
-	i = atomic_sub_return(i, a);
+	i = atomic_sub_return(i, &connection->pp_in_use);
 	if (i < 0)
-		drbd_warn(connection, "ASSERTION FAILED: %s: %d < 0\n",
-			is_net ? "pp_in_use_by_net" : "pp_in_use", i);
-	wake_up(&resource->pp_wait);
+		drbd_warn(connection, "ASSERTION FAILED: pp_in_use: %d < 0\n", i);
 }
 
 /* normal: payload_size == request size (bi_size)
@@ -639,7 +447,6 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_connection *connection = peer_device->connection;
-	bool is_net = peer_req->flags & EE_ON_NET_LIST;
 
 	if (peer_req->flags & EE_ON_RECV_ORDER) {
 		spin_lock_irq(&connection->peer_reqs_lock);
@@ -654,7 +461,7 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, is_net);
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
 	kref_debug_put(&peer_device->device->kref_debug, 9);
 	kref_put(&peer_device->device->kref, drbd_destroy_device);
 	mempool_free(peer_req, &drbd_ee_mempool);
@@ -683,18 +490,13 @@ int drbd_free_peer_reqs(struct drbd_connection *connection, struct list_head *li
 static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 {
 	LIST_HEAD(work_list);
-	LIST_HEAD(reclaimed);
 	struct drbd_peer_request *peer_req, *t;
 	int err = 0;
 	int n = 0;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
-	reclaim_finished_net_peer_reqs(connection, &reclaimed);
 	list_splice_init(&connection->done_ee, &work_list);
 	spin_unlock_irq(&connection->peer_reqs_lock);
-
-	list_for_each_entry_safe(peer_req, t, &reclaimed, w.list)
-		drbd_free_peer_req(peer_req);
 
 	/* possible callbacks here:
 	 * e_end_block, and e_end_resync_block.
@@ -2597,7 +2399,7 @@ static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
 	 * Free the pages now but leave the peer request until the
 	 * corresponding peers-in-sync has been scheduled.
 	 */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain, 0);
+	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
 
 	/*
 	 * The interval is no longer in the tree, but use this flag anyway,
@@ -3056,7 +2858,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		drbd_free_peer_req(peer_req);
 	} else {
-		drbd_free_page_chain(&connection->transport, &peer_req->page_chain, 0);
+		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		/* Do not use peer_req after this point. We may have sent the
 		 * corresponding barrier and received the corresponding peer ack. As a
@@ -4026,6 +3828,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 		if (!peer_req->page_chain.head)
 			goto fail2;
+		if (!mempool_is_saturated(&drbd_buffer_page_pool))
+			peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
 	}
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
@@ -4254,12 +4058,14 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 
-	drbd_alloc_page_chain(&peer_device->connection->transport,
-			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
+	drbd_alloc_page_chain(&peer_device->connection->transport, &peer_req->page_chain,
+			      DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
 	if (!peer_req->page_chain.head) {
 		err = -ENOMEM;
 		goto fail;
 	}
+	if (!mempool_is_saturated(&drbd_buffer_page_pool))
+		peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
 
 	inc_unacked(peer_device);
 
@@ -9958,15 +9764,6 @@ static void conn_disconnect(struct drbd_connection *connection)
 	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee);
 	if (i)
 		drbd_info(connection, "resync_ack_ee not empty, killed %u entries\n", i);
-
-	/*
-	 * tcp_close and release of sendpage pages can be deferred. We don't
-	 * care for exactly when the network stack does its put_page(), but
-	 * release our reference on these pages right here.
-	 */
-	i = drbd_free_peer_reqs(connection, &connection->net_ee);
-	if (i)
-		dynamic_drbd_dbg(connection, "net_ee not empty, killed %u entries\n", i);
 
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);

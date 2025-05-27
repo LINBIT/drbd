@@ -512,7 +512,7 @@ dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *ch
 	}
 	return 0;
 fail:
-	drbd_free_page_chain(transport, chain, 0);
+	drbd_free_page_chain(transport, chain);
 	return err;
 }
 
