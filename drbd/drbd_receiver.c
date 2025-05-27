@@ -10823,7 +10823,7 @@ static void drbd_send_oos_from(struct drbd_connection *oos_connection, int peer_
 		spin_lock_irq(&peer_ack_connection->send_oos_lock);
 		next_peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
 
-		peer_req->send_oos_pending &= ~oos_node_id;
+		peer_req->send_oos_pending &= ~NODE_MASK(oos_node_id);
 		if (!peer_req->send_oos_pending)
 			drbd_free_peer_req(peer_req);
 
