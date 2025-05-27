@@ -16,6 +16,7 @@
 #include <linux/sched/signal.h>
 #include <linux/wait.h>
 #include <linux/mm.h>
+#include <linux/memcontrol.h> /* needed on kernels <4.3 */
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/random.h>

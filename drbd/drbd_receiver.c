@@ -18,6 +18,7 @@
 #include <linux/file.h>
 #include <linux/in.h>
 #include <linux/mm.h>
+#include <linux/memcontrol.h> /* needed on kernels <4.3 */
 #include <linux/mm_inline.h>
 #include <linux/slab.h>
 #include <linux/pkt_sched.h>
