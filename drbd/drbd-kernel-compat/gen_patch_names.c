@@ -472,6 +472,9 @@ int main(int argc, char **argv)
 	patch(1, "timer_delete", true, false,
 	      COMPAT_HAVE_TIMER_DELETE, "present");
 
+	patch(1, "mempool_is_saturated", true, false,
+	      COMPAT_HAVE_MEMPOOL_IS_SATURATED, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
