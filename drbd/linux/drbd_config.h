@@ -9,7 +9,7 @@
 
 const char *drbd_buildtag(void);
 
-#define REL_VERSION "9.3.0"
+#define REL_VERSION "9.3.0-rc.1"
 #define PRO_VERSION_MIN 118 /* 9.0.26 */
 #define PRO_VERSION_MAX 123
 
