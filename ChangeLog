@@ -2,6 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.14-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+--------
+ * Fix a race condition between write requests and very short resyncs
+   that might cause DRBD to fail to resync that racing write.
+ * Fix the suspend-IO command so that it waits until all pending
+   writes are completed before it returns. From now on, it can be used
+   to create consistent snapshots of the primary and the secondary.
+ * Improve DRBD's pooling of buffer pages. The old implementation
+   stopped freeing any of those buffer pages if the kernel would leak
+   a single page reference.
+ * Fix corner case CM leaks in the RDMA transport.
+ * Fix a warning on recent kernels (RHEL10) regarding DRBD failing to
+   set queue parameters for zoned block devices.
+ * Dockerfile for RHEL10
+ * Compatibility with Linux 6.14 and 6.15
+
 9.2.13 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fix a bug in the rs-discard-granularity feature; when having three
