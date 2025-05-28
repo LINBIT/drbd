@@ -10920,9 +10920,11 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
 				oos_connection->cstate[NOW] < C_CONNECTED)
 			continue;
 
+		if (test_and_set_bit(peer_ack_node_id, &oos_connection->send_oos_from_mask))
+			continue; /* Only get kref if we set the bit here */
+
 		kref_get(&peer_ack_connection->kref);
 		kref_debug_get(&peer_ack_connection->kref_debug, 18);
-		set_bit(peer_ack_node_id, &oos_connection->send_oos_from_mask);
 		drbd_queue_work_if_unqueued(&oos_connection->sender_work,
 				&oos_connection->send_oos_work);
 	}
