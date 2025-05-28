@@ -10815,20 +10815,21 @@ static void drbd_send_oos_from(struct drbd_connection *oos_connection, int peer_
 	while (peer_req) {
 		struct drbd_peer_device *peer_device =
 			conn_peer_device(oos_connection, peer_req->peer_device->device->vnr);
-		struct drbd_peer_request *next_peer_req;
+		struct drbd_peer_request *free_peer_req = NULL;
 
 		/* Ignore errors and keep iterating to clear up list */
 		drbd_send_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 
 		spin_lock_irq(&peer_ack_connection->send_oos_lock);
-		next_peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
-
 		peer_req->send_oos_pending &= ~NODE_MASK(oos_node_id);
 		if (!peer_req->send_oos_pending)
-			drbd_free_peer_req(peer_req);
+			free_peer_req = peer_req;
 
-		peer_req = next_peer_req;
+		peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
 		spin_unlock_irq(&peer_ack_connection->send_oos_lock);
+
+		if (free_peer_req)
+			drbd_free_peer_req(free_peer_req);
 	}
 
 	kref_debug_put(&peer_ack_connection->kref_debug, 18);
