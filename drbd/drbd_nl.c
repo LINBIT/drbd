@@ -7067,7 +7067,10 @@ static int adm_del_resource(struct drbd_resource *resource)
 	drbd_debugfs_resource_cleanup(resource);
 	mutex_unlock(&resources_mutex);
 
-	cancel_work_sync(&resource->empty_twopc);
+	if (cancel_work_sync(&resource->empty_twopc)) {
+		kref_debug_put(&resource->kref_debug, 11);
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
 	timer_shutdown_sync(&resource->twopc_timer);
 	timer_shutdown_sync(&resource->peer_ack_timer);
 	call_rcu(&resource->rcu, drbd_reclaim_resource);
