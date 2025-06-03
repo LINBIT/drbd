@@ -2,7 +2,7 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.14-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.14 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fix a race condition between write requests and very short resyncs
    that might cause DRBD to fail to resync that racing write.
