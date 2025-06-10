@@ -2,6 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.16-xen.1 (api:genl2/proto:86-101,118-122/transport:19)
+--------
+ * With DRBD tracking exact open counts for Linux 6.3 (or older) only
+
 9.2.16 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Do not trigger the OOM-killer when allocating a too-big dirty

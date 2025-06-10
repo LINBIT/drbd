@@ -1,3 +1,9 @@
+drbd (9.2.16~xen.1) unstable; urgency=medium
+
+  * Restore exact open counts
+
+ -- Philipp Reisner <philipp.reisner@linbit.com>  Tue, 13 Jan 2026 18:37:03 +0200
+
 drbd (9.2.16-1) unstable; urgency=medium
 
   * New upstream release
