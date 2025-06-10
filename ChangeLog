@@ -2,6 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.15-xen.1 (api:genl2/proto:86-101,118-122/transport:19)
+--------
+ * With DRBD tracking exact open counts for Linux 6.3 (or older) only
+
 9.2.15 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fixed the regression introduced with 9.2.13, where a DRBD primary
