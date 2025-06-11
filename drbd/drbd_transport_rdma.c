@@ -531,7 +531,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 static void dtr_control_timer_fn(struct timer_list *t)
 {
-	struct dtr_transport *rdma_transport = from_timer(rdma_transport, t, control_timer);
+	struct dtr_transport *rdma_transport = timer_container_of(rdma_transport, t, control_timer);
 	struct drbd_transport *transport = &rdma_transport->transport;
 
 	drbd_control_event(transport, TIMEOUT);
@@ -1586,7 +1586,7 @@ out:
 
 static void dtr_tx_timeout_fn(struct timer_list *t)
 {
-	struct dtr_cm *cm = from_timer(cm, t, tx_timeout);
+	struct dtr_cm *cm = timer_container_of(cm, t, tx_timeout);
 
 	/* cm->kref for armed timer becomes a ref for the work */
 	schedule_work(&cm->tx_timeout_work);

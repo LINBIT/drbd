@@ -975,7 +975,8 @@ static void dtt_incoming_connection(struct sock *sock)
 
 static void dtt_control_timer_fn(struct timer_list *t)
 {
-	struct drbd_tcp_transport *tcp_transport = from_timer(tcp_transport, t, control_timer);
+	struct drbd_tcp_transport *tcp_transport = timer_container_of(tcp_transport, t,
+			control_timer);
 	struct drbd_transport *transport = &tcp_transport->transport;
 
 	drbd_control_event(transport, TIMEOUT);

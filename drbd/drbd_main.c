@@ -3618,7 +3618,7 @@ void drbd_flush_peer_acks(struct drbd_resource *resource)
 
 static void peer_ack_timer_fn(struct timer_list *t)
 {
-	struct drbd_resource *resource = from_timer(resource, t, peer_ack_timer);
+	struct drbd_resource *resource = timer_container_of(resource, t, peer_ack_timer);
 
 	drbd_flush_peer_acks(resource);
 }
@@ -5853,7 +5853,7 @@ bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_
 
 static void md_sync_timer_fn(struct timer_list *t)
 {
-	struct drbd_device *device = from_timer(device, t, md_sync_timer);
+	struct drbd_device *device = timer_container_of(device, t, md_sync_timer);
 	drbd_device_post_work(device, MD_SYNC);
 }
 
