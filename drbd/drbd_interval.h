@@ -66,6 +66,23 @@ enum drbd_interval_flags {
 	 * so the resync depth bound does not hold it back.
 	 */
 	INTERVAL_APP_WAITS,
+
+	/*
+	 * For local requests: whether this is done.
+	 *
+	 * Included here instead of in local_rq_state to allow access with
+	 * atomic bit operations instead of taking rq_lock.
+	 */
+	INTERVAL_DONE,
+
+	/*
+	 * For local requests: when we put the AL extent for this request, it
+	 * was the last in that extent.
+	 *
+	 * Included here instead of in local_rq_state to allow access with
+	 * atomic bit operations instead of taking rq_lock.
+	 */
+	INTERVAL_AL_EXTENT_LAST,
 };
 
 /* Intervals used to manage conflicts between application requests and various

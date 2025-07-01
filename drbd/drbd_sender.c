@@ -3660,6 +3660,14 @@ static struct drbd_request *__next_request_for_connection(
 static struct drbd_request *tl_next_request_for_connection(
 		struct drbd_connection *connection, bool wait_ready)
 {
+	/*
+	 * No cstate check here: a request that is
+	 * RQ_NET_QUEUED holds an oos_send_ref and stays on the transfer log
+	 * until process_one_request() retires it, and tl_walk(CONNECTION_LOST)
+	 * skips a request that is already RQ_NET_DONE. The sender therefore
+	 * still has to hand out queued requests below C_CONNECTED, even though
+	 * every send in process_one_request() fails there.
+	 */
 	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
 
@@ -3752,6 +3760,15 @@ static bool seen_all_requests(struct drbd_connection *connection)
 	return seen;
 }
 
+static bool drbd_send_barrier_next_oos(struct drbd_connection *connection)
+{
+	if (!connection->todo.req_next)
+		return false;
+
+	return connection->todo.req_next->net_rq_state[connection->peer_node_id]
+		& RQ_NET_PENDING_OOS;
+}
+
 static void wait_for_sender_todo(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
@@ -3809,8 +3826,14 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 			 * up-to-date with the most recently submitted dagtag
 			 * to ensure that we do not send a barrier early in
 			 * this case. If there is such a request then this
-			 * sender will be woken, so it is OK to schedule(). */
-			if (seen_all_requests(connection)) {
+			 * sender will be woken, so it is OK to schedule().
+			 *
+			 * If we have found a request that is
+			 * RQ_NET_PENDING_OOS, but not yet RQ_NET_READY, then
+			 * we also need to send a barrier.
+			 */
+			if (seen_all_requests(connection) ||
+			    drbd_send_barrier_next_oos(connection)) {
 				finish_wait(&connection->sender_work.q_wait, &wait);
 				maybe_send_barrier(connection,
 						connection->send.current_epoch_nr + 1);
@@ -3898,45 +3921,6 @@ static void send_reconcile_current_uuid(struct drbd_peer_device *peer_device)
 			       drbd_weak_nodes_device(device));
 }
 
-static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd_interval *in)
-{
-	struct drbd_device *device = peer_device->device;
-	struct drbd_request *req;
-	struct drbd_interval *i;
-	sector_t sector = in->sector;
-	int size = in->size;
-	int idx = peer_device->node_id;
-	int s;
-	bool in_flight = false;
-
-	if (idx < 0 || idx >= DRBD_NODE_ID_MAX) {
-		drbd_warn(peer_device, "is_write_in_flight: BAD idx: %d\n", idx);
-		return false;
-	}
-
-	read_lock_irq(&device->resource->state_rwlock);
-	spin_lock(&device->interval_lock);
-	drbd_for_each_overlap(i, &device->requests, sector, size) {
-		if (i == in)
-			continue;
-		if (i->type != INTERVAL_LOCAL_WRITE)
-			continue;
-		/* don't care for i->completed, in DRBD_PROT_A we
-		 * are more interested in RQ_NET_DONE instead */
-		req = container_of(i, struct drbd_request, i);
-		s = req->net_rq_state[idx];
-		if ((s & RQ_NET_SENT) == 0) /* not even sent: ignore */
-			continue;
-		if ((s & RQ_NET_DONE) == RQ_NET_DONE) /* already done: ignore */
-			continue;
-		in_flight = true;
-		break;
-	}
-	spin_unlock(&device->interval_lock);
-	read_unlock_irq(&device->resource->state_rwlock);
-	return in_flight;
-}
-
 static int process_one_request(struct drbd_connection *connection)
 {
 	struct bio_and_error m;
@@ -3990,39 +3974,7 @@ static int process_one_request(struct drbd_connection *connection)
 				drbd_send_current_state(peer_device);
 			}
 
-			/* Scenario:
-			 * L_ESTABLISHED -> L_AHEAD -> L_SYNC_SOURCE -> L_AHEAD
-			 *  a) during first L_AHEAD, we send, and set, out-of-sync,
-			 *  b) during L_SYNC_SOURCE, we send a normal write (above),
-			 *  c) during second L_AHEAD, we again send + set out-of-sync
-			 * all for the same block.
-			 * The "normal write during resync" may set the block
-			 * in-sync on completion/destruction.
-			 * We must make sure that won't race
-			 * race with the second set out-of-sync.
-			 *
-			 * In drbd_send_and_submit(), we introduce a dependency
-			 * via req->done_next, where the older (WRITE) requests
-			 * hold a done_ref on the younger ones, so we can be sure the
-			 * bitmap bits are set in oldest-to-youngest order.
-			 *
-			 * Even if the P_RS_WRITE_ACK for the write
-			 * during-resync (b) is received *after* the completion
-			 * of the second send+set out-of-sync (c), the ordering
-			 * of the destructors will only temporarily set
-			 * in-sync, then set out-of-sync again "soon enough",
-			 * at least on this node.
-			 *
-			 * As an optimization, if during L_AHEAD the same
-			 * block(s) are overwritten several times, we may skip
-			 * the send-out-of-sync, if we know we told the peer
-			 * before. But we must NOT skip, if there is still a
-			 * normal write in-flight to the peer (as per the
-			 * scenario above).  We check using our interval tree.
-			 */
-			if (drbd_set_out_of_sync(peer_device, req->i.sector, req->i.size) ||
-			    is_write_in_flight(peer_device, &req->i))
-				err = drbd_send_out_of_sync(peer_device, req->i.sector, req->i.size);
+			err = drbd_send_out_of_sync(peer_device, req->i.sector, req->i.size);
 			what = OOS_HANDED_TO_NETWORK; /* Well, most of the time, anyways. */
 		}
 	} else {
