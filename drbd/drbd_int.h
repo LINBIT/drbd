@@ -381,6 +381,8 @@ struct drbd_request {
 	atomic_t completion_ref;
 	/* once it hits 0, we may remove the request from the interval tree and activity log */
 	refcount_t done_ref;
+	/* once it hits 0, we may remove from transfer log and send a corresponding peer ack */
+	refcount_t oos_send_ref;
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
@@ -1281,7 +1283,7 @@ struct drbd_connection {
 		/* Position in change stream of last write sent. */
 		u64 current_dagtag_sector;
 
-		/* Position in change stream of last queued request seen. */
+		/* Position in change stream of last ready request seen. */
 		u64 seen_dagtag_sector;
 	} send;
 

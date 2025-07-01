@@ -102,6 +102,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		seq_printf(m, "\tnet[%d]:", peer_device->node_id);
 		sep = ' ';
 		seq_print_rq_state_bit(m, s & RQ_NET_PENDING, &sep, "pending");
+		seq_print_rq_state_bit(m, s & RQ_NET_PENDING_OOS, &sep, "pending-oos");
 		seq_print_rq_state_bit(m, s & RQ_NET_QUEUED, &sep, "queued");
 		seq_print_rq_state_bit(m, s & RQ_NET_READY, &sep, "ready");
 		seq_print_rq_state_bit(m, s & RQ_NET_SENT, &sep, "sent");
@@ -461,13 +462,13 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		if ((count & 0x1ff) == 0x1ff) {
 			struct list_head *next_hdr;
 			/* Only get if the request hasn't already been removed from transfer_log. */
-			if (!refcount_inc_not_zero(&req->done_ref))
+			if (!refcount_inc_not_zero(&req->oos_send_ref))
 				continue;
 			rcu_read_unlock();
 			cond_resched();
 			rcu_read_lock();
 			next_hdr = rcu_dereference(list_next_rcu(&req->tl_requests));
-			drbd_put_ref_tl_walk(req, 1);
+			drbd_put_ref_tl_walk(req, 0, 1);
 			if (!refcount_read(&req->done_ref)) {
 				if (next_hdr == &resource->transfer_log)
 					break;

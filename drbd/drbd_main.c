@@ -390,9 +390,8 @@ int tl_release(struct drbd_connection *connection,
 				continue;
 			/* probably a "send_out_of_sync", during Ahead/Behind mode,
 			 * while at least one volume already started to resync again.
-			 * I'd very much prefer these to be in their own epoch,
-			 * or better yet, "simultaneously" go from Ahead/Behind -> SyncSource/SyncTarget
-			 * but that is currently not the case. FIXME.
+			 * Or a write that was not replicated during a resync, and
+			 * replication has been enabled since it was submitted.
 			 */
 			if ((s & RQ_NET_MASK) && !(s & RQ_EXP_BARR_ACK))
 				continue;
@@ -3455,13 +3454,13 @@ static void do_retry(struct work_struct *ws)
 				req, atomic_read(&req->completion_ref),
 				req->local_rq_state);
 
-		/* We still need to put one reference associated with the
+		/* We still need to put one done reference associated with the
 		 * "completion_ref" going zero in the code path that queued it
 		 * here.  The request object may still be referenced by a
 		 * frozen local req->private_bio, in case we force-detached.
 		 */
 		read_lock_irq(&resource->state_rwlock);
-		drbd_put_ref_tl_walk(req, 1);
+		drbd_put_ref_tl_walk(req, 1, 0);
 		read_unlock_irq(&resource->state_rwlock);
 
 		/* A single suspended or otherwise blocking device may stall

@@ -62,6 +62,23 @@ enum drbd_interval_flags {
 
 	/* For resync requests: whether this was canceled while waiting for conflict resolution. */
 	INTERVAL_CANCELED,
+
+	/*
+	 * For local requests: whether this is done.
+	 *
+	 * Included here instead of in local_rq_state to allow access with
+	 * atomic bit operations instead of taking rq_lock.
+	 */
+	INTERVAL_DONE,
+
+	/*
+	 * For local requests: when we put the AL extent for this request, it
+	 * was the last in that extent.
+	 *
+	 * Included here instead of in local_rq_state to allow access with
+	 * atomic bit operations instead of taking rq_lock.
+	 */
+	INTERVAL_AL_EXTENT_LAST,
 };
 
 /* Intervals used to manage conflicts between application requests and various
