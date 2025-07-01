@@ -379,17 +379,19 @@ struct drbd_request {
 
 	/* once it hits 0, we may complete the master_bio */
 	atomic_t completion_ref;
+	/* once it hits 0, we may remove the request from the interval tree and activity log */
+	refcount_t done_ref;
 	/* once it hits 0, we may destroy this drbd_request object */
 	struct kref kref;
 
 	/* Creates a dependency chain between writes so that we know that a
-	 * peer ack can be sent when kref reaches zero.
+	 * peer ack can be sent when done_ref reaches zero.
 	 *
-	 * If not NULL, destruction of this drbd_request will
-	 * cause kref_put() on ->destroy_next.
+	 * If not NULL, when this drbd_request is done, one done_ref reference
+	 * of ->done_next will be put.
 	 *
 	 * "immutable" */
-	struct drbd_request *destroy_next;
+	struct drbd_request *done_next;
 
 	/* lock to protect state flags */
 	spinlock_t rq_lock;
@@ -2129,7 +2131,6 @@ void del_connect_timer(struct drbd_connection *connection);
 struct drbd_resource *drbd_create_resource(const char *name,
 					   struct res_opts *res_opts);
 void drbd_reclaim_resource(struct rcu_head *rp);
-void drbd_req_destroy_lock(struct kref *kref);
 struct drbd_resource *drbd_find_resource(const char *name);
 void drbd_destroy_resource(struct kref *kref);
 

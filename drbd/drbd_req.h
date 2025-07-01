@@ -284,6 +284,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 void complete_master_bio(struct drbd_device *device, struct bio_and_error *m);
 void drbd_release_conflicts(struct drbd_device *device,
 			    struct drbd_interval *release_interval);
+void drbd_req_put_done_ref(struct drbd_request *req, int put);
 void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device);
 void request_timer_fn(struct timer_list *t);
 void tl_walk(struct drbd_connection *connection,

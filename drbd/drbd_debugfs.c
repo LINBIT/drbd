@@ -460,14 +460,15 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 		/* don't disable preemption "forever" */
 		if ((count & 0x1ff) == 0x1ff) {
 			struct list_head *next_hdr;
-			/* Only get if the request hasn't already been destroyed. */
-			if (!kref_get_unless_zero(&req->kref))
+			/* Only get if the request hasn't already been removed from transfer_log. */
+			if (!refcount_inc_not_zero(&req->done_ref))
 				continue;
 			rcu_read_unlock();
 			cond_resched();
 			rcu_read_lock();
 			next_hdr = rcu_dereference(list_next_rcu(&req->tl_requests));
-			if (kref_put(&req->kref, drbd_req_destroy_lock)) {
+			drbd_req_put_done_ref(req, 1);
+			if (!refcount_read(&req->done_ref)) {
 				if (next_hdr == &resource->transfer_log)
 					break;
 				req = list_entry_rcu(next_hdr,

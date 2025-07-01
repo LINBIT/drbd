@@ -3423,16 +3423,6 @@ static struct retry_worker {
 	struct list_head writes;
 } retry;
 
-void drbd_req_destroy_lock(struct kref *kref)
-{
-	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
-	struct drbd_resource *resource = req->device->resource;
-
-	read_lock_irq(&resource->state_rwlock);
-	drbd_req_destroy(kref);
-	read_unlock_irq(&resource->state_rwlock);
-}
-
 static void do_retry(struct work_struct *ws)
 {
 	struct retry_worker *retry = container_of(ws, struct retry_worker, worker);
@@ -3445,6 +3435,7 @@ static void do_retry(struct work_struct *ws)
 
 	list_for_each_entry_safe(req, tmp, &writes, list) {
 		struct drbd_device *device = req->device;
+		struct drbd_resource *resource = device->resource;
 		struct bio *bio = req->master_bio;
 		unsigned long start_jif = req->start_jif;
 		bool expected;
@@ -3464,12 +3455,14 @@ static void do_retry(struct work_struct *ws)
 				req, atomic_read(&req->completion_ref),
 				req->local_rq_state);
 
-		/* We still need to put one kref associated with the
+		/* We still need to put one reference associated with the
 		 * "completion_ref" going zero in the code path that queued it
 		 * here.  The request object may still be referenced by a
 		 * frozen local req->private_bio, in case we force-detached.
 		 */
-		kref_put(&req->kref, drbd_req_destroy_lock);
+		read_lock_irq(&resource->state_rwlock);
+		drbd_req_put_done_ref(req, 1);
+		read_unlock_irq(&resource->state_rwlock);
 
 		/* A single suspended or otherwise blocking device may stall
 		 * all others as well. This code path is to recover from a

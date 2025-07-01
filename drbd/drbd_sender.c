@@ -3592,9 +3592,9 @@ static int process_one_request(struct drbd_connection *connection)
 			 * race with the second set out-of-sync.
 			 *
 			 * In drbd_send_and_submit(), we introduce a dependency
-			 * via req->destroy_next, where the older (WRITE) requests
-			 * hold a kref on the younger ones, so we can be sure the
-			 * destructor is processed in oldest-to-youngest order.
+			 * via req->done_next, where the older (WRITE) requests
+			 * hold a done_ref on the younger ones, so we can be sure the
+			 * bitmap bits are set in oldest-to-youngest order.
 			 *
 			 * Even if the P_RS_WRITE_ACK for the write
 			 * during-resync (b) is received *after* the completion

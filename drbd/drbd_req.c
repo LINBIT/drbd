@@ -49,7 +49,9 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 
 	/* one reference to be put by __drbd_make_request */
 	atomic_set(&req->completion_ref, 1);
-	/* one kref as long as completion_ref > 0 */
+	/* one reference as long as completion_ref > 0 */
+	refcount_set(&req->done_ref, 1);
+	/* one kref as long as done_ref > 0 */
 	kref_init(&req->kref);
 	spin_lock_init(&req->rq_lock);
 
@@ -155,7 +157,7 @@ int w_queue_peer_ack(struct drbd_work *w, int cancel)
 		drbd_destroy_peer_ack_if_done(peer_ack);
 		spin_unlock_irq(&resource->peer_ack_lock);
 
-		call_rcu(&req->rcu, drbd_reclaim_req);
+		kref_put(&req->kref, drbd_req_destroy);
 	}
 	return 0;
 }
@@ -203,8 +205,14 @@ static void drbd_remove_request_interval(struct rb_root *root,
 void drbd_req_destroy(struct kref *kref)
 {
 	struct drbd_request *req = container_of(kref, struct drbd_request, kref);
+
+	call_rcu(&req->rcu, drbd_reclaim_req);
+}
+
+static void drbd_req_done(struct drbd_request *req)
+{
 	struct drbd_resource *resource = req->device->resource;
-	struct drbd_request *destroy_next;
+	struct drbd_request *done_next;
 	struct drbd_device *device;
 	struct drbd_peer_device *peer_device;
 	unsigned int s;
@@ -246,21 +254,21 @@ void drbd_req_destroy(struct kref *kref)
 			continue;
 
 		drbd_err(device,
-			"drbd_req_destroy: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
-			s, peer_device->node_id, ns, atomic_read(&req->completion_ref));
+			"%s: Logic BUG rq_state: (0:%x, %d:%x), completion_ref = %d\n",
+			__func__, s, peer_device->node_id, ns, atomic_read(&req->completion_ref));
 		return;
 	}
 
 	/* more paranoia */
 	if ((req->master_bio && !(s & RQ_POSTPONED)) ||
 		atomic_read(&req->completion_ref) || (s & RQ_LOCAL_PENDING)) {
-		drbd_err(device, "drbd_req_destroy: Logic BUG rq_state: %x, completion_ref = %d\n",
-				s, atomic_read(&req->completion_ref));
+		drbd_err(device, "%s: Logic BUG rq_state: %x, completion_ref = %d\n",
+				__func__, s, atomic_read(&req->completion_ref));
 		return;
 	}
 
 	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
-	destroy_next = req->destroy_next;
+	done_next = req->done_next;
 	list_del_rcu(&req->tl_requests);
 	if (resource->tl_previous_write == req)
 		resource->tl_previous_write = NULL;
@@ -340,7 +348,7 @@ void drbd_req_destroy(struct kref *kref)
 				drbd_queue_peer_ack(resource, peer_ack_req);
 				peer_ack_req = NULL;
 			} else
-				call_rcu(&peer_ack_req->rcu, drbd_reclaim_req);
+				kref_put(&peer_ack_req->kref, drbd_req_destroy);
 		}
 		resource->peer_ack_req = req;
 
@@ -351,16 +359,16 @@ void drbd_req_destroy(struct kref *kref)
 		mod_timer(&resource->peer_ack_timer,
 			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
 	} else
-		call_rcu(&req->rcu, drbd_reclaim_req);
+		kref_put(&req->kref, drbd_req_destroy);
 
 	/*
 	 * Do the equivalent of:
-	 *   kref_put(&req->kref, drbd_req_destroy)
+	 *   drbd_req_put_done_ref(done_next, 1)
 	 * without recursing into the destructor.
 	 */
-	if (destroy_next) {
-		req = destroy_next;
-		if (refcount_dec_and_test(&req->kref.refcount))
+	if (done_next) {
+		req = done_next;
+		if (refcount_dec_and_test(&req->done_ref))
 			goto tail_recursion;
 	}
 }
@@ -505,6 +513,14 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 
 	if (any_queued)
 		queue_work(submit_conflict->wq, &submit_conflict->worker);
+}
+
+void drbd_req_put_done_ref(struct drbd_request *req, int put)
+{
+	lockdep_assert_held(&req->device->resource->state_rwlock);
+
+	if (refcount_sub_and_test(put, &req->done_ref))
+		drbd_req_done(req);
 }
 
 /* Helper for __req_mod().
@@ -684,7 +700,7 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 		return;
 	}
 
-	kref_put(&req->kref, drbd_req_destroy);
+	drbd_req_put_done_ref(req, 1);
 }
 
 void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
@@ -698,8 +714,10 @@ void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
 	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
 		unsigned int local_rq_state, net_rq_state;
 
-		/* This is similar to the bitmap modification performed in
-		 * drbd_req_destroy(), but simplified for this special case. */
+		/*
+		 * This is similar to the bitmap modification performed in
+		 * drbd_req_done(), but simplified for this special case.
+		 */
 
 		spin_lock_irq(&req->rq_lock);
 		local_rq_state = req->local_rq_state;
@@ -842,6 +860,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	unsigned set_local = set & RQ_STATE_0_MASK;
 	unsigned clear_local = clear & RQ_STATE_0_MASK;
 	int c_put = 0;
+	int d_put = 0;
 	const int idx = peer_device ? peer_device->node_id : -1;
 	struct drbd_connection *connection = NULL;
 	bool unchanged;
@@ -880,8 +899,6 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	/* intent: get references */
 
-	kref_get(&req->kref);
-
 	if (!(old_local & RQ_LOCAL_PENDING) && (set_local & RQ_LOCAL_PENDING))
 		atomic_inc(&req->completion_ref);
 
@@ -901,7 +918,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
-		kref_get(&req->kref); /* wait for the DONE */
+		refcount_inc(&req->done_ref); /* wait for the DONE */
 
 	if (!(old_net & RQ_NET_SENT) && (set & RQ_NET_SENT)) {
 		/* potentially already completed in the ack_receiver thread */
@@ -930,7 +947,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		struct drbd_device *device = req->device;
 
 		if (req->local_rq_state & RQ_LOCAL_ABORTED)
-			kref_put(&req->kref, drbd_req_destroy);
+			++d_put;
 		else
 			++c_put;
 		spin_lock(&device->pending_completion_lock); /* local irq already disabled */
@@ -957,7 +974,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		if (old_net & RQ_NET_SENT)
 			atomic_sub(req_payload_sectors(req), ap_in_flight);
 		if (old_net & RQ_EXP_BARR_ACK)
-			kref_put(&req->kref, drbd_req_destroy);
+			++d_put;
 		ktime_get_accounting(req->net_done_kt[peer_device->node_id]);
 
 		if (peer_device->repl_state[NOW] == L_AHEAD &&
@@ -990,7 +1007,11 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 
 	/* potentially complete and destroy */
 	drbd_req_put_completion_ref(req, m, c_put);
-	kref_put(&req->kref, drbd_req_destroy);
+
+	/* req cannot have been destroyed if there are still done references */
+	if (d_put)
+		/* potentially destroy */
+		drbd_req_put_done_ref(req, d_put);
 }
 
 static void drbd_report_io_error(struct drbd_device *device, struct drbd_request *req)
@@ -2009,8 +2030,8 @@ static void drbd_send_and_submit(struct drbd_request *req)
 			resource->tl_previous_write = req;
 
 			if (prev_write) {
-				kref_get(&req->kref);
-				prev_write->destroy_next = req;
+				refcount_inc(&req->done_ref);
+				prev_write->done_next = req;
 			}
 
 			if (!drbd_process_write_request(req))
