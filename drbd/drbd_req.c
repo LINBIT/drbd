@@ -2107,30 +2107,37 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 	conflict = drbd_find_conflict(device, &req->i, 0);
 	if (drbd_interval_empty(&req->i))
 		drbd_insert_interval(&device->requests, &req->i);
-	if (!conflict)
+	if (!conflict) {
 		set_bit(INTERVAL_SUBMITTED, &req->i.flags);
+	} else if (drbd_interval_is_local(conflict)) {
+		struct drbd_request *conflicting_req =
+			container_of(conflict, struct drbd_request, i);
+
+		if (conflicting_req->local_rq_state & RQ_POSTPONED) {
+			req->local_rq_state |= RQ_POSTPONED;
+
+			/*
+			 * Remove interval from tree to prevent req from being
+			 * queued when conflicts are released.
+			 */
+			drbd_remove_interval(&device->requests, &req->i);
+		}
+	}
 	spin_unlock_irq(&device->interval_lock);
 
-	if (conflict) {
-		if (drbd_interval_is_local(conflict)) {
-			struct drbd_request *conflicting_req =
-				container_of(conflict, struct drbd_request, i);
-
-			if (conflicting_req->local_rq_state & RQ_POSTPONED) {
-				req->local_rq_state |= RQ_POSTPONED;
-				if (req->private_bio) {
-					bio_put(req->private_bio);
-					req->private_bio = NULL;
-					put_ldev(device);
-				}
-				drbd_req_put_completion_ref(req, NULL, 1);
-			}
-		}
-		/* If there is a conflict, the request will be submitted once the
-		 * conflict has cleared.
-		 */
-	} else {
+	/*
+	 * If there is a conflict, the request will be submitted once the
+	 * conflict has cleared.
+	 */
+	if (!conflict) {
 		drbd_send_and_submit(req);
+	} else if (req->local_rq_state & RQ_POSTPONED) {
+		if (req->private_bio) {
+			bio_put(req->private_bio);
+			req->private_bio = NULL;
+			put_ldev(device);
+		}
+		drbd_req_put_completion_ref(req, NULL, 1);
 	}
 }
 
