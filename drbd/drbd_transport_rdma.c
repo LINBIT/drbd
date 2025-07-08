@@ -1920,7 +1920,7 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
 				tx_desc = NULL; /* it is in the air again! Fly! */
-			else
+			else if (__ratelimit(&rdma_transport->rate_limit))
 				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
 		}
 	}
