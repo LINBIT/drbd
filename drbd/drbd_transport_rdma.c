@@ -581,6 +581,9 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mas
 		{ .stream = ST_FLOW_CTRL, .sequence = 0 };
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
+	if (err)
+		dtr_free_tx_desc(cm, tx_desc);
+
 out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);
 out:
