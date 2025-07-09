@@ -223,6 +223,7 @@ int drbd_get_listener(struct drbd_path *path)
 	}
 
 	spin_lock_bh(&listener->waiters_lock);
+	kref_get(&path->kref);
 	list_add(&path->listener_link, &listener->waiters);
 	path->listener = listener;
 	spin_unlock_bh(&listener->waiters_lock);
@@ -258,6 +259,7 @@ void drbd_put_listener(struct drbd_path *path)
 
 	spin_lock_bh(&listener->waiters_lock);
 	list_del(&path->listener_link);
+	kref_put(&path->kref, drbd_destroy_path);
 	spin_unlock_bh(&listener->waiters_lock);
 	kref_put(&listener->kref, drbd_listener_destroy);
 }
