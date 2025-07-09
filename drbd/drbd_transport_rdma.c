@@ -355,7 +355,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask);
-static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path);
+static struct dtr_cm *dtr_path_get_cm_connected(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
@@ -548,7 +548,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mas
 
 	// pr_info("%s: dtr_send() size = %d data[0]:%lx\n", rdma_stream->name, (int)size, *(unsigned long*)buf);
 
-	cm = dtr_path_get_cm(path);
+	cm = dtr_path_get_cm_connected(path);
 	if (!cm)
 		goto out;
 
@@ -845,6 +845,18 @@ static struct dtr_cm *dtr_path_get_cm(struct dtr_path *path)
 	rcu_read_lock();
 	cm = __dtr_path_get_cm(path);
 	rcu_read_unlock();
+	return cm;
+}
+
+static struct dtr_cm *dtr_path_get_cm_connected(struct dtr_path *path)
+{
+	struct dtr_cm *cm;
+
+	cm = dtr_path_get_cm(path);
+	if (cm && cm->state != DSM_CONNECTED) {
+		kref_put(&cm->kref, dtr_destroy_cm);
+		cm = NULL;
+	}
 	return cm;
 }
 
@@ -2074,7 +2086,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 	}
 	BUG_ON(PageHighMem(page));
 
-	cm = dtr_path_get_cm(path);
+	cm = dtr_path_get_cm_connected(path);
 	if (!cm) {
 		err = -ECONNRESET;
 		goto out;
