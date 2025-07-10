@@ -732,12 +732,7 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 	rcu_read_lock();
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		const unsigned s = req->net_rq_state[connection->peer_node_id];
-		/* Found a request which is for this peer but not yet queued.
-		 * Do not skip past it. */
-		if (unlikely(s & RQ_NET_PENDING && !(s & (RQ_NET_QUEUED|RQ_NET_SENT))))
-			break;
 
-		connection->send.seen_dagtag_sector = req->dagtag_sector;
 		if (likely(s & RQ_NET_QUEUED)) {
 			found_req = req;
 			break;
@@ -896,12 +891,14 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	}
 
 	if (!(old_net & RQ_NET_QUEUED) && (set & RQ_NET_QUEUED)) {
-		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 		atomic_inc(&req->completion_ref);
 		/* This completion ref is necessary to avoid premature completion
 		   in case a WRITE_ACKED_BY_PEER comes in before the sender can do
 		   HANDED_OVER_TO_NETWORK. */
 	}
+
+	if (!(old_net & RQ_NET_READY) && (set & RQ_NET_READY))
+		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		kref_get(&req->kref); /* wait for the DONE */
@@ -1132,7 +1129,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
 		D_ASSERT(device, !(req->local_rq_state & RQ_LOCAL_MASK));
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING);
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED);
 		break;
 
 	case NEW_NET_WRITE:
@@ -1156,7 +1153,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		D_ASSERT(device, !(req->net_rq_state[idx] & RQ_NET_MASK));
 
 		/* queue work item to send data */
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_EXP_BARR_ACK|
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED|RQ_EXP_BARR_ACK|
 				drbd_protocol_state_bits(peer_device->connection));
 
 		/* Close the epoch, in case it outgrew the limit.
@@ -1182,11 +1179,11 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		break;
 
 	case NEW_NET_OOS:
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING);
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_PENDING|RQ_NET_QUEUED);
 		break;
 
-	case ADDED_TO_TRANSFER_LOG:
-		mod_rq_state(req, m, peer_device, 0, RQ_NET_QUEUED);
+	case READY_FOR_NET:
+		mod_rq_state(req, m, peer_device, 0, RQ_NET_READY);
 		break;
 
 	case SEND_CANCELED:
@@ -1693,14 +1690,14 @@ static int drbd_process_write_request(struct drbd_request *req)
 	return count;
 }
 
-static void drbd_queue_request(struct drbd_request *req)
+static void drbd_request_ready_for_net(struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device(peer_device, device) {
 		if (req->net_rq_state[peer_device->node_id] & RQ_NET_PENDING)
-			_req_mod(req, ADDED_TO_TRANSFER_LOG, peer_device);
+			_req_mod(req, READY_FOR_NET, peer_device);
 	}
 }
 
@@ -2032,7 +2029,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 		/* Do this after adding to the transfer log so that the
 		 * caching pointer req_not_net_done is set if
 		 * necessary. */
-		drbd_queue_request(req);
+		drbd_request_ready_for_net(req);
 	}
 	spin_unlock(&resource->tl_update_lock);
 

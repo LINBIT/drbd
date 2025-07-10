@@ -69,7 +69,7 @@ enum drbd_req_event {
 	NEW_NET_READ,
 	NEW_NET_WRITE,
 	NEW_NET_OOS,
-	ADDED_TO_TRANSFER_LOG,
+	READY_FOR_NET,
 
 	/* For an empty flush, mark that a corresponding barrier has been sent
 	 * to this peer. This causes it to complete "successfully", even if the
@@ -146,8 +146,11 @@ enum drbd_req_state_bits {
 	 * While set, the master_bio may not be completed. */
 	__RQ_NET_PENDING,
 
-	/* Queued for sending but not yet sent. */
+	/* The sender might store pointers to it */
 	__RQ_NET_QUEUED,
+
+	/* Ready for processing by the sender */
+	__RQ_NET_READY,
 
 	/* Well, actually only "handed over to the network stack". */
 	__RQ_NET_SENT,
@@ -218,6 +221,7 @@ enum drbd_req_state_bits {
 };
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_QUEUED      (1UL << __RQ_NET_QUEUED)
+#define RQ_NET_READY       (1UL << __RQ_NET_READY)
 #define RQ_NET_SENT        (1UL << __RQ_NET_SENT)
 #define RQ_NET_DONE        (1UL << __RQ_NET_DONE)
 #define RQ_NET_OK          (1UL << __RQ_NET_OK)

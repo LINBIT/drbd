@@ -3299,45 +3299,38 @@ static struct drbd_request *__next_request_for_connection(
 
 	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
 		unsigned s = req->net_rq_state[connection->peer_node_id];
-		/* Found a request which is for this peer but not yet queued.
-		 * Do not skip past it. */
-		if (unlikely(s & RQ_NET_PENDING && !(s & (RQ_NET_QUEUED|RQ_NET_SENT))))
-			return NULL;
 
-		connection->send.seen_dagtag_sector = req->dagtag_sector;
-		if (s & RQ_NET_QUEUED)
+		if (likely(s & RQ_NET_QUEUED))
 			return req;
 	}
 	return NULL;
 }
 
-static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
+static struct drbd_request *tl_next_request_for_connection(
+		struct drbd_connection *connection, bool wait_ready)
 {
 	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
 
-	connection->todo.req = connection->todo.req_next;
+	if (connection->todo.req_next == NULL) {
+		connection->todo.req = NULL;
+	} else {
+		unsigned int s = connection->todo.req_next->net_rq_state[connection->peer_node_id];
 
-	/* advancement of todo.req_next happens in advance_conn_req_next(),
-	 * called from mod_rq_state() */
-
-	return connection->todo.req;
-}
-
-static struct drbd_request *tl_next_request_for_cleanup(struct drbd_connection *connection)
-{
-	struct drbd_request *req, *found_req = NULL;
-
-	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
-		unsigned int s = req->net_rq_state[connection->peer_node_id];
-
-		if (s & RQ_NET_QUEUED) {
-			found_req = req;
-			break;
+		if (likely((s & RQ_NET_READY) || !wait_ready)) {
+			connection->todo.req = connection->todo.req_next;
+			connection->send.seen_dagtag_sector = connection->todo.req->dagtag_sector;
+		} else {
+			/* Leave the request in "req_next" until it is ready */
+			connection->todo.req = NULL;
 		}
 	}
 
-	connection->todo.req = found_req;
+	/*
+	 * Advancement of todo.req_next happens in advance_conn_req_next(),
+	 * called from mod_rq_state()
+	 */
+
 	return connection->todo.req;
 }
 
@@ -3366,7 +3359,7 @@ static void maybe_send_state_after_ahead(struct drbd_connection *connection)
 static bool check_sender_todo(struct drbd_connection *connection)
 {
 	rcu_read_lock();
-	tl_next_request_for_connection(connection);
+	tl_next_request_for_connection(connection, true);
 
 	/* FIXME can we get rid of this additional lock? */
 	spin_lock_irq(&connection->sender_work.q_lock);
@@ -3730,7 +3723,7 @@ int drbd_sender(struct drbd_thread *thi)
 	/* cleanup all currently unprocessed requests */
 	if (!connection->todo.req) {
 		rcu_read_lock();
-		tl_next_request_for_cleanup(connection);
+		tl_next_request_for_connection(connection, false);
 		rcu_read_unlock();
 	}
 	while (connection->todo.req) {
@@ -3746,7 +3739,7 @@ int drbd_sender(struct drbd_thread *thi)
 			complete_master_bio(device, &m);
 
 		rcu_read_lock();
-		tl_next_request_for_cleanup(connection);
+		tl_next_request_for_connection(connection, false);
 		rcu_read_unlock();
 	}
 
