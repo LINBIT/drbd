@@ -103,6 +103,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 		sep = ' ';
 		seq_print_rq_state_bit(m, s & RQ_NET_PENDING, &sep, "pending");
 		seq_print_rq_state_bit(m, s & RQ_NET_QUEUED, &sep, "queued");
+		seq_print_rq_state_bit(m, s & RQ_NET_READY, &sep, "ready");
 		seq_print_rq_state_bit(m, s & RQ_NET_SENT, &sep, "sent");
 		seq_print_rq_state_bit(m, s & RQ_NET_DONE, &sep, "done");
 		seq_print_rq_state_bit(m, s & RQ_NET_SIS, &sep, "sis");
