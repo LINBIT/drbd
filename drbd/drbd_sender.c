@@ -3557,8 +3557,12 @@ static int process_one_request(struct drbd_connection *connection)
 				drbd_send_current_state(peer_device);
 			}
 
-			err = drbd_send_out_of_sync(peer_device, req->i.sector, req->i.size);
-			what = OOS_HANDED_TO_NETWORK; /* Well, most of the time, anyways. */
+			/* When this flag is not set, sending OOS may be skipped */
+			if (s & RQ_NET_PENDING_OOS)
+				err = drbd_send_out_of_sync(peer_device,
+						req->i.sector, req->i.size);
+			/* This event has the appropriate effect even if OOS skipped or failed */
+			what = OOS_HANDED_TO_NETWORK;
 		}
 	} else {
 		maybe_send_barrier(connection, req->epoch);

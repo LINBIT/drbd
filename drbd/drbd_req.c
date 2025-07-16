@@ -217,6 +217,7 @@ static void drbd_req_done(struct drbd_request *req)
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
 	unsigned int s = req->local_rq_state;
+	unsigned long modified_mask = 0;
 
 	lockdep_assert_held(&resource->state_rwlock);
 	lockdep_assert_irqs_disabled();
@@ -295,7 +296,7 @@ static void drbd_req_done(struct drbd_request *req)
 					clear_bit(bitmap_index, &mask);
 			}
 		}
-		drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
+		modified_mask = drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
 		put_ldev(device);
 	}
 
@@ -310,7 +311,19 @@ static void drbd_req_done(struct drbd_request *req)
 				continue;
 			}
 
-			_req_mod(req, READY_FOR_NET, peer_device);
+			/*
+			 * As an optimization, we only send out-of-sync if we
+			 * set some bit for this peer. If we are not
+			 * replicating to this peer and the same block(s) are
+			 * overwritten several times, the peer only needs to be
+			 * informed of the first change.
+			 */
+			if (peer_device->bitmap_index != -1 &&
+					test_bit(peer_device->bitmap_index, &modified_mask))
+				_req_mod(req, READY_FOR_NET, peer_device);
+			else
+				_req_mod(req, SKIP_OOS, peer_device);
+
 			wake_up(&peer_device->connection->sender_work.q_wait);
 		}
 	}
@@ -1263,6 +1276,10 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case READY_FOR_NET:
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_READY);
+		break;
+
+	case SKIP_OOS:
+		mod_rq_state(req, m, peer_device, RQ_NET_PENDING_OOS, RQ_NET_READY);
 		break;
 
 	case OOS_HANDED_TO_NETWORK:

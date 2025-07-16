@@ -70,6 +70,7 @@ enum drbd_req_event {
 	NEW_NET_WRITE,
 	NEW_NET_OOS,
 	READY_FOR_NET,
+	SKIP_OOS,
 
 	/* For an empty flush, mark that a corresponding barrier has been sent
 	 * to this peer. This causes it to complete "successfully", even if the
@@ -148,6 +149,8 @@ enum drbd_req_state_bits {
 	 *   P_OUT_OF_SYNC to be sent, must not be processed yet.
 	 * pending-oos,queued,ready,done:
 	 *   P_OUT_OF_SYNC to be sent, processing allowed.
+	 * queued,ready,done:
+	 *   P_OUT_OF_SYNC was intended, but skipped.
 	 * done:
 	 *   P_OUT_OF_SYNC was intended, but connection lost before processing
 	 *   allowed.
