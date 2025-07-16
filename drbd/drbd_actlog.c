@@ -945,28 +945,31 @@ out:
  * @size:	size of disk range in bytes
  * @bits:	bit values to use by bitmap index
  * @mask:	bitmap indexes to modify (mask set)
+ * @authoritative: whether the caller knows that the peers it sets out of sync
+ *		lack the blocks; if not, the bitmap slots record placeholders
+ * @src_node_id: for non-authoritative bits, the node whose resync data this
+ *		is, or -1 if no node can retire the placeholders
  *
- * The caller knows the peers it sets out of sync lack the blocks; the bits
- * are recorded as authoritative.  Returns the number of bits modified.
+ * Return: a mask of the bitmap indexes which were modified.
  */
-static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
-			   unsigned long bits, unsigned long mask, bool authoritative,
-			   int src_node_id)
+static unsigned long __drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+				     unsigned long bits, unsigned long mask, bool authoritative,
+				     int src_node_id)
 {
 	long set_start, set_end, clear_start, clear_end;
 	struct drbd_peer_device *peer_device;
 	sector_t esector, nr_sectors;
 	unsigned long irq_flags;
-	int count = 0;
+	unsigned long modified = 0;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512)) {
 		drbd_err(device, "%s sector: %llus, size: %d\n",
 			 __func__, (unsigned long long)sector, size);
-		return false;
+		return 0;
 	}
 
 	if (!get_ldev(device))
-		return false; /* no disk, no metadata, no bitmap to set bits in */
+		return 0; /* no disk, no metadata, no bitmap to set bits in */
 
 	mask &= (1 << device->bitmap->bm_max_peers) - 1;
 
@@ -1004,16 +1007,17 @@ static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size
 			continue;
 
 		if (test_bit(bitmap_index, &bits)) {
-			int set = update_sync_bits(peer_device, set_start, set_end,
-						   SET_OUT_OF_SYNC);
-
-			if (set && authoritative)
-				bitmap_slot_authoritative(device, peer_device->node_id);
-			else if (set)
-				bitmap_slot_placeholder(device, peer_device->node_id, src_node_id);
-			count += set;
+			if (update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC)) {
+				__set_bit(bitmap_index, &modified);
+				if (authoritative)
+					bitmap_slot_authoritative(device, peer_device->node_id);
+				else
+					bitmap_slot_placeholder(device, peer_device->node_id,
+								src_node_id);
+			}
 		} else if (clear_start <= clear_end) {
-			count += update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
+			if (update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC))
+				__set_bit(bitmap_index, &modified);
 		}
 	}
 	rcu_read_unlock();
@@ -1022,29 +1026,32 @@ static int __drbd_set_sync(struct drbd_device *device, sector_t sector, int size
 
 		for_each_set_bit(bitmap_index, &mask, BITS_PER_LONG) {
 			if (test_bit(bitmap_index, &bits)) {
-				int set = drbd_bm_set_bits(device, bitmap_index,
-							   set_start, set_end);
-				int node_id = node_id_by_bitmap_index(device, bitmap_index);
+				if (drbd_bm_set_bits(device, bitmap_index, set_start, set_end)) {
+					int node_id = node_id_by_bitmap_index(device, bitmap_index);
 
-				if (set && authoritative && node_id != -1)
-					bitmap_slot_authoritative(device, node_id);
-				else if (set && node_id != -1)
-					bitmap_slot_placeholder(device, node_id, src_node_id);
-				count += set;
-			} else if (clear_start <= clear_end)
-				count += drbd_bm_clear_bits(device, bitmap_index,
-						   clear_start, clear_end);
+					__set_bit(bitmap_index, &modified);
+					if (node_id != -1 && authoritative)
+						bitmap_slot_authoritative(device, node_id);
+					else if (node_id != -1)
+						bitmap_slot_placeholder(device, node_id,
+									src_node_id);
+				}
+			} else if (clear_start <= clear_end) {
+				if (drbd_bm_clear_bits(device, bitmap_index,
+							clear_start, clear_end))
+					__set_bit(bitmap_index, &modified);
+			}
 		}
 	}
 	spin_unlock_irqrestore(&device->bitmap->bm_all_slots_lock, irq_flags);
 out:
 	put_ldev(device);
 
-	return count;
+	return modified;
 }
 
-int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
-		  unsigned long bits, unsigned long mask)
+unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+			    unsigned long bits, unsigned long mask)
 {
 	return __drbd_set_sync(device, sector, size, bits, mask, true, -1);
 }
@@ -1054,8 +1061,8 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
  * src_node_id names the node whose resync data this is, so the slots know who
  * can retire the placeholders; -1 where no node can (a local read error).
  */
-int drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
-			     sector_t sector, int size)
+unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
+				       sector_t sector, int size)
 {
 	return __drbd_set_sync(device, sector, size, -1, -1, false, src_node_id);
 }

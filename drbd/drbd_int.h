@@ -2901,10 +2901,10 @@ void drbd_advance_rs_marks(struct drbd_peer_device *peer_device,
 bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device);
 void drbd_check_resync_done(struct drbd_peer_device *peer_device);
 bool drbd_bitmap_slot_decides(struct drbd_peer_device *peer_device);
-int drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id, sector_t sector,
-			     int size);
-int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
-		  unsigned long bits, unsigned long mask);
+unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, int src_node_id,
+				       sector_t sector, int size);
+unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+			    unsigned long bits, unsigned long mask);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
 int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector,
 		       int size, enum update_sync_bits_mode mode);
