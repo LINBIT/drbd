@@ -769,7 +769,7 @@ out:
 	return count;
 }
 
-int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
+unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int size)
 {
 	return drbd_set_sync(device, sector, size, -1, -1);
 }
@@ -782,25 +782,25 @@ int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector, int si
  * @bits:	bit values to use by bitmap index
  * @mask:	bitmap indexes to modify (mask set)
  *
- * Returns the number of bits modified.
+ * Returns a mask of the bitmap indexes which were modified.
  */
-int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		   unsigned long bits, unsigned long mask)
 {
 	long set_start, set_end, clear_start, clear_end;
 	struct drbd_peer_device *peer_device;
 	sector_t esector, nr_sectors;
 	unsigned long irq_flags;
-	int count = 0;
+	unsigned long modified = 0;
 
 	if (size <= 0 || !IS_ALIGNED(size, 512)) {
 		drbd_err(device, "%s sector: %llus, size: %d\n",
 			 __func__, (unsigned long long)sector, size);
-		return false;
+		return 0;
 	}
 
 	if (!get_ldev(device))
-		return false; /* no disk, no metadata, no bitmap to set bits in */
+		return 0; /* no disk, no metadata, no bitmap to set bits in */
 
 	mask &= (1 << device->bitmap->bm_max_peers) - 1;
 
@@ -837,28 +837,32 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		if (!test_and_clear_bit(bitmap_index, &mask))
 			continue;
 
-		if (test_bit(bitmap_index, &bits))
-			count += update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC);
-
-		else if (clear_start <= clear_end)
-			count += update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC);
+		if (test_bit(bitmap_index, &bits)) {
+			if (update_sync_bits(peer_device, set_start, set_end, SET_OUT_OF_SYNC))
+				__set_bit(bitmap_index, &modified);
+		} else if (clear_start <= clear_end) {
+			if (update_sync_bits(peer_device, clear_start, clear_end, SET_IN_SYNC))
+				__set_bit(bitmap_index, &modified);
+		}
 	}
 	rcu_read_unlock();
 	if (mask) {
 		int bitmap_index;
 
 		for_each_set_bit(bitmap_index, &mask, BITS_PER_LONG) {
-			if (test_bit(bitmap_index, &bits))
-				count += drbd_bm_set_bits(device, bitmap_index,
-						 set_start, set_end);
-			else if (clear_start <= clear_end)
-				count += drbd_bm_clear_bits(device, bitmap_index,
-						   clear_start, clear_end);
+			if (test_bit(bitmap_index, &bits)) {
+				if (drbd_bm_set_bits(device, bitmap_index, set_start, set_end))
+					__set_bit(bitmap_index, &modified);
+			} else if (clear_start <= clear_end) {
+				if (drbd_bm_clear_bits(device, bitmap_index,
+							clear_start, clear_end))
+					__set_bit(bitmap_index, &modified);
+			}
 		}
 	}
 	spin_unlock_irqrestore(&device->bitmap->bm_all_slots_lock, irq_flags);
 out:
 	put_ldev(device);
 
-	return count;
+	return modified;
 }

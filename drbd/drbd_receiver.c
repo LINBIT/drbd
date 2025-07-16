@@ -10288,19 +10288,19 @@ static int got_peers_in_sync(struct drbd_connection *connection, struct packet_i
 	device = peer_device->device;
 
 	if (get_ldev(device)) {
-		int count;
+		unsigned long modified;
 
 		sector = be64_to_cpu(p->sector);
 		size = be32_to_cpu(p->size);
 		in_sync_b = node_ids_to_bitmap(device, be64_to_cpu(p->mask));
 
-		count = drbd_set_sync(device, sector, size, 0, in_sync_b);
+		modified = drbd_set_sync(device, sector, size, 0, in_sync_b);
 
 		/* If we are SyncSource then we rely on P_PEERS_IN_SYNC from
 		 * the peer to inform us of sync progress. Otherwise only send
 		 * peers-in-sync when we have actually cleared some bits.
 		 * This prevents an infinite loop with the peer. */
-		if (count > 0 || peer_device->repl_state[NOW] == L_SYNC_SOURCE)
+		if (modified || peer_device->repl_state[NOW] == L_SYNC_SOURCE)
 			drbd_queue_update_peers(peer_device, sector, sector + (size >> SECTOR_SHIFT));
 
 		put_ldev(device);

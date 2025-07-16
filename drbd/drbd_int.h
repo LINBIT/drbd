@@ -2449,9 +2449,9 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i);
 void drbd_advance_rs_marks(struct drbd_peer_device *peer_device,
 			   unsigned long still_to_go);
 bool drbd_lazy_bitmap_update_due(struct drbd_peer_device *peer_device);
-int drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector,
+unsigned long drbd_set_all_out_of_sync(struct drbd_device *device, sector_t sector,
 			     int size);
-int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
+unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 		  unsigned long bits, unsigned long mask);
 enum update_sync_bits_mode { RECORD_RS_FAILED, SET_OUT_OF_SYNC, SET_IN_SYNC };
 int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector,
