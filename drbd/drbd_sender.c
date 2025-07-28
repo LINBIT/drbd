@@ -770,7 +770,7 @@ bool drbd_any_flush_pending(struct drbd_resource *resource)
 
 void resync_timer_fn(struct timer_list *t)
 {
-	struct drbd_peer_device *peer_device = from_timer(peer_device, t, resync_timer);
+	struct drbd_peer_device *peer_device = timer_container_of(peer_device, t, resync_timer);
 
 	drbd_queue_work_if_unqueued(
 		&peer_device->connection->sender_work,
@@ -2776,7 +2776,8 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 
 void start_resync_timer_fn(struct timer_list *t)
 {
-	struct drbd_peer_device *peer_device = from_timer(peer_device, t, start_resync_timer);
+	struct drbd_peer_device *peer_device = timer_container_of(peer_device, t,
+			start_resync_timer);
 	drbd_peer_device_post_work(peer_device, RS_START);
 }
 

@@ -711,7 +711,7 @@ void wait_initial_states_received(struct drbd_connection *connection)
 
 void connect_timer_fn(struct timer_list *t)
 {
-	struct drbd_connection *connection = from_timer(connection, t, connect_timer);
+	struct drbd_connection *connection = timer_container_of(connection, t, connect_timer);
 
 	drbd_queue_work(&connection->sender_work, &connection->connect_timer_work);
 }
@@ -6913,7 +6913,7 @@ static void drbd_abort_twopc(struct drbd_resource *resource)
 
 void twopc_timer_fn(struct timer_list *t)
 {
-	struct drbd_resource *resource = from_timer(resource, t, twopc_timer);
+	struct drbd_resource *resource = timer_container_of(resource, t, twopc_timer);
 	unsigned long irq_flags;
 
 	write_lock_irqsave(&resource->state_rwlock, irq_flags);

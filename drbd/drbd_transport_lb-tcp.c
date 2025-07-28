@@ -1022,7 +1022,7 @@ static void dtl_incoming_connection(struct sock *sk)
 
 static void dtl_control_timer_fn(struct timer_list *t)
 {
-	struct dtl_transport *dtl_transport = from_timer(dtl_transport, t, control_timer);
+	struct dtl_transport *dtl_transport = timer_container_of(dtl_transport, t, control_timer);
 	struct drbd_transport *transport = &dtl_transport->transport;
 
 	drbd_control_event(transport, TIMEOUT);
