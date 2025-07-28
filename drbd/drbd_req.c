@@ -273,9 +273,7 @@ void drbd_req_destroy(struct kref *kref)
 		else
 			root = &device->read_requests;
 		drbd_remove_request_interval(root, req);
-	} else if (s & (RQ_NET_MASK & ~RQ_NET_DONE) && req->i.size != 0)
-		drbd_err(device, "drbd_req_destroy: Logic BUG: interval empty, but: rq_state=0x%x, sect=%llu, size=%u\n",
-			s, (unsigned long long)req->i.sector, req->i.size);
+	}
 
 	if (s & RQ_WRITE) {
 		/* There is a special case:
@@ -284,7 +282,7 @@ void drbd_req_destroy(struct kref *kref)
 		 * before it even was submitted or sent.
 		 * In that case we do not want to touch the bitmap at all.
 		 */
-		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) != RQ_POSTPONED &&
+		if ((s & (RQ_POSTPONED|RQ_LOCAL_MASK)) != RQ_POSTPONED &&
 		    req->i.size && get_ldev_if_state(device, D_DETACHING)) {
 			struct drbd_peer_md *peer_md = device->ldev->md.peers;
 			unsigned long bits = -1, mask = -1;
@@ -714,7 +712,7 @@ void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
 		if (!(local_rq_state & RQ_WRITE))
 			continue;
 
-		if ((local_rq_state & (RQ_POSTPONED|RQ_LOCAL_MASK|RQ_NET_MASK)) == RQ_POSTPONED)
+		if ((local_rq_state & (RQ_POSTPONED|RQ_LOCAL_MASK)) == RQ_POSTPONED)
 			continue;
 
 		if (!req->i.size)
