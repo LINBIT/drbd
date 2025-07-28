@@ -39,8 +39,8 @@ MODULE_VERSION(REL_VERSION);
  * We use this to try to keep "idle" TCP sessions "alive".
  * Default to send a probe every 23 seconds.
  */
-#define DRBD_KEEP_IDLE	(23*HZ)
-#define DRBD_KEEP_INTVL (23*HZ)
+#define DRBD_KEEP_IDLE	23
+#define DRBD_KEEP_INTVL 23
 #define DRBD_KEEP_CNT	9
 static unsigned int drbd_keepcnt = DRBD_KEEP_CNT;
 module_param_named(keepcnt, drbd_keepcnt, uint, 0664);
