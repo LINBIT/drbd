@@ -1106,8 +1106,10 @@ static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
 	return half_full;
 }
 
-static int optimal_bits_for_alignment(unsigned long bit, int max_bio_bits)
+static int optimal_bits_for_alignment(unsigned long bit)
 {
+	int max_bio_bits = DRBD_MAX_BIO_SIZE >> BM_BLOCK_SHIFT;
+
 	/* under the assumption that we find a big block of out-of-sync blocks
 	   in the bitmap, calculate the optimal request size so that the
 	   request sizes get bigger, and each request is "perfectly" aligned.
@@ -1120,12 +1122,12 @@ static int optimal_bits_for_alignment(unsigned long bit, int max_bio_bits)
 
 	/* Only consider the lower order bits up to the size of max_bio_bits.
 	 * This prevents overflows when converting to int. */
-	bit = bit & ((1 << fls(max_bio_bits)) - 1);
+	bit = bit & (max_bio_bits - 1);
 
 	if (bit == 0)
 		return max_bio_bits;
 
-	return min(1 << __ffs(bit), max_bio_bits);
+	return 1 << __ffs(bit);
 }
 
 static int round_to_powerof_2(int value)
@@ -1225,7 +1227,7 @@ static bool adjacent(sector_t sector1, int size, sector_t sector2)
 static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	int optimal_bits_alignment, optimal_bits_rate, discard_granularity = 0;
-	int max_bio_bits, number = 0, rollback_i, size = 0, i = 0, optimal_bits;
+	int number = 0, rollback_i, size = 0, i = 0, optimal_bits;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	const sector_t capacity = get_capacity(device->vdisk);
@@ -1266,13 +1268,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		discard_granularity = rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
 		rcu_read_unlock();
 	}
-
-	max_bio_bits = queue_max_hw_sectors(device->rq_queue) >> (BM_BLOCK_SHIFT - SECTOR_SHIFT);
-	/*
-	 * Round down to power of 2 to avoid losing alignment when this is the
-	 * limiting factor for our request size.
-	 */
-	max_bio_bits = 1 << (fls(max_bio_bits) - 1);
 
 	number = drbd_rs_number_requests(peer_device);
 	if (number * BM_BLOCK_SIZE < discard_granularity)
@@ -1338,7 +1333,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 		prev_sector = sector;
 		size = BM_BLOCK_SIZE;
-		optimal_bits_alignment = optimal_bits_for_alignment(bit, max_bio_bits);
+		optimal_bits_alignment = optimal_bits_for_alignment(bit);
 		optimal_bits_rate = round_to_powerof_2(number - i);
 		optimal_bits = min(optimal_bits_alignment, optimal_bits_rate) - 1;
 
