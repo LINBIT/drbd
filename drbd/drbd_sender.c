@@ -1440,7 +1440,7 @@ skip_request:
 	/* Always reschedule ourselves as a form of polling to detect the end of a resync pass. */
 	mod_timer(&peer_device->resync_timer, jiffies + resync_delay(request_ok, number, i));
 
-	if (i > 0 && request_ok) {
+	if (peer_device->rs_in_flight > 0 && request_ok) {
 		int rs_sect_in = atomic_read(&peer_device->rs_sect_in);
 
 		if (rs_sect_in >= peer_device->rs_in_flight) {
