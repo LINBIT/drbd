@@ -7,11 +7,17 @@
 #ifndef DRBD_CONFIG_H
 #define DRBD_CONFIG_H
 
+#include <drbd_protocol.h>
+
 const char *drbd_buildtag(void);
 
 #define REL_VERSION "9.3.0-rc.1"
 #define PRO_VERSION_MIN 118 /* 9.0.26 */
 #define PRO_VERSION_MAX 123
+#define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
+		      DRBD_FF_RESYNC_DAGTAG | \
+		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID | \
+		      DRBD_FF_RESYNC_WITHOUT_REPLICATION)
 
 #define PRO_VERSION_8_MIN 86
 #define PRO_VERSION_8_MAX 101
