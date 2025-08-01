@@ -409,6 +409,7 @@ static struct rdma_conn_param dtr_conn_param = {
 	.responder_resources = 1,
 	.initiator_depth = 1,
 	.retry_count = 10,
+	.rnr_retry_count  = 7,
 };
 
 static u32 dtr_cm_to_lkey(struct dtr_cm *cm)
