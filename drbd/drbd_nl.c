@@ -4817,6 +4817,7 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 		mutex_unlock(&resource->conf_update);
 
+		transport->class->ops.remove_path(path);
 		notify_path(connection, path, NOTIFY_DESTROY);
 		/* Transport modules might use RCU on the path list. */
 		call_rcu(&path->rcu, drbd_reclaim_path);
