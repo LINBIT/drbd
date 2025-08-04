@@ -2062,7 +2062,7 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 	kfree(rx_desc);
 }
 
-static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
+static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connected_only)
 {
 	struct dtr_path *path = flow->path;
 	struct drbd_transport *transport = path->path.transport;
@@ -2089,11 +2089,13 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask)
 	}
 	BUG_ON(PageHighMem(page));
 
-	cm = dtr_path_get_cm_connected(path);
-	if (!cm) {
-		err = -ECONNRESET;
+	err = -ECONNRESET;
+	cm = dtr_path_get_cm(path);
+	if (!cm)
 		goto out;
-	}
+	if (connected_only && cm->state != DSM_CONNECTED)
+		goto out_put;
+
 	rx_desc->cm = cm;
 	rx_desc->page = page;
 	rx_desc->size = 0;
@@ -2136,6 +2138,7 @@ static void dtr_refill_rx_descs_work_fn(struct work_struct *work)
 
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 {
+	struct drbd_transport *transport = path->path.transport;
 	struct dtr_flow *flow = &path->flow[stream];
 	int descs_want_posted, descs_max;
 
@@ -2144,7 +2147,9 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 	while (atomic_read(&flow->rx_descs_posted) < descs_want_posted &&
 	       atomic_read(&flow->rx_descs_allocated) < descs_max) {
-		int err = dtr_create_rx_desc(flow, (GFP_NOIO & ~__GFP_RECLAIM) | __GFP_NOWARN);
+		int err;
+
+		err = dtr_create_rx_desc(flow, (GFP_NOIO & ~__GFP_RECLAIM) | __GFP_NOWARN, true);
 		/*
 		 * drbd_alloc_pages() goes over the configured max_buffers, but throttles the
 		 * caller with sleeping 100ms for each of those excess pages.  By calling
@@ -2153,8 +2158,7 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 		 */
 		if (err == -ENOMEM) {
 			break;
-		} else if (err > 0) {
-			struct drbd_transport *transport = path->path.transport;
+		} else if (err) {
 			tr_err(transport, "dtr_create_rx_desc() = %d\n", err);
 			break;
 		}
@@ -2582,8 +2586,9 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 		goto createqp_failed;
 	}
 
+	/* some RDMA transports need at least one rx desc for establishing a connection */
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
-		dtr_create_rx_desc(&path->flow[i], GFP_NOIO);
+		dtr_create_rx_desc(&path->flow[i], GFP_NOIO, false);
 
 	return 0;
 
