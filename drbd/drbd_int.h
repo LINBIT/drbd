@@ -1140,6 +1140,7 @@ struct drbd_connection {
 	unsigned long send_oos_from_mask;
 
 	atomic64_t last_dagtag_sector;
+	/* Record of last peer ack to determine whether we can ack flush */
 	u64 last_peer_ack_dagtag_seen;
 
 	/* Mask of nodes from which we are waiting for a flush ack corresponding to this Primary */
