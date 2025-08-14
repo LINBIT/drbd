@@ -89,7 +89,7 @@ enum drbd_interval_flags {
  * are simply cancelled. Futhermore, they do not lock out other requests;
  * instead they are simply marked as having conflicts and ignored.
  *
- * Application request intervals are retained even when they are
+ * Application write request intervals are retained even when they are
  * "INTERVAL_COMPLETED", so that they can be used to look up remote replies
  * that are still pending.
  */

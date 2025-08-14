@@ -193,12 +193,11 @@ static void drbd_remove_request_interval(struct rb_root *root,
 					 struct drbd_request *req)
 {
 	struct drbd_device *device = req->device;
+	unsigned long flags;
 
-	lockdep_assert_irqs_disabled();
-
-	spin_lock(&device->interval_lock);
+	spin_lock_irqsave(&device->interval_lock, flags);
 	drbd_remove_interval(root, &req->i);
-	spin_unlock(&device->interval_lock);
+	spin_unlock_irqrestore(&device->interval_lock, flags);
 }
 
 void drbd_req_destroy(struct kref *kref)
@@ -269,15 +268,8 @@ void drbd_req_destroy(struct kref *kref)
 
 	/* finally remove the request from the conflict detection
 	 * respective block_id verification interval tree. */
-	if (!drbd_interval_empty(&req->i)) {
-		struct rb_root *root;
-
-		if (s & RQ_WRITE)
-			root = &device->requests;
-		else
-			root = &device->read_requests;
-		drbd_remove_request_interval(root, req);
-	}
+	if (s & RQ_WRITE && !drbd_interval_empty(&req->i))
+		drbd_remove_request_interval(&device->requests, req);
 
 	if (s & RQ_WRITE) {
 		/* There is a special case:
@@ -641,16 +633,21 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 		m->bio = req->master_bio;
 		req->master_bio = NULL;
 
-		spin_lock_irqsave(&device->interval_lock, flags);
-		/* We leave it in the tree, to be able to verify later
-		 * write-acks in protocol != C during resync.
-		 * But we mark it as "complete", so it won't be counted as
-		 * conflict in a multi-primary setup. */
-		set_bit(INTERVAL_COMPLETED, &req->i.flags);
-		if (req->local_rq_state & RQ_WRITE)
+		if (req->local_rq_state & RQ_WRITE) {
+			spin_lock_irqsave(&device->interval_lock, flags);
+			/* We leave it in the tree, to be able to verify later
+			 * write-acks in protocol != C during resync.
+			 * But we mark it as "complete", so it won't be counted as
+			 * conflict in a multi-primary setup.
+			 */
+			set_bit(INTERVAL_COMPLETED, &req->i.flags);
 			drbd_release_conflicts(device, &req->i);
-		spin_unlock_irqrestore(&device->interval_lock, flags);
+			spin_unlock_irqrestore(&device->interval_lock, flags);
+		}
 	}
+
+	if (!(req->local_rq_state & RQ_WRITE))
+		drbd_remove_request_interval(&device->read_requests, req);
 
 	/* Either we are about to complete to upper layers,
 	 * or we will restart this request.
