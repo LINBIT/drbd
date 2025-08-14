@@ -63,6 +63,10 @@ static struct drbd_request *drbd_req_new(struct drbd_device *device, struct bio 
 void drbd_reclaim_req(struct rcu_head *rp)
 {
 	struct drbd_request *req = container_of(rp, struct drbd_request, rcu);
+
+	kref_debug_put(&req->device->kref_debug, 6);
+	kref_put(&req->device->kref, drbd_destroy_device);
+
 	mempool_free(req, &drbd_request_mempool);
 }
 
@@ -356,10 +360,6 @@ void drbd_req_destroy(struct kref *kref)
 			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
 	} else
 		call_rcu(&req->rcu, drbd_reclaim_req);
-
-	/* In both branches of the if above, the reference to device gets released */
-	kref_debug_put(&device->kref_debug, 6);
-	kref_put(&device->kref, drbd_destroy_device);
 
 	/*
 	 * Do the equivalent of:
