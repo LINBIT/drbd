@@ -243,8 +243,10 @@ void drbd_peer_request_endio(struct bio *bio)
 	bool is_write = bio_data_dir(bio) == WRITE;
 	bool is_discard = bio_op(bio) == REQ_OP_WRITE_ZEROES ||
 			  bio_op(bio) == REQ_OP_DISCARD;
-
 	blk_status_t status = bio->bi_status;
+	unsigned long flags;
+	struct page *page;
+	struct bio **pos;
 
 	if (status && drbd_device_ratelimit(device, BACKEND))
 		drbd_warn(device, "%s: error=%d s=%llus\n",
@@ -255,7 +257,28 @@ void drbd_peer_request_endio(struct bio *bio)
 	if (status)
 		set_bit(__EE_WAS_ERROR, &peer_req->flags);
 
-	bio_put(bio); /* no need for the bio anymore */
+	bio->bi_next = NULL; /* bi_next was used by the kernel during I/O; reinitialize */
+	/* Reset iter and restore sector and size for bio_for_each_segment(). */
+	page = bio->bi_io_vec[0].bv_page;
+	bio->bi_iter = (struct bvec_iter) {
+		.bi_sector = peer_req->i.sector + page->private,
+		.bi_size = (unsigned int)(unsigned long)page->lru.next,
+	};
+
+	spin_lock_irqsave(&device->peer_req_bio_completion_lock, flags);
+	if (!peer_req->bio) {
+		peer_req->bio = bio;
+	} else {
+		/* Insert bio into the chain ordered by bi_sector */
+		for (pos = &peer_req->bio; *pos; pos = &(*pos)->bi_next) {
+			if (bio->bi_iter.bi_sector < (*pos)->bi_iter.bi_sector)
+				break;
+		}
+		bio->bi_next = *pos;
+		*pos = bio;
+	}
+	spin_unlock_irqrestore(&device->peer_req_bio_completion_lock, flags);
+
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
 		if (is_write)
 			drbd_endio_write_sec_final(peer_req);
@@ -565,7 +588,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
+	drbd_peer_req_strip_bio(peer_req);
 
 	/* Use the same drbd_peer_request for tracking resync request and for
 	 * writing, if that is necessary. */
@@ -605,12 +628,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	if (size) {
-		drbd_alloc_page_chain(&connection->transport,
-			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-		if (!peer_req->page_chain.head)
-			goto defer2;
-	}
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
 	/* This will be a resync write once we receive the data back from the
@@ -630,8 +647,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	 * retry may or may not help.
 	 * If it does not, you may need to force disconnect. */
 
-defer2:
-	drbd_free_peer_req(peer_req);
 defer:
 	put_ldev(device);
 	return -EAGAIN;
@@ -1571,9 +1586,13 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
 
-		/* Do not wait if no memory is immediately available.  */
-		peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM,
-					       size, REQ_OP_READ);
+		/* Do not wait if no memory is immediately available.
+		 * Don't allocate pages yet - we only need them when we
+		 * receive the P_OV_REPLY and need to read local data.
+		 * That is important to not exhaust max_buffers prematurely.
+		 */
+		peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY & ~__GFP_RECLAIM, size,
+					       REQ_NO_BIO);
 		if (!peer_req) {
 			drbd_err(device, "Could not allocate online verify request\n");
 			put_ldev(device);
@@ -2206,7 +2225,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		}
 		*expect_ack = true;
 
-		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
+		drbd_peer_req_strip_bio(peer_req);
 
 		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
 		peer_req = NULL;
@@ -2393,7 +2412,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	 * some distributed deadlock, if the other side blocks on
 	 * congestion as well, because our receiver blocks in
 	 * drbd_alloc_pages due to pp_in_use > max_buffers. */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
+	drbd_peer_req_strip_bio(peer_req);
 
 	inc_rs_pending(peer_device);
 

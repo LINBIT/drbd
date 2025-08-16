@@ -340,6 +340,26 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 		drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
 }
 
+void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
+{
+	struct drbd_transport *transport = &peer_req->peer_device->connection->transport;
+	struct bio *next_bio, *bio = peer_req->bio;
+	struct bvec_iter iter;
+	struct bio_vec bvec;
+
+	if (!bio)
+		return;
+	peer_req->bio = NULL;
+
+	do {
+		bio_for_each_segment(bvec, bio, iter)
+			drbd_free_pages(transport, bvec.bv_page);
+		next_bio = bio->bi_next;
+		bio_put(bio);
+		bio = next_bio;
+	} while (bio);
+}
+
 /**
  * drbd_alloc_pages() - Returns @number pages, retries forever (or until signalled)
  * @transport:	DRBD transport.
@@ -408,6 +428,47 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page)
 		drbd_warn(connection, "ASSERTION FAILED: pp_in_use: %d < 0\n", i);
 }
 
+static int
+peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_mask, blk_opf_t opf)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_transport *transport = &peer_device->connection->transport;
+	struct drbd_device *device = peer_device->device;
+	enum req_op op = opf & REQ_OP_MASK;
+	unsigned short nr_vecs;
+	struct page *page;
+	struct bio *bio;
+
+	nr_vecs = DIV_ROUND_UP(size, PAGE_SIZE);
+	if (nr_vecs > BIO_MAX_VECS)
+		nr_vecs = BIO_MAX_VECS;
+	bio = bio_alloc(device->ldev->backing_bdev, nr_vecs, opf, gfp_mask);
+	if (!bio)
+		return -ENOMEM;
+
+	peer_req->bio = bio;
+
+	if (op == REQ_OP_READ) {
+		while (size) {
+			unsigned int len = min(size, PAGE_SIZE);
+
+			page = drbd_alloc_pages(transport, 1, gfp_mask);
+			if (!page)
+				goto out_free_pages;
+			len = drbd_bio_add_page(transport, bio, page, len, 0);
+			if (len < 0)
+				goto out_free_pages;
+			size -= len;
+		}
+		if (!mempool_is_saturated(&drbd_buffer_page_pool))
+			peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
+	}
+	return 0;
+
+out_free_pages:
+	drbd_peer_req_strip_bio(peer_req);
+	return -ENOMEM;
+}
 
 /**
  * drbd_alloc_peer_req() - Allocate a drbd_peer_request
@@ -426,8 +487,7 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
-	unsigned short nr_vecs;
-	struct bio *bio;
+	int err;
 
 	gfp_mask &= ~__GFP_HIGHMEM;
 	if (drbd_insert_fault(device, DRBD_FAULT_AL_EE))
@@ -439,18 +499,8 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
 			drbd_err(device, "%s: allocation failed\n", __func__);
 		return NULL;
 	}
-
 	memset(peer_req, 0, sizeof(*peer_req));
-	nr_vecs = DIV_ROUND_UP(size, PAGE_SIZE);
-	if (nr_vecs > BIO_MAX_VECS)
-		nr_vecs = BIO_MAX_VECS;
-	bio = bio_alloc(device->ldev->backing_bdev, nr_vecs, opf, gfp_mask);
-	if (!bio) {
-		mempool_free(peer_req, &drbd_ee_mempool);
-		return NULL;
-	}
 
-	peer_req->bio = bio;
 	INIT_LIST_HEAD(&peer_req->w.list);
 	drbd_clear_interval(&peer_req->i);
 	INIT_LIST_HEAD(&peer_req->recv_order);
@@ -460,7 +510,18 @@ drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
 	peer_req->peer_device = peer_device;
 	peer_req->block_id = (unsigned long) peer_req;
 
+	if (opf == REQ_NO_BIO)
+		return peer_req;
+
+	err = peer_req_alloc_bio(peer_req, size, gfp_mask, opf);
+	if (err)
+		goto out_free_peer_req;
+
 	return peer_req;
+
+out_free_peer_req:
+	mempool_free(peer_req, &drbd_ee_mempool);
+	return NULL;
 }
 
 void drbd_free_peer_req(struct drbd_peer_request *peer_req)
@@ -481,7 +542,7 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
 	D_ASSERT(peer_device, drbd_interval_empty(&peer_req->i));
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
+	drbd_peer_req_strip_bio(peer_req);
 	kref_debug_put(&peer_device->device->kref_debug, 9);
 	kref_put(&peer_device->device->kref, drbd_destroy_device);
 	mempool_free(peer_req, &drbd_ee_mempool);
@@ -1737,19 +1798,14 @@ static int peer_request_fault_type(struct drbd_peer_request *peer_req)
 int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_device *device = peer_req->peer_device->device;
-	struct bio *bios = NULL;
-	struct bio *bio;
-	struct page *page = peer_req->page_chain.head;
+	struct bio *bio, *bios = NULL;
 	sector_t sector = peer_req->i.sector;
-	unsigned data_size = peer_req->i.size;
-	unsigned n_bios = 0;
-	unsigned nr_pages = peer_req->page_chain.nr_pages;
-	unsigned int bio_nr_iovecs;
-	int err;
+	struct page *page;
+	int fault_type, err;
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
 		drbd_set_out_of_sync(peer_req->peer_device,
-				peer_req->i.sector, peer_req->i.size);
+				sector, peer_req->i.size);
 
 	/* TRIM/DISCARD: for now, always use the helper function
 	 * blkdev_issue_zeroout(..., discard=true).
@@ -1772,7 +1828,6 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	 * Plain bio_alloc is good enough here, this is no DRBD internally
 	 * generated bio, but a bio allocated on behalf of the peer.
 	 */
-next_bio:
 	/* _DISCARD, _WRITE_ZEROES handled above.
 	 * REQ_OP_FLUSH (empty flush) not expected,
 	 * should have been mapped to a "drbd protocol barrier".
@@ -1785,81 +1840,48 @@ next_bio:
 		goto fail;
 	}
 
-	/*
-	 * Peer may have sent more pages in one request than bio_alloc can
-	 * handle. Even when (nr_pages > bio_nr_iovecs), we may only need one
-	 * bio because bio_add_page may be able to merge consecutive pages into
-	 * one bio_vec.
-	 */
-	bio_nr_iovecs = bio_max_segs(nr_pages);
-
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	bio = peer_req->bio;
-	/* > peer_req->i.sector, unless this is the first bio */
-	bio->bi_iter.bi_sector = sector;
-	bio->bi_private = peer_req;
-	bio->bi_end_io = drbd_peer_request_endio;
+	fault_type = peer_request_fault_type(peer_req);
+	bios = peer_req->bio;
+	peer_req->bio = NULL;
 
-	bio->bi_next = bios;
-	bios = bio;
-	++n_bios;
+	/* Get reference for the first bio */
+	atomic_inc(&peer_req->pending_bios);
 
-	page_chain_for_each(page) {
-		unsigned off, len;
-		int res;
-
-		if (bio_op(peer_req->bio) == REQ_OP_READ) {
-			set_page_chain_offset(page, 0);
-			set_page_chain_size(page, min_t(unsigned, data_size, PAGE_SIZE));
-		}
-		off = page_chain_offset(page);
-		len = page_chain_size(page);
-
-		if (off > PAGE_SIZE || len > PAGE_SIZE - off || len > data_size || len == 0) {
-			drbd_err(device, "invalid page chain: offset %u size %u remaining data_size %u\n",
-					off, len, data_size);
-			err = -EINVAL;
-			goto fail;
-		}
-
-		res = bio_add_page(bio, page, len, off);
-		if (res <= 0) {
-			/* A single page must always be possible!
-			 * But in case it fails anyways,
-			 * we deal with it, and complain (below). */
-			if (bio->bi_vcnt == 0) {
-				drbd_err(device,
-					"bio_add_page(%p, %p, %u, %u): %d (bi_vcnt %u bi_max_vecs %u bi_sector %llu, bi_flags 0x%lx)\n",
-					bio, page, len, off, res, bio->bi_vcnt, bio->bi_max_vecs, (uint64_t)bio->bi_iter.bi_sector,
-					 (unsigned long)bio->bi_flags);
-				err = -ENOSPC;
-				goto fail;
-			}
-			goto next_bio;
-		}
-		data_size -= len;
-		sector += len >> 9;
-		--nr_pages;
-	}
-	D_ASSERT(device, data_size == 0);
-	D_ASSERT(device, page == NULL);
-
-	atomic_set(&peer_req->pending_bios, n_bios);
 	/* for debugfs: update timestamp, mark as submitted */
 	peer_req->submit_jif = jiffies;
-	do {
+	while (true) {
 		bio = bios;
 		bios = bios->bi_next;
-		bio->bi_next = NULL;
 
-		drbd_submit_bio_noacct(device, peer_request_fault_type(peer_req), bio);
+		/* Submit bios with bi_next = NULL; bi_next is a kernel-private field;
+		 * do not read it after I/O; used temprorarily by DRBD pre submit
+		 */
+		bio->bi_next = NULL;
+		bio->bi_iter.bi_sector = sector;
+		bio->bi_private = peer_req;
+		bio->bi_end_io = drbd_peer_request_endio;
+
+		/* Store sector and size in first struct page for restoration after I/O. */
+		page = bio->bi_io_vec[0].bv_page;
+		page->private = sector - peer_req->i.sector;
+		page->lru.next = (void *)(unsigned long)bio->bi_iter.bi_size;
+
+		sector += bio_sectors(bio);
+
+		/* Get reference for the next bio (if any) now to prevent premature completion */
+		if (bios)
+			atomic_inc(&peer_req->pending_bios);
+		drbd_submit_bio_noacct(device, fault_type, bio);
+		if (!bios)
+			break;
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
-		if (bios && bios->bi_next)
+		if (bios->bi_next)
 			bios->bi_opf &= ~REQ_PREFLUSH;
-	} while (bios);
+	}
 	return 0;
 
 fail:
@@ -2082,8 +2104,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	void *dig_vv = connection->int_dig_vv;
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
-	int err;
-
+	int size, err;
 
 	if (d->digest_size) {
 		err = drbd_recv_into(connection, dig_in, d->digest_size);
@@ -2121,19 +2142,26 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	if (d->length == 0)
 		return 0;
 
-	err = tr_ops->recv_pages(transport, &peer_req->page_chain, d->length - d->digest_size);
+	size = d->length - d->digest_size;
+	if (!peer_req->bio) {
+		/* For a checksum resync, the bio was consumed for reading. */
+		err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_WRITE);
+		if (err)
+			return err;
+	}
+	err = tr_ops->recv_bio(transport, peer_req->bio, size);
 	if (err)
 		return err;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
-		struct page *page;
+		struct bio *bio = peer_req->bio;
 		unsigned long *data;
+
 		drbd_err(device, "Fault injection: Corrupting data on receive, sector %llu\n",
 				d->sector);
-		page = peer_req->page_chain.head;
-		data = kmap_local_page(page) + page_chain_offset(page);
+
+		data = bvec_virt(&bio->bi_io_vec[0]);
 		data[0] = ~data[0];
-		kunmap_local(data);
 	}
 
 	if (d->digest_size) {
@@ -2429,7 +2457,7 @@ static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
 	 * Free the pages now but leave the peer request until the
 	 * corresponding peers-in-sync has been scheduled.
 	 */
-	drbd_free_page_chain(&peer_device->connection->transport, &peer_req->page_chain);
+	drbd_peer_req_strip_bio(peer_req);
 
 	/*
 	 * The interval is no longer in the tree, but use this flag anyway,
@@ -2608,7 +2636,7 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 
 	err = read_in_block(peer_req, d);
 	if (err)
-		return -EIO;
+		return err;
 
 	if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
 		clear_bit(STABLE_RESYNC, &device->flags);
@@ -2887,7 +2915,7 @@ static int e_end_block(struct drbd_work *w, int cancel)
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		drbd_free_peer_req(peer_req);
 	} else {
-		drbd_free_page_chain(&connection->transport, &peer_req->page_chain);
+		drbd_peer_req_strip_bio(peer_req);
 		drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + (cancel ? EV_CLEANUP : 0));
 		/* Do not use peer_req after this point. We may have sent the
 		 * corresponding barrier and received the corresponding peer ack. As a
@@ -3304,8 +3332,6 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
 		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_DISCARD);
-		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
-		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
 		/* need to play safe: an older DRBD sender
 		 * may mean zero-out while sending P_TRIM. */
 		if (0 == (connection->agreed_features & DRBD_FF_WZEROES))
@@ -3314,18 +3340,9 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_ZEROES);
 		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_WRITE_ZEROES);
-		D_ASSERT(peer_device, peer_req->page_chain.head == NULL);
-		D_ASSERT(peer_device, peer_req->page_chain.nr_pages == 0);
 		/* Do (not) pass down BLKDEV_ZERO_NOUNMAP? */
 		if (d.dp_flags & DP_DISCARD)
 			peer_req->flags |= EE_TRIM;
-	} else if (peer_req->page_chain.head == NULL) {
-		/* Actually, this must not happen anymore,
-		 * "empty" flushes are mapped to P_BARRIER,
-		 * and should never end up here.
-		 * Compat with old DRBD? */
-		D_ASSERT(device, peer_req->i.size == 0);
-		D_ASSERT(device, d.dp_flags & DP_FLUSH);
 	} else {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_WRITE);
@@ -3862,14 +3879,6 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	err = -ENOMEM;
 	if (!peer_req)
 		goto fail;
-	if (size) {
-		drbd_alloc_page_chain(&peer_device->connection->transport,
-			&peer_req->page_chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-		if (!peer_req->page_chain.head)
-			goto fail2;
-		if (!mempool_is_saturated(&drbd_buffer_page_pool))
-			peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
-	}
 	peer_req->i.size = size;
 	peer_req->i.sector = sector;
 	peer_req->block_id = p->block_id;
@@ -4097,14 +4106,9 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 
-	drbd_alloc_page_chain(&peer_device->connection->transport, &peer_req->page_chain,
-			      DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-	if (!peer_req->page_chain.head) {
-		err = -ENOMEM;
+	err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_READ);
+	if (err)
 		goto fail;
-	}
-	if (!mempool_is_saturated(&drbd_buffer_page_pool))
-		peer_req->flags |= EE_RELEASE_TO_MEMPOOL;
 
 	inc_unacked(peer_device);
 

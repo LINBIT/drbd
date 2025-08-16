@@ -115,7 +115,7 @@ static int dtt_prepare_connect(struct drbd_transport *transport);
 static int dtt_connect(struct drbd_transport *transport);
 static void dtt_finish_connect(struct drbd_transport *transport);
 static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
-static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
+static int dtt_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size);
 static void dtt_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static int dtt_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtt_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
@@ -146,7 +146,7 @@ static struct drbd_transport_class tcp_transport_class = {
 		.connect = dtt_connect,
 		.finish_connect = dtt_finish_connect,
 		.recv = dtt_recv,
-		.recv_pages = dtt_recv_pages,
+		.recv_bio = dtt_recv_bio,
 		.stats = dtt_stats,
 		.net_conf_change = dtt_net_conf_change,
 		.set_rcvtimeo = dtt_set_rcvtimeo,
@@ -357,7 +357,8 @@ static int dtt_recv(struct drbd_transport *transport, enum drbd_stream stream, v
 	return rv;
 }
 
-static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
+
+static int dtt_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
 {
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
@@ -368,30 +369,28 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	if (!socket)
 		return -ENOTCONN;
 
-	drbd_alloc_page_chain(transport, chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-	page = chain->head;
-	if (!page)
-		return -ENOMEM;
-
-	page_chain_for_each(page) {
+	do {
 		size_t len = min_t(int, size, PAGE_SIZE);
-		void *data = kmap_local_page(page);
-		err = dtt_recv_short(socket, data, len, 0);
-		kunmap_local(data);
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, len);
+
+		page = drbd_alloc_pages(transport, 1, GFP_KERNEL);
+		if (!page)
+			return -ENOMEM;
+		err = dtt_recv_short(socket, page_address(page), len, 0);
 		if (err < 0)
 			goto fail;
 		size -= err;
-	}
+		err = drbd_bio_add_page(transport, bio, page, len, 0);
+		if (err < 0)
+			goto fail;
+	} while (size > 0);
+
 	if (unlikely(size)) {
 		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
-		err = -ENODATA;
-		goto fail;
+		return -ENODATA;
 	}
 	return 0;
 fail:
-	drbd_free_page_chain(transport, chain);
+	drbd_free_pages(transport, page);
 	return err;
 }
 

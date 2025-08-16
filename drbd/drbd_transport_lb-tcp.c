@@ -121,7 +121,6 @@ struct dtl_path {
 	struct dtl_flow flow[2];
 };
 
-
 static int dtl_init(struct drbd_transport *transport);
 static void dtl_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static void dtl_socket_free(struct drbd_transport *transport, struct socket **sock);
@@ -130,8 +129,7 @@ static int dtl_connect(struct drbd_transport *transport);
 static void dtl_finish_connect(struct drbd_transport *transport);
 static int dtl_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf,
 		    size_t size, int flags);
-static int dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain,
-			  size_t size);
+static int dtl_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size);
 static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtl_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream,
@@ -173,7 +171,7 @@ static struct drbd_transport_class dtl_transport_class = {
 		.connect = dtl_connect,
 		.finish_connect = dtl_finish_connect,
 		.recv = dtl_recv,
-		.recv_pages = dtl_recv_pages,
+		.recv_bio = dtl_recv_bio,
 		.stats = dtl_stats,
 		.net_conf_change = dtl_net_conf_change,
 		.set_rcvtimeo = dtl_set_rcvtimeo,
@@ -484,36 +482,36 @@ out:
 }
 
 static int
-dtl_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
+dtl_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 	struct page *page;
 	int err;
 
-	drbd_alloc_page_chain(transport, chain, DIV_ROUND_UP(size, PAGE_SIZE), GFP_TRY);
-	page = chain->head;
-	if (!page)
-		return -ENOMEM;
-
-	page_chain_for_each(page) {
+	do {
 		size_t len = min_t(int, size, PAGE_SIZE);
+
+		page = drbd_alloc_pages(transport, 1, GFP_KERNEL);
+		if (!page)
+			return -ENOMEM;
 
 		err = _dtl_recv_page(dtl_transport, page, len);
 		if (err < 0)
 			goto fail;
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, len);
 		size -= err;
-	}
+		err = drbd_bio_add_page(transport, bio, page, len, 0);
+		if (err < 0)
+			goto fail;
+	} while (size > 0);
+
 	if (unlikely(size)) {
 		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
-		err = -ENODATA;
-		goto fail;
+		return -ENODATA;
 	}
 	return 0;
 fail:
-	drbd_free_page_chain(transport, chain);
+	drbd_free_pages(transport, page);
 	return err;
 }
 

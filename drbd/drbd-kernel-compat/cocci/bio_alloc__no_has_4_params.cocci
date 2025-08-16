@@ -15,8 +15,6 @@ bio_alloc_bioset(
  )
 );
 + bio_set_dev(b, ebdev);
-...
-b->bi_end_io = ...;
 + b->bi_opf = _opf;
 
 // special case for the bio_alloc in submit_one_flush

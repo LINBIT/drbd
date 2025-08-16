@@ -366,6 +366,34 @@ struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,
 	return drbd_path;
 }
 
+int drbd_bio_add_page(struct drbd_transport *transport, struct bio *bio,
+		      struct page *page, unsigned int len, unsigned int offset)
+{
+	struct bio *new_bio;
+	int r;
+
+	/* bio->bi_next is used by the kernel while the bio is under I/O.
+	 * Before submitting and after I/O completion, DRBD is free to use it.
+	 */
+	while (bio->bi_next)
+		bio = bio->bi_next;
+
+	r = bio_add_page(bio, page, len, offset);
+	if (r)
+		return r;
+
+	new_bio = bio_alloc(bio->bi_bdev, bio->bi_max_vecs, bio->bi_opf, GFP_NOIO);
+	if (!new_bio)
+		return -ENOMEM;
+
+	bio->bi_next = new_bio;
+	r = bio_add_page(new_bio, page, len, offset);
+	if (r)
+		return r;
+
+	return -ENOENT;
+}
+
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);
 EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
@@ -377,3 +405,4 @@ EXPORT_SYMBOL_GPL(drbd_should_abort_listening);
 EXPORT_SYMBOL_GPL(drbd_path_event);
 EXPORT_SYMBOL_GPL(drbd_listener_destroy);
 EXPORT_SYMBOL_GPL(__drbd_next_path_ref);
+EXPORT_SYMBOL_GPL(drbd_bio_add_page);

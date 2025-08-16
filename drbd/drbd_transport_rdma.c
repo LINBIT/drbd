@@ -323,7 +323,7 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static int dtr_send_bio(struct drbd_transport *, struct bio *bio, unsigned int msg_flags);
-static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
+static int dtr_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
@@ -393,7 +393,7 @@ static struct drbd_transport_class rdma_transport_class = {
 		.get_rcvtimeo = dtr_get_rcvtimeo,
 		.send_page = dtr_send_page,
 		.send_bio = dtr_send_bio,
-		.recv_pages = dtr_recv_pages,
+		.recv_bio = dtr_recv_bio,
 		.stream_ok = dtr_stream_ok,
 		.hint = dtr_hint,
 		.debugfs_show = dtr_debugfs_show,
@@ -592,13 +592,13 @@ out:
 }
 
 
-static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size)
+static int dtr_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[DATA_STREAM];
-	struct page *page, *head = NULL, *tail = NULL;
-	int i = 0;
+	struct page *page;
+	int err, i = 0;
 
 	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
@@ -616,15 +616,8 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 					dtr_receive_rx_desc(rdma_transport, DATA_STREAM, &rx_desc),
 					rdma_stream->recv_timeout);
 
-		if (t <= 0) {
-			/*
-			 * Cannot give back pages that may still be in use!
-			 * (More reason why we only have one rx_desc per page,
-			 * and don't get_page() in dtr_create_rx_desc).
-			 */
-			drbd_free_pages(transport, head);
+		if (t <= 0)
 			return t == 0 ? -EAGAIN : -EINTR;
-		}
 
 		page = rx_desc->page;
 		/* put_page() if we would get_page() in
@@ -638,24 +631,10 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 		 * unaligned bvecs (as xfs often creates), rx_desc->size and
 		 * offset may well be not the PAGE_SIZE and 0 we hope for.
 		 */
-		if (tail) {
-			/* See also dtr_create_rx_desc().
-			 * For PAGE_SIZE > 4k, we may create several RR per page.
-			 * We cannot link a page to itself, though.
-			 *
-			 * Adding to size would be easy enough.
-			 * But what do we do about possible holes?
-			 * FIXME
-			 */
-			BUG_ON(page == tail);
 
-			set_page_chain_next(tail, page);
-			tail = page;
-		} else
-			head = tail = page;
-
-		set_page_chain_offset(page, 0);
-		set_page_chain_size(page, rx_desc->size);
+		err = drbd_bio_add_page(transport, bio, page, rx_desc->size, 0);
+		if (err < 0)
+			return err;
 
 		atomic_dec(&rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated);
 		dtr_free_rx_desc(rx_desc);
@@ -665,8 +644,6 @@ static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 	}
 
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
-	chain->head = head;
-	chain->nr_pages = i;
 	return 0;
 }
 

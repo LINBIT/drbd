@@ -466,7 +466,6 @@ struct drbd_peer_request {
 		};
 	};
 
-	struct drbd_page_chain_head page_chain;
 	struct bio *bio;
 	atomic_t pending_bios;
 	struct drbd_interval i;
@@ -561,6 +560,8 @@ enum {
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
+
+#define REQ_NO_BIO (REQ_OP_DRV_OUT) /* exception for drbd_alloc_peer_request(), DRBD private */
 
 /* flag bits per device */
 enum device_flag {
@@ -1650,6 +1651,7 @@ struct drbd_device {
 #endif
 	struct list_head openers;
 	spinlock_t openers_lock;
+	spinlock_t peer_req_bio_completion_lock;
 
 	struct rcu_head rcu;
 	struct work_struct finalize_work;
@@ -2406,6 +2408,7 @@ int drbd_free_peer_reqs(struct drbd_connection *connection,
 struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_device,
 			gfp_t gfp_mask, size_t size, blk_opf_t opf) __must_hold(local);
 void drbd_free_peer_req(struct drbd_peer_request *peer_req);
+void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req);
 int drbd_connected(struct drbd_peer_device *peer_device);
 void conn_connect2(struct drbd_connection *connection);
 void wait_initial_states_received(struct drbd_connection *connection);

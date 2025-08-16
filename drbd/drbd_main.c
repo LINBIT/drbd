@@ -4166,6 +4166,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	INIT_LIST_HEAD(&device->pending_completion[1]);
 	INIT_LIST_HEAD(&device->openers);
 	spin_lock_init(&device->openers_lock);
+	spin_lock_init(&device->peer_req_bio_completion_lock);
 
 	atomic_set(&device->pending_bitmap_work.n, 0);
 	spin_lock_init(&device->pending_bitmap_work.q_lock);
