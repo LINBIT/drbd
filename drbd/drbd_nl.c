@@ -4428,7 +4428,15 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		peer_devices++;
 		peer_device->node_id = connection->peer_node_id;
 	}
+
 	write_lock_irq(&adm_ctx->resource->state_rwlock);
+
+	/*
+	 * Initialize to the current dagtag so that flushes can be acked even
+	 * if no further writes occur.
+	 */
+	connection->last_peer_ack_dagtag_seen = READ_ONCE(adm_ctx->resource->dagtag_sector);
+
 	list_add_tail_rcu(&connection->connections, &adm_ctx->resource->connections);
 	write_unlock_irq(&adm_ctx->resource->state_rwlock);
 
