@@ -372,7 +372,7 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio *bio, size_
 	do {
 		size_t len = min_t(int, size, PAGE_SIZE);
 
-		page = drbd_alloc_pages(transport, 1, GFP_KERNEL);
+		page = drbd_alloc_page(transport, GFP_KERNEL);
 		if (!page)
 			return -ENOMEM;
 		err = dtt_recv_short(socket, page_address(page), len, 0);
@@ -390,7 +390,7 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio *bio, size_
 	}
 	return 0;
 fail:
-	drbd_free_pages(transport, page);
+	drbd_free_page(transport, page);
 	return err;
 }
 

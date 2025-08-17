@@ -308,28 +308,6 @@ static struct drbd_epoch *previous_epoch(struct drbd_connection *connection, str
 	return prev;
 }
 
-static struct page *__drbd_alloc_pages(struct drbd_resource *resource, unsigned int number, gfp_t gfp_mask)
-{
-	struct page *page = NULL;
-	struct page *tmp = NULL;
-	unsigned int i = 0;
-
-	for (i = 0; i < number; i++) {
-		tmp = mempool_alloc(&drbd_buffer_page_pool, gfp_mask);
-		if (!tmp)
-			goto fail;
-		set_page_chain_next_offset_size(tmp, page, 0, 0);
-		page = tmp;
-	}
-	return page;
-fail:
-	page_chain_for_each_safe(page, tmp) {
-		set_page_chain_next_offset_size(page, NULL, 0, 0);
-		mempool_free(page, &drbd_buffer_page_pool);
-	}
-	return NULL;
-}
-
 static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 {
 	int rs_sect_in = atomic_add_return(size >> 9, &peer_device->rs_sect_in);
@@ -353,7 +331,7 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 
 	do {
 		bio_for_each_segment(bvec, bio, iter)
-			drbd_free_pages(transport, bvec.bv_page);
+			drbd_free_page(transport, bvec.bv_page);
 		next_bio = bio->bi_next;
 		bio_put(bio);
 		bio = next_bio;
@@ -361,31 +339,23 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 }
 
 /**
- * drbd_alloc_pages() - Returns @number pages, retries forever (or until signalled)
- * @transport:	DRBD transport.
- * @number:	number of pages requested
+ * drbd_alloc_page() - Returns a page
+ * @transport:	DRBD transport
  * @gfp_mask:	how to allocate and whether to loop until we succeed
  *
- * Tries to allocate number pages, first from our own page pool, then from
- * the kernel.
- * Possibly retry until DRBD frees sufficient pages somewhere else.
+ * Allocates a page from the kernel or from the private mempool. When this
+ * allocation exceeds the max_buffers setting, throttle the allocation via
+ * schedule_timeout.
  *
- * If this allocation would exceed the max_buffers setting, we throttle
- * allocation (schedule_timeout) to give the system some room to breathe.
- *
- * We do not use max-buffers as hard limit, because it could lead to
- * congestion and further to a distributed deadlock during online-verify or
- * (checksum based) resync, if the max-buffers, socket buffer sizes and
+ * We do not use max-buffers as a hard limit, because it could lead to
+ * congestion and, further, to a distributed deadlock during online-verify or
+ * (checksum-based) resync, if the max-buffers, socket buffer sizes, and
  * resync-rate settings are mis-configured.
- *
- * Returns a page chain linked via (struct drbd_page_chain*)&page->lru.
  */
-struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int number,
-			      gfp_t gfp_mask)
+struct page *drbd_alloc_page(struct drbd_transport *transport, gfp_t gfp_mask)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
-	struct drbd_resource *resource = connection->resource;
 	struct page *page;
 	unsigned int mxb;
 
@@ -395,38 +365,37 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, unsigned int num
 
 	if (atomic_read(&connection->pp_in_use) >= mxb)
 		schedule_timeout_interruptible(HZ / 10);
-	page = __drbd_alloc_pages(resource, number, gfp_mask);
+
+	page = mempool_alloc(&drbd_buffer_page_pool, gfp_mask);
 
 	if (page)
-		atomic_add(number, &connection->pp_in_use);
+		atomic_inc(&connection->pp_in_use);
 	return page;
 }
+EXPORT_SYMBOL(drbd_alloc_page); /* for transports */
 
-/* Must not be used from irq, as that may deadlock: see drbd_alloc_pages.
+/* Must not be used from irq, as that may deadlock: see drbd_alloc_page().
  * Either links the page chain back to the pool of free pages,
  * or returns all pages to the system. */
-void drbd_free_pages(struct drbd_transport *transport, struct page *page)
+void drbd_free_page(struct drbd_transport *transport, struct page *page)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
-	struct page *tmp;
 	int i = 0;
 
 	if (page == NULL)
 		return;
 
-	page_chain_for_each_safe(page, tmp) {
-		set_page_chain_next_offset_size(page, NULL, 0, 0);
-		if (page_count(page) == 1)
-			mempool_free(page, &drbd_buffer_page_pool);
-		else
-			put_page(page);
-		i++;
-	}
-	i = atomic_sub_return(i, &connection->pp_in_use);
+	if (page_count(page) == 1)
+		mempool_free(page, &drbd_buffer_page_pool);
+	else
+		put_page(page);
+
+	i = atomic_dec_return(&connection->pp_in_use);
 	if (i < 0)
 		drbd_warn(connection, "ASSERTION FAILED: pp_in_use: %d < 0\n", i);
 }
+EXPORT_SYMBOL(drbd_free_page);
 
 static int
 peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_mask, blk_opf_t opf)
@@ -452,7 +421,7 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 		while (size) {
 			unsigned int len = min(size, PAGE_SIZE);
 
-			page = drbd_alloc_pages(transport, 1, gfp_mask);
+			page = drbd_alloc_page(transport, gfp_mask);
 			if (!page)
 				goto out_free_pages;
 			len = drbd_bio_add_page(transport, bio, page, len, 0);
@@ -11433,6 +11402,7 @@ keep_part:
 reconnect:
 	change_cstate(connection, err == -EPROTO ? C_PROTOCOL_ERROR : C_NETWORK_FAILURE, CS_HARD);
 }
+EXPORT_SYMBOL(drbd_control_data_ready);
 
 void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event event)
 {
@@ -11455,6 +11425,7 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 
 	change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
+EXPORT_SYMBOL(drbd_control_event);
 
 static bool disconnect_expected(struct drbd_connection *connection)
 {
@@ -11511,7 +11482,3 @@ void drbd_send_peer_ack_wf(struct work_struct *ws)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 }
 
-EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
-EXPORT_SYMBOL(drbd_free_pages);
-EXPORT_SYMBOL(drbd_control_data_ready);
-EXPORT_SYMBOL(drbd_control_event);

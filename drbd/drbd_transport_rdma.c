@@ -2034,7 +2034,7 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 
 		/* put_page(), if we had more than one rx_desc per page,
 		 * but see comments in dtr_create_rx_desc */
-		drbd_free_pages(transport, rx_desc->page);
+		drbd_free_page(transport, rx_desc->page);
 	}
 	kfree(rx_desc);
 }
@@ -2043,23 +2043,17 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 {
 	struct dtr_path *path = flow->path;
 	struct drbd_transport *transport = path->path.transport;
-	struct dtr_transport *rdma_transport =
-		container_of(transport, struct dtr_transport, transport);
 	struct dtr_rx_desc *rx_desc;
 	struct page *page;
-	int err, alloc_size = rdma_transport->rx_allocation_size;
-	int nr_pages = alloc_size / PAGE_SIZE;
+	int err;
 	struct dtr_cm *cm;
 
 	rx_desc = kzalloc(sizeof(*rx_desc), gfp_mask);
 	if (!rx_desc)
 		return -ENOMEM;
 
-	/* As of now, this MUST NEVER return a highmem page!
-	 * Which means no other user may ever have requested and then given
-	 * back a highmem page!
-	 */
-	page = drbd_alloc_pages(transport, nr_pages, gfp_mask);
+	/* Ignoring rdma_transport->rx_allocation_size for now! */
+	page = drbd_alloc_page(transport, gfp_mask);
 	if (!page) {
 		kfree(rx_desc);
 		return -ENOMEM;
@@ -2077,14 +2071,14 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 	rx_desc->page = page;
 	rx_desc->size = 0;
 	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
-	rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page), alloc_size,
+	rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page), PAGE_SIZE,
 					      DMA_FROM_DEVICE);
 	err = ib_dma_mapping_error(cm->id->device, rx_desc->sge.addr);
 	if (err) {
 		tr_err(transport, "ib_dma_map_single() failed %d\n", err);
 		goto out_put;
 	}
-	rx_desc->sge.length = alloc_size;
+	rx_desc->sge.length = PAGE_SIZE;
 
 	atomic_inc(&flow->rx_descs_allocated);
 	atomic_inc(&flow->rx_descs_posted);
@@ -2101,7 +2095,7 @@ out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);
 out:
 	kfree(rx_desc);
-	drbd_free_pages(transport, page);
+	drbd_free_page(transport, page);
 	return err;
 }
 
@@ -2128,7 +2122,7 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 		err = dtr_create_rx_desc(flow, (GFP_NOIO & ~__GFP_RECLAIM) | __GFP_NOWARN, true);
 		/*
-		 * drbd_alloc_pages() goes over the configured max_buffers, but throttles the
+		 * drbd_alloc_page() goes over the configured max_buffers, but throttles the
 		 * caller with sleeping 100ms for each of those excess pages.  By calling
 		 * without __GFP_RECLAIM we request to get a -ENOMEM instead of sleeping.
 		 * We simply stop refilling then.
@@ -3195,7 +3189,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	} else {
 		void *from;
 
-		page = drbd_alloc_pages(transport, 1, GFP_NOIO);
+		page = drbd_alloc_page(transport, GFP_NOIO);
 		from = kmap_local_page(caller_page);
 		memcpy(page_address(page), from + offset, size);
 		kunmap_local(from);
