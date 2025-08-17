@@ -2119,24 +2119,22 @@ drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_
 
 static bool all_zero(struct drbd_peer_request *peer_req)
 {
-	struct page *page = peer_req->page_chain.head;
-	unsigned int len = peer_req->i.size;
+	struct bvec_iter iter;
+	struct bio_vec bvec;
+	struct bio *bio = peer_req->bio;
 
-	page_chain_for_each(page) {
-		unsigned int l = min_t(unsigned int, len, PAGE_SIZE);
-		unsigned int i, words = l / sizeof(long);
-		unsigned long *d;
+	do {
+		bio_for_each_segment(bvec, bio, iter) {
+			unsigned long *d = bvec_virt(&bvec);
+			unsigned int i, words = bvec.bv_len / sizeof(*d);
 
-		d = kmap_atomic(page);
-		for (i = 0; i < words; i++) {
-			if (d[i]) {
-				kunmap_atomic(d);
-				return false;
+			for (i = 0; i < words; i++) {
+				if (d[i])
+					return false;
 			}
 		}
-		kunmap_atomic(d);
-		len -= l;
-	}
+		bio = bio->bi_next;
+	} while (bio);
 
 	return true;
 }

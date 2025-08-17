@@ -114,6 +114,9 @@ int main(int argc, char **argv)
 	patch(1, "bvec_kmap_local", true, false,
 	      COMPAT_HAVE_BVEC_KMAP_LOCAL, "present");
 
+	patch(1, "bvec_virt", true, false,
+	      COMPAT_HAVE_BVEC_VIRT, "present");
+
 	patch(1, "sendpage", false, true,
 	      COMPAT_HAVE_SENDPAGE, "present");
 
