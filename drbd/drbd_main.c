@@ -2406,8 +2406,9 @@ static u32 bio_flags_to_wire(struct drbd_connection *connection, struct bio *bio
 int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *req)
 {
 	struct drbd_device *device = peer_device->device;
-	char *const before = peer_device->connection->scratch_buffer.d.before;
-	char *const after = peer_device->connection->scratch_buffer.d.after;
+	struct drbd_connection *connection = peer_device->connection;
+	char *const before = connection->scratch_buffer.d.before;
+	char *const after = connection->scratch_buffer.d.after;
 	struct p_trim *trim = NULL;
 	struct p_data *p;
 	void *digest_out = NULL;
@@ -2424,8 +2425,8 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		p = &trim->p_data;
 		trim->size = cpu_to_be32(req->i.size);
 	} else {
-		if (peer_device->connection->integrity_tfm)
-			digest_size = crypto_shash_digestsize(peer_device->connection->integrity_tfm);
+		if (connection->integrity_tfm)
+			digest_size = crypto_shash_digestsize(connection->integrity_tfm);
 
 		p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
 		if (!p)
@@ -2436,10 +2437,10 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	p->sector = cpu_to_be64(req->i.sector);
 	p->block_id = (unsigned long)req;
 	p->seq_num = cpu_to_be32(atomic_inc_return(&peer_device->packet_seq));
-	dp_flags = bio_flags_to_wire(peer_device->connection, req->master_bio);
+	dp_flags = bio_flags_to_wire(connection, req->master_bio);
 	if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE && peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T)
 		dp_flags |= DP_MAY_SET_IN_SYNC;
-	if (peer_device->connection->agreed_pro_version >= 100) {
+	if (connection->agreed_pro_version >= 100) {
 		if (s & RQ_EXP_RECEIVE_ACK)
 			dp_flags |= DP_SEND_RECEIVE_ACK;
 		if (s & RQ_EXP_WRITE_ACK || dp_flags & DP_MAY_SET_IN_SYNC)
@@ -2448,19 +2449,19 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 	p->dp_flags = cpu_to_be32(dp_flags);
 
 	if (trim) {
-		err = __send_command(peer_device->connection, device->vnr,
+		err = __send_command(connection, device->vnr,
 				(dp_flags & DP_ZEROES) ? P_ZEROES : P_TRIM, DATA_STREAM);
 		goto out;
 	}
 
 	if (digest_size && digest_out) {
-		BUG_ON(digest_size > sizeof(peer_device->connection->scratch_buffer.d.before));
-		drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, before);
+		WARN_ON(digest_size > sizeof(connection->scratch_buffer.d.before));
+		drbd_csum_bio(connection->integrity_tfm, req->master_bio, before, false);
 		memcpy(digest_out, before, digest_size);
 	}
 
-	additional_size_command(peer_device->connection, DATA_STREAM, req->i.size);
-	err = __send_command(peer_device->connection, device->vnr, P_DATA, DATA_STREAM);
+	additional_size_command(connection, DATA_STREAM, req->i.size);
+	err = __send_command(connection, device->vnr, P_DATA, DATA_STREAM);
 	if (!err) {
 		/* For protocol A, we have to memcpy the payload into
 		 * socket buffers, as we may complete right away
@@ -2480,7 +2481,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0) {
-			drbd_csum_bio(peer_device->connection->integrity_tfm, req->master_bio, after);
+			drbd_csum_bio(connection->integrity_tfm, req->master_bio, after, false);
 			if (memcmp(before, after, digest_size)) {
 				drbd_warn(device,
 					"Digest mismatch, buffer modified by upper layers during write: %llus +%u\n",
@@ -2489,7 +2490,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		}
 	}
 out:
-	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 
 	return err;
 }
@@ -2501,12 +2502,13 @@ out:
 int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		    struct drbd_peer_request *peer_req)
 {
+	struct drbd_connection *connection = peer_device->connection;
 	struct p_data *p;
 	int err;
 	int digest_size;
 
-	digest_size = peer_device->connection->integrity_tfm ?
-		      crypto_shash_digestsize(peer_device->connection->integrity_tfm) : 0;
+	digest_size = connection->integrity_tfm ?
+		      crypto_shash_digestsize(connection->integrity_tfm) : 0;
 
 	p = drbd_prepare_command(peer_device, sizeof(*p) + digest_size, DATA_STREAM);
 
@@ -2518,17 +2520,17 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	p->dp_flags = 0;
 
 	/* Older peers expect block_id for P_RS_DATA_REPLY to be ID_SYNCER. */
-	if (peer_device->connection->agreed_pro_version < 122 && cmd == P_RS_DATA_REPLY)
+	if (connection->agreed_pro_version < 122 && cmd == P_RS_DATA_REPLY)
 		p->block_id = ID_SYNCER;
 
 	if (digest_size)
-		drbd_csum_pages(peer_device->connection->integrity_tfm, peer_req->page_chain.head, p + 1);
-	additional_size_command(peer_device->connection, DATA_STREAM, peer_req->i.size);
-	err = __send_command(peer_device->connection,
+		drbd_csum_bio(connection->integrity_tfm, peer_req->bio, p + 1, true);
+	additional_size_command(connection, DATA_STREAM, peer_req->i.size);
+	err = __send_command(connection,
 			     peer_device->device->vnr, cmd, DATA_STREAM);
 	if (!err)
 		err = drbd_send_ee(peer_device, peer_req);
-	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
 
 	return err;
 }

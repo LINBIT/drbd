@@ -2303,9 +2303,7 @@ static inline void ov_skipped_print(struct drbd_peer_device *peer_device)
 	peer_device->ov_last_skipped_size = 0;
 }
 
-void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest);
-void drbd_csum_pages(struct crypto_shash *tfm, struct page *page,
-		     void *digest);
+void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest, bool own);
 void drbd_resync_read_req_mod(struct drbd_peer_request *peer_req,
 			      enum drbd_interval_flags bit_to_set);
 

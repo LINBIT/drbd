@@ -2076,15 +2076,17 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
 	const uint64_t capacity = get_capacity(device->vdisk);
-	int err;
-	void *dig_in = peer_device->connection->int_dig_in;
-	void *dig_vv = peer_device->connection->int_dig_vv;
-	struct drbd_transport *transport = &peer_device->connection->transport;
+	void *dig_in = connection->int_dig_in;
+	void *dig_vv = connection->int_dig_vv;
+	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	int err;
+
 
 	if (d->digest_size) {
-		err = drbd_recv_into(peer_device->connection, dig_in, d->digest_size);
+		err = drbd_recv_into(connection, dig_in, d->digest_size);
 		if (err)
 			return err;
 	}
@@ -2135,7 +2137,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	}
 
 	if (d->digest_size) {
-		drbd_csum_pages(peer_device->connection->peer_integrity_tfm, peer_req->page_chain.head, dig_vv);
+		drbd_csum_bio(connection->peer_integrity_tfm, peer_req->bio, dig_vv, true);
 		if (memcmp(dig_in, dig_vv, d->digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				d->sector, d->bi_size);
@@ -2199,7 +2201,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	}
 
 	if (digest_size) {
-		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
+		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv, false);
 		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
 			return -EINVAL;
