@@ -2320,6 +2320,22 @@ void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_p
 			dagtag_node_id, dagtag);
 }
 
+
+static int __send_bio(struct drbd_peer_device *peer_device, struct bio *bio, unsigned int msg_flags)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	int err;
+
+	flush_send_buffer(connection, DATA_STREAM);
+	err = tr_ops->send_bio(transport, bio, msg_flags);
+	if (!err)
+		peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
+
+	return err;
+}
+
 /* sendmsg(MSG_SPLICE_PAGES) (former (sendpage()) increases the page ref_count
  * and hands it to the network stack. After the NIC DMA sends the data, it
  * decreases that page's ref_count.
@@ -2329,11 +2345,6 @@ void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_p
 static int
 drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio, unsigned int msg_flags)
 {
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_transport *transport = &connection->transport;
-	struct drbd_transport_ops *tr_ops = &transport->class->ops;
-	int err;
-
 	if (drbd_disable_sendpage)
 		msg_flags &= ~MSG_SPLICE_PAGES;
 
@@ -2352,42 +2363,23 @@ drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio, unsigned in
 		}
 	}
 
-	flush_send_buffer(connection, DATA_STREAM);
-
-	err = tr_ops->send_bio(transport, bio, msg_flags);
-	if (!err)
-		peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
-
-	return err;
+	return __send_bio(peer_device, bio, msg_flags);
 }
 
-static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
-			    struct drbd_peer_request *peer_req)
+static int drbd_send_ee(struct drbd_peer_device *peer_device, struct drbd_peer_request *peer_req)
 {
-	struct drbd_transport *transport = &peer_device->connection->transport;
-	struct drbd_transport_ops *tr_ops = &transport->class->ops;
-	unsigned int msg_flags = peer_req->flags & EE_RELEASE_TO_MEMPOOL ? 0 : MSG_SPLICE_PAGES;
-	struct page *page = peer_req->page_chain.head;
-	unsigned len = peer_req->i.size;
+	struct bio *bio = peer_req->bio;
 	int err;
 
-	flush_send_buffer(peer_device->connection, DATA_STREAM);
-	/* hint all but last page with MSG_MORE */
-	page_chain_for_each(page) {
-		unsigned l = min_t(unsigned, len, PAGE_SIZE);
-		if (page_chain_offset(page) != 0 ||
-		    page_chain_size(page) != l) {
-			drbd_err(peer_device, "FIXME page %p offset %u len %u\n",
-				page, page_chain_offset(page), page_chain_size(page));
-		}
-
-		err = tr_ops->send_page(transport, DATA_STREAM, page, 0, l,
-					msg_flags | (page_chain_next(page) ? MSG_MORE : 0));
+	do {
+		err = __send_bio(peer_device, bio,
+				 peer_req->flags & EE_RELEASE_TO_MEMPOOL ? 0 : MSG_SPLICE_PAGES);
 		if (err)
-			return err;
-		len -= l;
-	}
-	return 0;
+			break;
+		bio = bio->bi_next;
+	} while (bio);
+
+	return err;
 }
 
 /* see also wire_flags_to_bio() */
@@ -2535,7 +2527,7 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 	err = __send_command(peer_device->connection,
 			     peer_device->device->vnr, cmd, DATA_STREAM);
 	if (!err)
-		err = _drbd_send_zc_ee(peer_device, peer_req);
+		err = drbd_send_ee(peer_device, peer_req);
 	mutex_unlock(&peer_device->connection->mutex[DATA_STREAM]);
 
 	return err;
