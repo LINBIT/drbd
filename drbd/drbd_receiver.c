@@ -10718,7 +10718,7 @@ static int got_OVResult(struct drbd_connection *connection, struct packet_info *
 		result = be32_to_cpu(p->result);
 	}
 
-	update_peer_seq(peer_device, be32_to_cpu(seq_num));
+	update_peer_seq(peer_device, seq_num);
 
 	peer_req = find_resync_request(peer_device, INTERVAL_TYPE_MASK(INTERVAL_OV_READ_TARGET),
 			sector, size, block_id);
