@@ -75,6 +75,8 @@ drbd_sender.c
 drbd_state.c
 drbd_state.h
 drbd_state_change.h
+drbd_legacy_84.c
+drbd_legacy_84.h
 drbd_transport.c
 drbd_transport_lb-tcp.c
 drbd_transport_rdma.c

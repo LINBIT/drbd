@@ -591,6 +591,7 @@ enum device_flag {
 	OUTDATE_ON_2PC_COMMIT,
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
+	LEGACY_84_MD,
 };
 
 /* flag bits per peer device */

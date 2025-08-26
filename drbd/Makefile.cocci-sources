@@ -25,6 +25,8 @@ sources-ignored += drbd_state.h
 sources-ignored += drbd_state_change.h
 sources-ignored += drbd_vli.h
 sources-ignored += kref_debug.h
+sources-ignored += drbd_legacy_84.h
+sources-ignored += drbd_legacy_84.c
 
 sources += drbd_actlog.c
 sources += drbd_bitmap.c

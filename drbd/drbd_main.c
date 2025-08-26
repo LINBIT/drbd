@@ -47,6 +47,7 @@
 #include "drbd_vli.h"
 #include "drbd_debugfs.h"
 #include "drbd_meta_data.h"
+#include "drbd_legacy_84.h"
 #include "drbd_dax_pmem.h"
 
 static int drbd_open(struct gendisk *gd, blk_mode_t mode);
@@ -4545,7 +4546,7 @@ fail:
 /* meta data management */
 
 static
-void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
+void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
 {
 	int i;
 
@@ -4579,6 +4580,14 @@ void drbd_md_encode(struct drbd_device *device, struct meta_data_on_disk_9 *buff
 
 	buffer->al_stripes = cpu_to_be32(device->ldev->md.al_stripes);
 	buffer->al_stripe_size_4k = cpu_to_be32(device->ldev->md.al_stripe_size_4k);
+}
+
+static void drbd_md_encode(struct drbd_device *device, void *buffer)
+{
+	if (test_bit(LEGACY_84_MD, &device->flags))
+		drbd_md_encode_84(device, buffer);
+	else
+		drbd_md_encode_9(device, buffer);
 }
 
 int drbd_md_write(struct drbd_device *device, struct meta_data_on_disk_9 *buffer)
