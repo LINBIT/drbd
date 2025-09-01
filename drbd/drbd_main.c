@@ -3321,8 +3321,10 @@ void drbd_destroy_device(struct kref *kref)
 	/* cleanup stuff that may have been allocated during
 	 * device (re-)configuration or state changes */
 
+#ifdef CONFIG_DRBD_COMPAT_84
 	if (device->resource->res_opts.drbd8_compat_mode)
 		nr_drbd8_devices--;
+#endif
 
 	free_openers(device);
 
@@ -4536,7 +4538,9 @@ static int __init drbd_init(void)
 	pr_info("%s\n", drbd_buildtag());
 	pr_info("registered as block device major %d\n", DRBD_MAJOR);
 
+#ifdef CONFIG_DRBD_COMPAT_84
 	nr_drbd8_devices = 0;
+#endif
 
 	return 0; /* Success! */
 
