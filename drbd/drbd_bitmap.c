@@ -104,6 +104,12 @@ enum bitmap_operations {
 static void
 bm_print_lock_info(struct drbd_device *device, unsigned int bitmap_index, enum bitmap_operations op)
 {
+	/* On WinDRBD, task pids work in a different way, so we get
+	   too many FIXMEs, therefore not printing them.
+	 */
+
+	return;
+
 	static const char *op_names[] = {
 		[BM_OP_CLEAR] = "clear",
 		[BM_OP_SET] = "set",
