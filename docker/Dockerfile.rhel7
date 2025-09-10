@@ -1,7 +1,7 @@
 FROM registry.access.redhat.com/ubi7/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
 
-ENV DRBD_VERSION 9.2.14
+ENV DRBD_VERSION 9.2.15-rc.1
 
 ARG release=1
 LABEL name="DRBD Kernel module load container" \
