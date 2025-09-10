@@ -18,7 +18,7 @@ fi
 if [ "$(uname -n)" = "thank" ]; then
 	FILES=$((cd $COMPAT_HEADERS_PATH; find . -name "compat.h*" \
 		| tar -T - -czf -) | tar xzvf -)
-elif ping -c1 thank.linbit > /dev/null 2>&1; then
+elif ping -c1 -w1 thank.linbit > /dev/null 2>&1; then
 	FILES=$(ssh lbbuild@thank.linbit \
 		"cd $COMPAT_HEADERS_PATH; find . -name "compat.h*" | tar -T - -czf -" \
 		| tar xzvf -)

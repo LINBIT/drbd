@@ -16,7 +16,7 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 void drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path);
 bool drbd_show_legacy_device(struct seq_file *seq, void *v);
 #else
-#define drbd_md_decode_84(O, M, MP, B) do {} while (0)
+#define drbd_md_decode_84(O, M, MP, B) { *MP = 1; *B = BM_BLOCK_SIZE; }
 #define drbd_md_encode_84(D, M) do {} while (0)
 #define drbd_setup_node_ids_84(C, P) do {} while (0)
 #define drbd_show_legacy_device(S, V) (false)
