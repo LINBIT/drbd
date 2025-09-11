@@ -226,4 +226,11 @@ void arch_wb_cache_pmem(void *addr, size_t size);
 #define list_last_entry(ptr, type, member) \
         list_entry((ptr)->prev, type, member)
 #endif
+
+/* Rhel-7.0 to 7.5 lack it. Rhel 7.6+ has it in linux/timer.h */
+#ifndef from_timer
+#define from_timer(var, callback_timer, timer_fieldname)		\
+        container_of(callback_timer, typeof(*var), timer_fieldname)
 #endif
+
+#endif /* _DRBD_WRAPPERS_H */
