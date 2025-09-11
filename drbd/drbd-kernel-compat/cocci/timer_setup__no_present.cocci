@@ -3,7 +3,7 @@ void
 -timer_fn(struct timer_list *t)
 +timer_fn(unsigned long data)
 {
--	struct drbd_struct *object = from_timer(object, t, timer);
+-	struct drbd_struct *object = timer_container_of(object, t, timer);
 +	struct drbd_struct *object = (struct drbd_struct *) data;
 	...
 }
