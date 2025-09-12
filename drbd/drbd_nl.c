@@ -2992,7 +2992,7 @@ static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const cha
 }
 
 static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md,
-			int *max_peers, int *bytes_per_bit)
+			u32 *max_peers, int *bytes_per_bit)
 {
 	int i;
 
