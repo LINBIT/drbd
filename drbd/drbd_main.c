@@ -1871,7 +1871,7 @@ static void dcbp_set_start(struct p_compressed_bm *p, int set)
 static void dcbp_set_pad_bits(struct p_compressed_bm *p, int n)
 {
 	BUG_ON(n & ~0x7);
-	p->encoding = (p->encoding & (~0x7 << 4)) | (n << 4);
+	p->encoding = (p->encoding & (((uint8_t)~0x7) << 4)) | (n << 4);
 }
 
 static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
