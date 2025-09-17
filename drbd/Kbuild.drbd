@@ -36,7 +36,7 @@ ifndef CONFIG_NET_HANDSHAKE
 # Different versions of Make treat the '#' sign (in '#define') differently,
 # some want it escaped, others need it unescaped. Could use $(pound).
 # But just wildcard it.
-COMPAT_NET_HANDHAKE := $(shell set -x; grep -qe '^.define COMPAT_HAVE_TLS_TX_RX$$' $(src)/compat.h && echo m)
+COMPAT_NET_HANDSHAKE := $(shell set -x; grep -qe '^.define COMPAT_HAVE_TLS_TX_RX$$' $(src)/compat.h && echo m)
 endif
 endif
 
@@ -46,7 +46,7 @@ obj-$(CONFIG_BLK_DEV_DRBD)       += drbd.o
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_tcp.o
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_lb-tcp.o
 obj-$(if $(CONFIG_INFINIBAND),m) += drbd_transport_rdma.o
-obj-$(COMPAT_NET_HANDHAKE)       += drbd-kernel-compat/handshake/
+obj-$(COMPAT_NET_HANDSHAKE)      += drbd-kernel-compat/handshake/
 # ================================================================
 
 ifdef CONFIG_DEV_DAX_PMEM
