@@ -32,6 +32,9 @@ BuildRequires: %kernel_module_package_buildreqs
 # rpmbuild --with dkms to build drbd-dkms package
 %bcond_with dkms
 
+# rpmbuild --with compat_84 to include in-kernel compat code for drbd 8.4
+%bcond_with compat_84
+
 # rpmbuild --define "ofed_kernel_dir /usr/src/ofa_kernel/x86_64/4.18.0-147.5.1..."
 # to build against an some mlnx-ofa_kernel-devel
 %if %{defined ofed_kernel_dir}
@@ -146,7 +149,8 @@ for flavor in %flavors_to_build; do
 	%{?_ofed_version:BUILD_OFED=1} \
 	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
-	%{?with_gcov:GCOV_PROFILE=y}
+	%{?with_gcov:GCOV_PROFILE=y} \
+	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y}
 done
 
 %install

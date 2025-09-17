@@ -51,6 +51,10 @@ ifneq (,$(filter gcov,$(DEB_BUILD_OPTIONS)))
 extra_make_flags = GCOV_PROFILE=y
 endif
 
+ifneq (,$(filter compat_84,$(DEB_BUILD_OPTIONS)))
+extra_make_flags += CONFIG_DRBD_COMPAT_84=y
+endif
+
 deb_build_parallel := $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
 ifdef deb_build_parallel
 -j := -j$(deb_build_parallel)
