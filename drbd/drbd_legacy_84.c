@@ -165,80 +165,43 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 }
 
 
-static int compare_sockaddr(struct sockaddr_storage *a_sockaddr,
-			    struct sockaddr_storage *b_sockaddr)
-{
-	if (a_sockaddr->ss_family < b_sockaddr->ss_family)
-		return -1;
-	if (a_sockaddr->ss_family > b_sockaddr->ss_family)
-		return 1;
-	if (a_sockaddr->ss_family == AF_INET) {
-		struct sockaddr_in *a4_sockaddr = (struct sockaddr_in *)a_sockaddr;
-		struct sockaddr_in *b4_sockaddr = (struct sockaddr_in *)b_sockaddr;
-		int cmp = memcmp(&a4_sockaddr->sin_addr, &b4_sockaddr->sin_addr,
-									sizeof(struct in_addr));
-		if (cmp)
-			return cmp;
-		if (a4_sockaddr->sin_port < b4_sockaddr->sin_port)
-			return -1;
-		if (a4_sockaddr->sin_port > b4_sockaddr->sin_port)
-			return 1;
-		return 0;
-	} else if (a_sockaddr->ss_family == AF_INET6) {
-		struct sockaddr_in6 *a6_sockaddr = (struct sockaddr_in6 *)a_sockaddr;
-		struct sockaddr_in6 *b6_sockaddr = (struct sockaddr_in6 *)b_sockaddr;
-		int cmp = memcmp(&a6_sockaddr->sin6_addr, &b6_sockaddr->sin6_addr,
-									sizeof(struct in6_addr));
-		if (!cmp)
-			return cmp;
-		if (a6_sockaddr->sin6_port < b6_sockaddr->sin6_port)
-			return -1;
-		if (a6_sockaddr->sin6_port > b6_sockaddr->sin6_port)
-			return 1;
-		return 0;
-	}
-	pr_err("drbd: %s: Invalid sockaddr family %ul\n", __func__, a_sockaddr->ss_family);
-	return 1;
-}
-
 /*
- * This is drbd 8 userspace compat mode, so we do not have a node_id yet. Since
- * we only ever have two peers, we can arbitrate our node ids by comparing IP
- * addresses. The lower address gets node id 0, the other one gets 1.
+ * This is DRBD 8 userspace compatibility mode, so we do not have a node ID
+ * yet. We derive our own node ID from the peer node ID. drbdsetup gives us the
+ * peer-node-id, which it determines by comparing the IP addresses.
  */
-void drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path)
+int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path,
+			    unsigned int peer_node_id)
 {
-	int vnr, cmp, peer_node_id, my_node_id = -1, nr_legacy = 0, nr_v9 = 0;
+	int vnr, my_node_id, nr_legacy = 0, nr_v9 = 0;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	struct drbd_device *device;
 
+	my_node_id = !peer_node_id;
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		if (test_bit(LEGACY_84_MD, &device->flags)) {
 			nr_legacy++;
 		} else {
 			nr_v9++;
 			if (get_ldev(device)) {
-				if (my_node_id == -1)
-					my_node_id = device->ldev->md.node_id;
-				else if (my_node_id != device->ldev->md.node_id)
-					drbd_err(connection, "inconsistent node_ids\n");
+				int md_my_node_id = device->ldev->md.node_id;
+
 				put_ldev(device);
+				if (my_node_id != md_my_node_id) {
+					drbd_err(connection, "inconsistent node_ids %d %d\n",
+						 my_node_id, md_my_node_id);
+					return -ENOTUNIQ;
+				}
 			}
 		}
 	}
 
 	if (nr_legacy && nr_v9)
-		drbd_err(connection, "legacy-84 and drbd-9 metadata in one resource\n");
+		drbd_warn(connection, "legacy-84 and drbd-9 metadata in one resource\n");
 
-	if (my_node_id == -1) {
-		cmp = compare_sockaddr(&path->my_addr, &path->peer_addr);
-		D_ASSERT(connection, cmp != 0); /* addresses cannot be equal */
-		my_node_id = cmp == 1;
-		drbd_info(connection, "drbd8 userspace compat mode: setting my node id to %d\n",
-			  my_node_id);
-	}
-	peer_node_id = !my_node_id;
+	drbd_info(connection, "drbd8 userspace compat mode: setting my node id to %d\n",
+		  my_node_id);
 
 	/* setting up all node_ids*/
 	resource->res_opts.node_id = my_node_id;
@@ -271,6 +234,8 @@ void drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path
 			put_ldev(device);
 		}
 	}
+
+	return 0;
 }
 
 

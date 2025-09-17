@@ -4646,9 +4646,16 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
-	if (connection->resource->res_opts.drbd8_compat_mode)
-		drbd_setup_node_ids_84(connection, path);
-
+	if (connection->resource->res_opts.drbd8_compat_mode) {
+		err = drbd_setup_node_ids_84(connection, path, adm_ctx->peer_node_id);
+		if (err) {
+			drbd_msg_put_info(adm_ctx->reply_skb,
+				err == -ENOTUNIQ ? "node-id from drbdsetup and meta-data differ" :
+				"error setting up node IDs");
+			kref_put(&path->kref, drbd_destroy_path);
+			return ERR_INVALID_REQUEST;
+		}
+	}
 
 	/* Exclusive with transport op "prepare_connect()" */
 	mutex_lock(&resource->conf_update);
