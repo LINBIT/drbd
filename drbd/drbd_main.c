@@ -1922,7 +1922,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	do {
 		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(peer_device, c->bit_offset)
 				    : _drbd_bm_find_next(peer_device, c->bit_offset);
-		if (tmp == -1ULL)
+		if (tmp == -1UL)
 			tmp = c->bm_bits;
 		rl = tmp - c->bit_offset;
 
