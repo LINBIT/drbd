@@ -16,10 +16,12 @@ int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path 
 			   unsigned int peer_node_id);
 bool drbd_show_legacy_device(struct seq_file *seq, void *v);
 #else
-#define drbd_md_decode_84(O, M) do {} while (0)
-#define drbd_md_encode_84(D, M) do {} while (0)
-#define drbd_setup_node_ids_84(C, P, N) (0)
-#define drbd_show_legacy_device(S, V) (false)
+static inline void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md) {};
+static inline void drbd_md_encode_84(struct drbd_device *device,
+	struct meta_data_on_disk_84 *buffer) {};
+static inline int drbd_setup_node_ids_84(struct drbd_connection *connection, struct drbd_path *path,
+			   unsigned int peer_node_id) { return 0; };
+static inline bool drbd_show_legacy_device(struct seq_file *seq, void *v) { return false; };
 #endif  /* CONFIG_DRBD_COMPAT_84 */
 
 #endif  /* __DRBD_LEGACY_84_H */
