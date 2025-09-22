@@ -1815,8 +1815,7 @@ void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 void drbd_queue_unplug(struct drbd_device *device);
 
 u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, const struct drbd_md *md);
-void drbd_md_set_sector_offsets(struct drbd_device *device,
-				struct drbd_backing_dev *bdev);
+void drbd_md_set_sector_offsets(struct drbd_backing_dev *bdev);
 int drbd_md_write(struct drbd_device *device,
 		  struct meta_data_on_disk_9 *buffer);
 int drbd_md_sync(struct drbd_device *device);
