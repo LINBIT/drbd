@@ -823,8 +823,6 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 	unsigned long irq_flags;
 	int count = 0;
 
-	mask &= (1 << device->bitmap->bm_max_peers) - 1;
-
 	if (size <= 0 || !IS_ALIGNED(size, 512)) {
 		drbd_err(device, "%s sector: %llus, size: %d\n",
 			 __func__, (unsigned long long)sector, size);
@@ -833,6 +831,8 @@ int drbd_set_sync(struct drbd_device *device, sector_t sector, int size,
 
 	if (!get_ldev(device))
 		return false; /* no disk, no metadata, no bitmap to set bits in */
+
+	mask &= (1 << device->bitmap->bm_max_peers) - 1;
 
 	nr_sectors = get_capacity(device->vdisk);
 	esector = sector + (size >> 9) - 1;

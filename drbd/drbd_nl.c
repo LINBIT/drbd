@@ -1417,7 +1417,7 @@ out:
 	return 0;
 }
 
-u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers)
+u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, const struct drbd_md *md)
 {
 	u64 bits, bytes;
 
@@ -1425,13 +1425,15 @@ u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, unsigned int max_peers)
 	 * convert to number of bits needed, and round that up to 64bit words
 	 * to ease interoperability between 32bit and 64bit architectures.
 	 */
-	bits = ALIGN(BM_SECT_TO_BIT(ALIGN(capacity_sect, BM_SECT_PER_BIT)), 64);
+	bits = ALIGN(sect_to_bit(
+			ALIGN(capacity_sect, sect_per_bit(md->bm_block_shift)),
+			md->bm_block_shift), 64);
 
 	/* convert to bytes, multiply by number of peers,
 	 * and, because we do all our meta data IO in 4k blocks,
 	 * round up to full 4k
 	 */
-	bytes = ALIGN(bits / 8 * max_peers, 4096);
+	bytes = ALIGN(bits / 8 * md->max_peers, 4096);
 
 	/* convert to number of sectors */
 	return bytes >> 9;
@@ -1463,12 +1465,6 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 {
 	sector_t md_size_sect = 0;
 	unsigned int al_size_sect = bdev->md.al_size_4k * 8;
-	int max_peers;
-
-	if (device->bitmap)
-		max_peers = device->bitmap->bm_max_peers;
-	else
-		max_peers = 1;
 
 	bdev->md.md_offset = drbd_md_ss(bdev);
 
@@ -1495,7 +1491,7 @@ void drbd_md_set_sector_offsets(struct drbd_device *device,
 		 * and the activity log; */
 		md_size_sect = drbd_capacity_to_on_disk_bm_sect(
 				drbd_get_capacity(bdev->backing_bdev),
-				max_peers)
+				&bdev->md)
 			+ (4096 >> 9) + al_size_sect;
 
 		bdev->md.md_size_sect = md_size_sect;
@@ -2590,12 +2586,11 @@ static int
 allocate_bitmap_index(struct drbd_peer_device *peer_device,
 		      struct drbd_backing_dev *nbc)
 {
-	struct drbd_device *device = peer_device->device;
 	const int peer_node_id = peer_device->connection->peer_node_id;
 	struct drbd_peer_md *peer_md = &nbc->md.peers[peer_node_id];
 	int bitmap_index;
 
-	bitmap_index = drbd_unallocated_index(nbc, device->bitmap->bm_max_peers);
+	bitmap_index = drbd_unallocated_index(nbc, nbc->md.max_peers);
 	if (bitmap_index == -1) {
 		drbd_err(peer_device, "Not enough free bitmap slots\n");
 		return -ENOSPC;
@@ -2870,19 +2865,17 @@ err:
 	return -EINVAL;
 }
 
-static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backing_dev *bdev,
-				   int max_peers)
+static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backing_dev *bdev)
 {
 	sector_t capacity = drbd_get_capacity(bdev->md_bdev);
 	struct drbd_md *md = &bdev->md;
 	s32 on_disk_al_sect;
 	s32 on_disk_bm_sect;
 
-	if (max_peers > DRBD_PEERS_MAX) {
+	if (bdev->md.max_peers > DRBD_PEERS_MAX) {
 		drbd_err(device, "bm_max_peers too high\n");
 		goto err;
 	}
-	device->bitmap->bm_max_peers = max_peers;
 
 	/* The on-disk size of the activity log, calculated from offsets, and
 	 * the size of the activity log calculated from the stripe settings,
@@ -2939,7 +2932,7 @@ static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backi
 
 	/* can the available bitmap space cover the last agreed device size? */
 	if (on_disk_bm_sect < drbd_capacity_to_on_disk_bm_sect(
-				md->effective_size, max_peers))
+				md->effective_size, md))
 		goto err;
 
 	return 0;
@@ -2977,8 +2970,7 @@ static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const cha
 	kfree(text);
 }
 
-static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md,
-			int *max_peers, int *bytes_per_bit)
+static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 {
 	int i;
 
@@ -2993,8 +2985,8 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md,
 
 	md->flags = be32_to_cpu(on_disk->flags);
 
-	*max_peers = be32_to_cpu(on_disk->bm_max_peers);
-	*bytes_per_bit = be32_to_cpu(on_disk->bm_bytes_per_bit);
+	md->max_peers = be32_to_cpu(on_disk->bm_max_peers);
+	md->bm_block_size = be32_to_cpu(on_disk->bm_bytes_per_bit);
 	md->node_id = be32_to_cpu(on_disk->node_id);
 	md->al_stripes = be32_to_cpu(on_disk->al_stripes);
 	md->al_stripe_size_4k = be32_to_cpu(on_disk->al_stripe_size_4k);
@@ -3033,9 +3025,8 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 {
 	struct drbd_device *device = adm_ctx->device;
 	u32 magic, flags;
-	int i, bytes_per_bit, rv = NO_ERROR;
+	int i, rv = NO_ERROR;
 	int my_node_id = device->resource->res_opts.node_id;
-	u32 max_peers;
 
 	decode_magic(buffer, &magic, &flags);
 	if ((magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) ||
@@ -3061,7 +3052,7 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 
 	if (magic == DRBD_MD_MAGIC_09) {
 		clear_bit(LEGACY_84_MD, &device->flags);
-		decode_md_9(buffer, &bdev->md, &max_peers, &bytes_per_bit);
+		decode_md_9(buffer, &bdev->md);
 	} else {
 		if (!device->resource->res_opts.drbd8_compat_mode) {
 			drbd_err_and_skb_info(adm_ctx,
@@ -3069,18 +3060,19 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 			goto err;
 		}
 		set_bit(LEGACY_84_MD, &device->flags);
-		drbd_md_decode_84(buffer, &bdev->md, &max_peers, &bytes_per_bit);
+		drbd_md_decode_84(buffer, &bdev->md);
 	}
 
-	if (bytes_per_bit != BM_BLOCK_SIZE) {
+	if (bdev->md.bm_block_size != BM_BLOCK_SIZE) {
 		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
-		    bytes_per_bit, BM_BLOCK_SIZE);
+		    bdev->md.bm_block_size, BM_BLOCK_SIZE);
 		goto err;
 	}
+	bdev->md.bm_block_shift = ilog2(BM_BLOCK_SIZE);
 
 	if (check_activity_log_stripe_size(device, &bdev->md))
 		goto err;
-	if (check_offsets_and_sizes(device, bdev, max_peers))
+	if (check_offsets_and_sizes(device, bdev))
 		goto err;
 
 	if (bdev->md.node_id != -1 && bdev->md.node_id != my_node_id) {
@@ -3099,9 +3091,9 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 				my_node_id, peer_md->bitmap_index);
 			goto err;
 		}
-		if (peer_md->bitmap_index < -1 || peer_md->bitmap_index >= max_peers) {
+		if (peer_md->bitmap_index < -1 || peer_md->bitmap_index >= bdev->md.max_peers) {
 			drbd_err_and_skb_info(adm_ctx, "peer node id %d: bitmap index (%d) exceeds allocated bitmap slots (%d)\n",
-				i, peer_md->bitmap_index, max_peers);
+				i, peer_md->bitmap_index, bdev->md.max_peers);
 			goto err;
 		}
 		/* maybe: for each bitmap_index != -1, create a connection object
@@ -3274,19 +3266,23 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		peer_device->rs_failed = 0;
 	}
 
-	if (!device->bitmap) {
-		device->bitmap = drbd_bm_alloc();
-		if (!device->bitmap) {
-			retcode = ERR_NOMEM;
-			goto fail;
-		}
-	}
-
 	/* Read our meta data super block early.
 	 * This also sets other on-disk offsets. */
 	retcode = drbd_md_read(&adm_ctx, nbc);
 	if (retcode != NO_ERROR)
 		goto fail;
+
+	if (device->bitmap) {
+		drbd_err_and_skb_info(&adm_ctx, "already has a bitmap, this should not happen\n");
+		retcode = ERR_INVALID_REQUEST;
+		goto fail;
+	}
+
+	device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
+	if (!device->bitmap) {
+		retcode = ERR_NOMEM;
+		goto fail;
+	}
 
 	sanitize_disk_conf(device, new_disk_conf, nbc);
 
@@ -3812,22 +3808,10 @@ static enum drbd_ret_code
 check_net_options(struct drbd_connection *connection, struct net_conf *new_net_conf)
 {
 	enum drbd_ret_code rv;
-	struct drbd_peer_device *peer_device;
-	int i;
 
 	rcu_read_lock();
 	rv = _check_net_options(connection, rcu_dereference(connection->transport.net_conf), new_net_conf);
 	rcu_read_unlock();
-
-	/* connection->peer_devices protected by resource->conf_update here */
-	idr_for_each_entry(&connection->peer_devices, peer_device, i) {
-		struct drbd_device *device = peer_device->device;
-		if (!device->bitmap) {
-			device->bitmap = drbd_bm_alloc();
-			if (!device->bitmap)
-				return ERR_NOMEM;
-		}
-	}
 
 	return rv;
 }
@@ -6246,6 +6230,8 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 				      struct drbd_peer_device *pd)
 {
 	struct drbd_device *device = pd->device;
+	struct drbd_md *md;
+	struct drbd_peer_md *peer_md;
 	unsigned long now = jiffies;
 	unsigned long rs_left = 0;
 	int i;
@@ -6259,6 +6245,14 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	s->peer_dev_pending = atomic_read(&pd->ap_pending_cnt) +
 			      atomic_read(&pd->rs_pending_cnt);
 	s->peer_dev_unacked = atomic_read(&pd->unacked_cnt);
+	s->peer_dev_uuid_flags = pd->uuid_flags;
+
+	/* Below are resync / verify / bitmap / meta data stats.
+	 * Without disk, we don't have those.
+	 */
+	if (!get_ldev(device))
+		return;
+
 	s->peer_dev_out_of_sync = BM_BIT_TO_SECT(drbd_bm_total_weight(pd));
 
 	if (is_verify_state(pd, NOW)) {
@@ -6299,18 +6293,15 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		 */
 	}
 
-	if (get_ldev(device)) {
-		struct drbd_md *md = &device->ldev->md;
-		struct drbd_peer_md *peer_md = &md->peers[pd->node_id];
+	md = &device->ldev->md;
+	peer_md = &md->peers[pd->node_id];
 
-		spin_lock_irq(&md->uuid_lock);
-		s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
-		spin_unlock_irq(&md->uuid_lock);
-		s->peer_dev_flags = peer_md->flags;
-		put_ldev(device);
-	}
+	spin_lock_irq(&md->uuid_lock);
+	s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
+	spin_unlock_irq(&md->uuid_lock);
+	s->peer_dev_flags = peer_md->flags;
 
-	s->peer_dev_uuid_flags = pd->uuid_flags;
+	put_ldev(device);
 }
 
 static int drbd_adm_dump_peer_devices_done(struct netlink_callback *cb)

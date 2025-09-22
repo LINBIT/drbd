@@ -688,6 +688,7 @@ struct drbd_bitmap {
 
 	enum bm_flag bm_flags;
 	unsigned int bm_max_peers;
+	unsigned int bm_block_shift; /* ln2 of bytes per bit for this bitmap */
 
 	/* exclusively to be used by __al_write_transaction(),
 	 * and drbd_bm_write_hinted() -> bm_rw() called from there.
@@ -735,6 +736,10 @@ struct drbd_md {
 
 	s32 al_offset;	/* signed relative sector offset to activity log */
 	s32 bm_offset;	/* signed relative sector offset to bitmap */
+
+	u32 max_peers;
+	u32 bm_block_size;
+	u32 bm_block_shift; /* ilog2(bm_block_size) */
 
 	struct drbd_peer_md peers[DRBD_NODE_ID_MAX];
 	u64 history_uuids[HISTORY_UUIDS];
@@ -1809,8 +1814,7 @@ void drbd_cleanup_device(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 void drbd_queue_unplug(struct drbd_device *device);
 
-u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect,
-				     unsigned int max_peers);
+u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, const struct drbd_md *md);
 void drbd_md_set_sector_offsets(struct drbd_device *device,
 				struct drbd_backing_dev *bdev);
 int drbd_md_write(struct drbd_device *device,
@@ -1949,6 +1953,15 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
+static inline unsigned long sect_to_bit(sector_t s, unsigned int bm_block_shift)
+{
+	return s >> (bm_block_shift - 9);
+}
+static inline sector_t sect_per_bit(unsigned int bm_block_shift)
+{
+	return (sector_t)1 << (bm_block_shift - 9);
+}
+
 /* Send P_PEERS_IN_SYNC in steps defined by this shift. Set to the activity log
  * extent shift since the P_PEERS_IN_SYNC intervals are broken up based on
  * activity log extents anyway. */
@@ -2000,7 +2013,7 @@ static inline int interval_to_al_extents(struct drbd_interval *i)
 	return 1 + last - first; /* worst case: all touched extends are cold. */
 }
 
-struct drbd_bitmap *drbd_bm_alloc(void);
+struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_shift);
 int  drbd_bm_resize(struct drbd_device *device, sector_t capacity,
 		    bool set_new_bits);
 void drbd_bm_free(struct drbd_device *device);

@@ -4178,9 +4178,6 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device->md_io.page)
 		goto out_no_io_page;
 
-	device->bitmap = drbd_bm_alloc();
-	if (!device->bitmap)
-		goto out_no_bitmap;
 	spin_lock_init(&device->interval_lock);
 	device->read_requests = RB_ROOT;
 	device->requests = RB_ROOT;
@@ -4307,8 +4304,6 @@ out_no_peer_device:
 		kfree(peer_device);
 	}
 
-	drbd_bm_free(device);
-out_no_bitmap:
 	__free_page(device->md_io.page);
 out_no_io_page:
 	put_disk(disk);
@@ -4566,7 +4561,7 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
-	buffer->bm_max_peers = cpu_to_be32(device->bitmap->bm_max_peers);
+	buffer->bm_max_peers = cpu_to_be32(device->ldev->md.max_peers);
 	buffer->node_id = cpu_to_be32(device->ldev->md.node_id);
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[i];
@@ -5937,7 +5932,7 @@ static sector_t bm_sect_to_max_capacity(unsigned int bm_max_peers, sector_t bm_s
 sector_t drbd_get_max_capacity(
 		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn)
 {
-	unsigned int bm_max_peers = device->bitmap->bm_max_peers;
+	unsigned int bm_max_peers = bdev->md.max_peers;
 	sector_t backing_bdev_capacity = drbd_get_capacity(bdev->backing_bdev);
 	sector_t bm_sect;
 	sector_t backing_capacity_remaining;

@@ -3005,6 +3005,7 @@ static void go_diskless(struct drbd_device *device)
 	}
 
 	drbd_md_sync_if_dirty(device);
+	drbd_bm_free(device);
 	change_disk_state(device, D_DISKLESS, CS_HARD, "go-diskless", NULL);
 }
 
