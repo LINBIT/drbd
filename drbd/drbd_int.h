@@ -163,11 +163,14 @@ struct bm_xfer_ctx {
 	 * stores total bits and long words
 	 * of the bitmap, so we don't need to
 	 * call the accessor functions over and again. */
+	unsigned long bm_bits_4k; /* unused on sending side */
 	unsigned long bm_bits;
 	unsigned long bm_words;
 	unsigned int scale; /* against BM_BLOCK_SHIFT_4k */
 	/* during xfer, current position within the bitmap */
 	unsigned long bit_offset;
+	/* receiving "partial" bits; unused on sending side. */
+	unsigned long bit_offset_4k;
 	unsigned long word_offset;
 
 	/* statistics; index: (h->command == P_BITMAP) */
@@ -689,6 +692,7 @@ struct drbd_bitmap {
 
 	unsigned long bm_set[DRBD_PEERS_MAX]; /* number of bits set */
 	unsigned long bm_bits;  /* bits per peer */
+	unsigned long bm_bits_4k;  /* bits per peer, if we had bm_block_size of 4k */
 	size_t   bm_words; /* platform specitif word size; not 32bit!! */
 	size_t   bm_number_of_pages;
 	sector_t bm_dev_capacity;
@@ -2099,6 +2103,7 @@ int drbd_bm_write_copy_pages(struct drbd_device *device,
 			     struct drbd_peer_device *peer_device) __must_hold(local);
 size_t	     drbd_bm_words(struct drbd_device *device);
 unsigned long drbd_bm_bits(struct drbd_device *device);
+unsigned long drbd_bm_bits_4k(struct drbd_device *device);
 sector_t      drbd_bm_capacity(struct drbd_device *device);
 
 #define DRBD_END_OF_BITMAP	(~(unsigned long)0)

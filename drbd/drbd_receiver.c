@@ -8312,11 +8312,26 @@ static int receive_sync_uuid(struct drbd_connection *connection, struct packet_i
 	return 0;
 }
 
+static void scale_bits(unsigned long *base, unsigned int num_4k, unsigned int scale)
+{
+	unsigned int bits = num_4k * BITS_PER_LONG;
+	unsigned int sbit;
+
+	if (scale == 0)
+		return;
+
+	for (sbit = 0; sbit < bits; sbit++)
+		if (test_bit(sbit, base))
+			__set_bit(sbit >> scale, base);
+}
+
 /*
  * receive_bitmap_plain
  *
  * Return 0 when done, 1 when another iteration is needed, and a negative error
  * code upon failure.
+ *
+ * Received bitmap is 4k per bit, need to aggregate by c->scale.
  */
 static int
 receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
@@ -8325,9 +8340,9 @@ receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
 	unsigned long *p;
 	unsigned int data_size = DRBD_SOCKET_BUFFER_SIZE -
 				 drbd_header_size(peer_device->connection);
-	unsigned int num_words = min_t(size_t, data_size / sizeof(*p),
-				       c->bm_words - c->word_offset);
-	unsigned int want = num_words * sizeof(*p);
+	unsigned int num_words_4k = min_t(size_t, data_size / sizeof(*p),
+				       (c->bm_words - c->word_offset) << c->scale);
+	unsigned int want = num_words_4k * sizeof(*p);
 	int err;
 
 	if (want != size) {
@@ -8340,10 +8355,25 @@ receive_bitmap_plain(struct drbd_peer_device *peer_device, unsigned int size,
 	if (err)
 		return err;
 
-	drbd_bm_merge_lel(peer_device, c->word_offset, num_words, p);
+	if ((num_words_4k & ((1 << c->scale)-1)) != 0) {
+		drbd_err(peer_device,
+			"number of words %u not aligned to scale %u while receiving bitmap\n",
+			num_words_4k, c->scale);
+		return -ERANGE;
+	}
 
-	c->word_offset += num_words;
+	if (get_ldev(peer_device->device)) {
+		scale_bits(p, num_words_4k, c->scale);
+		drbd_bm_merge_lel(peer_device, c->word_offset, num_words_4k >> c->scale, p);
+		put_ldev(peer_device->device);
+	} else {
+		drbd_err(peer_device, "lost backend device while receiving bitmap\n");
+		return -EIO;
+	}
+
+	c->word_offset += num_words_4k >> c->scale;
 	c->bit_offset = c->word_offset * BITS_PER_LONG;
+	c->bit_offset_4k = (c->word_offset << c->scale) * BITS_PER_LONG;
 	if (c->bit_offset > c->bm_bits)
 		c->bit_offset = c->bm_bits;
 
@@ -8379,10 +8409,9 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 {
 	struct bitstream bs;
 	u64 look_ahead;
-	u64 rl;
+	u64 rl_4k;
 	u64 tmp;
-	unsigned long s = c->bit_offset;
-	unsigned long e;
+	unsigned long s_4k = c->bit_offset_4k;
 	int toggle = dcbp_get_start(p);
 	int have;
 	int bits;
@@ -8393,13 +8422,19 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 	if (bits < 0)
 		return -EIO;
 
-	for (have = bits; have > 0; s += rl, toggle = !toggle) {
-		bits = vli_decode_bits(&rl, look_ahead);
+	for (have = bits; have > 0; s_4k += rl_4k, toggle = !toggle) {
+		bits = vli_decode_bits(&rl_4k, look_ahead);
 		if (bits <= 0)
 			return -EIO;
 
 		if (toggle) {
-			e = s + rl -1;
+			/* If peers bm_block_size is smaller than ours,
+			 * this may be a "partially" set bit ;-)
+			 * there is no such thing. Round down s, round up e.
+			 */
+			unsigned long s = s_4k >> c->scale;
+			unsigned long e = ((s_4k + rl_4k + (1UL << c->scale)-1) >> c->scale) - 1;
+
 			if (e >= c->bm_bits) {
 				drbd_err(peer_device, "bitmap overflow (e:%lu) while decoding bm RLE packet\n", e);
 				return -EIO;
@@ -8428,10 +8463,11 @@ recv_bm_rle_bits(struct drbd_peer_device *peer_device,
 		have += bits;
 	}
 
-	c->bit_offset = s;
+	c->bit_offset_4k = s_4k;
+	c->bit_offset = s_4k >> c->scale;
 	bm_xfer_ctx_bit_to_word_offset(c);
 
-	return (s != c->bm_bits);
+	return (c->bit_offset_4k != c->bm_bits_4k);
 }
 
 /*
@@ -8446,8 +8482,19 @@ decode_bitmap_c(struct drbd_peer_device *peer_device,
 		struct bm_xfer_ctx *c,
 		unsigned int len)
 {
-	if (dcbp_get_code(p) == RLE_VLI_Bits)
-		return recv_bm_rle_bits(peer_device, p, c, len - sizeof(*p));
+	if (dcbp_get_code(p) == RLE_VLI_Bits) {
+		struct drbd_device *device = peer_device->device;
+		int res;
+
+		if (!get_ldev(device)) {
+			drbd_err(peer_device, "lost backend device while receiving bitmap\n");
+			return -EIO;
+		}
+
+		res = recv_bm_rle_bits(peer_device, p, c, len - sizeof(*p));
+		put_ldev(device);
+		return res;
+	}
 
 	/* other variants had been implemented for evaluation,
 	 * but have been dropped as this one turned out to be "best"
@@ -8523,7 +8570,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	enum drbd_repl_state repl_state;
 	struct drbd_device *device;
 	struct bm_xfer_ctx c;
-	int err;
+	int err = -EIO;
 
 	peer_device = conn_peer_device(connection, pi->vnr);
 	if (!peer_device)
@@ -8542,10 +8589,16 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	/* you are supposed to send additional out-of-sync information
 	 * if you actually set bits during this phase */
 
+	if (!get_ldev(device))
+		goto out;
+
 	c = (struct bm_xfer_ctx) {
+		.bm_bits_4k = drbd_bm_bits_4k(device),
 		.bm_bits = drbd_bm_bits(device),
 		.bm_words = drbd_bm_words(device),
+		.scale = device->bitmap->bm_block_shift - BM_BLOCK_SHIFT_4k,
 	};
+	put_ldev(device);
 
 	for(;;) {
 		if (pi->cmd == P_BITMAP)

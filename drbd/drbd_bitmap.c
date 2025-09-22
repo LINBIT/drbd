@@ -913,6 +913,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
 			b->bm_set[bitmap_index] = 0;
 		b->bm_bits = 0;
+		b->bm_bits_4k = 0;
 		b->bm_words = 0;
 		b->bm_dev_capacity = 0;
 		spin_unlock_irq(&b->bm_lock);
@@ -980,7 +981,9 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		b->bm_pages = npages;
 	}
 	b->bm_number_of_pages = want;
-	b->bm_bits  = bits;
+	b->bm_bits = bits;
+	b->bm_bits_4k = sect_to_bit(ALIGN(capacity, sect_per_bit(BM_BLOCK_SHIFT_4k)),
+				BM_BLOCK_SHIFT_4k);
 	b->bm_words = words;
 	b->bm_dev_capacity = capacity;
 
@@ -1062,6 +1065,7 @@ unsigned long drbd_bm_total_weight(struct drbd_peer_device *peer_device)
 size_t drbd_bm_words(struct drbd_device *device)
 {
 	struct drbd_bitmap *b = device->bitmap;
+
 	if (!expect(device, b))
 		return 0;
 	if (!expect(device, b->bm_pages))
@@ -1073,10 +1077,21 @@ size_t drbd_bm_words(struct drbd_device *device)
 unsigned long drbd_bm_bits(struct drbd_device *device)
 {
 	struct drbd_bitmap *b = device->bitmap;
+
 	if (!expect(device, b))
 		return 0;
 
 	return b->bm_bits;
+}
+
+unsigned long drbd_bm_bits_4k(struct drbd_device *device)
+{
+	struct drbd_bitmap *b = device->bitmap;
+
+	if (!expect(device, b))
+		return 0;
+
+	return b->bm_bits_4k;
 }
 
 /* merge number words from buffer into the bitmap starting at offset.
