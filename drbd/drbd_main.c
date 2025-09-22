@@ -4604,7 +4604,7 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 	buffer->md_size_sect  = cpu_to_be32(device->ldev->md.md_size_sect);
 	buffer->al_offset     = cpu_to_be32(device->ldev->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(device->act_log->nr_elements);
-	buffer->bm_bytes_per_bit = cpu_to_be32(BM_BLOCK_SIZE);
+	buffer->bm_bytes_per_bit = cpu_to_be32(bm_block_size(device->bitmap));
 	buffer->device_uuid = cpu_to_be64(device->ldev->md.device_uuid);
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);

@@ -909,6 +909,8 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
+	struct drbd_bitmap *bm = peer_device->device->bitmap;
+	int bm_block_kb = bm_bit_to_kb(bm, 1);
 
 	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
 	peer_device->rs_in_flight -= sect_in;
@@ -922,10 +924,10 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration)) >> (BM_BLOCK_SHIFT - 9);
-		peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE / 1024) / RS_MAKE_REQS_INTV;
+		peer_device->c_sync_rate = number * HZ * bm_block_kb / RS_MAKE_REQS_INTV;
 	} else {
 		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
-		number = RS_MAKE_REQS_INTV * peer_device->c_sync_rate  / ((BM_BLOCK_SIZE / 1024) * HZ);
+		number = RS_MAKE_REQS_INTV * peer_device->c_sync_rate  / (bm_block_kb * HZ);
 	}
 	rcu_read_unlock();
 
@@ -1230,10 +1232,12 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	int number = 0, rollback_i, size = 0, i = 0, optimal_bits;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
 	const sector_t capacity = get_capacity(device->vdisk);
 	bool request_ok = true;
 	unsigned long bit;
 	sector_t sector, prev_sector = 0;
+	unsigned int bm_block_shift = bm->bm_block_shift;
 
 	if (unlikely(cancel))
 		return 0;
@@ -1270,8 +1274,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	}
 
 	number = drbd_rs_number_requests(peer_device);
-	if (number * BM_BLOCK_SIZE < discard_granularity)
-		number = discard_granularity / BM_BLOCK_SIZE;
+	if (number < discard_granularity >> bm_block_shift)
+		number = discard_granularity >> bm_block_shift;
 
 	/*
 	 * Drain resync requests when we jump back to avoid conflicts that are
@@ -1332,7 +1336,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		}
 
 		prev_sector = sector;
-		size = BM_BLOCK_SIZE;
+		size = bm_block_size(bm);
 		optimal_bits_alignment = optimal_bits_for_alignment(bit);
 		optimal_bits_rate = round_to_powerof_2(number - i);
 		optimal_bits = min(optimal_bits_alignment, optimal_bits_rate) - 1;
@@ -1345,7 +1349,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 			if (drbd_bm_test_bit(peer_device, bit + 1) != 1)
 				break;
-			size += BM_BLOCK_SIZE;
+			size += bm_block_size(bm);
 			bit++;
 			i++;
 		}
@@ -1503,6 +1507,7 @@ static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
 static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
 	struct drbd_connection *connection = peer_device->connection;
 	int number, i, size;
 	sector_t sector;
@@ -1533,11 +1538,10 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 		if (stop_sector_reached)
 			break;
 
-		size = BM_BLOCK_SIZE;
-
 		if (drbd_rs_c_min_rate_throttle(peer_device))
 			break;
 
+		size = bm_block_size(bm);
 		if (sector + (size>>9) > capacity)
 			size = (capacity-sector)<<9;
 
@@ -2151,7 +2155,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 	if (eq) {
 		drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 		/* rs_same_csums unit is BM_BLOCK_SIZE */
-		peer_device->rs_same_csum += peer_req->i.size >> BM_BLOCK_SHIFT;
+		peer_device->rs_same_csum += peer_req->i.size >> device->ldev->md.bm_block_shift;
 		err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
 	} else {
 		inc_rs_pending(peer_device);

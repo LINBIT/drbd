@@ -36,7 +36,7 @@ struct meta_data_on_disk_84 {
 	u32 al_nr_extents;     /* important for restoring the AL (userspace) */
 	      /* `-- act_log->nr_elements <-- ldev->dc.al_extents */
 	u32 bm_offset;         /* offset to the bitmap, from here */
-	u32 bm_bytes_per_bit;  /* BM_BLOCK_SIZE */
+	u32 bm_bytes_per_bit;  /* 4k. Treat as magic number, must keep it compatible. */
 	u32 la_peer_max_bio_size;   /* last peer max_bio_size */
 
 	/* see al_tr_number_to_on_disk_sector() */
@@ -156,7 +156,7 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 	buffer->al_offset = cpu_to_be32(md->al_offset);
 	buffer->al_nr_extents = cpu_to_be32(device->act_log->nr_elements);
 	buffer->bm_offset = cpu_to_be32(md->bm_offset);
-	buffer->bm_bytes_per_bit = cpu_to_be32(BM_BLOCK_SIZE);
+	buffer->bm_bytes_per_bit = cpu_to_be32(BM_BLOCK_SIZE_4k); /* treat as magic number */
 	buffer->la_peer_max_bio_size = cpu_to_be32(device->device_conf.max_bio_size);
 
 	buffer->al_stripes = cpu_to_be32(md->al_stripes);

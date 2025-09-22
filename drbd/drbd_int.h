@@ -1951,9 +1951,10 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #define RS_MAKE_REQS_INTV_NS (NSEC_PER_SEC/10)
 
 /* We do bitmap IO in units of 4k blocks.
- * We also still have a hardcoded 4k per bit relation. */
+ * We also used to have a hardcoded 4k per bit relation.
+ */
+#define BM_BLOCK_SIZE_4k	 4096
 #define BM_BLOCK_SHIFT	12			 /* 4k per bit */
-#define BM_BLOCK_SIZE	 (1<<BM_BLOCK_SHIFT)
 
 #define LEGACY_BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
 #define LEGACY_BM_EXT_SECT_MASK ((1UL << (LEGACY_BM_EXT_SHIFT - SECTOR_SHIFT)) - 1)
@@ -1967,6 +1968,14 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
+static inline unsigned int bm_block_size(const struct drbd_bitmap *bm)
+{
+	return 1 << bm->bm_block_shift;
+}
+static inline sector_t bm_bit_to_kb(const struct drbd_bitmap *bm, unsigned long bit)
+{
+	return (sector_t)bit << (bm->bm_block_shift - 10);
+}
 
 static inline sector_t bit_to_kb(unsigned long bit, unsigned int bm_block_shift)
 {

@@ -3063,12 +3063,12 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		drbd_md_decode_84(buffer, &bdev->md);
 	}
 
-	if (bdev->md.bm_block_size != BM_BLOCK_SIZE) {
+	if (bdev->md.bm_block_size != BM_BLOCK_SIZE_4k) {
 		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
-		    bdev->md.bm_block_size, BM_BLOCK_SIZE);
+		    bdev->md.bm_block_size, BM_BLOCK_SIZE_4k);
 		goto err;
 	}
-	bdev->md.bm_block_shift = ilog2(BM_BLOCK_SIZE);
+	bdev->md.bm_block_shift = ilog2(BM_BLOCK_SIZE_4k);
 
 	if (check_activity_log_stripe_size(device, &bdev->md))
 		goto err;
