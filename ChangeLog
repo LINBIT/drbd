@@ -2,13 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.15-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.15 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fixed the regression introduced with 9.2.13, where a DRBD primary
    resource never finishes a resync with a newly added peer
  * Make DRBD's ability to discard(trim) blocks on a resync-target if
    they are all zero on the sync source compatible with block devices
    that have a lower max_hw_sectors_kb value than the rs-discard-granularity
+ * Fixed a regression introduced with 9.2.8, where DRBD failed to
+   write the metadata to its new location after an online resize, when
+   the "two-node cluster, no AL-updates on secondary" optimization was
+   active
+ * Added a missing spinlock in the code responsible for applying
+   unacknowledged peer requests to the bitmap, i.e. when a peer leaves
+   the cluster unexpectedly; We never got a crash report on Linux
+   caused by the missing spinlock, the bug was discovered on
+   Windows (winDRBD)
  * A bunch of fixes for the RDMA transport: A potential BUG() when
    removing the transport_rdma module, a memory leak upon a send
    failure, a race between re-creating rx descriptors and
