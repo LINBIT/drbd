@@ -155,7 +155,9 @@ extern struct list_head drbd_resources; /* RCU, updates: resources_mutex */
 extern struct mutex resources_mutex;
 
 /* for sending/receiving the bitmap,
- * possibly in some encoding scheme */
+ * possibly in some encoding scheme.
+ * For compatibility, we transfer as if bm_block_size was 4k.
+ */
 struct bm_xfer_ctx {
 	/* "const"
 	 * stores total bits and long words
@@ -163,6 +165,7 @@ struct bm_xfer_ctx {
 	 * call the accessor functions over and again. */
 	unsigned long bm_bits;
 	unsigned long bm_words;
+	unsigned int scale; /* against BM_BLOCK_SHIFT_4k */
 	/* during xfer, current position within the bitmap */
 	unsigned long bit_offset;
 	unsigned long word_offset;

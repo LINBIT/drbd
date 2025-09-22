@@ -840,12 +840,12 @@ unsigned int drbd_header_size(struct drbd_connection *connection)
 {
 	if (connection->agreed_pro_version >= 100) {
 		BUILD_BUG_ON(!IS_ALIGNED(sizeof(struct p_header100), 8));
-		return sizeof(struct p_header100);
+		return sizeof(struct p_header100); /* 16 */
 	} else {
 		BUILD_BUG_ON(sizeof(struct p_header80) !=
 			     sizeof(struct p_header95));
 		BUILD_BUG_ON(!IS_ALIGNED(sizeof(struct p_header80), 8));
-		return sizeof(struct p_header80);
+		return sizeof(struct p_header80); /* 8 */
 	}
 }
 
@@ -1925,6 +1925,9 @@ static void dcbp_set_pad_bits(struct p_compressed_bm *p, int n)
 	p->encoding = (p->encoding & (~0x7 << 4)) | (n << 4);
 }
 
+/* For compat reasons, encode bitmap as if it was 4k per bit!
+ * Easy: just scale the run length.
+ */
 static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 				struct p_compressed_bm *p,
 				unsigned int size,
@@ -1988,7 +1991,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 			return -1;
 		}
 
-		bits = vli_encode_bits(&bs, rl);
+		bits = vli_encode_bits(&bs, rl << c->scale);
 		if (bits == -ENOBUFS) /* buffer full */
 			break;
 		if (bits <= 0) {
@@ -2003,7 +2006,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 
 	len = bs.cur.b - p->code + !!bs.cur.bit;
 
-	if (plain_bits < (len << 3)) {
+	if (plain_bits << c->scale < (len << 3)) {
 		/* incompressible with this method.
 		 * we need to rewind both word and bit position. */
 		c->bit_offset -= plain_bits;
@@ -2022,11 +2025,39 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	return len;
 }
 
+/* Repeat extracted bits by "peeling off" words from the end.
+ * scale != 0 implies that repeat >= 2.
+ * Feel free to optimize ...
+ */
+static void repeat_bits(unsigned long *base, unsigned long num, unsigned int scale)
+{
+	unsigned long *src, *dst;
+	unsigned int repeat = 1 << scale;
+	unsigned int n;
+	int sbit, dbit, i;
+
+	for (n = num - 1; n > 0; n--) {
+		src = &base[n];
+		for (i = 0; i < repeat; i++) {
+			dst = &base[n*repeat + i];
+			*dst = 0;
+			for (dbit = 0; dbit < BITS_PER_LONG; dbit++) {
+				sbit = (i * BITS_PER_LONG + dbit) >> scale;
+				if (test_bit(sbit, src))
+					*dst |= 1UL << dbit;
+			}
+		}
+	}
+}
+
 /*
  * send_bitmap_rle_or_plain
  *
  * Return 0 when done, 1 when another iteration is needed, and a negative error
  * code upon failure.
+ *
+ * For compat reasons, send bitmap as if it was 4k per bit!
+ * Good thing that a "scaled" bitmap will always "compress".
  */
 static int
 send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ctx *c)
@@ -2061,14 +2092,33 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		 * send a buffer full of plain text bits instead. */
 		unsigned int data_size;
 		unsigned long num_words;
+		unsigned long words_left = c->bm_words - c->word_offset;
 		unsigned long *pu = (unsigned long *)pc;
 
+		/* At maximum scale, which is (20 - 12), factor 256,
+		 * to transfer at least one word of unscaled bitmap,
+		 * we need data_size >= 256 words, that is >= 2048 byte.
+		 * Which we always have.
+		 */
 		data_size = DRBD_SOCKET_BUFFER_SIZE - header_size;
-		num_words = min_t(size_t, data_size / sizeof(*pu),
-				  c->bm_words - c->word_offset);
+		num_words = min_t(size_t, (data_size / sizeof(*pu)) >> c->scale, words_left);
+		num_words = num_words & ~((1UL << c->scale)-1);
+
 		len = num_words * sizeof(*pu);
-		if (len)
+		if (len) {
 			drbd_bm_get_lel(peer_device, c->word_offset, num_words, pu);
+
+			if (c->scale) {
+				repeat_bits(pu, num_words, c->scale);
+				len <<= c->scale;
+			}
+		} else if (words_left != 0) {
+			drbd_err(peer_device,
+				"failed to scale %lu words by %u while sending bitmap\n",
+				words_left, c->scale);
+			cancel_send_buffer(peer_device->connection, DATA_STREAM);
+			return -ERANGE;
+		}
 
 		resize_prepared_command(peer_device->connection, DATA_STREAM, len);
 		err = __send_command(peer_device->connection, device->vnr, P_BITMAP, DATA_STREAM);
@@ -2093,11 +2143,11 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 }
 
 /* See the comment at receive_bitmap() */
-static int _drbd_send_bitmap(struct drbd_device *device,
+static bool _drbd_send_bitmap(struct drbd_device *device,
 			     struct drbd_peer_device *peer_device)
 {
 	struct bm_xfer_ctx c;
-	int err;
+	int res;
 
 	if (!expect(device, device->bitmap))
 		return false;
@@ -2116,19 +2166,27 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 				drbd_md_sync(device);
 			}
 		}
+		c = (struct bm_xfer_ctx) {
+			.bm_bits = drbd_bm_bits(device),
+			.bm_words = drbd_bm_words(device),
+			.scale = device->bitmap->bm_block_shift - BM_BLOCK_SHIFT_4k,
+		};
+
 		put_ldev(device);
+	} else {
+		return false;
 	}
 
-	c = (struct bm_xfer_ctx) {
-		.bm_bits = drbd_bm_bits(device),
-		.bm_words = drbd_bm_words(device),
-	};
-
 	do {
-		err = send_bitmap_rle_or_plain(peer_device, &c);
-	} while (err > 0);
+		if (get_ldev(device)) {
+			res = send_bitmap_rle_or_plain(peer_device, &c);
+			put_ldev(device);
+		} else {
+			return false;
+		}
+	} while (res > 0);
 
-	return err == 0;
+	return res == 0;
 }
 
 int drbd_send_bitmap(struct drbd_device *device, struct drbd_peer_device *peer_device)
