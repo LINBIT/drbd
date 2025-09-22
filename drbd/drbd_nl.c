@@ -1458,7 +1458,7 @@ u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, const struct drbd_md *md
  *  ==> bitmap sectors = Y = al_offset - bm_offset
  *
  *  Activity log size used to be fixed 32kB,
- *  but is about to become configurable.
+ *  but is actually al_stripes * al_stripe_size_4k.
  */
 void drbd_md_set_sector_offsets(struct drbd_backing_dev *bdev)
 {
@@ -2872,7 +2872,7 @@ static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backi
 	s32 on_disk_al_sect;
 	s32 on_disk_bm_sect;
 
-	if (bdev->md.max_peers > DRBD_PEERS_MAX) {
+	if (md->max_peers > DRBD_PEERS_MAX) {
 		drbd_err(device, "bm_max_peers too high\n");
 		goto err;
 	}
@@ -2902,7 +2902,8 @@ static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backi
 
 	/* old fixed size meta data is exactly that: fixed. */
 	if (md->meta_dev_idx >= 0) {
-		if (md->md_size_sect != (128 << 20 >> 9)
+		if (md->bm_block_size != BM_BLOCK_SIZE_4k
+		||  md->md_size_sect != (128 << 20 >> 9)
 		||  md->al_offset != (4096 >> 9)
 		||  md->bm_offset != (4096 >> 9) + (32768 >> 9)
 		||  md->al_stripes != 1
@@ -2938,10 +2939,8 @@ static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backi
 	return 0;
 
 err:
-	drbd_err(device, "meta data offsets don't make sense: idx=%d "
-			"al_s=%u, al_sz4k=%u, al_offset=%d, bm_offset=%d, "
-			"md_size_sect=%u, la_size=%llu, md_capacity=%llu\n",
-			md->meta_dev_idx,
+	drbd_err(device, "meta data offsets don't make sense: idx=%d bm_block_size=%d al_s=%u, al_sz4k=%u, al_offset=%d, bm_offset=%d, md_size_sect=%u, la_size=%llu, md_capacity=%llu\n",
+			md->meta_dev_idx, md->bm_block_size,
 			md->al_stripes, md->al_stripe_size_4k,
 			md->al_offset, md->bm_offset, md->md_size_sect,
 			(unsigned long long)md->effective_size,
@@ -3061,14 +3060,21 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		}
 		set_bit(LEGACY_84_MD, &device->flags);
 		drbd_md_decode_84(buffer, &bdev->md);
+		if (bdev->md.bm_block_size != BM_BLOCK_SIZE_4k) {
+			drbd_err_and_skb_info(adm_ctx,
+				"unexpected bm_bytes_per_bit: %u (expected %u)\n",
+				bdev->md.bm_block_size, BM_BLOCK_SIZE_4k);
+			goto err;
+		}
 	}
 
+	/* Soon: power-of-two 4k to 1M */
 	if (bdev->md.bm_block_size != BM_BLOCK_SIZE_4k) {
 		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
 		    bdev->md.bm_block_size, BM_BLOCK_SIZE_4k);
 		goto err;
 	}
-	bdev->md.bm_block_shift = ilog2(BM_BLOCK_SIZE_4k);
+	bdev->md.bm_block_shift = ilog2(bdev->md.bm_block_size);
 
 	if (check_activity_log_stripe_size(device, &bdev->md))
 		goto err;
@@ -3267,7 +3273,8 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* Read our meta data super block early.
-	 * This also sets other on-disk offsets. */
+	 * This also sets other on-disk offsets.
+	 */
 	retcode = drbd_md_read(&adm_ctx, nbc);
 	if (retcode != NO_ERROR)
 		goto fail;
@@ -3625,6 +3632,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
  force_diskless:
 	change_disk_state(device, D_DISKLESS, CS_HARD, "attach", NULL);
  fail:
+	drbd_bm_free(device);
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_backing_dev_free(device, nbc);
 	mutex_unlock(&resource->adm_mutex);
@@ -6233,6 +6241,7 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	struct drbd_device *device = pd->device;
 	struct drbd_md *md;
 	struct drbd_peer_md *peer_md;
+	struct drbd_bitmap *bm;
 	unsigned long now = jiffies;
 	unsigned long rs_left = 0;
 	int i;
@@ -6254,19 +6263,20 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	if (!get_ldev(device))
 		return;
 
-	s->peer_dev_out_of_sync = BM_BIT_TO_SECT(drbd_bm_total_weight(pd));
+	bm = device->bitmap;
+	s->peer_dev_out_of_sync = bm_bit_to_sect(bm, drbd_bm_total_weight(pd));
 
 	if (is_verify_state(pd, NOW)) {
-		rs_left = BM_BIT_TO_SECT(atomic64_read(&pd->ov_left));
+		rs_left = bm_bit_to_sect(bm, atomic64_read(&pd->ov_left));
 		s->peer_dev_ov_start_sector = pd->ov_start_sector;
 		s->peer_dev_ov_stop_sector = pd->ov_stop_sector;
 		s->peer_dev_ov_position = pd->ov_position;
-		s->peer_dev_ov_left = BM_BIT_TO_SECT(atomic64_read(&pd->ov_left));
-		s->peer_dev_ov_skipped = BM_BIT_TO_SECT(pd->ov_skipped);
+		s->peer_dev_ov_left = bm_bit_to_sect(bm, atomic64_read(&pd->ov_left));
+		s->peer_dev_ov_skipped = bm_bit_to_sect(bm, pd->ov_skipped);
 	} else if (is_sync_state(pd, NOW)) {
-		rs_left = s->peer_dev_out_of_sync - BM_BIT_TO_SECT(pd->rs_failed);
-		s->peer_dev_resync_failed = BM_BIT_TO_SECT(pd->rs_failed);
-		s->peer_dev_rs_same_csum = BM_BIT_TO_SECT(pd->rs_same_csum);
+		rs_left = s->peer_dev_out_of_sync - bm_bit_to_sect(bm, pd->rs_failed);
+		s->peer_dev_resync_failed = bm_bit_to_sect(bm, pd->rs_failed);
+		s->peer_dev_rs_same_csum = bm_bit_to_sect(bm, pd->rs_same_csum);
 	}
 
 	if (rs_left) {
@@ -6274,18 +6284,18 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		if (repl_state == L_SYNC_TARGET || repl_state == L_VERIFY_S)
 			s->peer_dev_rs_c_sync_rate = pd->c_sync_rate;
 
-		s->peer_dev_rs_total = BM_BIT_TO_SECT(pd->rs_total);
+		s->peer_dev_rs_total = bm_bit_to_sect(bm, pd->rs_total);
 
 		s->peer_dev_rs_dt_start_ms = jiffies_to_msecs(now - pd->rs_start);
 		s->peer_dev_rs_paused_ms = jiffies_to_msecs(pd->rs_paused);
 
 		i = (pd->rs_last_mark + 2) % DRBD_SYNC_MARKS;
 		s->peer_dev_rs_dt0_ms = jiffies_to_msecs(now - pd->rs_mark_time[i]);
-		s->peer_dev_rs_db0_sectors = BM_BIT_TO_SECT(pd->rs_mark_left[i]) - rs_left;
+		s->peer_dev_rs_db0_sectors = bm_bit_to_sect(bm, pd->rs_mark_left[i]) - rs_left;
 
 		i = (pd->rs_last_mark + DRBD_SYNC_MARKS-1) % DRBD_SYNC_MARKS;
 		s->peer_dev_rs_dt1_ms = jiffies_to_msecs(now - pd->rs_mark_time[i]);
-		s->peer_dev_rs_db1_sectors = BM_BIT_TO_SECT(pd->rs_mark_left[i]) - rs_left;
+		s->peer_dev_rs_db1_sectors = bm_bit_to_sect(bm, pd->rs_mark_left[i]) - rs_left;
 
 		/* long term average:
 		 * dt = rs_dt_start_ms - rs_paused_ms;
@@ -6603,7 +6613,7 @@ static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* w_make_ov_request expects position to be aligned */
-	peer_device->ov_start_sector = parms.ov_start_sector & ~(BM_SECT_PER_BIT-1);
+	peer_device->ov_start_sector = parms.ov_start_sector & ~(bm_sect_per_bit(device->bitmap)-1);
 	peer_device->ov_stop_sector = parms.ov_stop_sector;
 
 	/* If there is still bitmap IO pending, e.g. previous resync or verify

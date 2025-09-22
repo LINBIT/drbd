@@ -399,6 +399,12 @@ struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_
 {
 	struct drbd_bitmap *b;
 
+	if (bm_block_shift < BM_BLOCK_SHIFT_MIN
+	||  bm_block_shift > BM_BLOCK_SIZE_MAX)
+		return NULL;
+	if (max_peers < 1 || max_peers > DRBD_PEERS_MAX)
+		return NULL;
+
 	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
 	if (!b)
 		return NULL;
@@ -863,7 +869,7 @@ static u64 drbd_md_on_disk_bits(struct drbd_device *device)
 	/* for interoperability between 32bit and 64bit architectures,
 	 * we round on 64bit words.  FIXME do we still need this? */
 	word64_on_disk = bitmap_sectors << (9 - 3); /* x * (512/8) */
-	do_div(word64_on_disk, device->ldev->md.max_peers);
+	do_div(word64_on_disk, ldev->md.max_peers);
 	return word64_on_disk << 6; /* x * 64 */;
 }
 
@@ -916,7 +922,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		}
 		goto out;
 	}
-	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
+	bits  = bm_sect_to_bit(b, ALIGN(capacity, bm_sect_per_bit(b)));
 	words = (ALIGN(bits, 64) * b->bm_max_peers) / BITS_PER_LONG;
 
 	if (get_ldev(device)) {

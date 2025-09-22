@@ -2676,6 +2676,8 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 			    enum drbd_repl_state repl_state)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
+
 	if (peer_device->connection->agreed_pro_version < 90)
 		peer_device->ov_start_sector = 0;
 	peer_device->rs_total = drbd_bm_bits(device);
@@ -2688,10 +2690,10 @@ static void set_ov_position(struct drbd_peer_device *peer_device,
 		 * first P_OV_REQUEST is received */
 		peer_device->ov_start_sector = ~(sector_t)0;
 	} else {
-		unsigned long bit = BM_SECT_TO_BIT(peer_device->ov_start_sector);
+		unsigned long bit = bm_sect_to_bit(bm, peer_device->ov_start_sector);
 		if (bit >= peer_device->rs_total) {
 			peer_device->ov_start_sector =
-				BM_BIT_TO_SECT(peer_device->rs_total - 1);
+				bm_bit_to_sect(bm, peer_device->rs_total - 1);
 			peer_device->rs_total = 1;
 		} else
 			peer_device->rs_total -= bit;
@@ -2905,8 +2907,9 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
-		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
+		struct drbd_bitmap *bm = device->bitmap;
+		enum drbd_disk_state *disk_state = device->disk_state;
 		bool create_new_uuid = false;
 
 		if (test_bit(RESTORING_QUORUM, &device->flags) &&
@@ -2965,7 +2968,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				unsigned long ov_left = atomic64_read(&peer_device->ov_left);
 
 				peer_device->ov_start_sector =
-					BM_BIT_TO_SECT(drbd_bm_bits(device) - ov_left);
+					bm_bit_to_sect(bm, drbd_bm_bits(device) - ov_left);
 				if (ov_left)
 					drbd_info(peer_device, "Online Verify reached sector %llu\n",
 						  (unsigned long long)peer_device->ov_start_sector);
@@ -3841,12 +3844,13 @@ static bool use_checksum_based_resync(struct drbd_connection *connection, struct
 static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
 	struct drbd_connection *connection = peer_device->connection;
 	enum drbd_repl_state side = repl_is_sync_target(repl_state) ? L_SYNC_TARGET : L_SYNC_SOURCE;
 
-	drbd_info(peer_device, "Began resync as %s (will sync %lu KB [%lu bits set]).\n",
+	drbd_info(peer_device, "Began resync as %s (will sync %llu KB [%lu bits set]).\n",
 			drbd_repl_str(repl_state),
-			(unsigned long) peer_device->rs_total << (BM_BLOCK_SHIFT-10),
+			bm_bit_to_kb(bm, peer_device->rs_total),
 			(unsigned long) peer_device->rs_total);
 
 	if (side == L_SYNC_TARGET)

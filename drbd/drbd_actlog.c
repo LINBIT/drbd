@@ -278,17 +278,34 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 	return _al_get_nonblock(device, first) != NULL;
 }
 
-#if (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
-/* Currently BM_BLOCK_SHIFT and AL_EXTENT_SHIFT
+#if AL_EXTENT_SHIFT > 27
+/* Condition used to be:
+ * (PAGE_SHIFT + 3) < (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT)
+ * """
+ * Currently BM_BLOCK_SHIFT and AL_EXTENT_SHIFT
  * are still coupled, or assume too much about their relation.
  * Code below will not work if this is violated.
+ * """
+ *
+ * We want configurable bitmap granularity now.
+ * We only allow bytes per bit >= 4k, though: BM_BLOCK_SHIFT >= 12,
+ * increasing it will only make the right side smaller,
+ * not changing the boolean result.
+ * PAGE_SHIFT is 12 or larger (may be 14,16,18 for some architectures).
+ * That will increase the left side, so won't change the boolean result.
+ *
+ * Unfortunately I don't remember the specifics of which simplifications
+ * below this is supposed to protect.
+ * But assuming it is still relevant,
+ * we keep AL_EXTENT_SHIFT at 22, and must not increase it above 27
+ * without proving the code below to still work.
  */
 # error FIXME
 #endif
 
-static unsigned long al_extent_to_bm_bit(unsigned int al_enr)
+static unsigned long al_extent_to_bm_bit(const struct drbd_bitmap *bm, unsigned int al_enr)
 {
-	return (unsigned long)al_enr << (AL_EXTENT_SHIFT - BM_BLOCK_SHIFT);
+	return (unsigned long)al_enr << (AL_EXTENT_SHIFT - bm->bm_block_shift);
 }
 
 static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
@@ -311,6 +328,7 @@ static sector_t al_tr_number_to_on_disk_sector(struct drbd_device *device)
 
 static int __al_write_transaction(struct drbd_device *device, struct al_transaction_on_disk *buffer)
 {
+	struct drbd_bitmap *bm = device->bitmap;
 	struct lc_element *e;
 	sector_t sector;
 	int i, mx;
@@ -342,8 +360,8 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 		if (e->lc_number != LC_FREE) {
 			unsigned long start, end;
 
-			start = al_extent_to_bm_bit(e->lc_number);
-			end = al_extent_to_bm_bit(e->lc_number + 1) - 1;
+			start = al_extent_to_bm_bit(bm, e->lc_number);
+			end = al_extent_to_bm_bit(bm, e->lc_number + 1) - 1;
 			drbd_bm_mark_range_for_writeout(device, start, end);
 		}
 		i++;
@@ -710,9 +728,10 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 	return count;
 }
 
-/* clear the bit corresponding to the piece of storage in question:
- * size byte of data starting from sector.  Only clear a bits of the affected
- * one or more _aligned_ BM_BLOCK_SIZE blocks.
+/* Change bits corresponding to the piece of storage in question:
+ * size byte of data starting from sector.
+ * Only clear bits for fully affected _aligned_ BM_BLOCK_SIZE blocks.
+ * Set bits even for partially affected blocks.
  *
  * called by worker on L_SYNC_TARGET and receiver on SyncSource.
  *
@@ -722,6 +741,7 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 {
 	/* Is called from worker and receiver context _only_ */
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm;
 	unsigned long sbnr, ebnr, lbnr;
 	unsigned long count = 0;
 	sector_t esector, nr_sectors;
@@ -736,6 +756,8 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 	if (!get_ldev(device))
 		return 0; /* no disk, no metadata, no bitmap to manipulate bits in */
 
+	bm = device->bitmap;
+
 	nr_sectors = get_capacity(device->vdisk);
 	esector = sector + (size >> 9) - 1;
 
@@ -744,23 +766,23 @@ int __drbd_change_sync(struct drbd_peer_device *peer_device, sector_t sector, in
 	if (!expect(peer_device, esector < nr_sectors))
 		esector = nr_sectors - 1;
 
-	lbnr = BM_SECT_TO_BIT(nr_sectors-1);
+	lbnr = bm_sect_to_bit(bm, nr_sectors-1);
 
 	if (mode == SET_IN_SYNC) {
 		/* Round up start sector, round down end sector.  We make sure
 		 * we only clear full, aligned, BM_BLOCK_SIZE blocks. */
-		if (unlikely(esector < BM_SECT_PER_BIT-1))
+		if (unlikely(esector < bm_sect_per_bit(bm)-1))
 			goto out;
 		if (unlikely(esector == (nr_sectors-1)))
 			ebnr = lbnr;
 		else
-			ebnr = BM_SECT_TO_BIT(esector - (BM_SECT_PER_BIT-1));
-		sbnr = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT-1);
+			ebnr = bm_sect_to_bit(bm, esector - (bm_sect_per_bit(bm)-1));
+		sbnr = bm_sect_to_bit(bm, sector + bm_sect_per_bit(bm)-1);
 	} else {
 		/* We set it out of sync, or record resync failure.
 		 * Should not round anything here. */
-		sbnr = BM_SECT_TO_BIT(sector);
-		ebnr = BM_SECT_TO_BIT(esector);
+		sbnr = bm_sect_to_bit(bm, sector);
+		ebnr = bm_sect_to_bit(bm, esector);
 	}
 
 	count = update_sync_bits(peer_device, sbnr, ebnr, mode);
@@ -789,6 +811,7 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 {
 	long set_start, set_end, clear_start, clear_end;
 	struct drbd_peer_device *peer_device;
+	struct drbd_bitmap *bm;
 	sector_t esector, nr_sectors;
 	unsigned long irq_flags;
 	unsigned long modified = 0;
@@ -802,7 +825,8 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 	if (!get_ldev(device))
 		return 0; /* no disk, no metadata, no bitmap to set bits in */
 
-	mask &= (1 << device->bitmap->bm_max_peers) - 1;
+	bm = device->bitmap;
+	mask &= (1 << bm->bm_max_peers) - 1;
 
 	nr_sectors = get_capacity(device->vdisk);
 	esector = sector + (size >> 9) - 1;
@@ -813,20 +837,20 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 		esector = nr_sectors - 1;
 
 	/* For marking sectors as out of sync, we need to round up. */
-	set_start = BM_SECT_TO_BIT(sector);
-	set_end = BM_SECT_TO_BIT(esector);
+	set_start = bm_sect_to_bit(bm, sector);
+	set_end = bm_sect_to_bit(bm, esector);
 
 	/* For marking sectors as in sync, we need to round down except when we
 	 * reach the end of the device: The last bit in the bitmap does not
 	 * account for sectors past the end of the device.
 	 * CLEAR_END can become negative here. */
-	clear_start = BM_SECT_TO_BIT(sector + BM_SECT_PER_BIT - 1);
+	clear_start = bm_sect_to_bit(bm, sector + bm_sect_per_bit(bm) - 1);
 	if (esector == nr_sectors - 1)
-		clear_end = BM_SECT_TO_BIT(esector);
+		clear_end = bm_sect_to_bit(bm, esector);
 	else
-		clear_end = BM_SECT_TO_BIT(esector + 1) - 1;
+		clear_end = bm_sect_to_bit(bm, esector + 1) - 1;
 
-	spin_lock_irqsave(&device->bitmap->bm_all_slots_lock, irq_flags);
+	spin_lock_irqsave(&bm->bm_all_slots_lock, irq_flags);
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		int bitmap_index = peer_device->bitmap_index;
@@ -860,7 +884,7 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 			}
 		}
 	}
-	spin_unlock_irqrestore(&device->bitmap->bm_all_slots_lock, irq_flags);
+	spin_unlock_irqrestore(&bm->bm_all_slots_lock, irq_flags);
 out:
 	put_ldev(device);
 

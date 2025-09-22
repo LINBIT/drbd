@@ -2182,6 +2182,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_start, sector_t sector_end)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
 
 	if (peer_device->repl_state[NOW] == L_ESTABLISHED ||
 			peer_device->repl_state[NOW] == L_SYNC_SOURCE ||
@@ -2191,7 +2192,8 @@ static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_s
 		if (drbd_bm_total_weight(peer_device) == 0)
 			return true;
 		if (drbd_bm_count_bits(device, peer_device->bitmap_index,
-					BM_SECT_TO_BIT(sector_start), BM_SECT_TO_BIT(sector_end - 1)) == 0)
+					bm_sect_to_bit(bm, sector_start),
+					bm_sect_to_bit(bm, sector_end - 1)) == 0)
 			return true;
 	}
 	return false;
@@ -2201,13 +2203,15 @@ static void update_peers_for_interval(struct drbd_peer_device *peer_device,
 		struct drbd_interval *interval)
 {
 	struct drbd_device *device = peer_device->device;
+	struct drbd_bitmap *bm = device->bitmap;
 	u64 mask = NODE_MASK(peer_device->node_id), im;
 	struct drbd_peer_device *p;
 	sector_t sector_end = interval->sector + (interval->size >> SECTOR_SHIFT);
 
 	/* Only send P_PEERS_IN_SYNC if we are actually in sync with this peer. */
 	if (drbd_bm_count_bits(device, peer_device->bitmap_index,
-				BM_SECT_TO_BIT(interval->sector), BM_SECT_TO_BIT(sector_end - 1)))
+				bm_sect_to_bit(bm, interval->sector),
+				bm_sect_to_bit(bm, sector_end - 1)))
 		return;
 
 	for_each_peer_device_ref(p, im, device) {
@@ -3907,7 +3911,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 		    connection->agreed_pro_version >= 90) {
 			unsigned long now = jiffies;
 			int i;
-			unsigned long ov_left = drbd_bm_bits(device) - BM_SECT_TO_BIT(sector);
+			unsigned long ov_left = drbd_bm_bits(device)
+					- bm_sect_to_bit(device->bitmap, sector);
 			atomic64_set(&peer_device->ov_left, ov_left);
 			peer_device->ov_start_sector = sector;
 			peer_device->ov_skipped = 0;
@@ -10463,7 +10468,7 @@ static int got_IsInSync(struct drbd_connection *connection, struct packet_info *
 	if (get_ldev(device)) {
 		drbd_set_in_sync(peer_device, sector, blksize);
 		/* rs_same_csums is supposed to count in units of BM_BLOCK_SIZE */
-		peer_device->rs_same_csum += (blksize >> BM_BLOCK_SHIFT);
+		peer_device->rs_same_csum += (blksize >> device->ldev->md.bm_block_shift);
 		put_ldev(device);
 	}
 	rs_sectors_came_in(peer_device, blksize);

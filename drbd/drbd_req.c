@@ -1450,6 +1450,7 @@ barrier_acked:
 static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, int size)
 {
 	struct drbd_md *md = &device->ldev->md;
+	struct drbd_bitmap *bm;
 	unsigned int node_id;
 	unsigned int n_checked = 0;
 
@@ -1465,8 +1466,9 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	D_ASSERT(device, sector  < nr_sectors);
 	D_ASSERT(device, esector < nr_sectors);
 
-	sbnr = BM_SECT_TO_BIT(sector);
-	ebnr = BM_SECT_TO_BIT(esector);
+	bm = device->bitmap;
+	sbnr = bm_sect_to_bit(bm, sector);
+	ebnr = bm_sect_to_bit(bm, esector);
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &md->peers[node_id];

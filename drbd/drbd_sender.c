@@ -923,7 +923,8 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	nc = rcu_dereference(peer_device->connection->transport.net_conf);
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
-		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration)) >> (BM_BLOCK_SHIFT - 9);
+		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration));
+		number = bm_sect_to_bit(bm, number);
 		peer_device->c_sync_rate = number * HZ * bm_block_kb / RS_MAKE_REQS_INTV;
 	} else {
 		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
@@ -935,13 +936,21 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	 * Otherwise we may cause the remote site to stall on drbd_alloc_pages(),
 	 * potentially causing a distributed deadlock on congestion during
 	 * online-verify or (checksum-based) resync, if max-buffers,
-	 * socket buffer sizes and resync rate settings are mis-configured. */
-	/* note that "number" is in units of "BM_BLOCK_SIZE" (which is 4k),
+	 * socket buffer sizes and resync rate settings are mis-configured.
+	 * Note that "number" is in units of "bm_bytes_per_bit",
 	 * mxb (as used here, and in drbd_alloc_pages on the peer) is
-	 * "number of pages" (typically also 4k),
-	 * but "rs_in_flight" is in "sectors" (512 Byte). */
-	if (mxb - peer_device->rs_in_flight/8 < number)
-		number = mxb - peer_device->rs_in_flight/8;
+	 * "number of pages" (typically 4k), and "rs_in_flight" is in "sectors"
+	 * (512 Byte). Convert everything to sectors and back.
+	 */
+	{
+		int mxb_sect = mxb << (PAGE_SHIFT - 9);
+		int num_sect = bm_bit_to_sect(bm, number);
+
+		if (mxb_sect - peer_device->rs_in_flight < num_sect) {
+			num_sect = mxb_sect - peer_device->rs_in_flight;
+			number = bm_sect_to_bit(bm, num_sect);
+		}
+	}
 
 	return number;
 }
@@ -1108,9 +1117,9 @@ static bool send_buffer_half_full(struct drbd_peer_device *peer_device)
 	return half_full;
 }
 
-static int optimal_bits_for_alignment(unsigned long bit)
+static int optimal_bits_for_alignment(unsigned long bit, int bm_block_shift)
 {
-	int max_bio_bits = DRBD_MAX_BIO_SIZE >> BM_BLOCK_SHIFT;
+	int max_bio_bits = DRBD_MAX_BIO_SIZE >> bm_block_shift;
 
 	/* under the assumption that we find a big block of out-of-sync blocks
 	   in the bitmap, calculate the optimal request size so that the
@@ -1298,7 +1307,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
-	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
+	peer_device->rs_in_flight += bm_bit_to_sect(device->bitmap, number);
 
 	clear_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
 	for (; i < number; i++) {
@@ -1312,7 +1321,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			goto request_done;
 		}
 
-		if ((number - i) << BM_BLOCK_SHIFT < discard_granularity)
+		if ((number - i) < discard_granularity >> bm_block_shift)
 			goto request_done;
 
 		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
@@ -1321,14 +1330,14 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			goto request_done;
 		}
 
-		sector = BM_BIT_TO_SECT(bit);
+		sector = bm_bit_to_sect(bm, bit);
 
 		if (drbd_rs_c_min_rate_throttle(peer_device)) {
 			peer_device->resync_next_bit = bit;
 			goto request_done;
 		}
 
-		if (adjacent(prev_sector, size, sector) && (number - i) << BM_BLOCK_SHIFT < size) {
+		if (adjacent(prev_sector, size, sector) && (number - i) < size >> bm_block_shift) {
 			/* When making requests in an out-of-sync area, ensure that the size
 			   of successive requests does not decrease. This allows the next
 			   make_resync_request call to start with optimal alignment. */
@@ -1337,7 +1346,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 		prev_sector = sector;
 		size = bm_block_size(bm);
-		optimal_bits_alignment = optimal_bits_for_alignment(bit);
+		optimal_bits_alignment = optimal_bits_for_alignment(bit, bm_block_shift);
 		optimal_bits_rate = round_to_powerof_2(number - i);
 		optimal_bits = min(optimal_bits_alignment, optimal_bits_rate) - 1;
 
@@ -1372,7 +1381,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			return -EIO;
 		case -EAGAIN: /* allocation failed, or ldev busy */
 			set_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
-			peer_device->resync_next_bit = (unsigned long) BM_SECT_TO_BIT(sector);
+			peer_device->resync_next_bit = bm_sect_to_bit(bm, sector);
 			i = rollback_i;
 			goto request_done;
 		case 0:
@@ -1385,7 +1394,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 
 request_done:
 	/* ... but do a correction, in case we had to break/goto request_done; */
-	peer_device->rs_in_flight -= (number - i) * BM_SECT_PER_BIT;
+	peer_device->rs_in_flight -= (number - i) * bm_sect_per_bit(bm);
 
 	if (peer_device->resync_next_bit >= drbd_bm_bits(device)) {
 		/*
@@ -1522,7 +1531,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
-	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
+	peer_device->rs_in_flight += bm_bit_to_sect(bm, number);
 	for (i = 0; i < number; i++) {
 		struct drbd_peer_request *peer_req;
 
@@ -1564,10 +1573,10 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 
 		drbd_conflict_send_ov_request(peer_req);
 
-		sector += BM_SECT_PER_BIT;
+		sector += bm_sect_per_bit(bm);
 	}
 	/* ... but do a correction, in case we had to break; ... */
-	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
+	peer_device->rs_in_flight -= bm_bit_to_sect(bm, number-i);
 	peer_device->ov_position = sector;
 	if (stop_sector_reached)
 		return 1;

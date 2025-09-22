@@ -1953,20 +1953,15 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 /* We do bitmap IO in units of 4k blocks.
  * We also used to have a hardcoded 4k per bit relation.
  */
-#define BM_BLOCK_SIZE_4k	 4096
-#define BM_BLOCK_SHIFT	12			 /* 4k per bit */
+#define BM_BLOCK_SHIFT_4k	12			 /* 4k per bit */
+#define BM_BLOCK_SHIFT_MIN	BM_BLOCK_SHIFT_4k
+#define BM_BLOCK_SHIFT_MAX	20
+#define BM_BLOCK_SIZE_4k	4096
+#define BM_BLOCK_SIZE_MIN	(1<<BM_BLOCK_SHIFT_MIN)
+#define BM_BLOCK_SIZE_MAX	(1<<BM_BLOCK_SHIFT_MAX)
 
 #define LEGACY_BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
 #define LEGACY_BM_EXT_SECT_MASK ((1UL << (LEGACY_BM_EXT_SHIFT - SECTOR_SHIFT)) - 1)
-
-#if (BM_BLOCK_SHIFT != 12)
-#error "HAVE YOU FIXED drbdmeta AS WELL??"
-#endif
-
-/* thus many _storage_ sectors are described by one bit */
-#define BM_SECT_TO_BIT(x)   ((x)>>(BM_BLOCK_SHIFT-9))
-#define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
-#define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
 static inline unsigned int bm_block_size(const struct drbd_bitmap *bm)
 {
@@ -1975,6 +1970,18 @@ static inline unsigned int bm_block_size(const struct drbd_bitmap *bm)
 static inline sector_t bm_bit_to_kb(const struct drbd_bitmap *bm, unsigned long bit)
 {
 	return (sector_t)bit << (bm->bm_block_shift - 10);
+}
+static inline unsigned long bm_sect_to_bit(const struct drbd_bitmap *bm, sector_t s)
+{
+	return s >> (bm->bm_block_shift - 9);
+}
+static inline sector_t bm_bit_to_sect(const struct drbd_bitmap *bm, unsigned long bit)
+{
+	return (sector_t)bit << (bm->bm_block_shift - 9);
+}
+static inline sector_t bm_sect_per_bit(const struct drbd_bitmap *bm)
+{
+	return (sector_t)1 << (bm->bm_block_shift - 9);
 }
 
 static inline sector_t bit_to_kb(unsigned long bit, unsigned int bm_block_shift)

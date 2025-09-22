@@ -4225,7 +4225,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device->md_io.page)
 		goto out_no_io_page;
 
-	device->last_bm_block_shift = BM_BLOCK_SHIFT;
+	/* Just put in some sane default; should never be used. */
+	device->last_bm_block_shift = BM_BLOCK_SHIFT_MIN;
+
 	spin_lock_init(&device->interval_lock);
 	device->read_requests = RB_ROOT;
 	device->requests = RB_ROOT;
@@ -5956,13 +5958,13 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 	return directly_connected;
 }
 
-static sector_t bm_sect_to_max_capacity(unsigned int bm_max_peers, sector_t bm_sect)
+static sector_t bm_sect_to_max_capacity(const struct drbd_bitmap *bm, sector_t bm_sect)
 {
 	/* we do our meta data IO in 4k units */
 	u64 bm_bytes = ALIGN_DOWN(bm_sect << SECTOR_SHIFT, 4096);
-	u64 bm_bytes_per_peer = div_u64(bm_bytes, bm_max_peers);
+	u64 bm_bytes_per_peer = div_u64(bm_bytes, bm->bm_max_peers);
 	u64 bm_bits_per_peer = bm_bytes_per_peer * BITS_PER_BYTE;
-	return BM_BIT_TO_SECT(bm_bits_per_peer);
+	return bm_bit_to_sect(bm, bm_bits_per_peer);
 }
 
 
@@ -5981,6 +5983,7 @@ sector_t drbd_get_max_capacity(
 		struct drbd_device *device, struct drbd_backing_dev *bdev, bool warn)
 {
 	unsigned int bm_max_peers = bdev->md.max_peers;
+	unsigned int bm_block_size = bdev->md.bm_block_size;
 	sector_t backing_bdev_capacity = drbd_get_capacity(bdev->backing_bdev);
 	sector_t bm_sect;
 	sector_t backing_capacity_remaining;
@@ -6002,7 +6005,7 @@ sector_t drbd_get_max_capacity(
 		backing_capacity_remaining = backing_bdev_capacity;
 	}
 
-	metadata_limit = bm_sect_to_max_capacity(bm_max_peers, bm_sect);
+	metadata_limit = bm_sect_to_max_capacity(device->bitmap, bm_sect);
 
 	dynamic_drbd_dbg(device,
 			"Backing device capacity: %llus, remaining: %llus, bitmap sectors: %llus\n",
@@ -6010,8 +6013,8 @@ sector_t drbd_get_max_capacity(
 			(unsigned long long) backing_capacity_remaining,
 			(unsigned long long) bm_sect);
 	dynamic_drbd_dbg(device,
-			"Max peers: %u, metadata limit: %llus, hard limit: %llus\n",
-			bm_max_peers,
+			"Max peers: %u, bytes_per_bit: %u, metadata limit: %llus, hard limit: %llus\n",
+			bm_max_peers, bm_block_size,
 			(unsigned long long) metadata_limit,
 			(unsigned long long) DRBD_MAX_SECTORS);
 

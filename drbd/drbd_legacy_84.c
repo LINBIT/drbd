@@ -359,7 +359,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	seq_printf(seq, "%3u.%u%% ", res / 10, res % 10);
 
 	/* if more than a few GB, display in MB */
-	if (rs_total > (4UL << (30 - BM_BLOCK_SHIFT)))
+	if (rs_total > (4UL << (30 - bm_block_shift)))
 		seq_printf(seq, "(%llu/%llu)M",
 			    bit_to_kb(rs_left >> 10, bm_block_shift),
 			    bit_to_kb(rs_total >> 10, bm_block_shift));
@@ -448,8 +448,8 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		seq_printf(seq,
 			"\t%3d%% sector pos: %llu/%llu",
 			(int)(bit_pos / (bm_bits/100+1)),
-			(unsigned long long)bit_pos * BM_SECT_PER_BIT,
-			(unsigned long long)bm_bits * BM_SECT_PER_BIT);
+			(unsigned long long)bit_pos * sect_per_bit(bm_block_shift),
+			(unsigned long long)bm_bits * sect_per_bit(bm_block_shift));
 		if (stop_sector != 0 && stop_sector != ULLONG_MAX)
 			seq_printf(seq, " stop sector: %llu", stop_sector);
 		seq_putc(seq, '\n');
