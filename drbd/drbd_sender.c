@@ -1824,7 +1824,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
 	bool aborted = false;
-
+	int bm_block_shift = device->last_bm_block_shift;
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 		/* Make sure all queued w_update_peers() executed. */
@@ -1853,7 +1853,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T)
 		db -= atomic64_read(&peer_device->ov_left);
 
-	dbdt = Bit2KB(db/dt);
+	dbdt = bit_to_kb(db/dt, bm_block_shift);
 	peer_device->rs_paused /= HZ;
 
 	if (!get_ldev(device)) {
@@ -1888,8 +1888,8 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	{
 	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
 	if (verify_done && peer_device->ov_skipped)
-		snprintf(tmp, sizeof(tmp), " but %lu %dk blocks skipped",
-			peer_device->ov_skipped, Bit2KB(1));
+		snprintf(tmp, sizeof(tmp), " but %lu %lluk blocks skipped",
+			peer_device->ov_skipped, bit_to_kb(1, bm_block_shift));
 	drbd_info(peer_device, "%s %s%s (total %lu sec; paused %lu sec; %lu K/sec)\n",
 		  verify_done ? "Online verify" : "Resync",
 		  aborted ? "aborted" : "done", tmp,
@@ -1900,8 +1900,8 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 
 	if (repl_state[NOW] == L_VERIFY_S || repl_state[NOW] == L_VERIFY_T) {
 		if (n_oos) {
-			drbd_alert(peer_device, "Online verify found %lu %dk blocks out of sync!\n",
-			      n_oos, Bit2KB(1));
+			drbd_alert(peer_device, "Online verify found %lu %lluk blocks out of sync!\n",
+			      n_oos, bit_to_kb(1, bm_block_shift));
 			khelper_cmd = "out-of-sync";
 		}
 	} else {
@@ -1917,12 +1917,13 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			const int ratio =
 				(t == 0)     ? 0 :
 			(t < 100000) ? ((s*100)/t) : (s/(t/100));
-			drbd_info(peer_device, "%u %% had equal checksums, eliminated: %luK; "
-			     "transferred %luK total %luK\n",
+			drbd_info(peer_device, "%u %% had equal checksums, eliminated: %lluK; "
+			     "transferred %lluK total %lluK\n",
 			     ratio,
-			     Bit2KB(peer_device->rs_same_csum),
-			     Bit2KB(peer_device->rs_total - peer_device->rs_same_csum),
-			     Bit2KB(peer_device->rs_total));
+			     bit_to_kb(peer_device->rs_same_csum, bm_block_shift),
+			     bit_to_kb(peer_device->rs_total - peer_device->rs_same_csum,
+					bm_block_shift),
+			     bit_to_kb(peer_device->rs_total, bm_block_shift));
 		}
 	}
 

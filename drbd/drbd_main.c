@@ -4225,6 +4225,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	if (!device->md_io.page)
 		goto out_no_io_page;
 
+	device->last_bm_block_shift = BM_BLOCK_SHIFT;
 	spin_lock_init(&device->interval_lock);
 	device->read_requests = RB_ROOT;
 	device->requests = RB_ROOT;

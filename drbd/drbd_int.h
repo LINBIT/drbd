@@ -1588,6 +1588,11 @@ struct drbd_device {
 	struct list_head pending_completion[2];
 
 	struct drbd_bitmap *bitmap;
+	/* We may want to report on resync progress
+	 * even after we detached again (bitmap == NULL).
+	 * Cache the last bitmap block size here.
+	 */
+	unsigned int last_bm_block_shift;
 
 	int open_cnt;
 	bool writable;
@@ -1962,6 +1967,11 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #define BM_BIT_TO_SECT(x)   ((sector_t)(x)<<(BM_BLOCK_SHIFT-9))
 #define BM_SECT_PER_BIT     BM_BIT_TO_SECT(1)
 
+
+static inline sector_t bit_to_kb(unsigned long bit, unsigned int bm_block_shift)
+{
+	return (sector_t)bit << (bm_block_shift - 10);
+}
 static inline unsigned long sect_to_bit(sector_t s, unsigned int bm_block_shift)
 {
 	return s >> (bm_block_shift - 9);
@@ -1971,14 +1981,20 @@ static inline sector_t sect_per_bit(unsigned int bm_block_shift)
 	return (sector_t)1 << (bm_block_shift - 9);
 }
 
+/* We may have just lost our backing device, and with it ->ldev and ->bitmap.
+ * But we can still report sync progress and similar based on our last known
+ * bitmap block size.
+ */
+static inline sector_t device_bit_to_kb(struct drbd_device *device, unsigned long bit)
+{
+	return bit_to_kb(bit, device->last_bm_block_shift);
+}
+
 /* Send P_PEERS_IN_SYNC in steps defined by this shift. Set to the activity log
  * extent shift since the P_PEERS_IN_SYNC intervals are broken up based on
  * activity log extents anyway. */
 #define PEERS_IN_SYNC_STEP_SHIFT AL_EXTENT_SHIFT
 #define PEERS_IN_SYNC_STEP_SECT_MASK ((1UL << (PEERS_IN_SYNC_STEP_SHIFT - SECTOR_SHIFT)) - 1)
-
-/* bit to represented kilo byte conversion */
-#define Bit2KB(bits) ((bits)<<(BM_BLOCK_SHIFT-10))
 
 /* Indexed external meta data has a fixed on-disk size of 128MiB, of which
  * 4KiB are our "superblock", and 32KiB are the fixed size activity

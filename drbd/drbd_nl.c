@@ -3283,6 +3283,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
+	device->last_bm_block_shift = nbc->md.bm_block_shift;
 
 	sanitize_disk_conf(device, new_disk_conf, nbc);
 

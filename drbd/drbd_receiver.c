@@ -3537,7 +3537,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 		if (!dt)
 			dt++;
 		db = peer_device->rs_mark_left[i] - rs_left;
-		dbdt = Bit2KB(db/dt);
+		dbdt = device_bit_to_kb(device, db/dt);
 
 		if (dbdt > c_min_rate)
 			return true;

@@ -338,6 +338,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	unsigned int res;
 	int i, x, y;
 	int stalled = 0;
+	unsigned int bm_block_shift = pd->device->last_bm_block_shift;
 
 	drbd_get_syncer_progress(pd, repl_state, &rs_total, &rs_left, &res);
 
@@ -359,13 +360,13 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 
 	/* if more than a few GB, display in MB */
 	if (rs_total > (4UL << (30 - BM_BLOCK_SHIFT)))
-		seq_printf(seq, "(%lu/%lu)M",
-			    (unsigned long) Bit2KB(rs_left >> 10),
-			    (unsigned long) Bit2KB(rs_total >> 10));
+		seq_printf(seq, "(%llu/%llu)M",
+			    bit_to_kb(rs_left >> 10, bm_block_shift),
+			    bit_to_kb(rs_total >> 10, bm_block_shift));
 	else
-		seq_printf(seq, "(%lu/%lu)K",
-			    (unsigned long) Bit2KB(rs_left),
-			    (unsigned long) Bit2KB(rs_total));
+		seq_printf(seq, "(%llu/%llu)K",
+			    bit_to_kb(rs_left, bm_block_shift),
+			    bit_to_kb(rs_total, bm_block_shift));
 
 	seq_puts(seq, "\n\t");
 
@@ -396,7 +397,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	seq_printf(seq, "finish: %lu:%02lu:%02lu",
 		rt / 3600, (rt % 3600) / 60, rt % 60);
 
-	dbdt = Bit2KB(db/dt);
+	dbdt = bit_to_kb(db/dt, bm_block_shift);
 	seq_puts(seq, " speed: ");
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_puts(seq, " (");
@@ -408,7 +409,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		if (!dt)
 			dt++;
 		db = pd->rs_mark_left[i] - rs_left;
-		dbdt = Bit2KB(db/dt);
+		dbdt = bit_to_kb(db/dt, bm_block_shift);
 		seq_printf_with_thousands_grouping(seq, dbdt);
 		seq_puts(seq, " -- ");
 	}
@@ -419,7 +420,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	if (dt == 0)
 		dt = 1;
 	db = rs_total - rs_left;
-	dbdt = Bit2KB(db/dt);
+	dbdt = bit_to_kb(db/dt, bm_block_shift);
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_putc(seq, ')');
 
@@ -539,8 +540,8 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 			   write_ordering_chars[device->resource->write_ordering]
 			);
 		seq_printf(m, " oos:%llu\n",
-			   peer_device ? Bit2KB((unsigned long long)
-						drbd_bm_total_weight(peer_device)) : 0);
+			   peer_device ?
+				device_bit_to_kb(device, drbd_bm_total_weight(peer_device)) : 0);
 	}
 	if (state.conn == L_SYNC_SOURCE ||
 	    state.conn == L_SYNC_TARGET ||
