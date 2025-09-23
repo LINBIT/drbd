@@ -3461,7 +3461,7 @@ static void do_retry(struct work_struct *ws)
 		 * frozen local req->private_bio, in case we force-detached.
 		 */
 		read_lock_irq(&resource->state_rwlock);
-		drbd_req_put_done_ref(req, 1);
+		drbd_put_ref_tl_walk(req, 1);
 		read_unlock_irq(&resource->state_rwlock);
 
 		/* A single suspended or otherwise blocking device may stall

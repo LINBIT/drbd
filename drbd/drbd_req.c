@@ -211,20 +211,14 @@ void drbd_req_destroy(struct kref *kref)
 
 static void drbd_req_done(struct drbd_request *req)
 {
-	struct drbd_resource *resource = req->device->resource;
-	struct drbd_request *done_next;
-	struct drbd_device *device;
+	struct drbd_device *device = req->device;
+	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
-	unsigned int s;
-	bool was_last_ref;
+	unsigned int s = req->local_rq_state;
+	bool was_last_ref = false;
 
 	lockdep_assert_held(&resource->state_rwlock);
 	lockdep_assert_irqs_disabled();
-
- tail_recursion:
-	was_last_ref = false;
-	device = req->device;
-	s = req->local_rq_state;
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	if (s & RQ_WRITE && req->i.size != 0) {
@@ -266,13 +260,6 @@ static void drbd_req_done(struct drbd_request *req)
 				__func__, s, atomic_read(&req->completion_ref));
 		return;
 	}
-
-	spin_lock(&resource->tl_update_lock); /* local irq already disabled */
-	done_next = req->done_next;
-	list_del_rcu(&req->tl_requests);
-	if (resource->tl_previous_write == req)
-		resource->tl_previous_write = NULL;
-	spin_unlock(&resource->tl_update_lock);
 
 	/* finally remove the request from the conflict detection
 	 * respective block_id verification interval tree. */
@@ -360,17 +347,6 @@ static void drbd_req_done(struct drbd_request *req)
 			  jiffies + resource->res_opts.peer_ack_delay * HZ / 1000);
 	} else
 		kref_put(&req->kref, drbd_req_destroy);
-
-	/*
-	 * Do the equivalent of:
-	 *   drbd_req_put_done_ref(done_next, 1)
-	 * without recursing into the destructor.
-	 */
-	if (done_next) {
-		req = done_next;
-		if (refcount_dec_and_test(&req->done_ref))
-			goto tail_recursion;
-	}
 }
 
 static void wake_all_senders(struct drbd_resource *resource)
@@ -515,12 +491,31 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 		queue_work(submit_conflict->wq, &submit_conflict->worker);
 }
 
-void drbd_req_put_done_ref(struct drbd_request *req, int put)
+void drbd_put_ref_tl_walk(struct drbd_request *req, int done_put)
 {
-	lockdep_assert_held(&req->device->resource->state_rwlock);
+	struct drbd_resource *resource = req->device->resource;
 
-	if (refcount_sub_and_test(put, &req->done_ref))
+	lockdep_assert_held(&resource->state_rwlock);
+
+	while (req) {
+		struct drbd_request *done_next;
+
+		if (!refcount_sub_and_test(done_put, &req->done_ref))
+			break;
+
+		spin_lock(&resource->tl_update_lock); /* local irq already disabled */
+		done_next = req->done_next;
+		list_del_rcu(&req->tl_requests);
+		if (resource->tl_previous_write == req)
+			resource->tl_previous_write = NULL;
+		spin_unlock(&resource->tl_update_lock);
+
+		/* potentially destroy */
 		drbd_req_done(req);
+
+		req = done_next;
+		done_put = 1;
+	}
 }
 
 /* Helper for __req_mod().
@@ -700,7 +695,7 @@ static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and
 		return;
 	}
 
-	drbd_req_put_done_ref(req, 1);
+	drbd_put_ref_tl_walk(req, 1);
 }
 
 void drbd_set_pending_out_of_sync(struct drbd_peer_device *peer_device)
@@ -1011,7 +1006,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	/* req cannot have been destroyed if there are still done references */
 	if (d_put)
 		/* potentially destroy */
-		drbd_req_put_done_ref(req, d_put);
+		drbd_put_ref_tl_walk(req, d_put);
 }
 
 static void drbd_report_io_error(struct drbd_device *device, struct drbd_request *req)
