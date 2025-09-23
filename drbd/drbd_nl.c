@@ -3068,10 +3068,12 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		}
 	}
 
-	/* Soon: power-of-two 4k to 1M */
-	if (bdev->md.bm_block_size != BM_BLOCK_SIZE_4k) {
-		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
-		    bdev->md.bm_block_size, BM_BLOCK_SIZE_4k);
+	if (!is_power_of_2(bdev->md.bm_block_size)
+	|| bdev->md.bm_block_size < BM_BLOCK_SIZE_MIN
+	|| bdev->md.bm_block_size > BM_BLOCK_SIZE_MAX) {
+		drbd_err_and_skb_info(adm_ctx,
+			"unexpected bm_bytes_per_bit: %u (expected power of 2 in [%u..%u])\n",
+			bdev->md.bm_block_size, BM_BLOCK_SIZE_MIN, BM_BLOCK_SIZE_MAX);
 		goto err;
 	}
 	bdev->md.bm_block_shift = ilog2(bdev->md.bm_block_size);

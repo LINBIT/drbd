@@ -29,6 +29,7 @@
 #include <linux/part_stat.h>
 
 #include "drbd_int.h"
+#include "drbd_meta_data.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
 #include "drbd_vli.h"

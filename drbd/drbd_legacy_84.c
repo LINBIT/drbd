@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include "drbd_legacy_84.h"
+#include "drbd_meta_data.h"
 
 /*
  *   drbd-8.4                      drbd-9 md.flags                   drbd-9 peer-md.flags

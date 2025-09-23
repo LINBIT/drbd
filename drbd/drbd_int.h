@@ -1957,16 +1957,6 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
 #define RS_MAKE_REQS_INTV    (HZ/10)
 #define RS_MAKE_REQS_INTV_NS (NSEC_PER_SEC/10)
 
-/* We do bitmap IO in units of 4k blocks.
- * We also used to have a hardcoded 4k per bit relation.
- */
-#define BM_BLOCK_SHIFT_4k	12			 /* 4k per bit */
-#define BM_BLOCK_SHIFT_MIN	BM_BLOCK_SHIFT_4k
-#define BM_BLOCK_SHIFT_MAX	20
-#define BM_BLOCK_SIZE_4k	4096
-#define BM_BLOCK_SIZE_MIN	(1<<BM_BLOCK_SHIFT_MIN)
-#define BM_BLOCK_SIZE_MAX	(1<<BM_BLOCK_SHIFT_MAX)
-
 #define LEGACY_BM_EXT_SHIFT	 27	/* 128 MiB per resync extent */
 #define LEGACY_BM_EXT_SECT_MASK ((1UL << (LEGACY_BM_EXT_SHIFT - SECTOR_SHIFT)) - 1)
 
