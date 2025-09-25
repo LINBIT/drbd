@@ -34,6 +34,7 @@
 #include <net/sock.h>
 
 #include "drbd_meta_data.h"
+#include "drbd_legacy_84.h"
 
 /* .doit */
 static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info);
@@ -123,8 +124,8 @@ static int drbd_msg_put_info(struct sk_buff *skb, const char *info)
 	if (err) {
 		nla_nest_cancel(skb, nla);
 		return err;
-	} else
-		nla_nest_end(skb, nla);
+	}
+	nla_nest_end(skb, nla);
 	return 0;
 }
 
@@ -2828,12 +2829,10 @@ static int open_backing_devices(struct drbd_device *device,
 	return NO_ERROR;
 }
 
-static int check_activity_log_stripe_size(struct drbd_device *device,
-		struct meta_data_on_disk_9 *on_disk,
-		struct drbd_md *in_core)
+static int check_activity_log_stripe_size(struct drbd_device *device, struct drbd_md *md)
 {
-	u32 al_stripes = be32_to_cpu(on_disk->al_stripes);
-	u32 al_stripe_size_4k = be32_to_cpu(on_disk->al_stripe_size_4k);
+	u32 al_stripes = md->al_stripes;
+	u32 al_stripe_size_4k = md->al_stripe_size_4k;
 	u64 al_size_4k;
 
 	/* both not set: default to old fixed size activity log */
@@ -2862,9 +2861,7 @@ static int check_activity_log_stripe_size(struct drbd_device *device,
 	if (al_size_4k < (32768 >> 9)/8)
 		goto err;
 
-	in_core->al_stripe_size_4k = al_stripe_size_4k;
-	in_core->al_stripes = al_stripes;
-	in_core->al_size_4k = al_size_4k;
+	md->al_size_4k = al_size_4k;
 
 	return 0;
 err:
@@ -2873,13 +2870,11 @@ err:
 	return -EINVAL;
 }
 
-static int check_offsets_and_sizes(struct drbd_device *device,
-		struct meta_data_on_disk_9 *on_disk,
-		struct drbd_backing_dev *bdev)
+static int check_offsets_and_sizes(struct drbd_device *device, struct drbd_backing_dev *bdev,
+				   int max_peers)
 {
 	sector_t capacity = drbd_get_capacity(bdev->md_bdev);
-	struct drbd_md *in_core = &bdev->md;
-	u32 max_peers = be32_to_cpu(on_disk->bm_max_peers);
+	struct drbd_md *md = &bdev->md;
 	s32 on_disk_al_sect;
 	s32 on_disk_bm_sect;
 
@@ -2889,10 +2884,6 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 	}
 	device->bitmap->bm_max_peers = max_peers;
 
-	in_core->al_offset = be32_to_cpu(on_disk->al_offset);
-	in_core->bm_offset = be32_to_cpu(on_disk->bm_offset);
-	in_core->md_size_sect = be32_to_cpu(on_disk->md_size_sect);
-
 	/* The on-disk size of the activity log, calculated from offsets, and
 	 * the size of the activity log calculated from the stripe settings,
 	 * should match.
@@ -2901,34 +2892,34 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 	 * Right now, that would break how resize is implemented.
 	 * TODO: make drbd_determine_dev_size() (and the drbdmeta tool) aware
 	 * of possible unused padding space in the on disk layout. */
-	if (in_core->al_offset < 0) {
-		if (in_core->bm_offset > in_core->al_offset)
+	if (md->al_offset < 0) {
+		if (md->bm_offset > md->al_offset)
 			goto err;
-		on_disk_al_sect = -in_core->al_offset;
-		on_disk_bm_sect = in_core->al_offset - in_core->bm_offset;
+		on_disk_al_sect = -md->al_offset;
+		on_disk_bm_sect = md->al_offset - md->bm_offset;
 	} else {
-		if (in_core->al_offset != (4096 >> 9))
+		if (md->al_offset != (4096 >> 9))
 			goto err;
-		if (in_core->bm_offset < in_core->al_offset + in_core->al_size_4k * (4096 >> 9))
+		if (md->bm_offset < md->al_offset + md->al_size_4k * (4096 >> 9))
 			goto err;
 
-		on_disk_al_sect = in_core->bm_offset - (4096 >> 9);
-		on_disk_bm_sect = in_core->md_size_sect - in_core->bm_offset;
+		on_disk_al_sect = md->bm_offset - (4096 >> 9);
+		on_disk_bm_sect = md->md_size_sect - md->bm_offset;
 	}
 
 	/* old fixed size meta data is exactly that: fixed. */
-	if (in_core->meta_dev_idx >= 0) {
-		if (in_core->md_size_sect != (128 << 20 >> 9)
-		||  in_core->al_offset != (4096 >> 9)
-		||  in_core->bm_offset != (4096 >> 9) + (32768 >> 9)
-		||  in_core->al_stripes != 1
-		||  in_core->al_stripe_size_4k != (32768 >> 12))
+	if (md->meta_dev_idx >= 0) {
+		if (md->md_size_sect != (128 << 20 >> 9)
+		||  md->al_offset != (4096 >> 9)
+		||  md->bm_offset != (4096 >> 9) + (32768 >> 9)
+		||  md->al_stripes != 1
+		||  md->al_stripe_size_4k != (32768 >> 12))
 			goto err;
 	}
 
-	if (capacity < in_core->md_size_sect)
+	if (capacity < md->md_size_sect)
 		goto err;
-	if (capacity - in_core->md_size_sect < drbd_md_first_sector(bdev))
+	if (capacity - md->md_size_sect < drbd_md_first_sector(bdev))
 		goto err;
 
 	/* should be aligned, and at least 32k */
@@ -2937,18 +2928,18 @@ static int check_offsets_and_sizes(struct drbd_device *device,
 
 	/* should fit (for now: exactly) into the available on-disk space;
 	 * overflow prevention is in check_activity_log_stripe_size() above. */
-	if (on_disk_al_sect != in_core->al_size_4k * (4096 >> 9))
+	if (on_disk_al_sect != md->al_size_4k * (4096 >> 9))
 		goto err;
 
 	/* again, should be aligned */
-	if (in_core->bm_offset & 7)
+	if (md->bm_offset & 7)
 		goto err;
 
 	/* FIXME check for device grow with flex external meta data? */
 
 	/* can the available bitmap space cover the last agreed device size? */
 	if (on_disk_bm_sect < drbd_capacity_to_on_disk_bm_sect(
-				in_core->effective_size, max_peers))
+				md->effective_size, max_peers))
 		goto err;
 
 	return 0;
@@ -2957,10 +2948,10 @@ err:
 	drbd_err(device, "meta data offsets don't make sense: idx=%d "
 			"al_s=%u, al_sz4k=%u, al_offset=%d, bm_offset=%d, "
 			"md_size_sect=%u, la_size=%llu, md_capacity=%llu\n",
-			in_core->meta_dev_idx,
-			in_core->al_stripes, in_core->al_stripe_size_4k,
-			in_core->al_offset, in_core->bm_offset, in_core->md_size_sect,
-			(unsigned long long)in_core->effective_size,
+			md->meta_dev_idx,
+			md->al_stripes, md->al_stripe_size_4k,
+			md->al_offset, md->bm_offset, md->md_size_sect,
+			(unsigned long long)md->effective_size,
 			(unsigned long long)capacity);
 
 	return -EINVAL;
@@ -2986,56 +2977,111 @@ static void drbd_err_and_skb_info(struct drbd_config_context *adm_ctx, const cha
 	kfree(text);
 }
 
+static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md,
+			int *max_peers, int *bytes_per_bit)
+{
+	int i;
+
+	md->effective_size = be64_to_cpu(on_disk->effective_size);
+	md->current_uuid = be64_to_cpu(on_disk->current_uuid);
+	md->prev_members = be64_to_cpu(on_disk->members);
+	md->device_uuid = be64_to_cpu(on_disk->device_uuid);
+	md->md_size_sect = be32_to_cpu(on_disk->md_size_sect);
+	md->al_offset = be32_to_cpu(on_disk->al_offset);
+
+	md->bm_offset = be32_to_cpu(on_disk->bm_offset);
+
+	md->flags = be32_to_cpu(on_disk->flags);
+
+	*max_peers = be32_to_cpu(on_disk->bm_max_peers);
+	*bytes_per_bit = be32_to_cpu(on_disk->bm_bytes_per_bit);
+	md->node_id = be32_to_cpu(on_disk->node_id);
+	md->al_stripes = be32_to_cpu(on_disk->al_stripes);
+	md->al_stripe_size_4k = be32_to_cpu(on_disk->al_stripe_size_4k);
+
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		struct drbd_peer_md *peer_md = &md->peers[i];
+
+		peer_md->bitmap_uuid = be64_to_cpu(on_disk->peers[i].bitmap_uuid);
+		peer_md->bitmap_dagtag = be64_to_cpu(on_disk->peers[i].bitmap_dagtag);
+		peer_md->flags = be32_to_cpu(on_disk->peers[i].flags);
+		peer_md->bitmap_index = be32_to_cpu(on_disk->peers[i].bitmap_index);
+
+		if (peer_md->bitmap_index == -1)
+			continue;
+		peer_md->flags |= MDF_HAVE_BITMAP;
+	}
+	for (i = 0; i < ARRAY_SIZE(on_disk->history_uuids); i++)
+		md->history_uuids[i] = be64_to_cpu(on_disk->history_uuids[i]);
+
+	BUILD_BUG_ON(ARRAY_SIZE(md->history_uuids) != ARRAY_SIZE(on_disk->history_uuids));
+}
+
+
+static void decode_magic(struct meta_data_on_disk_9 *on_disk, u32 *magic, u32 *flags)
+{
+	/* magic and flags are in at the same offsets in 8.4 and 9 */
+	*magic = be32_to_cpu(on_disk->magic);
+	*flags = be32_to_cpu(on_disk->flags);
+}
+
 static
 int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		   struct drbd_backing_dev *bdev,
-		   struct meta_data_on_disk_9 *buffer)
+		   void *buffer)
 {
 	struct drbd_device *device = adm_ctx->device;
 	u32 magic, flags;
-	int i, rv = NO_ERROR;
+	int i, bytes_per_bit, rv = NO_ERROR;
 	int my_node_id = device->resource->res_opts.node_id;
 	u32 max_peers;
 
-	magic = be32_to_cpu(buffer->magic);
-	flags = be32_to_cpu(buffer->flags);
-	if (magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) {
-			/* btw: that's Activity Log clean, not "all" clean. */
-		drbd_err_and_skb_info(adm_ctx, "Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
+	decode_magic(buffer, &magic, &flags);
+	if ((magic == DRBD_MD_MAGIC_09 && !(flags & MDF_AL_CLEAN)) ||
+	    magic == DRBD_MD_MAGIC_84_UNCLEAN ||
+	    (magic == DRBD_MD_MAGIC_08 && !(flags & MDF_AL_CLEAN))) {
+		/* btw: that's Activity Log clean, not "all" clean. */
+		drbd_err_and_skb_info(adm_ctx,
+				"Found unclean meta data. Did you \"drbdadm apply-al\"?\n");
 		rv = ERR_MD_UNCLEAN;
 		goto err;
 	}
 	rv = ERR_MD_INVALID;
-	if (magic != DRBD_MD_MAGIC_09) {
-		if (magic == DRBD_MD_MAGIC_07 ||
-		    magic == DRBD_MD_MAGIC_08 ||
-		    magic == DRBD_MD_MAGIC_84_UNCLEAN)
-			drbd_err_and_skb_info(adm_ctx, "Found old meta data magic. Did you \"drbdadm create-md\"?\n");
+	if (magic != DRBD_MD_MAGIC_09 && magic !=
+	    DRBD_MD_MAGIC_84_UNCLEAN && magic !=  DRBD_MD_MAGIC_08) {
+		if (magic == DRBD_MD_MAGIC_07)
+			drbd_err_and_skb_info(adm_ctx,
+				"Found old meta data magic. Did you \"drbdadm create-md\"?\n");
 		else
-			drbd_err_and_skb_info(adm_ctx, "Meta data magic not found. Did you \"drbdadm create-md\"?\n");
+			drbd_err_and_skb_info(adm_ctx,
+				"Meta data magic not found. Did you \"drbdadm create-md\"?\n");
 		goto err;
 	}
 
-	if (be32_to_cpu(buffer->bm_bytes_per_bit) != BM_BLOCK_SIZE) {
+	if (magic == DRBD_MD_MAGIC_09) {
+		clear_bit(LEGACY_84_MD, &device->flags);
+		decode_md_9(buffer, &bdev->md, &max_peers, &bytes_per_bit);
+	} else {
+		if (!device->resource->res_opts.drbd8_compat_mode) {
+			drbd_err_and_skb_info(adm_ctx,
+				"Found old meta data magic. Did you \"drbdadm create-md\"?\n");
+			goto err;
+		}
+		set_bit(LEGACY_84_MD, &device->flags);
+		drbd_md_decode_84(buffer, &bdev->md, &max_peers, &bytes_per_bit);
+	}
+
+	if (bytes_per_bit != BM_BLOCK_SIZE) {
 		drbd_err_and_skb_info(adm_ctx, "unexpected bm_bytes_per_bit: %u (expected %u)\n",
-		    be32_to_cpu(buffer->bm_bytes_per_bit), BM_BLOCK_SIZE);
+		    bytes_per_bit, BM_BLOCK_SIZE);
 		goto err;
 	}
 
-	if (check_activity_log_stripe_size(device, buffer, &bdev->md))
+	if (check_activity_log_stripe_size(device, &bdev->md))
 		goto err;
-	if (check_offsets_and_sizes(device, buffer, bdev))
+	if (check_offsets_and_sizes(device, bdev, max_peers))
 		goto err;
-
-	bdev->md.effective_size = be64_to_cpu(buffer->effective_size);
-	bdev->md.current_uuid = be64_to_cpu(buffer->current_uuid);
-	bdev->md.flags = be32_to_cpu(buffer->flags);
-	bdev->md.prev_members = be64_to_cpu(buffer->members);
-
-	bdev->md.device_uuid = be64_to_cpu(buffer->device_uuid);
-	bdev->md.node_id = be32_to_cpu(buffer->node_id);
-
-	bdev->md.node_id = be32_to_cpu(buffer->node_id);
 
 	if (bdev->md.node_id != -1 && bdev->md.node_id != my_node_id) {
 		drbd_err_and_skb_info(adm_ctx, "ambiguous node id: meta-data: %d, config: %d\n",
@@ -3043,18 +3089,11 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		goto err;
 	}
 
-	max_peers = be32_to_cpu(buffer->bm_max_peers);
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[i];
 
-		peer_md->bitmap_uuid = be64_to_cpu(buffer->peers[i].bitmap_uuid);
-		peer_md->bitmap_dagtag = be64_to_cpu(buffer->peers[i].bitmap_dagtag);
-		peer_md->flags = be32_to_cpu(buffer->peers[i].flags);
-		peer_md->bitmap_index = be32_to_cpu(buffer->peers[i].bitmap_index);
-
 		if (peer_md->bitmap_index == -1)
 			continue;
-		peer_md->flags |= MDF_HAVE_BITMAP;
 		if (i == my_node_id) {
 			drbd_err_and_skb_info(adm_ctx, "my own node id (%d) should not have a bitmap index (%d)\n",
 				my_node_id, peer_md->bitmap_index);
@@ -3068,9 +3107,6 @@ int drbd_md_decode(struct drbd_config_context *adm_ctx,
 		/* maybe: for each bitmap_index != -1, create a connection object
 		 * with peer_node_id = i, unless already present. */
 	}
-	BUILD_BUG_ON(ARRAY_SIZE(bdev->md.history_uuids) != ARRAY_SIZE(buffer->history_uuids));
-	for (i = 0; i < ARRAY_SIZE(buffer->history_uuids); i++)
-		bdev->md.history_uuids[i] = be64_to_cpu(buffer->history_uuids[i]);
 
 	rv = NO_ERROR;
 
@@ -3092,7 +3128,7 @@ err:
 static int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing_dev *bdev)
 {
 	struct drbd_device *device = adm_ctx->device;
-	struct meta_data_on_disk_9 *buffer;
+	void *buffer;
 	int rv;
 
 	if (device->disk_state[NOW] != D_DISKLESS)
@@ -4557,40 +4593,6 @@ check_path_usable(const struct drbd_config_context *adm_ctx,
 	return NO_ERROR;
 }
 
-static int compare_sockaddr(struct sockaddr_storage *a_sockaddr,
-			    struct sockaddr_storage *b_sockaddr)
-{
-	if (a_sockaddr->ss_family < b_sockaddr->ss_family)
-		return -1;
-	if (a_sockaddr->ss_family > b_sockaddr->ss_family)
-		return 1;
-	if (a_sockaddr->ss_family == AF_INET) {
-		struct sockaddr_in *a4_sockaddr = (struct sockaddr_in *)a_sockaddr;
-		struct sockaddr_in *b4_sockaddr = (struct sockaddr_in *)b_sockaddr;
-		int cmp = memcmp(&a4_sockaddr->sin_addr, &b4_sockaddr->sin_addr, sizeof(struct in_addr));
-		if (cmp)
-			return cmp;
-		if (a4_sockaddr->sin_port < b4_sockaddr->sin_port)
-			return -1;
-		if (a4_sockaddr->sin_port > b4_sockaddr->sin_port)
-			return 1;
-		return 0;
-	} else if (a_sockaddr->ss_family == AF_INET6) {
-		struct sockaddr_in6 *a6_sockaddr = (struct sockaddr_in6 *)a_sockaddr;
-		struct sockaddr_in6 *b6_sockaddr = (struct sockaddr_in6 *)b_sockaddr;
-		int cmp = memcmp(&a6_sockaddr->sin6_addr, &b6_sockaddr->sin6_addr, sizeof(struct in6_addr));
-		if (!cmp)
-			return cmp;
-		if (a6_sockaddr->sin6_port < b6_sockaddr->sin6_port)
-			return -1;
-		if (a6_sockaddr->sin6_port > b6_sockaddr->sin6_port)
-			return 1;
-		return 0;
-	} else {
-		pr_err("drbd: %s: Invalid sockaddr family %ul\n", __func__, a_sockaddr->ss_family);
-	}
-	return 1;
-}
 
 static enum drbd_ret_code
 adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
@@ -4644,18 +4646,9 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
-	if (connection->resource->res_opts.drbd8_compat_mode) {
-		/*
-		 * This is drbd 8 userspace compat mode, so we do not have a
-		 * node_id yet. Since we only ever have two peers, we can
-		 * arbitrate our node ids by comparing IP addresses. The lower
-		 * address gets node id 0, the other one gets 1.
-		 */
-		int cmp = compare_sockaddr(&path->my_addr, &path->peer_addr);
-		D_ASSERT(connection, cmp != 0); /* addresses cannot be equal */
-		connection->resource->res_opts.node_id = cmp == -1 ? 0 : 1;
-		drbd_info(connection, "drbd8 userspace compat mode: setting my node id to %d\n", connection->resource->res_opts.node_id);
-	}
+	if (connection->resource->res_opts.drbd8_compat_mode)
+		drbd_setup_node_ids_84(connection, path);
+
 
 	/* Exclusive with transport op "prepare_connect()" */
 	mutex_lock(&resource->conf_update);
@@ -6928,6 +6921,7 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		 * will be set to an actual value when the resource is
 		 * connected later.
 		 */
+		res_opts.auto_promote = false;
 	} else if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
 		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;
