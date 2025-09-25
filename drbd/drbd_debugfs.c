@@ -1276,6 +1276,8 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 static int device_io_frozen_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+	unsigned long flags = device->flags;
+	char sep = ' ';
 
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
@@ -1290,6 +1292,14 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "ap_bio_cnt[WRITE]: %d\n", atomic_read(&device->ap_bio_cnt[WRITE]));
 	seq_printf(m, "device->pending_bitmap_work.n: %d\n", atomic_read(&device->pending_bitmap_work.n));
 	seq_printf(m, "may_inc_ap_bio(): %d\n", may_inc_ap_bio(device));
+	seq_printf(m, "flags: 0x%04lx :", flags);
+#define pretty_print_bit(n) \
+	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n)
+	pretty_print_bit(NEW_CUR_UUID);
+	pretty_print_bit(WRITING_NEW_CUR_UUID);
+	pretty_print_bit(MAKE_NEW_CUR_UUID);
+#undef pretty_print_bit
+	seq_putc(m, '\n');
 	put_ldev(device);
 
 	return 0;
