@@ -391,7 +391,7 @@ struct drbd_request {
 	 * of ->done_next will be put.
 	 *
 	 * "immutable" */
-	struct drbd_request *done_next;
+	struct drbd_request *next_write;
 
 	/* lock to protect state flags */
 	spinlock_t rq_lock;
