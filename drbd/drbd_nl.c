@@ -3329,8 +3329,12 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	}
 
-	/* Make sure no bitmap slot has our own node id */
-	if (nbc->md.peers[resource->res_opts.node_id].bitmap_index != -1) {
+	/* Make sure no bitmap slot has our own node id.
+	 * If we are operating in "drbd 8 compatibility mode", the node ID is
+	 * not yet initialized at this point, so just ignore this check.
+	 */
+	if (resource->res_opts.node_id != -1 &&
+	    nbc->md.peers[resource->res_opts.node_id].bitmap_index != -1) {
 		drbd_err_and_skb_info(&adm_ctx, "There is a bitmap for my own node id (%d)\n",
 			 resource->res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;
@@ -4553,6 +4557,41 @@ check_path_usable(const struct drbd_config_context *adm_ctx,
 	return NO_ERROR;
 }
 
+static int compare_sockaddr(struct sockaddr_storage *a_sockaddr,
+			    struct sockaddr_storage *b_sockaddr)
+{
+	if (a_sockaddr->ss_family < b_sockaddr->ss_family)
+		return -1;
+	if (a_sockaddr->ss_family > b_sockaddr->ss_family)
+		return 1;
+	if (a_sockaddr->ss_family == AF_INET) {
+		struct sockaddr_in *a4_sockaddr = (struct sockaddr_in *)a_sockaddr;
+		struct sockaddr_in *b4_sockaddr = (struct sockaddr_in *)b_sockaddr;
+		int cmp = memcmp(&a4_sockaddr->sin_addr, &b4_sockaddr->sin_addr, sizeof(struct in_addr));
+		if (cmp)
+			return cmp;
+		if (a4_sockaddr->sin_port < b4_sockaddr->sin_port)
+			return -1;
+		if (a4_sockaddr->sin_port > b4_sockaddr->sin_port)
+			return 1;
+		return 0;
+	} else if (a_sockaddr->ss_family == AF_INET6) {
+		struct sockaddr_in6 *a6_sockaddr = (struct sockaddr_in6 *)a_sockaddr;
+		struct sockaddr_in6 *b6_sockaddr = (struct sockaddr_in6 *)b_sockaddr;
+		int cmp = memcmp(&a6_sockaddr->sin6_addr, &b6_sockaddr->sin6_addr, sizeof(struct in6_addr));
+		if (!cmp)
+			return cmp;
+		if (a6_sockaddr->sin6_port < b6_sockaddr->sin6_port)
+			return -1;
+		if (a6_sockaddr->sin6_port > b6_sockaddr->sin6_port)
+			return 1;
+		return 0;
+	} else {
+		pr_err("drbd: %s: Invalid sockaddr family %ul\n", __func__, a_sockaddr->ss_family);
+	}
+	return 1;
+}
+
 static enum drbd_ret_code
 adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 {
@@ -4604,6 +4643,19 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	path->transport = transport;
 
 	kref_init(&path->kref);
+
+	if (connection->resource->res_opts.drbd8_compat_mode) {
+		/*
+		 * This is drbd 8 userspace compat mode, so we do not have a
+		 * node_id yet. Since we only ever have two peers, we can
+		 * arbitrate our node ids by comparing IP addresses. The lower
+		 * address gets node id 0, the other one gets 1.
+		 */
+		int cmp = compare_sockaddr(&path->my_addr, &path->peer_addr);
+		D_ASSERT(connection, cmp != 0); /* addresses cannot be equal */
+		connection->resource->res_opts.node_id = cmp == -1 ? 0 : 1;
+		drbd_info(connection, "drbd8 userspace compat mode: setting my node id to %d\n", connection->resource->res_opts.node_id);
+	}
 
 	/* Exclusive with transport op "prepare_connect()" */
 	mutex_lock(&resource->conf_update);
@@ -6869,7 +6921,14 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	if (retcode != NO_ERROR)
 		goto out;
 
-	if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
+	if (res_opts.drbd8_compat_mode) {
+		pr_info("drbd: running in DRBD 8 compatibility mode.\n");
+		/*
+		 * That means we ignore the value of node_id for now. That
+		 * will be set to an actual value when the resource is
+		 * connected later.
+		 */
+	} else if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
 		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;
 		goto out;

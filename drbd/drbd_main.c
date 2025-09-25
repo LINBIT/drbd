@@ -3801,7 +3801,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	spin_lock_init(&resource->initiator_flush_lock);
 	sema_init(&resource->state_sem, 1);
 	resource->role[NOW] = R_SECONDARY;
-	resource->max_node_id = res_opts->node_id;
+	resource->max_node_id = res_opts->drbd8_compat_mode ? 1 : res_opts->node_id;
 	resource->twopc_reply.initiator_node_id = -1;
 	mutex_init(&resource->conf_update);
 	mutex_init(&resource->adm_mutex);
@@ -3819,7 +3819,10 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	spin_lock_init(&resource->current_tle_lock);
 	drbd_debugfs_resource_add(resource);
 	resource->cached_min_aggreed_protocol_version = drbd_protocol_version_min;
-	resource->members = NODE_MASK(res_opts->node_id);
+	/* members is a bit mask of the "seen" nodes in this resource.
+	 * In drbd8 compatibility mode, we only have one peer, so we can
+	 * set this to 1. */
+	resource->members = res_opts->drbd8_compat_mode ? 1 : NODE_MASK(res_opts->node_id);
 	INIT_WORK(&resource->empty_twopc, drbd_empty_twopc_work_fn);
 	INIT_LIST_HEAD(&resource->suspended_reqs);
 
