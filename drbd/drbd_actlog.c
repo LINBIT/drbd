@@ -372,24 +372,20 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	buffer->crc32c = cpu_to_be32(crc);
 
 	ktime_aggregate_delta(device, start_kt, al_before_bm_write_hinted_kt);
-	if (drbd_bm_write_hinted(device))
-		err = -EIO;
-	else {
-		bool write_al_updates = !(device->ldev->md.flags & MDF_AL_DISABLED);
-		if (write_al_updates) {
-			ktime_aggregate_delta(device, start_kt, al_mid_kt);
-			if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
-				err = -EIO;
-				drbd_handle_io_error(device, DRBD_META_IO_ERROR);
-			} else {
-				device->al_tr_number++;
-				device->al_writ_cnt++;
-				device->al_histogram[min_t(unsigned int,
-						device->act_log->pending_changes,
-						AL_UPDATES_PER_TRANSACTION)]++;
-			}
-			ktime_aggregate_delta(device, start_kt, al_after_sync_page_kt);
+	err = drbd_bm_write_hinted(device);
+	if (!err) {
+		ktime_aggregate_delta(device, start_kt, al_mid_kt);
+		if (drbd_md_sync_page_io(device, device->ldev, sector, REQ_OP_WRITE)) {
+			err = -EIO;
+			drbd_handle_io_error(device, DRBD_META_IO_ERROR);
+		} else {
+			device->al_tr_number++;
+			device->al_writ_cnt++;
+			device->al_histogram[min_t(unsigned int,
+					device->act_log->pending_changes,
+					AL_UPDATES_PER_TRANSACTION)]++;
 		}
+		ktime_aggregate_delta(device, start_kt, al_after_sync_page_kt);
 	}
 
 	return err;
