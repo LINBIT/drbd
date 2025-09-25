@@ -186,8 +186,10 @@ int main(int argc, char **argv)
 	 * 5.9-6.10: QUEUE_FLAG_STABLE_WRITES
 	 * <5.9:     BDI_CAP_STABLE_WRITES
 	 */
+#ifndef COMPAT_HAVE_BLK_FEAT_STABLE_WRITES
 	patch(1, "queue_flag_stable_writes", true, false,
 	      COMPAT_HAVE_QUEUE_FLAG_STABLE_WRITES, "present");
+#endif
 
 	patch(1, "queue_flag_discard", false, true,
 	      COMPAT_HAVE_QUEUE_FLAG_DISCARD, "present");
@@ -260,13 +262,13 @@ int main(int argc, char **argv)
 	patch(1, "queue_limits", true, false,
 	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_DISCARD_SECTORS, "has_max_hw_discard_sectors");
 
+#if !defined(COMPAT_HAVE_QUEUE_LIMITS_START_UPDATE)
 	patch(1, "disk_update_readahead", true, false,
 	      COMPAT_HAVE_DISK_UPDATE_READAHEAD, "present");
-
-#if !defined(COMPAT_HAVE_DISK_UPDATE_READAHEAD)
 	/* disk_update_readahead is the "new version" of
 	 * blk_queue_update_readahead. we only need to consider compat
 	 * for the old function if we don't already have the new one. */
+
 	patch(1, "blk_queue_update_readahead", true, false,
 	      COMPAT_HAVE_BLK_QUEUE_UPDATE_READAHEAD, "present");
 #endif
