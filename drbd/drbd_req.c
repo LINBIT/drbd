@@ -498,13 +498,13 @@ void drbd_put_ref_tl_walk(struct drbd_request *req, int done_put)
 	lockdep_assert_held(&resource->state_rwlock);
 
 	while (req) {
-		struct drbd_request *done_next;
+		struct drbd_request *next_write;
 
 		if (!refcount_sub_and_test(done_put, &req->done_ref))
 			break;
 
 		spin_lock(&resource->tl_update_lock); /* local irq already disabled */
-		done_next = req->done_next;
+		next_write = req->next_write;
 		list_del_rcu(&req->tl_requests);
 		if (resource->tl_previous_write == req)
 			resource->tl_previous_write = NULL;
@@ -513,7 +513,7 @@ void drbd_put_ref_tl_walk(struct drbd_request *req, int done_put)
 		/* potentially destroy */
 		drbd_req_done(req);
 
-		req = done_next;
+		req = next_write;
 		done_put = 1;
 	}
 }
@@ -2026,7 +2026,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 
 			if (prev_write) {
 				refcount_inc(&req->done_ref);
-				prev_write->done_next = req;
+				prev_write->next_write = req;
 			}
 
 			if (!drbd_process_write_request(req))
