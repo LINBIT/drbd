@@ -62,10 +62,10 @@ ifndef CONFIG_DRBD_FAULT_INJECTION
 	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
 endif
 
-# Enabling now, for testing purposes. In upstream Linux, this should
-# default to yes. In the long run, the external module build should
-# not enable CONFIG_DRBD_COMPAT_84 by default
-CONFIG_DRBD_COMPAT_84 := y
+# Disabled for the external module build by default.
+# In upstream Linux, this should default to yes.
+# Enable by adding "CONFIG_DRBD_COMPAT_84=y" to your make command line.
+CONFIG_DRBD_COMPAT_84 := n
 
 # For drbd_strings.c. Could also use drbd-y += drbd-headers/drbd_strings.o,
 # but I don't think we should produce .o files in that directory.
