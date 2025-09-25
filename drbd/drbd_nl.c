@@ -6915,6 +6915,7 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 
 	if (res_opts.drbd8_compat_mode) {
+#ifdef CONFIG_DRBD_COMPAT_84
 		pr_info("drbd: running in DRBD 8 compatibility mode.\n");
 		/*
 		 * That means we ignore the value of node_id for now. That
@@ -6923,6 +6924,10 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		 */
 		nr_drbd8_devices++;
 		res_opts.auto_promote = false;
+#else
+		drbd_msg_put_info(adm_ctx.reply_skb, "CONFIG_DRBD_COMPAT_84 not enabled");
+		goto out;
+#endif
 	} else if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
 		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
 		retcode = ERR_INVALID_REQUEST;

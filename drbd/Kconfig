@@ -42,6 +42,7 @@ config BLK_DEV_DRBD
 config DRBD_FAULT_INJECTION
 	bool "DRBD fault injection"
 	depends on BLK_DEV_DRBD
+	default n
 	help
 
 	  Say Y here if you want to simulate IO errors, in order to test DRBD's
@@ -75,6 +76,7 @@ config DRBD_FAULT_INJECTION
 config DRBD_TIMING_STATS
 	bool "Enable additional timing collection"
 	depends on BLK_DEV_DRBD
+	default n
 	help
 
 	  this option enables a virtual file in debug-fs
@@ -82,3 +84,31 @@ config DRBD_TIMING_STATS
 
 	  that unveiles the culmative time consumed by requests in various
 	  stages of the request processing
+
+	  If unsure, say N.
+
+config DRBD_COMPAT_84
+	bool "Enable legacy (8.4) /proc/drbd and metadata compatibility"
+	depends on BLK_DEV_DRBD
+	default y
+	help
+
+	  This option enables the DRBD-8.4 style representation of
+	  DRBD devices in /proc/drbd. With DRBD 9.0, released in 2015,
+	  we deprecated this interface. The replacement is `drbdsetup
+	  status [--json] <resname>`. The new interface is optionally
+	  machine-readable, extensible, and scales to 1000s of
+	  resources. The deprecated interface had issues with all
+	  three areas.
+	  At the same time, this option also enables the DRBD driver
+	  to read and write the deprecated 8.4 version of the
+	  metadata.
+	  Only when you create a DRBD resource in the legacy way
+	  `drbdsetup new-resource <resname>` (no node-id positional
+	  argument), then the resource is put into legacy mode, and
+	  shows up in /proc/drbd, is capable of reading and writing
+	  the 8.4 metadata, and can have only a single peer. Without
+	  this compile-time option, creating a resource without a node
+	  ID is not possible.
+
+	  If unsure, say Y.

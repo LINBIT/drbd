@@ -22,8 +22,15 @@ struct proc_dir_entry *drbd_proc;
 int drbd_seq_show(struct seq_file *seq, void *v)
 {
 	bool any_legacy;
-	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)\n%s\n",
-		   GENL_MAGIC_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX,
+	static const char legacy_info[] =
+#ifdef CONFIG_DRBD_COMPAT_84
+		" (compat 8.4)";
+#else
+		"";
+#endif
+
+	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)%s\n%s\n",
+		   GENL_MAGIC_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, legacy_info,
 		   drbd_buildtag());
 
 	any_legacy = drbd_show_legacy_device(seq, v);
