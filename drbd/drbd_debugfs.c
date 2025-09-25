@@ -1744,9 +1744,9 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	}
 }
 
-int drbd_seq_print_peer_device_proc_drbd(struct seq_file *m,
-				    struct drbd_peer_device *peer_device)
+static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 {
+	struct drbd_peer_device *peer_device = m->private;
 	struct drbd_device *device = peer_device->device;
 	union drbd_state state;
 	const char *sn;
@@ -1765,6 +1765,7 @@ int drbd_seq_print_peer_device_proc_drbd(struct seq_file *m,
 
 	sn = drbd_repl_str(state.conn);
 
+	rcu_read_lock();
 	{
 		/* reset device->congestion_reason */
 
@@ -1822,18 +1823,9 @@ int drbd_seq_print_peer_device_proc_drbd(struct seq_file *m,
 		/* nr extents needed to satisfy the above in the worst case */
 		atomic_read(&device->wait_for_actlog_ecnt));
 
-	return 0;
-}
-
-static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
-{
-	struct drbd_peer_device *peer_device = m->private;
-	int rc;
-
-	rcu_read_lock();
-	rc = drbd_seq_print_peer_device_proc_drbd(m, peer_device);
 	rcu_read_unlock();
-	return rc;
+
+	return 0;
 }
 
 #define drbd_debugfs_peer_device_attr(name)					\

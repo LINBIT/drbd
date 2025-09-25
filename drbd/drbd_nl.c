@@ -6921,6 +6921,7 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		 * will be set to an actual value when the resource is
 		 * connected later.
 		 */
+		nr_drbd8_devices++;
 		res_opts.auto_promote = false;
 	} else if (res_opts.node_id >= DRBD_NODE_ID_MAX) {
 		pr_err("drbd: invalid node id (%d)\n", res_opts.node_id);
