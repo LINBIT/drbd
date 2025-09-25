@@ -10985,7 +10985,9 @@ found:
 void apply_unacked_peer_requests(struct drbd_connection *connection)
 {
 	struct drbd_peer_request *peer_req;
+	unsigned long flags;
 
+	spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 	list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
 		struct drbd_peer_device *peer_device = peer_req->peer_device;
 		struct drbd_device *device = peer_device->device;
@@ -10995,6 +10997,7 @@ void apply_unacked_peer_requests(struct drbd_connection *connection)
 		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 			      mask, mask);
 	}
+	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 }
 
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
