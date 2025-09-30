@@ -253,9 +253,17 @@ build:all:
   needs:
     - build:for-tests
 
-test:
+test:default:
   stage: test
   extends: [ .test ]
   rules:
     - if: $CI_MERGE_REQUEST_ID
   script: run_test
+
+test:rdma:
+  stage: test
+  extends: [ .test ]
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+  script: VMSHED_TEST_SELECTION=rdma_ci run_test --variant=rdma
