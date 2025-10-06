@@ -1674,9 +1674,11 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	}
 
 	if (get_capacity(device->vdisk) != size ||
-	    drbd_bm_capacity(device) != size) {
-		int err;
-		err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
+	    (device->bitmap && drbd_bm_capacity(device) != size)) {
+		int err = 0;
+
+		if (device->bitmap)
+			err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(device);
@@ -2153,12 +2155,13 @@ static void drbd_try_suspend_al(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 	bool suspend = true;
-	int max_peers = device->bitmap->bm_max_peers, bitmap_index;
+	int max_peers = device->ldev->md.max_peers, bitmap_index;
 
-	for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
-		if (_drbd_bm_total_weight(device, bitmap_index) !=
-		    drbd_bm_bits(device))
-			return;
+	if (device->bitmap) {
+		for (bitmap_index = 0; bitmap_index < max_peers; bitmap_index++) {
+			if (_drbd_bm_total_weight(device, bitmap_index) != drbd_bm_bits(device))
+				return;
+		}
 	}
 
 	if (!drbd_al_try_lock(device)) {
@@ -2352,7 +2355,7 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 	if (al_updates)
 		peer = the_only_peer_with_disk(device, which);
 
-	if (al_updates && device->bitmap->bm_max_peers == 1 &&
+	if (al_updates && device->ldev->md.max_peers == 1 &&
 	    peer && peer->peer_role[which] == R_PRIMARY &&
 	    device->resource->role[which] == R_SECONDARY) {
 		al_updates = false;
@@ -2453,6 +2456,30 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(adm_ctx.reply_skb,
 			"Try again without changing current al-extents setting");
 		retcode = ERR_NOMEM;
+		goto fail_unlock;
+	}
+
+	if (!old_disk_conf->d_bitmap && new_disk_conf->d_bitmap) {
+		struct drbd_md *md = &device->ldev->md;
+
+		device->bitmap = drbd_bm_alloc(md->max_peers, md->bm_block_shift);
+		if (!device->bitmap) {
+			drbd_msg_put_info(adm_ctx.reply_skb, "Failed to allocate bitmap");
+			retcode = ERR_NOMEM;
+			goto fail_unlock;
+		}
+		err = drbd_bm_resize(device, get_capacity(device->vdisk), true);
+		if (err) {
+			drbd_msg_put_info(adm_ctx.reply_skb, "Failed to allocate bitmap pages");
+			retcode = ERR_NOMEM;
+			goto fail_unlock;
+		}
+
+		drbd_bitmap_io(device, &drbd_bm_write, "write from disk_opts", BM_LOCK_ALL, NULL);
+	} else if (old_disk_conf->d_bitmap && !new_disk_conf->d_bitmap) {
+		/* That would be quite some effort, and there is no use case for this */
+		drbd_msg_put_info(adm_ctx.reply_skb, "Online freeing of the bitmap not supported");
+		retcode = ERR_INVALID_REQUEST;
 		goto fail_unlock;
 	}
 
@@ -3288,10 +3315,19 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
-	if (!device->bitmap) {
-		retcode = ERR_NOMEM;
-		goto fail;
+	if (new_disk_conf->d_bitmap) {
+		device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
+		if (!device->bitmap) {
+			retcode = ERR_NOMEM;
+			goto fail;
+		}
+	} else {
+		if (!list_empty(&resource->connections)) {
+			drbd_err_and_skb_info(&adm_ctx,
+				"Disabling bitmap allocation with peers defined is not allowed");
+			retcode = ERR_INVALID_REQUEST;
+			goto fail;
+		}
 	}
 	device->last_bm_block_shift = nbc->md.bm_block_shift;
 
@@ -3356,8 +3392,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (!get_ldev_if_state(device, D_ATTACHING))
 		goto force_diskless;
 
-	drbd_info(device, "Maximum number of peer devices = %u\n",
-		  device->bitmap->bm_max_peers);
+	drbd_info(device, "Maximum number of peer devices = %u\n", nbc->md.max_peers);
 
 	mutex_lock(&resource->conf_update);
 	have_conf_update = true;
@@ -3409,7 +3444,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 	if (slots_needed) {
-		int slots_available = device->bitmap->bm_max_peers - used_bitmap_slots(nbc);
+		int slots_available = nbc->md.max_peers - used_bitmap_slots(nbc);
 
 		if (slots_needed > slots_available) {
 			drbd_err_and_skb_info(&adm_ctx, "Not enough free bitmap "
@@ -4761,19 +4796,42 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
+	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
+	struct drbd_device *device;
+	int vnr;
+
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 
-	if (mutex_lock_interruptible(&adm_ctx.resource->adm_mutex)) {
+	resource = adm_ctx.resource;
+	if (mutex_lock_interruptible(&resource->adm_mutex)) {
 		retcode = ERR_INTR;
 		goto out;
 	}
 
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		bool fail = false;
+
+		if (get_ldev_if_state(device, D_FAILED)) {
+			fail = !device->ldev->disk_conf->d_bitmap;
+			put_ldev(device);
+		}
+		if (fail) {
+			rcu_read_unlock();
+			retcode = ERR_INVALID_REQUEST;
+			drbd_msg_sprintf_info(adm_ctx.reply_skb,
+			      "Cannot add a peer while having a disk without an allocated bitmap");
+			goto out_unlock;
+		}
+	}
+	rcu_read_unlock();
+
 	/* ensure uniqueness of peer_node_id by checking with adm_mutex */
-	connection = drbd_connection_by_node_id(adm_ctx.resource, adm_ctx.peer_node_id);
+	connection = drbd_connection_by_node_id(resource, adm_ctx.peer_node_id);
 	if (adm_ctx.connection || connection) {
 		retcode = ERR_INVALID_REQUEST;
 		drbd_msg_sprintf_info(adm_ctx.reply_skb,
@@ -4783,7 +4841,8 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 		retcode = adm_new_connection(&adm_ctx, info);
 	}
 
-	mutex_unlock(&adm_ctx.resource->adm_mutex);
+out_unlock:
+	mutex_unlock(&resource->adm_mutex);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;

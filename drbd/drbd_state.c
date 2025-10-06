@@ -3364,6 +3364,9 @@ int drbd_bitmap_io_from_worker(struct drbd_device *device,
 
 	D_ASSERT(device, current == device->resource->worker.task);
 
+	if (!device->bitmap)
+		return 0;
+
 	/* open coded non-blocking drbd_suspend_io(device); */
 	atomic_inc(&device->suspend_cnt);
 

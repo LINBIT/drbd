@@ -296,7 +296,9 @@ static void drbd_req_done(struct drbd_request *req)
 					clear_bit(bitmap_index, &mask);
 			}
 		}
-		modified_mask = drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
+		if (device->bitmap)
+			modified_mask =
+				drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
 		put_ldev(device);
 	}
 
@@ -1467,6 +1469,9 @@ static bool drbd_may_do_local_read(struct drbd_device *device, sector_t sector, 
 	D_ASSERT(device, esector < nr_sectors);
 
 	bm = device->bitmap;
+	if (!bm)
+		return true;
+
 	sbnr = bm_sect_to_bit(bm, sector);
 	ebnr = bm_sect_to_bit(bm, esector);
 

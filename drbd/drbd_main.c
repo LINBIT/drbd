@@ -4677,7 +4677,7 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 	buffer->md_size_sect  = cpu_to_be32(device->ldev->md.md_size_sect);
 	buffer->al_offset     = cpu_to_be32(device->ldev->md.al_offset);
 	buffer->al_nr_extents = cpu_to_be32(device->act_log->nr_elements);
-	buffer->bm_bytes_per_bit = cpu_to_be32(bm_block_size(device->bitmap));
+	buffer->bm_bytes_per_bit = cpu_to_be32(device->ldev->md.bm_block_size);
 	buffer->device_uuid = cpu_to_be64(device->ldev->md.device_uuid);
 
 	buffer->bm_offset = cpu_to_be32(device->ldev->md.bm_offset);
@@ -4968,7 +4968,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		peer_md[node_id].bitmap_dagtag = dagtag;
 		drbd_md_mark_dirty(device);
 		/* count, but only if that bitmap index exists. */
-		if (slot_nr < device->bitmap->bm_max_peers)
+		if (slot_nr < device->ldev->md.max_peers)
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 	}
 	rcu_read_unlock();
@@ -5920,6 +5920,9 @@ int drbd_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, current != device->resource->worker.task);
 
+	if (!device->bitmap)
+		return 0;
+
 	if (do_suspend_io)
 		drbd_suspend_io(device, WRITE_ONLY);
 
@@ -6029,13 +6032,13 @@ u64 directly_connected_nodes(struct drbd_resource *resource, enum which_state wh
 	return directly_connected;
 }
 
-static sector_t bm_sect_to_max_capacity(const struct drbd_bitmap *bm, sector_t bm_sect)
+static sector_t bm_sect_to_max_capacity(const struct drbd_md *md, sector_t bm_sect)
 {
 	/* we do our meta data IO in 4k units */
 	u64 bm_bytes = ALIGN_DOWN(bm_sect << SECTOR_SHIFT, 4096);
-	u64 bm_bytes_per_peer = div_u64(bm_bytes, bm->bm_max_peers);
+	u64 bm_bytes_per_peer = div_u64(bm_bytes, md->max_peers);
 	u64 bm_bits_per_peer = bm_bytes_per_peer * BITS_PER_BYTE;
-	return bm_bit_to_sect(bm, bm_bits_per_peer);
+	return bm_bits_per_peer << (md->bm_block_shift - SECTOR_SHIFT);
 }
 
 
@@ -6076,7 +6079,7 @@ sector_t drbd_get_max_capacity(
 		backing_capacity_remaining = backing_bdev_capacity;
 	}
 
-	metadata_limit = bm_sect_to_max_capacity(device->bitmap, bm_sect);
+	metadata_limit = bm_sect_to_max_capacity(&bdev->md, bm_sect);
 
 	dynamic_drbd_dbg(device,
 			"Backing device capacity: %llus, remaining: %llus, bitmap sectors: %llus\n",
