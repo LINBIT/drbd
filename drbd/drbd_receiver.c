@@ -4932,7 +4932,7 @@ static int bitmap_mod_after_handshake(struct drbd_peer_device *peer_device, enum
 		int from = device->ldev->md.peers[peer_node_id].bitmap_index;
 
 		if (from == -1)
-			from = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
+			from = drbd_unallocated_index(device->ldev);
 
 		if (peer_device->bitmap_index == -1)
 			return 0;

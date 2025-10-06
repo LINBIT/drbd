@@ -2239,7 +2239,7 @@ void conn_try_outdate_peer_async(struct drbd_connection *connection);
 int drbd_maybe_khelper(struct drbd_device *device,
 		       struct drbd_connection *connection, char *cmd);
 int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device);
-int drbd_unallocated_index(struct drbd_backing_dev *bdev, int bm_max_peers);
+int drbd_unallocated_index(struct drbd_backing_dev *bdev);
 void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf,
 				       size_t len);
 int param_set_drbd_strict_names(const char *val,
