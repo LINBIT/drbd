@@ -1595,6 +1595,9 @@ int drbd_send_sizes(struct drbd_peer_device *peer_device,
 		p->qlim->io_opt = cpu_to_be32(bdev_io_opt(bdev));
 		p->qlim->discard_enabled = !!bdev_max_discard_sectors(bdev);
 		p->qlim->write_same_capable = 0;
+		if (connection->agreed_features & DRBD_FF_BM_BLOCK_SHIFT)
+			p->qlim->bm_block_shift_minus_12 =
+				device->bitmap->bm_block_shift - BM_BLOCK_SHIFT_4k;
 		put_ldev(device);
 	} else {
 		struct request_queue *q = device->rq_queue;

@@ -5982,6 +5982,22 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		peer_device->q_limits.io_opt = be32_to_cpu(qlim->io_opt);
 	}
 
+	if (connection->agreed_features & DRBD_FF_BM_BLOCK_SHIFT)
+		peer_device->bm_block_shift =
+			p->qlim->bm_block_shift_minus_12 + BM_BLOCK_SHIFT_4k;
+	else {
+		int bbs = bm_block_size(device->bitmap);
+		/* May work as long as this one is SyncTarget. May result in
+		 * funny never ending / repeating resyncs if the other guy is
+		 * SyncTarget, but unaware of bitmap granularity issues.
+		 */
+		if (have_ldev && bbs != BM_BLOCK_SIZE_4k)
+			drbd_warn(peer_device,
+				"My bitmap granularity is %u. Upgrade this peer to make it aware.\n",
+				bbs);
+		peer_device->bm_block_shift = BM_BLOCK_SHIFT_4k;
+	}
+
 	/* Leave drbd_reconsider_queue_parameters() before drbd_determine_dev_size().
 	   In case we cleared the QUEUE_FLAG_DISCARD from our queue in
 	   drbd_reconsider_queue_parameters(), we can be sure that after

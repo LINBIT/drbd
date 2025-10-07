@@ -1252,7 +1252,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	bool request_ok = true;
 	unsigned long bit;
 	sector_t sector, prev_sector = 0;
-	unsigned int bm_block_shift = bm->bm_block_shift;
+	unsigned int bm_block_shift;
+	unsigned int peer_bm_block_shift;
+	unsigned int bits_per_peer_bit;
 
 	if (unlikely(cancel))
 		return 0;
@@ -1276,6 +1278,12 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		drbd_err(device, "Disk broke down during resync!\n");
 		return 0;
 	}
+	bm_block_shift = bm->bm_block_shift;
+	peer_bm_block_shift = peer_device->bm_block_shift;
+	if (peer_bm_block_shift > bm_block_shift)
+		bits_per_peer_bit = 1<<(peer_bm_block_shift - bm_block_shift);
+	else
+		bits_per_peer_bit = 1; // or maybe even only a partial bit ;-)
 
 	if (send_buffer_half_full(peer_device)) {
 		/* We still want to reschedule ourselves, so do not return. */
@@ -1314,9 +1322,13 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	/* don't let rs_sectors_came_in() re-schedule us "early"
 	 * just because the first reply came "fast", ... */
 	peer_device->rs_in_flight += bm_bit_to_sect(device->bitmap, number);
+	if (peer_device->bm_block_shift > bm_block_shift)
+		bits_per_peer_bit = 1<<(peer_device->bm_block_shift - bm_block_shift);
+	else
+		bits_per_peer_bit = 1; // or maybe even only a partial bit ;-)
 
 	clear_bit(RS_REQUEST_UNSUCCESSFUL, &peer_device->flags);
-	for (; i < number; i++) {
+	for (; i < number; i += bits_per_peer_bit) {
 		int err;
 
 		/* If we are aborting the requests or the peer is canceling
@@ -1336,6 +1348,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			goto request_done;
 		}
 
+		bit = ALIGN_DOWN(bit, bits_per_peer_bit);
 		sector = bm_bit_to_sect(bm, bit);
 
 		if (drbd_rs_c_min_rate_throttle(peer_device)) {
@@ -1351,7 +1364,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		}
 
 		prev_sector = sector;
-		size = bm_block_size(bm);
+		size = bm_block_size(bm) * bits_per_peer_bit;
 		optimal_bits_alignment = optimal_bits_for_alignment(bit, bm_block_shift);
 		optimal_bits_rate = round_to_powerof_2(number - i);
 		optimal_bits = min(optimal_bits_alignment, optimal_bits_rate) - 1;
@@ -1362,15 +1375,17 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			if (discard_granularity && size == discard_granularity)
 				break;
 
-			if (drbd_bm_test_bit(peer_device, bit + 1) != 1)
+			if (drbd_bm_count_bits(device, peer_device->bitmap_index,
+					       bit + bits_per_peer_bit,
+					       bit + bits_per_peer_bit * 2 - 1) == 0)
 				break;
-			size += bm_block_size(bm);
-			bit++;
-			i++;
+			size += bm_block_size(bm) * bits_per_peer_bit;
+			bit += bits_per_peer_bit;
+			i += bits_per_peer_bit;
 		}
 
 		/* set the offset to start the next drbd_bm_find_next from */
-		peer_device->resync_next_bit = bit + 1;
+		peer_device->resync_next_bit = bit + bits_per_peer_bit;
 
 		/* adjust very last sectors, in case we are oddly sized */
 		if (sector + (size>>9) > capacity)
