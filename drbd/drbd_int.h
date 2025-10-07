@@ -1989,6 +1989,10 @@ static inline unsigned long sect_to_bit(sector_t s, unsigned int bm_block_shift)
 {
 	return s >> (bm_block_shift - 9);
 }
+static inline sector_t bit_to_sect(unsigned long bit, unsigned int bm_block_shift)
+{
+	return (sector_t)bit << (bm_block_shift - 9);
+}
 static inline sector_t sect_per_bit(unsigned int bm_block_shift)
 {
 	return (sector_t)1 << (bm_block_shift - 9);

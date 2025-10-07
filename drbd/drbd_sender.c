@@ -26,6 +26,7 @@
 #include "drbd_int.h"
 #include "drbd_protocol.h"
 #include "drbd_req.h"
+#include "drbd_meta_data.h"
 
 void drbd_panic_after_delayed_completion_of_aborted_request(struct drbd_device *device);
 
@@ -903,6 +904,12 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 	return req_sect;
 }
 
+/* Calculate how many 4k sized blocks we want to resync this time.
+ * Because peer nodes may have different bitmap granularity,
+ * and won't be able to clear "partial bits", make sure we try to request
+ * multiples of BM_BLOCK_SIZE_MAX from the peer in one go.
+ * Return value is scaled to our bm_block_size.
+ */
 static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
 	struct net_conf *nc;
@@ -910,7 +917,6 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
 	struct drbd_bitmap *bm = peer_device->device->bitmap;
-	int bm_block_kb = bm_bit_to_kb(bm, 1);
 
 	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
 	peer_device->rs_in_flight -= sect_in;
@@ -924,11 +930,10 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	mxb = nc ? nc->max_buffers : 0;
 	if (rcu_dereference(peer_device->rs_plan_s)->size) {
 		number = drbd_rs_controller(peer_device, sect_in, ktime_to_ns(duration));
-		number = bm_sect_to_bit(bm, number);
-		peer_device->c_sync_rate = number * HZ * bm_block_kb / RS_MAKE_REQS_INTV;
+		number = sect_to_bit(number, BM_BLOCK_SHIFT_4k);
 	} else {
-		peer_device->c_sync_rate = rcu_dereference(peer_device->conf)->resync_rate;
-		number = RS_MAKE_REQS_INTV * peer_device->c_sync_rate  / (bm_block_kb * HZ);
+		number = RS_MAKE_REQS_INTV * rcu_dereference(peer_device->conf)->resync_rate
+			/ ((BM_BLOCK_SIZE_4k/1024) * HZ);
 	}
 	rcu_read_unlock();
 
@@ -944,15 +949,16 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	 */
 	{
 		int mxb_sect = mxb << (PAGE_SHIFT - 9);
-		int num_sect = bm_bit_to_sect(bm, number);
+		int num_sect = bit_to_sect(number, BM_BLOCK_SHIFT_4k);
 
 		if (mxb_sect - peer_device->rs_in_flight < num_sect) {
 			num_sect = mxb_sect - peer_device->rs_in_flight;
-			number = bm_sect_to_bit(bm, num_sect);
+			number = sect_to_bit(num_sect, BM_BLOCK_SHIFT_4k);
 		}
 	}
-
-	return number;
+	number = ALIGN(number, BM_BLOCK_SIZE_MAX/BM_BLOCK_SIZE_4k);
+	peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE_4k/1024) / RS_MAKE_REQS_INTV;
+	return number >> (bm->bm_block_shift - BM_BLOCK_SHIFT_4k);
 }
 
 static int resync_delay(bool request_ok, int number, int done)
