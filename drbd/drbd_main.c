@@ -1937,6 +1937,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	unsigned long plain_bits;
 	unsigned long tmp;
 	unsigned long rl;
+	unsigned long rl_4k;
 	unsigned len;
 	unsigned toggle;
 	int bits, use_rle;
@@ -1967,9 +1968,14 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 	do {
 		tmp = (toggle == 0) ? _drbd_bm_find_next_zero(peer_device, c->bit_offset)
 				    : _drbd_bm_find_next(peer_device, c->bit_offset);
-		if (tmp == -1UL)
+		if (tmp == -1UL) {
 			tmp = c->bm_bits;
-		rl = tmp - c->bit_offset;
+			rl = tmp - c->bit_offset;
+			rl_4k = c->bm_bits_4k - (c->bit_offset << c->scale);
+		} else {
+			rl = tmp - c->bit_offset;
+			rl_4k = rl << c->scale;
+		}
 
 		if (toggle == 2) { /* first iteration */
 			if (rl == 0) {
@@ -1991,7 +1997,7 @@ static int fill_bitmap_rle_bits(struct drbd_peer_device *peer_device,
 			return -1;
 		}
 
-		bits = vli_encode_bits(&bs, rl << c->scale);
+		bits = vli_encode_bits(&bs, rl_4k);
 		if (bits == -ENOBUFS) /* buffer full */
 			break;
 		if (bits <= 0) {
@@ -2095,14 +2101,17 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 		unsigned long words_left = c->bm_words - c->word_offset;
 		unsigned long *pu = (unsigned long *)pc;
 
-		/* At maximum scale, which is (20 - 12), factor 256,
+		/* Only send full native bitmap words (actual granularity),
+		 * scaled to what they would look like at 4k granularity.
+		 * At maximum scale, which is (20 - 12), factor 256,
 		 * to transfer at least one word of unscaled bitmap,
-		 * we need data_size >= 256 words, that is >= 2048 byte.
-		 * Which we always have.
+		 * we need data_size >= 256 (unsigned long) words,
+		 * that is >= 2048 byte. Which we always have.
 		 */
 		data_size = DRBD_SOCKET_BUFFER_SIZE - header_size;
-		num_words = min_t(size_t, (data_size / sizeof(*pu)) >> c->scale, words_left);
-		num_words = num_words & ~((1UL << c->scale)-1);
+		data_size = ALIGN_DOWN(data_size, sizeof(*pu) * (1UL << c->scale));
+		num_words = (data_size / sizeof(*pu)) >> c->scale;
+		num_words = min_t(size_t, num_words, words_left);
 
 		len = num_words * sizeof(*pu);
 		if (len) {
@@ -2167,6 +2176,7 @@ static bool _drbd_send_bitmap(struct drbd_device *device,
 			}
 		}
 		c = (struct bm_xfer_ctx) {
+			.bm_bits_4k = drbd_bm_bits_4k(device),
 			.bm_bits = drbd_bm_bits(device),
 			.bm_words = drbd_bm_words(device),
 			.scale = device->bitmap->bm_block_shift - BM_BLOCK_SHIFT_4k,
