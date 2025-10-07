@@ -3763,7 +3763,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 
 	/* Tell target to have a retry, waiting for the rescheduled
 	 * drbd_start_resync to complete. Otherwise the concurrency
-	 * of send oos and resync may lead to a data lose. */
+	 * of send oos and resync may lead to data loss.
+	 */
 	if (peer_device->repl_state[NOW] == L_WF_BITMAP_S ||
 			peer_device->repl_state[NOW] == L_STARTING_SYNC_S) {
 		switch (pi->cmd) {
@@ -3813,6 +3814,15 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 
 		/* drain possible payload */
 		return ignore_remaining_packet(connection, pi->size);
+	}
+
+	if (pi->cmd != P_DATA_REQUEST
+	&& !IS_ALIGNED(size, bm_block_size(device->bitmap))
+	&& (sector + (size >> 9) != device->bitmap->bm_dev_capacity)) {
+		drbd_warn_ratelimit(peer_device,
+			"Unaligned %s request (%u vs %u) at %llu; may lead to hung or repeating resync.\n",
+			drbd_packet_name(pi->cmd), size, bm_block_size(device->bitmap), sector);
+		/* For now, try to continue anyways */
 	}
 
 	inc_unacked(peer_device);
