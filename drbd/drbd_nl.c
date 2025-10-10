@@ -1460,8 +1460,7 @@ u64 drbd_capacity_to_on_disk_bm_sect(u64 capacity_sect, const struct drbd_md *md
  *  Activity log size used to be fixed 32kB,
  *  but is about to become configurable.
  */
-void drbd_md_set_sector_offsets(struct drbd_device *device,
-				struct drbd_backing_dev *bdev)
+void drbd_md_set_sector_offsets(struct drbd_backing_dev *bdev)
 {
 	sector_t md_size_sect = 0;
 	unsigned int al_size_sect = bdev->md.al_size_4k * 8;
@@ -1645,13 +1644,14 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	prev_size = get_capacity(device->vdisk);
 
 	if (rs) {
+		/* FIXME race with peer requests that want to do an AL transaction */
 		/* rs is non NULL if we should change the AL layout only */
 		md->al_stripes = rs->al_stripes;
 		md->al_stripe_size_4k = rs->al_stripe_size / 4;
 		md->al_size_4k = (u64)rs->al_stripes * rs->al_stripe_size / 4;
 	}
 
-	drbd_md_set_sector_offsets(device, device->ldev);
+	drbd_md_set_sector_offsets(device->ldev);
 
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
@@ -5124,7 +5124,7 @@ sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local)
 		return 0;
 
 	*tmp_bdev = *device->ldev;
-	drbd_md_set_sector_offsets(device, tmp_bdev);
+	drbd_md_set_sector_offsets(tmp_bdev);
 	s = drbd_get_max_capacity(device, tmp_bdev, false);
 	kfree(tmp_bdev);
 
