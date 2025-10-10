@@ -86,8 +86,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 
 int nr_drbd8_devices;
 
-void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
-		       int *max_peers, int *bytes_per_bit)
+void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 {
 	struct drbd_peer_md *peer_md;
 	const int peer_node_id = 0; /* setup_node_ids_84() moves it later */
@@ -106,8 +105,8 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md,
 	on_disk_flags = be32_to_cpu(on_disk->flags);
 	md->flags = on_disk_flags & MDF_84_MASK;
 
-	*max_peers = 1;
-	*bytes_per_bit = be32_to_cpu(on_disk->bm_bytes_per_bit);
+	md->max_peers = 1;
+	md->bm_block_size = be32_to_cpu(on_disk->bm_bytes_per_bit);
 	md->node_id = -1; /* no node_id in the drbd-8.4 meta-data */
 	md->al_stripes = be32_to_cpu(on_disk->al_stripes);
 	md->al_stripe_size_4k = be32_to_cpu(on_disk->al_stripe_size_4k);

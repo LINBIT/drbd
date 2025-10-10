@@ -191,7 +191,7 @@ void drbd_bm_unlock(struct drbd_device *device)
 		return;
 	}
 
-	if (!(device->bitmap->bm_flags & BM_LOCK_ALL))
+	if (!(b->bm_flags & BM_LOCK_ALL))
 		drbd_err(device, "FIXME bitmap not locked in bm_unlock\n");
 
 	b->bm_flags &= ~BM_LOCK_ALL;
@@ -262,7 +262,7 @@ static void bm_page_unlock_io(struct drbd_device *device, int page_nr)
 	struct drbd_bitmap *b = device->bitmap;
 	void *addr = &page_private(b->bm_pages[page_nr]);
 	clear_bit_unlock(BM_PAGE_IO_LOCK, addr);
-	wake_up(&device->bitmap->bm_io_wait);
+	wake_up(&b->bm_io_wait);
 }
 
 /* set _before_ submit_io, so it may be reset due to being changed
@@ -395,7 +395,7 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 	return new_pages;
 }
 
-struct drbd_bitmap *drbd_bm_alloc(void)
+struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_shift)
 {
 	struct drbd_bitmap *b;
 
@@ -408,7 +408,8 @@ struct drbd_bitmap *drbd_bm_alloc(void)
 	mutex_init(&b->bm_change);
 	init_waitqueue_head(&b->bm_io_wait);
 
-	b->bm_max_peers = 1;
+	b->bm_max_peers = max_peers;
+	b->bm_block_shift = bm_block_shift;
 
 	return b;
 }
@@ -862,7 +863,7 @@ static u64 drbd_md_on_disk_bits(struct drbd_device *device)
 	/* for interoperability between 32bit and 64bit architectures,
 	 * we round on 64bit words.  FIXME do we still need this? */
 	word64_on_disk = bitmap_sectors << (9 - 3); /* x * (512/8) */
-	do_div(word64_on_disk, device->bitmap->bm_max_peers);
+	do_div(word64_on_disk, device->ldev->md.max_peers);
 	return word64_on_disk << 6; /* x * 64 */;
 }
 
