@@ -3240,12 +3240,7 @@ void drbd_cleanup_device(struct drbd_device *device)
 	device->read_cnt = 0;
 	device->writ_cnt = 0;
 
-	if (device->bitmap) {
-		/* maybe never allocated. */
-		drbd_bm_resize(device, 0, 1);
-		drbd_bm_free(device->bitmap);
-		device->bitmap = NULL;
-	}
+	drbd_bm_free(device);
 
 	clear_bit(AL_SUSPENDED, &device->flags);
 	drbd_set_defaults(device);
@@ -3343,10 +3338,7 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 	struct drbd_device *device = container_of(work, struct drbd_device, finalize_work);
 	struct drbd_resource *resource = device->resource;
 
-	if (device->bitmap) {
-		drbd_bm_free(device->bitmap);
-		device->bitmap = NULL;
-	}
+	drbd_bm_free(device);
 
 	put_disk(device->vdisk);
 
@@ -4359,7 +4351,7 @@ out_no_peer_device:
 		kfree(peer_device);
 	}
 
-	drbd_bm_free(device->bitmap);
+	drbd_bm_free(device);
 out_no_bitmap:
 	__free_page(device->md_io.page);
 out_no_io_page:

@@ -420,14 +420,17 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 	return device->bitmap->bm_dev_capacity;
 }
 
-void drbd_bm_free(struct drbd_bitmap *bitmap)
+void drbd_bm_free(struct drbd_device *device)
 {
-	if (bitmap->bm_flags & BM_ON_DAX_PMEM)
+	struct drbd_bitmap *bitmap = device->bitmap;
+
+	if (bitmap == NULL)
 		return;
 
-	bm_free_pages(bitmap->bm_pages, bitmap->bm_number_of_pages);
-	kvfree(bitmap->bm_pages);
+	drbd_bm_resize(device, 0, 0);
+
 	kfree(bitmap);
+	device->bitmap = NULL;
 }
 
 static inline unsigned long interleaved_word32(struct drbd_bitmap *bitmap,
