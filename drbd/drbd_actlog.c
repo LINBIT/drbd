@@ -23,23 +23,31 @@ void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
 {
 	int r;
 	long t;
+	unsigned long t0 = jiffies;
+	unsigned int warn_s = 10;
 
-	t = wait_event_timeout(device->misc_wait,
-			(r = atomic_cmpxchg(&device->md_io.in_use, 0, 1)) == 0 ||
-			device->disk_state[NOW] <= D_FAILED,
-			HZ * 10);
+	for (;;) {
+		t = wait_event_timeout(device->misc_wait,
+				(r = atomic_cmpxchg(&device->md_io.in_use, 0, 1)) == 0 ||
+				device->disk_state[NOW] <= D_FAILED,
+				HZ * warn_s);
 
-	if (r) {
-		if (t == 0) {
-			drbd_err(device, "Waited 10 Seconds for md_buffer! BUG?\n");
-			drbd_err(device, "Failed to get md_buffer for %s, currently in use by %s\n",
-				 intent, device->md_io.current_use);
-		} else {
+		if (r == 0)
+			break;
+
+		if (t != 0) {
 			drbd_err(device, "Failed to get md_buffer for %s: disk state %s\n",
 				 intent, drbd_disk_str(device->disk_state[NOW]));
+			return NULL;
 		}
 
-		return NULL;
+		/* r != 0, t == 0: still in use, hit the timeout above.
+		 * Warn, but keep trying.
+		 */
+		drbd_err(device, "Waited %lds on md_buffer for %s; in use by %s; still trying...\n",
+			 (jiffies - t0 + HZ-1)/HZ, intent, device->md_io.current_use);
+		/* reduce warn frequency */
+		warn_s = max(30, warn_s + 10);
 	}
 
 	device->md_io.current_use = intent;
