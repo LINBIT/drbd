@@ -927,6 +927,15 @@ static char *alloc_send_buffer(struct drbd_connection *connection, int size,
 	return sbuf->pos;
 }
 
+/* If we called alloc_send_buffer(), possibly indirectly via __conn_prepare_command(),
+ * but then decide that we actually don't want to use it.
+ */
+static void cancel_send_buffer(struct drbd_connection *connection,
+		enum drbd_stream drbd_stream)
+{
+	connection->send_buffer[drbd_stream].allocated_size = 0;
+}
+
 /* Only used the shrink the previously allocated size. */
 static void resize_prepared_command(struct drbd_connection *connection,
 				    enum drbd_stream drbd_stream,
@@ -2033,8 +2042,10 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 
 	len = fill_bitmap_rle_bits(peer_device, pc,
 			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*pc), c);
-	if (len < 0)
+	if (len < 0) {
+		cancel_send_buffer(peer_device->connection, DATA_STREAM);
 		return -EIO;
+	}
 
 	if (len) {
 		dcbp_set_code(pc, RLE_VLI_Bits);
