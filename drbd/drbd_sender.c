@@ -905,10 +905,15 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 }
 
 /* Calculate how many 4k sized blocks we want to resync this time.
- * Because peer nodes may have different bitmap granularity,
- * and won't be able to clear "partial bits", make sure we try to request
- * multiples of BM_BLOCK_SIZE_MAX from the peer in one go.
- * Return value is scaled to our bm_block_size.
+ * Because peer nodes may have different bitmap granularity, and won't
+ * be able to clear "partial bits", make sure we try to request
+ * multiples of the bitmap block size (of myself or the peer, whichever
+ * is larger) in one go. Return value is scaled to our bm_block_size.
+ * If both peers operate at 4k granularity, or at identical granularity,
+ * this should not change behavior.
+ * If we operate at different granularities, we may need to improve our
+ * drbd_rs_controller() as well to get intended resync rates,
+ * especially if you configure for rather small c-max-rate.
  */
 static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 {
@@ -916,6 +921,7 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	ktime_t duration, now;
 	unsigned int sect_in;  /* Number of sectors that came in since the last turn */
 	int number, mxb;
+	int effective_resync_request_size;
 	struct drbd_bitmap *bm = peer_device->device->bitmap;
 
 	sect_in = atomic_xchg(&peer_device->rs_sect_in, 0);
@@ -956,7 +962,11 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 			number = sect_to_bit(num_sect, BM_BLOCK_SHIFT_4k);
 		}
 	}
-	number = ALIGN(number, BM_BLOCK_SIZE_MAX/BM_BLOCK_SIZE_4k);
+
+	/* BM_BLOCK_SIZE_MAX/BM_BLOCK_SIZE_4k? Maybe. But do not round up unless we have to. */
+	effective_resync_request_size =
+		1 << (max(bm->bm_block_shift, peer_device->bm_block_shift) - BM_BLOCK_SHIFT_4k);
+	number = ALIGN(number, effective_resync_request_size);
 	peer_device->c_sync_rate = number * HZ * (BM_BLOCK_SIZE_4k/1024) / RS_MAKE_REQS_INTV;
 	return number >> (bm->bm_block_shift - BM_BLOCK_SHIFT_4k);
 }

@@ -1480,7 +1480,7 @@ struct drbd_peer_device {
 		unsigned int	max_bio_size;
 	} q_limits;
 	/* communicated as part of o_qlim, if agreed on DRBD_FF_BM_BLOCK_SHIFT */
-	int bm_block_shift;
+	unsigned int bm_block_shift;
 };
 
 struct conflict_worker {
