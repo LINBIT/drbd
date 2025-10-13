@@ -2355,9 +2355,10 @@ static void __update_mdf_al_disabled(struct drbd_device *device, bool al_updates
 	if (al_updates)
 		peer = the_only_peer_with_disk(device, which);
 
-	if (al_updates && device->ldev->md.max_peers == 1 &&
+	if (device->bitmap == NULL ||
+	    (al_updates && device->ldev->md.max_peers == 1 &&
 	    peer && peer->peer_role[which] == R_PRIMARY &&
-	    device->resource->role[which] == R_SECONDARY) {
+	    device->resource->role[which] == R_SECONDARY)) {
 		al_updates = false;
 		optimized = true;
 	}
