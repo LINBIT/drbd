@@ -50,7 +50,7 @@ module_param_named(keepidle, drbd_keepidle, uint, 0664);
 MODULE_PARM_DESC(keepidle, "see tcp(7) tcp_keepalive_time; set TCP_KEEPIDLE for data sockets; default: 23s");
 static unsigned int drbd_keepintvl = DRBD_KEEP_INTVL;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
-MODULE_PARM_DESC(keepintvtl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
+MODULE_PARM_DESC(keepintvl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
 
 #define DTL_CONNECTING 1
 #define DTL_LOAD_BALANCE 2
