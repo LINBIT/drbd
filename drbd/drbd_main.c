@@ -4698,6 +4698,10 @@ void drbd_md_encode_9(struct drbd_device *device, struct meta_data_on_disk_9 *bu
 
 	buffer->al_stripes = cpu_to_be32(device->ldev->md.al_stripes);
 	buffer->al_stripe_size_4k = cpu_to_be32(device->ldev->md.al_stripe_size_4k);
+
+	if (device->bitmap == NULL)
+		for (i = 0; i < DRBD_PEERS_MAX; i++)
+			buffer->peers[i].flags |= cpu_to_be32(MDF_PEER_FULL_SYNC);
 }
 
 static void drbd_md_encode(struct drbd_device *device, void *buffer)

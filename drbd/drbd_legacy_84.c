@@ -142,6 +142,9 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 	u32 flags = (md->flags & MDF_84_MASK) | (peer_md->flags & MDF_84_PEER_MASK);
 	int i;
 
+	if (device->bitmap == NULL)
+		flags |= MDF_PEER_FULL_SYNC;
+
 	flags |= peer_md->flags & MDF_PEER_OUTDATED ? MDF_84_PEER_OUTDATED : 0;
 	flags |= peer_md->flags & MDF_PEER_CONNECTED ? MDF_84_CONNECTED_IND : 0;
 	buffer->la_size_sect = cpu_to_be64(md->effective_size);
