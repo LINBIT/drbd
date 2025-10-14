@@ -5986,12 +5986,12 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		peer_device->bm_block_shift =
 			p->qlim->bm_block_shift_minus_12 + BM_BLOCK_SHIFT_4k;
 	else {
-		int bbs = bm_block_size(device->bitmap);
+		int bbs = device->bitmap ? bm_block_size(device->bitmap) : BM_BLOCK_SIZE_4k;
 		/* May work as long as this one is SyncTarget. May result in
 		 * funny never ending / repeating resyncs if the other guy is
 		 * SyncTarget, but unaware of bitmap granularity issues.
 		 */
-		if (have_ldev && bbs != BM_BLOCK_SIZE_4k)
+		if (bbs != BM_BLOCK_SIZE_4k)
 			drbd_warn(peer_device,
 				"My bitmap granularity is %u. Upgrade this peer to make it aware.\n",
 				bbs);
