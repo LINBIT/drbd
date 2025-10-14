@@ -2776,10 +2776,14 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 
 static void do_start_resync(struct drbd_peer_device *peer_device)
 {
-	/* Postpone resync if there is still activity from a previous resync
-	 * pending. Also postpone the transition from Ahead to SyncSource if
-	 * there is any activity on this peer device. */
+	/*
+	 * Postpone resync in any of these situations:
+	 * - There is still activity from a previous resync according to rs_pending_cnt.
+	 * - The resync as SyncTarget is still active.
+	 * - The transition from Ahead to SyncSource if there is any activity on this peer device.
+	 */
 	if (atomic_read(&peer_device->rs_pending_cnt) ||
+			peer_device->resync_active[NOW] ||
 			(peer_device->repl_state[NOW] == L_AHEAD &&
 			 atomic_read(&peer_device->unacked_cnt))) {
 		drbd_warn(peer_device, "postponing start_resync ...\n");
