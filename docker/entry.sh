@@ -227,13 +227,8 @@ kos::rpm::bestbyrpmprovides() {
 		if [ -z "$(comm -13 "$kernel_provides_file" "$drbd_requires_file")" ]; then
 			debug "Kernel module matching kernel provides: \"$RPM\""
 			echo "$RPM"
-			return 0
 		fi
 	done
-
-	debug "No kernel module matches kernel provides"
-
-	return 1
 }
 
 kos::rpm::fromshipped() {
@@ -243,7 +238,14 @@ kos::rpm::fromshipped() {
 
 	family="$(lbdisttool.py --family)"
 
-	best="$(kos::rpm::bestbyrpmprovides "$pkgdir" "${PKGS}/${family}"*/*.rpm || lbdisttool.py --force-name "$family" -k "${PKGS}/${family}"*/*.rpm)"
+	# First try to filter best RPMs by package metadata
+	best="$(kos::rpm::bestbyrpmprovides "$pkgdir" "${PKGS}/${family}"*/*.rpm)"
+	if [ -z "$best" ]; then
+		# Either no RPM matches or not enough metadata, so just check all again
+		best="$(lbdisttool.py --force-name "$family" -k "${PKGS}/${family}"*/*.rpm)"
+	else
+		best="$(lbdisttool.py --force-name "$family" -k $best)"
+	fi
 	[ -n "$best" ] || die "Could not find matching rpm package for your kernel"
 	debug "Best kernel module package: \"$best\""
 	cp "$best" "$pkgdir"
