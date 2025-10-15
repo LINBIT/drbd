@@ -47,7 +47,7 @@ void *drbd_md_get_buffer(struct drbd_device *device, const char *intent)
 		drbd_err(device, "Waited %lds on md_buffer for %s; in use by %s; still trying...\n",
 			 (jiffies - t0 + HZ-1)/HZ, intent, device->md_io.current_use);
 		/* reduce warn frequency */
-		warn_s = max(30, warn_s + 10);
+		warn_s = max(30U, warn_s + 10);
 	}
 
 	device->md_io.current_use = intent;
