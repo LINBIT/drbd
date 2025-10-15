@@ -8059,7 +8059,18 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	/* Start resync after AHEAD/BEHIND */
 	if (connection->agreed_pro_version >= 110 &&
 	    peer_state.conn == L_SYNC_SOURCE && old_peer_state.conn == L_BEHIND) {
-		drbd_start_resync(peer_device, L_SYNC_TARGET, "resync-after-behind");
+		/*
+		 * Become Inconsistent immediately because we may now receive
+		 * data. Delay the start of the resync itself until any
+		 * previous resync is no longer active.
+		 */
+		rv = change_disk_state(device, D_INCONSISTENT, CS_VERBOSE,
+				"resync-after-behind", NULL);
+		if (rv < SS_SUCCESS)
+			goto fail;
+
+		peer_device->start_resync_side = L_SYNC_TARGET;
+		drbd_peer_device_post_work(peer_device, RS_START);
 		return 0;
 	}
 
