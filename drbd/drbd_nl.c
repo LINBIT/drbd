@@ -4678,7 +4678,7 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 
 	kref_init(&path->kref);
 
-	if (connection->resource->res_opts.drbd8_compat_mode) {
+	if (connection->resource->res_opts.drbd8_compat_mode && resource->res_opts.node_id == -1) {
 		err = drbd_setup_node_ids_84(connection, path, adm_ctx->peer_node_id);
 		if (err) {
 			drbd_msg_put_info(adm_ctx->reply_skb,
@@ -5421,6 +5421,9 @@ static int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
 		goto fail;
 	}
+
+	if (res_opts.node_id != -1)
+		res_opts.drbd8_compat_mode = res_opts.explicit_drbd8_compat;
 
 	err = set_resource_options(adm_ctx.resource, &res_opts, "resource-options");
 	if (err) {
@@ -6971,6 +6974,7 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	set_res_opts_defaults(&res_opts);
+	res_opts.node_id = -1;
 	err = res_opts_from_attrs(&res_opts, info);
 	if (err) {
 		retcode = ERR_MANDATORY_TAG;
@@ -6985,6 +6989,9 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 	retcode = drbd_check_resource_name(&adm_ctx);
 	if (retcode != NO_ERROR)
 		goto out;
+
+	if (res_opts.explicit_drbd8_compat)
+		res_opts.drbd8_compat_mode = true;
 
 	if (res_opts.drbd8_compat_mode) {
 #ifdef CONFIG_DRBD_COMPAT_84
