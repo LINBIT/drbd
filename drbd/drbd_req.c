@@ -984,8 +984,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 		atomic_inc(&req->completion_ref);
 	}
 
-	if (!(req->net_rq_state[idx] & RQ_NET_DONE) &&
-			!(old_net & RQ_NET_READY) && (set & RQ_NET_READY))
+	if (!(old_net & RQ_NET_READY) && (set & RQ_NET_READY) &&
+			!(req->net_rq_state[idx] & RQ_NET_DONE))
 		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
