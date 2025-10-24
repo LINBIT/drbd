@@ -5431,6 +5431,20 @@ static int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	if (res_opts.explicit_drbd8_compat) {
+		struct drbd_connection *connection;
+		int n_connections = 0;
+
+		for_each_connection(connection, adm_ctx.resource)
+			n_connections++;
+
+		if (n_connections > 1) {
+			drbd_msg_sprintf_info(adm_ctx.reply_skb,
+					      "drbd8 compat mode allows one peer at max");
+			goto fail;
+		}
+	}
+
 	if (res_opts.node_id != -1) {
 #ifdef CONFIG_DRBD_COMPAT_84
 		if (!res_opts.drbd8_compat_mode && res_opts.explicit_drbd8_compat)
