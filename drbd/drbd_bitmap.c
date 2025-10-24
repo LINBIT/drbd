@@ -343,8 +343,9 @@ static void bm_free_pages(struct page **pages, unsigned long number)
 /*
  * "have" and "want" are NUMBER OF PAGES.
  */
-static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
+static struct page **bm_realloc_pages(struct drbd_device *device, unsigned long want)
 {
+	struct drbd_bitmap *b = device->bitmap;
 	struct page **old_pages = b->bm_pages;
 	struct page **new_pages, *page;
 	unsigned int i, bytes;
@@ -356,11 +357,13 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 	if (have == want)
 		return old_pages;
 
-	/* Trying kmalloc first, falling back to vmalloc.
+	/*
+	 * Trying kmalloc first, falling back to vmalloc.
 	 * GFP_NOIO, as this is called while drbd IO is "suspended",
 	 * and during resize or attach on diskless Primary,
 	 * we must not block on IO to ourselves.
-	 * Context is receiver thread or dmsetup. */
+	 * Context is receiver thread or drbdsetup.
+	 */
 	bytes = sizeof(struct page *)*want;
 	new_pages = kzalloc(bytes, GFP_NOIO | __GFP_NOWARN);
 	if (!new_pages) {
@@ -374,10 +377,14 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 		for (i = 0; i < have; i++)
 			new_pages[i] = old_pages[i];
 		for (; i < want; i++) {
-			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM | __GFP_ZERO);
+			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM | __GFP_NORETRY | __GFP_NOWARN |
+					__GFP_ZERO);
 			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
 				kvfree(new_pages);
+				drbd_err(device, "Failed to allocate bitmap; allocated %lu KiB / %lu KiB\n",
+						(unsigned long) i << (PAGE_SHIFT - 10),
+						want << (PAGE_SHIFT - 10));
 				return NULL;
 			}
 			/* we want to know which page it is
@@ -942,7 +949,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			if (drbd_insert_fault(device, DRBD_FAULT_BM_ALLOC))
 				npages = NULL;
 			else
-				npages = bm_realloc_pages(b, want);
+				npages = bm_realloc_pages(device, want);
 		}
 
 		if (!npages) {
