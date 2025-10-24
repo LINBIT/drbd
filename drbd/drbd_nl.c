@@ -4750,6 +4750,7 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
 	enum drbd_ret_code retcode;
+	int n_connections = 0;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
 	if (!adm_ctx.reply_skb)
@@ -4758,6 +4759,15 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	if (mutex_lock_interruptible(&adm_ctx.resource->adm_mutex)) {
 		retcode = ERR_INTR;
 		goto out;
+	}
+
+	for_each_connection(connection, adm_ctx.resource)
+		n_connections++;
+	if (adm_ctx.resource->res_opts.drbd8_compat_mode && n_connections >= 1) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				      "drbd8 compat mode allows one peer at max");
+		goto out_unlock;
 	}
 
 	/* ensure uniqueness of peer_node_id by checking with adm_mutex */
@@ -4771,6 +4781,7 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 		retcode = adm_new_connection(&adm_ctx, info);
 	}
 
+out_unlock:
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
