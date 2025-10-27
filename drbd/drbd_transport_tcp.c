@@ -370,11 +370,13 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		return -ENOTCONN;
 
 	do {
-		size_t len = min_t(int, size, PAGE_SIZE);
+		size_t len;
 
-		page = drbd_alloc_page(transport, GFP_KERNEL);
+		page = drbd_alloc_pages(transport, GFP_KERNEL, size);
 		if (!page)
 			return -ENOMEM;
+		len = min(PAGE_SIZE << compound_order(page), size);
+
 		err = dtt_recv_short(socket, page_address(page), len, 0);
 		if (err < 0)
 			goto fail;

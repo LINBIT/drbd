@@ -2053,7 +2053,7 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 		return -ENOMEM;
 
 	/* Ignoring rdma_transport->rx_allocation_size for now! */
-	page = drbd_alloc_page(transport, gfp_mask);
+	page = drbd_alloc_pages(transport, gfp_mask, PAGE_SIZE);
 	if (!page) {
 		kfree(rx_desc);
 		return -ENOMEM;
@@ -2122,7 +2122,7 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 		err = dtr_create_rx_desc(flow, (GFP_NOIO & ~__GFP_RECLAIM) | __GFP_NOWARN, true);
 		/*
-		 * drbd_alloc_page() goes over the configured max_buffers, but throttles the
+		 * drbd_alloc_pages() goes over the configured max_buffers, but throttles the
 		 * caller with sleeping 100ms for each of those excess pages.  By calling
 		 * without __GFP_RECLAIM we request to get a -ENOMEM instead of sleeping.
 		 * We simply stop refilling then.
@@ -3189,7 +3189,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	} else {
 		void *from;
 
-		page = drbd_alloc_page(transport, GFP_NOIO);
+		page = drbd_alloc_pages(transport, GFP_NOIO, PAGE_SIZE);
 		from = kmap_local_page(caller_page);
 		memcpy(page_address(page), from + offset, size);
 		kunmap_local(from);

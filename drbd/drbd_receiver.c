@@ -326,16 +326,41 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 	struct bio *bio;
 
 	while ((bio = bio_list_pop(&peer_req->bios))) {
-		bio_for_each_segment(bvec, bio, iter)
+		bio_for_each_bvec(bvec, bio, iter)
 			drbd_free_page(transport, bvec.bv_page);
 		bio_put(bio);
 	}
 }
 
+static struct page *
+__drbd_alloc_pages(struct drbd_connection *connection, gfp_t gfp_mask, int order)
+{
+	struct page *page;
+	unsigned int mxb;
+
+	rcu_read_lock();
+	mxb = rcu_dereference(connection->transport.net_conf)->max_buffers;
+	rcu_read_unlock();
+
+	if (atomic_read(&connection->pp_in_use) >= mxb)
+		schedule_timeout_interruptible(HZ / 10);
+
+	if (order == 0)
+		page = mempool_alloc(&drbd_buffer_page_pool, gfp_mask);
+	else
+		page = alloc_pages(gfp_mask | __GFP_COMP | __GFP_NORETRY, order);
+
+	if (page)
+		atomic_add(1 << order, &connection->pp_in_use);
+
+	return page;
+}
+
 /**
- * drbd_alloc_page() - Returns a page
+ * drbd_alloc_pages() - Returns a page, which might be a single or compound page
  * @transport:	DRBD transport
  * @gfp_mask:	how to allocate and whether to loop until we succeed
+ * @size:	Desired size, gets rounded down to the closest power of two
  *
  * Allocates a page from the kernel or from the private mempool. When this
  * allocation exceeds the max_buffers setting, throttle the allocation via
@@ -346,46 +371,42 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
  * (checksum-based) resync, if the max-buffers, socket buffer sizes, and
  * resync-rate settings are mis-configured.
  */
-struct page *drbd_alloc_page(struct drbd_transport *transport, gfp_t gfp_mask)
+struct page *drbd_alloc_pages(struct drbd_transport *transport, gfp_t gfp_mask, unsigned int size)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
+	int order = max(ilog2(size) - PAGE_SHIFT, 0);
 	struct page *page;
-	unsigned int mxb;
 
-	rcu_read_lock();
-	mxb = rcu_dereference(transport->net_conf)->max_buffers;
-	rcu_read_unlock();
+	if (order && drbd_insert_fault_conn(connection, DRBD_FAULT_BIO_TOO_SMALL))
+		order = 0;
 
-	if (atomic_read(&connection->pp_in_use) >= mxb)
-		schedule_timeout_interruptible(HZ / 10);
+	page = __drbd_alloc_pages(connection, gfp_mask | __GFP_NOWARN, order);
+	if (!page && order)
+		page = __drbd_alloc_pages(connection, gfp_mask, 0);
 
-	page = mempool_alloc(&drbd_buffer_page_pool, gfp_mask);
-
-	if (page)
-		atomic_inc(&connection->pp_in_use);
 	return page;
 }
-EXPORT_SYMBOL(drbd_alloc_page); /* for transports */
+EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
 
-/* Must not be used from irq, as that may deadlock: see drbd_alloc_page().
+/* Must not be used from irq, as that may deadlock: see drbd_alloc_pages().
  * Either links the page chain back to the pool of free pages,
  * or returns all pages to the system. */
 void drbd_free_page(struct drbd_transport *transport, struct page *page)
 {
 	struct drbd_connection *connection =
 		container_of(transport, struct drbd_connection, transport);
-	int i = 0;
+	int order = compound_order(page), i = 0;
 
 	if (page == NULL)
 		return;
 
-	if (page_count(page) == 1)
+	if (page_count(page) == 1 && order == 0)
 		mempool_free(page, &drbd_buffer_page_pool);
 	else
 		put_page(page);
 
-	i = atomic_dec_return(&connection->pp_in_use);
+	i = atomic_sub_return(1 << order, &connection->pp_in_use);
 	if (i < 0)
 		drbd_warn(connection, "ASSERTION FAILED: pp_in_use: %d < 0\n", i);
 }
@@ -417,11 +438,13 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 
 	if (op == REQ_OP_READ) {
 		while (size) {
-			unsigned int len = min(size, PAGE_SIZE);
+			int len;
 
-			page = drbd_alloc_page(transport, gfp_mask);
+			page = drbd_alloc_pages(transport, gfp_mask, size);
 			if (!page)
 				goto out_free_pages;
+			len = min(PAGE_SIZE << compound_order(page), size);
+
 			len = drbd_bio_add_page(transport, &peer_req->bios, page, len, 0);
 			if (len < 0)
 				goto out_free_pages;

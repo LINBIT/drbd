@@ -490,11 +490,12 @@ dtl_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t siz
 	int err;
 
 	do {
-		size_t len = min_t(int, size, PAGE_SIZE);
+		size_t len;
 
-		page = drbd_alloc_page(transport, GFP_KERNEL);
+		page = drbd_alloc_pages(transport, GFP_KERNEL, size);
 		if (!page)
 			return -ENOMEM;
+		len = min(PAGE_SIZE << compound_order(page), size);
 
 		err = _dtl_recv_page(dtl_transport, page, len);
 		if (err < 0)
