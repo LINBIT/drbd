@@ -58,6 +58,15 @@ struct bvec_iter {
 #define __GFP_RECLAIM __GFP_WAIT
 #endif
 
+/* introduced in v4.12-11009-gdcda9b04713c */
+#ifndef __GFP_RETRY_MAYFAIL
+/*
+ * __GFP_RETRY_MAYFAIL replaced __GFP_REPEAT, however that had different
+ * semantics. Avoid causing regressions on older kernels.
+ */
+#define __GFP_RETRY_MAYFAIL 0
+#endif
+
 /* introduced in v4.14-rc8-66-gf54bb2ec02c8 */
 #ifndef lockdep_assert_irqs_disabled
 #define lockdep_assert_irqs_disabled() do { } while (0)
