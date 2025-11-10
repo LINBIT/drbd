@@ -269,13 +269,13 @@ load_from_ram() {
 	find "$pkgdir" -name "*.ko" -exec cp {} "$kodir" \;
 	cd "$kodir" || die "Could not cd to $kodir"
 	if [ ! -f drbd.ko ] || [ ! -f drbd_transport_tcp.ko ]; then
-		die "Could not find the expexted *.ko, see stderr for more details"
+		die "Could not find the expected *.ko, see stderr for more details"
 	fi
 
 	if [ -d "$LB_SIGN" ]; then
 		# guess we could source the whole thing, but...
 		eval "$(grep CONFIG_MODULE_SIG_HASH= "/lib/modules/$(uname -r)/build/.config")"
-		find . -name "*.ko" -print0 | xargs -0 -n1 "/lib/modules/$(uname -r)/build/scripts/sign-file" "$CONFIG_MODULE_SIG_HASH" "${LB_SIGN}/signing_key.pem" "${LB_SIGN}/signing_key.x509" 
+		find . -name "*.ko" -print0 | xargs -0 -n1 "/lib/modules/$(uname -r)/build/scripts/sign-file" "$CONFIG_MODULE_SIG_HASH" "${LB_SIGN}/signing_key.pem" "${LB_SIGN}/signing_key.x509"
 	fi
 
 	if [ -n "$LB_SELINUX_AS" ]; then
