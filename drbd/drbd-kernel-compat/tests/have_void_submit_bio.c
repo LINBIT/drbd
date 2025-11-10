@@ -2,9 +2,13 @@
 
 #include <linux/blkdev.h>
 
+#ifndef __same_type
+# define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+#endif
+
 void submit(struct bio *bio);
 
 void foo(struct block_device_operations *ops)
 {
-	ops->submit_bio = submit;
+	BUILD_BUG_ON(!(__same_type(ops->submit_bio, &submit)));
 }
