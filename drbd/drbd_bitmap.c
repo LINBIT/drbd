@@ -378,8 +378,8 @@ static struct page **bm_realloc_pages(struct drbd_device *device, unsigned long 
 		for (i = 0; i < have; i++)
 			new_pages[i] = old_pages[i];
 		for (; i < want; i++) {
-			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM | __GFP_NORETRY | __GFP_NOWARN |
-					__GFP_ZERO);
+			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM | __GFP_RETRY_MAYFAIL |
+					__GFP_NOWARN | __GFP_ZERO);
 			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
 				kvfree(new_pages);
