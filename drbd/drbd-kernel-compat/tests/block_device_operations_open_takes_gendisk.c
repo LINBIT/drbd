@@ -5,13 +5,9 @@
 # define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
 #endif
 
-int foo_open(struct gendisk *disk, unsigned int mode)
-{
-	return 0;
-}
+int foo_open(struct gendisk *disk, unsigned int mode);
 
-void foo(void)
+void foo(struct block_device_operations *ops)
 {
-	struct block_device_operations ops;
-	BUILD_BUG_ON(!(__same_type(ops.open, &foo_open)));
+	BUILD_BUG_ON(!(__same_type(ops->open, &foo_open)));
 }
