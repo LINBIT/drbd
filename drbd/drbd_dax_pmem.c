@@ -22,7 +22,6 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/dax.h>
-#include <linux/pfn_t.h>
 #include <linux/libnvdimm.h>
 #include <linux/blkdev.h>
 #include "drbd_int.h"
@@ -35,11 +34,10 @@ static int map_superblock_for_dax(struct drbd_backing_dev *bdev, struct dax_devi
 	pgoff_t pgoff = bdev->md.md_offset >> (PAGE_SHIFT - SECTOR_SHIFT);
 	void *kaddr;
 	long len;
-	pfn_t pfn_unused; /* before 4.18 it is required to pass in non-NULL */
 	int id;
 
 	id = dax_read_lock();
-	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, &pfn_unused);
+	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, NULL);
 	dax_read_unlock(id);
 
 	if (len < want)
@@ -93,11 +91,10 @@ int drbd_dax_map(struct drbd_backing_dev *bdev)
 	long al_offset_byte = (al_sector - first_sector) << SECTOR_SHIFT;
 	void *kaddr;
 	long len;
-	pfn_t pfn_unused; /* before 4.18 it is required to pass in non-NULL */
 	int id;
 
 	id = dax_read_lock();
-	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, &pfn_unused);
+	len = dax_direct_access(dax_dev, pgoff, want, DAX_ACCESS, &kaddr, NULL);
 	dax_read_unlock(id);
 
 	if (len < want)

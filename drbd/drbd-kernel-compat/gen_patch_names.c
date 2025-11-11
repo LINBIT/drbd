@@ -355,8 +355,17 @@ int main(int argc, char **argv)
 	patch(1, "list_is_first", true, false,
 	      COMPAT_HAVE_LIST_IS_FIRST, "present");
 
+#if defined(COMPAT_HAVE_PFN_T)
+	/* A few notes:
+	 * 1. dax_direct_access_takes_mode depends on the pfn_t type, so if we don't have that, we
+	 *    can't rely on the result of the test.
+	 * 2. If pfn_t does not exist, the kernel is new enough that dax_direct_access definitely
+	 *    takes the mode parameter anyway, making the dax_direct_access_takes_mode test redundant.
+	 * 3. pfn_t is only used within the dax_direct_access_takes_mode test, not in the actual
+	 *    code, so we don't need a separate cocci patch for it. */
 	patch(1, "dax_direct_access", true, false,
 	      COMPAT_DAX_DIRECT_ACCESS_TAKES_MODE, "takes_mode");
+#endif
 
 	patch(1, "bdev_max_discard_sectors", true, false,
 	      COMPAT_HAVE_BDEV_MAX_DISCARD_SECTORS, "present");
