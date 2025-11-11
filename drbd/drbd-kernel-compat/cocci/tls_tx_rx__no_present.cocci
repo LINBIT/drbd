@@ -49,13 +49,22 @@ expression s;
 @@
 - tls_handshake_cancel(s);
 
+@ exists @
+identifier csocket_tls_wait = csocket_tls_wait;
+identifier dsocket_tls_wait = dsocket_tls_wait;
+identifier tls = tls;
 @@
-symbol tls;
-@@
-  if (tls) {
-- 	...
-+ 	err = -ENOTSUPP;
-+ 	goto out;
+  dtt_connect(...) {
+  	...
+- 	struct tls_handshake_wait csocket_tls_wait = { ... };
+- 	struct tls_handshake_wait dsocket_tls_wait = { ... };
+  	...
+  	if (tls) {
+- 		...
++ 		err = -ENOTSUPP;
++ 		goto out;
+  	}
+  	...
   }
 
 @@
