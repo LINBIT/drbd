@@ -1140,6 +1140,8 @@ static int dtt_connect(struct drbd_transport *transport)
 	key_serial_t tls_keyring, tls_privkey, tls_certificate;
 	int timeout, err;
 	bool ok;
+	struct tls_handshake_wait csocket_tls_wait = { .status = 0 };
+	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
 
 	dsocket = NULL;
 	csocket = NULL;
@@ -1300,12 +1302,8 @@ randomize:
 	write_unlock_bh(&csocket->sk->sk_callback_lock);
 
 	if (tls) {
-		struct tls_handshake_wait csocket_tls_wait = {
-			.done = COMPLETION_INITIALIZER_ONSTACK(csocket_tls_wait.done),
-		};
-		struct tls_handshake_wait dsocket_tls_wait = {
-			.done = COMPLETION_INITIALIZER_ONSTACK(dsocket_tls_wait.done),
-		};
+		csocket_tls_wait.done = COMPLETION_INITIALIZER_ONSTACK(csocket_tls_wait.done);
+		dsocket_tls_wait.done = COMPLETION_INITIALIZER_ONSTACK(dsocket_tls_wait.done);
 
 		err = tls_init_hello(
 			csocket, peername, tls_keyring, tls_privkey, tls_certificate,
