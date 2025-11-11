@@ -50,11 +50,7 @@ obj-$(COMPAT_NET_HANDSHAKE)      += drbd-kernel-compat/handshake/
 # ================================================================
 
 ifdef CONFIG_DEV_DAX_PMEM
-ifneq ($(shell grep -e '\<arch_wb_cache_pmem\>' $(objtree)/Module.symvers | wc -l),1)
-override EXTRA_CFLAGS += -DDAX_PMEM_IS_INCOMPLETE
-else
 CONFIG_DRBD_DAX := y
-endif
 endif
 
 # enable fault injection by default

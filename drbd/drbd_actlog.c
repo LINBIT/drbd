@@ -203,7 +203,7 @@ struct lc_element *_al_get_nonblock(struct drbd_device *device, unsigned int enr
 	return al_ext;
 }
 
-#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
+#if IS_ENABLED(CONFIG_DEV_DAX_PMEM)
 static
 struct lc_element *_al_get(struct drbd_device *device, unsigned int enr)
 {

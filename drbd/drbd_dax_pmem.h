@@ -4,7 +4,7 @@
 
 #include <linux/kconfig.h>
 
-#if IS_ENABLED(CONFIG_DEV_DAX_PMEM) && !defined(DAX_PMEM_IS_INCOMPLETE)
+#if IS_ENABLED(CONFIG_DEV_DAX_PMEM)
 
 int drbd_dax_open(struct drbd_backing_dev *bdev);
 void drbd_dax_close(struct drbd_backing_dev *bdev);
