@@ -3326,7 +3326,7 @@ void drbd_destroy_device(struct kref *kref)
 
 #ifdef CONFIG_DRBD_COMPAT_84
 	if (device->resource->res_opts.drbd8_compat_mode)
-		nr_drbd8_devices--;
+		atomic_dec(&nr_drbd8_devices);
 #endif
 
 	free_openers(device);
@@ -4537,7 +4537,7 @@ static int __init drbd_init(void)
 	pr_info("registered as block device major %d\n", DRBD_MAJOR);
 
 #ifdef CONFIG_DRBD_COMPAT_84
-	nr_drbd8_devices = 0;
+	atomic_set(&nr_drbd8_devices, 0);
 #endif
 
 	return 0; /* Success! */
