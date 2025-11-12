@@ -85,7 +85,7 @@ static const char write_ordering_chars[] = {
 
 static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *device);
 
-int nr_drbd8_devices;
+atomic_t nr_drbd8_devices;
 
 void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 {
@@ -257,7 +257,7 @@ bool drbd_show_legacy_device(struct seq_file *seq, void *v)
 	struct drbd_device *device;
 	int i, prev_i = -1;
 
-	if (!nr_drbd8_devices)
+	if (!atomic_read(&nr_drbd8_devices))
 		return false;
 
 	rcu_read_lock();

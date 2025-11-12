@@ -7001,7 +7001,7 @@ static int drbd_adm_new_resource(struct sk_buff *skb, struct genl_info *info)
 		 * will be set to an actual value when the resource is
 		 * connected later.
 		 */
-		nr_drbd8_devices++;
+		atomic_inc(&nr_drbd8_devices);
 		res_opts.auto_promote = false;
 #else
 		drbd_msg_put_info(adm_ctx.reply_skb, "CONFIG_DRBD_COMPAT_84 not enabled");

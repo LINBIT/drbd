@@ -8,7 +8,7 @@
 struct meta_data_on_disk_84;
 
 #ifdef CONFIG_DRBD_COMPAT_84
-extern int nr_drbd8_devices;
+extern atomic_t nr_drbd8_devices;
 
 void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md);
 void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *buffer);
