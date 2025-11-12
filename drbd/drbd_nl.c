@@ -5422,8 +5422,15 @@ static int drbd_adm_resource_opts(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
-	if (res_opts.node_id != -1)
+	if (res_opts.node_id != -1) {
+#ifdef CONFIG_DRBD_COMPAT_84
+		if (!res_opts.drbd8_compat_mode && res_opts.explicit_drbd8_compat)
+			atomic_inc(&nr_drbd8_devices);
+		else if (res_opts.drbd8_compat_mode && !res_opts.explicit_drbd8_compat)
+			atomic_dec(&nr_drbd8_devices);
+#endif
 		res_opts.drbd8_compat_mode = res_opts.explicit_drbd8_compat;
+	}
 
 	err = set_resource_options(adm_ctx.resource, &res_opts, "resource-options");
 	if (err) {
