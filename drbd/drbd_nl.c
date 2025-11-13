@@ -4800,7 +4800,7 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	enum drbd_ret_code retcode;
 	struct drbd_device *device;
-	int vnr;
+	int vnr, n_connections = 0;
 
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_PEER_NODE);
@@ -4830,6 +4830,15 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 	rcu_read_unlock();
+
+	for_each_connection(connection, resource)
+		n_connections++;
+	if (resource->res_opts.drbd8_compat_mode && n_connections >= 1) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				      "drbd8 compat mode allows one peer at max");
+		goto out_unlock;
+	}
 
 	/* ensure uniqueness of peer_node_id by checking with adm_mutex */
 	connection = drbd_connection_by_node_id(resource, adm_ctx.peer_node_id);
