@@ -162,9 +162,8 @@ build:for-tests:
       # If the build is conditional and some packages already exist, skip the build.
       # Then the purpose of this job is just to generate build.env.
       if [ "$DRBD_BUILD_CONDITIONAL" = true ]; then
-        curl -fsSL "$LINBIT_REGISTRY_URL/service/rest/v1/search?repository=ci-yum&version=$DRBD_VERSION*" \
-            | grep -q name \
-            && exit 0
+        curl -fsSL "$LINBIT_REGISTRY_URL/service/rest/v1/search?repository=ci-yum&version=$DRBD_VERSION*" | \
+            jq --exit-status '.items | length > 0' && exit 0
       fi
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   artifacts:
