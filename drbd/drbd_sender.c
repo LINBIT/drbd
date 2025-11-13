@@ -1776,6 +1776,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
 	bool aborted = false;
+	sector_t final_peers_in_sync_end;
 
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
@@ -1951,8 +1952,10 @@ out_unlock:
 		after_reconciliation_resync(connection);
 
 	/* Potentially send final P_PEERS_IN_SYNC. */
+	final_peers_in_sync_end = min(get_capacity(device->vdisk),
+			(peer_device->last_peers_in_sync_end | PEERS_IN_SYNC_STEP_SECT_MASK) + 1);
 	drbd_queue_update_peers(peer_device,
-			peer_device->last_peers_in_sync_end, get_capacity(device->vdisk));
+			peer_device->last_peers_in_sync_end, final_peers_in_sync_end);
 
 out:
 	/* reset start sector, if we reached end of device */
