@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.16-rc.1 (api:genl2/proto:86-101,118-122/transport:19)
+--------
+ * Do not trigger the OOM-killer when allocating a too-big dirty
+   bitmap during attach; instead, fail the attach operation.
+ * Do not flush half-created packets out while closing a connection
+ * Fixed a bug that, in rare circumstances, when flapping between
+   Ahead and resync, can lead to a divide by zero error.
+ * Fixed a bug that caused DRBD to send too many P_PEERS_IN_SYNC
+   packets when finishing a resync; on huge devices ( >10TB), that led
+   to temporarily higher I/O latencies.
+ * Fixed an unhandled corner case to automatically reintegrate an I/O
+   frozen primary into a larger partition that created a newer data
+   generation
+ * Compatibility with Linux-6.17
+
 9.2.15 (api:genl2/proto:86-101,118-122/transport:19)
 --------
  * Fixed the regression introduced with 9.2.13, where a DRBD primary
