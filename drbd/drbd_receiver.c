@@ -7823,6 +7823,22 @@ static void propagate_exposed_uuid(struct drbd_device *device)
 	}
 }
 
+static void maybe_force_secondary(struct drbd_peer_device *peer_device)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	unsigned long irq_flags;
+
+	if (!resource->fail_io[NOW] && resource->cached_susp &&
+	    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
+		drbd_warn(peer_device, "force secondary!\n");
+		begin_state_change(resource, &irq_flags,
+				   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
+		resource->role[NEW] = R_SECONDARY;
+		/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
+		end_state_change(resource, &irq_flags, "peer-state");
+	}
+}
+
 static void diskless_with_peers_different_current_uuids(struct drbd_peer_device *peer_device,
 							enum drbd_disk_state *peer_disk_state)
 {
@@ -7831,19 +7847,10 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_device *device = peer_device->device;
-	unsigned long irq_flags;
 
 	if (data_successor && resource->role[NOW] == R_PRIMARY) {
 		drbd_warn(peer_device, "Remote node has more recent data\n");
-		if (!resource->fail_io[NOW] && resource->cached_susp &&
-		    resource->res_opts.on_susp_primary_outdated == SPO_FORCE_SECONDARY) {
-			drbd_warn(peer_device, "force secondary!\n");
-			begin_state_change(resource, &irq_flags,
-					   CS_VERBOSE | CS_HARD | CS_FS_IGN_OPENERS);
-			resource->role[NEW] = R_SECONDARY;
-			/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
-			end_state_change(resource, &irq_flags, "peer-state");
-		}
+		maybe_force_secondary(peer_device);
 		set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 	} else if (data_successor && resource->role[NOW] == R_SECONDARY) {
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
@@ -8068,6 +8075,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		put_ldev(device);
 		if (strategy_descriptor(strategy).reconnect) { /* retry connect */
+			maybe_force_secondary(peer_device);
 			if (connection->agreed_pro_version >= 118)
 				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 			else
