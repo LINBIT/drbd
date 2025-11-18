@@ -5328,7 +5328,8 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 
 	if (strategy_descriptor(strategy).is_sync_target &&
 	    strategy != SYNC_TARGET_IF_BOTH_FAILED &&
-	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT) {
+	    device->resource->role[NOW] == R_PRIMARY && device->disk_state[NOW] >= D_CONSISTENT &&
+	    (peer_device->comm_bm_set > 0 || peer_device->dirty_bits > 0)) {
 		switch (rr_conflict) {
 		case ASB_CALL_HELPER:
 			drbd_maybe_khelper(device, connection, "pri-lost");
