@@ -1170,8 +1170,10 @@ static int dtt_connect(struct drbd_transport *transport)
 	int timeout, err;
 	char one = 1;
 	bool ok;
+#if 0
 	struct tls_handshake_wait csocket_tls_wait = { .status = 0 };
 	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
+#endif
 
 	dsocket = NULL;
 	csocket = NULL;
