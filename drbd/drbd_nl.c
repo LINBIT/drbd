@@ -5828,7 +5828,7 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	struct drbd_resource *resource;
 	struct drbd_device *device;
-	int retcode, i;
+	int retcode, vnr, err = 0;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5838,17 +5838,35 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_INTR;
 		goto out;
 	}
+
+	idr_for_each_entry(&resource->devices, device, vnr)
+		if (!test_bit(BDEV_FROZEN, &device->flags)) {
+			err = bdev_freeze(device->vdisk->part0);
+			if (err)
+				goto out_thaw;
+
+			set_bit(BDEV_FROZEN, &device->flags);
+		}
+
 	retcode = stable_state_change(resource, change_io_susp_user(resource, true,
 						CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 	mutex_unlock(&resource->adm_mutex);
 	if (retcode < SS_SUCCESS)
 		goto out;
 
-	idr_for_each_entry(&resource->devices, device, i)
+	idr_for_each_entry(&resource->devices, device, vnr)
 		wait_event_interruptible(device->misc_wait, io_drained(device));
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
+out_thaw:
+	idr_for_each_entry(&resource->devices, device, vnr)
+		if (test_and_clear_bit(BDEV_FROZEN, &device->flags))
+			bdev_thaw(device->vdisk->part0);
+
+	mutex_unlock(&resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return err;
 }
 
 static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
@@ -5858,7 +5876,7 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	unsigned long irq_flags;
-	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	int vnr, retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5882,6 +5900,11 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	__change_io_susp_quorum(resource, false);
 	retcode = end_state_change(resource, &irq_flags, "resume-io");
 	drbd_resume_io(device);
+
+	idr_for_each_entry(&resource->devices, device, vnr)
+		if (test_and_clear_bit(BDEV_FROZEN, &device->flags))
+			bdev_thaw(device->vdisk->part0);
+
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
  out:
 	drbd_adm_finish(&adm_ctx, info, retcode);

@@ -602,6 +602,7 @@ enum device_flag {
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
+	BDEV_FROZEN,		/* called bdev_freeze(), needs bdev_thaw() on resume-io */
 };
 
 /* flag bits per peer device */
