@@ -113,21 +113,21 @@ stages:
 check:coccicheck:
   stage: check
   extends: [ .rules-build ]
-  image: linbit/coccinelle:1.2
+  image: docker.io/linbit/coccinelle:1.2
   script:
     - make coccicheck
 
 check:cocci-syntax:
   stage: check
   extends: [ .rules-build ]
-  image: linbit/coccinelle:1.2
+  image: docker.io/linbit/coccinelle:1.2
   script:
     - make cocci-syntax
 
 check:check-compat:
   stage: check
   extends: [ .rules-build ]
-  image: linbit/coccinelle:1.2
+  image: docker.io/linbit/coccinelle:1.2
   script:
     - make check-compat
 
@@ -135,7 +135,7 @@ check:checkpatch.pl:
   stage: check
   rules:
     - if: $CI_MERGE_REQUEST_ID
-  image: perl:5
+  image: docker.io/library/perl:5
   script:
     - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl
     - chmod +x checkpatch.pl
