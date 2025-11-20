@@ -5838,6 +5838,16 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_INTR;
 		goto out;
 	}
+
+	idr_for_each_entry(&resource->devices, device, i)
+		if (!device->bdev_frozen) {
+			retcode = bdev_freeze(device->vdisk->part0);
+			if (retcode)
+				goto out_thaw;
+
+			device->bdev_frozen = true;
+		}
+
 	retcode = stable_state_change(resource, change_io_susp_user(resource, true,
 						CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE));
 	mutex_unlock(&resource->adm_mutex);
@@ -5849,6 +5859,16 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
+out_thaw:
+	idr_for_each_entry(&resource->devices, device, i)
+		if (device->bdev_frozen) {
+			bdev_thaw(device->vdisk->part0);
+			device->bdev_frozen = false;
+		}
+
+	mutex_unlock(&resource->adm_mutex);
+	drbd_adm_finish(&adm_ctx, info, retcode);
+	return 0;
 }
 
 static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
@@ -5858,7 +5878,7 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	unsigned long irq_flags;
-	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	int retcode, i; /* enum drbd_ret_code rsp. enum drbd_state_rv */
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -5882,6 +5902,13 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	__change_io_susp_quorum(resource, false);
 	retcode = end_state_change(resource, &irq_flags, "resume-io");
 	drbd_resume_io(device);
+
+	idr_for_each_entry(&resource->devices, device, i)
+		if (device->bdev_frozen) {
+			bdev_thaw(device->vdisk->part0);
+			device->bdev_frozen = false;
+		}
+
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
  out:
 	drbd_adm_finish(&adm_ctx, info, retcode);

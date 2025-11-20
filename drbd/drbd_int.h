@@ -1637,6 +1637,7 @@ struct drbd_device {
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
 	bool cached_state_unstable; /* updates with each state change */
 	bool cached_err_io; /* complete all IOs with error */
+	bool bdev_frozen; /* called bdev_freeze(), waiting for a bdev_thaw() */
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	spinlock_t timing_lock;

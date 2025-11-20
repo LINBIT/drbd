@@ -489,6 +489,14 @@ int main(int argc, char **argv)
 	patch(1, "timer_container_of", true, false,
 	      COMPAT_HAVE_TIMER_CONTAINER_OF, "present");
 
+	patch(1, "bdev_freeze", true, false,
+	      COMPAT_HAVE_BDEV_FREEZE, "present");
+
+#if !defined(COMPAT_HAVE_BDEV_FREEZE)
+	patch(1, "freeze_bdev", false, true,
+	      COMPAT_FREEZE_BDEV_RETURNS_SUPER_BLOCK, "returns_super_block");
+#endif
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
