@@ -5829,18 +5829,30 @@ static int drbd_adm_suspend_io(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	struct drbd_device *device;
 	int retcode, vnr, err = 0;
+	struct suspend_io_parms params = {
+		.bdev_freeze = true,
+	};
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
 		return retcode;
 	resource = adm_ctx.device->resource;
+
+	if (info->attrs[DRBD_NLA_SUSPEND_IO_PARAMS]) {
+		err = suspend_io_parms_from_attrs(&params, info);
+		if (err) {
+			drbd_msg_put_info(adm_ctx.reply_skb, from_attrs_err_to_txt(err));
+			return err;
+		}
+	}
+
 	if (mutex_lock_interruptible(&resource->adm_mutex)) {
 		retcode = ERR_INTR;
 		goto out;
 	}
 
 	idr_for_each_entry(&resource->devices, device, vnr)
-		if (!test_bit(BDEV_FROZEN, &device->flags)) {
+		if (params.bdev_freeze && !test_bit(BDEV_FROZEN, &device->flags)) {
 			err = bdev_freeze(device->vdisk->part0);
 			if (err)
 				goto out_thaw;
