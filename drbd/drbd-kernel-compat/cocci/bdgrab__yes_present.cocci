@@ -10,22 +10,3 @@ expression part;
 + if (bdev)
 +	sync_blockdev(bdev);
 + bdput(bdev);
-
-@@
-identifier i;
-expression part;
-@@
-- i = bdev_freeze(part);
-+ struct block_device *bdev = bdgrab(part);
-+ if (bdev)
-+	i = bdev_freeze(bdev);
-+ bdput(bdev);
-
-@@
-expression part;
-@@
-- bdev_thaw(part);
-+ struct block_device *bdev = bdgrab(part);
-+ if (bdev)
-+	bdev_thaw(bdev);
-+ bdput(bdev);
