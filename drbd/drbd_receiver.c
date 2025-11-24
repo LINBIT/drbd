@@ -739,6 +739,7 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 	unsigned long irq_flags;
 	int vnr;
 
+	mutex_lock(&resource->open_release);
 	begin_state_change(resource, &irq_flags, CS_HARD | (force_demote ? CS_FS_IGN_OPENERS : 0));
 	if (ao_op == OUTDATE_DISKS_AND_DISCONNECT)
 		__change_cstate(connection, C_DISCONNECTING);
@@ -751,22 +752,28 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 		 * Right now it is that way, because we do not offer a way to gracefully
 		 * get out of a Primary/Outdated state */
 		struct drbd_peer_device *peer_device;
+		bool set_fail_io = false;
 
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			enum drbd_repl_state r = peer_device->connect_state.conn;
 			struct drbd_device *device = peer_device->device;
-			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T) {
+
+			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T)
 				__change_disk_state(device, D_OUTDATED);
-				resource->fail_io[NEW] = true;
-			}
+
+			if (device->open_cnt)
+				set_fail_io = true;
 		}
-		if (force_demote) {
+		if (resource->role[NOW] == R_PRIMARY && force_demote) {
 			drbd_warn(connection, "Remote node has more recent data;"
 				  " force secondary!\n");
 			resource->role[NEW] = R_SECONDARY;
+			if (set_fail_io)
+				resource->fail_io[NEW] = true;
 		}
 	}
 	end_state_change(resource, &irq_flags, "connect-failed");
+	mutex_unlock(&resource->open_release);
 }
 
 static int connect_work(struct drbd_work *work, int cancel)
