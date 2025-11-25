@@ -2,13 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.3.0-rc.5 (api:genl2/proto:86-101,118-123/transport:19)
+9.3.0-rc.6 (api:genl2/proto:86-101,118-123/transport:19)
 --------
  * Implemented support for bitmap granularity between 4k and 1M,
    including exchanging bitmaps with peers with a different bitmap
    block size
  * Add support for omitting bitmap allocation for standalone devices
  * Explicit config option for drbd8-api-compatibility mode
+ * Give filesystems mounted on DRBD a chance to bring their on-disk
+   representations into a consistent state before suspending I/O.
  * Fixes for resync without replication
  * All fixes from 9.2.14, 9.2.15 and 9.2.16
  * Compatibility with Linux-6.17
