@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.3.0~rc.6
+Version: 9.3.0
 Release: 1
 
 # always require a suitable userland
@@ -232,8 +232,5 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
-* Tue Nov 25 2025 Philipp Reisner <phil@linbit.com> - 9.3.0~rc.6
--  Release candidate
-
-* Tue May 27 2025 Philipp Reisner <phil@linbit.com> - 9.3.0~rc.1
--  Release candidate
+* Mon Dec  1 2025 Philipp Reisner <phil@linbit.com> - 9.3.0
+-  Fresh release
