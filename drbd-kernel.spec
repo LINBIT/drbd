@@ -176,6 +176,7 @@ for flavor in %flavors_to_build ; do
 	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y} \
+	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y} \
 	cmd_depmod=:
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv drbd/build-current/.kernel.config.gz drbd/k-config-$kernelrelease.gz
