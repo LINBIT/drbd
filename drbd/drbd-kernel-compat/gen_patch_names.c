@@ -668,6 +668,9 @@ int main(int argc, char **argv)
 	patch(1, "timer_container_of", true, false,
 	      COMPAT_HAVE_TIMER_CONTAINER_OF, "present");
 
+	patch(1, "queue_limits_max_hw_wzeroes_unmap_sectors", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_WZEROES_UNMAP_SECTORS, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
