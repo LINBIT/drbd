@@ -693,7 +693,7 @@ static int dtl_send_first_packet(struct dtl_transport *dtl_transport,
 /**
  * dtl_socket_free() - Free the socket
  * @transport:	DRBD transport.
- * @socket:	pointer to the pointer to the socket.
+ * @sock:	pointer to the pointer to the socket.
  */
 static void dtl_socket_free(struct drbd_transport *transport, struct socket **sock)
 {
@@ -710,7 +710,7 @@ static void dtl_socket_free(struct drbd_transport *transport, struct socket **so
 /**
  * dtl_socket_ok_or_free() - Free the socket if its connection is not okay
  * @transport:	DRBD transport.
- * @socket:	pointer to the pointer to the socket.
+ * @sock:	pointer to the pointer to the socket.
  */
 static bool dtl_socket_ok_or_free(struct drbd_transport *transport, struct socket **sock)
 {
