@@ -1458,7 +1458,7 @@ static int bm_rw(struct drbd_device *device, unsigned flags)
 	return bm_rw_range(device, 0, -1U, flags);
 }
 
-/**
+/*
  * drbd_bm_read() - Read the whole bitmap from its on disk location.
  * @device:	DRBD device.
  * @peer_device: parameter ignored
@@ -1506,7 +1506,7 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
 }
 
 
-/**
+/*
  * drbd_bm_write() - Write the whole bitmap to its on disk location.
  * @device:	DRBD device.
  * @peer_device: parameter ignored
@@ -1519,7 +1519,7 @@ int drbd_bm_write(struct drbd_device *device,
 	return bm_rw(device, 0);
 }
 
-/**
+/*
  * drbd_bm_write_all() - Write the whole bitmap to its on disk location.
  * @device:	 DRBD device.
  * @peer_device: parameter ignored
@@ -1543,7 +1543,7 @@ int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_ho
 	return bm_rw_range(device, 0, upper_idx - 1, BM_AIO_COPY_PAGES | BM_AIO_WRITE_LAZY);
 }
 
-/**
+/*
  * drbd_bm_write_copy_pages() - Write the whole bitmap to its on disk location.
  * @device:	DRBD device.
  * @peer_device: parameter ignored
@@ -1561,7 +1561,7 @@ int drbd_bm_write_copy_pages(struct drbd_device *device,
 	return bm_rw(device, BM_AIO_COPY_PAGES);
 }
 
-/**
+/*
  * drbd_bm_write_hinted() - Write bitmap pages with "hint" marks, if they have changed.
  * @device:	DRBD device.
  */
