@@ -2106,9 +2106,9 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 		drbd_err(device, "Fault injection: Corrupting data on receive, sector %llu\n",
 				d->sector);
 		page = peer_req->page_chain.head;
-		data = kmap(page) + page_chain_offset(page);
+		data = kmap_local_page(page) + page_chain_offset(page);
 		data[0] = ~data[0];
-		kunmap(page);
+		kunmap_local(data);
 	}
 
 	if (d->digest_size) {

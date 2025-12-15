@@ -375,9 +375,9 @@ static int dtt_recv_pages(struct drbd_transport *transport, struct drbd_page_cha
 
 	page_chain_for_each(page) {
 		size_t len = min_t(int, size, PAGE_SIZE);
-		void *data = kmap(page);
+		void *data = kmap_local_page(page);
 		err = dtt_recv_short(socket, data, len, 0);
-		kunmap(page);
+		kunmap_local(data);
 		set_page_chain_offset(page, 0);
 		set_page_chain_size(page, len);
 		if (err < 0)
