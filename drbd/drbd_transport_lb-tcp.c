@@ -623,13 +623,13 @@ dtl_try_connect(struct drbd_transport *transport, struct dtl_path *path, struct 
 	 * a free one dynamically.
 	 */
 	what = "bind before connect";
-	err = sock->ops->bind(sock, (struct sockaddr *) &my_addr, path->path.my_addr_len);
+	err = sock->ops->bind(sock, (struct sockaddr_unsized *) &my_addr, path->path.my_addr_len);
 	if (err < 0)
 		goto out;
 
 	/* connect may fail, peer not yet available. stay C_CONNECTING */
 	what = "connect";
-	err = sock->ops->connect(sock, (struct sockaddr *) &peer_addr,
+	err = sock->ops->connect(sock, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
@@ -1078,7 +1078,7 @@ static int dtl_init_listener(struct drbd_transport *transport,
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
 		: sizeof(struct sockaddr_in);
 
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr_unsized *)&my_addr, addr_len);
 	if (err < 0) {
 		what = "bind before listen";
 		goto out;

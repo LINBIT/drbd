@@ -497,6 +497,9 @@ int main(int argc, char **argv)
 	      COMPAT_THAW_BDEV_TAKES_SUPER_BLOCK, "takes_super_block");
 #endif
 
+	patch(1, "struct_sockaddr_unsized", true, false,
+	      COMPAT_HAVE_STRUCT_SOCKADDR_UNSIZED, "present");
+
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */
 
