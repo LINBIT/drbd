@@ -2453,16 +2453,16 @@ static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_devi
 		if (!test_bit(INTERVAL_COMPLETED, &peer_req->i.flags))
 			break;
 
+		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector,
+			peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
+
 		drbd_list_del_resync_request(peer_req);
 		list_add_tail(&peer_req->recv_order, &completed);
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
-	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
-		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector,
-			peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
+	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order)
 		drbd_free_peer_req(peer_req);
-	}
 }
 
 static void drbd_resync_request_complete(struct drbd_peer_request *peer_req)
