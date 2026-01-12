@@ -322,7 +322,7 @@ static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
-static int dtr_send_zc_bio(struct drbd_transport *, struct bio *bio);
+static int dtr_send_bio(struct drbd_transport *, struct bio *bio, unsigned int msg_flags);
 static int dtr_recv_pages(struct drbd_transport *transport, struct drbd_page_chain_head *chain, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
@@ -392,7 +392,7 @@ static struct drbd_transport_class rdma_transport_class = {
 		.set_rcvtimeo = dtr_set_rcvtimeo,
 		.get_rcvtimeo = dtr_get_rcvtimeo,
 		.send_page = dtr_send_page,
-		.send_zc_bio = dtr_send_zc_bio,
+		.send_bio = dtr_send_bio,
 		.recv_pages = dtr_recv_pages,
 		.stream_ok = dtr_stream_ok,
 		.hint = dtr_hint,
@@ -3195,11 +3195,12 @@ static void dtr_update_congested(struct drbd_transport *transport)
 }
 
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream,
-			 struct page *page, int offset, size_t size, unsigned msg_flags)
+			 struct page *caller_page, int offset, size_t size, unsigned int msg_flags)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_tx_desc *tx_desc;
+	struct page *page;
 	int err;
 
 	// pr_info("%s: in send_page, size: %zu\n", rdma_stream->name, size);
@@ -3211,7 +3212,19 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (!tx_desc)
 		return -ENOMEM;
 
-	get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
+	if (msg_flags & MSG_SPLICE_PAGES) {
+		page = caller_page;
+		get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
+	} else {
+		void *from;
+
+		page = drbd_alloc_pages(transport, 1, GFP_NOIO);
+		from = kmap_local_page(caller_page);
+		memcpy(page_address(page), from + offset, size);
+		kunmap_local(from);
+		offset = 0;
+	}
+
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
@@ -3318,7 +3331,7 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 }
 #endif
 
-static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
+static int dtr_send_bio(struct drbd_transport *transport, struct bio *bio, unsigned int msg_flags)
 {
 #if SENDER_COMPACTS_BVECS
 	struct dtr_transport *rdma_transport =
@@ -3336,6 +3349,7 @@ static int dtr_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 		return -ECONNRESET;
 
 #if SENDER_COMPACTS_BVECS
+	/* TODO obey !MSG_SPLICE_PAGES in msg_flags */
 	bio_for_each_segment(bvec, bio, iter) {
 		size_tx_desc += bvec.bv_len;
 		//tr_info(transport, " bvec len = %d\n", bvec.bv_len);
@@ -3365,8 +3379,7 @@ out:
 #else
 	bio_for_each_segment(bvec, bio, iter) {
 		err = dtr_send_page(transport, DATA_STREAM,
-			bvec.bv_page, bvec.bv_offset, bvec.bv_len,
-			0 /* flags currently unused by dtr_send_page */);
+			bvec.bv_page, bvec.bv_offset, bvec.bv_len, msg_flags);
 		if (err)
 			break;
 	}

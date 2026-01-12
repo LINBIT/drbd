@@ -139,7 +139,7 @@ static void dtl_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static long dtl_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
 static int dtl_send_page(struct drbd_transport *transport, enum drbd_stream, struct page *page,
 		int offset, size_t size, unsigned int msg_flags);
-static int dtl_send_zc_bio(struct drbd_transport *, struct bio *bio);
+static int dtl_send_bio(struct drbd_transport *, struct bio *bio, unsigned int msg_flags);
 static bool dtl_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtl_hint(struct drbd_transport *transport, enum drbd_stream stream,
 		     enum drbd_tr_hints hint);
@@ -179,7 +179,7 @@ static struct drbd_transport_class dtl_transport_class = {
 		.set_rcvtimeo = dtl_set_rcvtimeo,
 		.get_rcvtimeo = dtl_get_rcvtimeo,
 		.send_page = dtl_send_page,
-		.send_zc_bio = dtl_send_zc_bio,
+		.send_bio = dtl_send_bio,
 		.stream_ok = dtl_stream_ok,
 		.hint = dtl_hint,
 		.debugfs_show = dtl_debugfs_show,
@@ -1631,7 +1631,7 @@ static int dtl_select_send_flow(struct dtl_transport *dtl_transport,
 static int _dtl_send_page(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
 			  struct page *page, int offset, size_t size, unsigned int msg_flags)
 {
-	struct msghdr msg = { .msg_flags = msg_flags | MSG_NOSIGNAL | MSG_SPLICE_PAGES };
+	struct msghdr msg = { .msg_flags = msg_flags | MSG_NOSIGNAL };
 	struct drbd_transport *transport = &dtl_transport->transport;
 	struct socket *sock = flow->sock;
 	struct bio_vec bvec;
@@ -1716,7 +1716,7 @@ static int dtl_bio_chunk_size_available(struct bio *bio, int wmem_available,
 }
 
 static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_flow *flow,
-		struct bio *bio, struct bvec_iter *iter, int chunk)
+			struct bio *bio, struct bvec_iter *iter, int chunk, unsigned int msg_flags)
 {
 	struct bio_vec bvec;
 
@@ -1726,7 +1726,7 @@ static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_fl
 		bvec = bio_iter_iovec(bio, *iter);
 		err = _dtl_send_page(dtl_transport, flow, bvec.bv_page,
 				bvec.bv_offset, bvec.bv_len,
-				bio_iter_last(bvec, *iter) ? 0 : MSG_MORE);
+				msg_flags | (bio_iter_last(bvec, *iter) ? 0 : MSG_MORE));
 		if (err)
 			return err;
 		chunk -= bvec.bv_len;
@@ -1736,7 +1736,8 @@ static int dtl_send_bio_pages(struct dtl_transport *dtl_transport, struct dtl_fl
 	return 0;
 }
 
-static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
+static int dtl_send_bio(struct drbd_transport *transport, struct bio *bio,
+			   unsigned int msg_flags)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
@@ -1777,7 +1778,7 @@ static int dtl_send_zc_bio(struct drbd_transport *transport, struct bio *bio)
 				goto out;
 		}
 
-		err = dtl_send_bio_pages(dtl_transport, flow, bio, &iter, chunk);
+		err = dtl_send_bio_pages(dtl_transport, flow, bio, &iter, chunk, msg_flags);
 		if (err)
 			goto out;
 	} while (iter.bi_size);

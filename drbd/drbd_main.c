@@ -2320,136 +2320,53 @@ void *drbd_prepare_drequest_csum(struct drbd_peer_request *peer_req, enum drbd_p
 			dagtag_node_id, dagtag);
 }
 
-/* The idea of sendpage seems to be to put some kind of reference
- * to the page into the skb, and to hand it over to the NIC. In
- * this process get_page() gets called.
- *
- * As soon as the page was really sent over the network put_page()
- * gets called by some part of the network layer. [ NIC driver? ]
- *
- * [ get_page() / put_page() increment/decrement the count. If count
- *   reaches 0 the page will be freed. ]
- *
- * This works nicely with pages from FSs.
- * But this means that in protocol A we might signal IO completion too early!
- *
- * In order not to corrupt data during a resync we must make sure
- * that we do not reuse our own buffer pages (EEs) to early, therefore
- * we have the net_ee list.
- *
- * XFS seems to have problems, still, it submits pages with page_count == 0!
- * As a workaround, we disable sendpage on pages
- * with page_count == 0 or PageSlab.
+/* sendmsg(MSG_SPLICE_PAGES) (former (sendpage()) increases the page ref_count
+ * and hands it to the network stack. After the NIC DMA sends the data, it
+ * decreases that page's ref_count.
+ * We may not do this for protocol A, where we could complete a write operation
+ * before the network stack sends the data.
  */
-static int _drbd_send_page(struct drbd_peer_device *peer_device, struct page *page,
-			    int offset, size_t size, unsigned msg_flags)
+static int
+drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio, unsigned int msg_flags)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	int err;
 
-	err = tr_ops->send_page(transport, DATA_STREAM, page, offset, size, msg_flags);
-	if (!err)
-		peer_device->send_cnt += size >> 9;
+	if (drbd_disable_sendpage)
+		msg_flags &= ~MSG_SPLICE_PAGES;
 
-	return err;
-}
+	/* e.g. XFS meta- & log-data is in slab pages have !sendpage_ok(page) */
+	if (msg_flags & MSG_SPLICE_PAGES) {
+		struct bvec_iter iter;
+		struct bio_vec bvec;
 
-static int _drbd_no_send_page(struct drbd_peer_device *peer_device, struct page *page,
-			      int offset, size_t size, unsigned msg_flags)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	struct drbd_send_buffer *sbuf = &connection->send_buffer[DATA_STREAM];
-	char *from_base;
-	void *buffer2;
-	int err;
-
-	buffer2 = alloc_send_buffer(connection, size, DATA_STREAM);
-	from_base = kmap_atomic(page);
-	memcpy(buffer2, from_base + offset, size);
-	kunmap_atomic(from_base);
-
-	if (msg_flags & MSG_MORE) {
-		sbuf->pos += sbuf->allocated_size;
-		sbuf->allocated_size = 0;
-		err = 0;
-	} else {
-		err = flush_send_buffer(connection, DATA_STREAM);
-	}
-
-	return err;
-}
-
-static int _drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio)
-{
-	struct drbd_connection *connection = peer_device->connection;
-	struct bio_vec bvec;
-	struct bvec_iter iter;
-
-	/* Flush send buffer and make sure PAGE_SIZE is available... */
-	alloc_send_buffer(connection, PAGE_SIZE, DATA_STREAM);
-	connection->send_buffer[DATA_STREAM].allocated_size = 0;
-
-	/* hint all but last page with MSG_MORE */
-	bio_for_each_segment(bvec, bio, iter) {
-		int err;
-
-		err = _drbd_no_send_page(peer_device, bvec.bv_page,
-					 bvec.bv_offset, bvec.bv_len,
-					 bio_iter_last(bvec, iter) ? 0 : MSG_MORE);
-		if (err)
-			return err;
-
-		peer_device->send_cnt += bvec.bv_len >> 9;
-	}
-	return 0;
-}
-
-static int _drbd_send_zc_bio(struct drbd_peer_device *peer_device, struct bio *bio)
-{
-	struct bio_vec bvec;
-	struct bvec_iter iter;
-	bool no_zc = drbd_disable_sendpage;
-
-	/* e.g. XFS meta- & log-data is in slab pages, which have a
-	 * page_count of 0 and/or have PageSlab() set.
-	 * we cannot use send_page for those, as that does get_page();
-	 * put_page(); and would cause either a VM_BUG directly, or
-	 * __page_cache_release a page that would actually still be referenced
-	 * by someone, leading to some obscure delayed Oops somewhere else. */
-	if (!no_zc)
 		bio_for_each_segment(bvec, bio, iter) {
 			struct page *page = bvec.bv_page;
 
 			if (!sendpage_ok(page)) {
-				no_zc = true;
+				msg_flags &= ~MSG_SPLICE_PAGES;
 				break;
 			}
 		}
-
-	if (no_zc) {
-		return _drbd_send_bio(peer_device, bio);
-	} else {
-		struct drbd_connection *connection = peer_device->connection;
-		struct drbd_transport *transport = &connection->transport;
-		struct drbd_transport_ops *tr_ops = &transport->class->ops;
-		int err;
-
-		flush_send_buffer(connection, DATA_STREAM);
-
-		err = tr_ops->send_zc_bio(transport, bio);
-		if (!err)
-			peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
-
-		return err;
 	}
+
+	flush_send_buffer(connection, DATA_STREAM);
+
+	err = tr_ops->send_bio(transport, bio, msg_flags);
+	if (!err)
+		peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
+
+	return err;
 }
 
 static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req)
 {
-	bool use_sendpage = !(peer_req->flags & EE_RELEASE_TO_MEMPOOL);
+	struct drbd_transport *transport = &peer_device->connection->transport;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	unsigned int msg_flags = peer_req->flags & EE_RELEASE_TO_MEMPOOL ? 0 : MSG_SPLICE_PAGES;
 	struct page *page = peer_req->page_chain.head;
 	unsigned len = peer_req->i.size;
 	int err;
@@ -2464,12 +2381,8 @@ static int _drbd_send_zc_ee(struct drbd_peer_device *peer_device,
 				page, page_chain_offset(page), page_chain_size(page));
 		}
 
-		if (likely(use_sendpage))
-			err = _drbd_send_page(peer_device, page, 0, l,
-					      page_chain_next(page) ? MSG_MORE : 0);
-		else
-			err = _drbd_no_send_page(peer_device, page, 0, l,
-						 page_chain_next(page) ? MSG_MORE : 0);
+		err = tr_ops->send_page(transport, DATA_STREAM, page, 0, l,
+					msg_flags | (page_chain_next(page) ? MSG_MORE : 0));
 		if (err)
 			return err;
 		len -= l;
@@ -2568,10 +2481,10 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 		 * out ok after sending on this side, but does not fit on the
 		 * receiving side, we sure have detected corruption elsewhere.
 		 */
-		if (!(s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK)) || digest_size)
-			err = _drbd_send_bio(peer_device, req->master_bio);
-		else
-			err = _drbd_send_zc_bio(peer_device, req->master_bio);
+		bool proto_b_or_c = (s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK));
+		int msg_flags =  proto_b_or_c && !digest_size ? MSG_SPLICE_PAGES : 0;
+
+		err = drbd_send_bio(peer_device, req->master_bio, msg_flags);
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0) {
