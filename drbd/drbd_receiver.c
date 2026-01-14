@@ -761,7 +761,7 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 			if (r == L_WF_BITMAP_T || r == L_SYNC_TARGET || r == L_PAUSED_SYNC_T)
 				__change_disk_state(device, D_OUTDATED);
 
-			if (device->open_cnt)
+			if (device->open_rw_cnt || device->open_ro_cnt)
 				set_fail_io = true;
 		}
 		if (resource->role[NOW] == R_PRIMARY && force_demote) {
