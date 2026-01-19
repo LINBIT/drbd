@@ -2484,7 +2484,7 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	return peer_req;
 }
 
-/* With agreed_pro_version < 122, one ack may correspond to multiple peer requests. */
+/* Find multiple requests for a given interval. */
 static void find_resync_requests(struct drbd_peer_device *peer_device,
 		struct list_head *matching, sector_t sector, unsigned int size, u64 block_id)
 {
@@ -10521,7 +10521,17 @@ static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info
 	int size = be32_to_cpu(p->blksize);
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request *peer_req_tmp;
-	/* With agreed_pro_version < 122, one ack may correspond to multiple peer requests. */
+	/*
+	 * Matched peer requests.
+	 *
+	 * With agreed_pro_version == 121, one ack may correspond to multiple
+	 * peer requests.
+	 *
+	 * In particular, releases drbd-9.2.0, drbd-9.2.1 and drbd-9.2.2 used an
+	 * implementation of discard merging which caused one P_RS_WRITE_ACK to be sent
+	 * for the whole merged interval. These releases all have
+	 * PRO_VERSION_MAX == 121.
+	 */
 	LIST_HEAD(peer_reqs);
 
 	/* P_RS_WRITE_ACK used to be used instead of P_WRITE_ACK_IN_SYNC. */
