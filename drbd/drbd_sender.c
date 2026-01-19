@@ -2111,10 +2111,6 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_add_tail(&peer_req->w.list, &connection->resync_ack_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-
 		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 			err = drbd_send_rs_deallocated(peer_device, peer_req);
 		} else {
