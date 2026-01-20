@@ -23,16 +23,15 @@ enum drbd_interval_type {
 #define INTERVAL_TYPE_MASK(type) (1 << (type))
 
 enum drbd_interval_flags {
-	/*
-	 * Whether this peer request has been sent yet. For resync writes, the
-	 * flag is set before sending.
-	 *
-	 * For resync reads, this flag is set after sending and is used to
-	 * manage the lifetime of the request. When INTERVAL_READY_TO_SEND is not set,
-	 * the sending path still has a reference to the request. This
-	 * reference counting is protected by peer_reqs_lock.
-	 */
+	/* Whether this peer request may be sent. */
 	INTERVAL_READY_TO_SEND,
+
+	/*
+	 * Used for resync reads. This flag is set after sending and is used to
+	 * manage the lifetime of the request. When INTERVAL_SENT is not set,
+	 * the sending path still has a reference to the request.
+	 */
+	INTERVAL_SENT,
 
 	/*
 	 * Whether this peer request has been received yet.
