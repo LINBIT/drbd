@@ -2484,29 +2484,70 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	return peer_req;
 }
 
-/* Find multiple requests for a given interval. */
+/*
+ * Find resync reads which correspond to an ack for a given interval. This is
+ * only intended to be used to handle a specific compatibility case. In
+ * particular, only with peers supporting DRBD_FF_RESYNC_DAGTAG.
+ */
 static void find_resync_requests(struct drbd_peer_device *peer_device,
-		struct list_head *matching, sector_t sector, unsigned int size, u64 block_id)
+		struct list_head *matching, sector_t sector, unsigned int size)
 {
-	struct drbd_device *device = peer_device->device;
-	struct drbd_interval *i;
+	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_peer_request *peer_req;
+	sector_t sector_end = sector + (size >> SECTOR_SHIFT);
+	unsigned long total_size = 0;
 
-	spin_lock_irq(&device->interval_lock);
-	drbd_for_each_overlap(i, &device->requests, sector, size) {
-		if (!test_bit(INTERVAL_SUBMITTED, &i->flags))
+	/*
+	 * Find requests by searching peer_reads. That is, in the order we
+	 * initial received the resync requests. Search until the matched
+	 * requests have the expected total size.
+	 *
+	 * We might receive overlapping requests for a given interval. However,
+	 * the peer has feature DRBD_FF_RESYNC_DAGTAG and so exclusivity in the
+	 * interval tree causes acks to be sent in the same order as the
+	 * requests were sent. This applies even in a checksum resync, since
+	 * that only affects the order in which the requests are sent. It also
+	 * applies when discard merging occurs; there might be one ack for
+	 * multiple requests, but the ordering is preserved relative to other
+	 * requests.
+	 *
+	 * Hence by searching the resync requests in the order we received
+	 * them, we should find the requests that correspond to this ack.
+	 */
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry(peer_req, &connection->peer_reads, recv_order) {
+		sector_t pr_sector_end = peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT);
+
+		if (!test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags)
+				|| test_bit(INTERVAL_RECEIVED, &peer_req->i.flags))
 			continue;
 
-		if (i->type != INTERVAL_RESYNC_READ)
+		if (peer_req->i.type != INTERVAL_RESYNC_READ)
 			continue;
 
-		peer_req = container_of(i, struct drbd_peer_request, i);
-		/* With agreed_pro_version < 122, block_id is always ID_SYNCER. */
-		if (peer_req->peer_device == peer_device &&
-				(block_id == ID_SYNCER || peer_req->block_id == block_id))
-			list_add_tail(&peer_req->w.list, matching);
+		if (peer_req->peer_device != peer_device)
+			continue;
+
+		if (peer_req->i.sector < sector || pr_sector_end > sector_end)
+			continue;
+
+		total_size += peer_req->i.size;
+		list_add_tail(&peer_req->w.list, matching);
+
+		if (total_size >= size)
+			break;
 	}
-	spin_unlock_irq(&device->interval_lock);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	if (total_size != size) {
+		/* This should not happen. The connection will be dropped. */
+		drbd_err_ratelimit(peer_device,
+				"Resync ack at %llus+%u matched unexpected size %lu\n",
+				(unsigned long long) sector, size, total_size);
+
+		/* No need to clear up peer_req->w.list - may have any value when not used */
+		INIT_LIST_HEAD(matching);
+	}
 }
 
 static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_req)
@@ -10521,17 +10562,6 @@ static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info
 	int size = be32_to_cpu(p->blksize);
 	struct drbd_peer_request *peer_req;
 	struct drbd_peer_request *peer_req_tmp;
-	/*
-	 * Matched peer requests.
-	 *
-	 * With agreed_pro_version == 121, one ack may correspond to multiple
-	 * peer requests.
-	 *
-	 * In particular, releases drbd-9.2.0, drbd-9.2.1 and drbd-9.2.2 used an
-	 * implementation of discard merging which caused one P_RS_WRITE_ACK to be sent
-	 * for the whole merged interval. These releases all have
-	 * PRO_VERSION_MAX == 121.
-	 */
 	LIST_HEAD(peer_reqs);
 
 	/* P_RS_WRITE_ACK used to be used instead of P_WRITE_ACK_IN_SYNC. */
@@ -10547,18 +10577,32 @@ static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info
 	if (is_neg_ack && peer_device->disk_state[NOW] == D_UP_TO_DATE)
 		set_bit(GOT_NEG_ACK, &peer_device->flags);
 
-	find_resync_requests(peer_device, &peer_reqs, sector, size, p->block_id);
+	if (connection->agreed_pro_version == 121 &&
+			(connection->agreed_features & DRBD_FF_RESYNC_DAGTAG)) {
+		/*
+		 * Releases drbd-9.2.0, drbd-9.2.1 and drbd-9.2.2 used an
+		 * implementation of discard merging which caused one
+		 * P_RS_WRITE_ACK to be sent for the whole merged interval.
+		 * These are precisely the releases with PRO_VERSION_MAX == 121
+		 * and feature DRBD_FF_RESYNC_DAGTAG.
+		 *
+		 * In this specific situation, one ack may correspond to multiple
+		 * peer requests.
+		 */
 
-	if (list_empty(&peer_reqs)) {
-		drbd_err(peer_device, "Unexpected resync write ack at %llus+%u\n",
-				(unsigned long long) sector, size);
-		return -EIO;
-	}
+		find_resync_requests(peer_device, &peer_reqs, sector, size);
 
-	if (p->block_id != ID_SYNCER && peer_reqs.next->next != &peer_reqs) {
-		drbd_err(peer_device, "Resync write ack at %llus+%u matches multiple requests\n",
-				(unsigned long long) sector, size);
-		return -EIO;
+		if (list_empty(&peer_reqs))
+			return -EIO;
+	} else {
+		peer_req = find_resync_request(peer_device,
+				INTERVAL_TYPE_MASK(INTERVAL_RESYNC_READ),
+				sector, size, p->block_id);
+
+		if (!peer_req)
+			return -EIO;
+
+		list_add_tail(&peer_req->w.list, &peer_reqs);
 	}
 
 	if (is_neg_ack)
@@ -10570,6 +10614,14 @@ static int got_RSWriteAck(struct drbd_connection *connection, struct packet_info
 
 	list_for_each_entry_safe(peer_req, peer_req_tmp, &peer_reqs, w.list) {
 		dec_rs_pending(peer_device);
+
+		/*
+		 * Remove from the interval tree now so that
+		 * find_resync_request() cannot find this request again if we
+		 * get another ack for this interval.
+		 */
+		drbd_remove_peer_req_interval(peer_req);
+
 		drbd_resync_read_req_mod(peer_req, INTERVAL_RECEIVED);
 	}
 	return 0;
