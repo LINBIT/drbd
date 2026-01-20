@@ -2456,7 +2456,7 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 	drbd_for_each_overlap(i, &device->requests, sector, size) {
 		struct drbd_peer_request *pr;
 
-		if (!test_bit(INTERVAL_SENT, &i->flags))
+		if (!test_bit(INTERVAL_READY_TO_SEND, &i->flags))
 			continue;
 
 		if (!(INTERVAL_TYPE_MASK(i->type) & type_mask))
@@ -9289,7 +9289,7 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 
 		/* Only cancel requests which are waiting for conflicts to resolve. */
 		if (test_bit(INTERVAL_SUBMITTED, &i->flags) ||
-				(test_bit(INTERVAL_SENT, &i->flags) &&
+				(test_bit(INTERVAL_READY_TO_SEND, &i->flags) &&
 				 !test_bit(INTERVAL_RECEIVED, &i->flags)) ||
 				test_bit(INTERVAL_CANCELED, &i->flags))
 			continue;
@@ -9302,7 +9302,7 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 					"already queued" : "unqueued",
 				drbd_interval_type_str(i),
 				(unsigned long long) i->sector, i->size,
-				test_bit(INTERVAL_SENT, &i->flags));
+				test_bit(INTERVAL_READY_TO_SEND, &i->flags));
 
 		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
 			continue;
@@ -9411,7 +9411,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 			continue;
 		}
 
-		D_ASSERT(connection, test_bit(INTERVAL_SENT, &peer_req->i.flags));
+		D_ASSERT(connection, test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags));
 		D_ASSERT(connection, !test_bit(INTERVAL_RECEIVED, &peer_req->i.flags));
 		D_ASSERT(connection, !(peer_req->flags & EE_TRIM));
 

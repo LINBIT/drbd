@@ -2996,7 +2996,8 @@ static inline bool drbd_should_defer_to_interval(struct drbd_interval *interval,
 	 * difficulties associating the replies to the requests.
 	 */
 	if (interval->type == INTERVAL_RESYNC_WRITE &&
-			i->type == INTERVAL_RESYNC_WRITE && test_bit(INTERVAL_SENT, &i->flags))
+			i->type == INTERVAL_RESYNC_WRITE &&
+			test_bit(INTERVAL_READY_TO_SEND, &i->flags))
 		return true;
 
 	return false;
