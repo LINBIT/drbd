@@ -29,6 +29,9 @@ const char *drbd_buildtag(void);
  *	"Rolling" upgrade path for those versions:
  *	first upgrade to 9.0.latest, then connect to 9.1/9.2 or later.
  * 118-PRO_VERSION_MAX: accepted DRBD 9 protocol versions.
+ *
+ * Note that we also reject connections with protocol version 121 and feature
+ * DRBD_FF_RESYNC_DAGTAG.
  */
 
 #endif
