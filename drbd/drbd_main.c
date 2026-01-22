@@ -6097,6 +6097,7 @@ _drbd_fault_str(unsigned int type) {
 		[DRBD_FAULT_BM_ALLOC] = "BM allocation",
 		[DRBD_FAULT_AL_EE] = "EE allocation",
 		[DRBD_FAULT_RECEIVE] = "receive data corruption",
+		[DRBD_FAULT_BIO_TOO_SMALL] = "BIO too small",
 	};
 
 	return (type < DRBD_FAULT_MAX) ? _faults[type] : "**Unknown**";

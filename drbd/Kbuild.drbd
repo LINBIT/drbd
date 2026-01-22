@@ -56,6 +56,7 @@ endif
 # enable fault injection by default
 ifndef CONFIG_DRBD_FAULT_INJECTION
 	override EXTRA_CFLAGS += -DCONFIG_DRBD_FAULT_INJECTION
+	ccflags-y += -DCONFIG_DRBD_FAULT_INJECTION
 endif
 
 # Disabled for the external module build by default.

@@ -411,6 +411,10 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 	nr_vecs = DIV_ROUND_UP(size, PAGE_SIZE);
 	if (nr_vecs > BIO_MAX_VECS)
 		nr_vecs = BIO_MAX_VECS;
+
+	if (drbd_insert_fault(device, DRBD_FAULT_BIO_TOO_SMALL))
+		nr_vecs = DIV_ROUND_UP(nr_vecs, 4);
+
 	bio = bio_alloc(device->ldev->backing_bdev, nr_vecs, opf, gfp_mask);
 	if (!bio)
 		return -ENOMEM;
@@ -1770,7 +1774,7 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	struct bio *bio, *bios = NULL;
 	sector_t sector = peer_req->i.sector;
 	struct page *page;
-	int fault_type, err;
+	int fault_type, err, nr_bios = 0;
 
 	if (peer_req->flags & EE_SET_OUT_OF_SYNC)
 		drbd_set_out_of_sync(peer_req->peer_device,
@@ -1839,6 +1843,8 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 
 		sector += bio_sectors(bio);
 
+		nr_bios++;
+
 		/* Get reference for the next bio (if any) now to prevent premature completion */
 		if (bios)
 			atomic_inc(&peer_req->pending_bios);
@@ -1851,6 +1857,9 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		if (bios->bi_next)
 			bios->bi_opf &= ~REQ_PREFLUSH;
 	}
+	if (nr_bios > 1)
+		device->multi_bio_cnt++;
+
 	return 0;
 
 fail:

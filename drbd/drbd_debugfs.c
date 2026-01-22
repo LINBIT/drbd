@@ -1337,6 +1337,14 @@ static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
 	return 0;
 }
 
+static int device_multi_bio_cnt_show(struct seq_file *m, void *ignored)
+{
+	struct drbd_device *device = m->private;
+
+	seq_printf(m, "%u\n", device->multi_bio_cnt);
+	return 0;
+}
+
 #define show_per_peer(M) do {							\
 		seq_printf(m, "%-16s", #M ":");					\
 		for_each_peer_device(peer_device, device)			\
@@ -1458,6 +1466,7 @@ drbd_debugfs_device_attr(openers)
 drbd_debugfs_device_attr(md_io)
 drbd_debugfs_device_attr(interval_tree)
 drbd_debugfs_device_attr(al_updates)
+drbd_debugfs_device_attr(multi_bio_cnt)
 #ifdef CONFIG_DRBD_TIMING_STATS
 __drbd_debugfs_device_attr(req_timing, device_req_timing_write)
 #endif
@@ -1499,6 +1508,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	vol_dcf(md_io);
 	vol_dcf(interval_tree);
 	vol_dcf(al_updates);
+	vol_dcf(multi_bio_cnt);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_dcf(device->debugfs_vol, device, req_timing, 0600);
 #endif
@@ -1529,6 +1539,7 @@ void drbd_debugfs_device_cleanup(struct drbd_device *device)
 	drbd_debugfs_remove(&device->debugfs_vol_md_io);
 	drbd_debugfs_remove(&device->debugfs_vol_interval_tree);
 	drbd_debugfs_remove(&device->debugfs_vol_al_updates);
+	drbd_debugfs_remove(&device->debugfs_vol_multi_bio_cnt);
 #ifdef CONFIG_DRBD_TIMING_STATS
 	drbd_debugfs_remove(&device->debugfs_vol_req_timing);
 #endif
