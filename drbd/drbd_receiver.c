@@ -2341,26 +2341,31 @@ void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
 	}
 }
 
-static void drbd_peers_in_sync_progress(struct drbd_peer_device *peer_device, sector_t sector_end)
+static void drbd_peers_in_sync_progress(struct drbd_peer_device *peer_device,
+		sector_t sector_start, sector_t sector_end)
 {
-	/* Round down to the boundary defined by PEERS_IN_SYNC_STEP_SHIFT. */
-	sector_t peers_in_sync_end = sector_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	/* P_PEERS_IN_SYNC "steps" are represented by their start sector */
+	sector_t step = sector_start & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	sector_t end_step = sector_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	sector_t last_end = peer_device->last_in_sync_end;
+	sector_t last_step = last_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	sector_t last_step_end = min(get_capacity(peer_device->device->vdisk),
+			last_step + PEERS_IN_SYNC_STEP_SECT);
 
-	/* If we move backwards then move marker back. */
-	if (peers_in_sync_end < peer_device->last_peers_in_sync_end) {
-		peer_device->last_peers_in_sync_end = peers_in_sync_end;
-		return;
-	}
+	/* Send for last request if it was part way through a different step */
+	if (last_end > last_step && step != last_step)
+		drbd_queue_update_peers(peer_device, last_step, last_step_end);
 
-	/* Only schedule when we cross a boundary as defined by PEERS_IN_SYNC_STEP_SHIFT. */
-	if (peers_in_sync_end == peer_device->last_peers_in_sync_end)
-		return;
+	/* Send if the request reaches or passes a step boundary */
+	if (end_step != step)
+		drbd_queue_update_peers(peer_device, step, end_step);
 
-	drbd_queue_update_peers(peer_device, peer_device->last_peers_in_sync_end, peers_in_sync_end);
-	peer_device->last_peers_in_sync_end = peers_in_sync_end;
+	peer_device->last_in_sync_end = sector_end;
 
-	/* Also consider scheduling a bitmap update to reduce the size of the
-	 * next resync if this one is disrupted. */
+	/*
+	 * Consider scheduling a bitmap update to reduce the size of the next
+	 * resync if this one is disrupted.
+	 */
 	if (drbd_lazy_bitmap_update_due(peer_device))
 		drbd_peer_device_post_work(peer_device, RS_LAZY_BM_WRITE);
 }
@@ -2382,7 +2387,8 @@ static void drbd_check_peers_in_sync_progress(struct drbd_peer_device *peer_devi
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
 	list_for_each_entry_safe(peer_req, tmp, &completed, recv_order) {
-		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
+		drbd_peers_in_sync_progress(peer_device, peer_req->i.sector,
+			peer_req->i.sector + (peer_req->i.size >> SECTOR_SHIFT));
 		drbd_free_peer_req(peer_req);
 	}
 }
