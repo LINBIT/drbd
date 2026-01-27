@@ -2368,16 +2368,15 @@ drbd_send_bio(struct drbd_peer_device *peer_device, struct bio *bio, unsigned in
 
 static int drbd_send_ee(struct drbd_peer_device *peer_device, struct drbd_peer_request *peer_req)
 {
-	struct bio *bio = peer_req->bio;
-	int err;
+	struct bio *bio;
+	int err = 0;
 
-	do {
+	bio_list_for_each(bio, &peer_req->bios) {
 		err = __send_bio(peer_device, bio,
 				 peer_req->flags & EE_RELEASE_TO_MEMPOOL ? 0 : MSG_SPLICE_PAGES);
 		if (err)
 			break;
-		bio = bio->bi_next;
-	} while (bio);
+	}
 
 	return err;
 }
@@ -2456,7 +2455,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 
 	if (digest_size && digest_out) {
 		WARN_ON(digest_size > sizeof(connection->scratch_buffer.d.before));
-		drbd_csum_bio(connection->integrity_tfm, req->master_bio, before, false);
+		drbd_csum_bio(connection->integrity_tfm, req->master_bio, before);
 		memcpy(digest_out, before, digest_size);
 	}
 
@@ -2481,7 +2480,7 @@ int drbd_send_dblock(struct drbd_peer_device *peer_device, struct drbd_request *
 
 		/* double check digest, sometimes buffers have been modified in flight. */
 		if (digest_size > 0) {
-			drbd_csum_bio(connection->integrity_tfm, req->master_bio, after, false);
+			drbd_csum_bio(connection->integrity_tfm, req->master_bio, after);
 			if (memcmp(before, after, digest_size)) {
 				drbd_warn(device,
 					"Digest mismatch, buffer modified by upper layers during write: %llus +%u\n",
@@ -2524,7 +2523,7 @@ int drbd_send_block(struct drbd_peer_device *peer_device, enum drbd_packet cmd,
 		p->block_id = ID_SYNCER;
 
 	if (digest_size)
-		drbd_csum_bio(connection->integrity_tfm, peer_req->bio, p + 1, true);
+		drbd_csum_bios(connection->integrity_tfm, &peer_req->bios, p + 1);
 	additional_size_command(connection, DATA_STREAM, peer_req->i.size);
 	err = __send_command(connection,
 			     peer_device->device->vnr, cmd, DATA_STREAM);

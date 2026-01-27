@@ -129,7 +129,7 @@ static int dtl_connect(struct drbd_transport *transport);
 static void dtl_finish_connect(struct drbd_transport *transport);
 static int dtl_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf,
 		    size_t size, int flags);
-static int dtl_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size);
+static int dtl_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size);
 static void dtl_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
 static int dtl_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
 static void dtl_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream,
@@ -482,7 +482,7 @@ out:
 }
 
 static int
-dtl_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
+dtl_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size)
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
@@ -500,7 +500,7 @@ dtl_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
 		if (err < 0)
 			goto fail;
 		size -= err;
-		err = drbd_bio_add_page(transport, bio, page, len, 0);
+		err = drbd_bio_add_page(transport, bios, page, len, 0);
 		if (err < 0)
 			goto fail;
 	} while (size > 0);

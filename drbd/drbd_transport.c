@@ -366,17 +366,12 @@ struct drbd_path *__drbd_next_path_ref(struct drbd_path *drbd_path,
 	return drbd_path;
 }
 
-int drbd_bio_add_page(struct drbd_transport *transport, struct bio *bio,
+int drbd_bio_add_page(struct drbd_transport *transport, struct bio_list *bios,
 		      struct page *page, unsigned int len, unsigned int offset)
 {
+	struct bio *bio = bios->tail;
 	struct bio *new_bio;
 	int r;
-
-	/* bio->bi_next is used by the kernel while the bio is under I/O.
-	 * Before submitting and after I/O completion, DRBD is free to use it.
-	 */
-	while (bio->bi_next)
-		bio = bio->bi_next;
 
 	r = bio_add_page(bio, page, len, offset);
 	if (r)
@@ -386,7 +381,7 @@ int drbd_bio_add_page(struct drbd_transport *transport, struct bio *bio,
 	if (!new_bio)
 		return -ENOMEM;
 
-	bio->bi_next = new_bio;
+	bio_list_add(bios, new_bio);
 	r = bio_add_page(new_bio, page, len, offset);
 	if (r)
 		return r;

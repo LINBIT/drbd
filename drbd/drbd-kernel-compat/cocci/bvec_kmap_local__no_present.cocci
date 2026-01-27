@@ -26,7 +26,7 @@ ptr =
 @@
 identifier ptr, bvec;
 @@
-drbd_csum_bio(...)
+__drbd_csum_bio(...)
 {
 <...
 ptr =

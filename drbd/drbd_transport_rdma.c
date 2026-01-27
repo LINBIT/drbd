@@ -323,7 +323,7 @@ static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream 
 static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
 		int offset, size_t size, unsigned msg_flags);
 static int dtr_send_bio(struct drbd_transport *, struct bio *bio, unsigned int msg_flags);
-static int dtr_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size);
+static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size);
 static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
 static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
 static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
@@ -592,7 +592,7 @@ out:
 }
 
 
-static int dtr_recv_bio(struct drbd_transport *transport, struct bio *bio, size_t size)
+static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -632,7 +632,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio *bio, size_
 		 * offset may well be not the PAGE_SIZE and 0 we hope for.
 		 */
 
-		err = drbd_bio_add_page(transport, bio, page, rx_desc->size, 0);
+		err = drbd_bio_add_page(transport, bios, page, rx_desc->size, 0);
 		if (err < 0)
 			return err;
 

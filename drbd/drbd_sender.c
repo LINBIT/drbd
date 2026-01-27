@@ -266,16 +266,19 @@ void drbd_peer_request_endio(struct bio *bio)
 	};
 
 	spin_lock_irqsave(&device->peer_req_bio_completion_lock, flags);
-	if (!peer_req->bio) {
-		peer_req->bio = bio;
+	if (bio_list_empty(&peer_req->bios)) {
+		bio_list_add(&peer_req->bios, bio);
 	} else {
 		/* Insert bio into the chain ordered by bi_sector */
-		for (pos = &peer_req->bio; *pos; pos = &(*pos)->bi_next) {
+		for (pos = &peer_req->bios.head; *pos; pos = &(*pos)->bi_next) {
 			if (bio->bi_iter.bi_sector < (*pos)->bi_iter.bi_sector)
 				break;
 		}
 		bio->bi_next = *pos;
 		*pos = bio;
+		/* Update tail if we inserted at the end */
+		if (!bio->bi_next)
+			peer_req->bios.tail = bio;
 	}
 	spin_unlock_irqrestore(&device->peer_req_bio_completion_lock, flags);
 
@@ -521,30 +524,45 @@ void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 }
 
 
-/* own = true means that DRBD owns the bio and uses bi_next for chaining
- * multiple bios of a peer_req. own = false means this is someone else's BIO,
- * and DRBD should not follow the bi_next pointer
- */
-void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest, bool own)
+
+static void __drbd_csum_bio(struct bio *bio, struct shash_desc *desc)
 {
 	struct bio_vec bvec;
 	struct bvec_iter iter;
+
+	bio_for_each_segment(bvec, bio, iter) {
+		u8 *src;
+
+		src = bvec_kmap_local(&bvec);
+		crypto_shash_update(desc, src, bvec.bv_len);
+		kunmap_local(src);
+	}
+}
+
+void drbd_csum_bios(struct crypto_shash *tfm, struct bio_list *bios, void *digest)
+{
+	struct bio *bio;
 	SHASH_DESC_ON_STACK(desc, tfm);
 
 	desc->tfm = tfm;
-
 	crypto_shash_init(desc);
 
-	do {
-		bio_for_each_segment(bvec, bio, iter) {
-			u8 *src;
+	bio_list_for_each(bio, bios)
+		__drbd_csum_bio(bio, desc);
 
-			src = bvec_kmap_local(&bvec);
-			crypto_shash_update(desc, src, bvec.bv_len);
-			kunmap_local(src);
-		}
-		bio = own ? bio->bi_next : NULL;
-	} while (bio);
+	crypto_shash_final(desc, digest);
+	shash_desc_zero(desc);
+}
+
+/* This function needs to ignore bi_next */
+void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest)
+{
+	SHASH_DESC_ON_STACK(desc, tfm);
+
+	desc->tfm = tfm;
+	crypto_shash_init(desc);
+
+	__drbd_csum_bio(bio, desc);
 
 	crypto_shash_final(desc, digest);
 	shash_desc_zero(desc);
@@ -581,7 +599,7 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	di->digest_size = digest_size;
 	di->digest = (((char *)di)+sizeof(struct digest_info));
 
-	drbd_csum_bio(connection->csums_tfm, peer_req->bio, di->digest, true);
+	drbd_csum_bios(connection->csums_tfm, &peer_req->bios, di->digest);
 
 	/* Free pages before continuing.
 	 * In case we block on congestion, we could otherwise run into
@@ -2140,9 +2158,9 @@ static bool all_zero(struct drbd_peer_request *peer_req)
 {
 	struct bvec_iter iter;
 	struct bio_vec bvec;
-	struct bio *bio = peer_req->bio;
+	struct bio *bio;
 
-	do {
+	bio_list_for_each(bio, &peer_req->bios) {
 		bio_for_each_segment(bvec, bio, iter) {
 			unsigned long *d = bvec_virt(&bvec);
 			unsigned int i, words = bvec.bv_len / sizeof(*d);
@@ -2152,8 +2170,7 @@ static bool all_zero(struct drbd_peer_request *peer_req)
 					return false;
 			}
 		}
-		bio = bio->bi_next;
-	} while (bio);
+	}
 
 	return true;
 }
@@ -2189,7 +2206,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 			D_ASSERT(device, digest_size == di->digest_size);
 			digest = kmalloc(digest_size, GFP_NOIO);
 			if (digest) {
-				drbd_csum_bio(connection->csums_tfm, peer_req->bio, digest, true);
+				drbd_csum_bios(connection->csums_tfm, &peer_req->bios, digest);
 				eq = !memcmp(digest, di->digest, digest_size);
 				kfree(digest);
 			}
@@ -2403,7 +2420,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	}
 
 	if (!(peer_req->flags & EE_WAS_ERROR))
-		drbd_csum_bio(peer_device->connection->verify_tfm, peer_req->bio, digest, true);
+		drbd_csum_bios(peer_device->connection->verify_tfm, &peer_req->bios, digest);
 	else
 		memset(digest, 0, digest_size);
 
@@ -2476,7 +2493,7 @@ static bool digest_equal(struct drbd_peer_request *peer_req)
 	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 	digest = kmalloc(digest_size, GFP_NOIO);
 	if (digest) {
-		drbd_csum_bio(peer_device->connection->verify_tfm, peer_req->bio, digest, true);
+		drbd_csum_bios(peer_device->connection->verify_tfm, &peer_req->bios, digest);
 
 		D_ASSERT(device, digest_size == di->digest_size);
 		eq = !memcmp(digest, di->digest, digest_size);

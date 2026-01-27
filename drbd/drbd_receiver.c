@@ -321,21 +321,15 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 {
 	struct drbd_transport *transport = &peer_req->peer_device->connection->transport;
-	struct bio *next_bio, *bio = peer_req->bio;
 	struct bvec_iter iter;
 	struct bio_vec bvec;
+	struct bio *bio;
 
-	if (!bio)
-		return;
-	peer_req->bio = NULL;
-
-	do {
+	while ((bio = bio_list_pop(&peer_req->bios))) {
 		bio_for_each_segment(bvec, bio, iter)
 			drbd_free_page(transport, bvec.bv_page);
-		next_bio = bio->bi_next;
 		bio_put(bio);
-		bio = next_bio;
-	} while (bio);
+	}
 }
 
 /**
@@ -419,7 +413,7 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 	if (!bio)
 		return -ENOMEM;
 
-	peer_req->bio = bio;
+	bio_list_add(&peer_req->bios, bio);
 
 	if (op == REQ_OP_READ) {
 		while (size) {
@@ -428,7 +422,7 @@ peer_req_alloc_bio(struct drbd_peer_request *peer_req, size_t size, gfp_t gfp_ma
 			page = drbd_alloc_page(transport, gfp_mask);
 			if (!page)
 				goto out_free_pages;
-			len = drbd_bio_add_page(transport, bio, page, len, 0);
+			len = drbd_bio_add_page(transport, &peer_req->bios, page, len, 0);
 			if (len < 0)
 				goto out_free_pages;
 			size -= len;
@@ -1741,7 +1735,7 @@ static void drbd_issue_peer_discard_or_zero_out(struct drbd_device *device, stru
 
 static int peer_request_fault_type(struct drbd_peer_request *peer_req)
 {
-	if (bio_op(peer_req->bio) == REQ_OP_READ) {
+	if (bio_op(peer_req->bios.head) == REQ_OP_READ) {
 		return drbd_interval_is_application(&peer_req->i) ?
 			DRBD_FAULT_DT_RD : DRBD_FAULT_RS_RD;
 	} else {
@@ -1771,8 +1765,9 @@ static int peer_request_fault_type(struct drbd_peer_request *peer_req)
 int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_device *device = peer_req->peer_device->device;
-	struct bio *bio, *bios = NULL;
+	struct bio *bio, *next_bio;
 	sector_t sector = peer_req->i.sector;
+	struct bio_list bios;
 	struct page *page;
 	int fault_type, err, nr_bios = 0;
 
@@ -1793,6 +1788,10 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		return 0;
 	}
 
+	fault_type = peer_request_fault_type(peer_req);
+	bios = peer_req->bios;
+	bio_list_init(&peer_req->bios);
+
 	/* In most cases, we will only need one bio.  But in case the lower
 	 * level restrictions happen to be different at this offset on this
 	 * side than those of the sending peer, we may need to submit the
@@ -1806,32 +1805,26 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	 * should have been mapped to a "drbd protocol barrier".
 	 * REQ_OP_SECURE_ERASE: I don't see how we could ever support that.
 	 */
-	if (!(bio_op(peer_req->bio) == REQ_OP_WRITE ||
-				bio_op(peer_req->bio) == REQ_OP_READ)) {
-		drbd_err(device, "Invalid bio op received: 0x%x\n", peer_req->bio->bi_opf);
+	bio = bio_list_peek(&bios);
+	if (!(bio_op(bio) == REQ_OP_WRITE || bio_op(bio) == REQ_OP_READ)) {
+		drbd_err(device, "Invalid bio op received: 0x%x\n", bio->bi_opf);
 		err = -EINVAL;
 		goto fail;
 	}
 
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
-	fault_type = peer_request_fault_type(peer_req);
-	bios = peer_req->bio;
-	peer_req->bio = NULL;
 
 	/* Get reference for the first bio */
 	atomic_inc(&peer_req->pending_bios);
 
 	/* for debugfs: update timestamp, mark as submitted */
 	peer_req->submit_jif = jiffies;
-	while (true) {
-		bio = bios;
-		bios = bios->bi_next;
-
-		/* Submit bios with bi_next = NULL; bi_next is a kernel-private field;
-		 * do not read it after I/O; used temprorarily by DRBD pre submit
+	while ((bio = bio_list_pop(&bios))) {
+		/* bio_list_pop() clears bio->bi_next; it is a kernel-private
+		 * field used during I/O; used temprorarily by DRBD pre submit
+		 * and post completion
 		 */
-		bio->bi_next = NULL;
 		bio->bi_iter.bi_sector = sector;
 		bio->bi_private = peer_req;
 		bio->bi_end_io = drbd_peer_request_endio;
@@ -1846,16 +1839,15 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 		nr_bios++;
 
 		/* Get reference for the next bio (if any) now to prevent premature completion */
-		if (bios)
+		next_bio = bio_list_peek(&bios);
+		if (next_bio)
 			atomic_inc(&peer_req->pending_bios);
 		drbd_submit_bio_noacct(device, fault_type, bio);
-		if (!bios)
-			break;
 
 		/* strip off REQ_PREFLUSH,
 		 * unless it is the first or last bio */
-		if (bios->bi_next)
-			bios->bi_opf &= ~REQ_PREFLUSH;
+		if (next_bio && next_bio->bi_next)
+			next_bio->bi_opf &= ~REQ_PREFLUSH;
 	}
 	if (nr_bios > 1)
 		device->multi_bio_cnt++;
@@ -1863,11 +1855,8 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	return 0;
 
 fail:
-	while (bios) {
-		bio = bios;
-		bios = bios->bi_next;
+	while ((bio = bio_list_pop(&bios)))
 		bio_put(bio);
-	}
 	return err;
 }
 
@@ -2121,18 +2110,18 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 		return 0;
 
 	size = d->length - d->digest_size;
-	if (!peer_req->bio) {
+	if (bio_list_empty(&peer_req->bios)) {
 		/* For a checksum resync, the bio was consumed for reading. */
 		err = peer_req_alloc_bio(peer_req, size, GFP_NOIO, REQ_OP_WRITE);
 		if (err)
 			return err;
 	}
-	err = tr_ops->recv_bio(transport, peer_req->bio, size);
+	err = tr_ops->recv_bio(transport, &peer_req->bios, size);
 	if (err)
 		return err;
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
-		struct bio *bio = peer_req->bio;
+		struct bio *bio = bio_list_peek(&peer_req->bios);
 		unsigned long *data;
 
 		drbd_err(device, "Fault injection: Corrupting data on receive, sector %llu\n",
@@ -2143,7 +2132,7 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 	}
 
 	if (d->digest_size) {
-		drbd_csum_bio(connection->peer_integrity_tfm, peer_req->bio, dig_vv, true);
+		drbd_csum_bios(connection->peer_integrity_tfm, &peer_req->bios, dig_vv);
 		if (memcmp(dig_in, dig_vv, d->digest_size)) {
 			drbd_err(device, "Digest integrity check FAILED: %llus +%u\n",
 				d->sector, d->bi_size);
@@ -2207,7 +2196,7 @@ static int recv_dless_read(struct drbd_peer_device *peer_device, struct drbd_req
 	}
 
 	if (digest_size) {
-		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv, false);
+		drbd_csum_bio(peer_device->connection->peer_integrity_tfm, bio, dig_vv);
 		if (memcmp(dig_in, dig_vv, digest_size)) {
 			drbd_err(peer_device, "Digest integrity check FAILED. Broken NICs?\n");
 			return -EINVAL;
@@ -3309,7 +3298,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	if (pi->cmd == P_TRIM) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_DISCARD);
-		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_DISCARD);
+		D_ASSERT(peer_device, bio_op(peer_req->bios.head) == REQ_OP_DISCARD);
 		/* need to play safe: an older DRBD sender
 		 * may mean zero-out while sending P_TRIM. */
 		if (0 == (connection->agreed_features & DRBD_FF_WZEROES))
@@ -3317,13 +3306,13 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	} else if (pi->cmd == P_ZEROES) {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
 		D_ASSERT(peer_device, d.dp_flags & DP_ZEROES);
-		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_WRITE_ZEROES);
+		D_ASSERT(peer_device, bio_op(peer_req->bios.head) == REQ_OP_WRITE_ZEROES);
 		/* Do (not) pass down BLKDEV_ZERO_NOUNMAP? */
 		if (d.dp_flags & DP_DISCARD)
 			peer_req->flags |= EE_TRIM;
 	} else {
 		D_ASSERT(peer_device, peer_req->i.size > 0);
-		D_ASSERT(peer_device, bio_op(peer_req->bio) == REQ_OP_WRITE);
+		D_ASSERT(peer_device, bio_op(peer_req->bios.head) == REQ_OP_WRITE);
 	}
 
 	if (d.dp_flags & DP_MAY_SET_IN_SYNC)
@@ -3345,14 +3334,14 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 		epoch = list_entry(peer_req->epoch->list.prev, struct drbd_epoch, list);
 		if (epoch == peer_req->epoch) {
 			set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-			peer_req->bio->bi_opf |= REQ_PREFLUSH | REQ_FUA;
+			peer_req->bios.head->bi_opf |= REQ_PREFLUSH | REQ_FUA;
 			peer_req->flags |= EE_IS_BARRIER;
 		} else {
 			if (atomic_read(&epoch->epoch_size) > 1 ||
 			    !test_bit(DE_CONTAINS_A_BARRIER, &epoch->flags)) {
 				set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &epoch->flags);
 				set_bit(DE_CONTAINS_A_BARRIER, &peer_req->epoch->flags);
-				peer_req->bio->bi_opf |= REQ_PREFLUSH | REQ_FUA;
+				peer_req->bios.head->bi_opf |= REQ_PREFLUSH | REQ_FUA;
 				peer_req->flags |= EE_IS_BARRIER;
 			}
 		}
@@ -9134,7 +9123,7 @@ static void drbd_submit_rs_discard(struct drbd_peer_request *peer_req)
 		list_del(&peer_req->w.list);
 
 		peer_req->w.cb = e_end_resync_block;
-		peer_req->bio->bi_opf = REQ_OP_DISCARD;
+		peer_req->bios.head->bi_opf = REQ_OP_DISCARD;
 
 		atomic_inc(&connection->backing_ee_cnt);
 		drbd_conflict_submit_resync_request(peer_req);

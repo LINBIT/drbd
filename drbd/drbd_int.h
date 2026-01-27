@@ -467,7 +467,7 @@ struct drbd_peer_request {
 		};
 	};
 
-	struct bio *bio;
+	struct bio_list bios;
 	atomic_t pending_bios;
 	struct drbd_interval i;
 	unsigned long flags;	/* see comments on ee flag bits below */
@@ -484,6 +484,7 @@ struct drbd_peer_request {
 		};
 	};
 };
+
 
 /* ee flag bits.
  * While corresponding bios are in flight, the only modification will be
@@ -2308,7 +2309,8 @@ static inline void ov_skipped_print(struct drbd_peer_device *peer_device)
 	peer_device->ov_last_skipped_size = 0;
 }
 
-void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest, bool own);
+void drbd_csum_bios(struct crypto_shash *tfm, struct bio_list *bios, void *digest);
+void drbd_csum_bio(struct crypto_shash *tfm, struct bio *bio, void *digest);
 void drbd_resync_read_req_mod(struct drbd_peer_request *peer_req,
 			      enum drbd_interval_flags bit_to_set);
 
