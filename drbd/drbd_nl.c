@@ -2069,8 +2069,6 @@ static void get_common_queue_limits(struct queue_limits *common_limits,
 	struct queue_limits peer_limits = { 0 };
 
 	blk_set_stacking_limits(common_limits);
-	/* This is the workaround for "bio would need to, but cannot, be split" */
-	common_limits->seg_boundary_mask = PAGE_SIZE - 1;
 	common_limits->max_hw_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
 	common_limits->max_sectors = device->device_conf.max_bio_size >> SECTOR_SHIFT;
 	common_limits->physical_block_size = device->device_conf.block_size;
