@@ -1870,7 +1870,7 @@ int drbd_bmio_clear_one_peer(struct drbd_device *device,
 bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr);
 void drbd_flush_peer_acks(struct drbd_resource *resource);
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
-void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream);
+int drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream);
 void drbd_open_counts(struct drbd_resource *resource, int *rw_count_ptr,
 		      int *ro_count_ptr);
 

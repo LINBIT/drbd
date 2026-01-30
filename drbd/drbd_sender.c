@@ -3358,8 +3358,10 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	nc = rcu_dereference(connection->transport.net_conf);
 	uncork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
-	if (uncork)
-		drbd_uncork(connection, DATA_STREAM);
+	if (uncork) {
+		if (drbd_uncork(connection, DATA_STREAM))
+			return;
+	}
 
 	for (;;) {
 		int send_barrier;

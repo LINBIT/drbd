@@ -11339,11 +11339,11 @@ void drbd_send_acks_wf(struct work_struct *ws)
 	err = drbd_finish_peer_reqs(connection);
 
 	/* but unconditionally uncork unless disabled */
-	if (tcp_cork)
-		drbd_uncork(connection, CONTROL_STREAM);
-
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+	else if (tcp_cork)
+		drbd_uncork(connection, CONTROL_STREAM);
+
 }
 
 void drbd_send_peer_ack_wf(struct work_struct *ws)
