@@ -1766,6 +1766,8 @@ static u64 __cancel_other_resyncs(struct drbd_device *device)
 		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T) {
 			target_m |= NODE_MASK(peer_device->node_id);
 			__change_repl_state(peer_device, L_ESTABLISHED);
+			if (drbd_bm_total_weight(peer_device))
+				peer_device->resync_again++;
 		}
 	}
 
