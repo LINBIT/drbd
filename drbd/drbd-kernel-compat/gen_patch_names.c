@@ -117,6 +117,9 @@ int main(int argc, char **argv)
 	patch(1, "bvec_virt", true, false,
 	      COMPAT_HAVE_BVEC_VIRT, "present");
 
+	patch(1, "bio_for_each_bvec", true, false,
+	      COMPAT_HAVE_BIO_FOR_EACH_BVEC, "present");
+
 	patch(1, "sendpage", false, true,
 	      COMPAT_HAVE_SENDPAGE, "present");
 

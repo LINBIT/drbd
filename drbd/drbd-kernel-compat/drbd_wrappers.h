@@ -169,9 +169,13 @@ void arch_wb_cache_pmem(void *addr, size_t size);
 #endif
 
 
-// For kernels before 4.20
-#ifndef bio_for_each_bvec
-/* multi-page (mp_bvec) helpers */
+/* For kernels before 5.1: bio_for_each_bvec polyfill.
+ * On these kernels, bio_for_each_segment() does not split multi-page bvecs
+ * into PAGE_SIZE chunks (upstream commit 3d75ca0adef4, merged in v5.1).
+ * The cocci compat patch also forces single-page allocations in
+ * drbd_alloc_pages() to avoid buffer overflows with drivers that iterate
+ * using bio_for_each_segment (e.g. brd). */
+#ifndef COMPAT_HAVE_BIO_FOR_EACH_BVEC
 #define mp_bvec_iter_page(bvec, iter)				\
 	(__bvec_iter_bvec((bvec), (iter))->bv_page)
 
