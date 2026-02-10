@@ -322,9 +322,11 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		adm_ctx->connection = drbd_get_connection_by_node_id(adm_ctx->resource, adm_ctx->peer_node_id);
-		if (adm_ctx->connection)
-			kref_debug_get(&adm_ctx->connection->kref_debug, 2);
+		if (adm_ctx->resource) {
+			adm_ctx->connection = drbd_get_connection_by_node_id(adm_ctx->resource, adm_ctx->peer_node_id);
+			if (adm_ctx->connection)
+				kref_debug_get(&adm_ctx->connection->kref_debug, 2);
+		}
 	} else if (flags & DRBD_ADM_NEED_PEER_NODE) {
 		drbd_msg_put_info(adm_ctx->reply_skb, "peer node id missing");
 		err = ERR_INVALID_REQUEST;
