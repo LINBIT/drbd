@@ -120,6 +120,13 @@ int main(int argc, char **argv)
 	patch(1, "bio_for_each_bvec", true, false,
 	      COMPAT_HAVE_BIO_FOR_EACH_BVEC, "present");
 
+#if !defined(COMPAT_HAVE_BIO_FOR_EACH_BVEC) || defined(COMPAT_HAVE_BVEC_NTH_PAGE)
+	/* Pre-5.2: bio_add_page() does not guarantee contiguous page
+	 * structs in merged bvecs. Use nth_page() for safe iteration. */
+	patch(1, "bvec_page_struct_contiguous", true, false,
+	      NO, "guaranteed");
+#endif
+
 	patch(1, "sendpage", false, true,
 	      COMPAT_HAVE_SENDPAGE, "present");
 

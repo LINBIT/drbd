@@ -326,8 +326,22 @@ void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req)
 	struct bio *bio;
 
 	while ((bio = bio_list_pop(&peer_req->bios))) {
-		bio_for_each_bvec(bvec, bio, iter)
-			drbd_free_page(transport, bvec.bv_page);
+		bio_for_each_bvec(bvec, bio, iter) {
+			struct page *page = bvec.bv_page;
+			unsigned int len = bvec.bv_len;
+
+			/* bio_add_page() may have merged contiguous pages from
+			 * separate allocations into a single bvec. Step through
+			 * by compound_order to free each allocation unit.
+			 */
+			while (len) {
+				unsigned int order = compound_order(page);
+
+				drbd_free_page(transport, page);
+				page += 1 << order;
+				len -= min_t(unsigned int, PAGE_SIZE << order, len);
+			}
+		}
 		bio_put(bio);
 	}
 }
