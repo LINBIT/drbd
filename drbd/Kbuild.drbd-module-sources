@@ -28,8 +28,6 @@ drbd-headers/linux/drbd.h
 drbd-headers/linux/drbd_genl.h
 drbd-headers/linux/drbd_genl_api.h
 drbd-headers/linux/drbd_limits.h
-drbd-headers/linux/genl_magic_func-genl_register_family_with_ops_groups.h
-drbd-headers/linux/genl_magic_func-genl_register_mc_group.h
 drbd-headers/linux/genl_magic_func.h
 drbd-headers/linux/genl_magic_struct.h
 drbd-headers/windrbd/windrbd_ioctl.h

@@ -6,16 +6,16 @@
  	.cmd = op_name,						\
 -	.policy	= CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),	\
  },
- 
+
  #define ZZZ_genl_ops		CONCAT_(GENL_MAGIC_FAMILY, _genl_ops)
-@@ -311,6 +310,7 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
- #endif
- 	.netnsok = false,
+@@ -321,6 +320,7 @@ static struct genl_family ZZZ_genl_family __read_mostly = {
+ 	.module = THIS_MODULE,
+ 	.netnsok = false,	/* 9.2 may set to true from module_init */
  	.parallel_ops = true,
 +	.policy = CONCAT_(GENL_MAGIC_FAMILY, _tla_nl_policy),
  };
- 
- /*
+
+ int CONCAT_(GENL_MAGIC_FAMILY, _genl_register)(void)
 
 --- drbd-kernel-compat/handshake/genl.c
 +++ drbd-kernel-compat/handshake/genl.c

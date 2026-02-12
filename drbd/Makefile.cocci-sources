@@ -62,8 +62,6 @@ sources += drbd-headers/linux/drbd.h
 sources += drbd-headers/linux/drbd_genl.h
 sources += drbd-headers/linux/drbd_genl_api.h
 sources += drbd-headers/linux/drbd_limits.h
-sources += drbd-headers/linux/genl_magic_func-genl_register_family_with_ops_groups.h
-sources += drbd-headers/linux/genl_magic_func-genl_register_mc_group.h
 sources += drbd-headers/linux/genl_magic_func.h
 sources += drbd-headers/linux/genl_magic_struct.h
 
