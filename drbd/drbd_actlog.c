@@ -137,6 +137,7 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 			 sector_t sector, enum req_op op)
 {
 	int err;
+
 	D_ASSERT(device, atomic_read(&device->md_io.in_use) == 1);
 
 	if (!bdev->md_bdev) {
@@ -147,7 +148,7 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 	dynamic_drbd_dbg(device, "meta_data io: %s [%d]:%s(,%llus,%s) %pS\n",
 	     current->comm, current->pid, __func__,
 	     (unsigned long long)sector, (op == REQ_OP_WRITE) ? "WRITE" : "READ",
-	     (void*)_RET_IP_ );
+	     (void *)_RET_IP_);
 
 	if (sector < drbd_md_first_sector(bdev) ||
 	    sector + 7 > drbd_md_last_sector(bdev))
@@ -167,14 +168,15 @@ int drbd_md_sync_page_io(struct drbd_device *device, struct drbd_backing_dev *bd
 
 bool drbd_al_active(struct drbd_device *device, sector_t sector, unsigned int size)
 {
-	unsigned first = sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = size == 0 ? first : (sector + (size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
-	unsigned enr;
+	unsigned int first = sector >> (AL_EXTENT_SHIFT-9);
+	unsigned int last = size == 0 ? first : (sector + (size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned int enr;
 	bool active = false;
 
 	spin_lock_irq(&device->al_lock);
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
+
 		al_ext = lc_find(device->act_log, enr);
 		if (al_ext && al_ext->refcnt > 0) {
 			active = true;
@@ -257,8 +259,9 @@ bool drbd_al_begin_io_fastpath(struct drbd_device *device, struct drbd_interval 
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
-	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned int first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned int last = i->size == 0 ? first :
+		(i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 
 	D_ASSERT(device, first <= last);
 	D_ASSERT(device, atomic_read(&device->local_cnt) > 0);
@@ -327,8 +330,8 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	struct lc_element *e;
 	sector_t sector;
 	int i, mx;
-	unsigned extent_nr;
-	unsigned crc = 0;
+	unsigned int extent_nr;
+	unsigned int crc = 0;
 	int err = 0;
 	ktime_var_for_accounting(start_kt);
 
@@ -376,7 +379,8 @@ static int __al_write_transaction(struct drbd_device *device, struct al_transact
 	mx = min_t(int, AL_CONTEXT_PER_TRANSACTION,
 		   device->act_log->nr_elements - device->al_tr_cycle);
 	for (i = 0; i < mx; i++) {
-		unsigned idx = device->al_tr_cycle + i;
+		unsigned int idx = device->al_tr_cycle + i;
+
 		extent_nr = lc_element_by_index(device->act_log, idx)->lc_number;
 		buffer->context[i] = cpu_to_be32(extent_nr);
 	}
@@ -537,9 +541,10 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
-	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
-	unsigned enr;
+	unsigned int first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned int last = i->size == 0 ? first :
+		(i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned int enr;
 
 	if (i->partially_in_al_next_enr) {
 		D_ASSERT(device, first < i->partially_in_al_next_enr);
@@ -550,6 +555,7 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 	/* Try to checkout the refcounts. */
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
+
 		al_ext = lc_get_cumulative(device->act_log, enr);
 
 		if (!al_ext) {
@@ -572,8 +578,9 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 {
 	/* for bios crossing activity log extent boundaries,
 	 * we may need to activate two extents in one go */
-	unsigned first = i->sector >> (AL_EXTENT_SHIFT-9);
-	unsigned last = i->size == 0 ? first : (i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+	unsigned int first = i->sector >> (AL_EXTENT_SHIFT-9);
+	unsigned int last = i->size == 0 ? first :
+		(i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
 
 	return put_actlog(device, first, last);
 }
@@ -638,6 +645,7 @@ int drbd_al_initialize(struct drbd_device *device, void *buffer)
 	 * on-disk ring buffer. */
 	for (i = 1; i < al_size_4k; i++) {
 		int err = __al_write_transaction(device, al);
+
 		if (err)
 			return err;
 	}
@@ -715,6 +723,7 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 			peer_device->rs_failed += count;
 		} else /* if (mode == SET_OUT_OF_SYNC) */ {
 			enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+
 			if (repl_state >= L_SYNC_SOURCE && repl_state <= L_PAUSED_SYNC_T)
 				peer_device->rs_total += count;
 		}

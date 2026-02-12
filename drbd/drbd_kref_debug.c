@@ -6,6 +6,7 @@
 static void get_resource_name(const struct kref_debug_info *debug_info, char *name)
 {
 	struct drbd_resource *resource = container_of(debug_info, struct drbd_resource, kref_debug);
+
 	if (resource->name)
 		strcpy(name, resource->name);
 	else

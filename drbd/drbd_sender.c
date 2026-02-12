@@ -344,6 +344,7 @@ void drbd_request_endio(struct bio *bio)
 	/* to avoid recursion in __req_mod */
 	if (unlikely(status)) {
 		enum req_op op = bio_op(bio);
+
 		if (op == REQ_OP_DISCARD || op == REQ_OP_WRITE_ZEROES) {
 			if (status == BLK_STS_NOTSUPP)
 				what = DISCARD_COMPLETED_NOTSUPP;
@@ -479,6 +480,7 @@ static void send_resync_request(struct drbd_peer_request *peer_req)
 		drbd_send_command(peer_device, cmd, DATA_STREAM);
 	} else {
 		enum drbd_packet cmd;
+
 		if (connection->agreed_features & DRBD_FF_RESYNC_DAGTAG)
 			cmd = peer_req->flags & EE_RS_THIN_REQ ? P_RS_THIN_DAGTAG_REQ : P_RS_DAGTAG_REQ;
 		else
@@ -715,6 +717,7 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 		if (atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight) {
 			struct drbd_resource *resource = peer_device->device->resource;
 			unsigned long irq_flags;
+
 			begin_state_change(resource, &irq_flags, 0);
 			peer_device->resync_active[NEW] = false;
 			end_state_change(resource, &irq_flags, "resync-inactive");
@@ -885,6 +888,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 			want = pdc->c_fill_target;
 		} else {
 			u64 tmp = sect_in * pdc->c_delay_target * NSEC_PER_SEC;
+
 			do_div(tmp, (duration_ns * 10));
 			want = tmp;
 		}
@@ -1808,6 +1812,7 @@ static void init_resync_stable_bits(struct drbd_peer_device *first_target_pd)
 	   resync target on the first peer_device. */
 	for_each_peer_device(peer_device, device) {
 		enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
+
 		if (peer_device == first_target_pd)
 			continue;
 		if (repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T)
@@ -1970,6 +1975,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	aborted = device->disk_state[NOW] == D_OUTDATED && new_peer_disk_state == D_INCONSISTENT;
 	{
 	char tmp[sizeof(" but 01234567890123456789 4k blocks skipped")] = "";
+
 	if (verify_done && peer_device->ov_skipped)
 		snprintf(tmp, sizeof(tmp), " but %lu %lluk blocks skipped",
 			peer_device->ov_skipped, bit_to_kb(1, bm_block_shift));
@@ -2023,8 +2029,10 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			bool stable_resync = was_resync_stable(peer_device);
+
 			if (stable_resync) {
 				enum drbd_disk_state new_disk_state = peer_device->disk_state[NOW];
+
 				if (new_disk_state < D_UP_TO_DATE &&
 				    test_bit(SYNC_SRC_CRASHED_PRI, peer_device->flags)) {
 					try_to_get_resynced_from_primary_flag = true;
@@ -2041,6 +2049,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 				int i;
 
 				u64 newer = drbd_uuid_resync_finished(peer_device);
+
 				__outdate_peer_disk_by_mask(device, newer);
 				drbd_print_uuids(peer_device, "updated UUIDs");
 
@@ -2611,7 +2620,7 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 
 static bool need_unplug(struct drbd_connection *connection)
 {
-	unsigned i = connection->todo.unplug_slot;
+	unsigned int i = connection->todo.unplug_slot;
 
 	/* Nobody to hint to below C_CONNECTED. */
 	if (connection->cstate[NOW] < C_CONNECTED)
@@ -3008,7 +3017,7 @@ enum drbd_ret_code drbd_resync_after_valid(struct drbd_device *device, int resyn
 void drbd_resync_after_changed(struct drbd_device *device)
 {
 	while (drbd_pause_after(device) || drbd_resume_next(device))
-		/* do nothing */ ;
+		;
 }
 
 void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
@@ -3144,7 +3153,7 @@ static void handle_congestion(struct drbd_peer_device *peer_device)
  * drbd_start_resync() - Start the resync process
  * @peer_device: The DRBD peer device to start the resync on.
  * @side: Direction of the resync; which side am I? Either L_SYNC_SOURCE or
- * 	  L_SYNC_TARGET.
+ *	  L_SYNC_TARGET.
  * @tag: State change tag to print in status messages.
  *
  * This function might bring you directly into one of the
@@ -3259,7 +3268,7 @@ skip_helper:
 
 	unlock_all_resources();
 	put_ldev(device);
-    out:
+out:
 	up(&device->resource->state_sem);
 	if (finished_resync_pdsk != D_UNKNOWN)
 		drbd_resync_finished(peer_device, finished_resync_pdsk);
@@ -3268,6 +3277,7 @@ skip_helper:
 static void update_on_disk_bitmap(struct drbd_peer_device *peer_device, bool resync_done)
 {
 	struct drbd_device *device = peer_device->device;
+
 	peer_device->rs_last_writeout = jiffies;
 
 	if (!get_ldev(device))
@@ -3525,6 +3535,7 @@ static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 		struct drbd_device *device = peer_device->device;
 		unsigned long todo = get_work_bits(DRBD_PEER_DEVICE_WORK_MASK, peer_device->flags);
+
 		if (!todo)
 			continue;
 
@@ -3554,6 +3565,7 @@ static void do_unqueued_device_work(struct drbd_resource *resource)
 	rcu_read_lock();
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		unsigned long todo = get_work_bits(DRBD_DEVICE_WORK_MASK, &device->flags);
+
 		if (!todo)
 			continue;
 
@@ -3580,7 +3592,7 @@ static struct drbd_request *__next_request_for_connection(
 	struct drbd_request *req;
 
 	list_for_each_entry_rcu(req, &connection->resource->transfer_log, tl_requests) {
-		unsigned s = req->net_rq_state[connection->peer_node_id];
+		unsigned int s = req->net_rq_state[connection->peer_node_id];
 
 		if (likely(s & RQ_NET_QUEUED))
 			return req;
@@ -3727,9 +3739,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
-		if (check_sender_todo(connection) || signal_pending(current)) {
+		if (check_sender_todo(connection) || signal_pending(current))
 			break;
-		}
 
 		/* We found nothing new to do, no to-be-communicated request,
 		 * no other work item.  We may still need to close the last
@@ -3862,7 +3873,7 @@ static int process_one_request(struct drbd_connection *connection)
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device =
 			conn_peer_device(connection, device->vnr);
-	unsigned s = req->net_rq_state[peer_device->node_id];
+	unsigned int s = req->net_rq_state[peer_device->node_id];
 	bool do_send_unplug = req->local_rq_state & RQ_UNPLUG;
 	int err = 0;
 	enum drbd_req_event what;
@@ -4040,8 +4051,8 @@ int drbd_sender(struct drbd_thread *thi)
 		struct bio_and_error m;
 		struct drbd_request *req = connection->todo.req;
 		struct drbd_device *device = req->device;
-		peer_device = conn_peer_device(connection, device->vnr);
 
+		peer_device = conn_peer_device(connection, device->vnr);
 		read_lock_irq(&connection->resource->state_rwlock);
 		/* ldev_safe: requests hold their own ldev refs */
 		__req_mod(req, SEND_CANCELED, peer_device, &m);

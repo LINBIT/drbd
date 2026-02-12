@@ -4,6 +4,7 @@
  */
 
 #include <asm/bug.h>
+#include <linux/kernel.h>
 #include <linux/rbtree_augmented.h>
 #include "drbd_interval.h"
 
@@ -14,6 +15,7 @@ static inline
 sector_t interval_end(struct rb_node *node)
 {
 	struct drbd_interval *this = rb_entry(node, struct drbd_interval, rb);
+
 	return this->end;
 }
 
@@ -34,7 +36,7 @@ static const char * const drbd_interval_type_names[] = {
 const char *drbd_interval_type_str(struct drbd_interval *i)
 {
 	enum drbd_interval_type type = i->type;
-	unsigned int size = sizeof drbd_interval_type_names / sizeof drbd_interval_type_names[0];
+	unsigned int size = ARRAY_SIZE(drbd_interval_type_names);
 
 	return (type < 0 || type >= size ||
 		!drbd_interval_type_names[type]) ?

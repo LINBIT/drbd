@@ -84,6 +84,7 @@ static void seq_print_request_state(struct seq_file *m, struct drbd_request *req
 	struct drbd_peer_device *peer_device;
 	unsigned int s = req->local_rq_state;
 	char sep = ' ';
+
 	seq_printf(m, "\t0x%08x", s);
 	seq_puts(m, "\tmaster:");
 	__seq_print_rq_state_bit(m, req->master_bio, &sep, "pending", "completed");
@@ -142,6 +143,7 @@ static void print_one_age_or_dash(struct seq_file *m, struct drbd_request *req,
 
 		if (s & set_mask && !(s & clear_mask)) {
 			ktime_t ktime = ktime_sub(now, memberat(req, ktime_t, offset));
+
 			seq_printf(m, "\t[%d]%d", peer_device->node_id, (int)ktime_to_ms(ktime));
 			return;
 		}
@@ -228,6 +230,7 @@ static void seq_print_waiting_for_AL(struct seq_file *m, struct drbd_resource *r
 	idr_for_each_entry(&resource->devices, device, i) {
 		struct drbd_request *req;
 		int n = atomic_read(&device->ap_actlog_cnt);
+
 		if (n) {
 			spin_lock_irq(&device->pending_completion_lock);
 			req = list_first_entry_or_null(&device->pending_master_completion[1],
@@ -260,6 +263,7 @@ static void seq_print_device_bitmap_io(struct seq_file *m, struct drbd_device *d
 	unsigned long start_jif;
 	unsigned int in_flight;
 	unsigned int flags;
+
 	spin_lock_irq(&device->pending_bmio_lock);
 	ctx = list_first_entry_or_null(&device->pending_bitmap_io, struct drbd_bm_aio_ctx, list);
 	if (ctx && ctx->done)
@@ -400,7 +404,7 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 	struct drbd_peer_device *peer_device;
 	int i;
 
-	seq_printf(m, "list\t\tminor\tvnr\tsector\tsize\ttype\t\tage\tflags\n");
+	seq_puts(m, "list\t\tminor\tvnr\tsector\tsize\ttype\t\tage\tflags\n");
 	spin_lock_irq(&connection->peer_reqs_lock);
 	seq_print_peer_request_w(m, connection, &connection->done_ee, "done\t", jif);
 	seq_print_peer_request_w(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
@@ -559,7 +563,7 @@ static int resource_in_flight_summary_show(struct seq_file *m, void *pos)
 				transport_stats.unread_received,
 				transport_stats.unacked_send);
 		} else {
-			seq_printf(m, "-\t-\n");
+			seq_puts(m, "-\t-\n");
 		}
 	}
 	rcu_read_unlock();
@@ -652,6 +656,7 @@ static int resource_state_twopc_show(struct seq_file *m, void *pos)
 static int resource_worker_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_resource *resource = m->private;
+
 	if (resource->worker.task)
 		seq_printf(m, "%d\n", resource->worker.task->pid);
 	return 0;
@@ -667,7 +672,7 @@ static int resource_members_show(struct seq_file *m, void *pos)
 
 /* make sure at *open* time that the respective object won't go away. */
 static int drbd_single_open(struct file *file, int (*show)(struct seq_file *, void *),
-		                void *data, struct kref *kref,
+				void *data, struct kref *kref,
 				void (*release)(struct kref *))
 {
 	struct dentry *parent;
@@ -698,6 +703,7 @@ out:
 static int resource_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_resource *resource = inode->i_private;
+
 	kref_put(&resource->kref, drbd_destroy_resource);
 	return single_release(inode, file);
 }
@@ -891,6 +897,7 @@ static int connection_transport_show(struct seq_file *m, void *ignored)
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		struct drbd_send_buffer *sbuf = &connection->send_buffer[i];
+
 		seq_printf(m, "%s stream\n", i == DATA_STREAM ? "data" : "control");
 		seq_printf(m, "  corked: %d\n", test_bit(CORKED + i, &connection->flags));
 		seq_printf(m, "  unsent: %ld bytes\n", (long)(sbuf->pos - sbuf->unsent));
@@ -920,7 +927,7 @@ static int connection_debug_show(struct seq_file *m, void *ignored)
 
 	seq_printf(m, "flags: 0x%04lx :", flags);
 #define pretty_print_bit(n) \
-	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n);
+	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n)
 	pretty_print_bit(PING_PENDING);
 	pretty_print_bit(TWOPC_PREPARED);
 	pretty_print_bit(TWOPC_YES);
@@ -1020,6 +1027,7 @@ static void pid_show(struct seq_file *m, struct drbd_thread *thi)
 static int connection_receiver_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
+
 	pid_show(m, &connection->receiver);
 	return 0;
 }
@@ -1027,6 +1035,7 @@ static int connection_receiver_pid_show(struct seq_file *m, void *pos)
 static int connection_sender_pid_show(struct seq_file *m, void *pos)
 {
 	struct drbd_connection *connection = m->private;
+
 	pid_show(m, &connection->sender);
 	return 0;
 }
@@ -1034,6 +1043,7 @@ static int connection_sender_pid_show(struct seq_file *m, void *pos)
 static int connection_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_connection *connection = inode->i_private;
+
 	kref_put(&connection->kref, drbd_destroy_connection);
 	return single_release(inode, file);
 }
@@ -1047,7 +1057,7 @@ static int connection_ ## name ## _open(struct inode *inode, struct file *file) 
 				drbd_destroy_connection);		\
 }									\
 static const struct file_operations connection_ ## name ## _fops = {	\
-	.owner		= THIS_MODULE,				      	\
+	.owner		= THIS_MODULE,					\
 	.open		= connection_ ## name ##_open,			\
 	.read		= seq_read,					\
 	.llseek		= seq_lseek,					\
@@ -1070,7 +1080,7 @@ void drbd_debugfs_connection_add(struct drbd_connection *connection)
 	int vnr;
 
 	rcu_read_lock();
-	strcpy(conn_name, rcu_dereference(connection->transport.net_conf)->name);
+	strscpy(conn_name, rcu_dereference(connection->transport.net_conf)->name);
 	rcu_read_unlock();
 
 	dentry = debugfs_create_dir(conn_name, conns_dir);
@@ -1101,11 +1111,11 @@ void drbd_debugfs_connection_cleanup(struct drbd_connection *connection)
 	drbd_debugfs_remove(&connection->debugfs_conn);
 }
 
-static void seq_printf_nice_histogram(struct seq_file *m, unsigned *hist, unsigned const n)
+static void seq_printf_nice_histogram(struct seq_file *m, unsigned int *hist, unsigned int const n)
 {
-	unsigned i;
-	unsigned max = 0;
-	unsigned n_transactions = 0;
+	unsigned int i;
+	unsigned int max = 0;
+	unsigned int n_transactions = 0;
 	unsigned long n_updates = 0;
 
 	for (i = 1; i <= n; i++) {
@@ -1122,7 +1132,7 @@ static void seq_printf_nice_histogram(struct seq_file *m, unsigned *hist, unsign
 		return;
 
 	for (i = 0; i <= n; i++) {
-		unsigned v = (hist[i] * 60UL + max-1) / max;
+		unsigned int v = (hist[i] * 60UL + max-1) / max;
 		seq_printf(m, "%2u : %10u : %-60.*s\n", i, hist[i], v,
 			"############################################################");
 	}
@@ -1361,6 +1371,7 @@ static int device_al_updates_show(struct seq_file *m, void *ignored)
 static int device_ed_gen_id_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
+
 	seq_printf(m, "0x%016llX\n", (unsigned long long)device->exposed_data_uuid);
 	return 0;
 }
@@ -1378,7 +1389,7 @@ static int device_multi_bio_cnt_show(struct seq_file *m, void *ignored)
 		for_each_peer_device(peer_device, device)			\
 			seq_printf(m, " %12lld", ktime_to_ns(peer_device->M));	\
 		seq_printf(m, "\n");						\
-	} while (0);
+	} while (0)
 
 #define PRId64 "lld"
 
@@ -1412,6 +1423,7 @@ static int device_req_timing_show(struct seq_file *m, void *ignored)
 	seq_puts(m, "\npeer:           ");
 	for_each_peer_device(peer_device, device) {
 		struct drbd_connection *connection = peer_device->connection;
+
 		seq_printf(m, " %12.12s", rcu_dereference(connection->transport.net_conf)->name);
 	}
 	seq_puts(m, "\n");
@@ -1463,6 +1475,7 @@ static ssize_t device_req_timing_write(struct file *file, const char __user *ubu
 static int device_attr_release(struct inode *inode, struct file *file)
 {
 	struct drbd_device *device = inode->i_private;
+
 	kref_put(&device->kref, drbd_destroy_device);
 	return single_release(inode, file);
 }
@@ -1508,6 +1521,7 @@ void drbd_debugfs_device_add(struct drbd_device *device)
 	char *slink_name = NULL;
 
 	struct dentry *dentry;
+
 	if (!vols_dir || !drbd_debugfs_minors)
 		return;
 
@@ -1595,6 +1609,7 @@ static int drbd_single_open_peer_device(struct file *file,
 
 	if (got_connection && got_device) {
 		int ret;
+
 		inode_unlock(d_inode(parent));
 		ret = single_open(file, show, peer_device);
 		if (ret) {
@@ -1802,6 +1817,7 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		unsigned long bm_bits = drbd_bm_bits(pd->device);
 		unsigned long bit_pos;
 		unsigned long long stop_sector = 0;
+
 		if (repl_state == L_VERIFY_S ||
 		    repl_state == L_VERIFY_T) {
 			bit_pos = bm_bits - (unsigned long)atomic64_read(&pd->ov_left);

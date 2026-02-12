@@ -102,6 +102,7 @@ static void queue_peer_ack_send(struct drbd_resource *resource,
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
+
 		if (connection->agreed_pro_version < 110 ||
 				connection->cstate[NOW] != C_CONNECTED) {
 			connection->last_peer_ack_dagtag_seen = peer_ack->dagtag_sector;
@@ -230,7 +231,8 @@ static void drbd_req_done(struct drbd_request *req)
 		ktime_aggregate(device, req, pre_submit_kt);
 		for_each_peer_device(peer_device, device) {
 			int node_id = peer_device->node_id;
-			unsigned ns = req->net_rq_state[node_id];
+			unsigned int ns = req->net_rq_state[node_id];
+
 			if (!(ns & RQ_NET_MASK))
 				continue;
 			ktime_aggregate_pd(peer_device, node_id, req, pre_send_kt);
@@ -243,7 +245,8 @@ static void drbd_req_done(struct drbd_request *req)
 
 	/* paranoia */
 	for_each_peer_device(peer_device, device) {
-		unsigned ns = req->net_rq_state[peer_device->node_id];
+		unsigned int ns = req->net_rq_state[peer_device->node_id];
+
 		if (!(ns & RQ_NET_MASK))
 			continue;
 		if (ns & RQ_NET_DONE)
@@ -425,6 +428,7 @@ void complete_master_bio(struct drbd_device *device,
 		struct bio_and_error *m)
 {
 	int rw = bio_data_dir(m->bio);
+
 	if (unlikely(m->error))
 		m->bio->bi_status = errno_to_blk_status(m->error);
 	bio_endio(m->bio);
@@ -585,7 +589,7 @@ void drbd_put_ref_tl_walk(struct drbd_request *req, int done_put, int oos_send_p
 static
 void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 {
-	const unsigned s = req->local_rq_state;
+	const unsigned int s = req->local_rq_state;
 	struct drbd_device *device = req->device;
 	struct drbd_peer_device *peer_device;
 	unsigned long flags;
@@ -609,7 +613,7 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 	error = PTR_ERR(req->private_bio);
 
 	for_each_peer_device(peer_device, device) {
-		unsigned ns = req->net_rq_state[peer_device->node_id];
+		unsigned int ns = req->net_rq_state[peer_device->node_id];
 		/* any net ok ok local ok is good enough to complete this bio as OK */
 		if (ns & RQ_NET_OK)
 			++ok;
@@ -804,7 +808,7 @@ static void advance_conn_req_next(struct drbd_connection *connection, struct drb
 		return;
 	rcu_read_lock();
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = req->net_rq_state[connection->peer_node_id];
+		const unsigned int s = req->net_rq_state[connection->peer_node_id];
 
 		if (likely(s & RQ_NET_QUEUED)) {
 			found_req = req;
@@ -875,7 +879,8 @@ static void advance_cache_ptr(struct drbd_connection *connection,
 		return;
 	}
 	list_for_each_entry_continue_rcu(req, &connection->resource->transfer_log, tl_requests) {
-		const unsigned s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
+		const unsigned int s = READ_ONCE(req->net_rq_state[connection->peer_node_id]);
+
 		if (!(s & RQ_NET_MASK))
 			continue;
 		if (((s & is_set) == is_set) && !(s & is_clear)) {
@@ -1224,7 +1229,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	switch (what) {
 	default:
-		drbd_err(device, "LOGIC BUG in %s:%u\n", __FILE__ , __LINE__);
+		drbd_err(device, "LOGIC BUG in %s:%u\n", __FILE__, __LINE__);
 		break;
 
 	case TO_BE_SUBMITTED: /* locally */
@@ -1424,7 +1429,7 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* protocol B; pretends to be successfully written on peer.
 		 * see also notes above in HANDED_OVER_TO_NETWORK about
 		 * protocol != C */
-	ack_common:
+ack_common:
 		if (hold_completion_for_unconfirmed_gen(req)) {
 			/* Mark RQ_NET_OK (the peer has the data), but hold master-bio
 			 * completion via RQ_COMPLETION_SUSP until the generation is
@@ -1794,9 +1799,8 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 		/* ldev_safe: checked disk_state while holding state_rwlock */
 		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
 		rcu_read_unlock();
-		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
+		if (rbm == RB_PREFER_LOCAL && req->private_bio)
 			return NULL; /* submit locally */
-		}
 	}
 
 	/* TODO: improve read balancing decisions, allow user to configure node weights */
@@ -1805,6 +1809,7 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 			device->read_nodes = calc_nodes_to_read_from(device);
 		if (device->read_nodes) {
 			int peer_node_id = __ffs64(device->read_nodes);
+
 			device->read_nodes &= ~NODE_MASK(peer_node_id);
 			peer_device = peer_device_by_node_id(device, peer_node_id);
 			if (!peer_device)
@@ -1956,7 +1961,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
 	}
- }
+}
 
 static void drbd_queue_write(struct drbd_device *device, struct drbd_request *req)
 {
@@ -2095,7 +2100,7 @@ static bool may_do_writes(struct drbd_device *device)
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->disk_state[NOW] == D_UP_TO_DATE)
-		    return true;
+			return true;
 	}
 
 	return false;
@@ -2131,7 +2136,7 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 	read_unlock_irq(&resource->state_rwlock);
 }
 
-static struct drbd_plug_cb* drbd_check_plugged(struct drbd_resource *resource)
+static struct drbd_plug_cb *drbd_check_plugged(struct drbd_resource *resource)
 {
 	/* A lot of text to say
 	 * return (struct drbd_plug_cb*)blk_check_plugged(); */
@@ -2232,6 +2237,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 	} else {
 		if (rw == WRITE) {
 			struct drbd_request *prev_write = resource->tl_previous_write;
+
 			resource->tl_previous_write = req;
 
 			if (prev_write) {
@@ -2282,6 +2288,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 
 	if (no_remote == false) {
 		struct drbd_plug_cb *plug = drbd_check_plugged(resource);
+
 		if (plug)
 			drbd_update_plug(plug, req);
 	}

@@ -29,6 +29,7 @@ int drbd_register_transport_class(struct drbd_transport_class *transport_class, 
 				  int drbd_transport_size)
 {
 	int rv = 0;
+
 	if (version != DRBD_TRANSPORT_API_VERSION) {
 		pr_err("DRBD_TRANSPORT_API_VERSION not compatible\n");
 		return -EINVAL;
