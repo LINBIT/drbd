@@ -4070,6 +4070,7 @@ static void drbd_ldev_destroy(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, ldev_destroy_work);
 
+	drbd_bm_free(device);
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
 	__acquire(local);
