@@ -909,14 +909,17 @@ have_page:
 	sbuf->pos = page_address(sbuf->page);
 }
 
-static char *alloc_send_buffer(struct drbd_connection *connection, int size,
+static char * __must_check alloc_send_buffer(struct drbd_connection *connection, int size,
 			       enum drbd_stream drbd_stream)
 {
 	struct drbd_send_buffer *sbuf = &connection->send_buffer[drbd_stream];
 	char *page_start = page_address(sbuf->page);
+	int err;
 
 	if (sbuf->pos - page_start + size > PAGE_SIZE) {
-		flush_send_buffer(connection, drbd_stream);
+		err = flush_send_buffer(connection, drbd_stream);
+		if (err)
+			return ERR_PTR(err);
 		new_or_recycle_send_buffer_page(sbuf);
 	}
 
@@ -956,6 +959,7 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 {
 	struct drbd_transport *transport = &connection->transport;
 	int header_size;
+	void *p;
 
 	if (connection->cstate[NOW] < C_CONNECTING)
 		return NULL;
@@ -964,7 +968,10 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 		return NULL;
 
 	header_size = drbd_header_size(connection);
-	return alloc_send_buffer(connection, header_size + size, drbd_stream) + header_size;
+	p = alloc_send_buffer(connection, header_size + size, drbd_stream) + header_size;
+	if (IS_ERR(p))
+		return NULL;
+	return p;
 }
 
 /**
@@ -1117,19 +1124,22 @@ void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream)
 	mutex_unlock(&connection->mutex[stream]);
 }
 
-void drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
+int drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = &connection->transport;
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+	int err;
 
 	mutex_lock(&connection->mutex[stream]);
-	flush_send_buffer(connection, stream);
-
-	clear_bit(CORKED + stream, &connection->flags);
-	/* only call into transport, if we expect it to work */
-	if (connection->cstate[NOW] >= C_CONNECTING)
-		tr_ops->hint(transport, stream, UNCORK);
+	err = flush_send_buffer(connection, stream);
+	if (!err) {
+		clear_bit(CORKED + stream, &connection->flags);
+		/* only call into transport, if we expect it to work */
+		if (connection->cstate[NOW] >= C_CONNECTING)
+			tr_ops->hint(transport, stream, UNCORK);
+	}
 	mutex_unlock(&connection->mutex[stream]);
+	return err;
 }
 
 int send_command(struct drbd_connection *connection, int vnr,
@@ -2076,10 +2086,14 @@ send_bitmap_rle_or_plain(struct drbd_peer_device *peer_device, struct bm_xfer_ct
 	struct drbd_device *device = peer_device->device;
 	unsigned int header_size = drbd_header_size(peer_device->connection);
 	struct p_compressed_bm *pc;
+	char *p;
 	int len, err;
 
-	pc = (struct p_compressed_bm *)
-		(alloc_send_buffer(peer_device->connection, DRBD_SOCKET_BUFFER_SIZE, DATA_STREAM) + header_size);
+	p = alloc_send_buffer(peer_device->connection, DRBD_SOCKET_BUFFER_SIZE, DATA_STREAM);
+	if (IS_ERR(p))
+		return -EIO;
+
+	pc = (struct p_compressed_bm *)(p + header_size);
 
 	len = fill_bitmap_rle_bits(peer_device, pc,
 			DRBD_SOCKET_BUFFER_SIZE - header_size - sizeof(*pc), c);
@@ -2330,10 +2344,12 @@ static int __send_bio(struct drbd_peer_device *peer_device, struct bio *bio, uns
 	struct drbd_transport_ops *tr_ops = &transport->class->ops;
 	int err;
 
-	flush_send_buffer(connection, DATA_STREAM);
-	err = tr_ops->send_bio(transport, bio, msg_flags);
-	if (!err)
-		peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
+	err = flush_send_buffer(connection, DATA_STREAM);
+	if (!err) {
+		err = tr_ops->send_bio(transport, bio, msg_flags);
+		if (!err)
+			peer_device->send_cnt += bio->bi_iter.bi_size >> 9;
+	}
 
 	return err;
 }
@@ -3945,6 +3961,7 @@ void drbd_transport_shutdown(struct drbd_connection *connection, enum drbd_tr_fr
 	mutex_lock(&connection->mutex[DATA_STREAM]);
 	mutex_lock(&connection->mutex[CONTROL_STREAM]);
 
+	/* Ignore send errors, if any: we are shutting down. */
 	flush_send_buffer(connection, DATA_STREAM);
 	flush_send_buffer(connection, CONTROL_STREAM);
 
