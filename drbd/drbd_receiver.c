@@ -2540,14 +2540,11 @@ static struct drbd_peer_request *find_resync_request(struct drbd_peer_device *pe
 static void find_resync_requests(struct drbd_peer_device *peer_device,
 		struct list_head *matching, sector_t sector, unsigned int size, u64 block_id)
 {
-	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_interval *i;
 	struct drbd_peer_request *peer_req;
 
-	/* peer_reqs_lock required for using pr->w.list */
-	spin_lock_irq(&connection->peer_reqs_lock);
-	spin_lock(&device->interval_lock);
+	spin_lock_irq(&device->interval_lock);
 	drbd_for_each_overlap(i, &device->requests, sector, size) {
 		if (!test_bit(INTERVAL_SUBMITTED, &i->flags))
 			continue;
@@ -2559,10 +2556,9 @@ static void find_resync_requests(struct drbd_peer_device *peer_device,
 		/* With agreed_pro_version < 122, block_id is always ID_SYNCER. */
 		if (peer_req->peer_device == peer_device &&
 				(block_id == ID_SYNCER || peer_req->block_id == block_id))
-			list_move_tail(&peer_req->w.list, matching); /* from resync_ack_ee */
+			list_add_tail(&peer_req->w.list, matching);
 	}
-	spin_unlock(&device->interval_lock);
-	spin_unlock_irq(&connection->peer_reqs_lock);
+	spin_unlock_irq(&device->interval_lock);
 }
 
 static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_req)
@@ -4044,7 +4040,7 @@ static int receive_data_request(struct drbd_connection *connection, struct packe
  *        v                                    v
  * w_e_end_rsdata_req                    w_e_end_ov_req
  *        |                                    |
- *       ... via peer (on resync_ack_ee)      ... via peer
+ *       ... via peer                         ... via peer
  *        |                                    |
  *        v                                    v
  * got_RSWriteAck                         got_OVResult
@@ -9532,10 +9528,7 @@ static void free_waiting_resync_requests(struct drbd_connection *connection)
 		peer_req->flags &= ~EE_ON_RECV_ORDER;
 		list_del(&peer_req->recv_order);
 
-		if (peer_req->i.type == INTERVAL_RESYNC_READ)
-			list_move_tail(&peer_req->w.list, &free_list); /* from resync_ack_ee */
-		else
-			list_add_tail(&peer_req->w.list, &free_list);
+		list_add_tail(&peer_req->w.list, &free_list);
 	}
 	spin_unlock_irq(&connection->peer_reqs_lock);
 
@@ -9882,9 +9875,6 @@ static void conn_disconnect(struct drbd_connection *connection)
 	i = drbd_free_peer_reqs(connection, &connection->dagtag_wait_ee);
 	if (i)
 		drbd_info(connection, "dagtag_wait_ee not empty, killed %u entries\n", i);
-	i = drbd_free_peer_reqs(connection, &connection->resync_ack_ee);
-	if (i)
-		drbd_info(connection, "resync_ack_ee not empty, killed %u entries\n", i);
 
 	cleanup_unacked_peer_requests(connection);
 	cleanup_peer_ack_list(connection);

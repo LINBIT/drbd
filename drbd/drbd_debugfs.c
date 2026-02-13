@@ -398,7 +398,6 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 	spin_lock_irq(&connection->peer_reqs_lock);
 	seq_print_peer_request_w(m, connection, &connection->done_ee, "done\t", jif);
 	seq_print_peer_request_w(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
-	seq_print_peer_request_w(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
 	seq_print_peer_request(m, connection, &connection->peer_requests, "peer_requests", jif);
 	seq_print_peer_request(m, connection, &connection->peer_reads, "peer_reads", jif);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
