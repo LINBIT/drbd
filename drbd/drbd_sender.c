@@ -1878,6 +1878,18 @@ static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drb
 	drbd_queue_work(&connection->sender_work, &rfw->pdw.w);
 }
 
+static void drbd_queue_final_peers_in_sync(struct drbd_peer_device *peer_device)
+{
+	sector_t last_end = peer_device->last_in_sync_end;
+	sector_t last_step = last_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	sector_t last_step_end = min(get_capacity(peer_device->device->vdisk),
+			last_step + PEERS_IN_SYNC_STEP_SECT);
+
+	/* Send for last request if it was part way through a step */
+	if (last_end > last_step)
+		drbd_queue_update_peers(peer_device, last_step, last_step_end);
+}
+
 void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			 enum drbd_disk_state new_peer_disk_state)
 {
@@ -1893,7 +1905,6 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	int verify_done = 0;
 	bool aborted = false;
 	int bm_block_shift = device->last_bm_block_shift;
-	sector_t final_peers_in_sync_end;
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 		/* Make sure all queued w_update_peers() executed. */
@@ -2074,11 +2085,7 @@ out_unlock:
 	if (connection->after_reconciliation.lost_node_id != -1)
 		after_reconciliation_resync(connection);
 
-	/* Potentially send final P_PEERS_IN_SYNC. */
-	final_peers_in_sync_end = min(get_capacity(device->vdisk),
-			(peer_device->last_peers_in_sync_end | PEERS_IN_SYNC_STEP_SECT_MASK) + 1);
-	drbd_queue_update_peers(peer_device,
-			peer_device->last_peers_in_sync_end, final_peers_in_sync_end);
+	drbd_queue_final_peers_in_sync(peer_device);
 
 out:
 	/* reset start sector, if we reached end of device */

@@ -2721,7 +2721,7 @@ static void initialize_resync(struct drbd_peer_device *peer_device)
 	unsigned long tw = drbd_bm_total_weight(peer_device);
 	unsigned long now = jiffies;
 
-	peer_device->last_peers_in_sync_end = 0;
+	peer_device->last_in_sync_end = 0;
 	peer_device->resync_next_bit = 0;
 	peer_device->last_resync_pass_bits = tw;
 	peer_device->rs_failed = 0;
