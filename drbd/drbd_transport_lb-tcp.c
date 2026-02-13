@@ -468,7 +468,7 @@ _dtl_recv_page(struct dtl_transport *dtl_transport, struct page *page, int size)
 		if (err)
 			goto out;
 
-		err = dtl_recv_short(flow->sock, data, min(size, flow->recv_bytes), 0);
+		err = dtl_recv_short(flow->sock, pos, min(size, flow->recv_bytes), 0);
 		if (err < 0)
 			goto out;
 		size -= err;
