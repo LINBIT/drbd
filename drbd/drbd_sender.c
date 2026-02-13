@@ -509,7 +509,7 @@ void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 	if (drbd_interval_empty(&peer_req->i))
 		drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
-		set_bit(INTERVAL_SENT, &peer_req->i.flags);
+		set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
 	if (!conflict) {
@@ -1504,7 +1504,7 @@ static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
 	if (drbd_find_conflict(device, &peer_req->i, 0))
 		set_bit(INTERVAL_CONFLICT, &peer_req->i.flags);
 	drbd_insert_interval(&device->requests, &peer_req->i);
-	set_bit(INTERVAL_SENT, &peer_req->i.flags);
+	set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 	/* Mark as submitted now, since OV requests do not have a second
 	 * conflict resolution stage when the reply is received. */
 	set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
@@ -2132,7 +2132,7 @@ out:
 void
 drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_flags bit_to_set)
 {
-	const unsigned long done_mask = 1UL << INTERVAL_SENT | 1UL << INTERVAL_RECEIVED;
+	const unsigned long done_mask = 1UL << INTERVAL_READY_TO_SEND | 1UL << INTERVAL_RECEIVED;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	unsigned long nflags, oflags, new_flag;
 
@@ -2240,7 +2240,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 
 		drbd_peer_req_strip_bio(peer_req);
 
-		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
+		drbd_resync_read_req_mod(peer_req, INTERVAL_READY_TO_SEND);
 		peer_req = NULL;
 	}
 
@@ -2404,7 +2404,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (dagtag_result.err)
 		goto out;
 
-	set_bit(INTERVAL_SENT, &peer_req->i.flags);
+	set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 
 	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */

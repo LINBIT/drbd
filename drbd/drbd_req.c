@@ -480,7 +480,8 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 
 		/* If we are waiting for a reply from the peer, then there is
 		 * no need to process the conflict. */
-		if (test_bit(INTERVAL_SENT, &i->flags) && !test_bit(INTERVAL_RECEIVED, &i->flags))
+		if (test_bit(INTERVAL_READY_TO_SEND, &i->flags) &&
+				!test_bit(INTERVAL_RECEIVED, &i->flags))
 			continue;
 
 		dynamic_drbd_dbg(device,
@@ -2332,7 +2333,7 @@ void drbd_do_submit_conflict(struct work_struct *ws)
 
 	list_for_each_entry_safe(peer_req, peer_req_tmp, &resync_writes, w.list) {
 		list_del_init(&peer_req->w.list);
-		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
+		if (!test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags))
 			drbd_conflict_send_resync_request(peer_req);
 		else
 			drbd_conflict_submit_resync_request(peer_req);

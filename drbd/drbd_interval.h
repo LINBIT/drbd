@@ -28,11 +28,11 @@ enum drbd_interval_flags {
 	 * flag is set before sending.
 	 *
 	 * For resync reads, this flag is set after sending and is used to
-	 * manage the lifetime of the request. When INTERVAL_SENT is not set,
+	 * manage the lifetime of the request. When INTERVAL_READY_TO_SEND is not set,
 	 * the sending path still has a reference to the request. This
 	 * reference counting is protected by peer_reqs_lock.
 	 */
-	INTERVAL_SENT,
+	INTERVAL_READY_TO_SEND,
 
 	/*
 	 * Whether this peer request has been received yet.
