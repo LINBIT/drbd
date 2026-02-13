@@ -1844,9 +1844,9 @@ static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		enum drbd_stream i;
 
-		seq_printf(m, "%pI4 - %pI4:\n",
-			   &((struct sockaddr_in *)&drbd_path->my_addr)->sin_addr,
-			   &((struct sockaddr_in *)&drbd_path->peer_addr)->sin_addr);
+		seq_printf(m, "%pISpc - %pISpc:\n",
+			   &drbd_path->my_addr,
+			   &drbd_path->peer_addr);
 
 		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 			struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
