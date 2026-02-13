@@ -503,6 +503,9 @@ int main(int argc, char **argv)
 	      COMPAT_THAW_BDEV_TAKES_SUPER_BLOCK, "takes_super_block");
 #endif
 
+	patch(1, "queue_limits_max_hw_wzeroes_unmap_sectors", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_WZEROES_UNMAP_SECTORS, "present");
+
 	patch(1, "struct_sockaddr_unsized", true, false,
 	      COMPAT_HAVE_STRUCT_SOCKADDR_UNSIZED, "present");
 
