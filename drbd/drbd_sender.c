@@ -2148,10 +2148,8 @@ drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_
 	if (new_flag & oflags)
 		drbd_err(peer_device, "BUG: %s: Flag 0x%lx already set\n", __func__, new_flag);
 
-	if ((nflags & done_mask) == done_mask) {
-		drbd_remove_peer_req_interval(peer_req);
+	if ((nflags & done_mask) == done_mask)
 		drbd_free_peer_req(peer_req);
-	}
 }
 
 static bool all_zero(struct drbd_peer_request *peer_req)
@@ -2230,6 +2228,9 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 * the atomic_sub() in got_RSWriteAck.
 		 */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
+
+		/* After setting this, peer_req can be found by got_RSWriteAck. */
+		set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 
 		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 			err = drbd_send_rs_deallocated(peer_device, peer_req);
