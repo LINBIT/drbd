@@ -2132,7 +2132,7 @@ out:
 void
 drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_flags bit_to_set)
 {
-	const unsigned long done_mask = 1UL << INTERVAL_READY_TO_SEND | 1UL << INTERVAL_RECEIVED;
+	const unsigned long done_mask = 1UL << INTERVAL_SENT | 1UL << INTERVAL_RECEIVED;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	unsigned long nflags, oflags, new_flag;
 
@@ -2240,7 +2240,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 
 		drbd_peer_req_strip_bio(peer_req);
 
-		drbd_resync_read_req_mod(peer_req, INTERVAL_READY_TO_SEND);
+		drbd_resync_read_req_mod(peer_req, INTERVAL_SENT);
 		peer_req = NULL;
 	}
 
