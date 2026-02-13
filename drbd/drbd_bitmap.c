@@ -32,6 +32,8 @@
 # endif
 #endif
 
+#define PAGES_TO_KIB(pages) (((unsigned long long) (pages)) * (PAGE_SIZE / 1024))
+
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
 
@@ -904,9 +906,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 
 	drbd_bm_lock(device, "resize", BM_LOCK_ALL);
 
-	drbd_info(device, "drbd_bm_resize called with capacity == %llu\n",
-			(unsigned long long)capacity);
-
 	if (capacity == b->bm_dev_capacity)
 		goto out;
 
@@ -916,6 +915,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		spin_lock_irq(&b->bm_lock);
 		opages = b->bm_pages;
 		onpages = b->bm_number_of_pages;
+		drbd_info(device, "Freeing bitmap of size %llu KiB\n", PAGES_TO_KIB(onpages));
 		b->bm_pages = NULL;
 		b->bm_number_of_pages = 0;
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
@@ -948,12 +948,22 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	want = PFN_UP(words * sizeof(long));
 	have = b->bm_number_of_pages;
 	if (drbd_md_dax_active(device->ldev)) {
+		drbd_info(device, "DAX/PMEM bitmap has size %llu KiB\n", PAGES_TO_KIB(want));
 		bm_on_pmem = drbd_dax_bitmap(device, want);
 	} else {
 		if (want == have) {
 			D_ASSERT(device, b->bm_pages != NULL);
+			drbd_info(device, "Bitmap size remains %llu KiB\n", PAGES_TO_KIB(have));
 			npages = b->bm_pages;
 		} else {
+			if (have == 0) {
+				drbd_info(device, "Allocating %llu KiB for new bitmap\n",
+						PAGES_TO_KIB(want));
+			} else if (want > have) {
+				drbd_info(device, "Allocating %llu KiB for bitmap, new size %llu KiB\n",
+						PAGES_TO_KIB(want - have), PAGES_TO_KIB(want));
+			}
+
 			if (drbd_insert_fault(device, DRBD_FAULT_BM_ALLOC))
 				npages = NULL;
 			else
@@ -1014,6 +1024,8 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 
 	if (want < have && !(b->bm_flags & BM_ON_DAX_PMEM)) {
 		/* implicit: (opages != NULL) && (opages != npages) */
+		drbd_info(device, "Freeing %llu KiB from bitmap, new size %llu KiB\n",
+				PAGES_TO_KIB(have - want), PAGES_TO_KIB(want));
 		bm_free_pages(opages + want, have - want);
 	}
 
