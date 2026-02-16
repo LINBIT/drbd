@@ -334,10 +334,17 @@ MODE = report
 endif
 
 .PHONY: coccicheck
-coccicheck: coccinelle/*.cocci
+coccicheck: checks/*.cocci
 	@for file in $^ ; do \
 		echo "  COCCICHECK $$(basename $${file} .cocci)"; \
 		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
+	done
+
+.PHONY: checks
+checks: coccicheck
+	@for file in checks/*.py ; do \
+		echo "  CHECK $$(basename $${file} .py)"; \
+		python3 $${file} drbd/*.c; \
 	done
 
 .PHONY: check-compat
