@@ -266,7 +266,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
 static void process_twopc(struct drbd_connection *, struct twopc_reply *, struct packet_info *, unsigned long);
-static void drbd_resync(struct drbd_peer_device *, enum resync_reason) __must_hold(local);
+static void drbd_resync(struct drbd_peer_device *, enum resync_reason);
 static void drbd_unplug_all_devices(struct drbd_connection *connection);
 static int decode_header(struct drbd_connection *, const void *, struct packet_info *);
 static void check_resync_source(struct drbd_device *device, u64 weak_nodes);
@@ -416,7 +416,7 @@ void drbd_free_pages(struct drbd_transport *transport, struct page *page)
  * w_same: payload_size == logical_block_size
  * trim: payload_size == 0 */
 struct drbd_peer_request *
-drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask) __must_hold(local)
+drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
@@ -1529,7 +1529,7 @@ max_allowed_wo(struct drbd_backing_dev *bdev, enum write_ordering_e wo)
  * @wo:		Write ordering method to try.
  */
 void drbd_bump_write_ordering(struct drbd_resource *resource, struct drbd_backing_dev *bdev,
-			      enum write_ordering_e wo) __must_hold(local)
+			      enum write_ordering_e wo)
 {
 	struct drbd_device *device;
 	enum write_ordering_e pwo;
@@ -1870,7 +1870,7 @@ void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req)
  * @w:		work object.
  * @cancel:	The connection will be closed anyways (unused in this callback)
  */
-int w_e_reissue(struct drbd_work *w, int cancel) __releases(local)
+int w_e_reissue(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_request *peer_req =
 		container_of(w, struct drbd_peer_request, w);
@@ -2050,7 +2050,7 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
  * as extra argument in the packet header.
  */
 static int
-read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_details *d) __must_hold(local)
+read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_details *d)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -2546,7 +2546,7 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 
 static int recv_resync_read(struct drbd_peer_device *peer_device,
 			    struct drbd_peer_request *peer_req,
-			    struct drbd_peer_request_details *d) __releases(local)
+			    struct drbd_peer_request_details *d)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
@@ -4150,7 +4150,7 @@ static int receive_flush_requests_ack(struct drbd_connection *connection, struct
 /*
  * drbd_asb_recover_0p  -  Recover after split-brain with no remaining primaries
  */
-static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_device) __must_hold(local)
+static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_device)
 {
 	const int node_id = peer_device->device->resource->res_opts.node_id;
 	int self, peer;
@@ -4241,7 +4241,7 @@ static enum sync_strategy drbd_asb_recover_0p(struct drbd_peer_device *peer_devi
 /*
  * drbd_asb_recover_1p  -  Recover after split-brain with one remaining primary
  */
-static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_device) __must_hold(local)
+static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -4303,7 +4303,7 @@ static enum sync_strategy drbd_asb_recover_1p(struct drbd_peer_device *peer_devi
 /*
  * drbd_asb_recover_2p  -  Recover after split-brain with two remaining primaries
  */
-static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_device) __must_hold(local)
+static enum sync_strategy drbd_asb_recover_2p(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -4418,7 +4418,8 @@ static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uu
 	return -1;
 }
 
-static enum sync_strategy uuid_fixup_resync_end(struct drbd_peer_device *peer_device, enum sync_rule *rule) __must_hold(local)
+static enum sync_strategy
+uuid_fixup_resync_end(struct drbd_peer_device *peer_device, enum sync_rule *rule)
 {
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
@@ -4481,7 +4482,8 @@ static enum sync_strategy uuid_fixup_resync_end(struct drbd_peer_device *peer_de
 	return UNDETERMINED;
 }
 
-static enum sync_strategy uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, enum sync_rule *rule) __must_hold(local)
+static enum sync_strategy
+uuid_fixup_resync_start1(struct drbd_peer_device *peer_device, enum sync_rule *rule)
 {
 	struct drbd_device *device = peer_device->device;
 	const int node_id = peer_device->device->resource->res_opts.node_id;
@@ -4519,7 +4521,8 @@ static enum sync_strategy uuid_fixup_resync_start1(struct drbd_peer_device *peer
 	return UNDETERMINED;
 }
 
-static enum sync_strategy uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, enum sync_rule *rule) __must_hold(local)
+static enum sync_strategy
+uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, enum sync_rule *rule)
 {
 	struct drbd_device *device = peer_device->device;
 	u64 self, peer;
@@ -4556,7 +4559,7 @@ static enum sync_strategy uuid_fixup_resync_start2(struct drbd_peer_device *peer
 }
 
 static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device,
-			     enum sync_rule *rule, int *peer_node_id) __must_hold(local)
+			     enum sync_rule *rule, int *peer_node_id)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
@@ -4803,7 +4806,7 @@ static void log_handshake(struct drbd_peer_device *peer_device)
 static enum sync_strategy drbd_handshake(struct drbd_peer_device *peer_device,
 			  enum sync_rule *rule,
 			  int *peer_node_id,
-			  bool always_verbose) __must_hold(local)
+			  bool always_verbose)
 {
 	struct drbd_device *device = peer_device->device;
 	enum sync_strategy strategy;
@@ -5073,7 +5076,7 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 }
 
 static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
-						  enum drbd_disk_state peer_disk_state) __must_hold(local)
+						  enum drbd_disk_state peer_disk_state)
 {
 	enum sync_strategy strategy;
 	enum sync_rule rule;
@@ -5111,7 +5114,7 @@ static enum sync_strategy discard_my_data_to_strategy(struct drbd_peer_device *p
  * on failure.
  */
 static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_device,
-					      union drbd_state peer_state) __must_hold(local)
+					      union drbd_state peer_state)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
@@ -6120,7 +6123,7 @@ static enum sync_strategy resolve_splitbrain_from_disk_states(struct drbd_peer_d
 }
 
 static void drbd_resync(struct drbd_peer_device *peer_device,
-			enum resync_reason reason) __must_hold(local)
+			enum resync_reason reason)
 {
 	enum drbd_role peer_role = peer_device->connection->peer_role[NOW];
 	enum drbd_repl_state new_repl_state;
@@ -10823,13 +10826,13 @@ static int got_skip(struct drbd_connection *connection, struct packet_info *pi)
 	return 0;
 }
 
-static u64 node_id_to_mask(struct drbd_peer_md *peer_md, int node_id) __must_hold(local)
+static u64 node_id_to_mask(struct drbd_peer_md *peer_md, int node_id)
 {
 	int bitmap_bit = peer_md[node_id].bitmap_index;
 	return (bitmap_bit >= 0) ? NODE_MASK(bitmap_bit) : 0;
 }
 
-static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids) __must_hold(local)
+static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 bitmap_bits = 0;

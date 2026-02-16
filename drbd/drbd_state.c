@@ -117,7 +117,7 @@ static bool may_return_to_up_to_date(struct drbd_device *device, enum which_stat
  * When fencing is enabled, it may only transition from D_CONSISTENT to D_UP_TO_DATE
  * when ether all peers are connected, or outdated.
  */
-static bool may_be_up_to_date(struct drbd_device *device, enum which_state which) __must_hold(local)
+static bool may_be_up_to_date(struct drbd_device *device, enum which_state which)
 {
 	bool all_peers_outdated = true;
 	int node_id;
@@ -218,7 +218,7 @@ static bool stable_up_to_date_neighbor(struct drbd_device *device)
  * this function only if disk_state[NOW] >= D_NEGOTIATING and holding the
  * state_rwlock.
  */
-enum drbd_disk_state disk_state_from_md(struct drbd_device *device) __must_hold(local)
+enum drbd_disk_state disk_state_from_md(struct drbd_device *device)
 {
 	enum drbd_disk_state disk_state;
 

@@ -295,7 +295,7 @@ else
 	$(Q)rm $(if $(V),-v) -rf drbd-kernel-compat/cocci_cache
 
   tags:
-	git ls-files --recurse | ctags -I__must_hold -L -
+	git ls-files --recurse | ctags -L -
 
   cscope:
 	git ls-files --recurse | cscope -b -i -
