@@ -8859,8 +8859,12 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		drbd_info(connection, "No reconciliation resync even though \'%s\' disappeared. (o=%d)\n",
 			  lost_peer->transport.net_conf->name, (int)dagtag_offset);
 
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-			drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			if (get_ldev(peer_device->device)) {
+				drbd_bm_clear_many_bits(peer_device, 0, -1UL);
+				put_ldev(peer_device->device);
+			}
+		}
 	}
 
 out:
