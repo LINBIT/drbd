@@ -2069,7 +2069,7 @@ static void sanitize_state(struct drbd_resource *resource)
 				disk_state[NEW] = D_INCONSISTENT;
 			else
 				disk_state[NEW] = up_to_date_neighbor ? D_UP_TO_DATE :
-					disk_state_from_md(device);
+					/* ldev_safe: dstate */ disk_state_from_md(device);
 
 			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_repl_state nr = peer_device->negotiation_result;
@@ -2267,13 +2267,14 @@ static void sanitize_state(struct drbd_resource *resource)
 
 			/* The attempted resync made us D_OUTDATED, roll that back in case */
 			if (repl_state[OLD] == L_WF_BITMAP_T && repl_state[NEW] == L_OFF &&
-			    disk_state[NEW] == D_OUTDATED &&
-			    stable_up_to_date_neighbor(device) && may_be_up_to_date(device, NEW))
+			    disk_state[NEW] == D_OUTDATED && stable_up_to_date_neighbor(device) &&
+			    /* ldev_safe: repl_state[OLD] */ may_be_up_to_date(device, NEW))
 				disk_state[NEW] = D_UP_TO_DATE;
 
 			/* clause intentional here, the D_CONSISTENT form above might trigger this */
 			if (repl_state[OLD] < L_ESTABLISHED && repl_state[NEW] >= L_ESTABLISHED &&
-			    disk_state[NEW] == D_CONSISTENT && may_be_up_to_date(device, NEW))
+			    disk_state[NEW] == D_CONSISTENT &&
+			    /* ldev_safe: repl_state[NEW] */ may_be_up_to_date(device, NEW))
 				disk_state[NEW] = D_UP_TO_DATE;
 
 			/* Follow a neighbor that goes from D_CONSISTENT TO D_UP_TO_DATE */
@@ -2352,7 +2353,7 @@ static void sanitize_state(struct drbd_resource *resource)
 		}
 
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
-			disk_state[NEW] = disk_state_from_md(device);
+			disk_state[NEW] = /* ldev_safe: disk_state */ disk_state_from_md(device);
 
 		if (maybe_crashed_primary && !connected_primaries &&
 		    disk_state[NEW] == D_UP_TO_DATE && role[NOW] == R_SECONDARY)
@@ -2844,6 +2845,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				peer_device->bitmap_index = -1;
 		}
 
+		/* ldev_safe: transitioning from D_ATTACHING, ldev just established */
 		if (disk_state[OLD] == D_ATTACHING && disk_state[NEW] >= D_NEGOTIATING)
 			drbd_info(device, "attached to current UUID: %016llX\n", device->ldev->md.current_uuid);
 
@@ -2869,8 +2871,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			    repl_state[NEW] <= L_ESTABLISHED) {
 				unsigned long ov_left = atomic64_read(&peer_device->ov_left);
 
+				/* ldev_safe: repl_state[OLD] */
 				peer_device->ov_start_sector =
 					BM_BIT_TO_SECT(drbd_bm_bits(device) - ov_left);
+
 				if (ov_left)
 					drbd_info(peer_device, "Online Verify reached sector %llu\n",
 						  (unsigned long long)peer_device->ov_start_sector);
@@ -2904,6 +2908,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				unsigned long now = jiffies;
 				int i;
 
+				/* ldev_safe: repl_state[NEW] */
 				set_ov_position(peer_device, repl_state[NEW]);
 				peer_device->rs_start = now;
 				peer_device->ov_last_oos_size = 0;
@@ -3984,6 +3989,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				 * it does no harm to resync a small amount of
 				 * additional data. */
 				drbd_set_pending_out_of_sync(peer_device);
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				drbd_queue_bitmap_io(device, &drbd_send_bitmap, NULL,
 						"send_bitmap (WFBitMapS)",
 						BM_LOCK_SET | BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
@@ -4021,6 +4027,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* In case one of the isp bits got set, suspend other devices. */
 			if (!(resync_susp_dependency[OLD] || resync_susp_peer[OLD] || resync_susp_user[OLD]) &&
 			     (resync_susp_dependency[NEW] || resync_susp_peer[NEW] || resync_susp_user[NEW]))
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				suspend_other_sg(device);
 
 			/* Make sure the peer gets informed about eventual state
@@ -4033,6 +4040,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* We are in the progress to start a full sync. SyncTarget sets all slots. */
 			if (repl_state[OLD] != L_STARTING_SYNC_T && repl_state[NEW] == L_STARTING_SYNC_T)
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_all_n_write, &abw_start_sync,
 					"set_n_write from StartingSync",
@@ -4041,6 +4049,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			/* We are in the progress to start a full sync. SyncSource one slot. */
 			if (repl_state[OLD] != L_STARTING_SYNC_S && repl_state[NEW] == L_STARTING_SYNC_S)
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
 					"set_n_write from StartingSync",
@@ -4058,6 +4067,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			if ((repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) ||
 			    (resync_susp_peer[OLD] && !resync_susp_peer[NEW]) ||
 			    (resync_susp_user[OLD] && !resync_susp_user[NEW]))
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				resume_next_sg(device);
 
 			/* sync target done with resync. Explicitly notify all peers. Our sync
@@ -4114,6 +4124,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    cstate[NEW] == C_STANDALONE &&
 			    role[NEW] == R_SECONDARY) {
 				if (resync_susp_dependency[OLD] != resync_susp_dependency[NEW])
+					/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg */
 					resume_next_sg(device);
 			}
 
@@ -4165,6 +4176,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			}
 
 			if (!repl_is_sync(repl_state[OLD]) && repl_is_sync(repl_state[NEW]))
+				/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 				drbd_run_resync(peer_device, repl_state[NEW]);
 
 			if (repl_is_sync(repl_state[OLD]) && !repl_is_sync(repl_state[NEW]))
@@ -4225,6 +4237,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			/* Our cleanup here with the transition to D_DISKLESS.
 			 * It is still not safe to dereference ldev here, since
 			 * we might come from an failed Attach before ldev was set. */
+			/* ldev_safe: ref from extra_ldev_ref_for_after_state_chg() */
 			if (have_ldev && device->ldev) {
 				rcu_read_lock();
 				eh = rcu_dereference(device->ldev->disk_conf)->on_io_error;
@@ -5756,6 +5769,7 @@ static bool do_change_disk_state(struct change_context *context, enum change_pha
 				supports_two_phase_commit(device->resource);
 		} else {
 			/* very last part of attach */
+			/* ldev_safe: D_ATTACHING->D_NEGOTIATING, state_rwlock held, ldev exists */
 			context->val.disk = disk_state_from_md(device);
 			restore_outdated_in_pdsk(device);
 		}

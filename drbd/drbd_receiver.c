@@ -1737,6 +1737,7 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	if (peer_req->flags & (EE_TRIM|EE_ZEROOUT)) {
 		peer_req->submit_jif = jiffies;
 
+		/* ldev_safe: a peer_req has a ldev reference */
 		drbd_issue_peer_discard_or_zero_out(device, peer_req);
 		return 0;
 	}
@@ -1772,6 +1773,7 @@ next_bio:
 
 	/* we special case some flags in the multi-bio case, see below
 	 * (REQ_PREFLUSH, or BIO_RW_BARRIER in older kernels) */
+	/* ldev_safe: a peer_req has a ldev reference */
 	bio = bio_alloc(device->ldev->backing_bdev, bio_nr_iovecs, peer_req->opf,
 			GFP_NOIO);
 	/* > peer_req->i.sector, unless this is the first bio */

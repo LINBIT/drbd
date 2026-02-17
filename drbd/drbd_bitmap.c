@@ -432,14 +432,18 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 
 void drbd_bm_free(struct drbd_device *device)
 {
+	/* ldev_safe: explicit NULL check below */
 	struct drbd_bitmap *bitmap = device->bitmap;
 
 	if (bitmap == NULL)
 		return;
 
+	/* ldev_safe: explicit NULL check above */
 	drbd_bm_resize(device, 0, 0);
 
 	kfree(bitmap);
+
+	/* ldev_safe: clearing pointer */
 	device->bitmap = NULL;
 }
 
@@ -894,9 +898,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	int err = 0;
 	bool growing;
 
-	if (!expect(device, b))
-		return -ENOMEM;
-
 	drbd_bm_lock(device, "resize", BM_LOCK_ALL);
 
 	if (capacity == b->bm_dev_capacity)
@@ -1141,6 +1142,7 @@ static void drbd_bm_endio(struct bio *bio)
 {
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
+	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned int idx = bm_page_to_idx(bio->bi_io_vec[0].bv_page);
 
@@ -1165,6 +1167,7 @@ static void drbd_bm_endio(struct bio *bio)
 		dynamic_drbd_dbg(device, "bitmap page idx %u completed\n", idx);
 	}
 
+	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	bm_page_unlock_io(device, idx);
 
 	if (ctx->flags & BM_AIO_COPY_PAGES)
@@ -1407,6 +1410,7 @@ static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsi
 	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight)) {
+		/* ldev_safe: get_ldev_if_state() above, put_ldev in drbd_bm_aio_ctx_destroy() */
 		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
 	} else
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);

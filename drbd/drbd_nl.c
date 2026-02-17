@@ -3303,6 +3303,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	/* ldev_safe: attach path, allocating bitmap */
 	device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
 	if (!device->bitmap) {
 		retcode = ERR_NOMEM;
@@ -3698,7 +3699,6 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS) {
-		/* wait for completion of drbd_ldev_destroy() */
 		wait_event_interruptible(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
 		drbd_cleanup_device(device);
 	} else {

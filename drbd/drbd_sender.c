@@ -61,6 +61,7 @@ void drbd_md_endio(struct bio *bio)
 	device->md_io.error = blk_status_to_errno(status);
 
 	/* special case: drbd_md_read() during drbd_adm_attach() */
+	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	if (device->ldev)
 		put_ldev(device);
 	bio_put(bio);
@@ -255,6 +256,7 @@ void drbd_peer_request_endio(struct bio *bio)
 	bio_put(bio); /* no need for the bio anymore */
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
 		if (is_write)
+			/* ldev_safe: bio endio, ldev ref held since I/O submission */
 			drbd_endio_write_sec_final(peer_req);
 		else
 			drbd_endio_read_sec_final(peer_req);
@@ -354,6 +356,7 @@ void drbd_request_endio(struct bio *bio)
 
 	/* not req_mod(), we need irqsave here! */
 	read_lock_irqsave(&device->resource->state_rwlock, flags);
+	/* ldev_safe: bio endio, ldev ref held since drbd_request_prepare(), put_ldev() follows */
 	__req_mod(req, what, NULL, &m);
 	read_unlock_irqrestore(&device->resource->state_rwlock, flags);
 	put_ldev(device);
@@ -3002,6 +3005,7 @@ static void go_diskless(struct drbd_device *device)
 	 * We still need to check if both bitmap and ldev are present, we may
 	 * end up here after a failed attach, before ldev was even assigned.
 	 */
+	/* ldev_safe: ldev is only destroyed after state change to D_DISKLESS below */
 	if (device->bitmap && device->ldev) {
 		if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
 					       "detach",
@@ -3622,6 +3626,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 		maybe_send_unplug_remote(connection, false);
 	} else if (list_empty(&connection->todo.work_list)) {
 		update_sender_timing_details(connection, process_one_request);
+		/* ldev_safe: have connection->todo.req which holds its own ldev ref */
 		return process_one_request(connection);
 	}
 
@@ -3637,6 +3642,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 		if (connection->todo.req) {
 			update_sender_timing_details(connection, process_one_request);
+			/* ldev_safe: have connection->todo.req which holds its own ldev ref */
 			err = process_one_request(connection);
 		}
 		if (err)
@@ -3701,6 +3707,7 @@ int drbd_sender(struct drbd_thread *thi)
 		peer_device = conn_peer_device(connection, device->vnr);
 
 		read_lock_irq(&connection->resource->state_rwlock);
+		/* ldev_safe: requests hold their own ldev refs */
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
 		read_unlock_irq(&connection->resource->state_rwlock);
 		if (m.bio)

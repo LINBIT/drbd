@@ -2053,9 +2053,6 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 	struct bm_xfer_ctx c;
 	int err;
 
-	if (!expect(device, device->bitmap))
-		return false;
-
 	if (get_ldev(device)) {
 		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
 			drbd_info(device, "Writing the whole bitmap, MDF_FullSync was set.\n");
@@ -3312,6 +3309,7 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 	struct drbd_device *device = container_of(work, struct drbd_device, finalize_work);
 	struct drbd_resource *resource = device->resource;
 
+	/* ldev_safe: no other contexts can access */
 	drbd_bm_free(device);
 
 	put_disk(device->vdisk);
@@ -4051,10 +4049,13 @@ static void drbd_ldev_destroy(struct work_struct *ws)
 {
 	struct drbd_device *device = container_of(ws, struct drbd_device, ldev_destroy_work);
 
+	/* ldev_safe: destroying the bitmap */
 	drbd_bm_free(device);
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
+	/* ldev_safe: destroying ldev */
 	drbd_backing_dev_free(device, device->ldev);
+	/* ldev_safe: final teardown, no other user possible */
 	device->ldev = NULL;
 
 	clear_bit(GOING_DISKLESS, &device->flags);
