@@ -1462,6 +1462,9 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	if (unlikely(cancel))
 		return 1;
 
+	if (!get_ldev(device))
+		return 0;
+
 	number = drbd_rs_number_requests(peer_device);
 	sector = peer_device->ov_position;
 
@@ -1516,7 +1519,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
 	peer_device->ov_position = sector;
 	if (stop_sector_reached)
-		return 1;
+		goto out_ok;
 	/* ... and in case that raced with the receiver,
 	 * reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
@@ -1525,6 +1528,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 			&peer_device->resync_work);
 	else
 		mod_timer(&peer_device->resync_timer, jiffies + resync_delay(true, number, i));
+out_ok:
+	put_ldev(device);
 	return 1;
 }
 
