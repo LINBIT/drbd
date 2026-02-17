@@ -8560,6 +8560,11 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	wait_event_interruptible(device->resource->state_wait,
 				 ready_for_bitmap(device));
 
+	if (!get_ldev(device)) {
+		drbd_err(device, "Cannot receive bitmap, local disk gone\n");
+		return -EIO;
+	}
+
 	drbd_bm_slot_lock(peer_device, "receive bitmap", BM_LOCK_CLEAR | BM_LOCK_BULK);
 	/* you are supposed to send additional out-of-sync information
 	 * if you actually set bits during this phase */
@@ -8620,6 +8625,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	}
 
 	drbd_bm_slot_unlock(peer_device);
+	put_ldev(device);
 
 	if (test_bit(B_RS_H_DONE, &peer_device->flags)) {
 		/* We have entered drbd_start_resync() since starting the bitmap exchange. */
@@ -8648,6 +8654,7 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 	return 0;
  out:
 	drbd_bm_slot_unlock(peer_device);
+	put_ldev(device);
 	return err;
 }
 
