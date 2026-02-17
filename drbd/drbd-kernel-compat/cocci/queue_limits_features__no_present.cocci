@@ -11,15 +11,19 @@ expression e;
 struct gendisk *disk;
 identifier lim;
 @@
--struct queue_limits lim = {
--	.features = e,
--};
-...
-blk_alloc_disk(
--	&lim
-+	NULL
-	, ...)
-...
 disk->private_data = ...;
 + blk_queue_flag_set(QUEUE_FLAG_STABLE_WRITES, disk->queue);
 + blk_queue_write_cache(disk->queue, true, true);
+
+// We usually do some more manipulation on the features flags in
+// drbd_reconsider_queue_parameters, but that is not necessary on old kernels
+// that still have these flags directly in the queue.
+// Just patch out all mentions of the features field.
+@@
+struct queue_limits lim;
+@@
+(
+- lim.features = ...;
+|
+- lim.features |= ...;
+)
