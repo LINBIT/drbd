@@ -25,6 +25,7 @@ C_LANG = Language(tsc.language())
 GET_LDEV = {"get_ldev", "get_ldev_if_state"}
 PUT_LDEV = {"put_ldev"}
 LDEV_SAFE_RE = "ldev_safe"
+LDEV_REF_TRANSFER_RE = "ldev_ref_transfer"
 
 
 def make_parser():
@@ -376,6 +377,19 @@ def _has_ldev_safe(body):
     return False
 
 
+def _has_ldev_ref_transfer_func(body):
+    """Check if a function body has a function-level ``/* ldev_ref_transfer: ... */``
+    comment among its initial declarations/comments (before the first
+    non-declaration/non-comment child)."""
+    for child in body.children:
+        if child.type in ("comment", "declaration", "{", "}"):
+            if child.type == "comment" and LDEV_REF_TRANSFER_RE in text(child):
+                return True
+            continue
+        break
+    return False
+
+
 def is_bail_out(node):
     """Check if a statement exits the current scope."""
     if node.type in ("return_statement", "goto_statement",
@@ -398,11 +412,12 @@ def find_protected_regions(body):
     regions = []
     _analyze_block(body, regions)
     _find_ldev_safe_comment_regions(body, regions)
+    _find_ldev_ref_transfer_function_region(body, regions)
     return regions
 
 
-def _find_ldev_safe_comment_regions(body, regions):
-    """Find ``/* ldev_safe: ... */`` comments and mark the next sibling as protected.
+def _find_annotation_regions(body, regions, annotation):
+    """Find comments containing *annotation* and mark the next sibling as a region.
 
     Tree-sitter places the comment as a child node immediately before
     the node it annotates, regardless of nesting level (statement,
@@ -411,7 +426,7 @@ def _find_ldev_safe_comment_regions(body, regions):
     for node in walk_body(body):
         children = node.children
         for i, child in enumerate(children):
-            if child.type != "comment" or LDEV_SAFE_RE not in text(child):
+            if child.type != "comment" or annotation not in text(child):
                 continue
             # Find next non-comment sibling
             for j in range(i + 1, len(children)):
@@ -419,6 +434,28 @@ def _find_ldev_safe_comment_regions(body, regions):
                 if sibling.type != "comment":
                     regions.append((sibling.start_byte, sibling.end_byte))
                     break
+
+
+def _find_ldev_safe_comment_regions(body, regions):
+    """Find ``/* ldev_safe: ... */`` comments and mark the next sibling as protected."""
+    _find_annotation_regions(body, regions, LDEV_SAFE_RE)
+
+
+def _find_ldev_ref_transfer_function_region(body, regions):
+    """When a function-level ``/* ldev_ref_transfer: ... */`` is present,
+    add a region from body start to the first ``put_ldev()`` call (inclusive),
+    or to body end if no ``put_ldev()`` exists (ref delegated)."""
+    if not _has_ldev_ref_transfer_func(body):
+        return
+    # Find the first put_ldev() call in the body
+    for node in walk_body(body):
+        if node.type == "call_expression":
+            fn = node.child_by_field_name("function")
+            if fn and text(fn) in PUT_LDEV:
+                regions.append((body.start_byte, node.end_byte))
+                return
+    # No put_ldev() — ref is delegated; protect entire body
+    regions.append((body.start_byte, body.end_byte))
 
 
 def _analyze_block(block, regions):
@@ -638,12 +675,173 @@ def is_in_regions(byte_pos, regions):
 
 
 # ---------------------------------------------------------------------------
+# Balanced get_ldev/put_ldev exit-path analysis
+# ---------------------------------------------------------------------------
+
+def _get_ldev_call_line(if_stmt):
+    """Extract the line number of the get_ldev() call from an if-statement."""
+    cond = if_stmt.child_by_field_name("condition")
+    if cond:
+        for node in walk_all(cond):
+            if node.type == "call_expression":
+                fn = node.child_by_field_name("function")
+                if fn and text(fn) in GET_LDEV:
+                    return node.start_point[0] + 1
+    return if_stmt.start_point[0] + 1
+
+
+def _is_unconditional_put_ldev_stmt(stmt):
+    """Check if *stmt* unconditionally executes ``put_ldev()``.
+
+    Matches:
+    - ``expression_statement`` containing a ``put_ldev()`` call
+    - ``labeled_statement`` whose child statement is such an expression
+    """
+    if stmt.type == "expression_statement":
+        return contains_call(stmt, PUT_LDEV)
+    if stmt.type == "labeled_statement":
+        for child in stmt.named_children:
+            if child.type == "statement_identifier":
+                continue
+            return _is_unconditional_put_ldev_stmt(child)
+    return False
+
+
+def _has_preceding_put_ldev(return_node, stop_node):
+    """Walk up from *return_node* to *stop_node*, checking at each
+    ``compound_statement`` level for a preceding sibling that
+    unconditionally executes ``put_ldev()``.
+    """
+    node = return_node
+    while node is not None and node != stop_node:
+        parent = node.parent
+        if parent is None:
+            break
+        if parent.type in ("compound_statement", "case_statement"):
+            for sibling in parent.named_children:
+                if sibling.start_byte >= node.start_byte:
+                    break
+                if _is_unconditional_put_ldev_stmt(sibling):
+                    return True
+        node = parent
+    return False
+
+
+def _is_inside_pattern_b(node, func_body, guard_stmt):
+    """Check if *node* is inside a positive ``if (get_ldev()) { … }`` body."""
+    ancestor = node.parent
+    while ancestor is not None and ancestor != func_body:
+        parent = ancestor.parent
+        if (parent is not None and
+                parent.type == "if_statement" and
+                parent != guard_stmt):
+            consequence = parent.child_by_field_name("consequence")
+            if consequence == ancestor:
+                cond = parent.child_by_field_name("condition")
+                if cond and contains_call(cond, GET_LDEV):
+                    cond_text = text(cond).replace(" ", "")
+                    if not any(f"!{fn}(" in cond_text for fn in GET_LDEV):
+                        return True
+        ancestor = ancestor.parent
+    return False
+
+
+def check_balanced_ldev(func_node, body):
+    """Check that every exit path in a function balances get_ldev/put_ldev.
+
+    Returns list of ``(return_line, get_line)`` for imbalanced exits.
+    Handles Pattern A (negated guard) and Pattern B (positive if-body).
+    Skips Pattern C (deferred boolean flag) and ldev_safe functions.
+    """
+    issues = []
+    stmts = [c for c in body.named_children if c.type != "comment"]
+
+    # Skip if no actual get_ldev calls
+    if not contains_call(body, GET_LDEV):
+        return issues
+
+    # Skip functions with ldev_safe annotation
+    if _has_ldev_safe(body):
+        return issues
+
+    # Detect Pattern C (deferred flag) — skip these
+    ldev_vars = set()
+    _collect_ldev_vars(stmts, ldev_vars)
+    if ldev_vars:
+        return issues
+    for stmt in stmts:
+        pos_body = _is_positive_get_ldev_if(stmt)
+        if pos_body is not None:
+            flag_vars = set()
+            _collect_ldev_flag_vars(pos_body, flag_vars)
+            if flag_vars:
+                return issues
+
+    # Compute annotation regions for per-return suppression
+    # Both ldev_safe and ldev_ref_transfer suppress balance warnings.
+    ldev_safe_regions = []
+    _find_ldev_safe_comment_regions(body, ldev_safe_regions)
+    _find_annotation_regions(body, ldev_safe_regions, LDEV_REF_TRANSFER_RE)
+
+    # --- Pattern A: if (!get_ldev()) bail; ---
+    for stmt in stmts:
+        if not _is_negated_get_ldev_if(stmt):
+            continue
+
+        get_line = _get_ldev_call_line(stmt)
+        guard_end_byte = stmt.end_byte
+        consequence = stmt.child_by_field_name("consequence")
+
+        for node in walk_body(body):
+            if node.type != "return_statement":
+                continue
+            if node.start_byte <= guard_end_byte:
+                continue
+            # Skip returns inside the guard's bail-out consequence
+            if (consequence and
+                    consequence.start_byte <= node.start_byte <=
+                    consequence.end_byte):
+                continue
+            # Skip returns inside a nested Pattern B body
+            if _is_inside_pattern_b(node, body, stmt):
+                continue
+            # Skip returns annotated with /* ldev_safe: ... */
+            if is_in_regions(node.start_byte, ldev_safe_regions):
+                continue
+
+            if not _has_preceding_put_ldev(node, body):
+                ret_line = node.start_point[0] + 1
+                issues.append((ret_line, get_line))
+
+    # --- Pattern B: if (get_ldev()) { body } (standalone only) ---
+    has_pattern_a = any(_is_negated_get_ldev_if(s) for s in stmts)
+    if not has_pattern_a:
+        for stmt in stmts:
+            pos_body = _is_positive_get_ldev_if(stmt)
+            if pos_body is None:
+                continue
+            get_line = _get_ldev_call_line(stmt)
+
+            for node in walk_body(pos_body):
+                if node.type != "return_statement":
+                    continue
+                if is_in_regions(node.start_byte, ldev_safe_regions):
+                    continue
+                if not _has_preceding_put_ldev(node, pos_body):
+                    ret_line = node.start_point[0] + 1
+                    issues.append((ret_line, get_line))
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
 # Data structures for cross-file analysis
 # ---------------------------------------------------------------------------
 
 class FuncInfo:
     __slots__ = ("name", "filepath", "static", "has_get_ldev",
-                 "accesses", "calls", "protected_regions")
+                 "accesses", "calls", "protected_regions",
+                 "balance_issues")
 
     def __init__(self, name, filepath, static):
         self.name = name
@@ -653,6 +851,7 @@ class FuncInfo:
         self.accesses = []       # [(byte_pos, line, col, field)]
         self.calls = []          # [(callee_name, byte_pos)]
         self.protected_regions = []  # [(start_byte, end_byte)]
+        self.balance_issues = []  # [(return_line, get_line)]
 
 
 # ---------------------------------------------------------------------------
@@ -688,10 +887,14 @@ def parse_all_files(filepaths, parser):
             info.accesses = find_field_accesses(body, {"ldev", "bitmap"}, type_map)
             info.calls = find_calls(body)
             info.has_get_ldev = (contains_call(body, GET_LDEV)
-                                 or _has_ldev_safe(body))
+                                 or _has_ldev_safe(body)
+                                 or _has_ldev_ref_transfer_func(body))
 
             if info.has_get_ldev:
                 info.protected_regions = find_protected_regions(body)
+
+            if contains_call(body, GET_LDEV):
+                info.balance_issues = check_balanced_ldev(func_node, body)
 
             # Key: (filepath, name) for static functions, just name otherwise
             key = (filepath, name) if static else name
@@ -890,6 +1093,22 @@ def _print_chain(key, funcs, needs_ldev, depth, visited,
                      self_unprotected)
 
 
+def report_balance_issues(funcs):
+    """Print warnings for functions with imbalanced get_ldev/put_ldev."""
+    entries = []
+    for key, info in funcs.items():
+        for ret_line, get_line in info.balance_issues:
+            entries.append((info.filepath, ret_line, info.name, get_line))
+
+    entries.sort()
+    for filepath, ret_line, name, get_line in entries:
+        print(f"!! {name}() may leak ldev ref: return without "
+              f"put_ldev()  {filepath}:{ret_line}")
+        print(f"   get_ldev() at line {get_line}, "
+              f"no put_ldev() before return at line {ret_line}")
+    if entries:
+        print()
+
 
 # ---------------------------------------------------------------------------
 # Verify mode: show all call paths with their ldev protection
@@ -1067,6 +1286,7 @@ def main():
                         self_unprotected)
         return
     report_results(uncovered, needs_ldev, funcs, self_unprotected)
+    report_balance_issues(funcs)
 
     has_findings = bool(uncovered) or any(
         info.balance_issues for info in funcs.values())

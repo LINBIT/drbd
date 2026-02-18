@@ -1140,9 +1140,9 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 /* bv_page may be a copy, or may be the original */
 static void drbd_bm_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in bitmap I/O path */
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
-	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	struct drbd_bitmap *b = device->bitmap;
 	unsigned int idx = bm_page_to_idx(bio->bi_io_vec[0].bv_page);
 
@@ -1167,7 +1167,6 @@ static void drbd_bm_endio(struct bio *bio)
 		dynamic_drbd_dbg(device, "bitmap page idx %u completed\n", idx);
 	}
 
-	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	bm_page_unlock_io(device, idx);
 
 	if (ctx->flags & BM_AIO_COPY_PAGES)

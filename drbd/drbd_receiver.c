@@ -3400,6 +3400,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 
 	if (!conflict)
 		submit_peer_request_activity_log(peer_req);
+	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	return 0;
 
 out_del_list:
@@ -3928,6 +3929,7 @@ submit:
 	} else {
 		drbd_peer_resync_read(peer_req);
 	}
+	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	return 0;
 fail2:
 	drbd_free_peer_req(peer_req);
@@ -4059,6 +4061,7 @@ static int receive_common_ov_reply(struct drbd_connection *connection, struct pa
 	rs_sectors_came_in(peer_device, size);
 
 	drbd_peer_resync_read(peer_req);
+	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	return 0;
 fail:
 	drbd_remove_peer_req_interval(peer_req);
