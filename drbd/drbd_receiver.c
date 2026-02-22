@@ -5646,6 +5646,38 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 		}
 	}
 
+	/* Non-voting disk: always be sync target, never sync source.
+	 * This ensures the non-voting replica never overwrites voting peers'
+	 * data, even in edge cases like split-brain after promotion race. */
+	if (strategy_descriptor(strategy).is_sync_source && get_ldev(device)) {
+		struct disk_conf *dc;
+		bool nv = false;
+
+		rcu_read_lock();
+		dc = rcu_dereference(device->ldev->disk_conf);
+		if (dc)
+			nv = dc->non_voting;
+		rcu_read_unlock();
+		put_ldev(device);
+
+		if (nv) {
+			enum sync_strategy reversed = strategy_descriptor(strategy).reverse;
+
+			if (reversed != UNDETERMINED) {
+				drbd_info(peer_device,
+					  "Non-voting disk: reversing sync direction %s -> %s\n",
+					  strategy_descriptor(strategy).name,
+					  strategy_descriptor(reversed).name);
+				strategy = reversed;
+			} else {
+				drbd_info(peer_device,
+					  "Non-voting disk: cannot reverse %s, becoming target via full sync\n",
+					  strategy_descriptor(strategy).name);
+				strategy = SYNC_TARGET_SET_BITMAP;
+			}
+		}
+	}
+
 	if (test_bit(CONN_DRY_RUN, &connection->flags)) {
 		if (strategy == NO_SYNC)
 			drbd_info(peer_device, "dry-run connect: No resync, would become Connected immediately.\n");
