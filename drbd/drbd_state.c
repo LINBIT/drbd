@@ -1582,7 +1582,7 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		qi->min_redundancy_at = min_redundancy_at;
 	}
 
-	have_quorum = qd.quorate_peers ||
+	have_quorum = (qd.quorate_peers && qd.quorate_peers >= min_redundancy_at) ||
 		((qd.up_to_date + qd.present) >= quorum_at && qd.up_to_date >= min_redundancy_at);
 
 	if (!have_quorum && voters != 0 && voters % 2 == 0 && qd.up_to_date + qd.present == quorum_at - 1 &&

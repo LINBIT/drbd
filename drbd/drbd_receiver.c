@@ -8674,6 +8674,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	clear_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
 	clear_bit(RS_PEER_MISSED_END, &peer_device->flags);
 
+	/* For diskless nodes, quorum depends on peer's quorum state.
+	 * Force recalculation when peer quorum changes. */
+	if (test_bit(PEER_QUORATE, &peer_device->flags) != peer_state.quorum &&
+	    device->disk_state[NOW] == D_DISKLESS)
+		begin_state_chg_flags |= CS_FORCE_RECALC;
+
 	if (peer_state.quorum)
 		set_bit(PEER_QUORATE, &peer_device->flags);
 	else
