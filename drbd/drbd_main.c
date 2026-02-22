@@ -3750,6 +3750,7 @@ int set_resource_options(struct drbd_resource *resource, struct res_opts *res_op
 		res_opts->nr_requests = DRBD_NR_REQUESTS_MIN;
 
 	if (old_opts->quorum != res_opts->quorum ||
+	    old_opts->quorum_min_redundancy != res_opts->quorum_min_redundancy ||
 	    old_opts->on_no_quorum != res_opts->on_no_quorum)
 		force_state_recalc = true;
 
