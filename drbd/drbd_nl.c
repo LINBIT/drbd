@@ -2516,6 +2516,18 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	    new_disk_conf->discard_zeroes_if_aligned)
 		drbd_reconsider_queue_parameters(device, device->ldev);
 
+	if (old_disk_conf->non_voting != new_disk_conf->non_voting) {
+		unsigned long irq_flags;
+
+		drbd_info(device, "non-voting changed: %s -> %s, recalculating quorum\n",
+			  old_disk_conf->non_voting ? "yes" : "no",
+			  new_disk_conf->non_voting ? "yes" : "no");
+
+		begin_state_change(resource, &irq_flags,
+				   CS_VERBOSE | CS_FORCE_RECALC);
+		end_state_change(resource, &irq_flags, "non-voting-change");
+	}
+
 	drbd_md_sync_if_dirty(device);
 
 	for_each_peer_device(peer_device, device) {

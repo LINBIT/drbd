@@ -1338,16 +1338,19 @@ static int calc_quorum_at(s32 setting, int voters)
 	return quorum_at;
 }
 
-static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_detail *qd)
+static void __calc_quorum_with_disk(struct drbd_device *device,
+				    struct quorum_detail *qd)
 {
 	struct drbd_resource *resource = device->resource;
 	const u64 quorumless_nodes = device->have_quorum[NOW] ? ~resource->members : 0;
 	const int my_node_id = resource->res_opts.node_id;
+	bool non_voting;
 	int node_id;
 
 	check_wrongly_set_mdf_exists(device);
 
 	rcu_read_lock();
+	non_voting = rcu_dereference(device->ldev->disk_conf)->non_voting;
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 		struct drbd_peer_device *peer_device;
@@ -1357,12 +1360,14 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		struct net_conf *nc;
 
 		if (node_id == my_node_id) {
-			disk_state = device->disk_state[NEW];
-			if (disk_state > D_DISKLESS) {
-				if (disk_state == D_UP_TO_DATE)
-					qd->up_to_date++;
-				else
-					qd->present++;
+			if (!non_voting) {
+				disk_state = device->disk_state[NEW];
+				if (disk_state > D_DISKLESS) {
+					if (disk_state == D_UP_TO_DATE)
+						qd->up_to_date++;
+					else
+						qd->present++;
+				}
 			}
 			continue;
 		}
@@ -1409,6 +1414,13 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			else
 				qd->present++;
 		}
+
+		/* Non-voting diskful nodes inherit quorum from peers,
+		 * same as diskless nodes do via __calc_quorum_no_disk(). */
+		if (non_voting && peer_device &&
+		    disk_state == D_UP_TO_DATE &&
+		    test_bit(PEER_QUORATE, &peer_device->flags))
+			qd->quorate_peers++;
 	}
 	rcu_read_unlock();
 }
