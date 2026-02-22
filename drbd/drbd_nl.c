@@ -7787,6 +7787,7 @@ static int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_device *device;
 	struct forget_peer_parms parms = { };
 	enum drbd_ret_code retcode;
+	unsigned long irq_flags;
 	int vnr, peer_node_id, err;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_RESOURCE);
@@ -7820,6 +7821,12 @@ static int drbd_adm_forget_peer(struct sk_buff *skb, struct genl_info *info)
 
 	idr_for_each_entry(&resource->devices, device, vnr)
 		clear_peer_slot(device, peer_node_id, 0);
+
+	/* Recalculate quorum since forgetting a peer changes voter count */
+	if (resource->res_opts.quorum != QOU_OFF) {
+		begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
+		end_state_change(resource, &irq_flags, "forget-peer");
+	}
 out:
 	mutex_unlock(&resource->adm_mutex);
 out_no_adm_mutex:
