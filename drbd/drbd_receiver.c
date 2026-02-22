@@ -9967,7 +9967,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	drbd_maybe_khelper(NULL, connection, "disconnected");
 
-	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY);
+	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_LOCAL_ONLY | CS_HARD);
 	oc = connection->cstate[NOW];
 	if (oc >= C_UNCONNECTED) {
 		__change_cstate(connection, C_UNCONNECTED);
