@@ -1773,9 +1773,12 @@ handshake_found:
 			nr_negotiating++;
 
 		/* Prevent promote when there is no quorum and
-		 * prevent graceful disconnect/detach that would kill quorum
+		 * prevent graceful disconnect/detach that would kill quorum.
+		 * Allow forced recalculation (CS_FORCE_RECALC) to proceed,
+		 * so the node can transition to suspend-io when quorum is lost.
 		 */
-		if ((role[OLD] == R_SECONDARY || device->have_quorum[OLD]) &&
+		if (!(resource->state_change_flags & CS_FORCE_RECALC) &&
+		    (role[OLD] == R_SECONDARY || device->have_quorum[OLD]) &&
 		    role[NEW] == R_PRIMARY && !device->have_quorum[NEW]) {
 			struct quorum_info qi;
 
