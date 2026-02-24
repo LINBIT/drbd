@@ -2035,10 +2035,14 @@ static void sanitize_state(struct drbd_resource *resource)
 		    disk_state[OLD] < D_OUTDATED && disk_state[NEW] == D_OUTDATED)
 			disk_state[NEW] = disk_state[OLD];
 
-		/* Is disk state negotiation finished? */
-		if (disk_state[OLD] == D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
+		if (disk_state[NEW] == D_NEGOTIATING) {
 			int all = 0, target = 0, no_result = 0;
 			bool up_to_date_neighbor = false;
+
+			if (disk_state[OLD] != D_NEGOTIATING) {
+				for_each_peer_device_rcu(peer_device, device)
+					peer_device->negotiation_result = L_NEGOTIATING;
+			}
 
 			for_each_peer_device_rcu(peer_device, device) {
 				enum drbd_repl_state repl_state = peer_device->repl_state[NEW];
@@ -2824,11 +2828,6 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (test_bit(RESTORE_QUORUM, &device->flags) &&
 		    (device->have_quorum[NEW] || disk_state[NEW] < D_UP_TO_DATE))
 			clear_bit(RESTORE_QUORUM, &device->flags);
-
-		if (disk_state[OLD] != D_NEGOTIATING && disk_state[NEW] == D_NEGOTIATING) {
-			for_each_peer_device(peer_device, device)
-				peer_device->negotiation_result = L_NEGOTIATING;
-		}
 
 		/* if we are going -> D_FAILED or D_DISKLESS, grab one extra reference
 		 * on the ldev here, to be sure the transition -> D_DISKLESS resp.
@@ -5672,8 +5671,7 @@ static bool device_has_peer_devices_with_disk(struct drbd_device *device)
 			   To avoid a race in receive_state, "clear" uuids while
 			   holding state_rwlock. I.e. atomic with the state change */
 			clear_bit(UUIDS_RECEIVED, &peer_device->flags);
-			if (peer_device->disk_state[NOW] > D_DISKLESS &&
-			    peer_device->disk_state[NOW] != D_UNKNOWN)
+			if (peer_device->disk_state[NOW] > D_DISKLESS)
 				rv = true;
 		}
 	}
