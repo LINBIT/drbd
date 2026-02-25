@@ -85,7 +85,7 @@ void drbd_md_endio(struct bio *bio)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -153,7 +153,7 @@ int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main, struct list_he
 
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver, final stage.  */
-void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -169,8 +169,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
 		peer_req->w.cb = w_e_reissue;
-		/* put_ldev actually happens below, once we come here again. */
-		__release(local);
 		spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 		drbd_queue_work(&connection->sender_work, &peer_req->w);
 		if (atomic_dec_and_test(&connection->active_ee_cnt))

@@ -1847,17 +1847,17 @@ int drbd_md_write(struct drbd_device *device,
 int drbd_md_sync(struct drbd_device *device);
 int drbd_md_sync_if_dirty(struct drbd_device *device);
 void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val,
-				    u64 weak_nodes) __must_hold(local);
-void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must_hold(local);
-void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local);
-void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local);
+				    u64 weak_nodes);
+void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid);
+void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
+void _drbd_uuid_set_current(struct drbd_device *device, u64 val);
 void drbd_uuid_new_current(struct drbd_device *device, bool forced);
 void drbd_uuid_new_current_by_user(struct drbd_device *device);
-void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local);
-u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local);
-void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device); __must_hold(local);
-u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local);
-void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local);
+void _drbd_uuid_push_history(struct drbd_device *device, u64 val);
+u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device);
+void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device);
+u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
+void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
 bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 u64 drbd_weak_nodes_device(struct drbd_device *device);
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag);
@@ -1885,15 +1885,15 @@ int drbd_bitmap_io_from_worker(struct drbd_device *device,
 			       char *why, enum bm_flag flags,
 			       struct drbd_peer_device *peer_device);
 int drbd_bmio_set_n_write(struct drbd_device *device,
-			  struct drbd_peer_device *peer_device) __must_hold(local);
+			  struct drbd_peer_device *peer_device);
 int drbd_bmio_clear_all_n_write(struct drbd_device *device,
-				struct drbd_peer_device *peer_device) __must_hold(local);
+				struct drbd_peer_device *peer_device);
 int drbd_bmio_set_all_n_write(struct drbd_device *device,
-			      struct drbd_peer_device *peer_device) __must_hold(local);
+			      struct drbd_peer_device *peer_device);
 int drbd_bmio_set_allocated_n_write(struct drbd_device *device,
-				    struct drbd_peer_device *peer_device) __must_hold(local);
+				    struct drbd_peer_device *peer_device);
 int drbd_bmio_clear_one_peer(struct drbd_device *device,
-			     struct drbd_peer_device *peer_device) __must_hold(local);
+			     struct drbd_peer_device *peer_device);
 bool drbd_device_stable(struct drbd_device *device, u64 *authoritative_ptr);
 void drbd_flush_peer_acks(struct drbd_resource *resource);
 void drbd_cork(struct drbd_connection *connection, enum drbd_stream stream);
@@ -2088,18 +2088,18 @@ void _drbd_bm_set_many_bits(struct drbd_device *device, int bitmap_index,
 int drbd_bm_test_bit(struct drbd_peer_device *peer_device,
 		     const unsigned long bitnr);
 int  drbd_bm_read(struct drbd_device *device,
-		  struct drbd_peer_device *peer_device) __must_hold(local);
-void drbd_bm_reset_al_hints(struct drbd_device *device) __must_hold(local);
+		  struct drbd_peer_device *peer_device);
+void drbd_bm_reset_al_hints(struct drbd_device *device);
 void drbd_bm_mark_range_for_writeout(struct drbd_device *device,
 				     unsigned long start, unsigned long end);
 int  drbd_bm_write(struct drbd_device *device,
-		   struct drbd_peer_device *peer_device) __must_hold(local);
-int  drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local);
-int  drbd_bm_write_lazy(struct drbd_device *device, unsigned int upper_idx) __must_hold(local);
+		   struct drbd_peer_device *peer_device);
+int  drbd_bm_write_hinted(struct drbd_device *device);
+int  drbd_bm_write_lazy(struct drbd_device *device, unsigned int upper_idx);
 int drbd_bm_write_all(struct drbd_device *device,
-		      struct drbd_peer_device *peer_device) __must_hold(local);
+		      struct drbd_peer_device *peer_device);
 int drbd_bm_write_copy_pages(struct drbd_device *device,
-			     struct drbd_peer_device *peer_device) __must_hold(local);
+			     struct drbd_peer_device *peer_device);
 size_t	     drbd_bm_words(struct drbd_device *device);
 unsigned long drbd_bm_bits(struct drbd_device *device);
 unsigned long drbd_bm_bits_4k(struct drbd_device *device);
@@ -2215,7 +2215,7 @@ void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss);
 void drbd_resume_io(struct drbd_device *device);
 char *ppsize(char *buf, unsigned long long size);
 sector_t drbd_new_dev_size(struct drbd_device *device, sector_t current_size,
-			   sector_t user_capped_size, enum dds_flags flags) __must_hold(local);
+			   sector_t user_capped_size, enum dds_flags flags);
 enum determine_dev_size {
 	DS_2PC_ERR = -5,
 	DS_2PC_NOT_SUPPORTED = -4,
@@ -2230,7 +2230,7 @@ enum determine_dev_size {
 enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *device,
 			sector_t peer_current_size, enum dds_flags flags,
-			struct resize_parms *rs) __must_hold(local);
+			struct resize_parms *rs);
 void resync_after_online_grow(struct drbd_peer_device *peer_device);
 void drbd_reconsider_queue_parameters(struct drbd_device *device,
 				      struct drbd_backing_dev *bdev);
@@ -2410,8 +2410,8 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device,
 void drbd_remove_peer_req_interval(struct drbd_peer_request *peer_req);
 int drbd_free_peer_reqs(struct drbd_connection *connection,
 			struct list_head *list);
-struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_device,
-			gfp_t gfp_mask, size_t size, blk_opf_t opf) __must_hold(local);
+struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
+					      size_t size, blk_opf_t opf);
 void drbd_free_peer_req(struct drbd_peer_request *peer_req);
 void drbd_peer_req_strip_bio(struct drbd_peer_request *peer_req);
 int drbd_connected(struct drbd_peer_device *peer_device);
@@ -2456,8 +2456,6 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size);
 static inline void drbd_submit_bio_noacct(struct drbd_device *device,
 					     int fault_type, struct bio *bio)
 {
-	__release(local);
-
 	if (drbd_insert_fault(device, fault_type)) {
 		bio->bi_status = BLK_STS_IOERR;
 		bio_endio(bio);
@@ -2534,7 +2532,7 @@ int notify_path(struct drbd_connection *connection, struct drbd_path *path,
 		enum drbd_notification_type type);
 void drbd_broadcast_peer_device_state(struct drbd_peer_device *peer_device);
 
-sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local);
+sector_t drbd_local_max_size(struct drbd_device *device);
 int drbd_open_ro_count(struct drbd_resource *resource);
 
 void device_to_info(struct device_info *info, struct drbd_device *device);
@@ -2816,9 +2814,6 @@ drbd_insert_fault_conn(struct drbd_connection *connection, unsigned int type) {
  *
  * You have to call put_ldev() when finished working with device->ldev.
  */
-#define get_ldev_if_state(_device, _min_state)				\
-	(_get_ldev_if_state((_device), (_min_state)) ?			\
-	 ({ __acquire(x); true; }) : false)
 #define get_ldev(_device) get_ldev_if_state(_device, D_INCONSISTENT)
 
 static inline void put_ldev(struct drbd_device *device)
@@ -2833,7 +2828,6 @@ static inline void put_ldev(struct drbd_device *device)
 	/* This may be called from some endio handler,
 	 * so we must not sleep here. */
 
-	__release(local);
 	D_ASSERT(device, i >= 0);
 	if (i == 0) {
 		if (disk_state == D_DISKLESS) {
@@ -2849,8 +2843,7 @@ static inline void put_ldev(struct drbd_device *device)
 	}
 }
 
-#ifndef __CHECKER__
-static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
+static inline int get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
 {
 	int io_allowed;
 
@@ -2864,9 +2857,6 @@ static inline int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_
 		put_ldev(device);
 	return io_allowed;
 }
-#else
-int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins);
-#endif
 
 void drbd_queue_pending_bitmap_work(struct drbd_device *device);
 

@@ -1605,7 +1605,7 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
  */
 enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
-			enum dds_flags flags, struct resize_parms *rs) __must_hold(local)
+			enum dds_flags flags, struct resize_parms *rs)
 {
 	struct md_offsets_and_sizes {
 		u64 effective_size;
@@ -1813,7 +1813,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
  * are connected.
  */
 static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
-		uint64_t twopc_reachable_nodes) __must_hold(local)
+		uint64_t twopc_reachable_nodes)
 {
 	int node_id;
 	bool all_known;
@@ -1902,7 +1902,7 @@ sector_t
 drbd_new_dev_size(struct drbd_device *device,
 		sector_t current_size, /* need at least this much */
 		sector_t user_capped_size, /* want (at most) this much */
-		enum dds_flags flags) __must_hold(local)
+		enum dds_flags flags)
 {
 	struct drbd_resource *resource = device->resource;
 	uint64_t p_size = 0;
@@ -5218,7 +5218,7 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 	drbd_start_resync(peer_device, sync_source ? L_SYNC_SOURCE : L_SYNC_TARGET, "online-grow");
 }
 
-sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local)
+sector_t drbd_local_max_size(struct drbd_device *device)
 {
 	struct drbd_backing_dev *tmp_bdev;
 	sector_t s;
@@ -5511,7 +5511,7 @@ static enum drbd_state_rv invalidate_resync(struct drbd_peer_device *peer_device
 	return rv;
 }
 
-static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device) __must_hold(local)
+static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
@@ -5654,7 +5654,7 @@ out_no_ldev:
 	return 0;
 }
 
-static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_device *peer_device) __must_hold(local)
+static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_device *peer_device)
 {
 	int rv;
 

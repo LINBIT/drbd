@@ -55,8 +55,8 @@ static void drbd_release(struct gendisk *gd);
 static void md_sync_timer_fn(struct timer_list *t);
 static int w_bitmap_io(struct drbd_work *w, int unused);
 static int flush_send_buffer(struct drbd_connection *connection, enum drbd_stream drbd_stream);
-static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local);
-static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local);
+static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes);
+static u64 __test_bitmap_slots(struct drbd_device *device);
 static void drbd_send_ping_ack_wf(struct work_struct *ws);
 static void __net_exit __drbd_net_exit(struct net *net);
 
@@ -175,25 +175,6 @@ static const struct block_device_operations drbd_ops = {
 static struct pernet_operations drbd_pernet_ops = {
 	.exit = __drbd_net_exit,
 };
-
-#ifdef __CHECKER__
-/* When checking with sparse, and this is an inline function, sparse will
-   give tons of false positives. When this is a real functions sparse works.
- */
-int _get_ldev_if_state(struct drbd_device *device, enum drbd_disk_state mins)
-{
-	int io_allowed;
-
-	atomic_inc(&device->local_cnt);
-	io_allowed = (device->disk_state[NOW] >= mins);
-	if (!io_allowed) {
-		if (atomic_dec_and_test(&device->local_cnt))
-			wake_up(&device->misc_wait);
-	}
-	return io_allowed;
-}
-
-#endif
 
 struct drbd_connection *__drbd_next_connection_ref(u64 *visited,
 						   struct drbd_connection *connection,
@@ -1344,7 +1325,7 @@ static int _drbd_send_uuids(struct drbd_peer_device *peer_device, u64 uuid_flags
 	return drbd_send_command(peer_device, P_UUIDS, DATA_STREAM);
 }
 
-static u64 __bitmap_uuid(struct drbd_device *device, int node_id) __must_hold(local)
+static u64 __bitmap_uuid(struct drbd_device *device, int node_id)
 {
 	struct drbd_peer_device *peer_device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4078,10 +4059,8 @@ static void drbd_ldev_destroy(struct work_struct *ws)
 	drbd_bm_free(device);
 	lc_destroy(device->act_log);
 	device->act_log = NULL;
-	__acquire(local);
 	drbd_backing_dev_free(device, device->ldev);
 	device->ldev = NULL;
-	__release(local);
 
 	clear_bit(GOING_DISKLESS, &device->flags);
 	wake_up(&device->misc_wait);
@@ -4723,7 +4702,7 @@ void drbd_md_mark_dirty(struct drbd_device *device)
 		mod_timer(&device->md_sync_timer, jiffies + 5*HZ);
 }
 
-void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(local)
+void _drbd_uuid_push_history(struct drbd_device *device, u64 val)
 {
 	struct drbd_md *md = &device->ldev->md;
 	int node_id, i;
@@ -4753,7 +4732,7 @@ void _drbd_uuid_push_history(struct drbd_device *device, u64 val) __must_hold(lo
 	md->history_uuids[i] = val;
 }
 
-u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device) __must_hold(local)
+u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
@@ -4790,7 +4769,7 @@ static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val
 	peer_md->bitmap_dagtag = val ? device->resource->dagtag_sector : 0;
 }
 
-void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(local)
+void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
 {
 	unsigned long flags;
 
@@ -4799,7 +4778,7 @@ void _drbd_uuid_set_current(struct drbd_device *device, u64 val) __must_hold(loc
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must_hold(local)
+void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
@@ -4812,7 +4791,7 @@ void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val) __must
 }
 
 /* call holding down_write(uuid_sem) */
-void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must_hold(local)
+void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
@@ -4826,7 +4805,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid) __must
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes, u64 dagtag) __must_hold(local)
+static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes, u64 dagtag)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	struct drbd_peer_device *peer_device;
@@ -4936,7 +4915,7 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 }
 
 
-static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced) __must_hold(local)
+static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 {
 	u64 got_new_bitmap_uuid, val, old_current_uuid;
 	int err;
@@ -4972,7 +4951,7 @@ static void __new_current_uuid_info(struct drbd_device *device, u64 weak_nodes)
 		  device->ldev->md.current_uuid, weak_nodes);
 }
 
-static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, bool forced) __must_hold(local)
+static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, bool forced)
 {
 	struct drbd_peer_device *peer_device;
 	u64 im;
@@ -4983,7 +4962,7 @@ static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, 
 	}
 }
 
-static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced) __must_hold(local)
+static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced)
 {
 	u64 weak_nodes;
 
@@ -4999,7 +4978,7 @@ static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced
 	up_read(&device->uuid_sem);
 }
 
-static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device) __must_hold(local)
+static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device)
 {
 	u64 weak_nodes;
 
@@ -5154,7 +5133,7 @@ static void drbd_propagate_uuids(struct drbd_device *device, u64 nodes)
 	rcu_read_unlock();
 }
 
-void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u64 weak_nodes) __must_hold(local)
+void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u64 weak_nodes)
 {
 	struct drbd_device *device = from_pd->device;
 	u64 dagtag = atomic64_read(&from_pd->connection->last_dagtag_sector);
@@ -5216,7 +5195,7 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	up_read(&device->uuid_sem);
 }
 
-static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes) __must_hold(local)
+static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 do_nodes)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	u64 modified = 0;
@@ -5244,7 +5223,7 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 	return modified;
 }
 
-static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local)
+static u64 __test_bitmap_slots(struct drbd_device *device)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	int node_id;
@@ -5262,7 +5241,7 @@ static u64 __test_bitmap_slots(struct drbd_device *device) __must_hold(local)
    SyncSource had. It might be that in the mean time some peers sent more
    recent UUIDs to me. Remove all peers that are on the same UUID as I am
    now from the set of nodes */
-static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+static u64 __test_bitmap_slots_of_peer(struct drbd_peer_device *peer_device)
 {
 	u64 set_bitmap_slots = 0;
 	int node_id;
@@ -5297,7 +5276,7 @@ peers_with_current_uuid(struct drbd_device *device, u64 current_uuid)
 	return nodes;
 }
 
-void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold(local)
+void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 
@@ -5307,7 +5286,7 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device) __must_hold
 	rotate_current_into_bitmap(device, 0, device->resource->dagtag_sector);
 }
 
-u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device) __must_hold(local)
+u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	unsigned long flags;
@@ -5366,7 +5345,7 @@ static const char *name_of_node_id(struct drbd_resource *resource, int node_id)
 	return connection ? rcu_dereference(connection->transport.net_conf)->name : "";
 }
 
-static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(local)
+static void forget_bitmap(struct drbd_device *device, int node_id)
 {
 	int bitmap_index = device->ldev->md.peers[node_id].bitmap_index;
 	const char *name;
@@ -5389,7 +5368,7 @@ static void forget_bitmap(struct drbd_device *device, int node_id) __must_hold(l
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 }
 
-static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __must_hold(local)
+static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 {
 	struct drbd_peer_device *peer_device = peer_device_by_node_id(device, to_id);
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -5423,7 +5402,7 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id) __mu
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 }
 
-static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid) __must_hold(local)
+static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
 	int node_id;
@@ -5458,7 +5437,7 @@ static bool node_connected(struct drbd_resource *resource, int node_id)
 	return r;
 }
 
-static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device) __must_hold(local)
+static bool detect_copy_ops_on_peer(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -5525,7 +5504,7 @@ found:
 	return modified;
 }
 
-void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __must_hold(local)
+void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 {
 	u64 peer_current_uuid = peer_device->current_uuid & ~UUID_PRIMARY;
 	struct drbd_device *device = peer_device->device;
@@ -5642,7 +5621,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 }
 
 int drbd_bmio_set_all_n_write(struct drbd_device *device,
-			      struct drbd_peer_device *peer_device) __must_hold(local)
+			      struct drbd_peer_device *peer_device)
 {
 	drbd_bm_set_all(device);
 	return drbd_bm_write(device, NULL);
@@ -5656,7 +5635,7 @@ int drbd_bmio_set_all_n_write(struct drbd_device *device,
  * Sets all bits in the bitmap towards one peer and writes the whole bitmap to stable storage.
  */
 int drbd_bmio_set_n_write(struct drbd_device *device,
-			  struct drbd_peer_device *peer_device) __must_hold(local)
+			  struct drbd_peer_device *peer_device)
 {
 	int rv = -EIO;
 
@@ -5682,7 +5661,7 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
  * Sets all bits in all allocated bitmap slots and writes it to stable storage.
  */
 int drbd_bmio_set_allocated_n_write(struct drbd_device *device,
-				    struct drbd_peer_device *peer_device) __must_hold(local)
+				    struct drbd_peer_device *peer_device)
 {
 	const int my_node_id = device->resource->res_opts.node_id;
 	struct drbd_md *md = &device->ldev->md;
@@ -5710,7 +5689,7 @@ int drbd_bmio_set_allocated_n_write(struct drbd_device *device,
  * Clears all bits in the bitmap and writes the whole bitmap to stable storage.
  */
 int drbd_bmio_clear_all_n_write(struct drbd_device *device,
-			    struct drbd_peer_device *peer_device) __must_hold(local)
+			    struct drbd_peer_device *peer_device)
 {
 	drbd_resume_al(device);
 	drbd_bm_clear_all(device);
@@ -5718,7 +5697,7 @@ int drbd_bmio_clear_all_n_write(struct drbd_device *device,
 }
 
 int drbd_bmio_clear_one_peer(struct drbd_device *device,
-			     struct drbd_peer_device *peer_device) __must_hold(local)
+			     struct drbd_peer_device *peer_device)
 {
 	drbd_bm_clear_many_bits(peer_device, 0, -1UL);
 	return drbd_bm_write(device, NULL);
@@ -5891,7 +5870,7 @@ int drbd_bitmap_io(struct drbd_device *device,
 }
 
 void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
-			   enum mdf_peer_flag flag) __must_hold(local)
+			   enum mdf_peer_flag flag)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
@@ -5903,7 +5882,7 @@ void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
 }
 
 void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
-			     enum mdf_peer_flag flag) __must_hold(local)
+			     enum mdf_peer_flag flag)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
