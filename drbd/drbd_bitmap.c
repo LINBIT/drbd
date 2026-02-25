@@ -934,23 +934,26 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	bits  = bm_sect_to_bit(b, ALIGN(capacity, bm_sect_per_bit(b)));
 	words = (ALIGN(bits, 64) * b->bm_max_peers) / BITS_PER_LONG;
 
+	want = PFN_UP(words * sizeof(long));
+	have = b->bm_number_of_pages;
 	if (get_ldev(device)) {
 		u64 bits_on_disk = drbd_md_on_disk_bits(device);
-		put_ldev(device);
 		if (bits > bits_on_disk) {
+			put_ldev(device);
 			drbd_err(device, "Not enough space for bitmap: %lu > %lu\n",
 				(unsigned long)bits, (unsigned long)bits_on_disk);
 			err = -ENOSPC;
 			goto out;
 		}
+		if (drbd_md_dax_active(device->ldev)) {
+			drbd_info(device, "DAX/PMEM bitmap has size %llu KiB\n",
+				  PAGES_TO_KIB(want));
+			bm_on_pmem = drbd_dax_bitmap(device, want);
+		}
+		put_ldev(device);
 	}
 
-	want = PFN_UP(words * sizeof(long));
-	have = b->bm_number_of_pages;
-	if (drbd_md_dax_active(device->ldev)) {
-		drbd_info(device, "DAX/PMEM bitmap has size %llu KiB\n", PAGES_TO_KIB(want));
-		bm_on_pmem = drbd_dax_bitmap(device, want);
-	} else {
+	if (!bm_on_pmem) {
 		if (want == have) {
 			D_ASSERT(device, b->bm_pages != NULL);
 			drbd_info(device, "Bitmap size remains %llu KiB\n", PAGES_TO_KIB(have));
