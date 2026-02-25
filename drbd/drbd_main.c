@@ -5548,13 +5548,33 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device) __m
 
 		if (bm_towards_me != 0 && bm_to_peer == 0 &&
 		    bm_towards_me != peer_current_uuid) {
-			drbd_info(peer_device, "Peer missed end of resync\n");
-			set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+			if (peer_device->comm_bm_set == 0 && peer_device->dirty_bits == 0) {
+				drbd_info(peer_device, "Peer missed end of resync, 0 to sync\n");
+				if (peer_device->connection->agreed_pro_version < 124)
+					set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+			} else {
+				drbd_info(peer_device, "Peer missed end of resync\n");
+				set_bit(RS_PEER_MISSED_END, &peer_device->flags);
+			}
 		}
 		if (bm_towards_me == 0 && bm_to_peer != 0 &&
 		    bm_to_peer != peer_current_uuid) {
-			drbd_info(peer_device, "Missed end of resync as sync-source\n");
-			set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+			if (peer_device->comm_bm_set == 0 && peer_device->dirty_bits == 0) {
+				int peer_node_id = peer_device->node_id;
+				u64 previous = peer_md[peer_node_id].bitmap_uuid;
+
+				drbd_info(peer_device,
+					"Missed end of resync as sync-source, no bits to sync\n");
+				peer_md[peer_node_id].bitmap_uuid = 0;
+				_drbd_uuid_push_history(device, previous);
+				peer_device->comm_bitmap_uuid = 0;
+				drbd_md_mark_dirty(device);
+				if (peer_device->connection->agreed_pro_version < 124)
+					set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+			} else {
+				drbd_info(peer_device, "Missed end of resync as sync-source\n");
+				set_bit(RS_SOURCE_MISSED_END, &peer_device->flags);
+			}
 		}
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		return;

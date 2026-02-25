@@ -138,6 +138,7 @@ enum sync_strategy {
 	RETRY_CONNECT,
 	REQUIRES_PROTO_91,
 	REQUIRES_PROTO_96,
+	REQUIRES_PROTO_124,
 	SYNC_TARGET_PRIMARY_RECONNECT,
 	SYNC_TARGET_PRIMARY_DISCONNECT,
 };
@@ -233,6 +234,11 @@ static const struct sync_descriptor sync_descriptors[] = {
 	[REQUIRES_PROTO_96] = {
 		.name = "requires-proto-96",
 		.required_protocol = 96,
+		.disconnect = true,
+	},
+	[REQUIRES_PROTO_124] = {
+		.name = "requires-proto-124",
+		.required_protocol = 124,
 		.disconnect = true,
 	},
 	[SYNC_TARGET_PRIMARY_RECONNECT] = {
@@ -5235,6 +5241,27 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 		return strategy;
 	}
 
+	/* Protocol < 124 peers don't handle 0-bit missed-end-of-resync correctly.
+	 * Retry the connection to let UUID cleanup resolve it, or keep retrying
+	 * if the peer needs to be upgraded.
+	 */
+	if (connection->agreed_pro_version < 124 &&
+	    peer_device->comm_bm_set == 0 && peer_device->dirty_bits == 0) {
+		if (strategy == SYNC_SOURCE_USE_BITMAP &&
+		    rule == RULE_SYNC_SOURCE_MISSED_FINISH) {
+			drbd_info(peer_device, "Missed end of resync as sync-source with 0 bits;"
+				  " retrying to let UUID cleanup resolve it\n");
+			return RETRY_CONNECT;
+		}
+		if (strategy == SYNC_TARGET_USE_BITMAP &&
+		    rule == RULE_SYNC_TARGET_PEER_MISSED_FINISH &&
+		    device->resource->role[NOW] == R_PRIMARY) {
+			drbd_info(peer_device, "Missed end of resync as sync-target with 0 bits on Primary;"
+				  " peer needs protocol 124+ to resolve, retrying\n");
+			return REQUIRES_PROTO_124;
+		}
+	}
+
 	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
@@ -5370,6 +5397,37 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 	    rr_conflict == ASB_AUTO_DISCARD) {
 		drbd_warn(peer_device, "reversing resync by auto-discard\n");
 		strategy = SYNC_TARGET_USE_BITMAP;
+	}
+
+	if (rule == RULE_SYNC_SOURCE_MISSED_FINISH || rule == RULE_SYNC_SOURCE_PEER_MISSED_FINISH ||
+	    rule == RULE_SYNC_TARGET_MISSED_FINISH || rule == RULE_SYNC_TARGET_PEER_MISSED_FINISH) {
+		if (strategy == SYNC_SOURCE_USE_BITMAP) {
+			enum drbd_disk_state disk_state = peer_device->comm_state.disk;
+
+			if (disk_state == D_NEGOTIATING)
+				disk_state = disk_state_from_md(device);
+			if (disk_state != D_UP_TO_DATE) {
+				drbd_info(peer_device,
+					  "Resync (rule=%s) skipped: sync-source (%s)\n",
+					  drbd_sync_rule_str(rule), drbd_disk_str(disk_state));
+				strategy = NO_SYNC;
+			}
+		} else if (strategy == SYNC_TARGET_USE_BITMAP) {
+			if (peer_disk_state != D_UP_TO_DATE) {
+				int peer_node_id = peer_device->node_id;
+				u64 previous = device->ldev->md.peers[peer_node_id].bitmap_uuid;
+
+				if (previous) {
+					device->ldev->md.peers[peer_node_id].bitmap_uuid = 0;
+					_drbd_uuid_push_history(device, previous);
+					drbd_md_mark_dirty(device);
+				}
+				drbd_info(peer_device,
+					  "Resync (rule=%s) skipped: peer sync-source (%s)\n",
+					  drbd_sync_rule_str(rule), drbd_disk_str(peer_disk_state));
+				strategy = NO_SYNC;
+			}
+		}
 	}
 
 	if (test_bit(CONN_DRY_RUN, &connection->flags)) {
