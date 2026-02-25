@@ -1826,6 +1826,7 @@ int drbd_submit_peer_request(struct drbd_peer_request *peer_req)
 	if (peer_req->flags & (EE_TRIM|EE_ZEROOUT)) {
 		peer_req->submit_jif = jiffies;
 
+		/* ldev_safe: a peer_req has a ldev reference */
 		drbd_issue_peer_discard_or_zero_out(device, peer_req);
 		return 0;
 	}

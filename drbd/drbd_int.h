@@ -1557,7 +1557,7 @@ struct drbd_device {
 	unsigned long flags;
 
 	/* configured by drbdsetup */
-	struct drbd_backing_dev *ldev;
+	struct drbd_backing_dev *ldev; /* enclose accessing code in get_ldev() / put_ldev() */
 
 	/* Used to close backing devices and destroy related structures. */
 	struct work_struct ldev_destroy_work;
@@ -1597,7 +1597,7 @@ struct drbd_device {
 	struct list_head pending_master_completion[2];
 	struct list_head pending_completion[2];
 
-	struct drbd_bitmap *bitmap;
+	struct drbd_bitmap *bitmap; /* enclose accessing code in get_ldev() / put_ldev() */
 	/* We may want to report on resync progress
 	 * even after we detached again (bitmap == NULL).
 	 * Cache the last bitmap block size here.
