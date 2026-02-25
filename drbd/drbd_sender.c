@@ -54,6 +54,7 @@ static unsigned long get_work_bits(const unsigned long mask, unsigned long *flag
  */
 void drbd_md_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in md I/O path */
 	struct drbd_device *device;
 
 	blk_status_t status = bio->bi_status;
@@ -62,7 +63,6 @@ void drbd_md_endio(struct bio *bio)
 	device->md_io.error = blk_status_to_errno(status);
 
 	/* special case: drbd_md_read() during drbd_adm_attach() */
-	/* ldev_safe: bio endio, ldev ref held since I/O submission */
 	if (device->ldev)
 		put_ldev(device);
 	bio_put(bio);
@@ -237,6 +237,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
  */
 void drbd_peer_request_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in peer request I/O path */
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
 	bool is_write = bio_data_dir(bio) == WRITE;
@@ -283,7 +284,6 @@ void drbd_peer_request_endio(struct bio *bio)
 
 	if (atomic_dec_and_test(&peer_req->pending_bios)) {
 		if (is_write)
-			/* ldev_safe: bio endio, ldev ref held since I/O submission */
 			drbd_endio_write_sec_final(peer_req);
 		else
 			drbd_endio_read_sec_final(peer_req);
@@ -658,6 +658,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 
 	atomic_inc(&connection->backing_ee_cnt);
 	atomic_add(size >> 9, &device->rs_sect_ev);
+	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	if (drbd_submit_peer_request(peer_req) == 0)
 		return 0;
 
