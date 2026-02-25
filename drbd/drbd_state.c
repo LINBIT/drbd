@@ -1385,7 +1385,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		struct drbd_peer_device *peer_device;
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
-		bool is_intentional_diskless;
+		bool is_intentional_diskless, is_tiebreaker;
 		struct net_conf *nc;
 
 		if (node_id == my_node_id) {
@@ -1411,6 +1411,7 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		if (peer_device) {
 			is_intentional_diskless = !want_bitmap(peer_device);
 			nc = rcu_dereference(peer_device->connection->transport.net_conf);
+			is_tiebreaker = rcu_dereference(peer_device->conf)->peer_tiebreaker;
 			if (nc && !nc->allow_remote_read) {
 				dynamic_drbd_dbg(peer_device,
 						 "Excluding from quorum calculation because allow-remote-read = no\n");
@@ -1418,7 +1419,11 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			}
 		} else {
 			is_intentional_diskless = !(peer_md->flags & MDF_PEER_DEVICE_SEEN);
+			is_tiebreaker = true;
 		}
+
+		if (is_intentional_diskless && !is_tiebreaker)
+			continue;
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
 		disk_state = peer_device ? peer_device->disk_state[NEW] : D_UNKNOWN;
@@ -1468,17 +1473,21 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 		enum drbd_disk_state disk_state;
 		enum drbd_repl_state repl_state;
 		struct net_conf *nc;
+		bool is_tiebreaker;
 
 		repl_state = peer_device->repl_state[NEW];
 		disk_state = peer_device->disk_state[NEW];
 
 		is_intentional_diskless = !want_bitmap(peer_device);
 		nc = rcu_dereference(peer_device->connection->transport.net_conf);
+		is_tiebreaker = rcu_dereference(peer_device->conf)->peer_tiebreaker;
 		if (nc && !nc->allow_remote_read) {
 			dynamic_drbd_dbg(peer_device,
 					 "Excluding from quorum calculation because allow-remote-read = no\n");
 			continue;
 		}
+		if (is_intentional_diskless && !is_tiebreaker)
+			continue;
 
 		if (repl_state == L_OFF) {
 			if (is_intentional_diskless)
