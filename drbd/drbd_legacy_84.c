@@ -475,6 +475,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 	struct drbd_peer_device *peer_device;
 	union drbd_state state;
 	const char *sn;
+	bool have_ldev;
 	char wp;
 
 	peer_device = list_first_or_null_rcu(&device->peer_devices, struct drbd_peer_device,
@@ -508,6 +509,7 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 	}
 
 	sn = drbd_conn_str_84(state.conn);
+	have_ldev = get_ldev_if_state(device, D_FAILED);
 
 	if (state.conn == C_STANDALONE &&
 	    state.disk == D_DISKLESS &&
@@ -544,16 +546,18 @@ static int seq_print_device_proc_drbd(struct seq_file *m, struct drbd_device *de
 			   epochs,
 			   write_ordering_chars[device->resource->write_ordering]
 			);
-		seq_printf(m, " oos:%llu\n",
-			   peer_device ?
+		seq_printf(m, " oos:%llu\n", (peer_device && have_ldev) ?
 				device_bit_to_kb(device, drbd_bm_total_weight(peer_device)) : 0);
 	}
-	if (state.conn == L_SYNC_SOURCE ||
-	    state.conn == L_SYNC_TARGET ||
-	    state.conn == L_VERIFY_S ||
-	    state.conn == L_VERIFY_T)
-		drbd_syncer_progress(peer_device, m, state.conn);
+	if (have_ldev) {
+		if (state.conn == L_SYNC_SOURCE ||
+		    state.conn == L_SYNC_TARGET ||
+		    state.conn == L_VERIFY_S ||
+		    state.conn == L_VERIFY_T)
+			drbd_syncer_progress(peer_device, m, state.conn);
 
+		put_ldev(device);
+	}
 	/* drbd_proc_details 1 or 2 missing */
 
 	return 0;
