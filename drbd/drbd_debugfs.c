@@ -1779,6 +1779,7 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	union drbd_state state;
 	const char *sn;
 	struct net_conf *nc;
+	bool have_ldev;
 	char wp;
 
 	state.disk = device->disk_state[NOW];
@@ -1794,12 +1795,13 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	sn = drbd_repl_str(state.conn);
 
 	rcu_read_lock();
-	{
-		/* reset device->congestion_reason */
+	have_ldev = get_ldev_if_state(device, D_FAILED);
 
-		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
-		seq_printf(m,
+	/* reset device->congestion_reason */
+
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
+	wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
+	seq_printf(m,
 		   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c%c%c\n"
 		   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 		   "lo:%d pe:[%d;%d] ua:%d ap:[%d;%d] ep:%d wo:%d",
@@ -1830,17 +1832,19 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 		   peer_device->connection->epochs,
 		   device->resource->write_ordering
 		);
-		seq_printf(m, " oos:%llu\n",
-			   device_bit_to_kb(device, drbd_bm_total_weight(peer_device)));
-	}
-	if (state.conn == L_SYNC_SOURCE ||
-	    state.conn == L_SYNC_TARGET ||
-	    state.conn == L_VERIFY_S ||
-	    state.conn == L_VERIFY_T)
-		drbd_syncer_progress(peer_device, m, state.conn);
 
-	if (get_ldev_if_state(device, D_FAILED)) {
+	seq_printf(m, " oos:%llu\n",
+		   have_ldev ? device_bit_to_kb(device, drbd_bm_total_weight(peer_device)) : 0);
+
+	if (have_ldev) {
+		if (state.conn == L_SYNC_SOURCE ||
+		    state.conn == L_SYNC_TARGET ||
+		    state.conn == L_VERIFY_S ||
+		    state.conn == L_VERIFY_T)
+			drbd_syncer_progress(peer_device, m, state.conn);
+
 		lc_seq_printf_stats(m, device->act_log);
+
 		put_ldev(device);
 	}
 
