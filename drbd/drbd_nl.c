@@ -6761,9 +6761,13 @@ static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 	}
+	if (!get_ldev(device)) {
+		retcode = ERR_NO_DISK;
+		goto out;
+	}
 	if (mutex_lock_interruptible(&adm_ctx.resource->adm_mutex)) {
 		retcode = ERR_INTR;
-		goto out;
+		goto out_put_ldev;
 	}
 
 	/* w_make_ov_request expects position to be aligned */
@@ -6779,8 +6783,12 @@ static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	drbd_resume_io(device);
 
 	mutex_unlock(&adm_ctx.resource->adm_mutex);
+	put_ldev(device);
 	drbd_adm_finish(&adm_ctx, info, rv);
 	return 0;
+
+out_put_ldev:
+	put_ldev(device);
 out:
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
