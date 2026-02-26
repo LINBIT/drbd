@@ -117,6 +117,19 @@ check:coccicheck:
   script:
     - make coccicheck
 
+check:pychecks:
+  stage: check
+  extends: [ .rules-build ]
+  image: docker.io/library/python:3
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  cache:
+    paths:
+      - .cache/pip
+  script:
+    - pip install tree-sitter tree-sitter-c
+    - make pychecks
+
 check:check-compat:
   stage: check
   extends: [ .rules-build ]
