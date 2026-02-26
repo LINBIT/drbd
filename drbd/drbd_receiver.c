@@ -1237,7 +1237,7 @@ static void submit_one_flush(struct drbd_device *device, struct issue_flush_cont
 {
 	struct bio *bio = bio_alloc(device->ldev->backing_bdev, 0,
 			REQ_OP_WRITE | REQ_PREFLUSH, GFP_NOIO);
-	struct one_flush_context *octx = kmalloc(sizeof(*octx), GFP_NOIO);
+	struct one_flush_context *octx = kmalloc_obj(*octx, GFP_NOIO);
 
 	if (!octx) {
 		drbd_warn(device, "Could not allocate a octx, CANNOT ISSUE FLUSH\n");
@@ -1490,7 +1490,7 @@ static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *connectio
 
 	if (schedule_flush) {
 		struct flush_work *fw;
-		fw = kmalloc(sizeof(*fw), GFP_ATOMIC);
+		fw = kmalloc_obj(*fw, GFP_ATOMIC);
 		if (fw) {
 			fw->w.cb = w_flush;
 			fw->epoch = epoch;
@@ -1991,7 +1991,7 @@ static int receive_Barrier(struct drbd_connection *connection, struct packet_inf
 
 	/* receiver context, in the writeout path of the other node.
 	 * avoid potential distributed deadlock */
-	epoch = kzalloc(sizeof(struct drbd_epoch), GFP_NOIO);
+	epoch = kzalloc_obj(struct drbd_epoch, GFP_NOIO);
 	if (!epoch) {
 		drbd_warn(connection, "Allocation of an epoch failed, slowing down\n");
 		issue_flush = !test_and_set_bit(DE_BARRIER_IN_NEXT_EPOCH_ISSUED, &connection->current_epoch->flags);
@@ -2329,7 +2329,7 @@ void drbd_queue_update_peers(struct drbd_peer_device *peer_device,
 	struct drbd_device *device = peer_device->device;
 	struct update_peers_work *upw;
 
-	upw = kmalloc(sizeof(*upw), GFP_ATOMIC | __GFP_NOWARN);
+	upw = kmalloc_obj(*upw, GFP_ATOMIC | __GFP_NOWARN);
 	if (upw) {
 		upw->sector_start = sector_start;
 		upw->sector_end = sector_end;
@@ -5471,7 +5471,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 		}
 	}
 
-	new_net_conf = kmalloc(sizeof(struct net_conf), GFP_KERNEL);
+	new_net_conf = kmalloc_obj(struct net_conf, GFP_KERNEL);
 	if (!new_net_conf)
 		goto disconnect;
 
@@ -5668,7 +5668,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 
 		if (verify_tfm || csums_tfm) {
-			new_net_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
+			new_net_conf = kzalloc_obj(struct net_conf, GFP_KERNEL);
 			if (!new_net_conf)
 				goto disconnect;
 
@@ -5951,7 +5951,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
 
-			new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
+			new_disk_conf = kzalloc_obj(struct disk_conf, GFP_KERNEL);
 			if (!new_disk_conf) {
 				err = -ENOMEM;
 				goto out;
@@ -7257,7 +7257,7 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 		drbd_info(device, "New u_size %llu sectors\n",
 			  (unsigned long long)tr->user_size);
 
-		new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
+		new_disk_conf = kzalloc_obj(struct disk_conf, GFP_KERNEL);
 		if (!new_disk_conf) {
 			device->ldev->disk_conf->disk_size = tr->user_size;
 			goto cont;
@@ -10117,7 +10117,7 @@ int drbd_do_auth(struct drbd_connection *connection)
 		goto fail;
 	}
 
-	peers_ch = kmalloc(sizeof(*peers_ch), GFP_NOIO);
+	peers_ch = kmalloc_obj(*peers_ch, GFP_NOIO);
 	if (!peers_ch) {
 		rv = -1;
 		goto fail;

@@ -812,7 +812,7 @@ struct fifo_buffer *fifo_alloc(unsigned int fifo_size)
 {
 	struct fifo_buffer *fb;
 
-	fb = kzalloc(struct_size(fb, values, fifo_size), GFP_NOIO);
+	fb = kzalloc_flex(*fb, values, fifo_size, GFP_NOIO);
 	if (!fb)
 		return NULL;
 
@@ -1757,7 +1757,7 @@ static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drb
 	struct drbd_connection *connection = peer_device->connection;
 	struct resync_finished_work *rfw;
 
-	rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
+	rfw = kmalloc_obj(*rfw, GFP_ATOMIC);
 	if (!rfw) {
 		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
 		return;

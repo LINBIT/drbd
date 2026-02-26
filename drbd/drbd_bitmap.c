@@ -408,7 +408,7 @@ struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_
 {
 	struct drbd_bitmap *b;
 
-	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
+	b = kzalloc_obj(struct drbd_bitmap, GFP_KERNEL);
 	if (!b)
 		return NULL;
 
@@ -1311,7 +1311,7 @@ static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsi
 	if (!expect(device, b->bm_number_of_pages))
 		return -ENODEV;
 
-	ctx = kmalloc(sizeof(struct drbd_bm_aio_ctx), GFP_NOIO);
+	ctx = kmalloc_obj(struct drbd_bm_aio_ctx, GFP_NOIO);
 	if (!ctx)
 		return -ENOMEM;
 
