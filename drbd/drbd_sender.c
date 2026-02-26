@@ -1284,7 +1284,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	int number = 0, rollback_i, size = 0, i = 0, optimal_bits;
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	struct drbd_bitmap *bm = device->bitmap; /* deref bm members only after get_ldev() */
+	struct drbd_bitmap *bm;
 	const sector_t capacity = get_capacity(device->vdisk);
 	bool request_ok = true;
 	unsigned long bit;
@@ -1302,10 +1302,6 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		drbd_info_ratelimit(peer_device, "peer pulled ahead during resync\n");
 		return 0;
 	}
-
-	if (drbd_resync_check_finished(peer_device))
-		return 0;
-
 	if (!get_ldev(device)) {
 		/* Since we only need to access device->rsync a
 		   get_ldev_if_state(device,D_FAILED) would be sufficient, but
@@ -1314,6 +1310,10 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		drbd_err(device, "Disk broke down during resync!\n");
 		return 0;
 	}
+	bm = device->bitmap;
+
+	if (drbd_resync_check_finished(peer_device))
+		goto out_put_ldev;
 
 	if (send_buffer_half_full(peer_device)) {
 		/* We still want to reschedule ourselves, so do not return. */
@@ -1473,6 +1473,7 @@ skip_request:
 			drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
 		}
 	}
+out_put_ldev:
 	put_ldev(device);
 	return 0;
 }
@@ -1568,7 +1569,7 @@ static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
 static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 {
 	struct drbd_device *device = peer_device->device;
-	struct drbd_bitmap *bm = device->bitmap;
+	struct drbd_bitmap *bm;
 	struct drbd_connection *connection = peer_device->connection;
 	int number, i, size;
 	sector_t sector;
@@ -1581,6 +1582,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	if (!get_ldev(device))
 		return 0;
 
+	bm = device->bitmap;
 	number = drbd_rs_number_requests(peer_device);
 	sector = peer_device->ov_position;
 
