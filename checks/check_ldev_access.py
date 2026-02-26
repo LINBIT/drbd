@@ -507,6 +507,12 @@ def _analyze_block(block, regions):
                 i += 1
                 continue
 
+        # Pattern D: ldev_var ? consequence : alternative
+        # Mark the consequence of ternary expressions guarded by an
+        # ldev variable as protected.
+        if ldev_vars:
+            _find_ternary_ldev_guards(stmt, ldev_vars, regions)
+
         _recurse_children(stmt, regions)
         i += 1
 
@@ -599,6 +605,20 @@ def _is_ldev_var_guard(stmt, ldev_vars):
     if consequence.type == "compound_statement":
         return consequence
     return None
+
+
+def _find_ternary_ldev_guards(node, ldev_vars, regions):
+    """Find ``ldev_var ? consequence : alternative`` and mark *consequence*
+    as a protected region."""
+    for n in walk_body(node):
+        if n.type != "conditional_expression":
+            continue
+        cond = n.child_by_field_name("condition")
+        consequence = n.child_by_field_name("consequence")
+        if cond is None or consequence is None:
+            continue
+        if cond.type == "identifier" and text(cond) in ldev_vars:
+            regions.append((consequence.start_byte, consequence.end_byte))
 
 
 def _is_negated_get_ldev_if(stmt):
