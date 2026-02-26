@@ -1695,28 +1695,6 @@ unsigned int drbd_bm_clear_bits(struct drbd_device *device, unsigned int bitmap_
 	return bm_op(device, bitmap_index, start, end, BM_OP_CLEAR, NULL);
 }
 
-/* returns bit state
- * wants bitnr, NOT sector.
- * inherently racy... area needs to be locked by means of {al,rs}_lru
- *  1 ... bit set
- *  0 ... bit not set
- * -1 ... first out of bounds access, stop testing for bits!
- */
-int drbd_bm_test_bit(struct drbd_peer_device *peer_device, const unsigned long bitnr)
-{
-	struct drbd_bitmap *bitmap = peer_device->device->bitmap;
-	unsigned long irq_flags;
-	int ret;
-
-	spin_lock_irqsave(&bitmap->bm_lock, irq_flags);
-	if (bitnr >= bitmap->bm_bits)
-		ret = -1;
-	else
-		ret = __bm_op(peer_device->device, peer_device->bitmap_index, bitnr, bitnr,
-			      BM_OP_COUNT, NULL);
-	spin_unlock_irqrestore(&bitmap->bm_lock, irq_flags);
-	return ret;
-}
 
 /* returns number of bits set in the range [s, e] */
 int drbd_bm_count_bits(struct drbd_device *device, unsigned int bitmap_index, unsigned long s, unsigned long e)

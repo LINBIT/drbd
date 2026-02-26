@@ -2913,7 +2913,6 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
-		struct drbd_bitmap *bm = device->bitmap;
 		enum drbd_disk_state *disk_state = device->disk_state;
 		bool create_new_uuid = false;
 
@@ -2966,6 +2965,8 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			 * Log the last position, unless end-of-device. */
 			if ((repl_state[OLD] == L_VERIFY_S || repl_state[OLD] == L_VERIFY_T) &&
 			    repl_state[NEW] <= L_ESTABLISHED) {
+				/* ldev_safe: repl_state[OLD] */
+				struct drbd_bitmap *bm = device->bitmap;
 				unsigned long ov_left = atomic64_read(&peer_device->ov_left);
 
 				/* ldev_safe: repl_state[OLD] */

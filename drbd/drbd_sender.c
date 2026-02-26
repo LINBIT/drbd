@@ -2231,6 +2231,7 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 	if (eq) {
 		drbd_set_in_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 		/* rs_same_csums unit is BM_BLOCK_SIZE */
+		/* ldev_safe: a bio that holds a ldev ref exists */
 		peer_device->rs_same_csum += peer_req->i.size >> device->ldev->md.bm_block_shift;
 		err = drbd_send_ack(peer_device, P_RS_IS_IN_SYNC, peer_req);
 	} else {

@@ -2085,8 +2085,6 @@ void _drbd_bm_clear_many_bits(struct drbd_device *device, int bitmap_index,
 			      unsigned long start, unsigned long end);
 void _drbd_bm_set_many_bits(struct drbd_device *device, int bitmap_index,
 			    unsigned long start, unsigned long end);
-int drbd_bm_test_bit(struct drbd_peer_device *peer_device,
-		     const unsigned long bitnr);
 int  drbd_bm_read(struct drbd_device *device,
 		  struct drbd_peer_device *peer_device);
 void drbd_bm_reset_al_hints(struct drbd_device *device);
