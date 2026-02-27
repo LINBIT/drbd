@@ -3204,20 +3204,6 @@ static void drbd_set_defaults(struct drbd_device *device)
 	device->disk_state[NOW] = D_DISKLESS;
 }
 
-void drbd_cleanup_device(struct drbd_device *device)
-{
-	device->al_writ_cnt = 0;
-	device->bm_writ_cnt = 0;
-	device->read_cnt = 0;
-	device->writ_cnt = 0;
-
-	drbd_bm_free(device);
-
-	clear_bit(AL_SUSPENDED, &device->flags);
-	drbd_set_defaults(device);
-}
-
-
 static void drbd_destroy_mempools(void)
 {
 	bioset_exit(&drbd_io_bio_set);

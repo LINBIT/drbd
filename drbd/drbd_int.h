@@ -1809,7 +1809,6 @@ int drbd_send_current_uuid(struct drbd_peer_device *peer_device,
 			   u64 current_uuid, u64 weak_nodes);
 void drbd_backing_dev_free(struct drbd_device *device,
 			   struct drbd_backing_dev *ldev);
-void drbd_cleanup_device(struct drbd_device *device);
 void drbd_print_uuids(struct drbd_peer_device *peer_device, const char *text);
 void drbd_queue_unplug(struct drbd_device *device);
 

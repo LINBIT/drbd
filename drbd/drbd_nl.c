@@ -3700,7 +3700,12 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS) {
 		wait_event_interruptible(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
-		drbd_cleanup_device(device);
+
+		device->al_writ_cnt = 0;
+		device->bm_writ_cnt = 0;
+		device->read_cnt = 0;
+		device->writ_cnt = 0;
+		clear_bit(AL_SUSPENDED, &device->flags);
 	} else {
 		device->device_conf.intentional_diskless = false;
 	}
