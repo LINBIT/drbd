@@ -10,14 +10,36 @@
 *.o
 *.o.*
 
+# IDE / editor tooling
+.cache/
+.clang-format
+.clangd
+compile_commands.json
+
+# Claude Code
+.claude/
+CLAUDE.local.md
+
+# Build artifacts
 drbd/tags
 drbd/cscope.out
 drbd/build-*/
+drbd/build-current
 drbd/compat*.h
 drbd/compat*.patch
 drbd/.drbd_git_revision
+drbd/.compat_test
+drbd/.compat_test.*
+drbd/.modules.order.cmd
+drbd/drbd_buildtag.c
+drbd/modules.order
 drbd/dummy-for-compat-h.c
 drbd/dummy-for-patch.c
 
+# Packaging
+.fdist_version
+sbom/drbd-kmod.cdx.json
+sbom/drbd-kmod_rhel.spdx.json
+sbom/drbd-kmod_sles.spdx.json
 /drbd-kmod_rhel.spdx
 /drbd-kmod_sles.spdx
