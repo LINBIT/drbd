@@ -2246,6 +2246,7 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf,
 int param_set_drbd_strict_names(const char *val,
 				const struct kernel_param *kp);
 void drbd_enable_netns(void);
+void drbd_register_pre_post_doit(void);
 
 /* drbd_sender.c */
 int drbd_sender(struct drbd_thread *thi);
