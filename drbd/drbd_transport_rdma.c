@@ -152,10 +152,8 @@ enum dtr_state_bits {
 
 enum dtr_alloc_rdma_res_causes {
 	IB_ALLOC_PD,
-	IB_CREATE_CQ_RX,
-	IB_CREATE_CQ_TX,
-	IB_REQ_NOTIFY_CQ_RX,
-	IB_REQ_NOTIFY_CQ_TX,
+	IB_ALLOC_CQ_RX,
+	IB_ALLOC_CQ_TX,
 	RDMA_CREATE_QP,
 	IB_GET_DMA_MR
 };
@@ -166,6 +164,7 @@ struct dtr_rx_desc {
 	int size;
 	unsigned int sequence;
 	struct dtr_cm *cm;
+	struct ib_cqe cqe;
 	struct ib_sge sge;
 };
 
@@ -182,6 +181,7 @@ struct dtr_tx_desc {
 	} type;
 	int nr_sges;
 	union dtr_immediate imm;
+	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
 
@@ -1383,10 +1383,10 @@ static int dtr_new_rx_descs(struct dtr_flow *flow)
 	int posted, known;
 
 	posted = atomic_read(&flow->rx_descs_posted);
-	smp_rmb(); /* smp_wmb() is in dtr_handle_rx_cq_event() */
+	smp_rmb(); /* smp_wmb() is in dtr_rx_cqe_done() */
 	known = atomic_read(&flow->rx_descs_known_to_peer);
 
-	/* If the two decrements in dtr_handle_rx_cq_event() execute in
+	/* If the two decrements in dtr_rx_cqe_done() execute in
 	 * parallel our result might be one too low, that does not matter.
 	 * Only make sure to never return a -1 because that would matter! */
 	return max(posted - known, 0);
@@ -1742,27 +1742,21 @@ abort:
 	tasklet_schedule(&rdma_transport->control_tasklet);
 }
 
-static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
+static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 {
+	struct dtr_rx_desc *rx_desc = container_of(wc->wr_cqe, struct dtr_rx_desc, cqe);
+	struct dtr_cm *cm = rx_desc->cm;
 	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
-	struct dtr_rx_desc *rx_desc;
 	union dtr_immediate immediate;
-	struct ib_wc wc;
-	int ret, err;
+	int err;
 
-	ret = ib_poll_cq(cq, 1, &wc);
-	if (!ret)
-		return -EAGAIN;
-
-	rx_desc = (struct dtr_rx_desc *) (unsigned long) wc.wr_id;
-
-	if (wc.status != IB_WC_SUCCESS || !(wc.opcode & IB_WC_RECV)) {
+	if (wc->status != IB_WC_SUCCESS || !(wc->opcode & IB_WC_RECV)) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 		unsigned long irq_flags;
 
-		switch (wc.status) {
+		switch (wc->status) {
 		case IB_WC_WR_FLUSH_ERR:
 			/* "Work Request Flushed Error: A Work Request was in
 			 * process or outstanding when the QP transitioned into
@@ -1776,19 +1770,17 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			if (__ratelimit(&rdma_transport->rate_limit)) {
 				tr_warn(transport,
 					"wc.status = %d (%s), wc.opcode = %d (%s)\n",
-					wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
-					wc.opcode, wc.opcode & IB_WC_RECV ? "ok" : "bad");
+					wc->status, wc->status == IB_WC_SUCCESS ? "ok" : "bad",
+					wc->opcode, wc->opcode & IB_WC_RECV ? "ok" : "bad");
 
 				tr_warn(transport,
 					"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-					wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+					wc->vendor_err, wc->byte_len, wc->ex.imm_data);
 			}
 		}
 
-		/* dtr_free_rx_desc(NULL, rx_desc);
-		   dtr_free_rx_desc() will call drbd_free_page(), and that function
-		   should not be called from IRQ context. This callback executes
-		   in the context of the timer interrupt.
+		/* dtr_free_rx_desc() will call drbd_free_page(), and that function
+		 * should not be called from softirq context.
 		 */
 		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
 		list_add_tail(&rx_desc->list, &cm->error_rx_descs);
@@ -1796,11 +1788,15 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		dtr_dec_rx_descs(cm);
 		set_bit(DSB_ERROR, &cm->state);
 
-		return 0;
+		kref_get(&cm->kref);
+		if (!schedule_work(&cm->end_rx_work))
+			kref_put(&cm->kref, dtr_destroy_cm);
+
+		return;
 	}
 
-	rx_desc->size = wc.byte_len;
-	immediate.i = be32_to_cpu(wc.ex.imm_data);
+	rx_desc->size = wc->byte_len;
+	immediate.i = be32_to_cpu(wc->ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
 		int rx_desc_stolen_from;
 
@@ -1829,39 +1825,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			tasklet_schedule(&rdma_transport->control_tasklet);
 		else
 			wake_up_interruptible(&rdma_stream->recv_wq);
-
 	}
-
-	return 0;
-}
-
-static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct dtr_cm *cm = ctx;
-	struct dtr_path *path = cm->path;
-	int err, rc;
-
-	do {
-		unsigned long irq_flags;
-		do {
-			err = dtr_handle_rx_cq_event(cq, cm);
-		} while (!err);
-
-		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
-		if (!list_empty(&cm->error_rx_descs)) {
-			kref_get(&cm->kref);
-			if (!schedule_work(&cm->end_rx_work))
-				kref_put(&cm->kref, dtr_destroy_cm);
-		}
-		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
-
-		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-		if (unlikely(rc < 0)) {
-			struct drbd_transport *transport = path->path.transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
-			break;
-		}
-	} while (rc);
 
 	if (dtr_path_ok(path)) {
 		struct dtr_flow *flow = &path->flow[DATA_STREAM];
@@ -1900,34 +1864,27 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	kfree(tx_desc);
 }
 
-static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
+static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 {
+	struct dtr_tx_desc *tx_desc = container_of(wc->wr_cqe, struct dtr_tx_desc, cqe);
+	struct dtr_cm *cm = cq->cq_context;
 	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
-	struct dtr_tx_desc *tx_desc;
-	struct ib_wc wc;
-	enum dtr_stream_nr stream_nr;
-	int ret, err;
+	enum dtr_stream_nr stream_nr = tx_desc->imm.stream;
+	int err;
 
-	ret = ib_poll_cq(cq, 1, &wc);
-	if (!ret)
-		return -EAGAIN;
-
-	tx_desc = (struct dtr_tx_desc *) (unsigned long) wc.wr_id;
-	stream_nr = tx_desc->imm.stream;
-
-	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
+	if (wc->status != IB_WC_SUCCESS || wc->opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
-		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
+		if (wc->status == IB_WC_RNR_RETRY_EXC_ERR) {
 			struct dtr_flow *flow = &path->flow[stream_nr];
 			tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
 			tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
-		} else if (wc.status != IB_WC_WR_FLUSH_ERR) {
-			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+		} else if (wc->status != IB_WC_WR_FLUSH_ERR) {
+			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc->status);
 			tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+			       wc->vendor_err, wc->byte_len, wc->ex.imm_data);
 		}
 
 		set_bit(DSB_ERROR, &cm->state);
@@ -1962,30 +1919,6 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		else
 			schedule_work(&cm->end_tx_work); /* the last ref might be put in this work */
 	}
-
-	return 0;
-}
-
-static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct dtr_cm *cm = ctx;
-	int err, rc;
-
-	do {
-		do {
-			err = dtr_handle_tx_cq_event(cq, cm);
-		} while (!err);
-
-		if (cm->state != DSM_CONNECTED)
-			break;
-
-		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-		if (unlikely(rc < 0)) {
-			struct drbd_transport *transport = cm->path->path.transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
-			break;
-		}
-	} while (rc);
 }
 
 static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
@@ -2019,7 +1952,8 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	int err = -EIO;
 
 	recv_wr.next = NULL;
-	recv_wr.wr_id = (unsigned long)rx_desc;
+	rx_desc->cqe.done = dtr_rx_cqe_done;
+	recv_wr.wr_cqe = &rx_desc->cqe;
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
@@ -2239,7 +2173,8 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	bool was_active;
 
 	send_wr.next = NULL;
-	send_wr.wr_id = (unsigned long)tx_desc;
+	tx_desc->cqe.done = dtr_tx_cqe_done;
+	send_wr.wr_cqe = &tx_desc->cqe;
 	send_wr.sg_list = tx_desc->sge;
 	send_wr.num_sge = tx_desc->nr_sges;
 	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm.i);
@@ -2523,7 +2458,6 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 				    enum dtr_alloc_rdma_res_causes *cause)
 {
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
-	struct ib_cq_init_attr cq_attr = {};
 	struct dtr_path *path = cm->path;
 
 	/* Each path might be the sole path, therefore it must be able to
@@ -2544,39 +2478,20 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 		goto pd_failed;
 	}
 
-	/* create recv completion queue (CQ) */
-	cq_attr.cqe = rx_descs_max;
-	cm->recv_cq = ib_create_cq(cm->id->device,
-			dtr_rx_cq_event_handler, NULL, cm,
-			&cq_attr);
+	/* allocate recv completion queue (CQ) */
+	cm->recv_cq = ib_alloc_cq_any(cm->id->device, cm, rx_descs_max, IB_POLL_SOFTIRQ);
 	if (IS_ERR(cm->recv_cq)) {
-		*cause = IB_CREATE_CQ_RX;
+		*cause = IB_ALLOC_CQ_RX;
 		err = PTR_ERR(cm->recv_cq);
 		goto recv_cq_failed;
 	}
 
-	/* create send completion queue (CQ) */
-	cq_attr.cqe = tx_descs_max;
-	cm->send_cq = ib_create_cq(cm->id->device,
-			dtr_tx_cq_event_handler, NULL, cm,
-			&cq_attr);
+	/* allocate send completion queue (CQ) */
+	cm->send_cq = ib_alloc_cq_any(cm->id->device, cm, tx_descs_max, IB_POLL_SOFTIRQ);
 	if (IS_ERR(cm->send_cq)) {
-		*cause = IB_CREATE_CQ_TX;
+		*cause = IB_ALLOC_CQ_TX;
 		err = PTR_ERR(cm->send_cq);
 		goto send_cq_failed;
-	}
-
-	/* arm CQs */
-	err = ib_req_notify_cq(cm->recv_cq, IB_CQ_NEXT_COMP);
-	if (err) {
-		*cause = IB_REQ_NOTIFY_CQ_RX;
-		goto notify_failed;
-	}
-
-	err = ib_req_notify_cq(cm->send_cq, IB_CQ_NEXT_COMP);
-	if (err) {
-		*cause = IB_REQ_NOTIFY_CQ_TX;
-		goto notify_failed;
 	}
 
 	/* create a queue pair (QP) */
@@ -2593,11 +2508,10 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 	return 0;
 
 createqp_failed:
-notify_failed:
-	ib_destroy_cq(cm->send_cq);
+	ib_free_cq(cm->send_cq);
 	cm->send_cq = NULL;
 send_cq_failed:
-	ib_destroy_cq(cm->recv_cq);
+	ib_free_cq(cm->recv_cq);
 	cm->recv_cq = NULL;
 recv_cq_failed:
 	ib_dealloc_pd(cm->pd);
@@ -2623,10 +2537,8 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 
 	static const char * const err_txt[] = {
 		[IB_ALLOC_PD] = "ib_alloc_pd()",
-		[IB_CREATE_CQ_RX] = "ib_create_cq() rx",
-		[IB_CREATE_CQ_TX] = "ib_create_cq() tx",
-		[IB_REQ_NOTIFY_CQ_RX] = "ib_req_notify_cq() rx",
-		[IB_REQ_NOTIFY_CQ_TX] = "ib_req_notify_cq() tx",
+		[IB_ALLOC_CQ_RX] = "ib_alloc_cq_any() rx",
+		[IB_ALLOC_CQ_TX] = "ib_alloc_cq_any() tx",
 		[RDMA_CREATE_QP] = "rdma_create_qp()",
 		[IB_GET_DMA_MR] = "ib_get_dma_mr()",
 	};
@@ -2842,12 +2754,12 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	}
 
 	if (cm->send_cq) {
-		ib_destroy_cq(cm->send_cq);
+		ib_free_cq(cm->send_cq);
 		cm->send_cq = NULL;
 	}
 
 	if (cm->recv_cq) {
-		ib_destroy_cq(cm->recv_cq);
+		ib_free_cq(cm->recv_cq);
 		cm->recv_cq = NULL;
 	}
 
@@ -3211,7 +3123,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (!tx_desc)
 		return -ENOMEM;
 
-	get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
+	get_page(page); /* The put_page() is in dtr_tx_cqe_done() */
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
