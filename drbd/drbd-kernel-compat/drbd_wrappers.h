@@ -130,6 +130,19 @@
 	blkdev_issue_zeroout(BDEV, SS, NS, GFP)
 #endif
 
+/* RDMA related */
+#ifndef COMPAT_HAVE_IB_ALLOC_CQ_ANY
+#include <rdma/ib_verbs.h>
+
+static inline struct ib_cq *
+ib_alloc_cq_any(struct ib_device *dev, void *private,
+		int nr_cqe, enum ib_poll_context poll_ctx)
+{
+	return ib_alloc_cq(dev, private, nr_cqe, 0, poll_ctx);
+}
+#endif
+/* RDMA */
+
 #ifndef COMPAT_HAVE_PROC_CREATE_SINGLE
 extern struct proc_dir_entry *proc_create_single(const char *name, umode_t mode,
 		struct proc_dir_entry *parent,
