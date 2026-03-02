@@ -521,6 +521,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		list_for_each_entry(drbd_path, &transport->paths, list) {
 			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
+			cancel_work_sync(&path->refill_rx_descs_work);
 			flush_delayed_work(&path->cs.retry_connect_work);
 		}
 
@@ -2036,9 +2037,18 @@ out:
 static void dtr_refill_rx_descs_work_fn(struct work_struct *work)
 {
 	struct dtr_path *path = container_of(work, struct dtr_path, refill_rx_descs_work);
+	int i;
 
-	if (dtr_path_ok(path))
-		__dtr_refill_rx_desc(path, DATA_STREAM);
+	if (!dtr_path_ok(path))
+		return;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct dtr_flow *flow = &path->flow[i];
+
+		if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2)
+			__dtr_refill_rx_desc(path, i);
+		dtr_flow_control(flow, GFP_NOIO);
+	}
 }
 
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
@@ -2079,11 +2089,7 @@ static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 	for_each_path_ref(drbd_path, transport) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
-		if (!dtr_path_ok(path))
-			continue;
-
-		__dtr_refill_rx_desc(path, stream);
-		dtr_flow_control(&path->flow[stream], GFP_NOIO);
+		schedule_work(&path->refill_rx_descs_work);
 	}
 }
 
@@ -2773,6 +2779,7 @@ static void dtr_disconnect_path(struct dtr_path *path)
 		return;
 
 	__dtr_disconnect_path(path);
+	cancel_work_sync(&path->refill_rx_descs_work);
 
 	cm = xchg(&path->cm, NULL); // RCU xchg
 	if (cm)
