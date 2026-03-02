@@ -2110,14 +2110,25 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 	get_common_queue_limits(&lim, device);
 
 	/*
-	 * We don't care for the granularity, really.
-	 * Stacking limits below should fix it for the local device. Whether or
-	 * not it is a suitable granularity on the remote device is not our
-	 * problem, really. If you care, you need to use devices with similar
-	 * topology on all peers.
+	 * discard_granularity == DRBD_DISCARD_GRANULARITY_DEF (sentinel):
+	 *   not explicitly configured; use the legacy heuristic
+	 *   (drbd_discard_supported decides, granularity=512).
+	 * discard_granularity == 0: explicitly disable discards.
+	 * discard_granularity > 0: use the configured value and enable discards
+	 *   unconditionally (e.g. LINSTOR knows the real granularity from
+	 *   storage pool info and configures it for diskless primaries or to
+	 *   advertise a larger granularity than strictly required).
 	 */
-	if (drbd_discard_supported(device, bdev)) {
-		lim.discard_granularity = 512;
+	if (device->device_conf.discard_granularity == DRBD_DISCARD_GRANULARITY_DEF) {
+		if (drbd_discard_supported(device, bdev)) {
+			lim.discard_granularity = 512;
+			lim.max_hw_discard_sectors = drbd_max_discard_sectors(device->resource);
+		} else {
+			lim.discard_granularity = 0;
+			lim.max_hw_discard_sectors = 0;
+		}
+	} else if (device->device_conf.discard_granularity) {
+		lim.discard_granularity = device->device_conf.discard_granularity;
 		lim.max_hw_discard_sectors = drbd_max_discard_sectors(device->resource);
 	} else {
 		lim.discard_granularity = 0;
@@ -2142,6 +2153,17 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 		 *    receiver will detect a checksum mismatch.
 		 */
 		lim.features |= BLK_FEAT_STABLE_WRITES;
+
+		/*
+		 * blk_stack_limits() uses max() for discard_granularity and
+		 * min_not_zero() for max_hw_discard_sectors, both of which can
+		 * re-enable discards from the backing device even when the user
+		 * explicitly disabled them (discard_granularity == 0).
+		 */
+		if (device->device_conf.discard_granularity == 0) {
+			lim.discard_granularity = 0;
+			lim.max_hw_discard_sectors = 0;
+		}
 	} else {
 		lim.features = BLK_FEAT_WRITE_CACHE | BLK_FEAT_FUA |
 			       BLK_FEAT_ROTATIONAL | BLK_FEAT_STABLE_WRITES;
@@ -7180,6 +7202,14 @@ static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 		retcode = ERR_INVALID_REQUEST;
 		goto out;
 	}
+	if (device_conf.discard_granularity != DRBD_DISCARD_GRANULARITY_DEF &&
+	    device_conf.discard_granularity != 0 &&
+	    device_conf.discard_granularity % device_conf.block_size != 0) {
+		drbd_msg_put_info(adm_ctx.reply_skb,
+			"discard_granularity must be 0 or a multiple of block_size");
+		retcode = ERR_INVALID_REQUEST;
+		goto out;
+	}
 
 	if (adm_ctx.device)
 		goto out;
@@ -7198,6 +7228,8 @@ static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info)
 		struct device_info info;
 		unsigned int peer_devices = 0;
 		enum drbd_notification_type flags;
+
+		drbd_reconsider_queue_parameters(device, NULL);
 
 		for_each_peer_device(peer_device, device)
 			peer_devices++;
