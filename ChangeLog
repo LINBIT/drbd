@@ -2,6 +2,37 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.3.1-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Use compound pages to optimize large I/O performance
+ * New option for setting the discard granularity exposed on
+   diskless nodes
+ * Add per-peer_device tiebreaker config flag for quorum
+ * Fix compat-8.4 /proc/drbd output for connected resources
+ * All fixes from 9.2.17
+  - Fix a kernel crash triggered by a crafted/invalid netlink message
+  - Fix a crash when resyncing with a peer supporting proto 121,
+    e.g. drbd-9.1.23
+  - Fixed two corner case regressions regarding bitmap lifetime
+    (introduced with 9.2.16)
+  - Add a static analyzer that checks for correctly handling bitmap
+    object lifetime; it identified 6 bugs
+  - Correctly request BLK_FEAT_STABLE_WRITES from the kernel; Kernels
+    side changes lead to this queue flag not being active
+  - Fix lb-tcp to not corrupt data when it reassembles a data chunk, it
+    split for sending over multiple paths in parallel
+  - Add a special case to ensure LINSTOR re-provisioned nodes with thin
+    volumes get the necessary incremental resync
+  - Always do a two-phase-commit for attach, closes a race that could
+    lead to an inconsistent repl states
+  - Skip unnecessary resync when a missed end-of-resync has 0 bits;
+    before that fix, DRBD could end up in inconsistent repl states
+  - Fix a case where a send error was ignored on congested connections
+  - Make detection of missed end-of-resync symmetric; the bug led to
+    inconsistent repl states
+  - Make the RDMA transport compatible with RXE (software RoCE),
+    and some mainly performance-related fixes
+
 9.3.0 (api:genl2/proto:86-101,118-123/transport:19)
 --------
  * was forked off between 9.2.12 and 9.2.13
