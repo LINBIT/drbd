@@ -5570,7 +5570,7 @@ static int receive_protocol(struct drbd_connection *connection, struct packet_in
 		}
 	}
 
-	new_net_conf = kmalloc_obj(struct net_conf, GFP_KERNEL);
+	new_net_conf = kmalloc_obj(struct net_conf);
 	if (!new_net_conf)
 		goto disconnect;
 
@@ -5749,7 +5749,7 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 		}
 
 		if (verify_tfm || csums_tfm) {
-			new_net_conf = kzalloc_obj(struct net_conf, GFP_KERNEL);
+			new_net_conf = kzalloc_obj(struct net_conf);
 			if (!new_net_conf)
 				goto disconnect;
 
@@ -6032,7 +6032,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		if (my_usize != p_usize) {
 			struct disk_conf *old_disk_conf, *new_disk_conf;
 
-			new_disk_conf = kzalloc_obj(struct disk_conf, GFP_KERNEL);
+			new_disk_conf = kzalloc_obj(struct disk_conf);
 			if (!new_disk_conf) {
 				err = -ENOMEM;
 				goto out;
@@ -7354,7 +7354,7 @@ drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs, u64
 		drbd_info(device, "New u_size %llu sectors\n",
 			  (unsigned long long)tr->user_size);
 
-		new_disk_conf = kzalloc_obj(struct disk_conf, GFP_KERNEL);
+		new_disk_conf = kzalloc_obj(struct disk_conf);
 		if (!new_disk_conf) {
 			device->ldev->disk_conf->disk_size = tr->user_size;
 			goto cont;

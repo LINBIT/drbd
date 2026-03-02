@@ -415,7 +415,7 @@ struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_
 	if (max_peers < 1 || max_peers > DRBD_PEERS_MAX)
 		return NULL;
 
-	b = kzalloc_obj(struct drbd_bitmap, GFP_KERNEL);
+	b = kzalloc_obj(struct drbd_bitmap);
 	if (!b)
 		return NULL;
 
