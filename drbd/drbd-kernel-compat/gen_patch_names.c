@@ -357,6 +357,9 @@ int main(int argc, char **argv)
 	patch(1, "rb_declare_callbacks_max", true, false,
 	      COMPAT_HAVE_RB_DECLARE_CALLBACKS_MAX, "present");
 
+	patch(1, "alloc_obj_default_gfp", true, false,
+	      COMPAT_HAVE_ALLOC_OBJ_DEFAULT_GFP, "present");
+
 	patch(1, "kmalloc_obj", true, false,
 	      COMPAT_HAVE_KMALLOC_OBJ, "present");
 

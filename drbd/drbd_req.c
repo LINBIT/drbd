@@ -138,7 +138,7 @@ int w_queue_peer_ack(struct drbd_work *w, int cancel)
 
 	list_for_each_entry_safe(req, tmp, &work_list, list) {
 		struct drbd_peer_ack *peer_ack =
-			kzalloc_obj(struct drbd_peer_ack, GFP_KERNEL);
+			kzalloc_obj(struct drbd_peer_ack);
 
 		peer_ack->resource = resource;
 		INIT_LIST_HEAD(&peer_ack->list);

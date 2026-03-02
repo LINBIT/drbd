@@ -3734,7 +3734,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 {
 	struct drbd_resource *resource;
 
-	resource = kzalloc_obj(struct drbd_resource, GFP_KERNEL);
+	resource = kzalloc_obj(struct drbd_resource);
 	if (!resource)
 		goto fail;
 	resource->name = kstrdup(name, GFP_KERNEL);
@@ -3819,7 +3819,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	if (drbd_alloc_send_buffers(connection))
 		goto fail;
 
-	connection->current_epoch = kzalloc_obj(struct drbd_epoch, GFP_KERNEL);
+	connection->current_epoch = kzalloc_obj(struct drbd_epoch);
 	if (!connection->current_epoch)
 		goto fail;
 
@@ -3981,7 +3981,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	struct drbd_peer_device *peer_device;
 	int err;
 
-	peer_device = kzalloc_obj(struct drbd_peer_device, GFP_KERNEL);
+	peer_device = kzalloc_obj(struct drbd_peer_device);
 	if (!peer_device)
 		return NULL;
 
@@ -4100,7 +4100,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		return ERR_MINOR_OR_VOLUME_EXISTS;
 
 	/* GFP_KERNEL, we are outside of all write-out paths */
-	device = kzalloc_obj(struct drbd_device, GFP_KERNEL);
+	device = kzalloc_obj(struct drbd_device);
 	if (!device)
 		return ERR_NOMEM;
 	kref_init(&device->kref);
