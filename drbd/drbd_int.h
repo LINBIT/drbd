@@ -1859,6 +1859,7 @@ u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
 bool drbd_uuid_set_exposed(struct drbd_device *device, u64 val, bool log);
 u64 drbd_weak_nodes_device(struct drbd_device *device);
+bool drbd_uuid_is_day0(struct drbd_device *device);
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag);
 void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
 			   enum mdf_peer_flag flag);

@@ -4792,6 +4792,38 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid)
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
+/**
+ * drbd_uuid_is_day0() - Check if device is in "day0" UUID state
+ * @device: DRBD device (caller must hold ldev reference)
+ *
+ * Returns true if the current UUID appears to be a "day0" UUID:
+ * a real UUID value was set (e.g. by linstor during create-md),
+ * but no UUID rotation has ever happened (all history and bitmap
+ * UUIDs are still zero).
+ */
+bool drbd_uuid_is_day0(struct drbd_device *device)
+{
+	struct drbd_md *md = &device->ldev->md;
+	int i;
+
+	if ((md->current_uuid & ~UUID_PRIMARY) == UUID_JUST_CREATED ||
+	    md->current_uuid == 0)
+		return false;
+
+	for (i = 0; i < ARRAY_SIZE(md->history_uuids); i++)
+		if (md->history_uuids[i])
+			return false;
+
+	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
+		if (i == md->node_id)
+			continue;
+		if (md->peers[i].bitmap_uuid)
+			return false;
+	}
+
+	return true;
+}
+
 static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes, u64 dagtag)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
@@ -4905,14 +4937,16 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 {
 	u64 got_new_bitmap_uuid, val, old_current_uuid;
+	bool day0;
 	int err;
 
 	spin_lock_irq(&device->ldev->md.uuid_lock);
+	day0 = drbd_uuid_is_day0(device);
 	got_new_bitmap_uuid = rotate_current_into_bitmap(device,
 					forced ? initial_resync_nodes(device) : 0,
 					device->resource->dagtag_sector);
 
-	if (!got_new_bitmap_uuid) {
+	if (!got_new_bitmap_uuid && !day0) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		return false;
 	}
