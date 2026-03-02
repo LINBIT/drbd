@@ -2802,7 +2802,7 @@ static void add_opener(struct drbd_device *device, bool did_auto_promote)
 		resource->auto_promoted_by.opened = now;
 		get_task_comm(resource->auto_promoted_by.comm, current);
 	}
-	opener = kmalloc(sizeof(*opener), GFP_NOIO);
+	opener = kmalloc_obj(*opener, GFP_NOIO);
 	if (!opener)
 		return;
 	get_task_comm(opener->comm, current);
@@ -3739,7 +3739,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 {
 	struct drbd_resource *resource;
 
-	resource = kzalloc(sizeof(struct drbd_resource), GFP_KERNEL);
+	resource = kzalloc_obj(struct drbd_resource, GFP_KERNEL);
 	if (!resource)
 		goto fail;
 	resource->name = kstrdup(name, GFP_KERNEL);
@@ -3824,7 +3824,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	if (drbd_alloc_send_buffers(connection))
 		goto fail;
 
-	connection->current_epoch = kzalloc(sizeof(struct drbd_epoch), GFP_KERNEL);
+	connection->current_epoch = kzalloc_obj(struct drbd_epoch, GFP_KERNEL);
 	if (!connection->current_epoch)
 		goto fail;
 
@@ -3986,7 +3986,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	struct drbd_peer_device *peer_device;
 	int err;
 
-	peer_device = kzalloc(sizeof(struct drbd_peer_device), GFP_KERNEL);
+	peer_device = kzalloc_obj(struct drbd_peer_device, GFP_KERNEL);
 	if (!peer_device)
 		return NULL;
 
@@ -4105,7 +4105,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 		return ERR_MINOR_OR_VOLUME_EXISTS;
 
 	/* GFP_KERNEL, we are outside of all write-out paths */
-	device = kzalloc(sizeof(struct drbd_device), GFP_KERNEL);
+	device = kzalloc_obj(struct drbd_device, GFP_KERNEL);
 	if (!device)
 		return ERR_NOMEM;
 	kref_init(&device->kref);
@@ -5793,7 +5793,7 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 
 	D_ASSERT(device, current == device->resource->worker.task);
 
-	bm_io_work = kmalloc(sizeof(*bm_io_work), GFP_NOIO);
+	bm_io_work = kmalloc_obj(*bm_io_work, GFP_NOIO);
 	if (!bm_io_work) {
 		if (done)
 			done(device, peer_device, -ENOMEM);

@@ -773,7 +773,7 @@ static struct after_state_change_work *alloc_after_state_change_work(struct drbd
 	if (test_bit(R_UNREGISTERED, &resource->flags))
 		return NULL;
 
-	work = kmalloc(sizeof(*work), GFP_ATOMIC);
+	work = kmalloc_obj(*work, GFP_ATOMIC);
 	if (work) {
 		work->state_change = remember_state_change(resource, GFP_ATOMIC);
 		if (!work->state_change) {

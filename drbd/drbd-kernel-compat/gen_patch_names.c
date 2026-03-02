@@ -231,6 +231,9 @@ int main(int argc, char **argv)
 	patch(1, "rb_declare_callbacks_max", true, false,
 	      COMPAT_HAVE_RB_DECLARE_CALLBACKS_MAX, "present");
 
+	patch(1, "kmalloc_obj", true, false,
+	      COMPAT_HAVE_KMALLOC_OBJ, "present");
+
 	patch(1, "struct_size", true, false,
 	      COMPAT_HAVE_STRUCT_SIZE, "present");
 

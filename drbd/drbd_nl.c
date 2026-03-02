@@ -2452,7 +2452,7 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
+	new_disk_conf = kmalloc_obj(struct disk_conf, GFP_KERNEL);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
@@ -3254,14 +3254,14 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* allocation not in the IO path, drbdsetup context */
-	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	nbc = kzalloc_obj(struct drbd_backing_dev, GFP_KERNEL);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 	spin_lock_init(&nbc->md.uuid_lock);
 
-	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
+	new_disk_conf = kzalloc_obj(struct disk_conf, GFP_KERNEL);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
@@ -4013,7 +4013,7 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out_no_adm_mutex;
 	}
 
-	new_net_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
+	new_net_conf = kzalloc_obj(struct net_conf, GFP_KERNEL);
 	if (!new_net_conf) {
 		retcode = ERR_NOMEM;
 		goto out;
@@ -4179,7 +4179,7 @@ static int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info
 	}
 	mutex_lock(&adm_ctx.resource->conf_update);
 
-	new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
+	new_peer_device_conf = kzalloc_obj(struct peer_device_conf, GFP_KERNEL);
 	if (!new_peer_device_conf)
 		goto fail;
 
@@ -4270,7 +4270,7 @@ int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device)
 	struct peer_device_conf *conf;
 	int err;
 
-	conf = kzalloc(sizeof(*conf), GFP_KERNEL);
+	conf = kzalloc_obj(*conf, GFP_KERNEL);
 	if (!conf)
 		return -ENOMEM;
 
@@ -4423,7 +4423,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	struct drbd_transport *transport;
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
-	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
+	new_net_conf = kzalloc_obj(*new_net_conf, GFP_KERNEL);
 	if (!new_net_conf)
 		return ERR_NOMEM;
 
@@ -5228,7 +5228,7 @@ sector_t drbd_local_max_size(struct drbd_device *device)
 	struct drbd_backing_dev *tmp_bdev;
 	sector_t s;
 
-	tmp_bdev = kmalloc(sizeof(struct drbd_backing_dev), GFP_ATOMIC);
+	tmp_bdev = kmalloc_obj(struct drbd_backing_dev, GFP_ATOMIC);
 	if (!tmp_bdev)
 		return 0;
 
@@ -5341,7 +5341,7 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
 	if (u_size != (sector_t)rs.resize_size) {
-		new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
+		new_disk_conf = kmalloc_obj(struct disk_conf, GFP_KERNEL);
 		if (!new_disk_conf) {
 			retcode = ERR_NOMEM;
 			goto fail_ldev;
