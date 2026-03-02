@@ -2,7 +2,33 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.16 (api:genl2/proto:86-101,118-122/transport:19)
+
+9.2.17-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix a kernel crash triggered by a crafted/invalid netlink message
+ * Fix a crash when resyncing with a peer supporting proto 121,
+   e.g. drbd-9.1.23
+ * Fixed two corner case regressions regarding bitmap lifetime
+   (introduced with 9.2.16)
+ * Add a static analyzer that checks for correctly handling bitmap
+   object lifetime; it identified 6 bugs
+ * Correctly request BLK_FEAT_STABLE_WRITES from the kernel; Kernels
+   side changes lead to this queue flag not being active
+ * Fix lb-tcp to not corrupt data when it reassembles a data chunk, it
+   split for sending over multiple paths in parallel
+ * Add a special case to ensure LINSTOR re-provisioned nodes with thin
+   volumes get the necessary incremental resync
+ * Always do a two-phase-commit for attach, closes a race that could
+   lead to an inconsistent repl states
+ * Skip unnecessary resync when a missed end-of-resync has 0 bits;
+   before that fix, DRBD could end up in inconsistent repl states
+ * Fix a case where a send error was ignored on congested connections
+ * Make detection of missed end-of-resync symmetric; the bug led to
+   inconsistent repl states
+ * Make the RDMA transport compatible with RXE (software RoCE),
+   and some mainly performance-related fixes
+
+9.2.16 (api:genl2/proto:86-101,118-123/transport:21)
 --------
  * Do not trigger the OOM-killer when allocating a too-big dirty
    bitmap during attach; instead, fail the attach operation.
@@ -17,7 +43,7 @@ Latest:
    generation
  * Compatibility with Linux-6.17 and 6.18-rc6
 
-9.2.15 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.15 (api:genl2/proto:86-101,118-123/transport:21)
 --------
  * Fixed the regression introduced with 9.2.13, where a DRBD primary
    resource never finishes a resync with a newly added peer
@@ -43,7 +69,7 @@ Latest:
    metadata, and v8 style /proc/drbd. By default, this is not compiled in
  * Verified compatibility for Linux-6.16 and 6.17-rc5
 
-9.2.14 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.14 (api:genl2/proto:86-101,118-123/transport:21)
 --------
  * Fix a race condition between write requests and very short resyncs
    that might cause DRBD to fail to resync that racing write.
@@ -59,7 +85,7 @@ Latest:
  * Dockerfile for RHEL10
  * Compatibility with Linux 6.14 and 6.15
 
-9.2.13 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.13 (api:genl2/proto:86-101,118-122/transport:21)
 --------
  * Fix a bug in the rs-discard-granularity feature; when having three
    or more replicas and after a particular resync scenario in the
@@ -89,7 +115,7 @@ Latest:
  * Compatibility with coccinelle 1.2
  * Compatibility with Linux 6.13
 
-9.2.12 (api:genl2/proto:86-101,118-122/transport:19)
+9.2.12 (api:genl2/proto:86-101,118-122/transport:21)
 --------
  * Fix a complicated distributed deadlock corner case that caused
    DRBD to being unable to reconnect after losing connection during
@@ -110,7 +136,7 @@ Latest:
     this can prevent unexpected "unrelared data" events later
   - Updated compatibility code for Linux 6.11 and 6.12
 
-9.2.11 (api:genl2/proto:86-122/transport:19)
+9.2.11 (api:genl2/proto:86-122/transport:21)
 --------
  * Do not block del-minor or down operations if the RDMA/Infiniband
    stack cleans up slowly.
@@ -129,7 +155,7 @@ Latest:
   - Improve log readability for 2PC state changes and drbd-threads
   - Updated compability code for Linux 6.9
 
-9.2.10 (api:genl2/proto:86-122/transport:19)
+9.2.10 (api:genl2/proto:86-122/transport:21)
 --------
  * Changes merged from 9.1.21
   - fix a deadlock that can trigger when deleting a connection and
@@ -139,7 +165,7 @@ Latest:
     crash when the bitmap ends on a page boundary, and this is also a
     regression in 9.1.20.
 
-9.2.9 (api:genl2/proto:86-122/transport:19)
+9.2.9 (api:genl2/proto:86-122/transport:21)
 --------
  * Allow resync operations between secondaries if the sync source is
    not connected with the primary node
@@ -161,7 +187,7 @@ Latest:
     single drbd source tree
   - Updated compability code for Linux 6.8
 
-9.2.8 (api:genl2/proto:86-122/transport:19)
+9.2.8 (api:genl2/proto:86-122/transport:20)
 --------
  * Fix the not-terminating-resync phenomenon between two nodes with
    backing disk in the presence of a diskless primary node under
@@ -188,7 +214,7 @@ Latest:
     performance optimization
   - Reduce CPU usage of acknowledgment processing
 
-9.2.7 (api:genl2/proto:86-122/transport:19)
+9.2.7 (api:genl2/proto:86-122/transport:20)
 --------
  * Fixed wrong tx-timeouts in the RDMA transport
  * Recreate buffers promptly for the RDMA transport, improving
