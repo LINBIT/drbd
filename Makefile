@@ -340,12 +340,15 @@ coccicheck: checks/*.cocci
 		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
 	done
 
-.PHONY: checks
-checks: coccicheck
-	@for file in checks/*.py ; do \
+.PHONY: pychecks
+pychecks: checks/*.py
+	@for file in $^ ; do \
 		echo "  CHECK $$(basename $${file} .py)"; \
 		python3 $${file} drbd/*.c; \
 	done
+
+.PHONY: checks
+checks: coccicheck pychecks
 
 .PHONY: check-compat
 check-compat:
