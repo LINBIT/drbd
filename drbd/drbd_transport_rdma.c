@@ -2298,8 +2298,11 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 			return -ECONNRESET;
 
 		err = dtr_remap_tx_desc(old_cm, cm, tx_desc);
-		if (err)
+		if (err) {
+			tr_err(&rdma_transport->transport, "dtr_remap_tx_desc failed: %d\n", err);
+			kref_put(&cm->kref, dtr_destroy_cm);
 			continue;
+		}
 
 		err = __dtr_post_tx_desc(cm, tx_desc);
 		if (!err) {
