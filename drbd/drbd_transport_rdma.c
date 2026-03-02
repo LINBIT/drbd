@@ -1871,8 +1871,10 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
 				tx_desc = NULL; /* it is in the air again! Fly! */
-			else if (__ratelimit(&rdma_transport->rate_limit))
+			else if (__ratelimit(&rdma_transport->rate_limit)) {
 				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
+				drbd_control_event(transport, CLOSED_BY_PEER);
+			}
 		}
 	}
 
@@ -3132,6 +3134,9 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (err) {
 		put_page(page);
 		kfree(tx_desc);
+
+		tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
+		drbd_control_event(transport, CLOSED_BY_PEER);
 	}
 
 	if (stream == DATA_STREAM)
@@ -3218,6 +3223,9 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 			}
 			kfree(tx_desc);
 		}
+
+		tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
+		drbd_control_event(transport, CLOSED_BY_PEER);
 	}
 
 	return err;
