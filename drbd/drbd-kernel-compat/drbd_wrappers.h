@@ -173,7 +173,7 @@ static inline void shash_desc_zero(struct shash_desc *desc)
 #endif
 
 /* RDMA related */
-#ifndef COMPAT_HAVE_IB_ALLOC_CQ_ANY
+#if defined(COMPAT_HAVE_IB_ALLOC_CQ) && !defined(COMPAT_HAVE_IB_ALLOC_CQ_ANY)
 #include <rdma/ib_verbs.h>
 
 static inline struct ib_cq *
