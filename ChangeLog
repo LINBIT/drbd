@@ -2,13 +2,15 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.3.1-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+9.3.1 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Use compound pages to optimize large I/O performance
  * New option for setting the discard granularity exposed on
    diskless nodes
  * Add per-peer_device tiebreaker config flag for quorum
  * Fix compat-8.4 /proc/drbd output for connected resources
+ * Fix a race that could lead that a resyncs stalls when it
+   should complete.
  * All fixes from 9.2.17
   - Fix a kernel crash triggered by a crafted/invalid netlink message
   - Fix a crash when resyncing with a peer supporting proto 121,
