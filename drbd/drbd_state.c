@@ -5821,17 +5821,6 @@ void __change_cstate(struct drbd_connection *connection, enum drbd_conn_state cs
 	}
 }
 
-static bool connection_has_connected_peer_devices(struct drbd_connection *connection)
-{
-	struct drbd_peer_device *peer_device;
-	int vnr;
-
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
-			return true;
-	}
-	return false;
-}
 
 enum outdate_what { OUTDATE_NOTHING, OUTDATE_DISKS, OUTDATE_PEER_DISKS };
 
@@ -5962,7 +5951,7 @@ static bool do_change_cstate(struct change_context *context, enum change_phase p
 	return phase != PH_PREPARE ||
 	       context->val.conn == C_CONNECTED ||
 	       (context->val.conn == C_DISCONNECTING &&
-		connection_has_connected_peer_devices(connection));
+		connection->cstate[NOW] == C_CONNECTED);
 }
 
 /**
