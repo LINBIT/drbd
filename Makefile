@@ -131,6 +131,9 @@ module: check-kdir check-submods
 	@ $(MAKE) -C drbd KVER=$(KVER) KDIR=$(KDIR) SPAAS=$(SPAAS) SPAAS_URL=$(SPAAS_URL)
 	@ echo -e "\n\tModule build was successful."
 
+compile_commands.json: module
+	@ misc/gen-compile-commands.sh $(KDIR) drbd/build-current $@
+
 install:
 	$(MAKE) -C drbd install
 
@@ -140,7 +143,7 @@ clean:
 
 distclean:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i distclean; done
-	rm -f *~ .filelist .fdist_version
+	rm -f *~ .filelist .fdist_version compile_commands.json
 
 uninstall:
 	@ set -e; for i in $(SUBDIRS); do $(MAKE) -C $$i uninstall; done
