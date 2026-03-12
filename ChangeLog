@@ -2,6 +2,21 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.16-flant.2 (api:genl2/proto:86-101,118-123/transport:19)
+--------
+ * Fixed a race in w_resync_timer that could permanently stall resync.
+   Administrative operations on any resource (disk attach, resync-after
+   reconfiguration) trigger a global resync-dependency recalculation
+   (drbd_pause_after / drbd_resume_next) that may briefly pause and
+   unpause an unrelated resource's sync target. If the resync timer
+   fires during this transient pause, the sender thread could read the
+   intermediate L_PAUSED_SYNC_T state without holding the state lock,
+   enter the wrong code path, and never reschedule the resync work.
+   The affected resource would show SyncTarget with 0% progress and
+   all worker threads idle; the only recovery was to manually
+   disconnect and reconnect.
+
+
 9.2.16-flant.1 (api:genl2/proto:86-101,118-123/transport:19)
 --------
  * Implement non-voting disk for quorum exclusion.
