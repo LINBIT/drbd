@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.18~flant.1
+Version: 9.2.18~flant.2
 Release: 1
 
 # always require a suitable userland
@@ -232,6 +232,9 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.2
+-  Fixed a race in w_resync_timer that could permanently stall resync.
+
 * Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.18~flant.1
 -  Flant fork: non-voting disk for quorum exclusion, configurable dynamic
    voters, quorum-minimum-redundancy enforcement.

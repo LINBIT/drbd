@@ -682,8 +682,14 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 {
 	struct drbd_peer_device *peer_device =
 		container_of(w, struct drbd_peer_device, resync_work);
+	struct drbd_resource *resource = peer_device->device->resource;
+	enum drbd_repl_state repl_state;
 
-	switch (peer_device->repl_state[NOW]) {
+	read_lock_irq(&resource->state_rwlock);
+	repl_state = peer_device->repl_state[NOW];
+	read_unlock_irq(&resource->state_rwlock);
+
+	switch (repl_state) {
 	case L_VERIFY_S:
 		make_ov_request(peer_device, cancel);
 		break;
@@ -692,7 +698,6 @@ int w_resync_timer(struct drbd_work *w, int cancel)
 		break;
 	default:
 		if (atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight) {
-			struct drbd_resource *resource = peer_device->device->resource;
 			unsigned long irq_flags;
 			begin_state_change(resource, &irq_flags, 0);
 			peer_device->resync_active[NEW] = false;
