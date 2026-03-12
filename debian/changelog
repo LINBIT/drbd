@@ -1,3 +1,9 @@
+drbd (9.2.16~flant.2-1) unstable; urgency=medium
+
+  * Fixed a race in w_resync_timer that could permanently stall resync
+
+ -- Flant <aleksandr.stefurishin@flant.com>  Thu, 12 Mar 2026 16:16:33 +0300
+
 drbd (9.2.16~flant.1-1) unstable; urgency=medium
 
   * New upstream release
