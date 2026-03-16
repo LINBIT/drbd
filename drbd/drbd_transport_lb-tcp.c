@@ -81,7 +81,7 @@ struct dtl_transport {
 	wait_queue_head_t write_space;
 	struct dtl_stream streams[2];
 	struct buffer rbuf;
-	int connected_paths;
+	atomic_t connected_paths;
 	wait_queue_head_t connected_paths_change;
 	int err;
 	struct mutex connecting_socket_mutex;
@@ -202,7 +202,7 @@ static int dtl_init(struct drbd_transport *transport)
 	init_waitqueue_head(&dtl_transport->data_ready);
 	init_waitqueue_head(&dtl_transport->write_space);
 	INIT_DELAYED_WORK(&dtl_transport->connect_work, dtl_connect_work_fn);
-	dtl_transport->connected_paths = 0;
+	atomic_set(&dtl_transport->connected_paths, 0);
 	dtl_transport->flags = 0;
 	init_waitqueue_head(&dtl_transport->connected_paths_change);
 
@@ -785,11 +785,11 @@ static bool dtl_path_established(struct drbd_transport *transport, struct dtl_pa
 
 	if (!established) {
 		if (test_and_clear_bit(TR_ESTABLISHED, &drbd_path->flags)) {
-			dtl_transport->connected_paths--;
+			atomic_dec(&dtl_transport->connected_paths);
 			drbd_path_event(transport, drbd_path);
 		}
 	} else if (!test_and_set_bit(TR_ESTABLISHED, &drbd_path->flags)) {
-		dtl_transport->connected_paths++;
+		atomic_inc(&dtl_transport->connected_paths);
 
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 			if (lb) {
@@ -1211,7 +1211,7 @@ static void dtl_do_first_packet(struct dtl_transport *dtl_transport, struct dtl_
 	}
 
 	if (dtl_path_established(transport, path)) {
-		if (dtl_transport->connected_paths == 1 && fp == P_INITIAL_META)
+		if (atomic_read(&dtl_transport->connected_paths) == 1 && fp == P_INITIAL_META)
 			set_bit(RESOLVE_CONFLICTS, &transport->flags);
 	} else {
 		/* successful accept, not yet both -> speed up next connect attempt */
@@ -1295,7 +1295,7 @@ static void dtl_connect_work_fn(struct work_struct *work)
 	struct dtl_transport *dtl_transport =
 		container_of(work, struct dtl_transport, connect_work.work);
 	struct drbd_transport *transport = &dtl_transport->transport;
-	int connected_paths = dtl_transport->connected_paths;
+	int connected_paths = atomic_read(&dtl_transport->connected_paths);
 	int err, nr_paths = 0, to_connect = 0, err_ret = 0;
 	struct drbd_path *drbd_path;
 
@@ -1354,7 +1354,7 @@ static void dtl_connect_work_fn(struct work_struct *work)
 		}
 
 		if (dtl_path_established(transport, path)) {
-			if (dtl_transport->connected_paths == 1 && !use_for_data)
+			if (atomic_read(&dtl_transport->connected_paths) == 1 && !use_for_data)
 				clear_bit(RESOLVE_CONFLICTS, &transport->flags);
 		}
 	}
@@ -1375,7 +1375,7 @@ static void dtl_connect_work_fn(struct work_struct *work)
 	if (nr_paths == to_connect && err_ret && !dtl_transport->err)
 		dtl_transport->err = err_ret;
 
-	if (connected_paths != dtl_transport->connected_paths || err_ret)
+	if (connected_paths != atomic_read(&dtl_transport->connected_paths) || err_ret)
 		wake_up_all(&dtl_transport->connected_paths_change);
 }
 
@@ -1447,7 +1447,7 @@ static int dtl_prepare_connect(struct drbd_transport *transport)
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
 
-	dtl_transport->connected_paths = 0;
+	atomic_set(&dtl_transport->connected_paths, 0);
 	dtl_transport->err = 0;
 	flush_signals(current);
 	timer_delete_sync(&dtl_transport->control_timer);
@@ -1464,7 +1464,7 @@ static int dtl_connect(struct drbd_transport *transport)
 
 	schedule_work(&dtl_transport->connect_work.work);
 	err = wait_event_interruptible(dtl_transport->connected_paths_change,
-				       dtl_transport->connected_paths > 0);
+				       atomic_read(&dtl_transport->connected_paths) > 0);
 
 	if (err < 0)
 		dtl_transport->err = err;
