@@ -425,6 +425,26 @@ int drbd_bio_add_page(struct drbd_transport *transport, struct bio_list *bios,
 	return -ENOENT;
 }
 
+void drbd_transport_lock(struct drbd_transport *transport)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+
+	mutex_lock(&connection->mutex[DATA_STREAM]);
+	mutex_lock(&connection->mutex[CONTROL_STREAM]);
+}
+EXPORT_SYMBOL_GPL(drbd_transport_lock);
+
+void drbd_transport_unlock(struct drbd_transport *transport)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+
+	mutex_unlock(&connection->mutex[CONTROL_STREAM]);
+	mutex_unlock(&connection->mutex[DATA_STREAM]);
+}
+EXPORT_SYMBOL_GPL(drbd_transport_unlock);
+
 /* Network transport abstractions */
 EXPORT_SYMBOL_GPL(drbd_register_transport_class);
 EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
