@@ -9204,8 +9204,23 @@ static struct drbd_peer_request *drbd_advance_to_next_rs_discard(
 		if (!test_bit(INTERVAL_RECEIVED, &peer_req->i.flags) && !submit_all)
 			break;
 
-		if (peer_req->flags & EE_TRIM)
+		if (peer_req->flags & EE_TRIM) {
+			/*
+			 * Skip TRIM entries that belong to an already-submitted
+			 * discard group. The main entry has INTERVAL_SUBMITTED,
+			 * merged entries have their intervals cleared (empty).
+			 *
+			 * This prevents double-processing when received_last was
+			 * reset to NULL (after freeing the entry it pointed to)
+			 * causing a rescan from the list head.
+			 */
+			if (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags) ||
+			    drbd_interval_empty(&peer_req->i)) {
+				peer_device->received_last = peer_req;
+				continue;
+			}
 			break;
+		}
 
 		peer_device->received_last = peer_req;
 	}
@@ -9215,6 +9230,14 @@ static struct drbd_peer_request *drbd_advance_to_next_rs_discard(
 		list_prepare_entry(peer_device->received_last,
 				&peer_device->resync_requests, recv_order);
 	list_for_each_entry_continue(peer_req, &peer_device->resync_requests, recv_order) {
+		/* Skip entries from already-submitted discard groups. */
+		if ((peer_req->flags & EE_TRIM) &&
+		    (test_bit(INTERVAL_SUBMITTED, &peer_req->i.flags) ||
+		     drbd_interval_empty(&peer_req->i))) {
+			discard_last = NULL;
+			continue;
+		}
+
 		/* Consider submitting previous discards. */
 		if (discard_last && !interval_is_adjacent(&discard_last->i, &peer_req->i)) {
 			discard_range_end = true;

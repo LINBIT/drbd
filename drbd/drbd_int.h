@@ -2924,14 +2924,27 @@ static inline struct net *drbd_net_assigned_to_connection(struct drbd_connection
 
 static inline void drbd_list_del_resync_request(struct drbd_peer_request *peer_req)
 {
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct list_head *prev = peer_req->recv_order.prev;
+
 	peer_req->flags &= ~EE_ON_RECV_ORDER;
 	list_del(&peer_req->recv_order);
 
-	if (peer_req == peer_req->peer_device->received_last)
-		peer_req->peer_device->received_last = NULL;
+	if (peer_req == peer_device->received_last) {
+		if (prev == &peer_device->resync_requests)
+			peer_device->received_last = NULL;
+		else
+			peer_device->received_last =
+				list_entry(prev, struct drbd_peer_request, recv_order);
+	}
 
-	if (peer_req == peer_req->peer_device->discard_last)
-		peer_req->peer_device->discard_last = NULL;
+	if (peer_req == peer_device->discard_last) {
+		if (prev == &peer_device->resync_requests)
+			peer_device->discard_last = NULL;
+		else
+			peer_device->discard_last =
+				list_entry(prev, struct drbd_peer_request, recv_order);
+	}
 }
 
 /*
