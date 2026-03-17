@@ -249,8 +249,7 @@ build:all:
 
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
-        cd drbd9-tests
-        ./virter/run-test.sh --out-dir=../tests-out "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
+        ./drbd9-tests/virter/run-test.sh "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
       }
   dependencies:
     - build:for-tests
