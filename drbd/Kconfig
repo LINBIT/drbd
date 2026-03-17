@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # DRBD device driver configuration
 #
@@ -10,7 +11,6 @@ config BLK_DEV_DRBD
 	depends on PROC_FS && INET
 	select LRU_CACHE
 	select CRC32
-	default n
 	help
 
 	  NOTE: In order to authenticate connections you have to select
@@ -42,7 +42,6 @@ config BLK_DEV_DRBD
 config DRBD_FAULT_INJECTION
 	bool "DRBD fault injection"
 	depends on BLK_DEV_DRBD
-	default n
 	help
 
 	  Say Y here if you want to simulate IO errors, in order to test DRBD's
@@ -76,7 +75,6 @@ config DRBD_FAULT_INJECTION
 config DRBD_TIMING_STATS
 	bool "Enable additional timing collection"
 	depends on BLK_DEV_DRBD
-	default n
 	help
 
 	  this option enables a virtual file in debug-fs
@@ -84,6 +82,38 @@ config DRBD_TIMING_STATS
 
 	  that unveiles the culmative time consumed by requests in various
 	  stages of the request processing
+
+	  If unsure, say N.
+
+config BLK_DEV_DRBD_TCP
+	tristate "DRBD TCP transport"
+	depends on BLK_DEV_DRBD
+	default BLK_DEV_DRBD
+	help
+
+	  TCP transport support for DRBD. This is the standard transport
+	  for DRBD replication over TCP/IP networks.
+
+	  If unsure, say Y.
+
+config BLK_DEV_DRBD_LB_TCP
+	tristate "DRBD load-balanced TCP transport"
+	depends on BLK_DEV_DRBD
+	help
+
+	  Load-balanced TCP transport support for DRBD. This transport
+	  distributes DRBD replication traffic across multiple TCP
+	  connections for improved throughput.
+
+	  If unsure, say N.
+
+config BLK_DEV_DRBD_RDMA
+	tristate "DRBD RDMA transport"
+	depends on BLK_DEV_DRBD && INFINIBAND && INFINIBAND_ADDR_TRANS
+	help
+
+	  RDMA transport support for DRBD. This enables DRBD replication
+	  over RDMA-capable networks for lower latency and higher throughput.
 
 	  If unsure, say N.
 
