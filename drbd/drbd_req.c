@@ -1347,7 +1347,7 @@ barrier_acked:
 	case BARRIER_SENT:
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
 		break;
-	};
+	}
 }
 
 /* we may do a local read if:
