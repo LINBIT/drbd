@@ -970,6 +970,7 @@ struct drbd_resource {
 					 * &drbd_request */
 	u64 dagtag_from_backing_dev;
 	u64 dagtag_before_attach;
+	atomic_t dagtag_waiters;	/* number of requests on dagtag_wait_ee lists */
 	u64 members;			/* mask of online nodes */
 	unsigned long flags;
 
