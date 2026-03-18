@@ -729,11 +729,12 @@ int w_send_dagtag(struct drbd_work *w, int cancel)
 	 * queued again if it is changed. */
 	read_unlock_irq(&resource->state_rwlock);
 
-	/* Only send if no request with a newer dagtag has been sent. This can
-	 * occur if a write arrives after the state change and is processed
-	 * before this work item. */
+	/* If writes raced ahead and have already been sent past the queued
+	 * dagtag value, send P_DAGTAG with the actual current position instead
+	 * of skipping. The receiver needs an explicit P_DAGTAG to advance
+	 * last_dagtag_sector and release dagtag-dependent resync requests. */
 	if (dagtag_newer_eq(connection->send.current_dagtag_sector, dagtag_sector))
-		return 0;
+		dagtag_sector = connection->send.current_dagtag_sector;
 
 	err = drbd_send_dagtag(connection, dagtag_sector);
 	if (err)

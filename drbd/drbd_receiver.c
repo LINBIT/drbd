@@ -266,6 +266,7 @@ static void conn_disconnect(struct drbd_connection *connection);
 
 static enum finish_epoch drbd_may_finish_epoch(struct drbd_connection *, struct drbd_epoch *, enum epoch_event);
 static int e_end_block(struct drbd_work *, int);
+static void release_dagtag_wait(struct drbd_resource *resource, unsigned int node_id, u64 dagtag);
 static void cleanup_unacked_peer_requests(struct drbd_connection *connection);
 static void cleanup_peer_ack_list(struct drbd_connection *connection);
 static u64 node_ids_to_bitmap(struct drbd_device *device, u64 node_ids);
@@ -2852,7 +2853,9 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_resource *resource = device->resource;
 	sector_t sector = peer_req->i.sector;
+	u64 dagtag_sector = peer_req->dagtag_sector;
 	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
 
@@ -2877,6 +2880,10 @@ static int e_end_block(struct drbd_work *w, int cancel)
 		err = drbd_send_ack(peer_device, pcmd, peer_req);
 		dec_unacked(peer_device);
 	}
+
+	if (dagtag_sector && atomic_read(&resource->dagtag_waiters) > 0)
+		release_dagtag_wait(resource, connection->peer_node_id,
+				    dagtag_sector);
 
 	drbd_remove_peer_req_interval(peer_req);
 
@@ -3109,13 +3116,26 @@ static struct drbd_peer_request *find_released_peer_request(struct drbd_resource
 					peer_req->depend_dagtag > dagtag)
 				continue;
 
-			dynamic_drbd_dbg(peer_req->peer_device, "%s at %llus+%u: Wait for dagtag %llus from peer %u complete\n",
+			if (time_after(jiffies, peer_req->submit_jif + 10 * HZ))
+				drbd_warn(peer_req->peer_device,
+					  "%s at %llus+%u: Dagtag wait for %llus from peer %u "
+					  "stalled for %lds (last_dagtag_sector=%llus)\n",
+					  drbd_interval_type_str(&peer_req->i),
+					  (unsigned long long)peer_req->i.sector, peer_req->i.size,
+					  (unsigned long long)peer_req->depend_dagtag,
+					  peer_req->depend_dagtag_node_id,
+					  (long)(jiffies - peer_req->submit_jif) / HZ,
+					  (unsigned long long)dagtag);
+			else
+				dynamic_drbd_dbg(peer_req->peer_device,
+					"%s at %llus+%u: Wait for dagtag %llus from peer %u complete\n",
 					drbd_interval_type_str(&peer_req->i),
-					(unsigned long long) peer_req->i.sector, peer_req->i.size,
-					(unsigned long long) peer_req->depend_dagtag,
+					(unsigned long long)peer_req->i.sector, peer_req->i.size,
+					(unsigned long long)peer_req->depend_dagtag,
 					peer_req->depend_dagtag_node_id);
 
 			list_del(&peer_req->w.list);
+			atomic_dec(&resource->dagtag_waiters);
 			released_peer_req = peer_req;
 			break;
 		}
@@ -3401,6 +3421,7 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	}
 
 	peer_req->dagtag_sector = atomic64_read(&connection->last_dagtag_sector) + (peer_req->i.size >> 9);
+	atomic64_set(&connection->last_dagtag_sector, peer_req->dagtag_sector);
 
 	drbd_wait_for_activity_log_extents(peer_req);
 
@@ -3750,9 +3771,11 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 				 (unsigned long long)peer_req->i.sector, size,
 				 (unsigned long long)peer_req->depend_dagtag,
 				 peer_req->depend_dagtag_node_id);
+		peer_req->submit_jif = jiffies;
 		spin_lock_irq(&connection->peer_reqs_lock);
 		list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
 		spin_unlock_irq(&connection->peer_reqs_lock);
+		atomic_inc(&device->resource->dagtag_waiters);
 		return;
 	}
 
@@ -10058,6 +10081,7 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 					node_id);
 
 			list_move_tail(&peer_req->w.list, &work_list);
+			atomic_dec(&resource->dagtag_waiters);
 		}
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
@@ -10146,6 +10170,8 @@ static void free_dagtag_wait_requests(struct drbd_connection *connection)
 {
 	LIST_HEAD(dagtag_wait_work_list);
 	struct drbd_peer_request *peer_req, *t;
+	struct drbd_resource *resource = connection->resource;
+	int count = 0;
 
 	spin_lock_irq(&connection->peer_reqs_lock);
 	list_splice_init(&connection->dagtag_wait_ee, &dagtag_wait_work_list);
@@ -10163,7 +10189,10 @@ static void free_dagtag_wait_requests(struct drbd_connection *connection)
 		drbd_free_peer_req(peer_req);
 		dec_unacked(peer_device);
 		put_ldev(peer_device->device);
+		count++;
 	}
+	if (count)
+		atomic_sub(count, &resource->dagtag_waiters);
 }
 
 static void drain_resync_activity(struct drbd_connection *connection)
