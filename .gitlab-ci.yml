@@ -256,8 +256,7 @@ build:all:
 
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
-        cd drbd9-tests
-        ./virter/run-test.sh "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
+        ./drbd9-tests/virter/run-test.sh "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
       }
   dependencies:
     - build:for-tests
@@ -265,10 +264,10 @@ build:all:
     # provide a convenient name so that the downloaded artifacts can be identified
     name: $CI_PROJECT_NAME-$CI_JOB_ID
     paths:
-      - drbd9-tests/tests-out/
+      - tests-out/
     when: always
     reports:
-      junit: drbd9-tests/tests-out/test-results/*.xml
+      junit: tests-out/test-results/*.xml
   needs:
     - build:for-tests
 
