@@ -1,5 +1,5 @@
 @@
-identifier find_struct_bio_set.bs;
+identifier bs;
 expression bio, gfp;
 @@
 - bio_clone_fast(bio, gfp, &bs)
