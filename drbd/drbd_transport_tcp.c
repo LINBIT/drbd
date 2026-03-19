@@ -13,7 +13,9 @@
 #include <linux/tcp.h>
 #include <linux/highmem.h>
 #include <linux/bio.h>
-#include <linux/drbd_genl_api.h>
+#include <linux/drbd.h>
+#include <uapi/linux/drbd_genl.h>
+#include <linux/drbd_nl_gen.h>
 #include <linux/drbd_config.h>
 #include <linux/tls.h>
 #include <net/tcp.h>

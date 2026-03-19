@@ -43,11 +43,11 @@ struct kref_debug_class kref_class_resource = {
 		[3] = "struct drbd_connection",
 		[4] = "struct drbd_device",
 		[5] = "struct drbd_state_change",
-		[6] = "drbd_adm_dump_connections()",
-		[7] = "drbd_adm_dump_devices()",
+		[6] = "drbd_nl_get_connections_dumpit()",
+		[7] = "drbd_nl_get_devices_dumpit()",
 		[8] = "free",
-		[9] = "drbd_adm_dump_peer_devices()",
-		[10] = "drbd_adm_dump_paths()",
+		[9] = "drbd_nl_get_peer_devices_dumpit()",
+		[10] = "drbd_nl_get_paths_dumpit()",
 		[11] = "drbd_empty_twopc_work_fn()",
 	}
 };

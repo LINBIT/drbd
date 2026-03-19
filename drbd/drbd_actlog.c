@@ -108,7 +108,7 @@ static int _drbd_md_sync_page_io(struct drbd_device *device,
 	bio->bi_end_io = drbd_md_endio;
 
 	if (op != REQ_OP_WRITE && device->disk_state[NOW] == D_DISKLESS && device->ldev == NULL)
-		/* special case, drbd_md_read() during drbd_adm_attach(): no get_ldev */
+		/* special case, drbd_md_read() during drbd_nl_attach_doit(): no get_ldev */
 		;
 	else if (!get_ldev_if_state(device, D_ATTACHING)) {
 		/* Corresponding put_ldev in drbd_md_endio() */

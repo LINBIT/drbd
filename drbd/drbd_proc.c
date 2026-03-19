@@ -22,7 +22,7 @@ int drbd_seq_show(struct seq_file *seq, void *v)
 #endif
 
 	seq_printf(seq, "version: " REL_VERSION " (api:%d/proto:%d-%d)%s\n%s\n",
-		   GENL_MAGIC_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, legacy_info,
+		   DRBD_FAMILY_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX, legacy_info,
 		   drbd_buildtag());
 
 	any_legacy = drbd_show_legacy_device(seq, v);

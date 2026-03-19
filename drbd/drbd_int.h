@@ -26,9 +26,14 @@
 #include <linux/idr.h>
 #include <linux/lru_cache.h>
 #include <linux/prefetch.h>
-#include <linux/drbd_genl_api.h>
 #include <linux/drbd.h>
+#include <uapi/linux/drbd_genl.h>
+#include <linux/drbd_nl_gen.h>
 #include <linux/drbd_config.h>
+
+extern struct genl_family drbd_nl_family;
+extern const unsigned int drbd_genl_cmd_flags[];
+int drbd_genl_multicast_events(struct sk_buff *skb);
 
 #include "drbd_strings.h"
 #include "drbd_state.h"
@@ -2333,9 +2338,6 @@ void youngest_and_oldest_opener_to_str(struct drbd_device *device, char *buf,
 				       size_t len);
 int param_set_drbd_strict_names(const char *val,
 				const struct kernel_param *kp);
-void drbd_enable_netns(void);
-void drbd_register_pre_post_doit(void);
-
 /* drbd_sender.c */
 int drbd_sender(struct drbd_thread *thi);
 int drbd_worker(struct drbd_thread *thi);

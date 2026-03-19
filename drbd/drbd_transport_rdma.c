@@ -24,7 +24,9 @@
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_cm.h>
 #include <linux/interrupt.h>
-#include <linux/drbd_genl_api.h>
+#include <linux/drbd.h>
+#include <linux/drbd_genl.h>
+#include <linux/drbd_nl_gen.h>
 #include "drbd_protocol.h"
 #include "drbd_transport.h"
 #include "linux/drbd_config.h" /* for REL_VERSION */

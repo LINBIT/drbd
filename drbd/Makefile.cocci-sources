@@ -9,7 +9,8 @@ __git_ls_sources := $(shell			\
   git ls-files --recurse			\
 	*.[ch]					\
 	drbd-kernel-compat/handshake/*.[ch]	\
-	drbd-headers/linux/*.h			\
+	drbd-headers/linux/*.[ch]		\
+	drbd-headers/uapi/linux/*.h		\
 )
 
 # no need to patch our headers (yet)
@@ -56,12 +57,11 @@ sources += drbd-kernel-compat/handshake/netlink.c
 sources += drbd-kernel-compat/handshake/request.c
 sources += drbd-kernel-compat/handshake/tlshd.c
 
-sources += drbd-headers/linux/drbd.h
-sources += drbd-headers/linux/drbd_genl.h
-sources += drbd-headers/linux/drbd_genl_api.h
-sources += drbd-headers/linux/drbd_limits.h
-sources += drbd-headers/linux/genl_magic_func.h
-sources += drbd-headers/linux/genl_magic_struct.h
+sources += drbd-headers/uapi/linux/drbd.h
+sources += drbd-headers/uapi/linux/drbd_genl.h
+sources += drbd-headers/uapi/linux/drbd_limits.h
+sources += drbd-headers/linux/drbd_nl_gen.c
+sources-ignored += drbd-headers/linux/drbd_nl_gen.h
 
 __duplicates := $(shell printf "%s\n" $(sources) $(sources-ignored) | sort | uniq -d)
 $(if $(__duplicates),$(error duplicated entries found: $(__duplicates)))

@@ -1,7 +1,7 @@
 #!make # syntax highlighting
 
 # PRE_CFLAGS may contain (M)OFED header locations
-LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers $(LINUXINCLUDE)
+LINUXINCLUDE := $(PRE_CFLAGS) -I$(src) -I$(src)/drbd-headers -I$(src)/drbd-headers/uapi $(LINUXINCLUDE)
 
 # Files in the standard include directories take precendence over files
 # in the drbd-kernel-compat directory.
@@ -85,6 +85,7 @@ drbd-y += drbd_actlog.o
 drbd-y += drbd_main.o
 drbd-y += drbd_strings.o
 drbd-y += drbd_nl.o
+drbd-y += drbd-headers/linux/drbd_nl_gen.o
 drbd-y += drbd_interval.o
 drbd-y += drbd_state.o
 drbd-y += drbd_transport.o

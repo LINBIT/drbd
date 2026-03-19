@@ -8,6 +8,7 @@ __drbd-module-sources := $(sort $(shell     \
  	linux/                              \
  	drbd-headers/*.[ch]                 \
  	drbd-headers/linux/                 \
+	drbd-headers/uapi/                  \
  	drbd-headers/windrbd/               \
  	drbd-kernel-compat/handshake/*      \
  	drbd-kernel-compat/*.[ch]           \
@@ -15,6 +16,8 @@ __drbd-module-sources := $(sort $(shell     \
  	drbd-kernel-compat/net/handshake.h  \
  	drbd-kernel-compat/uapi/            \
   | grep -vFe /gen_patch_names.c	    \
+  | grep -vF drbd-headers/linux/ynl/   \
+  | grep -vF drbd-headers/tests/       \
 ))
 
 define drbd-module-sources :=
@@ -24,12 +27,14 @@ drbd-headers/drbd_protocol.h
 drbd-headers/drbd_strings.c
 drbd-headers/drbd_strings.h
 drbd-headers/drbd_transport.h
-drbd-headers/linux/drbd.h
-drbd-headers/linux/drbd_genl.h
-drbd-headers/linux/drbd_genl_api.h
-drbd-headers/linux/drbd_limits.h
-drbd-headers/linux/genl_magic_func.h
-drbd-headers/linux/genl_magic_struct.h
+drbd-headers/uapi/linux/drbd.h
+drbd-headers/linux/drbd_genl_ynl.yaml
+drbd-headers/linux/drbd_nl_gen.c
+drbd-headers/linux/drbd_nl_gen.h
+drbd-headers/uapi/linux/drbd_limits.h
+drbd-headers/uapi/linux/drbd_genl.h
+drbd-headers/linux/genetlink-legacy.yaml
+drbd-headers/linux/generate.sh
 drbd-headers/windrbd/windrbd_ioctl.h
 drbd-kernel-compat/cocci_macros.h
 drbd-kernel-compat/drbd_wrappers.c

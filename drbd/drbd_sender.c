@@ -57,7 +57,7 @@ void drbd_md_endio(struct bio *bio)
 	device = bio->bi_private;
 	device->md_io.error = blk_status_to_errno(status);
 
-	/* special case: drbd_md_read() during drbd_adm_attach() */
+	/* special case: drbd_md_read() during drbd_nl_attach_doit() */
 	if (device->ldev)
 		put_ldev(device);
 	bio_put(bio);
@@ -2585,7 +2585,7 @@ int w_e_end_ov_reply(struct drbd_work *w, int cancel)
 /* FIXME
  * We need to track the number of pending barrier acks,
  * and to be able to wait for them.
- * See also comment in drbd_adm_attach before drbd_suspend_io.
+ * See also comment in drbd_nl_attach_doit before drbd_suspend_io.
  */
 static int drbd_send_barrier(struct drbd_connection *connection)
 {

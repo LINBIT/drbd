@@ -334,6 +334,9 @@ int main(int argc, char **argv)
 	patch(1, "nla_strscpy", true, false,
 	      COMPAT_HAVE_NLA_STRSCPY, "present");
 
+	patch(1, "NLA_POLICY_MAX_LEN", true, false,
+	      COMPAT_HAVE_NLA_POLICY_MAX_LEN, "present");
+
 	patch(1, "part_stat_read", true, false,
 	      COMPAT_PART_STAT_READ_TAKES_BLOCK_DEVICE, "takes_block_device");
 

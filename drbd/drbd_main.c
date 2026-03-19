@@ -3550,7 +3550,7 @@ static void drbd_cleanup(void)
 	if (retry.wq)
 		destroy_workqueue(retry.wq);
 
-	drbd_genl_unregister();
+	genl_unregister_family(&drbd_nl_family);
 	drbd_debugfs_cleanup();
 
 	unregister_pernet_device(&drbd_pernet_ops);
@@ -4560,9 +4560,7 @@ static int __init drbd_init(void)
 		goto fail;
 	}
 
-	drbd_enable_netns();
-	drbd_register_pre_post_doit();
-	err = drbd_genl_register();
+	err = genl_register_family(&drbd_nl_family);
 	if (err) {
 		pr_err("unable to register generic netlink family\n");
 		goto fail;
@@ -4600,7 +4598,7 @@ static int __init drbd_init(void)
 
 	pr_info("initialized. "
 	       "Version: " REL_VERSION " (api:%d/proto:%d-%d)\n",
-	       GENL_MAGIC_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX);
+	       DRBD_FAMILY_VERSION, PRO_VERSION_MIN, PRO_VERSION_MAX);
 	pr_info("%s\n", drbd_buildtag());
 	pr_info("registered as block device major %d\n", DRBD_MAJOR);
 

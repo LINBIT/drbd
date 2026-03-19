@@ -1418,7 +1418,7 @@ static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsi
 		return -ENODEV;
 	}
 	/* Here, D_ATTACHING is sufficient because drbd_bm_read() is only
-	 * called from drbd_adm_attach(), after device->ldev has been assigned.
+	 * called from drbd_nl_attach_doit(), after device->ldev has been assigned.
 	 *
 	 * The corresponding put_ldev() happens in bm_aio_ctx_destroy().
 	 */
