@@ -9908,6 +9908,18 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	connection->after_reconciliation.lost_node_id = -1;
 
+	/* Kick the submit workers so they can clean up any peer requests
+	 * from this connection that are still waiting for AL allocation.
+	 * Without this, a PeerWrite stuck in blocked-on-al state would
+	 * never be cleaned up, and active_ee_cnt would never reach zero. */
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+		queue_work(device->submit.wq, &device->submit.worker);
+		wake_up(&device->al_wait);
+	}
+	rcu_read_unlock();
+
 	/* Wait for current activity to cease.  This includes waiting for
 	 * peer_request queued to the submitter workqueue. */
 	wait_event(connection->ee_wait,
@@ -11232,7 +11244,11 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 		if (get_ldev(device)) {
 			drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 				      mask, mask);
-			drbd_al_complete_io(device, &peer_req->i);
+			if (WARN_ON_ONCE(!(peer_req->flags & EE_IN_ACTLOG)))
+				drbd_err(peer_device, "cleanup_unacked: peer_req without EE_IN_ACTLOG, sector %llu\n",
+					 (unsigned long long)peer_req->i.sector);
+			else
+				drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
 

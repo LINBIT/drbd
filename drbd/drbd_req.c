@@ -2368,6 +2368,18 @@ static bool prepare_al_transaction_nonblock(struct drbd_device *device,
 
 	spin_lock_irq(&device->al_lock);
 
+	/* Always clean up requests from disconnected connections, even if
+	 * the AL is locked. Otherwise conn_disconnect's wait_event on
+	 * active_ee_cnt can deadlock against a locked AL. */
+	while ((peer_req = wfa_next_peer_request(wfa))) {
+		if (peer_req->peer_device->connection->cstate[NOW] < C_CONNECTED) {
+			list_move_tail(&peer_req->w.list, &wfa->peer_requests.cleanup);
+			made_progress = true;
+			continue;
+		}
+		break;
+	}
+
 	/* Don't even try, if someone has it locked right now. */
 	if (test_bit(__LC_LOCKED, &device->act_log->flags))
 		goto out;
