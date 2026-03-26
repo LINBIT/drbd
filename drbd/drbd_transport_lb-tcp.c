@@ -1438,11 +1438,21 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 			dtl_socket_free(transport, &path->flow[i].sock);
 		}
 
-		err = dtl_path_adjust_listener(path, active);
+		/*
+		 * When activating, register the listener if not yet registered.
+		 * When deactivating, keep the listener registered so that
+		 * incoming connections are not rejected as "unexpected" during
+		 * receiver thread restart. The listener is cleaned up either
+		 * when the path successfully establishes (dtl_path_established)
+		 * or when the path is removed (dtl_remove_path).
+		 */
+		if (active) {
+			err = dtl_path_adjust_listener(path, true);
 
-		if (err) {
-			kref_put(&drbd_path->kref, drbd_destroy_path);
-			return err;
+			if (err) {
+				kref_put(&drbd_path->kref, drbd_destroy_path);
+				return err;
+			}
 		}
 	}
 	return 0;

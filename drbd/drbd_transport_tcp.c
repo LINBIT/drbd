@@ -1125,12 +1125,26 @@ static void dtt_finish_connect(struct drbd_transport *transport)
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_path *path;
+	bool connected;
 
 	clear_bit(DTT_CONNECTING, &tcp_transport->flags);
 
+	connected = tcp_transport->stream[DATA_STREAM] &&
+		    tcp_transport->stream[CONTROL_STREAM];
+
 	list_for_each_entry(path, &transport->paths, path.list) {
-		drbd_put_listener(&path->path);
-		dtt_cleanup_accepted_sockets(path);
+		if (connected) {
+			drbd_put_listener(&path->path);
+			dtt_cleanup_accepted_sockets(path);
+		}
+		/*
+		 * On failure, keep the listener registered to prevent
+		 * incoming connections from being rejected as "unexpected"
+		 * between receiver thread restart cycles.
+		 *
+		 * Stale accepted sockets are cleaned up at the start of
+		 * the next dtt_prepare_connect() call.
+		 */
 	}
 }
 
@@ -1154,15 +1168,20 @@ static int dtt_prepare_connect(struct drbd_transport *transport)
 	struct dtt_path *path;
 	struct drbd_path *drbd_path;
 
-	list_for_each_entry(path, &transport->paths, path.list)
-		dtt_cleanup_accepted_sockets(path);
-
 	set_bit(DTT_CONNECTING, &tcp_transport->flags);
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
+		path = container_of(drbd_path, struct dtt_path, path);
+
+		/* Always clean up stale accepted sockets from previous
+		 * failed connect attempts. This is safe because
+		 * dtt_prepare_connect is called before dtt_connect,
+		 * so there is no concurrent socket routing via
+		 * dtt_wait_for_connect. */
+		dtt_cleanup_accepted_sockets(path);
+
 		if (!drbd_path->listener) {
 			int err = drbd_get_listener(drbd_path);
-
 			if (err)
 				return err;
 		}
@@ -1690,7 +1709,10 @@ static bool dtt_may_remove_path(struct drbd_path *drbd_path)
 
 static void dtt_remove_path(struct drbd_path *drbd_path)
 {
+	struct dtt_path *path = container_of(drbd_path, struct dtt_path, path);
+
 	drbd_put_listener(drbd_path);
+	dtt_cleanup_accepted_sockets(path);
 }
 
 static int __init dtt_initialize(void)
