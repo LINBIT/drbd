@@ -67,7 +67,7 @@ static struct drbd_transport *xxx_create(struct drbd_connection *connection)
 	if (!try_module_get(THIS_MODULE))
 		return NULL;
 
-	xxx_transport = kzalloc(sizeof(struct drbd_xxx_transport), GFP_KERNEL);
+	xxx_transport = kzalloc_obj(struct drbd_xxx_transport);
 	if (!xxx_transport) {
 		module_put(THIS_MODULE);
 		return NULL;

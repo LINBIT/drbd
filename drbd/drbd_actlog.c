@@ -552,6 +552,8 @@ int drbd_al_begin_io_nonblock(struct drbd_device *device, struct drbd_interval *
 		first = i->partially_in_al_next_enr;
 	}
 
+	D_ASSERT(device, first <= last);
+
 	/* Try to checkout the refcounts. */
 	for (enr = first; enr <= last; enr++) {
 		struct lc_element *al_ext;
@@ -581,6 +583,8 @@ bool drbd_al_complete_io(struct drbd_device *device, struct drbd_interval *i)
 	unsigned int first = i->sector >> (AL_EXTENT_SHIFT-9);
 	unsigned int last = i->size == 0 ? first :
 		(i->sector + (i->size >> 9) - 1) >> (AL_EXTENT_SHIFT-9);
+
+	D_ASSERT(device, first <= last);
 
 	return put_actlog(device, first, last);
 }

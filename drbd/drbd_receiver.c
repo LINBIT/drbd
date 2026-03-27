@@ -515,8 +515,9 @@ out_free_pages:
  * entirely with buffer pages. Otherwise it allocates the peer_req with
  * an empty BIO.
  */
-struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
-					      size_t size, blk_opf_t opf)
+struct drbd_peer_request *
+drbd_alloc_peer_req(struct drbd_peer_device *peer_device, gfp_t gfp_mask,
+		    size_t size, blk_opf_t opf)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_request *peer_req;
@@ -7342,14 +7343,14 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			*new_net_conf = *old_net_conf;
 
 			if (verify_tfm) {
-				strcpy(new_net_conf->verify_alg, p->verify_alg);
+				strscpy(new_net_conf->verify_alg, p->verify_alg);
 				new_net_conf->verify_alg_len = strlen(p->verify_alg) + 1;
 				crypto_free_shash(connection->verify_tfm);
 				connection->verify_tfm = verify_tfm;
 				drbd_info(device, "using verify-alg: \"%s\"\n", p->verify_alg);
 			}
 			if (csums_tfm) {
-				strcpy(new_net_conf->csums_alg, p->csums_alg);
+				strscpy(new_net_conf->csums_alg, p->csums_alg);
 				new_net_conf->csums_alg_len = strlen(p->csums_alg) + 1;
 				crypto_free_shash(connection->csums_tfm);
 				connection->csums_tfm = csums_tfm;
@@ -10102,7 +10103,8 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
 	    drbd_gen_obligation_state(device) == GEN_OBL_ARMED) {
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
-		   for temporary network outages! */
+		 * for temporary network outages!
+		 */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer,
 		 * cannot thaw).  The connection is torn down below and IO resumes
@@ -10431,7 +10433,8 @@ decode_bitmap_c(struct drbd_peer_device *peer_device,
 
 	/* other variants had been implemented for evaluation,
 	 * but have been dropped as this one turned out to be "best"
-	 * during all our tests. */
+	 * during all our tests.
+	 */
 
 	drbd_err(peer_device, "receive_bitmap_c: unknown encoding %u\n", p->encoding);
 	change_cstate(peer_device->connection, C_PROTOCOL_ERROR, CS_HARD);

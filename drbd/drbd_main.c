@@ -29,6 +29,7 @@
 #include <linux/vmalloc.h>
 #include <linux/dynamic_debug.h>
 #include <linux/libnvdimm.h>
+#include <linux/string.h>
 #include <linux/swab.h>
 #include <linux/overflow.h>
 
@@ -1315,6 +1316,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 {
 	struct p_protocol *p;
 	struct net_conf *nc;
+	size_t integrity_alg_len;
 	int size, cf;
 
 	if (test_bit(CONN_DRY_RUN, &connection->flags) && connection->agreed_pro_version < 92) {
@@ -1326,8 +1328,10 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	size = sizeof(*p);
 	rcu_read_lock();
 	nc = rcu_dereference(connection->transport.net_conf);
-	if (connection->agreed_pro_version >= 87)
-		size += strlen(nc->integrity_alg) + 1;
+	if (connection->agreed_pro_version >= 87) {
+		integrity_alg_len = strlen(nc->integrity_alg) + 1;
+		size += integrity_alg_len;
+	}
 	rcu_read_unlock();
 
 	p = __conn_prepare_command(connection, size, DATA_STREAM);
@@ -1350,7 +1354,7 @@ int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cm
 	p->conn_flags    = cpu_to_be32(cf);
 
 	if (connection->agreed_pro_version >= 87)
-		strcpy(p->integrity_alg, nc->integrity_alg);
+		strscpy(p->integrity_alg, nc->integrity_alg, integrity_alg_len);
 	rcu_read_unlock();
 
 	return __send_command(connection, -1, cmd, DATA_STREAM);
