@@ -5162,23 +5162,29 @@ static void del_connection(struct drbd_connection *connection, const char *tag)
 	if (test_bit(C_UNREGISTERED, &connection->flags))
 		return;
 
-	/* No one else can reconfigure the network while I am here.
-	 * The state handling only uses drbd_thread_stop_nowait(),
-	 * we want to really wait here until the receiver is no more.
-	 */
-	drbd_thread_stop(&connection->receiver);
-
-	/* Race breaker.  This additional state change request may be
-	 * necessary, if this was a forced disconnect during a receiver
-	 * restart.  We may have "killed" the receiver thread just
-	 * after drbd_receiver() returned.  Typically, we should be
-	 * C_STANDALONE already, now, and this becomes a no-op.
+	/*
+	 * Set C_STANDALONE before stopping the receiver thread. This
+	 * prevents the state machine from restarting the receiver via
+	 * drbd_thread_start() (triggered by C_STANDALONE -> C_UNCONNECTED
+	 * transition in finish_state_change) while _drbd_thread_stop is
+	 * waiting for the thread to exit. Without this, an external event
+	 * (e.g. peer reconnecting) can cause a C_STANDALONE -> C_UNCONNECTED
+	 * transition which calls drbd_thread_start(), converting t_state
+	 * from EXITING to RESTARTING. The receiver then restarts instead
+	 * of exiting, and _drbd_thread_stop waits on the completion forever.
 	 */
 	rv2 = change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD, tag, NULL);
 	if (rv2 < SS_SUCCESS)
 		drbd_err(connection,
 			"unexpected rv2=%d in del_connection()\n",
 			rv2);
+
+	/* No one else can reconfigure the network while I am here.
+	 * The state handling only uses drbd_thread_stop_nowait(),
+	 * we want to really wait here until the receiver is no more.
+	 */
+	drbd_thread_stop(&connection->receiver);
+
 	/* Make sure the sender thread has actually stopped: state
 	 * handling only does drbd_thread_stop_nowait().
 	 */
