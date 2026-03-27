@@ -280,7 +280,7 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
-	if (rule < 0 || rule > ARRAY_SIZE(sync_rule_names)) {
+	if (rule < 0 || rule >= ARRAY_SIZE(sync_rule_names)) {
 		WARN_ON(true);
 		return "?";
 	}
