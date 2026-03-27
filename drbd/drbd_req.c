@@ -1997,11 +1997,13 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct drbd_plug_cb *plug = container_of(cb, struct drbd_plug_cb, cb);
 	struct drbd_request *req = plug->most_recent_req;
-	struct drbd_resource *resource = req->device->resource;
+	struct drbd_resource *resource;
 
 	kfree(cb);
 	if (!req)
 		return;
+
+	resource = req->device->resource;
 
 	read_lock_irq(&resource->state_rwlock);
 	/* In case the sender did not process it yet, raise the flag to
