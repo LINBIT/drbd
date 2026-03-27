@@ -901,6 +901,10 @@ static bool conn_connect(struct drbd_connection *connection)
 
 start:
 	have_mutex = false;
+
+	if (get_t_state(&connection->receiver) == EXITING)
+		return false;
+
 	clear_bit(PING_PENDING, &connection->flags);
 	clear_bit(DISCONNECT_EXPECTED, &connection->flags);
 	if (change_cstate_tag(connection, C_CONNECTING, CS_VERBOSE, "connecting", NULL)
@@ -916,10 +920,10 @@ start:
 	err = drbd_transport_connect(connection);
 	if (err == -EAGAIN) {
 		enum drbd_conn_state cstate;
-		read_lock_irq(&resource->state_rwlock); /* See commit message */
+		read_lock_irq(&resource->state_rwlock);
 		cstate = connection->cstate[NOW];
 		read_unlock_irq(&resource->state_rwlock);
-		if (cstate == C_DISCONNECTING)
+		if (cstate <= C_DISCONNECTING)
 			return false;
 		goto retry;
 	} else if (err == -EADDRNOTAVAIL) {
