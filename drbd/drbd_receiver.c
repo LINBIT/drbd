@@ -531,10 +531,27 @@ static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size
 
 	rv = tr_ops->recv(&connection->transport, DATA_STREAM, buf, size, flags);
 
+	/* If the receiver thread has been asked to stop, force an error
+	 * return regardless of what recv returned. This handles the case
+	 * where _drbd_thread_stop's SIGHUP interrupted tcp_recvmsg but
+	 * the signal was consumed (e.g. tcp_recvmsg returned partial data
+	 * or the signal arrived between recv completions). Without this,
+	 * the caller would process the received data and loop back to
+	 * recv, blocking indefinitely.
+	 *
+	 * Only check for EXITING, not RESTARTING. RESTARTING means
+	 * "finish current iteration and restart" (normal disconnect +
+	 * reconnect flow). Treating RESTARTING as an error would kill
+	 * the feature exchange during reconnect, causing a permanent
+	 * BrokenPipe loop. */
+	if (rv > 0 && get_t_state(&connection->receiver) == EXITING) {
+		rv = -EINTR;
+	}
+
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
 			drbd_info(connection, "sock was reset by peer\n");
-		else if (rv != -ERESTARTSYS)
+		else if (rv != -ERESTARTSYS && rv != -EINTR)
 			drbd_info(connection, "sock_recvmsg returned %d\n", rv);
 	} else if (rv == 0) {
 		if (test_bit(DISCONNECT_EXPECTED, &connection->flags)) {
