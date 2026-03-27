@@ -314,12 +314,11 @@ bool drbd_should_abort_listening(struct drbd_transport *transport)
 
 	if (connection->cstate[NOW] <= C_DISCONNECTING)
 		abort = true;
-	if (signal_pending(current)) {
+	if (signal_pending(current))
 		flush_signals(current);
-		smp_rmb();
-		if (get_t_state(&connection->receiver) == EXITING)
-			abort = true;
-	}
+	smp_rmb();
+	if (get_t_state(&connection->receiver) == EXITING)
+		abort = true;
 
 	return abort;
 }
