@@ -7378,8 +7378,10 @@ static int drbd_adm_down(struct sk_buff *skb, struct genl_info *info)
 
 	for_each_connection_ref(connection, im, resource) {
 		retcode = SS_SUCCESS;
-		if (connection->cstate[NOW] > C_STANDALONE)
+		if (connection->cstate[NOW] >= C_CONNECTED)
 			retcode = conn_try_disconnect(connection, 0, "down", adm_ctx.reply_skb);
+		if (retcode < SS_SUCCESS || connection->cstate[NOW] > C_STANDALONE)
+			retcode = conn_try_disconnect(connection, 1, "down", adm_ctx.reply_skb);
 		if (retcode >= SS_SUCCESS) {
 			del_connection(connection, "down");
 		} else {
