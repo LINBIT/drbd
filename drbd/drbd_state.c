@@ -4410,6 +4410,28 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 	if (work->done)
 		complete(work->done);
+
+	/*
+	 * When IO is suspended (e.g. quorum loss), pending bitmap work
+	 * will never be moved to the worker queue by dec_ap_bio() because
+	 * suspended IO holds ap_bio_cnt > 0 indefinitely. Since suspended
+	 * IO does not modify the on-disk bitmap, it is safe to bypass the
+	 * ap_bio_cnt == 0 requirement and move bitmap work directly.
+	 *
+	 * This breaks the circular dependency: suspended IO waits for
+	 * quorum, quorum requires resync, resync requires bitmap exchange,
+	 * bitmap exchange waits for ap_bio_cnt == 0.
+	 */
+	if (resource_is_suspended(resource, NOW)) {
+		struct drbd_device *device;
+		int vnr;
+
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (!list_empty(&device->pending_bitmap_work.q))
+				drbd_queue_pending_bitmap_work(device);
+		}
+	}
+
 	forget_state_change(state_change);
 	kfree(work);
 
