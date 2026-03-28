@@ -5790,6 +5790,16 @@ void drbd_queue_bitmap_io(struct drbd_device *device,
 	list_add_tail(&bm_io_work->w.list, &device->pending_bitmap_work.q);
 	spin_unlock_irq(&device->pending_bitmap_work.q_lock);
 	dec_ap_bio(device, WRITE);  /* may move to actual work queue */
+
+	/* If IO is suspended (e.g. quorum loss), dec_ap_bio above won't
+	 * move bitmap work to the worker queue because other suspended IO
+	 * holds ap_bio_cnt > 0 indefinitely. Since suspended IO does not
+	 * modify the on-disk bitmap, it is safe to bypass the
+	 * ap_bio_cnt == 0 requirement and move bitmap work directly.
+	 * See also the corresponding check in w_after_state_change(). */
+	if (drbd_suspended(device) &&
+	    !list_empty(&device->pending_bitmap_work.q))
+		drbd_queue_pending_bitmap_work(device);
 }
 
 /**
