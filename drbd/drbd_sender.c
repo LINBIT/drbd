@@ -1182,8 +1182,9 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		return 0;
 
 	if (peer_device->rs_total == 0) {
-		/* empty resync? */
-		if (!drbd_any_flush_pending(connection->resource))
+		/* empty resync? See comment in drbd_rs_complete_io(). */
+		if (drbd_suspended(peer_device->device) ||
+		    !drbd_any_flush_pending(connection->resource))
 			drbd_resync_finished(peer_device, D_MASK);
 		return 0;
 	}

@@ -696,8 +696,14 @@ void drbd_check_resync_done(struct drbd_peer_device *peer_device)
 		return;
 	}
 
+	/* When the resource is suspended (e.g. quorum loss), a connected
+	 * Primary will never complete pending flushes because its IO is
+	 * frozen. Waiting for flush completion would prevent resync from
+	 * finishing, which prevents quorum restoration — a circular
+	 * dependency. Skip the flush check when suspended. */
 	if (still_to_go <= peer_device->rs_failed &&
-			!drbd_any_flush_pending(device->resource))
+			(drbd_suspended(device) ||
+			 !drbd_any_flush_pending(device->resource)))
 		drbd_peer_device_post_work(peer_device, RS_DONE);
 }
 
