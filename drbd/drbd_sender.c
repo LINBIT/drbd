@@ -1668,8 +1668,19 @@ static void resync_again(struct drbd_device *device, u64 source_m, u64 target_m)
 
 	for_each_peer_device(peer_device, device) {
 		if (peer_device->resync_again) {
+			unsigned long oos = drbd_bm_total_weight(peer_device);
 			u64 m = NODE_MASK(peer_device->node_id);
-			enum drbd_repl_state new_repl_state =
+			enum drbd_repl_state new_repl_state;
+
+			/* OOS bits may have cleared by the time we get here
+			 * (late acks from in-flight writes). Skip if bitmap
+			 * is already clean — nothing to resync. */
+			if (oos == 0) {
+				peer_device->resync_again = 0;
+				continue;
+			}
+
+			new_repl_state =
 				source_m & m ? L_WF_BITMAP_S :
 				target_m & m ? L_WF_BITMAP_T :
 				L_ESTABLISHED;
@@ -1859,6 +1870,13 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 		if (!aborted && (n_oos - peer_device->rs_failed != 0)) {
 			drbd_warn(peer_device, "expected n_oos:%lu to be equal to rs_failed:%lu\n",
 				n_oos, peer_device->rs_failed);
+
+			/* If peer receives writes (do_remote), OOS bits are
+			 * in-flight acks — data is on the peer already.
+			 * Otherwise, genuinely missing — resync again. */
+			if (n_oos > peer_device->rs_failed &&
+			    !drbd_should_do_remote(peer_device, NOW))
+				peer_device->resync_again++;
 		}
 
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T)
