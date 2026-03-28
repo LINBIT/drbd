@@ -1393,6 +1393,14 @@ static int drbd_adm_set_role(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (test_bit(DOWN_IN_PROGRESS, &resource->flags) ||
+	    test_bit(R_UNREGISTERED, &resource->flags)) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_put_info(adm_ctx.reply_skb, "resource is being removed");
+		mutex_unlock(&resource->adm_mutex);
+		goto out;
+	}
+
 	new_role = info->genlhdr->cmd == DRBD_ADM_PRIMARY ? R_PRIMARY : R_SECONDARY;
 	if (new_role == R_PRIMARY)
 		set_bit(EXPLICIT_PRIMARY, &resource->flags);
@@ -3186,7 +3194,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	int err, retcode;
 	enum determine_dev_size dd;
 	sector_t min_md_device_sectors;
-	struct drbd_backing_dev *nbc; /* new_backing_conf */
+	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	sector_t backing_disk_max_sectors;
 	struct disk_conf *new_disk_conf = NULL;
 	enum drbd_state_rv rv;
@@ -3202,6 +3210,13 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (mutex_lock_interruptible(&resource->adm_mutex)) {
 		retcode = ERR_INTR;
 		goto out_no_adm_mutex;
+	}
+
+	if (test_bit(DOWN_IN_PROGRESS, &resource->flags) ||
+	    test_bit(R_UNREGISTERED, &resource->flags)) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_put_info(adm_ctx.reply_skb, "resource is being removed");
+		goto fail;
 	}
 
 	/* allocation not in the IO path, drbdsetup context */
@@ -4775,6 +4790,13 @@ static int drbd_adm_new_peer(struct sk_buff *skb, struct genl_info *info)
 	if (mutex_lock_interruptible(&adm_ctx.resource->adm_mutex)) {
 		retcode = ERR_INTR;
 		goto out;
+	}
+
+	if (test_bit(DOWN_IN_PROGRESS, &adm_ctx.resource->flags) ||
+	    test_bit(R_UNREGISTERED, &adm_ctx.resource->flags)) {
+		retcode = ERR_INVALID_REQUEST;
+		drbd_msg_put_info(adm_ctx.reply_skb, "resource is being removed");
+		goto out_unlock;
 	}
 
 	for_each_connection(connection, adm_ctx.resource)
