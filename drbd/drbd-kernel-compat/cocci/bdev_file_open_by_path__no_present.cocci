@@ -94,11 +94,6 @@ int err = bd_link_disk_holder(
 -	file_bdev(file)
 +	handle->bdev
 	, ...);
-if (err) {
--	fput(file);
-+	bdev_release(handle);
-	...
-}
 ...
 }
 
