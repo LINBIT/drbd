@@ -8622,7 +8622,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 		put_ldev(device);
 		if (strategy_descriptor(strategy).reconnect) { /* retry connect */
-			maybe_force_secondary(peer_device);
+			/* Only force-secondary for strategies where the peer
+			 * has newer data (SYNC_TARGET_PRIMARY_RECONNECT).
+			 * RETRY_CONNECT just means uuid_flags changed during
+			 * handshake (e.g. concurrent quorum loss); the retry
+			 * will succeed — no need to demote and kill IO. */
+			if (strategy != RETRY_CONNECT)
+				maybe_force_secondary(peer_device);
+
 			if (connection->agreed_pro_version >= 118)
 				set_bit(CONN_HANDSHAKE_RETRY, &connection->flags);
 			else
