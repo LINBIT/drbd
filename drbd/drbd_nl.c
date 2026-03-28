@@ -2808,7 +2808,6 @@ static int link_backing_dev(struct drbd_device *device,
 {
 	int err = bd_link_disk_holder(file_bdev(file), device->vdisk);
 	if (err) {
-		fput(file);
 		drbd_err(device, "bd_link_disk_holder(\"%s\", ...) failed with %d\n",
 				bdev_path, err);
 	}
