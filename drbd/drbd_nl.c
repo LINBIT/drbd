@@ -3955,7 +3955,12 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	drbd_flush_workqueue(&connection->sender_work);
+	/* Only flush sender workqueue if the sender thread is actually
+	 * processing work items (connection is established or connecting).
+	 * If the connection is StandAlone or Unconnected, the sender may
+	 * not be running, and flushing would block forever. */
+	if (connection->cstate[NOW] >= C_CONNECTING)
+		drbd_flush_workqueue(&connection->sender_work);
 
 	mutex_lock(&connection->resource->conf_update);
 	mutex_lock(&connection->mutex[DATA_STREAM]);
