@@ -2980,8 +2980,10 @@ static void drbd_fsync_device(struct drbd_device *device)
 		struct drbd_connection *connection;
 		u64 im;
 
-		for_each_connection_ref(connection, im, resource)
-			drbd_flush_workqueue(&connection->sender_work);
+		for_each_connection_ref(connection, im, resource) {
+			if (connection->cstate[NOW] >= C_CONNECTING)
+				drbd_flush_workqueue(&connection->sender_work);
+		}
 	}
 	wait_event(resource->barrier_wait, !barrier_pending(resource));
 	/* After waiting for pending barriers, we got any possible NEG_ACKs,
