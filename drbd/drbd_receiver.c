@@ -8809,6 +8809,18 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		err = drbd_send_bitmap(device, peer_device);
 		if (err)
 			goto out;
+	} else if (repl_state == L_ESTABLISHED) {
+		/* Unstable re-handshake: accept bitmap from Source
+		 * and send our reply for the next resync pass. */
+		unsigned long bm_total = drbd_bm_total_weight(peer_device);
+		if (bm_total) {
+			drbd_info(peer_device,
+				  "Accepting bitmap in Established for unstable "
+				  "re-handshake (bm_total=%lu)\n", bm_total);
+			err = drbd_send_bitmap(device, peer_device);
+			if (err)
+				goto out;
+		}
 	}
 
 	drbd_bm_slot_unlock(peer_device);
@@ -8831,7 +8843,20 @@ static int receive_bitmap(struct drbd_connection *connection, struct packet_info
 		} else {
 			drbd_start_resync(peer_device, L_SYNC_TARGET, "receive-bitmap");
 		}
-	} else {
+	} else if (repl_state == L_ESTABLISHED && drbd_bm_total_weight(peer_device) > 0) {
+		/* Unstable re-handshake: start resync as Target */
+		drbd_start_resync(peer_device, L_SYNC_TARGET, "unstable-rehandshake");
+	} else if (repl_state == L_ESTABLISHED && device->disk_state[NOW] == D_INCONSISTENT &&
+		   drbd_stable_sync_source_present(peer_device, NOW)) {
+		/* Unstable re-handshake returned empty bitmap AND a
+		 * stable source (Primary with L_ESTABLISHED) is present.
+		 * Bitmap is clean, all data is consistent. Promote disk. */
+		drbd_info(peer_device,
+			  "Re-handshake bitmap clean, stable source present "
+			  "— promoting to UpToDate\n");
+		change_disk_state(device, D_UP_TO_DATE, CS_VERBOSE,
+				  "unstable-rehandshake-promote", NULL);
+	} else if (repl_state != L_ESTABLISHED) {
 		/* admin may have requested C_DISCONNECTING,
 		 * other threads may have noticed network errors */
 		drbd_info(peer_device, "unexpected repl_state (%s) in receive_bitmap\n",
