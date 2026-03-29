@@ -6163,6 +6163,18 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
+
+	/* Skip after-unstable resync from an unstable secondary
+	 * when a stable source (Primary) is already available. */
+	if (new_repl_state == L_WF_BITMAP_T &&
+	    reason == AFTER_UNSTABLE &&
+	    drbd_stable_sync_source_present(peer_device, NOW)) {
+		drbd_info(peer_device,
+			  "Skipping after-unstable resync from unstable peer, "
+			  "stable source available\n");
+		return;
+	}
+
 	if (new_repl_state != L_ESTABLISHED) {
 		bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
 		drbd_info(peer_device, "Becoming %s %s\n", drbd_repl_str(new_repl_state),
