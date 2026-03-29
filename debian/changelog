@@ -1,3 +1,18 @@
+drbd (9.2.16~flant.3-1) unstable; urgency=medium
+
+  * Fix drbdsetup down/del-peer/del-connection hang scenarios
+  * Fix receiver thread restart race and connect loop exit
+  * Fix double fput kernel BUG in link_backing_dev error path
+  * Fix bitmap IO deadlock when IO suspended due to quorum loss
+  * Do not force-secondary on transient handshake retry
+  * Fix transport listener race causing rejected connections
+  * Fix resync-again on in-flight acks (do_remote guard + oos==0 skip)
+  * Fix stable source detection (require L_ESTABLISHED for Primary)
+  * Fix resync stall: clean up stale intervals on disconnect
+  * Fix unstable resync: re-handshake instead of UUID rotation
+
+ -- Flant <david.magton@flant.com>  Sat, 29 Mar 2026 23:00:00 +0300
+
 drbd (9.2.16~flant.2-1) unstable; urgency=medium
 
   * Fixed a race in w_resync_timer that could permanently stall resync
