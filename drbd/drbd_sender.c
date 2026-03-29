@@ -1790,6 +1790,7 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	enum drbd_repl_state *repl_state = peer_device->repl_state;
 	enum drbd_repl_state old_repl_state = L_ESTABLISHED;
 	bool try_to_get_resynced_from_primary_flag = false;
+	bool send_resync_uuids = false;
 	u64 source_m = 0, target_m = 0;
 	unsigned long db, dt, dbdt;
 	unsigned long n_oos;
@@ -1913,7 +1914,16 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	} else {
 		if (repl_state[NOW] == L_SYNC_TARGET || repl_state[NOW] == L_PAUSED_SYNC_T) {
 			bool stable_resync = was_resync_stable(peer_device);
-			if (stable_resync) {
+			bool unstable_source = test_bit(UNSTABLE_RESYNC, &peer_device->flags);
+
+			if (unstable_source) {
+				/* Unstable source — skip UUID rotation.
+				 * Request re-handshake via UUID_FLAG_RESYNC
+				 * so the next pass can be stable. */
+				drbd_info(peer_device,
+					  "Unstable resync done, requesting re-handshake\n");
+				send_resync_uuids = true;
+			} else if (stable_resync) {
 				enum drbd_disk_state new_disk_state = peer_device->disk_state[NOW];
 				if (new_disk_state < D_UP_TO_DATE &&
 				    test_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags)) {
@@ -1926,7 +1936,8 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			if (device->disk_state[NEW] == D_UP_TO_DATE)
 				target_m = __cancel_other_resyncs(device);
 
-			if (stable_resync && test_bit(UUIDS_RECEIVED, &peer_device->flags)) {
+			if (!unstable_source && stable_resync &&
+			    test_bit(UUIDS_RECEIVED, &peer_device->flags)) {
 				const int node_id = device->resource->res_opts.node_id;
 				int i;
 
@@ -1941,12 +1952,9 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 				for (i = 0; i < ARRAY_SIZE(peer_device->history_uuids); i++)
 					peer_device->history_uuids[i] =
 						drbd_history_uuid(device, i);
-			} else {
+			} else if (!unstable_source) {
 				if (!test_bit(UUIDS_RECEIVED, &peer_device->flags))
 					drbd_err(peer_device, "BUG: uuids were not received!\n");
-
-				if (test_bit(UNSTABLE_RESYNC, &peer_device->flags))
-					drbd_info(peer_device, "Peer was unstable during resync\n");
 			}
 		} else if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
 			if (new_peer_disk_state != D_MASK)
@@ -1977,6 +1985,11 @@ out_unlock:
 	up_write(&device->uuid_sem);
 	if (connection->after_reconciliation.lost_node_id != -1)
 		after_reconciliation_resync(connection);
+
+	/* Request re-handshake from Source after unstable resync.
+	 * Must be done after releasing state_rwlock and uuid_sem. */
+	if (send_resync_uuids)
+		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
 
 	/* Potentially send final P_PEERS_IN_SYNC. */
 	final_peers_in_sync_end = min(get_capacity(device->vdisk),
