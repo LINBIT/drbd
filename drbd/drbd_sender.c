@@ -1659,7 +1659,10 @@ static u64 __cancel_other_resyncs(struct drbd_device *device)
 	u64 target_m = 0;
 
 	for_each_peer_device(peer_device, device) {
-		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T) {
+		/* Cancel pending target-side resyncs: WFBitMapT from
+		 * unstable secondaries would clamp disk to Outdated. */
+		if (peer_device->repl_state[NEW] == L_PAUSED_SYNC_T ||
+		    peer_device->repl_state[NEW] == L_WF_BITMAP_T) {
 			target_m |= NODE_MASK(peer_device->node_id);
 			__change_repl_state(peer_device, L_ESTABLISHED);
 		}
@@ -2797,8 +2800,12 @@ bool drbd_stable_sync_source_present(struct drbd_peer_device *except_peer_device
 			   we need to ensure here that we are neighbor of all primaries,
 			   and that is a lot more challenging. */
 
+			/* Primary is a stable source only with L_ESTABLISHED —
+			 * during handshake/resync it may not have our bitmap
+			 * yet, so was_resync_stable() would be wrong. */
 			if ((!nc->two_primaries &&
-			     peer_device->connection->peer_role[which] == R_PRIMARY) ||
+			     peer_device->connection->peer_role[which] == R_PRIMARY &&
+			     repl_state == L_ESTABLISHED) ||
 			    ((repl_state == L_SYNC_TARGET || repl_state == L_PAUSED_SYNC_T) &&
 			     peer_device->uuid_flags & UUID_FLAG_STABLE)) {
 				rv = true;
