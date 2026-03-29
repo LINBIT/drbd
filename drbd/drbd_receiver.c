@@ -280,6 +280,7 @@ static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid)
 static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
 static int find_common_lost_primary_node_id(struct drbd_connection *self);
 static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *peer_device);
+static void drbd_cleanup_stale_resync_intervals(struct drbd_peer_device *peer_device);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -9940,6 +9941,55 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 		queue_work(submit_conflict->wq, &submit_conflict->worker);
 }
 
+/* Remove SENT && !RECEIVED resync entries from interval tree on disconnect.
+ * These Source-side requests will never get a reply. They must not go
+ * through drbd_cleanup_received_resync_write() — no counters were
+ * incremented for them, so decrementing would underflow and hang. */
+static void drbd_cleanup_stale_resync_intervals(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct rb_node *node, *next;
+	LIST_HEAD(cleanup);
+	struct drbd_peer_request *peer_req, *t;
+	int count = 0;
+
+	spin_lock_irq(&device->interval_lock);
+	for (node = rb_first(&device->requests); node; node = next) {
+		struct drbd_interval *i = rb_entry(node, struct drbd_interval, rb);
+
+		next = rb_next(node);
+
+		if (!drbd_interval_is_resync(i))
+			continue;
+
+		peer_req = container_of(i, struct drbd_peer_request, i);
+
+		if (peer_req->peer_device != peer_device)
+			continue;
+
+		if (!test_bit(INTERVAL_SENT, &i->flags) ||
+		    test_bit(INTERVAL_RECEIVED, &i->flags) ||
+		    test_bit(INTERVAL_SUBMITTED, &i->flags))
+			continue;
+
+		drbd_remove_interval(&device->requests, i);
+		list_add(&peer_req->w.list, &cleanup);
+		count++;
+	}
+	spin_unlock_irq(&device->interval_lock);
+
+	if (count)
+		drbd_info(peer_device,
+			  "Cleaned up %d stale resync intervals "
+			  "(SENT but not RECEIVED)\n", count);
+
+	list_for_each_entry_safe(peer_req, t, &cleanup, w.list) {
+		list_del(&peer_req->w.list);
+		dec_rs_pending(peer_device);
+		drbd_free_peer_req(peer_req);
+	}
+}
+
 static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, unsigned int node_id)
 {
 	struct drbd_connection *connection;
@@ -10101,6 +10151,8 @@ static void drain_resync_activity(struct drbd_connection *connection)
 		drbd_last_resync_request(peer_device, true);
 		/* Cause requests waiting due to conflicts to be canceled. */
 		drbd_cancel_conflicting_resync_requests(peer_device);
+
+		drbd_cleanup_stale_resync_intervals(peer_device);
 
 		kref_put(&device->kref, drbd_destroy_device);
 		rcu_read_lock();
