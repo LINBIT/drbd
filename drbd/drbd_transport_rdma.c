@@ -614,6 +614,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[DATA_STREAM];
+	size_t remaining = size;
 	struct page *page;
 	int err, i = 0;
 
@@ -625,7 +626,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	dtr_recycle_rx_desc(transport, DATA_STREAM, &rdma_stream->current_rx.desc, GFP_NOIO);
 	dtr_refill_rx_desc(rdma_transport, DATA_STREAM);
 
-	while (size) {
+	while (remaining) {
 		struct dtr_rx_desc *rx_desc = NULL;
 		long t;
 
@@ -642,7 +643,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		 * chain to the user, which is supposed to give it back to
 		 * drbd_free_pages() eventually. */
 		rx_desc->page = NULL;
-		size -= rx_desc->size;
+		remaining -= rx_desc->size;
 
 		/* If the sender did dtr_send_page every bvec of a bio with
 		 * unaligned bvecs (as xfs often creates), rx_desc->size and
@@ -661,7 +662,7 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	}
 
 	// pr_info("%s: rcvd %d pages\n", rdma_stream->name, i);
-	return 0;
+	return size;
 }
 
 static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,

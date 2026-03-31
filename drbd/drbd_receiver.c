@@ -2159,9 +2159,22 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 		if (err)
 			return err;
 	}
+
 	err = tr_ops->recv_bio(transport, &peer_req->bios, size);
-	if (err)
+	if (err < 0) {
+		if (err == -ECONNRESET)
+			drbd_info(connection, "sock was reset by peer while receiving data\n");
+		else if (err != -ERESTARTSYS)
+			drbd_info(connection, "recvmsg returned %d while receiving data\n", err);
+	} else if (err == 0) {
+		drbd_info(connection, "sock was shut down by peer while receiving data\n");
+		err = -EIO;
+	}
+
+	if (err != size) {
+		change_cstate(connection, C_BROKEN_PIPE, CS_HARD);
 		return err;
+	}
 
 	if (drbd_insert_fault(device, DRBD_FAULT_RECEIVE)) {
 		struct bio *bio = bio_list_peek(&peer_req->bios);

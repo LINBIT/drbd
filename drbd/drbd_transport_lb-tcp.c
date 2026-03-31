@@ -469,7 +469,7 @@ _dtl_recv_page(struct dtl_transport *dtl_transport, struct page *page, int size)
 			goto out;
 
 		err = dtl_recv_short(flow->sock, pos, min(size, flow->recv_bytes), 0);
-		if (err < 0)
+		if (err <= 0)
 			goto out;
 		size -= err;
 		pos += err;
@@ -486,31 +486,29 @@ dtl_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t siz
 {
 	struct dtl_transport *dtl_transport =
 		container_of(transport, struct dtl_transport, transport);
+	size_t remaining = size;
 	struct page *page;
 	int err;
 
 	do {
 		size_t len;
 
-		page = drbd_alloc_pages(transport, GFP_KERNEL, size);
+		page = drbd_alloc_pages(transport, GFP_KERNEL, remaining);
 		if (!page)
 			return -ENOMEM;
-		len = min(PAGE_SIZE << compound_order(page), size);
+		len = min(PAGE_SIZE << compound_order(page), remaining);
 
 		err = _dtl_recv_page(dtl_transport, page, len);
-		if (err < 0)
+		if (err <= 0)
 			goto fail;
-		size -= err;
+		remaining -= err;
 		err = drbd_bio_add_page(transport, bios, page, len, 0);
 		if (err < 0)
 			goto fail;
-	} while (size > 0);
+	} while (remaining > 0);
 
-	if (unlikely(size)) {
-		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
-		return -ENODATA;
-	}
-	return 0;
+	return size;
+
 fail:
 	drbd_free_page(transport, page);
 	return err;

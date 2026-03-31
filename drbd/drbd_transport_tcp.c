@@ -363,6 +363,7 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[DATA_STREAM];
+	size_t remaining = size;
 	struct page *page;
 	int err;
 
@@ -372,25 +373,22 @@ static int dtt_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 	do {
 		size_t len;
 
-		page = drbd_alloc_pages(transport, GFP_KERNEL, size);
+		page = drbd_alloc_pages(transport, GFP_KERNEL, remaining);
 		if (!page)
 			return -ENOMEM;
-		len = min(PAGE_SIZE << compound_order(page), size);
+		len = min(PAGE_SIZE << compound_order(page), remaining);
 
 		err = dtt_recv_short(socket, page_address(page), len, 0);
-		if (err < 0)
+		if (err <= 0)
 			goto fail;
-		size -= err;
+		remaining -= err;
 		err = drbd_bio_add_page(transport, bios, page, len, 0);
 		if (err < 0)
 			goto fail;
-	} while (size > 0);
+	} while (remaining > 0);
 
-	if (unlikely(size)) {
-		tr_warn(transport, "Not enough data received; missing %zu bytes\n", size);
-		return -ENODATA;
-	}
-	return 0;
+	return size;
+
 fail:
 	drbd_free_page(transport, page);
 	return err;
