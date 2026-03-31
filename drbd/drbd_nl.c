@@ -4287,7 +4287,7 @@ static void __device_to_info(struct device_info *info,
 	info->dev_is_open = device->open_cnt != 0;
 
 	rcu_read_lock();
-	if (get_ldev(device)) {
+	if (get_ldev_if_state(device, D_FAILED)) {
 		struct disk_conf *disk_conf =
 			rcu_dereference(device->ldev->disk_conf);
 		str_to_info(info, backing_dev_path, disk_conf->backing_dev);
@@ -6066,7 +6066,7 @@ put_result:
 		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device, NULL);
 		if (err)
 			goto out;
-		if (get_ldev(device)) {
+		if (get_ldev_if_state(device, D_FAILED)) {
 			struct disk_conf *disk_conf =
 				rcu_dereference(device->ldev->disk_conf);
 
