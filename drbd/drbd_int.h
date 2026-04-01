@@ -2820,6 +2820,17 @@ static inline void dec_ap_bio(struct drbd_device *device, int rw)
 		wake_up(&device->misc_wait);
 }
 
+static inline unsigned long get_work_bits(const unsigned long mask, unsigned long *flags)
+{
+	unsigned long old, new;
+
+	do {
+		old = *flags;
+		new = old & ~mask;
+	} while (cmpxchg(flags, old, new) != old);
+	return old & mask;
+}
+
 static inline bool drbd_suspended(struct drbd_device *device)
 {
 	return device->resource->cached_susp;

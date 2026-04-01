@@ -33,7 +33,6 @@ static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
 static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
-static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags);
 
 /* endio handlers:
  *   drbd_md_endio (defined here)
@@ -3187,16 +3186,6 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << RS_DONE)		\
 	|(1UL << HANDLE_CONGESTION)     \
 	)
-
-static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags)
-{
-	unsigned long old, new;
-	do {
-		old = *flags;
-		new = old & ~mask;
-	} while (cmpxchg(flags, old, new) != old);
-	return old & mask;
-}
 
 static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 {
