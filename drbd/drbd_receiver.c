@@ -9600,7 +9600,18 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		   requests that did not reach the lost peer.
 		   But when we lost quorum we are going to finish those
 		   requests with error, therefore do not create the new UUID
-		   immediately! */
+		   immediately!
+		   WRITING_NEW_CUR_UUID is held as a dispatch guard: if already
+		   set, the worker (queued via drbd_req.c) or another direct
+		   path is already generating the UUID; skip to avoid a double
+		   bump.  Skipping without waiting is safe: NEW_CUR_UUID remains
+		   set until generation completes, so inc_ap_bio_cond keeps
+		   blocking new writes throughout.  The drbd_md_sync() below may
+		   therefore reach disk before the new UUID does, but that is
+		   harmless on crash+reconnect: no write from the new generation
+		   can have been admitted, and the bitmap covers any pre-trigger
+		   in-flight writes.
+		   */
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
