@@ -62,8 +62,6 @@ drbd_kref_debug.c
 drbd_kref_debug.h
 drbd_main.c
 drbd_nl.c
-drbd_nla.c
-drbd_nla.h
 drbd_polymorph_printk.h
 drbd_proc.c
 drbd_receiver.c

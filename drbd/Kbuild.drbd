@@ -87,7 +87,6 @@ drbd-y += drbd_strings.o
 drbd-y += drbd_nl.o
 drbd-y += drbd_interval.o
 drbd-y += drbd_state.o
-drbd-y += drbd_nla.o
 drbd-y += drbd_transport.o
 drbd-y += $(compat_objs)
 

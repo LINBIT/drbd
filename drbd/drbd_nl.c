@@ -36,6 +36,21 @@
 #include "drbd_meta_data.h"
 #include "drbd_legacy_84.h"
 
+/*
+ * DRBD used to repurpose bit 14 of nla_type as a "mandatory" flag
+ * (DRBD_GENLA_F_MANDATORY). The T_* enum values had this bit baked in, and
+ * old drbdsetup versions compare nla->nla_type directly (without nla_type())
+ * against these T_* values when parsing path attributes from the kernel.
+ *
+ * We no longer include bit 14 in the T_* enum values, but must keep setting
+ * it in hand-written nla_put() calls so already-built userspace tools can
+ * still parse our responses.
+ *
+ * Deprecated: only used for a specific compat case, will be removed with
+ * the new DRBD netlink family.
+ */
+#define nla_type_mandatory(type) ((type) | 0x4000)
+
 /* .doit */
 static int drbd_adm_new_minor(struct sk_buff *skb, struct genl_info *info);
 static int drbd_adm_del_minor(struct sk_buff *skb, struct genl_info *info);
@@ -84,7 +99,14 @@ static int drbd_adm_get_initial_state(struct sk_buff *skb, struct netlink_callba
 static int drbd_adm_get_initial_state_done(struct netlink_callback *cb);
 
 #include <linux/drbd_genl_api.h>
-#include "drbd_nla.h"
+/*
+ * genl_magic_func.h calls drbd_nla_parse_nested(). Provide it as a wrapper
+ * around nla_parse_nested_deprecated(), which a compat patch may further
+ * rewrite to nla_parse_nested() for older kernels.
+ * Can be removed together with the genl_magic infrastructure.
+ */
+#define drbd_nla_parse_nested(tb, maxtype, nla, policy) \
+	nla_parse_nested_deprecated(tb, maxtype, nla, policy, NULL)
 #include <linux/genl_magic_func.h>
 
 void drbd_enable_netns(void)
@@ -253,13 +275,13 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			goto fail;
 
 		/* and assign stuff to the adm_ctx */
-		nla = nested_attr_tb[__nla_type(T_ctx_volume)];
+		nla = nested_attr_tb[T_ctx_volume];
 		if (nla)
 			adm_ctx->volume = nla_get_u32(nla);
-		nla = nested_attr_tb[__nla_type(T_ctx_peer_node_id)];
+		nla = nested_attr_tb[T_ctx_peer_node_id];
 		if (nla)
 			adm_ctx->peer_node_id = nla_get_u32(nla);
-		nla = nested_attr_tb[__nla_type(T_ctx_resource_name)];
+		nla = nested_attr_tb[T_ctx_resource_name];
 		if (nla)
 			adm_ctx->resource_name = nla_data(nla);
 		kfree(nested_attr_tb);
@@ -1402,7 +1424,6 @@ static void opener_info(struct drbd_resource *resource,
 static const char *from_attrs_err_to_txt(int err)
 {
 	return	err == -ENOMSG ? "required attribute missing" :
-		err == -EOPNOTSUPP ? "unknown mandatory attribute" :
 		err == -EEXIST ? "can not change invariant setting" :
 		"invalid attribute value";
 }
@@ -4857,8 +4878,8 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
 		return ERR_MANDATORY_TAG;
 	}
-	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
-	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+	my_addr = nested_attr_tb[T_my_addr];
+	peer_addr = nested_attr_tb[T_peer_addr];
 	kfree(nested_attr_tb);
 	nested_attr_tb = NULL;
 
@@ -5105,8 +5126,8 @@ adm_del_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 		drbd_msg_put_info(adm_ctx->reply_skb, from_attrs_err_to_txt(err));
 		return ERR_MANDATORY_TAG;
 	}
-	my_addr = nested_attr_tb[__nla_type(T_my_addr)];
-	peer_addr = nested_attr_tb[__nla_type(T_peer_addr)];
+	my_addr = nested_attr_tb[T_my_addr];
+	peer_addr = nested_attr_tb[T_peer_addr];
 	kfree(nested_attr_tb);
 	nested_attr_tb = NULL;
 
@@ -6179,14 +6200,13 @@ nla_put_failure:
 static struct nlattr *find_cfg_context_attr(const struct nlmsghdr *nlh, int attr)
 {
 	const unsigned hdrlen = GENL_HDRLEN + GENL_MAGIC_FAMILY_HDRSZ;
-	const int maxtype = ARRAY_SIZE(drbd_cfg_context_nl_policy) - 1;
 	struct nlattr *nla;
 
 	nla = nla_find(nlmsg_attrdata(nlh, hdrlen), nlmsg_attrlen(nlh, hdrlen),
 		       DRBD_NLA_CFG_CONTEXT);
 	if (!nla)
 		return NULL;
-	return drbd_nla_find_nested(maxtype, nla, __nla_type(attr));
+	return nla_find_nested(nla, attr);
 }
 
 static void resource_to_info(struct resource_info *, struct drbd_resource *);
@@ -6407,8 +6427,21 @@ static int connection_paths_to_skb(struct sk_buff *skb, struct drbd_connection *
 	/* array of such paths. */
 	rcu_read_lock();
 	list_for_each_entry_rcu(path, &connection->transport.paths, list) {
-		if (nla_put(skb, T_my_addr, path->my_addr_len, &path->my_addr) ||
-				nla_put(skb, T_peer_addr, path->peer_addr_len, &path->peer_addr)) {
+		/*
+		 * Userspace compat hack: purposefully set bit 14 for old drbd-utils.
+		 * DRBD used to repurpose bit 14 as its "mandatory" flag; because of the way
+		 * the genl_magic infrastructure works, this flag also gets sent back on the wire,
+		 * and userspace usually strips it.
+		 * There is a bug in drbdsetup though: for these two fields, it does a raw
+		 * comparison between the genl_magic-defined T_my_addr (including bit 14) and the
+		 * data that came on the wire (which also used to include bit 14).
+		 * This comparison breaks when we remove bit 14, so add it back here.
+		 */
+		int my_type = nla_type_mandatory(T_my_addr);
+		int peer_type = nla_type_mandatory(T_peer_addr);
+
+		if (nla_put(skb, my_type, path->my_addr_len, &path->my_addr) ||
+		    nla_put(skb, peer_type, path->peer_addr_len, &path->peer_addr)) {
 			rcu_read_unlock();
 			goto nla_put_failure;
 		}
