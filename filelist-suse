@@ -1,5 +1,0 @@
-%defattr(-,root,root)
-%doc COPYING
-%doc ChangeLog
-/lib/modules/%2-%1
-%doc obj/k-config-%2-%1.gz
