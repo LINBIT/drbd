@@ -5137,11 +5137,33 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
 		enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
+		enum drbd_repl_state repl = peer_device->repl_state[NOW];
 
-		if (pdsk >= D_INCONSISTENT && pdsk <= D_UNKNOWN &&
-		    (device->exposed_data_uuid & ~UUID_PRIMARY) ==
-		    (peer_device->current_uuid & ~UUID_PRIMARY) &&
-		    !(peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET)) {
+		/* We don't need to create a new data generation for a directly connected peer */
+		if (repl >= L_ESTABLISHED ||
+		    pdsk < D_INCONSISTENT || pdsk > D_UNKNOWN)
+			continue;
+
+		/* Or if UUID_FLAG_SYNC_TARGET is set */
+		if (peer_device->uuid_flags & UUID_FLAG_SYNC_TARGET)
+			continue;
+
+		/* If the peer is unreachable and we know it was at the same data
+		 * generation, we must bump so it can detect the divergence on
+		 * reconnect.
+		 *
+		 * If current_uuid is zero, we have no memory of the peer's current
+		 * UUID (e.g. after a restart).  The peer may have caught up to our
+		 * current generation in the interim -- for example, it reconnected
+		 * after a prior bump, synced, then disconnected again before we
+		 * restarted.  Without a bump, that peer would see no UUID divergence
+		 * on reconnect: a suspended primary resumes into a split-brain, a
+		 * secondary skips the resync its diverged data requires.
+		 * Bump conservatively.
+		 */
+		if (((device->exposed_data_uuid & ~UUID_PRIMARY) ==
+		     (peer_device->current_uuid & ~UUID_PRIMARY)) ||
+		     peer_device->current_uuid == 0) {
 			rv = true;
 			break;
 		}
@@ -5156,8 +5178,75 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * @device:	DRBD device.
  * @forced:	Force UUID creation
  *
- * Creates a new current UUID, and rotates the old current UUID into
- * the bitmap slot. Causes an incremental resync upon next connect.
+ * For a diskful device, rotates the old current UUID into peer_md[n].bitmap_uuid
+ * for every absent or weak peer, generates a fresh current UUID, persists it,
+ * and notifies connected peers via P_UUIDS110.  Causes an incremental resync
+ * on reconnect for peers that missed writes.
+ *
+ * For a diskless device, generates a fresh exposed_data_uuid and sends
+ * P_CURRENT_UUID to connected peers if a bump is warranted.  The decision
+ * is made by two complementary helpers:
+ *
+ *   diskfull_peers_need_new_cur_uuid():
+ *     Asks a connected diskful peer whether its metadata shows a bump is
+ *     needed.  Returns true when no third peer has a non-zero bitmap_uuid in
+ *     peer_md, meaning either no prior bump has been recorded (first write
+ *     session or all previously absent peers have since synced and cleared
+ *     their bitmap_uuid entries).
+ *
+ *   a_lost_peer_is_on_same_cur_uuid():
+ *     Scans absent peers.  Returns true if any absent peer either (a) is
+ *     known to be at the same data generation as us, or (b) has an unknown
+ *     UUID state (current_uuid == 0 after a restart) and therefore
+ *     *might* be at the same generation.
+ *
+ * Key scenarios (A = diskless primary, B = diskful secondary connected,
+ *                C = third peer, UUID0/1/2 = successive current UUIDs):
+ *
+ * S1. 2-node (A, B), A promotes:
+ *     diskless_primary_needs_uuid_bump(B): no other configured peers -> true.
+ *     Path: diskfull_peers_need_new_cur_uuid.
+ *
+ * S2. 3-node (A, B, C diskful absent), first bump:
+ *     B.peer_md[C].bitmap_uuid = 0 (no prior bump recorded).
+ *     diskless_primary_needs_uuid_bump(B): no non-zero bitmap_uuid entries -> true.
+ *     After bump: B calls rotate_current_into_bitmap(), sets
+ *     B.peer_md[C].bitmap_uuid = UUID0.  B propagates; A sees
+ *     peer_device_B.bitmap_uuids[C] = UUID0.
+ *     Path: diskfull_peers_need_new_cur_uuid.
+ *
+ * S3. 3-node, second trigger (C still absent, C has UUID0):
+ *     B.peer_md[C].bitmap_uuid = UUID0 (non-zero).  C.current_uuid = UUID0 != UUID1.
+ *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
+ *     a_lost_peer_is_on_same_cur_uuid: UUID0 != UUID1, current_uuid != 0 -> false.
+ *     No bump.  C reconnects with UUID0, sees UUID1 != UUID0 -> bitmap resync.
+ *
+ * S4. 3-node, A restarts, promotes (C still absent; C may be at UUID0 or UUID1):
+ *     A's in-memory C.current_uuid = 0 (reset on restart).
+ *     After reconnect to B: peer_device_B.bitmap_uuids[C] = UUID0 (from B).
+ *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
+ *     a_lost_peer_is_on_same_cur_uuid: C.current_uuid == 0 -> true -> bump.
+ *     Necessary because C may have caught up to UUID1 and disconnected again
+ *     before A restarted; without the bump, C at UUID1 would see no UUID
+ *     divergence -- a suspended primary resumes into a split-brain, a
+ *     secondary skips the resync its diverged data requires.
+ *     Path: a_lost_peer_is_on_same_cur_uuid.
+ *
+ * S5. 3-node, C synced to UUID1 then disconnected; A still running:
+ *     B.peer_md[C].bitmap_uuid = 0 (cleared when C's resync completed).
+ *     C.current_uuid = UUID1 = A.exposed_data_uuid.
+ *     diskless_primary_needs_uuid_bump(B): zero bitmap_uuid -> true -> bump (UUID1->UUID2).
+ *     Without bump, C (at UUID1) would reconnect and see no divergence.
+ *     Path: diskfull_peers_need_new_cur_uuid.
+ *
+ * The combined behaviour for an absent peer D:
+ * - First write session: bump triggered because exposed_data_uuid matches
+ *   D's last-known UUID.
+ * - Subsequent write sessions in the same primary up-cycle: no bump --
+ *   the primary already knows D's stale UUID differs from exposed, so D
+ *   will detect the change on reconnect regardless.
+ * - After the primary restarts: bump again via the current_uuid == 0
+ *   path, since the primary no longer has any knowledge of D's state.
  */
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
