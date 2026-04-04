@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
-   drbd_transport_rdma.c
-
-   This file is part of DRBD.
-
-   Copyright (C) 2014-2021, LINBIT HA-Solutions GmbH.
-*/
+ * Copyright (C) 2014, LINBIT HA-Solutions GmbH.
+ */
 
 #undef pr_fmt
 #define pr_fmt(fmt)	"drbd_rdma: " fmt

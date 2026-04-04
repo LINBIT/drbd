@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
-   drbd_proc.c
-
-   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
-
-   Copyright (C) 2001-2008, LINBIT Information Technologies GmbH.
-   Copyright (C) 1999-2008, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2002-2008, Lars Ellenberg <lars.ellenberg@linbit.com>.
-
-
+ * Copyright (C) 2001, LINBIT HA-Solutions GmbH.
  */
 
 #include <linux/proc_fs.h>

@@ -1,14 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
-   lru_cache.c
-
-   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
-
-   Copyright (C) 2003-2008, LINBIT Information Technologies GmbH.
-   Copyright (C) 2003-2008, Philipp Reisner <philipp.reisner@linbit.com>.
-   Copyright (C) 2003-2008, Lars Ellenberg <lars.ellenberg@linbit.com>.
-
-
+ * Copyright (C) 2003-2008, LINBIT Information Technologies GmbH.
+ * Copyright (C) 2003-2008, Philipp Reisner <philipp.reisner@linbit.com>.
+ * Copyright (C) 2003-2008, Lars Ellenberg <lars.ellenberg@linbit.com>.
+ * Copyright (C) 2008, LINBIT HA-Solutions GmbH.
  */
 
 #ifndef LRU_CACHE_H

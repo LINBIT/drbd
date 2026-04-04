@@ -1,4 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (C) 2011, LINBIT HA-Solutions GmbH.
+ */
+
 #ifndef __DRBD_INTERVAL_H
 #define __DRBD_INTERVAL_H
 

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2014, LINBIT HA-Solutions GmbH.
+ */
+
 #define pr_fmt(fmt)	KBUILD_MODNAME " debugfs: " fmt
 #include <linux/kernel.h>
 #include <linux/module.h>

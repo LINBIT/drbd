@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
-   drbd_transport_tcp.c
-
-   This file is part of DRBD.
-
-   Copyright (C) 2014-2017, LINBIT HA-Solutions GmbH.
-
-
-*/
+ * Copyright (C) 2014, LINBIT HA-Solutions GmbH.
+ */
 
 #include <linux/module.h>
 #include <linux/errno.h>

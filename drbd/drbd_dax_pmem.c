@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
-   drbd_dax.c
-
-   This file is part of DRBD by Philipp Reisner and Lars Ellenberg.
-
-   Copyright (C) 2017, LINBIT HA-Solutions GmbH.
-
-
+ * Copyright (C) 2017, LINBIT HA-Solutions GmbH.
  */
 
 /*

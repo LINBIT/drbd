@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (C) 2017, LINBIT HA-Solutions GmbH.
+ */
 #ifndef DRBD_DAX_H
 #define DRBD_DAX_H
 

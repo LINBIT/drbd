@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2025, LINBIT HA-Solutions GmbH.
+ */
 
 #ifndef __DRBD_LEGACY_84_H
 #define __DRBD_LEGACY_84_H
