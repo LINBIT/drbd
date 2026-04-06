@@ -5283,10 +5283,49 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 void drbd_uuid_new_current_by_user(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
+	u64 peer_mask = 0;
+	int node_id;
 
 	down_write(&device->uuid_sem);
-	for_each_peer_device(peer_device, device)
+	for_each_peer_device(peer_device, device) {
 		drbd_uuid_set_bitmap(peer_device, 0); /* Rotate UI_BITMAP to History 1, etc... */
+		peer_mask |= NODE_MASK(peer_device->node_id);
+	}
+
+	/* rotate_current_into_bitmap()'s second loop skips peer_md entries
+	 * whose bitmap_uuid is non-zero but does not match prev_c_uuid (the
+	 * "stale" case: a previous bump wrote a UUID into the slot and a
+	 * subsequent bump left it unchanged).  Such a stale value can later
+	 * cause a false RULE_BITMAP_SELF match in drbd_sync_handshake() --
+	 * SYNC_SOURCE_USE_BITMAP against an empty bitmap -- silently skipping
+	 * a resync the peer actually needs.
+	 *
+	 * For every node_id that is not a currently configured peer (and
+	 * therefore not already handled by drbd_uuid_set_bitmap() above),
+	 * apply the same treatment: push the old UUID to history so that
+	 * reconnect handshakes can still find it, and zero the slot.  With
+	 * bitmap_uuid == 0 the second loop in rotate_current_into_bitmap()
+	 * treats the entry as fresh and advances it to prev_c_uuid together
+	 * with all other absent peers.
+	 */
+	spin_lock_irq(&device->ldev->md.uuid_lock);
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_md *pm = &device->ldev->md.peers[node_id];
+		u64 bm_uuid;
+
+		if (node_id == device->ldev->md.node_id)
+			continue;
+		if (peer_mask & NODE_MASK(node_id))
+			continue; /* covered by for_each_peer_device above */
+		bm_uuid = pm->bitmap_uuid;
+		if (!bm_uuid)
+			continue;
+		pm->bitmap_uuid = 0;
+		pm->bitmap_dagtag = 0;
+		drbd_md_mark_dirty(device);
+		_drbd_uuid_push_history(device, bm_uuid);
+	}
+	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	if (get_ldev(device)) {
 		__drbd_uuid_new_current_holding_uuid_sem(device);
