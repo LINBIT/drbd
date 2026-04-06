@@ -3621,13 +3621,66 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	/* Determine the final device size, growing [old_size, new_size] with
-	 * bits SET (DDSF_NO_RESYNC absent).  The on-disk bitmap is written
-	 * here if la_size_changed; the in-memory bitmap is already correct:
+	/* Determine the final device size, growing [old_size, new_size].
+	 * Normally new-region bits are SET (new territory, needs resync).
+	 * Exception: if the backing device guarantees zeroes for all new
+	 * allocations (discard_zeroes_if_aligned) and the device has a real
+	 * UUID (not just-created), the new region may be known-clean:
+	 *
+	 *   Path A -- device was UpToDate before detach: no dirty data, new
+	 *             space on a zero-guarantee backend is safe to skip.
+	 *
+	 *   Path B -- device was NOT UpToDate, but all per-peer bitmap UUIDs
+	 *             and all history UUIDs are zero: this is a day0 volume
+	 *             that has never diverged from any peer; new space is
+	 *             guaranteed zeroed by the backend.
+	 *
+	 * In both cases pass DDSF_NO_RESYNC to leave the new-region bits
+	 * clear rather than marking them dirty.
+	 *
+	 * The on-disk bitmap is written here if la_size_changed; the
+	 * in-memory bitmap is already correct:
 	 *   [0, old_size]        loaded from disk above
-	 *   [old_size, new_size] SET -- new territory, always needs resync
+	 *   [old_size, new_size] SET or clear depending on ddsf
 	 */
-	dd = drbd_determine_dev_size(device, 0, 0, NULL);
+	{
+		enum dds_flags ddsf = 0;
+		bool dzoia;
+
+		rcu_read_lock();
+		dzoia = rcu_dereference(device->ldev->disk_conf)->discard_zeroes_if_aligned;
+		rcu_read_unlock();
+
+		if (dzoia &&
+		    (device->ldev->md.current_uuid & ~UUID_PRIMARY) != UUID_JUST_CREATED) {
+			const char *reason = NULL;
+
+			if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE)) {
+				reason = "was UpToDate";
+			} else {
+				/* Path B: check that all bitmap and history UUIDs are zero */
+				bool all_zero = true;
+				int i;
+
+				for (i = 0; i < DRBD_NODE_ID_MAX && all_zero; i++)
+					if (device->ldev->md.peers[i].bitmap_uuid)
+						all_zero = false;
+				for (i = 0; i < HISTORY_UUIDS && all_zero; i++)
+					if (device->ldev->md.history_uuids[i])
+						all_zero = false;
+
+				if (all_zero)
+					reason = "day0 volume (all bitmap and history UUIDs zero)";
+			}
+
+			if (reason) {
+				drbd_info(device, "%s, new region assumed zeroed\n", reason);
+				ddsf = DDSF_NO_RESYNC;
+			}
+		}
+
+		dd = drbd_determine_dev_size(device, 0, ddsf, NULL);
+	}
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
