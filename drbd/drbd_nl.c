@@ -1756,7 +1756,15 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		drbd_info(device, "Writing the whole bitmap, %s\n",
 			 la_size_changed && md_moved ? "size changed and md moved" :
 			 la_size_changed ? "size changed" : "md moved");
-		/* next line implicitly does drbd_suspend_io()+drbd_resume_io() */
+		/* The in-memory bitmap is correct at this point: callers load it
+		 * from disk before invoking drbd_determine_dev_size(), and
+		 * drbd_bm_resize() above has marked the grown region dirty when
+		 * set_new_bits was true.  Write it to disk to update la_size and
+		 * persist any resync markers for the newly grown region.
+		 *
+		 * drbd_bitmap_io() with flags != 0 implicitly does
+		 * drbd_suspend_io()+drbd_resume_io()
+		 */
 		drbd_bitmap_io(device, md_moved ? &drbd_bm_write_all : &drbd_bm_write,
 			       "size changed", BM_LOCK_ALL, NULL);
 
@@ -3572,27 +3580,60 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	}
 
-	/*
-	 * If we are attaching to a disk that is marked as being up-to-date,
-	 * then we do not need to set the bitmap bits.
+	/* Load on-disk tracking bits before peers' advertised sizes can
+	 * influence the computed device size.
+	 *
+	 * old_size is the number of sectors for which the on-disk bitmap
+	 * carries meaningful content.  Use min_not_zero() so that:
+	 *   - day0 attach (md->effective_size == 0, device already live at
+	 *     dev_size via a diskless connection): old_size = dev_size, reading
+	 *     whatever bitmap the metadata preparer wrote (all-set for full
+	 *     sync, or a day0 tracking bitmap for inception-based resync).
+	 *   - normal re-attach: old_size = min(md_size, dev_size), so any
+	 *     gap between md_size and dev_size (e.g. a peer ran resize while
+	 *     this node was diskless) is covered by drbd_determine_dev_size()
+	 *     below with bits SET, rather than by whatever happens to be on
+	 *     disk at that offset.
 	 */
-	dd = drbd_determine_dev_size(device, 0,
-			disk_state_from_md(device) == D_UP_TO_DATE ? DDSF_NO_RESYNC : 0,
-			NULL);
+	{
+		sector_t md_size = device->ldev->md.effective_size;
+		sector_t dev_size = get_capacity(device->vdisk);
+		sector_t old_size = min_not_zero(md_size, dev_size);
+
+		/* old_size == 0 means no prior history exists (first-ever attach
+		 * before any connection): skip the read and let
+		 * drbd_determine_dev_size() below allocate and initialise the
+		 * bitmap fresh.
+		 */
+		if (old_size > 0) {
+			err = drbd_bm_resize(device, old_size, false);
+			if (err) {
+				retcode = ERR_NOMEM_BITMAP;
+				goto force_diskless_dec;
+			}
+			err = drbd_bitmap_io(device, &drbd_bm_read,
+					     "read from attaching", BM_LOCK_ALL,
+					     NULL);
+			if (err) {
+				retcode = ERR_IO_MD_DISK;
+				goto force_diskless_dec;
+			}
+		}
+	}
+
+	/* Determine the final device size, growing [old_size, new_size] with
+	 * bits SET (DDSF_NO_RESYNC absent).  The on-disk bitmap is written
+	 * here if la_size_changed; the in-memory bitmap is already correct:
+	 *   [0, old_size]        loaded from disk above
+	 *   [old_size, new_size] SET -- new territory, always needs resync
+	 */
+	dd = drbd_determine_dev_size(device, 0, 0, NULL);
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
 	} else if (dd == DS_GREW) {
 		for_each_peer_device(peer_device, device)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
-	}
-
-	err = drbd_bitmap_io(device, &drbd_bm_read,
-			     "read from attaching", BM_LOCK_ALL,
-			     NULL);
-	if (err) {
-		retcode = ERR_IO_MD_DISK;
-		goto force_diskless_dec;
 	}
 
 	for_each_peer_device(peer_device, device) {
