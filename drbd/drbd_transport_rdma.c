@@ -101,28 +101,56 @@ enum dtr_stream_nr {
  * handler of the completion queue. This can be used to queue the incoming
  * messages to different streams.
  *
- * dtr_imm:
- * In order to support folding the data and the control stream into one RDMA
- * connection we use the stream field of dtr_imm: DATA_STREAM, CONTROL_STREAM
- * and FLOW_CONTROL.
- * To be able to order the messages on the receiving side before delivering
- * them to the upper layers we use a sequence number.
+ * We pack a 2-bit stream identifier and a 30-bit sequence number into this
+ * 32-bit immediate value:
+ *
+ *   Bits 31..30: stream (DATA_STREAM, CONTROL_STREAM, or FLOW_CTRL)
+ *   Bits 29..0:  sequence number for message ordering
+ *
+ * The stream field identifies which logical channel (data, control, or
+ * transport-private flow control) a message belongs to, allowing us to fold
+ * all three into a single RDMA connection. The sequence number lets the
+ * receiver reorder messages before delivering them to upper layers.
+ *
+ * Byte order conversion happens at the wire boundary via cpu_to_be32() /
+ * be32_to_cpu(), so these helpers operate on native CPU integers.
  */
-#define SEQUENCE_BITS 30
-union dtr_immediate {
-	struct {
-#if defined(__LITTLE_ENDIAN_BITFIELD)
-		unsigned int sequence:SEQUENCE_BITS;
-		unsigned int stream:2;
-#elif defined(__BIG_ENDIAN_BITFIELD)
-		unsigned int stream:2;
-		unsigned int sequence:SEQUENCE_BITS;
-#else
-# error "this endianness is not supported"
-#endif
-	};
-	unsigned int i;
-};
+#define DTR_IMM_SEQUENCE_BITS	30
+#define DTR_IMM_SEQUENCE_MASK	((1U << DTR_IMM_SEQUENCE_BITS) - 1)
+#define DTR_IMM_STREAM_SHIFT	DTR_IMM_SEQUENCE_BITS
+
+static inline u32 dtr_imm_encode(unsigned int stream, unsigned int sequence)
+{
+	return (stream << DTR_IMM_STREAM_SHIFT) |
+	       (sequence & DTR_IMM_SEQUENCE_MASK);
+}
+
+static inline unsigned int dtr_imm_stream(u32 imm)
+{
+	return imm >> DTR_IMM_STREAM_SHIFT;
+}
+
+static inline unsigned int dtr_imm_sequence(u32 imm)
+{
+	return imm & DTR_IMM_SEQUENCE_MASK;
+}
+
+/* Advance a sequence number by one, wrapping around at the 30-bit boundary. */
+static inline unsigned int dtr_seq_next(unsigned int seq)
+{
+	return (seq + 1) & DTR_IMM_SEQUENCE_MASK;
+}
+
+/*
+ * Return true if sequence number @a is ahead of @b in the circular
+ * sequence space. Uses the sign bit of the difference to handle wrap.
+ */
+static inline bool dtr_seq_greater(unsigned int a, unsigned int b)
+{
+	unsigned int diff = a - b;
+
+	return !(diff & (1U << (DTR_IMM_SEQUENCE_BITS - 1)));
+}
 
 
 enum dtr_state_bits {
@@ -167,7 +195,7 @@ struct dtr_tx_desc {
 		SEND_BIO,
 	} type;
 	int nr_sges;
-	union dtr_immediate imm;
+	u32 imm;
 	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
@@ -579,8 +607,7 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mas
 
 	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 	tx_desc->sge[0].length = size;
-	tx_desc->imm = (union dtr_immediate)
-		{ .stream = ST_FLOW_CTRL, .sequence = 0 };
+	tx_desc->imm = dtr_imm_encode(ST_FLOW_CTRL, 0);
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
 	if (err)
@@ -1372,7 +1399,7 @@ static struct dtr_rx_desc *dtr_next_rx_desc(struct dtr_stream *rdma_stream)
 		if (rx_desc->sequence == rdma_stream->rx_sequence) {
 			list_del(&rx_desc->list);
 			rdma_stream->rx_sequence =
-				(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+				dtr_seq_next(rdma_stream->rx_sequence);
 			rdma_stream->unread -= rx_desc->size;
 		} else {
 			rx_desc = NULL;
@@ -1593,18 +1620,7 @@ static void dtr_tx_timeout_fn(struct timer_list *t)
 	schedule_work(&cm->tx_timeout_work);
 }
 
-static bool higher_in_sequence(unsigned int higher, unsigned int base)
-{
-	/*
-	  SEQUENCE Arithmetic: By looking at the most signifficant bit of
-	  the reduced word size we find out if the difference is positive.
-	  The difference is necessary to deal with the overflow in the
-	  sequence number space.
-	 */
-	unsigned int diff = higher - base;
 
-	return !(diff & (1 << (SEQUENCE_BITS - 1)));
-}
 
 static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 				 struct dtr_rx_desc *rx_desc)
@@ -1613,7 +1629,7 @@ static void __dtr_order_rx_descs(struct dtr_stream *rdma_stream,
 	unsigned int seq = rx_desc->sequence;
 
 	list_for_each_entry_reverse(pos, &rdma_stream->rx_descs, list) {
-		if (higher_in_sequence(seq, pos->sequence)) { /* think: seq > pos->sequence */
+		if (dtr_seq_greater(seq, pos->sequence)) {
 			list_add(&rx_desc->list, &pos->list);
 			return;
 		}
@@ -1682,7 +1698,7 @@ static void __dtr_order_rx_descs_front(struct dtr_stream *rdma_stream,
 	unsigned int seq = rx_desc->sequence;
 
 	list_for_each_entry(pos, &rdma_stream->rx_descs, list) {
-		if (higher_in_sequence(seq, pos->sequence)) { /* think: seq > pos->sequence */
+		if (dtr_seq_greater(seq, pos->sequence)) {
 			list_add(&rx_desc->list, &pos->list);
 			return;
 		}
@@ -1707,7 +1723,7 @@ static void dtr_control_tasklet_fn(struct tasklet_struct *t)
 			goto abort;
 		list_del(&rx_desc->list);
 		rdma_stream->rx_sequence =
-			(rdma_stream->rx_sequence + 1) & ((1UL << SEQUENCE_BITS) - 1);
+			dtr_seq_next(rdma_stream->rx_sequence);
 		rdma_stream->unread -= rx_desc->size;
 		dtr_control_data_ready(rdma_stream, rx_desc);
 	}
@@ -1731,7 +1747,7 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
-	union dtr_immediate immediate;
+	u32 immediate;
 	int err;
 
 	if (wc->status != IB_WC_SUCCESS || !(wc->opcode & IB_WC_RECV)) {
@@ -1778,8 +1794,8 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	}
 
 	rx_desc->size = wc->byte_len;
-	immediate.i = be32_to_cpu(wc->ex.imm_data);
-	if (immediate.stream == ST_FLOW_CTRL) {
+	immediate = be32_to_cpu(wc->ex.imm_data);
+	if (dtr_imm_stream(immediate) == ST_FLOW_CTRL) {
 		int send_from_stream;
 
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
@@ -1790,20 +1806,21 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
 		dtr_maybe_trigger_flow_control_msg(path, send_from_stream);
 	} else {
-		struct dtr_flow *flow = &path->flow[immediate.stream];
-		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
+		unsigned int stream = dtr_imm_stream(immediate);
+		struct dtr_flow *flow = &path->flow[stream];
+		struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 
 		atomic_dec(&flow->rx_descs_posted);
 		smp_wmb(); /* smp_rmb() is in dtr_new_rx_descs() */
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
-		if (immediate.stream == ST_CONTROL)
+		if (stream == ST_CONTROL)
 			mod_timer(&rdma_transport->control_timer, jiffies + rdma_stream->recv_timeout);
 
-		rx_desc->sequence = immediate.sequence;
+		rx_desc->sequence = dtr_imm_sequence(immediate);
 		dtr_order_rx_descs(rdma_stream, rx_desc);
 
-		if (immediate.stream == ST_CONTROL)
+		if (stream == ST_CONTROL)
 			tasklet_schedule(&rdma_transport->control_tasklet);
 		else
 			wake_up_interruptible(&rdma_stream->recv_wq);
@@ -1855,7 +1872,7 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		container_of(path->path.transport, struct dtr_transport, transport);
 	struct dtr_flow *flow;
 	struct dtr_stream *rdma_stream;
-	enum dtr_stream_nr stream_nr = tx_desc->imm.stream;
+	enum dtr_stream_nr stream_nr = dtr_imm_stream(tx_desc->imm);
 	int err;
 
 	if (stream_nr != ST_FLOW_CTRL) {
@@ -2164,7 +2181,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	send_wr.wr_cqe = &tx_desc->cqe;
 	send_wr.sg_list = tx_desc->sge;
 	send_wr.num_sge = tx_desc->nr_sges;
-	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm.i);
+	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm);
 	send_wr.opcode = IB_WR_SEND_WITH_IMM;
 	send_wr.send_flags = IB_SEND_SIGNALED;
 
@@ -2300,7 +2317,7 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 {
 	struct dtr_transport *rdma_transport =
 		container_of(old_cm->path->path.transport, struct dtr_transport, transport);
-	enum drbd_stream stream = tx_desc->imm.stream;
+	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	struct dtr_cm *cm;
 	struct dtr_flow *flow;
 	int err;
@@ -2342,7 +2359,7 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 			    struct dtr_tx_desc *tx_desc)
 {
-	enum drbd_stream stream = tx_desc->imm.stream;
+	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct ib_device *device;
 	struct dtr_flow *flow;
@@ -3178,10 +3195,8 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
-	tx_desc->imm = (union dtr_immediate)
-		{ .stream = stream,
-		  .sequence = rdma_transport->stream[stream].tx_sequence++
-		};
+	tx_desc->imm = dtr_imm_encode(stream,
+				      rdma_transport->stream[stream].tx_sequence++);
 	tx_desc->sge[0].length = size;
 	tx_desc->sge[0].lkey = offset; /* abusing lkey fild. See dtr_post_tx_desc() */
 
