@@ -325,26 +325,7 @@ struct dtr_listener {
 	struct dtr_cm cm;
 };
 
-static int dtr_init(struct drbd_transport *transport);
-static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op);
-static int dtr_prepare_connect(struct drbd_transport *transport);
-static int dtr_connect(struct drbd_transport *transport);
-static void dtr_finish_connect(struct drbd_transport *transport);
-static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags);
-static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_stats *stats);
-static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf *new_net_conf);
-static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout);
-static long dtr_get_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream);
-static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stream, struct page *page,
-		int offset, size_t size, unsigned msg_flags);
-static int dtr_send_bio(struct drbd_transport *, struct bio *bio, unsigned int msg_flags);
-static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios, size_t size);
-static bool dtr_stream_ok(struct drbd_transport *transport, enum drbd_stream stream);
-static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream, enum drbd_tr_hints hint);
-static void dtr_debugfs_show(struct drbd_transport *, struct seq_file *m);
-static int dtr_add_path(struct drbd_path *path);
-static bool dtr_may_remove_path(struct drbd_path *path);
-static void dtr_remove_path(struct drbd_path *path);
+static struct drbd_transport_class rdma_transport_class;
 
 static int dtr_create_cm_id(struct dtr_cm *cm_context, struct net *net);
 static bool dtr_path_ok(struct dtr_path *path);
@@ -388,38 +369,6 @@ static int dtr_init_listener(struct drbd_transport *transport, const struct sock
 			     struct net *net, struct drbd_listener *drbd_listener);
 static void dtr_destroy_listener(struct drbd_listener *generic_listener);
 
-
-static struct drbd_transport_class rdma_transport_class = {
-	.name = "rdma",
-	.instance_size = sizeof(struct dtr_transport),
-	.path_instance_size = sizeof(struct dtr_path),
-	.listener_instance_size = sizeof(struct dtr_listener),
-	.ops = {
-		.init = dtr_init,
-		.free = dtr_free,
-		.init_listener = dtr_init_listener,
-		.release_listener = dtr_destroy_listener,
-		.prepare_connect = dtr_prepare_connect,
-		.connect = dtr_connect,
-		.finish_connect = dtr_finish_connect,
-		.recv = dtr_recv,
-		.stats = dtr_stats,
-		.net_conf_change = dtr_net_conf_change,
-		.set_rcvtimeo = dtr_set_rcvtimeo,
-		.get_rcvtimeo = dtr_get_rcvtimeo,
-		.send_page = dtr_send_page,
-		.send_bio = dtr_send_bio,
-		.recv_bio = dtr_recv_bio,
-		.stream_ok = dtr_stream_ok,
-		.hint = dtr_hint,
-		.debugfs_show = dtr_debugfs_show,
-		.add_path = dtr_add_path,
-		.may_remove_path = dtr_may_remove_path,
-		.remove_path = dtr_remove_path,
-	},
-	.module = THIS_MODULE,
-	.list = LIST_HEAD_INIT(rdma_transport_class.list),
-};
 
 static struct rdma_conn_param dtr_conn_param = {
 	.responder_resources = 1,
@@ -3371,6 +3320,38 @@ static void dtr_remove_path(struct drbd_path *del_path)
 
 	dtr_disconnect_path(path);
 }
+
+static struct drbd_transport_class rdma_transport_class = {
+	.name = "rdma",
+	.instance_size = sizeof(struct dtr_transport),
+	.path_instance_size = sizeof(struct dtr_path),
+	.listener_instance_size = sizeof(struct dtr_listener),
+	.ops = {
+		.init = dtr_init,
+		.free = dtr_free,
+		.init_listener = dtr_init_listener,
+		.release_listener = dtr_destroy_listener,
+		.prepare_connect = dtr_prepare_connect,
+		.connect = dtr_connect,
+		.finish_connect = dtr_finish_connect,
+		.recv = dtr_recv,
+		.stats = dtr_stats,
+		.net_conf_change = dtr_net_conf_change,
+		.set_rcvtimeo = dtr_set_rcvtimeo,
+		.get_rcvtimeo = dtr_get_rcvtimeo,
+		.send_page = dtr_send_page,
+		.send_bio = dtr_send_bio,
+		.recv_bio = dtr_recv_bio,
+		.stream_ok = dtr_stream_ok,
+		.hint = dtr_hint,
+		.debugfs_show = dtr_debugfs_show,
+		.add_path = dtr_add_path,
+		.may_remove_path = dtr_may_remove_path,
+		.remove_path = dtr_remove_path,
+	},
+	.module = THIS_MODULE,
+	.list = LIST_HEAD_INIT(rdma_transport_class.list),
+};
 
 static int __init dtr_initialize(void)
 {
