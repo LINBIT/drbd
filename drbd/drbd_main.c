@@ -3334,6 +3334,7 @@ void drbd_destroy_device(struct kref *kref)
 	kref_debug_destroy(&device->kref_debug);
 
 	INIT_WORK(&device->finalize_work, drbd_device_finalize_work_fn);
+	device->finalize_work.will_delete_work = true;
 	schedule_work(&device->finalize_work);
 }
 
