@@ -151,6 +151,8 @@ check:checkpatch.pl:
   image: docker.io/library/perl:5
   script:
     - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl
+    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/spelling.txt
+    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/const_structs.checkpatch
     - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
