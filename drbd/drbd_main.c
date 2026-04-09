@@ -1533,7 +1533,7 @@ void drbd_gen_and_send_sync_uuid(struct drbd_peer_device *peer_device)
 	if (uuid && uuid != UUID_JUST_CREATED)
 		uuid = uuid + UUID_NEW_BM_OFFSET;
 	else
-		get_random_bytes(&uuid, sizeof(u64));
+		uuid = get_random_u64();
 	drbd_uuid_set_bitmap(peer_device, uuid);
 	drbd_print_uuids(peer_device, "updated sync UUID");
 	drbd_md_sync(device);
@@ -4841,7 +4841,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	if (device->ldev->md.current_uuid != UUID_JUST_CREATED)
 		prev_c_uuid = device->ldev->md.current_uuid;
 	else
-		get_random_bytes(&prev_c_uuid, sizeof(u64));
+		prev_c_uuid = get_random_u64();
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -4954,7 +4954,7 @@ static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 	}
 
 	old_current_uuid = device->ldev->md.current_uuid;
-	get_random_bytes(&val, sizeof(u64));
+	val = get_random_u64();
 	__drbd_uuid_set_current(device, val);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
@@ -5100,7 +5100,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
-		get_random_bytes(&current_uuid, sizeof(u64));
+		current_uuid = get_random_u64();
 		if (device->resource->role[NOW] == R_PRIMARY)
 			current_uuid |= UUID_PRIMARY;
 		else
