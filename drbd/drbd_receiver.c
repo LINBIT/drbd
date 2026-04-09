@@ -6215,8 +6215,10 @@ static void propagate_skip_initial_to_diskless(struct drbd_device *device)
 	u64 im;
 
 	for_each_peer_device_ref(peer_device, im, device) {
-		if (peer_device->disk_state[NOW] == D_DISKLESS)
+		if (peer_device->disk_state[NOW] == D_DISKLESS) {
 			drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
+			peer_device->current_uuid = drbd_current_uuid(device);
+		}
 	}
 }
 
