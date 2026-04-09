@@ -1026,9 +1026,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 		(sbuf->additional_size ? MSG_MORE : 0);
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, flags);
-	if (err) {
-		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-	} else {
+	if (!err) {
 		sbuf->unsent =
 		sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
 	}
