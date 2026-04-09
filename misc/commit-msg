@@ -1,0 +1,10 @@
+#!/bin/bash
+# Commit-msg hook: check commit message with checkpatch.pl.
+# Install: cp misc/pre-commit misc/commit-msg .git/hooks/
+
+toplevel=$(git rev-parse --show-toplevel)
+
+if ! "$toplevel/misc/checkpatch.sh" message "$1"; then
+	echo "Commit message check failed. Please fix warnings or commit with \"--no-verify\"." >&2
+	exit 1
+fi

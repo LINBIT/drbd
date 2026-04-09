@@ -156,7 +156,7 @@ check:checkpatch.pl:
     - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
-    - .gitlab/checkpatch.sh "$base" ./checkpatch.pl
+    - CHECKPATCH=./checkpatch.pl misc/checkpatch.sh commits "$base"
 
 build:for-tests:
   stage: build
