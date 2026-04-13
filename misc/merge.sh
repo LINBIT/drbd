@@ -6,12 +6,12 @@ usage() {
 	echo ""
 	echo "Merge a commit from a maintenance branch into the current branch."
 	echo "The source branch (e.g. drbd-9.2) is detected automatically"
-	echo "from local drbd-* branches."
+	echo "from origin's drbd-* branches."
 	echo ""
 	echo "Options:"
 	echo "  --skip              Use 'ours' strategy (record merge without taking changes)"
 	echo "  --status [branch]   Show commits not yet merged into the current branch."
-	echo "                      If no branch is given, check all local drbd-X.Y branches."
+	echo "                      If no branch is given, check all origin drbd-X.Y branches."
 	exit 1
 }
 
@@ -19,7 +19,8 @@ show_status() {
 	if [ -n "$1" ]; then
 		branches="$1"
 	else
-		branches=$(git for-each-ref --format='%(refname:short)' 'refs/heads/drbd-[0-9]*')
+		branches=$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/drbd-*' \
+			| grep -E '^origin/drbd-[0-9]+\.[0-9]+$')
 	fi
 
 	for b in $branches; do
@@ -76,13 +77,13 @@ fi
 
 commitish=$1
 
-# Determine the source branch from local drbd-X.Y style branches
-branch=$(git name-rev --name-only --refs='refs/heads/drbd-[0-9]*' "$commitish" \
-	| sed 's|~[0-9]*$||; s|\^[0-9]*$||')
+# Determine the source branch from origin's drbd-X.Y style branches
+branch=$(git name-rev --name-only --refs='refs/remotes/origin/drbd-*.*' "$commitish" \
+	| sed 's|~[0-9]*$||; s|\^[0-9]*$||; s|^remotes/||; s|^origin/||')
 
-if [ "$branch" = "undefined" ] || [ -z "$branch" ]; then
+if ! echo "$branch" | grep -qE '^drbd-[0-9]+\.[0-9]+$'; then
 	echo "Error: could not determine source branch for $commitish" >&2
-	echo "The commit must be reachable from a local drbd-X.Y branch." >&2
+	echo "The commit must be reachable from an origin drbd-X.Y branch." >&2
 	exit 1
 fi
 
