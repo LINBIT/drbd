@@ -5012,43 +5012,100 @@ static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device)
 static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
-	const bool intentional_diskless = device->device_conf.intentional_diskless;
-	const int my_node_id = device->resource->res_opts.node_id;
 	int node_id;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		struct drbd_peer_device *p2;
 		if (node_id == peer_device->node_id)
 			continue;
-		if (peer_device->bitmap_uuids[node_id] == 0) {
-			struct drbd_peer_device *p2;
-			p2 = peer_device_by_node_id(peer_device->device, node_id);
-			if (p2 && !want_bitmap(p2))
-				continue;
-
-			if (node_id == my_node_id && intentional_diskless)
-				continue;
-
-			return true;
-		}
+		if (peer_device->bitmap_uuids[node_id] != 0)
+			continue;
+		p2 = peer_device_by_node_id(device, node_id);
+		/* Diskless peers (bitmap=no) have no bitmap slot tracking
+		 * changes; rotate_current_into_bitmap() skips them.
+		 */
+		if (p2 && !want_bitmap(p2))
+			continue;
+		return true;
 	}
 
 	return false;
 }
 
+/* For a diskless primary: returns true if peer_device's per-node bitmap_uuid
+ * entries (peer_md[].bitmap_uuid in the peer's superblock) show no record of
+ * a prior bump -- meaning we are either in the very first write session (no
+ * non-zero entries anywhere) or a prior bump's entries have been cleared by a
+ * successful resync, and a new generation must be signalled.
+ *
+ * The diskless primary has no bitmap of its own (!MDF_HAVE_BITMAP), so its
+ * peer_md[].bitmap_uuid in every diskful peer's superblock is perpetually
+ * zero.  We skip n == my_node_id rather than mistaking it for a zero entry
+ * that signals "no prior bump".
+ *
+ * After the first bump, absent peers acquire non-zero bitmap_uuid entries in
+ * the peer's superblock (set by rotate_current_into_bitmap() on the receiving
+ * diskful peer), causing this to return false.  When such entries are present,
+ * the bump path calls a_lost_peer_is_on_same_cur_uuid() to handle the case
+ * where our knowledge of an absent peer's current UUID is lost after a restart.
+ */
+static bool diskless_primary_needs_uuid_bump(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	const int my_node_id = device->resource->res_opts.node_id;
+	int n;
+
+	for (n = 0; n < DRBD_NODE_ID_MAX; n++) {
+		struct drbd_peer_device *pn;
+
+		if (n == peer_device->node_id || n == my_node_id)
+			continue;
+		/* Skip peer_md entries for node IDs not in the current cluster
+		 * configuration.  When a peer is removed from a cluster its
+		 * peer_md[n].bitmap_uuid on remaining nodes is preserved for
+		 * potential re-join, so a non-zero entry there records a bump
+		 * from when that peer was still a member -- not evidence that a
+		 * bump is needed now.
+		 */
+		pn = peer_device_by_node_id(device, n);
+		if (!pn)
+			continue;
+		/* A bitmap_uuid of (u64)-1 is a sentinel emitted by
+		 * drbd_bitmap_uuid_for_node() when peer_md[n].bitmap_uuid is
+		 * physically zero but we are currently a sync target from that
+		 * peer at a different generation.  It is not evidence of a prior
+		 * UUID bump.
+		 */
+		if (peer_device->bitmap_uuids[n] != (u64)-1 &&
+		    peer_device->bitmap_uuids[n] != 0)
+			return false;
+	}
+	return true;
+}
+
 static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 {
+	const bool intentional_diskless = device->device_conf.intentional_diskless;
 	struct drbd_peer_device *peer_device;
 	bool rv = false;
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
+		/* In protocol < 110 (DRBD 8, strictly two peers), the primary
+		 * does not generate or send a new current UUID.  Instead the
+		 * secondary detects the new primary session and creates the UUID
+		 * on its own side.  Nothing for us to do here.
+		 */
 		if (peer_device->connection->agreed_pro_version < 110)
 			continue;
 
 		/* Only an up-to-date peer persists a new current uuid! */
 		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
-		if (peer_can_fill_a_bitmap_slot(peer_device)) {
+
+		if (intentional_diskless ?
+				diskless_primary_needs_uuid_bump(peer_device) :
+				peer_can_fill_a_bitmap_slot(peer_device)) {
 			rv = true;
 			break;
 		}
