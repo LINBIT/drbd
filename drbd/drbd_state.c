@@ -2364,9 +2364,10 @@ static void sanitize_state(struct drbd_resource *resource)
 			}
 
 			if (connection->agreed_features & DRBD_FF_RS_SKIP_UUID)
-				cond = have_good_peer &&
-					(device->exposed_data_uuid & ~UUID_PRIMARY) !=
-					(peer_device->current_uuid & ~UUID_PRIMARY);
+				cond = (have_good_peer || device->exposed_data_uuid) &&
+				       peer_disk_state[OLD] != D_UP_TO_DATE &&
+				       (device->exposed_data_uuid & ~UUID_PRIMARY) !=
+				       (peer_device->current_uuid & ~UUID_PRIMARY);
 			else
 				cond = peer_disk_state[OLD] == D_UNKNOWN &&
 					role[NEW] == R_PRIMARY && !uuids_match;
