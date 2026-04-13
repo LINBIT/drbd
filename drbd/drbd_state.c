@@ -1500,7 +1500,7 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 			else
 				qd->unknown++;
 		} else {
-			if (disk_state == D_DISKLESS && is_intentional_diskless)
+			if (disk_state == D_DISKLESS)
 				qd->diskless++;
 			else if (disk_state == D_UP_TO_DATE)
 				qd->up_to_date++;
