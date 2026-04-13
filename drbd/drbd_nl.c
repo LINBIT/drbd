@@ -7051,6 +7051,11 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			if (NODE_MASK(peer_device->node_id) & nodes) {
 				_drbd_uuid_set_bitmap(peer_device, 0);
 				drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
+				/* The peer adopts our new UUID but does not send its
+				 * UUID back, so update our cached record here to
+				 * avoid a stale mismatch in sanitize_state().
+				 */
+				peer_device->current_uuid = drbd_current_uuid(device);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
 			}
 		}
