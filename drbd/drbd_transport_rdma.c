@@ -887,16 +887,15 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = &path->cs;
 	int i, p, err;
 
-
 	err = cm != path->cm;
-	kref_put(&cm->kref, dtr_destroy_cm);
 	if (err)
-		return;
+		goto out_put;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
 	if (p < PCS_CONNECTING)
 		goto out;
 
+	kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 	path->cm->state = DSM_CONNECTED;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
@@ -911,7 +910,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (!dtr_path_ok(path)) {
 		if (path->cs.active)
 			dtr_cma_retry_connect(path, path->cm);
-		return;
+		goto out_put;
 	}
 
 	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
@@ -933,6 +932,9 @@ out:
 		drbd_put_listener(&path->path);
 
 	wake_up(&cs->wq);
+
+out_put:
+	kref_put(&cm->kref, dtr_destroy_cm);  /* for work */
 }
 
 static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
@@ -1316,7 +1318,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
 
