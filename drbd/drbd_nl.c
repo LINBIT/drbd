@@ -3298,6 +3298,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	int err, retcode = NO_ERROR;
 	enum determine_dev_size dd;
+	enum drbd_disk_state ds;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
 	sector_t backing_disk_max_sectors;
@@ -3837,6 +3838,29 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
 	put_ldev(device);
 	mutex_unlock(&resource->adm_mutex);
+
+	/*
+	 * Wait for UUID negotiation with connected peers to settle before
+	 * reporting the outcome to the caller.  In the no-peers case
+	 * disk_state_from_md() resolves D_NEGOTIATING immediately inside the
+	 * state change, so wait_event returns without blocking.
+	 *
+	 * D_DETACHING is set by sanitize_state() when all connected peers
+	 * return L_NEG_NO_RESULT (stale re-attach with diverged data).  It
+	 * will transition to D_DISKLESS via go_diskless(), so wait for that
+	 * transition too before reporting the error.
+	 */
+	wait_event(device->misc_wait,
+		   (ds = device->disk_state[NOW]) != D_ATTACHING &&
+		    ds != D_NEGOTIATING &&
+		    ds != D_DETACHING);
+
+	if (ds == D_DISKLESS || ds == D_FAILED) {
+		drbd_msg_sprintf_info(adm_ctx->reply_skb,
+			"attach negotiation ended in unexpected state %s",
+			drbd_disk_str(ds));
+		retcode = ds == D_FAILED ? ERR_IO_MD_DISK : ERR_DATA_NOT_CURRENT;
+	}
 	goto out_no_adm_mutex;
 
  force_diskless_dec:
