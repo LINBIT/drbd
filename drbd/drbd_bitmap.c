@@ -1018,7 +1018,20 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			if (set_new_bits) {
 				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
 				bm_set += bits - obits;
-			} else {
+			} else if (obits) {
+				/* Clear bits [obits, new_bits).  Two sub-regions:
+				 *  - Tail of the last existing page [obits, page_end):
+				 *    obits is rarely page-aligned, so this partial page
+				 *    was already in the bitmap.  Those tail bits may be
+				 *    non-zero (e.g. a previous shrink left stale bits, or
+				 *    drbd_bm_read() loaded non-zero on-disk padding); an
+				 *    explicit CLEAR is required to avoid spurious resyncs.
+				 *  - Newly allocated pages [page_end, new_bits):
+				 *    bm_realloc_pages() uses __GFP_ZERO, so these are
+				 *    already zero and CLEAR is a no-op for them.
+				 * When obits == 0 all pages are new (__GFP_ZERO), so the
+				 * entire range is already clear and we skip this call.
+				 */
 				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL);
 			}
 
