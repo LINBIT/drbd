@@ -3634,7 +3634,12 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 *   Path B -- device was NOT UpToDate, but all per-peer bitmap UUIDs
 	 *             and all history UUIDs are zero: this is a day0 volume
 	 *             that has never diverged from any peer; new space is
-	 *             guaranteed zeroed by the backend.
+	 *             guaranteed zeroed by the backend.  Requires
+	 *             rs_discard_granularity to be explicitly configured
+	 *             (non-zero), because discard_zeroes_if_aligned defaults
+	 *             to 1 on all devices -- without an explicit thin-
+	 *             provisioning opt-in the new-region content is not
+	 *             guaranteed clean.
 	 *
 	 * In both cases pass DDSF_NO_RESYNC to leave the new-region bits
 	 * clear rather than marking them dirty.
@@ -3647,9 +3652,12 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	{
 		enum dds_flags ddsf = 0;
 		bool dzoia;
+		u32 rs_discard_granularity;
 
 		rcu_read_lock();
 		dzoia = rcu_dereference(device->ldev->disk_conf)->discard_zeroes_if_aligned;
+		rs_discard_granularity =
+			rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
 		rcu_read_unlock();
 
 		if (dzoia &&
@@ -3658,7 +3666,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 			if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE)) {
 				reason = "was UpToDate";
-			} else {
+			} else if (rs_discard_granularity) {
 				/* Path B: check that all bitmap and history UUIDs are zero */
 				bool all_zero = true;
 				int i;
