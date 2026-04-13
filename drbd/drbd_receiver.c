@@ -9760,8 +9760,13 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+		    test_bit(NEW_CUR_UUID, &device->flags) &&
+		    !test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags)) {
 			drbd_check_peers_new_current_uuid(device);
+			get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID,
+				      &device->flags);
+			wake_up(&device->misc_wait);
+		}
 	}
 
 	drbd_md_sync(device);
