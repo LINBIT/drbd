@@ -5195,9 +5195,15 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
 						  enum drbd_disk_state peer_disk_state)
 {
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+	enum drbd_role peer_role = connection->peer_role[NOW];
 	enum sync_strategy strategy;
 	enum sync_rule rule;
 	int peer_node_id, err;
+	struct net_conf *nc;
+	int rr_conflict, always_asbp;
+	bool need_full_sync_after_split_brain;
 
 	strategy = drbd_handshake(peer_device, &rule, &peer_node_id, true);
 
@@ -5205,6 +5211,101 @@ static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_de
 		return strategy;
 
 	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+
+	if (strategy == SPLIT_BRAIN_AUTO_RECOVER &&
+	    (!drbd_device_stable(device, NULL) ||
+	     !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
+		drbd_warn(peer_device,
+			  "Ignoring split-brain during attach: at least one side unstable\n");
+		strategy = NO_SYNC;
+	}
+
+	if (strategy_descriptor(strategy).is_split_brain)
+		drbd_maybe_khelper(device, connection, "initial-split-brain");
+
+	rcu_read_lock();
+	nc = rcu_dereference(connection->transport.net_conf);
+	always_asbp = nc->always_asbp;
+	rr_conflict = nc->rr_conflict;
+	rcu_read_unlock();
+
+	need_full_sync_after_split_brain = (strategy == SPLIT_BRAIN_DISCONNECT);
+
+	if (strategy == SPLIT_BRAIN_AUTO_RECOVER ||
+	    (strategy == SPLIT_BRAIN_DISCONNECT && always_asbp)) {
+		int pcount = (device->resource->role[NOW] == R_PRIMARY)
+			   + (peer_role == R_PRIMARY);
+
+		if (strategy_descriptor(strategy).is_split_brain) {
+			switch (pcount) {
+			case 0:
+				strategy = drbd_asb_recover_0p(peer_device);
+				break;
+			case 1:
+				strategy = drbd_asb_recover_1p(peer_device);
+				break;
+			case 2:
+				strategy = drbd_asb_recover_2p(peer_device);
+				break;
+			}
+		}
+		if (!strategy_descriptor(strategy).is_split_brain) {
+			drbd_warn(peer_device,
+				  "Split-Brain detected during attach, %d primary(ies), automatically resolved. Sync from %s node\n",
+				  pcount,
+				  strategy_descriptor(strategy).is_sync_target ? "peer" : "this");
+			if (need_full_sync_after_split_brain) {
+				if (!strategy_descriptor(strategy).full_sync_equivalent) {
+					drbd_alert(peer_device,
+						   "Want full sync but cannot decide direction, dropping connection!\n");
+					return SPLIT_BRAIN_DISCONNECT;
+				}
+				drbd_warn(peer_device,
+					  "Doing a full sync since UUIDs were ambiguous.\n");
+				strategy = strategy_descriptor(strategy).full_sync_equivalent;
+			}
+		}
+	}
+
+	if (strategy_descriptor(strategy).is_split_brain) {
+		drbd_alert(peer_device,
+			   "Split-Brain detected during attach but unresolved, dropping connection!\n");
+		drbd_maybe_khelper(device, connection, "split-brain");
+		return strategy;
+	}
+
+	if (!is_strategy_determined(strategy)) {
+		drbd_alert(peer_device,
+			   "Failed to determine sync strategy during attach, dropping connection!\n");
+		return strategy;
+	}
+
+	if (strategy_descriptor(strategy).is_sync_target &&
+	    strategy != SYNC_TARGET_IF_BOTH_FAILED &&
+	    device->resource->role[NOW] == R_PRIMARY &&
+	    device->disk_state[NOW] >= D_CONSISTENT &&
+	    (peer_device->comm_bm_set > 0 || peer_device->dirty_bits > 0)) {
+		switch (rr_conflict) {
+		case ASB_CALL_HELPER:
+			drbd_maybe_khelper(device, connection, "pri-lost");
+			fallthrough;
+		case ASB_DISCONNECT:
+		case ASB_RETRY_CONNECT:
+			drbd_err(peer_device,
+				 "I shall become SyncTarget during attach, but I am primary!\n");
+			strategy = rr_conflict == ASB_RETRY_CONNECT ?
+				SYNC_TARGET_PRIMARY_RECONNECT :
+				SYNC_TARGET_PRIMARY_DISCONNECT;
+			break;
+		case ASB_VIOLENTLY:
+			drbd_warn(peer_device,
+				  "Becoming SyncTarget during attach, violating stable-data assumption\n");
+			break;
+		default:
+			break;
+		}
+	}
+
 	err = bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
 	if (err)
 		return RETRY_CONNECT;
