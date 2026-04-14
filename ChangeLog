@@ -3,6 +3,22 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.18-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix UUID bump for intentional-diskless primary
+ * Fix a_lost_peer_is_on_same_cur_uuid after primary restart
+ * Fix new-current-uuid --clear to reset all bm_uuid, not just
+   currently configured
+ * Detect and recover from split-brain at attach
+ * Skip new-region resync for zero-guarantee backends at attach
+ * Read bitmap before drbd_determine_dev_size during attach
+ * Require rs_discard_granularity for day0 no-resync path
+ * Fix missing disk line in drbdsetup show while in D_NEGOTIATING state
+ * Use two-phase commit for disconnect even without volumes
+ * Count detached-but-connected peers as diskless for quorum
+ * Fix out-of-bounds access
+ * Fix variable dereference before check
+
 9.2.17 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix a kernel crash triggered by a crafted/invalid netlink message
