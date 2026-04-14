@@ -4271,14 +4271,14 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&
-			    test_bit(NEW_CUR_UUID, &device->flags))
+			    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
 				   we know that a write failed on that node. Therefore we need to create
 				   the new UUID right now (not wait for the next write to come in) */
 				new_current_uuid = true;
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
-			    role[NEW] == R_PRIMARY && test_bit(NEW_CUR_UUID, &device->flags))
+			    role[NEW] == R_PRIMARY && test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 				new_current_uuid = true;
 
 			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S) {
@@ -4441,15 +4441,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			drbd_maybe_khelper(device, NULL, "quorum-lost");
 
 		if (!susp_uuid[OLD] && susp_uuid[NEW] &&
-		    test_bit(NEW_CUR_UUID, &device->flags))
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 			new_current_uuid = true;
 
-		if (new_current_uuid && !test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags)) {
+		if (new_current_uuid)
 			drbd_uuid_new_current(device, false);
-			get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID,
-				      &device->flags);
-			wake_up(&device->misc_wait);
-		}
 
 		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)
 			drbd_reconsider_queue_parameters(device, NULL);
