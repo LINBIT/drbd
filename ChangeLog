@@ -3,6 +3,10 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.18-rc.2 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Convert bind and connect callbacks to use sockaddr_unsized
+
 9.2.18-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix UUID bump for intentional-diskless primary
