@@ -3161,11 +3161,22 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 
 	if (msg_flags & MSG_SPLICE_PAGES) {
 		page = caller_page;
-		get_page(page); /* The put_page() is in dtr_tx_cqe_done() */
+		get_page(page); /* The put_page() is in dtr_free_tx_desc() */
 	} else {
 		void *from;
 
-		page = drbd_alloc_pages(transport, GFP_NOIO, PAGE_SIZE);
+		/*
+		 * Allocate a page outside of DRBD's managed page pool, as
+		 * the TCP transport does implicitly by handing the caller's
+		 * page to the socket layer. Backpressure against unbounded
+		 * allocations comes from dtr_post_tx_desc(), which respects
+		 * tx_descs_max (derived from sndbuf_size).
+		 */
+		page = alloc_page(GFP_NOIO);
+		if (!page) {
+			kfree(tx_desc);
+			return -ENOMEM;
+		}
 		from = kmap_local_page(caller_page);
 		memcpy(page_address(page), from + offset, size);
 		kunmap_local(from);
