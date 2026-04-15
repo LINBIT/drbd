@@ -284,6 +284,9 @@ test:rdma:
   extends: [ .test ]
   rules:
     - if: $CI_MERGE_REQUEST_ID
+      changes:
+        - drbd/drbd_transport_rdma.c
+    - if: $CI_MERGE_REQUEST_ID
       when: manual
   allow_failure: true
   script: VMSHED_TEST_SELECTION=rdma_ci run_test --variant=rdma
