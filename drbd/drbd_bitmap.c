@@ -998,7 +998,9 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	b->bm_bits  = bits;
 	b->bm_words = words;
 	b->bm_dev_capacity = capacity;
+	spin_unlock_irq(&b->bm_lock);
 
+	/* without holding the spinlock! Setting many bits is time-consuming */
 	if (growing) {
 		unsigned int bitmap_index;
 
@@ -1006,23 +1008,26 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			unsigned long bm_set = b->bm_set[bitmap_index];
 
 			if (set_new_bits) {
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
+				_drbd_bm_set_many_bits(device, bitmap_index, obits, -1UL);
 				bm_set += bits - obits;
 			} else if (obits) {
-				/* Clear bits [obits, new_bits).  Two sub-regions:
-				 *  - Tail of the last existing page [obits, page_end):
-				 *    obits is rarely page-aligned, so this partial page
-				 *    was already in the bitmap.  Those tail bits may be
-				 *    non-zero (e.g. a previous shrink left stale bits, or
-				 *    drbd_bm_read() loaded non-zero on-disk padding); an
-				 *    explicit CLEAR is required to avoid spurious resyncs.
-				 *  - Newly allocated pages [page_end, new_bits):
-				 *    bm_realloc_pages() uses __GFP_ZERO, so these are
-				 *    already zero and CLEAR is a no-op for them.
-				 * When obits == 0 all pages are new (__GFP_ZERO), so the
-				 * entire range is already clear and we skip this call.
+				/* Clear stale bits in the tail of the last existing
+				 * page [obits, page_end).  obits is rarely
+				 * page-aligned, so this partial page may carry
+				 * non-zero bits from a previous shrink or on-disk
+				 * padding that must be cleared to avoid spurious
+				 * resyncs.
+				 *
+				 * Newly allocated pages are __GFP_ZERO and need no
+				 * clearing.  When obits == 0 all pages are new, so
+				 * we skip this branch entirely.
 				 */
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL);
+				unsigned long page_end =
+					last_bit_on_page(b, bitmap_index, obits);
+
+				if (page_end >= bits)
+					page_end = bits - 1;
+				bm_op(device, bitmap_index, obits, page_end, BM_OP_CLEAR, NULL);
 			}
 
 			b->bm_set[bitmap_index] = bm_set;
@@ -1035,8 +1040,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 				PAGES_TO_KIB(have - want), PAGES_TO_KIB(want));
 		bm_free_pages(opages + want, have - want);
 	}
-
-	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
 		kvfree(opages);
 	if (!growing)
