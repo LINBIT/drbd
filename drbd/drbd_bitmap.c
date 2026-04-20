@@ -1013,12 +1013,40 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	/* without holding the spinlock! Setting many bits is time-consuming */
 	if (growing) {
 		unsigned int bitmap_index;
+		unsigned long first_bit_last_page = 0;
+
+		if (set_new_bits && want > have)
+			first_bit_last_page = ((want - 1) *
+				(PAGE_SIZE / sizeof(u32)) / b->bm_max_peers) << 5;
 
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++) {
 			unsigned long bm_set = b->bm_set[bitmap_index];
 
 			if (set_new_bits) {
-				_drbd_bm_set_many_bits(device, bitmap_index, obits, -1UL);
+				/* Set bits in the tail of the last existing
+				 * page [obits, page_end).  New pages are
+				 * __GFP_ZERO and get bulk-filled below.
+				 * When obits == 0 all pages are new, so we
+				 * skip this.
+				 */
+				if (obits) {
+					unsigned long page_end =
+						last_bit_on_page(b, bitmap_index, obits);
+
+					if (page_end >= bits)
+						page_end = bits - 1;
+					bm_op(device, bitmap_index, obits, page_end,
+					      BM_OP_SET, NULL);
+				}
+				/* Set bits on the last new page per-peer;
+				 * bm_op() handles the partial last word
+				 * correctly.  Interior pages are bulk-filled
+				 * below.
+				 */
+				if (want > have)
+					bm_op(device, bitmap_index,
+					      first_bit_last_page, bits - 1,
+					      BM_OP_SET, NULL);
 				bm_set += bits - obits;
 			} else if (obits) {
 				/* Clear stale bits in the tail of the last existing
@@ -1041,6 +1069,27 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 			}
 
 			b->bm_set[bitmap_index] = bm_set;
+		}
+
+		if (set_new_bits && want > have + 1) {
+			/* New pages are __GFP_ZERO.  Set all bits for all
+			 * peers at once by filling interior pages with 0xFF
+			 * rather than iterating per-peer word-by-word.
+			 * The last new page is handled per-peer above.
+			 */
+			unsigned long p;
+
+			for (p = have; p < want - 1; p++) {
+				void *addr;
+
+				spin_lock_irq(&b->bm_lock);
+				addr = bm_map(b, p);
+				memset(addr, 0xFF, PAGE_SIZE);
+				bm_unmap(b, addr);
+				bm_set_page_need_writeout(b, p);
+				spin_unlock_irq(&b->bm_lock);
+				cond_resched();
+			}
 		}
 	}
 
