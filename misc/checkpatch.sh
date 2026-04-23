@@ -73,7 +73,12 @@ message)
 	# line 3+ the body.
 	stripped=$(git stripspace --strip-comments < "$msgfile")
 	subject=$(echo "$stripped" | head -1)
+
+	# 'fixup' commits are temporary - do not check.
+	echo "$subject" | grep -qE '^fixup!' && exit 0
+
 	author=$(git var GIT_AUTHOR_IDENT | sed 's/> .*/>/')
+
 	{
 		echo "From: $author"
 		echo "Subject: [PATCH] $subject"
@@ -83,7 +88,13 @@ message)
 		echo "diff --git a/x b/x"
 	} > "$patch"
 
-	"$checkpatch" --no-tree --ignore FILE_PATH_CHANGES "$patch"
+	# Merge/Skip commits: check message formatting but not
+	# Signed-off-by or Fixes tags.
+	extra_args=()
+	echo "$subject" | grep -qE '^(Merge|Skip)' &&
+		extra_args=(--no-signoff --no-fixes-tag)
+
+	"$checkpatch" --no-tree --ignore FILE_PATH_CHANGES "${extra_args[@]}" "$patch"
 	;;
 
 *)
