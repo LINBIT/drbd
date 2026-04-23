@@ -1,0 +1,13 @@
+#!/bin/sh
+
+NAME=$(git config user.name)
+EMAIL=$(git config user.email)
+
+[ -z "$NAME" ] && { echo "empty git config user.name"; exit 1; }
+[ -z "$EMAIL" ] && { echo "empty git config user.email"; exit 1; }
+
+[ "$2" = "merge" ] && exit 0
+
+git interpret-trailers --if-exists doNothing --trailer \
+    "Signed-off-by: $NAME <$EMAIL>" \
+    --in-place "$1"

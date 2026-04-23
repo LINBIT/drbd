@@ -54,7 +54,7 @@ curl -L https://github.com/torvalds/linux/raw/master/scripts/checkpatch.pl | sud
 sudo chmod +x /usr/local/bin/checkpatch.pl
 curl -L https://github.com/torvalds/linux/raw/master/scripts/spelling.txt | sudo tee /usr/local/bin/spelling.txt | wc
 sudo touch /usr/local/bin/const_structs.checkpatch
-cp misc/pre-commit misc/commit-msg .git/hooks/
+cp misc/pre-commit misc/prepare-commit-msg misc/commit-msg .git/hooks/
 ```
 
 # Installing DRBD
