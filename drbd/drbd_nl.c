@@ -3329,6 +3329,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	enum drbd_disk_state ds;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
+	struct drbd_bitmap *bitmap = NULL; /* unpublished until bm_pages is wired up */
 	sector_t backing_disk_max_sectors;
 	struct disk_conf *new_disk_conf = NULL;
 	enum drbd_state_rv rv;
@@ -3432,9 +3433,9 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (new_disk_conf->d_bitmap) {
-		/* ldev_safe: attach path, allocating bitmap */
-		device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
-		if (!device->bitmap) {
+		/* ldev_safe: attach path, allocating bitmap. */
+		bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
+		if (!bitmap) {
 			retcode = ERR_NOMEM;
 			goto fail;
 		}
@@ -3735,12 +3736,17 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		 * drbd_determine_dev_size() below allocate and initialise the
 		 * bitmap fresh.
 		 */
-		if (old_size > 0 && device->bitmap) {
-			err = drbd_bm_resize(device, device->bitmap, old_size, false);
+		if (old_size > 0 && bitmap) {
+			err = drbd_bm_resize(device, bitmap, old_size, false);
 			if (err) {
 				retcode = ERR_NOMEM_BITMAP;
 				goto force_diskless_dec;
 			}
+
+			/* Publish only after bm_pages is populated. */
+			smp_store_release(&device->bitmap, bitmap);
+			bitmap = NULL;
+
 			err = drbd_bitmap_io(device, &drbd_bm_read,
 					     "read from attaching", BM_LOCK_ALL,
 					     NULL);
@@ -3748,6 +3754,16 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 				retcode = ERR_IO_MD_DISK;
 				goto force_diskless_dec;
 			}
+		} else if (bitmap) {
+			/* old_size == 0: no prior bitmap to read.
+			 * drbd_determine_dev_size() below resizes via
+			 * device->bitmap, so we have to publish here.  The
+			 * window during which device->bitmap is non-NULL with
+			 * bm_pages == NULL is quiescent (D_ATTACHING, no peer
+			 * connected, no IO touching the bitmap).
+			 */
+			smp_store_release(&device->bitmap, bitmap);
+			bitmap = NULL;
 		}
 	}
 
@@ -3904,6 +3920,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
  force_diskless:
 	change_disk_state(device, D_DISKLESS, CS_HARD, "attach", NULL);
  fail:
+	kfree(bitmap); /* free unpublished local; NULL after publication */
 	drbd_bm_free(device);
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_backing_dev_free(device, nbc);
