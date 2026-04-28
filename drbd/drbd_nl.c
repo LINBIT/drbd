@@ -1735,7 +1735,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		int err = 0;
 
 		if (device->bitmap)
-			err = drbd_bm_resize(device, size, !(flags & DDSF_NO_RESYNC));
+			err = drbd_bm_resize(device, device->bitmap, size,
+					     !(flags & DDSF_NO_RESYNC));
 		if (unlikely(err)) {
 			/* currently there is only one error: ENOMEM! */
 			size = drbd_bm_capacity(device);
@@ -2565,19 +2566,30 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 
 	if (!old_disk_conf->d_bitmap && new_disk_conf->d_bitmap) {
 		struct drbd_md *md = &device->ldev->md;
+		struct drbd_bitmap *bitmap;
 
-		device->bitmap = drbd_bm_alloc(md->max_peers, md->bm_block_shift);
-		if (!device->bitmap) {
+		bitmap = drbd_bm_alloc(md->max_peers, md->bm_block_shift);
+		if (!bitmap) {
 			drbd_msg_put_info(adm_ctx->reply_skb, "Failed to allocate bitmap");
 			retcode = ERR_NOMEM;
 			goto fail_unlock;
 		}
-		err = drbd_bm_resize(device, get_capacity(device->vdisk), true);
+		err = drbd_bm_resize(device, bitmap, get_capacity(device->vdisk), true);
 		if (err) {
+			kfree(bitmap);
 			drbd_msg_put_info(adm_ctx->reply_skb, "Failed to allocate bitmap pages");
 			retcode = ERR_NOMEM;
 			goto fail_unlock;
 		}
+
+		/* Publish only after bm_pages is populated, otherwise readers
+		 * in __bm_op() can observe device->bitmap != NULL with
+		 * bm_pages == NULL and trip the assertion.  No
+		 * smp_load_acquire() needed: bm_pages is always read under
+		 * bitmap->bm_lock, and lockless NULL-checks are ordered by
+		 * address dependency.
+		 */
+		smp_store_release(&device->bitmap, bitmap);
 
 		drbd_bitmap_io(device, &drbd_bm_write, "write from disk_opts", BM_LOCK_ALL, NULL);
 	} else if (old_disk_conf->d_bitmap && !new_disk_conf->d_bitmap) {
@@ -3724,7 +3736,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		 * bitmap fresh.
 		 */
 		if (old_size > 0 && device->bitmap) {
-			err = drbd_bm_resize(device, old_size, false);
+			err = drbd_bm_resize(device, device->bitmap, old_size, false);
 			if (err) {
 				retcode = ERR_NOMEM_BITMAP;
 				goto force_diskless_dec;
