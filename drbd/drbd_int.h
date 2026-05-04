@@ -46,6 +46,7 @@
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
 extern unsigned int drbd_protocol_version_min;
+extern unsigned int drbd_max_parallel_resyncs;
 extern bool drbd_strict_names;
 
 static inline bool drbd_protocol_version_acceptable(unsigned int pv)
@@ -1333,6 +1334,7 @@ struct drbd_peer_device {
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
+	bool resync_susp_max_parallel[2];
 	bool resync_active[2];
 	enum drbd_repl_state negotiation_result; /* To find disk state after attach */
 	unsigned int send_cnt;
@@ -2212,6 +2214,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device,
 		       enum drbd_repl_state side, const char *tag);
 void resume_next_sg(struct drbd_device *device);
 void suspend_other_sg(struct drbd_device *device);
+void drbd_apply_resync_max_parallel(void);
 void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			  enum drbd_disk_state new_peer_disk_state);
 void verify_progress(struct drbd_peer_device *peer_device,
