@@ -42,6 +42,7 @@ struct drbd_peer_device_state_change {
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
+	bool resync_susp_max_parallel[2];
 	bool resync_active[2];
 	bool replication[2];
 	bool peer_replication[2];

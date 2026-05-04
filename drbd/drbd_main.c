@@ -120,6 +120,26 @@ static const struct kernel_param_ops param_ops_drbd_protocol_version = {
 
 unsigned int drbd_protocol_version_min = PRO_VERSION_8_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
+
+static int param_set_max_parallel_resyncs(const char *s, const struct kernel_param *kp)
+{
+	int rv = param_set_uint(s, kp);
+
+	if (rv == 0)
+		drbd_apply_resync_max_parallel();
+	return rv;
+}
+
+static const struct kernel_param_ops param_ops_max_parallel_resyncs = {
+	.set = param_set_max_parallel_resyncs,
+	.get = param_get_uint,
+};
+
+unsigned int drbd_max_parallel_resyncs;	/* 0 = unlimited */
+module_param_cb(max_parallel_resyncs, &param_ops_max_parallel_resyncs,
+		&drbd_max_parallel_resyncs, 0644);
+MODULE_PARM_DESC(max_parallel_resyncs,
+	"Cap on volumes resyncing in parallel (0 = unlimited)");
 #define protocol_version_min_desc								\
 	"\n\t\tReject DRBD dialects older than this.\n\t\t"					\
 	"Supported: "										\
