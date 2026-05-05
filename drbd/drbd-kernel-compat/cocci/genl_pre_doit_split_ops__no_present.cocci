@@ -1,6 +1,7 @@
 @@
 identifier fn;
 identifier ops;
+symbol skb, info;
 @@
  int fn(
 -const struct genl_split_ops *ops,
@@ -11,6 +12,7 @@ identifier ops;
 @@
 identifier fn;
 identifier ops;
+symbol skb, info;
 @@
  void fn(
 -const struct genl_split_ops *ops,

@@ -9,6 +9,7 @@
 expression expr;
 struct drbd_device *device;
 symbol false;
+identifier flags =~ "^flags$";
 @@
   if (test_and_clear_bit(BDEV_FROZEN, &device->flags)) {
   <+...
@@ -23,6 +24,7 @@ identifier err;
 expression expr;
 struct drbd_device *device;
 symbol true;
+identifier flags =~ "^flags$";
 identifier out_thaw;
 @@
   <+...

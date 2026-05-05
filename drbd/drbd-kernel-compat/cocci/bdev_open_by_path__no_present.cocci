@@ -10,6 +10,7 @@ struct drbd_backing_dev {
 
 @@
 identifier handle;
+identifier bdev =~ "^bdev$";
 @@
 static void close_backing_dev(...,
 -	struct bdev_handle *handle
@@ -29,13 +30,14 @@ static void close_backing_dev(...,
 + bdev
 )
 ...>
-} 
+}
 
 @@
 identifier device;
 struct bdev_handle *handle;
 identifier err;
 identifier new_disk_conf;
+symbol bdev;
 @@
 // special case: when linking the meta_dev, we want to pass meta_claim_ptr to close instead of device
 err = link_backing_dev(..., new_disk_conf->meta_dev, ...);
@@ -52,6 +54,7 @@ if (err) {
 identifier ldev;
 struct bdev_handle *handle;
 identifier device;
+symbol bdev;
 @@
 // generic close_backing_dev usage
 close_backing_dev(device,
@@ -70,6 +73,7 @@ close_backing_dev(device,
 
 @@
 identifier handle;
+symbol bdev;
 @@
 - struct bdev_handle *
 + struct block_device *
@@ -99,6 +103,7 @@ return
 @@
 identifier handle;
 identifier err;
+identifier bdev =~ "^bdev$";
 @@
 static int link_backing_dev(...,
 -	struct bdev_handle *handle
@@ -121,6 +126,7 @@ if (err) {
 identifier device;
 expression bd;
 identifier handle;
+symbol bdev;
 @@
 // generic link_backing_dev usage
 link_backing_dev(device, bd,
@@ -130,6 +136,7 @@ link_backing_dev(device, bd,
 
 @@
 identifier handle;
+symbol bdev;
 @@
 // generic open_backing_dev usage
 {
@@ -153,6 +160,7 @@ IS_ERR(
 @@
 struct drbd_backing_dev *nbc;
 identifier handle;
+identifier bdev =~ "^bdev$";
 @@
 (
 - nbc->backing_bdev = handle->bdev;
@@ -167,6 +175,7 @@ identifier handle;
 @@
 identifier handle;
 identifier nbc;
+identifier bdev =~ "^bdev$";
 @@
 // only this one comparison exists in the code, just special-case it instead of implementing the generic case
 - handle->bdev != nbc->backing_bdev

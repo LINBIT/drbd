@@ -4,6 +4,7 @@
 // buffer overflows. Force single-page allocations on these kernels.
 @@
 expression E;
+symbol order;
 @@
  drbd_alloc_pages(...)
  {
