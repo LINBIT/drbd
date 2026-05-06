@@ -4535,6 +4535,7 @@ static void peer_device_to_info(struct peer_device_info *info,
 	info->peer_disk_state = peer_device->disk_state[NOW];
 	info->peer_resync_susp_user = peer_device->resync_susp_user[NOW];
 	info->peer_resync_susp_peer = peer_device->resync_susp_peer[NOW];
+	info->peer_resync_susp_max_parallel = peer_device->resync_susp_max_parallel[NOW];
 	__peer_device_to_info(info, peer_device, NOW);
 }
 
@@ -4545,6 +4546,7 @@ void peer_device_state_change_to_info(struct peer_device_info *info,
 	info->peer_disk_state = state_change->disk_state[NEW];
 	info->peer_resync_susp_user = state_change->resync_susp_user[NEW];
 	info->peer_resync_susp_peer = state_change->resync_susp_peer[NEW];
+	info->peer_resync_susp_max_parallel = state_change->resync_susp_max_parallel[NEW];
 	__peer_device_to_info(info, state_change->peer_device, NEW);
 }
 
