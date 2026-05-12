@@ -82,7 +82,7 @@ patch-target := $(obj)/dummy-for-patch.o
 $(patch-target): $(obj)/dummy-for-compat-h.o
 	@true
 
-ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj.build)/.config.timestamp 2> /dev/null))
+ifneq ($(shell date -r $(objtree)/include/config/auto.conf),$(shell date -r $(obj.build)/.config.timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
 endif
 
@@ -137,7 +137,7 @@ filechk_compat.h = { printf '$(obj.build)/%s ' $(patsubst $(obj.build)/%,%,$(TES
 
 $(compat.h): $(TEST_R) FORCE
 	$(call filechk,compat.h)
-	$(Q)touch -r $(objtree)/.config $(obj.build)/.config.timestamp
+	$(Q)touch -r $(objtree)/include/config/auto.conf $(obj.build)/.config.timestamp
 
 # Generate / find from cache the compat.patch.
 # If we used an old compat.patch from the cache,
