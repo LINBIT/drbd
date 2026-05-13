@@ -280,6 +280,17 @@ struct drbd_path *drbd_find_path_by_addr(struct drbd_listener *listener, struct 
 	return NULL;
 }
 
+/* An incoming connection is routed by matching the listener (my_addr and
+ * my_port) and then the peer IP. Two paths that agree on all three are
+ * therefore indistinguishable to the receiver.
+ */
+bool drbd_path_conflicts_by_listener(struct drbd_path *existing,
+				     struct drbd_path *candidate)
+{
+	return addr_and_port_equal(&existing->my_addr, &candidate->my_addr) &&
+	       addr_equal(&existing->peer_addr, &candidate->peer_addr);
+}
+
 /**
  * drbd_stream_send_timed_out() - Tells transport if the connection should stay alive
  * @transport:	DRBD transport to operate on.

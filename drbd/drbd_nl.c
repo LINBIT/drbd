@@ -4878,6 +4878,37 @@ check_path_usable(const struct drbd_config_context *adm_ctx,
 	return NO_ERROR;
 }
 
+/* Check that adding the candidate path does not make incoming connections
+ * ambiguous between paths of distinct connections of the resource. Same-
+ * connection ambiguity is harmless because the assignment is irrelevant.
+ */
+static enum drbd_ret_code
+check_path_not_ambiguous(const struct drbd_config_context *adm_ctx,
+			 struct drbd_path *candidate)
+{
+	struct drbd_resource *resource = adm_ctx->resource;
+	struct drbd_connection *connection;
+
+	for_each_connection_rcu(connection, resource) {
+		struct drbd_transport *transport = &connection->transport;
+		struct drbd_path *path;
+
+		if (connection == adm_ctx->connection)
+			continue;
+		if (transport->class != candidate->transport->class)
+			continue;
+
+		list_for_each_entry_rcu(path, &transport->paths, list) {
+			if (drbd_path_conflicts_by_listener(path, candidate)) {
+				drbd_msg_put_info(adm_ctx->reply_skb,
+					"path indistinguishable from path in another connection");
+				return ERR_PATH_COLLISION;
+			}
+		}
+	}
+	return NO_ERROR;
+}
+
 
 static enum drbd_ret_code
 adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
@@ -4909,12 +4940,6 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	kfree(nested_attr_tb);
 	nested_attr_tb = NULL;
 
-	rcu_read_lock();
-	retcode = check_path_usable(adm_ctx, my_addr, peer_addr);
-	rcu_read_unlock();
-	if (retcode != NO_ERROR)
-		return retcode;
-
 	path = kzalloc(transport->class->path_instance_size, GFP_KERNEL);
 	if (!path)
 		return ERR_NOMEM;
@@ -4924,12 +4949,20 @@ adm_add_path(struct drbd_config_context *adm_ctx,  struct genl_info *info)
 	memcpy(&path->my_addr, nla_data(my_addr), path->my_addr_len);
 	path->peer_addr_len = nla_len(peer_addr);
 	memcpy(&path->peer_addr, nla_data(peer_addr), path->peer_addr_len);
-
+	path->transport = transport;
+	kref_init(&path->kref);
 	kref_get(&adm_ctx->connection->kref);
 	kref_debug_get(&adm_ctx->connection->kref_debug, 17);
-	path->transport = transport;
 
-	kref_init(&path->kref);
+	rcu_read_lock();
+	retcode = check_path_usable(adm_ctx, my_addr, peer_addr);
+	if (retcode == NO_ERROR)
+		retcode = check_path_not_ambiguous(adm_ctx, path);
+	rcu_read_unlock();
+	if (retcode != NO_ERROR) {
+		kref_put(&path->kref, drbd_destroy_path);
+		return retcode;
+	}
 
 	if (connection->resource->res_opts.drbd8_compat_mode && resource->res_opts.node_id == -1) {
 		err = drbd_setup_node_ids_84(connection, path, adm_ctx->peer_node_id);
