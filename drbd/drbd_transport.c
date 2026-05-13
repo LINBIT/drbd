@@ -266,23 +266,14 @@ void drbd_put_listener(struct drbd_path *path)
 
 struct drbd_path *drbd_find_path_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
 {
-	struct drbd_path *path, *ip_match = NULL;
+	struct drbd_path *path;
 
-	/*
-	 * Prefer an exact (IP, port) match. This disambiguates multiple paths
-	 * that share a peer IP but have distinct peer_addr ports, as long as
-	 * the peer (typically a DRBD proxy instance) binds its source port
-	 * accordingly. Direct DRBD-to-DRBD peers use an ephemeral source port
-	 * and are resolved by the first IP-only match.
-	 */
 	list_for_each_entry(path, &listener->waiters, listener_link) {
-		if (addr_and_port_equal(&path->peer_addr, addr))
+		if (addr_equal(&path->peer_addr, addr))
 			return path;
-		if (!ip_match && addr_equal(&path->peer_addr, addr))
-			ip_match = path;
 	}
 
-	return ip_match;
+	return NULL;
 }
 
 /**
