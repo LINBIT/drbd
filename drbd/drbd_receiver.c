@@ -542,7 +542,7 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 			list_del(&peer_req->recv_order);
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
-
+	D_ASSERT(peer_device, !(peer_req->flags & EE_ON_SEND_OOS));
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
@@ -11169,7 +11169,7 @@ static void drbd_send_oos_from(struct drbd_connection *oos_connection, int peer_
 		next_peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
 		free_it = !peer_req->send_oos_pending;
 		if (free_it) {
-			peer_req->flags &= ~EE_ON_RECV_ORDER;
+			peer_req->flags &= ~EE_ON_SEND_OOS;
 			list_del(&peer_req->recv_order);
 		}
 		spin_unlock_irq(&peer_ack_connection->send_oos_lock);
@@ -11301,8 +11301,12 @@ found:
 
 		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, in_sync);
 		any_send_oos_pending |= peer_req->send_oos_pending;
-		if (!peer_req->send_oos_pending)
-			drbd_free_peer_req(peer_req);
+		if (peer_req->send_oos_pending) {
+			peer_req->flags &= ~EE_ON_RECV_ORDER;
+			peer_req->flags |= EE_ON_SEND_OOS;
+		} else {
+			drbd_free_peer_req(peer_req); /* list_del() because EE_ON_RECV_ORDER */
+		}
 	}
 
 	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
