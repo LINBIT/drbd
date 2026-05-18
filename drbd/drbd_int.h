@@ -538,8 +538,11 @@ enum {
 	/* SyncTarget: This is the last resync request. */
 	__EE_LAST_RESYNC_REQUEST,
 
-	/* This peer_req->recv_order is on some list */
+	/* This peer_req->recv_order is on some list protected by peer_reqs_lock */
 	__EE_ON_RECV_ORDER,
+
+	/* This peer_req->recv_order is on connection->send_oos protocted by send_oos_lock */
+	__EE_ON_SEND_OOS,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -556,6 +559,7 @@ enum {
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
+#define EE_ON_SEND_OOS		(1<<__EE_ON_SEND_OOS)
 
 /* flag bits per device */
 enum device_flag {
