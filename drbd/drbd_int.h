@@ -881,7 +881,10 @@ struct drbd_bitmap {
 	const char    *bm_why;
 	char          bm_task_comm[TASK_COMM_LEN];
 	pid_t         bm_task_pid;
-	struct drbd_peer_device *bm_locked_peer;
+	/* >= 0 if a slot-scoped lock is held (the locked slot's index);
+	 * -1 if no lock is held or the lock is device-wide.
+	 */
+	int           bm_locked_slot_index;
 };
 
 struct drbd_work_queue {

@@ -117,9 +117,11 @@ bm_print_lock_info(struct drbd_device *device, unsigned int bitmap_index, enum b
 	struct drbd_bitmap *b = device->bitmap;
 	if (!drbd_device_ratelimit(device, GENERIC))
 		return;
-	drbd_err(device, "FIXME %s[%d] op %s, bitmap locked for '%s' by %s[%d]\n",
+	drbd_err(device, "FIXME %s[%d] op %s on slot %u, %s for '%s' by %s[%d]\n",
 		 current->comm, task_pid_nr(current),
-		 op_names[op], b->bm_why ?: "?",
+		 op_names[op], bitmap_index,
+		 b->bm_locked_slot_index >= 0 ? "slot locked" : "bitmap locked device-wide",
+		 b->bm_why ?: "?",
 		 b->bm_task_comm, b->bm_task_pid);
 }
 
@@ -141,6 +143,7 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_bitmap *b,
 	      struct drbd_peer_device *peer_device,
 	      const char *why, enum bm_flag flags)
 {
+	bool slot_lock = peer_device && peer_device->bitmap_index >= 0;
 	int trylock_failed;
 
 	if (!b) {
@@ -150,16 +153,24 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_bitmap *b,
 
 	trylock_failed = !mutex_trylock(&b->bm_change);
 
-	if (trylock_failed && peer_device && b->bm_locked_peer != peer_device) {
+	if (trylock_failed && slot_lock &&
+	    b->bm_locked_slot_index != peer_device->bitmap_index) {
 		mutex_lock(&b->bm_change);
 		trylock_failed = 0;
 	}
 
 	if (trylock_failed) {
-		drbd_warn(device, "%s[%d] going to '%s' but bitmap already locked for '%s' by %s[%d]\n",
-			  current->comm, task_pid_nr(current),
-			  why, b->bm_why ?: "?",
-			  b->bm_task_comm, b->bm_task_pid);
+		if (b->bm_locked_slot_index >= 0)
+			drbd_warn(device, "%s[%d] going to '%s' but bitmap already locked for '%s' on slot %d by %s[%d]\n",
+				  current->comm, task_pid_nr(current),
+				  why, b->bm_why ?: "?",
+				  b->bm_locked_slot_index,
+				  b->bm_task_comm, b->bm_task_pid);
+		else
+			drbd_warn(device, "%s[%d] going to '%s' but bitmap already locked device-wide for '%s' by %s[%d]\n",
+				  current->comm, task_pid_nr(current),
+				  why, b->bm_why ?: "?",
+				  b->bm_task_comm, b->bm_task_pid);
 		mutex_lock(&b->bm_change);
 	}
 	if (b->bm_flags & BM_LOCK_ALL)
@@ -169,7 +180,10 @@ _drbd_bm_lock(struct drbd_device *device, struct drbd_bitmap *b,
 	b->bm_why  = why;
 	strcpy(b->bm_task_comm, current->comm);
 	b->bm_task_pid = task_pid_nr(current);
-	b->bm_locked_peer = peer_device;
+	if (slot_lock)
+		b->bm_locked_slot_index = peer_device->bitmap_index;
+	else
+		b->bm_locked_slot_index = -1;
 }
 
 void drbd_bm_lock(struct drbd_device *device, const char *why, enum bm_flag flags)
@@ -196,7 +210,7 @@ void _drbd_bm_unlock(struct drbd_device *device, struct drbd_bitmap *b)
 	b->bm_why  = NULL;
 	b->bm_task_comm[0] = 0;
 	b->bm_task_pid = 0;
-	b->bm_locked_peer = NULL;
+	b->bm_locked_slot_index = -1;
 	mutex_unlock(&b->bm_change);
 }
 
@@ -426,6 +440,7 @@ struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_
 
 	b->bm_max_peers = max_peers;
 	b->bm_block_shift = bm_block_shift;
+	b->bm_locked_slot_index = -1;
 
 	return b;
 }
@@ -781,7 +796,12 @@ __bm_op(struct drbd_device *device, struct drbd_bitmap *bitmap, unsigned int bit
 	if (!bitmap->bm_bits)
 		return 0;
 
-	if (bitmap->bm_task_pid != task_pid_nr(current)) {
+	/* Warn only when the op runs against the lock holder's scope: a
+	 * different task, and either a device-wide lock or one on this slot.
+	 */
+	if (bitmap->bm_task_pid != task_pid_nr(current) &&
+	    (bitmap->bm_locked_slot_index < 0 ||
+	     bitmap->bm_locked_slot_index == bitmap_index)) {
 		switch (op) {
 		case BM_OP_CLEAR:
 			if (bitmap->bm_flags & BM_LOCK_CLEAR)
