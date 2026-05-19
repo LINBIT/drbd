@@ -105,6 +105,9 @@ struct dtt_path {
 	struct list_head sockets; /* sockets passed to me by other receiver threads */
 };
 
+/* From drbd_transport.c; here because drbd-headers is frozen for drbd-9.2 */
+struct drbd_listener *drbd_listener_try_get_ref(struct drbd_path *path);
+
 static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
 static void dtt_socket_free(struct socket **sock);
@@ -689,7 +692,11 @@ static struct dtt_path *dtt_wait_connect_cond(struct drbd_transport *transport)
 	rcu_read_lock();
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		path = container_of(drbd_path, struct dtt_path, path);
-		listener = drbd_path->listener;
+
+		/* Pairs with xchg() in drbd_put_listener() */
+		listener = READ_ONCE(drbd_path->listener);
+		if (!listener)
+			continue;
 
 		spin_lock_bh(&listener->waiters_lock);
 		rv = listener->pending_accepts > 0 || !list_empty(&path->sockets);
@@ -714,7 +721,7 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 }
 
 static int dtt_wait_for_connect(struct drbd_transport *transport,
-				struct drbd_listener *drbd_listener, struct socket **socket,
+				struct socket **socket,
 				struct dtt_path **ret_path)
 {
 	struct dtt_socket_container *socket_c;
@@ -724,14 +731,23 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 	struct socket *s_estab = NULL;
 	struct net_conf *nc;
 	struct drbd_path *drbd_path2;
-	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
+	struct drbd_listener *drbd_listener;
+	struct dtt_listener *listener;
 	struct dtt_path *path = NULL;
+
+	/* Protect the listener from a concurrent del-path (drbd_put_listener()) */
+	drbd_listener = drbd_listener_try_get_ref(&(*ret_path)->path);
+	if (!drbd_listener)
+		return -EAGAIN;
+
+	listener = container_of(drbd_listener, struct dtt_listener, listener);
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return -EINVAL;
+		err = -EINVAL;
+		goto out;
 	}
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
@@ -745,8 +761,10 @@ retry:
 	timeo = wait_event_interruptible_timeout(listener->wait,
 			(path = dtt_wait_connect_cond(transport)),
 			timeo);
-	if (timeo <= 0)
-		return -EAGAIN;
+	if (timeo <= 0) {
+		err = -EAGAIN;
+		goto out;
+	}
 
 	spin_lock_bh(&listener->listener.waiters_lock);
 	socket_c = list_first_entry_or_null(&path->sockets, struct dtt_socket_container, list);
@@ -762,7 +780,7 @@ retry:
 		err = kernel_accept(listener->s_listen, &s_estab, O_NONBLOCK);
 		if (err < 0) {
 			kref_put(&path->path.kref, drbd_destroy_path);
-			return err;
+			goto out;
 		}
 
 		/* The established socket inherits the sk_state_change callback
@@ -817,12 +835,17 @@ retry:
 	if (*ret_path)
 		kref_put(&(*ret_path)->path.kref, drbd_destroy_path);
 	*ret_path = path;
-	return 0;
+	err = 0;
+	goto out;
 
 retry_locked:
 	spin_unlock_bh(&listener->listener.waiters_lock);
 	dtt_socket_free(&s_estab);
 	goto retry;
+
+out:
+	kref_put(&drbd_listener->kref, drbd_listener_destroy);
+	return err;
 }
 
 static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket)
@@ -1223,7 +1246,7 @@ static int dtt_connect(struct drbd_transport *transport)
 
 retry:
 		s = NULL;
-		err = dtt_wait_for_connect(transport, connect_to_path->path.listener, &s, &connect_to_path);
+		err = dtt_wait_for_connect(transport, &s, &connect_to_path);
 		if (err < 0 && err != -EAGAIN)
 			goto out_release_sockets;
 

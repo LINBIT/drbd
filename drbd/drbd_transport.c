@@ -264,6 +264,27 @@ void drbd_put_listener(struct drbd_path *path)
 	kref_put(&listener->kref, drbd_listener_destroy);
 }
 
+/**
+ * drbd_listener_try_get_ref() - Acquire a reference to path->listener.
+ * @path: The path whose listener should be pinned.
+ *
+ * Necessary to protect from a concurrently running del-path.
+ */
+struct drbd_listener *drbd_listener_try_get_ref(struct drbd_path *path)
+{
+	struct drbd_connection *connection =
+		container_of(path->transport, struct drbd_connection, transport);
+	struct drbd_resource *resource = connection->resource;
+	struct drbd_listener *listener;
+
+	spin_lock_bh(&resource->listeners_lock);
+	listener = READ_ONCE(path->listener);
+	if (!listener || !kref_get_unless_zero(&listener->kref))
+		listener = NULL;
+	spin_unlock_bh(&resource->listeners_lock);
+	return listener;
+}
+
 struct drbd_path *drbd_find_path_by_addr(struct drbd_listener *listener, struct sockaddr_storage *addr)
 {
 	struct drbd_path *path;
@@ -371,6 +392,7 @@ EXPORT_SYMBOL_GPL(drbd_register_transport_class);
 EXPORT_SYMBOL_GPL(drbd_unregister_transport_class);
 EXPORT_SYMBOL_GPL(drbd_get_listener);
 EXPORT_SYMBOL_GPL(drbd_put_listener);
+EXPORT_SYMBOL_GPL(drbd_listener_try_get_ref);
 EXPORT_SYMBOL_GPL(drbd_find_path_by_addr);
 EXPORT_SYMBOL_GPL(drbd_stream_send_timed_out);
 EXPORT_SYMBOL_GPL(drbd_should_abort_listening);

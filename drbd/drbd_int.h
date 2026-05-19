@@ -2144,6 +2144,9 @@ void drbd_transport_shutdown(struct drbd_connection *connection,
 void drbd_destroy_connection(struct kref *kref);
 void conn_free_crypto(struct drbd_connection *connection);
 
+/* From drbd_transport.c; here because drbd-headers is frozen for drbd-9.2 */
+struct drbd_listener *drbd_listener_try_get_ref(struct drbd_path *path);
+
 /* drbd_req */
 void drbd_do_submit_conflict(struct work_struct *ws);
 void do_submit(struct work_struct *ws);
