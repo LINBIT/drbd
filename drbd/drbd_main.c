@@ -170,7 +170,7 @@ module_param_named(strict_names, drbd_strict_names, drbd_strict_names, 0644);
  * as member "struct gendisk *vdisk;"
  */
 struct idr drbd_devices;
-struct list_head drbd_resources;
+LIST_HEAD(drbd_resources);
 static DEFINE_SPINLOCK(drbd_devices_lock);
 DEFINE_MUTEX(resources_mutex);
 
@@ -4491,8 +4491,6 @@ static int __init drbd_init(void)
 	 */
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
-
-	INIT_LIST_HEAD(&drbd_resources);
 
 	err = register_pernet_device(&drbd_pernet_ops);
 	if (err) {
