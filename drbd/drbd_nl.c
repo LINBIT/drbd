@@ -4171,7 +4171,7 @@ int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 			drbd_info(peer_device, "Assuming that all blocks are out of sync "
 				  "(aka FullSync)\n");
 			if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
-				"set_n_write from attaching", BM_LOCK_ALL,
+				"set_n_write from attaching", BM_LOCK_ALL | BM_LOCK_SINGLE_SLOT,
 				peer_device)) {
 				retcode = ERR_IO_MD_DISK;
 				goto force_diskless_dec;
@@ -6443,7 +6443,9 @@ static int full_sync_from_peer(struct drbd_peer_device *peer_device)
 			if (retcode >= SS_SUCCESS) {
 				if (drbd_bitmap_io(device, &drbd_bmio_set_susp_al,
 						   "set_n_write from invalidate_peer",
-						   BM_LOCK_CLEAR | BM_LOCK_BULK, peer_device))
+						   BM_LOCK_CLEAR | BM_LOCK_BULK |
+							BM_LOCK_SINGLE_SLOT,
+						   peer_device))
 					retcode = ERR_IO_MD_DISK;
 			}
 		} else {

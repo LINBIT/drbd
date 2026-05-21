@@ -4681,7 +4681,8 @@ static void no_resync_connect_bm(struct drbd_peer_device *peer_device)
 
 	drbd_print_uuids(peer_device, "cleared bm UUID and bitmap");
 	drbd_bitmap_io_from_worker(device, &drbd_bmio_clear_one_peer,
-				   "clearing bm one peer", BM_LOCK_CLEAR | BM_LOCK_BULK,
+				   "clearing bm one peer",
+				   BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 				   peer_device);
 }
 
@@ -4941,7 +4942,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_queue_bitmap_io(device,
 					&drbd_bmio_set_n_write, &abw_start_sync,
 					"set_n_write from StartingSync",
-					BM_LOCK_CLEAR | BM_LOCK_BULK,
+					BM_LOCK_CLEAR | BM_LOCK_BULK | BM_LOCK_SINGLE_SLOT,
 					peer_device);
 
 			/* A backing device that grew under DRBD reaches the
