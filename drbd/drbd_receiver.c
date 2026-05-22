@@ -9502,7 +9502,7 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		spin_lock_irq(&connection->peer_reqs_lock);
-		list_for_each_entry(peer_req, &connection->dagtag_wait_ee, w.list) {
+		list_for_each_entry_safe(peer_req, t, &connection->dagtag_wait_ee, w.list) {
 			if (peer_req->depend_dagtag_node_id != node_id)
 				continue;
 
@@ -9513,15 +9513,25 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 					node_id);
 
 			list_move_tail(&peer_req->w.list, &work_list);
-			break;
 		}
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
 	rcu_read_unlock();
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+		struct drbd_peer_device *peer_device = peer_req->peer_device;
+
 		drbd_peer_resync_read_cancel(peer_req);
+		/* Verify requests on the source side are placed in the
+		 * interval tree when the request is made; they need to be
+		 * removed if the reply was parked waiting for a dagtag.
+		 * Mirrors free_dagtag_wait_requests().
+		 */
+		if (peer_req->i.type == INTERVAL_OV_READ_SOURCE)
+			drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
+		dec_unacked(peer_device);
+		put_ldev(peer_device->device);
 	}
 }
 
