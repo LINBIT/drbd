@@ -293,13 +293,6 @@ int handshake_req_submit(struct socket *sock, struct handshake_req *req,
 			goto out_err;
 	}
 
-	/*
-	 * Pin struct sock so sk_destruct does not run until the
-	 * handshake completion path releases it; struct socket is
-	 * held separately via hr_file above.
-	 */
-	sock_hold(req->hr_sk);
-
 	return 0;
 
 out_unlock:
@@ -318,15 +311,10 @@ EXPORT_SYMBOL(handshake_req_submit);
 void handshake_complete(struct handshake_req *req, int status,
 			struct genl_info *info)
 {
-	struct sock *sk = req->hr_sk;
-
 	if (!test_and_set_bit(HANDSHAKE_F_REQ_COMPLETED, &req->hr_flags)) {
 		struct file *file = req->hr_file;
 
 		req->hr_proto->hp_done(req, status, info);
-
-		/* Handshake request is no longer pending */
-		sock_put(sk);
 
 		fput(file);
 	}
@@ -370,8 +358,6 @@ bool handshake_req_cancel(struct sock *sk)
 
 out_true:
 
-	/* Handshake request is no longer pending */
-	sock_put(sk);
 	fput(req->hr_file);
 	return true;
 }
