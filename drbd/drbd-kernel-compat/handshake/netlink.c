@@ -95,7 +95,6 @@ int handshake_nl_accept_doit(struct sk_buff *skb, struct genl_info *info)
 	struct net *net = sock_net(skb->sk);
 	struct handshake_net *hn = handshake_pernet(net);
 	struct handshake_req *req;
-	struct socket *sock;
 	int class, fd, err;
 
 	err = -EOPNOTSUPP;
@@ -114,9 +113,9 @@ int handshake_nl_accept_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!req)
 		goto out_status;
 
-	sock = req->hr_sk->sk_socket;
 	fd = get_unused_fd_flags(O_CLOEXEC);
 	if (fd < 0) {
+		fput(req->hr_file); /* drop ref from handshake_req_next() */
 		err = fd;
 		goto out_complete;
 	}
@@ -124,10 +123,11 @@ int handshake_nl_accept_doit(struct sk_buff *skb, struct genl_info *info)
 	err = req->hr_proto->hp_accept(req, info, fd);
 	if (err) {
 		put_unused_fd(fd);
+		fput(req->hr_file);
 		goto out_complete;
 	}
 
-	fd_install(fd, get_file(sock->file));
+	fd_install(fd, req->hr_file); /* consumes the handshake_req_next() ref */
 
 	return 0;
 
