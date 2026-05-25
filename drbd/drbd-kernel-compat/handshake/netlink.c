@@ -15,6 +15,7 @@
 #include <linux/mm.h>
 #include <linux/netlink.h>
 #include <linux/file.h>
+#include <linux/err.h>
 
 #include <net/sock.h>
 #include <net/genetlink.h>
@@ -162,8 +163,16 @@ int handshake_nl_done_doit(struct sk_buff *skb, struct genl_info *info)
 
 
 	status = -EIO;
-	if (info->attrs[HANDSHAKE_A_DONE_STATUS])
-		status = nla_get_u32(info->attrs[HANDSHAKE_A_DONE_STATUS]);
+	if (info->attrs[HANDSHAKE_A_DONE_STATUS]) {
+		u32 err_status = nla_get_u32(info->attrs[HANDSHAKE_A_DONE_STATUS]);
+
+		/* Upstream bounds this with NLA_POLICY_MAX() */
+		if (err_status > MAX_ERRNO) {
+			fput(sock->file);
+			return -EINVAL;
+		}
+		status = -(int)err_status;
+	}
 
 	handshake_complete(req, status, info);
 	fput(sock->file);
