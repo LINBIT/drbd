@@ -11370,8 +11370,12 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 
 		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, 0);
 		any_send_oos_pending |= peer_req->send_oos_pending;
-		if (!peer_req->send_oos_pending)
-			drbd_free_peer_req(peer_req);
+		if (peer_req->send_oos_pending) {
+			peer_req->flags &= ~EE_ON_RECV_ORDER;
+			peer_req->flags |= EE_ON_SEND_OOS;
+		} else {
+			drbd_free_peer_req(peer_req); /* list_del() because EE_ON_RECV_ORDER */
+		}
 	}
 
 	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
