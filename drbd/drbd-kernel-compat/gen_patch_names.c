@@ -240,6 +240,9 @@ int main(int argc, char **argv)
 	patch(1, "kmalloc_obj", true, false,
 	      COMPAT_HAVE_KMALLOC_OBJ, "present");
 
+	patch(1, "kzalloc_flex", true, false,
+	      COMPAT_HAVE_KZALLOC_FLEX, "present");
+
 	patch(1, "struct_size", true, false,
 	      COMPAT_HAVE_STRUCT_SIZE, "present");
 
