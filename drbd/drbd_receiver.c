@@ -3707,8 +3707,12 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 	u64 block_id = peer_req->block_id;
 
 	if (peer_req->i.type == INTERVAL_OV_READ_SOURCE) {
-		/* P_OV_REPLY */
-		dec_rs_pending(peer_device);
+		/* P_OV_REPLY.
+		 * rs_pending was already decremented in
+		 * receive_common_ov_reply() before the peer_req reached
+		 * either of the two paths that call us; do not decrement
+		 * again.
+		 */
 		drbd_send_ov_result(peer_device, sector, size, block_id, OV_RESULT_SKIP);
 	} else if (peer_req->i.type == INTERVAL_OV_READ_TARGET) {
 		/* P_OV_REQUEST */
