@@ -2,6 +2,12 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.18-xen.2 (api:genl2/proto:86-101,118-122/transport:21)
+--------
+ * Fix a crash when passing max_parallel_resyncs as module parameter
+   (opposed to setting it later using
+   /sys/module/drbd/parameters/max_parallel_resyncs)
+
 9.2.18-xen.1 (api:genl2/proto:86-101,118-122/transport:21)
 --------
  * With DRBD tracking exact open counts for Linux 6.3 (or older) only
