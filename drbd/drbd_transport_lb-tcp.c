@@ -87,6 +87,8 @@ struct dtl_transport {
 	int connected_paths;
 	wait_queue_head_t connected_paths_change;
 	int err;
+	struct mutex connecting_socket_mutex;
+	struct socket *connecting_socket;
 };
 
 struct dtl_listener {
@@ -197,6 +199,7 @@ static int dtl_init(struct drbd_transport *transport)
 		container_of(transport, struct dtl_transport, transport);
 
 	spin_lock_init(&dtl_transport->control_recv_lock);
+	mutex_init(&dtl_transport->connecting_socket_mutex);
 
 	dtl_transport->transport.class = &dtl_transport_class;
 	timer_setup(&dtl_transport->control_timer, dtl_control_timer_fn, 0);
@@ -576,6 +579,8 @@ static bool dtl_path_cmp_addr(struct dtl_path *path)
 static int
 dtl_try_connect(struct drbd_transport *transport, struct dtl_path *path, struct socket **ret_sock)
 {
+	struct dtl_transport *dtl_transport =
+		container_of(transport, struct dtl_transport, transport);
 	const char *what;
 	struct socket *sock;
 	struct sockaddr_storage my_addr, peer_addr;
@@ -629,8 +634,14 @@ dtl_try_connect(struct drbd_transport *transport, struct dtl_path *path, struct 
 
 	/* connect may fail, peer not yet available. stay C_CONNECTING */
 	what = "connect";
+	mutex_lock(&dtl_transport->connecting_socket_mutex);
+	dtl_transport->connecting_socket = sock;
+	mutex_unlock(&dtl_transport->connecting_socket_mutex);
 	err = sock->ops->connect(sock, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
+	mutex_lock(&dtl_transport->connecting_socket_mutex);
+	dtl_transport->connecting_socket = NULL;
+	mutex_unlock(&dtl_transport->connecting_socket_mutex);
 	if (err < 0) {
 		switch (err) {
 		case -ETIMEDOUT:
@@ -1300,6 +1311,12 @@ static void dtl_connect_work_fn(struct work_struct *work)
 		bool use_for_data;
 
 		nr_paths++;
+
+		if (!test_bit(DTL_CONNECTING, &dtl_transport->flags)) {
+			kref_put(&drbd_path->kref, drbd_destroy_path);
+			break;
+		}
+
 		if (_dtl_path_established(transport, path))
 			continue;
 
@@ -1388,10 +1405,22 @@ static int dtl_set_active(struct drbd_transport *transport, bool active)
 		container_of(transport, struct dtl_transport, transport);
 	struct drbd_path *drbd_path;
 
-	if (active)
+	if (active) {
 		set_bit(DTL_CONNECTING, &dtl_transport->flags);
-	else
+	} else {
+		struct socket *sock;
+
 		clear_bit(DTL_CONNECTING, &dtl_transport->flags);
+
+		/* Abort a waiting connect(). Holding the mutex across the
+		 * shutdown keeps the socket alive.
+		 */
+		mutex_lock(&dtl_transport->connecting_socket_mutex);
+		sock = dtl_transport->connecting_socket;
+		if (sock)
+			kernel_sock_shutdown(sock, SHUT_RDWR);
+		mutex_unlock(&dtl_transport->connecting_socket_mutex);
+	}
 
 	for_each_path_ref(drbd_path, transport) {
 		struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);
