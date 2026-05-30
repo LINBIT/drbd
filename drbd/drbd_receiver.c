@@ -3492,7 +3492,8 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct gendisk *disk = device->ldev->backing_bdev->bd_disk;
-	unsigned long db, dt, dbdt;
+	unsigned long dt, dbdt;
+	long db;
 	unsigned int c_min_rate;
 	int curr_events;
 
@@ -3525,7 +3526,18 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 		dt = ((long)jiffies - (long)peer_device->rs_mark_time[i]) / HZ;
 		if (!dt)
 			dt++;
-		db = peer_device->rs_mark_left[i] - rs_left;
+
+		/* db is signed: the out-of-sync count grows (db < 0) when the
+		 * resync is losing ground to incoming application writes. Doing
+		 * this subtraction unsigned would wrap to a huge value, making
+		 * dbdt exceed c_min_rate and wrongly throttle the resync exactly
+		 * when it is starved. If oos is not shrinking, the resync makes
+		 * no forward progress, i.e. it is below any minimum rate, so we
+		 * must not slow it down here.
+		 */
+		db = (long)peer_device->rs_mark_left[i] - (long)rs_left;
+		if (db <= 0)
+			return false;
 		dbdt = Bit2KB(db/dt);
 
 		if (dbdt > c_min_rate)
