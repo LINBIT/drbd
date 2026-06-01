@@ -4840,10 +4840,13 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	 * actually set a new bitmap uuid */
 	u64 got_new_bitmap_uuid = 0;
 
-	if (device->ldev->md.current_uuid != UUID_JUST_CREATED)
+	if (device->ldev->md.current_uuid != UUID_JUST_CREATED) {
 		prev_c_uuid = device->ldev->md.current_uuid;
-	else
+	} else {
 		get_random_bytes(&prev_c_uuid, sizeof(u64));
+		drbd_info(device, "Bitmap UUID for initial resync: %016llX\n",
+			  (unsigned long long)prev_c_uuid);
+	}
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
