@@ -1845,11 +1845,15 @@ static int dtl_bio_chunk_size_available(struct bio *bio, int wmem_available,
 	struct bio_vec bvec;
 	int chunk = 0;
 
-	while (chunk < wmem_available && iter_scan->bi_size) {
+	/* Always include at least one bvec, even when wmem_available <= 0 (the
+	 * socket's send queue is full). Otherwise we would emit a 0-byte chunk
+	 * header.
+	 */
+	do {
 		bvec = bio_iter_iovec(bio, *iter_scan);
 		chunk += bvec.bv_len;
 		bio_advance_iter_single(bio, iter_scan, bvec.bv_len);
-	}
+	} while (chunk < wmem_available && iter_scan->bi_size);
 
 	return chunk;
 }
