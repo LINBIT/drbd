@@ -1516,22 +1516,50 @@ static int dtt_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	struct drbd_tcp_transport *tcp_transport =
 		container_of(transport, struct drbd_tcp_transport, transport);
 	struct socket *socket = tcp_transport->stream[stream];
-	struct msghdr msg = { .msg_flags = msg_flags | MSG_NOSIGNAL };
+	struct net_conf *nc;
+	struct msghdr msg;
 	struct bio_vec bvec;
 	int len = size;
 	int err = -EIO;
+	bool tls;
 
 	if (!socket)
 		return -ENOTCONN;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	tls = nc && nc->tls;
+	rcu_read_unlock();
+
+	/* With kTLS the payload is encrypted into freshly allocated TLS records,
+	 * so there is no zero-copy to preserve. Doing so would cause page ref bugs.
+	 */
+	if (tls)
+		msg_flags &= ~MSG_SPLICE_PAGES;
+
+	msg = (struct msghdr) { .msg_flags = msg_flags | MSG_NOSIGNAL };
 
 	dtt_update_congested(tcp_transport);
 	do {
 		int sent;
 
-		bvec_set_page(&bvec, page, len, offset);
-		iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, len);
+		if (tls) {
+			/* Map and send at most one page at a time. */
+			struct page *p = page + (offset >> PAGE_SHIFT);
+			unsigned int poff = offset & ~PAGE_MASK;
+			unsigned int chunk = min_t(int, len, PAGE_SIZE - poff);
+			void *addr = kmap_local_page(p);
+			struct kvec iov = { .iov_base = addr + poff, .iov_len = chunk };
 
-		sent = sock_sendmsg(socket, &msg);
+			iov_iter_kvec(&msg.msg_iter, ITER_SOURCE, &iov, 1, chunk);
+			sent = sock_sendmsg(socket, &msg);
+			kunmap_local(addr);
+		} else {
+			bvec_set_page(&bvec, page, len, offset);
+			iov_iter_bvec(&msg.msg_iter, ITER_SOURCE, &bvec, 1, len);
+
+			sent = sock_sendmsg(socket, &msg);
+		}
 		if (sent <= 0) {
 			if (sent == -EAGAIN) {
 				if (drbd_stream_send_timed_out(transport, stream))

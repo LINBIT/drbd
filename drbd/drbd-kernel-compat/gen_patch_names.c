@@ -130,6 +130,9 @@ int main(int argc, char **argv)
 	patch(1, "sendpage", false, true,
 	      COMPAT_HAVE_SENDPAGE, "present");
 
+	patch(1, "iter_source", true, false,
+	      COMPAT_HAVE_ITER_SOURCE, "present");
+
 	patch(1, "ib_device", true, false,
 	      COMPAT_IB_DEVICE_HAS_OPS, "has_ops");
 
