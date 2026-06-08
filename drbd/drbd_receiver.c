@@ -6519,13 +6519,29 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		spin_lock_irq(&device->ldev->md.uuid_lock);
 	}
 
-	if (device->resource->role[NOW] != R_PRIMARY ||
+	/* The condition below keeps a diskless primary's exposed current UUID
+	 * from going backward when a stale/older value is reported (see commit
+	 * 2f464b8e8 "drbd: fix exposed_uuid going backward").  But that
+	 * protection must only apply to a CONFIRMED generation.  If our view of
+	 * this peer's current UUID was advanced only optimistically by our own
+	 * UUID bump (CURRENT_UUID_UNCONFIRMED) and the peer never actually got
+	 * it, the peer's handshake report is the truth -- take it, so we do not
+	 * treat the peer as UpToDate at a generation it never persisted.
+	 */
+	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) ||
+	    device->resource->role[NOW] != R_PRIMARY ||
 	    device->disk_state[NOW] != D_DISKLESS ||
 	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
 						(device->exposed_data_uuid & ~UUID_PRIMARY) ||
 	    (peer_device->comm_current_uuid & ~UUID_PRIMARY) !=
 						(device->exposed_data_uuid & ~UUID_PRIMARY))
 		peer_device->current_uuid = be64_to_cpu(p->current_uuid);
+
+	/* The peer just told us its current UUID in this handshake; whatever we
+	 * now hold reflects reality, so the optimistic-bump assumption is
+	 * resolved either way.
+	 */
+	clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);

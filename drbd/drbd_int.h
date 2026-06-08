@@ -631,6 +631,14 @@ enum peer_device_flag {
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 	PEER_QUORATE,		/* Peer has quorum */
+	CURRENT_UUID_UNCONFIRMED, /* peer_device->current_uuid was advanced
+				   * optimistically (diskless primary sent a new
+				   * current UUID to this still-connected peer and
+				   * assumed it took); not yet confirmed by the
+				   * peer.  Until confirmed, a handshake must
+				   * trust the peer's reported UUID over this
+				   * optimistic value.
+				   */
 };
 
 /* We could make these currently hardcoded constants configurable
