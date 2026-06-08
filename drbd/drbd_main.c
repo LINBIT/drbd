@@ -5036,6 +5036,10 @@ static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced
 		return;
 	}
 	downgrade_write(&device->uuid_sem);
+	/* New data generation: separate pre- and post-bump writes into distinct
+	 * write epochs (see the diskless path in drbd_uuid_new_current).
+	 */
+	start_new_tl_epoch(device->resource);
 	weak_nodes = drbd_weak_nodes_device(device);
 	__new_current_uuid_info(device, weak_nodes);
 	__new_current_uuid_send(device, weak_nodes, forced);
@@ -5318,6 +5322,15 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 			current_uuid |= UUID_PRIMARY;
 		else
 			current_uuid &= ~UUID_PRIMARY;
+
+		/* A new data generation begins here: close the current write
+		 * epoch so that writes issued under the old current UUID and
+		 * writes issued under the new one never share an epoch.  The
+		 * post-bump epoch's barrier-ack then tells us a peer actually
+		 * persisted the new generation (a confirmation the diskless
+		 * primary otherwise lacks).
+		 */
+		start_new_tl_epoch(device->resource);
 
 		down_write(&device->uuid_sem);
 		drbd_uuid_set_exposed(device, current_uuid, false);
