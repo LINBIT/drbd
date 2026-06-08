@@ -5350,6 +5350,12 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 				 * UpToDate at a generation no one ever persisted.
 				 */
 				peer_device->current_uuid = current_uuid;
+				/* The UUID was sent at the start of this (just
+				 * opened) write epoch; anything the peer acks at
+				 * or past it confirms receipt.
+				 */
+				peer_device->current_uuid_epoch =
+					atomic_read(&device->resource->current_tle_nr);
 				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 			}
 		}
