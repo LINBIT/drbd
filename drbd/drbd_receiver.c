@@ -84,6 +84,8 @@ enum sync_rule {
 	RULE_LOST_QUORUM,
 	RULE_RECONNECTED,
 	RULE_BOTH_OFF,
+	RULE_RECONCILE_BITMAP,
+	RULE_RECONCILE_DAGTAG,
 	RULE_BITMAP_PEER,
 	RULE_BITMAP_PEER_OTHER,
 	RULE_BITMAP_SELF,
@@ -109,6 +111,8 @@ static const char * const sync_rule_names[] = {
 	[RULE_LOST_QUORUM] = "lost-quorum",
 	[RULE_RECONNECTED] = "reconnected",
 	[RULE_BOTH_OFF] = "both-off",
+	[RULE_RECONCILE_BITMAP] = "reconcile-bitmap",
+	[RULE_RECONCILE_DAGTAG] = "reconcile-dagtag",
 	[RULE_BITMAP_PEER] = "bitmap-peer",
 	[RULE_BITMAP_PEER_OTHER] = "bitmap-peer-other",
 	[RULE_BITMAP_SELF] = "bitmap-self",
@@ -274,6 +278,7 @@ static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kin
 static bool disconnect_expected(struct drbd_connection *connection);
 static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid);
 static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
+static int find_common_lost_primary_node_id(struct drbd_connection *self);
 static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *peer_device);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
@@ -646,6 +651,25 @@ void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
+
+	/*
+	 * If a common primary is currently absent and we have a dagtag toward
+	 * it, hand the peer our position in its change stream before the UUID
+	 * and state packets below. drbd_uuid_compare() on the peer uses it to
+	 * roll an equal-UUID both-dirty reconcile forward (the node further
+	 * along the stream becomes the source). Feature-gated; a peer without
+	 * the feature never receives it and falls back to a node-id choice.
+	 */
+	if (connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT) {
+		int lost_node_id = find_common_lost_primary_node_id(connection);
+		struct drbd_connection *lost_peer = lost_node_id == -1 ? NULL :
+			drbd_get_connection_by_node_id(connection->resource, lost_node_id);
+
+		if (lost_peer) {
+			drbd_send_peer_dagtag(connection, lost_peer);
+			kref_put(&lost_peer->kref, drbd_destroy_connection);
+		}
+	}
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -4587,6 +4611,50 @@ uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, enum sync_rule *r
 	return UNDETERMINED;
 }
 
+/*
+ * Two diskful peers can carry the same current UUID yet sit at different
+ * positions in a (now absent) common primary's change stream. When both still
+ * hold out-of-sync bits toward each other, the bit counts do not order them;
+ * only the dagtag toward that common primary tells roll-forward from roll-back.
+ *
+ * Each of us kept its last_dagtag_sector toward the lost primary across the
+ * disconnect (see conn_disconnect()). Identify exactly one such common,
+ * currently-absent peer, so we can hand the other side our dagtag toward it
+ * during the handshake and let the node further along the stream become the
+ * resync source.
+ *
+ * Return -1 if there is no candidate, or more than one (ambiguous): we then
+ * fall back to a deterministic node-id choice, which still converges.
+ */
+static int find_common_lost_primary_node_id(struct drbd_connection *self)
+{
+	struct drbd_resource *resource = self->resource;
+	struct drbd_connection *connection;
+	int found = -1;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection == self)
+			continue;
+		if (connection->cstate[NOW] == C_CONNECTED)
+			continue;
+		/*
+		 * Non-zero means we received writes (dagtags) from it: it was a
+		 * source of data we may sit behind. Zero cannot order us.
+		 */
+		if (atomic64_read(&connection->last_dagtag_sector) == 0)
+			continue;
+		if (found != -1) {
+			found = -1; /* ambiguous; caller uses the node-id fallback */
+			break;
+		}
+		found = connection->peer_node_id;
+	}
+	rcu_read_unlock();
+
+	return found;
+}
+
 static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device,
 			     enum sync_rule *rule, int *peer_node_id)
 {
@@ -4674,6 +4742,15 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			*rule = RULE_SYNC_TARGET_PEER_MISSED_FINISH;
 			return SYNC_TARGET_USE_BITMAP;
 		}
+
+		/*
+		 * Equal current UUIDs do not imply identical data: two peers can
+		 * still hold out-of-sync bits toward each other. The rules below
+		 * resolve the direction; where they would otherwise declare NO_SYNC
+		 * and drop those bits, disk_states_to_strategy() reconciles via the
+		 * bitmap afterwards (maybe_reconcile_equal_uuid_bitmap), so it never
+		 * preempts a disk-state-based direction.
+		 */
 
 		if (connection->agreed_pro_version >= 120) {
 			*rule = RULE_RECONNECTED;
@@ -5049,9 +5126,110 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 	return SYNC_TARGET_CLEAR_BITMAP;
 }
 
+/*
+ * Two equal-current-UUID peers can still hold out-of-sync bits toward each
+ * other (a common primary vanished while they sat at different positions in
+ * its change stream, and the P_PEER_DAGTAG reconciliation never reached them
+ * -- e.g. a switch failure isolating all three at once). The equal-UUID rules
+ * would then declare NO_SYNC, which clears the bitmaps and silently drops the
+ * divergence. Reconcile via the bitmap instead.
+ *
+ *     precondition (else leave the decision untouched):
+ *         strategy == NO_SYNC            (rules found no resync; bits would drop)
+ *         both peers D_UP_TO_DATE        (differing disk states are the
+ *                                         disk-state decision's job, made above)
+ *         out-of-sync bits remain        (comm_bm_set || dirty_bits)
+ *         peer supports the feature      (DRBD_FF_RECONCILE_RECONNECT)
+ *         no stronger signal owns it     (crashed primary / lost quorum)
+ *
+ *     direction:
+ *         one side has bits   -> that side is the exact subset -> other is source
+ *         both sides have bits -> dagtag toward the common lost primary,
+ *                                 else a deterministic node-id tie-break
+ *
+ * Placed here, after the disk-state resolution, so it never preempts a real
+ * resync direction; it only rescues the would-be NO_SYNC-drops-bits case.
+ */
+static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_device,
+					      enum drbd_disk_state disk_state,
+					      enum drbd_disk_state peer_disk_state,
+					      enum sync_strategy *strategy,
+					      enum sync_rule *rule)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
+	u64 local_uuid_flags;
+
+	if (*strategy != NO_SYNC)
+		return;
+	if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE)
+		return;
+	if (!(peer_device->comm_bm_set || peer_device->dirty_bits))
+		return;
+	if (!(connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT))
+		return;
+
+	/*
+	 * Reconcile only between secondaries of a *common lost primary*: the peer
+	 * named one via P_PEER_DAGTAG during this connect handshake
+	 * (find_common_lost_primary_node_id stashed it in reconcile_handshake).
+	 * Without that, an equal-UUID state with leftover bits is an ordinary
+	 * reconnect whose direction the rules above already settled (or NO_SYNC is
+	 * correct) -- do not second-guess it and force a resync.
+	 */
+	if (connection->cstate[NOW] != C_CONNECTING ||
+	    connection->reconcile_handshake.lost_node_id == -1)
+		return;
+
+	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
+	if ((local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
+	    (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
+	    test_bit(PRIMARY_LOST_QUORUM, &device->flags) ||
+	    (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM))
+		return;
+
+	*rule = RULE_RECONCILE_BITMAP;
+	if (peer_device->comm_bm_set && !peer_device->dirty_bits) {
+		*strategy = SYNC_SOURCE_USE_BITMAP;
+	} else if (peer_device->dirty_bits && !peer_device->comm_bm_set) {
+		*strategy = SYNC_TARGET_USE_BITMAP;
+	} else {
+		/*
+		 * Both sides hold bits. Either direction restores identity, but the
+		 * bit counts do not order us; the node further along the common lost
+		 * primary's change stream (by dagtag) is the source. No usable dagtag
+		 * offset (we are at the same position) -> deterministic node-id
+		 * tie-break; either direction converges.
+		 */
+		int lost_id = connection->reconcile_handshake.lost_node_id;
+		struct drbd_connection *lost;
+		s64 offset = 0;
+
+		rcu_read_lock();
+		lost = drbd_connection_by_node_id(device->resource, lost_id);
+		if (lost)
+			offset = atomic64_read(&lost->last_dagtag_sector) -
+				(s64)connection->reconcile_handshake.dagtag_sector;
+		rcu_read_unlock();
+
+		if (offset) {
+			*rule = RULE_RECONCILE_DAGTAG;
+			*strategy = offset > 0 ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+		} else {
+			*strategy = node_id < peer_device->node_id ?
+				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+		}
+	}
+
+	drbd_info(peer_device,
+		  "strategy = %s to reconcile equal-UUID peers holding out-of-sync bits\n",
+		  strategy_descriptor(*strategy).name);
+}
+
 static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
-				    enum sync_strategy *strategy, enum sync_rule rule,
+				    enum sync_strategy *strategy, enum sync_rule *rule,
 				    int *peer_node_id)
 {
 	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
@@ -5076,8 +5254,8 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 
 		decide_based_on_dstates =
 			dstates_want_resync &&
-			(((rule == RULE_RECONNECTED || rule == RULE_LOST_QUORUM || rule == RULE_BOTH_OFF) &&
-			  resync_direction_arbitrary) ||
+			(((*rule == RULE_RECONNECTED || *rule == RULE_LOST_QUORUM ||
+			   *rule == RULE_BOTH_OFF) && resync_direction_arbitrary) ||
 			 (*strategy == NO_SYNC && either_inconsistent));
 
 		prefer_local = disk_state > peer_disk_state;
@@ -5089,7 +5267,7 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 		   was found by looking if a node lost quorum while being primary */
 	} else {
 		decide_based_on_dstates =
-			(rule == RULE_BOTH_OFF || *strategy == NO_SYNC) && either_inconsistent;
+			(*rule == RULE_BOTH_OFF || *strategy == NO_SYNC) && either_inconsistent;
 
 		prefer_local = disk_state > D_INCONSISTENT;
 	}
@@ -5102,6 +5280,9 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 			  strategy_descriptor(*strategy).name,
 			  drbd_disk_str(disk_state), drbd_disk_str(peer_disk_state));
 	}
+
+	maybe_reconcile_equal_uuid_bitmap(peer_device, disk_state, peer_disk_state,
+					  strategy, rule);
 }
 
 static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
@@ -5122,7 +5303,7 @@ static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_de
 	if (!is_strategy_determined(strategy))
 		return strategy;
 
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, &rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER &&
 	    (!drbd_device_stable(device, NULL) ||
@@ -5294,7 +5475,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 		}
 	}
 
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, &rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
 		drbd_warn(peer_device, "Ignore Split-Brain, for now, at least one side unstable\n");
@@ -6275,7 +6456,8 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 	peer_disk_state = peer_device->disk_state[NOW];
 	if (reason == DISKLESS_PRIMARY)
-		disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+		disk_states_to_strategy(peer_device, peer_disk_state, &strategy,
+					&rule, &peer_node_id);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 	if (new_repl_state != L_ESTABLISHED) {
@@ -7903,7 +8085,7 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 			continue;
 
 		strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
-		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, rule,
+		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, &rule,
 					&peer_node_id);
 		drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
 		if (strategy_descriptor(strategy).resync_peer_preference > best_preference) {
@@ -9073,6 +9255,20 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	s64 dagtag_offset;
 	int vnr = 0;
 
+	/*
+	 * During the connect handshake (DRBD_FF_RECONCILE_RECONNECT) the peer
+	 * sends its position in a common lost primary's change stream before its
+	 * state packet. Stash it for drbd_uuid_compare(), which uses it to roll
+	 * an equal-UUID both-dirty reconcile forward, and do not run the
+	 * established-connection reconciliation below: the connection is not up
+	 * yet, and the resync direction is decided synchronously in the handshake.
+	 */
+	if (connection->cstate[NOW] < C_CONNECTED) {
+		connection->reconcile_handshake.lost_node_id = be32_to_cpu(p->node_id);
+		connection->reconcile_handshake.dagtag_sector = be64_to_cpu(p->dagtag);
+		return 0;
+	}
+
 	lost_peer = drbd_get_connection_by_node_id(resource, be32_to_cpu(p->node_id));
 	if (!lost_peer)
 		return 0;
@@ -10153,6 +10349,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	drain_resync_activity(connection);
 
 	connection->after_reconciliation.lost_node_id = -1;
+	connection->reconcile_handshake.lost_node_id = -1;
 
 	/* Wait for current activity to cease.  This includes waiting for
 	 * peer_request queued to the submitter workqueue. */

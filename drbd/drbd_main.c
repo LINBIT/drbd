@@ -3941,6 +3941,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
 	connection->after_reconciliation.lost_node_id = -1;
+	connection->reconcile_handshake.lost_node_id = -1;
 
 	connection->reassemble_buffer.buffer = connection->reassemble_buffer_bytes.bytes;
 
