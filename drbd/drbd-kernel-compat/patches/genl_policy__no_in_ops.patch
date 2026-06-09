@@ -45,7 +45,7 @@
  		.cmd		= HANDSHAKE_CMD_DONE,
  		.doit		= handshake_nl_done_doit,
 -		.policy		= handshake_done_nl_policy,
- 		.flags		= GENL_CMD_CAP_DO,
+ 		.flags		= GENL_ADMIN_PERM | GENL_CMD_CAP_DO,
  	},
  };
 @@ -55,6 +45,7 @@ struct genl_family handshake_nl_family __ro_after_init = {
