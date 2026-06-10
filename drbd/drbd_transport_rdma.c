@@ -1119,6 +1119,9 @@ static void dtr_remove_cm_from_path(struct dtr_path *path, struct dtr_cm *failed
 {
 	struct dtr_cm *cm;
 
+	if (!failed_cm)
+		return;
+
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
 	if (cm == failed_cm) {
 		__dtr_modify_qp_to_err(cm);
