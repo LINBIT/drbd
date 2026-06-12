@@ -4311,6 +4311,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->have_quorum[OLD] =
 	device->have_quorum[NEW] =
 		(resource->res_opts.quorum == QOU_OFF);
+	/* Real quorum, recomputed on the first state change. */
+	device->quorum[OLD] =
+	device->quorum[NEW] = false;
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
