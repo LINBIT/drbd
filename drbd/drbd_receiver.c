@@ -2642,9 +2642,11 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 		return -EIO;
 
 	/* A reply to a remote read we issued after sending the new current UUID
-	 * confirms the peer processed past it (see validate_req_change_req_state).
+	 * proves the peer received it (handshake confirmation only -- not durable,
+	 * so it does not release the completion hold; see
+	 * validate_req_change_req_state and got_BarrierAck).
 	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch, false);
 	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
@@ -8492,6 +8494,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
+		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer, cannot thaw) */
 		drbd_uuid_new_current(device, false);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
@@ -10859,10 +10862,13 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 		return -EIO;
 	/* This ack refers to a request the peer received; if that request is in
 	 * (or past) the epoch in which we optimistically sent it the current
-	 * UUID, the peer has processed past the UUID -> confirm it.  req->epoch
-	 * is set once at submission; req stays alive until req_mod() below.
+	 * UUID, the peer received the UUID -> confirm it for the handshake.  This
+	 * is a write/recv ack: the data may still be in a volatile cache, so it
+	 * is not durable and does not release the completion hold (only the
+	 * barrier ack does; see got_BarrierAck).  req->epoch is set once at
+	 * submission; req stays alive until req_mod() below.
 	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch, false);
 	req_mod(req, what, peer_device);
 
 	return 0;
@@ -11074,20 +11080,30 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 {
 	struct p_barrier_ack *p = pi->data;
 	struct drbd_peer_device *peer_device;
-	int vnr;
+	bool confirmed = false;
+	int vnr, err;
 
-	/* Protocol A has no per-write acks: a barrier ack is the confirmation
-	 * that the peer processed (and persisted) everything up to this epoch,
-	 * including a current UUID sent at the epoch boundary.  p->barrier is an
-	 * opaque token we sent in host order and the peer echoed back, so it is
-	 * directly comparable to current_uuid_epoch.
+	/* A barrier ack is an in-order signal that the peer processed everything
+	 * up to this epoch, including a current UUID sent at the epoch boundary;
+	 * clear the per-peer confirmation marks and re-evaluate the release.
+	 * p->barrier is the epoch token the peer echoed back, directly comparable
+	 * to current_uuid_epoch.
 	 */
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier);
+		if (drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier, true))
+			confirmed = true;
 	rcu_read_unlock();
 
-	return tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
+	err = tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
+
+	/* Now that the generation is confirmed (EXPOSED_GEN_UNCONFIRMED cleared),
+	 * release the master-bio completion we held back for writes in it.
+	 */
+	if (!err && confirmed)
+		tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
+
+	return err;
 }
 
 static int got_confirm_stable(struct drbd_connection *connection, struct packet_info *pi)

@@ -1692,24 +1692,45 @@ struct drbd_device {
  * sends a peer a new current UUID (see drbd_uuid_new_current), marking it
  * CURRENT_UUID_UNCONFIRMED (and the device EXPOSED_GEN_UNCONFIRMED).  Anything
  * the peer communicates back that refers to the data stream at or past the
- * epoch in which the UUID was sent proves the peer received and (synchronously)
- * persisted it -- the data socket is processed in order.  acked_epoch is that
- * epoch: req->epoch for a write/recv ack or a read (data) reply, or the barrier
- * number for a barrier ack.  A confirmation by any peer also lifts the
- * device-wide deferral, so a later loss may start a new generation again.
+ * epoch in which the UUID was sent proves the peer received it -- the data
+ * socket is processed in order.  acked_epoch is that epoch: req->epoch for a
+ * write/recv ack or a read (data) reply, or the barrier number for a barrier
+ * ack.
+ *
+ * Two confirmations with different strength:
+ *
+ * CURRENT_UUID_UNCONFIRMED (per peer) is a handshake property: it only needs
+ * the peer to have *received* the UUID so it will not reject us on reconnect.
+ * Any in-order ack -- including a write/recv ack or a read reply -- clears it.
+ *
+ * EXPOSED_GEN_UNCONFIRMED (per device) gates confirm-before-complete: it must
+ * not clear until the rotated generation is *durable* on a quorate peer.  A
+ * write ack only proves the data reached the peer (possibly a volatile cache);
+ * only a barrier ack proves it is on stable storage and in order with the UUID.
+ * So pass durable=true only from the barrier-ack path.
+ *
+ * Returns true when this ack cleared EXPOSED_GEN_UNCONFIRMED: the barrier-ack
+ * caller should then release the held writes via tl_walk(NEW_UUID_CONFIRMED).
  */
-static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
-						     unsigned int acked_epoch)
+static inline bool drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
+						     unsigned int acked_epoch,
+						     bool durable)
 {
 	struct drbd_device *device = peer_device->device;
+	bool released = false;
 
 	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
 	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
 		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 
-	if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
-	    (int)(acked_epoch - device->exposed_gen_epoch) >= 0)
+	if (durable &&
+	    test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+	    (int)(acked_epoch - device->exposed_gen_epoch) >= 0) {
 		clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
+		released = true;
+	}
+
+	return released;
 }
 
 struct drbd_bm_aio_ctx {
