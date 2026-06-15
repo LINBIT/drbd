@@ -10610,7 +10610,7 @@ void twopc_connection_down(struct drbd_connection *connection)
 
 static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
-	queue_work(ping_ack_sender, &connection->send_ping_ack_work);
+	drbd_queue_ping_ack(connection);
 	return 0;
 }
 
@@ -11343,6 +11343,9 @@ void drbd_send_ping_wf(struct work_struct *ws)
 	err = drbd_send_ping(connection);
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+
+	kref_debug_put(&connection->kref_debug, 19);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 struct meta_sock_cmd {
@@ -11517,7 +11520,7 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 
 	if (event == TIMEOUT) {
 		if (!test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
-			schedule_work(&connection->send_ping_work);
+			drbd_queue_ping(connection);
 			return;
 		} else {
 			if (connection->cstate[NOW] == C_CONNECTED)

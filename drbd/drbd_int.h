@@ -2358,6 +2358,8 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req,
 int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel);
 int drbd_flush_ack_wf(struct drbd_work *w, int unused);
 void drbd_send_ping_wf(struct work_struct *ws);
+void drbd_queue_ping(struct drbd_connection *connection);
+void drbd_queue_ping_ack(struct drbd_connection *connection);
 void drbd_send_acks_wf(struct work_struct *ws);
 void drbd_send_peer_ack_wf(struct work_struct *ws);
 bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device);

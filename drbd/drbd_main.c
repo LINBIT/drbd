@@ -1167,6 +1167,38 @@ int drbd_send_ping(struct drbd_connection *connection)
 	return send_command(connection, -1, P_PING, CONTROL_STREAM | SFLAG_FLUSH);
 }
 
+/*
+ * send_ping_work and send_ping_ack_work run on global workqueues and do not
+ * otherwise keep the connection alive. Take a connection reference for each
+ * queued instance so the connection cannot be freed while a ping is still
+ * pending or running
+ */
+void drbd_queue_ping(struct drbd_connection *connection)
+{
+	bool queued;
+
+	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 19);
+	queued = schedule_work(&connection->send_ping_work);
+	if (!queued) {
+		kref_debug_put(&connection->kref_debug, 19);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
+void drbd_queue_ping_ack(struct drbd_connection *connection)
+{
+	bool queued;
+
+	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 19);
+	queued = queue_work(ping_ack_sender, &connection->send_ping_ack_work);
+	if (!queued) {
+		kref_debug_put(&connection->kref_debug, 19);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 void drbd_send_ping_ack_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
@@ -1178,6 +1210,9 @@ void drbd_send_ping_ack_wf(struct work_struct *ws)
 		err = send_command(connection, -1, P_PING_ACK, CONTROL_STREAM | SFLAG_FLUSH);
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+
+	kref_debug_put(&connection->kref_debug, 19);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_sector)
@@ -3968,6 +4003,7 @@ void drbd_destroy_path(struct kref *kref)
 	kfree(path);
 }
 
+/* The last ref might be dropped from atomic context, no sleeping functions here */
 void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
