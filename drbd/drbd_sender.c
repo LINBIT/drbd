@@ -216,8 +216,10 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	 * cleanup functions if the connection is lost.
 	 */
 
+	read_lock_irqsave(&connection->resource->state_rwlock, flags);
 	if (connection->cstate[NOW] == C_CONNECTED)
 		queue_work(connection->ack_sender, &connection->send_acks_work);
+	read_unlock_irqrestore(&connection->resource->state_rwlock, flags);
 
 	if (type == INTERVAL_RESYNC_WRITE)
 		do_wake = atomic_dec_and_test(&connection->backing_ee_cnt);
