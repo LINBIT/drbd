@@ -640,13 +640,14 @@ enum peer_device_flag {
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 	PEER_QUORATE,		/* Peer has quorum */
-	CURRENT_UUID_UNCONFIRMED, /* peer_device->current_uuid was advanced
-				   * optimistically (diskless primary sent a new
-				   * current UUID to this still-connected peer and
-				   * assumed it took); not yet confirmed by the
-				   * peer.  Until confirmed, a handshake must
-				   * trust the peer's reported UUID over this
-				   * optimistic value.
+	CURRENT_UUID_UNCONFIRMED, /* Diskless primary optimistically advanced this
+				   * peer's current_uuid (sent the new UUID, assumed
+				   * it took). Until the peer confirms, the handshake
+				   * trusts the peer's reported UUID and the rotated
+				   * gen is not yet confirmed durable on this peer.
+				   * Cleared by any in-order ack at/past the bump
+				   * epoch: the UUID is written FUA on receipt, so
+				   * receipt proves it durable.
 				   */
 	RECONCILE_INJECT_CUR_UUID, /* This peer returned on our predecessor
 				    * generation; we presented the predecessor during
@@ -1688,49 +1689,20 @@ struct drbd_device {
 	struct work_struct finalize_work;
 };
 
-/* A diskless primary advances peer_device->current_uuid optimistically when it
- * sends a peer a new current UUID (see drbd_uuid_new_current), marking it
- * CURRENT_UUID_UNCONFIRMED (and the device EXPOSED_GEN_UNCONFIRMED).  Anything
- * the peer communicates back that refers to the data stream at or past the
- * epoch in which the UUID was sent proves the peer received it -- the data
- * socket is processed in order.  acked_epoch is that epoch: req->epoch for a
- * write/recv ack or a read (data) reply, or the barrier number for a barrier
- * ack.
- *
- * Two confirmations with different strength:
- *
- * CURRENT_UUID_UNCONFIRMED (per peer) is a handshake property: it only needs
- * the peer to have *received* the UUID so it will not reject us on reconnect.
- * Any in-order ack -- including a write/recv ack or a read reply -- clears it.
- *
- * EXPOSED_GEN_UNCONFIRMED (per device) gates confirm-before-complete: it must
- * not clear until the rotated generation is *durable* on a quorate peer.  A
- * write ack only proves the data reached the peer (possibly a volatile cache);
- * only a barrier ack proves it is on stable storage and in order with the UUID.
- * So pass durable=true only from the barrier-ack path.
- *
- * Returns true when this ack cleared EXPOSED_GEN_UNCONFIRMED: the barrier-ack
- * caller should then release the held writes via tl_walk(NEW_UUID_CONFIRMED).
+/* Clear CURRENT_UUID_UNCONFIRMED once the peer communicates back about the data
+ * stream at/past the epoch the new UUID was sent in (acked_epoch: req->epoch for
+ * a write/recv ack or read reply, or the barrier number). The data socket is
+ * in order and the UUID is written FUA on receipt, so any such ack proves the
+ * peer holds the rotated generation durably. The device-level "confirmed across
+ * a quorate set" decision is drbd_maybe_release_rotated_gen()'s, run afterwards.
  */
-static inline bool drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
-						     unsigned int acked_epoch,
-						     bool durable)
+static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
+						     unsigned int acked_epoch)
 {
-	struct drbd_device *device = peer_device->device;
-	bool released = false;
+	if ((int)(acked_epoch - peer_device->current_uuid_epoch) < 0)
+		return;
 
-	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
-	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
-		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
-
-	if (durable &&
-	    test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
-	    (int)(acked_epoch - device->exposed_gen_epoch) >= 0) {
-		clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
-		released = true;
-	}
-
-	return released;
+	clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 }
 
 struct drbd_bm_aio_ctx {
