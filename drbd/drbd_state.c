@@ -3794,16 +3794,24 @@ static bool drbd_should_unfence(struct drbd_state_change *state_change, int n_co
 	return some_peer_was_not_up_to_date;
 }
 
-static bool use_checksum_based_resync(struct drbd_connection *connection, struct drbd_device *device)
+static bool use_checksum_based_resync(struct drbd_peer_device *peer_device)
 {
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
 	bool csums_after_crash_only;
 	rcu_read_lock();
 	csums_after_crash_only = rcu_dereference(connection->transport.net_conf)->csums_after_crash_only;
 	rcu_read_unlock();
+	/* A reconciliation resync runs over a pessimistic, mostly-matching bitmap
+	 * between two full copies after a failure -- exactly where csums pay off,
+	 * so use them there too (both the connected dagtag reconcile and the
+	 * equal-UUID handshake reconcile set RECONCILIATION_RESYNC).
+	 */
 	return connection->agreed_pro_version >= 89 &&		/* supported? */
 		connection->csums_tfm &&			/* configured? */
 		(csums_after_crash_only == false		/* use for each resync? */
-		 || test_bit(CRASHED_PRIMARY, &device->flags));	/* or only after Primary crash? */
+		 || test_bit(CRASHED_PRIMARY, &device->flags)	/* or only after Primary crash? */
+		 || test_bit(RECONCILIATION_RESYNC, &peer_device->flags));
 }
 
 static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl_state repl_state)
@@ -3821,7 +3829,7 @@ static void drbd_run_resync(struct drbd_peer_device *peer_device, enum drbd_repl
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, false);
 
 	peer_device->use_csums = side == L_SYNC_TARGET ?
-		use_checksum_based_resync(connection, device) : false;
+		use_checksum_based_resync(peer_device) : false;
 
 	if (side == L_SYNC_TARGET &&
 			!(peer_device->uuid_flags & UUID_FLAG_STABLE) &&
