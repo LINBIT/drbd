@@ -648,6 +648,17 @@ enum peer_device_flag {
 				   * trust the peer's reported UUID over this
 				   * optimistic value.
 				   */
+	RECONCILE_INJECT_CUR_UUID, /* This peer returned on our predecessor
+				    * generation; we presented the predecessor during
+				    * the handshake so it stays UpToDate.  Armed so that
+				    * once it settles UpToDate we relabel it forward to
+				    * our current generation.  See
+				    * diskless_primary_present_current_uuid().
+				    */
+	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
+				 * send it our current UUID (the relabel), ordered
+				 * by the sender after the replayed transfer log.
+				 */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -2456,6 +2467,8 @@ enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs,
 			u64 nodes_to_reach);
 void drbd_try_to_get_resynced(struct drbd_device *device);
+bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device);
+u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device);
 void drbd_process_rs_discards(struct drbd_peer_device *peer_device,
 			      bool submit_all);
 void drbd_last_resync_request(struct drbd_peer_device *peer_device,

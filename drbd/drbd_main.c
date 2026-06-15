@@ -1471,7 +1471,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	int p_size = sizeof(*p);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
-		return drbd_send_current_uuid(peer_device, device->exposed_data_uuid,
+		return drbd_send_current_uuid(peer_device,
+					      diskless_primary_present_current_uuid(peer_device),
 					      drbd_weak_nodes_device(device));
 
 	peer_md = device->ldev->md.peers;

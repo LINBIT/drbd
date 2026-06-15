@@ -33,6 +33,7 @@ static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
 static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
+static void send_reconcile_current_uuid(struct drbd_peer_device *);
 
 /* endio handlers:
  *   drbd_md_endio (defined here)
@@ -72,9 +73,9 @@ void drbd_md_endio(struct bio *bio)
 	 * During normal operation, this only puts that extra reference
 	 * down to 1 again.
 	 * Make sure we first drop the reference, and only then signal
-	 * completion, or we may (in drbd_al_read_log()) cycle so fast into the
-	 * next drbd_md_sync_page_io(), that we trigger the
-	 * ASSERT(atomic_read(&mdev->md_io_in_use) == 1) there.
+	 * completion, or a tight loop of metadata page IO (the next
+	 * drbd_md_get_buffer() / drbd_md_sync_page_io()) could re-enter so fast
+	 * that it finds device->md_io.in_use still held.
 	 */
 	drbd_md_put_buffer(device);
 	device->md_io.done = 1;
@@ -3358,6 +3359,8 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 		do_start_resync(peer_device);
 	if (test_bit(HANDLE_CONGESTION, &todo))
 		handle_congestion(peer_device);
+	if (test_bit(SEND_RECONCILE_UUID, &todo))
+		send_reconcile_current_uuid(peer_device);
 }
 
 #define DRBD_DEVICE_WORK_MASK	\
@@ -3372,6 +3375,7 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << RS_PROGRESS)		\
 	|(1UL << RS_DONE)		\
 	|(1UL << HANDLE_CONGESTION)     \
+	|(1UL << SEND_RECONCILE_UUID)   \
 	)
 
 static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
@@ -3589,6 +3593,7 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 			continue;
 		}
 
+
 		/* drbd_send() may have called flush_signals() */
 		if (get_t_state(&connection->sender) != RUNNING)
 			break;
@@ -3636,6 +3641,23 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 			drbd_send_barrier(connection);
 		connection->send.current_epoch_nr = epoch;
 	}
+}
+
+/* The reconcile peer has settled UpToDate on the generation we presented (the
+ * predecessor); the handshake is complete and it knows we are Primary.  Relabel
+ * it forward to our real current generation now.  Running on the sender, this
+ * P_CURRENT_UUID is ordered after the replayed transfer-log writes, and the peer
+ * is UpToDate, so it takes the adopt path in receive_current_uuid (rather than
+ * outdating).  See diskless_primary_present_current_uuid().
+ */
+static void send_reconcile_current_uuid(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (!test_and_clear_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags))
+		return;
+	drbd_send_current_uuid(peer_device, device->exposed_data_uuid,
+			       drbd_weak_nodes_device(device));
 }
 
 static bool is_write_in_flight(struct drbd_peer_device *peer_device, struct drbd_interval *in)
@@ -3701,6 +3723,7 @@ static int process_one_request(struct drbd_connection *connection)
 
 			re_init_if_first_write(connection, req->epoch);
 			maybe_send_barrier(connection, req->epoch);
+
 			if (current_dagtag_sector != connection->send.current_dagtag_sector)
 				drbd_send_dagtag(connection, current_dagtag_sector);
 
