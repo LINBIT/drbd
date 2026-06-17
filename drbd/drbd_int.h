@@ -1463,6 +1463,11 @@ struct drbd_peer_device {
 
 	unsigned long comm_bm_set; /* communicated number of set bits. */
 	u64 comm_current_uuid; /* communicated current UUID */
+	unsigned int current_uuid_epoch; /* write epoch in which we optimistically
+					  * sent this peer the current UUID; with
+					  * CURRENT_UUID_UNCONFIRMED, used to detect
+					  * when the peer has processed past it.
+					  */
 	u64 comm_uuid_flags; /* communicated UUID flags */
 	u64 comm_bitmap_uuid;
 	union drbd_state comm_state;
@@ -1490,6 +1495,22 @@ struct drbd_peer_device {
 	/* communicated as part of o_qlim, if agreed on DRBD_FF_BM_BLOCK_SHIFT */
 	unsigned int bm_block_shift;
 };
+
+/* A diskless primary advances peer_device->current_uuid optimistically when it
+ * sends a peer a new current UUID (see drbd_uuid_new_current), marking it
+ * CURRENT_UUID_UNCONFIRMED.  Anything the peer communicates back that refers to
+ * the data stream at or past the epoch in which the UUID was sent proves the
+ * peer received and (synchronously) persisted it -- the data socket is
+ * processed in order.  acked_epoch is that epoch: req->epoch for a write/recv
+ * ack or a read (data) reply, or the barrier number for a barrier ack.
+ */
+static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
+						     unsigned int acked_epoch)
+{
+	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
+	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
+		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
+}
 
 struct conflict_worker {
 	struct workqueue_struct *wq;

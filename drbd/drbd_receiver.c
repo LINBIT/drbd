@@ -2713,6 +2713,10 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	if (unlikely(!req))
 		return -EIO;
 
+	/* A reply to a remote read we issued after sending the new current UUID
+	 * confirms the peer processed past it (see validate_req_change_req_state).
+	 */
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
@@ -10858,6 +10862,12 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 	spin_unlock_irq(&device->interval_lock);
 	if (unlikely(!req))
 		return -EIO;
+	/* This ack refers to a request the peer received; if that request is in
+	 * (or past) the epoch in which we optimistically sent it the current
+	 * UUID, the peer has processed past the UUID -> confirm it.  req->epoch
+	 * is set once at submission; req stays alive until req_mod() below.
+	 */
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	req_mod(req, what, peer_device);
 
 	return 0;
@@ -11063,6 +11073,19 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_barrier_ack *p = pi->data;
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	/* Protocol A has no per-write acks: a barrier ack is the confirmation
+	 * that the peer processed (and persisted) everything up to this epoch,
+	 * including a current UUID sent at the epoch boundary.  p->barrier is an
+	 * opaque token we sent in host order and the peer echoed back, so it is
+	 * directly comparable to current_uuid_epoch.
+	 */
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier);
+	rcu_read_unlock();
 
 	return tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
 }
