@@ -448,6 +448,28 @@ static bool dtt_path_cmp_addr(struct dtt_path *path)
 	return memcmp(&drbd_path->my_addr, &drbd_path->peer_addr, addr_size) > 0;
 }
 
+/* Translate transient socket errors (connect timeout, peer reset, etc.)
+ * to -EAGAIN so the caller restarts the connect cycle instead of treating
+ * the error as fatal. Other errors are returned unchanged.
+ */
+static int dtt_socket_err_to_eagain(int err)
+{
+	switch (err) {
+	case -ETIMEDOUT:
+	case -EINPROGRESS:
+	case -EINTR:
+	case -ERESTARTSYS:
+	case -ECONNREFUSED:
+	case -ECONNRESET:
+	case -ENETUNREACH:
+	case -EHOSTDOWN:
+	case -EHOSTUNREACH:
+		return -EAGAIN;
+	default:
+		return err;
+	}
+}
+
 static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 {
 	struct drbd_transport *transport = path->path.transport;
@@ -509,22 +531,9 @@ static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 	err = socket->ops->connect(socket, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
 	if (err < 0) {
-		switch (err) {
-		case -ETIMEDOUT:
-		case -EINPROGRESS:
-		case -EINTR:
-		case -ERESTARTSYS:
-		case -ECONNREFUSED:
-		case -ECONNRESET:
-		case -ENETUNREACH:
-		case -EHOSTDOWN:
-		case -EHOSTUNREACH:
-			err = -EAGAIN;
-			break;
-		case -EINVAL:
+		err = dtt_socket_err_to_eagain(err);
+		if (err == -EINVAL)
 			err = -EADDRNOTAVAIL;
-			break;
-		}
 	}
 
 out:
@@ -1345,6 +1354,7 @@ randomize:
 			&csocket_tls_wait);
 		if (err < 0) {
 			tr_warn(transport, "Error from control socket tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 
@@ -1354,12 +1364,14 @@ randomize:
 			&dsocket_tls_wait);
 		if (err < 0) {
 			tr_warn(transport, "Error from data socket tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 
 		err = tls_wait_hello(&csocket_tls_wait, &dsocket_tls_wait, timeout);
 		if (err < 0) {
 			tr_warn(transport, "Error from tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 
