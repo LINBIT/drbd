@@ -639,6 +639,14 @@ enum peer_device_flag {
 	RS_REQUEST_UNSUCCESSFUL, /* Some resync request was unsuccessful in current cycle */
 	REPLICATION_NEXT, /* If unset, do not replicate writes when next Inconsistent */
 	PEER_REPLICATION_NEXT, /* We have instructed peer not to replicate writes */
+	CURRENT_UUID_UNCONFIRMED, /* peer_device->current_uuid was advanced
+				   * optimistically (diskless primary sent a new
+				   * current UUID to this still-connected peer and
+				   * assumed it took); not yet confirmed by the
+				   * peer.  Until confirmed, a handshake must
+				   * trust the peer's reported UUID over this
+				   * optimistic value.
+				   */
 };
 
 /* We could make these currently hardcoded constants configurable

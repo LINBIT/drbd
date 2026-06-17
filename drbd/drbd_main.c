@@ -5334,7 +5334,16 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
 				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+				/* Optimistically assume the peer received and persisted the
+				 * new current UUID.  Mark it unconfirmed: if the peer never
+				 * actually got it (lost P_CURRENT_UUID, stalled backend) and
+				 * later reconnects on the old generation, the handshake must
+				 * trust the peer's reported UUID over this optimistic value --
+				 * otherwise the diskless primary would treat the peer as
+				 * UpToDate at a generation no one ever persisted.
+				 */
 				peer_device->current_uuid = current_uuid;
+				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 			}
 		}
 		up_read(&device->uuid_sem);
