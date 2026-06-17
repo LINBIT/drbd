@@ -2389,11 +2389,19 @@ static void sanitize_state(struct drbd_resource *resource)
 					role[NEW] == R_PRIMARY && !uuids_match;
 
 			if (disk_state[NEW] == D_DISKLESS && peer_disk_state[NEW] == D_UP_TO_DATE &&
-			    cond) {
+			    cond && !test_bit(RECONCILE_INJECT_CUR_UUID, peer_device->flags)) {
 				/* Do not trust this guy!
 				   He wants to be D_UP_TO_DATE, but has a different current
 				   UUID. Do not accept him as D_UP_TO_DATE but downgrade that to
 				   D_CONSISTENT here.
+
+				   Exception: a peer we have armed for predecessor-relabel
+				   (RECONCILE_INJECT_CUR_UUID) legitimately presents the
+				   predecessor UUID (!= our unconfirmed current).  We asserted it
+				   D_UP_TO_DATE deliberately -- it holds a complete generation and
+				   diskless_primary_can_replay_to() gated the arming -- and will
+				   relabel it to the current generation post-handshake.  Keep it
+				   UpToDate so it provides data access and the relabel can fire.
 				*/
 				peer_disk_state[NEW] = D_CONSISTENT;
 			}

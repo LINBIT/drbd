@@ -8285,6 +8285,25 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 			  "Peer is one generation behind; asserting UpToDate, will resend transfer log and relabel.\n");
 		set_bit(RECONCILE_INJECT_CUR_UUID, peer_device->flags);
 		*peer_disk_state = D_UP_TO_DATE;
+	} else if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+		   resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO) {
+		/* Park-until-resync.  We are a diskless primary in an unconfirmed
+		 * rotated generation, and this peer is on an older generation we can
+		 * neither place as a recognised ancestor nor replay to (e.g. the
+		 * first-lost peer, whose transfer log we discarded -- see
+		 * diskless_primary_can_replay_to).  Being diskless we are no resync
+		 * source for it.  Refusing it would strand the cluster; relabelling it
+		 * forward would be silent divergence (it lacks the bridging writes).
+		 * Instead accept the connection but keep it Outdated: it contributes no
+		 * quorum and serves no data until it resyncs from a diskful peer that
+		 * holds the current generation (the last-lost peer, once reconciled).
+		 * We stay suspended (no quorum) until then -- correct, and loss-free
+		 * because the rotated writes were never completed/acknowledged.
+		 */
+		drbd_warn(peer_device,
+			  "Peer is on an older generation we cannot source; keeping it Outdated until it resyncs from a peer that holds the current generation.\n");
+		if (*peer_disk_state > D_OUTDATED)
+			*peer_disk_state = D_OUTDATED;
 	} else {
 		drbd_warn(peer_device, "Current UUID of peer does not match my exposed UUID.");
 		set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
