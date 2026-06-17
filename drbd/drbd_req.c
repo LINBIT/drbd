@@ -97,6 +97,8 @@ static void queue_peer_ack_send(struct drbd_resource *resource,
 {
 	struct drbd_connection *connection;
 
+	lockdep_assert_held(&resource->state_rwlock);
+
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		unsigned int node_id = connection->peer_node_id;
@@ -148,11 +150,14 @@ int w_queue_peer_ack(struct drbd_work *w, int cancel)
 		peer_ack->mask = peer_ack_mask(req);
 		peer_ack->dagtag_sector = req->dagtag_sector;
 
-		spin_lock_irq(&resource->peer_ack_lock);
+		/* lock against state changes for queue_peer_ack_send() */
+		read_lock_irq(&resource->state_rwlock);
+		spin_lock(&resource->peer_ack_lock);
 		list_add_tail(&peer_ack->list, &resource->peer_ack_list);
 		queue_peer_ack_send(resource, req, peer_ack);
 		drbd_destroy_peer_ack_if_done(peer_ack);
-		spin_unlock_irq(&resource->peer_ack_lock);
+		spin_unlock(&resource->peer_ack_lock);
+		read_unlock_irq(&resource->state_rwlock);
 
 		kref_put(&req->kref, drbd_req_destroy);
 	}

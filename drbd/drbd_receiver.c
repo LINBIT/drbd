@@ -4190,12 +4190,14 @@ static int receive_flush_requests(struct drbd_connection *connection, struct pac
 	drbd_flush_peer_acks(resource);
 
 	/* For each peer, check if peer ack for this dagtag has already been sent */
+	read_lock_irq(&resource->state_rwlock);
 	rcu_read_lock();
 	for_each_connection_rcu(other_connection, resource) {
 		if (other_connection->cstate[NOW] == C_CONNECTED)
 			queue_work(other_connection->ack_sender, &other_connection->peer_ack_work);
 	}
 	rcu_read_unlock();
+	read_unlock_irq(&resource->state_rwlock);
 
 	return 0;
 }
