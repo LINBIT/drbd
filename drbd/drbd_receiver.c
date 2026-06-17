@@ -8482,7 +8482,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				     peer_state.conn == L_STARTING_SYNC_T));
 
 		consider_resync |= peer_state.conn == L_WF_BITMAP_T &&
-				   peer_device->flags & UUID_FLAG_CRASHED_PRIMARY;
+				   peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY;
 
 		if (consider_resync) {
 			strategy = drbd_sync_handshake(peer_device, peer_state);
