@@ -5361,6 +5361,40 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 */
 		device->exposed_data_uuid_predecessor = device->exposed_data_uuid;
 		device->exposed_gen_epoch = atomic_read(&device->resource->current_tle_nr);
+
+		/* Publish ordering (paired with the smp_rmb() in
+		 * drbd_maybe_release_rotated_gen()):
+		 *
+		 *     set per-peer current_uuid_epoch + UNCONFIRMED (all peers)
+		 *     smp_wmb()
+		 *     set EXPOSED_GEN_UNCONFIRMED         <- the gate, last
+		 *     send P_CURRENT_UUID                 <- only after the gate
+		 *
+		 * The gate means "an unconfirmed generation exists"; a mark means
+		 * "this peer does not have it durably yet".  A releaser reads the
+		 * gate first, then the marks.  If it could see the gate set with a
+		 * survivor's mark still clear (the just-confirmed predecessor left
+		 * it clear, current_uuid_epoch at the old value), a barrier ack
+		 * racing this bump on the peer's receiver thread would satisfy the
+		 * old epoch, find the mark clear, wrongly confirm the new
+		 * generation, release the IO hold, and strand on reconnect.
+		 */
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
+				/* The UUID opens this write epoch; any in-order ack
+				 * at/past it confirms the peer holds the generation
+				 * durably (FUA on receipt). Cleared by
+				 * drbd_peer_uuid_confirmed_by_epoch().
+				 */
+				peer_device->current_uuid_epoch =
+					atomic_read(&device->resource->current_tle_nr);
+				set_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
+			}
+		}
+		/* Make the per-peer marks visible before the gate; paired with the
+		 * smp_rmb() in drbd_maybe_release_rotated_gen() after its gate test.
+		 */
+		smp_wmb();
 		/* Defer any further bump until a peer confirms this one (see the
 		 * deferral guard above); cleared by drbd_peer_uuid_confirmed_by_epoch.
 		 */
@@ -5372,23 +5406,16 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
-				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 				/* Optimistically assume the peer received and persisted the
-				 * new current UUID.  Mark it unconfirmed: if the peer never
-				 * actually got it (lost P_CURRENT_UUID, stalled backend) and
-				 * later reconnects on the old generation, the handshake must
-				 * trust the peer's reported UUID over this optimistic value --
-				 * otherwise the diskless primary would treat the peer as
-				 * UpToDate at a generation no one ever persisted.
+				 * new current UUID.  It stays marked unconfirmed (above): if
+				 * the peer never actually got it (lost P_CURRENT_UUID, stalled
+				 * backend) and later reconnects on the old generation, the
+				 * handshake must trust the peer's reported UUID over this
+				 * optimistic value -- otherwise the diskless primary would
+				 * treat the peer as UpToDate at a generation no one persisted.
 				 */
 				peer_device->current_uuid = current_uuid;
-				/* The UUID was sent at the start of this (just
-				 * opened) write epoch; anything the peer acks at
-				 * or past it confirms receipt.
-				 */
-				peer_device->current_uuid_epoch =
-					atomic_read(&device->resource->current_tle_nr);
-				set_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
+				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 			}
 		}
 		up_read(&device->uuid_sem);

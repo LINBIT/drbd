@@ -2718,7 +2718,7 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	 * so it does not release the completion hold; see
 	 * validate_req_change_req_state and got_BarrierAck).
 	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch, false);
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
@@ -10195,12 +10195,73 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 	}
 }
 
+/* Informed confirmation of an optimistically rotated data generation.
+ *
+ * Confirmed -- safe to complete the held writes (confirm-before-complete) --
+ * the first instant ALL of:
+ *
+ *     quorate                device->quorum[NOW] (only where completions
+ *                            are actually held: on-no-quorum=suspend-io)
+ *     AND every still-connected protocol-C D_UP_TO_DATE peer:
+ *         acked it           (CURRENT_UUID_UNCONFIRMED clear), OR
+ *         has been lost      (requirement discharged: we are "informed")
+ *
+ * ALL surviving sync-UpToDate peers, not a quorum-sized count: a count could
+ * release while a future-quorum member still lacks the generation.  Protocol
+ * A/B peers are excluded (that connection accepted losing in-flight writes).
+ * With io-error / quorum-off nothing is held, but we still clear once informed,
+ * to lift the bump deferral and the reconnect-handshake special-casing.
+ *
+ * Returns true (and clears EXPOSED_GEN_UNCONFIRMED) exactly when the generation
+ * just became confirmed; the caller then releases the held completions with a
+ * NEW_UUID_CONFIRMED transfer-log walk.  Re-evaluated on two event classes: a
+ * peer's barrier ack (got_BarrierAck) and the loss of a copy (conn_disconnect).
+ */
+static bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+		return false;
+	/* Pair with the smp_wmb() in drbd_uuid_new_current(): having observed the
+	 * gate, see the per-peer CURRENT_UUID_UNCONFIRMED marks the bump set before it.
+	 * Otherwise a racing ack could read a survivor's mark as still clear and
+	 * wrongly confirm a generation that peer never received.
+	 */
+	smp_rmb();
+	if (device->resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO &&
+	    !device->quorum[NOW])
+		return false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+		struct net_conf *nc;
+
+		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
+			continue;	/* lost -> requirement discharged */
+		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+			continue;	/* not a full copy of a generation */
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (!nc || nc->wire_protocol != DRBD_PROT_C)
+			continue;	/* A/B: in-flight loss was accepted */
+		if (test_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags)) {
+			rcu_read_unlock();
+			return false;	/* a survivor still lacks it durably */
+		}
+	}
+	rcu_read_unlock();
+
+	return test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
+}
+
 static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
+	bool release_gen = false;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
@@ -10280,6 +10341,21 @@ static void conn_disconnect(struct drbd_connection *connection)
 	 * change the suspended state. */
 	tl_walk(connection, &connection->req_not_net_done,
 			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
+
+	/* Losing this peer can complete the "every survivor has it" picture for a
+	 * still-unconfirmed rotated generation -- the lost peer's durable-ack
+	 * requirement is discharged.  The disconnect state change above has settled
+	 * (so quorum[NOW] and repl_state[NOW] reflect the loss); re-check and release
+	 * any now-confirmed held completions.  If the loss instead dropped us below
+	 * quorum, the check leaves the completions held -- correct (suspend-io).
+	 */
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		if (drbd_maybe_release_rotated_gen(peer_device->device))
+			release_gen = true;
+	rcu_read_unlock();
+	if (release_gen)
+		tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
 
 	i = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (i)
@@ -11039,7 +11115,7 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 	 * barrier ack does; see got_BarrierAck).  req->epoch is set once at
 	 * submission; req stays alive until req_mod() below.
 	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch, false);
+	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	req_mod(req, what, peer_device);
 
 	return 0;
@@ -11246,7 +11322,7 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 {
 	struct p_barrier_ack *p = pi->data;
 	struct drbd_peer_device *peer_device;
-	bool confirmed = false;
+	bool release_gen = false;
 	int vnr, err;
 
 	/* A barrier ack is an in-order signal that the peer processed everything
@@ -11257,17 +11333,24 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 	 */
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		if (drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier, true))
-			confirmed = true;
+		drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier);
 	rcu_read_unlock();
 
 	err = tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
 
-	/* Now that the generation is confirmed (EXPOSED_GEN_UNCONFIRMED cleared),
-	 * release the master-bio completion we held back for writes in it.
+	/* This peer's durable confirmation may complete the "every surviving sync
+	 * peer has it, and we are quorate" picture for one or more devices: release
+	 * any now-confirmed generation's held completions.
 	 */
-	if (!err && confirmed)
-		tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
+	if (!err) {
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+			if (drbd_maybe_release_rotated_gen(peer_device->device))
+				release_gen = true;
+		rcu_read_unlock();
+		if (release_gen)
+			tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
+	}
 
 	return err;
 }
