@@ -4678,7 +4678,7 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 			continue;
 		}
 		if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ)
-			schedule_work(&connection->send_ping_work);
+			drbd_queue_ping(connection);
 		rv = SS_CW_SUCCESS;
 	}
 	return rv;
