@@ -23,6 +23,9 @@ if id in enums:
 else:
     enums[id] = [c]
 
+// ->flags is matched both as &var->flags (scalar unsigned long) and as
+// var->flags (an unsigned long bitmap array that decays to the pointer the
+// bitops want).  peer_device uses the array form, the other objects the scalar.
 @drbd_flag_ops@
 constant F;
 type T;
@@ -32,13 +35,23 @@ position p;
 (
 	test_bit(F, &var->flags)@p
 |
+	test_bit(F, var->flags)@p
+|
 	set_bit(F, &var->flags)@p
+|
+	set_bit(F, var->flags)@p
 |
 	clear_bit(F, &var->flags)@p
 |
+	clear_bit(F, var->flags)@p
+|
 	test_and_set_bit(F, &var->flags)@p
 |
+	test_and_set_bit(F, var->flags)@p
+|
 	test_and_clear_bit(F, &var->flags)@p
+|
+	test_and_clear_bit(F, var->flags)@p
 )
 
 @script:python depends on report@
