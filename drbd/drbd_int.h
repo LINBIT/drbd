@@ -1684,6 +1684,10 @@ struct drbd_device {
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
+	bool quorum[2];		/* real quorum, tracked even when quorum is
+				 * disabled (then not enforced); used to decide
+				 * reconciliation direction
+				 */
 	bool cached_state_unstable; /* updates with each state change */
 	bool cached_err_io; /* complete all IOs with error */
 

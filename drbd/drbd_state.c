@@ -591,6 +591,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 
 		device->disk_state[NEW] = device->disk_state[NOW];
 		device->have_quorum[NEW] = device->have_quorum[NOW];
+		device->quorum[NEW] = device->quorum[NOW];
 
 		for_each_peer_device_rcu(peer_device, device) {
 			peer_device->disk_state[NEW] = peer_device->disk_state[NOW];
@@ -868,6 +869,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 		device->disk_state[NOW] = device->disk_state[NEW];
 		device->have_quorum[NOW] = device->have_quorum[NEW];
+		device->quorum[NOW] = device->quorum[NEW];
 
 		if (!device->have_quorum[NOW])
 			all_devs_have_quorum = false;
@@ -1522,6 +1524,12 @@ static void __calc_quorum_no_disk(struct drbd_device *device, struct quorum_deta
 	rcu_read_unlock();
 }
 
+/*
+ * Computes the real quorum, including the diskless tiebreaker. The tiebreaker
+ * is sticky: it consults the previous result via device->quorum[NOW] (the
+ * tracked real quorum, NOT the enforced have_quorum[NOW], which is forced true
+ * when quorum is disabled). have_quorum is derived from this afterwards.
+ */
 static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 {
 	struct drbd_resource *resource = device->resource;
@@ -1572,7 +1580,7 @@ static bool calc_quorum(struct drbd_device *device, struct quorum_info *qi)
 		/* It is an even number of nodes (think 2) and we failed by one vote.
 		   Check if we have majority of the diskless nodes connected.
 		   Using the diskless nodes a tie-breaker! */
-	    qd.diskless >= diskless_majority_at && device->have_quorum[NOW]) {
+	    qd.diskless >= diskless_majority_at && device->quorum[NOW]) {
 		have_quorum = true;
 		if (!test_bit(TIEBREAKER_QUORUM, &device->flags)) {
 			set_bit(TIEBREAKER_QUORUM, &device->flags);
@@ -2434,10 +2442,17 @@ static void sanitize_state(struct drbd_resource *resource)
 				peer_device->replication[NEW] = true;
 		}
 
-		if (resource->res_opts.quorum != QOU_OFF)
-			device->have_quorum[NEW] = calc_quorum(device, NULL);
-		else
+		/* Always track the real quorum (so reconciliation can use it);
+		 * enforce it via have_quorum unless quorum is disabled.
+		 */
+		device->quorum[NEW] = calc_quorum(device, NULL);
+		if (resource->res_opts.quorum != QOU_OFF) {
+			device->have_quorum[NEW] = device->quorum[NEW];
+		} else {
 			device->have_quorum[NEW] = true;
+			if (device->quorum[OLD] && !device->quorum[NEW])
+				drbd_info(device, "Would have lost quorum (not enforced, quorum disabled)\n");
+		}
 
 		if (!device->have_quorum[NEW] && disk_state[NEW] == D_UP_TO_DATE &&
 		    test_bit(RESTORE_QUORUM, &device->flags)) {
