@@ -100,6 +100,7 @@ enum drbd_req_event {
 	RESEND,
 	CANCEL_SUSPENDED_IO,
 	COMPLETION_RESUMED,
+	NEW_UUID_CONFIRMED,
 	NOTHING,
 };
 
@@ -237,6 +238,16 @@ enum drbd_req_state_bits {
 	/* would have been completed,
 	 * but was not, because of drbd_suspended() */
 	__RQ_COMPLETION_SUSP,
+
+	/* Completion held back because this write was acknowledged in a data
+	 * generation that a diskless primary rotated to optimistically, before
+	 * any quorate peer confirmed persisting the new current UUID
+	 * (confirm-before-complete).  The hold is implemented via
+	 * RQ_COMPLETION_SUSP; this flag marks it as a generation hold so that
+	 * NEW_UUID_CONFIRMED releases exactly these requests once an in-order
+	 * barrier ack proves the generation durable.
+	 */
+	__RQ_UNCONF_GEN,
 };
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_PENDING_OOS (1UL << __RQ_NET_PENDING_OOS)
@@ -269,6 +280,7 @@ enum drbd_req_state_bits {
 #define RQ_UNPLUG          (1UL << __RQ_UNPLUG)
 #define RQ_POSTPONED	   (1UL << __RQ_POSTPONED)
 #define RQ_COMPLETION_SUSP (1UL << __RQ_COMPLETION_SUSP)
+#define RQ_UNCONF_GEN      (1UL << __RQ_UNCONF_GEN)
 
 
 /* these flags go into local_rq_state,
@@ -282,7 +294,8 @@ enum drbd_req_state_bits {
 	 RQ_IN_ACT_LOG  |\
 	 RQ_UNPLUG      |\
 	 RQ_POSTPONED   |\
-	 RQ_COMPLETION_SUSP)
+	 RQ_COMPLETION_SUSP |\
+	 RQ_UNCONF_GEN)
 
 static inline bool drbd_req_is_write(struct drbd_request *req)
 {

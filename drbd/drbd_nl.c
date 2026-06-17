@@ -1279,6 +1279,7 @@ retry:
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (flags & CS_FP_LOCAL_UP_TO_DATE) {
+				/* gen-rotate reason: OTHER (admin force-primary) */
 				drbd_uuid_new_current(device, true);
 				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
@@ -6176,6 +6177,7 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	}
 	device = adm_ctx->device;
 	resource = device->resource;
+	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
 	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 		drbd_uuid_new_current(device, false);
 	drbd_suspend_io(device, READ_AND_WRITE);
@@ -7115,6 +7117,7 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	/* gen-rotate reason: OTHER (admin new-current-uuid) */
 	drbd_uuid_new_current_by_user(device); /* New current, previous to UI_BITMAP */
 
 	if (args.force_resync) {

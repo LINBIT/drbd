@@ -3821,6 +3821,7 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
 				kref_get(&device->kref);
 				rcu_read_unlock();
+				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
 				drbd_uuid_new_current(device, false);
 				kref_put(&device->kref, drbd_destroy_device);
 				rcu_read_lock();
@@ -4497,6 +4498,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 			new_current_uuid = true;
 
+		/* gen-rotate reason: DEGRADE (lost quorum/data then regained; deferred
+		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary)
+		 */
 		if (new_current_uuid)
 			drbd_uuid_new_current(device, false);
 

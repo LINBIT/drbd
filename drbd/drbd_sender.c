@@ -3443,6 +3443,7 @@ void drbd_check_peers_new_current_uuid(struct drbd_device *device)
 
 	drbd_check_peers(resource);
 
+	/* gen-rotate reason: DEGRADE (peer disconnected; create deferred bump once quorate) */
 	if (device->have_quorum[NOW] && drbd_data_accessible(device, NOW))
 		drbd_uuid_new_current(device, false);
 }

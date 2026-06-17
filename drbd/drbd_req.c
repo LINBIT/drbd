@@ -1125,6 +1125,30 @@ static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx
 		==  RQ_NET_PENDING;
 }
 
+/* Confirm-before-complete: while a diskless primary's optimistically rotated
+ * current generation is still unconfirmed (EXPOSED_GEN_UNCONFIRMED), hold back
+ * completion of writes acknowledged in that generation, so we never acknowledge
+ * data to the upper layers in a generation no quorate partition has confirmed.
+ * Released by a NEW_UUID_CONFIRMED transfer-log walk once the generation is
+ * confirmed (drbd_maybe_release_rotated_gen).
+ *
+ * Only on on-no-quorum=suspend-io: with io-error the configured behaviour (error
+ * out) wins. Only the diskless optimistic bump sets EXPOSED_GEN_UNCONFIRMED; a
+ * diskful node self-confirms its bump synchronously and never arrives here set.
+ */
+static bool hold_completion_for_unconfirmed_gen(struct drbd_request *req)
+{
+	struct drbd_device *device = req->device;
+
+	if (!(req->local_rq_state & RQ_WRITE))
+		return false;
+	if (device->resource->res_opts.on_no_quorum != ONQ_SUSPEND_IO)
+		return false;
+	if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+		return false;
+	return (int)(req->epoch - device->exposed_gen_epoch) >= 0;
+}
+
 /* obviously this could be coded as many single functions
  * instead of one huge switch,
  * or by putting the code directly in the respective locations
@@ -1360,6 +1384,18 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		 * see also notes above in HANDED_OVER_TO_NETWORK about
 		 * protocol != C */
 	ack_common:
+		if (hold_completion_for_unconfirmed_gen(req)) {
+			/* Mark RQ_NET_OK (the peer has the data), but hold master-bio
+			 * completion via RQ_COMPLETION_SUSP until the generation is
+			 * confirmed.  Setting RQ_COMPLETION_SUSP takes a completion ref
+			 * exactly as clearing RQ_NET_PENDING drops one, so the request
+			 * does not complete now.  RQ_UNCONF_GEN tags it for release by
+			 * NEW_UUID_CONFIRMED.
+			 */
+			mod_rq_state(req, m, peer_device, RQ_NET_PENDING,
+				     RQ_NET_OK | RQ_COMPLETION_SUSP | RQ_UNCONF_GEN);
+			break;
+		}
 		mod_rq_state(req, m, peer_device, RQ_NET_PENDING, RQ_NET_OK);
 		break;
 
@@ -1370,6 +1406,19 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 
 	case COMPLETION_RESUMED:
 		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
+		break;
+
+	case NEW_UUID_CONFIRMED:
+		/* The optimistically rotated data generation has been confirmed
+		 * durable by an in-order barrier ack from a quorate peer.  Release
+		 * the writes whose completion we held back in that generation (see
+		 * the RQ_UNCONF_GEN hold in ack_common).  Once EXPOSED_GEN_UNCONFIRMED
+		 * is cleared, every such write is safe to acknowledge: the peer holds
+		 * the new current UUID, so the diskless-primary strand cannot occur.
+		 */
+		if (req->local_rq_state & RQ_UNCONF_GEN)
+			mod_rq_state(req, m, peer_device,
+				     RQ_COMPLETION_SUSP | RQ_UNCONF_GEN, 0);
 		break;
 
 	case CANCEL_SUSPENDED_IO:
@@ -2151,6 +2200,20 @@ static void drbd_send_and_submit(struct drbd_request *req)
 		wake_all_senders(resource);
 	else if (peer_device)
 		wake_up(&peer_device->connection->sender_work.q_wait);
+
+	/* Confirm-before-complete: a write admitted into an unconfirmed data
+	 * generation has its completion held until a barrier ack confirms the
+	 * generation durable (see hold_completion_for_unconfirmed_gen).  That
+	 * barrier is only emitted once the transfer-log epoch advances past this
+	 * write's epoch.  Request completion is what normally advances it -- but
+	 * that is exactly what we hold, so for a trailing or lone write the epoch
+	 * would never close and the confirming barrier would never be sent.  Close
+	 * the epoch here so the sender emits the barrier independent of completion.
+	 * Self-limiting: the first barrier ack clears EXPOSED_GEN_UNCONFIRMED, after
+	 * which no further write takes this path.
+	 */
+	if (hold_completion_for_unconfirmed_gen(req))
+		start_new_tl_epoch(resource);
 
 	if (no_remote == false) {
 		struct drbd_plug_cb *plug = drbd_check_plugged(resource);

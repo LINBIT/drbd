@@ -5320,6 +5320,9 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
+		/* gen-rotate reason: per call site (promotion=OTHER, others DEGRADE).
+		 * Diskful: persists md.current_uuid synchronously -> self-confirms.
+		 */
 		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
 	} else if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
@@ -5329,6 +5332,9 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 * has it yet, so this loss is logically simultaneous with the one
 		 * that opened it -- the open generation already covers it.  At most
 		 * one unconfirmed generation (and one predecessor) exists at a time.
+		 */
+		/* gen-rotate reason: DEGRADE (diskless primary lost a diskful peer);
+		 * no local disk -> not self-confirming, relies on peer acks.
 		 */
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
@@ -5386,6 +5392,13 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 			}
 		}
 		up_read(&device->uuid_sem);
+
+		/* We just opened an unconfirmed data generation (EXPOSED_GEN_UNCONFIRMED).
+		 * The confirm-before-complete IO hold needs no action here: it engages
+		 * lazily, per write, when a write in this generation is acked while still
+		 * unconfirmed (see hold_completion_for_unconfirmed_gen in drbd_req.c), and
+		 * is released by the in-order barrier ack (NEW_UUID_CONFIRMED).
+		 */
 	}
 }
 
