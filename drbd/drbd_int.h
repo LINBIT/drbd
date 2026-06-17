@@ -602,6 +602,15 @@ enum device_flag {
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
 	BDEV_FROZEN,		/* called bdev_freeze(), needs bdev_thaw() on resume-io */
+	EXPOSED_GEN_UNCONFIRMED, /* A diskless primary started a new data
+				  * generation that no peer has confirmed yet.
+				  * While set, a further peer loss does not start
+				  * yet another generation -- the open one already
+				  * covers it (the losses are logically
+				  * simultaneous) -- so there is at most one
+				  * unconfirmed generation and a single
+				  * predecessor at any time.
+				  */
 };
 
 /* flag bits per peer device */
@@ -1496,22 +1505,6 @@ struct drbd_peer_device {
 	unsigned int bm_block_shift;
 };
 
-/* A diskless primary advances peer_device->current_uuid optimistically when it
- * sends a peer a new current UUID (see drbd_uuid_new_current), marking it
- * CURRENT_UUID_UNCONFIRMED.  Anything the peer communicates back that refers to
- * the data stream at or past the epoch in which the UUID was sent proves the
- * peer received and (synchronously) persisted it -- the data socket is
- * processed in order.  acked_epoch is that epoch: req->epoch for a write/recv
- * ack or a read (data) reply, or the barrier number for a barrier ack.
- */
-static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
-						     unsigned int acked_epoch)
-{
-	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
-	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
-		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
-}
-
 struct conflict_worker {
 	struct workqueue_struct *wq;
 	struct work_struct worker;
@@ -1649,6 +1642,16 @@ struct drbd_device {
 	wait_queue_head_t seq_wait;
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
+	/* When a diskless primary starts a new data generation it keeps the
+	 * generation it bumped away from (the predecessor) and the write epoch
+	 * the new generation began in.  This lets a peer that reconnects on the
+	 * predecessor generation be recognised and brought forward by replaying
+	 * the transfer log (re-injecting the new current UUID at exposed_gen_epoch),
+	 * rather than rejected -- as long as the writes bridging the two are still
+	 * resendable.  Protected by uuid_sem.
+	 */
+	u64 exposed_data_uuid_predecessor;
+	unsigned int exposed_gen_epoch;
 	struct rw_semaphore uuid_sem;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	struct pending_bitmap_work_s {
@@ -1689,6 +1692,30 @@ struct drbd_device {
 	struct rcu_head rcu;
 	struct work_struct finalize_work;
 };
+
+/* A diskless primary advances peer_device->current_uuid optimistically when it
+ * sends a peer a new current UUID (see drbd_uuid_new_current), marking it
+ * CURRENT_UUID_UNCONFIRMED (and the device EXPOSED_GEN_UNCONFIRMED).  Anything
+ * the peer communicates back that refers to the data stream at or past the
+ * epoch in which the UUID was sent proves the peer received and (synchronously)
+ * persisted it -- the data socket is processed in order.  acked_epoch is that
+ * epoch: req->epoch for a write/recv ack or a read (data) reply, or the barrier
+ * number for a barrier ack.  A confirmation by any peer also lifts the
+ * device-wide deferral, so a later loss may start a new generation again.
+ */
+static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *peer_device,
+						     unsigned int acked_epoch)
+{
+	struct drbd_device *device = peer_device->device;
+
+	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
+	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
+		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
+
+	if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+	    (int)(acked_epoch - device->exposed_gen_epoch) >= 0)
+		clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
+}
 
 struct drbd_bm_aio_ctx {
 	struct drbd_device *device;

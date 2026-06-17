@@ -5318,8 +5318,14 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
-	} else if (diskfull_peers_need_new_cur_uuid(device) ||
-		   a_lost_peer_is_on_same_cur_uuid(device)) {
+	} else if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+		   (diskfull_peers_need_new_cur_uuid(device) ||
+		    a_lost_peer_is_on_same_cur_uuid(device))) {
+		/* Defer when the current generation is still unconfirmed: no peer
+		 * has it yet, so this loss is logically simultaneous with the one
+		 * that opened it -- the open generation already covers it.  At most
+		 * one unconfirmed generation (and one predecessor) exists at a time.
+		 */
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
@@ -5339,6 +5345,16 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		start_new_tl_epoch(device->resource);
 
 		down_write(&device->uuid_sem);
+		/* Keep the generation we are leaving as the predecessor, tagged with
+		 * the epoch the new one begins in, so a peer that reconnects on it can
+		 * be recognised and replayed forward instead of rejected.
+		 */
+		device->exposed_data_uuid_predecessor = device->exposed_data_uuid;
+		device->exposed_gen_epoch = atomic_read(&device->resource->current_tle_nr);
+		/* Defer any further bump until a peer confirms this one (see the
+		 * deferral guard above); cleared by drbd_peer_uuid_confirmed_by_epoch.
+		 */
+		set_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
 		drbd_uuid_set_exposed(device, current_uuid, false);
 		downgrade_write(&device->uuid_sem);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
