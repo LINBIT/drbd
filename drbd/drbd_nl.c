@@ -809,7 +809,7 @@ static bool initial_states_pending(struct drbd_connection *connection)
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
-		if (test_bit(INITIAL_STATE_SENT, &peer_device->flags) &&
+		if (test_bit(INITIAL_STATE_SENT, peer_device->flags) &&
 		    peer_device->repl_state[NOW] == L_OFF) {
 			pending = true;
 			break;
@@ -1008,7 +1008,7 @@ static bool reconciliation_ongoing(struct drbd_device *device)
 	struct drbd_peer_device *peer_device;
 
 	for_each_peer_device_rcu(peer_device, device) {
-		if (test_bit(RECONCILIATION_RESYNC, &peer_device->flags))
+		if (test_bit(RECONCILIATION_RESYNC, peer_device->flags))
 			return true;
 	}
 	return false;
@@ -1297,7 +1297,7 @@ retry:
 				/* if this was forced, we should consider sync */
 				if (flags & CS_FP_LOCAL_UP_TO_DATE) {
 					drbd_send_uuids(peer_device, 0, 0);
-					set_bit(CONSIDER_RESYNC, &peer_device->flags);
+					set_bit(CONSIDER_RESYNC, peer_device->flags);
 				}
 				drbd_send_current_state(peer_device);
 			}
@@ -1922,7 +1922,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 					peer_device->max_size,
 					drbd_disk_str(pdsk));
 
-			if (test_bit(HAVE_SIZES, &peer_device->flags)) {
+			if (test_bit(HAVE_SIZES, peer_device->flags)) {
 				/* If we still can see it, consider its last
 				 * known size, even if it may have meanwhile
 				 * detached from its disk.
@@ -2144,7 +2144,7 @@ static void get_common_queue_limits(struct queue_limits *common_limits,
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
-		if (!test_bit(HAVE_SIZES, &peer_device->flags) &&
+		if (!test_bit(HAVE_SIZES, peer_device->flags) &&
 		    peer_device->repl_state[NOW] < L_ESTABLISHED)
 			continue;
 		blk_set_stacking_limits(&peer_limits);
@@ -3704,11 +3704,11 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	 * degraded but active "cluster" after a certain timeout.
 	 */
 	for_each_peer_device(peer_device, device) {
-		clear_bit(USE_DEGR_WFC_T, &peer_device->flags);
+		clear_bit(USE_DEGR_WFC_T, peer_device->flags);
 		if (resource->role[NOW] != R_PRIMARY &&
 		    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
 		    !drbd_md_test_peer_flag(peer_device, MDF_PEER_CONNECTED))
-			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
+			set_bit(USE_DEGR_WFC_T, peer_device->flags);
 	}
 
 	/* Load on-disk tracking bits before peers' advertised sizes can
@@ -3840,7 +3840,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto force_diskless_dec;
 	} else if (dd == DS_GREW) {
 		for_each_peer_device(peer_device, device)
-			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
+			set_bit(RESYNC_AFTER_NEG, peer_device->flags);
 	}
 
 	for_each_peer_device(peer_device, device) {
@@ -5669,7 +5669,7 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->repl_state[NOW] == L_ESTABLISHED) {
 				if (dd == DS_GREW)
-					set_bit(RESIZE_PENDING, &peer_device->flags);
+					set_bit(RESIZE_PENDING, peer_device->flags);
 				drbd_send_uuids(peer_device, 0, 0);
 				drbd_send_sizes(peer_device, rs.resize_size, ddsf);
 			}
@@ -6983,7 +6983,7 @@ static int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info
 
 	tp.timeout_type =
 		peer_device->disk_state[NOW] == D_OUTDATED ? UT_PEER_OUTDATED :
-		test_bit(USE_DEGR_WFC_T, &peer_device->flags) ? UT_DEGRADED :
+		test_bit(USE_DEGR_WFC_T, peer_device->flags) ? UT_DEGRADED :
 		UT_DEFAULT;
 
 	err = timeout_parms_to_priv_skb(adm_ctx->reply_skb, &tp);
@@ -7127,7 +7127,7 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			if (NODE_MASK(peer_device->node_id) & nodes) {
 				if (NODE_MASK(peer_device->node_id) & diskful) {
 					drbd_info(peer_device, "Forcing resync");
-					set_bit(CONSIDER_RESYNC, &peer_device->flags);
+					set_bit(CONSIDER_RESYNC, peer_device->flags);
 					drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
 					drbd_send_current_state(peer_device);
 				} else {

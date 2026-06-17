@@ -1067,7 +1067,7 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			idr_for_each_entry(&peer_device->connection->peer_devices, pd, vnr) {
 				if (pd->repl_state[NOW] != L_AHEAD)
 					continue;
-				if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, &pd->flags))
+				if (test_and_set_bit(AHEAD_TO_SYNC_SOURCE, pd->flags))
 					continue; /* already done */
 				pd->start_resync_side = L_SYNC_SOURCE;
 				mod_timer(&pd->start_resync_timer, jiffies + HZ);
@@ -1563,7 +1563,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 	if (!get_ldev_if_state(device, D_UP_TO_DATE))
 		return;
 
-	if (test_and_set_bit(HANDLING_CONGESTION, &peer_device->flags))
+	if (test_and_set_bit(HANDLING_CONGESTION, peer_device->flags))
 		goto out;
 
 	/* if an other volume already found that we are congested, short circuit. */
@@ -1588,7 +1588,7 @@ static void __maybe_pull_ahead(struct drbd_device *device, struct drbd_connectio
 		set_bit(CONN_CONGESTED, &connection->flags);
 		drbd_peer_device_post_work(peer_device, HANDLE_CONGESTION);
 	} else {
-		clear_bit(HANDLING_CONGESTION, &peer_device->flags);
+		clear_bit(HANDLING_CONGESTION, peer_device->flags);
 	}
 out:
 	put_ldev(device);

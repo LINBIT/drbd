@@ -648,6 +648,13 @@ enum peer_device_flag {
 	RS_REQUEST_UNSUCCESSFUL, /* Some resync request was unsuccessful in current cycle */
 	REPLICATION_NEXT, /* If unset, do not replicate writes when next Inconsistent */
 	PEER_REPLICATION_NEXT, /* We have instructed peer not to replicate writes */
+	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
+				 * send it our current UUID (the relabel), ordered
+				 * by the sender after the replayed transfer log.
+				 * Worker-dispatched (see DRBD_PEER_DEVICE_WORK_MASK);
+				 * must stay below 32 so get_work_bits() finds it in
+				 * flags[0] on 32-bit kernels.
+				 */
 	CURRENT_UUID_UNCONFIRMED, /* peer_device->current_uuid was advanced
 				   * optimistically (diskless primary sent a new
 				   * current UUID to this still-connected peer and
@@ -663,10 +670,7 @@ enum peer_device_flag {
 				    * our current generation.  See
 				    * diskless_primary_present_current_uuid().
 				    */
-	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
-				 * send it our current UUID (the relabel), ordered
-				 * by the sender after the replayed transfer log.
-				 */
+	PEER_DEVICE_FLAG_COUNT,	/* keep last: sizes peer_device->flags[] */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1394,7 +1398,7 @@ struct drbd_peer_device {
 
 	struct ratelimit_state ratelimit[1];
 
-	unsigned long flags;
+	unsigned long flags[BITS_TO_LONGS(PEER_DEVICE_FLAG_COUNT)];
 
 	enum drbd_repl_state start_resync_side;
 	enum drbd_repl_state last_repl_state; /* What we received from the peer */
@@ -1719,9 +1723,9 @@ static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *pe
 {
 	struct drbd_device *device = peer_device->device;
 
-	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) &&
+	if (test_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags) &&
 	    (int)(acked_epoch - peer_device->current_uuid_epoch) >= 0)
-		clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
+		clear_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
 
 	if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
 	    (int)(acked_epoch - device->exposed_gen_epoch) >= 0)
@@ -2714,7 +2718,7 @@ drbd_device_post_work(struct drbd_device *device, int work_bit)
 static inline void
 drbd_peer_device_post_work(struct drbd_peer_device *peer_device, int work_bit)
 {
-	if (!test_and_set_bit(work_bit, &peer_device->flags)) {
+	if (!test_and_set_bit(work_bit, peer_device->flags)) {
 		struct drbd_resource *resource = peer_device->device->resource;
 		struct drbd_work_queue *q = &resource->work;
 		if (!test_and_set_bit(PEER_DEVICE_WORK_PENDING, &resource->flags))
