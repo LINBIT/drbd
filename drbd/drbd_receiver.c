@@ -8567,13 +8567,14 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		    (exposed_data_uuid & ~UUID_PRIMARY) == (peer_current_uuid & ~UUID_PRIMARY)) {
 			/* The peer presents our current generation: it adopted the UUID we
 			 * sent before the connection was lost, even though we may never have
-			 * seen the confirming ack.  Its presence here IS that confirmation --
-			 * the generation is real and persisted.  Clear the unconfirmed marks
-			 * and cancel any pending reconcile relabel for it.
+			 * seen the confirming ack.  Its presence here IS durable proof for
+			 * this peer -- clear its unconfirmed mark and cancel any pending
+			 * reconcile relabel.  The device-level EXPOSED_GEN_UNCONFIRMED is
+			 * cleared by the informed-confirmation hook (drbd_maybe_release_-
+			 * rotated_gen) post-commit of this handshake's state change, once we
+			 * are quorate with this peer UpToDate -- which also releases the held
+			 * completions.
 			 */
-			if (test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
-				drbd_info(peer_device,
-					  "current generation confirmed by returning peer\n");
 			clear_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
 			clear_bit(RECONCILE_INJECT_CUR_UUID, peer_device->flags);
 		} else if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
@@ -10214,10 +10215,13 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
  *
  * Returns true (and clears EXPOSED_GEN_UNCONFIRMED) exactly when the generation
  * just became confirmed; the caller then releases the held completions with a
- * NEW_UUID_CONFIRMED transfer-log walk.  Re-evaluated on two event classes: a
- * peer's barrier ack (got_BarrierAck) and the loss of a copy (conn_disconnect).
+ * NEW_UUID_CONFIRMED transfer-log walk.  Re-evaluated on:
+ *
+ *     barrier ack     got_BarrierAck
+ *     state change    central hook in ___end_state_change, post-commit
+ *                     (gained quorum / sync peer UpToDate / lost a copy)
  */
-static bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
+bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 
@@ -10252,7 +10256,10 @@ static bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 	}
 	rcu_read_unlock();
 
-	return test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
+	if (!test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+		return false;
+	drbd_info(device, "rotated data generation confirmed durable in a quorate partition\n");
+	return true;
 }
 
 static void conn_disconnect(struct drbd_connection *connection)
@@ -10261,7 +10268,6 @@ static void conn_disconnect(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
-	bool release_gen = false;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
@@ -10342,20 +10348,12 @@ static void conn_disconnect(struct drbd_connection *connection)
 	tl_walk(connection, &connection->req_not_net_done,
 			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
 
-	/* Losing this peer can complete the "every survivor has it" picture for a
-	 * still-unconfirmed rotated generation -- the lost peer's durable-ack
-	 * requirement is discharged.  The disconnect state change above has settled
-	 * (so quorum[NOW] and repl_state[NOW] reflect the loss); re-check and release
-	 * any now-confirmed held completions.  If the loss instead dropped us below
-	 * quorum, the check leaves the completions held -- correct (suspend-io).
+	/* Losing this peer may complete the informed-confirmation picture for a
+	 * still-unconfirmed rotated generation (its durable-ack requirement is
+	 * discharged), or drop us below quorum.  That is handled centrally by the
+	 * release hook in ___end_state_change, post-commit of the disconnect state
+	 * change -- nothing to do here.
 	 */
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		if (drbd_maybe_release_rotated_gen(peer_device->device))
-			release_gen = true;
-	rcu_read_unlock();
-	if (release_gen)
-		tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
 
 	i = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (i)

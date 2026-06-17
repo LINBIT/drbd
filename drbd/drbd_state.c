@@ -928,6 +928,24 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 	wake_up_all(&resource->state_wait);
 
+	/* Informed confirmation of a rotated data generation.  This state change
+	 * may have gained quorum, brought a sync peer UpToDate, or lost a peer
+	 * (discharging its durable-ack requirement) -- any of which can complete the
+	 * "every surviving sync peer has it, and we are quorate" picture.  Release
+	 * the held completions of any generation that just became confirmed.  Runs
+	 * post-commit (NOW reflects the new state) under state_rwlock, like the
+	 * COMPLETION_RESUMED walk in finish_state_change.
+	 */
+	{
+		bool release_gen = false;
+
+		idr_for_each_entry(&resource->devices, device, vnr)
+			if (drbd_maybe_release_rotated_gen(device))
+				release_gen = true;
+		if (release_gen)
+			__tl_walk(resource, NULL, NULL, NEW_UUID_CONFIRMED);
+	}
+
 	/* Call this after applying the state change from NEW to NOW. */
 	queue_after_state_change_work(resource, done, work);
 out:

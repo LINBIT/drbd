@@ -1729,6 +1729,12 @@ static inline void drbd_peer_uuid_confirmed_by_epoch(struct drbd_peer_device *pe
 	clear_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
 }
 
+/* Device-level decision for the per-peer signals above; defined in
+ * drbd_receiver.c.  Returns true (clearing EXPOSED_GEN_UNCONFIRMED) when the
+ * rotated generation just became confirmed across a quorate set of survivors.
+ */
+extern bool drbd_maybe_release_rotated_gen(struct drbd_device *device);
+
 struct drbd_bm_aio_ctx {
 	struct drbd_device *device;
 	struct list_head list; /* on device->pending_bitmap_io */
