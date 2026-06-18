@@ -6606,8 +6606,6 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int node_id, u64 bitmap_uuid)
 {
-	struct drbd_device *device = peer_device->device;
-
 	if (peer_device->bitmap_uuids[node_id] && bitmap_uuid == 0) {
 		/* If we learn from a neighbor that it no longer has a bitmap
 		   against a third node, we need to deduce from that knowledge
@@ -6624,10 +6622,6 @@ static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int
 		rcu_read_unlock();
 	}
 
-	if (node_id != device->resource->res_opts.node_id && bitmap_uuid != -1 && get_ldev(device)) {
-		_drbd_uuid_push_history(device, bitmap_uuid);
-		put_ldev(device);
-	}
 	peer_device->bitmap_uuids[node_id] = bitmap_uuid;
 }
 
@@ -6863,6 +6857,14 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP) &&
 			    i != not_allocated)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
+
+			/* ldev_safe: peer_md is non-NULL only while we hold
+			 * get_ldev() + uuid_lock (taken together above). Record
+			 * the peer's bitmap slots in our history, not the day0 hint.
+			 */
+			if (peer_md && i != not_allocated &&
+			    i != device->resource->res_opts.node_id)
+				_drbd_uuid_push_history(device, bitmap_uuid);
 		} else {
 			bitmap_uuid = -1;
 		}
