@@ -1479,7 +1479,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
-	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
+	/* advertise an unallocated day0 bitmap slot only if we actually have one */
+	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116 ||
+		drbd_unallocated_index(device->ldev) == -1;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
 		bool send_this = peer_md[i].flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS);
@@ -4753,6 +4755,12 @@ void _drbd_uuid_push_history(struct drbd_device *device, u64 val)
 	if (val == (md->current_uuid & ~UUID_PRIMARY))
 		return;
 
+	/* day0 UUID: keep in history even if also held in a bitmap slot */
+	if (md->history_uuids[0] == 0) {
+		md->history_uuids[0] = val;
+		return;
+	}
+
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == md->node_id)
 			continue;
@@ -5008,6 +5016,9 @@ static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 	old_current_uuid = device->ldev->md.current_uuid;
 	val = get_random_u64();
 	__drbd_uuid_set_current(device, val);
+	/* first bump: retire day0 into history (after __drbd_uuid_set_current) */
+	if (day0)
+		_drbd_uuid_push_history(device, old_current_uuid);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	/* get it to stable storage _now_ */
