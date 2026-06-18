@@ -3,6 +3,35 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.19-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix silent data divergence when a diskless primary creates a new
+   current UUID that a peer never received (.e.g switch failure);
+   the optimistic UUID is now confirmed via the data stream before
+   being relied upon
+ * Reconcile two peers holding the same current UUID but still carrying
+   out-of-sync bits toward each other, instead of silently dropping the
+   divergence
+ * Fix a list corruption crash when freeing a peer_req that was
+   still linked on the send_oos list
+ * Fix an AB-BA deadlock between online resize and activity-log
+   transactions
+ * Fix a use-after-free of the TCP listener during connection setup
+ * Fix a list corruption crash and assertion failures when a peer
+   disconnects while online-verify requests are still in flight
+ * Fix several races during connection teardown that could crash or
+   hang (ack_sender requeue, pending ping work, in-progress lb-tcp
+   connect)
+ * Abort a two-phase-commit on peers when the target connection fails
+   to prepare
+ * Added max_parallel_resyncs module parameter to cap how many
+   volumes may resync (or verify) in parallel
+ * Fix multiple RDMA transport bugs hit during racing teardown: a
+   NULL pointer dereference, a self-deadlock, and a cm object leak
+ * Fix bogus resync speed/ETA reported in /proc/drbd when the
+   out-of-sync amount grows
+ * Do not throttle a resync that is losing ground to ongoing writes
+
 9.2.18 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix when a diskless primary creates a new current UUID,
