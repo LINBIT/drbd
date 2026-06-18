@@ -1331,6 +1331,18 @@ struct drbd_connection {
 		int lost_node_id;
 	} after_reconciliation;
 
+	/*
+	 * Filled in during the connect handshake (DRBD_FF_RECONCILE_RECONNECT)
+	 * from a P_PEER_DAGTAG the peer sends before its state: the peer's
+	 * position in a common lost primary's change stream. drbd_uuid_compare()
+	 * compares it against our own last_dagtag_sector toward that node to roll
+	 * an equal-UUID both-dirty reconcile forward. lost_node_id == -1 if none.
+	 */
+	struct {
+		u64 dagtag_sector;
+		int lost_node_id;
+	} reconcile_handshake;
+
 	unsigned int peer_node_id;
 
 	struct drbd_mutable_buffer reassemble_buffer;
