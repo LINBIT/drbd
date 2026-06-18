@@ -5150,7 +5150,7 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	u64 reach_immediately;
 	int retries = 1;
 	unsigned long start_time;
-	bool have_peers;
+	bool have_peers, prepared_peers;
 
 	begin_state_change(resource, &irq_flags, context->flags | CS_LOCAL_ONLY);
 	resource->state_change_err_str = context->err_str;
@@ -5287,6 +5287,11 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	D_ASSERT(resource, !test_bit(TWOPC_WORK_PENDING, &resource->flags));
 	begin_remote_state_change(resource, &irq_flags);
 	rv = __cluster_wide_request(resource, &request, reach_immediately);
+
+	/* Some peers may have accepted the P_TWOPC_PREPARE even if the change
+	 * as a whole fails below; remember so that we abort it on them.
+	 */
+	prepared_peers = rv == SS_CW_SUCCESS;
 
 	/* If we are changing state attached to a particular connection then we
 	 * expect that connection to remain connected. A failure to send
@@ -5444,6 +5449,16 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 	}
 
 	if (have_peers && !context->change_local_state_last)
+		twopc_phase2(resource, &request, reach_immediately);
+
+	/* If peers accepted the prepare but the connection the change is
+	 * attached to did not (rv == SS_NEED_CONNECTION), have_peers is false
+	 * and the verdict was not sent above. request.cmd is P_TWOPC_ABORT in
+	 * that case; tell the peers that did prepare to abort now. Otherwise
+	 * they hold the transaction until their twopc-timeout and reject every
+	 * other cluster-wide state change in the meantime.
+	 */
+	if (!have_peers && prepared_peers)
 		twopc_phase2(resource, &request, reach_immediately);
 
 	if (target_connection) {
