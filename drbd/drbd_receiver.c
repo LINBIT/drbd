@@ -5297,6 +5297,15 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 	    (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM))
 		return;
 
+	/* Mark this as a reconciliation resync, like the connected dagtag reconcile
+	 * (receive_peer_dagtag).  Its bitmap is pessimistic (set for tails that may
+	 * have been delivered) between two full copies; the SyncTarget then forces
+	 * checksum-based resync, clearing the matching majority without transfer and
+	 * keeping its Inconsistent window short.  Cleared when the resync finishes
+	 * (sanitize_state) or on disconnect.
+	 */
+	set_bit(RECONCILIATION_RESYNC, peer_device->flags);
+
 	*rule = RULE_RECONCILE_BITMAP;
 	if (peer_device->comm_bm_set && !peer_device->dirty_bits) {
 		*strategy = SYNC_SOURCE_USE_BITMAP;
@@ -10256,6 +10265,10 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	 */
 	clear_bit(RECONCILE_INJECT_CUR_UUID, peer_device->flags);
 	clear_bit(SEND_RECONCILE_UUID, peer_device->flags);
+	/* If a handshake reconcile armed RECONCILIATION_RESYNC but no resync
+	 * followed, drop it so it cannot mislabel a later resync.
+	 */
+	clear_bit(RECONCILIATION_RESYNC, peer_device->flags);
 
 	peer_device_init_connect_state(peer_device);
 
