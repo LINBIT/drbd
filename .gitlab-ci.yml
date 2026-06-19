@@ -26,7 +26,8 @@ stages:
     - git clone --branch ${DRBD9_TESTS_REF} https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/drbd/drbd9-tests.git
     - |
       kernels_from_vms() {
-        python3 .gitlab/kernels-from-vms.py < drbd9-tests/virter/vms.toml
+        # FIXME: mainline build containers are currently broken. Re-enable once they are fixed.
+        python3 .gitlab/kernels-from-vms.py < drbd9-tests/virter/vms.toml | grep -v '^mainline '
       }
 
       # parameters: [version]
