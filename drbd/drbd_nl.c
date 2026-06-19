@@ -1264,12 +1264,6 @@ retry:
 			kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
 	}
 
-	if (old_role == R_SECONDARY && role == R_PRIMARY) {
-		idr_for_each_entry(&resource->devices, device, vnr) {
-			windrbd_become_primary(device, &err_str);
-		}
-	}
-
 out:
 	up(&resource->state_sem);
 	if (err_str) {
@@ -1278,6 +1272,12 @@ out:
 			drbd_msg_put_info(reply_skb, err_str);
 		kfree(err_str);
 	}
+	if (old_role == R_SECONDARY && role == R_PRIMARY && rv >= SS_SUCCESS) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			windrbd_become_primary(device, &err_str);
+		}
+	}
+
 	return rv;
 }
 
