@@ -6728,12 +6728,6 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 						(device->exposed_data_uuid & ~UUID_PRIMARY))
 		peer_device->current_uuid = be64_to_cpu(p->current_uuid);
 
-	/* The peer just told us its current UUID in this handshake; whatever we
-	 * now hold reflects reality, so the optimistic-bump assumption is
-	 * resolved either way.
-	 */
-	clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
-
 	peer_device->dirty_bits = be64_to_cpu(p->dirty_bits);
 	peer_device->uuid_flags = be64_to_cpu(p->uuid_flags);
 	if (peer_device->uuid_flags & UUID_FLAG_HAS_UNALLOC) {
@@ -8644,17 +8638,9 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		   peer a source for my data anyways. */
 		if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
 		    (exposed_data_uuid & ~UUID_PRIMARY) == (peer_current_uuid & ~UUID_PRIMARY)) {
-			/* The peer presents our current generation: it adopted the UUID we
-			 * sent before the connection was lost, even though we may never have
-			 * seen the confirming ack.  Its presence here IS durable proof for
-			 * this peer -- clear its unconfirmed mark and cancel any pending
-			 * reconcile relabel.  The device-level EXPOSED_GEN_UNCONFIRMED is
-			 * cleared by the informed-confirmation hook (drbd_maybe_release_-
-			 * rotated_gen) post-commit of this handshake's state change, once we
-			 * are quorate with this peer UpToDate -- which also releases the held
-			 * completions.
+			/* The peer is already on our current generation's label, so
+			 * the pending predecessor->current reconcile relabel is moot.
 			 */
-			clear_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 			clear_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
 		} else if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
 			   (exposed_data_uuid & ~UUID_PRIMARY) !=
