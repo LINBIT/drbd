@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.18-flant.5 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
+
+
 9.2.18-flant.4 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields

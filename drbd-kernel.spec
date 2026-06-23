@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.18~flant.4
+Version: 9.2.18~flant.5
 Release: 1
 
 # always require a suitable userland
@@ -232,6 +232,9 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.5
+-  Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
+
 * Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.4
 -  Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields
 
