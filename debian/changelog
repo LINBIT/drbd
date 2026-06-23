@@ -1,3 +1,9 @@
+drbd (9.2.19~flant.4-1) unstable; urgency=medium
+
+  * Fix use-after-free (GPF) in resync-discard processing
+
+ -- Flant <aleksandr.stefurishin@flant.com>  Tue, 23 Jun 2026 22:43:10 +0300
+
 drbd (9.2.19~flant.3-1) unstable; urgency=medium
 
   * Fix drbdsetup down/del-peer/del-connection hang scenarios

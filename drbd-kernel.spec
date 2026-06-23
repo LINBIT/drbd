@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.19~flant.3
+Version: 9.2.19~flant.4
 Release: 1
 
 # always require a suitable userland
@@ -232,6 +232,9 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.4
+-  Fix use-after-free (GPF) in resync-discard processing.
+
 * Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.19~flant.3
 -  Fix drbdsetup down/del-peer/del-connection hang scenarios.
    Fix receiver thread restart race, connect loop exit, double fput BUG.

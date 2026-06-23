@@ -2,6 +2,10 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.19-flant.4 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix use-after-free (GPF) in resync-discard processing.
+
 
 9.2.19-flant.3 (api:genl2/proto:86-101,118-124/transport:21)
 --------
