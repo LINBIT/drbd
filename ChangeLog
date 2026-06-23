@@ -3,6 +3,18 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.18-flant.1 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Implement non-voting disk for quorum exclusion.
+ * Make dynamic voter reduction configurable.
+ * Use CS_HARD for C_UNCONNECTED transition in conn_disconnect.
+ * Recalculate quorum after forget-peer.
+ * Allow CS_FORCE_RECALC to bypass quorum validation check.
+ * Enforce quorum-minimum-redundancy for diskless nodes.
+ * Check quorum-minimum-redundancy in tiebreaker quorum logic.
+ * Recalculate quorum state when quorum-minimum-redundancy changes.
+
+
 9.2.18 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix when a diskless primary creates a new current UUID,
