@@ -3,6 +3,36 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
+9.2.18-flant.3 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix drbdsetup down hang when receiver thread is in connect loop
+ * Fix del_connection hang caused by receiver thread restart race
+ * Fix receiver thread not exiting on _drbd_thread_stop in established
+   connection
+ * Fix del-peer deadlock on blocked-on-al PeerWrite
+ * Fix conn_connect loop not exiting on del_connection
+ * Fall back to force disconnect in drbd_adm_down
+ * Skip sender workqueue flush when sender thread is not running
+ * Fix double fput in link_backing_dev error path causing kernel BUG
+ * Reject admin operations on resource being removed
+ * Fix bitmap IO deadlock when IO is suspended due to quorum loss
+ * Do not force-secondary on transient handshake retry
+ * Skip flush-pending check for resync completion when IO is suspended
+ * Fix transport listener race causing rejected connections
+ * Fix resync-again triggering on in-flight acks: only schedule
+   resync-again when peer is NOT receiving application writes
+   (drbd_should_do_remote). Skip zero-length resync passes.
+ * Fix was_resync_stable() returning wrong result: require
+   L_ESTABLISHED for Primary to be considered a stable sync source.
+   Cancel stale WFBitMapT states. Skip after-unstable resync when
+   stable source is already available.
+ * Fix resync stall after reconnect: clean up SENT && !RECEIVED
+   resync intervals from the interval tree on disconnect.
+ * Fix unstable resync completion: do not rotate UUIDs after unstable
+   resync. Request re-handshake via UUID_FLAG_RESYNC. Promote to
+   UpToDate when re-handshake returns clean bitmap with stable source.
+
+
 9.2.18-flant.2 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fixed a race in w_resync_timer that could permanently stall resync.
