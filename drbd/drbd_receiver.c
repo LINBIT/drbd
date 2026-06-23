@@ -6751,14 +6751,6 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP) &&
 			    i != not_allocated)
 				peer_md[i].flags |= MDF_NODE_EXISTS;
-
-			/* ldev_safe: peer_md is non-NULL only while we hold
-			 * get_ldev() + uuid_lock (taken together above). Record
-			 * the peer's bitmap slots in our history, not the day0 hint.
-			 */
-			if (peer_md && i != not_allocated &&
-			    i != device->resource->res_opts.node_id)
-				_drbd_uuid_push_history(device, bitmap_uuid);
 		} else {
 			bitmap_uuid = -1;
 		}
