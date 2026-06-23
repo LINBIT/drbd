@@ -1,3 +1,9 @@
+drbd (9.2.19~flant.5-1) unstable; urgency=medium
+
+  * Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
+
+ -- Flant <aleksandr.stefurishin@flant.com>  Tue, 23 Jun 2026 22:44:28 +0300
+
 drbd (9.2.19~flant.4-1) unstable; urgency=medium
 
   * Fix use-after-free (GPF) in resync-discard processing
