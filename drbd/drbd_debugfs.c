@@ -300,6 +300,8 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 			&sep, "conflict");
 	seq_print_rq_state_bit(m, test_bit(INTERVAL_SENT, &peer_req->i.flags),
 			&sep, "sent");
+	seq_print_rq_state_bit(m, test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags),
+			&sep, "ready-to-send");
 	seq_print_rq_state_bit(m, test_bit(INTERVAL_RECEIVED, &peer_req->i.flags),
 			&sep, "received");
 	seq_print_rq_state_bit(m, test_bit(INTERVAL_BACKING_COMPLETED, &peer_req->i.flags),
@@ -319,7 +321,7 @@ static void seq_print_peer_request_flags(struct seq_file *m, struct drbd_peer_re
 
 enum drbd_peer_request_state {
 	PRS_NEW,
-	PRS_SENT,
+	PRS_READY_TO_SEND,
 	PRS_SUBMITTED,
 	PRS_LAST,
 };
@@ -331,8 +333,8 @@ static enum drbd_peer_request_state drbd_get_peer_request_state(struct drbd_peer
 	if (interval_flags & INTERVAL_SUBMITTED)
 		return PRS_SUBMITTED;
 
-	if (interval_flags & INTERVAL_SENT)
-		return PRS_SENT;
+	if (interval_flags & INTERVAL_READY_TO_SEND)
+		return PRS_READY_TO_SEND;
 
 	return PRS_NEW;
 }
@@ -396,7 +398,6 @@ static void seq_print_connection_peer_requests(struct seq_file *m,
 	spin_lock_irq(&connection->peer_reqs_lock);
 	seq_print_peer_request_w(m, connection, &connection->done_ee, "done\t", jif);
 	seq_print_peer_request_w(m, connection, &connection->dagtag_wait_ee, "dagtag_wait", jif);
-	seq_print_peer_request_w(m, connection, &connection->resync_ack_ee, "resync_ack", jif);
 	seq_print_peer_request(m, connection, &connection->peer_requests, "peer_requests", jif);
 	seq_print_peer_request(m, connection, &connection->peer_reads, "peer_reads", jif);
 	idr_for_each_entry(&connection->peer_devices, peer_device, i)
@@ -1216,6 +1217,8 @@ static void seq_printf_interval_tree(struct seq_file *m, struct rb_root *root)
 		char sep = ' ';
 
 		seq_printf(m, "%llus+%u %s", (unsigned long long) i->sector, i->size, drbd_interval_type_str(i));
+		seq_print_rq_state_bit(m, test_bit(INTERVAL_READY_TO_SEND, &i->flags), &sep,
+				"ready-to-send");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SENT, &i->flags), &sep, "sent");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_RECEIVED, &i->flags), &sep, "received");
 		seq_print_rq_state_bit(m, test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags), &sep, "submit-conflict-queued");
@@ -1761,6 +1764,7 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	union drbd_state state;
 	const char *sn;
 	struct net_conf *nc;
+	bool have_ldev;
 	char wp;
 
 	state.disk = device->disk_state[NOW];
@@ -1776,12 +1780,13 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 	sn = drbd_repl_str(state.conn);
 
 	rcu_read_lock();
-	{
-		/* reset device->congestion_reason */
+	have_ldev = get_ldev_if_state(device, D_FAILED);
 
-		nc = rcu_dereference(peer_device->connection->transport.net_conf);
-		wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
-		seq_printf(m,
+	/* reset device->congestion_reason */
+
+	nc = rcu_dereference(peer_device->connection->transport.net_conf);
+	wp = nc ? nc->wire_protocol - DRBD_PROT_A + 'A' : ' ';
+	seq_printf(m,
 		   "%2d: cs:%s ro:%s/%s ds:%s/%s %c %c%c%c%c%c%c\n"
 		   "    ns:%u nr:%u dw:%u dr:%u al:%u bm:%u "
 		   "lo:%d pe:[%d;%d] ua:%d ap:[%d;%d] ep:%d wo:%d",
@@ -1812,18 +1817,18 @@ static int peer_device_proc_drbd_show(struct seq_file *m, void *ignored)
 		   peer_device->connection->epochs,
 		   device->resource->write_ordering
 		);
-		seq_printf(m, " oos:%llu\n",
-			   Bit2KB((unsigned long long)
-				   drbd_bm_total_weight(peer_device)));
-	}
-	if (state.conn == L_SYNC_SOURCE ||
-	    state.conn == L_SYNC_TARGET ||
-	    state.conn == L_VERIFY_S ||
-	    state.conn == L_VERIFY_T)
-		drbd_syncer_progress(peer_device, m, state.conn);
+	seq_printf(m, " oos:%llu\n", have_ldev ?
+				Bit2KB((unsigned long long) drbd_bm_total_weight(peer_device)) : 0);
 
-	if (get_ldev_if_state(device, D_FAILED)) {
+	if (have_ldev) {
+		if (state.conn == L_SYNC_SOURCE ||
+		    state.conn == L_SYNC_TARGET ||
+		    state.conn == L_VERIFY_S ||
+		    state.conn == L_VERIFY_T)
+			drbd_syncer_progress(peer_device, m, state.conn);
+
 		lc_seq_printf_stats(m, device->act_log);
+
 		put_ldev(device);
 	}
 

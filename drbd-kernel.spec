@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.16~flant.3
+Version: 9.2.18~flant.5
 Release: 1
 
 # always require a suitable userland
@@ -176,6 +176,7 @@ for flavor in %flavors_to_build ; do
 	%{?ofed_kernel_dir:OFED_KERNEL_DIR=%{ofed_kernel_dir}} \
 	%{?_ofed_version:OFED_VERSION=%{_ofed_version}} \
 	%{?with_gcov:GCOV_PROFILE=y} \
+	%{?with_compat_84:CONFIG_DRBD_COMPAT_84=y} \
 	cmd_depmod=:
     kernelrelease=$(cat %{kernel_source $flavor}/include/config/kernel.release || make -s -C %{kernel_source $flavor} kernelrelease)
     mv drbd/build-current/.kernel.config.gz drbd/k-config-$kernelrelease.gz
@@ -231,18 +232,31 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
-* Sat Mar 29 2026 Flant <david.magton@flant.com> - 9.2.16~flant.3
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.5
+-  Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
+
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.4
+-  Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields
+
+* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.18~flant.3
 -  Fix drbdsetup down/del-peer/del-connection hang scenarios.
    Fix receiver thread restart race, connect loop exit, double fput BUG.
    Fix bitmap IO deadlock on quorum loss, transport listener race.
    Fix resync stability: do_remote guard, stale interval cleanup,
    L_ESTABLISHED for stable source, unstable resync re-handshake.
 
-* Thu Mar 12 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.16~flant.2
--  Fixed a race in w_resync_timer that could permanently stall resync
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.2
+-  Fixed a race in w_resync_timer that could permanently stall resync.
 
-* Wed Mar 11 2026 Flant <david.magton@flant.com> - 9.2.16~flant.1
--  Flant fork: non-voting disk for quorum exclusion.
+* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.18~flant.1
+-  Flant fork: non-voting disk for quorum exclusion, configurable dynamic
+   voters, quorum-minimum-redundancy enforcement.
+
+* Mon Apr 20 2026 Philipp Reisner <phil@linbit.com> - 9.2.18
+-  New upstream release.
+
+* Mon Mar 09 2026 Philipp Reisner <phil@linbit.com> - 9.2.17
+-  New upstream release.
 
 * Tue Nov 25 2025 Philipp Reisner <phil@linbit.com> - 9.2.16
 -  New upstream release.

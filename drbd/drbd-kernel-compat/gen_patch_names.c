@@ -357,6 +357,12 @@ int main(int argc, char **argv)
 	patch(1, "rb_declare_callbacks_max", true, false,
 	      COMPAT_HAVE_RB_DECLARE_CALLBACKS_MAX, "present");
 
+	patch(1, "alloc_obj_default_gfp", true, false,
+	      COMPAT_HAVE_ALLOC_OBJ_DEFAULT_GFP, "present");
+
+	patch(1, "kmalloc_obj", true, false,
+	      COMPAT_HAVE_KMALLOC_OBJ, "present");
+
 	patch(1, "struct_size", true, false,
 	      COMPAT_HAVE_STRUCT_SIZE, "present");
 
@@ -667,6 +673,12 @@ int main(int argc, char **argv)
 
 	patch(1, "timer_container_of", true, false,
 	      COMPAT_HAVE_TIMER_CONTAINER_OF, "present");
+
+	patch(1, "queue_limits_max_hw_wzeroes_unmap_sectors", true, false,
+	      COMPAT_QUEUE_LIMITS_HAS_MAX_HW_WZEROES_UNMAP_SECTORS, "present");
+
+	patch(1, "struct_sockaddr_unsized", true, false,
+	      COMPAT_HAVE_STRUCT_SOCKADDR_UNSIZED, "present");
 
 /* #define BLKDEV_ISSUE_ZEROOUT_EXPORTED */
 /* #define BLKDEV_ZERO_NOUNMAP */

@@ -151,7 +151,7 @@ else
   endif
   ifdef KDIR
     MODSUBDIR=updates
-    INSTALL_MOD_PATH ?=   $(DESTDIR)
+    INSTALL_MOD_PATH ?= $(abspath $(DESTDIR))
     INSTALL_MOD_DIR  ?= $(MODSUBDIR)
     export INSTALL_MOD_PATH INSTALL_MOD_DIR
     .PHONY: install
@@ -167,7 +167,7 @@ else
 		modules_install
     else
 	cd $(current_build_symlink) && find -name "*.ko" |	\
-	cpio -puvmd $(DESTDIR)/lib/modules/$(KERNELRELEASE)/$(INSTALL_MOD_DIR)/
+	cpio -puvmd $(abspath $(DESTDIR))/lib/modules/$(KERNELRELEASE)/$(INSTALL_MOD_DIR)/
     endif
   else
     $(error No KDIR in $(current_build_drbd_kernelrelease) found. Do you need to 'make' the module first?)
@@ -295,7 +295,7 @@ else
 	$(Q)rm $(if $(V),-v) -rf drbd-kernel-compat/cocci_cache
 
   tags:
-	git ls-files --recurse | ctags -I__must_hold -L -
+	git ls-files --recurse | ctags -L -
 
   cscope:
 	git ls-files --recurse | cscope -b -i -

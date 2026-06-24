@@ -113,14 +113,34 @@ stages:
 check:coccicheck:
   stage: check
   extends: [ .rules-build ]
-  image: szeder/coccinelle:1.1.0-1
+  image: docker.io/linbit/coccinelle:1.2
   script:
     - make coccicheck
+
+check:pychecks:
+  stage: check
+  extends: [ .rules-build ]
+  image: docker.io/library/python:3
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  cache:
+    paths:
+      - .cache/pip
+  script:
+    - pip install tree-sitter tree-sitter-c
+    - make pychecks
+
+check:cocci-syntax:
+  stage: check
+  extends: [ .rules-build ]
+  image: docker.io/linbit/coccinelle:1.2
+  script:
+    - make cocci-syntax
 
 check:check-compat:
   stage: check
   extends: [ .rules-build ]
-  image: szeder/coccinelle:1.1.0-1
+  image: docker.io/linbit/coccinelle:1.2
   script:
     - make check-compat
 
@@ -128,14 +148,15 @@ check:checkpatch.pl:
   stage: check
   rules:
     - if: $CI_MERGE_REQUEST_ID
-  image: perl:5
+  image: docker.io/library/perl:5
   script:
     - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl
+    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/spelling.txt
+    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/const_structs.checkpatch
     - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
-    - git diff --submodule=diff ${base}...HEAD -- drbd/{drbd-headers/{linux/,},linux/,}*\.[ch] > merge_request.diff
-    - ./checkpatch.pl --no-tree --ignore FILE_PATH_CHANGES merge_request.diff
+    - CHECKPATCH=./checkpatch.pl misc/checkpatch.sh commits "$base"
 
 build:for-tests:
   stage: build
@@ -236,8 +257,7 @@ build:all:
 
         export DRBD_VERSION=$DRBD_VERSION
         export DRBD_UTILS_VERSION=9.0.0.latest-*
-        cd drbd9-tests
-        ./virter/run-test.sh --out-dir=../tests-out "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
+        ./drbd9-tests/virter/run-test.sh "$@" --exclude-base-image "$EXCLUDE_BASE_IMAGES"
       }
   dependencies:
     - build:for-tests

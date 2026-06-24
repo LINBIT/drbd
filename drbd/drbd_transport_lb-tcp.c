@@ -50,7 +50,7 @@ module_param_named(keepidle, drbd_keepidle, uint, 0664);
 MODULE_PARM_DESC(keepidle, "see tcp(7) tcp_keepalive_time; set TCP_KEEPIDLE for data sockets; default: 23s");
 static unsigned int drbd_keepintvl = DRBD_KEEP_INTVL;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
-MODULE_PARM_DESC(keepintvtl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
+MODULE_PARM_DESC(keepintvl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
 
 #define DTL_CONNECTING 1
 #define DTL_LOAD_BALANCE 2
@@ -470,7 +470,7 @@ _dtl_recv_page(struct dtl_transport *dtl_transport, struct page *page, int size)
 		if (err)
 			goto out;
 
-		err = dtl_recv_short(flow->sock, data, min(size, flow->recv_bytes), 0);
+		err = dtl_recv_short(flow->sock, pos, min(size, flow->recv_bytes), 0);
 		if (err < 0)
 			goto out;
 		size -= err;
@@ -623,13 +623,13 @@ dtl_try_connect(struct drbd_transport *transport, struct dtl_path *path, struct 
 	 * a free one dynamically.
 	 */
 	what = "bind before connect";
-	err = sock->ops->bind(sock, (struct sockaddr *) &my_addr, path->path.my_addr_len);
+	err = sock->ops->bind(sock, (struct sockaddr_unsized *) &my_addr, path->path.my_addr_len);
 	if (err < 0)
 		goto out;
 
 	/* connect may fail, peer not yet available. stay C_CONNECTING */
 	what = "connect";
-	err = sock->ops->connect(sock, (struct sockaddr *) &peer_addr,
+	err = sock->ops->connect(sock, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
@@ -1078,7 +1078,7 @@ static int dtl_init_listener(struct drbd_transport *transport,
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
 		: sizeof(struct sockaddr_in);
 
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr_unsized *)&my_addr, addr_len);
 	if (err < 0) {
 		what = "bind before listen";
 		goto out;
@@ -1854,9 +1854,9 @@ static void dtl_debugfs_show(struct drbd_transport *transport, struct seq_file *
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		enum drbd_stream i;
 
-		seq_printf(m, "%pI4 - %pI4:\n",
-			   &((struct sockaddr_in *)&drbd_path->my_addr)->sin_addr,
-			   &((struct sockaddr_in *)&drbd_path->peer_addr)->sin_addr);
+		seq_printf(m, "%pISpc - %pISpc:\n",
+			   &drbd_path->my_addr,
+			   &drbd_path->peer_addr);
 
 		for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 			struct dtl_path *path = container_of(drbd_path, struct dtl_path, path);

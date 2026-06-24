@@ -1,5 +1,5 @@
 @@
-identifier find_struct_bio_set.bs;
+identifier bs;
 expression re, size, front_pad, flags;
 statement S;
 @@

@@ -334,11 +334,21 @@ MODE = report
 endif
 
 .PHONY: coccicheck
-coccicheck: coccinelle/*.cocci
+coccicheck: checks/*.cocci
 	@for file in $^ ; do \
 		echo "  COCCICHECK $$(basename $${file} .cocci)"; \
 		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
 	done
+
+.PHONY: pychecks
+pychecks: checks/*.py
+	@for file in $^ ; do \
+		echo "  CHECK $$(basename $${file} .py)"; \
+		python3 $${file} drbd/*.c; \
+	done
+
+.PHONY: checks
+checks: coccicheck pychecks
 
 .PHONY: check-compat
 check-compat:
@@ -346,5 +356,9 @@ check-compat:
 	@spatch --very-quiet --no-show-diff -D report \
 		drbd/drbd-kernel-compat/check_patch_names.cocci \
 		drbd/drbd-kernel-compat/gen_patch_names.c
+
+.PHONY: cocci-syntax
+cocci-syntax: $(addprefix cocci-syntax-,$(COCCI_PATCHES))
+	@drbd/drbd-kernel-compat/spatch_works.sh $(wildcard drbd/drbd-kernel-compat/cocci/*.cocci)
 
 Makefile: ;

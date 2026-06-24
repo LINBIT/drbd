@@ -138,7 +138,7 @@ int w_queue_peer_ack(struct drbd_work *w, int cancel)
 
 	list_for_each_entry_safe(req, tmp, &work_list, list) {
 		struct drbd_peer_ack *peer_ack =
-			kzalloc(sizeof(struct drbd_peer_ack), GFP_KERNEL);
+			kzalloc_obj(struct drbd_peer_ack);
 
 		peer_ack->resource = resource;
 		INIT_LIST_HEAD(&peer_ack->list);
@@ -462,7 +462,8 @@ void drbd_release_conflicts(struct drbd_device *device, struct drbd_interval *re
 
 		/* If we are waiting for a reply from the peer, then there is
 		 * no need to process the conflict. */
-		if (test_bit(INTERVAL_SENT, &i->flags) && !test_bit(INTERVAL_RECEIVED, &i->flags))
+		if (test_bit(INTERVAL_READY_TO_SEND, &i->flags) &&
+				!test_bit(INTERVAL_RECEIVED, &i->flags))
 			continue;
 
 		dynamic_drbd_dbg(device,
@@ -1346,7 +1347,7 @@ barrier_acked:
 	case BARRIER_SENT:
 		mod_rq_state(req, m, peer_device, 0, RQ_NET_OK|RQ_NET_DONE);
 		break;
-	};
+	}
 }
 
 /* we may do a local read if:
@@ -1578,6 +1579,7 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 	enum drbd_read_balancing rbm = RB_PREFER_REMOTE;
 
 	if (req->private_bio) {
+		/* ldev_safe: have private_bio */
 		if (!drbd_may_do_local_read(device,
 					req->i.sector, req->i.size)) {
 			bio_put(req->private_bio);
@@ -1588,6 +1590,7 @@ static struct drbd_peer_device *find_peer_device_for_read(struct drbd_request *r
 
 	if (device->disk_state[NOW] > D_DISKLESS) {
 		rcu_read_lock();
+		/* ldev_safe: checked disk_state while holding state_rwlock */
 		rbm = rcu_dereference(device->ldev->disk_conf)->read_balancing;
 		rcu_read_unlock();
 		if (rbm == RB_PREFER_LOCAL && req->private_bio) {
@@ -1726,6 +1729,7 @@ drbd_submit_req_private_bio(struct drbd_request *req)
 	else
 		type = DRBD_FAULT_DT_RD;
 
+	/* ldev_safe: req->private_bio implies an ldev reference is held */
 	bio_set_dev(bio, device->ldev->backing_bdev);
 
 	/* State may have changed since we grabbed our reference on the
@@ -1833,6 +1837,7 @@ drbd_request_prepare(struct drbd_device *device, struct bio *bio,
 		goto queue_for_submitter_thread;
 
 	if (req->private_bio && !test_bit(AL_SUSPENDED, &device->flags)) {
+		/* ldev_safe: have private_bio */
 		if (!drbd_al_begin_io_fastpath(device, &req->i))
 			goto queue_for_submitter_thread;
 		drbd_req_in_actlog(req);
@@ -1889,11 +1894,13 @@ static void drbd_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct drbd_plug_cb *plug = container_of(cb, struct drbd_plug_cb, cb);
 	struct drbd_request *req = plug->most_recent_req;
-	struct drbd_resource *resource = req->device->resource;
+	struct drbd_resource *resource;
 
 	kfree(cb);
 	if (!req)
 		return;
+
+	resource = req->device->resource;
 
 	read_lock_irq(&resource->state_rwlock);
 	/* In case the sender did not process it yet, raise the flag to
@@ -2227,7 +2234,7 @@ void drbd_do_submit_conflict(struct work_struct *ws)
 
 	list_for_each_entry_safe(peer_req, peer_req_tmp, &resync_writes, w.list) {
 		list_del_init(&peer_req->w.list);
-		if (!test_bit(INTERVAL_SENT, &peer_req->i.flags))
+		if (!test_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags))
 			drbd_conflict_send_resync_request(peer_req);
 		else
 			drbd_conflict_submit_resync_request(peer_req);
@@ -2245,6 +2252,7 @@ void drbd_do_submit_conflict(struct work_struct *ws)
 
 	list_for_each_entry_safe(peer_req, peer_req_tmp, &peer_writes, w.list) {
 		list_del_init(&peer_req->w.list);
+		/* ldev_safe: queued peer requests hold their own ldev references */
 		drbd_conflict_submit_peer_write(peer_req);
 	}
 }
@@ -2457,6 +2465,7 @@ void do_submit(struct work_struct *ws)
 	for (;;) {
 		DEFINE_WAIT(wait);
 
+		/* ldev_safe: queued requests acquired ldev in drbd_request_prepare() */
 		submit_fast_path(device, &wfa);
 		if (wfa_lists_empty(&wfa, incoming))
 			break;
@@ -2547,6 +2556,7 @@ void do_submit(struct work_struct *ws)
 		if (!list_empty(&wfa.peer_requests.cleanup))
 			drbd_cleanup_peer_requests_wfa(device, &wfa.peer_requests.cleanup);
 
+		/* ldev_safe: queued requests acquired ldev in drbd_request_prepare() */
 		drbd_al_begin_io_commit(device);
 
 		send_and_submit_pending(device, &wfa);
@@ -2933,6 +2943,7 @@ void drbd_handle_io_error_(struct drbd_device *device,
 	write_lock_irqsave(&device->resource->state_rwlock, flags);
 
 	rcu_read_lock();
+	/* ldev_safe: called from endio handlers where ldev is still held */
 	ep = rcu_dereference(device->ldev->disk_conf)->on_io_error;
 	rcu_read_unlock();
 	switch (ep) {

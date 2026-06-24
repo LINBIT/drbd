@@ -45,7 +45,10 @@ CONFIG_BLK_DEV_DRBD := m
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd.o
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_tcp.o
 obj-$(CONFIG_BLK_DEV_DRBD)       += drbd_transport_lb-tcp.o
-obj-$(if $(CONFIG_INFINIBAND),m) += drbd_transport_rdma.o
+# The RDMA transport requires the ib_alloc_cq API (upstream v4.5+, RHEL 7.4+).
+# Older kernels with CONFIG_INFINIBAND but without this API cannot build it.
+COMPAT_IB_ALLOC_CQ := $(shell grep -qe '^.define COMPAT_HAVE_IB_ALLOC_CQ$$' $(src)/compat.h 2>/dev/null && echo yes)
+obj-$(if $(and $(CONFIG_INFINIBAND),$(COMPAT_IB_ALLOC_CQ)),m) += drbd_transport_rdma.o
 obj-$(COMPAT_NET_HANDSHAKE)      += drbd-kernel-compat/handshake/
 # ================================================================
 

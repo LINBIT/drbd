@@ -317,7 +317,13 @@ static int drbd_adm_prepare(struct drbd_config_context *adm_ctx,
 			err = ERR_INVALID_REQUEST;
 			goto finish;
 		}
-		if (adm_ctx->resource && adm_ctx->peer_node_id == adm_ctx->resource->res_opts.node_id) {
+		if (!adm_ctx->resource) {
+			drbd_msg_put_info(adm_ctx->reply_skb,
+					"peer node id given without a resource");
+			err = ERR_INVALID_REQUEST;
+			goto finish;
+		}
+		if (adm_ctx->peer_node_id == adm_ctx->resource->res_opts.node_id) {
 			drbd_msg_put_info(adm_ctx->reply_skb, "peer node id cannot be my own node id");
 			err = ERR_INVALID_REQUEST;
 			goto finish;
@@ -1607,7 +1613,7 @@ void drbd_set_my_capacity(struct drbd_device *device, sector_t size)
  */
 enum determine_dev_size
 drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
-			enum dds_flags flags, struct resize_parms *rs) __must_hold(local)
+			enum dds_flags flags, struct resize_parms *rs)
 {
 	struct md_offsets_and_sizes {
 		u64 effective_size;
@@ -1758,7 +1764,15 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		drbd_info(device, "Writing the whole bitmap, %s\n",
 			 la_size_changed && md_moved ? "size changed and md moved" :
 			 la_size_changed ? "size changed" : "md moved");
-		/* next line implicitly does drbd_suspend_io()+drbd_resume_io() */
+		/* The in-memory bitmap is correct at this point: callers load it
+		 * from disk before invoking drbd_determine_dev_size(), and
+		 * drbd_bm_resize() above has marked the grown region dirty when
+		 * set_new_bits was true.  Write it to disk to update la_size and
+		 * persist any resync markers for the newly grown region.
+		 *
+		 * drbd_bitmap_io() with flags != 0 implicitly does
+		 * drbd_suspend_io()+drbd_resume_io()
+		 */
 		drbd_bitmap_io(device, md_moved ? &drbd_bm_write_all : &drbd_bm_write,
 			       "size changed", BM_LOCK_ALL, NULL);
 
@@ -1813,7 +1827,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
  * are connected.
  */
 static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
-		uint64_t twopc_reachable_nodes) __must_hold(local)
+		uint64_t twopc_reachable_nodes)
 {
 	int node_id;
 	bool all_known;
@@ -1902,7 +1916,7 @@ sector_t
 drbd_new_dev_size(struct drbd_device *device,
 		sector_t current_size, /* need at least this much */
 		sector_t user_capped_size, /* want (at most) this much */
-		enum dds_flags flags) __must_hold(local)
+		enum dds_flags flags)
 {
 	struct drbd_resource *resource = device->resource;
 	uint64_t p_size = 0;
@@ -2129,6 +2143,24 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 	if (bdev) {
 		b = bdev->backing_bdev->bd_disk->queue;
 		blk_stack_limits(&lim, &b->limits, 0);
+		/*
+		 * blk_set_stacking_limits() cleared the features, and
+		 * blk_stack_limits() may or may not have inherited
+		 * BLK_FEAT_STABLE_WRITES from the backing device.
+		 *
+		 * DRBD always requires stable writes because:
+		 * 1. The same bio data is read for both local disk I/O and
+		 *    network transmission. If the page changes mid-flight,
+		 *    the local and remote copies could diverge.
+		 * 2. When data integrity is enabled, DRBD calculates a
+		 *    checksum before sending the data. If the page changes
+		 *    between checksum calculation and transmission, the
+		 *    receiver will detect a checksum mismatch.
+		 */
+		lim.features |= BLK_FEAT_STABLE_WRITES;
+	} else {
+		lim.features = BLK_FEAT_WRITE_CACHE | BLK_FEAT_FUA |
+			       BLK_FEAT_ROTATIONAL | BLK_FEAT_STABLE_WRITES;
 	}
 
 	/*
@@ -2140,6 +2172,7 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device, struct drbd_ba
 		lim.max_write_zeroes_sectors = DRBD_MAX_BBIO_SECTORS;
 	else
 		lim.max_write_zeroes_sectors = 0;
+	lim.max_hw_wzeroes_unmap_sectors = 0;
 
 	if ((lim.discard_granularity >> SECTOR_SHIFT) >
 	    lim.max_hw_discard_sectors) {
@@ -2433,7 +2466,7 @@ static int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
+	new_disk_conf = kmalloc_obj(struct disk_conf);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
@@ -3193,6 +3226,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_resource *resource;
 	int err, retcode;
 	enum determine_dev_size dd;
+	enum drbd_disk_state ds;
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc = NULL; /* new_backing_conf */
 	sector_t backing_disk_max_sectors;
@@ -3220,14 +3254,14 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/* allocation not in the IO path, drbdsetup context */
-	nbc = kzalloc(sizeof(struct drbd_backing_dev), GFP_KERNEL);
+	nbc = kzalloc_obj(struct drbd_backing_dev);
 	if (!nbc) {
 		retcode = ERR_NOMEM;
 		goto fail;
 	}
 	spin_lock_init(&nbc->md.uuid_lock);
 
-	new_disk_conf = kzalloc(sizeof(struct disk_conf), GFP_KERNEL);
+	new_disk_conf = kzalloc_obj(struct disk_conf);
 	if (!new_disk_conf) {
 		retcode = ERR_NOMEM;
 		goto fail;
@@ -3304,6 +3338,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		goto fail;
 	}
 
+	/* ldev_safe: attach path, allocating bitmap */
 	device->bitmap = drbd_bm_alloc(nbc->md.max_peers, nbc->md.bm_block_shift);
 	if (!device->bitmap) {
 		retcode = ERR_NOMEM;
@@ -3572,27 +3607,121 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(USE_DEGR_WFC_T, &peer_device->flags);
 	}
 
-	/*
-	 * If we are attaching to a disk that is marked as being up-to-date,
-	 * then we do not need to set the bitmap bits.
+	/* Load on-disk tracking bits before peers' advertised sizes can
+	 * influence the computed device size.
+	 *
+	 * old_size is the number of sectors for which the on-disk bitmap
+	 * carries meaningful content.  Use min_not_zero() so that:
+	 *   - day0 attach (md->effective_size == 0, device already live at
+	 *     dev_size via a diskless connection): old_size = dev_size, reading
+	 *     whatever bitmap the metadata preparer wrote (all-set for full
+	 *     sync, or a day0 tracking bitmap for inception-based resync).
+	 *   - normal re-attach: old_size = min(md_size, dev_size), so any
+	 *     gap between md_size and dev_size (e.g. a peer ran resize while
+	 *     this node was diskless) is covered by drbd_determine_dev_size()
+	 *     below with bits SET, rather than by whatever happens to be on
+	 *     disk at that offset.
 	 */
-	dd = drbd_determine_dev_size(device, 0,
-			disk_state_from_md(device) == D_UP_TO_DATE ? DDSF_NO_RESYNC : 0,
-			NULL);
+	{
+		sector_t md_size = device->ldev->md.effective_size;
+		sector_t dev_size = get_capacity(device->vdisk);
+		sector_t old_size = min_not_zero(md_size, dev_size);
+
+		/* old_size == 0 means no prior history exists (first-ever attach
+		 * before any connection): skip the read and let
+		 * drbd_determine_dev_size() below allocate and initialise the
+		 * bitmap fresh.
+		 */
+		if (old_size > 0) {
+			err = drbd_bm_resize(device, old_size, false);
+			if (err) {
+				retcode = ERR_NOMEM_BITMAP;
+				goto force_diskless_dec;
+			}
+			err = drbd_bitmap_io(device, &drbd_bm_read,
+					     "read from attaching", BM_LOCK_ALL,
+					     NULL);
+			if (err) {
+				retcode = ERR_IO_MD_DISK;
+				goto force_diskless_dec;
+			}
+		}
+	}
+
+	/* Determine the final device size, growing [old_size, new_size].
+	 * Normally new-region bits are SET (new territory, needs resync).
+	 * Exception: if the backing device guarantees zeroes for all new
+	 * allocations (discard_zeroes_if_aligned) and the device has a real
+	 * UUID (not just-created), the new region may be known-clean:
+	 *
+	 *   Path A -- device was UpToDate before detach: no dirty data, new
+	 *             space on a zero-guarantee backend is safe to skip.
+	 *
+	 *   Path B -- device was NOT UpToDate, but all per-peer bitmap UUIDs
+	 *             and all history UUIDs are zero: this is a day0 volume
+	 *             that has never diverged from any peer; new space is
+	 *             guaranteed zeroed by the backend.  Requires
+	 *             rs_discard_granularity to be explicitly configured
+	 *             (non-zero), because discard_zeroes_if_aligned defaults
+	 *             to 1 on all devices -- without an explicit thin-
+	 *             provisioning opt-in the new-region content is not
+	 *             guaranteed clean.
+	 *
+	 * In both cases pass DDSF_NO_RESYNC to leave the new-region bits
+	 * clear rather than marking them dirty.
+	 *
+	 * The on-disk bitmap is written here if la_size_changed; the
+	 * in-memory bitmap is already correct:
+	 *   [0, old_size]        loaded from disk above
+	 *   [old_size, new_size] SET or clear depending on ddsf
+	 */
+	{
+		enum dds_flags ddsf = 0;
+		bool dzoia;
+		u32 rs_discard_granularity;
+
+		rcu_read_lock();
+		dzoia = rcu_dereference(device->ldev->disk_conf)->discard_zeroes_if_aligned;
+		rs_discard_granularity =
+			rcu_dereference(device->ldev->disk_conf)->rs_discard_granularity;
+		rcu_read_unlock();
+
+		if (dzoia &&
+		    (device->ldev->md.current_uuid & ~UUID_PRIMARY) != UUID_JUST_CREATED) {
+			const char *reason = NULL;
+
+			if (drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE)) {
+				reason = "was UpToDate";
+			} else if (rs_discard_granularity) {
+				/* Path B: check that all bitmap and history UUIDs are zero */
+				bool all_zero = true;
+				int i;
+
+				for (i = 0; i < DRBD_NODE_ID_MAX && all_zero; i++)
+					if (device->ldev->md.peers[i].bitmap_uuid)
+						all_zero = false;
+				for (i = 0; i < HISTORY_UUIDS && all_zero; i++)
+					if (device->ldev->md.history_uuids[i])
+						all_zero = false;
+
+				if (all_zero)
+					reason = "day0 volume (all bitmap and history UUIDs zero)";
+			}
+
+			if (reason) {
+				drbd_info(device, "%s, new region assumed zeroed\n", reason);
+				ddsf = DDSF_NO_RESYNC;
+			}
+		}
+
+		dd = drbd_determine_dev_size(device, 0, ddsf, NULL);
+	}
 	if (dd == DS_ERROR) {
 		retcode = ERR_NOMEM_BITMAP;
 		goto force_diskless_dec;
 	} else if (dd == DS_GREW) {
 		for_each_peer_device(peer_device, device)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
-	}
-
-	err = drbd_bitmap_io(device, &drbd_bm_read,
-			     "read from attaching", BM_LOCK_ALL,
-			     NULL);
-	if (err) {
-		retcode = ERR_IO_MD_DISK;
-		goto force_diskless_dec;
 	}
 
 	for_each_peer_device(peer_device, device) {
@@ -3642,6 +3771,30 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	kobject_uevent(&disk_to_dev(device->vdisk)->kobj, KOBJ_CHANGE);
 	put_ldev(device);
 	mutex_unlock(&resource->adm_mutex);
+
+	/*
+	 * Wait for UUID negotiation with connected peers to settle before
+	 * reporting the outcome to the caller.  In the no-peers case
+	 * disk_state_from_md() resolves D_NEGOTIATING immediately inside the
+	 * state change, so wait_event returns without blocking.
+	 *
+	 * D_DETACHING is set by sanitize_state() when all connected peers
+	 * return L_NEG_NO_RESULT (stale re-attach with diverged data).  It
+	 * will transition to D_DISKLESS via go_diskless(), so wait for that
+	 * transition too before reporting the error.
+	 */
+	wait_event(device->misc_wait,
+		   (ds = device->disk_state[NOW]) != D_ATTACHING &&
+		    ds != D_NEGOTIATING &&
+		    ds != D_DETACHING);
+
+	if (ds == D_DISKLESS || ds == D_FAILED) {
+		drbd_msg_sprintf_info(adm_ctx.reply_skb,
+			"attach negotiation ended in unexpected state %s",
+			drbd_disk_str(ds));
+		retcode = ds == D_FAILED ? ERR_IO_MD_DISK : ERR_DATA_NOT_CURRENT;
+	}
+
 	drbd_adm_finish(&adm_ctx, info, retcode);
 	return 0;
 
@@ -3699,9 +3852,13 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 	ret = wait_event_interruptible(device->misc_wait,
 			get_disk_state(device) != D_DETACHING);
 	if (retcode >= SS_SUCCESS) {
-		/* wait for completion of drbd_ldev_destroy() */
 		wait_event_interruptible(device->misc_wait, !test_bit(GOING_DISKLESS, &device->flags));
-		drbd_cleanup_device(device);
+
+		device->al_writ_cnt = 0;
+		device->bm_writ_cnt = 0;
+		device->read_cnt = 0;
+		device->writ_cnt = 0;
+		clear_bit(AL_SUSPENDED, &device->flags);
 	} else {
 		device->device_conf.intentional_diskless = false;
 	}
@@ -3963,7 +4120,7 @@ static int drbd_adm_net_opts(struct sk_buff *skb, struct genl_info *info)
 		goto out_no_adm_mutex;
 	}
 
-	new_net_conf = kzalloc(sizeof(struct net_conf), GFP_KERNEL);
+	new_net_conf = kzalloc_obj(struct net_conf);
 	if (!new_net_conf) {
 		retcode = ERR_NOMEM;
 		goto out;
@@ -4134,7 +4291,7 @@ static int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info
 	}
 	mutex_lock(&adm_ctx.resource->conf_update);
 
-	new_peer_device_conf = kzalloc(sizeof(struct peer_device_conf), GFP_KERNEL);
+	new_peer_device_conf = kzalloc_obj(struct peer_device_conf);
 	if (!new_peer_device_conf)
 		goto fail;
 
@@ -4225,7 +4382,7 @@ int drbd_create_peer_device_default_config(struct drbd_peer_device *peer_device)
 	struct peer_device_conf *conf;
 	int err;
 
-	conf = kzalloc(sizeof(*conf), GFP_KERNEL);
+	conf = kzalloc_obj(*conf);
 	if (!conf)
 		return -ENOMEM;
 
@@ -4288,7 +4445,7 @@ static void __device_to_info(struct device_info *info,
 	info->dev_is_open = device->open_cnt != 0;
 
 	rcu_read_lock();
-	if (get_ldev(device)) {
+	if (get_ldev_if_state(device, D_FAILED)) {
 		struct disk_conf *disk_conf =
 			rcu_dereference(device->ldev->disk_conf);
 		str_to_info(info, backing_dev_path, disk_conf->backing_dev);
@@ -4378,7 +4535,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 	struct drbd_transport *transport;
 
 	/* allocation not in the IO path, drbdsetup / netlink process context */
-	new_net_conf = kzalloc(sizeof(*new_net_conf), GFP_KERNEL);
+	new_net_conf = kzalloc_obj(*new_net_conf);
 	if (!new_net_conf)
 		return ERR_NOMEM;
 
@@ -5169,12 +5326,12 @@ void resync_after_online_grow(struct drbd_peer_device *peer_device)
 	drbd_start_resync(peer_device, sync_source ? L_SYNC_SOURCE : L_SYNC_TARGET, "online-grow");
 }
 
-sector_t drbd_local_max_size(struct drbd_device *device) __must_hold(local)
+sector_t drbd_local_max_size(struct drbd_device *device)
 {
 	struct drbd_backing_dev *tmp_bdev;
 	sector_t s;
 
-	tmp_bdev = kmalloc(sizeof(struct drbd_backing_dev), GFP_ATOMIC);
+	tmp_bdev = kmalloc_obj(struct drbd_backing_dev, GFP_ATOMIC);
 	if (!tmp_bdev)
 		return 0;
 
@@ -5287,7 +5444,7 @@ static int drbd_adm_resize(struct sk_buff *skb, struct genl_info *info)
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
 	if (u_size != (sector_t)rs.resize_size) {
-		new_disk_conf = kmalloc(sizeof(struct disk_conf), GFP_KERNEL);
+		new_disk_conf = kmalloc_obj(struct disk_conf);
 		if (!new_disk_conf) {
 			retcode = ERR_NOMEM;
 			goto fail_ldev;
@@ -5438,7 +5595,7 @@ static enum drbd_state_rv invalidate_resync(struct drbd_peer_device *peer_device
 	return rv;
 }
 
-static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device) __must_hold(local)
+static enum drbd_state_rv invalidate_no_resync(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 	struct drbd_peer_device *peer_device;
@@ -5581,7 +5738,7 @@ out_no_ldev:
 	return 0;
 }
 
-static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_device *peer_device) __must_hold(local)
+static int drbd_bmio_set_susp_al(struct drbd_device *device, struct drbd_peer_device *peer_device)
 {
 	int rv;
 
@@ -6042,7 +6199,7 @@ static int drbd_adm_dump_devices(struct sk_buff *skb, struct netlink_callback *c
 	rcu_read_lock();
 	if (!cb->args[0] && !cb->args[1]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-		if (resource_filter) {
+		if (!IS_ERR_OR_NULL(resource_filter)) {
 			retcode = ERR_RES_NOT_KNOWN;
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
@@ -6080,7 +6237,7 @@ put_result:
 		err = nla_put_drbd_cfg_context(skb, device->resource, NULL, device, NULL);
 		if (err)
 			goto out;
-		if (get_ldev(device)) {
+		if (get_ldev_if_state(device, D_FAILED)) {
 			struct disk_conf *disk_conf =
 				rcu_dereference(device->ldev->disk_conf);
 
@@ -6167,7 +6324,7 @@ static int drbd_adm_dump_connections(struct sk_buff *skb, struct netlink_callbac
 	resource = (struct drbd_resource *)cb->args[0];
 	if (!cb->args[0]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-		if (resource_filter) {
+		if (!IS_ERR_OR_NULL(resource_filter)) {
 			retcode = ERR_RES_NOT_KNOWN;
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
@@ -6379,7 +6536,7 @@ static int drbd_adm_dump_peer_devices(struct sk_buff *skb, struct netlink_callba
 	rcu_read_lock();
 	if (!cb->args[0] && !cb->args[1]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-		if (resource_filter) {
+		if (!IS_ERR_OR_NULL(resource_filter)) {
 			retcode = ERR_RES_NOT_KNOWN;
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
@@ -6483,7 +6640,7 @@ static int drbd_adm_dump_paths(struct sk_buff *skb, struct netlink_callback *cb)
 	resource = (struct drbd_resource *)cb->args[0];
 	if (!cb->args[0]) {
 		resource_filter = find_cfg_context_attr(cb->nlh, T_ctx_resource_name);
-		if (resource_filter) {
+		if (!IS_ERR_OR_NULL(resource_filter)) {
 			retcode = ERR_RES_NOT_KNOWN;
 			resource = drbd_find_resource(nla_data(resource_filter));
 			if (!resource)
@@ -6774,6 +6931,11 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 			if (NODE_MASK(peer_device->node_id) & nodes) {
 				_drbd_uuid_set_bitmap(peer_device, 0);
 				drbd_send_uuids(peer_device, UUID_FLAG_SKIP_INITIAL_SYNC, 0);
+				/* The peer adopts our new UUID but does not send its
+				 * UUID back, so update our cached record here to
+				 * avoid a stale mismatch in sanitize_state().
+				 */
+				peer_device->current_uuid = drbd_current_uuid(device);
 				drbd_print_uuids(peer_device, "cleared bitmap UUID");
 			}
 		}

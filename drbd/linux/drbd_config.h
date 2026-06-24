@@ -11,9 +11,9 @@
 
 const char *drbd_buildtag(void);
 
-#define REL_VERSION "9.2.16-flant.3"
+#define REL_VERSION "9.2.18-flant.5"
 #define PRO_VERSION_MIN 118 /* 9.0.26 */
-#define PRO_VERSION_MAX 123
+#define PRO_VERSION_MAX 124
 #define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
 		      DRBD_FF_RESYNC_DAGTAG | \
 		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID)
@@ -29,6 +29,9 @@ const char *drbd_buildtag(void);
  *	"Rolling" upgrade path for those versions:
  *	first upgrade to 9.0.latest, then connect to 9.1/9.2 or later.
  * 118-PRO_VERSION_MAX: accepted DRBD 9 protocol versions.
+ *
+ * Note that we also reject connections with protocol version 121 and feature
+ * DRBD_FF_RESYNC_DAGTAG.
  */
 
 #endif

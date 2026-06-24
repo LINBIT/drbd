@@ -1,4 +1,16 @@
-drbd (9.2.16~flant.3-1) unstable; urgency=medium
+drbd (9.2.18~flant.5-1) unstable; urgency=medium
+
+  * Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
+
+ -- Flant <aleksandr.stefurishin@flant.com>  Tue, 23 Jun 2026 22:44:28 +0300
+
+drbd (9.2.18~flant.4-1) unstable; urgency=medium
+
+  * Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields
+
+ -- Flant <aleksandr.stefurishin@flant.com>  Tue, 23 Jun 2026 22:43:10 +0300
+
+drbd (9.2.18~flant.3-1) unstable; urgency=medium
 
   * Fix drbdsetup down/del-peer/del-connection hang scenarios
   * Fix receiver thread restart race and connect loop exit
@@ -11,19 +23,32 @@ drbd (9.2.16~flant.3-1) unstable; urgency=medium
   * Fix resync stall: clean up stale intervals on disconnect
   * Fix unstable resync: re-handshake instead of UUID rotation
 
- -- Flant <david.magton@flant.com>  Sat, 29 Mar 2026 23:00:00 +0300
+ -- Flant <david.magton@flant.com>  Tue, 23 Jun 2026 12:02:00 +0000
 
-drbd (9.2.16~flant.2-1) unstable; urgency=medium
+drbd (9.2.18~flant.2-1) unstable; urgency=medium
 
   * Fixed a race in w_resync_timer that could permanently stall resync
 
- -- Flant <aleksandr.stefurishin@flant.com>  Thu, 12 Mar 2026 16:16:33 +0300
+ -- Flant <aleksandr.stefurishin@flant.com>  Tue, 23 Jun 2026 12:01:00 +0000
 
-drbd (9.2.16~flant.1-1) unstable; urgency=medium
+drbd (9.2.18~flant.1-1) unstable; urgency=medium
+
+  * Flant quorum features: quorum-minimum-redundancy enforcement,
+    non-voting disk, configurable dynamic voters
+
+ -- Flant <david.magton@flant.com>  Tue, 23 Jun 2026 12:00:00 +0000
+
+drbd (9.2.18-1) unstable; urgency=medium
 
   * New upstream release
 
- -- Flant <david.magton@flant.com>  Wed, 11 Mar 2026 12:00:00 +0300
+ -- Philipp Reisner <philipp.reisner@linbit.com>  Mon, 20 Apr 2026 12:00:00 +0200
+
+drbd (9.2.17-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Philipp Reisner <philipp.reisner@linbit.com>  Mon, 09 Mar 2026 12:00:00 +0100
 
 drbd (9.2.16-1) unstable; urgency=medium
 

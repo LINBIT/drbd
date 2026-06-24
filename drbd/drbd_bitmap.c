@@ -31,6 +31,8 @@
 # endif
 #endif
 
+#define PAGES_TO_KIB(pages) (((unsigned long long) (pages)) * (PAGE_SIZE / 1024))
+
 /* OPAQUE outside this file!
  * interface defined in drbd_int.h
 
@@ -406,7 +408,7 @@ struct drbd_bitmap *drbd_bm_alloc(unsigned int max_peers, unsigned int bm_block_
 {
 	struct drbd_bitmap *b;
 
-	b = kzalloc(sizeof(struct drbd_bitmap), GFP_KERNEL);
+	b = kzalloc_obj(struct drbd_bitmap);
 	if (!b)
 		return NULL;
 
@@ -430,14 +432,18 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 
 void drbd_bm_free(struct drbd_device *device)
 {
+	/* ldev_safe: explicit NULL check below */
 	struct drbd_bitmap *bitmap = device->bitmap;
 
 	if (bitmap == NULL)
 		return;
 
+	/* ldev_safe: explicit NULL check above */
 	drbd_bm_resize(device, 0, 0);
 
 	kfree(bitmap);
+
+	/* ldev_safe: clearing pointer */
 	device->bitmap = NULL;
 }
 
@@ -892,13 +898,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	int err = 0;
 	bool growing;
 
-	if (!expect(device, b))
-		return -ENOMEM;
-
 	drbd_bm_lock(device, "resize", BM_LOCK_ALL);
-
-	drbd_info(device, "drbd_bm_resize called with capacity == %llu\n",
-			(unsigned long long)capacity);
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
@@ -909,6 +909,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 		spin_lock_irq(&b->bm_lock);
 		opages = b->bm_pages;
 		onpages = b->bm_number_of_pages;
+		drbd_info(device, "Freeing bitmap of size %llu KiB\n", PAGES_TO_KIB(onpages));
 		b->bm_pages = NULL;
 		b->bm_number_of_pages = 0;
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++)
@@ -926,26 +927,39 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	bits  = BM_SECT_TO_BIT(ALIGN(capacity, BM_SECT_PER_BIT));
 	words = (ALIGN(bits, 64) * b->bm_max_peers) / BITS_PER_LONG;
 
+	want = PFN_UP(words * sizeof(long));
+	have = b->bm_number_of_pages;
 	if (get_ldev(device)) {
 		u64 bits_on_disk = drbd_md_on_disk_bits(device);
-		put_ldev(device);
 		if (bits > bits_on_disk) {
+			put_ldev(device);
 			drbd_err(device, "Not enough space for bitmap: %lu > %lu\n",
 				(unsigned long)bits, (unsigned long)bits_on_disk);
 			err = -ENOSPC;
 			goto out;
 		}
+		if (drbd_md_dax_active(device->ldev)) {
+			drbd_info(device, "DAX/PMEM bitmap has size %llu KiB\n",
+				  PAGES_TO_KIB(want));
+			bm_on_pmem = drbd_dax_bitmap(device, want);
+		}
+		put_ldev(device);
 	}
 
-	want = PFN_UP(words * sizeof(long));
-	have = b->bm_number_of_pages;
-	if (drbd_md_dax_active(device->ldev)) {
-		bm_on_pmem = drbd_dax_bitmap(device, want);
-	} else {
+	if (!bm_on_pmem) {
 		if (want == have) {
 			D_ASSERT(device, b->bm_pages != NULL);
+			drbd_info(device, "Bitmap size remains %llu KiB\n", PAGES_TO_KIB(have));
 			npages = b->bm_pages;
 		} else {
+			if (have == 0) {
+				drbd_info(device, "Allocating %llu KiB for new bitmap\n",
+						PAGES_TO_KIB(want));
+			} else if (want > have) {
+				drbd_info(device, "Allocating %llu KiB for bitmap, new size %llu KiB\n",
+						PAGES_TO_KIB(want - have), PAGES_TO_KIB(want));
+			}
+
 			if (drbd_insert_fault(device, DRBD_FAULT_BM_ALLOC))
 				npages = NULL;
 			else
@@ -984,30 +998,97 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	b->bm_bits  = bits;
 	b->bm_words = words;
 	b->bm_dev_capacity = capacity;
+	spin_unlock_irq(&b->bm_lock);
 
+	/* without holding the spinlock! Setting many bits is time-consuming */
 	if (growing) {
 		unsigned int bitmap_index;
+		unsigned long first_bit_last_page = 0;
+
+		if (set_new_bits && want > have)
+			first_bit_last_page = ((want - 1) *
+				(PAGE_SIZE / sizeof(u32)) / b->bm_max_peers) << 5;
 
 		for (bitmap_index = 0; bitmap_index < b->bm_max_peers; bitmap_index++) {
 			unsigned long bm_set = b->bm_set[bitmap_index];
 
 			if (set_new_bits) {
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_SET, NULL);
+				/* Set bits in the tail of the last existing
+				 * page [obits, page_end).  New pages are
+				 * __GFP_ZERO and get bulk-filled below.
+				 * When obits == 0 all pages are new, so we
+				 * skip this.
+				 */
+				if (obits) {
+					unsigned long page_end =
+						last_bit_on_page(b, bitmap_index, obits);
+
+					if (page_end >= bits)
+						page_end = bits - 1;
+					bm_op(device, bitmap_index, obits, page_end,
+					      BM_OP_SET, NULL);
+				}
+				/* Set bits on the last new page per-peer;
+				 * bm_op() handles the partial last word
+				 * correctly.  Interior pages are bulk-filled
+				 * below.
+				 */
+				if (want > have)
+					bm_op(device, bitmap_index,
+					      first_bit_last_page, bits - 1,
+					      BM_OP_SET, NULL);
 				bm_set += bits - obits;
-			} else {
-				___bm_op(device, bitmap_index, obits, -1UL, BM_OP_CLEAR, NULL);
+			} else if (obits) {
+				/* Clear stale bits in the tail of the last existing
+				 * page [obits, page_end).  obits is rarely
+				 * page-aligned, so this partial page may carry
+				 * non-zero bits from a previous shrink or on-disk
+				 * padding that must be cleared to avoid spurious
+				 * resyncs.
+				 *
+				 * Newly allocated pages are __GFP_ZERO and need no
+				 * clearing.  When obits == 0 all pages are new, so
+				 * we skip this branch entirely.
+				 */
+				unsigned long page_end =
+					last_bit_on_page(b, bitmap_index, obits);
+
+				if (page_end >= bits)
+					page_end = bits - 1;
+				bm_op(device, bitmap_index, obits, page_end, BM_OP_CLEAR, NULL);
 			}
 
 			b->bm_set[bitmap_index] = bm_set;
+		}
+
+		if (set_new_bits && want > have + 1) {
+			/* New pages are __GFP_ZERO.  Set all bits for all
+			 * peers at once by filling interior pages with 0xFF
+			 * rather than iterating per-peer word-by-word.
+			 * The last new page is handled per-peer above.
+			 */
+			unsigned long p;
+
+			for (p = have; p < want - 1; p++) {
+				void *addr;
+
+				spin_lock_irq(&b->bm_lock);
+				addr = bm_map(b, p);
+				memset(addr, 0xFF, PAGE_SIZE);
+				bm_unmap(b, addr);
+				bm_set_page_need_writeout(b, p);
+				spin_unlock_irq(&b->bm_lock);
+				cond_resched();
+			}
 		}
 	}
 
 	if (want < have && !(b->bm_flags & BM_ON_DAX_PMEM)) {
 		/* implicit: (opages != NULL) && (opages != npages) */
+		drbd_info(device, "Freeing %llu KiB from bitmap, new size %llu KiB\n",
+				PAGES_TO_KIB(have - want), PAGES_TO_KIB(want));
 		bm_free_pages(opages + want, have - want);
 	}
-
-	spin_unlock_irq(&b->bm_lock);
 	if (opages != npages)
 		kvfree(opages);
 	if (!growing)
@@ -1124,6 +1205,7 @@ static void drbd_bm_aio_ctx_destroy(struct kref *kref)
 /* bv_page may be a copy, or may be the original */
 static void drbd_bm_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in bitmap I/O path */
 	struct drbd_bm_aio_ctx *ctx = bio->bi_private;
 	struct drbd_device *device = ctx->device;
 	struct drbd_bitmap *b = device->bitmap;
@@ -1177,7 +1259,7 @@ static inline sector_t drbd_md_last_bitmap_sector(struct drbd_backing_dev *bdev)
 	}
 }
 
-static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_hold(local)
+static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr)
 {
 	struct bio *bio;
 	struct drbd_device *device = ctx->device;
@@ -1267,9 +1349,8 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr) __must_ho
  * In case this becomes an issue on systems with larger PAGE_SIZE,
  * we may want to change this again to do 4k aligned 4k pieces.
  */
-static int bm_rw_range(struct drbd_device *device,
-	unsigned int start_page, unsigned int end_page,
-	unsigned flags) __must_hold(local)
+static int bm_rw_range(struct drbd_device *device, unsigned int start_page, unsigned int end_page,
+		       unsigned int flags)
 {
 	struct drbd_bm_aio_ctx *ctx;
 	struct drbd_bitmap *b = device->bitmap;
@@ -1295,7 +1376,7 @@ static int bm_rw_range(struct drbd_device *device,
 	if (!expect(device, b->bm_number_of_pages))
 		return -ENODEV;
 
-	ctx = kmalloc(sizeof(struct drbd_bm_aio_ctx), GFP_NOIO);
+	ctx = kmalloc_obj(struct drbd_bm_aio_ctx, GFP_NOIO);
 	if (!ctx)
 		return -ENOMEM;
 
@@ -1393,6 +1474,7 @@ static int bm_rw_range(struct drbd_device *device,
 	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight)) {
+		/* ldev_safe: get_ldev_if_state() above, put_ldev in drbd_bm_aio_ctx_destroy() */
 		wait_until_done_or_force_detached(device, device->ldev, &ctx->done);
 	} else
 		kref_put(&ctx->kref, &drbd_bm_aio_ctx_destroy);
@@ -1441,7 +1523,7 @@ static int bm_rw(struct drbd_device *device, unsigned flags)
  * @peer_device: parameter ignored
  */
 int drbd_bm_read(struct drbd_device *device,
-		 struct drbd_peer_device *peer_device) __must_hold(local)
+		 struct drbd_peer_device *peer_device)
 {
 	return bm_rw(device, BM_AIO_READ);
 }
@@ -1491,7 +1573,7 @@ void drbd_bm_mark_range_for_writeout(struct drbd_device *device, unsigned long s
  * Will only write pages that have changed since last IO.
  */
 int drbd_bm_write(struct drbd_device *device,
-		  struct drbd_peer_device *peer_device) __must_hold(local)
+		  struct drbd_peer_device *peer_device)
 {
 	return bm_rw(device, 0);
 }
@@ -1505,7 +1587,7 @@ int drbd_bm_write(struct drbd_device *device,
  * whole bitmap should be written into its new position.
  */
 int drbd_bm_write_all(struct drbd_device *device,
-		      struct drbd_peer_device *peer_device) __must_hold(local)
+		      struct drbd_peer_device *peer_device)
 {
 	return bm_rw(device, BM_AIO_WRITE_ALL_PAGES);
 }
@@ -1515,7 +1597,7 @@ int drbd_bm_write_all(struct drbd_device *device,
  * @device:	DRBD device.
  * @upper_idx:	0: write all changed pages; +ve: page index to stop scanning for changed pages
  */
-int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_hold(local)
+int drbd_bm_write_lazy(struct drbd_device *device, unsigned int upper_idx)
 {
 	return bm_rw_range(device, 0, upper_idx - 1, BM_AIO_COPY_PAGES | BM_AIO_WRITE_LAZY);
 }
@@ -1533,7 +1615,7 @@ int drbd_bm_write_lazy(struct drbd_device *device, unsigned upper_idx) __must_ho
  * pending resync acks are still being processed.
  */
 int drbd_bm_write_copy_pages(struct drbd_device *device,
-			     struct drbd_peer_device *peer_device) __must_hold(local)
+			     struct drbd_peer_device *peer_device)
 {
 	return bm_rw(device, BM_AIO_COPY_PAGES);
 }
@@ -1542,7 +1624,7 @@ int drbd_bm_write_copy_pages(struct drbd_device *device,
  * drbd_bm_write_hinted() - Write bitmap pages with "hint" marks, if they have changed.
  * @device:	DRBD device.
  */
-int drbd_bm_write_hinted(struct drbd_device *device) __must_hold(local)
+int drbd_bm_write_hinted(struct drbd_device *device)
 {
 	return bm_rw(device, BM_AIO_WRITE_HINTED | BM_AIO_COPY_PAGES);
 }

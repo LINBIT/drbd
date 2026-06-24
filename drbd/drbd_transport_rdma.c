@@ -95,7 +95,7 @@ int allocation_size;
 struct dtr_flow_control {
 	uint32_t magic;
 	uint32_t new_rx_descs[2];
-	uint32_t rx_desc_stolen_from_stream;
+	uint32_t send_from_stream;
 } __packed;
 
 /* These numbers are sent within the immediate data value to identify
@@ -152,10 +152,8 @@ enum dtr_state_bits {
 
 enum dtr_alloc_rdma_res_causes {
 	IB_ALLOC_PD,
-	IB_CREATE_CQ_RX,
-	IB_CREATE_CQ_TX,
-	IB_REQ_NOTIFY_CQ_RX,
-	IB_REQ_NOTIFY_CQ_TX,
+	IB_ALLOC_CQ_RX,
+	IB_ALLOC_CQ_TX,
 	RDMA_CREATE_QP,
 	IB_GET_DMA_MR
 };
@@ -166,6 +164,7 @@ struct dtr_rx_desc {
 	int size;
 	unsigned int sequence;
 	struct dtr_cm *cm;
+	struct ib_cqe cqe;
 	struct ib_sge sge;
 };
 
@@ -182,6 +181,7 @@ struct dtr_tx_desc {
 	} type;
 	int nr_sges;
 	union dtr_immediate imm;
+	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
 
@@ -521,6 +521,7 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		list_for_each_entry(drbd_path, &transport->paths, list) {
 			struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
+			cancel_work_sync(&path->refill_rx_descs_work);
 			flush_delayed_work(&path->cs.retry_connect_work);
 		}
 
@@ -536,6 +537,22 @@ static void dtr_control_timer_fn(struct timer_list *t)
 	struct drbd_transport *transport = &rdma_transport->transport;
 
 	drbd_control_event(transport, TIMEOUT);
+}
+
+static bool atomic_inc_if_below(atomic_t *v, int limit)
+{
+	int old, cur;
+
+	cur = atomic_read(v);
+	do {
+		old = cur;
+		if (old >= limit)
+			return false;
+
+		cur = atomic_cmpxchg(v, old, old + 1);
+	} while (cur != old);
+
+	return true;
 }
 
 static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mask)
@@ -870,16 +887,15 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = &path->cs;
 	int i, p, err;
 
-
 	err = cm != path->cm;
-	kref_put(&cm->kref, dtr_destroy_cm);
 	if (err)
-		return;
+		goto out_put;
 
 	p = atomic_cmpxchg(&cs->passive_state, PCS_CONNECTING, PCS_FINISHING);
 	if (p < PCS_CONNECTING)
 		goto out;
 
+	kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 	path->cm->state = DSM_CONNECTED;
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
@@ -894,7 +910,7 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	if (!dtr_path_ok(path)) {
 		if (path->cs.active)
 			dtr_cma_retry_connect(path, path->cm);
-		return;
+		goto out_put;
 	}
 
 	p = atomic_cmpxchg(&rdma_transport->first_path_connect_err, 1, err);
@@ -916,6 +932,9 @@ out:
 		drbd_put_listener(&path->path);
 
 	wake_up(&cs->wq);
+
+out_put:
+	kref_put(&cm->kref, dtr_destroy_cm);  /* for work */
 }
 
 static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
@@ -1299,7 +1318,6 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
 		kref_get(&cm->kref); /* for the work */
 		schedule_work(&cm->establish_work);
 
@@ -1383,10 +1401,10 @@ static int dtr_new_rx_descs(struct dtr_flow *flow)
 	int posted, known;
 
 	posted = atomic_read(&flow->rx_descs_posted);
-	smp_rmb(); /* smp_wmb() is in dtr_handle_rx_cq_event() */
+	smp_rmb(); /* smp_wmb() is in dtr_rx_cqe_done() */
 	known = atomic_read(&flow->rx_descs_known_to_peer);
 
-	/* If the two decrements in dtr_handle_rx_cq_event() execute in
+	/* If the two decrements in dtr_rx_cqe_done() execute in
 	 * parallel our result might be one too low, that does not matter.
 	 * Only make sure to never return a -1 because that would matter! */
 	return max(posted - known, 0);
@@ -1454,8 +1472,9 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 {
 	struct dtr_flow_control msg;
+	struct dtr_flow *flow;
 	enum drbd_stream i;
-	int err, n[2], rx_desc_stolen_from = -1, rx_descs = 0;
+	int err, n[2], send_from_stream = -1, rx_descs = 0;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 
@@ -1466,19 +1485,21 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 	   from rx_descs_known_to_peer has to be atomic!
 	 */
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		struct dtr_flow *flow = &path->flow[i];
+		flow = &path->flow[i];
 
 		n[i] = dtr_new_rx_descs(flow);
 		atomic_add(n[i], &flow->rx_descs_known_to_peer);
 		rx_descs += n[i];
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
-		if (rx_desc_stolen_from == -1 && atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
-			rx_desc_stolen_from = i;
+		if (send_from_stream == -1 &&
+			atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
+			atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
+			send_from_stream = i;
 	}
 	spin_unlock_bh(&path->send_flow_control_lock);
 
-	if (rx_desc_stolen_from == -1) {
+	if (send_from_stream == -1) {
 		struct drbd_transport *transport = path->path.transport;
 		struct dtr_transport *rdma_transport =
 			container_of(transport, struct dtr_transport, transport);
@@ -1489,18 +1510,20 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 		goto out_undo;
 	}
 
-	if (rx_descs == 0) {
-		atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
+	flow = &path->flow[send_from_stream];
+	if (rx_descs == 0 || !atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
+		atomic_inc(&flow->peer_rx_descs);
 		return 0;
 	}
 
-	msg.rx_desc_stolen_from_stream = cpu_to_be32(rx_desc_stolen_from);
+	msg.send_from_stream = cpu_to_be32(send_from_stream);
 	err = dtr_send(path, &msg, sizeof(msg), gfp_mask);
 	if (err) {
-		atomic_inc(&path->flow[rx_desc_stolen_from].peer_rx_descs);
-	out_undo:
+		atomic_inc(&flow->peer_rx_descs);
+		atomic_dec(&flow->tx_descs_posted);
+out_undo:
 		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-			struct dtr_flow *flow = &path->flow[i];
+			flow = &path->flow[i];
 			atomic_sub(n[i], &flow->rx_descs_known_to_peer);
 		}
 	}
@@ -1540,7 +1563,7 @@ static int dtr_got_flow_control_msg(struct dtr_path *path,
 			clear_bit(NET_CONGESTED, &rdma_transport->transport.flags);
 	}
 
-	return be32_to_cpu(msg->rx_desc_stolen_from_stream);
+	return be32_to_cpu(msg->send_from_stream);
 }
 
 static void dtr_flow_control_tasklet_fn(struct tasklet_struct *t)
@@ -1550,12 +1573,12 @@ static void dtr_flow_control_tasklet_fn(struct tasklet_struct *t)
 	dtr_send_flow_control_msg(path, GFP_ATOMIC);
 }
 
-static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int rx_desc_stolen_from)
+static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int send_from_stream)
 {
 	struct dtr_flow *flow;
 	int n;
 
-	flow = &path->flow[rx_desc_stolen_from];
+	flow = &path->flow[send_from_stream];
 	n = atomic_dec_return(&flow->rx_descs_known_to_peer);
 	/* If we get a lot of flow control messages in, but no data on this
 	 * path, we need to tell the peer that we recycled all these buffers
@@ -1742,27 +1765,21 @@ abort:
 	tasklet_schedule(&rdma_transport->control_tasklet);
 }
 
-static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
+static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 {
+	struct dtr_rx_desc *rx_desc = container_of(wc->wr_cqe, struct dtr_rx_desc, cqe);
+	struct dtr_cm *cm = rx_desc->cm;
 	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
-	struct dtr_rx_desc *rx_desc;
 	union dtr_immediate immediate;
-	struct ib_wc wc;
-	int ret, err;
+	int err;
 
-	ret = ib_poll_cq(cq, 1, &wc);
-	if (!ret)
-		return -EAGAIN;
-
-	rx_desc = (struct dtr_rx_desc *) (unsigned long) wc.wr_id;
-
-	if (wc.status != IB_WC_SUCCESS || !(wc.opcode & IB_WC_RECV)) {
+	if (wc->status != IB_WC_SUCCESS || !(wc->opcode & IB_WC_RECV)) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 		unsigned long irq_flags;
 
-		switch (wc.status) {
+		switch (wc->status) {
 		case IB_WC_WR_FLUSH_ERR:
 			/* "Work Request Flushed Error: A Work Request was in
 			 * process or outstanding when the QP transitioned into
@@ -1776,19 +1793,17 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			if (__ratelimit(&rdma_transport->rate_limit)) {
 				tr_warn(transport,
 					"wc.status = %d (%s), wc.opcode = %d (%s)\n",
-					wc.status, wc.status == IB_WC_SUCCESS ? "ok" : "bad",
-					wc.opcode, wc.opcode & IB_WC_RECV ? "ok" : "bad");
+					wc->status, wc->status == IB_WC_SUCCESS ? "ok" : "bad",
+					wc->opcode, wc->opcode & IB_WC_RECV ? "ok" : "bad");
 
 				tr_warn(transport,
 					"wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-					wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+					wc->vendor_err, wc->byte_len, wc->ex.imm_data);
 			}
 		}
 
-		/* dtr_free_rx_desc(NULL, rx_desc);
-		   dtr_free_rx_desc() will call drbd_free_page(), and that function
-		   should not be called from IRQ context. This callback executes
-		   in the context of the timer interrupt.
+		/* dtr_free_rx_desc() will call drbd_free_page(), and that function
+		 * should not be called from softirq context.
 		 */
 		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
 		list_add_tail(&rx_desc->list, &cm->error_rx_descs);
@@ -1796,21 +1811,25 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		dtr_dec_rx_descs(cm);
 		set_bit(DSB_ERROR, &cm->state);
 
-		return 0;
+		kref_get(&cm->kref);
+		if (!schedule_work(&cm->end_rx_work))
+			kref_put(&cm->kref, dtr_destroy_cm);
+
+		return;
 	}
 
-	rx_desc->size = wc.byte_len;
-	immediate.i = be32_to_cpu(wc.ex.imm_data);
+	rx_desc->size = wc->byte_len;
+	immediate.i = be32_to_cpu(wc->ex.imm_data);
 	if (immediate.stream == ST_FLOW_CTRL) {
-		int rx_desc_stolen_from;
+		int send_from_stream;
 
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
-		rx_desc_stolen_from = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
+		send_from_stream = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 		err = dtr_repost_rx_desc(cm, rx_desc);
 		if (err)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
-		dtr_maybe_trigger_flow_control_msg(path, rx_desc_stolen_from);
+		dtr_maybe_trigger_flow_control_msg(path, send_from_stream);
 	} else {
 		struct dtr_flow *flow = &path->flow[immediate.stream];
 		struct dtr_stream *rdma_stream = &rdma_transport->stream[immediate.stream];
@@ -1829,39 +1848,7 @@ static int dtr_handle_rx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 			tasklet_schedule(&rdma_transport->control_tasklet);
 		else
 			wake_up_interruptible(&rdma_stream->recv_wq);
-
 	}
-
-	return 0;
-}
-
-static void dtr_rx_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct dtr_cm *cm = ctx;
-	struct dtr_path *path = cm->path;
-	int err, rc;
-
-	do {
-		unsigned long irq_flags;
-		do {
-			err = dtr_handle_rx_cq_event(cq, cm);
-		} while (!err);
-
-		spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
-		if (!list_empty(&cm->error_rx_descs)) {
-			kref_get(&cm->kref);
-			if (!schedule_work(&cm->end_rx_work))
-				kref_put(&cm->kref, dtr_destroy_cm);
-		}
-		spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
-
-		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-		if (unlikely(rc < 0)) {
-			struct drbd_transport *transport = path->path.transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
-			break;
-		}
-	} while (rc);
 
 	if (dtr_path_ok(path)) {
 		struct dtr_flow *flow = &path->flow[DATA_STREAM];
@@ -1900,54 +1887,57 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	kfree(tx_desc);
 }
 
-static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
+static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 {
+	struct dtr_tx_desc *tx_desc = container_of(wc->wr_cqe, struct dtr_tx_desc, cqe);
+	struct dtr_cm *cm = cq->cq_context;
 	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
-	struct dtr_tx_desc *tx_desc;
-	struct ib_wc wc;
-	enum dtr_stream_nr stream_nr;
-	int ret, err;
+	struct dtr_flow *flow;
+	struct dtr_stream *rdma_stream;
+	enum dtr_stream_nr stream_nr = tx_desc->imm.stream;
+	int err;
 
-	ret = ib_poll_cq(cq, 1, &wc);
-	if (!ret)
-		return -EAGAIN;
+	if (stream_nr != ST_FLOW_CTRL) {
+		flow = &path->flow[stream_nr];
+		rdma_stream = &rdma_transport->stream[stream_nr];
+	} else {
+		struct dtr_flow_control *msg = (struct dtr_flow_control *)tx_desc->data;
+		enum dtr_stream_nr send_from_stream = be32_to_cpu(msg->send_from_stream);
 
-	tx_desc = (struct dtr_tx_desc *) (unsigned long) wc.wr_id;
-	stream_nr = tx_desc->imm.stream;
+		flow = &path->flow[send_from_stream];
+		rdma_stream = &rdma_transport->stream[send_from_stream];
+	}
 
-	if (wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND) {
+	if (wc->status != IB_WC_SUCCESS || wc->opcode != IB_WC_SEND) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
-		if (wc.status == IB_WC_RNR_RETRY_EXC_ERR) {
-			struct dtr_flow *flow = &path->flow[stream_nr];
+		if (wc->status == IB_WC_RNR_RETRY_EXC_ERR) {
 			tr_err(transport, "tx_event: wc.status = IB_WC_RNR_RETRY_EXC_ERR\n");
 			tr_info(transport, "peer_rx_descs = %d", atomic_read(&flow->peer_rx_descs));
-		} else if (wc.status != IB_WC_WR_FLUSH_ERR) {
-			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc.status);
+		} else if (wc->status != IB_WC_WR_FLUSH_ERR) {
+			tr_err(transport, "tx_event: wc.status != IB_WC_SUCCESS %d\n", wc->status);
 			tr_err(transport, "wc.vendor_err = %d, wc.byte_len = %d wc.imm_data = %d\n",
-			       wc.vendor_err, wc.byte_len, wc.ex.imm_data);
+			       wc->vendor_err, wc->byte_len, wc->ex.imm_data);
 		}
 
+		atomic_inc(&flow->peer_rx_descs);
 		set_bit(DSB_ERROR, &cm->state);
 
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
 				tx_desc = NULL; /* it is in the air again! Fly! */
-			else if (__ratelimit(&rdma_transport->rate_limit))
+			else if (__ratelimit(&rdma_transport->rate_limit)) {
 				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
+				drbd_control_event(transport, CLOSED_BY_PEER);
+			}
 		}
 	}
 
-	if (stream_nr != ST_FLOW_CTRL) {
-		struct dtr_flow *flow = &path->flow[stream_nr];
-		struct dtr_stream *rdma_stream = &rdma_transport->stream[stream_nr];
-
-		atomic_dec(&flow->tx_descs_posted);
-		wake_up_interruptible(&rdma_stream->send_wq);
-	}
+	atomic_dec(&flow->tx_descs_posted);
+	wake_up_interruptible(&rdma_stream->send_wq);
 
 	if (tx_desc)
 		dtr_free_tx_desc(cm, tx_desc);
@@ -1962,30 +1952,6 @@ static int dtr_handle_tx_cq_event(struct ib_cq *cq, struct dtr_cm *cm)
 		else
 			schedule_work(&cm->end_tx_work); /* the last ref might be put in this work */
 	}
-
-	return 0;
-}
-
-static void dtr_tx_cq_event_handler(struct ib_cq *cq, void *ctx)
-{
-	struct dtr_cm *cm = ctx;
-	int err, rc;
-
-	do {
-		do {
-			err = dtr_handle_tx_cq_event(cq, cm);
-		} while (!err);
-
-		if (cm->state != DSM_CONNECTED)
-			break;
-
-		rc = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-		if (unlikely(rc < 0)) {
-			struct drbd_transport *transport = cm->path->path.transport;
-			tr_err(transport, "ib_req_notify_cq failed %d\n", rc);
-			break;
-		}
-	} while (rc);
 }
 
 static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
@@ -2019,7 +1985,8 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	int err = -EIO;
 
 	recv_wr.next = NULL;
-	recv_wr.wr_id = (unsigned long)rx_desc;
+	rx_desc->cqe.done = dtr_rx_cqe_done;
+	recv_wr.wr_cqe = &rx_desc->cqe;
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
@@ -2131,9 +2098,18 @@ out:
 static void dtr_refill_rx_descs_work_fn(struct work_struct *work)
 {
 	struct dtr_path *path = container_of(work, struct dtr_path, refill_rx_descs_work);
+	int i;
 
-	if (dtr_path_ok(path))
-		__dtr_refill_rx_desc(path, DATA_STREAM);
+	if (!dtr_path_ok(path))
+		return;
+
+	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+		struct dtr_flow *flow = &path->flow[i];
+
+		if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2)
+			__dtr_refill_rx_desc(path, i);
+		dtr_flow_control(flow, GFP_NOIO);
+	}
 }
 
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
@@ -2174,11 +2150,7 @@ static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 	for_each_path_ref(drbd_path, transport) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
-		if (!dtr_path_ok(path))
-			continue;
-
-		__dtr_refill_rx_desc(path, stream);
-		dtr_flow_control(&path->flow[stream], GFP_NOIO);
+		schedule_work(&path->refill_rx_descs_work);
 	}
 }
 
@@ -2239,7 +2211,8 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	bool was_active;
 
 	send_wr.next = NULL;
-	send_wr.wr_id = (unsigned long)tx_desc;
+	tx_desc->cqe.done = dtr_tx_cqe_done;
+	send_wr.wr_cqe = &tx_desc->cqe;
 	send_wr.sg_list = tx_desc->sge;
 	send_wr.num_sge = tx_desc->nr_sges;
 	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm.i);
@@ -2378,6 +2351,7 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 		container_of(old_cm->path->path.transport, struct dtr_transport, transport);
 	enum drbd_stream stream = tx_desc->imm.stream;
 	struct dtr_cm *cm;
+	struct dtr_flow *flow;
 	int err;
 
 	do {
@@ -2386,13 +2360,27 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 			return -ECONNRESET;
 
 		err = dtr_remap_tx_desc(old_cm, cm, tx_desc);
-		if (err)
+		if (err) {
+			tr_err(&rdma_transport->transport, "dtr_remap_tx_desc failed: %d\n", err);
+			kref_put(&cm->kref, dtr_destroy_cm);
 			continue;
+		}
+
+		flow = &cm->path->flow[stream];
+		if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0) {
+			kref_put(&cm->kref, dtr_destroy_cm);
+			continue;
+		}
+		if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
+			atomic_inc(&flow->peer_rx_descs);
+			kref_put(&cm->kref, dtr_destroy_cm);
+			continue;
+		}
 
 		err = __dtr_post_tx_desc(cm, tx_desc);
-		if (!err) {
-			struct dtr_flow *flow = &cm->path->flow[stream];
-			atomic_inc(&flow->tx_descs_posted);
+		if (err) {
+			atomic_inc(&flow->peer_rx_descs);
+			atomic_dec(&flow->tx_descs_posted);
 		}
 		kref_put(&cm->kref, dtr_destroy_cm);
 	} while (err);
@@ -2430,6 +2418,12 @@ retry:
 		kref_put(&cm->kref, dtr_destroy_cm);
 		goto retry;
 	}
+	if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
+		atomic_inc(&flow->peer_rx_descs);
+		kref_put(&cm->kref, dtr_destroy_cm);
+		goto retry;
+	}
+
 	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -2437,8 +2431,11 @@ retry:
 		tx_desc->sge[0].addr = ib_dma_map_page(device, tx_desc->page, offset,
 						      tx_desc->sge[0].length, DMA_TO_DEVICE);
 		err = ib_dma_mapping_error(device, tx_desc->sge[0].addr);
-		if (err)
+		if (err) {
+			atomic_inc(&flow->peer_rx_descs);
+			atomic_dec(&flow->tx_descs_posted);
 			goto out;
+		}
 
 		tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 		break;
@@ -2448,10 +2445,11 @@ retry:
 	}
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
-	if (!err)
-		atomic_inc(&flow->tx_descs_posted);
-	else
+	if (err) {
+		atomic_inc(&flow->peer_rx_descs);
+		atomic_dec(&flow->tx_descs_posted);
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+	}
 
 
 out:
@@ -2523,7 +2521,6 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 				    enum dtr_alloc_rdma_res_causes *cause)
 {
 	int err, i, rx_descs_max = 0, tx_descs_max = 0;
-	struct ib_cq_init_attr cq_attr = {};
 	struct dtr_path *path = cm->path;
 
 	/* Each path might be the sole path, therefore it must be able to
@@ -2544,39 +2541,20 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 		goto pd_failed;
 	}
 
-	/* create recv completion queue (CQ) */
-	cq_attr.cqe = rx_descs_max;
-	cm->recv_cq = ib_create_cq(cm->id->device,
-			dtr_rx_cq_event_handler, NULL, cm,
-			&cq_attr);
+	/* allocate recv completion queue (CQ) */
+	cm->recv_cq = ib_alloc_cq_any(cm->id->device, cm, rx_descs_max, IB_POLL_SOFTIRQ);
 	if (IS_ERR(cm->recv_cq)) {
-		*cause = IB_CREATE_CQ_RX;
+		*cause = IB_ALLOC_CQ_RX;
 		err = PTR_ERR(cm->recv_cq);
 		goto recv_cq_failed;
 	}
 
-	/* create send completion queue (CQ) */
-	cq_attr.cqe = tx_descs_max;
-	cm->send_cq = ib_create_cq(cm->id->device,
-			dtr_tx_cq_event_handler, NULL, cm,
-			&cq_attr);
+	/* allocate send completion queue (CQ) */
+	cm->send_cq = ib_alloc_cq_any(cm->id->device, cm, tx_descs_max, IB_POLL_SOFTIRQ);
 	if (IS_ERR(cm->send_cq)) {
-		*cause = IB_CREATE_CQ_TX;
+		*cause = IB_ALLOC_CQ_TX;
 		err = PTR_ERR(cm->send_cq);
 		goto send_cq_failed;
-	}
-
-	/* arm CQs */
-	err = ib_req_notify_cq(cm->recv_cq, IB_CQ_NEXT_COMP);
-	if (err) {
-		*cause = IB_REQ_NOTIFY_CQ_RX;
-		goto notify_failed;
-	}
-
-	err = ib_req_notify_cq(cm->send_cq, IB_CQ_NEXT_COMP);
-	if (err) {
-		*cause = IB_REQ_NOTIFY_CQ_TX;
-		goto notify_failed;
 	}
 
 	/* create a queue pair (QP) */
@@ -2593,11 +2571,10 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 	return 0;
 
 createqp_failed:
-notify_failed:
-	ib_destroy_cq(cm->send_cq);
+	ib_free_cq(cm->send_cq);
 	cm->send_cq = NULL;
 send_cq_failed:
-	ib_destroy_cq(cm->recv_cq);
+	ib_free_cq(cm->recv_cq);
 	cm->recv_cq = NULL;
 recv_cq_failed:
 	ib_dealloc_pd(cm->pd);
@@ -2623,10 +2600,8 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 
 	static const char * const err_txt[] = {
 		[IB_ALLOC_PD] = "ib_alloc_pd()",
-		[IB_CREATE_CQ_RX] = "ib_create_cq() rx",
-		[IB_CREATE_CQ_TX] = "ib_create_cq() tx",
-		[IB_REQ_NOTIFY_CQ_RX] = "ib_req_notify_cq() rx",
-		[IB_REQ_NOTIFY_CQ_TX] = "ib_req_notify_cq() tx",
+		[IB_ALLOC_CQ_RX] = "ib_alloc_cq_any() rx",
+		[IB_ALLOC_CQ_TX] = "ib_alloc_cq_any() tx",
 		[RDMA_CREATE_QP] = "rdma_create_qp()",
 		[IB_GET_DMA_MR] = "ib_get_dma_mr()",
 	};
@@ -2842,12 +2817,12 @@ static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 	}
 
 	if (cm->send_cq) {
-		ib_destroy_cq(cm->send_cq);
+		ib_free_cq(cm->send_cq);
 		cm->send_cq = NULL;
 	}
 
 	if (cm->recv_cq) {
-		ib_destroy_cq(cm->recv_cq);
+		ib_free_cq(cm->recv_cq);
 		cm->recv_cq = NULL;
 	}
 
@@ -2890,6 +2865,7 @@ static void dtr_disconnect_path(struct dtr_path *path)
 		return;
 
 	__dtr_disconnect_path(path);
+	cancel_work_sync(&path->refill_rx_descs_work);
 
 	cm = xchg(&path->cm, NULL); // RCU xchg
 	if (cm)
@@ -3211,7 +3187,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (!tx_desc)
 		return -ENOMEM;
 
-	get_page(page); /* The put_page() is in dtr_tx_cq_event_handler() */
+	get_page(page); /* The put_page() is in dtr_tx_cqe_done() */
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
@@ -3226,6 +3202,9 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	if (err) {
 		put_page(page);
 		kfree(tx_desc);
+
+		tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
+		drbd_control_event(transport, CLOSED_BY_PEER);
 	}
 
 	if (stream == DATA_STREAM)
@@ -3312,6 +3291,9 @@ static int dtr_send_bio_part(struct dtr_transport *rdma_transport,
 			}
 			kfree(tx_desc);
 		}
+
+		tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
+		drbd_control_event(transport, CLOSED_BY_PEER);
 	}
 
 	return err;

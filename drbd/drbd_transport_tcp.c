@@ -58,7 +58,7 @@ module_param_named(keepidle, drbd_keepidle, uint, 0664);
 MODULE_PARM_DESC(keepidle, "see tcp(7) tcp_keepalive_time; set TCP_KEEPIDLE for data sockets; default: 23s");
 static unsigned int drbd_keepintvl = DRBD_KEEP_INTVL;
 module_param_named(keepintvl, drbd_keepintvl, uint, 0664);
-MODULE_PARM_DESC(keepintvtl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
+MODULE_PARM_DESC(keepintvl, "see tcp(7) tcp_keepalive_intvl; set TCP_KEEPINTVL for data sockets; default: 23s");
 
 static struct workqueue_struct *dtt_csocket_recv;
 
@@ -495,14 +495,15 @@ static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 	*  a free one dynamically.
 	*/
 	what = "bind before connect";
-	err = socket->ops->bind(socket, (struct sockaddr *) &my_addr, path->path.my_addr_len);
+	err = socket->ops->bind(socket, (struct sockaddr_unsized *) &my_addr,
+			path->path.my_addr_len);
 	if (err < 0)
 		goto out;
 
 	/* connect may fail, peer not yet available.
 	 * stay C_CONNECTING, don't go Disconnecting! */
 	what = "connect";
-	err = socket->ops->connect(socket, (struct sockaddr *) &peer_addr,
+	err = socket->ops->connect(socket, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
 	if (err < 0) {
 		switch (err) {
@@ -795,7 +796,7 @@ retry:
 			struct dtt_path *path2 =
 				container_of(drbd_path2, struct dtt_path, path);
 
-			socket_c = kmalloc(sizeof(*socket_c), GFP_ATOMIC);
+			socket_c = kmalloc_obj(*socket_c, GFP_ATOMIC);
 			if (!socket_c) {
 				tr_info(transport, /* path2->transport, */
 					"No mem, dropped an incoming connection\n");
@@ -1030,7 +1031,7 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	addr_len = addr->sa_family == AF_INET6 ? sizeof(struct sockaddr_in6)
 		: sizeof(struct sockaddr_in);
 
-	err = s_listen->ops->bind(s_listen, (struct sockaddr *)&my_addr, addr_len);
+	err = s_listen->ops->bind(s_listen, (struct sockaddr_unsized *)&my_addr, addr_len);
 	if (err < 0) {
 		what = "bind before listen";
 		goto out;

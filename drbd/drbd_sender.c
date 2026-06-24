@@ -33,7 +33,6 @@ static int make_ov_request(struct drbd_peer_device *, int);
 static int make_resync_request(struct drbd_peer_device *, int);
 static bool should_send_barrier(struct drbd_connection *, unsigned int epoch);
 static void maybe_send_barrier(struct drbd_connection *, unsigned int);
-static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags);
 
 /* endio handlers:
  *   drbd_md_endio (defined here)
@@ -53,6 +52,7 @@ static unsigned long get_work_bits(const unsigned long mask, unsigned long *flag
  */
 void drbd_md_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in md I/O path */
 	struct drbd_device *device;
 
 	blk_status_t status = bio->bi_status;
@@ -84,7 +84,7 @@ void drbd_md_endio(struct bio *bio)
 /* reads on behalf of the partner,
  * "submitted" by the receiver
  */
-static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
@@ -152,7 +152,7 @@ int drbd_unmerge_discard(struct drbd_peer_request *peer_req_main, struct list_he
 
 /* writes on behalf of the partner, or resync writes,
  * "submitted" by the receiver, final stage.  */
-void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(local)
+void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 {
 	unsigned long flags = 0;
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -168,8 +168,6 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
 		spin_lock_irqsave(&connection->peer_reqs_lock, flags);
 		peer_req->flags = (peer_req->flags & ~EE_WAS_ERROR) | EE_RESUBMITTED;
 		peer_req->w.cb = w_e_reissue;
-		/* put_ldev actually happens below, once we come here again. */
-		__release(local);
 		spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 		drbd_queue_work(&connection->sender_work, &peer_req->w);
 		if (atomic_dec_and_test(&connection->active_ee_cnt))
@@ -237,6 +235,7 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req) __releases(l
  */
 void drbd_peer_request_endio(struct bio *bio)
 {
+	/* ldev_ref_transfer: ldev ref from bio submit in peer request I/O path */
 	struct drbd_peer_request *peer_req = bio->bi_private;
 	struct drbd_device *device = peer_req->peer_device->device;
 	bool is_write = bio_data_dir(bio) == WRITE;
@@ -356,6 +355,7 @@ void drbd_request_endio(struct bio *bio)
 
 	/* not req_mod(), we need irqsave here! */
 	read_lock_irqsave(&device->resource->state_rwlock, flags);
+	/* ldev_safe: bio endio, ldev ref held since drbd_request_prepare(), put_ldev() follows */
 	__req_mod(req, what, NULL, &m);
 	read_unlock_irqrestore(&device->resource->state_rwlock, flags);
 	put_ldev(device);
@@ -482,7 +482,7 @@ void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req)
 	if (drbd_interval_empty(&peer_req->i))
 		drbd_insert_interval(&device->requests, &peer_req->i);
 	if (!conflict)
-		set_bit(INTERVAL_SENT, &peer_req->i.flags);
+		set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
 	if (!conflict) {
@@ -630,6 +630,7 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 
 	atomic_inc(&connection->backing_ee_cnt);
 	atomic_add(size >> 9, &device->rs_sect_ev);
+	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	if (drbd_submit_peer_request(peer_req) == 0)
 		return 0;
 
@@ -725,11 +726,12 @@ int w_send_dagtag(struct drbd_work *w, int cancel)
 	 * queued again if it is changed. */
 	read_unlock_irq(&resource->state_rwlock);
 
-	/* Only send if no request with a newer dagtag has been sent. This can
-	 * occur if a write arrives after the state change and is processed
-	 * before this work item. */
+	/* If writes raced ahead and have already been sent past the queued
+	 * dagtag value, send P_DAGTAG with the actual current position instead
+	 * of skipping. The receiver needs an explicit P_DAGTAG to advance
+	 * last_dagtag_sector and release dagtag-dependent resync requests. */
 	if (dagtag_newer_eq(connection->send.current_dagtag_sector, dagtag_sector))
-		return 0;
+		dagtag_sector = connection->send.current_dagtag_sector;
 
 	err = drbd_send_dagtag(connection, dagtag_sector);
 	if (err)
@@ -815,7 +817,7 @@ struct fifo_buffer *fifo_alloc(unsigned int fifo_size)
 {
 	struct fifo_buffer *fb;
 
-	fb = kzalloc(struct_size(fb, values, fifo_size), GFP_NOIO);
+	fb = kzalloc_flex(*fb, values, fifo_size, GFP_NOIO);
 	if (!fb)
 		return NULL;
 
@@ -1399,7 +1401,7 @@ static void drbd_conflict_send_ov_request(struct drbd_peer_request *peer_req)
 	if (drbd_find_conflict(device, &peer_req->i, 0))
 		set_bit(INTERVAL_CONFLICT, &peer_req->i.flags);
 	drbd_insert_interval(&device->requests, &peer_req->i);
-	set_bit(INTERVAL_SENT, &peer_req->i.flags);
+	set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 	/* Mark as submitted now, since OV requests do not have a second
 	 * conflict resolution stage when the reply is received. */
 	set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
@@ -1470,6 +1472,9 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	if (unlikely(cancel))
 		return 1;
 
+	if (!get_ldev(device))
+		return 0;
+
 	number = drbd_rs_number_requests(peer_device);
 	sector = peer_device->ov_position;
 
@@ -1524,7 +1529,7 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 	peer_device->rs_in_flight -= (number-i) * BM_SECT_PER_BIT;
 	peer_device->ov_position = sector;
 	if (stop_sector_reached)
-		return 1;
+		goto out_ok;
 	/* ... and in case that raced with the receiver,
 	 * reschedule ourselves right now */
 	if (i > 0 && atomic_read(&peer_device->rs_sect_in) >= peer_device->rs_in_flight)
@@ -1533,6 +1538,8 @@ static int make_ov_request(struct drbd_peer_device *peer_device, int cancel)
 			&peer_device->resync_work);
 	else
 		mod_timer(&peer_device->resync_timer, jiffies + resync_delay(true, number, i));
+out_ok:
+	put_ldev(device);
 	return 1;
 }
 
@@ -1770,7 +1777,7 @@ static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drb
 	struct drbd_connection *connection = peer_device->connection;
 	struct resync_finished_work *rfw;
 
-	rfw = kmalloc(sizeof(*rfw), GFP_ATOMIC);
+	rfw = kmalloc_obj(*rfw, GFP_ATOMIC);
 	if (!rfw) {
 		drbd_err(peer_device, "Warn failed to kmalloc(dw).\n");
 		return;
@@ -1780,6 +1787,18 @@ static void queue_resync_finished(struct drbd_peer_device *peer_device, enum drb
 	rfw->pdw.peer_device = peer_device;
 	rfw->new_peer_disk_state = new_peer_disk_state;
 	drbd_queue_work(&connection->sender_work, &rfw->pdw.w);
+}
+
+static void drbd_queue_final_peers_in_sync(struct drbd_peer_device *peer_device)
+{
+	sector_t last_end = peer_device->last_in_sync_end;
+	sector_t last_step = last_end & ~PEERS_IN_SYNC_STEP_SECT_MASK;
+	sector_t last_step_end = min(get_capacity(peer_device->device->vdisk),
+			last_step + PEERS_IN_SYNC_STEP_SECT);
+
+	/* Send for last request if it was part way through a step */
+	if (last_end > last_step)
+		drbd_queue_update_peers(peer_device, last_step, last_step_end);
 }
 
 void drbd_resync_finished(struct drbd_peer_device *peer_device,
@@ -1797,7 +1816,6 @@ void drbd_resync_finished(struct drbd_peer_device *peer_device,
 	char *khelper_cmd = NULL;
 	int verify_done = 0;
 	bool aborted = false;
-	sector_t final_peers_in_sync_end;
 
 
 	if (repl_state[NOW] == L_SYNC_SOURCE || repl_state[NOW] == L_PAUSED_SYNC_S) {
@@ -1991,11 +2009,7 @@ out_unlock:
 	if (send_resync_uuids)
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC, 0);
 
-	/* Potentially send final P_PEERS_IN_SYNC. */
-	final_peers_in_sync_end = min(get_capacity(device->vdisk),
-			(peer_device->last_peers_in_sync_end | PEERS_IN_SYNC_STEP_SECT_MASK) + 1);
-	drbd_queue_update_peers(peer_device,
-			peer_device->last_peers_in_sync_end, final_peers_in_sync_end);
+	drbd_queue_final_peers_in_sync(peer_device);
 
 out:
 	/* reset start sector, if we reached end of device */
@@ -2065,10 +2079,8 @@ drbd_resync_read_req_mod(struct drbd_peer_request *peer_req, enum drbd_interval_
 	if (new_flag & oflags)
 		drbd_err(peer_device, "BUG: %s: Flag 0x%lx already set\n", __func__, new_flag);
 
-	if ((nflags & done_mask) == done_mask) {
-		drbd_remove_peer_req_interval(peer_req);
+	if ((nflags & done_mask) == done_mask)
 		drbd_free_peer_req(peer_req);
-	}
 }
 
 static bool all_zero(struct drbd_peer_request *peer_req)
@@ -2151,9 +2163,8 @@ static int drbd_rs_reply(struct drbd_peer_device *peer_device, struct drbd_peer_
 		 */
 		atomic_add(peer_req->i.size >> 9, &connection->rs_in_flight);
 
-		spin_lock_irq(&connection->peer_reqs_lock);
-		list_add_tail(&peer_req->w.list, &connection->resync_ack_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
+		/* After setting this, peer_req can be found by got_RSWriteAck. */
+		set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 
 		if (peer_req->flags & EE_RS_THIN_REQ && all_zero(peer_req)) {
 			err = drbd_send_rs_deallocated(peer_device, peer_req);
@@ -2328,7 +2339,7 @@ int w_e_end_ov_req(struct drbd_work *w, int cancel)
 	if (dagtag_result.err)
 		goto out;
 
-	set_bit(INTERVAL_SENT, &peer_req->i.flags);
+	set_bit(INTERVAL_READY_TO_SEND, &peer_req->i.flags);
 
 	digest_size = crypto_shash_digestsize(peer_device->connection->verify_tfm);
 	/* FIXME if this allocation fails, online verify will not terminate! */
@@ -3039,6 +3050,7 @@ static void go_diskless(struct drbd_device *device)
 	 * We still need to check if both bitmap and ldev are present, we may
 	 * end up here after a failed attach, before ldev was even assigned.
 	 */
+	/* ldev_safe: ldev is only destroyed after state change to D_DISKLESS below */
 	if (device->bitmap && device->ldev) {
 		if (drbd_bitmap_io_from_worker(device, drbd_bm_write,
 					       "detach",
@@ -3056,7 +3068,6 @@ static void go_diskless(struct drbd_device *device)
 	}
 
 	drbd_md_sync_if_dirty(device);
-	drbd_bm_free(device);
 	change_disk_state(device, D_DISKLESS, CS_HARD, "go-diskless", NULL);
 }
 
@@ -3220,16 +3231,6 @@ static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsi
 	|(1UL << RS_DONE)		\
 	|(1UL << HANDLE_CONGESTION)     \
 	)
-
-static unsigned long get_work_bits(const unsigned long mask, unsigned long *flags)
-{
-	unsigned long old, new;
-	do {
-		old = *flags;
-		new = old & ~mask;
-	} while (cmpxchg(flags, old, new) != old);
-	return old & mask;
-}
 
 static void __do_unqueued_peer_device_work(struct drbd_connection *connection)
 {
@@ -3398,8 +3399,10 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	nc = rcu_dereference(connection->transport.net_conf);
 	uncork = nc ? nc->tcp_cork : 0;
 	rcu_read_unlock();
-	if (uncork)
-		drbd_uncork(connection, DATA_STREAM);
+	if (uncork) {
+		if (drbd_uncork(connection, DATA_STREAM))
+			return;
+	}
 
 	for (;;) {
 		int send_barrier;
@@ -3658,6 +3661,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 		maybe_send_unplug_remote(connection, false);
 	} else if (list_empty(&connection->todo.work_list)) {
 		update_sender_timing_details(connection, process_one_request);
+		/* ldev_safe: have connection->todo.req which holds its own ldev ref */
 		return process_one_request(connection);
 	}
 
@@ -3673,6 +3677,7 @@ static int process_sender_todo(struct drbd_connection *connection)
 
 		if (connection->todo.req) {
 			update_sender_timing_details(connection, process_one_request);
+			/* ldev_safe: have connection->todo.req which holds its own ldev ref */
 			err = process_one_request(connection);
 		}
 		if (err)
@@ -3737,6 +3742,7 @@ int drbd_sender(struct drbd_thread *thi)
 		peer_device = conn_peer_device(connection, device->vnr);
 
 		read_lock_irq(&connection->resource->state_rwlock);
+		/* ldev_safe: requests hold their own ldev refs */
 		__req_mod(req, SEND_CANCELED, peer_device, &m);
 		read_unlock_irq(&connection->resource->state_rwlock);
 		if (m.bio)
