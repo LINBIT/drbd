@@ -417,6 +417,62 @@ struct page *drbd_alloc_pages(struct drbd_transport *transport, gfp_t gfp_mask, 
 }
 EXPORT_SYMBOL(drbd_alloc_pages); /* for transports */
 
+/**
+ * drbd_alloc_pages_split() - Allocate a physically contiguous, non-compound region
+ * @transport:	DRBD transport
+ * @gfp_mask:	how to allocate
+ * @order:	in/out: on entry the desired (maximum) order, on return the order
+ *		actually allocated
+ *
+ * Allocates 2^*order physically contiguous pages and runs split_page() so that
+ * each constituent page becomes an independently refcounted order-0 page.
+ *
+ * Tries the requested order first and falls back to successively smaller orders
+ * when the high-order, physically-contiguous allocation fails.
+ * The caller uses *order to learn how large a region it actually got, so it can
+ * fill its receive window with as few, as-large-as-possible regions.
+ *
+ * The same max_buffers throttle as __drbd_alloc_pages() applies.
+ *
+ * Returns the head page (representing 1 << *order linear pages), or NULL.
+ */
+struct page *drbd_alloc_pages_split(struct drbd_transport *transport, gfp_t gfp_mask, int *order)
+{
+	struct drbd_connection *connection =
+		container_of(transport, struct drbd_connection, transport);
+	struct page *page = NULL;
+	unsigned int mxb;
+	int o = *order;
+
+	rcu_read_lock();
+	mxb = rcu_dereference(connection->transport.net_conf)->max_buffers;
+	rcu_read_unlock();
+
+	if (atomic_read(&connection->pp_in_use) >= mxb)
+		schedule_timeout_interruptible(HZ / 10);
+
+	for (; o > 0; o--) {
+		page = alloc_pages(gfp_mask | __GFP_NORETRY | __GFP_NOWARN, o);
+		if (page)
+			break;
+	}
+	if (!page) {
+		o = 0;
+		page = alloc_pages(gfp_mask | __GFP_NOWARN, 0);
+		if (!page)
+			return NULL;
+	}
+
+	if (o)
+		split_page(page, o);
+
+	atomic_add(1 << o, &connection->pp_in_use);
+	*order = o;
+
+	return page;
+}
+EXPORT_SYMBOL(drbd_alloc_pages_split); /* for transports */
+
 /* Must not be used from irq, as that may deadlock: see drbd_alloc_pages().
  * Either links the page chain back to the pool of free pages,
  * or returns all pages to the system. */
