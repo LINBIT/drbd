@@ -2665,12 +2665,6 @@ static int receive_DataReply(struct drbd_connection *connection, struct packet_i
 	if (unlikely(!req))
 		return -EIO;
 
-	/* A reply to a remote read we issued after sending the new current UUID
-	 * proves the peer received it (handshake confirmation only -- not durable,
-	 * so it does not release the completion hold; see
-	 * validate_req_change_req_state and got_BarrierAck).
-	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	err = recv_dless_read(peer_device, req, sector, pi->size);
 	if (!err)
 		req_mod(req, DATA_RECEIVED, peer_device);
@@ -11143,15 +11137,6 @@ validate_req_change_req_state(struct drbd_peer_device *peer_device, u64 id, sect
 	spin_unlock_irq(&device->interval_lock);
 	if (unlikely(!req))
 		return -EIO;
-	/* This ack refers to a request the peer received; if that request is in
-	 * (or past) the epoch in which we optimistically sent it the current
-	 * UUID, the peer received the UUID -> confirm it for the handshake.  This
-	 * is a write/recv ack: the data may still be in a volatile cache, so it
-	 * is not durable and does not release the completion hold (only the
-	 * barrier ack does; see got_BarrierAck).  req->epoch is set once at
-	 * submission; req stays alive until req_mod() below.
-	 */
-	drbd_peer_uuid_confirmed_by_epoch(peer_device, req->epoch);
 	req_mod(req, what, peer_device);
 
 	return 0;
@@ -11366,28 +11351,21 @@ static int got_BarrierAck(struct drbd_connection *connection, struct packet_info
 	bool release_gen = false;
 	int vnr, err;
 
-	/* A barrier ack is an in-order signal that the peer processed everything
-	 * up to this epoch, including a current UUID sent at the epoch boundary;
-	 * clear the per-peer confirmation marks and re-evaluate the release.
-	 * p->barrier is the epoch token the peer echoed back, directly comparable
-	 * to current_uuid_epoch.
+	/* tl_release flushes this epoch (RQ_NET_DONE) first, so the confirm below
+	 * sees the just-flushed held writes.
 	 */
-	rcu_read_lock();
-	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
-		drbd_peer_uuid_confirmed_by_epoch(peer_device, p->barrier);
-	rcu_read_unlock();
-
 	err = tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
 
-	/* This peer's durable confirmation may complete the "every surviving sync
-	 * peer has it, and we are quorate" picture for one or more devices: release
-	 * any now-confirmed generation's held completions.
+	/* confirm any peer that has now durably persisted all the generation's
+	 * held writes, then re-evaluate the release gate.
 	 */
 	if (!err) {
 		rcu_read_lock();
-		idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			drbd_peer_maybe_confirm_rotated_gen(peer_device, p->barrier);
 			if (drbd_maybe_release_rotated_gen(peer_device->device))
 				release_gen = true;
+		}
 		rcu_read_unlock();
 		if (release_gen)
 			tl_walk(connection, NULL, NEW_UUID_CONFIRMED);

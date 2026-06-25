@@ -5363,39 +5363,20 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		/* Publish ordering (paired with the smp_rmb() in
 		 * drbd_maybe_release_rotated_gen()):
 		 *
-		 *     set per-peer current_uuid_epoch + UNCONFIRMED (all peers)
+		 *     set per-peer CURRENT_UUID_UNCONFIRMED (all peers)
 		 *     smp_wmb()
 		 *     set EXPOSED_GEN_UNCONFIRMED         <- the gate, last
 		 *     send P_CURRENT_UUID                 <- only after the gate
 		 *
-		 * The gate means "an unconfirmed generation exists"; a mark means
-		 * "this peer does not have it durably yet".  A releaser reads the
-		 * gate first, then the marks.  If it could see the gate set with a
-		 * survivor's mark still clear (the just-confirmed predecessor left
-		 * it clear, current_uuid_epoch at the old value), a barrier ack
-		 * racing this bump on the peer's receiver thread would satisfy the
-		 * old epoch, find the mark clear, wrongly confirm the new
-		 * generation, release the IO hold, and strand on reconnect.
+		 * Marks before gate: a releaser reads gate then marks, so it
+		 * cannot see the gate set with a survivor's mark already clear.
 		 */
 		for_each_peer_device(peer_device, device) {
-			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
-				/* The UUID opens this write epoch; any in-order ack
-				 * at/past it confirms the peer holds the generation
-				 * durably (FUA on receipt). Cleared by
-				 * drbd_peer_uuid_confirmed_by_epoch().
-				 */
-				peer_device->current_uuid_epoch =
-					atomic_read(&device->resource->current_tle_nr);
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
 				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
-			}
 		}
-		/* Make the per-peer marks visible before the gate; paired with the
-		 * smp_rmb() in drbd_maybe_release_rotated_gen() after its gate test.
-		 */
-		smp_wmb();
-		/* Defer any further bump until a peer confirms this one (see the
-		 * deferral guard above); cleared by drbd_peer_uuid_confirmed_by_epoch.
-		 */
+		smp_wmb(); /* marks before gate; paired with smp_rmb() in releaser */
+		/* defer further bumps until this one is confirmed */
 		set_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
 		drbd_uuid_set_exposed(device, current_uuid, false);
 		downgrade_write(&device->uuid_sem);
