@@ -203,6 +203,16 @@ struct dtr_tx_desc {
 struct dtr_flow {
 	struct dtr_path *path;
 
+	/* Byte windows derived from net_conf, set once in dtr_init_flow().
+	 * rx_window_bytes: size of the local receive region the peer may
+	 *   RDMA-WRITE into (DATA: rcvbuf-size, CONTROL: rdma-ctrl-rcvbuf-size).
+	 * tx_window_bytes: how many bytes may be outstanding (un-acked) on the
+	 *   wire before the sender must wait (DATA: sndbuf-size, CONTROL:
+	 *   rdma-ctrl-sndbuf-size); tracks rx_window_bytes if unconfigured.
+	 */
+	unsigned int rx_window_bytes;
+	unsigned int tx_window_bytes;
+
 	atomic_t tx_descs_posted;
 	int tx_descs_max; /* derived from net_conf->sndbuf_size. Do not change after alloc. */
 	atomic_t peer_rx_descs; /* peer's receive window in number of rx descs */
@@ -273,7 +283,6 @@ struct dtr_stream {
 struct dtr_transport {
 	struct drbd_transport transport;
 	struct dtr_stream stream[2];
-	int rx_allocation_size;
 	int sges_max;
 	bool active; /* connect() returned no error. I.e. C_CONNECTING or C_CONNECTED */
 
@@ -424,7 +433,6 @@ static int dtr_init(struct drbd_transport *transport)
 
 	transport->class = &rdma2_transport_class;
 
-	rdma_transport->rx_allocation_size = PAGE_SIZE;
 	rdma_transport->active = false;
 	rdma_transport->sges_max = DTR_MAX_TX_SGES;
 
@@ -1378,12 +1386,10 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 
 	if (rx_desc) {
 		struct dtr_cm *cm = rx_desc->cm;
-		struct dtr_transport *rdma_transport =
-			container_of(cm->path->path.transport, struct dtr_transport, transport);
 
 		INIT_LIST_HEAD(&rx_desc->list);
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+					   PAGE_SIZE, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
 	}
@@ -1637,7 +1643,7 @@ static void dtr_control_data_ready(struct dtr_stream *rdma_stream, struct dtr_rx
 		dtr_send_flow_control_msg(path, GFP_ATOMIC);
 
 	ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-				   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+				   PAGE_SIZE, DMA_FROM_DEVICE);
 
 	buffer.buffer = page_address(rx_desc->page);
 	buffer.avail = rx_desc->size;
@@ -1754,7 +1760,7 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		int send_from_stream;
 
 		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+					   PAGE_SIZE, DMA_FROM_DEVICE);
 		send_from_stream = dtr_got_flow_control_msg(path, page_address(rx_desc->page));
 		err = dtr_repost_rx_desc(cm, rx_desc);
 		if (err)
@@ -1924,9 +1930,8 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
-	ib_dma_sync_single_for_device(cm->id->device, rx_desc->sge.addr,
-				      rdma_transport->rx_allocation_size,
-				      DMA_FROM_DEVICE);
+	ib_dma_sync_single_for_device(cm->id->device,
+				      rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
 
 	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
 	if (err)
@@ -1941,7 +1946,6 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 	struct dtr_path *path;
 	struct ib_device *device;
 	struct dtr_cm *cm;
-	int alloc_size;
 
 	if (!rx_desc)
 		return; /* Allow call with NULL */
@@ -1950,8 +1954,7 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 	device = cm->id->device;
 	path = cm->path;
 	rdma_transport = container_of(path->path.transport, struct dtr_transport, transport);
-	alloc_size = rdma_transport->rx_allocation_size;
-	ib_dma_unmap_single(device, rx_desc->sge.addr, alloc_size, DMA_FROM_DEVICE);
+	ib_dma_unmap_single(device, rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
 	kref_put(&cm->kref, dtr_destroy_cm);
 
 	if (rx_desc->page) {
@@ -1979,7 +1982,6 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 	if (!rx_desc)
 		return -ENOMEM;
 
-	/* Ignoring rdma_transport->rx_allocation_size for now! */
 	page = drbd_alloc_pages(transport, gfp_mask, PAGE_SIZE);
 	if (!page) {
 		kfree(rx_desc);
@@ -2395,51 +2397,76 @@ out:
 	return err;
 }
 
+/* Derive the per-stream receive-region and tx-credit windows (in bytes) from
+ * net_conf. DATA uses rcvbuf-size/sndbuf-size; CONTROL uses
+ * rdma-ctrl-rcvbuf-size/rdma-ctrl-sndbuf-size, defaulting to a small fraction
+ * of the DATA windows. An unset sndbuf tracks the matching rcvbuf, so the
+ * sender may keep a full receive window in flight.
+ */
+static void dtr_window_bytes(struct net_conf *nc, enum drbd_stream stream,
+			     unsigned int *rx_bytes, unsigned int *tx_bytes)
+{
+	unsigned int rcvbuf = nc->rcvbuf_size ?: RDMA_DEF_BUFFER_SIZE;
+	unsigned int sndbuf = nc->sndbuf_size ?: rcvbuf;
+
+	if (stream == CONTROL_STREAM) {
+		/* Under protocol C the CONTROL stream carries one write-ack per
+		 * write, so its volume tracks the DATA stream's, not the low rate
+		 * a control channel is usually sized for. A CONTROL window smaller
+		 * than the DATA window cannot hold the acks for the writes in
+		 * flight on a path: when that path fails over, the stranded
+		 * lower-sequence acks leave an in-order-delivery gap whose
+		 * higher-sequence descs fill the whole CONTROL receive window
+		 * (every reorder-held desc still counts against rx_descs_max), so
+		 * recv WRs can no longer be reposted, the credit granted to the
+		 * peer collapses to one, and the peer can never send the
+		 * gap-fillers that would let delivery resume -- a deadlock that
+		 * persists until the core's PingAck timeout tears the connection
+		 * down. Size CONTROL like DATA by default (the old rcvbuf/64
+		 * undersized it by 64x); an explicit rdma-ctrl-rcvbuf-size /
+		 * rdma-ctrl-sndbuf-size still overrides.
+		 */
+		rcvbuf = nc->rdma_ctrl_rcvbuf_size ?:
+			max_t(unsigned int, rcvbuf, 8 * PAGE_SIZE);
+		sndbuf = nc->rdma_ctrl_sndbuf_size ?: rcvbuf;
+	}
+
+	*rx_bytes = rcvbuf;
+	*tx_bytes = sndbuf;
+}
+
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 {
 	struct drbd_transport *transport = path->path.transport;
-	struct dtr_transport *rdma_transport =
-		container_of(transport, struct dtr_transport, transport);
-	unsigned int alloc_size = rdma_transport->rx_allocation_size;
-	unsigned int rcvbuf_size = RDMA_DEF_BUFFER_SIZE;
-	unsigned int sndbuf_size = RDMA_DEF_BUFFER_SIZE;
 	struct dtr_flow *flow = &path->flow[stream];
+	unsigned int rx_bytes, tx_bytes;
 	struct net_conf *nc;
-	int err = 0;
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
 		tr_err(transport, "need net_conf\n");
-		err = -EINVAL;
-		goto out;
+		return -EINVAL;
 	}
 
-	if (nc->rcvbuf_size)
-		rcvbuf_size = nc->rcvbuf_size;
-	if (nc->sndbuf_size)
-		sndbuf_size = nc->sndbuf_size;
+	dtr_window_bytes(nc, stream, &rx_bytes, &tx_bytes);
 
-	if (stream == CONTROL_STREAM) {
-		rcvbuf_size = nc->rdma_ctrl_rcvbuf_size ?: max(rcvbuf_size / 64, alloc_size * 8);
-		sndbuf_size = nc->rdma_ctrl_sndbuf_size ?: max(sndbuf_size / 64, alloc_size * 8);
-	}
-
-	if (rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
+	if (rx_bytes / DRBD_SOCKET_BUFFER_SIZE > nc->max_buffers) {
 		tr_err(transport, "Set max-buffers at least to %d, (right now it is %d).\n",
-		       rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE, nc->max_buffers);
-		tr_err(transport, "This is due to rcvbuf-size = %d.\n", rcvbuf_size);
+		       rx_bytes / DRBD_SOCKET_BUFFER_SIZE, nc->max_buffers);
+		tr_err(transport, "This is due to rcvbuf-size = %d.\n", rx_bytes);
 		rcu_read_unlock();
-		err = -EINVAL;
-		goto out;
+		return -EINVAL;
 	}
 
 	rcu_read_unlock();
 
 	flow->path = path;
-	flow->tx_descs_max = sndbuf_size / DRBD_SOCKET_BUFFER_SIZE;
-	flow->rx_descs_max = rcvbuf_size / DRBD_SOCKET_BUFFER_SIZE;
+	flow->rx_window_bytes = rx_bytes;
+	flow->tx_window_bytes = tx_bytes;
+	flow->tx_descs_max = tx_bytes / DRBD_SOCKET_BUFFER_SIZE;
+	flow->rx_descs_max = rx_bytes / DRBD_SOCKET_BUFFER_SIZE;
 
 	atomic_set(&flow->tx_descs_posted, 0);
 	atomic_set(&flow->peer_rx_descs, stream == CONTROL_STREAM ? 1 : 0);
@@ -2450,8 +2477,7 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 
 	flow->rx_descs_want_posted = flow->rx_descs_max / 2;
 
- out:
-	return err;
+	return 0;
 }
 
 static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
