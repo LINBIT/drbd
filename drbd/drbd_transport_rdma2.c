@@ -87,10 +87,30 @@ MODULE_VERSION(REL_VERSION);
 
 #define DTR_MAGIC ((u32)0x5257494E)
 
+/*
+ * These numbers are sent within the immediate data value to identify
+ * if the packet is a data, control, or (transport private) flow_control
+ * message.
+ */
+enum dtr_stream_nr {
+	ST_DATA = DATA_STREAM,
+	ST_CONTROL = CONTROL_STREAM,
+	ST_FLOW_CTRL
+};
+
+/* Flow-control and announce records share a {magic, send_from_stream} header so
+ * the tx-completion path can recover send_from_stream from either without
+ * knowing the record type, and the rx path can disambiguate on the magic.
+ */
 struct dtr_flow_control {
 	uint32_t magic;
-	uint32_t new_rx_descs[2];
 	uint32_t send_from_stream;
+	/* Receive-window grants, indexed by stream. [DATA]/[CONTROL] grant payload
+	 * recv WRs as before; [ST_FLOW_CTRL] grants control-ring slots, returning
+	 * the credit the peer's ring writer spends per flow-control / announce
+	 * record (see the FLOW_CTRL credit pool below).
+	 */
+	uint32_t new_rx_descs[ST_FLOW_CTRL + 1];
 } __packed;
 
 #define DTR_ANNOUNCE_MAGIC ((u32)0x414E4E43) /* "ANNC" */
@@ -111,6 +131,13 @@ struct dtr_announce_buffer {
 	uint32_t stride;            /* consume granularity, see dtr_region_stride() */
 } __packed;
 
+/* Size of the dedicated flow-control / announce credit pool: how many such
+ * records may be in flight before the writer must wait. It also fixes the
+ * number of slots in the control ring (one slot per credit), so the pool alone
+ * bounds the ring writer and it can never lap an unread slot.
+ */
+#define DTR_FLOW_CTRL_DESCS 64
+
 /* Floor for a stream's registered receive window. A single packet may be up to
  * DRBD_SOCKET_BUFFER_SIZE, and a region whose tail cannot take the next write
  * is abandoned there (see __dtr_find_remote_buffer()), so leave room for a
@@ -118,16 +145,11 @@ struct dtr_announce_buffer {
  */
 #define DTR_MIN_REGION_BYTES (8 * DRBD_SOCKET_BUFFER_SIZE)
 
-/*
- * These numbers are sent within the immediate data value to identify
- * if the packet is a data, control, or (transport private) flow_control
- * message.
+/* Control-ring slot size. 64 B holds either record (dtr_flow_control /
+ * dtr_announce_buffer) with headroom; the whole ring is one page
+ * (64 * 64 == PAGE_SIZE).
  */
-enum dtr_stream_nr {
-	ST_DATA = DATA_STREAM,
-	ST_CONTROL = CONTROL_STREAM,
-	ST_FLOW_CTRL
-};
+#define DTR_RING_SLOT_SIZE 64
 
 /*
  * IB_WR_SEND_WITH_IMM and IB_WR_RDMA_WRITE_WITH_IMM both transfer user data
@@ -244,6 +266,14 @@ struct dtr_tx_desc {
 	} type;
 	int nr_sges;
 	u32 imm;
+	/* When set, post IB_WR_RDMA_WRITE_WITH_IMM into the peer-registered
+	 * buffer at @remote_addr/@rkey instead of IB_WR_SEND_WITH_IMM. The
+	 * immediate still carries {stream, sequence} for ordering/demux. Used
+	 * for control-ring records (and, later, DATA/CONTROL payload).
+	 */
+	bool rdma_write;
+	u64 remote_addr;
+	u32 rkey;
 	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
@@ -366,6 +396,25 @@ struct dtr_region_set {
 	struct list_head exhausted_buffers;
 };
 
+/* Per-path control ring for flow-control / announce records. One per direction:
+ * @local is our ring (a 1-page REMOTE_WRITE region the peer writes into);
+ * @remote_* is the peer's ring we RDMA-WRITE into, learned from the peer's
+ * ring-announce (region_stream == ST_FLOW_CTRL) after both sides are in RTS.
+ */
+struct dtr_ring {
+	struct dtr_local_buffer *local; /* our ring (1 page); NULL until registered */
+	u64 remote_addr;                /* peer's ring base address */
+	u32 remote_rkey;
+	/* Set when the peer's ring-announce arrives. The peer posts that announce
+	 * only after its ring's REG_MR (same QP, so by RC send-queue ordering the
+	 * REG_MR has completed by the time the announce is delivered), so
+	 * remote_known also means the peer's ring MR is valid to RDMA-WRITE into.
+	 */
+	bool remote_known;
+	u32 tx_seq;                     /* write cursor; slot = tx_seq % DTR_FLOW_CTRL_DESCS */
+	spinlock_t lock;                /* serialises tx_seq / remote_* */
+};
+
 struct dtr_path {
 	struct drbd_path path;
 
@@ -373,7 +422,10 @@ struct dtr_path {
 
 	struct dtr_cm *cm; /* RCU'd and kref in cm */
 
-	struct dtr_flow flow[2];
+	/* Indexed by enum dtr_stream_nr: [ST_DATA], [ST_CONTROL], and the
+	 * dedicated [ST_FLOW_CTRL] pool that bounds the control-ring writer.
+	 */
+	struct dtr_flow flow[ST_FLOW_CTRL + 1];
 	spinlock_t send_flow_control_lock;
 	struct tasklet_struct flow_control_tasklet;
 	struct work_struct refill_rx_descs_work;
@@ -382,6 +434,17 @@ struct dtr_path {
 	 * DATA_STREAM carries bulk payload, CONTROL_STREAM small control packets.
 	 */
 	struct dtr_region_set regions[2];
+
+	/* Control ring for flow-control / announce records. */
+	struct dtr_ring ring;
+
+	/* Registers + announces the control ring, deferred off the establishment
+	 * critical path: the ring announce spends a FLOW_CTRL credit, and doing
+	 * that inline would starve the first flow-control message out of the single
+	 * initial credit. Kicked once flow-control is exchanged and re-kicked as
+	 * credits arrive, until the ring is registered.
+	 */
+	struct work_struct ring_register_work;
 };
 
 struct dtr_stream {
@@ -507,6 +570,7 @@ static void dtr_disconnect_path(struct dtr_path *path);
 static void __dtr_modify_qp_to_err(struct dtr_cm *cm);
 static void __dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
+static void dtr_init_flow_control_flow(struct dtr_path *path);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
 static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask);
@@ -517,6 +581,9 @@ static int dtr_activate_path(struct dtr_path *path);
 static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announce_buffer *msg);
 static void dtr_free_local_buffers(struct dtr_path *path);
 static void dtr_free_remote_buffers(struct dtr_path *path);
+static void dtr_drop_stale_path_buffers(struct dtr_path *path);
+static int dtr_register_ring(struct dtr_path *path);
+static void dtr_free_ring(struct dtr_path *path);
 static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
@@ -612,10 +679,12 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
 		__dtr_disconnect_path(path);
+		cancel_work_sync(&path->ring_register_work);
 		cancel_work_sync(&path->regions[DATA_STREAM].register_buffers_work);
 		cancel_work_sync(&path->regions[CONTROL_STREAM].register_buffers_work);
 		dtr_free_remote_buffers(path);
 		dtr_free_local_buffers(path);
+		dtr_free_ring(path);
 	}
 
 	/* Free the rx_descs that where received and not consumed. */
@@ -720,7 +789,34 @@ static int dtr_send(struct dtr_path *path, void *buf, size_t size, gfp_t gfp_mas
 
 	tx_desc->sge[0].lkey = dtr_cm_to_lkey(cm);
 	tx_desc->sge[0].length = size;
-	tx_desc->imm = dtr_imm_encode(ST_FLOW_CTRL, 0);
+
+	/* Once the peer has announced its control ring, RDMA-WRITE the record into
+	 * the next ring slot instead of SEND_WITH_IMM -- the immediate still
+	 * consumes one peer recv WR (the caller already charged the FLOW_CTRL
+	 * pool), only the opcode and target differ. The slot is
+	 * sequence % DTR_FLOW_CTRL_DESCS at both ends; the FLOW_CTRL credit pool
+	 * caps outstanding records at DTR_FLOW_CTRL_DESCS == the slot count, so the
+	 * writer can never lap an unread slot. Falls back to SEND until the ring is
+	 * known (the bootstrap records are charged to the same pool).
+	 */
+	{
+		unsigned long ring_flags;
+
+		spin_lock_irqsave(&path->ring.lock, ring_flags);
+		if (path->ring.remote_known) {
+			u32 seq = path->ring.tx_seq++;
+			unsigned int slot = seq % DTR_FLOW_CTRL_DESCS;
+
+			tx_desc->rdma_write = true;
+			tx_desc->remote_addr = path->ring.remote_addr +
+					       (u64)slot * DTR_RING_SLOT_SIZE;
+			tx_desc->rkey = path->ring.remote_rkey;
+			tx_desc->imm = dtr_imm_encode(ST_FLOW_CTRL, seq);
+		} else {
+			tx_desc->imm = dtr_imm_encode(ST_FLOW_CTRL, 0);
+		}
+		spin_unlock_irqrestore(&path->ring.lock, ring_flags);
+	}
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
 	if (err)
@@ -943,6 +1039,7 @@ static int dtr_path_prepare(struct dtr_path *path, struct dtr_cm *cm, bool activ
 	path->cs.active = active;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_flow(path, i);
+	dtr_init_flow_control_flow(path);
 
 	return dtr_cm_alloc_rdma_res(cm);
 }
@@ -998,15 +1095,45 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 		goto out;
 
 	kref_get(&cm->kref); /* connected -> expect a disconnect in the future */
+
+	/* If this path is re-establishing after a failover, it still carries the
+	 * dead QP's stale buffers (failover only forced the old QP to error). Drop
+	 * them now, before the path becomes DSM_CONNECTED and thus selectable for
+	 * tx, so it starts from a clean slate and uses only freshly re-announced
+	 * regions -- otherwise a stale remote chunk (an rkey of an MR that died
+	 * with the peer's old QP) is written into and faults the peer with a local
+	 * access error, tripping the path back to ERROR (and leaking a cm_id on the
+	 * retry). No-op on a first connect: the lists are empty.
+	 */
+	dtr_drop_stale_path_buffers(path);
+
 	path->cm->state = DSM_CONNECTED;
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+	/* Post the recv WRs for all three pools (DATA, CONTROL, and the
+	 * FLOW_CTRL control-ring pool) before the first flow-control message,
+	 * so it can grant the peer the full window of each.
+	 */
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++)
 		__dtr_refill_rx_desc(path, i);
 	err = dtr_send_flow_control_msg(path, GFP_NOIO);
 	if (err > 0)
 		err = 0;
+	/* -ENOBUFS means a concurrent sender (dtr_receive_rx_desc() saw the
+	 * freshly posted recv WRs) already spent the single bootstrap credit on
+	 * an equivalent window grant -- the message this call is for. Common
+	 * when a path (re-)establishes under load; not a failure.
+	 */
+	if (err == -ENOBUFS)
+		err = 0;
 	if (err)
 		tr_err(transport, "sending first flow_control_msg() failed\n");
+
+	/* The QP is in RTS: register + announce our control ring, but deferred so
+	 * its announce does not spend the single initial FLOW_CTRL credit out from
+	 * under the flow-control message above. Re-kicked from
+	 * dtr_got_flow_control_msg() once the peer has granted a receive window.
+	 */
+	schedule_work(&path->ring_register_work);
 
 	schedule_timeout(HZ / 4);
 	if (!dtr_path_ok(path)) {
@@ -1027,11 +1154,10 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	set_bit(TR_ESTABLISHED, &path->path.flags);
 	drbd_path_event(transport, &path->path);
 
-	/* NB: region registration is NOT kicked here. Announcing regions over
-	 * an in-band SEND would borrow the scarce initial CONTROL credit and
-	 * starve DRBD's own handshake. The clean design announces regions over
-	 * the control ring bootstrapped via CM private_data; the kick lands with
-	 * that ring. Until then the machinery below stays dormant.
+	/* NB: region registration is NOT kicked here. DATA/CONTROL region
+	 * announces ride the control ring and charge the FLOW_CTRL pool, so they
+	 * have to wait until the peer's ring is known. dtr_got_announce_buffer_msg()
+	 * kicks dtr_kick_register_buffers() when the peer's ring announce arrives.
 	 */
 
 out:
@@ -1577,10 +1703,11 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 
 static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 {
+	struct dtr_flow *fc = &path->flow[ST_FLOW_CTRL];
 	struct dtr_flow_control msg;
 	struct dtr_flow *flow;
-	enum drbd_stream i;
-	int err, n[2], send_from_stream = -1, rx_descs = 0;
+	int err, n[ST_FLOW_CTRL + 1], i, rx_descs = 0;
+	bool charged;
 
 	msg.magic = cpu_to_be32(DTR_MAGIC);
 
@@ -1590,8 +1717,14 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 	 * receiver thread, the sender threads, softirq contexts).
 	 * Determining the number of new rx_descs and adding this number
 	 * to rx_descs_known_to_peer has to be atomic!
+	 *
+	 * Grant all three windows: DATA/CONTROL payload recv WRs, and the
+	 * FLOW_CTRL control-ring slots (returning the credit a peer ring writer
+	 * spends per record). The message itself is an ST_FLOW_CTRL record, so
+	 * it is charged to the FLOW_CTRL pool (one credit == one ring slot ==
+	 * one peer recv WR), not to DATA/CONTROL.
 	 */
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL; i++) {
 		flow = &path->flow[i];
 
 		n[i] = dtr_new_rx_descs(flow);
@@ -1599,37 +1732,34 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 		rx_descs += n[i];
 
 		msg.new_rx_descs[i] = cpu_to_be32(n[i]);
-		if (send_from_stream == -1 &&
-			atomic_read(&flow->tx_descs_posted) < flow->tx_descs_max &&
-			atomic_dec_if_positive(&flow->peer_rx_descs) >= 0)
-			send_from_stream = i;
 	}
+	charged = atomic_read(&fc->tx_descs_posted) < fc->tx_descs_max &&
+		  atomic_dec_if_positive(&fc->peer_rx_descs) >= 0;
 	spin_unlock_bh(&path->send_flow_control_lock);
 
-	if (send_from_stream == -1) {
-		struct drbd_transport *transport = path->path.transport;
-		struct dtr_transport *rdma_transport =
-			container_of(transport, struct dtr_transport, transport);
-
-		if (__ratelimit(&rdma_transport->rate_limit))
-			tr_err(transport, "Not sending flow_control msg, no receive window!\n");
+	if (!charged) {
+		/* No FLOW_CTRL credit right now. An expected transient: many
+		 * triggers race for the single bootstrap credit while a path
+		 * (re-)establishes under load, and a busy control ring throttles
+		 * its writer by design. A later trigger (or the peer's next
+		 * grant) retries; the flow counters are visible in debugfs.
+		 */
 		err = -ENOBUFS;
 		goto out_undo;
 	}
 
-	flow = &path->flow[send_from_stream];
-	if (rx_descs == 0 || !atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
-		atomic_inc(&flow->peer_rx_descs);
+	if (rx_descs == 0 || !atomic_inc_if_below(&fc->tx_descs_posted, fc->tx_descs_max)) {
+		atomic_inc(&fc->peer_rx_descs);
 		return 0;
 	}
 
-	msg.send_from_stream = cpu_to_be32(send_from_stream);
+	msg.send_from_stream = cpu_to_be32(ST_FLOW_CTRL);
 	err = dtr_send(path, &msg, sizeof(msg), gfp_mask);
 	if (err) {
-		atomic_inc(&flow->peer_rx_descs);
-		atomic_dec(&flow->tx_descs_posted);
+		atomic_inc(&fc->peer_rx_descs);
+		atomic_dec(&fc->tx_descs_posted);
 out_undo:
-		for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
+		for (i = DATA_STREAM; i <= ST_FLOW_CTRL; i++) {
 			flow = &path->flow[i];
 			atomic_sub(n[i], &flow->rx_descs_known_to_peer);
 		}
@@ -1655,6 +1785,12 @@ static int dtr_got_flow_control_msg(struct dtr_path *path,
 	struct dtr_flow *flow;
 	int i, n;
 
+	/* The peer just granted a receive window; if our control ring still needs
+	 * a send credit to announce itself, retry now.
+	 */
+	if (!path->ring.local && dtr_path_ok(path))
+		schedule_work(&path->ring_register_work);
+
 	for (i = CONTROL_STREAM; i >= DATA_STREAM; i--) {
 		uint32_t new_rx_descs = be32_to_cpu(msg->new_rx_descs[i]);
 
@@ -1662,6 +1798,20 @@ static int dtr_got_flow_control_msg(struct dtr_path *path,
 
 		n = atomic_add_return(new_rx_descs, &flow->peer_rx_descs);
 		wake_up_interruptible(&rdma_transport->stream[i].send_wq);
+	}
+
+	/* The FLOW_CTRL window has no payload stream to wake; the grant frees
+	 * control-ring slots, so re-kick any region announce that earlier ran out
+	 * of credit (dtr_send_announce_buffer_msg() -> -ENOBUFS). The work is
+	 * idempotent, so an unconditional kick on a non-zero grant is fine.
+	 */
+	if (be32_to_cpu(msg->new_rx_descs[ST_FLOW_CTRL])) {
+		atomic_add(be32_to_cpu(msg->new_rx_descs[ST_FLOW_CTRL]),
+			   &path->flow[ST_FLOW_CTRL].peer_rx_descs);
+		if (dtr_path_ok(path)) {
+			schedule_work(&path->regions[DATA_STREAM].register_buffers_work);
+			schedule_work(&path->regions[CONTROL_STREAM].register_buffers_work);
+		}
 	}
 
 	/* rdma_stream is the data_stream here... */
@@ -1778,12 +1928,15 @@ static void dtr_dec_rx_descs(struct dtr_cm *cm)
 	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
 	/* When we get the posted rx_descs back, we do not know if they
-	 * were accounted for the data stream or the control stream...
+	 * were accounted for the data, the control, or the flow-control stream...
 	 */
 	if (atomic_dec_if_positive(&flow[DATA_STREAM].rx_descs_posted) >= 0)
 		return;
 
 	if (atomic_dec_if_positive(&flow[CONTROL_STREAM].rx_descs_posted) >= 0)
+		return;
+
+	if (atomic_dec_if_positive(&flow[ST_FLOW_CTRL].rx_descs_posted) >= 0)
 		return;
 
 	if (__ratelimit(&rdma_transport->rate_limit)) {
@@ -1920,22 +2073,58 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	rx_desc->size = wc->byte_len;
 	immediate = be32_to_cpu(wc->ex.imm_data);
 	if (dtr_imm_stream(immediate) == ST_FLOW_CTRL) {
-		void *msg = page_address(rx_desc->page);
-		int send_from_stream;
+		struct dtr_local_buffer *ring = path->ring.local;
+		int send_from_stream = -1; /* default: drop, no credit accounting */
+		void *msg = NULL;
 
-		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-					   PAGE_SIZE, DMA_FROM_DEVICE);
+		if (wc->opcode == IB_WC_RECV_RDMA_WITH_IMM && ring) {
+			/* Ring write: the record landed in our control ring at
+			 * slot = sequence % DTR_FLOW_CTRL_DESCS. The recv buffer is
+			 * unused; we only consumed the WR to take the immediate.
+			 */
+			unsigned int slot = dtr_imm_sequence(immediate) % DTR_FLOW_CTRL_DESCS;
+			u64 off = (u64)slot * DTR_RING_SLOT_SIZE;
+
+			ib_dma_sync_single_for_cpu(cm->id->device, ring->addr + off,
+						   DTR_RING_SLOT_SIZE, DMA_FROM_DEVICE);
+			msg = page_address(ring->head_page) + off;
+		} else if (wc->opcode != IB_WC_RECV_RDMA_WITH_IMM) {
+			/* SEND_WITH_IMM (pre-ring / fallback): record is in the
+			 * recv buffer.
+			 */
+			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+						   PAGE_SIZE, DMA_FROM_DEVICE);
+			msg = page_address(rx_desc->page);
+		}
 		/* Flow-control and region-announce records share the ST_FLOW_CTRL
-		 * stream; tell them apart by their leading magic.
+		 * immediate; both carry a leading magic, disambiguate on it. A ring
+		 * slot that is stale/unwritten/raced carries neither magic -- drop it
+		 * rather than parse garbage (and feed a garbage send_from_stream into
+		 * flow[] indexing).
 		 */
-		if (be32_to_cpu(*(__be32 *)msg) == DTR_ANNOUNCE_MAGIC)
-			send_from_stream = dtr_got_announce_buffer_msg(path, msg);
-		else
-			send_from_stream = dtr_got_flow_control_msg(path, msg);
+		if (msg) {
+			u32 magic = be32_to_cpu(*(__be32 *)msg);
+
+			if (magic == DTR_ANNOUNCE_MAGIC)
+				send_from_stream = dtr_got_announce_buffer_msg(path, msg);
+			else if (magic == DTR_MAGIC)
+				send_from_stream = dtr_got_flow_control_msg(path, msg);
+			else if (__ratelimit(&rdma_transport->rate_limit))
+				tr_warn(&rdma_transport->transport,
+					"control-ring: dropping record with bad magic 0x%x\n",
+					magic);
+		}
 		err = dtr_repost_rx_desc(cm, rx_desc);
 		if (err)
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
-		dtr_maybe_trigger_flow_control_msg(path, send_from_stream);
+		/* Range-check before flow[] indexing: send_from_stream comes from a
+		 * record that may be stale/raced in the ring. Every well-formed record
+		 * now charges the FLOW_CTRL pool (send_from_stream == ST_FLOW_CTRL);
+		 * DATA/CONTROL remain valid for records still in flight from a peer that
+		 * has not yet switched (none in rdma2, but the check stays cheap).
+		 */
+		if (send_from_stream >= DATA_STREAM && send_from_stream <= ST_FLOW_CTRL)
+			dtr_maybe_trigger_flow_control_msg(path, send_from_stream);
 	} else {
 		unsigned int stream = dtr_imm_stream(immediate);
 		struct dtr_flow *flow = &path->flow[stream];
@@ -2005,7 +2194,13 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
 	struct dtr_flow *flow;
-	struct dtr_stream *rdma_stream;
+	/*
+	 * Only DATA/CONTROL have a payload stream whose send_wq waits for tx
+	 * completions; FLOW_CTRL records (charged to the FLOW_CTRL pool) have
+	 * none, so rdma_stream stays NULL and the wake below is skipped for
+	 * them.
+	 */
+	struct dtr_stream *rdma_stream = NULL;
 	enum dtr_stream_nr stream_nr = dtr_imm_stream(tx_desc->imm);
 	int err;
 
@@ -2017,10 +2212,12 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		enum dtr_stream_nr send_from_stream = be32_to_cpu(msg->send_from_stream);
 
 		flow = &path->flow[send_from_stream];
-		rdma_stream = &rdma_transport->stream[send_from_stream];
+		if (send_from_stream != ST_FLOW_CTRL)
+			rdma_stream = &rdma_transport->stream[send_from_stream];
 	}
 
-	if (wc->status != IB_WC_SUCCESS || wc->opcode != IB_WC_SEND) {
+	if (wc->status != IB_WC_SUCCESS ||
+	    (wc->opcode != IB_WC_SEND && wc->opcode != IB_WC_RDMA_WRITE)) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
 		if (wc->status == IB_WC_RNR_RETRY_EXC_ERR) {
@@ -2047,7 +2244,8 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	}
 
 	atomic_dec(&flow->tx_descs_posted);
-	wake_up_interruptible(&rdma_stream->send_wq);
+	if (rdma_stream)
+		wake_up_interruptible(&rdma_stream->send_wq);
 
 	if (tx_desc)
 		dtr_free_tx_desc(cm, tx_desc);
@@ -2210,7 +2408,7 @@ static void dtr_refill_rx_descs_work_fn(struct work_struct *work)
 	if (!dtr_path_ok(path))
 		return;
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++) {
 		struct dtr_flow *flow = &path->flow[i];
 
 		if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2)
@@ -2303,7 +2501,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	struct dtr_transport *rdma_transport =
 		container_of(cm->path->path.transport, struct dtr_transport, transport);
 	struct drbd_transport *transport = &rdma_transport->transport;
-	struct ib_send_wr send_wr;
+	struct ib_rdma_wr rdma_wr = {};
 	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
 	unsigned long timeout;
@@ -2311,14 +2509,23 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	int i, err = -EIO;
 	bool was_active;
 
-	send_wr.next = NULL;
+	rdma_wr.wr.next = NULL;
 	tx_desc->cqe.done = dtr_tx_cqe_done;
-	send_wr.wr_cqe = &tx_desc->cqe;
-	send_wr.sg_list = tx_desc->sge;
-	send_wr.num_sge = tx_desc->nr_sges;
-	send_wr.ex.imm_data = cpu_to_be32(tx_desc->imm);
-	send_wr.opcode = IB_WR_SEND_WITH_IMM;
-	send_wr.send_flags = IB_SEND_SIGNALED;
+	rdma_wr.wr.wr_cqe = &tx_desc->cqe;
+	rdma_wr.wr.sg_list = tx_desc->sge;
+	rdma_wr.wr.num_sge = tx_desc->nr_sges;
+	rdma_wr.wr.ex.imm_data = cpu_to_be32(tx_desc->imm);
+	rdma_wr.wr.send_flags = IB_SEND_SIGNALED;
+	if (tx_desc->rdma_write) {
+		/* One-sided write straight into the peer's registered buffer;
+		 * the immediate still carries {stream, sequence} for ordering.
+		 */
+		rdma_wr.wr.opcode = IB_WR_RDMA_WRITE_WITH_IMM;
+		rdma_wr.remote_addr = tx_desc->remote_addr;
+		rdma_wr.rkey = tx_desc->rkey;
+	} else {
+		rdma_wr.wr.opcode = IB_WR_SEND_WITH_IMM;
+	}
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
@@ -2337,7 +2544,7 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	if (was_active)
 		kref_put(&cm->kref, dtr_destroy_cm);
 
-	err = ib_post_send(cm->id->qp, &send_wr, &send_wr_failed);
+	err = ib_post_send(cm->id->qp, &rdma_wr.wr, &send_wr_failed);
 	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
 		was_active = timer_delete(&cm->tx_timeout);
@@ -2567,27 +2774,24 @@ out:
 	return err;
 }
 
-/* Reserve one send credit for an announce message: a peer rx_desc plus a tx
- * slot. Announce, like flow-control, is sent as an ST_FLOW_CTRL message that
- * borrows a DATA or CONTROL credit (rdma2 has no separate FLOW_CTRL credit pool
- * yet). Returns the borrowed stream (the announce's send_from_stream), or -1 if
- * no stream has a free credit right now.
+/* Reserve one send credit for an announce message from the FLOW_CTRL pool: one
+ * control-ring slot == one peer recv WR == one tx slot. Announce, like
+ * flow-control, is an ST_FLOW_CTRL record and charges the dedicated FLOW_CTRL
+ * credit pool, so the writer can have at most DTR_FLOW_CTRL_DESCS records
+ * outstanding and never laps an unread ring slot. Returns ST_FLOW_CTRL (the
+ * record's send_from_stream), or -1 if no credit is free right now.
  */
 static int dtr_reserve_send_credit(struct dtr_path *path)
 {
-	enum drbd_stream i;
+	struct dtr_flow *flow = &path->flow[ST_FLOW_CTRL];
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
-		struct dtr_flow *flow = &path->flow[i];
-
-		if (atomic_read(&flow->tx_descs_posted) >= flow->tx_descs_max)
-			continue;
-		if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
-			continue;
-		if (atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max))
-			return i;
-		atomic_inc(&flow->peer_rx_descs); /* undo */
-	}
+	if (atomic_read(&flow->tx_descs_posted) >= flow->tx_descs_max)
+		return -1;
+	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
+		return -1;
+	if (atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max))
+		return ST_FLOW_CTRL;
+	atomic_inc(&flow->peer_rx_descs); /* undo */
 	return -1;
 }
 
@@ -2630,6 +2834,20 @@ static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announc
 	struct dtr_region_set *rs;
 	struct dtr_remote_buffer *rb;
 	unsigned long flags;
+
+	if (stream == ST_FLOW_CTRL) {
+		/* Bootstrap announce of the peer's control ring: record where to
+		 * RDMA-WRITE our flow-control / announce records. Not a payload
+		 * region. The peer posted the ring's REG_MR before this announce on
+		 * the same QP, so by RC ordering the ring MR is valid now.
+		 */
+		spin_lock_irqsave(&path->ring.lock, flags);
+		path->ring.remote_addr = be64_to_cpu(msg->addr);
+		path->ring.remote_rkey = be32_to_cpu(msg->rkey);
+		path->ring.remote_known = true;
+		spin_unlock_irqrestore(&path->ring.lock, flags);
+		return be32_to_cpu(msg->send_from_stream);
+	}
 
 	if (stream != ST_DATA && stream != ST_CONTROL) {
 		if (__ratelimit(&rdma_transport->rate_limit))
@@ -2954,12 +3172,35 @@ out_put_cm:
 	return NULL;
 }
 
+/* Post the unsignaled IB_WR_REG_MR that makes @mr's current mapping usable for
+ * remote access. Ordered before any announce/write posted right after it, so
+ * the rkey is valid by the time the peer can reach it. Requires the QP to be
+ * postable (RTS), which holds for both regions and the ring since both register
+ * post-establishment. ib_post_send() copies the WR, so a stack reg_wr is fine;
+ * the completion anchor (cm->reg_cqe) outlives the buffer.
+ */
+static int dtr_post_reg_mr(struct dtr_cm *cm, struct ib_mr *mr)
+{
+	struct ib_reg_wr mr_reg_wr = {};
+
+	mr_reg_wr.wr.next = NULL;
+	mr_reg_wr.wr.wr_cqe = &cm->reg_cqe;
+	mr_reg_wr.wr.num_sge = 0;
+	mr_reg_wr.wr.opcode = IB_WR_REG_MR;
+	mr_reg_wr.wr.send_flags = 0; /* unsignaled, ordered before the announce */
+	mr_reg_wr.mr = mr;
+	mr_reg_wr.key = mr->rkey;
+	mr_reg_wr.access = IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_WRITE;
+
+	return ib_post_send(cm->id->qp, &mr_reg_wr.wr, NULL);
+}
+
 /* Attach a freshly allocated split-page region to @buf, (re-)register @buf->mr
  * over it for REMOTE_WRITE, and post the unsignaled IB_WR_REG_MR. The caller
- * announces the region on the same QP right after (so the announce is ordered
- * behind the REG_MR and the rkey is valid before the peer can write). The MR is
- * reused -- no ib_alloc_mr()/ib_dereg_mr() per cycle. Returns 0, or a negative
- * errno with @buf left disarmed (no pages attached).
+ * announces the region right after, so it is ordered behind the REG_MR and the
+ * rkey is valid before the peer can write. The MR is reused -- no
+ * ib_alloc_mr()/ib_dereg_mr() per cycle. Returns 0, or a negative errno with
+ * @buf left disarmed (no pages attached).
  */
 static int dtr_arm_local_buffer(struct dtr_path *path, struct dtr_local_buffer *buf,
 				int max_order, u32 stride)
@@ -2967,7 +3208,6 @@ static int dtr_arm_local_buffer(struct dtr_path *path, struct dtr_local_buffer *
 	struct drbd_transport *transport = path->path.transport;
 	struct dtr_cm *cm = buf->cm;
 	struct ib_device *device = cm->id->device;
-	struct ib_reg_wr mr_reg_wr = {};
 	int order = max_order, n, err;
 	struct page *head_page;
 
@@ -3007,19 +3247,7 @@ static int dtr_arm_local_buffer(struct dtr_path *path, struct dtr_local_buffer *
 	buf->addr = buf->mr->iova;
 	buf->rkey = buf->mr->rkey;
 
-	/* ib_post_send() copies the WR, so a stack reg_wr is fine; the completion
-	 * anchor (cm->reg_cqe) outlives the buffer.
-	 */
-	mr_reg_wr.wr.next = NULL;
-	mr_reg_wr.wr.wr_cqe = &cm->reg_cqe;
-	mr_reg_wr.wr.num_sge = 0;
-	mr_reg_wr.wr.opcode = IB_WR_REG_MR;
-	mr_reg_wr.wr.send_flags = 0; /* unsignaled, ordered before the announce */
-	mr_reg_wr.mr = buf->mr;
-	mr_reg_wr.key = buf->mr->rkey;
-	mr_reg_wr.access = IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_WRITE;
-
-	err = ib_post_send(cm->id->qp, &mr_reg_wr.wr, NULL);
+	err = dtr_post_reg_mr(cm, buf->mr);
 	if (err) {
 		tr_err(transport, "ib_post_send(REG_MR) = %d\n", err);
 		goto out_unmap_sg;
@@ -3135,6 +3363,73 @@ static void dtr_free_local_buffers(struct dtr_path *path)
 		list_del(&buf->list);
 		dtr_release_local_buffer(path, buf);
 	}
+}
+
+/* Register this path's control ring (one page of DTR_FLOW_CTRL_DESCS slots) for
+ * REMOTE_WRITE and announce it to the peer. region_stream == ST_FLOW_CTRL in the
+ * announce marks it as the ring rather than a payload region. The REG_MR is
+ * posted (by dtr_register_local_buffer) before the announce on the same QP, so
+ * by RC send-queue ordering the ring MR is valid by the time the peer receives
+ * the announce and starts writing into it. Runs post-RTS in the established
+ * work; idempotent, retried on the next establish if allocation fails. Returns
+ * 0 on success.
+ */
+static int dtr_register_ring(struct dtr_path *path)
+{
+	struct dtr_local_buffer *buf;
+	int err;
+
+	BUILD_BUG_ON(DTR_FLOW_CTRL_DESCS * DTR_RING_SLOT_SIZE > PAGE_SIZE);
+
+	if (path->ring.local)
+		return 0;
+
+	/* Order 0: one page of slots. The ring is consumed by slot, not by cursor,
+	 * so its stride is nominal.
+	 */
+	buf = dtr_register_local_buffer(path, 0, DTR_RING_SLOT_SIZE);
+	if (!buf)
+		return -ECONNRESET;
+
+	err = dtr_send_announce_buffer_msg(path, ST_FLOW_CTRL, buf, GFP_NOIO);
+	if (err) {
+		dtr_release_local_buffer(path, buf);
+		return err;
+	}
+	path->ring.local = buf;
+	return 0;
+}
+
+static void dtr_ring_register_work_fn(struct work_struct *work)
+{
+	struct dtr_path *path = container_of(work, struct dtr_path, ring_register_work);
+	struct dtr_transport *rdma_transport =
+		container_of(path->path.transport, struct dtr_transport, transport);
+	int err;
+
+	if (!dtr_path_ok(path) || path->ring.local)
+		return;
+
+	err = dtr_register_ring(path);
+	/* -ENOBUFS just means no send credit yet; a later flow-control re-kicks us.
+	 * Anything else is a real failure worth a (rate-limited) note.
+	 */
+	if (err && err != -ENOBUFS && __ratelimit(&rdma_transport->rate_limit))
+		tr_warn(&rdma_transport->transport, "dtr_register_ring() = %d\n", err);
+}
+
+static void dtr_free_ring(struct dtr_path *path)
+{
+	struct dtr_local_buffer *buf = path->ring.local;
+
+	if (buf) {
+		path->ring.local = NULL;
+		dtr_release_local_buffer(path, buf);
+	}
+	path->ring.remote_known = false;
+	path->ring.remote_addr = 0;
+	path->ring.remote_rkey = 0;
+	path->ring.tx_seq = 0;
 }
 
 /* A payload of @byte_len bytes was just RDMA-written into our receive region at
@@ -3401,6 +3696,35 @@ static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream)
 	return 0;
 }
 
+/* The FLOW_CTRL flow is the credit pool for control-ring records (flow-control +
+ * announce), not a payload stream, so its window is the fixed ring size rather
+ * than anything from net_conf. One credit == one ring slot == one recv WR the
+ * peer's writer consumes per record, so a sender can have at most
+ * DTR_FLOW_CTRL_DESCS records outstanding and can never lap an unread slot. Keep
+ * all DTR_FLOW_CTRL_DESCS recv WRs posted (want == max). peer_rx_descs /
+ * rx_descs_known_to_peer start at 1, as for CONTROL, so the bootstrap
+ * flow-control message can be sent before the peer's first window grant arrives.
+ */
+static void dtr_init_flow_control_flow(struct dtr_path *path)
+{
+	struct dtr_flow *flow = &path->flow[ST_FLOW_CTRL];
+
+	flow->path = path;
+	flow->rx_window_bytes = DTR_FLOW_CTRL_DESCS * DTR_RING_SLOT_SIZE;
+	flow->tx_window_bytes = DTR_FLOW_CTRL_DESCS * DTR_RING_SLOT_SIZE;
+	flow->tx_descs_max = DTR_FLOW_CTRL_DESCS;
+	flow->rx_descs_max = DTR_FLOW_CTRL_DESCS;
+
+	atomic_set(&flow->tx_descs_posted, 0);
+	atomic_set(&flow->peer_rx_descs, 1);
+	atomic_set(&flow->rx_descs_known_to_peer, 1);
+
+	atomic_set(&flow->rx_descs_posted, 0);
+	atomic_set(&flow->rx_descs_allocated, 0);
+
+	flow->rx_descs_want_posted = flow->rx_descs_max;
+}
+
 static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 				    enum dtr_alloc_rdma_res_causes *cause)
 {
@@ -3409,9 +3733,10 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 
 	/*
 	 * Each path might be the sole path, therefore it must be able
-	 * to support both streams.
+	 * to support both streams. ST_FLOW_CTRL adds its control-ring credit
+	 * pool (recv WRs for inbound records, send WRs for outbound ones).
 	 */
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++) {
 		rx_descs_max += path->flow[i].rx_descs_max;
 		tx_descs_max += path->flow[i].tx_descs_max;
 	}
@@ -3456,7 +3781,7 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 	}
 
 	/* some RDMA transports need at least one rx desc for establishing a connection */
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++)
 		dtr_create_rx_desc(&path->flow[i], GFP_NOIO, false);
 
 	return 0;
@@ -3514,7 +3839,7 @@ static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm)
 
 	hca_max = min(dev_attr.max_qp_wr, dev_attr.max_cqe);
 
-	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
+	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++) {
 		rx_descs_max += path->flow[i].rx_descs_max;
 		tx_descs_max += path->flow[i].tx_descs_max;
 	}
@@ -3768,6 +4093,27 @@ static void dtr_destroy_cm_keep_id(struct kref *kref)
 	__dtr_destroy_cm(kref, false);
 }
 
+/* Free the per-path buffers tied to a QP that is gone: the peer's announced
+ * remote chunks (their rkeys died with the peer's MRs), our registered receive
+ * regions (our MRs died with our QP), and the control ring. Cancels the workers
+ * that would otherwise re-arm them. Called both on an explicit path disconnect
+ * and -- crucially -- when a path re-establishes after a failover, which only
+ * forces the old QP to error and does NOT free these (so without this the
+ * re-established path keeps the dead incarnation's stale buffers: a remote chunk
+ * with a dead rkey yields a local access error at the peer when written, and a
+ * still-set ring.local makes dtr_register_ring() skip re-registration).
+ */
+static void dtr_drop_stale_path_buffers(struct dtr_path *path)
+{
+	cancel_work_sync(&path->ring_register_work);
+	cancel_work_sync(&path->regions[DATA_STREAM].register_buffers_work);
+	cancel_work_sync(&path->regions[CONTROL_STREAM].register_buffers_work);
+
+	dtr_free_remote_buffers(path);
+	dtr_free_local_buffers(path);
+	dtr_free_ring(path);
+}
+
 static void dtr_disconnect_path(struct dtr_path *path)
 {
 	struct dtr_cm *cm;
@@ -3777,13 +4123,7 @@ static void dtr_disconnect_path(struct dtr_path *path)
 
 	__dtr_disconnect_path(path);
 	cancel_work_sync(&path->refill_rx_descs_work);
-	cancel_work_sync(&path->regions[DATA_STREAM].register_buffers_work);
-	cancel_work_sync(&path->regions[CONTROL_STREAM].register_buffers_work);
-
-	/* The peer's announced buffers refer to a connection that is gone. */
-	dtr_free_remote_buffers(path);
-	/* Our registered regions belong to the QP we are dropping. */
-	dtr_free_local_buffers(path);
+	dtr_drop_stale_path_buffers(path);
 
 	cm = xchg(&path->cm, NULL); // RCU xchg
 	if (cm) {
@@ -4219,6 +4559,7 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 	static const char * const stream_names[] = {
 		[ST_DATA] = "data",
 		[ST_CONTROL] = "control",
+		[ST_FLOW_CTRL] = "flowctl",
 	};
 	static const char * const state_names[] = {
 		[0] = "not connected",
@@ -4282,6 +4623,13 @@ static void dtr_debugfs_show_path(struct dtr_path *path, struct seq_file *m)
 			seq_printf(m, "    %s regions: local %d (%u KiB armed), remote %d\n",
 				   stream_names[i], local, armed >> 10, remote);
 		}
+
+		dtr_debugfs_show_flow(&path->flow[ST_FLOW_CTRL],
+				      stream_names[ST_FLOW_CTRL], m);
+		seq_printf(m, "    control ring: local %s, remote %s (tx_seq %u)\n",
+			   path->ring.local ? "registered" : "none",
+			   path->ring.remote_known ? "known" : "unknown",
+			   path->ring.tx_seq);
 	}
 }
 
@@ -4332,6 +4680,8 @@ static int dtr_add_path(struct drbd_path *add_path)
 		spin_lock_init(&rs->local_buffers_lock);
 		INIT_WORK(&rs->register_buffers_work, dtr_register_buffers_work_fn);
 	}
+	spin_lock_init(&path->ring.lock);
+	INIT_WORK(&path->ring_register_work, dtr_ring_register_work_fn);
 	spin_lock_init(&path->send_flow_control_lock);
 	tasklet_setup(&path->flow_control_tasklet, dtr_flow_control_tasklet_fn);
 	INIT_WORK(&path->refill_rx_descs_work, dtr_refill_rx_descs_work_fn);
