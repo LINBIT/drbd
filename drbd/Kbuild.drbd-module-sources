@@ -93,6 +93,7 @@ drbd_legacy_84.h
 drbd_transport.c
 drbd_transport_lb-tcp.c
 drbd_transport_rdma.c
+drbd_transport_rdma2.c
 drbd_transport_tcp.c
 drbd_transport_template.c
 drbd_vli.h
