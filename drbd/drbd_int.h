@@ -624,6 +624,9 @@ enum peer_device_flag {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
+	RECONCILE_PENDING,	/* post-loss reconcile owed, not yet armed;
+				 * bridges loss -> RECONCILIATION_RESYNC
+				 */
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	SEND_STATE_AFTER_AHEAD,
 	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
@@ -1706,6 +1709,7 @@ extern void drbd_peer_maybe_confirm_rotated_gen(struct drbd_peer_device *peer_de
  * rotated generation just became confirmed across a quorate set of survivors.
  */
 extern bool drbd_maybe_release_rotated_gen(struct drbd_device *device);
+extern void drbd_reconcile_settled_try_up_to_date(struct drbd_resource *resource);
 
 struct drbd_bm_aio_ctx {
 	struct drbd_device *device;

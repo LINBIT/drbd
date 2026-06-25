@@ -86,9 +86,34 @@ static void update_members(struct drbd_resource *resource);
 static bool calc_data_accessible(struct drbd_state_change *state_change, int n_device,
 				 enum which_state which);
 
+/* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
+ * D_UP_TO_DATE, gap-free across
+ * NOTIFY_PEERS_LOST_PRIMARY -> RECONCILE_PENDING -> RECONCILIATION_RESYNC.
+ * Upgrade-only: outdating (< D_CONSISTENT) stays allowed, so a survivor of an
+ * unreachable primary still outdates via the lost-peer twopc.
+ */
+static bool reconcile_hold_active(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool rv = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &peer_device->connection->flags) ||
+		    test_bit(RECONCILE_PENDING, &peer_device->flags) ||
+		    test_bit(RECONCILIATION_RESYNC, &peer_device->flags)) {
+			rv = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return rv;
+}
+
 /* We need to stay consistent if we are neighbor of a diskless primary with
-   different UUID. This function should be used if the device was D_UP_TO_DATE
-   before.
+ * different UUID. This function should be used if the device was D_UP_TO_DATE
+ * before.
  */
 static bool may_return_to_up_to_date(struct drbd_device *device, enum which_state which)
 {
@@ -122,7 +147,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 	bool all_peers_outdated = true;
 	int node_id;
 
-	if (!may_return_to_up_to_date(device, which))
+	if (!may_return_to_up_to_date(device, which) || reconcile_hold_active(device))
 		return false;
 
 	rcu_read_lock();
@@ -2483,6 +2508,34 @@ static void drbd_schedule_empty_twopc(struct drbd_resource *resource)
 	}
 }
 
+/* Re-arm the return to UpToDate once no reconcile is owed.  The empty twopc
+ * re-checks the hold per device at commit, so it no-ops while still gated and
+ * the next clear re-arms.
+ */
+void drbd_reconcile_settled_try_up_to_date(struct drbd_resource *resource)
+{
+	struct drbd_device *device;
+	bool any_consistent = false;
+	bool still_pending = false;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&resource->devices, device, vnr) {
+		if (device->disk_state[NOW] == D_CONSISTENT)
+			any_consistent = true;
+		if (reconcile_hold_active(device)) {
+			still_pending = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	if (any_consistent && !still_pending) {
+		set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
+		drbd_schedule_empty_twopc(resource);
+	}
+}
+
 /*
  * We cache a node mask of the online members of the cluster. It might
  * be off because a node is still marked as online immediately after
@@ -2763,6 +2816,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	bool starting_resync = false;
+	bool reconciliation_resync_done = false;
 	bool start_new_epoch = false;
 	bool lost_a_primary_peer = false;
 	bool some_peer_is_primary = false;
@@ -2952,8 +3006,25 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			}
 
 
-			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED)
-				clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+			if (repl_state[OLD] > L_ESTABLISHED && repl_state[NEW] <= L_ESTABLISHED) {
+				if (test_and_clear_bit(RECONCILIATION_RESYNC, &peer_device->flags))
+					reconciliation_resync_done = true;
+				/* dagtag sender as reconcile target: it must receive the
+				 * data first, so discharge on resync end (as source it
+				 * discharged at SyncSource onset, below).
+				 */
+				if (test_and_clear_bit(RECONCILE_PENDING, &peer_device->flags))
+					reconciliation_resync_done = true;
+			}
+
+			/* dagtag sender as reconcile source: it is the holder, so
+			 * discharge as soon as it starts sourcing -- no need to wait
+			 * for the peer to finish catching up.
+			 */
+			if (!repl_is_sync_source(repl_state[OLD]) &&
+			    repl_is_sync_source(repl_state[NEW]) &&
+			    test_and_clear_bit(RECONCILE_PENDING, &peer_device->flags))
+				reconciliation_resync_done = true;
 
 			if (repl_state[OLD] >= L_ESTABLISHED && repl_state[NEW] < L_ESTABLISHED)
 				clear_bit(AHEAD_TO_SYNC_SOURCE, &peer_device->flags);
@@ -3282,6 +3353,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 	if ((resource_suspended[OLD] && !resource_suspended[NEW]) || unfreeze_io)
 		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
+
+	/* reconcile settled: a held-Consistent survivor may return to UpToDate */
+	if (reconciliation_resync_done)
+		drbd_reconcile_settled_try_up_to_date(resource);
 }
 
 static void abw_start_sync(struct drbd_device *device,
@@ -5825,8 +5900,16 @@ static bool do_twopc_after_lost_peer(struct change_context *context, enum change
 		int vnr;
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (device->disk_state[NOW] == D_CONSISTENT &&
-			    may_return_to_up_to_date(device, NOW))
+			if (device->disk_state[NOW] != D_CONSISTENT ||
+			    !may_return_to_up_to_date(device, NOW))
+				continue;
+			/* Stage the optimistic UpToDate at PH_PREPARE even while the
+			 * reconcile hold is active: it keeps the twopc non-empty so it
+			 * reaches PH_COMMIT, where primary_nodes is known and the outdate
+			 * branch above can fire.  At PH_COMMIT the hold is honored, so a
+			 * held survivor commits no change and stays D_CONSISTENT.
+			 */
+			if (phase == PH_PREPARE || !reconcile_hold_active(device))
 				__change_disk_state(device, D_UP_TO_DATE);
 		}
 	}
