@@ -10289,7 +10289,8 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 
 	if (!test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
 		return false;
-	drbd_info(device, "rotated data generation confirmed durable in a quorate partition\n");
+	drbd_info(device, "rotated data generation confirmed durable in a quorate partition (gen %016llX)\n",
+		  device->exposed_data_uuid);
 	return true;
 }
 
