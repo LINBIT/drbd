@@ -579,6 +579,13 @@ static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
 static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announce_buffer *msg);
+static u32 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
+				 u64 *addr, u32 *rkey);
+static bool dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
+				     u64 *addr, u32 *rkey);
+static void dtr_put_data_pages(struct drbd_transport *transport, struct dtr_rx_desc *rx_desc);
+static void dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
+				     unsigned int byte_len);
 static void dtr_free_local_buffers(struct dtr_path *path);
 static void dtr_free_remote_buffers(struct dtr_path *path);
 static void dtr_drop_stale_path_buffers(struct dtr_path *path);
@@ -864,25 +871,37 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		if (t <= 0)
 			return t == 0 ? -EAGAIN : -EINTR;
 
-		page = rx_desc->page;
-		/* put_page() if we would get_page() in
-		 * dtr_create_rx_desc().  but we don't. We return the page
-		 * chain to the user, which is supposed to give it back to
-		 * drbd_free_pages() eventually.
-		 */
-		rx_desc->page = NULL;
 		remaining -= rx_desc->size;
 
-		/* If the sender did dtr_send_page every bvec of a bio with
-		 * unaligned bvecs (as xfs often creates), rx_desc->size and
-		 * offset may well be not the PAGE_SIZE and 0 we hope for.
-		 */
-
-		err = drbd_bio_add_page(transport, bios, page, rx_desc->size, 0);
-		if (err < 0)
-			return err;
-		if (remaining)
-			*misalign_bits |= rx_desc->size;
+		if (rx_desc->data_page) {
+			/* DATA was RDMA-written into a region: a physically contiguous
+			 * byte range starting @data_offset into @data_page. It goes
+			 * into the bio as a single multi-page bvec of its own (never
+			 * merged with a neighbouring write, which may share its first
+			 * or last page), and the desc's page references go with it:
+			 * the core releases one per touched page in
+			 * drbd_peer_req_strip_bio().
+			 */
+			err = drbd_bio_add_page_nomerge(transport, bios, rx_desc->data_page,
+							rx_desc->size, rx_desc->data_offset);
+			if (err < 0)
+				return err;
+			*misalign_bits |= rx_desc->data_offset;
+			if (remaining)
+				*misalign_bits |= rx_desc->size;
+			atomic_add(rx_desc->data_nr_pages, &rdma_transport->region_refs_handed);
+			rx_desc->data_page = NULL;
+			rx_desc->data_nr_pages = 0;
+		} else {
+			/* Pre-region SEND: payload is in the recv buffer itself. */
+			page = rx_desc->page;
+			rx_desc->page = NULL;
+			err = drbd_bio_add_page(transport, bios, page, rx_desc->size, 0);
+			if (err < 0)
+				return err;
+			if (remaining)
+				*misalign_bits |= rx_desc->size;
+		}
 
 		atomic_dec(&rx_desc->cm->path->flow[DATA_STREAM].rx_descs_allocated);
 		dtr_free_rx_desc(rx_desc);
@@ -898,8 +917,7 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
-	struct dtr_rx_desc *rx_desc = NULL;
-	void *buffer;
+	size_t done = 0;
 
 	if (flags & GROW_BUFFER) {
 		/*
@@ -908,57 +926,71 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 		 */
 		tr_err(transport, "Called with GROW_BUFFER\n");
 		return -EINVAL;
-	} else if (rdma_stream->current_rx.bytes_left == 0) {
-		long t;
+	}
 
-		dtr_recycle_rx_desc(transport, stream, &rdma_stream->current_rx.desc, GFP_NOIO);
-		if (flags & MSG_DONTWAIT) {
-			t = dtr_receive_rx_desc(rdma_transport, stream, &rx_desc);
-		} else {
-			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-					dtr_receive_rx_desc(rdma_transport, stream,
-							    &rx_desc),
-					rdma_stream->recv_timeout);
+	do {
+		size_t n;
+
+		if (rdma_stream->current_rx.bytes_left == 0) {
+			struct dtr_rx_desc *rx_desc = NULL;
+			long t;
+
+			dtr_recycle_rx_desc(transport, stream, &rdma_stream->current_rx.desc,
+					    GFP_NOIO);
+			if (flags & MSG_DONTWAIT) {
+				t = dtr_receive_rx_desc(rdma_transport, stream, &rx_desc);
+			} else {
+				t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
+						dtr_receive_rx_desc(rdma_transport, stream,
+								    &rx_desc),
+						rdma_stream->recv_timeout);
+			}
+
+			if (t <= 0) {
+				if (done)
+					return done; /* short read, like a socket */
+				return t == 0 ? -EAGAIN : -EINTR;
+			}
+
+			/* DATA arrives RDMA-written into a region (data_page +
+			 * data_offset; a message larger than the region's stride may
+			 * run into the next, contiguous region page). Other streams
+			 * land in the recv buffer.
+			 */
+			rdma_stream->current_rx.desc = rx_desc;
+			if (rx_desc->data_page)
+				rdma_stream->current_rx.pos =
+					page_address(rx_desc->data_page) + rx_desc->data_offset;
+			else
+				rdma_stream->current_rx.pos = page_address(rx_desc->page);
+			rdma_stream->current_rx.bytes_left = rx_desc->size;
 		}
 
-		if (t <= 0)
-			return t == 0 ? -EAGAIN : -EINTR;
+		if (!(flags & CALLER_BUFFER)) {
+			/* A pointer into the transport's buffer cannot span two
+			 * RDMA-WRITEs. Whole messages (headers, small packets) are sent
+			 * as one write and lie within one desc; a fixed-size read of
+			 * bio-chunked payload (ignore_remaining_packet()) may run into a
+			 * chunk end -- return the short count, as a socket would, and
+			 * the caller continues with the rest.
+			 */
+			n = min_t(size_t, size, rdma_stream->current_rx.bytes_left);
+			*buf = rdma_stream->current_rx.pos;
+			rdma_stream->current_rx.pos += n;
+			rdma_stream->current_rx.bytes_left -= n;
+			return n;
+		}
 
-		buffer = page_address(rx_desc->page);
-		rdma_stream->current_rx.desc = rx_desc;
-		rdma_stream->current_rx.pos = buffer + size;
-		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
-		if (rdma_stream->current_rx.bytes_left < 0)
-			tr_warn(transport,
-				"new, requesting more (%zu) than available (%d)\n",
-				size, rx_desc->size);
-
-		if (flags & CALLER_BUFFER)
-			memcpy(*buf, buffer, size);
-		else
-			*buf = buffer;
-
-
-		return size;
-	}
-
-	/* return next part */
-	buffer = rdma_stream->current_rx.pos;
-	rdma_stream->current_rx.pos += size;
-
-	if (rdma_stream->current_rx.bytes_left < size) {
-		tr_err(transport,
-		       "requested more than left! bytes_left = %d, size = %zu\n",
-		       rdma_stream->current_rx.bytes_left, size);
-		rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
-	} else {
-		rdma_stream->current_rx.bytes_left -= size;
-	}
-
-	if (flags & CALLER_BUFFER)
-		memcpy(*buf, buffer, size);
-	else
-		*buf = buffer;
+		/* Copy into the caller's buffer, spanning descs as needed: payload
+		 * read this way (recv_dless_read()) is chunked by the sender at
+		 * region-room boundaries that need not match the caller's bvecs.
+		 */
+		n = min_t(size_t, size - done, rdma_stream->current_rx.bytes_left);
+		memcpy((char *)*buf + done, rdma_stream->current_rx.pos, n);
+		rdma_stream->current_rx.pos += n;
+		rdma_stream->current_rx.bytes_left -= n;
+		done += n;
+	} while (done < size);
 
 	return size;
 }
@@ -1074,6 +1106,18 @@ static struct dtr_cm *dtr_path_get_cm_connected(struct dtr_path *path)
 		cm = NULL;
 	}
 	return cm;
+}
+
+/* Kick the initial registration + announce of the DATA and CONTROL receive
+ * regions. Region announces ride the control ring, so this is deferred until the
+ * ring is usable (peer ring known); see dtr_path_established_work_fn(). Until at
+ * least one DATA region is announced the peer's DATA sender blocks in
+ * reserve-or-wait, so this must fire for the connection to carry any data.
+ */
+static void dtr_kick_register_buffers(struct dtr_path *path)
+{
+	schedule_work(&path->regions[DATA_STREAM].register_buffers_work);
+	schedule_work(&path->regions[CONTROL_STREAM].register_buffers_work);
 }
 
 static void dtr_path_established_work_fn(struct work_struct *work)
@@ -2134,6 +2178,14 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		smp_wmb(); /* smp_rmb() is in dtr_new_rx_descs() */
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
+		/* DATA was RDMA-written into our receive region, not the recv
+		 * buffer: take the page it landed in (rx_desc->data_page), which
+		 * _dtr_recv()/dtr_recv_bio() hand up instead of rx_desc->page.
+		 */
+		if (stream == ST_DATA && wc->opcode == IB_WC_RECV_RDMA_WITH_IMM)
+			dtr_consume_local_buffer(&path->regions[DATA_STREAM], rx_desc,
+						 wc->byte_len);
+
 		if (stream == ST_CONTROL)
 			mod_timer(&rdma_transport->control_timer,
 				  jiffies + rdma_stream->recv_timeout);
@@ -2334,7 +2386,32 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 		 */
 		drbd_free_page(transport, rx_desc->page);
 	}
+	/* Region pages still referenced here were read in place (a DATA header
+	 * via _dtr_recv) rather than handed up in a BIO; dtr_recv_bio() clears
+	 * data_page after transferring the references to the core.
+	 */
+	dtr_put_data_pages(&rdma_transport->transport, rx_desc);
 	kfree(rx_desc);
+}
+
+/* Drop the references a desc holds on the region pages its payload occupies
+ * (taken in dtr_consume_local_buffer()). The region itself keeps its own
+ * reference on every page until it is disarmed, so a page shared with a
+ * neighbouring write stays valid for that write's holder. drbd_free_page() is
+ * a put_page() or an order-0 mempool_free(), safe from the softirq recycle path.
+ */
+static void dtr_put_data_pages(struct drbd_transport *transport, struct dtr_rx_desc *rx_desc)
+{
+	int i;
+
+	if (!rx_desc->data_page)
+		return;
+	for (i = 0; i < rx_desc->data_nr_pages; i++)
+		drbd_free_page(transport, rx_desc->data_page + i);
+	atomic_add(rx_desc->data_nr_pages,
+		   &container_of(transport, struct dtr_transport, transport)->region_refs_put);
+	rx_desc->data_page = NULL;
+	rx_desc->data_nr_pages = 0;
 }
 
 static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connected_only)
@@ -2461,6 +2538,12 @@ static void dtr_refill_rx_desc(struct dtr_transport *rdma_transport,
 
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 {
+	/* Recycling a DATA desc whose region bytes were read in place (a header,
+	 * not handed up in a BIO): drop its page references before the recv
+	 * buffer is reposted.
+	 */
+	dtr_put_data_pages(cm->path->path.transport, rx_desc);
+
 	rx_desc->size = 0;
 	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
 	return dtr_post_rx_desc(cm, rx_desc);
@@ -2559,6 +2642,14 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 	return err;
 }
 
+/* Pick a connected path to transmit one @stream packet on, and return its cm
+ * (kref'd). For the DATA stream the packet is RDMA-written into a peer-announced
+ * receive region, so a path also needs free region space: peek it here purely as
+ * a scheduling gate, so the send_wq sleep wakes only when a usable path exists
+ * rather than spinning on a credit-only path. The authoritative, atomic
+ * reservation happens in the caller via dtr_reserve_remote_chunk(); a peek that
+ * loses a race to a concurrent reservation just makes the caller retry.
+ */
 static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_transport,
 						     enum drbd_stream stream)
 {
@@ -2576,6 +2667,8 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[stream];
 		unsigned long ls;
+		u64 addr;
+		u32 rk;
 
 		cm = rcu_dereference(path->cm);
 		if (!cm || cm->state != DSM_CONNECTED)
@@ -2588,6 +2681,11 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 		 */
 		if (atomic_read(&flow->tx_descs_posted) >= flow->tx_descs_max ||
 		    atomic_read(&flow->peer_rx_descs) <= 1)
+			continue;
+
+		/* DATA RDMA-writes into a peer region; skip paths with no room. */
+		if (stream == DATA_STREAM &&
+		    !dtr_peek_remote_chunk(&path->regions[DATA_STREAM], 1, &addr, &rk))
 			continue;
 
 		ls = cm->last_sent_jif;
@@ -2664,6 +2762,8 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	struct dtr_cm *cm;
 	struct dtr_flow *flow;
+	u64 remote_addr = 0;
+	u32 rkey = 0;
 	int err;
 
 	do {
@@ -2689,6 +2789,22 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 			continue;
 		}
 
+		/* The original DATA region died with old_cm; aim the RDMA-WRITE at a
+		 * fresh chunk in the new path's region (reserved atomically here).
+		 */
+		if (stream == DATA_STREAM &&
+		    !dtr_reserve_remote_chunk(&cm->path->regions[DATA_STREAM],
+					      tx_desc->sge[0].length, &remote_addr, &rkey)) {
+			atomic_inc(&flow->peer_rx_descs);
+			atomic_dec(&flow->tx_descs_posted);
+			kref_put(&cm->kref, dtr_destroy_cm);
+			continue;
+		}
+		if (stream == DATA_STREAM) {
+			tx_desc->remote_addr = remote_addr;
+			tx_desc->rkey = rkey;
+		}
+
 		err = __dtr_post_tx_desc(cm, tx_desc);
 		if (err) {
 			atomic_inc(&flow->peer_rx_descs);
@@ -2708,6 +2824,8 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	struct ib_device *device;
 	struct dtr_flow *flow;
 	struct dtr_cm *cm;
+	u64 remote_addr = 0;
+	u32 rkey = 0;
 	int offset, err;
 	long t;
 
@@ -2736,6 +2854,21 @@ retry:
 		goto retry;
 	}
 
+	/* DATA is RDMA-written straight into the peer's receive region. Reserve a
+	 * chunk now (atomically; the peek in path selection only gated the sleep).
+	 * The chunk is the message size rounded up to the region's stride, matching
+	 * the receiver's consume. If we lost the chunk to a concurrent (failover)
+	 * reservation, release the credit and reselect.
+	 */
+	if (stream == DATA_STREAM &&
+	    !dtr_reserve_remote_chunk(&cm->path->regions[DATA_STREAM], tx_desc->sge[0].length,
+				      &remote_addr, &rkey)) {
+		atomic_inc(&flow->peer_rx_descs);
+		atomic_dec(&flow->tx_descs_posted);
+		kref_put(&cm->kref, dtr_destroy_cm);
+		goto retry;
+	}
+
 	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -2758,6 +2891,16 @@ retry:
 		atomic_dec(&flow->tx_descs_posted);
 		err = -EINVAL;
 		goto out;
+	}
+
+	/* Aim the RDMA-WRITE at the chunk reserved above. On a post error the
+	 * connection is torn down and the region re-announced on reconnect, so the
+	 * already-consumed chunk needs no rollback.
+	 */
+	if (stream == DATA_STREAM) {
+		tx_desc->rdma_write = true;
+		tx_desc->remote_addr = remote_addr;
+		tx_desc->rkey = rkey;
 	}
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
@@ -2846,6 +2989,12 @@ static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announc
 		path->ring.remote_rkey = be32_to_cpu(msg->rkey);
 		path->ring.remote_known = true;
 		spin_unlock_irqrestore(&path->ring.lock, flags);
+
+		/* The control ring can now carry announces: register and announce
+		 * the DATA/CONTROL receive regions (the deferred kick promised in
+		 * dtr_path_established_work_fn()).
+		 */
+		dtr_kick_register_buffers(path);
 		return be32_to_cpu(msg->send_from_stream);
 	}
 
@@ -2939,7 +3088,7 @@ __dtr_find_remote_buffer(struct dtr_region_set *rs, unsigned int bytes)
  * (nothing consumed, no buffer abandoned) -- a partial grant cannot help the
  * single-WR caller.
  */
-static bool __maybe_unused
+static bool
 dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *addr, u32 *rkey)
 {
 	struct dtr_remote_buffer *rb, *tmp;
@@ -2980,7 +3129,7 @@ dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *add
  * acting on a peek retries. Returns 0 if no announced region can take the
  * write (pass @bytes == 1 for "any room at all").
  */
-static u32 __maybe_unused
+static u32
 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *addr, u32 *rkey)
 {
 	struct dtr_remote_buffer *rb;
@@ -3443,7 +3592,7 @@ static void dtr_free_ring(struct dtr_path *path)
  * same stride-rounded amount. A fully consumed region moves to the exhausted
  * list for deferred release + replacement. Runs in the rx completion softirq.
  */
-static void __maybe_unused
+static void
 dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 			 unsigned int byte_len)
 {
@@ -4476,6 +4625,8 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->type = SEND_PAGE;
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
+	/* CONTROL still SENDs; dtr_post_tx_desc() flips this for DATA RDMA-WRITE. */
+	tx_desc->rdma_write = false;
 	tx_desc->imm = dtr_imm_encode(stream,
 				      rdma_transport->stream[stream].tx_sequence++);
 	tx_desc->sge[0].length = size;
