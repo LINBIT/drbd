@@ -306,11 +306,20 @@ struct dtr_tx_desc {
 	/* When set, post IB_WR_RDMA_WRITE_WITH_IMM into the peer-registered
 	 * buffer at @remote_addr/@rkey instead of IB_WR_SEND_WITH_IMM. The
 	 * immediate still carries {stream, sequence} for ordering/demux. Used
-	 * for control-ring records (and, later, DATA/CONTROL payload).
+	 * for control-ring records and DATA/CONTROL payload. Such a tx_desc is
+	 * never reposted to another path (the rkey is path-specific).
+	 *
+	 * @wr_pages, when non-NULL, holds the get_page()'d source pages
+	 * (@nr_pages of them) that the multi-SGE bio write path (dtr_send_bio())
+	 * builds and frees; one SGE may cover several contiguous pages, so
+	 * @nr_pages >= @nr_sges. The single-page paths (SEND_PAGE/SEND_MSG) leave
+	 * @wr_pages NULL and use the @page/@data union member.
 	 */
 	bool rdma_write;
 	u64 remote_addr;
 	u32 rkey;
+	struct page **wr_pages;
+	int nr_pages;
 	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
@@ -631,11 +640,14 @@ static u32 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				 u64 *addr, u32 *rkey);
 static bool dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				     u64 *addr, u32 *rkey);
+static void dtr_commit_remote_chunk(struct dtr_region_set *rs, unsigned int bytes);
 static bool dtr_any_remote_room(struct dtr_transport *rdma_transport, enum drbd_stream stream,
 				unsigned int bytes);
 static int dtr_wait_for_remote_buffer(struct dtr_transport *rdma_transport,
 				      enum drbd_stream stream, unsigned int bytes);
 static void dtr_put_data_pages(struct drbd_transport *transport, struct dtr_rx_desc *rx_desc);
+static struct dtr_cm *dtr_get_cm_reserve_credit(struct dtr_transport *rdma_transport, int *err);
+static void dtr_undo_credit(struct dtr_path *path);
 static bool dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 				     unsigned int byte_len);
 static void dtr_free_local_buffers(struct dtr_path *path);
@@ -926,12 +938,13 @@ static int dtr_recv_bio(struct drbd_transport *transport, struct bio_list *bios,
 		remaining -= rx_desc->size;
 
 		if (rx_desc->data_page) {
-			/* DATA was RDMA-written into a region: a physically contiguous
-			 * byte range starting @data_offset into @data_page. It goes
-			 * into the bio as a single multi-page bvec of its own (never
-			 * merged with a neighbouring write, which may share its first
-			 * or last page), and the desc's page references go with it:
-			 * the core releases one per touched page in
+			/* DATA was RDMA-written into a region: one rx_desc is one
+			 * sender chunk (dtr_send_bio), a physically contiguous byte
+			 * range starting @data_offset into @data_page. It goes into
+			 * the bio as a single multi-page bvec of its own (never merged
+			 * with the neighbouring chunk, which may share its first or
+			 * last page), and the desc's page references go with it: the
+			 * core releases one per touched page in
 			 * drbd_peer_req_strip_bio().
 			 */
 			err = drbd_bio_add_page_nomerge(transport, bios, rx_desc->data_page,
@@ -2319,9 +2332,26 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct ib_device *device = cm->id->device;
-	struct bio_vec bvec;
-	struct bvec_iter iter;
 	int i, nr_sges;
+
+	/* Multi-SGE RDMA-WRITE chunk: drop the references and mappings taken per
+	 * source page by dtr_send_bio(). Uses @wr_pages (always set for SEND_BIO),
+	 * not the bio, since one bio may be split into several chunks each owning a
+	 * subset of the pages. Keyed on the type, not on @wr_pages/@rdma_write: the
+	 * single-page SEND_PAGE/SEND_MSG descriptors are also rdma_write for
+	 * DATA/CONTROL and do not initialise @wr_pages.
+	 */
+	if (tx_desc->type == SEND_BIO) {
+		nr_sges = tx_desc->nr_sges;
+		for (i = 0; i < nr_sges; i++)
+			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
+					  DMA_TO_DEVICE);
+		for (i = 0; i < tx_desc->nr_pages; i++)
+			put_page(tx_desc->wr_pages[i]);
+		kfree(tx_desc->wr_pages);
+		kfree(tx_desc);
+		return;
+	}
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -2335,13 +2365,6 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		kfree(tx_desc->data);
 		break;
 	case SEND_BIO:
-		nr_sges = tx_desc->nr_sges;
-		for (i = 0; i < nr_sges; i++)
-			ib_dma_unmap_page(device, tx_desc->sge[i].addr, tx_desc->sge[i].length,
-					  DMA_TO_DEVICE);
-		bio_for_each_segment(bvec, tx_desc->bio, iter) {
-			put_page(bvec.bv_page);
-		}
 		break;
 	}
 	kfree(tx_desc);
@@ -2393,7 +2416,12 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		atomic_inc(&flow->peer_rx_descs);
 		set_bit(DSB_ERROR, &cm->state);
 
-		if (stream_nr != ST_FLOW_CTRL) {
+		/* Only non-RDMA-WRITE descs can fail over to another path: an
+		 * RDMA-WRITE targets a path-specific rkey/region, and the multi-SGE
+		 * bio chunk cannot be remapped, so a failed RDMA-WRITE drops the
+		 * connection (reconnect re-announces regions) rather than reposting.
+		 */
+		if (stream_nr != ST_FLOW_CTRL && !tx_desc->rdma_write) {
 			err = dtr_repost_tx_desc(cm, tx_desc);
 			if (!err)
 				tx_desc = NULL; /* it is in the air again! Fly! */
@@ -3316,6 +3344,33 @@ __dtr_find_remote_buffer(struct dtr_region_set *rs, unsigned int bytes)
 			return rb;
 	}
 	return NULL;
+}
+
+/* Consume the region room a chunk built against a prior dtr_peek_remote_chunk()
+ * occupied, now that it has been posted: @bytes rounded up to the stride of the
+ * region the peek found, which is exactly what the receiver advances its cursor
+ * by (dtr_consume_local_buffer()), so the two stay in lockstep. Frees the region
+ * once fully consumed. Used by the multi-SGE bio path (dtr_send_bio), which
+ * peeks then commits exactly what the chunk occupied; the single-message path
+ * uses the atomic dtr_reserve_remote_chunk() instead. Both are driven by the one
+ * DATA sender thread, so a peek and its matching commit are never interleaved
+ * with another consume of the same region.
+ */
+static void dtr_commit_remote_chunk(struct dtr_region_set *rs, unsigned int bytes)
+{
+	struct dtr_remote_buffer *rb;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rs->remote_buffers_lock, flags);
+	rb = __dtr_find_remote_buffer(rs, bytes);
+	if (rb) {
+		rb->consumed += dtr_chunk_size(bytes, rb->stride);
+		if (rb->consumed >= rb->len) {
+			list_del(&rb->list);
+			kfree(rb);
+		}
+	}
+	spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
 }
 
 /* Reserve region room for one @bytes RDMA-WRITE in the peer's remote buffers
@@ -4885,9 +4940,12 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->page = page;
 	tx_desc->nr_sges = 1;
 	/* Defensive init of the kmalloc'd descriptor; dtr_post_tx_desc() sets the
-	 * RDMA-WRITE target for both DATA and CONTROL before posting.
+	 * RDMA-WRITE target for both DATA and CONTROL before posting. @wr_pages must
+	 * be NULL on any non-SEND_BIO descriptor (dtr_free_tx_desc() keys on the
+	 * type, but keep the documented invariant explicit).
 	 */
 	tx_desc->rdma_write = false;
+	tx_desc->wr_pages = NULL;
 	tx_desc->imm = dtr_imm_encode(stream,
 				      rdma_transport->stream[stream].tx_sequence++);
 	tx_desc->sge[0].length = size;
@@ -4908,23 +4966,269 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	return err;
 }
 
+/* Wait for a DATA path with credit and an announced region chunk, then reserve
+ * one tx credit (one peer recv WR == one RDMA-WRITE chunk) on it. Returns the
+ * chosen cm (kref'd, credit reserved) or NULL with *err set
+ * (-EAGAIN once the send timeout expires, -EINTR on signal). The credit is
+ * released with dtr_undo_credit() if the chunk is not posted.
+ */
+static struct dtr_cm *dtr_get_cm_reserve_credit(struct dtr_transport *rdma_transport, int *err)
+{
+	struct dtr_stream *rdma_stream = &rdma_transport->stream[DATA_STREAM];
+	struct dtr_flow *flow;
+	struct dtr_cm *cm;
+	long t;
+
+	*err = 0;
+retry:
+	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
+			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, DATA_STREAM)),
+			rdma_stream->send_timeout);
+	if (t == 0) {
+		if (drbd_stream_send_timed_out(&rdma_transport->transport, DATA_STREAM)) {
+			*err = -EAGAIN;
+			return NULL;
+		}
+		goto retry;
+	} else if (t < 0) {
+		*err = -EINTR;
+		return NULL;
+	}
+
+	flow = &cm->path->flow[DATA_STREAM];
+	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0) {
+		kref_put(&cm->kref, dtr_destroy_cm);
+		goto retry;
+	}
+	if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
+		atomic_inc(&flow->peer_rx_descs);
+		kref_put(&cm->kref, dtr_destroy_cm);
+		goto retry;
+	}
+	return cm;
+}
+
+static void dtr_undo_credit(struct dtr_path *path)
+{
+	struct dtr_flow *flow = &path->flow[DATA_STREAM];
+
+	atomic_inc(&flow->peer_rx_descs);
+	atomic_dec(&flow->tx_descs_posted);
+}
+
+/* Map @len bytes starting at @off within the physically-contiguous page run
+ * that begins at @page as one source SGE on @tx_desc, taking a reference on
+ * each page the run spans (released by dtr_free_tx_desc()). @len may exceed
+ * PAGE_SIZE for a multi-page bvec: one SGE then covers several pages, gathered
+ * into a contiguous RDMA-WRITE. Returns 0, or -EIO on a DMA mapping error with
+ * nothing left behind.
+ */
+static int dtr_add_bvec_sge(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc,
+			    struct page *page, unsigned int off, unsigned int len)
+{
+	struct ib_device *device = cm->id->device;
+	unsigned int npages = DIV_ROUND_UP(off + len, PAGE_SIZE);
+	int s = tx_desc->nr_sges;
+	dma_addr_t addr;
+	unsigned int p;
+
+	addr = ib_dma_map_page(device, page, off, len, DMA_TO_DEVICE);
+	if (ib_dma_mapping_error(device, addr))
+		return -EIO;
+
+	for (p = 0; p < npages; p++) {
+		/*
+		 * nth_page() was removed in newer kernels; walking the pfn is
+		 * its universal equivalent, correct on both the discontiguous
+		 * (SPARSEMEM) and the contiguous memory models.
+		 */
+		struct page *pg = pfn_to_page(page_to_pfn(page) + p);
+
+		get_page(pg);
+		tx_desc->wr_pages[tx_desc->nr_pages++] = pg;
+	}
+	tx_desc->sge[s].addr = addr;
+	tx_desc->sge[s].length = len;
+	tx_desc->sge[s].lkey = dtr_cm_to_lkey(cm);
+	tx_desc->nr_sges = s + 1;
+
+	return 0;
+}
+
+/* Post a fully-built chunk as one RDMA-WRITE and, on success, commit the region
+ * room it occupies: @chunk_bytes rounded up to the region's stride, which is
+ * what the receiver advances its cursor by (dtr_consume_local_buffer()), so the
+ * two stay in lockstep. Commit
+ * only after a successful post, so a failed post leaves the cursor untouched
+ * (nothing reached the peer). Consumes the caller's @cm credit reference either
+ * way; on error releases the tx credit, sets DSB_ERROR and frees the chunk (a
+ * posted chunk is freed by its tx completion instead).
+ */
+static int dtr_flush_chunk(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc,
+			   unsigned int chunk_bytes)
+{
+	int err;
+
+	err = __dtr_post_tx_desc(cm, tx_desc);
+	if (err) {
+		dtr_undo_credit(cm->path);
+		dtr_free_tx_desc(cm, tx_desc);
+		set_bit(DSB_ERROR, &cm->state);
+	} else {
+		dtr_commit_remote_chunk(&cm->path->regions[DATA_STREAM], chunk_bytes);
+	}
+	kref_put(&cm->kref, dtr_destroy_cm);
+
+	return err;
+}
+
+/* Send @bio's payload on DATA_STREAM via one-sided RDMA-WRITE, iterating the
+ * bio by bvec: each (multi-page) bvec becomes one source SGE, so a physically
+ * contiguous 1 MiB bio can go in a single WR, and an arbitrarily offset/sized
+ * bvec is handled directly -- no per-page copy. A chunk (one WR) packs up to
+ * sges_max bvecs, bounded by the room available in the peer's head region; a
+ * bvec larger than that is split and continues in the next chunk. The receiver
+ * lands each chunk at its region cursor (stride-aligned, so possibly mid-page)
+ * and reassembles the sequenced chunks in dtr_recv_bio() regardless of how the
+ * bio was split. When
+ * the peer's window is momentarily empty the sender waits for a region announce
+ * (region bytes are the bulk back-pressure) rather than spinning.
+ */
 static int dtr_send_bio(struct drbd_transport *transport, struct bio *bio, unsigned int msg_flags)
 {
-	int err = -EINVAL;
-	struct bio_vec bvec;
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
+	struct dtr_stream *ds = &rdma_transport->stream[DATA_STREAM];
+	int sges_max = rdma_transport->sges_max;
+	struct dtr_tx_desc *tx_desc = NULL;
+	struct dtr_cm *cm = NULL;
+	struct dtr_path *path = NULL;
+	unsigned int chunk_bytes = 0;
+	unsigned int chunk_max_bytes = 0;
 	struct bvec_iter iter;
+	struct bio_vec bvec;
+	int err = 0;
 
 	if (!dtr_transport_ok(transport))
 		return -ECONNRESET;
 
-	bio_for_each_segment(bvec, bio, iter) {
-		err = dtr_send_page(transport, DATA_STREAM,
-			bvec.bv_page, bvec.bv_offset, bvec.bv_len, msg_flags);
-		if (err)
-			break;
+	bio_for_each_bvec(bvec, bio, iter) {
+		unsigned int done = 0;
+
+		while (done < bvec.bv_len) {
+			unsigned int boff = bvec.bv_offset + done;
+			struct page *page = pfn_to_page(page_to_pfn(bvec.bv_page) +
+							(boff >> PAGE_SHIFT));
+			unsigned int off = boff & (PAGE_SIZE - 1);
+			unsigned int remain = bvec.bv_len - done;
+			unsigned int room, take;
+
+			if (!tx_desc) {
+				/* Open a chunk: secure a path with credit, peek its
+				 * head region, size the descriptor.
+				 */
+				unsigned int rem_bytes = iter.bi_size - done;
+				u64 remote_addr;
+				u32 rkey;
+
+				cm = dtr_get_cm_reserve_credit(rdma_transport, &err);
+				if (!cm)
+					goto out; /* -EAGAIN / -EINTR */
+				path = cm->path;
+
+				chunk_max_bytes = dtr_peek_remote_chunk(&path->regions[DATA_STREAM],
+									1, &remote_addr, &rkey);
+				if (chunk_max_bytes == 0) {
+					/* Window momentarily empty: wait for an announce
+					 * and retry rather than spinning.
+					 */
+					dtr_undo_credit(path);
+					kref_put(&cm->kref, dtr_destroy_cm);
+					cm = NULL;
+					err = dtr_wait_for_remote_buffer(rdma_transport,
+									 DATA_STREAM, 1);
+					if (err)
+						goto out;
+					continue;
+				}
+				/* No chunk needs more region room than the rest of the
+				 * bio occupies; cap so the descriptor stays bio-sized.
+				 * (The room is a multiple of the region's stride, so any
+				 * chunk up to it fits once rounded.)
+				 */
+				chunk_max_bytes = min(chunk_max_bytes, rem_bytes);
+
+				tx_desc = kzalloc_flex(*tx_desc, sge, sges_max, GFP_NOIO);
+				if (tx_desc) {
+					/* Each SGE spans ceil(off+len) pages; a sub-page SGE
+					 * straddling a boundary touches 2, so bound the
+					 * per-page ref array generously.
+					 */
+					int nr_pages = DIV_ROUND_UP(chunk_max_bytes, PAGE_SIZE) +
+						       2 * sges_max;
+
+					tx_desc->wr_pages =
+						kmalloc_array(nr_pages, sizeof(struct page *),
+							      GFP_NOIO);
+				}
+				if (!tx_desc || !tx_desc->wr_pages) {
+					kfree(tx_desc);
+					tx_desc = NULL;
+					dtr_undo_credit(path);
+					kref_put(&cm->kref, dtr_destroy_cm);
+					cm = NULL;
+					err = -ENOMEM;
+					goto out;
+				}
+				tx_desc->type = SEND_BIO;
+				tx_desc->rdma_write = true;
+				tx_desc->remote_addr = remote_addr;
+				tx_desc->rkey = rkey;
+				tx_desc->imm = dtr_imm_encode(DATA_STREAM, ds->tx_sequence++);
+				chunk_bytes = 0;
+			}
+
+			/* Bytes the chunk can still take, bounded by the region room
+			 * it was sized for; the SGE count is bounded separately below.
+			 */
+			room = chunk_max_bytes - chunk_bytes;
+			take = min(remain, room);
+
+			err = dtr_add_bvec_sge(cm, tx_desc, page, off, take);
+			if (err)
+				goto out;
+			chunk_bytes += take;
+			done += take;
+
+			if (tx_desc->nr_sges == sges_max || chunk_bytes >= chunk_max_bytes) {
+				err = dtr_flush_chunk(cm, tx_desc, chunk_bytes);
+				tx_desc = NULL;
+				cm = NULL;
+				if (err)
+					goto out;
+			}
+		}
 	}
 
+	if (tx_desc) {
+		err = dtr_flush_chunk(cm, tx_desc, chunk_bytes);
+		tx_desc = NULL;
+		cm = NULL;
+	}
+
+out:
+	/* Reached only with a half-built chunk on error (region not yet
+	 * committed); drop it and its credit.
+	 */
+	if (tx_desc) {
+		dtr_free_tx_desc(cm, tx_desc);
+		dtr_undo_credit(cm->path);
+		kref_put(&cm->kref, dtr_destroy_cm);
+	}
 	dtr_update_congested(transport);
+
+	if (err)
+		drbd_control_event(transport, CLOSED_BY_PEER);
 
 	return err;
 }
