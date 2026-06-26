@@ -3311,6 +3311,11 @@ static void drbd_device_finalize_work_fn(struct work_struct *work)
 
 	put_disk(device->vdisk);
 
+	FINALIZE_WORK(&device->ldev_destroy_work);
+	FINALIZE_WORK(&device->finalize_work);
+	FINALIZE_WORK(&device->submit_conflict.worker);
+	FINALIZE_WORK(&device->submit.worker);
+
 	kfree(device);
 
 	kref_debug_put(&resource->kref_debug, 4);
@@ -3355,6 +3360,10 @@ void drbd_destroy_resource(struct kref *kref)
 	free_cpumask_var(resource->cpu_mask);
 	kfree(resource->name);
 	kref_debug_destroy(&resource->kref_debug);
+
+	FINALIZE_WORK(&resource->twopc_work);
+	FINALIZE_WORK(&resource->empty_twopc);
+
 	kfree(resource);
 	module_put(THIS_MODULE);
 }
@@ -3496,6 +3505,8 @@ static void drbd_cleanup(void)
 	unregister_blkdev(DRBD_MAJOR, "drbd");
 
 	idr_destroy(&drbd_devices);
+
+	FINALIZE_WORK(&retry.worker);
 
 	pr_info("module cleanup done.\n");
 }
@@ -3975,6 +3986,12 @@ void drbd_destroy_connection(struct kref *kref)
 
 	kfree(connection->transport.net_conf);
 	kref_debug_destroy(&connection->kref_debug);
+
+	FINALIZE_WORK(&connection->peer_ack_work);
+	FINALIZE_WORK(&connection->send_acks_work);
+	FINALIZE_WORK(&connection->send_ping_ack_work);
+	FINALIZE_WORK(&connection->send_ping_work);
+
 	kfree(connection);
 	kref_debug_put(&resource->kref_debug, 3);
 	kref_put(&resource->kref, drbd_destroy_resource);
