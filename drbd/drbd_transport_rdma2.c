@@ -626,13 +626,13 @@ static struct dtr_cm *dtr_path_get_cm_connected(struct dtr_path *path);
 static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
-static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announce_buffer *msg);
+static int dtr_got_announce_buffer_msg(struct dtr_cm *cm, struct dtr_announce_buffer *msg);
 static u32 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				 u64 *addr, u32 *rkey);
 static bool dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				     u64 *addr, u32 *rkey);
 static void dtr_put_data_pages(struct drbd_transport *transport, struct dtr_rx_desc *rx_desc);
-static void dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
+static bool dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 				     unsigned int byte_len);
 static void dtr_free_local_buffers(struct dtr_path *path);
 static void dtr_free_remote_buffers(struct dtr_path *path);
@@ -2231,7 +2231,7 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			u32 magic = be32_to_cpu(*(__be32 *)msg);
 
 			if (magic == DTR_ANNOUNCE_MAGIC)
-				send_from_stream = dtr_got_announce_buffer_msg(path, msg);
+				send_from_stream = dtr_got_announce_buffer_msg(cm, msg);
 			else if (magic == DTR_MAGIC)
 				send_from_stream = dtr_got_flow_control_msg(path, msg);
 			else if (__ratelimit(&rdma_transport->rate_limit))
@@ -2264,9 +2264,32 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		 * (rx_desc->data_page), which _dtr_recv()/dtr_recv_bio() (DATA) and
 		 * dtr_control_data_ready() (CONTROL) hand up instead of rx_desc->page.
 		 */
-		if (wc->opcode == IB_WC_RECV_RDMA_WITH_IMM)
-			dtr_consume_local_buffer(&path->regions[stream], rx_desc,
-						 wc->byte_len);
+		if (wc->opcode == IB_WC_RECV_RDMA_WITH_IMM &&
+		    !dtr_consume_local_buffer(&path->regions[stream], rx_desc,
+					      wc->byte_len)) {
+			unsigned long irq_flags;
+
+			/* The receive region overran (replenishment could not keep up
+			 * with a burst, e.g. the CONTROL-stream flood of online verify):
+			 * the payload has no page to hand up. Dropping a packet would
+			 * desync the reliable stream and handing a NULL page to the
+			 * stream consumer would oops, so drop the connection instead --
+			 * it reconnects. Dispose of the desc via the error list (freed at
+			 * teardown); the rx_descs accounting above already ran.
+			 */
+			if (__ratelimit(&rdma_transport->rate_limit))
+				tr_err(&rdma_transport->transport,
+				       "%s payload with no receive region; dropping connection\n",
+				       stream == ST_CONTROL ? "control" : "data");
+			spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
+			list_add_tail(&rx_desc->list, &cm->error_rx_descs);
+			spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+			set_bit(DSB_ERROR, &cm->state);
+			kref_get(&cm->kref);
+			if (!schedule_work(&cm->end_rx_work))
+				kref_put(&cm->kref, dtr_destroy_cm);
+			return;
+		}
 
 		if (stream == ST_CONTROL)
 			mod_timer(&rdma_transport->control_timer,
@@ -3089,8 +3112,9 @@ static int dtr_send_announce_buffer_msg(struct dtr_path *path, enum dtr_stream_n
 	return err;
 }
 
-static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announce_buffer *msg)
+static int dtr_got_announce_buffer_msg(struct dtr_cm *cm, struct dtr_announce_buffer *msg)
 {
+	struct dtr_path *path = cm->path;
 	struct dtr_transport *rdma_transport =
 		container_of(path->path.transport, struct dtr_transport, transport);
 	struct drbd_transport *transport = &rdma_transport->transport;
@@ -3128,22 +3152,45 @@ static int dtr_got_announce_buffer_msg(struct dtr_path *path, struct dtr_announc
 	}
 	rs = &path->regions[stream];
 
+	/* Sender and receiver consume a region in lockstep by its stride (see
+	 * dtr_reserve_remote_chunk()); a stride we cannot mirror -- or a region we
+	 * cannot record -- would make the cursors diverge and hand up wrong data.
+	 * Drop the connection instead of using the region.
+	 */
+	if (len && (!stride || !is_power_of_2(stride) || stride > PAGE_SIZE ||
+		    len % stride)) {
+		if (__ratelimit(&rdma_transport->rate_limit))
+			tr_err(transport, "announce with bad stride %u (len %u); dropping connection\n",
+			       stride, len);
+		goto drop;
+	}
+
 	if (len) {
 		rb = kzalloc_obj(*rb, GFP_ATOMIC);
 		if (!rb) {
 			if (__ratelimit(&rdma_transport->rate_limit))
-				tr_err(transport, "no memory for remote buffer\n");
-		} else {
-			rb->addr = be64_to_cpu(msg->addr);
-			rb->rkey = be32_to_cpu(msg->rkey);
-			rb->len = len;
-			rb->stride = stride;
-
-			spin_lock_irqsave(&rs->remote_buffers_lock, flags);
-			list_add_tail(&rb->list, &rs->remote_buffers);
-			spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
+				tr_err(transport, "no memory for remote buffer; dropping connection\n");
+			goto drop;
 		}
+		rb->addr = be64_to_cpu(msg->addr);
+		rb->rkey = be32_to_cpu(msg->rkey);
+		rb->len = len;
+		rb->stride = stride;
+
+		spin_lock_irqsave(&rs->remote_buffers_lock, flags);
+		list_add_tail(&rb->list, &rs->remote_buffers);
+		spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
 	}
+
+	wake_up_interruptible(&rdma_transport->stream[stream].send_wq);
+
+	return be32_to_cpu(msg->send_from_stream);
+
+drop:
+	set_bit(DSB_ERROR, &cm->state);
+	kref_get(&cm->kref);
+	if (!schedule_work(&cm->end_rx_work))
+		kref_put(&cm->kref, dtr_destroy_cm);
 
 	wake_up_interruptible(&rdma_transport->stream[stream].send_wq);
 
@@ -3718,7 +3765,7 @@ static void dtr_free_ring(struct dtr_path *path)
  * fully consumed region moves to the exhausted list for deferred release +
  * replacement. Runs in the rx completion softirq.
  */
-static void
+static bool
 dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 			 unsigned int byte_len)
 {
@@ -3739,7 +3786,7 @@ dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 			spin_unlock_irqrestore(&rs->local_buffers_lock, flags);
 			if (__ratelimit(&rdma_transport->rate_limit))
 				tr_err(transport, "RDMA-WRITE arrived with no registered buffer\n");
-			return;
+			return false;
 		}
 		need = dtr_chunk_size(byte_len, buf->stride);
 		if (need <= buf->len - buf->consumed)
@@ -3773,6 +3820,8 @@ dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 
 	if (exhausted)
 		schedule_work(&rs->register_buffers_work);
+
+	return true;
 }
 
 /* Fill a stream's receive window with as few, as-large-as-possible registered
