@@ -631,6 +631,10 @@ static u32 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				 u64 *addr, u32 *rkey);
 static bool dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
 				     u64 *addr, u32 *rkey);
+static bool dtr_any_remote_room(struct dtr_transport *rdma_transport, enum drbd_stream stream,
+				unsigned int bytes);
+static int dtr_wait_for_remote_buffer(struct dtr_transport *rdma_transport,
+				      enum drbd_stream stream, unsigned int bytes);
 static void dtr_put_data_pages(struct drbd_transport *transport, struct dtr_rx_desc *rx_desc);
 static bool dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
 				     unsigned int byte_len);
@@ -2965,6 +2969,62 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 	return err;
 }
 
+/* True if any connected path has announced receive region room for a @bytes
+ * RDMA-WRITE on @stream. Racy read, used only as a wait condition; the
+ * authoritative reservation rechecks under remote_buffers_lock.
+ */
+static bool dtr_any_remote_room(struct dtr_transport *rdma_transport, enum drbd_stream stream,
+				unsigned int bytes)
+{
+	struct drbd_transport *transport = &rdma_transport->transport;
+	struct dtr_path *path;
+	bool found = false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &transport->paths, path.list) {
+		u64 addr;
+		u32 rkey;
+
+		if (dtr_peek_remote_chunk(&path->regions[stream], bytes, &addr, &rkey)) {
+			found = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+	return found;
+}
+
+/* Block until the peer announces @stream region space (or the connection goes
+ * away). DATA and CONTROL are RDMA-written straight into a peer-announced
+ * region, so region bytes -- not just WR credits -- are the back-pressure: when
+ * the window is momentarily empty the sender waits here rather than spinning the
+ * reserve-retry loop (which under a high control-rate workload like online
+ * verify degenerates into a flow-control message storm). Woken by
+ * dtr_got_announce_buffer_msg() (new region) and dtr_tx_cqe_done() (slot freed).
+ * Returns 0 to retry, -EAGAIN once the send timeout is exhausted (the ko-count
+ * then drops the connection, as for any stalled send), -EINTR on signal,
+ * -ECONNRESET if the transport went away.
+ */
+static int dtr_wait_for_remote_buffer(struct dtr_transport *rdma_transport,
+				      enum drbd_stream stream, unsigned int bytes)
+{
+	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
+	struct drbd_transport *transport = &rdma_transport->transport;
+	long t;
+
+	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
+			dtr_any_remote_room(rdma_transport, stream, bytes) ||
+				!dtr_transport_ok(transport),
+			rdma_stream->send_timeout);
+	if (t < 0)
+		return -EINTR;
+	if (!dtr_transport_ok(transport))
+		return -ECONNRESET;
+	if (t == 0 && drbd_stream_send_timed_out(transport, stream))
+		return -EAGAIN;
+	return 0;
+}
+
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 			    struct dtr_tx_desc *tx_desc)
 {
@@ -3014,6 +3074,15 @@ retry:
 		atomic_inc(&flow->peer_rx_descs);
 		atomic_dec(&flow->tx_descs_posted);
 		kref_put(&cm->kref, dtr_destroy_cm);
+		/* Credit was available but the region window is momentarily empty
+		 * (the path-selection peek lost a race, or the peer has not yet
+		 * re-announced a consumed region). Block on region space rather
+		 * than busy-retrying the select loop.
+		 */
+		err = dtr_wait_for_remote_buffer(rdma_transport, stream,
+						 tx_desc->sge[0].length);
+		if (err)
+			return err;
 		goto retry;
 	}
 
