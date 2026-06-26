@@ -30,29 +30,50 @@
 #endif
 
 /*
- * Nearly all data transfer uses the send/receive semantics. No need to
- * actually use RDMA WRITE / READ.
+ * This transport carries both of DRBD's streams over one-sided RDMA WRITEs.
  *
- * Only for DRBD's remote read (P_DATA_REQUEST and P_DATA_REPLY) an
- * RDMA WRITE would make a lot of sense:
- *   Right now the recv_dless_read() function in DRBD is one of the few
- *   remaining callers of recv(,,CALLER_BUFFER). This in turn needs a
- *   memcpy().
+ * Payload transfer
+ * ================
  *
- * The block_id field (64 bit) could be re-labelled to be the RKEY for
- * an RDMA WRITE. The P_DATA_REPLY packet will then only deliver the
- * news that the RDMA WRITE was executed...
+ * Each side registers per-stream receive regions (physically contiguous
+ * runs of split order-0 pages, fast-reg MRs with REMOTE_WRITE) and
+ * announces them to the peer as {addr, rkey, len, stride}. The sender
+ * RDMA-WRITEs DATA and CONTROL packets straight into the peer's current
+ * region with IB_WR_RDMA_WRITE_WITH_IMM; the immediate carries {stream,
+ * sequence}. The receiver's recv WRs are buffer-less (num_sge = 0),
+ * consumed only to deliver the immediates: the receiver never learns a
+ * write's target address from the wire, it advances its own cursor through
+ * the announced region by each write's size rounded up to the region's
+ * stride (a cache line, or the alignment the receiver's backing devices
+ * need -- see dtr_region_stride()), in completion order (which on an RC QP
+ * equals posted order -- see dtr_reserve_and_post()). Neighbouring writes
+ * may thus share a region page; the receiver reference-counts the pages.
+ * The pages a payload landed in are handed up to DRBD without copying; a
+ * fully consumed region is re-registered over fresh pages and re-announced.
  *
- * Flow Control
+ * Flow control
  * ============
  *
- * If the receiving machine cannot keep up with the data rate it needs to
- * slow down the sending machine. In order to do so we keep track of the
- * number of rx_descs the peer has posted (peer_rx_descs).
+ * Three mechanisms throttle a sender, per path:
+ *  - WR credits: how many recv WRs the peer has posted per stream
+ *    (peer_rx_descs), granted/replenished with dtr_flow_control records.
+ *  - Region space: an RDMA WRITE needs room in the peer's announced
+ *    receive region; when the window is empty the sender sleeps until the
+ *    peer announces a recycled region.
+ *  - The FLOW_CTRL pool: flow-control, region-announce and shutdown
+ *    records ride a per-path one-page control ring (RDMA-written, slot =
+ *    sequence % DTR_FLOW_CTRL_DESCS) bounded by its own credit pool, so
+ *    they never compete with payload for credits. These records are
+ *    consumed by the transport itself, never delivered to DRBD.
  *
- * If one player posts new rx_descs it tells the peer about it with a
- * dtr_flow_control packet. Those packets never get delivered to the
- * DRBD above us.
+ * Bootstrap
+ * =========
+ *
+ * A fresh connection has no ring or regions yet: the first records
+ * (flow-control, ring announce) travel as IB_WR_SEND_WITH_IMM into
+ * page-backed bootstrap recv WRs. The first RDMA write seen on a path
+ * proves the SEND phase is over (single RC QP, in-order delivery); from
+ * then on recv WRs are posted buffer-less. See dtr_ring.rx_got_rdma_write.
  */
 
 MODULE_AUTHOR("Roland Kammerer <roland.kammerer@linbit.com>");
@@ -145,6 +166,16 @@ struct dtr_announce_buffer {
  */
 #define DTR_MIN_REGION_BYTES (8 * DRBD_SOCKET_BUFFER_SIZE)
 
+/* Recv WRs to post per stream while the peer may still SEND. Every desc posted
+ * in that phase has to carry a page (a SEND lands in whichever desc is at the
+ * head of the QP's single receive queue, so there is no way to have only some
+ * of them buffered), and the phase is short: a flow-control record, the peer's
+ * ring announce and its first region announces, then its writes go one-sided
+ * and the window is filled buffer-less. Post just enough to carry that
+ * handshake and to grant the peer a credit on every stream.
+ */
+#define DTR_BOOTSTRAP_RX_DESCS 16
+
 /* Control-ring slot size. 64 B holds either record (dtr_flow_control /
  * dtr_announce_buffer) with headroom; the whole ring is one page
  * (64 * 64 == PAGE_SIZE).
@@ -230,6 +261,12 @@ enum dtr_alloc_rdma_res_causes {
 };
 
 struct dtr_rx_desc {
+	/* Only the page-backed bootstrap descs (which catch the peer's pre-RDMA-write
+	 * SENDs) carry a recv buffer here; steady-state descs post num_sge=0 and
+	 * leave this NULL, since every inbound op is an RDMA_WRITE_WITH_IMM whose
+	 * payload lands in a region (DATA/CONTROL) or the control ring (FLOW_CTRL).
+	 * See rx_got_rdma_write for the buffered -> buffer-less transition.
+	 */
 	struct page *page;
 	struct list_head list;
 	int size;
@@ -413,6 +450,17 @@ struct dtr_ring {
 	bool remote_known;
 	u32 tx_seq;                     /* write cursor; slot = tx_seq % DTR_FLOW_CTRL_DESCS */
 	spinlock_t lock;                /* serialises tx_seq / remote_* */
+
+	/* Bootstrap recv phase. Until the peer switches from SEND to RDMA-WRITE we
+	 * may receive a variable number of SEND records (first flow-control, then
+	 * ring-announce, plus any flow-control grants in between), so recv WRs must
+	 * be posted page-backed (num_sge=1) to catch them. The peer emits every
+	 * SEND before its first RDMA-WRITE and the single RC QP delivers in order,
+	 * so the first IB_WC_RECV_RDMA_WITH_IMM proves no SEND can follow: from then
+	 * on recv WRs (and reposts) go buffer-less (num_sge=0). Reset per (re)connect
+	 * in dtr_free_ring(); zero-initialised => page-backed for a fresh path.
+	 */
+	bool rx_got_rdma_write;
 };
 
 struct dtr_path {
@@ -1153,9 +1201,11 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 
 	path->cm->state = DSM_CONNECTED;
 
-	/* Post the recv WRs for all three pools (DATA, CONTROL, and the
-	 * FLOW_CTRL control-ring pool) before the first flow-control message,
-	 * so it can grant the peer the full window of each.
+	/* Post recv WRs for all three pools (DATA, CONTROL, and the FLOW_CTRL
+	 * control-ring pool) before the first flow-control message, so it can
+	 * grant the peer a credit on each. These are the page-backed bootstrap
+	 * descs, so it is only a fraction of each window; the rest follows
+	 * buffer-less once the peer's first RDMA-write ends the SEND phase.
 	 */
 	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++)
 		__dtr_refill_rx_desc(path, i);
@@ -1721,8 +1771,13 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 		struct dtr_cm *cm = rx_desc->cm;
 
 		INIT_LIST_HEAD(&rx_desc->list);
-		ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
-					   PAGE_SIZE, DMA_FROM_DEVICE);
+		/* DATA is RDMA-written into a region page (data_page), already synced
+		 * in dtr_consume_local_buffer(); the buffer-less recv desc has no
+		 * mapping to sync. Only a pre-region SEND lands in the recv buffer.
+		 */
+		if (!rx_desc->data_page)
+			ib_dma_sync_single_for_cpu(cm->id->device, rx_desc->sge.addr,
+						   PAGE_SIZE, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
 	}
@@ -2124,6 +2179,24 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 
 	rx_desc->size = wc->byte_len;
 	immediate = be32_to_cpu(wc->ex.imm_data);
+
+	/* The first peer RDMA-write ends the bootstrap SEND phase: the peer emits
+	 * all its SENDs before any RDMA-write and the single RC QP delivers in
+	 * order, so from here recv WRs may post buffer-less. A SEND seen after this
+	 * point would have no buffer to land in -- a protocol violation.
+	 */
+	if (wc->opcode == IB_WC_RECV_RDMA_WITH_IMM) {
+		/* Fill the window now that the descs need no pages, and grant the
+		 * peer the credits for it: the bootstrap posted a fraction of it.
+		 */
+		if (!READ_ONCE(path->ring.rx_got_rdma_write)) {
+			WRITE_ONCE(path->ring.rx_got_rdma_write, true);
+			schedule_work(&path->refill_rx_descs_work);
+		}
+	} else {
+		WARN_ON_ONCE(READ_ONCE(path->ring.rx_got_rdma_write));
+	}
+
 	if (dtr_imm_stream(immediate) == ST_FLOW_CTRL) {
 		struct dtr_local_buffer *ring = path->ring.local;
 		int send_from_stream = -1; /* default: drop, no credit accounting */
@@ -2332,7 +2405,7 @@ static int dtr_create_qp(struct dtr_cm *cm, int rx_descs_max, int tx_descs_max)
 	struct ib_qp_init_attr init_attr = {
 		.cap.max_send_wr = tx_descs_max,
 		.cap.max_recv_wr = rx_descs_max,
-		.cap.max_recv_sge = 1, /* We only receive into single pages */
+		.cap.max_recv_sge = 1, /* one page for bootstrap recvs; steady-state posts none */
 		.cap.max_send_sge = rdma_transport->sges_max,
 		.qp_type = IB_QPT_RC,
 		.send_cq = cm->send_cq,
@@ -2356,11 +2429,22 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	recv_wr.next = NULL;
 	rx_desc->cqe.done = dtr_rx_cqe_done;
 	recv_wr.wr_cqe = &rx_desc->cqe;
-	recv_wr.sg_list = &rx_desc->sge;
-	recv_wr.num_sge = 1;
 
-	ib_dma_sync_single_for_device(cm->id->device,
-				      rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
+	/* Steady-state recv WRs carry no buffer (num_sge=0): every inbound op is
+	 * RDMA_WRITE_WITH_IMM, whose payload lands in a peer-known region (or the
+	 * control ring), so the WR only has to deliver the immediate. Only the
+	 * page-backed bootstrap descs (catching the peer's pre-RDMA-write SENDs)
+	 * post a sge.
+	 */
+	if (rx_desc->page) {
+		recv_wr.sg_list = &rx_desc->sge;
+		recv_wr.num_sge = 1;
+		ib_dma_sync_single_for_device(cm->id->device,
+					      rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
+	} else {
+		recv_wr.sg_list = NULL;
+		recv_wr.num_sge = 0;
+	}
 
 	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
 	if (err)
@@ -2383,12 +2467,15 @@ static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc)
 	device = cm->id->device;
 	path = cm->path;
 	rdma_transport = container_of(path->path.transport, struct dtr_transport, transport);
-	ib_dma_unmap_single(device, rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
 	kref_put(&cm->kref, dtr_destroy_cm);
 
+	/* Only the page-backed bootstrap descs were DMA-mapped; buffer-less
+	 * (num_sge=0) steady-state descs have no mapping and no page to free.
+	 */
 	if (rx_desc->page) {
 		struct drbd_transport *transport = &rdma_transport->transport;
 
+		ib_dma_unmap_single(device, rx_desc->sge.addr, PAGE_SIZE, DMA_FROM_DEVICE);
 		/*
 		 * put_page(), if we had more than one rx_desc per page,
 		 * but see comments in dtr_create_rx_desc.
@@ -2428,7 +2515,11 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 	struct dtr_path *path = flow->path;
 	struct drbd_transport *transport = path->path.transport;
 	struct dtr_rx_desc *rx_desc;
-	struct page *page;
+	struct page *page = NULL;
+	/* Page-backed only while the peer may still SEND (bootstrap phase); once a
+	 * peer RDMA-write has been seen, every desc posts num_sge=0. See rx_got_rdma_write.
+	 */
+	bool buffered = !READ_ONCE(path->ring.rx_got_rdma_write);
 	int err;
 	struct dtr_cm *cm;
 
@@ -2436,15 +2527,20 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 	if (!rx_desc)
 		return -ENOMEM;
 
-	page = drbd_alloc_pages(transport, gfp_mask, PAGE_SIZE);
-	if (!page) {
-		kfree(rx_desc);
-		return -ENOMEM;
-	}
-	if (WARN_ON_ONCE(PageHighMem(page))) {
-		drbd_free_page(transport, page);
-		kfree(rx_desc);
-		return -EINVAL;
+	/* Buffer-less descs (the steady state) post num_sge=0 and need no page;
+	 * only the bootstrap descs that catch the peer's SENDs carry one.
+	 */
+	if (buffered) {
+		page = drbd_alloc_pages(transport, gfp_mask, PAGE_SIZE);
+		if (!page) {
+			kfree(rx_desc);
+			return -ENOMEM;
+		}
+		if (WARN_ON_ONCE(PageHighMem(page))) {
+			drbd_free_page(transport, page);
+			kfree(rx_desc);
+			return -EINVAL;
+		}
 	}
 
 	err = -ECONNRESET;
@@ -2455,17 +2551,19 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 		goto out_put;
 
 	rx_desc->cm = cm;
-	rx_desc->page = page;
 	rx_desc->size = 0;
-	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
-	rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page), PAGE_SIZE,
-					      DMA_FROM_DEVICE);
-	err = ib_dma_mapping_error(cm->id->device, rx_desc->sge.addr);
-	if (err) {
-		tr_err(transport, "ib_dma_map_single() failed %d\n", err);
-		goto out_put;
+	if (buffered) {
+		rx_desc->page = page;
+		rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
+		rx_desc->sge.addr = ib_dma_map_single(cm->id->device, page_address(page),
+						      PAGE_SIZE, DMA_FROM_DEVICE);
+		err = ib_dma_mapping_error(cm->id->device, rx_desc->sge.addr);
+		if (err) {
+			tr_err(transport, "ib_dma_map_single() failed %d\n", err);
+			goto out_put;
+		}
+		rx_desc->sge.length = PAGE_SIZE;
 	}
-	rx_desc->sge.length = PAGE_SIZE;
 
 	atomic_inc(&flow->rx_descs_allocated);
 	atomic_inc(&flow->rx_descs_posted);
@@ -2482,7 +2580,8 @@ out_put:
 	kref_put(&cm->kref, dtr_destroy_cm);
 out:
 	kfree(rx_desc);
-	drbd_free_page(transport, page);
+	if (page)
+		drbd_free_page(transport, page);
 	return err;
 }
 
@@ -2511,6 +2610,13 @@ static void __dtr_refill_rx_desc(struct dtr_path *path, enum drbd_stream stream)
 
 	descs_max = flow->rx_descs_max;
 	descs_want_posted = flow->rx_descs_want_posted;
+
+	/* Bootstrap phase: these descs are page-backed, so post only the few the
+	 * handshake needs. dtr_rx_cqe_done() re-kicks the refill once the first
+	 * peer RDMA-write ends the phase, and the window then fills buffer-less.
+	 */
+	if (!READ_ONCE(path->ring.rx_got_rdma_write))
+		descs_want_posted = min(descs_want_posted, DTR_BOOTSTRAP_RX_DESCS);
 
 	while (atomic_read(&flow->rx_descs_posted) < descs_want_posted &&
 	       atomic_read(&flow->rx_descs_allocated) < descs_max) {
@@ -2553,8 +2659,21 @@ static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	 */
 	dtr_put_data_pages(cm->path->path.transport, rx_desc);
 
+	/* Once the SEND phase is over (a peer RDMA-write was seen, so by the single
+	 * RC QP's in-order delivery no SEND can follow), drop a bootstrap desc's
+	 * recv buffer and repost it num_sge=0 like every steady-state desc. While
+	 * still in the SEND phase the page is kept so the desc can catch another
+	 * SEND. drbd_free_page() on an order-0 page is just mempool_free(), safe
+	 * from the softirq recycle path too.
+	 */
+	if (rx_desc->page && READ_ONCE(cm->path->ring.rx_got_rdma_write)) {
+		ib_dma_unmap_single(cm->id->device, rx_desc->sge.addr,
+				    PAGE_SIZE, DMA_FROM_DEVICE);
+		drbd_free_page(cm->path->path.transport, rx_desc->page);
+		rx_desc->page = NULL;
+	}
+
 	rx_desc->size = 0;
-	rx_desc->sge.lkey = dtr_cm_to_lkey(cm);
 	return dtr_post_rx_desc(cm, rx_desc);
 }
 
@@ -3583,6 +3702,7 @@ static void dtr_free_ring(struct dtr_path *path)
 	path->ring.remote_addr = 0;
 	path->ring.remote_rkey = 0;
 	path->ring.tx_seq = 0;
+	path->ring.rx_got_rdma_write = false;
 }
 
 /* A payload of @byte_len bytes was just RDMA-written into our receive region at
@@ -3935,7 +4055,22 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 		goto createqp_failed;
 	}
 
-	/* some RDMA transports need at least one rx desc for establishing a connection */
+	/* Some RDMA transports need at least one rx desc for establishing a
+	 * connection. These are posted page-backed: they precede every
+	 * steady-state desc in the RC recv FIFO and absorb the peer's bootstrap
+	 * SENDs (flow-control / ring announce). Page-backing depends on
+	 * rx_got_rdma_write being false -- true on a first connect, but on a
+	 * reconnect the path object survives with it still true from the prior
+	 * incarnation: failover (dtr_remove_cm_from_path) does not reset it, and
+	 * dtr_free_ring() runs only later in dtr_path_established_work_fn(). Posting
+	 * the bootstrap descs with the stale-true flag makes them buffer-less
+	 * (num_sge=0), so the peer's re-sent bootstrap SEND has no buffer to land
+	 * in and faults the recv with a local length error. Reset it here, before
+	 * the descs are posted, so a re-establishing QP bootstraps exactly like a
+	 * first connect.
+	 */
+	WRITE_ONCE(path->ring.rx_got_rdma_write, false);
+
 	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++)
 		dtr_create_rx_desc(&path->flow[i], GFP_NOIO, false);
 
