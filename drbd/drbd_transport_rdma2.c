@@ -582,8 +582,10 @@ struct dtr_cm {
 	unsigned long last_sent_jif;
 	atomic_t tx_descs_posted;
 	struct timer_list tx_timeout;
+	struct timer_list connect_timeout;
 
 	struct work_struct tx_timeout_work;
+	struct work_struct connect_timeout_work;
 	struct work_struct connect_work;
 	struct work_struct establish_work;
 	struct work_struct disconnect_work;
@@ -659,8 +661,12 @@ static void dtr_end_tx_work_fn(struct work_struct *work);
 static void dtr_end_rx_work_fn(struct work_struct *work);
 static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_cm);
 static void dtr_tx_timeout_fn(struct timer_list *t);
+static void dtr_connect_timeout_fn(struct timer_list *t);
 static void dtr_control_timer_fn(struct timer_list *t);
 static void dtr_tx_timeout_work_fn(struct work_struct *work);
+static void dtr_connect_timeout_work_fn(struct work_struct *work);
+static void dtr_arm_connect_timeout(struct dtr_cm *cm);
+static void dtr_cancel_connect_timeout(struct dtr_cm *cm);
 static void dtr_cma_connect_work_fn(struct work_struct *work);
 static struct dtr_rx_desc *dtr_next_rx_desc(struct dtr_stream *rdma_stream);
 static void dtr_control_tasklet_fn(struct tasklet_struct *t);
@@ -1195,6 +1201,9 @@ static void dtr_path_established_work_fn(struct work_struct *work)
 	struct dtr_connect_state *cs = &path->cs;
 	int i, p, err;
 
+	/* ESTABLISHED arrived: the connect attempt resolved, disarm its watchdog. */
+	dtr_cancel_connect_timeout(cm);
+
 	err = cm != path->cm;
 	if (err)
 		goto out_put;
@@ -1298,9 +1307,11 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
 	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
 	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
+	INIT_WORK(&cm->connect_timeout_work, dtr_connect_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
 	spin_lock_init(&cm->error_rx_descs_lock);
 	timer_setup(&cm->tx_timeout, dtr_tx_timeout_fn, 0);
+	timer_setup(&cm->connect_timeout, dtr_connect_timeout_fn, 0);
 
 	kref_get(&path->path.kref);
 	cm->path = path;
@@ -1397,6 +1408,8 @@ static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_
 	err = rdma_accept(new_cm_id, &dtr_conn_param);
 	if (err)
 		kref_put(&cm->kref, dtr_destroy_cm);
+	else
+		dtr_arm_connect_timeout(cm);
 
 	return err;
 
@@ -1462,6 +1475,16 @@ static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 	}
 }
 
+/* Disarm the connect-attempt watchdog. timer_delete() (not the _sync variant)
+ * is safe in any context: if it deactivates a pending timer we own and drop its
+ * ref; if the timer already fired, the work owns that ref and drops it itself.
+ */
+static void dtr_cancel_connect_timeout(struct dtr_cm *cm)
+{
+	if (timer_delete(&cm->connect_timeout))
+		kref_put(&cm->kref, dtr_destroy_cm); /* the armed-timer ref */
+}
+
 static void dtr_remove_cm_from_path(struct dtr_path *path, struct dtr_cm *failed_cm)
 {
 	struct dtr_cm *cm;
@@ -1484,6 +1507,7 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 	struct net_conf *nc;
 	int a;
 
+	dtr_cancel_connect_timeout(failed_cm);
 	dtr_remove_cm_from_path(path, failed_cm);
 
 	a = atomic_read(&cs->active_state);
@@ -1499,6 +1523,83 @@ static void dtr_cma_retry_connect(struct dtr_path *path, struct dtr_cm *failed_c
 		connect_int = 1;
 	}
 	schedule_delayed_work(&cs->retry_connect_work, connect_int);
+}
+
+/* Arm the connect-attempt watchdog on a cm that has just issued rdma_connect()
+ * (active) or rdma_accept() (passive) and is now waiting for an
+ * RDMA_CM_EVENT_ESTABLISHED. Some providers (notably soft-RoCE / RXE) never
+ * deliver a terminating CM event when the peer is unreachable, which would
+ * otherwise leave the cm pinned in path->cm forever and dead-lock every later
+ * reconnect (dtr_path_prepare() == -ENOENT). The watchdog synthesizes the
+ * missing event; see dtr_connect_timeout_work_fn(). Uses the same one-ref-while-
+ * armed discipline as the tx_timeout timer.
+ */
+static void dtr_arm_connect_timeout(struct dtr_cm *cm)
+{
+	struct drbd_transport *transport = cm->path->path.transport;
+	long connect_int = 10 * HZ;
+	struct net_conf *nc;
+	bool was_active;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	if (nc)
+		connect_int = nc->connect_int * HZ;
+	rcu_read_unlock();
+
+	kref_get(&cm->kref); /* for the armed connect-timeout timer */
+	was_active = mod_timer(&cm->connect_timeout, jiffies + connect_int);
+	if (was_active)
+		kref_put(&cm->kref, dtr_destroy_cm);
+}
+
+static void dtr_connect_timeout_fn(struct timer_list *t)
+{
+	struct dtr_cm *cm = timer_container_of(cm, t, connect_timeout);
+
+	/* the armed-timer ref becomes the work's ref */
+	schedule_work(&cm->connect_timeout_work);
+}
+
+static void dtr_connect_timeout_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, connect_timeout_work);
+	struct dtr_path *path = cm->path;
+	struct drbd_transport *transport;
+	bool connecting;
+
+	/* Lost the race to an ESTABLISHED / error event / teardown: the connect
+	 * phase is already resolved, nothing to abort.
+	 */
+	if (!path || test_bit(DSB_CONNECTED, &cm->state))
+		goto out;
+
+	/* Claim the connect attempt. Whoever clears DSB_CONNECTING/DSB_CONNECT_REQ
+	 * owns the "expecting ESTABLISHED" reference; if an event beat us to it we
+	 * must not touch the cm.
+	 */
+	connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
+		test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
+	if (!connecting)
+		goto out;
+
+	transport = path->path.transport;
+	tr_warn(transport, "%pI4 - %pI4: connect timeout\n",
+		&((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
+		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
+
+	set_bit(DSB_ERROR, &cm->state);
+
+	/* Drop the cm from path->cm and schedule a fresh attempt -- exactly what
+	 * dtr_cma_event_handler() does for RDMA_CM_EVENT_UNREACHABLE. The work
+	 * holds its own (armed-timer) ref plus the just-claimed expecting ref, so
+	 * dtr_remove_cm_from_path() dropping the path->cm ref cannot free the cm
+	 * under us.
+	 */
+	dtr_cma_retry_connect(path, cm);
+	kref_put(&cm->kref, dtr_destroy_cm); /* the "expecting ESTABLISHED" ref */
+out:
+	kref_put(&cm->kref, dtr_destroy_cm); /* the armed-timer -> work ref */
 }
 
 static void dtr_cma_connect_work_fn(struct work_struct *work)
@@ -1532,6 +1633,8 @@ static void dtr_cma_connect_work_fn(struct work_struct *work)
 		tr_err(transport, "rdma_connect error %d\n", err);
 		goto out;
 	}
+
+	dtr_arm_connect_timeout(cm);
 
 	kref_put(&cm->kref, dtr_destroy_cm); /* for work */
 	return;
@@ -4478,6 +4581,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 			cm->state);
 
  out:
+	dtr_cancel_connect_timeout(cm);
 	__dtr_modify_qp_to_err(cm);
 	/*
 	 * We are expecting one of RDMA_CM_EVENT_ESTABLISHED, _UNREACHABLE,
