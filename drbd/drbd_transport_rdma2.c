@@ -252,6 +252,18 @@ enum dtr_state_bits {
 #define DSM_CONNECTED     (1 << DSB_CONNECTED)
 #define DSM_ERROR         (1 << DSB_ERROR)
 
+/* Out-of-band per-cm flags. Kept separate from cm->state because several
+ * places compare cm->state for exact equality with DSM_CONNECTED, so they must
+ * not see these bits.
+ */
+enum dtr_cm_flags {
+	DCF_SUSPECT,		/* the path's link failed: stop selecting it and
+				 * fail over (set from the IB async-event handler
+				 * or the first tx completion error)
+				 */
+	DCF_IB_EVENT_REG,	/* the IB async-event handler is registered */
+};
+
 enum dtr_alloc_rdma_res_causes {
 	IB_ALLOC_PD,
 	IB_ALLOC_CQ_RX,
@@ -578,13 +590,22 @@ struct dtr_cm {
 	struct ib_cqe reg_cqe;
 
 	unsigned long state; /* DSB bits / DSM masks */
+	unsigned long flags; /* DCF_* bits */
 	wait_queue_head_t state_wq;
 	unsigned long last_sent_jif;
 	atomic_t tx_descs_posted;
 	struct timer_list tx_timeout;
 	struct timer_list connect_timeout;
 
+	/* Async-event handler for the cm's IB device; catches port-down
+	 * (IB_EVENT_PORT_ERR, e.g. a pulled cable or `mlxlink --port_state dn`)
+	 * so a dead path is detected immediately instead of waiting out the HCA
+	 * retry timeout or the tx watchdog. Registered once the QP exists.
+	 */
+	struct ib_event_handler ib_event_handler;
+
 	struct work_struct tx_timeout_work;
+	struct work_struct suspect_work;
 	struct work_struct connect_timeout_work;
 	struct work_struct connect_work;
 	struct work_struct establish_work;
@@ -664,6 +685,10 @@ static void dtr_tx_timeout_fn(struct timer_list *t);
 static void dtr_connect_timeout_fn(struct timer_list *t);
 static void dtr_control_timer_fn(struct timer_list *t);
 static void dtr_tx_timeout_work_fn(struct work_struct *work);
+static void dtr_suspect_work_fn(struct work_struct *work);
+static void dtr_path_failover(struct dtr_cm *cm, const char *reason);
+static void dtr_cm_set_suspect(struct dtr_cm *cm);
+static void dtr_ib_event_handler(struct ib_event_handler *handler, struct ib_event *event);
 static void dtr_connect_timeout_work_fn(struct work_struct *work);
 static void dtr_arm_connect_timeout(struct dtr_cm *cm);
 static void dtr_cancel_connect_timeout(struct dtr_cm *cm);
@@ -1307,6 +1332,7 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	INIT_WORK(&cm->end_rx_work, dtr_end_rx_work_fn);
 	INIT_WORK(&cm->end_tx_work, dtr_end_tx_work_fn);
 	INIT_WORK(&cm->tx_timeout_work, dtr_tx_timeout_work_fn);
+	INIT_WORK(&cm->suspect_work, dtr_suspect_work_fn);
 	INIT_WORK(&cm->connect_timeout_work, dtr_connect_timeout_work_fn);
 	INIT_LIST_HEAD(&cm->error_rx_descs);
 	spin_lock_init(&cm->error_rx_descs_lock);
@@ -2065,20 +2091,29 @@ static void dtr_maybe_trigger_flow_control_msg(struct dtr_path *path, int send_f
 		tasklet_schedule(&path->flow_control_tasklet);
 }
 
-static void dtr_tx_timeout_work_fn(struct work_struct *work)
+/* Tear down a dead/suspect cm and either fail over to a surviving path or close
+ * the connection. Idempotent via the DSB_CONNECTED test-and-clear: the tx-timeout
+ * watchdog (dtr_tx_timeout_work_fn) and the link-down suspect path
+ * (dtr_suspect_work_fn) may both target the same cm; only the first to clear
+ * DSB_CONNECTED performs the teardown. @reason labels the log line.
+ */
+static void dtr_path_failover(struct dtr_cm *cm, const char *reason)
 {
-	struct dtr_cm *cm = container_of(work, struct dtr_cm, tx_timeout_work);
 	struct drbd_transport *transport;
 	struct dtr_path *path = cm->path;
 
 	if (!test_and_clear_bit(DSB_CONNECTED, &cm->state) || !path)
-		goto out;
+		return;
 
 	transport = path->path.transport;
-	tr_warn(transport, "%pI4 - %pI4: tx timeout\n",
+	tr_warn(transport, "%pI4 - %pI4: %s\n",
 		&((struct sockaddr_in *)&path->path.my_addr)->sin_addr,
-		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr);
+		&((struct sockaddr_in *)&path->path.peer_addr)->sin_addr, reason);
 
+	/* dtr_remove_cm_from_path() also puts the QP into the error state, so any
+	 * WRs still posted on the dead path flush at once instead of waiting out
+	 * the HCA retry timeout.
+	 */
 	dtr_remove_cm_from_path(path, cm);
 
 	/* It is not sure that a RDMA_CM_EVENT_DISCONNECTED will be delivered.
@@ -2100,9 +2135,26 @@ static void dtr_tx_timeout_work_fn(struct work_struct *work)
 	} else {
 		dtr_activate_path(path);
 	}
+}
 
-out:
+static void dtr_tx_timeout_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, tx_timeout_work);
+
+	dtr_path_failover(cm, "tx timeout");
 	kref_put(&cm->kref, dtr_destroy_cm); /* for work (armed timer) */
+}
+
+/* Runs from dtr_cm_set_suspect() after the IB async-event handler (or a tx
+ * completion error) flagged the path's link as failed. Fails the path over
+ * promptly rather than waiting for the tx watchdog.
+ */
+static void dtr_suspect_work_fn(struct work_struct *work)
+{
+	struct dtr_cm *cm = container_of(work, struct dtr_cm, suspect_work);
+
+	dtr_path_failover(cm, "link down");
+	kref_put(&cm->kref, dtr_destroy_cm); /* for the suspect work */
 }
 
 static void dtr_tx_timeout_fn(struct timer_list *t)
@@ -2111,6 +2163,44 @@ static void dtr_tx_timeout_fn(struct timer_list *t)
 
 	/* cm->kref for armed timer becomes a ref for the work */
 	schedule_work(&cm->tx_timeout_work);
+}
+
+/* Flag a path's cm as suspect so dtr_select_and_get_cm_for_tx() stops choosing
+ * it for new sends, and kick dtr_suspect_work_fn() to fail it over. Idempotent
+ * and safe from atomic context (IB async-event handler, tx-completion softirq):
+ * only the first caller schedules the work and hands it the matching ref.
+ */
+static void dtr_cm_set_suspect(struct dtr_cm *cm)
+{
+	if (test_and_set_bit(DCF_SUSPECT, &cm->flags))
+		return;
+
+	kref_get(&cm->kref); /* for the suspect work */
+	if (!schedule_work(&cm->suspect_work))
+		kref_put(&cm->kref, dtr_destroy_cm);
+}
+
+/* IB device async-event handler. The interesting event is IB_EVENT_PORT_ERR
+ * (the port this cm's QP rides on went down -- cable pull, switch port down, or
+ * `mlxlink -d <dev> --port_state dn`); IB_EVENT_DEVICE_FATAL kills every path on
+ * the device. Both are surfaced as a suspect so failover starts immediately,
+ * without waiting for in-flight WRs to exhaust their HCA retries.
+ */
+static void dtr_ib_event_handler(struct ib_event_handler *handler, struct ib_event *event)
+{
+	struct dtr_cm *cm = container_of(handler, struct dtr_cm, ib_event_handler);
+
+	switch (event->event) {
+	case IB_EVENT_PORT_ERR:
+		if (cm->id && event->element.port_num == cm->id->port_num)
+			dtr_cm_set_suspect(cm);
+		break;
+	case IB_EVENT_DEVICE_FATAL:
+		dtr_cm_set_suspect(cm);
+		break;
+	default:
+		break;
+	}
 }
 
 
@@ -2518,6 +2608,16 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 
 		atomic_inc(&flow->peer_rx_descs);
 		set_bit(DSB_ERROR, &cm->state);
+
+		/* A non-flush error means the RC QP has gone to the error state:
+		 * every later WR on it will flush, so stop selecting this path for
+		 * new sends and fail it over now. (A flush error is the consequence
+		 * of a teardown already under way -- nothing to flag.) This is the
+		 * generic/RXE backstop for the IB_EVENT_PORT_ERR async event, which
+		 * soft-RoCE does not deliver reliably.
+		 */
+		if (wc->status != IB_WC_WR_FLUSH_ERR)
+			dtr_cm_set_suspect(cm);
 
 		/* Only non-RDMA-WRITE descs can fail over to another path: an
 		 * RDMA-WRITE targets a path-specific rkey/region, and the multi-SGE
@@ -2957,7 +3057,7 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 		u32 rk;
 
 		cm = rcu_dereference(path->cm);
-		if (!cm || cm->state != DSM_CONNECTED)
+		if (!cm || cm->state != DSM_CONNECTED || test_bit(DCF_SUSPECT, &cm->flags))
 			continue;
 
 		/*
@@ -4350,6 +4450,14 @@ static int _dtr_cm_alloc_rdma_res(struct dtr_cm *cm,
 	for (i = DATA_STREAM; i <= ST_FLOW_CTRL ; i++)
 		dtr_create_rx_desc(&path->flow[i], GFP_NOIO, false);
 
+	/* Now that the QP exists, watch the device for port-down events so a link
+	 * failure on this path is detected immediately. Unregistered in
+	 * __dtr_destroy_cm() (both run in process context).
+	 */
+	INIT_IB_EVENT_HANDLER(&cm->ib_event_handler, cm->id->device, dtr_ib_event_handler);
+	ib_register_event_handler(&cm->ib_event_handler);
+	set_bit(DCF_IB_EVENT_REG, &cm->flags);
+
 	return 0;
 
 createqp_failed:
@@ -4610,6 +4718,13 @@ static void dtr_reclaim_cm(struct rcu_head *rcu_head)
 static void __dtr_destroy_cm(struct kref *kref, bool destroy_id)
 {
 	struct dtr_cm *cm = container_of(kref, struct dtr_cm, kref);
+
+	/* Pairs with the ib_register_event_handler() in _dtr_cm_alloc_rdma_res().
+	 * ib_unregister_event_handler() may sleep (rwsem); __dtr_destroy_cm()
+	 * already sleeps here (ib_dealloc_pd/rdma_destroy_id), so this is safe.
+	 */
+	if (test_and_clear_bit(DCF_IB_EVENT_REG, &cm->flags))
+		ib_unregister_event_handler(&cm->ib_event_handler);
 
 	if (cm->id) {
 		if (cm->id->qp)
