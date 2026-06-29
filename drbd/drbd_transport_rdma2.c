@@ -334,6 +334,13 @@ struct dtr_tx_desc {
 	u32 rkey;
 	struct page **wr_pages;
 	int nr_pages;
+	/* Failover resend queue linkage (dtr_resend_work_fn). @resend_cm is the cm
+	 * the desc is still DMA-mapped on (a ref is held while queued); @resend_attempts
+	 * is the remaining retry budget. Only used while on dtr_transport.resend_q.
+	 */
+	struct list_head resend_list;
+	struct dtr_cm *resend_cm;
+	int resend_attempts;
 	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
@@ -397,6 +404,17 @@ struct dtr_remote_buffer {
  * a small fixed reserve is plenty.
  */
 #define DTR_REG_WR_HEADROOM 16
+
+/* Failover resend: when an in-flight packet's path dies and the tx-completion
+ * softirq cannot immediately place it on a surviving path (that path's receive
+ * region is momentarily full), it is queued for a bounded asynchronous retry
+ * rather than dropping the connection. The window frees as the survivor drains,
+ * so a few short-spaced retries cover a transient full condition; if the budget
+ * is exhausted (sustained saturation) the connection drops and resyncs as
+ * before. See dtr_resend_work_fn().
+ */
+#define DTR_RESEND_MAX_ATTEMPTS 8
+#define DTR_RESEND_DELAY_MS 2
 
 /* A receive region we registered for IB_ACCESS_REMOTE_WRITE and announced to
  * the peer. The peer RDMA-WRITEs payload into it; we hand the landed pages up
@@ -574,6 +592,16 @@ struct dtr_transport {
 	struct completion connected;
 
 	struct tasklet_struct control_tasklet;
+
+	/* Bounded asynchronous failover-resend queue: descriptors that could not be
+	 * placed on a surviving path in the tx-completion softirq, awaiting a
+	 * process-context retry. @resend_shutdown (under @resend_lock) stops new
+	 * enqueues during teardown.
+	 */
+	struct list_head resend_q;
+	spinlock_t resend_lock;
+	bool resend_shutdown;
+	struct delayed_work resend_work;
 };
 
 struct dtr_cm {
@@ -636,6 +664,9 @@ static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
 static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
 static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc);
+static bool dtr_resend_enqueue(struct dtr_transport *rdma_transport, struct dtr_cm *old_cm,
+			       struct dtr_tx_desc *tx_desc);
+static void dtr_resend_work_fn(struct work_struct *work);
 static int dtr_repost_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc);
 static bool dtr_receive_rx_desc(struct dtr_transport *, enum drbd_stream,
 				struct dtr_rx_desc **);
@@ -762,6 +793,11 @@ static int dtr_init(struct drbd_transport *transport)
 	ratelimit_state_init(&rdma_transport->rate_limit, 5*HZ, 4);
 	timer_setup(&rdma_transport->control_timer, dtr_control_timer_fn, 0);
 
+	INIT_LIST_HEAD(&rdma_transport->resend_q);
+	spin_lock_init(&rdma_transport->resend_lock);
+	rdma_transport->resend_shutdown = false;
+	INIT_DELAYED_WORK(&rdma_transport->resend_work, dtr_resend_work_fn);
+
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
 
@@ -778,6 +814,32 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 	int i;
 
 	rdma_transport->active = false;
+
+	/* Stop and drain the failover-resend queue: refuse new enqueues, cancel the
+	 * retry worker, and free any queued descriptors (releasing the cm reference
+	 * each holds). Refusing new enqueues makes the tx-completion path free+drop
+	 * descs that flush during the path teardown below. Re-armed at the end for a
+	 * transport that will be reused (CLOSE_CONNECTION).
+	 */
+	spin_lock_bh(&rdma_transport->resend_lock);
+	rdma_transport->resend_shutdown = true;
+	spin_unlock_bh(&rdma_transport->resend_lock);
+	cancel_delayed_work_sync(&rdma_transport->resend_work);
+	{
+		struct dtr_tx_desc *tx_desc, *tmp;
+		LIST_HEAD(batch);
+
+		spin_lock_bh(&rdma_transport->resend_lock);
+		list_splice_init(&rdma_transport->resend_q, &batch);
+		spin_unlock_bh(&rdma_transport->resend_lock);
+		list_for_each_entry_safe(tx_desc, tmp, &batch, resend_list) {
+			struct dtr_cm *old_cm = tx_desc->resend_cm;
+
+			list_del(&tx_desc->resend_list);
+			dtr_free_tx_desc(old_cm, tx_desc);
+			kref_put(&old_cm->kref, dtr_destroy_cm);
+		}
+	}
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
@@ -834,6 +896,11 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		 * Do not free it here! The function should better be called
 		 * uninit.
 		 */
+	} else {
+		/* CLOSE_CONNECTION: the transport object is reused for a reconnect
+		 * (dtr_init() does not run again), so re-arm the resend queue.
+		 */
+		rdma_transport->resend_shutdown = false;
 	}
 }
 
@@ -2626,16 +2693,29 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		 * number, so the peer's in-order reorder queue does not stall on the
 		 * gap (which would otherwise hang the stream until the connection
 		 * resets). FLOW_CTRL records are not reposted -- they are ring writes
-		 * regenerated by the flow-control machinery. dtr_repost_tx_desc()
-		 * consumes the desc either way (frees it on failure), so drop our
-		 * pointer; if it could not be placed, tear the connection down.
+		 * regenerated by the flow-control machinery. If the survivor is
+		 * momentarily out of room (-EAGAIN), queue the desc for a bounded async
+		 * retry rather than dropping; only a hard failure (or an exhausted
+		 * budget, later) tears the connection down.
 		 */
 		if (stream_nr != ST_FLOW_CTRL) {
 			err = dtr_repost_tx_desc(cm, tx_desc);
-			tx_desc = NULL; /* reposted, or freed by dtr_repost_tx_desc() */
-			if (err && __ratelimit(&rdma_transport->rate_limit)) {
-				tr_warn(transport, "repost of tx_desc failed! %d\n", err);
-				drbd_control_event(transport, CLOSED_BY_PEER);
+			if (err == 0) {
+				tx_desc = NULL; /* placed on a surviving path */
+			} else if (err == -EAGAIN &&
+				   dtr_resend_enqueue(rdma_transport, cm, tx_desc)) {
+				tx_desc = NULL; /* queued for a bounded async retry */
+			} else {
+				/* -ECONNRESET: dtr_repost_tx_desc() already freed it.
+				 * -EAGAIN with enqueue refused (teardown): still on cm.
+				 */
+				if (err == -EAGAIN)
+					dtr_free_tx_desc(cm, tx_desc);
+				tx_desc = NULL;
+				if (__ratelimit(&rdma_transport->rate_limit)) {
+					tr_warn(transport, "repost of tx_desc failed! %d\n", err);
+					drbd_control_event(transport, CLOSED_BY_PEER);
+				}
 			}
 		}
 	}
@@ -3183,16 +3263,20 @@ static int dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 }
 
 
-/* Re-send a tx_desc whose path died on a surviving path, preserving its stream
- * sequence number so the peer's in-order reorder queue does not stall on the
- * gap. Takes ownership of @tx_desc: on success (return 0) it is posted on the new
- * path (and DMA-mapped on that cm); on failure it is freed here and the caller
- * must drop the connection. Runs in the tx-completion softirq, so it cannot wait
- * for credit/region space -- a single attempt on the path the scheduler picks,
- * else give up (the connection drops and resyncs, which is correct, just not
- * transparent). For an rdma_write desc the new path's region is path-specific, so
- * a fresh chunk is reserved here (all-or-nothing, contiguous) and the descriptor
- * re-aimed at it; legacy SENDs need no region.
+/* Attempt, once, to place a tx_desc whose path died onto a surviving path,
+ * preserving its stream sequence number so the peer's in-order reorder queue
+ * does not stall on the gap. For an rdma_write desc the new path's region is
+ * path-specific, so a fresh contiguous chunk is reserved here and the descriptor
+ * re-aimed at it; legacy SENDs need no region. Runs in the tx-completion softirq
+ * (and from dtr_resend_work_fn()), so it never waits.
+ *
+ * Returns:
+ *   0          -- placed and posted on a surviving path (desc now owned by it);
+ *   -EAGAIN    -- no path could take it right now (none connected, or the
+ *                 picked path is out of credit/region); @tx_desc is untouched,
+ *                 still DMA-mapped on @old_cm, and may be retried later;
+ *   -ECONNRESET-- the post failed after remapping (the picked path just went
+ *                 bad); @tx_desc has been freed here.
  */
 /* Payload bytes of a desc: what its RDMA-WRITE occupies in the peer's region
  * before stride rounding.
@@ -3213,57 +3297,140 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 		container_of(old_cm->path->path.transport, struct dtr_transport, transport);
 	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	unsigned int bytes = dtr_tx_desc_bytes(tx_desc);
-	struct dtr_cm *cm, *map_cm = old_cm;
 	u64 remote_addr = 0;
 	u32 rkey = 0;
 	struct dtr_flow *flow;
-	int err = -ECONNRESET;
+	struct dtr_cm *cm;
+	int err;
 
 	cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream);
 	if (!cm)
-		goto fail;
+		return -EAGAIN;
 
 	flow = &cm->path->flow[stream];
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0)
-		goto fail_cm;
+		goto again_cm;
 	if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max))
-		goto fail_peer;
+		goto again_peer;
 
 	/* The original region died with old_cm; aim an RDMA-WRITE at a fresh,
 	 * contiguous chunk in the new path's region (reserved atomically here).
 	 */
 	if (tx_desc->rdma_write &&
 	    !dtr_reserve_remote_chunk(&cm->path->regions[stream], bytes, &remote_addr, &rkey))
-		goto fail_tx;
+		goto again_tx;
 
 	err = dtr_remap_tx_desc(old_cm, cm, tx_desc);
 	if (err)
-		goto fail_region;
-	map_cm = cm; /* now DMA-mapped on the new cm's device */
+		goto again_region; /* desc untouched on old_cm (remap maps-new-first) */
 	tx_desc->remote_addr = remote_addr;
 	tx_desc->rkey = rkey;
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
-	if (err)
-		goto fail_region;
+	if (err) {
+		/* Remapped onto cm but the post failed: the desc is now on cm and
+		 * cannot stay on old_cm for a retry, so this is terminal -- free it.
+		 */
+		atomic_dec(&flow->tx_descs_posted);
+		atomic_inc(&flow->peer_rx_descs);
+		kref_put(&cm->kref, dtr_destroy_cm);
+		dtr_free_tx_desc(cm, tx_desc);
+		return -ECONNRESET;
+	}
 
 	kref_put(&cm->kref, dtr_destroy_cm);
 	return 0;
 
-fail_region:
+again_region:
 	/* A reserved-but-unposted chunk stays consumed on the survivor's region
 	 * until that path reconnects (there is no un-reserve); tolerable on this
-	 * rare error path.
+	 * rare retry path.
 	 */
-fail_tx:
+again_tx:
 	atomic_dec(&flow->tx_descs_posted);
-fail_peer:
+again_peer:
 	atomic_inc(&flow->peer_rx_descs);
-fail_cm:
+again_cm:
 	kref_put(&cm->kref, dtr_destroy_cm);
-fail:
-	dtr_free_tx_desc(map_cm, tx_desc);
-	return err;
+	return -EAGAIN;
+}
+
+/* Queue a tx_desc that dtr_repost_tx_desc() could not place right now for a
+ * bounded, short-spaced retry from process context (dtr_resend_work_fn), instead
+ * of dropping the connection on a transient survivor-region-full condition. The
+ * desc stays DMA-mapped on @old_cm, so a reference on @old_cm is held until the
+ * desc is finally placed or freed. Called from the tx-completion softirq.
+ * Returns false (refusing the desc) once teardown has begun.
+ */
+static bool dtr_resend_enqueue(struct dtr_transport *rdma_transport, struct dtr_cm *old_cm,
+			       struct dtr_tx_desc *tx_desc)
+{
+	spin_lock(&rdma_transport->resend_lock);
+	if (rdma_transport->resend_shutdown) {
+		spin_unlock(&rdma_transport->resend_lock);
+		return false;
+	}
+	kref_get(&old_cm->kref);
+	tx_desc->resend_cm = old_cm;
+	tx_desc->resend_attempts = DTR_RESEND_MAX_ATTEMPTS;
+	list_add_tail(&tx_desc->resend_list, &rdma_transport->resend_q);
+	spin_unlock(&rdma_transport->resend_lock);
+
+	schedule_delayed_work(&rdma_transport->resend_work, msecs_to_jiffies(DTR_RESEND_DELAY_MS));
+	return true;
+}
+
+static void dtr_resend_work_fn(struct work_struct *work)
+{
+	struct dtr_transport *rdma_transport =
+		container_of(to_delayed_work(work), struct dtr_transport, resend_work);
+	struct drbd_transport *transport = &rdma_transport->transport;
+	struct dtr_tx_desc *tx_desc, *tmp;
+	bool drop = false, more = false, shutdown;
+	LIST_HEAD(batch);
+
+	spin_lock_bh(&rdma_transport->resend_lock);
+	list_splice_init(&rdma_transport->resend_q, &batch);
+	shutdown = rdma_transport->resend_shutdown;
+	spin_unlock_bh(&rdma_transport->resend_lock);
+
+	list_for_each_entry_safe(tx_desc, tmp, &batch, resend_list) {
+		struct dtr_cm *old_cm = tx_desc->resend_cm;
+		int err;
+
+		list_del(&tx_desc->resend_list);
+
+		if (shutdown || !dtr_transport_ok(transport)) {
+			dtr_free_tx_desc(old_cm, tx_desc); /* still mapped on old_cm */
+			kref_put(&old_cm->kref, dtr_destroy_cm);
+			drop = true;
+			continue;
+		}
+
+		err = dtr_repost_tx_desc(old_cm, tx_desc);
+		if (err == 0) {
+			kref_put(&old_cm->kref, dtr_destroy_cm); /* placed; release queue ref */
+		} else if (err == -EAGAIN && --tx_desc->resend_attempts > 0) {
+			spin_lock_bh(&rdma_transport->resend_lock);
+			list_add_tail(&tx_desc->resend_list, &rdma_transport->resend_q);
+			spin_unlock_bh(&rdma_transport->resend_lock);
+			more = true;
+		} else {
+			/* budget exhausted (-EAGAIN, desc still on old_cm) or terminal
+			 * (-ECONNRESET, desc already freed by dtr_repost_tx_desc()).
+			 */
+			if (err == -EAGAIN)
+				dtr_free_tx_desc(old_cm, tx_desc);
+			kref_put(&old_cm->kref, dtr_destroy_cm);
+			drop = true;
+		}
+	}
+
+	if (more && !shutdown)
+		schedule_delayed_work(&rdma_transport->resend_work,
+				      msecs_to_jiffies(DTR_RESEND_DELAY_MS));
+	if (drop)
+		drbd_control_event(transport, CLOSED_BY_PEER);
 }
 
 /* True if any connected path has announced receive region room for a @bytes
