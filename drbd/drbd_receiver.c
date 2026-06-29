@@ -8266,49 +8266,12 @@ bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device)
 	return have_resendable;
 }
 
-/* What current UUID should a diskless primary present to this peer during the
- * connection handshake?
- *
- * While our new current generation is still unconfirmed (EXPOSED_GEN_UNCONFIRMED)
- * a peer that returns on the generation we bumped away from
- * (exposed_data_uuid_predecessor) holds equivalent data -- the writes bridging
- * the two are unacknowledged and still in our (suspended) transfer log.  If we
- * presented our (unconfirmed) current UUID, the peer would see a generation it
- * does not have and outdate itself (drbd_diskless_moved_on -> receive_current_uuid).
- * Instead we present the predecessor, which matches what the peer already has, so
- * it stays UpToDate and the 2PC handshake commits cleanly.  We arm
- * RECONCILE_INJECT_CUR_UUID: once the handshake has committed, the transfer-log
- * replay re-sends the bridging writes and injects the real current UUID, advancing
- * the peer to our current generation deterministically (no race with the outdate).
- *
- * Only do this when the bridging writes are still replayable; otherwise present
- * the real current UUID and let the normal mismatch handling refuse honestly
- * (the peer must then resync from a diskful peer that holds good data).
+/* Present our actual exposed current generation to a returning peer.
+ * Reverts 308cf12f2's present-predecessor (see commit message).
  */
 u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device)
 {
-	struct drbd_device *device = peer_device->device;
-
-	/* While our current generation is unconfirmed, no peer can hold it (any
-	 * confirmation clears EXPOSED_GEN_UNCONFIRMED), so the predecessor is the
-	 * honest value to present.  We deliberately do NOT gate on
-	 * peer_device->current_uuid: at handshake emit time it may still be the
-	 * optimistic value we recorded at the bump (not yet refreshed to the peer's
-	 * actually-reported UUID), which would make us present the current and
-	 * outdate the peer.  Present the predecessor whenever the bridging writes to
-	 * this peer are still replayable; arm the post-handshake relabel.  A peer
-	 * that turns out to be more than one generation behind will not match the
-	 * predecessor either and outdates itself (correctly: it must resync from a
-	 * diskful peer), and the relabel never fires for it (it never reaches
-	 * UpToDate).  See SEND_RECONCILE_UUID / send_reconcile_current_uuid().
-	 */
-	if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
-	    device->exposed_data_uuid_predecessor &&
-	    diskless_primary_can_replay_to(peer_device)) {
-		set_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
-		return device->exposed_data_uuid_predecessor;
-	}
-	return device->exposed_data_uuid;
+	return peer_device->device->exposed_data_uuid;
 }
 
 static void diskless_with_peers_different_current_uuids(struct drbd_peer_device *peer_device,
@@ -8343,10 +8306,11 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 		 * data is a complete, valid generation -- equivalent to our current
 		 * minus the unacknowledged in-flight writes -- so assert it UpToDate
 		 * now (a sole diskful peer cannot promote itself against a diskless
-		 * primary; we presented the predecessor so it agrees).  The
-		 * post-handshake relabel (RECONCILE_INJECT_CUR_UUID -> SEND_RECONCILE_UUID)
-		 * then advances it to our current generation, the replayed writes
-		 * filling the gap.  See diskless_primary_present_current_uuid().
+		 * primary; the "Do not trust this guy" exception in sanitize_state
+		 * honors RECONCILE_INJECT_CUR_UUID and keeps it UpToDate despite the
+		 * UUID mismatch).  The post-handshake relabel
+		 * (RECONCILE_INJECT_CUR_UUID -> SEND_RECONCILE_UUID) then advances it
+		 * to our current generation, the replayed writes filling the gap.
 		 */
 		drbd_info(peer_device,
 			  "Peer is one generation behind; asserting UpToDate, will resend transfer log and relabel.\n");

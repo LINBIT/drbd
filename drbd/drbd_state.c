@@ -4318,13 +4318,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				   the new UUID right now (not wait for the next write to come in) */
 				new_current_uuid = true;
 
-			/* A diskless-primary reconcile peer has now settled UpToDate on the
-			 * generation we presented (the predecessor) -- the connection handshake
-			 * is complete and the peer knows our role.  Only now is it safe to
-			 * relabel it forward to our (real) current generation: hand the work to
-			 * the sender so the P_CURRENT_UUID is ordered after the replayed writes,
-			 * and the peer takes the adopt path rather than outdating.  See
-			 * diskless_primary_present_current_uuid().
+			/* A diskless-primary reconcile peer we asserted UpToDate on its
+			 * predecessor generation has now settled UpToDate -- the connection
+			 * handshake is complete and the peer knows our role.  Only now is it
+			 * safe to relabel it forward to our (real) current generation: hand the
+			 * work to the sender so the P_CURRENT_UUID is ordered after the replayed
+			 * writes, and the peer takes the adopt path rather than outdating.  See
+			 * diskless_with_peers_different_current_uuids().
 			 */
 			if (peer_disk_state[NEW] == D_UP_TO_DATE &&
 			    peer_disk_state[OLD] != D_UP_TO_DATE &&
