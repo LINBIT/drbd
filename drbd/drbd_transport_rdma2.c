@@ -152,6 +152,22 @@ struct dtr_announce_buffer {
 	uint32_t stride;            /* consume granularity, see dtr_region_stride() */
 } __packed;
 
+#define DTR_SHUTDOWN_MAGIC ((u32)0x53485554) /* "SHUT" */
+
+/* Graceful path-removal marker -- the RDMA analog of a TCP FIN. RC QPs have no
+ * half-close, so del-path announces "I will send no more payload on this path"
+ * with this record instead. Sent (like dtr_announce_buffer) as an ST_FLOW_CTRL
+ * record on the path's control ring, so it shares the {magic, send_from_stream}
+ * header and the same credit-accounting role, and -- crucially -- rides the one
+ * RC QP that also carries this path's DATA/CONTROL RDMA-writes, so it is
+ * delivered in order after every payload already posted here. See
+ * dtr_remove_path() / dtr_got_shutdown_msg().
+ */
+struct dtr_shutdown {
+	uint32_t magic;             /* DTR_SHUTDOWN_MAGIC */
+	uint32_t send_from_stream;  /* same role as in dtr_flow_control */
+} __packed;
+
 /* Size of the dedicated flow-control / announce credit pool: how many such
  * records may be in flight before the writer must wait. It also fixes the
  * number of slots in the control ring (one slot per credit), so the pool alone
@@ -262,6 +278,18 @@ enum dtr_cm_flags {
 				 * or the first tx completion error)
 				 */
 	DCF_IB_EVENT_REG,	/* the IB async-event handler is registered */
+};
+
+/* Per-path graceful-shutdown bits for hot path removal (drbdsetup del-path),
+ * named after the lb-tcp transport's equivalents (DTL_*_SHUT_DOWN). Unlike
+ * lb-tcp, which has one socket per stream and so splits the passive bit per
+ * stream, an rdma2 path carries both streams on a single RC QP, so one
+ * passive bit suffices. A path with either bit set is skipped for new payload
+ * by dtr_select_and_get_cm_for_tx().
+ */
+enum dtr_path_flags {
+	DTR_ACTIVE_SHUT_DOWN,	/* this side initiated the removal (dtr_remove_path) */
+	DTR_PASSIVE_SHUT_DOWN,	/* the peer's shutdown marker has been received */
 };
 
 enum dtr_alloc_rdma_res_causes {
@@ -513,6 +541,14 @@ struct dtr_path {
 
 	struct dtr_cm *cm; /* RCU'd and kref in cm */
 
+	unsigned long flags; /* DTR_*_SHUT_DOWN bits */
+
+	/* Echoes a graceful-shutdown marker back to a peer that initiated a path
+	 * removal (dtr_got_shutdown_msg() schedules it). Deferred to process
+	 * context so the marker send can use GFP_NOIO and not run in the rx softirq.
+	 */
+	struct work_struct shutdown_work;
+
 	/* Indexed by enum dtr_stream_nr: [ST_DATA], [ST_CONTROL], and the
 	 * dedicated [ST_FLOW_CTRL] pool that bounds the control-ring writer.
 	 */
@@ -611,6 +647,12 @@ struct dtr_transport {
 	 * survivor's region.
 	 */
 	atomic_t resend_pending[2];
+
+	/* Woken when a graceful path removal makes progress: the peer's shutdown
+	 * marker arrives (dtr_got_shutdown_msg) or in-flight payload on the path
+	 * being removed completes (dtr_tx_cqe_done). dtr_remove_path() waits on it.
+	 */
+	wait_queue_head_t shutdown_wq;
 };
 
 struct dtr_cm {
@@ -703,6 +745,9 @@ static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
 static int dtr_got_announce_buffer_msg(struct dtr_cm *cm, struct dtr_announce_buffer *msg);
+static int dtr_got_shutdown_msg(struct dtr_path *path, struct dtr_shutdown *msg);
+static int dtr_send_shutdown_msg(struct dtr_path *path, gfp_t gfp_mask);
+static void dtr_shutdown_work_fn(struct work_struct *work);
 static u32 dtr_remote_room(struct dtr_region_set *rs, unsigned int bytes);
 static int dtr_reserve_and_post(struct dtr_cm *cm, struct dtr_region_set *rs,
 				struct dtr_tx_desc *tx_desc, unsigned int bytes);
@@ -808,6 +853,7 @@ static int dtr_init(struct drbd_transport *transport)
 	atomic_set(&rdma_transport->resend_pending[DATA_STREAM], 0);
 	atomic_set(&rdma_transport->resend_pending[CONTROL_STREAM], 0);
 	INIT_DELAYED_WORK(&rdma_transport->resend_work, dtr_resend_work_fn);
+	init_waitqueue_head(&rdma_transport->shutdown_wq);
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
 		dtr_init_stream(&rdma_transport->stream[i], transport);
@@ -858,12 +904,11 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		struct dtr_path *path = container_of(drbd_path, struct dtr_path, path);
 
 		__dtr_disconnect_path(path);
-		cancel_work_sync(&path->ring_register_work);
-		cancel_work_sync(&path->regions[DATA_STREAM].register_buffers_work);
-		cancel_work_sync(&path->regions[CONTROL_STREAM].register_buffers_work);
-		dtr_free_remote_buffers(path);
-		dtr_free_local_buffers(path);
-		dtr_free_ring(path);
+		/* Also cancels shutdown_work, which a peer-initiated del-path may
+		 * have scheduled; letting it run after the teardown below would be
+		 * a use-after-free on DESTROY_TRANSPORT.
+		 */
+		dtr_drop_stale_path_buffers(path);
 	}
 
 	/* Free the rx_descs that where received and not consumed. */
@@ -1534,6 +1579,14 @@ static int dtr_start_try_connect(struct dtr_connect_state *cs)
 	struct dtr_cm *cm;
 	int err = -ENOMEM;
 
+	/* Never (re)connect a path this side is gracefully removing; dtr_remove_path
+	 * owns its teardown, and a connect racing that teardown oopses in the
+	 * rx-desc post against a half-set-up cm. The single chokepoint for all
+	 * connect kickoffs (dtr_activate_path and the retry work).
+	 */
+	if (test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
+		return 0;
+
 	cm = dtr_alloc_cm(path);
 	if (!cm)
 		goto out;
@@ -1777,6 +1830,16 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 	if (destroyed)
 		return;
 
+	/* A path this side is gracefully removing owns its teardown in
+	 * dtr_remove_path(); do not tear it down (and reconnect it) here too. Both
+	 * ends running del-path makes the peer's disconnect land this work right
+	 * while dtr_remove_path() is in its own dtr_disconnect_path(), and two
+	 * concurrent teardowns double-free the path's buffers / reconnect a path
+	 * that is going away.
+	 */
+	if (test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
+		return;
+
 	/*
 	 * dtr_disconnect_path() drops the path's cm. That causes the
 	 * reference on the path to be dropped. In dtr_activate_path() ->
@@ -1934,6 +1997,19 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		return 0;
 	}
 	wake_up(&cm->state_wq);
+
+	/* A cm state change (e.g. the peer disconnecting the path) may release a
+	 * dtr_remove_path() waiting for this path to quiesce: once the path is no
+	 * longer connected its in-flight is settled, so the wait need not run out
+	 * the ping-timeout. cm->path is set for every connection cm (NULL only for
+	 * a listener, which never reaches here).
+	 */
+	if (cm->path) {
+		struct dtr_transport *rdma_transport =
+			container_of(cm->path->path.transport, struct dtr_transport, transport);
+
+		wake_up_interruptible(&rdma_transport->shutdown_wq);
+	}
 
 	/*
 	 * By returning 1 we instruct the caller to destroy the cm_id.
@@ -2566,6 +2642,8 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 				send_from_stream = dtr_got_announce_buffer_msg(cm, msg);
 			else if (magic == DTR_MAGIC)
 				send_from_stream = dtr_got_flow_control_msg(path, msg);
+			else if (magic == DTR_SHUTDOWN_MAGIC)
+				send_from_stream = dtr_got_shutdown_msg(path, msg);
 			else if (__ratelimit(&rdma_transport->rate_limit))
 				tr_warn(&rdma_transport->transport,
 					"control-ring: dropping record with bad magic 0x%x\n",
@@ -2779,8 +2857,15 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	}
 
 	atomic_dec(&flow->tx_descs_posted);
-	if (rdma_stream)
+	if (rdma_stream) {
 		wake_up_interruptible(&rdma_stream->send_wq);
+		/* A DATA/CONTROL completion on a path being gracefully removed may
+		 * be the last in-flight payload dtr_remove_path() is waiting to
+		 * drain before it tears the QP down.
+		 */
+		if (test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
+			wake_up_interruptible(&rdma_transport->shutdown_wq);
+	}
 
 	if (tx_desc)
 		dtr_free_tx_desc(cm, tx_desc);
@@ -3206,6 +3291,13 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 
 		cm = rcu_dereference(path->cm);
 		if (!cm || cm->state != DSM_CONNECTED || test_bit(DCF_SUSPECT, &cm->flags))
+			continue;
+
+		/* A path being gracefully removed (del-path) takes no new payload:
+		 * the in-flight is drained and a shutdown marker handed to the peer
+		 * before the QP is torn down. See dtr_remove_path().
+		 */
+		if (path->flags & (BIT(DTR_ACTIVE_SHUT_DOWN) | BIT(DTR_PASSIVE_SHUT_DOWN)))
 			continue;
 
 		/*
@@ -3969,6 +4061,84 @@ drop:
 		kref_put(&cm->kref, dtr_destroy_cm);
 
 	wake_up_interruptible(&rdma_transport->stream[stream].send_wq);
+
+	return be32_to_cpu(msg->send_from_stream);
+}
+
+/* Send the graceful-shutdown marker (the RDMA FIN) on @path. Modeled on
+ * dtr_send_announce_buffer_msg(): reserve an ST_FLOW_CTRL credit, ride the
+ * control ring. Because it shares the path's single RC QP with all payload, it
+ * is delivered in order after every DATA/CONTROL write already posted here.
+ */
+static int dtr_send_shutdown_msg(struct dtr_path *path, gfp_t gfp_mask)
+{
+	struct dtr_shutdown msg = {};
+	struct dtr_flow *flow;
+	int send_from_stream, err;
+
+	msg.magic = cpu_to_be32(DTR_SHUTDOWN_MAGIC);
+
+	send_from_stream = dtr_reserve_send_credit(path);
+	if (send_from_stream < 0)
+		return -ENOBUFS;
+	msg.send_from_stream = cpu_to_be32(send_from_stream);
+
+	err = dtr_send(path, &msg, sizeof(msg), gfp_mask);
+	if (err) {
+		flow = &path->flow[send_from_stream];
+		atomic_inc(&flow->peer_rx_descs);
+		atomic_dec(&flow->tx_descs_posted);
+	}
+	return err;
+}
+
+/* Echo a shutdown marker back to a peer that initiated a path removal, in
+ * process context (the rx softirq scheduled us). Best effort: if it cannot be
+ * placed the initiator's bounded wait falls back to an abrupt teardown.
+ */
+static void dtr_shutdown_work_fn(struct work_struct *work)
+{
+	struct dtr_path *path = container_of(work, struct dtr_path, shutdown_work);
+	struct drbd_transport *transport = path->path.transport;
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
+	unsigned long deadline = jiffies + HZ;
+	int err;
+
+	/* Echo the marker back so the initiator can confirm our payload drained.
+	 * Retry for a FLOW_CTRL credit under load (see dtr_remove_path); the
+	 * initiator times out and tears down abruptly if our echo never lands.
+	 */
+	for (;;) {
+		err = dtr_send_shutdown_msg(path, GFP_NOIO);
+		if ((err != -ENOBUFS && err != -ENOMEM) ||
+		    !dtr_path_ok(path) || time_after_eq(jiffies, deadline))
+			break;
+		msleep(20);
+	}
+	if (err && err != -ENOBUFS && __ratelimit(&rdma_transport->rate_limit))
+		tr_warn(transport, "echo of shutdown marker failed %d\n", err);
+}
+
+/* The peer announced it will send no more payload on this path (its FIN). Since
+ * the marker rode the same RC QP as the peer's payload, every DATA/CONTROL
+ * write the peer posted on this path has already been delivered to our rx
+ * completion (placed in the reorder queue or consumed) by the time we see this.
+ * Record it (DTR_PASSIVE_SHUT_DOWN also stops us selecting the path for new
+ * payload), and -- unless we initiated the removal ourselves -- echo a marker
+ * back so the initiator can confirm OUR payload drained too. Wake any
+ * dtr_remove_path() waiting on this path.
+ */
+static int dtr_got_shutdown_msg(struct dtr_path *path, struct dtr_shutdown *msg)
+{
+	struct dtr_transport *rdma_transport =
+		container_of(path->path.transport, struct dtr_transport, transport);
+
+	if (!test_and_set_bit(DTR_PASSIVE_SHUT_DOWN, &path->flags)) {
+		if (!test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
+			schedule_work(&path->shutdown_work);
+	}
+	wake_up_interruptible(&rdma_transport->shutdown_wq);
 
 	return be32_to_cpu(msg->send_from_stream);
 }
@@ -5171,6 +5341,20 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 	    test_and_clear_bit(DSB_CONNECT_REQ, &cm->state))
 		kref_put(&cm->kref, dtr_destroy_cm);
 
+	/* Drop the "connected" reference taken at establish (the kref_get in
+	 * dtr_path_established_work_fn that "expects a disconnect in the future").
+	 * Normally the RDMA_CM_EVENT_DISCONNECTED handler clears DSB_CONNECTED and
+	 * drops it, but that event is not guaranteed to be delivered for a
+	 * locally-initiated rdma_disconnect (the wait above can time out with
+	 * DSB_CONNECTED still set). Drop it here in that case; the test_and_clear
+	 * keeps it from being dropped twice should the event still arrive (the
+	 * handler then sees DSB_CONNECTED already clear and keeps its ref). Mirrors
+	 * dtr_path_failover(); without it every del-path leaks one cm and the
+	 * transport module refcount never returns to 0.
+	 */
+	if (test_and_clear_bit(DSB_CONNECTED, &cm->state))
+		kref_put(&cm->kref, dtr_destroy_cm);
+
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
@@ -5255,6 +5439,7 @@ static void dtr_destroy_cm_keep_id(struct kref *kref)
  */
 static void dtr_drop_stale_path_buffers(struct dtr_path *path)
 {
+	cancel_work_sync(&path->shutdown_work);
 	cancel_work_sync(&path->ring_register_work);
 	cancel_work_sync(&path->regions[DATA_STREAM].register_buffers_work);
 	cancel_work_sync(&path->regions[CONTROL_STREAM].register_buffers_work);
@@ -5339,7 +5524,24 @@ static int dtr_activate_path(struct dtr_path *path)
 
 	cs = &path->cs;
 
+	/* A path this side is gracefully removing (dtr_remove_path set
+	 * DTR_ACTIVE_SHUT_DOWN) must not be reconnected: dtr_remove_path owns its
+	 * teardown, and racing a fresh connect against that teardown reconnects a
+	 * path that is going away -- the rx-desc post then runs against a
+	 * half-set-up cm (NULL pd) and oopses. A peer-initiated removal leaves only
+	 * DTR_PASSIVE_SHUT_DOWN set (this side keeps the path), so it still
+	 * reconnects; the flag clear below resets that for the fresh connection.
+	 */
+	if (test_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags))
+		return 0;
+
 	init_waitqueue_head(&cs->wq);
+
+	/* A path re-establishing after a passive graceful shutdown (the peer ran
+	 * del-path) carries a stale DTR_PASSIVE_SHUT_DOWN bit; clear it so the fresh
+	 * connection is selectable for tx again.
+	 */
+	path->flags = 0;
 
 	atomic_set(&cs->passive_state, PCS_CONNECTING);
 	atomic_set(&cs->active_state, PCS_CONNECTING);
@@ -6106,6 +6308,8 @@ static int dtr_add_path(struct drbd_path *add_path)
 		spin_lock_init(&rs->local_buffers_lock);
 		INIT_WORK(&rs->register_buffers_work, dtr_register_buffers_work_fn);
 	}
+	path->flags = 0;
+	INIT_WORK(&path->shutdown_work, dtr_shutdown_work_fn);
 	spin_lock_init(&path->ring.lock);
 	INIT_WORK(&path->ring_register_work, dtr_ring_register_work_fn);
 	spin_lock_init(&path->send_flow_control_lock);
@@ -6142,9 +6346,119 @@ static bool dtr_may_remove_path(struct drbd_path *del_path)
 	return connected > 1 || connected_path != del_path;
 }
 
+/* Is some path other than @path connected? Such a survivor must exist for a
+ * graceful removal to make sense: it carries the connection while @path drains
+ * and fills the global per-stream reorder gaps as both ends finish in flight.
+ */
+static bool dtr_other_path_connected(struct dtr_path *path)
+{
+	struct drbd_transport *transport = path->path.transport;
+	struct dtr_path *p;
+	bool found = false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(p, &transport->paths, path.list) {
+		if (p != path && dtr_path_ok(p)) {
+			found = true;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return found;
+}
+
+/* The graceful-shutdown handshake for @path is complete: the peer's marker has
+ * arrived (so all of its payload on this path is in) AND our own in-flight
+ * DATA/CONTROL payload has all completed (SUCCESS, not flushed). FLOW_CTRL
+ * records -- including the shutdown markers -- are charged to a separate pool
+ * and are intentionally not counted here. Now the QP can be torn down without
+ * losing or flushing any payload.
+ */
+static bool dtr_path_drained_for_removal(struct dtr_path *path)
+{
+	return test_bit(DTR_PASSIVE_SHUT_DOWN, &path->flags) &&
+	       atomic_read(&path->flow[DATA_STREAM].tx_descs_posted) == 0 &&
+	       atomic_read(&path->flow[CONTROL_STREAM].tx_descs_posted) == 0;
+}
+
+/* Hot path removal (drbdsetup del-path). Modeled on the lb-tcp transport's
+ * dtl_remove_path() coordinated half-close: stop sending payload on the path,
+ * hand the peer an in-band marker that all our payload has been sent, and wait
+ * (bounded by ping_timeo) for the peer to drain and echo a marker back, before
+ * tearing the QP down. RC QPs have no TCP-style half-close, so the marker is a
+ * control-ring record (DTR_SHUTDOWN_MAGIC) delivered in order after all payload
+ * on the path's single QP -- the FIN guarantee. This avoids dtr_disconnect_path()
+ * flushing payload still in flight (which strands a per-stream reorder gap and
+ * bounces the connection into a +12s ping timeout and a resync).
+ *
+ * Only meaningful while connected with a survivor to carry the connection;
+ * otherwise the connection is going down regardless -- tear down directly.
+ */
 static void dtr_remove_path(struct drbd_path *del_path)
 {
 	struct dtr_path *path = container_of(del_path, struct dtr_path, path);
+	struct drbd_transport *transport = del_path->transport;
+	struct dtr_transport *rdma_transport =
+		container_of(transport, struct dtr_transport, transport);
+
+	if (test_bit(TR_ESTABLISHED, &del_path->flags) && dtr_other_path_connected(path)) {
+		long timeout = HZ; /* fallback if net_conf went away */
+		unsigned long deadline;
+		struct net_conf *nc;
+		long remaining;
+		int err;
+
+		/* Divert new payload to the survivor (dtr_select_and_get_cm_for_tx
+		 * skips a DTR_ACTIVE_SHUT_DOWN path); already-posted in-flight stays
+		 * on the live QP and completes normally.
+		 */
+		set_bit(DTR_ACTIVE_SHUT_DOWN, &path->flags);
+
+		rcu_read_lock();
+		nc = rcu_dereference(transport->net_conf);
+		if (nc)
+			timeout = nc->ping_timeo * HZ;
+		rcu_read_unlock();
+		deadline = jiffies + timeout;
+
+		/* Our FIN, the last record we post on this path. It MUST reach the
+		 * peer for the handshake to complete; under load the FLOW_CTRL credit
+		 * pool is momentarily exhausted (-ENOBUFS) often enough that a single
+		 * attempt regularly fails -- which would silently degrade to the
+		 * abrupt teardown that bounces the connection. Retry within the
+		 * deadline (a tx completion or a peer grant frees a credit in
+		 * milliseconds); stop early if the path goes down (peer disconnected).
+		 */
+		for (;;) {
+			err = dtr_send_shutdown_msg(path, GFP_NOIO);
+			if ((err != -ENOBUFS && err != -ENOMEM) ||
+			    !dtr_path_ok(path) || time_after_eq(jiffies, deadline))
+				break;
+			msleep(20);
+		}
+		if (err && err != -ENOBUFS && __ratelimit(&rdma_transport->rate_limit))
+			tr_warn(transport, "graceful path removal: marker send failed %d\n", err);
+
+		/* Waits on the survivor delivering the peer's marker + our in-flight
+		 * completing -- never on the dead path's own tx -- so concurrent
+		 * two-sided del-path cannot deadlock it. No transport lock is held
+		 * across the wait, so the survivor's data path is not stalled. Also
+		 * completes if the peer disconnects the path first (the common case
+		 * when both ends run del-path: the peer finishes its handshake and
+		 * disconnects before its marker reaches us; the path is then settled
+		 * -- our payload has drained -- so there is nothing left to wait for).
+		 */
+		remaining = (long)(deadline - jiffies);
+		if (remaining < 1)
+			remaining = 1;
+		wait_event_timeout(rdma_transport->shutdown_wq,
+				   dtr_path_drained_for_removal(path) || !dtr_path_ok(path),
+				   remaining);
+
+		if (dtr_path_ok(path) && !dtr_path_drained_for_removal(path))
+			tr_warn(transport, "graceful path removal timed out, closing anyway\n");
+	}
 
 	dtr_disconnect_path(path);
 }
