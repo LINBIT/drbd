@@ -671,7 +671,7 @@ static int dtr_create_cm_id(struct dtr_cm *cm_context, struct net *net);
 static bool dtr_path_ok(struct dtr_path *path);
 static bool dtr_transport_ok(struct drbd_transport *transport);
 static int __dtr_post_tx_desc(struct dtr_cm *, struct dtr_tx_desc *);
-static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *);
+static int dtr_post_tx_desc(struct dtr_transport *, struct dtr_tx_desc *, bool nonblock);
 static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc);
 static bool dtr_resend_enqueue(struct dtr_transport *rdma_transport, struct dtr_cm *old_cm,
 			       struct dtr_tx_desc *tx_desc);
@@ -3686,7 +3686,7 @@ static int dtr_drain_resend(struct dtr_transport *rdma_transport, enum drbd_stre
 }
 
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
-			    struct dtr_tx_desc *tx_desc)
+			    struct dtr_tx_desc *tx_desc, bool nonblock)
 {
 	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
@@ -3706,35 +3706,55 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	offset = tx_desc->sge[0].lkey;
 
 retry:
-	/* Drain this stream's reposts (placing the lower-sequence gap-fillers
-	 * ahead of this new send) before competing for the survivor's region.
+	/* @nonblock is set for a teardown flush (flush_send_buffer() passes
+	 * MSG_DONTWAIT once cstate < C_CONNECTING). The peer is gone, so the
+	 * credit/region this send needs will never be granted; waiting for it
+	 * wedges the sender in flush_send_buffer() while it holds
+	 * connection->mutex[stream], and conn_disconnect()'s
+	 * drbd_transport_shutdown() then blocks behind it (both threads D-state,
+	 * requiring a reboot). Make a single non-blocking attempt and return
+	 * -EAGAIN instead -- both flush_send_buffer() callers discard the buffer
+	 * on error during teardown. Skip the failover drain too (it waits, and a
+	 * dying connection's reposts are moot).
 	 */
-	if (atomic_read(&rdma_transport->resend_pending[stream])) {
+	if (!nonblock && atomic_read(&rdma_transport->resend_pending[stream])) {
+		/* Drain this stream's reposts (placing the lower-sequence
+		 * gap-fillers ahead of this new send) before competing for the
+		 * survivor's region.
+		 */
 		err = dtr_drain_resend(rdma_transport, stream);
 		if (err)
 			return err;
 	}
-	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream)),
-			rdma_stream->send_timeout);
-
-	if (t == 0) {
-		struct dtr_transport *rdma_transport = rdma_stream->rdma_transport;
-
-		if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
+	if (nonblock) {
+		cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream);
+		if (!cm)
 			return -EAGAIN;
-		goto retry;
-	} else if (t < 0)
-		return -EINTR;
+	} else {
+		t = wait_event_interruptible_timeout(rdma_stream->send_wq,
+				(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream)),
+				rdma_stream->send_timeout);
+
+		if (t == 0) {
+			if (drbd_stream_send_timed_out(&rdma_transport->transport, stream))
+				return -EAGAIN;
+			goto retry;
+		} else if (t < 0)
+			return -EINTR;
+	}
 
 	flow = &cm->path->flow[stream];
 	if (atomic_dec_if_positive(&flow->peer_rx_descs) < 0) {
 		kref_put(&cm->kref, dtr_destroy_cm);
+		if (nonblock)
+			return -EAGAIN;
 		goto retry;
 	}
 	if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max)) {
 		atomic_inc(&flow->peer_rx_descs);
 		kref_put(&cm->kref, dtr_destroy_cm);
+		if (nonblock)
+			return -EAGAIN;
 		goto retry;
 	}
 
@@ -3749,6 +3769,8 @@ retry:
 		atomic_inc(&flow->peer_rx_descs);
 		atomic_dec(&flow->tx_descs_posted);
 		kref_put(&cm->kref, dtr_destroy_cm);
+		if (nonblock)
+			return -EAGAIN;
 		/* Credit was available but the region window is momentarily empty
 		 * (the path-selection peek lost a race, or the peer has not yet
 		 * re-announced a consumed region). Block on region space rather
@@ -5621,13 +5643,19 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->sge[0].length = size;
 	tx_desc->sge[0].lkey = offset; /* abusing the lkey field. See dtr_post_tx_desc() */
 
-	err = dtr_post_tx_desc(rdma_transport, tx_desc);
+	err = dtr_post_tx_desc(rdma_transport, tx_desc, (msg_flags & MSG_DONTWAIT) != 0);
 	if (err) {
 		put_page(page);
 		kfree(tx_desc);
 
-		tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
-		drbd_control_event(transport, CLOSED_BY_PEER);
+		/* A non-blocking teardown flush (MSG_DONTWAIT) returning -EAGAIN
+		 * is the connection already going away, not a send failure -- do
+		 * not log it or re-trigger the teardown it is part of.
+		 */
+		if (!((msg_flags & MSG_DONTWAIT) && err == -EAGAIN)) {
+			tr_err(transport, "dtr_post_tx_desc() failed %d\n", err);
+			drbd_control_event(transport, CLOSED_BY_PEER);
+		}
 	}
 
 	if (stream == DATA_STREAM)
