@@ -6469,6 +6469,25 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
 	}
 
+	/* No reconciliation resync with an UpToDate peer: we hold the current
+	 * generation, so we owe no post-loss reconcile to anyone.
+	 * Clear RECONCILE_PENDING and return to UpToDate (do not stay Consistent)
+	 */
+	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_UP_TO_DATE &&
+	    peer_device->device->disk_state[NOW] == D_CONSISTENT) {
+		struct drbd_device *device = peer_device->device;
+		struct drbd_peer_device *pd;
+		bool cleared = false;
+
+		rcu_read_lock();
+		for_each_peer_device_rcu(pd, device)
+			if (test_and_clear_bit(RECONCILE_PENDING, &pd->flags))
+				cleared = true;
+		rcu_read_unlock();
+		if (cleared)
+			drbd_reconcile_settled_try_up_to_date(device->resource);
+	}
+
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state >= D_CONSISTENT &&
 	    peer_device->device->disk_state[NOW] == D_OUTDATED) {
 		/* No resync with up-to-date peer -> I should be consistent or up-to-date as well.
