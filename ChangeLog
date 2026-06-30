@@ -3,12 +3,19 @@ Latest:
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
 
-9.2.19-rc.1 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix silent data divergence when a diskless primary creates a new
    current UUID that a peer never received (.e.g switch failure);
    the optimistic UUID is now confirmed via the data stream before
    being relied upon
+ * Fix silent data corruption when a diskless primary suppressed its
+   current-UUID bump because a peer had been resynced by a third node
+ * Fix a false split-brain ("Unrelated data, aborting!") caused by
+   pushing a peer's bitmap UUIDs into the local history
+ * Hold a primary-loss survivor at Consistent until it reconciles with
+   the surviving peers, so a stale node cannot promote and serve
+   un-reconciled data
  * Reconcile two peers holding the same current UUID but still carrying
    out-of-sync bits toward each other, instead of silently dropping the
    divergence
