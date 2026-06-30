@@ -961,10 +961,10 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 		return NULL;
 
 	header_size = drbd_header_size(connection);
-	p = alloc_send_buffer(connection, header_size + size, drbd_stream) + header_size;
+	p = alloc_send_buffer(connection, header_size + size, drbd_stream);
 	if (IS_ERR(p))
 		return NULL;
-	return p;
+	return p + header_size;
 }
 
 /**
