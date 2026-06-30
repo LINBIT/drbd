@@ -1149,6 +1149,43 @@ static bool hold_completion_for_unconfirmed_gen(struct drbd_request *req)
 	return (int)(req->epoch - device->exposed_gen_epoch) >= 0;
 }
 
+/* Clear CURRENT_UUID_UNCONFIRMED once this peer holds the rotated generation:
+ * every held write durable on it (RQ_NET_OK | RQ_NET_DONE), and a barrier ack
+ * at/past exposed_gen_epoch -- the in-order proof for the no-held case, where
+ * no held write vouches for receipt.  Run from got_BarrierAck.
+ */
+void drbd_peer_maybe_confirm_rotated_gen(struct drbd_peer_device *peer_device,
+					 unsigned int acked_epoch)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_request *req;
+	int idx = peer_device->node_id;
+
+	if (!test_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags))
+		return;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		if (req->device != device)
+			continue;
+		if (!(req->local_rq_state & RQ_UNCONF_GEN))
+			continue;
+		/* durable == received and flushed: RQ_NET_OK | RQ_NET_DONE.
+		 * RQ_NET_DONE without RQ_NET_OK is connection-loss cleanup, not data.
+		 */
+		if ((req->net_rq_state[idx] & (RQ_NET_OK | RQ_NET_DONE)) !=
+		    (RQ_NET_OK | RQ_NET_DONE)) {
+			rcu_read_unlock();
+			return;
+		}
+	}
+	rcu_read_unlock();
+
+	if ((int)(acked_epoch - device->exposed_gen_epoch) >= 0)
+		clear_bit(CURRENT_UUID_UNCONFIRMED, peer_device->flags);
+}
+
 /* obviously this could be coded as many single functions
  * instead of one huge switch,
  * or by putting the code directly in the respective locations
