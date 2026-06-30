@@ -9506,6 +9506,11 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 		}
 	}
 
+	/* hand the bridge over to RECONCILIATION_RESYNC, or discharge if none owed */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		clear_bit(RECONCILE_PENDING, peer_device->flags);
+	drbd_reconcile_settled_try_up_to_date(resource);
+
 out:
 	kref_debug_put(&lost_peer->kref_debug, 12);
 	kref_put(&lost_peer->kref, drbd_destroy_connection);
@@ -10370,6 +10375,11 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 			    peer_device->disk_state[NOW] < D_INCONSISTENT)
 				continue; /* Ignore if one side is diskless */
 
+			/* owe a reconcile to this peer; set before NOTIFY clears,
+			 * which receive_peer_dagtag waits for (gap-free handover)
+			 */
+			set_bit(RECONCILE_PENDING, peer_device->flags);
+
 			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 			send_dagtag = true;
 		}
@@ -10452,6 +10462,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
+	bool reconsider = false;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
@@ -10601,7 +10612,19 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags)) {
 		drbd_notify_peers_lost_primary(connection);
 		clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
+		reconsider = true;
 	}
+
+	/* a surviving peer we owe a reconcile to is itself leaving:
+	 * discharge it, else we stay pinned at Consistent forever
+	 */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		if (test_and_clear_bit(RECONCILE_PENDING, peer_device->flags))
+			reconsider = true;
+
+	/* re-arm once nothing is owed (2-node case arms no RECONCILE_PENDING) */
+	if (reconsider)
+		drbd_reconcile_settled_try_up_to_date(resource);
 
 	if (oc == C_DISCONNECTING)
 		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,
