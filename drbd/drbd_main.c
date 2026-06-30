@@ -5078,9 +5078,11 @@ static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device)
 	__new_current_uuid_info(device, weak_nodes);
 }
 
-static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
+static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device,
+					bool intentional_diskless)
 {
 	struct drbd_device *device = peer_device->device;
+	const int my_node_id = device->resource->res_opts.node_id;
 	int node_id;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -5088,6 +5090,16 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 		if (node_id == peer_device->node_id)
 			continue;
 		if (peer_device->bitmap_uuids[node_id] != 0)
+			continue;
+		/* bitmap_uuids[my_node_id] is the peer's record of *us*, from the
+		 * handshake.  When intentionally diskless (bitmap=no) the peer
+		 * never rotates into it, so it is perpetually zero and never
+		 * fillable -- skip it.  A detached (bitmap=yes) primary keeps
+		 * MDF_HAVE_BITMAP on the peer, so the slot self-corrects after a
+		 * bump and a zero there is a real signal of divergence to resync
+		 * on reattach -- do not skip it.
+		 */
+		if (node_id == my_node_id && intentional_diskless)
 			continue;
 		p2 = peer_device_by_node_id(device, node_id);
 		/* Diskless peers (bitmap=no) have no bitmap slot tracking
@@ -5101,35 +5113,26 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 	return false;
 }
 
-/* For a D_DISKLESS primary (intentionally diskless, or detached due to IO
- * errors or administrative action): returns true if peer_device's per-node
- * bitmap_uuid entries (peer_md[].bitmap_uuid in the peer's superblock) show
- * no record of a prior bump -- meaning we are either in the very first write
- * session (no non-zero entries anywhere) or a prior bump's entries have been
- * cleared by a successful resync, and a new generation must be signalled.
+/* For an intentionally-diskless primary (bitmap=no): returns true if the peer
+ * reports no prior bump -- i.e. the very first write session, or a prior
+ * bump's entries have since been cleared by resync -- so a new generation must
+ * be signalled.  We scan peer_device->bitmap_uuids[n], the connected peer's
+ * peer_md[n].bitmap_uuid from the handshake; holding no disk, that is all we
+ * have.
  *
- * We detect prior bumps through THIRD PARTY configured peers (n != my_node_id,
- * n != peer_device->node_id): after a UUID bump, rotate_current_into_bitmap()
- * on the receiving diskful peer records the old current UUID in each absent or
- * weak peer's bitmap_uuid slot.  We skip n == my_node_id because our own slot
- * in the peer's superblock is not a reliable signal:
+ * The peer's record of *us* (bitmap_uuids[my_node_id]) is useless here: the
+ * peer has no MDF_HAVE_BITMAP for us, so it is perpetually zero and the slot
+ * scan in peer_can_fill_a_bitmap_slot() skips it, missing the first-write /
+ * 2-node case.  (A merely-detached primary keeps MDF_HAVE_BITMAP on the peer,
+ * so that slot self-corrects and the slot scan handles it without this helper.)
+ * We instead detect prior bumps through THIRD PARTY configured peers
+ * (n != my_node_id, n != peer_device->node_id): rotate_current_into_bitmap()
+ * on the receiving peer records the old current UUID in each absent or weak
+ * peer's slot.
  *
- *   - Intentionally-diskless primary: rotate_current_into_bitmap() skips us
- *     unconditionally (D_DISKLESS && !MDF_HAVE_BITMAP), so our slot is
- *     perpetually zero regardless of how many bumps have occurred.
- *
- *   - Temporarily-diskless primary (detached): rotate_current_into_bitmap()
- *     does update our slot after a bump (MDF_HAVE_BITMAP is set).  But our
- *     slot starts at zero before the first bump (we were in sync at detach
- *     time), so we cannot distinguish "no prior bump" from "was in sync at
- *     detach" by inspecting our own slot.  Third-party peer slots provide
- *     the reliable signal in both cases.
- *
- * After the first bump, absent third-party peers acquire non-zero bitmap_uuid
- * entries in the peer's superblock, causing this to return false.  When such
- * entries are present, the bump path calls a_lost_peer_is_on_same_cur_uuid()
- * to handle the case where our knowledge of an absent peer's current UUID is
- * lost after a restart.
+ * Once such entries are present this returns false, and the bump path calls
+ * a_lost_peer_is_on_same_cur_uuid() to handle an absent peer's current UUID
+ * being lost after a restart.
  */
 static bool diskless_primary_needs_uuid_bump(struct drbd_peer_device *peer_device)
 {
@@ -5167,6 +5170,7 @@ static bool diskless_primary_needs_uuid_bump(struct drbd_peer_device *peer_devic
 
 static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 {
+	const bool intentional_diskless = device->device_conf.intentional_diskless;
 	struct drbd_peer_device *peer_device;
 	bool rv = false;
 
@@ -5184,23 +5188,23 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
 
-		/* Use disk_state to select the bump-decision helper.  For any
-		 * D_DISKLESS primary, our slot in the connected diskful peer's
-		 * metadata cannot reliably indicate whether a prior bump has
-		 * occurred: if intentionally diskless, the peer never updates
-		 * our slot (we have no bitmap), so it stays zero regardless of
-		 * how many bumps have occurred; if we lost our disk recently,
-		 * our slot was already zero when we detached (we were in sync
-		 * at the time), so zero-meaning-no-prior-bump is
-		 * indistinguishable from zero-meaning-was-in-sync-at-detach.
-		 * diskless_primary_needs_uuid_bump() uses third-party peers'
-		 * slots instead, where a zero unambiguously means no bump is on
-		 * record.  A diskful-but-degraded primary's slot self-corrects
-		 * after each bump, so peer_can_fill_a_bitmap_slot() applies.
+		/* peer_can_fill_a_bitmap_slot() scans the connected peer's
+		 * bitmap_uuid records (from the handshake, not our own metadata):
+		 * a zero slot for a configured bitmap peer means that peer is on
+		 * our generation and a bump marks a new divergence.  Authoritative
+		 * even for a diskless primary -- it catches a peer an absent third
+		 * party resynced to our generation behind our back, which our own
+		 * UUID memory misses.  A detached primary stays bitmap=yes, so the
+		 * peer's record of us self-corrects after a bump and the scan
+		 * decides on its own.
+		 *
+		 * An intentionally-diskless primary is bitmap=no: the peer's
+		 * record of us stays zero and is skipped, so the scan misses the
+		 * first-write / 2-node case; diskless_primary_needs_uuid_bump()
+		 * covers that from third-party slots instead.
 		 */
-		if (device->disk_state[NOW] == D_DISKLESS ?
-				diskless_primary_needs_uuid_bump(peer_device) :
-				peer_can_fill_a_bitmap_slot(peer_device)) {
+		if (peer_can_fill_a_bitmap_slot(peer_device, intentional_diskless) ||
+		    (intentional_diskless && diskless_primary_needs_uuid_bump(peer_device))) {
 			rv = true;
 			break;
 		}
@@ -5268,36 +5272,33 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * P_CURRENT_UUID to connected peers if a bump is warranted.  The decision
  * is made by two complementary helpers:
  *
- *   diskfull_peers_need_new_cur_uuid():
- *     Asks a connected diskful peer whether its metadata shows a bump is
- *     needed.  Returns true when no third peer has a non-zero bitmap_uuid in
- *     peer_md, meaning either no prior bump has been recorded (first write
- *     session or all previously absent peers have since synced and cleared
- *     their bitmap_uuid entries).
+ *   diskfull_peers_need_new_cur_uuid(): bump if a connected diskful peer's
+ *     metadata shows that some peer still sits on our generation.
  *
- *   a_lost_peer_is_on_same_cur_uuid():
- *     Scans absent peers.  Returns true if any absent peer either (a) is
- *     known to be at the same data generation as us, or (b) has an unknown
- *     UUID state (current_uuid == 0 after a restart) and therefore
- *     *might* be at the same generation.
+ *   a_lost_peer_is_on_same_cur_uuid(): bump if an absent peer is, or might
+ *     be, on our generation.
  *
  * Key scenarios (A = diskless primary, B = diskful secondary connected,
  *                C = third peer, UUID0/1/2 = successive current UUIDs):
  *
  * S1. 2-node (A, B), A promotes:
+ *     peer_can_fill_a_bitmap_slot(B): only A (skipped, our own slot) and B
+ *     (skipped, the connected peer) exist -> false.
  *     diskless_primary_needs_uuid_bump(B): no other configured peers -> true.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ *     Path: diskless_primary_needs_uuid_bump.
  *
  * S2. 3-node (A, B, C diskful absent), first bump:
  *     B.peer_md[C].bitmap_uuid = 0 (no prior bump recorded).
- *     diskless_primary_needs_uuid_bump(B): no non-zero bitmap_uuid entries -> true.
+ *     peer_can_fill_a_bitmap_slot(B): C is a configured bitmap peer with a zero
+ *     slot -> true.
  *     After bump: B calls rotate_current_into_bitmap(), sets
  *     B.peer_md[C].bitmap_uuid = UUID0.  B propagates; A sees
  *     peer_device_B.bitmap_uuids[C] = UUID0.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ *     Path: peer_can_fill_a_bitmap_slot.
  *
  * S3. 3-node, second trigger (C still absent, C has UUID0):
  *     B.peer_md[C].bitmap_uuid = UUID0 (non-zero).  C.current_uuid = UUID0 != UUID1.
+ *     peer_can_fill_a_bitmap_slot(B): C slot non-zero -> false.
  *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
  *     a_lost_peer_is_on_same_cur_uuid: UUID0 != UUID1, current_uuid != 0 -> false.
  *     No bump.  C reconnects with UUID0, sees UUID1 != UUID0 -> bitmap resync.
@@ -5305,6 +5306,7 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * S4. 3-node, A restarts, promotes (C still absent; C may be at UUID0 or UUID1):
  *     A's in-memory C.current_uuid = 0 (reset on restart).
  *     After reconnect to B: peer_device_B.bitmap_uuids[C] = UUID0 (from B).
+ *     peer_can_fill_a_bitmap_slot(B): C slot non-zero -> false.
  *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
  *     a_lost_peer_is_on_same_cur_uuid: C.current_uuid == 0 -> true -> bump.
  *     Necessary because C may have caught up to UUID1 and disconnected again
@@ -5316,9 +5318,23 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * S5. 3-node, C synced to UUID1 then disconnected; A still running:
  *     B.peer_md[C].bitmap_uuid = 0 (cleared when C's resync completed).
  *     C.current_uuid = UUID1 = A.exposed_data_uuid.
- *     diskless_primary_needs_uuid_bump(B): zero bitmap_uuid -> true -> bump (UUID1->UUID2).
+ *     peer_can_fill_a_bitmap_slot(B): C slot zero -> true -> bump (UUID1->UUID2).
  *     Without bump, C (at UUID1) would reconnect and see no divergence.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ *     Path: peer_can_fill_a_bitmap_slot.
+ *
+ * S6. 4-node (A diskless primary; B, C diskful connected; D diskful absent),
+ *     a third party resyncs D behind A's back:
+ *     A's first write bumps to UUID1; B and C take it, D is absent, so
+ *     B.peer_md[{C,D}] = C.peer_md[{B,D}] = UUID0.
+ *     A resync C->D then completes out of A's sight: C.peer_md[D] = 0 (cleared),
+ *     B.peer_md[C] = UUID0 unchanged.
+ *     A writes again:
+ *     diskless_primary_needs_uuid_bump(C) sees C.peer_md[B] = UUID0 != 0 -> false
+ *     (and likewise for B) -- the coarse "any third-party slot non-zero" check
+ *     misses the bump, leaving D silently behind on UUID1.
+ *     peer_can_fill_a_bitmap_slot(C) sees C.peer_md[D] = 0 for bitmap peer D ->
+ *     true -> bump (UUID1->UUID2).  D detects the divergence on reconnect.
+ *     Path: peer_can_fill_a_bitmap_slot.
  *
  * The combined behaviour for an absent peer D:
  * - First write session: bump triggered because exposed_data_uuid matches
