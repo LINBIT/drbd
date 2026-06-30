@@ -164,6 +164,8 @@ static struct drbd_transport_class tcp_transport_class = {
 	.list = LIST_HEAD_INIT(tcp_transport_class.list),
 };
 
+static void dtt_control_data_ready_work(struct work_struct *item);
+
 static int dtt_init(struct drbd_transport *transport)
 {
 	struct drbd_tcp_transport *tcp_transport =
@@ -179,6 +181,8 @@ static int dtt_init(struct drbd_transport *transport)
 		tcp_transport->rbuf[i].base = buffer;
 		tcp_transport->rbuf[i].pos = buffer;
 	}
+	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
+
 	timer_setup(&tcp_transport->control_timer, dtt_control_timer_fn, 0);
 
 	return 0;
@@ -200,8 +204,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 	if (tcp_transport->control_data_ready_work.func) {
 		cancel_work_sync(&tcp_transport->control_data_ready_work);
-		tcp_transport->control_data_ready_work.func = NULL;
-		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 	}
 
 	if (tcp_transport->stream[CONTROL_STREAM] &&
@@ -231,6 +233,11 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 			tcp_transport->rbuf[i].base = NULL;
 		}
+	}
+
+	if (tcp_transport->control_data_ready_work.func) {
+		tcp_transport->control_data_ready_work.func = NULL;
+		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 	}
 }
 
@@ -1388,7 +1395,6 @@ randomize:
 		INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 #endif
 	}
-	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
