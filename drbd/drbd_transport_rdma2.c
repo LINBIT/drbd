@@ -2626,10 +2626,27 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 	}
 
 	if (dtr_path_ok(path)) {
-		struct dtr_flow *flow = &path->flow[DATA_STREAM];
+		enum drbd_stream s;
 
-		if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2)
-			schedule_work(&path->refill_rx_descs_work);
+		/* Repost recv WRs (and re-grant the peer's receive window) for any
+		 * stream that runs low, not just DATA. CONTROL must be included: its
+		 * recv WRs are otherwise only reposted from dtr_recv() after in-order
+		 * delivery, so a sequence gap -- e.g. CONTROL packets stranded on a
+		 * failed path -- stalls delivery, stops reposting, collapses
+		 * rx_descs_known_to_peer, and throttles the peer to a single credit.
+		 * The peer can then no longer send the gap-filling reposts that would
+		 * let delivery resume: a deadlock that persists until the core's
+		 * PingAck timeout tears the connection down. The refill work itself
+		 * already replenishes every stream.
+		 */
+		for (s = DATA_STREAM; s <= CONTROL_STREAM; s++) {
+			struct dtr_flow *flow = &path->flow[s];
+
+			if (atomic_read(&flow->rx_descs_posted) < flow->rx_descs_want_posted / 2) {
+				schedule_work(&path->refill_rx_descs_work);
+				break;
+			}
+		}
 	}
 }
 
