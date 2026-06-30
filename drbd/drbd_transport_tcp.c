@@ -1210,6 +1210,13 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
 #endif
 
+		/* Having that here should fix occosional connection
+		 * aborts (BrokenPipe) in the early connection establish
+		 * process.
+		 */
+
+	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
+
 	dsocket = NULL;
 	csocket = NULL;
 
@@ -1418,7 +1425,6 @@ randomize:
 		INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 #endif
 	}
-	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 
 	TR_ASSERT(transport, first_path == connect_to_path);
 	set_bit(TR_ESTABLISHED, &connect_to_path->path.flags);
@@ -1490,6 +1496,8 @@ out_eagain:
 out_release_sockets:
 	dtt_socket_free(&dsocket);
 	dtt_socket_free(&csocket);
+
+	FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 
 out:
 	if (first_path)
