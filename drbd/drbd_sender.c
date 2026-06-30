@@ -3770,12 +3770,12 @@ static void maybe_send_barrier(struct drbd_connection *connection, unsigned int 
 	}
 }
 
-/* The reconcile peer has settled UpToDate on the generation we presented (the
- * predecessor); the handshake is complete and it knows we are Primary.  Relabel
- * it forward to our real current generation now.  Running on the sender, this
- * P_CURRENT_UUID is ordered after the replayed transfer-log writes, and the peer
- * is UpToDate, so it takes the adopt path in receive_current_uuid (rather than
- * outdating).  See diskless_primary_present_current_uuid().
+/* The reconcile peer we asserted UpToDate on its predecessor generation has
+ * settled UpToDate; the handshake is complete and it knows we are Primary.
+ * Relabel it forward to our real current generation now.  Running on the sender,
+ * this P_CURRENT_UUID is ordered after the replayed transfer-log writes, and the
+ * peer is UpToDate, so it takes the adopt path in receive_current_uuid (rather
+ * than outdating).  See diskless_with_peers_different_current_uuids().
  */
 static void send_reconcile_current_uuid(struct drbd_peer_device *peer_device)
 {

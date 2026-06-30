@@ -669,11 +669,12 @@ enum peer_device_flag {
 				   * held, a barrier ack at/past the gen's epoch.
 				   */
 	RECONCILE_INJECT_CUR_UUID, /* This peer returned on our predecessor
-				    * generation; we presented the predecessor during
-				    * the handshake so it stays UpToDate.  Armed so that
-				    * once it settles UpToDate we relabel it forward to
-				    * our current generation.  See
-				    * diskless_primary_present_current_uuid().
+				    * generation.  We assert it UpToDate anyway
+				    * (it holds a complete generation and the
+				    * bridging writes are still replayable) and arm
+				    * this so that, once it settles UpToDate, we
+				    * relabel it forward to our current generation.
+				    * See diskless_with_peers_different_current_uuids().
 				    */
 	PEER_DEVICE_FLAG_COUNT,	/* keep last: sizes peer_device->flags[] */
 };
