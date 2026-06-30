@@ -5329,13 +5329,15 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 */
 		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
-	} else if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+	} else if ((!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) ||
+		    device->resource->res_opts.on_no_quorum == ONQ_IO_ERROR) &&
 		   (diskfull_peers_need_new_cur_uuid(device) ||
 		    a_lost_peer_is_on_same_cur_uuid(device))) {
 		/* Defer when the current generation is still unconfirmed: no peer
 		 * has it yet, so this loss is logically simultaneous with the one
 		 * that opened it -- the open generation already covers it.  At most
 		 * one unconfirmed generation (and one predecessor) exists at a time.
+		 * Exception: on-no-quorum=io-error
 		 */
 		/* gen-rotate reason: DEGRADE (diskless primary lost a diskful peer);
 		 * no local disk -> not self-confirming, relies on peer acks.
