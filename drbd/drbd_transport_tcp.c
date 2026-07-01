@@ -200,8 +200,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 
 	if (tcp_transport->control_data_ready_work.func) {
 		cancel_work_sync(&tcp_transport->control_data_ready_work);
-		tcp_transport->control_data_ready_work.func = NULL;
-		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 	}
 
 	if (tcp_transport->stream[CONTROL_STREAM] &&
@@ -231,6 +229,11 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			free_page((unsigned long)tcp_transport->rbuf[i].base);
 			tcp_transport->rbuf[i].base = NULL;
 		}
+	}
+
+	if (tcp_transport->control_data_ready_work.func) {
+		tcp_transport->control_data_ready_work.func = NULL;
+		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 	}
 }
 
