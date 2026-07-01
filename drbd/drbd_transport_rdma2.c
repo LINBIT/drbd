@@ -335,12 +335,11 @@ struct dtr_tx_desc {
 	struct page **wr_pages;
 	int nr_pages;
 	/* Failover resend queue linkage (dtr_resend_work_fn). @resend_cm is the cm
-	 * the desc is still DMA-mapped on (a ref is held while queued); @resend_attempts
-	 * is the remaining retry budget. Only used while on dtr_transport.resend_q.
+	 * the desc is still DMA-mapped on (a ref is held while queued). Only used
+	 * while on dtr_transport.resend_q.
 	 */
 	struct list_head resend_list;
 	struct dtr_cm *resend_cm;
-	int resend_attempts;
 	struct ib_cqe cqe;
 	struct ib_sge sge[]; /* must be last! */
 };
@@ -405,15 +404,18 @@ struct dtr_remote_buffer {
  */
 #define DTR_REG_WR_HEADROOM 16
 
-/* Failover resend: when an in-flight packet's path dies and the tx-completion
- * softirq cannot immediately place it on a surviving path (that path's receive
- * region is momentarily full), it is queued for a bounded asynchronous retry
- * rather than dropping the connection. The window frees as the survivor drains,
- * so a few short-spaced retries cover a transient full condition; if the budget
- * is exhausted (sustained saturation) the connection drops and resyncs as
- * before. See dtr_resend_work_fn().
+/* Failover resend: when a packet's path dies and it cannot immediately be placed
+ * on a surviving path (that path's receive region is momentarily full), it is
+ * queued rather than dropping the connection. A sender on the same stream drains
+ * the queue (dtr_drain_resend) before issuing new sends, placing the stranded
+ * (lower-sequence) descs ahead of the new, higher-sequence data that would
+ * otherwise grab the survivor's region first; the peer can then fill its reorder
+ * gap, deliver, and re-announce region. dtr_resend_work_fn is the backstop that
+ * drains the queue when no sender is active on the stream; it retries
+ * persistently while a path survives (no per-desc deadline -- that would
+ * guillotine a still-recovering survivor; the give-up for a permanently stuck
+ * survivor comes from the active sender's send timeout instead).
  */
-#define DTR_RESEND_MAX_ATTEMPTS 8
 #define DTR_RESEND_DELAY_MS 2
 
 /* A receive region we registered for IB_ACCESS_REMOTE_WRITE and announced to
@@ -602,6 +604,13 @@ struct dtr_transport {
 	spinlock_t resend_lock;
 	bool resend_shutdown;
 	struct delayed_work resend_work;
+	/* Per-stream count of descs awaiting failover-resend. While > 0, a sender on
+	 * that stream first drains the queued reposts (dtr_drain_resend, called from
+	 * dtr_get_cm_reserve_credit/dtr_post_tx_desc) before issuing new sends, so the
+	 * lower-sequence gap-fillers are placed ahead of new data competing for the
+	 * survivor's region.
+	 */
+	atomic_t resend_pending[2];
 };
 
 struct dtr_cm {
@@ -798,6 +807,8 @@ static int dtr_init(struct drbd_transport *transport)
 	INIT_LIST_HEAD(&rdma_transport->resend_q);
 	spin_lock_init(&rdma_transport->resend_lock);
 	rdma_transport->resend_shutdown = false;
+	atomic_set(&rdma_transport->resend_pending[DATA_STREAM], 0);
+	atomic_set(&rdma_transport->resend_pending[CONTROL_STREAM], 0);
 	INIT_DELAYED_WORK(&rdma_transport->resend_work, dtr_resend_work_fn);
 
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++)
@@ -841,6 +852,8 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			dtr_free_tx_desc(old_cm, tx_desc);
 			kref_put(&old_cm->kref, dtr_destroy_cm);
 		}
+		atomic_set(&rdma_transport->resend_pending[DATA_STREAM], 0);
+		atomic_set(&rdma_transport->resend_pending[CONTROL_STREAM], 0);
 	}
 
 	list_for_each_entry(drbd_path, &transport->paths, list) {
@@ -2236,6 +2249,33 @@ static void dtr_tx_timeout_fn(struct timer_list *t)
 	schedule_work(&cm->tx_timeout_work);
 }
 
+/* (Re)arm the per-cm tx watchdog, holding exactly one cm reference for a pending
+ * timer (the was_active dance keeps the count at one across re-arms). The
+ * watchdog is armed when the first WR goes in flight and reset on each
+ * completion, so it measures time since the last COMPLETION, not the last post:
+ * a path that stops completing -- e.g. the peer's port went down and our WRs
+ * black-hole -- is detected within ping_timeo even while we keep posting. This
+ * is what catches the peer side of a one-sided link loss, whose own port stays
+ * up so it gets no IB_EVENT_PORT_ERR and must infer the break from stuck WRs.
+ */
+static void dtr_arm_tx_timeout(struct dtr_cm *cm)
+{
+	struct drbd_transport *transport = &cm->rdma_transport->transport;
+	struct net_conf *nc;
+	unsigned int timeout;
+	bool was_active;
+
+	rcu_read_lock();
+	nc = rcu_dereference(transport->net_conf);
+	timeout = nc->ping_timeo;
+	rcu_read_unlock();
+
+	kref_get(&cm->kref);
+	was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
+	if (was_active)
+		kref_put(&cm->kref, dtr_destroy_cm);
+}
+
 /* Flag a path's cm as suspect so dtr_select_and_get_cm_for_tx() stops choosing
  * it for new sends, and kick dtr_suspect_work_fn() to fail it over. Idempotent
  * and safe from atomic context (IB async-event handler, tx-completion softirq):
@@ -2726,6 +2766,12 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 			kref_put(&cm->kref, dtr_destroy_cm); /* this is _not_ the last ref */
 		else /* the last ref might be put in this work */
 			schedule_work(&cm->end_tx_work);
+	} else {
+		/* Progress on this path: a WR completed but others are still in flight.
+		 * Reset the watchdog so it measures time since this completion -- a path
+		 * that subsequently stops completing is detected within ping_timeo.
+		 */
+		dtr_arm_tx_timeout(cm);
 	}
 }
 
@@ -3044,14 +3090,10 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(cm->path->path.transport, struct dtr_transport, transport);
-	struct drbd_transport *transport = &rdma_transport->transport;
 	struct ib_rdma_wr rdma_wr = {};
 	const struct ib_send_wr *send_wr_failed;
 	struct ib_device *device = cm->id->device;
-	unsigned long timeout;
-	struct net_conf *nc;
 	int i, err = -EIO;
-	bool was_active;
 
 	rdma_wr.wr.next = NULL;
 	tx_desc->cqe.done = dtr_tx_cqe_done;
@@ -3071,36 +3113,38 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 		rdma_wr.wr.opcode = IB_WR_SEND_WITH_IMM;
 	}
 
-	rcu_read_lock();
-	nc = rcu_dereference(transport->net_conf);
-	timeout = nc->ping_timeo;
-	rcu_read_unlock();
-
 	for (i = 0; i < tx_desc->nr_sges; i++)
 		ib_dma_sync_single_for_device(device, tx_desc->sge[i].addr,
 					      tx_desc->sge[i].length, DMA_TO_DEVICE);
 
-	if (atomic_inc_return(&cm->tx_descs_posted) == 1)
+	/* Arm the tx watchdog only for the first in-flight WR; it is reset on each
+	 * completion (dtr_tx_cqe_done), so it tracks time since the last completion
+	 * rather than the last post -- a stalled (black-holing) path is then caught
+	 * within ping_timeo even under a steady post rate.
+	 */
+	if (atomic_inc_return(&cm->tx_descs_posted) == 1) {
 		kref_get(&cm->kref); /* keep one extra ref as long as one tx is posted */
-
-	kref_get(&cm->kref);
-	was_active = mod_timer(&cm->tx_timeout, jiffies + timeout * HZ / 20);
-	if (was_active)
-		kref_put(&cm->kref, dtr_destroy_cm);
+		dtr_arm_tx_timeout(cm);
+	}
 
 	err = ib_post_send(cm->id->qp, &rdma_wr.wr, &send_wr_failed);
 	if (err) {
 		tr_err(&rdma_transport->transport, "ib_post_send() failed %d\n", err);
-		/* This can run in softirq context on the failover-repost path, so
-		 * no cancel_work_sync() here: if the watchdog already fired, its
-		 * work owns the timer ref and drops it itself. Neither put below
-		 * can be the last one, the caller still holds a cm ref.
+		/* The WR never went out; mirror a completion. Only when the in-flight
+		 * count reaches zero do we tear down the watchdog and drop the extra
+		 * ref -- with other WRs still in flight the timer stays armed for them.
+		 * This runs in softirq context on the failover-repost path, so no
+		 * cancel_work_sync() here: if the watchdog already fired, its work owns
+		 * the timer ref and drops it itself (as in dtr_tx_cqe_done()); neither
+		 * put below can be the last one, the caller still holds a cm ref.
 		 */
-		was_active = timer_delete(&cm->tx_timeout);
-		if (was_active)
-			kref_put(&cm->kref, dtr_destroy_cm);
-		if (atomic_dec_and_test(&cm->tx_descs_posted))
-			kref_put(&cm->kref, dtr_destroy_cm);
+		if (atomic_dec_and_test(&cm->tx_descs_posted)) {
+			bool was_active = timer_delete(&cm->tx_timeout);
+
+			if (was_active)
+				kref_put(&cm->kref, dtr_destroy_cm); /* timer ref */
+			kref_put(&cm->kref, dtr_destroy_cm); /* the 0->1 extra ref */
+		}
 	}
 
 	return err;
@@ -3355,16 +3399,19 @@ again_cm:
 static bool dtr_resend_enqueue(struct dtr_transport *rdma_transport, struct dtr_cm *old_cm,
 			       struct dtr_tx_desc *tx_desc)
 {
-	spin_lock(&rdma_transport->resend_lock);
+	/* Called from the tx-completion softirq and from the synchronous send path
+	 * (dtr_flush_chunk), so the lock must disable bottom halves.
+	 */
+	spin_lock_bh(&rdma_transport->resend_lock);
 	if (rdma_transport->resend_shutdown) {
-		spin_unlock(&rdma_transport->resend_lock);
+		spin_unlock_bh(&rdma_transport->resend_lock);
 		return false;
 	}
 	kref_get(&old_cm->kref);
 	tx_desc->resend_cm = old_cm;
-	tx_desc->resend_attempts = DTR_RESEND_MAX_ATTEMPTS;
+	atomic_inc(&rdma_transport->resend_pending[dtr_imm_stream(tx_desc->imm)]);
 	list_add_tail(&tx_desc->resend_list, &rdma_transport->resend_q);
-	spin_unlock(&rdma_transport->resend_lock);
+	spin_unlock_bh(&rdma_transport->resend_lock);
 
 	schedule_delayed_work(&rdma_transport->resend_work, msecs_to_jiffies(DTR_RESEND_DELAY_MS));
 	return true;
@@ -3407,7 +3454,9 @@ static void dtr_resend_work_fn(struct work_struct *work)
 	struct drbd_transport *transport = &rdma_transport->transport;
 	struct dtr_tx_desc *tx_desc, *tmp;
 	bool drop = false, more = false, shutdown;
+	bool drained[2] = { false, false };
 	LIST_HEAD(batch);
+	int i;
 
 	spin_lock_bh(&rdma_transport->resend_lock);
 	list_splice_init(&rdma_transport->resend_q, &batch);
@@ -3416,13 +3465,26 @@ static void dtr_resend_work_fn(struct work_struct *work)
 
 	list_for_each_entry_safe(tx_desc, tmp, &batch, resend_list) {
 		struct dtr_cm *old_cm = tx_desc->resend_cm;
+		enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 		int err;
 
 		list_del(&tx_desc->resend_list);
 
+		/* Backstop drainer for reposts left unplaced when no sender is active
+		 * on the stream (an active sender drains them itself, ahead of its new
+		 * sends, via dtr_drain_resend). Retry persistently while a path
+		 * survives -- give up only on teardown or an all-paths-down transport.
+		 * A per-desc deadline here would guillotine the connection out from
+		 * under an inline drain that is still making progress on a saturated
+		 * but recovering survivor; the genuine give-up for a permanently stuck
+		 * survivor comes instead from the active sender's send timeout
+		 * (dtr_wait_for_remote_buffer), the same bound a normal send has.
+		 */
 		if (shutdown || !dtr_transport_ok(transport)) {
 			dtr_free_tx_desc(old_cm, tx_desc); /* still mapped on old_cm */
 			kref_put(&old_cm->kref, dtr_destroy_cm);
+			if (atomic_dec_and_test(&rdma_transport->resend_pending[stream]))
+				drained[stream] = true;
 			drop = true;
 			continue;
 		}
@@ -3430,21 +3492,27 @@ static void dtr_resend_work_fn(struct work_struct *work)
 		err = dtr_repost_tx_desc(old_cm, tx_desc);
 		if (err == 0) {
 			kref_put(&old_cm->kref, dtr_destroy_cm); /* placed; release queue ref */
-		} else if (err == -EAGAIN && --tx_desc->resend_attempts > 0) {
+			if (atomic_dec_and_test(&rdma_transport->resend_pending[stream]))
+				drained[stream] = true;
+		} else if (err == -EAGAIN) {
+			/* Survivor momentarily out of room; keep it queued and retry. */
 			spin_lock_bh(&rdma_transport->resend_lock);
 			list_add_tail(&tx_desc->resend_list, &rdma_transport->resend_q);
 			spin_unlock_bh(&rdma_transport->resend_lock);
 			more = true;
 		} else {
-			/* budget exhausted (-EAGAIN, desc still on old_cm) or terminal
-			 * (-ECONNRESET, desc already freed by dtr_repost_tx_desc()).
-			 */
-			if (err == -EAGAIN)
-				dtr_free_tx_desc(old_cm, tx_desc);
+			/* -ECONNRESET: dtr_repost_tx_desc() already freed it. */
 			kref_put(&old_cm->kref, dtr_destroy_cm);
+			if (atomic_dec_and_test(&rdma_transport->resend_pending[stream]))
+				drained[stream] = true;
 			drop = true;
 		}
 	}
+
+	/* A stream whose queue just emptied may have senders blocked waiting for it. */
+	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++)
+		if (drained[i])
+			wake_up_interruptible(&rdma_transport->stream[i].send_wq);
 
 	if (more && !shutdown)
 		schedule_delayed_work(&rdma_transport->resend_work,
@@ -3509,6 +3577,97 @@ static int dtr_wait_for_remote_buffer(struct dtr_transport *rdma_transport,
 	return 0;
 }
 
+/* Place this stream's queued failover reposts from the caller's process context
+ * before it issues new sends. Reposts carry the dead path's LOWER sequence
+ * numbers -- the gap the peer's reorder queue is stalled on. Sending them ahead
+ * of new, higher-sequence data (which competes for the same survivor receive
+ * region) lets the peer fill the gap, deliver, and re-announce region, which in
+ * turn frees space for the remaining reposts; the new sends that follow
+ * immediately keep that region cycling. This priority-then-resume ordering is
+ * what a plain yield (stall the survivor -> peer stops re-announcing -> reposts
+ * starve for region) and a plain no-yield (new high-seq sends grab the region
+ * first) each fail to achieve. Crucially, placing a repost is itself survivor
+ * traffic, so -- unlike a yield -- this drives the peer's re-announce rather than
+ * starving it. Waits for region when the survivor is momentarily full, bounded
+ * by the send timeout (the same back-pressure a normal send sees).
+ *
+ * A pulled desc is held on-stack (off the queue) across the retry/wait, so it
+ * cannot race teardown's queue drain. Returns 0 once @stream's resend queue is
+ * drained (caller may send), or a negative errno the caller should surface as a
+ * connection drop: -ECONNRESET (transport gone), -EAGAIN (send timeout
+ * exhausted), -EINTR (signal).
+ */
+static int dtr_drain_resend(struct dtr_transport *rdma_transport, enum drbd_stream stream)
+{
+	struct drbd_transport *transport = &rdma_transport->transport;
+
+	while (atomic_read(&rdma_transport->resend_pending[stream])) {
+		struct dtr_tx_desc *tx_desc = NULL, *iter;
+		struct dtr_cm *old_cm;
+		int err;
+
+		spin_lock_bh(&rdma_transport->resend_lock);
+		list_for_each_entry(iter, &rdma_transport->resend_q, resend_list) {
+			if (dtr_imm_stream(iter->imm) == stream) {
+				tx_desc = iter;
+				list_del(&tx_desc->resend_list);
+				break;
+			}
+		}
+		spin_unlock_bh(&rdma_transport->resend_lock);
+
+		/* pending > 0 but nothing queued for this stream: another drainer
+		 * (the resend worker, or a concurrent sender) holds the desc
+		 * mid-placement -- it is being prioritized there -- so let this
+		 * caller proceed rather than spin.
+		 */
+		if (!tx_desc)
+			return 0;
+
+		old_cm = tx_desc->resend_cm;
+
+		/* Retry THIS desc until it lands or we must give up; it stays
+		 * on-stack (off the queue) the whole time.
+		 */
+		for (;;) {
+			if (!dtr_transport_ok(transport)) {
+				dtr_free_tx_desc(old_cm, tx_desc); /* still mapped on old_cm */
+				kref_put(&old_cm->kref, dtr_destroy_cm);
+				atomic_dec(&rdma_transport->resend_pending[stream]);
+				return -ECONNRESET;
+			}
+
+			err = dtr_repost_tx_desc(old_cm, tx_desc);
+			if (err == 0) {
+				/* placed; release the queue's ref on old_cm */
+				kref_put(&old_cm->kref, dtr_destroy_cm);
+				atomic_dec(&rdma_transport->resend_pending[stream]);
+				break;
+			}
+			if (err != -EAGAIN) {
+				/* -ECONNRESET: dtr_repost_tx_desc() already freed it. */
+				kref_put(&old_cm->kref, dtr_destroy_cm);
+				atomic_dec(&rdma_transport->resend_pending[stream]);
+				return err;
+			}
+
+			/* Survivor momentarily out of region: wait for an announce
+			 * (the peer frees region as it consumes the reposts already
+			 * placed), then retry this same desc.
+			 */
+			err = dtr_wait_for_remote_buffer(rdma_transport, stream,
+							 dtr_tx_desc_bytes(tx_desc));
+			if (err) {
+				dtr_free_tx_desc(old_cm, tx_desc); /* still mapped on old_cm */
+				kref_put(&old_cm->kref, dtr_destroy_cm);
+				atomic_dec(&rdma_transport->resend_pending[stream]);
+				return err;
+			}
+		}
+	}
+	return 0;
+}
+
 static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 			    struct dtr_tx_desc *tx_desc)
 {
@@ -3516,7 +3675,7 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct ib_device *device;
 	struct dtr_flow *flow;
-	struct dtr_cm *cm;
+	struct dtr_cm *cm = NULL;
 	u64 remote_addr = 0;
 	u32 rkey = 0;
 	int offset, err;
@@ -3530,6 +3689,14 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	offset = tx_desc->sge[0].lkey;
 
 retry:
+	/* Drain this stream's reposts (placing the lower-sequence gap-fillers
+	 * ahead of this new send) before competing for the survivor's region.
+	 */
+	if (atomic_read(&rdma_transport->resend_pending[stream])) {
+		err = dtr_drain_resend(rdma_transport, stream);
+		if (err)
+			return err;
+	}
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
 			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream)),
 			rdma_stream->send_timeout);
@@ -5462,11 +5629,19 @@ static struct dtr_cm *dtr_get_cm_reserve_credit(struct dtr_transport *rdma_trans
 {
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[DATA_STREAM];
 	struct dtr_flow *flow;
-	struct dtr_cm *cm;
+	struct dtr_cm *cm = NULL;
 	long t;
 
 	*err = 0;
 retry:
+	/* Drain DATA reposts (priority gap-fillers) before this new send competes
+	 * for the survivor's region (see dtr_drain_resend / dtr_post_tx_desc).
+	 */
+	if (atomic_read(&rdma_transport->resend_pending[DATA_STREAM])) {
+		*err = dtr_drain_resend(rdma_transport, DATA_STREAM);
+		if (*err)
+			return NULL;
+	}
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
 			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, DATA_STREAM)),
 			rdma_stream->send_timeout);
