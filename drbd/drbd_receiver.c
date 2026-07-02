@@ -3145,20 +3145,57 @@ static void submit_peer_request_activity_log(struct drbd_peer_request *peer_req)
 		drbd_cleanup_after_failed_submit_peer_write(peer_req);
 }
 
+/* Give up on a peer write that was held waiting for conflicts to resolve.
+ * Mirrors the cleanup done in receive_Data()'s out_del_list path, but also
+ * removes the interval (which was already inserted into the tree) and wakes
+ * conn_disconnect(), which may be waiting for active_ee_cnt to reach zero.
+ */
+static void cleanup_canceled_peer_write(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	struct drbd_connection *connection = peer_device->connection;
+
+	drbd_remove_peer_req_interval(peer_req);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	peer_req->flags &= ~EE_ON_RECV_ORDER;
+	list_del(&peer_req->recv_order);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	if (peer_req->flags & EE_IN_ACTLOG)
+		drbd_al_complete_io(device, &peer_req->i);
+	else
+		atomic_sub(interval_to_al_extents(&peer_req->i), &device->wait_for_actlog_ecnt);
+
+	if (peer_req->flags & EE_SEND_WRITE_ACK)
+		dec_unacked(peer_device);
+	drbd_may_finish_epoch(connection, peer_req->epoch, EV_PUT + EV_CLEANUP);
+	put_ldev(device);
+	drbd_free_peer_req(peer_req);
+
+	if (atomic_dec_and_test(&connection->active_ee_cnt))
+		wake_up(&connection->ee_wait);
+}
+
 void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	bool conflict = false;
+	bool canceled;
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
+	canceled = test_bit(INTERVAL_CANCELED, &peer_req->i.flags);
 	conflict = drbd_find_conflict(device, &peer_req->i, 0);
-	if (!conflict)
+	if (!conflict && !canceled)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
-	if (!conflict)
+	if (canceled)
+		cleanup_canceled_peer_write(peer_req);
+	else if (!conflict)
 		submit_peer_request_activity_log(peer_req);
 }
 
@@ -9862,6 +9899,54 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 		queue_work(submit_conflict->wq, &submit_conflict->worker);
 }
 
+/* Peer writes that are held waiting for a conflicting interval to resolve keep
+ * active_ee_cnt above zero. If the conflict cannot resolve, conn_disconnect()
+ * would wait for active_ee_cnt forever. Cancelling such writes is okay, since
+ * they could have been lost in flight as well.
+ */
+static void cancel_conflicting_peer_writes(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct conflict_worker *submit_conflict = &device->submit_conflict;
+	struct rb_node *node;
+	bool any_queued = false;
+
+	spin_lock_irq(&device->interval_lock);
+	for (node = rb_first(&device->requests); node; node = rb_next(node)) {
+		struct drbd_interval *i = rb_entry(node, struct drbd_interval, rb);
+		struct drbd_peer_request *peer_req;
+
+		if (i->type != INTERVAL_PEER_WRITE)
+			continue;
+
+		peer_req = container_of(i, struct drbd_peer_request, i);
+
+		if (peer_req->peer_device != peer_device)
+			continue;
+
+		if (test_bit(INTERVAL_SUBMITTED, &i->flags) ||
+				test_bit(INTERVAL_CANCELED, &i->flags))
+			continue;
+
+		set_bit(INTERVAL_CANCELED, &i->flags);
+
+		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
+			continue;
+
+		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags);
+
+		spin_lock(&submit_conflict->lock);
+		list_add_tail(&peer_req->w.list, &submit_conflict->peer_writes);
+		spin_unlock(&submit_conflict->lock);
+
+		any_queued = true;
+	}
+	spin_unlock_irq(&device->interval_lock);
+
+	if (any_queued)
+		queue_work(submit_conflict->wq, &submit_conflict->worker);
+}
+
 static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, unsigned int node_id)
 {
 	struct drbd_connection *connection;
@@ -10332,6 +10417,11 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	connection->after_reconciliation.lost_node_id = -1;
 	connection->reconcile_handshake.lost_node_id = -1;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		cancel_conflicting_peer_writes(peer_device);
+	rcu_read_unlock();
 
 	/* Wait for current activity to cease.  This includes waiting for
 	 * peer_request queued to the submitter workqueue. */
