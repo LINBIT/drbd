@@ -181,7 +181,6 @@ static int dtt_init(struct drbd_transport *transport)
 		tcp_transport->rbuf[i].base = buffer;
 		tcp_transport->rbuf[i].pos = buffer;
 	}
-	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 
 	timer_setup(&tcp_transport->control_timer, dtt_control_timer_fn, 0);
 
@@ -234,7 +233,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			tcp_transport->rbuf[i].base = NULL;
 		}
 	}
-
 	if (tcp_transport->control_data_ready_work.func) {
 		tcp_transport->control_data_ready_work.func = NULL;
 		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
@@ -1183,6 +1181,8 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct tls_handshake_wait csocket_tls_wait = { .status = 0 };
 	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
 #endif
+
+	INIT_WORK(&tcp_transport->control_data_ready_work, dtt_control_data_ready_work);
 
 	dsocket = NULL;
 	csocket = NULL;
