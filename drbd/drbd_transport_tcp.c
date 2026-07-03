@@ -225,7 +225,6 @@ static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 			tcp_transport->rbuf[i].base = NULL;
 		}
 	}
-
 	if (tcp_transport->control_data_ready_work.func) {
 		tcp_transport->control_data_ready_work.func = NULL;
 		FINALIZE_WORK(&tcp_transport->control_data_ready_work);
@@ -1213,7 +1212,7 @@ static int dtt_connect(struct drbd_transport *transport)
 	struct tls_handshake_wait dsocket_tls_wait = { .status = 0 };
 #endif
 
-		/* Having that here should fix occosional connection
+		/* Having that here fixes occosional connection
 		 * aborts (BrokenPipe) in the early connection establish
 		 * process.
 		 */
@@ -1499,8 +1498,6 @@ out_eagain:
 out_release_sockets:
 	dtt_socket_free(&dsocket);
 	dtt_socket_free(&csocket);
-
-	FINALIZE_WORK(&tcp_transport->control_data_ready_work);
 
 out:
 	if (first_path)
