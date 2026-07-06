@@ -11701,6 +11701,27 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
 	read_unlock_irq(&resource->state_rwlock);
 }
 
+/* A block just marked out of sync may sit behind a sync target's resync
+ * cursor (resync_next_bit), which make_resync_request() has already advanced
+ * past.  This happens for a peer ack reporting that a peer does not hold a
+ * write: we mark that peer out of sync, but if the cursor is already beyond
+ * the block nothing would ever request it again, and the resync stalls just
+ * short of completion.  Rewind the cursor, mirroring receive_out_of_sync().
+ */
+static void rs_rewind_next_bit(struct drbd_peer_device *peer_device, sector_t sector)
+{
+	spin_lock_bh(&peer_device->resync_next_bit_lock);
+	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
+		unsigned long bit = BM_SECT_TO_BIT(sector);
+
+		if (bit < peer_device->resync_next_bit)
+			peer_device->resync_next_bit = bit;
+		if (!timer_pending(&peer_device->resync_timer))
+			mod_timer(&peer_device->resync_timer, jiffies + 1);
+	}
+	spin_unlock_bh(&peer_device->resync_next_bit_lock);
+}
+
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_peer_ack *p = pi->data;
@@ -11734,6 +11755,8 @@ found:
 		D_ASSERT(peer_device, peer_req->flags & EE_IN_ACTLOG);
 
 		if (get_ldev(device)) {
+			u64 set_oos;
+
 			if ((peer_req->flags & EE_WAS_ERROR) == 0)
 				in_sync_b = node_ids_to_bitmap(device, in_sync);
 			else
@@ -11744,6 +11767,23 @@ found:
 			drbd_set_sync(device, peer_req->i.sector,
 				      peer_req->i.size, ~in_sync_b, mask);
 			drbd_al_complete_io(device, &peer_req->i);
+
+			/* Bits we just set out of sync may be behind a sync
+			 * target's resync cursor; rewind it so they get
+			 * requested again instead of stalling the resync.
+			 */
+			set_oos = ~in_sync_b & mask;
+			if (set_oos) {
+				struct drbd_peer_device *pd;
+
+				rcu_read_lock();
+				for_each_peer_device_rcu(pd, device) {
+					if (pd->bitmap_index != -1 &&
+					    (set_oos & (1ULL << pd->bitmap_index)))
+						rs_rewind_next_bit(pd, peer_req->i.sector);
+				}
+				rcu_read_unlock();
+			}
 			put_ldev(device);
 		}
 
