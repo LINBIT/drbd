@@ -3836,6 +3836,7 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	 * set this to 1. */
 	resource->members = res_opts->drbd8_compat_mode ? 1 : NODE_MASK(res_opts->node_id);
 	INIT_WORK(&resource->empty_twopc, drbd_empty_twopc_work_fn);
+	INIT_WORK(&resource->resume_twopc, drbd_resume_twopc_work_fn);
 	INIT_LIST_HEAD(&resource->suspended_reqs);
 
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
