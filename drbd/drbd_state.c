@@ -3173,8 +3173,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 				create_new_uuid = true;
 
 			if (lost_contact_to_peer_data(peer_disk_state)) {
-				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
-				    drbd_data_accessible(device, NEW))
+				if (role[NEW] == R_PRIMARY &&
+				    !test_bit(UNREGISTERED, &device->flags) &&
+				    (drbd_data_accessible(device, OLD) ||
+				     drbd_data_accessible(device, NEW)))
 					create_new_uuid = true;
 
 				if (connection->agreed_pro_version < 110 &&
