@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.19~flant.5
+Version: 9.2.19~flant.10
 Release: 1
 
 # always require a suitable userland
@@ -232,6 +232,9 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
+* Thu Jul 09 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.10
+-  Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
+
 * Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.5
 -  Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
 
