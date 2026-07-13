@@ -2,6 +2,11 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.18-flant.10 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
+
+
 9.2.18-flant.5 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
