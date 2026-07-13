@@ -46,6 +46,7 @@
 /* module parameter, defined in drbd_main.c */
 extern unsigned int drbd_minor_count;
 extern unsigned int drbd_protocol_version_min;
+extern unsigned int drbd_max_parallel_resyncs;
 extern bool drbd_strict_names;
 
 static inline bool drbd_protocol_version_acceptable(unsigned int pv)
@@ -537,8 +538,11 @@ enum {
 	/* SyncTarget: This is the last resync request. */
 	__EE_LAST_RESYNC_REQUEST,
 
-	/* This peer_req->recv_order is on some list */
+	/* This peer_req->recv_order is on some list protected by peer_reqs_lock */
 	__EE_ON_RECV_ORDER,
+
+	/* This peer_req->recv_order is on connection->send_oos protocted by send_oos_lock */
+	__EE_ON_SEND_OOS,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -555,6 +559,7 @@ enum {
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
+#define EE_ON_SEND_OOS		(1<<__EE_ON_SEND_OOS)
 
 /* flag bits per device */
 enum device_flag {
@@ -592,6 +597,15 @@ enum device_flag {
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
+	EXPOSED_GEN_UNCONFIRMED, /* A diskless primary started a new data
+				  * generation that no peer has confirmed yet.
+				  * While set, a further peer loss does not start
+				  * yet another generation -- the open one already
+				  * covers it (the losses are logically
+				  * simultaneous) -- so there is at most one
+				  * unconfirmed generation and a single
+				  * predecessor at any time.
+				  */
 };
 
 /* flag bits per peer device */
@@ -610,6 +624,9 @@ enum peer_device_flag {
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
+	RECONCILE_PENDING,	/* post-loss reconcile owed, not yet armed;
+				 * bridges loss -> RECONCILIATION_RESYNC
+				 */
 	UNSTABLE_RESYNC,	/* Sync source went unstable during resync. */
 	SEND_STATE_AFTER_AHEAD,
 	GOT_NEG_ACK,		/* got a neg_ack while primary, wait until peer_disk is lower than
@@ -626,6 +643,28 @@ enum peer_device_flag {
 	UUIDS_RECEIVED,		/* Have recent UUIDs from the peer */
 	CURRENT_UUID_RECEIVED,	/* Got a p_current_uuid packet */
 	PEER_QUORATE,		/* Peer has quorum */
+	CURRENT_UUID_UNCONFIRMED, /* Diskless primary optimistically advanced this
+				   * peer's current_uuid (sent the new UUID, assumed
+				   * it took). Until the peer confirms, the handshake
+				   * trusts the peer's reported UUID and the rotated
+				   * gen is not yet confirmed durable on this peer.
+				   * Cleared only on the peer's own data evidence by
+				   * drbd_peer_maybe_confirm_rotated_gen(): every held
+				   * write of the gen durable on the peer, or, none
+				   * held, a barrier ack at/past the gen's epoch.
+				   */
+	RECONCILE_INJECT_CUR_UUID, /* This peer returned on our predecessor
+				    * generation.  We assert it UpToDate anyway
+				    * (it holds a complete generation and the
+				    * bridging writes are still replayable) and arm
+				    * this so that, once it settles UpToDate, we
+				    * relabel it forward to our current generation.
+				    * See diskless_with_peers_different_current_uuids().
+				    */
+	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
+				 * send it our current UUID (the relabel), ordered
+				 * by the sender after the replayed transfer log.
+				 */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1285,6 +1324,18 @@ struct drbd_connection {
 		int lost_node_id;
 	} after_reconciliation;
 
+	/*
+	 * Filled in during the connect handshake (DRBD_FF_RECONCILE_RECONNECT)
+	 * from a P_PEER_DAGTAG the peer sends before its state: the peer's
+	 * position in a common lost primary's change stream. drbd_uuid_compare()
+	 * compares it against our own last_dagtag_sector toward that node to roll
+	 * an equal-UUID both-dirty reconcile forward. lost_node_id == -1 if none.
+	 */
+	struct {
+		u64 dagtag_sector;
+		int lost_node_id;
+	} reconcile_handshake;
+
 	unsigned int peer_node_id;
 
 	struct drbd_mutable_buffer reassemble_buffer;
@@ -1334,6 +1385,7 @@ struct drbd_peer_device {
 	bool resync_susp_peer[2];
 	bool resync_susp_dependency[2];
 	bool resync_susp_other_c[2];
+	bool resync_susp_max_parallel[2];
 	bool resync_active[2];
 	enum drbd_repl_state negotiation_result; /* To find disk state after attach */
 	unsigned int send_cnt;
@@ -1596,6 +1648,16 @@ struct drbd_device {
 	wait_queue_head_t seq_wait;
 	u64 exposed_data_uuid; /* UUID of the exposed data */
 	u64 next_exposed_data_uuid;
+	/* When a diskless primary starts a new data generation it keeps the
+	 * generation it bumped away from (the predecessor) and the write epoch
+	 * the new generation began in.  This lets a peer that reconnects on the
+	 * predecessor generation be recognised and brought forward by replaying
+	 * the transfer log (re-injecting the new current UUID at exposed_gen_epoch),
+	 * rather than rejected -- as long as the writes bridging the two are still
+	 * resendable.  Protected by uuid_sem.
+	 */
+	u64 exposed_data_uuid_predecessor;
+	unsigned int exposed_gen_epoch;
 	struct rw_semaphore uuid_sem;
 	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
 	struct pending_bitmap_work_s {
@@ -1613,6 +1675,10 @@ struct drbd_device {
 	struct submit_worker submit;
 	u64 read_nodes; /* used for balancing read requests among peers */
 	bool have_quorum[2];	/* no quorum -> suspend IO or error IO */
+	bool quorum[2];		/* real quorum, tracked even when quorum is
+				 * disabled (then not enforced); used to decide
+				 * reconciliation direction
+				 */
 	bool cached_state_unstable; /* updates with each state change */
 	bool cached_err_io; /* complete all IOs with error */
 
@@ -1635,6 +1701,17 @@ struct drbd_device {
 	struct rcu_head rcu;
 	struct work_struct finalize_work;
 };
+
+/* Per-peer CURRENT_UUID_UNCONFIRMED clear; defined in drbd_req.c. */
+extern void drbd_peer_maybe_confirm_rotated_gen(struct drbd_peer_device *peer_device,
+						unsigned int acked_epoch);
+
+/* Device-level decision for the per-peer signals above; defined in
+ * drbd_receiver.c.  Returns true (clearing EXPOSED_GEN_UNCONFIRMED) when the
+ * rotated generation just became confirmed across a quorate set of survivors.
+ */
+extern bool drbd_maybe_release_rotated_gen(struct drbd_device *device);
+extern void drbd_reconcile_settled_try_up_to_date(struct drbd_resource *resource);
 
 struct drbd_bm_aio_ctx {
 	struct drbd_device *device;
@@ -2139,6 +2216,9 @@ void drbd_transport_shutdown(struct drbd_connection *connection,
 void drbd_destroy_connection(struct kref *kref);
 void conn_free_crypto(struct drbd_connection *connection);
 
+/* From drbd_transport.c; here because drbd-headers is frozen for drbd-9.2 */
+struct drbd_listener *drbd_listener_try_get_ref(struct drbd_path *path);
+
 /* drbd_req */
 void drbd_do_submit_conflict(struct work_struct *ws);
 void do_submit(struct work_struct *ws);
@@ -2213,6 +2293,7 @@ void drbd_start_resync(struct drbd_peer_device *peer_device,
 		       enum drbd_repl_state side, const char *tag);
 void resume_next_sg(struct drbd_device *device);
 void suspend_other_sg(struct drbd_device *device);
+void drbd_apply_resync_max_parallel(void);
 void drbd_resync_finished(struct drbd_peer_device *peer_device,
 			  enum drbd_disk_state new_peer_disk_state);
 void verify_progress(struct drbd_peer_device *peer_device,
@@ -2349,6 +2430,8 @@ void drbd_unsuccessful_resync_request(struct drbd_peer_request *peer_req,
 int drbd_send_out_of_sync_wf(struct drbd_work *w, int cancel);
 int drbd_flush_ack_wf(struct drbd_work *w, int unused);
 void drbd_send_ping_wf(struct work_struct *ws);
+void drbd_queue_ping(struct drbd_connection *connection);
+void drbd_queue_ping_ack(struct drbd_connection *connection);
 void drbd_send_acks_wf(struct work_struct *ws);
 void drbd_send_peer_ack_wf(struct work_struct *ws);
 bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device);
@@ -2389,6 +2472,8 @@ enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs,
 			u64 nodes_to_reach);
 void drbd_try_to_get_resynced(struct drbd_device *device);
+bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device);
+u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device);
 void drbd_process_rs_discards(struct drbd_peer_device *peer_device,
 			      bool submit_all);
 void drbd_last_resync_request(struct drbd_peer_device *peer_device,

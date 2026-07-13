@@ -84,6 +84,8 @@ enum sync_rule {
 	RULE_LOST_QUORUM,
 	RULE_RECONNECTED,
 	RULE_BOTH_OFF,
+	RULE_RECONCILE_BITMAP,
+	RULE_RECONCILE_DAGTAG,
 	RULE_BITMAP_PEER,
 	RULE_BITMAP_PEER_OTHER,
 	RULE_BITMAP_SELF,
@@ -109,6 +111,8 @@ static const char * const sync_rule_names[] = {
 	[RULE_LOST_QUORUM] = "lost-quorum",
 	[RULE_RECONNECTED] = "reconnected",
 	[RULE_BOTH_OFF] = "both-off",
+	[RULE_RECONCILE_BITMAP] = "reconcile-bitmap",
+	[RULE_RECONCILE_DAGTAG] = "reconcile-dagtag",
 	[RULE_BITMAP_PEER] = "bitmap-peer",
 	[RULE_BITMAP_PEER_OTHER] = "bitmap-peer-other",
 	[RULE_BITMAP_SELF] = "bitmap-self",
@@ -275,6 +279,7 @@ static void set_rcvtimeo(struct drbd_connection *connection, enum rcv_timeou_kin
 static bool disconnect_expected(struct drbd_connection *connection);
 static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid);
 static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
+static int find_common_lost_primary_node_id(struct drbd_connection *self);
 static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *peer_device);
 static void drbd_cleanup_stale_resync_intervals(struct drbd_peer_device *peer_device);
 
@@ -289,7 +294,7 @@ static const char *drbd_sync_rule_str(enum sync_rule rule)
 
 static struct sync_descriptor strategy_descriptor(enum sync_strategy strategy)
 {
-	if (strategy < 0 || strategy > ARRAY_SIZE(sync_descriptors)) {
+	if (strategy < 0 || strategy >= ARRAY_SIZE(sync_descriptors)) {
 		WARN_ON(true);
 		return sync_descriptors[UNDETERMINED];
 	}
@@ -459,7 +464,7 @@ void drbd_free_peer_req(struct drbd_peer_request *peer_req)
 			list_del(&peer_req->recv_order);
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
-
+	D_ASSERT(peer_device, !(peer_req->flags & EE_ON_SEND_OOS));
 	if (peer_req->flags & EE_HAS_DIGEST)
 		kfree(peer_req->digest);
 	D_ASSERT(peer_device, atomic_read(&peer_req->pending_bios) == 0);
@@ -665,6 +670,25 @@ void conn_connect2(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
 	int vnr;
+
+	/*
+	 * If a common primary is currently absent and we have a dagtag toward
+	 * it, hand the peer our position in its change stream before the UUID
+	 * and state packets below. drbd_uuid_compare() on the peer uses it to
+	 * roll an equal-UUID both-dirty reconcile forward (the node further
+	 * along the stream becomes the source). Feature-gated; a peer without
+	 * the feature never receives it and falls back to a node-id choice.
+	 */
+	if (connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT) {
+		int lost_node_id = find_common_lost_primary_node_id(connection);
+		struct drbd_connection *lost_peer = lost_node_id == -1 ? NULL :
+			drbd_get_connection_by_node_id(connection->resource, lost_node_id);
+
+		if (lost_peer) {
+			drbd_send_peer_dagtag(connection, lost_peer);
+			kref_put(&lost_peer->kref, drbd_destroy_connection);
+		}
+	}
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -3535,7 +3559,8 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
 	struct gendisk *disk = device->ldev->backing_bdev->bd_disk;
-	unsigned long db, dt, dbdt;
+	unsigned long dt, dbdt;
+	long db;
 	unsigned int c_min_rate;
 	int curr_events;
 
@@ -3568,7 +3593,18 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 		dt = ((long)jiffies - (long)peer_device->rs_mark_time[i]) / HZ;
 		if (!dt)
 			dt++;
-		db = peer_device->rs_mark_left[i] - rs_left;
+
+		/* db is signed: the out-of-sync count grows (db < 0) when the
+		 * resync is losing ground to incoming application writes. Doing
+		 * this subtraction unsigned would wrap to a huge value, making
+		 * dbdt exceed c_min_rate and wrongly throttle the resync exactly
+		 * when it is starved. If oos is not shrinking, the resync makes
+		 * no forward progress, i.e. it is below any minimum rate, so we
+		 * must not slow it down here.
+		 */
+		db = (long)peer_device->rs_mark_left[i] - (long)rs_left;
+		if (db <= 0)
+			return false;
 		dbdt = Bit2KB(db/dt);
 
 		if (dbdt > c_min_rate)
@@ -3689,8 +3725,12 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 	u64 block_id = peer_req->block_id;
 
 	if (peer_req->i.type == INTERVAL_OV_READ_SOURCE) {
-		/* P_OV_REPLY */
-		dec_rs_pending(peer_device);
+		/* P_OV_REPLY.
+		 * rs_pending was already decremented in
+		 * receive_common_ov_reply() before the peer_req reached
+		 * either of the two paths that call us; do not decrement
+		 * again.
+		 */
 		drbd_send_ov_result(peer_device, sector, size, block_id, OV_RESULT_SKIP);
 	} else if (peer_req->i.type == INTERVAL_OV_READ_TARGET) {
 		/* P_OV_REQUEST */
@@ -4162,12 +4202,14 @@ static int receive_flush_requests(struct drbd_connection *connection, struct pac
 	drbd_flush_peer_acks(resource);
 
 	/* For each peer, check if peer ack for this dagtag has already been sent */
+	read_lock_irq(&resource->state_rwlock);
 	rcu_read_lock();
 	for_each_connection_rcu(other_connection, resource) {
 		if (other_connection->cstate[NOW] == C_CONNECTED)
 			queue_work(other_connection->ack_sender, &other_connection->peer_ack_work);
 	}
 	rcu_read_unlock();
+	read_unlock_irq(&resource->state_rwlock);
 
 	return 0;
 }
@@ -4608,6 +4650,50 @@ uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, enum sync_rule *r
 	return UNDETERMINED;
 }
 
+/*
+ * Two diskful peers can carry the same current UUID yet sit at different
+ * positions in a (now absent) common primary's change stream. When both still
+ * hold out-of-sync bits toward each other, the bit counts do not order them;
+ * only the dagtag toward that common primary tells roll-forward from roll-back.
+ *
+ * Each of us kept its last_dagtag_sector toward the lost primary across the
+ * disconnect (see conn_disconnect()). Identify exactly one such common,
+ * currently-absent peer, so we can hand the other side our dagtag toward it
+ * during the handshake and let the node further along the stream become the
+ * resync source.
+ *
+ * Return -1 if there is no candidate, or more than one (ambiguous): we then
+ * fall back to a deterministic node-id choice, which still converges.
+ */
+static int find_common_lost_primary_node_id(struct drbd_connection *self)
+{
+	struct drbd_resource *resource = self->resource;
+	struct drbd_connection *connection;
+	int found = -1;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		if (connection == self)
+			continue;
+		if (connection->cstate[NOW] == C_CONNECTED)
+			continue;
+		/*
+		 * Non-zero means we received writes (dagtags) from it: it was a
+		 * source of data we may sit behind. Zero cannot order us.
+		 */
+		if (atomic64_read(&connection->last_dagtag_sector) == 0)
+			continue;
+		if (found != -1) {
+			found = -1; /* ambiguous; caller uses the node-id fallback */
+			break;
+		}
+		found = connection->peer_node_id;
+	}
+	rcu_read_unlock();
+
+	return found;
+}
+
 static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device,
 			     enum sync_rule *rule, int *peer_node_id)
 {
@@ -4695,6 +4781,15 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 			*rule = RULE_SYNC_TARGET_PEER_MISSED_FINISH;
 			return SYNC_TARGET_USE_BITMAP;
 		}
+
+		/*
+		 * Equal current UUIDs do not imply identical data: two peers can
+		 * still hold out-of-sync bits toward each other. The rules below
+		 * resolve the direction; where they would otherwise declare NO_SYNC
+		 * and drop those bits, disk_states_to_strategy() reconciles via the
+		 * bitmap afterwards (maybe_reconcile_equal_uuid_bitmap), so it never
+		 * preempts a disk-state-based direction.
+		 */
 
 		if (connection->agreed_pro_version >= 120) {
 			*rule = RULE_RECONNECTED;
@@ -5070,9 +5165,119 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 	return SYNC_TARGET_CLEAR_BITMAP;
 }
 
+/*
+ * Two equal-current-UUID peers can still hold out-of-sync bits toward each
+ * other (a common primary vanished while they sat at different positions in
+ * its change stream, and the P_PEER_DAGTAG reconciliation never reached them
+ * -- e.g. a switch failure isolating all three at once). The equal-UUID rules
+ * would then declare NO_SYNC, which clears the bitmaps and silently drops the
+ * divergence. Reconcile via the bitmap instead.
+ *
+ *     precondition (else leave the decision untouched):
+ *         strategy == NO_SYNC            (rules found no resync; bits would drop)
+ *         both peers D_UP_TO_DATE        (differing disk states are the
+ *                                         disk-state decision's job, made above)
+ *         out-of-sync bits remain        (comm_bm_set || dirty_bits)
+ *         peer supports the feature      (DRBD_FF_RECONCILE_RECONNECT)
+ *         no stronger signal owns it     (crashed primary / lost quorum)
+ *
+ *     direction:
+ *         one side has bits   -> that side is the exact subset -> other is source
+ *         both sides have bits -> dagtag toward the common lost primary,
+ *                                 else a deterministic node-id tie-break
+ *
+ * Placed here, after the disk-state resolution, so it never preempts a real
+ * resync direction; it only rescues the would-be NO_SYNC-drops-bits case.
+ */
+static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_device,
+					      enum drbd_disk_state disk_state,
+					      enum drbd_disk_state peer_disk_state,
+					      enum sync_strategy *strategy,
+					      enum sync_rule *rule)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_device *device = peer_device->device;
+	const int node_id = device->resource->res_opts.node_id;
+	u64 local_uuid_flags;
+
+	if (*strategy != NO_SYNC)
+		return;
+	if (disk_state != D_UP_TO_DATE || peer_disk_state != D_UP_TO_DATE)
+		return;
+	if (!(peer_device->comm_bm_set || peer_device->dirty_bits))
+		return;
+	if (!(connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT))
+		return;
+
+	/*
+	 * Reconcile only between secondaries of a *common lost primary*: the peer
+	 * named one via P_PEER_DAGTAG during this connect handshake
+	 * (find_common_lost_primary_node_id stashed it in reconcile_handshake).
+	 * Without that, an equal-UUID state with leftover bits is an ordinary
+	 * reconnect whose direction the rules above already settled (or NO_SYNC is
+	 * correct) -- do not second-guess it and force a resync.
+	 */
+	if (connection->cstate[NOW] != C_CONNECTING ||
+	    connection->reconcile_handshake.lost_node_id == -1)
+		return;
+
+	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
+	if ((local_uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
+	    (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY) ||
+	    test_bit(PRIMARY_LOST_QUORUM, &device->flags) ||
+	    (peer_device->uuid_flags & UUID_FLAG_PRIMARY_LOST_QUORUM))
+		return;
+
+	/* Mark this as a reconciliation resync, like the connected dagtag reconcile
+	 * (receive_peer_dagtag).  Its bitmap is pessimistic (set for tails that may
+	 * have been delivered) between two full copies; the SyncTarget then forces
+	 * checksum-based resync, clearing the matching majority without transfer and
+	 * keeping its Inconsistent window short.  Cleared when the resync finishes
+	 * (sanitize_state) or on disconnect.
+	 */
+	set_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+
+	*rule = RULE_RECONCILE_BITMAP;
+	if (peer_device->comm_bm_set && !peer_device->dirty_bits) {
+		*strategy = SYNC_SOURCE_USE_BITMAP;
+	} else if (peer_device->dirty_bits && !peer_device->comm_bm_set) {
+		*strategy = SYNC_TARGET_USE_BITMAP;
+	} else {
+		/*
+		 * Both sides hold bits. Either direction restores identity, but the
+		 * bit counts do not order us; the node further along the common lost
+		 * primary's change stream (by dagtag) is the source. No usable dagtag
+		 * offset (we are at the same position) -> deterministic node-id
+		 * tie-break; either direction converges.
+		 */
+		int lost_id = connection->reconcile_handshake.lost_node_id;
+		struct drbd_connection *lost;
+		s64 offset = 0;
+
+		rcu_read_lock();
+		lost = drbd_connection_by_node_id(device->resource, lost_id);
+		if (lost)
+			offset = atomic64_read(&lost->last_dagtag_sector) -
+				(s64)connection->reconcile_handshake.dagtag_sector;
+		rcu_read_unlock();
+
+		if (offset) {
+			*rule = RULE_RECONCILE_DAGTAG;
+			*strategy = offset > 0 ? SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+		} else {
+			*strategy = node_id < peer_device->node_id ?
+				SYNC_SOURCE_USE_BITMAP : SYNC_TARGET_USE_BITMAP;
+		}
+	}
+
+	drbd_info(peer_device,
+		  "strategy = %s to reconcile equal-UUID peers holding out-of-sync bits\n",
+		  strategy_descriptor(*strategy).name);
+}
+
 static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 				    enum drbd_disk_state peer_disk_state,
-				    enum sync_strategy *strategy, enum sync_rule rule,
+				    enum sync_strategy *strategy, enum sync_rule *rule,
 				    int *peer_node_id)
 {
 	enum drbd_disk_state disk_state = peer_device->comm_state.disk;
@@ -5097,8 +5302,8 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 
 		decide_based_on_dstates =
 			dstates_want_resync &&
-			(((rule == RULE_RECONNECTED || rule == RULE_LOST_QUORUM || rule == RULE_BOTH_OFF) &&
-			  resync_direction_arbitrary) ||
+			(((*rule == RULE_RECONNECTED || *rule == RULE_LOST_QUORUM ||
+			   *rule == RULE_BOTH_OFF) && resync_direction_arbitrary) ||
 			 (*strategy == NO_SYNC && either_inconsistent));
 
 		prefer_local = disk_state > peer_disk_state;
@@ -5110,7 +5315,7 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 		   was found by looking if a node lost quorum while being primary */
 	} else {
 		decide_based_on_dstates =
-			(rule == RULE_BOTH_OFF || *strategy == NO_SYNC) && either_inconsistent;
+			(*rule == RULE_BOTH_OFF || *strategy == NO_SYNC) && either_inconsistent;
 
 		prefer_local = disk_state > D_INCONSISTENT;
 	}
@@ -5123,6 +5328,9 @@ static void disk_states_to_strategy(struct drbd_peer_device *peer_device,
 			  strategy_descriptor(*strategy).name,
 			  drbd_disk_str(disk_state), drbd_disk_str(peer_disk_state));
 	}
+
+	maybe_reconcile_equal_uuid_bitmap(peer_device, disk_state, peer_disk_state,
+					  strategy, rule);
 }
 
 static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_device,
@@ -5143,7 +5351,7 @@ static enum sync_strategy drbd_attach_handshake(struct drbd_peer_device *peer_de
 	if (!is_strategy_determined(strategy))
 		return strategy;
 
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, &rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER &&
 	    (!drbd_device_stable(device, NULL) ||
@@ -5315,7 +5523,7 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 		}
 	}
 
-	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+	disk_states_to_strategy(peer_device, peer_disk_state, &strategy, &rule, &peer_node_id);
 
 	if (strategy == SPLIT_BRAIN_AUTO_RECOVER && (!drbd_device_stable(device, NULL) || !(peer_device->uuid_flags & UUID_FLAG_STABLE))) {
 		drbd_warn(peer_device, "Ignore Split-Brain, for now, at least one side unstable\n");
@@ -6328,7 +6536,8 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 	peer_disk_state = peer_device->disk_state[NOW];
 	if (reason == DISKLESS_PRIMARY)
-		disk_states_to_strategy(peer_device, peer_disk_state, &strategy, rule, &peer_node_id);
+		disk_states_to_strategy(peer_device, peer_disk_state, &strategy,
+					&rule, &peer_node_id);
 
 	new_repl_state = strategy_to_repl_state(peer_device, peer_role, strategy);
 
@@ -6347,6 +6556,25 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 		bitmap_mod_after_handshake(peer_device, strategy, peer_node_id);
 		drbd_info(peer_device, "Becoming %s %s\n", drbd_repl_str(new_repl_state),
 			  reason == AFTER_UNSTABLE ? "after unstable" : "because primary is diskless");
+	}
+
+	/* No reconciliation resync with an UpToDate peer: we hold the current
+	 * generation, so we owe no post-loss reconcile to anyone.
+	 * Clear RECONCILE_PENDING and return to UpToDate (do not stay Consistent)
+	 */
+	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_UP_TO_DATE &&
+	    peer_device->device->disk_state[NOW] == D_CONSISTENT) {
+		struct drbd_device *device = peer_device->device;
+		struct drbd_peer_device *pd;
+		bool cleared = false;
+
+		rcu_read_lock();
+		for_each_peer_device_rcu(pd, device)
+			if (test_and_clear_bit(RECONCILE_PENDING, &pd->flags))
+				cleared = true;
+		rcu_read_unlock();
+		if (cleared)
+			drbd_reconcile_settled_try_up_to_date(device->resource);
 	}
 
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state >= D_CONSISTENT &&
@@ -6374,8 +6602,6 @@ static void drbd_resync(struct drbd_peer_device *peer_device,
 
 static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int node_id, u64 bitmap_uuid)
 {
-	struct drbd_device *device = peer_device->device;
-
 	if (peer_device->bitmap_uuids[node_id] && bitmap_uuid == 0) {
 		/* If we learn from a neighbor that it no longer has a bitmap
 		   against a third node, we need to deduce from that knowledge
@@ -6392,10 +6618,6 @@ static void update_bitmap_slot_of_peer(struct drbd_peer_device *peer_device, int
 		rcu_read_unlock();
 	}
 
-	if (node_id != device->resource->res_opts.node_id && bitmap_uuid != -1 && get_ldev(device)) {
-		_drbd_uuid_push_history(device, bitmap_uuid);
-		put_ldev(device);
-	}
 	peer_device->bitmap_uuids[node_id] = bitmap_uuid;
 }
 
@@ -6590,7 +6812,17 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		spin_lock_irq(&device->ldev->md.uuid_lock);
 	}
 
-	if (device->resource->role[NOW] != R_PRIMARY ||
+	/* The condition below keeps a diskless primary's exposed current UUID
+	 * from going backward when a stale/older value is reported (see commit
+	 * 2f464b8e8 "drbd: fix exposed_uuid going backward").  But that
+	 * protection must only apply to a CONFIRMED generation.  If our view of
+	 * this peer's current UUID was advanced only optimistically by our own
+	 * UUID bump (CURRENT_UUID_UNCONFIRMED) and the peer never actually got
+	 * it, the peer's handshake report is the truth -- take it, so we do not
+	 * treat the peer as UpToDate at a generation it never persisted.
+	 */
+	if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags) ||
+	    device->resource->role[NOW] != R_PRIMARY ||
 	    device->disk_state[NOW] != D_DISKLESS ||
 	    (peer_device->current_uuid & ~UUID_PRIMARY) !=
 						(device->exposed_data_uuid & ~UUID_PRIMARY) ||
@@ -7952,7 +8184,7 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 			continue;
 
 		strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
-		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, rule,
+		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, &rule,
 					&peer_node_id);
 		drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
 		if (strategy_descriptor(strategy).resync_peer_preference > best_preference) {
@@ -8061,7 +8293,8 @@ static void propagate_exposed_uuid(struct drbd_device *device)
 	for_each_peer_device_ref(peer_device, im, device) {
 		if (!test_bit(INITIAL_STATE_SENT, &peer_device->flags))
 			continue;
-		drbd_send_current_uuid(peer_device, device->exposed_data_uuid, 0);
+		drbd_send_current_uuid(peer_device,
+				       diskless_primary_present_current_uuid(peer_device), 0);
 	}
 }
 
@@ -8079,6 +8312,74 @@ static void maybe_force_secondary(struct drbd_peer_device *peer_device)
 		/* resource->fail_io[NEW] gets set via CS_FS_IGN_OPENERS */
 		end_state_change(resource, &irq_flags, "peer-state");
 	}
+}
+
+/* A diskless primary that bumped its current UUID keeps the generation it
+ * bumped away from (exposed_data_uuid_predecessor) while the new one is still
+ * unconfirmed.  A peer returning on that predecessor generation can be brought
+ * forward by resending the transfer log -- but only if the bridging writes are
+ * still there.  They are kept exactly when the peer was lost while we were
+ * suspended (CONNECTION_LOST_WHILE_SUSPENDED keeps protocol B/C requests as
+ * RQ_COMPLETION_SUSP) and we have stayed suspended since, so the transfer log
+ * has not advanced.  If we would instead have to resend a write we no longer
+ * hold (completed to the upper layers and freed), we cannot recover this peer
+ * here; it has to resync from a peer that holds good data.
+ *
+ * The resend cursor is conservative: writes this peer acked (RQ_NET_OK) are not
+ * resent, writes still pending to it are.  A pending write may in fact have been
+ * processed by the peer already (its ack lost in the break); resending it is
+ * harmless.  The only fatal case is a needed write that was given up on
+ * (RQ_NET_DONE without RQ_NET_OK), whose data may be gone.
+ */
+bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_resource *resource = device->resource;
+	int idx = peer_device->node_id;
+	struct drbd_request *req;
+	bool have_resendable = false;
+
+	/* The transfer log must still be frozen; if it moved on, the bridging
+	 * writes may have been completed and freed.
+	 */
+	if (!resource->cached_susp)
+		return false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		unsigned int local, net;
+
+		if (req->device != device)
+			continue;
+		local = READ_ONCE(req->local_rq_state);
+		if (!(local & RQ_WRITE))
+			continue;
+		net = READ_ONCE(req->net_rq_state[idx]);
+
+		/* A write we would need to resend but already gave up on towards
+		 * this peer: its data may be gone -> cannot recover here.
+		 */
+		if ((net & RQ_NET_DONE) && !(net & RQ_NET_OK)) {
+			rcu_read_unlock();
+			return false;
+		}
+		/* A write still pending to this peer, kept across the loss
+		 * because completion was suspended: this is resendable.
+		 */
+		if ((net & RQ_NET_PENDING) && (local & RQ_COMPLETION_SUSP))
+			have_resendable = true;
+	}
+	rcu_read_unlock();
+
+	return have_resendable;
+}
+
+/* Present our actual exposed current generation to a returning peer.
+ * Reverts 308cf12f2's present-predecessor (see commit message).
+ */
+u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device)
+{
+	return peer_device->device->exposed_data_uuid;
 }
 
 static void diskless_with_peers_different_current_uuids(struct drbd_peer_device *peer_device,
@@ -8102,6 +8403,46 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 		if (*peer_disk_state > D_OUTDATED)
 			*peer_disk_state = D_OUTDATED;
 			/* See "Do not trust this guy!" in sanitize_state() */
+	} else if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+		   device->exposed_data_uuid_predecessor &&
+		   (peer_device->current_uuid & ~UUID_PRIMARY) ==
+		   (device->exposed_data_uuid_predecessor & ~UUID_PRIMARY) &&
+		   diskless_primary_can_replay_to(peer_device)) {
+		/* The peer returned on the generation we bumped away from, and the
+		 * writes bridging it to our (still unconfirmed) current generation are
+		 * still replayable from our suspended transfer log.  Its predecessor
+		 * data is a complete, valid generation -- equivalent to our current
+		 * minus the unacknowledged in-flight writes -- so assert it UpToDate
+		 * now (a sole diskful peer cannot promote itself against a diskless
+		 * primary; the "Do not trust this guy" exception in sanitize_state
+		 * honors RECONCILE_INJECT_CUR_UUID and keeps it UpToDate despite the
+		 * UUID mismatch).  The post-handshake relabel
+		 * (RECONCILE_INJECT_CUR_UUID -> SEND_RECONCILE_UUID) then advances it
+		 * to our current generation, the replayed writes filling the gap.
+		 */
+		drbd_info(peer_device,
+			  "Peer is one generation behind; asserting UpToDate, will resend transfer log and relabel.\n");
+		set_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
+		*peer_disk_state = D_UP_TO_DATE;
+	} else if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+		   resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO) {
+		/* Park-until-resync.  We are a diskless primary in an unconfirmed
+		 * rotated generation, and this peer is on an older generation we can
+		 * neither place as a recognised ancestor nor replay to (e.g. the
+		 * first-lost peer, whose transfer log we discarded -- see
+		 * diskless_primary_can_replay_to).  Being diskless we are no resync
+		 * source for it.  Refusing it would strand the cluster; relabelling it
+		 * forward would be silent divergence (it lacks the bridging writes).
+		 * Instead accept the connection but keep it Outdated: it contributes no
+		 * quorum and serves no data until it resyncs from a diskful peer that
+		 * holds the current generation (the last-lost peer, once reconciled).
+		 * We stay suspended (no quorum) until then -- correct, and loss-free
+		 * because the rotated writes were never completed/acknowledged.
+		 */
+		drbd_warn(peer_device,
+			  "Peer is on an older generation we cannot source; keeping it Outdated until it resyncs from a peer that holds the current generation.\n");
+		if (*peer_disk_state > D_OUTDATED)
+			*peer_disk_state = D_OUTDATED;
 	} else {
 		drbd_warn(peer_device, "Current UUID of peer does not match my exposed UUID.");
 		set_bit(CONN_HANDSHAKE_DISCONNECT, &connection->flags);
@@ -8301,7 +8642,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				     peer_state.conn == L_STARTING_SYNC_T));
 
 		consider_resync |= peer_state.conn == L_WF_BITMAP_T &&
-				   peer_device->flags & UUID_FLAG_CRASHED_PRIMARY;
+				   peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY;
 
 		if (consider_resync) {
 			strategy = drbd_sync_handshake(peer_device, peer_state);
@@ -8369,8 +8710,16 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		   We only check if the peer claims to have D_UP_TO_DATE data. Only then is the
 		   peer a source for my data anyways. */
 		if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
-		    (exposed_data_uuid & ~UUID_PRIMARY) != (peer_current_uuid & ~UUID_PRIMARY))
+		    (exposed_data_uuid & ~UUID_PRIMARY) == (peer_current_uuid & ~UUID_PRIMARY)) {
+			/* The peer is already on our current generation's label, so
+			 * the pending predecessor->current reconcile relabel is moot.
+			 */
+			clear_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
+		} else if (exposed_data_uuid && peer_state.disk == D_UP_TO_DATE &&
+			   (exposed_data_uuid & ~UUID_PRIMARY) !=
+				(peer_current_uuid & ~UUID_PRIMARY)) {
 			diskless_with_peers_different_current_uuids(peer_device, &peer_disk_state);
+		}
 		if (!exposed_data_uuid && peer_state.disk == D_UP_TO_DATE) {
 			drbd_uuid_set_exposed(device, peer_current_uuid, true);
 			propagate_exposed_uuid(device);
@@ -8409,6 +8758,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
+		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer, cannot thaw) */
 		drbd_uuid_new_current(device, false);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
@@ -8998,6 +9348,20 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 	s64 dagtag_offset;
 	int vnr = 0;
 
+	/*
+	 * During the connect handshake (DRBD_FF_RECONCILE_RECONNECT) the peer
+	 * sends its position in a common lost primary's change stream before its
+	 * state packet. Stash it for drbd_uuid_compare(), which uses it to roll
+	 * an equal-UUID both-dirty reconcile forward, and do not run the
+	 * established-connection reconciliation below: the connection is not up
+	 * yet, and the resync direction is decided synchronously in the handshake.
+	 */
+	if (connection->cstate[NOW] < C_CONNECTED) {
+		connection->reconcile_handshake.lost_node_id = be32_to_cpu(p->node_id);
+		connection->reconcile_handshake.dagtag_sector = be64_to_cpu(p->dagtag);
+		return 0;
+	}
+
 	lost_peer = drbd_get_connection_by_node_id(resource, be32_to_cpu(p->node_id));
 	if (!lost_peer)
 		return 0;
@@ -9103,6 +9467,11 @@ static int receive_peer_dagtag(struct drbd_connection *connection, struct packet
 			}
 		}
 	}
+
+	/* hand the bridge over to RECONCILIATION_RESYNC, or discharge if none owed */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		clear_bit(RECONCILE_PENDING, &peer_device->flags);
+	drbd_reconcile_settled_try_up_to_date(resource);
 
 out:
 	kref_debug_put(&lost_peer->kref_debug, 12);
@@ -9701,7 +10070,7 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
 		spin_lock_irq(&connection->peer_reqs_lock);
-		list_for_each_entry(peer_req, &connection->dagtag_wait_ee, w.list) {
+		list_for_each_entry_safe(peer_req, t, &connection->dagtag_wait_ee, w.list) {
 			if (peer_req->depend_dagtag_node_id != node_id)
 				continue;
 
@@ -9713,15 +10082,25 @@ static void cancel_dagtag_dependent_requests(struct drbd_resource *resource, uns
 
 			list_move_tail(&peer_req->w.list, &work_list);
 			atomic_dec(&resource->dagtag_waiters);
-			break;
 		}
 		spin_unlock_irq(&connection->peer_reqs_lock);
 	}
 	rcu_read_unlock();
 
 	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+		struct drbd_peer_device *peer_device = peer_req->peer_device;
+
 		drbd_peer_resync_read_cancel(peer_req);
+		/* Verify requests on the source side are placed in the
+		 * interval tree when the request is made; they need to be
+		 * removed if the reply was parked waiting for a dagtag.
+		 * Mirrors free_dagtag_wait_requests().
+		 */
+		if (peer_req->i.type == INTERVAL_OV_READ_SOURCE)
+			drbd_remove_peer_req_interval(peer_req);
 		drbd_free_peer_req(peer_req);
+		dec_unacked(peer_device);
+		put_ldev(peer_device->device);
 	}
 }
 
@@ -9898,6 +10277,16 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	if (test_and_clear_bit(HOLDING_UUID_READ_LOCK, &peer_device->flags))
 		up_read_non_owner(&device->uuid_sem);
 
+	/* A pending reconcile relabel is only valid for the connection it was
+	 * armed for; drop it so it cannot fire on a later connection.
+	 */
+	clear_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
+	clear_bit(SEND_RECONCILE_UUID, &peer_device->flags);
+	/* If a handshake reconcile armed RECONCILIATION_RESYNC but no resync
+	 * followed, drop it so it cannot mislabel a later resync.
+	 */
+	clear_bit(RECONCILIATION_RESYNC, &peer_device->flags);
+
 	peer_device_init_connect_state(peer_device);
 
 	/* No need to start additional resyncs after reconnection. */
@@ -10024,6 +10413,11 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 			    peer_device->disk_state[NOW] < D_INCONSISTENT)
 				continue; /* Ignore if one side is diskless */
 
+			/* owe a reconcile to this peer; set before NOTIFY clears,
+			 * which receive_peer_dagtag waits for (gap-free handover)
+			 */
+			set_bit(RECONCILE_PENDING, &peer_device->flags);
+
 			drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 			send_dagtag = true;
 		}
@@ -10033,12 +10427,80 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
 	}
 }
 
+/* Informed confirmation of an optimistically rotated data generation.
+ *
+ * Confirmed -- safe to complete the held writes (confirm-before-complete) --
+ * the first instant ALL of:
+ *
+ *     quorate                device->quorum[NOW] (only where completions
+ *                            are actually held: on-no-quorum=suspend-io)
+ *     AND every still-connected protocol-C D_UP_TO_DATE peer:
+ *         acked it           (CURRENT_UUID_UNCONFIRMED clear), OR
+ *         has been lost      (requirement discharged: we are "informed")
+ *
+ * ALL surviving sync-UpToDate peers, not a quorum-sized count: a count could
+ * release while a future-quorum member still lacks the generation.  Protocol
+ * A/B peers are excluded (that connection accepted losing in-flight writes).
+ * With io-error / quorum-off nothing is held, but we still clear once informed,
+ * to lift the bump deferral and the reconnect-handshake special-casing.
+ *
+ * Returns true (and clears EXPOSED_GEN_UNCONFIRMED) exactly when the generation
+ * just became confirmed; the caller then releases the held completions with a
+ * NEW_UUID_CONFIRMED transfer-log walk.  Re-evaluated on:
+ *
+ *     barrier ack     got_BarrierAck
+ *     state change    central hook in ___end_state_change, post-commit
+ *                     (gained quorum / sync peer UpToDate / lost a copy)
+ */
+bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+
+	if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+		return false;
+	/* Pair with the smp_wmb() in drbd_uuid_new_current(): having observed the
+	 * gate, see the per-peer CURRENT_UUID_UNCONFIRMED marks the bump set before it.
+	 * Otherwise a racing ack could read a survivor's mark as still clear and
+	 * wrongly confirm a generation that peer never received.
+	 */
+	smp_rmb();
+	if (device->resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO &&
+	    !device->quorum[NOW])
+		return false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+		struct net_conf *nc;
+
+		if (peer_device->repl_state[NOW] < L_ESTABLISHED)
+			continue;	/* lost -> requirement discharged */
+		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
+			continue;	/* not a full copy of a generation */
+		nc = rcu_dereference(connection->transport.net_conf);
+		if (!nc || nc->wire_protocol != DRBD_PROT_C)
+			continue;	/* A/B: in-flight loss was accepted */
+		if (test_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags)) {
+			rcu_read_unlock();
+			return false;	/* a survivor still lacks it durably */
+		}
+	}
+	rcu_read_unlock();
+
+	if (!test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+		return false;
+	drbd_info(device, "rotated data generation confirmed durable in a quorate partition (gen %016llX)\n",
+		  device->exposed_data_uuid);
+	return true;
+}
+
 static void conn_disconnect(struct drbd_connection *connection)
 {
 	struct drbd_resource *resource = connection->resource;
 	struct drbd_peer_device *peer_device;
 	enum drbd_conn_state oc;
 	unsigned long irq_flags;
+	bool reconsider = false;
 	int vnr, i;
 
 	clear_bit(CONN_DRY_RUN, &connection->flags);
@@ -10076,6 +10538,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 	drain_resync_activity(connection);
 
 	connection->after_reconciliation.lost_node_id = -1;
+	connection->reconcile_handshake.lost_node_id = -1;
 
 	/* Kick the submit workers so they can clean up any peer requests
 	 * from this connection that are still waiting for AL allocation.
@@ -10130,6 +10593,13 @@ static void conn_disconnect(struct drbd_connection *connection)
 	 * change the suspended state. */
 	tl_walk(connection, &connection->req_not_net_done,
 			resource->cached_susp ? CONNECTION_LOST_WHILE_SUSPENDED : CONNECTION_LOST);
+
+	/* Losing this peer may complete the informed-confirmation picture for a
+	 * still-unconfirmed rotated generation (its durable-ack requirement is
+	 * discharged), or drop us below quorum.  That is handled centrally by the
+	 * release hook in ___end_state_change, post-commit of the disconnect state
+	 * change -- nothing to do here.
+	 */
 
 	i = drbd_free_peer_reqs(connection, &connection->done_ee);
 	if (i)
@@ -10192,7 +10662,19 @@ static void conn_disconnect(struct drbd_connection *connection)
 	if (test_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags)) {
 		drbd_notify_peers_lost_primary(connection);
 		clear_bit(NOTIFY_PEERS_LOST_PRIMARY, &connection->flags);
+		reconsider = true;
 	}
+
+	/* a surviving peer we owe a reconcile to is itself leaving:
+	 * discharge it, else we stay pinned at Consistent forever
+	 */
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
+		if (test_and_clear_bit(RECONCILE_PENDING, &peer_device->flags))
+			reconsider = true;
+
+	/* re-arm once nothing is owed (2-node case arms no RECONCILE_PENDING) */
+	if (reconsider)
+		drbd_reconcile_settled_try_up_to_date(resource);
 
 	if (oc == C_DISCONNECTING)
 		change_cstate_tag(connection, C_STANDALONE, CS_VERBOSE | CS_HARD | CS_LOCAL_ONLY,
@@ -10803,7 +11285,7 @@ void twopc_connection_down(struct drbd_connection *connection)
 
 static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
-	queue_work(ping_ack_sender, &connection->send_ping_ack_work);
+	drbd_queue_ping_ack(connection);
 	return 0;
 }
 
@@ -11091,8 +11573,31 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_barrier_ack *p = pi->data;
+	struct drbd_peer_device *peer_device;
+	bool release_gen = false;
+	int vnr, err;
 
-	return tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
+	/* tl_release flushes this epoch (RQ_NET_DONE) first, so the confirm below
+	 * sees the just-flushed held writes.
+	 */
+	err = tl_release(connection, 0, 0, p->barrier, be32_to_cpu(p->set_size));
+
+	/* confirm any peer that has now durably persisted all the generation's
+	 * held writes, then re-evaluate the release gate.
+	 */
+	if (!err) {
+		rcu_read_lock();
+		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+			drbd_peer_maybe_confirm_rotated_gen(peer_device, p->barrier);
+			if (drbd_maybe_release_rotated_gen(peer_device->device))
+				release_gen = true;
+		}
+		rcu_read_unlock();
+		if (release_gen)
+			tl_walk(connection, NULL, NEW_UUID_CONFIRMED);
+	}
+
+	return err;
 }
 
 static int got_confirm_stable(struct drbd_connection *connection, struct packet_info *pi)
@@ -11230,21 +11735,26 @@ static void drbd_send_oos_from(struct drbd_connection *oos_connection, int peer_
 	while (peer_req) {
 		struct drbd_peer_device *peer_device =
 			conn_peer_device(oos_connection, peer_req->peer_device->device->vnr);
-		struct drbd_peer_request *free_peer_req = NULL;
+		struct drbd_peer_request *next_peer_req;
+		bool free_it;
 
 		/* Ignore errors and keep iterating to clear up list */
 		drbd_send_out_of_sync(peer_device, peer_req->i.sector, peer_req->i.size);
 
 		spin_lock_irq(&peer_ack_connection->send_oos_lock);
 		peer_req->send_oos_pending &= ~NODE_MASK(oos_node_id);
-		if (!peer_req->send_oos_pending)
-			free_peer_req = peer_req;
-
-		peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
+		next_peer_req = drbd_send_oos_next_req(peer_ack_connection, oos_node_id, peer_req);
+		free_it = !peer_req->send_oos_pending;
+		if (free_it) {
+			peer_req->flags &= ~EE_ON_SEND_OOS;
+			list_del(&peer_req->recv_order);
+		}
 		spin_unlock_irq(&peer_ack_connection->send_oos_lock);
 
-		if (free_peer_req)
-			drbd_free_peer_req(free_peer_req);
+		if (free_it)
+			drbd_free_peer_req(peer_req);
+
+		peer_req = next_peer_req;
 	}
 
 	kref_debug_put(&peer_ack_connection->kref_debug, 18);
@@ -11368,8 +11878,12 @@ found:
 
 		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, in_sync);
 		any_send_oos_pending |= peer_req->send_oos_pending;
-		if (!peer_req->send_oos_pending)
-			drbd_free_peer_req(peer_req);
+		if (peer_req->send_oos_pending) {
+			peer_req->flags &= ~EE_ON_RECV_ORDER;
+			peer_req->flags |= EE_ON_SEND_OOS;
+		} else {
+			drbd_free_peer_req(peer_req); /* list_del() because EE_ON_RECV_ORDER */
+		}
 	}
 
 	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
@@ -11423,8 +11937,12 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 
 		peer_req->send_oos_pending = drbd_calculate_send_oos_pending(device, 0);
 		any_send_oos_pending |= peer_req->send_oos_pending;
-		if (!peer_req->send_oos_pending)
-			drbd_free_peer_req(peer_req);
+		if (peer_req->send_oos_pending) {
+			peer_req->flags &= ~EE_ON_RECV_ORDER;
+			peer_req->flags |= EE_ON_SEND_OOS;
+		} else {
+			drbd_free_peer_req(peer_req); /* list_del() because EE_ON_RECV_ORDER */
+		}
 	}
 
 	drbd_queue_send_out_of_sync(connection, &work_list, any_send_oos_pending);
@@ -11527,6 +12045,9 @@ void drbd_send_ping_wf(struct work_struct *ws)
 	err = drbd_send_ping(connection);
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+
+	kref_debug_put(&connection->kref_debug, 19);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 struct meta_sock_cmd {
@@ -11701,7 +12222,7 @@ void drbd_control_event(struct drbd_transport *transport, enum drbd_tr_event eve
 
 	if (event == TIMEOUT) {
 		if (!test_bit(PING_TIMEOUT_ACTIVE, &connection->flags)) {
-			schedule_work(&connection->send_ping_work);
+			drbd_queue_ping(connection);
 			return;
 		} else {
 			if (connection->cstate[NOW] == C_CONNECTED)

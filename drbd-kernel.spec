@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.18~flant.10
+Version: 9.2.19~flant.10
 Release: 1
 
 # always require a suitable userland
@@ -232,28 +232,30 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
-* Thu Jul 09 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.10
+* Thu Jul 09 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.10
 -  Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
 
-* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.5
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.5
 -  Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
 
-* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.4
--  Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.4
+-  Fix use-after-free (GPF) in resync-discard processing.
 
-* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.18~flant.3
+* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.19~flant.3
 -  Fix drbdsetup down/del-peer/del-connection hang scenarios.
    Fix receiver thread restart race, connect loop exit, double fput BUG.
    Fix bitmap IO deadlock on quorum loss, transport listener race.
    Fix resync stability: do_remote guard, stale interval cleanup,
    L_ESTABLISHED for stable source, unstable resync re-handshake.
 
-* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.18~flant.2
+* Tue Jun 23 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.2
 -  Fixed a race in w_resync_timer that could permanently stall resync.
 
-* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.18~flant.1
+* Tue Jun 23 2026 Flant <david.magton@flant.com> - 9.2.19~flant.1
 -  Flant fork: non-voting disk for quorum exclusion, configurable dynamic
    voters, quorum-minimum-redundancy enforcement.
+* Tue Jun 30 2026 Philipp Reisner <phil@linbit.com> - 9.2.19
+-  New upstream release.
 
 * Mon Apr 20 2026 Philipp Reisner <phil@linbit.com> - 9.2.18
 -  New upstream release.

@@ -273,7 +273,15 @@ bool drbd_show_legacy_device(struct seq_file *seq, void *v)
 
 static void seq_printf_with_thousands_grouping(struct seq_file *seq, long v)
 {
-	/* v is in kB/sec. We don't expect TiByte/sec yet. */
+	/* v is in kB/sec. We don't expect TiByte/sec yet.
+	 * v can be negative: while the resync loses ground to incoming
+	 * application writes the out-of-sync count grows, so the rate at
+	 * which it shrinks is negative. Show that honestly.
+	 */
+	if (v < 0) {
+		seq_putc(seq, '-');
+		v = -v;
+	}
 	if (unlikely(v >= 1000000)) {
 		/* cool: > GiByte/s */
 		seq_printf(seq, "%ld,", v / 1000000);
@@ -283,6 +291,16 @@ static void seq_printf_with_thousands_grouping(struct seq_file *seq, long v)
 		seq_printf(seq, "%ld,%03ld", v/1000, v % 1000);
 	else
 		seq_printf(seq, "%ld", v);
+}
+
+/* like bit_to_kb(), but accepts a signed bit count so we can express a
+ * negative kB/sec rate when the out-of-sync set is growing.
+ */
+static long signed_bit_to_kb(long bits)
+{
+	if (bits < 0)
+		return -(long)Bit2KB(-bits);
+	return Bit2KB(bits);
 }
 
 static void drbd_get_syncer_progress(struct drbd_peer_device *pd,
@@ -334,7 +352,8 @@ static void drbd_get_syncer_progress(struct drbd_peer_device *pd,
 static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *seq,
 		enum drbd_repl_state repl_state)
 {
-	unsigned long db, dt, dbdt, rt, rs_total, rs_left;
+	unsigned long dt, rt, rs_total, rs_left;
+	long db, dbdt;
 	unsigned int res;
 	int i, x, y;
 	int stalled = 0;
@@ -390,13 +409,19 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 
 	if (!dt)
 		dt++;
-	db = pd->rs_mark_left[i] - rs_left;
-	rt = (dt * (rs_left / (db/100+1)))/100; /* seconds */
+	db = (long)pd->rs_mark_left[i] - (long)rs_left;
+	if (db <= 0) {
+		/* out-of-sync is not shrinking: under this write load the
+		 * resync is not converging, so there is no finish time.
+		 */
+		seq_puts(seq, "finish: ∞");
+	} else {
+		rt = (dt * (rs_left / ((unsigned long)db/100+1)))/100; /* seconds */
+		seq_printf(seq, "finish: %lu:%02lu:%02lu",
+			rt / 3600, (rt % 3600) / 60, rt % 60);
+	}
 
-	seq_printf(seq, "finish: %lu:%02lu:%02lu",
-		rt / 3600, (rt % 3600) / 60, rt % 60);
-
-	dbdt = Bit2KB(db/dt);
+	dbdt = signed_bit_to_kb(db / (long)dt);
 	seq_puts(seq, " speed: ");
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_puts(seq, " (");
@@ -407,8 +432,8 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 		dt = (jiffies - pd->rs_mark_time[i]) / HZ;
 		if (!dt)
 			dt++;
-		db = pd->rs_mark_left[i] - rs_left;
-		dbdt = Bit2KB(db/dt);
+		db = (long)pd->rs_mark_left[i] - (long)rs_left;
+		dbdt = signed_bit_to_kb(db / (long)dt);
 		seq_printf_with_thousands_grouping(seq, dbdt);
 		seq_puts(seq, " -- ");
 	}
@@ -418,8 +443,8 @@ static void drbd_syncer_progress(struct drbd_peer_device *pd, struct seq_file *s
 	dt = (jiffies - pd->rs_start - pd->rs_paused) / HZ;
 	if (dt == 0)
 		dt = 1;
-	db = rs_total - rs_left;
-	dbdt = Bit2KB(db/dt);
+	db = (long)rs_total - (long)rs_left;
+	dbdt = signed_bit_to_kb(db / (long)dt);
 	seq_printf_with_thousands_grouping(seq, dbdt);
 	seq_putc(seq, ')');
 

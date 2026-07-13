@@ -1225,6 +1225,7 @@ retry:
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (flags & CS_FP_LOCAL_UP_TO_DATE) {
+				/* gen-rotate reason: OTHER (admin force-primary) */
 				drbd_uuid_new_current(device, true);
 				clear_bit(NEW_CUR_UUID, &device->flags);
 			}
@@ -1641,8 +1642,16 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	 * data in core memory, to "move" it we just write it all out, there
 	 * are no reads. */
 	drbd_suspend_io(device, READ_AND_WRITE);
+
+	/* Take the AL transaction lock before the md_buffer to avoid an
+	 * AB-BA deadlock against al_write_transaction().
+	 */
+	wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
+
 	buffer = drbd_md_get_buffer(device, __func__); /* Lock meta-data IO */
 	if (!buffer) {
+		lc_unlock(device->act_log);
+		wake_up(&device->al_wait);
 		drbd_resume_io(device);
 		return DS_ERROR;
 	}
@@ -1657,8 +1666,13 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	prev.al_stripe_size_4k = md->al_stripe_size_4k;
 	prev_size = get_capacity(device->vdisk);
 
+	/* We do some synchronous IO below, which may take some time.
+	 * Clear the timer, to avoid scary "timer expired!" messages,
+	 * "Superblock" is written out at least twice below, anyways.
+	 */
+	timer_delete(&device->md_sync_timer);
+
 	if (rs) {
-		/* FIXME race with peer requests that want to do an AL transaction */
 		/* rs is non NULL if we should change the AL layout only */
 		md->al_stripes = rs->al_stripes;
 		md->al_stripe_size_4k = rs->al_stripe_size / 4;
@@ -1729,21 +1743,9 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		bool prev_al_disabled = 0;
 		u32 prev_peer_full_sync = 0;
 
-		/* We do some synchronous IO below, which may take some time.
-		 * Clear the timer, to avoid scary "timer expired!" messages,
-		 * "Superblock" is written out at least twice below, anyways. */
-		timer_delete(&device->md_sync_timer);
-
-		/* We won't change the "al-extents" setting, we just may need
-		 * to move the on-disk location of the activity log ringbuffer.
-		 * Lock for transaction is good enough, it may well be "dirty"
-		 * or even "starving". */
-		wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
-
 		if (drbd_md_dax_active(device->ldev)) {
 			if (drbd_dax_map(device->ldev)) {
 				drbd_err(device, "Could not remap DAX; aborting resize\n");
-				lc_unlock(device->act_log);
 				goto err_out;
 			}
 		}
@@ -1789,9 +1791,6 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		if (rs)
 			drbd_info(device, "Changed AL layout to al-stripes = %d, al-stripe-size-kB = %d\n",
 				 md->al_stripes, md->al_stripe_size_4k * 4);
-
-		lc_unlock(device->act_log);
-		wake_up(&device->al_wait);
 	}
 
 	if (size > prev_size)
@@ -1812,6 +1811,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		md->al_size_4k = (u64)prev.al_stripes * prev.al_stripe_size_4k;
 	}
 	drbd_md_put_buffer(device);
+	lc_unlock(device->act_log);
+	wake_up(&device->al_wait);
 	drbd_resume_io(device);
 
 	return rv;
@@ -5989,6 +5990,7 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	}
 	device = adm_ctx.device;
 	resource = device->resource;
+	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
 	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
 		drbd_uuid_new_current(device, false);
 	drbd_suspend_io(device, READ_AND_WRITE);
@@ -6906,6 +6908,7 @@ static int drbd_adm_new_c_uuid(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
+	/* gen-rotate reason: OTHER (admin new-current-uuid) */
 	drbd_uuid_new_current_by_user(device); /* New current, previous to UI_BITMAP */
 
 	if (args.force_resync) {

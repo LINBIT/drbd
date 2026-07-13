@@ -1,7 +1,7 @@
 Source: drbd
 Section: misc
 Priority: extra
-Maintainer: DRBD dev <drbd-dev@lists.linbit.com>
+Maintainer: DRBD dev <drbd-dev@lists.linux.dev>
 Uploaders: Philipp Reisner <phil@linbit.com>,
            Lars Ellenberg <lars@linbit.com>,
            Roland Kammerer <roland.kammerer@linbit.com>

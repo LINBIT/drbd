@@ -11,12 +11,14 @@
 
 const char *drbd_buildtag(void);
 
-#define REL_VERSION "9.2.18-flant.10"
+#define REL_VERSION "9.2.19-flant.10"
 #define PRO_VERSION_MIN 118 /* 9.0.26 */
 #define PRO_VERSION_MAX 124
+
 #define PRO_FEATURES (DRBD_FF_TRIM | DRBD_FF_THIN_RESYNC | DRBD_FF_WSAME | DRBD_FF_WZEROES | \
 		      DRBD_FF_RESYNC_DAGTAG | \
-		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID)
+		      DRBD_FF_2PC_V2 | DRBD_FF_RS_SKIP_UUID | \
+		      DRBD_FF_RECONCILE_RECONNECT)
 
 #define PRO_VERSION_8_MIN 86
 #define PRO_VERSION_8_MAX 101

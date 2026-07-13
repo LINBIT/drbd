@@ -350,6 +350,7 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc);
 static void dtr_free_rx_desc(struct dtr_rx_desc *rx_desc);
 static void dtr_cma_disconnect_work_fn(struct work_struct *work);
 static void dtr_disconnect_path(struct dtr_path *path);
+static void __dtr_modify_qp_to_err(struct dtr_cm *cm);
 static void __dtr_disconnect_path(struct dtr_path *path);
 static int dtr_init_flow(struct dtr_path *path, enum drbd_stream stream);
 static int dtr_cm_alloc_rdma_res(struct dtr_cm *cm);
@@ -511,8 +512,10 @@ static void dtr_free(struct drbd_transport *transport, enum drbd_tr_free_op free
 		struct dtr_cm *cm;
 
 		cm = xchg(&path->cm, NULL); // RCU xchg
-		if (cm)
+		if (cm) {
+			__dtr_modify_qp_to_err(cm);
 			kref_put(&cm->kref, dtr_destroy_cm);
+		}
 	}
 
 	timer_delete_sync(&rdma_transport->control_timer);
@@ -1116,16 +1119,12 @@ static void dtr_remove_cm_from_path(struct dtr_path *path, struct dtr_cm *failed
 {
 	struct dtr_cm *cm;
 
+	if (!failed_cm)
+		return;
+
 	cm = cmpxchg(&path->cm, failed_cm, NULL); // RCU &path->cm
-	if (cm == failed_cm && cm->id && cm->id->qp) {
-		struct drbd_transport *transport = path->path.transport;
-		struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
-		int err;
-
-		err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
-		if (err)
-			tr_err(transport, "ib_modify_qp failed %d\n", err);
-
+	if (cm == failed_cm) {
+		__dtr_modify_qp_to_err(cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
 	}
 }
@@ -1343,11 +1342,13 @@ static int dtr_cma_event_handler(struct rdma_cm_id *cm_id, struct rdma_cm_event 
 		// pr_info("event = %d, status = %d\n", event->event, event->status);
 		set_bit(DSB_ERROR, &cm->state);
 
+		/* shield ref: prevent the last kref put calling rdma_destroy_id() here */
+		kref_get(&cm->kref);
 		dtr_cma_retry_connect(cm->path, cm);
 		connecting = test_and_clear_bit(DSB_CONNECTING, &cm->state) ||
 			test_and_clear_bit(DSB_CONNECT_REQ, &cm->state);
-		if (!connecting)
-			return 0; /* keep ref; __dtr_disconnect_path() won */
+		if (connecting)
+			kref_put(&cm->kref, dtr_destroy_cm);
 		break;
 
 	case RDMA_CM_EVENT_DISCONNECTED:
@@ -2699,9 +2700,25 @@ static void dtr_end_tx_work_fn(struct work_struct *work)
 	kref_put(&cm->kref, dtr_destroy_cm);
 }
 
+static void __dtr_modify_qp_to_err(struct dtr_cm *cm)
+{
+	struct dtr_path *path = cm->path;
+	struct drbd_transport *transport = path->path.transport;
+	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
+	int err;
+
+	/* between dtr_alloc_cm() and dtr_cm_alloc_rdma_res() cm->id->qp is NULL */
+	if (!cm->id || !cm->id->qp)
+		return;
+
+	/* With putting the QP into error state, it has to hand back all posted rx_descs */
+	err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
+	if (err)
+		tr_err(transport, "ib_modify_qp failed %d\n", err);
+}
+
 static void __dtr_disconnect_path(struct dtr_path *path)
 {
-	struct ib_qp_attr attr = { .qp_state = IB_QPS_ERR };
 	struct drbd_transport *transport;
 	enum connect_state_enum a, p;
 	bool was_scheduled;
@@ -2773,15 +2790,7 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 			cm->state);
 
  out:
-	/* between dtr_alloc_cm() and dtr_cm_alloc_rdma_res() cm->id->qp is NULL */
-	if (cm->id->qp) {
-		/* With putting the QP into error state, it has to hand back
-		   all posted rx_descs */
-		err = ib_modify_qp(cm->id->qp, &attr, IB_QP_STATE);
-		if (err)
-			tr_err(transport, "ib_modify_qp failed %d\n", err);
-	}
-
+	__dtr_modify_qp_to_err(cm);
 	/*
 	 * We are expecting one of RDMA_CM_EVENT_ESTABLISHED, _UNREACHABLE,
 	 * _CONNECT_ERROR, or _REJECTED on this cm. Some RDMA drivers report
@@ -2868,8 +2877,10 @@ static void dtr_disconnect_path(struct dtr_path *path)
 	cancel_work_sync(&path->refill_rx_descs_work);
 
 	cm = xchg(&path->cm, NULL); // RCU xchg
-	if (cm)
+	if (cm) {
+		__dtr_modify_qp_to_err(cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
+	}
 }
 
 static void dtr_destroy_listener(struct drbd_listener *generic_listener)

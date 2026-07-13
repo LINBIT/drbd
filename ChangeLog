@@ -2,23 +2,22 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
-9.2.18-flant.10 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.10 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
 
 
-9.2.18-flant.5 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.5 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix dagtag-dependent resync stall after Primary reconnect (always send P_DAGTAG; release dagtag waiters on write completion)
 
 
-9.2.18-flant.4 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.4 (api:genl2/proto:86-101,118-124/transport:21)
 --------
- * Fix use-after-free (GPF) in resync-discard processing; renumber non-voting (28->36) and quorum-dynamic-voters (17->25) netlink fields
+ * Fix use-after-free (GPF) in resync-discard processing.
 
 
-
-9.2.18-flant.3 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.3 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix drbdsetup down hang when receiver thread is in connect loop
  * Fix del_connection hang caused by receiver thread restart race
@@ -48,7 +47,7 @@ Latest:
    UpToDate when re-handshake returns clean bitmap with stable source.
 
 
-9.2.18-flant.2 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.2 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fixed a race in w_resync_timer that could permanently stall resync.
    Administrative operations on any resource (disk attach, resync-after
@@ -63,7 +62,7 @@ Latest:
    disconnect and reconnect.
 
 
-9.2.18-flant.1 (api:genl2/proto:86-101,118-124/transport:21)
+9.2.19-flant.1 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Implement non-voting disk for quorum exclusion.
  * Make dynamic voter reduction configurable.
@@ -74,6 +73,41 @@ Latest:
  * Check quorum-minimum-redundancy in tiebreaker quorum logic.
  * Recalculate quorum state when quorum-minimum-redundancy changes.
 
+9.2.19 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Fix silent data divergence when a diskless primary creates a new
+   current UUID that a peer never received (.e.g switch failure);
+   the optimistic UUID is now confirmed via the data stream before
+   being relied upon
+ * Fix silent data corruption when a diskless primary suppressed its
+   current-UUID bump because a peer had been resynced by a third node
+ * Fix a false split-brain ("Unrelated data, aborting!") caused by
+   pushing a peer's bitmap UUIDs into the local history
+ * Hold a primary-loss survivor at Consistent until it reconciles with
+   the surviving peers, so a stale node cannot promote and serve
+   un-reconciled data
+ * Reconcile two peers holding the same current UUID but still carrying
+   out-of-sync bits toward each other, instead of silently dropping the
+   divergence
+ * Fix a list corruption crash when freeing a peer_req that was
+   still linked on the send_oos list
+ * Fix an AB-BA deadlock between online resize and activity-log
+   transactions
+ * Fix a use-after-free of the TCP listener during connection setup
+ * Fix a list corruption crash and assertion failures when a peer
+   disconnects while online-verify requests are still in flight
+ * Fix several races during connection teardown that could crash or
+   hang (ack_sender requeue, pending ping work, in-progress lb-tcp
+   connect)
+ * Abort a two-phase-commit on peers when the target connection fails
+   to prepare
+ * Added max_parallel_resyncs module parameter to cap how many
+   volumes may resync (or verify) in parallel
+ * Fix multiple RDMA transport bugs hit during racing teardown: a
+   NULL pointer dereference, a self-deadlock, and a cm object leak
+ * Fix bogus resync speed/ETA reported in /proc/drbd when the
+   out-of-sync amount grows
+ * Do not throttle a resync that is losing ground to ongoing writes
 
 9.2.18 (api:genl2/proto:86-101,118-124/transport:21)
 --------

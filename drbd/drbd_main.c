@@ -128,6 +128,26 @@ static const struct kernel_param_ops param_ops_drbd_protocol_version = {
 
 unsigned int drbd_protocol_version_min = PRO_VERSION_8_MIN;
 module_param_named(protocol_version_min, drbd_protocol_version_min, drbd_protocol_version, 0644);
+
+static int param_set_max_parallel_resyncs(const char *s, const struct kernel_param *kp)
+{
+	int rv = param_set_uint(s, kp);
+
+	if (rv == 0)
+		drbd_apply_resync_max_parallel();
+	return rv;
+}
+
+static const struct kernel_param_ops param_ops_max_parallel_resyncs = {
+	.set = param_set_max_parallel_resyncs,
+	.get = param_get_uint,
+};
+
+unsigned int drbd_max_parallel_resyncs;	/* 0 = unlimited */
+module_param_cb(max_parallel_resyncs, &param_ops_max_parallel_resyncs,
+		&drbd_max_parallel_resyncs, 0644);
+MODULE_PARM_DESC(max_parallel_resyncs,
+	"Cap on volumes resyncing in parallel (0 = unlimited)");
 #define protocol_version_min_desc								\
 	"\n\t\tReject DRBD dialects older than this.\n\t\t"					\
 	"Supported: "										\
@@ -150,7 +170,7 @@ module_param_named(strict_names, drbd_strict_names, drbd_strict_names, 0644);
  * as member "struct gendisk *vdisk;"
  */
 struct idr drbd_devices;
-struct list_head drbd_resources;
+LIST_HEAD(drbd_resources);
 static DEFINE_SPINLOCK(drbd_devices_lock);
 DEFINE_MUTEX(resources_mutex);
 
@@ -950,10 +970,10 @@ void *__conn_prepare_command(struct drbd_connection *connection, int size,
 		return NULL;
 
 	header_size = drbd_header_size(connection);
-	p = alloc_send_buffer(connection, header_size + size, drbd_stream) + header_size;
+	p = alloc_send_buffer(connection, header_size + size, drbd_stream);
 	if (IS_ERR(p))
 		return NULL;
-	return p;
+	return p + header_size;
 }
 
 /**
@@ -1026,9 +1046,7 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 		(sbuf->additional_size ? MSG_MORE : 0);
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, flags);
-	if (err) {
-		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
-	} else {
+	if (!err) {
 		sbuf->unsent =
 		sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
 	}
@@ -1149,6 +1167,38 @@ int drbd_send_ping(struct drbd_connection *connection)
 	return send_command(connection, -1, P_PING, CONTROL_STREAM | SFLAG_FLUSH);
 }
 
+/*
+ * send_ping_work and send_ping_ack_work run on global workqueues and do not
+ * otherwise keep the connection alive. Take a connection reference for each
+ * queued instance so the connection cannot be freed while a ping is still
+ * pending or running
+ */
+void drbd_queue_ping(struct drbd_connection *connection)
+{
+	bool queued;
+
+	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 19);
+	queued = schedule_work(&connection->send_ping_work);
+	if (!queued) {
+		kref_debug_put(&connection->kref_debug, 19);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
+void drbd_queue_ping_ack(struct drbd_connection *connection)
+{
+	bool queued;
+
+	kref_get(&connection->kref);
+	kref_debug_get(&connection->kref_debug, 19);
+	queued = queue_work(ping_ack_sender, &connection->send_ping_ack_work);
+	if (!queued) {
+		kref_debug_put(&connection->kref_debug, 19);
+		kref_put(&connection->kref, drbd_destroy_connection);
+	}
+}
+
 void drbd_send_ping_ack_wf(struct work_struct *ws)
 {
 	struct drbd_connection *connection =
@@ -1160,6 +1210,9 @@ void drbd_send_ping_ack_wf(struct work_struct *ws)
 		err = send_command(connection, -1, P_PING_ACK, CONTROL_STREAM | SFLAG_FLUSH);
 	if (err)
 		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
+
+	kref_debug_put(&connection->kref_debug, 19);
+	kref_put(&connection->kref, drbd_destroy_connection);
 }
 
 int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_sector)
@@ -1418,7 +1471,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	int p_size = sizeof(*p);
 
 	if (!get_ldev_if_state(device, D_NEGOTIATING))
-		return drbd_send_current_uuid(peer_device, device->exposed_data_uuid,
+		return drbd_send_current_uuid(peer_device,
+					      diskless_primary_present_current_uuid(peer_device),
 					      drbd_weak_nodes_device(device));
 
 	peer_md = device->ldev->md.peers;
@@ -1434,7 +1488,9 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 	peer_device->comm_current_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags);
 	p->current_uuid = cpu_to_be64(peer_device->comm_current_uuid);
 
-	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116;
+	/* advertise an unallocated day0 bitmap slot only if we actually have one */
+	sent_one_unallocated = peer_device->connection->agreed_pro_version < 116 ||
+		drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers) == -1;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
 		bool send_this = peer_md[i].flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS);
@@ -3891,6 +3947,7 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	kref_debug_get(&resource->kref_debug, 3);
 	connection->resource = resource;
 	connection->after_reconciliation.lost_node_id = -1;
+	connection->reconcile_handshake.lost_node_id = -1;
 
 	connection->reassemble_buffer.buffer = connection->reassemble_buffer_bytes.bytes;
 
@@ -3954,6 +4011,7 @@ void drbd_destroy_path(struct kref *kref)
 	kfree(path);
 }
 
+/* The last ref might be dropped from atomic context, no sleeping functions here */
 void drbd_destroy_connection(struct kref *kref)
 {
 	struct drbd_connection *connection = container_of(kref, struct drbd_connection, kref);
@@ -4260,6 +4318,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	device->have_quorum[OLD] =
 	device->have_quorum[NEW] =
 		(resource->res_opts.quorum == QOU_OFF);
+	/* Real quorum, recomputed on the first state change. */
+	device->quorum[OLD] =
+	device->quorum[NEW] = false;
 
 	for_each_peer_device(peer_device, device) {
 		connection = peer_device->connection;
@@ -4478,8 +4539,6 @@ static int __init drbd_init(void)
 	drbd_proc = NULL; /* play safe for drbd_cleanup */
 	idr_init(&drbd_devices);
 
-	INIT_LIST_HEAD(&drbd_resources);
-
 	err = register_pernet_device(&drbd_pernet_ops);
 	if (err) {
 		pr_err("unable to register net namespace handlers\n");
@@ -4694,6 +4753,12 @@ void _drbd_uuid_push_history(struct drbd_device *device, u64 val)
 	if (val == (md->current_uuid & ~UUID_PRIMARY))
 		return;
 
+	/* day0 UUID: keep in history even if also held in a bitmap slot */
+	if (md->history_uuids[0] == 0) {
+		md->history_uuids[0] = val;
+		return;
+	}
+
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (node_id == md->node_id)
 			continue;
@@ -4828,10 +4893,13 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 	 * actually set a new bitmap uuid */
 	u64 got_new_bitmap_uuid = 0;
 
-	if (device->ldev->md.current_uuid != UUID_JUST_CREATED)
+	if (device->ldev->md.current_uuid != UUID_JUST_CREATED) {
 		prev_c_uuid = device->ldev->md.current_uuid;
-	else
+	} else {
 		get_random_bytes(&prev_c_uuid, sizeof(u64));
+		drbd_info(device, "Bitmap UUID for initial resync: %016llX\n",
+			  (unsigned long long)prev_c_uuid);
+	}
 
 	rcu_read_lock();
 	for_each_peer_device_rcu(peer_device, device) {
@@ -4946,6 +5014,9 @@ static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 	old_current_uuid = device->ldev->md.current_uuid;
 	get_random_bytes(&val, sizeof(u64));
 	__drbd_uuid_set_current(device, val);
+	/* first bump: retire day0 into history (after __drbd_uuid_set_current) */
+	if (day0)
+		_drbd_uuid_push_history(device, old_current_uuid);
 	spin_unlock_irq(&device->ldev->md.uuid_lock);
 
 	/* get it to stable storage _now_ */
@@ -4985,6 +5056,10 @@ static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced
 		return;
 	}
 	downgrade_write(&device->uuid_sem);
+	/* New data generation: separate pre- and post-bump writes into distinct
+	 * write epochs (see the diskless path in drbd_uuid_new_current).
+	 */
+	start_new_tl_epoch(device->resource);
 	weak_nodes = drbd_weak_nodes_device(device);
 	__new_current_uuid_info(device, weak_nodes);
 	__new_current_uuid_send(device, weak_nodes, forced);
@@ -5001,9 +5076,11 @@ static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device)
 	__new_current_uuid_info(device, weak_nodes);
 }
 
-static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
+static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device,
+					bool intentional_diskless)
 {
 	struct drbd_device *device = peer_device->device;
+	const int my_node_id = device->resource->res_opts.node_id;
 	int node_id;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
@@ -5011,6 +5088,16 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 		if (node_id == peer_device->node_id)
 			continue;
 		if (peer_device->bitmap_uuids[node_id] != 0)
+			continue;
+		/* bitmap_uuids[my_node_id] is the peer's record of *us*, from the
+		 * handshake.  When intentionally diskless (bitmap=no) the peer
+		 * never rotates into it, so it is perpetually zero and never
+		 * fillable -- skip it.  A detached (bitmap=yes) primary keeps
+		 * MDF_HAVE_BITMAP on the peer, so the slot self-corrects after a
+		 * bump and a zero there is a real signal of divergence to resync
+		 * on reattach -- do not skip it.
+		 */
+		if (node_id == my_node_id && intentional_diskless)
 			continue;
 		p2 = peer_device_by_node_id(device, node_id);
 		/* Diskless peers (bitmap=no) have no bitmap slot tracking
@@ -5024,35 +5111,26 @@ static bool peer_can_fill_a_bitmap_slot(struct drbd_peer_device *peer_device)
 	return false;
 }
 
-/* For a D_DISKLESS primary (intentionally diskless, or detached due to IO
- * errors or administrative action): returns true if peer_device's per-node
- * bitmap_uuid entries (peer_md[].bitmap_uuid in the peer's superblock) show
- * no record of a prior bump -- meaning we are either in the very first write
- * session (no non-zero entries anywhere) or a prior bump's entries have been
- * cleared by a successful resync, and a new generation must be signalled.
+/* For an intentionally-diskless primary (bitmap=no): returns true if the peer
+ * reports no prior bump -- i.e. the very first write session, or a prior
+ * bump's entries have since been cleared by resync -- so a new generation must
+ * be signalled.  We scan peer_device->bitmap_uuids[n], the connected peer's
+ * peer_md[n].bitmap_uuid from the handshake; holding no disk, that is all we
+ * have.
  *
- * We detect prior bumps through THIRD PARTY configured peers (n != my_node_id,
- * n != peer_device->node_id): after a UUID bump, rotate_current_into_bitmap()
- * on the receiving diskful peer records the old current UUID in each absent or
- * weak peer's bitmap_uuid slot.  We skip n == my_node_id because our own slot
- * in the peer's superblock is not a reliable signal:
+ * The peer's record of *us* (bitmap_uuids[my_node_id]) is useless here: the
+ * peer has no MDF_HAVE_BITMAP for us, so it is perpetually zero and the slot
+ * scan in peer_can_fill_a_bitmap_slot() skips it, missing the first-write /
+ * 2-node case.  (A merely-detached primary keeps MDF_HAVE_BITMAP on the peer,
+ * so that slot self-corrects and the slot scan handles it without this helper.)
+ * We instead detect prior bumps through THIRD PARTY configured peers
+ * (n != my_node_id, n != peer_device->node_id): rotate_current_into_bitmap()
+ * on the receiving peer records the old current UUID in each absent or weak
+ * peer's slot.
  *
- *   - Intentionally-diskless primary: rotate_current_into_bitmap() skips us
- *     unconditionally (D_DISKLESS && !MDF_HAVE_BITMAP), so our slot is
- *     perpetually zero regardless of how many bumps have occurred.
- *
- *   - Temporarily-diskless primary (detached): rotate_current_into_bitmap()
- *     does update our slot after a bump (MDF_HAVE_BITMAP is set).  But our
- *     slot starts at zero before the first bump (we were in sync at detach
- *     time), so we cannot distinguish "no prior bump" from "was in sync at
- *     detach" by inspecting our own slot.  Third-party peer slots provide
- *     the reliable signal in both cases.
- *
- * After the first bump, absent third-party peers acquire non-zero bitmap_uuid
- * entries in the peer's superblock, causing this to return false.  When such
- * entries are present, the bump path calls a_lost_peer_is_on_same_cur_uuid()
- * to handle the case where our knowledge of an absent peer's current UUID is
- * lost after a restart.
+ * Once such entries are present this returns false, and the bump path calls
+ * a_lost_peer_is_on_same_cur_uuid() to handle an absent peer's current UUID
+ * being lost after a restart.
  */
 static bool diskless_primary_needs_uuid_bump(struct drbd_peer_device *peer_device)
 {
@@ -5090,6 +5168,7 @@ static bool diskless_primary_needs_uuid_bump(struct drbd_peer_device *peer_devic
 
 static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 {
+	const bool intentional_diskless = device->device_conf.intentional_diskless;
 	struct drbd_peer_device *peer_device;
 	bool rv = false;
 
@@ -5107,23 +5186,23 @@ static bool diskfull_peers_need_new_cur_uuid(struct drbd_device *device)
 		if (peer_device->disk_state[NOW] < D_UP_TO_DATE)
 			continue;
 
-		/* Use disk_state to select the bump-decision helper.  For any
-		 * D_DISKLESS primary, our slot in the connected diskful peer's
-		 * metadata cannot reliably indicate whether a prior bump has
-		 * occurred: if intentionally diskless, the peer never updates
-		 * our slot (we have no bitmap), so it stays zero regardless of
-		 * how many bumps have occurred; if we lost our disk recently,
-		 * our slot was already zero when we detached (we were in sync
-		 * at the time), so zero-meaning-no-prior-bump is
-		 * indistinguishable from zero-meaning-was-in-sync-at-detach.
-		 * diskless_primary_needs_uuid_bump() uses third-party peers'
-		 * slots instead, where a zero unambiguously means no bump is on
-		 * record.  A diskful-but-degraded primary's slot self-corrects
-		 * after each bump, so peer_can_fill_a_bitmap_slot() applies.
+		/* peer_can_fill_a_bitmap_slot() scans the connected peer's
+		 * bitmap_uuid records (from the handshake, not our own metadata):
+		 * a zero slot for a configured bitmap peer means that peer is on
+		 * our generation and a bump marks a new divergence.  Authoritative
+		 * even for a diskless primary -- it catches a peer an absent third
+		 * party resynced to our generation behind our back, which our own
+		 * UUID memory misses.  A detached primary stays bitmap=yes, so the
+		 * peer's record of us self-corrects after a bump and the scan
+		 * decides on its own.
+		 *
+		 * An intentionally-diskless primary is bitmap=no: the peer's
+		 * record of us stays zero and is skipped, so the scan misses the
+		 * first-write / 2-node case; diskless_primary_needs_uuid_bump()
+		 * covers that from third-party slots instead.
 		 */
-		if (device->disk_state[NOW] == D_DISKLESS ?
-				diskless_primary_needs_uuid_bump(peer_device) :
-				peer_can_fill_a_bitmap_slot(peer_device)) {
+		if (peer_can_fill_a_bitmap_slot(peer_device, intentional_diskless) ||
+		    (intentional_diskless && diskless_primary_needs_uuid_bump(peer_device))) {
 			rv = true;
 			break;
 		}
@@ -5191,57 +5270,45 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * P_CURRENT_UUID to connected peers if a bump is warranted.  The decision
  * is made by two complementary helpers:
  *
- *   diskfull_peers_need_new_cur_uuid():
- *     Asks a connected diskful peer whether its metadata shows a bump is
- *     needed.  Returns true when no third peer has a non-zero bitmap_uuid in
- *     peer_md, meaning either no prior bump has been recorded (first write
- *     session or all previously absent peers have since synced and cleared
- *     their bitmap_uuid entries).
+ *   diskfull_peers_need_new_cur_uuid(): bump if a connected diskful peer's
+ *     metadata shows that some peer still sits on our generation.
  *
- *   a_lost_peer_is_on_same_cur_uuid():
- *     Scans absent peers.  Returns true if any absent peer either (a) is
- *     known to be at the same data generation as us, or (b) has an unknown
- *     UUID state (current_uuid == 0 after a restart) and therefore
- *     *might* be at the same generation.
+ *   a_lost_peer_is_on_same_cur_uuid(): bump if an absent peer is, or might
+ *     be, on our generation.
  *
  * Key scenarios (A = diskless primary, B = diskful secondary connected,
  *                C = third peer, UUID0/1/2 = successive current UUIDs):
  *
  * S1. 2-node (A, B), A promotes:
- *     diskless_primary_needs_uuid_bump(B): no other configured peers -> true.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ *     Only the connected peer B exists -> bump.
  *
- * S2. 3-node (A, B, C diskful absent), first bump:
- *     B.peer_md[C].bitmap_uuid = 0 (no prior bump recorded).
- *     diskless_primary_needs_uuid_bump(B): no non-zero bitmap_uuid entries -> true.
- *     After bump: B calls rotate_current_into_bitmap(), sets
- *     B.peer_md[C].bitmap_uuid = UUID0.  B propagates; A sees
- *     peer_device_B.bitmap_uuids[C] = UUID0.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ * S2. 3-node (A, B, C diskful absent), first write:
+ *     C has not recorded a bump from us, so it still sits on our generation
+ *     -> bump (UUID0->UUID1).  C resyncs when it reconnects.
  *
- * S3. 3-node, second trigger (C still absent, C has UUID0):
- *     B.peer_md[C].bitmap_uuid = UUID0 (non-zero).  C.current_uuid = UUID0 != UUID1.
- *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
- *     a_lost_peer_is_on_same_cur_uuid: UUID0 != UUID1, current_uuid != 0 -> false.
- *     No bump.  C reconnects with UUID0, sees UUID1 != UUID0 -> bitmap resync.
+ * S3. 3-node, second write (C still absent at UUID0):
+ *     We already know C diverged on the first bump (UUID0 != UUID1) -> no
+ *     bump.  C still sees UUID1 != UUID0 and resyncs on reconnect.
  *
  * S4. 3-node, A restarts, promotes (C still absent; C may be at UUID0 or UUID1):
- *     A's in-memory C.current_uuid = 0 (reset on restart).
- *     After reconnect to B: peer_device_B.bitmap_uuids[C] = UUID0 (from B).
- *     diskless_primary_needs_uuid_bump(B): non-zero bitmap_uuid -> false.
- *     a_lost_peer_is_on_same_cur_uuid: C.current_uuid == 0 -> true -> bump.
+ *     A has lost its knowledge of C's UUID across the restart -> bump.
  *     Necessary because C may have caught up to UUID1 and disconnected again
  *     before A restarted; without the bump, C at UUID1 would see no UUID
  *     divergence -- a suspended primary resumes into a split-brain, a
  *     secondary skips the resync its diverged data requires.
- *     Path: a_lost_peer_is_on_same_cur_uuid.
  *
  * S5. 3-node, C synced to UUID1 then disconnected; A still running:
- *     B.peer_md[C].bitmap_uuid = 0 (cleared when C's resync completed).
- *     C.current_uuid = UUID1 = A.exposed_data_uuid.
- *     diskless_primary_needs_uuid_bump(B): zero bitmap_uuid -> true -> bump (UUID1->UUID2).
- *     Without bump, C (at UUID1) would reconnect and see no divergence.
- *     Path: diskfull_peers_need_new_cur_uuid.
+ *     C is back on our current generation -> bump (UUID1->UUID2).  Without it,
+ *     C at UUID1 would reconnect and see no divergence.
+ *
+ * S6. 4-node (A diskless primary; B, C diskful connected; D diskful absent),
+ *     a third party resyncs D behind A's back:
+ *     A's first write bumps to UUID1, taken by B and C; D is absent.  A resync
+ *     C->D then completes out of A's sight, so D is on UUID1 but A never
+ *     learned of it.  On A's next write D still sits on our generation and must
+ *     be marked diverged -> bump (UUID1->UUID2).  D detects the divergence on
+ *     reconnect.  A's own per-peer UUID memory cannot see a resync a third node
+ *     performed on an absent peer; only the connected peers' metadata can.
  *
  * The combined behaviour for an absent peer D:
  * - First write session: bump triggered because exposed_data_uuid matches
@@ -5255,10 +5322,24 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
 void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
+		/* gen-rotate reason: per call site (promotion=OTHER, others DEGRADE).
+		 * Diskful: persists md.current_uuid synchronously -> self-confirms.
+		 */
 		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
-	} else if (diskfull_peers_need_new_cur_uuid(device) ||
-		   a_lost_peer_is_on_same_cur_uuid(device)) {
+	} else if ((!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) ||
+		    device->resource->res_opts.on_no_quorum == ONQ_IO_ERROR) &&
+		   (diskfull_peers_need_new_cur_uuid(device) ||
+		    a_lost_peer_is_on_same_cur_uuid(device))) {
+		/* Defer when the current generation is still unconfirmed: no peer
+		 * has it yet, so this loss is logically simultaneous with the one
+		 * that opened it -- the open generation already covers it.  At most
+		 * one unconfirmed generation (and one predecessor) exists at a time.
+		 * Exception: on-no-quorum=io-error
+		 */
+		/* gen-rotate reason: DEGRADE (diskless primary lost a diskful peer);
+		 * no local disk -> not self-confirming, relies on peer acks.
+		 */
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
@@ -5268,7 +5349,41 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		else
 			current_uuid &= ~UUID_PRIMARY;
 
+		/* A new data generation begins here: close the current write
+		 * epoch so that writes issued under the old current UUID and
+		 * writes issued under the new one never share an epoch.  The
+		 * post-bump epoch's barrier-ack then tells us a peer actually
+		 * persisted the new generation (a confirmation the diskless
+		 * primary otherwise lacks).
+		 */
+		start_new_tl_epoch(device->resource);
+
 		down_write(&device->uuid_sem);
+		/* Keep the generation we are leaving as the predecessor, tagged with
+		 * the epoch the new one begins in, so a peer that reconnects on it can
+		 * be recognised and replayed forward instead of rejected.
+		 */
+		device->exposed_data_uuid_predecessor = device->exposed_data_uuid;
+		device->exposed_gen_epoch = atomic_read(&device->resource->current_tle_nr);
+
+		/* Publish ordering (paired with the smp_rmb() in
+		 * drbd_maybe_release_rotated_gen()):
+		 *
+		 *     set per-peer CURRENT_UUID_UNCONFIRMED (all peers)
+		 *     smp_wmb()
+		 *     set EXPOSED_GEN_UNCONFIRMED         <- the gate, last
+		 *     send P_CURRENT_UUID                 <- only after the gate
+		 *
+		 * Marks before gate: a releaser reads gate then marks, so it
+		 * cannot see the gate set with a survivor's mark already clear.
+		 */
+		for_each_peer_device(peer_device, device) {
+			if (peer_device->repl_state[NOW] >= L_ESTABLISHED)
+				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
+		}
+		smp_wmb(); /* marks before gate; paired with smp_rmb() in releaser */
+		/* defer further bumps until this one is confirmed */
+		set_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
 		drbd_uuid_set_exposed(device, current_uuid, false);
 		downgrade_write(&device->uuid_sem);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
@@ -5276,11 +5391,26 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		weak_nodes = drbd_weak_nodes_device(device);
 		for_each_peer_device(peer_device, device) {
 			if (peer_device->repl_state[NOW] >= L_ESTABLISHED) {
-				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
+				/* Optimistically assume the peer received and persisted the
+				 * new current UUID.  It stays marked unconfirmed (above): if
+				 * the peer never actually got it (lost P_CURRENT_UUID, stalled
+				 * backend) and later reconnects on the old generation, the
+				 * handshake must trust the peer's reported UUID over this
+				 * optimistic value -- otherwise the diskless primary would
+				 * treat the peer as UpToDate at a generation no one persisted.
+				 */
 				peer_device->current_uuid = current_uuid;
+				drbd_send_current_uuid(peer_device, current_uuid, weak_nodes);
 			}
 		}
 		up_read(&device->uuid_sem);
+
+		/* We just opened an unconfirmed data generation (EXPOSED_GEN_UNCONFIRMED).
+		 * The confirm-before-complete IO hold needs no action here: it engages
+		 * lazily, per write, when a write in this generation is acked while still
+		 * unconfirmed (see hold_completion_for_unconfirmed_gen in drbd_req.c), and
+		 * is released by the in-order barrier ack (NEW_UUID_CONFIRMED).
+		 */
 	}
 }
 

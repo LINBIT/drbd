@@ -80,14 +80,13 @@ struct drbd_tcp_transport {
 	struct work_struct control_data_ready_work;
 	void (*original_control_sk_state_change)(struct sock *sk);
 	void (*original_control_sk_data_ready)(struct sock *sk);
+	wait_queue_head_t wait; /* woken if a connection came in on any of our paths */
 };
 
 struct dtt_listener {
 	struct drbd_listener listener;
 	void (*original_sk_state_change)(struct sock *sk);
 	struct socket *s_listen;
-
-	wait_queue_head_t wait; /* woken if a connection came in */
 };
 
 /* Since each path might have a different local IP address, each
@@ -104,6 +103,9 @@ struct dtt_path {
 
 	struct list_head sockets; /* sockets passed to me by other receiver threads */
 };
+
+/* From drbd_transport.c; here because drbd-headers is frozen for drbd-9.2 */
+struct drbd_listener *drbd_listener_try_get_ref(struct drbd_path *path);
 
 static int dtt_init(struct drbd_transport *transport);
 static void dtt_free(struct drbd_transport *transport, enum drbd_tr_free_op free_op);
@@ -171,6 +173,7 @@ static int dtt_init(struct drbd_transport *transport)
 	enum drbd_stream i;
 
 	spin_lock_init(&tcp_transport->control_recv_lock);
+	init_waitqueue_head(&tcp_transport->wait);
 	tcp_transport->transport.class = &tcp_transport_class;
 	for (i = DATA_STREAM; i <= CONTROL_STREAM ; i++) {
 		void *buffer = (void *)__get_free_page(GFP_KERNEL);
@@ -445,6 +448,28 @@ static bool dtt_path_cmp_addr(struct dtt_path *path)
 	return memcmp(&drbd_path->my_addr, &drbd_path->peer_addr, addr_size) > 0;
 }
 
+/* Translate transient socket errors (connect timeout, peer reset, etc.)
+ * to -EAGAIN so the caller restarts the connect cycle instead of treating
+ * the error as fatal. Other errors are returned unchanged.
+ */
+static int dtt_socket_err_to_eagain(int err)
+{
+	switch (err) {
+	case -ETIMEDOUT:
+	case -EINPROGRESS:
+	case -EINTR:
+	case -ERESTARTSYS:
+	case -ECONNREFUSED:
+	case -ECONNRESET:
+	case -ENETUNREACH:
+	case -EHOSTDOWN:
+	case -EHOSTUNREACH:
+		return -EAGAIN;
+	default:
+		return err;
+	}
+}
+
 static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 {
 	struct drbd_transport *transport = path->path.transport;
@@ -506,22 +531,9 @@ static int dtt_try_connect(struct dtt_path *path, struct socket **ret_socket)
 	err = socket->ops->connect(socket, (struct sockaddr_unsized *) &peer_addr,
 				   path->path.peer_addr_len, 0);
 	if (err < 0) {
-		switch (err) {
-		case -ETIMEDOUT:
-		case -EINPROGRESS:
-		case -EINTR:
-		case -ERESTARTSYS:
-		case -ECONNREFUSED:
-		case -ECONNRESET:
-		case -ENETUNREACH:
-		case -EHOSTDOWN:
-		case -EHOSTUNREACH:
-			err = -EAGAIN;
-			break;
-		case -EINVAL:
+		err = dtt_socket_err_to_eagain(err);
+		if (err == -EINVAL)
 			err = -EADDRNOTAVAIL;
-			break;
-		}
 	}
 
 out:
@@ -689,7 +701,11 @@ static struct dtt_path *dtt_wait_connect_cond(struct drbd_transport *transport)
 	rcu_read_lock();
 	list_for_each_entry_rcu(drbd_path, &transport->paths, list) {
 		path = container_of(drbd_path, struct dtt_path, path);
-		listener = drbd_path->listener;
+
+		/* Pairs with xchg() in drbd_put_listener() */
+		listener = READ_ONCE(drbd_path->listener);
+		if (!listener)
+			continue;
 
 		spin_lock_bh(&listener->waiters_lock);
 		rv = listener->pending_accepts > 0 || !list_empty(&path->sockets);
@@ -714,9 +730,11 @@ static void unregister_state_change(struct sock *sock, struct dtt_listener *list
 }
 
 static int dtt_wait_for_connect(struct drbd_transport *transport,
-				struct drbd_listener *drbd_listener, struct socket **socket,
+				struct socket **socket,
 				struct dtt_path **ret_path)
 {
+	struct drbd_tcp_transport *tcp_transport =
+		container_of(transport, struct drbd_tcp_transport, transport);
 	struct dtt_socket_container *socket_c;
 	struct sockaddr_storage peer_addr;
 	int connect_int, err = 0;
@@ -724,14 +742,23 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 	struct socket *s_estab = NULL;
 	struct net_conf *nc;
 	struct drbd_path *drbd_path2;
-	struct dtt_listener *listener = container_of(drbd_listener, struct dtt_listener, listener);
+	struct drbd_listener *drbd_listener;
+	struct dtt_listener *listener;
 	struct dtt_path *path = NULL;
+
+	/* Protect the listener from a concurrent del-path (drbd_put_listener()) */
+	drbd_listener = drbd_listener_try_get_ref(&(*ret_path)->path);
+	if (!drbd_listener)
+		return -EAGAIN;
+
+	listener = container_of(drbd_listener, struct dtt_listener, listener);
 
 	rcu_read_lock();
 	nc = rcu_dereference(transport->net_conf);
 	if (!nc) {
 		rcu_read_unlock();
-		return -EINVAL;
+		err = -EINVAL;
+		goto out;
 	}
 	connect_int = nc->connect_int;
 	rcu_read_unlock();
@@ -742,11 +769,13 @@ static int dtt_wait_for_connect(struct drbd_transport *transport,
 retry:
 	if (path)
 		kref_put(&path->path.kref, drbd_destroy_path);
-	timeo = wait_event_interruptible_timeout(listener->wait,
+	timeo = wait_event_interruptible_timeout(tcp_transport->wait,
 			(path = dtt_wait_connect_cond(transport)),
 			timeo);
-	if (timeo <= 0)
-		return -EAGAIN;
+	if (timeo <= 0) {
+		err = -EAGAIN;
+		goto out;
+	}
 
 	spin_lock_bh(&listener->listener.waiters_lock);
 	socket_c = list_first_entry_or_null(&path->sockets, struct dtt_socket_container, list);
@@ -762,7 +791,7 @@ retry:
 		err = kernel_accept(listener->s_listen, &s_estab, O_NONBLOCK);
 		if (err < 0) {
 			kref_put(&path->path.kref, drbd_destroy_path);
-			return err;
+			goto out;
 		}
 
 		/* The established socket inherits the sk_state_change callback
@@ -795,6 +824,9 @@ retry:
 		if (drbd_path2 != &path->path) {
 			struct dtt_path *path2 =
 				container_of(drbd_path2, struct dtt_path, path);
+			struct drbd_tcp_transport *path2_tcp_transport =
+				container_of(drbd_path2->transport,
+					     struct drbd_tcp_transport, transport);
 
 			socket_c = kmalloc_obj(*socket_c, GFP_ATOMIC);
 			if (!socket_c) {
@@ -806,7 +838,7 @@ retry:
 			socket_c->socket = s_estab;
 			s_estab = NULL;
 			list_add_tail(&socket_c->list, &path2->sockets);
-			wake_up(&listener->wait);
+			wake_up(&path2_tcp_transport->wait);
 			goto retry_locked;
 		}
 		if (s_estab->sk->sk_state != TCP_ESTABLISHED)
@@ -817,12 +849,17 @@ retry:
 	if (*ret_path)
 		kref_put(&(*ret_path)->path.kref, drbd_destroy_path);
 	*ret_path = path;
-	return 0;
+	err = 0;
+	goto out;
 
 retry_locked:
 	spin_unlock_bh(&listener->listener.waiters_lock);
 	dtt_socket_free(&s_estab);
 	goto retry;
+
+out:
+	kref_put(&drbd_listener->kref, drbd_listener_destroy);
+	return err;
 }
 
 static int dtt_receive_first_packet(struct drbd_tcp_transport *tcp_transport, struct socket *socket)
@@ -963,6 +1000,7 @@ static void dtt_control_state_change(struct sock *sock)
 static void dtt_incoming_connection(struct sock *sock)
 {
 	struct dtt_listener *listener = sock->sk_user_data;
+	struct drbd_path *drbd_path;
 	void (*state_change)(struct sock *sock);
 
 	state_change = listener->original_sk_state_change;
@@ -970,8 +1008,13 @@ static void dtt_incoming_connection(struct sock *sock)
 
 	spin_lock(&listener->listener.waiters_lock);
 	listener->listener.pending_accepts++;
+	list_for_each_entry(drbd_path, &listener->listener.waiters, listener_link) {
+		struct drbd_tcp_transport *tcp_transport =
+			container_of(drbd_path->transport,
+				     struct drbd_tcp_transport, transport);
+		wake_up(&tcp_transport->wait);
+	}
 	spin_unlock(&listener->listener.waiters_lock);
-	wake_up(&listener->wait);
 }
 
 static void dtt_control_timer_fn(struct timer_list *t)
@@ -1051,7 +1094,6 @@ static int dtt_init_listener(struct drbd_transport *transport,
 	}
 
 	listener->listener.listen_addr = my_addr;
-	init_waitqueue_head(&listener->wait);
 
 	return 0;
 out:
@@ -1242,7 +1284,7 @@ static int dtt_connect(struct drbd_transport *transport)
 
 retry:
 		s = NULL;
-		err = dtt_wait_for_connect(transport, connect_to_path->path.listener, &s, &connect_to_path);
+		err = dtt_wait_for_connect(transport, &s, &connect_to_path);
 		if (err < 0 && err != -EAGAIN)
 			goto out_release_sockets;
 
@@ -1331,6 +1373,7 @@ randomize:
 			&csocket_tls_wait);
 		if (err < 0) {
 			tr_warn(transport, "Error from control socket tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 
@@ -1340,12 +1383,14 @@ randomize:
 			&dsocket_tls_wait);
 		if (err < 0) {
 			tr_warn(transport, "Error from data socket tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 
 		err = tls_wait_hello(&csocket_tls_wait, &dsocket_tls_wait, timeout);
 		if (err < 0) {
 			tr_warn(transport, "Error from tls handshake: %d\n", err);
+			err = dtt_socket_err_to_eagain(err);
 			goto out_release_sockets;
 		}
 

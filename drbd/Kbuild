@@ -82,7 +82,7 @@ patch-target := $(obj)/dummy-for-patch.o
 $(patch-target): $(obj)/dummy-for-compat-h.o
 	@true
 
-ifneq ($(shell date -r $(objtree)/.config),$(shell date -r $(obj.build)/.config.timestamp 2> /dev/null))
+ifneq ($(shell date -r $(objtree)/include/config/auto.conf),$(shell date -r $(obj.build)/.config.timestamp 2> /dev/null))
 COMPAT_FORCE := FORCE
 endif
 
@@ -137,7 +137,7 @@ filechk_compat.h = { printf '$(obj.build)/%s ' $(patsubst $(obj.build)/%,%,$(TES
 
 $(compat.h): $(TEST_R) FORCE
 	$(call filechk,compat.h)
-	$(Q)touch -r $(objtree)/.config $(obj.build)/.config.timestamp
+	$(Q)touch -r $(objtree)/include/config/auto.conf $(obj.build)/.config.timestamp
 
 # Generate / find from cache the compat.patch.
 # If we used an old compat.patch from the cache,
@@ -286,7 +286,7 @@ endef
 $(obj.build)/.drbd_kernelrelease: /dev/null FORCE
 	$(call filechk,.drbd_kernelrelease)
 
-kconfig := $(realpath $(word 1,$(wildcard $(objtree)/.config $(srctree)/.config)))
+kconfig := $(realpath $(word 1,$(wildcard $(objtree)/.config $(srctree)/.config $(objtree)/include/config/auto.conf)))
 $(obj.build)/.kernel.config.gz: $(obj.build)/.drbd_kernelrelease $(kconfig)
 	@$(kecho) '  GEN     $@ $(echo-why)'
 	$(Q)config=$(kconfig)                                   ; \
@@ -294,10 +294,14 @@ $(obj.build)/.kernel.config.gz: $(obj.build)/.drbd_kernelrelease $(kconfig)
 	  echo "#  `$(CC) -v 2>&1 | tail -1`"               ; \
 	  echo "# against this kernelrelease:"              ; \
 	  sed 's/^/#  /' $<                                 ; \
-	  echo    "# kernel .config from"                   ; \
-	  echo    "#  $$config"                             ; \
-	  echo -e "# follows\n#\n"                          ; \
-	  cat $$config ; } | gzip > $@.new && mv $@.new $@
+	  if [ -n "$$config" ]; then                          \
+	    echo    "# kernel .config from"                 ; \
+	    echo    "#  $$config"                           ; \
+	    echo -e "# follows\n#\n"                        ; \
+	    cat $$config                                    ; \
+	  else                                                \
+	    echo -e "# kernel .config not available\n#\n"   ; \
+	  fi ; } | gzip > $@.new && mv $@.new $@
 
 # for some reason some of the commands below only work correctly in bash,
 # and not in e.g. dash. I'm too lazy to fix it to be compatible.
