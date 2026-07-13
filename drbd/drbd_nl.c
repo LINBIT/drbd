@@ -3335,7 +3335,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	if (device->bitmap) {
 		drbd_err_and_skb_info(&adm_ctx, "already has a bitmap, this should not happen\n");
 		retcode = ERR_INVALID_REQUEST;
-		goto fail;
+		goto fail_free_bitmap;
 	}
 
 	/* ldev_safe: attach path, allocating bitmap */
@@ -3353,7 +3353,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			(unsigned long long) backing_disk_max_sectors,
 			(unsigned long long) new_disk_conf->disk_size);
 		retcode = ERR_DISK_TOO_SMALL;
-		goto fail;
+		goto fail_free_bitmap;
 	}
 
 	if (new_disk_conf->meta_dev_idx < 0) {
@@ -3368,7 +3368,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		drbd_warn(device, "refusing attach: md-device too small, "
 		     "at least %llu sectors needed for this meta-disk type\n",
 		     (unsigned long long) min_md_device_sectors);
-		goto fail;
+		goto fail_free_bitmap;
 	}
 
 	/* Make sure the new disk is big enough
@@ -3380,7 +3380,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			(unsigned long long)get_capacity(device->vdisk),
 			(unsigned long long)backing_disk_max_sectors);
 		retcode = ERR_DISK_TOO_SMALL;
-		goto fail;
+		goto fail_free_bitmap;
 	}
 
 	nbc->known_size = drbd_get_capacity(nbc->backing_bdev);
@@ -3401,7 +3401,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 		update_resource_dagtag(resource, nbc);
 	drbd_resume_io(device);
 	if (rv < SS_SUCCESS)
-		goto fail;
+		goto fail_free_bitmap;
 
 	if (!get_ldev_if_state(device, D_ATTACHING))
 		goto force_diskless;
@@ -3802,6 +3802,18 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	put_ldev(device);
  force_diskless:
 	change_disk_state(device, D_DISKLESS, CS_HARD, "attach", NULL);
+	/* The D_DISKLESS transition scheduled the backing-device/bitmap
+	 * cleanup (drbd_ldev_destroy() -> drbd_bm_free()); do not free the
+	 * bitmap again below. */
+	goto fail;
+ fail_free_bitmap:
+	/* Reached from early attach failures, before the device took
+	 * ownership of the backing device (device->ldev is still NULL and no
+	 * D_DISKLESS transition scheduled the cleanup). Free the bitmap that
+	 * was allocated above so it is not leaked on device->bitmap; otherwise
+	 * every subsequent attach hits the "already has a bitmap" guard until
+	 * the resource is torn down with "drbdsetup down". */
+	drbd_bm_free(device);
  fail:
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_backing_dev_free(device, nbc);
