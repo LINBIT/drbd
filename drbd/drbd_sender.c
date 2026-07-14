@@ -680,7 +680,6 @@ static int make_one_resync_request(struct drbd_peer_device *peer_device, int dis
 				       size, REQ_OP_WRITE);
 	if (!peer_req) {
 		drbd_err(device, "Could not allocate resync request\n");
-		put_ldev(device);
 		return -EAGAIN;
 	}
 
