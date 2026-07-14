@@ -3147,9 +3147,16 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 					}
 				}
 
-				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
-				if (disk_state[OLD] == D_INCONSISTENT &&
-				    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE &&
+				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync.
+				 * Also cover D_OUTDATED, not just D_INCONSISTENT: e.g. after both
+				 * nodes were D_OUTDATED (both --outdate'd, then reconnected) and
+				 * one side is force-promoted to Primary/D_UP_TO_DATE, we still
+				 * need to redo the handshake here, or we get stuck: the newly
+				 * forced Primary moves on to L_WF_BITMAP_S and sends its bitmap,
+				 * while we never armed CONSIDER_RESYNC and stay in L_ESTABLISHED. */
+				if ((disk_state[OLD] == D_INCONSISTENT || disk_state[OLD] == D_OUTDATED) &&
+				    (peer_disk_state[OLD] == D_INCONSISTENT || peer_disk_state[OLD] == D_OUTDATED) &&
+				    peer_disk_state[NEW] == D_UP_TO_DATE &&
 				    peer_role[OLD] == R_SECONDARY && peer_role[NEW] == R_PRIMARY)
 					set_bit(CONSIDER_RESYNC, &peer_device->flags);
 
