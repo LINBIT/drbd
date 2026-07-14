@@ -1548,6 +1548,13 @@ static bool ap_bio_drained(struct drbd_device *device, enum suspend_scope ss)
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
 {
 	atomic_inc(&device->suspend_cnt);
+	/* Order the suspend_cnt store before the ap_bio_cnt load in the wait
+	 * condition below. Pairs with the cmpxchg + suspend_cnt re-check in
+	 * inc_ap_bio_cond(): a submitter that increments ap_bio_cnt after we
+	 * raised suspend_cnt is guaranteed to observe suspend_cnt and roll
+	 * back, or we observe its increment and wait.
+	 */
+	smp_mb__after_atomic();
 	wait_event(device->misc_wait, ap_bio_drained(device, ss));
 }
 
@@ -1562,6 +1569,7 @@ int drbd_suspend_io_interruptible(struct drbd_device *device, enum suspend_scope
 	int ret;
 
 	atomic_inc(&device->suspend_cnt);
+	smp_mb__after_atomic(); /* see drbd_suspend_io() */
 	ret = wait_event_interruptible(device->misc_wait, ap_bio_drained(device, ss));
 	if (ret)
 		drbd_resume_io(device);
