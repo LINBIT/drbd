@@ -2251,6 +2251,7 @@ enum suspend_scope {
 	WRITE_ONLY
 };
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss);
+int drbd_suspend_io_interruptible(struct drbd_device *device, enum suspend_scope ss);
 void drbd_resume_io(struct drbd_device *device);
 char *ppsize(char *buf, unsigned long long size);
 sector_t drbd_new_dev_size(struct drbd_device *device, sector_t current_size,

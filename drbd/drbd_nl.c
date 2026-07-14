@@ -1538,18 +1538,34 @@ char *ppsize(char *buf, unsigned long long size)
  * and should be short-lived. */
 /* It needs to be a counter, since multiple threads might
    independently suspend and resume IO. */
+static bool ap_bio_drained(struct drbd_device *device, enum suspend_scope ss)
+{
+	return drbd_suspended(device) ||
+	       atomic_read(&device->ap_bio_cnt[WRITE]) +
+	       (ss == READ_AND_WRITE ? atomic_read(&device->ap_bio_cnt[READ]) : 0) == 0;
+}
+
 void drbd_suspend_io(struct drbd_device *device, enum suspend_scope ss)
 {
 	atomic_inc(&device->suspend_cnt);
-	wait_event(device->misc_wait, drbd_suspended(device) ||
-		   (atomic_read(&device->ap_bio_cnt[WRITE]) +
-		    ss == READ_AND_WRITE ? atomic_read(&device->ap_bio_cnt[READ]) : 0) == 0);
+	wait_event(device->misc_wait, ap_bio_drained(device, ss));
 }
 
 void drbd_resume_io(struct drbd_device *device)
 {
 	if (atomic_dec_and_test(&device->suspend_cnt))
 		wake_up(&device->misc_wait);
+}
+
+int drbd_suspend_io_interruptible(struct drbd_device *device, enum suspend_scope ss)
+{
+	int ret;
+
+	atomic_inc(&device->suspend_cnt);
+	ret = wait_event_interruptible(device->misc_wait, ap_bio_drained(device, ss));
+	if (ret)
+		drbd_resume_io(device);
+	return ret;
 }
 
 /**
@@ -3811,7 +3827,13 @@ static int adm_detach(struct drbd_device *device, bool force, bool intentional_d
 		goto out;
 	}
 
-	drbd_suspend_io(device, READ_AND_WRITE); /* so no-one is stuck in drbd_al_begin_io */
+	/* so no-one is stuck in drbd_al_begin_io */
+	ret = drbd_suspend_io_interruptible(device, READ_AND_WRITE);
+	if (ret) {
+		device->device_conf.intentional_diskless = false;
+		retcode = ERR_INTR;
+		goto out;
+	}
 	retcode = stable_state_change(device->resource,
 		change_disk_state(device, D_DETACHING,
 			CS_VERBOSE | CS_SERIALIZE, tag, &err_str));
