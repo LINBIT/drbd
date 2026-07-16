@@ -4801,14 +4801,22 @@ static void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 	drbd_uuid_set_exposed(device, val, false);
 }
 
+/* Assign a peer's bitmap UUID together with its dagtag.  A bitmap_uuid of 0
+ * means the bitmap is unused, in which case the dagtag is cleared too.
+ */
+void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u64 dagtag)
+{
+	peer_md->bitmap_uuid = bitmap_uuid;
+	peer_md->bitmap_dagtag = bitmap_uuid ? dagtag : 0;
+}
+
 static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
 
 	drbd_md_mark_dirty(device);
-	peer_md->bitmap_uuid = val;
-	peer_md->bitmap_dagtag = val ? device->resource->dagtag_sector : 0;
+	drbd_set_peer_bitmap_uuid(peer_md, val, device->resource->dagtag_sector);
 }
 
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val)
@@ -4920,8 +4928,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 
 		if ((pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
 		    (NODE_MASK(node_id) & weak_nodes)) {
-			peer_md[node_id].bitmap_uuid = prev_c_uuid;
-			peer_md[node_id].bitmap_dagtag = dagtag;
+			drbd_set_peer_bitmap_uuid(&peer_md[node_id], prev_c_uuid, dagtag);
 			drbd_md_mark_dirty(device);
 			got_new_bitmap_uuid |= NODE_MASK(node_id);
 		}
@@ -4945,8 +4952,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 			slot_nr = find_first_zero_bit((unsigned long *)&slot_mask, sizeof(slot_mask) * BITS_PER_BYTE);
 			__set_bit(slot_nr, (unsigned long *)&slot_mask);
 		}
-		peer_md[node_id].bitmap_uuid = prev_c_uuid;
-		peer_md[node_id].bitmap_dagtag = dagtag;
+		drbd_set_peer_bitmap_uuid(&peer_md[node_id], prev_c_uuid, dagtag);
 		drbd_md_mark_dirty(device);
 		/* count, but only if that bitmap index exists. */
 		if (slot_nr < device->bitmap->bm_max_peers)
@@ -5452,8 +5458,7 @@ void drbd_uuid_new_current_by_user(struct drbd_device *device)
 		bm_uuid = pm->bitmap_uuid;
 		if (!bm_uuid)
 			continue;
-		pm->bitmap_uuid = 0;
-		pm->bitmap_dagtag = 0;
+		drbd_set_peer_bitmap_uuid(pm, 0, 0);
 		drbd_md_mark_dirty(device);
 		_drbd_uuid_push_history(device, bm_uuid);
 	}
@@ -5582,9 +5587,8 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 		if (peer_md[node_id].bitmap_uuid != bitmap_uuid) {
 			u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
 			/* drbd_info(device, "XXX bitmap[node_id=%d] = %llX\n", node_id, bitmap_uuid); */
-			peer_md[node_id].bitmap_uuid = bitmap_uuid;
-			peer_md[node_id].bitmap_dagtag =
-				bitmap_uuid ? device->resource->dagtag_sector : 0;
+			drbd_set_peer_bitmap_uuid(&peer_md[node_id], bitmap_uuid,
+					     device->resource->dagtag_sector);
 			_drbd_uuid_push_history(device, previous_bitmap_uuid);
 			drbd_md_mark_dirty(device);
 			modified |= NODE_MASK(node_id);
@@ -5748,8 +5752,8 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 	int to_index = peer_md[to_id].bitmap_index;
 	const char *from_name, *to_name;
 
-	peer_md[to_id].bitmap_uuid = peer_md[from_id].bitmap_uuid;
-	peer_md[to_id].bitmap_dagtag = peer_md[from_id].bitmap_dagtag;
+	drbd_set_peer_bitmap_uuid(&peer_md[to_id], peer_md[from_id].bitmap_uuid,
+			     peer_md[from_id].bitmap_dagtag);
 	_drbd_uuid_push_history(device, previous_bitmap_uuid);
 
 	/* Pretending that the updated UUID was sent is a hack.
@@ -5915,7 +5919,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 
 				drbd_info(peer_device,
 					"Missed end of resync as sync-source, no bits to sync\n");
-				peer_md[peer_node_id].bitmap_uuid = 0;
+				drbd_set_peer_bitmap_uuid(&peer_md[peer_node_id], 0, 0);
 				_drbd_uuid_push_history(device, previous);
 				peer_device->comm_bitmap_uuid = 0;
 				drbd_md_mark_dirty(device);
@@ -5948,7 +5952,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 
 			if (current_equal) {
 				u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
-				peer_md[node_id].bitmap_uuid = 0;
+				drbd_set_peer_bitmap_uuid(&peer_md[node_id], 0, 0);
 				_drbd_uuid_push_history(device, previous_bitmap_uuid);
 				if (node_id == peer_device->node_id)
 					drbd_print_uuids(peer_device, "updated UUIDs");
