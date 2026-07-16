@@ -530,6 +530,8 @@ struct drbd_peer_request *drbd_alloc_peer_req(struct drbd_peer_device *peer_devi
 	return peer_req;
 
 out_free_peer_req:
+	kref_debug_put(&device->kref_debug, 9);
+	kref_put(&device->kref, drbd_destroy_device);
 	mempool_free(peer_req, &drbd_ee_mempool);
 	return NULL;
 }
