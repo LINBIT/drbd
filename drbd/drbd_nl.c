@@ -2743,6 +2743,10 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	 * any flags set should always contain the day0 UUID.
 	 */
 	if (!peer_md->flags && day0_md) {
+		/* Assign directly, not via drbd_set_peer_bitmap_uuid(): a day0 slot must
+		 * keep flags == 0, and is implicitly a divergence bitmap through the
+		 * !MDF_HAVE_BITMAP path, so it must not gain MDF_PEER_DIVERGENCE_BITMAP.
+		 */
 		peer_md->bitmap_uuid = day0_md->bitmap_uuid;
 		peer_md->bitmap_dagtag = day0_md->bitmap_dagtag;
 	} else {

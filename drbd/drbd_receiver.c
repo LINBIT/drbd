@@ -3921,6 +3921,35 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 		return ignore_remaining_packet(connection, pi->size);
 	}
 
+	/* A sync source whose slot toward this peer still has
+	 * MDF_PEER_DIVERGENCE_BITMAP set:  Defer (retry) the resync request
+	 * until the flag has been cleared.
+	 *
+	 * Only toward a drbd-9 peer.  A drbd-8.4 sync target treats P_RS_CANCEL
+	 * as "this block is done" instead of rewinding to it, so the block would
+	 * never be resynced.
+	 */
+	if (repl_is_sync_source(peer_device->repl_state[NOW]) &&
+	    connection->agreed_pro_version >= 110 &&
+	    (device->ldev->md.peers[peer_device->node_id].flags & MDF_PEER_DIVERGENCE_BITMAP)) {
+		switch (pi->cmd) {
+		case P_RS_DATA_REQUEST:
+		case P_RS_DAGTAG_REQ:
+		case P_CSUM_RS_REQUEST:
+		case P_RS_CSUM_DAGTAG_REQ:
+		case P_RS_THIN_REQ:
+		case P_RS_THIN_DAGTAG_REQ:
+			drbd_notice_ratelimit(peer_device,
+				"Deferring resync request %llus +%u, divergence bitmap not cleared yet\n",
+				(unsigned long long)sector, size);
+			drbd_send_ack_be(peer_device, P_RS_CANCEL, sector, size, p->block_id);
+			put_ldev(device);
+			return ignore_remaining_packet(connection, pi->size);
+		default:
+			break;
+		}
+	}
+
 	inc_unacked(peer_device);
 
 	peer_req = drbd_alloc_peer_req(peer_device, GFP_TRY);
@@ -4525,26 +4554,35 @@ static int drbd_find_peer_bitmap_by_uuid(struct drbd_peer_device *peer_device, u
 	return -1;
 }
 
-/* find our bitmap slot for the given UUID, if we have one */
+/* Find our bitmap slot for the given UUID, if we have one. Prefer a slot whose
+ * bitmap is safe to copy from -- a divergence bitmap -- over a convergence
+ * bitmap being cleared by an ongoing resync. Fall back to a convergence slot so
+ * that callers can still tell "UUID unknown" (-1) from "UUID known but only as
+ * a convergence bitmap"; callers that must copy re-check is_divergence_bitmap()
+ * on the result.
+ */
 static int drbd_find_bitmap_by_uuid(struct drbd_peer_device *peer_device, u64 uuid)
 {
 	struct drbd_connection *connection = peer_device->connection;
 	struct drbd_device *device = peer_device->device;
-	u64 self;
-	int i;
+	struct drbd_peer_md *peer_md = device->ldev->md.peers;
+	int i, any = -1;
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		if (i == device->ldev->md.node_id)
 			continue;
 		if (connection->agreed_pro_version < 116 &&
-		    device->ldev->md.peers[i].bitmap_index == -1)
+		    peer_md[i].bitmap_index == -1)
 			continue;
-		self = device->ldev->md.peers[i].bitmap_uuid & ~UUID_PRIMARY;
-		if (self == uuid)
+		if ((peer_md[i].bitmap_uuid & ~UUID_PRIMARY) != uuid)
+			continue;
+		if (is_divergence_bitmap(&peer_md[i]))
 			return i;
+		if (any == -1)
+			any = i;
 	}
 
-	return -1;
+	return any;
 }
 
 static enum sync_strategy
@@ -4925,8 +4963,15 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	*rule = RULE_BITMAP_SELF_OTHER;
 	i = drbd_find_bitmap_by_uuid(peer_device, peer);
 	if (i != -1) {
-		*peer_node_id = i;
-		return SYNC_SOURCE_COPY_BITMAP;
+		if (is_divergence_bitmap(&device->ldev->md.peers[i])) {
+			*peer_node_id = i;
+			return SYNC_SOURCE_COPY_BITMAP;
+		}
+		/* A slot records the divergence from the peer's data, but its
+		 * bitmap is being cleared by an ongoing resync and cannot be
+		 * copied.  The data is related, so resync the whole slot.
+		 */
+		return SYNC_SOURCE_SET_BITMAP;
 	}
 
 	self = resolved_uuid;
@@ -5161,11 +5206,11 @@ static enum sync_strategy drbd_disk_states_source_strategy(
 	if (bitmap_uuid)
 		i = drbd_find_bitmap_by_uuid(peer_device, bitmap_uuid);
 
-	if (i == -1)
-		return SYNC_SOURCE_SET_BITMAP;
-
 	if (i == peer_device->node_id)
 		return SYNC_SOURCE_USE_BITMAP;
+
+	if (i == -1 || !is_divergence_bitmap(&peer_device->device->ldev->md.peers[i]))
+		return SYNC_SOURCE_SET_BITMAP;
 
 	*peer_node_id = i;
 	return SYNC_SOURCE_COPY_BITMAP;
@@ -5192,11 +5237,11 @@ static enum sync_strategy drbd_disk_states_target_strategy(
 	 * drbd_disk_states_source_strategy). */
 	i = drbd_find_peer_bitmap_by_uuid(peer_device, bitmap_uuid);
 
-	if (i == -1)
-		return SYNC_TARGET_SET_BITMAP;
-
 	if (i == node_id)
 		return SYNC_TARGET_USE_BITMAP;
+
+	if (i == -1)
+		return SYNC_TARGET_SET_BITMAP;
 
 	*peer_node_id = i;
 	return SYNC_TARGET_CLEAR_BITMAP;

@@ -4801,13 +4801,26 @@ static void __drbd_uuid_set_current(struct drbd_device *device, u64 val)
 	drbd_uuid_set_exposed(device, val, false);
 }
 
-/* Assign a peer's bitmap UUID together with its dagtag.  A bitmap_uuid of 0
- * means the bitmap is unused, in which case the dagtag is cleared too.
+/* Assign a peer's bitmap UUID, with its dagtag and MDF_PEER_DIVERGENCE_BITMAP.
+ * A bitmap_uuid of 0 means the bitmap is unused.
  */
 void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u64 dagtag)
 {
+	u64 previous = peer_md->bitmap_uuid;
+
 	peer_md->bitmap_uuid = bitmap_uuid;
 	peer_md->bitmap_dagtag = bitmap_uuid ? dagtag : 0;
+	/* Mark it a divergence bitmap only when we begin tracking a fresh one
+	 * (0 -> non-0).  A non-0 -> non-0 re-assignment rebases a bitmap that a
+	 * resync already owns onto a new data generation; that bitmap is a
+	 * convergence bitmap and its flag, cleared at resync start, must stay
+	 * cleared.  This relies on a resync's bitmap UUID being non-zero
+	 * throughout -- see drbd_run_resync().
+	 */
+	if (bitmap_uuid && !previous)
+		peer_md->flags |= MDF_PEER_DIVERGENCE_BITMAP;
+	else if (!bitmap_uuid)
+		peer_md->flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
 }
 
 static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
@@ -4863,6 +4876,10 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid)
  * a real UUID value was set (e.g. by linstor during create-md),
  * but no UUID rotation has ever happened (all history and bitmap
  * UUIDs are still zero).
+ *
+ * The same notion of day0 as a day0 peer slot (see struct drbd_peer_md), seen
+ * differently: here, the local current UUID is still day0; there, a bitmap
+ * tracks divergence since day0.
  */
 bool drbd_uuid_is_day0(struct drbd_device *device)
 {
@@ -5651,23 +5668,47 @@ peers_with_current_uuid(struct drbd_device *device, u64 current_uuid)
 	return nodes;
 }
 
+/* Prepare a sync target's peer slot at resync start: rotate our current UUID
+ * into the bitmap, then leave divergence.  As a resync proceeds, bits in the
+ * bitmap towards the peer are cleared -- on both the sync source and the sync
+ * target.  From then on the bitmap only records the blocks not yet in sync, so
+ * it is a convergence bitmap and must no longer be copied to another peer slot.
+ * Clear the flag after rotate_current_into_bitmap(), which may (re-)set it on
+ * this slot, and persist it before any bit is cleared.  Both under one
+ * uuid_lock hold, as the other rotate_current_into_bitmap() callers do, so that
+ * a concurrent UUID update can not re-establish divergence on this slot.
+ *
+ * The caller persists the cleared flag with drbd_md_sync_if_dirty().
+ * WARNING: Bits may already be cleared while that write is in flight, so a
+ * crash in that window can leave a partially cleared bitmap on disk with the
+ * flag still set.  The bitmap would then be taken for a divergence bitmap and
+ * could be copied to another peer slot.
+ */
 void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
+	unsigned long flags;
 
-	peer_device->rs_start_uuid = drbd_current_uuid(device);
 	if (peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY)
 		set_bit(SYNC_SRC_CRASHED_PRI, &peer_device->flags);
+
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+	peer_device->rs_start_uuid = drbd_current_uuid(device);
 	rotate_current_into_bitmap(device, 0, device->resource->dagtag_sector);
+	device->ldev->md.peers[peer_device->node_id].flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
+	drbd_md_mark_dirty(device);
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
-/* Prepare a sync source's peer slot at resync start.  A resync's bitmap towards
- * the peer records the divergence from a definite data generation, so the slot
- * should name that generation in its bitmap UUID.  A same-current forced full
- * resync -- the peer ran "invalidate", so source and target still share a
- * current UUID yet the whole device is out of sync -- leaves the bitmap UUID at
- * zero, because unlike a divergent-generation resync no handshake sets it.  Set
- * it to our current UUID.
+/* Prepare a sync source's peer slot at resync start.  The bitmap UUID must be
+ * non-zero throughout the resync.  A divergent-generation resync already has a
+ * non-zero bitmap UUID.  A same-current forced full resync -- the peer ran
+ * "invalidate", so source and target still share a current UUID yet the whole
+ * device is out of sync -- has no handshake to set it, so set it to our current
+ * UUID here.
+ *
+ * Then leave divergence, as drbd_uuid_resync_starting() does for the target.
+ * Both under one uuid_lock hold.
  */
 void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device)
 {
@@ -5678,11 +5719,11 @@ void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device)
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	if (peer_md->bitmap_uuid == 0 &&
 	    (peer_device->current_uuid & ~UUID_PRIMARY) ==
-	    (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
+	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
 		drbd_set_peer_bitmap_uuid(peer_md, drbd_current_uuid(device),
 					  device->resource->dagtag_sector);
-		drbd_md_mark_dirty(device);
-	}
+	peer_md->flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
+	drbd_md_mark_dirty(device);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
 
@@ -5802,25 +5843,35 @@ static void copy_bitmap(struct drbd_device *device, int from_id, int to_id)
 	spin_lock_irq(&device->ldev->md.uuid_lock);
 }
 
+/* Find a peer slot holding the given bitmap UUID, to be used as a copy source.
+ * Prefer, in order:
+ *   1. a divergence bitmap with an allocated bitmap (MDF_HAVE_BITMAP);
+ *   2. any other divergence bitmap (e.g. a day0 slot);
+ *   3. any matching slot, so callers can still distinguish "UUID unknown" (-1)
+ *      from "UUID known but only as a convergence bitmap being cleared by a
+ *      resync", which cannot be copied from.
+ */
 static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid)
 {
 	struct drbd_peer_md *peer_md = device->ldev->md.peers;
-	int node_id;
+	int node_id, any = -1, divergence = -1;
 
 	bm_uuid &= ~UUID_PRIMARY;
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == bm_uuid &&
-		    peer_md[node_id].flags & MDF_HAVE_BITMAP)
+		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) != bm_uuid)
+			continue;
+		if (any == -1)
+			any = node_id;
+		if (!is_divergence_bitmap(&peer_md[node_id]))
+			continue;
+		if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
 			return node_id;
+		if (divergence == -1)
+			divergence = node_id;
 	}
 
-	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if ((peer_md[node_id].bitmap_uuid & ~UUID_PRIMARY) == bm_uuid)
-			return node_id;
-	}
-
-	return -1;
+	return divergence != -1 ? divergence : any;
 }
 
 static bool node_connected(struct drbd_resource *resource, int node_id)
@@ -5887,6 +5938,12 @@ found:
 	}
 
 	if (!(peer_md[from_id].flags & MDF_HAVE_BITMAP))
+		return false;
+
+	/* Only copy from a divergence bitmap, never from a convergence bitmap
+	 * that is being cleared by an ongoing resync.
+	 */
+	if (!is_divergence_bitmap(&peer_md[from_id]))
 		return false;
 
 	if (from_id != node_id1 &&
@@ -5992,6 +6049,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 
 			from_node_id = find_node_id_by_bitmap_uuid(device, peer_current_uuid);
 			if (from_node_id != -1 && node_id != from_node_id &&
+			    is_divergence_bitmap(&peer_md[from_node_id]) &&
 			    dagtag_newer(peer_md[from_node_id].bitmap_dagtag,
 					 peer_md[node_id].bitmap_dagtag)) {
 				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&

@@ -753,6 +753,24 @@ struct drbd_work_queue {
 	wait_queue_head_t q_wait;
 };
 
+/*
+ * Per-peer metadata slot. bitmap_uuid names the generation this slot's bitmap
+ * records divergence from (0 when unused); bitmap_dagtag is the dagtag at which
+ * it was set. A slot is in one of three states:
+ *
+ *   - allocated bitmap (MDF_HAVE_BITMAP, bitmap_index >= 0): owns an on-disk
+ *     bitmap tracking per-block divergence toward the peer.
+ *   - diskless peer (MDF_NODE_EXISTS, bitmap_index == -1): the peer is known
+ *     but we hold no bitmap of our own for it.
+ *   - unallocated day0 slot (flags == 0, bitmap_index == -1): carries the day0
+ *     UUID -- the generation the volume was created in -- as a common-ancestor
+ *     reference for inception-based resync. Its bitmap is associated with it
+ *     indirectly (a spare bitmap index, or implicitly all-set), never owned
+ *     directly, so it always records full divergence.
+ *
+ * (The same notion of day0 as drbd_uuid_is_day0(), seen differently: there, the
+ * local current UUID is still day0; here, a bitmap tracks divergence since day0.)
+ */
 struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u64 bitmap_dagtag;
@@ -2980,6 +2998,17 @@ static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
 
 	peer_md = &device->ldev->md.peers[peer_device->node_id];
 	return peer_md->bitmap_uuid;
+}
+
+/* A slot with no bitmap of its own (MDF_HAVE_BITMAP clear) is implicitly a
+ * divergence bitmap. A day0 slot is such a slot: its bitmap is associated with
+ * it indirectly rather than owned directly. Only a directly-owned bitmap is
+ * cleared by a resync, and thereby turned into a convergence bitmap.
+ */
+static inline bool is_divergence_bitmap(struct drbd_peer_md *peer_md)
+{
+	return !(peer_md->flags & MDF_HAVE_BITMAP) ||
+		(peer_md->flags & MDF_PEER_DIVERGENCE_BITMAP);
 }
 
 static inline u64 drbd_history_uuid(struct drbd_device *device, int i)

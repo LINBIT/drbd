@@ -9,7 +9,7 @@
  * MDF_CONNECTED_IND   1 << 2                                    MDF_PEER_FENCING =      1 << 2,
  * MDF_FULL_SYNC       1 << 3                                    MDF_PEER_FULL_SYNC =    1 << 3,
  * MDF_WAS_UP_TO_DATE  1 << 4  MDF_WAS_UP_TO_DATE =    1 << 4,   MDF_PEER_DEVICE_SEEN =  1 << 4,
- * MDF_PEER_OUT_DATED  1 << 5
+ * MDF_PEER_OUT_DATED  1 << 5                                    MDF_PEER_DIVERGENCE_BITMAP = 1 << 5
  * MDF_CRASHED_PRIMARY 1 << 6  MDF_CRASHED_PRIMARY =   1 << 6,
  * MDF_AL_CLEAN        1 << 7  MDF_AL_CLEAN =          1 << 7,
  * MDF_AL_DISABLED     1 << 8  MDF_AL_DISABLED =       1 << 8,
@@ -121,12 +121,15 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 		peer_md->bitmap_index = -1;
 	}
 	peer_md = &md->peers[peer_node_id];
-	drbd_set_peer_bitmap_uuid(peer_md, be64_to_cpu(on_disk->uuid[UI_BITMAP]), 0);
 	peer_md->bitmap_index = 0;
 	peer_md->flags = on_disk_flags & MDF_84_PEER_MASK;
 	peer_md->flags |= MDF_HAVE_BITMAP;
 	peer_md->flags |= on_disk_flags & MDF_84_PEER_OUTDATED ? MDF_PEER_OUTDATED : 0;
 	peer_md->flags |= on_disk_flags & MDF_84_CONNECTED_IND ? MDF_PEER_CONNECTED : 0;
+	/* An 8.4 bitmap fully records the divergence; set the UUID (and its
+	 * divergence flag) after the other flags so it is not overwritten.
+	 */
+	drbd_set_peer_bitmap_uuid(peer_md, be64_to_cpu(on_disk->uuid[UI_BITMAP]), 0);
 
 
 	for (i = UI_HISTORY_START; i < UI_HISTORY_END; i++)
