@@ -2333,6 +2333,7 @@ static void drbd_conflict_submit_write(struct drbd_request *req)
 			 * queued when conflicts are released.
 			 */
 			drbd_remove_interval(&device->requests, &req->i);
+			drbd_clear_interval(&req->i);
 		}
 	}
 	spin_unlock_irq(&device->interval_lock);
