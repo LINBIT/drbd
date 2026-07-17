@@ -895,6 +895,12 @@ enum resource_flag {
 
 	TRY_BECOME_UP_TO_DATE_PENDING,
 
+	RESUME_HELD_FOR_OUTDATE, /* A Primary regained data access but a far-away
+				  * member must be outdated before we resume I/O;
+				  * holds susp_nod until the primary-resume 2PC
+				  * commits (or aborts).
+				  */
+
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 
@@ -1115,6 +1121,7 @@ struct drbd_resource {
 	 *   (with access to data) node.
 	 */
 	struct work_struct empty_twopc;
+	struct work_struct resume_twopc;
 };
 
 enum drbd_per_connection_ratelimit {

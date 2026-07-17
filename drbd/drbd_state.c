@@ -2142,6 +2142,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	struct drbd_device *device;
 	bool maybe_crashed_primary = false;
 	bool volume_lost_data_access = false;
+	bool volume_gained_data_access = false;
 	bool volumes_have_data_access = true;
 	bool resource_has_quorum = true;
 	int connected_primaries = 0;
@@ -2558,6 +2559,9 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (role[OLD] != R_PRIMARY || drbd_data_accessible(device, OLD))
 				volume_lost_data_access = true;
 		}
+		if (role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW) &&
+		    !(role[OLD] == R_PRIMARY && drbd_data_accessible(device, OLD)))
+			volume_gained_data_access = true;
 
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
 			disk_state[NEW] = /* ldev_safe: disk_state */ disk_state_from_md(device);
@@ -2569,8 +2573,23 @@ static void sanitize_state(struct drbd_resource *resource)
 	}
 	rcu_read_unlock();
 
-	if (volumes_have_data_access)
-		resource->susp_nod[NEW] = false;
+	if (volumes_have_data_access) {
+		/* A Primary regaining data access while a member exists that we
+		 * cannot reach directly must outdate that far-away member before
+		 * resuming I/O: otherwise a diskless Primary's queued writes reach
+		 * only the close peer and silently diverge the far-away one.  Hold
+		 * the resume (keep susp_nod) until the primary-resume 2PC has
+		 * outdated the far-away member(s) and cleared the hold.
+		 */
+		if (volume_gained_data_access &&
+		    resource->res_opts.on_no_data == OND_SUSPEND_IO &&
+		    (resource->members & ~(directly_connected_nodes(resource, NEW) |
+					   NODE_MASK(resource->res_opts.node_id))))
+			set_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+
+		resource->susp_nod[NEW] =
+			test_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+	}
 	if (volume_lost_data_access && resource->res_opts.on_no_data == OND_SUSPEND_IO)
 		resource->susp_nod[NEW] = true;
 
@@ -2626,6 +2645,16 @@ static void drbd_schedule_empty_twopc(struct drbd_resource *resource)
 	kref_get(&resource->kref);
 	kref_debug_get(&resource->kref_debug, 11);
 	if (!schedule_work(&resource->empty_twopc)) {
+		kref_debug_put(&resource->kref_debug, 11);
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
+}
+
+static void drbd_schedule_resume_twopc(struct drbd_resource *resource)
+{
+	kref_get(&resource->kref);
+	kref_debug_get(&resource->kref_debug, 11);
+	if (!schedule_work(&resource->resume_twopc)) {
 		kref_debug_put(&resource->kref_debug, 11);
 		kref_put(&resource->kref, drbd_destroy_resource);
 	}
@@ -4710,6 +4739,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	if (try_become_up_to_date || healed_primary)
 		drbd_schedule_empty_twopc(resource);
 
+	/* The Primary regained data access but sanitize_state held its resume
+	 * because a far-away member must be outdated first.  Drive that from
+	 * here.
+	 */
+	if (healed_primary && test_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags))
+		drbd_schedule_resume_twopc(resource);
+
 	if (!still_connected)
 		mod_timer_pending(&resource->twopc_timer, jiffies);
 
@@ -6096,6 +6132,42 @@ void drbd_empty_twopc_work_fn(struct work_struct *work)
 
 	clear_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
 	wake_up_all(&resource->state_wait);
+
+	kref_debug_put(&resource->kref_debug, 11);
+	kref_put(&resource->kref, drbd_destroy_resource);
+}
+
+/* A resumed Primary drives an empty 2PC so that far-away members it cannot
+ * reach directly outdate themselves (do_twopc_after_lost_peer at PH_COMMIT ->
+ * far_away_change on those nodes) before we resume.
+ */
+static enum drbd_state_rv twopc_primary_resume(struct drbd_resource *resource,
+					       enum chg_state_flags flags)
+{
+	struct change_context context = {
+		.resource = resource,
+		.vnr = -1,
+		.mask = { },
+		.val = { },
+		.target_node_id = -1,
+		.flags = flags | CS_FORCE_RECALC,
+		.change_local_state_last = true,
+	};
+
+	return change_cluster_wide_state(do_twopc_after_lost_peer, &context, "primary-resume");
+}
+
+void drbd_resume_twopc_work_fn(struct work_struct *work)
+{
+	struct drbd_resource *resource = container_of(work, struct drbd_resource, resume_twopc);
+	unsigned long irq_flags;
+
+	/* First outdate the far-away member(s) behind this Primary. */
+	twopc_primary_resume(resource, CS_VERBOSE);
+
+	clear_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
+	end_state_change(resource, &irq_flags, "primary-resumed");
 
 	kref_debug_put(&resource->kref_debug, 11);
 	kref_put(&resource->kref, drbd_destroy_resource);

@@ -193,4 +193,5 @@ bool drbd_res_data_accessible(struct drbd_resource *resource);
 
 
 void drbd_empty_twopc_work_fn(struct work_struct *work);
+void drbd_resume_twopc_work_fn(struct work_struct *work);
 #endif

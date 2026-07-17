@@ -7589,6 +7589,10 @@ static int adm_del_resource(struct drbd_resource *resource)
 		kref_debug_put(&resource->kref_debug, 11);
 		kref_put(&resource->kref, drbd_destroy_resource);
 	}
+	if (cancel_work_sync(&resource->resume_twopc)) {
+		kref_debug_put(&resource->kref_debug, 11);
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
 	timer_shutdown_sync(&resource->twopc_timer);
 	timer_shutdown_sync(&resource->peer_ack_timer);
 	call_rcu(&resource->rcu, drbd_reclaim_resource);
