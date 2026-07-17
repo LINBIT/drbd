@@ -127,6 +127,42 @@ static bool may_return_to_up_to_date(struct drbd_device *device, enum which_stat
 	return rv;
 }
 
+/* Losing a primary whose own disk was at best D_OUTDATED cannot leave this node
+ * behind data that survives nowhere else -- such a primary holds no
+ * authoritative copy of its own.  This node only owes a post-loss reconcile if
+ * some *surviving* diskful peer might hold a write it missed.  If this node is
+ * the sync source for every surviving diskful peer, it is the sole
+ * authoritative copy and must stay D_UP_TO_DATE instead of dropping to
+ * D_CONSISTENT to await a reconcile that no one owes it.
+ */
+static bool sole_authority_after_incapable_primary_loss(struct drbd_device *device)
+{
+	struct drbd_peer_device *peer_device;
+	bool lost_incapable_primary = false;
+	bool peer_might_be_ahead = false;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		if (connection->peer_role[OLD] == R_PRIMARY &&
+		    connection->cstate[NEW] < C_CONNECTED) {
+			if (peer_device->disk_state[OLD] <= D_OUTDATED)
+				lost_incapable_primary = true;
+			else
+				peer_might_be_ahead = true;
+
+		/* A surviving diskful peer that we are not syncing to could hold
+		 * a write we are missing (an outdated/inconsistent peer cannot).
+		 */
+		} else if (peer_device->disk_state[NEW] >= D_CONSISTENT)
+			peer_might_be_ahead = true;
+	}
+	rcu_read_unlock();
+
+	return lost_incapable_primary && !peer_might_be_ahead;
+}
+
 /**
  * may_be_up_to_date()  -  check if transition from D_CONSISTENT to D_UP_TO_DATE is allowed
  * @device: DRBD device.
@@ -2527,7 +2563,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			disk_state[NEW] = /* ldev_safe: disk_state */ disk_state_from_md(device);
 
 		if (maybe_crashed_primary && !connected_primaries &&
-		    disk_state[NEW] == D_UP_TO_DATE && role[NOW] == R_SECONDARY)
+		    disk_state[NEW] == D_UP_TO_DATE && role[NOW] == R_SECONDARY &&
+		    !sole_authority_after_incapable_primary_loss(device))
 			disk_state[NEW] = D_CONSISTENT;
 	}
 	rcu_read_unlock();
