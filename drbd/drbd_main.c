@@ -68,8 +68,8 @@ MODULE_SOFTDEP("post: handshake");
 #ifdef CONFIG_DRBD_FAULT_INJECTION
 int drbd_enable_faults;
 int drbd_fault_rate;
-static int drbd_fault_count;
-static int drbd_fault_devs;
+int drbd_fault_count;
+int drbd_fault_devs;
 
 /* bitmap of enabled faults */
 module_param_named(enable_faults, drbd_enable_faults, int, 0664);
