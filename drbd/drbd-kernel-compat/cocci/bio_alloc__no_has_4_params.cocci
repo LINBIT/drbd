@@ -14,8 +14,10 @@ bio_alloc_bioset(
 + gfp_mask, nr_vecs, bioset
  )
 );
-+ bio_set_dev(b, ebdev);
-+ b->bi_opf = _opf;
++ if (b) {
++ 	bio_set_dev(b, ebdev);
++ 	b->bi_opf = _opf;
++ }
 
 // special case for the bio_alloc in submit_one_flush
 // 1) because it is "struct bio *b = ...", not just "b = ...", and
