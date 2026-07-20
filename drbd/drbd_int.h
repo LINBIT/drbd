@@ -1336,10 +1336,13 @@ struct drbd_connection {
 	 * position in a common lost primary's change stream. drbd_uuid_compare()
 	 * compares it against our own last_dagtag_sector toward that node to roll
 	 * an equal-UUID both-dirty reconcile forward. lost_node_id == -1 if none.
+	 * sent_lost_node records the mirror direction: we named a common lost
+	 * primary to the peer in this handshake (conn_connect2).
 	 */
 	struct {
 		u64 dagtag_sector;
 		int lost_node_id;
+		bool sent_lost_node;
 	} reconcile_handshake;
 
 	unsigned int peer_node_id;

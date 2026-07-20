@@ -666,7 +666,8 @@ void conn_connect2(struct drbd_connection *connection)
 			drbd_get_connection_by_node_id(connection->resource, lost_node_id);
 
 		if (lost_peer) {
-			drbd_send_peer_dagtag(connection, lost_peer);
+			if (!drbd_send_peer_dagtag(connection, lost_peer))
+				connection->reconcile_handshake.sent_lost_node = true;
 			kref_put(&lost_peer->kref, drbd_destroy_connection);
 		}
 	}
@@ -5196,6 +5197,7 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 	struct drbd_device *device = peer_device->device;
 	const int node_id = device->resource->res_opts.node_id;
 	u64 local_uuid_flags;
+	bool one_sided;
 
 	if (*strategy != NO_SYNC)
 		return;
@@ -5205,17 +5207,37 @@ static void maybe_reconcile_equal_uuid_bitmap(struct drbd_peer_device *peer_devi
 		return;
 	if (!(connection->agreed_features & DRBD_FF_RECONCILE_RECONNECT))
 		return;
+	if (connection->cstate[NOW] != C_CONNECTING)
+		return;
 
 	/*
-	 * Reconcile only between secondaries of a *common lost primary*: the peer
-	 * named one via P_PEER_DAGTAG during this connect handshake
-	 * (find_common_lost_primary_node_id stashed it in reconcile_handshake).
-	 * Without that, an equal-UUID state with leftover bits is an ordinary
-	 * reconnect whose direction the rules above already settled (or NO_SYNC is
-	 * correct) -- do not second-guess it and force a resync.
+	 * Equal current UUIDs with leftover bits reconcile only between
+	 * secondaries of a *common lost primary*. Without one, the bits are
+	 * resync artifacts -- set toward an absent peer while this node was
+	 * itself a sync target (or after invalidate), marking blocks the peer
+	 * already holds -- and NO_SYNC (drop the bits) is correct; forcing a
+	 * resync would pull a healthy UpToDate peer through Inconsistent for
+	 * nothing.
+	 *
+	 * "Named a common lost primary" must be evaluated identically on both
+	 * nodes, but each node only ever *hears* the other's naming
+	 * (find_common_lost_primary_node_id excludes the peer itself, so a
+	 * plain secondary of the bit-holder can never name one; P_PEER_DAGTAG
+	 * stashed the peer's naming in reconcile_handshake). Gating on the
+	 * stash alone therefore deadlocked one-sided reconciles: the side the
+	 * naming reached went WFBitMapS while the namer stayed
+	 * NO_SYNC/Established. Accept either direction of the exchange --
+	 * the peer named one, or we named one to the peer -- which is the
+	 * same predicate on both nodes, so the one-sided case (ordered by the
+	 * bit counts) derives mirrored decisions.
+	 *
+	 * The both-sided case cannot be ordered by bit counts; it additionally
+	 * needs the peer's dagtag position toward the named lost primary, so
+	 * it still requires the peer's naming.
 	 */
-	if (connection->cstate[NOW] != C_CONNECTING ||
-	    connection->reconcile_handshake.lost_node_id == -1)
+	one_sided = !peer_device->comm_bm_set != !peer_device->dirty_bits;
+	if (connection->reconcile_handshake.lost_node_id == -1 &&
+	    !(one_sided && connection->reconcile_handshake.sent_lost_node))
 		return;
 
 	local_uuid_flags = drbd_collect_local_uuid_flags(peer_device, NULL);
@@ -10422,6 +10444,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	connection->after_reconciliation.lost_node_id = -1;
 	connection->reconcile_handshake.lost_node_id = -1;
+	connection->reconcile_handshake.sent_lost_node = false;
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr)
