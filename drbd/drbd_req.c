@@ -2381,6 +2381,18 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 			return false;
 	} while (atomic_cmpxchg(&device->ap_bio_cnt[rw], ap_bio_cnt, ap_bio_cnt + 1) != ap_bio_cnt);
 
+	/* Re-check suspend_cnt after publishing our ap_bio_cnt increment.
+	 * atomic_cmpxchg() is a full barrier, so this load is ordered after
+	 * the increment; it pairs with the smp_mb__after_atomic() in
+	 * drbd_suspend_io(). If a suspend raced in, at least one side sees
+	 * the other: either drbd_suspend_io() observes our increment and
+	 * waits, or we observe suspend_cnt here and roll back.
+	 */
+	if (atomic_read(&device->suspend_cnt)) {
+		dec_ap_bio(device, rw);
+		return false;
+	}
+
 	return true;
 }
 
