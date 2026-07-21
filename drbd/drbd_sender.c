@@ -1244,6 +1244,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
 	for (; i < number; i++) {
+		unsigned long cursor;
 		int err;
 
 		/* If we are aborting the requests or the peer is canceling
@@ -1257,7 +1258,24 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		if ((number - i) << BM_BLOCK_SHIFT < discard_granularity)
 			goto request_done;
 
-		bit  = drbd_bm_find_next(peer_device, peer_device->resync_next_bit);
+		/* Scanning the bitmap can take long on devices with a large
+		 * bitmap; do it without holding resync_next_bit_lock, which
+		 * disables softirqs and preemption.
+		 */
+		cursor = peer_device->resync_next_bit;
+		spin_unlock_bh(&peer_device->resync_next_bit_lock);
+		bit = drbd_bm_find_next(peer_device, cursor);
+		spin_lock_bh(&peer_device->resync_next_bit_lock);
+
+		if (peer_device->resync_next_bit != cursor) {
+			/* A reply rewound the cursor while we were scanning
+			 * without the lock. Back off; the next run starts
+			 * from the rewound position.
+			 */
+			request_ok = false;
+			goto request_done;
+		}
+
 		if (bit == DRBD_END_OF_BITMAP) {
 			peer_device->resync_next_bit = drbd_bm_bits(device);
 			goto request_done;
