@@ -2155,6 +2155,11 @@ static int ignore_remaining_packet(struct drbd_connection *connection, int size)
 {
 	void *data_to_ignore;
 
+	if (size < 0) {
+		drbd_err(connection, "Invalid packet size\n");
+		return -EIO;
+	}
+
 	while (size) {
 		int s = min_t(int, size, DRBD_SOCKET_BUFFER_SIZE);
 		int rv = drbd_recv(connection, &data_to_ignore, s, 0);
