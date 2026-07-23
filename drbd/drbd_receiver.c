@@ -6104,17 +6104,20 @@ static int receive_SyncParam(struct drbd_connection *connection, struct packet_i
 			p->csums_alg[SHARED_SECRET_MAX-1] = 0;
 		}
 
+		strscpy(connection->peer_verify_alg, p->verify_alg,
+			sizeof(connection->peer_verify_alg));
+
 		if (strcmp(old_net_conf->verify_alg, p->verify_alg)) {
 			if (peer_device->repl_state[NOW] == L_OFF) {
-				drbd_err(device, "Different verify-alg settings. me=\"%s\" peer=\"%s\"\n",
+				drbd_warn(device, "Different verify-alg settings. me=\"%s\" peer=\"%s\", online verify will be refused\n",
 				    old_net_conf->verify_alg, p->verify_alg);
-				goto disconnect;
-			}
-			verify_tfm = drbd_crypto_alloc_digest_safe(device,
-					p->verify_alg, "verify-alg");
-			if (IS_ERR(verify_tfm)) {
-				verify_tfm = NULL;
-				goto disconnect;
+			} else {
+				verify_tfm = drbd_crypto_alloc_digest_safe(device,
+						p->verify_alg, "verify-alg");
+				if (IS_ERR(verify_tfm)) {
+					verify_tfm = NULL;
+					goto disconnect;
+				}
 			}
 		}
 
@@ -10590,6 +10593,7 @@ static void conn_disconnect(struct drbd_connection *connection)
 
 	mutex_lock(&resource->conf_update);
 	drbd_transport_shutdown(connection, CLOSE_CONNECTION);
+	connection->peer_verify_alg[0] = 0;
 	mutex_unlock(&resource->conf_update);
 
 	cleanup_remote_state_change(connection);

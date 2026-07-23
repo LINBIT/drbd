@@ -1222,7 +1222,7 @@ int drbd_send_peer_ack(struct drbd_connection *connection, u64 mask, u64 dagtag_
 int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 {
 	struct p_rs_param_95 *p;
-	int size;
+	int size, err;
 	const int apv = peer_device->connection->agreed_pro_version;
 	enum drbd_packet cmd;
 	struct net_conf *nc;
@@ -1277,7 +1277,23 @@ int drbd_send_sync_param(struct drbd_peer_device *peer_device)
 		strcpy(p->csums_alg, nc->csums_alg);
 	rcu_read_unlock();
 
-	return drbd_send_command(peer_device, cmd, DATA_STREAM);
+	err = drbd_send_command(peer_device, cmd, DATA_STREAM);
+
+	/* A peer with established replication adopts the verify-alg we
+	 * advertise, see receive_SyncParam(). Keep our record of the peer's
+	 * algorithm current. Must not be called with conf_update held.
+	 */
+	if (!err && apv >= 88 && peer_device->repl_state[NOW] != L_OFF) {
+		struct drbd_connection *connection = peer_device->connection;
+
+		mutex_lock(&connection->resource->conf_update);
+		nc = connection->transport.net_conf;
+		strscpy(connection->peer_verify_alg, nc->verify_alg,
+			sizeof(connection->peer_verify_alg));
+		mutex_unlock(&connection->resource->conf_update);
+	}
+
+	return err;
 }
 
 int __drbd_send_protocol(struct drbd_connection *connection, enum drbd_packet cmd)

@@ -7028,6 +7028,30 @@ static int drbd_adm_get_timeout_type(struct sk_buff *skb, struct genl_info *info
 	return 0;
 }
 
+static enum drbd_ret_code check_verify_alg_matches_peer(struct drbd_peer_device *peer_device,
+							struct sk_buff *reply_skb)
+{
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_resource *resource = connection->resource;
+	enum drbd_ret_code retcode = NO_ERROR;
+	struct net_conf *nc;
+
+	mutex_lock(&resource->conf_update);
+	nc = connection->transport.net_conf;
+	if (connection->agreed_pro_version >= 88 &&
+	    peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+	    nc && nc->verify_alg[0] &&
+	    strcmp(nc->verify_alg, connection->peer_verify_alg)) {
+		drbd_msg_sprintf_info(reply_skb,
+			"Online verify refused: local verify-alg \"%s\" differs from peer verify-alg \"%s\"",
+			nc->verify_alg, connection->peer_verify_alg);
+		retcode = ERR_VERIFY_ALG;
+	}
+	mutex_unlock(&resource->conf_update);
+
+	return retcode;
+}
+
 static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context *adm_ctx = info->user_ptr[0];
@@ -7060,6 +7084,12 @@ static int drbd_adm_start_ov(struct sk_buff *skb, struct genl_info *info)
 	}
 	if (mutex_lock_interruptible(&adm_ctx->resource->adm_mutex)) {
 		retcode = ERR_INTR;
+		goto out_put_ldev;
+	}
+
+	retcode = check_verify_alg_matches_peer(peer_device, adm_ctx->reply_skb);
+	if (retcode != NO_ERROR) {
+		mutex_unlock(&adm_ctx->resource->adm_mutex);
 		goto out_put_ldev;
 	}
 
