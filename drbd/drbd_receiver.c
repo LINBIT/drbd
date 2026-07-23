@@ -3790,6 +3790,11 @@ static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
 {
 	struct digest_info *di = NULL;
 
+	if (digest_size < 0) {
+		drbd_err(peer_req->peer_device, "Invalid digest size\n");
+		return -EIO;
+	}
+
 	di = kmalloc(sizeof(*di) + digest_size, GFP_NOIO);
 	if (!di)
 		return -ENOMEM;
