@@ -2650,8 +2650,25 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 					magic);
 		}
 		err = dtr_repost_rx_desc(cm, rx_desc);
-		if (err)
+		if (err) {
+			unsigned long irq_flags;
+
 			tr_err(&rdma_transport->transport, "dtr_repost_rx_desc() failed %d", err);
+			/* The desc is off the recv queue for good; dropping it on the
+			 * floor would leak it and its cm reference (which pins the
+			 * module). Dispose of it via the error list like any dead
+			 * desc, and correct the posted count (this one was charged
+			 * to the FLOW_CTRL pool).
+			 */
+			atomic_dec(&path->flow[ST_FLOW_CTRL].rx_descs_posted);
+			spin_lock_irqsave(&cm->error_rx_descs_lock, irq_flags);
+			list_add_tail(&rx_desc->list, &cm->error_rx_descs);
+			spin_unlock_irqrestore(&cm->error_rx_descs_lock, irq_flags);
+			set_bit(DSB_ERROR, &cm->state);
+			kref_get(&cm->kref);
+			if (!schedule_work(&cm->end_rx_work))
+				kref_put(&cm->kref, dtr_destroy_cm);
+		}
 		/* Range-check before flow[] indexing: send_from_stream comes from a
 		 * record that may be stale/raced in the ring. Every well-formed record
 		 * now charges the FLOW_CTRL pool (send_from_stream == ST_FLOW_CTRL);
