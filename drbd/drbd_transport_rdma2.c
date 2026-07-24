@@ -703,11 +703,9 @@ static void dtr_destroy_cm(struct kref *kref);
 static void dtr_destroy_cm_keep_id(struct kref *kref);
 static int dtr_activate_path(struct dtr_path *path);
 static int dtr_got_announce_buffer_msg(struct dtr_cm *cm, struct dtr_announce_buffer *msg);
-static u32 dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
-				 u64 *addr, u32 *rkey);
-static bool dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes,
-				     u64 *addr, u32 *rkey);
-static void dtr_commit_remote_chunk(struct dtr_region_set *rs, unsigned int bytes);
+static u32 dtr_remote_room(struct dtr_region_set *rs, unsigned int bytes);
+static int dtr_reserve_and_post(struct dtr_cm *cm, struct dtr_region_set *rs,
+				struct dtr_tx_desc *tx_desc, unsigned int bytes);
 static bool dtr_any_remote_room(struct dtr_transport *rdma_transport, enum drbd_stream stream,
 				unsigned int bytes);
 static int dtr_wait_for_remote_buffer(struct dtr_transport *rdma_transport,
@@ -3171,12 +3169,12 @@ static int __dtr_post_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
  * (kref'd). DATA and CONTROL are both RDMA-written into a peer-announced receive
  * region, so a path also needs free region space: peek it here purely as a
  * scheduling gate, so the send_wq sleep wakes only when a usable path exists
- * rather than spinning on a credit-only path. The authoritative, atomic
- * reservation happens in the caller via dtr_reserve_remote_chunk(); a peek that
- * loses a race to a concurrent reservation just makes the caller retry.
+ * rather than spinning on a credit-only path. The authoritative reservation
+ * happens in the caller via dtr_reserve_and_post(); a peek that loses a race
+ * to a concurrent reservation just makes the caller retry.
  */
 static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_transport,
-						     enum drbd_stream stream)
+						     enum drbd_stream stream, unsigned int bytes)
 {
 	struct drbd_transport *transport = &rdma_transport->transport;
 	struct dtr_path *path, *candidate = NULL;
@@ -3192,8 +3190,6 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 	list_for_each_entry_rcu(path, &transport->paths, path.list) {
 		struct dtr_flow *flow = &path->flow[stream];
 		unsigned long ls;
-		u64 addr;
-		u32 rk;
 
 		cm = rcu_dereference(path->cm);
 		if (!cm || cm->state != DSM_CONNECTED || test_bit(DCF_SUSPECT, &cm->flags))
@@ -3211,7 +3207,7 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 		/* The packet RDMA-writes into a peer region; skip paths with no room
 		 * for it.
 		 */
-		if (!dtr_peek_remote_chunk(&path->regions[stream], 1, &addr, &rk))
+		if (!dtr_remote_room(&path->regions[stream], bytes))
 			continue;
 
 		ls = cm->last_sent_jif;
@@ -3314,6 +3310,19 @@ static int dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 }
 
 
+/* Payload bytes of a desc: what its RDMA-WRITE occupies in the peer's region
+ * before stride rounding.
+ */
+static unsigned int dtr_tx_desc_bytes(struct dtr_tx_desc *tx_desc)
+{
+	unsigned int bytes = 0;
+	int i;
+
+	for (i = 0; i < tx_desc->nr_sges; i++)
+		bytes += tx_desc->sge[i].length;
+	return bytes;
+}
+
 /* Attempt, once, to place a tx_desc whose path died onto a surviving path,
  * preserving its stream sequence number so the peer's in-order reorder queue
  * does not stall on the gap. For an rdma_write desc the new path's region is
@@ -3329,32 +3338,17 @@ static int dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
  *   -ECONNRESET-- the post failed after remapping (the picked path just went
  *                 bad); @tx_desc has been freed here.
  */
-/* Payload bytes of a desc: what its RDMA-WRITE occupies in the peer's region
- * before stride rounding.
- */
-static unsigned int dtr_tx_desc_bytes(struct dtr_tx_desc *tx_desc)
-{
-	unsigned int bytes = 0;
-	int i;
-
-	for (i = 0; i < tx_desc->nr_sges; i++)
-		bytes += tx_desc->sge[i].length;
-	return bytes;
-}
-
 static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(old_cm->path->path.transport, struct dtr_transport, transport);
 	enum drbd_stream stream = dtr_imm_stream(tx_desc->imm);
 	unsigned int bytes = dtr_tx_desc_bytes(tx_desc);
-	u64 remote_addr = 0;
-	u32 rkey = 0;
 	struct dtr_flow *flow;
 	struct dtr_cm *cm;
 	int err;
 
-	cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream);
+	cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream, bytes);
 	if (!cm)
 		return -EAGAIN;
 
@@ -3364,23 +3358,39 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 	if (!atomic_inc_if_below(&flow->tx_descs_posted, flow->tx_descs_max))
 		goto again_peer;
 
-	/* The original region died with old_cm; aim an RDMA-WRITE at a fresh,
-	 * contiguous chunk in the new path's region (reserved atomically here).
+	/* Remap onto the new path's device first: the reserve and the post must
+	 * be one atomic step (dtr_reserve_and_post), so no work may sit between
+	 * them. A remap failure leaves the desc untouched on old_cm (remap
+	 * maps-new-first).
 	 */
-	if (tx_desc->rdma_write &&
-	    !dtr_reserve_remote_chunk(&cm->path->regions[stream], bytes, &remote_addr, &rkey))
-		goto again_tx;
-
 	err = dtr_remap_tx_desc(old_cm, cm, tx_desc);
 	if (err)
-		goto again_region; /* desc untouched on old_cm (remap maps-new-first) */
-	tx_desc->remote_addr = remote_addr;
-	tx_desc->rkey = rkey;
+		goto again_tx;
 
-	err = __dtr_post_tx_desc(cm, tx_desc);
+	if (tx_desc->rdma_write) {
+		/* The original region died with old_cm; aim the RDMA-WRITE at a
+		 * fresh, contiguous chunk in the new path's region and post it in
+		 * the same atomic step, so a concurrent sender on this path cannot
+		 * slip a post between our reservation and our post.
+		 */
+		err = dtr_reserve_and_post(cm, &cm->path->regions[stream], tx_desc, bytes);
+		if (err == -ENOBUFS) {
+			/* Survivor momentarily out of region. Restore the desc onto
+			 * old_cm, as the retry bookkeeping (resend_cm) requires; on
+			 * the rare remap-back failure (it leaves the desc mapped on
+			 * cm) the desc is unusable for a retry -- terminal.
+			 */
+			if (dtr_remap_tx_desc(cm, old_cm, tx_desc) == 0)
+				goto again_tx;
+			err = -ECONNRESET;
+		}
+	} else {
+		err = __dtr_post_tx_desc(cm, tx_desc);
+	}
 	if (err) {
-		/* Remapped onto cm but the post failed: the desc is now on cm and
-		 * cannot stay on old_cm for a retry, so this is terminal -- free it.
+		/* The post failed (or the desc could not be restored): the desc is
+		 * mapped on cm and cannot stay on old_cm for a retry -- terminal,
+		 * free it.
 		 */
 		atomic_dec(&flow->tx_descs_posted);
 		atomic_inc(&flow->peer_rx_descs);
@@ -3392,11 +3402,6 @@ static int dtr_repost_tx_desc(struct dtr_cm *old_cm, struct dtr_tx_desc *tx_desc
 	kref_put(&cm->kref, dtr_destroy_cm);
 	return 0;
 
-again_region:
-	/* A reserved-but-unposted chunk stays consumed on the survivor's region
-	 * until that path reconnects (there is no un-reserve); tolerable on this
-	 * rare retry path.
-	 */
 again_tx:
 	atomic_dec(&flow->tx_descs_posted);
 again_peer:
@@ -3551,10 +3556,7 @@ static bool dtr_any_remote_room(struct dtr_transport *rdma_transport, enum drbd_
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(path, &transport->paths, path.list) {
-		u64 addr;
-		u32 rkey;
-
-		if (dtr_peek_remote_chunk(&path->regions[stream], bytes, &addr, &rkey)) {
+		if (dtr_remote_room(&path->regions[stream], bytes)) {
 			found = true;
 			break;
 		}
@@ -3693,8 +3695,6 @@ static int dtr_post_tx_desc(struct dtr_transport *rdma_transport,
 	struct ib_device *device;
 	struct dtr_flow *flow;
 	struct dtr_cm *cm = NULL;
-	u64 remote_addr = 0;
-	u32 rkey = 0;
 	int offset, err;
 	long t;
 
@@ -3727,12 +3727,13 @@ retry:
 			return err;
 	}
 	if (nonblock) {
-		cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream);
+		cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream, tx_desc->sge[0].length);
 		if (!cm)
 			return -EAGAIN;
 	} else {
 		t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-				(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream)),
+				(cm = dtr_select_and_get_cm_for_tx(rdma_transport, stream,
+								   tx_desc->sge[0].length)),
 				rdma_stream->send_timeout);
 
 		if (t == 0) {
@@ -3758,31 +3759,10 @@ retry:
 		goto retry;
 	}
 
-	/* DATA and CONTROL are RDMA-written straight into the peer's receive
-	 * region. Reserve a chunk now (atomically; the peek in path selection only
-	 * gated the sleep). The chunk is the message size rounded up to the
-	 * region's stride, matching the receiver's consume. If we lost the chunk to
-	 * a concurrent (failover) reservation, release the credit and reselect.
+	/* Map the source page before the reserve: the region reservation and the
+	 * post must be one atomic step (dtr_reserve_and_post), so nothing may sit
+	 * between them.
 	 */
-	if (!dtr_reserve_remote_chunk(&cm->path->regions[stream], tx_desc->sge[0].length,
-				      &remote_addr, &rkey)) {
-		atomic_inc(&flow->peer_rx_descs);
-		atomic_dec(&flow->tx_descs_posted);
-		kref_put(&cm->kref, dtr_destroy_cm);
-		if (nonblock)
-			return -EAGAIN;
-		/* Credit was available but the region window is momentarily empty
-		 * (the path-selection peek lost a race, or the peer has not yet
-		 * re-announced a consumed region). Block on region space rather
-		 * than busy-retrying the select loop.
-		 */
-		err = dtr_wait_for_remote_buffer(rdma_transport, stream,
-						 tx_desc->sge[0].length);
-		if (err)
-			return err;
-		goto retry;
-	}
-
 	device = cm->id->device;
 	switch (tx_desc->type) {
 	case SEND_PAGE:
@@ -3806,30 +3786,40 @@ retry:
 		goto out;
 	}
 
-	/* Aim the RDMA-WRITE at the chunk reserved above. On a post error the
-	 * connection is torn down and the region re-announced on reconnect, so the
-	 * already-consumed chunk needs no rollback.
+	/* DATA and CONTROL are RDMA-written straight into the peer's receive
+	 * region: reserve a chunk and post at it atomically (the room check in
+	 * path selection only gated the sleep). The chunk is the message size
+	 * rounded up to the region's stride, matching the receiver's consume.
 	 */
-	tx_desc->rdma_write = true;
-	tx_desc->remote_addr = remote_addr;
-	tx_desc->rkey = rkey;
-
-	err = __dtr_post_tx_desc(cm, tx_desc);
+	err = dtr_reserve_and_post(cm, &cm->path->regions[stream], tx_desc,
+				   tx_desc->sge[0].length);
 	if (err) {
 		atomic_inc(&flow->peer_rx_descs);
 		atomic_dec(&flow->tx_descs_posted);
 		ib_dma_unmap_page(device, tx_desc->sge[0].addr,
 				  tx_desc->sge[0].length, DMA_TO_DEVICE);
-		/* The path went bad between selection and post. Stop selecting it
-		 * and retry on a surviving path rather than returning an error that
-		 * tears the whole connection down; send_timeout bounds the retry.
-		 * The chunk reserved on this path's region dies with the path.
-		 */
-		dtr_cm_set_suspect(cm);
 		kref_put(&cm->kref, dtr_destroy_cm);
+		if (err == -ENOBUFS) {
+			/* Lost the region space to a concurrent (failover)
+			 * reservation, or the peer has not yet re-announced a
+			 * consumed region. Block on region space rather than
+			 * busy-retrying the select loop.
+			 */
+			if (nonblock)
+				return -EAGAIN;
+			err = dtr_wait_for_remote_buffer(rdma_transport, stream,
+							 tx_desc->sge[0].length);
+			if (err)
+				return err;
+		}
+		/* Otherwise the post itself failed: the path went bad between
+		 * selection and post and is suspect now (dtr_reserve_and_post);
+		 * retry on a surviving path rather than returning an error that
+		 * tears the whole connection down; send_timeout bounds the retry.
+		 * The chunk consumed on this path's region dies with the path.
+		 */
 		goto retry;
 	}
-
 
 out:
 	kref_put(&cm->kref, dtr_destroy_cm);
@@ -3926,7 +3916,7 @@ static int dtr_got_announce_buffer_msg(struct dtr_cm *cm, struct dtr_announce_bu
 	rs = &path->regions[stream];
 
 	/* Sender and receiver consume a region in lockstep by its stride (see
-	 * dtr_reserve_remote_chunk()); a stride we cannot mirror -- or a region we
+	 * dtr_reserve_and_post()); a stride we cannot mirror -- or a region we
 	 * cannot record -- would make the cursors diverge and hand up wrong data.
 	 * Drop the connection instead of using the region.
 	 */
@@ -4022,53 +4012,43 @@ __dtr_find_remote_buffer(struct dtr_region_set *rs, unsigned int bytes)
 	return NULL;
 }
 
-/* Consume the region room a chunk built against a prior dtr_peek_remote_chunk()
- * occupied, now that it has been posted: @bytes rounded up to the stride of the
- * region the peek found, which is exactly what the receiver advances its cursor
- * by (dtr_consume_local_buffer()), so the two stay in lockstep. Frees the region
- * once fully consumed. Used by the multi-SGE bio path (dtr_send_bio), which
- * peeks then commits exactly what the chunk occupied; the single-message path
- * uses the atomic dtr_reserve_remote_chunk() instead. Both are driven by the one
- * DATA sender thread, so a peek and its matching commit are never interleaved
- * with another consume of the same region.
- */
-static void dtr_commit_remote_chunk(struct dtr_region_set *rs, unsigned int bytes)
-{
-	struct dtr_remote_buffer *rb;
-	unsigned long flags;
-
-	spin_lock_irqsave(&rs->remote_buffers_lock, flags);
-	rb = __dtr_find_remote_buffer(rs, bytes);
-	if (rb) {
-		rb->consumed += dtr_chunk_size(bytes, rb->stride);
-		if (rb->consumed >= rb->len) {
-			list_del(&rb->list);
-			kfree(rb);
-		}
-	}
-	spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
-}
-
-/* Reserve region room for one @bytes RDMA-WRITE in the peer's remote buffers
- * and report the remote address and rkey to write to. Consumption is
- * stride-granular (the region's announced stride), so neighbouring writes may
- * share a region page; the receiver reference-counts the pages accordingly.
+/* Reserve room for a @bytes RDMA-WRITE in the peer's remote buffers and post
+ * @tx_desc aimed at it, in one atomic step under remote_buffers_lock.
  *
- * All-or-nothing: false if no announced buffer can take the write right now
- * (nothing consumed, no buffer abandoned) -- a partial grant cannot help the
- * single-WR caller.
+ * Why atomic: the receiver never learns a write's target address from the wire.
+ * dtr_consume_local_buffer() advances its own region cursor by the write's
+ * stride-rounded byte count in completion order, and RC completions arrive in
+ * posted order -- so region space must be consumed in exactly the order the
+ * writes are posted to the QP. With concurrent reservers on one region (a
+ * payload sender and a failover repost from the tx-completion softirq or the
+ * resend worker, see dtr_repost_tx_desc()), a separate reserve-then-post-later
+ * scheme can invert post order against cursor order; the writes then land where
+ * the receiver's cursor no longer points and the stream hands up wrong data.
+ *
+ * All-or-nothing: -ENOBUFS if no announced buffer can take the write right now
+ * (@tx_desc untouched, nothing posted, nothing consumed, no buffer abandoned) --
+ * a partial grant cannot help the single-WR caller. Consumption is
+ * stride-granular (the region's announced stride, a cache line or the core's
+ * dma_alignment), so neighbouring writes may share a region page; the receiver
+ * reference-counts the pages accordingly.
+ *
+ * On a post failure the path is marked suspect: its cursor has advanced past a
+ * write the peer will never receive, so no further payload may be posted on
+ * this path (its buffers are dropped and re-announced on the re-establish).
+ * Returns the ib_post_send() error in that case; @tx_desc is not freed.
  */
-static bool
-dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *addr, u32 *rkey)
+static int dtr_reserve_and_post(struct dtr_cm *cm, struct dtr_region_set *rs,
+				struct dtr_tx_desc *tx_desc, unsigned int bytes)
 {
 	struct dtr_remote_buffer *rb, *tmp;
 	unsigned long flags;
+	int err;
 
 	spin_lock_irqsave(&rs->remote_buffers_lock, flags);
 	rb = __dtr_find_remote_buffer(rs, bytes);
 	if (!rb) {
 		spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
-		return false;
+		return -ENOBUFS;
 	}
 	/* Tail rule: the buffers ahead of @rb cannot take this write; the
 	 * receiver retires them when the write arrives, so do the same here.
@@ -4080,27 +4060,33 @@ dtr_reserve_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *add
 		list_del(&tmp->list);
 		kfree(tmp);
 	}
-	*addr = rb->addr + rb->consumed;
-	*rkey = rb->rkey;
+	tx_desc->rdma_write = true;
+	tx_desc->remote_addr = rb->addr + rb->consumed;
+	tx_desc->rkey = rb->rkey;
 	rb->consumed += dtr_chunk_size(bytes, rb->stride);
 	if (rb->consumed >= rb->len) {
 		list_del(&rb->list);
 		kfree(rb);
 	}
+	err = __dtr_post_tx_desc(cm, tx_desc);
 	spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
 
-	return true;
+	if (err) {
+		set_bit(DSB_ERROR, &cm->state);
+		dtr_cm_set_suspect(cm);
+	}
+	return err;
 }
 
 /* Room for a @bytes write: the bytes remaining in the remote buffer it would go
- * into (see __dtr_find_remote_buffer()), and the addr/rkey there, without
- * consuming anything. Advisory only -- the authoritative consume is the atomic
- * dtr_reserve_remote_chunk(), which may race ahead of a peek, so a caller
- * acting on a peek retries. Returns 0 if no announced region can take the
- * write (pass @bytes == 1 for "any room at all").
+ * into (see __dtr_find_remote_buffer()), without consuming anything. Advisory
+ * only -- used to gate path selection, as a wait condition, and to size a bio
+ * chunk (pass @bytes == 1 for "any room at all"); the authoritative consume is
+ * the atomic dtr_reserve_and_post(), which may race ahead (e.g. a failover
+ * repost from tx-completion), so the caller handles coming up short there.
+ * Returns 0 if no announced region can take the write.
  */
-static u32
-dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *addr, u32 *rkey)
+static u32 dtr_remote_room(struct dtr_region_set *rs, unsigned int bytes)
 {
 	struct dtr_remote_buffer *rb;
 	unsigned long flags;
@@ -4108,11 +4094,8 @@ dtr_peek_remote_chunk(struct dtr_region_set *rs, unsigned int bytes, u64 *addr, 
 
 	spin_lock_irqsave(&rs->remote_buffers_lock, flags);
 	rb = __dtr_find_remote_buffer(rs, bytes);
-	if (rb) {
+	if (rb)
 		room = rb->len - rb->consumed;
-		*addr = rb->addr + rb->consumed;
-		*rkey = rb->rkey;
-	}
 	spin_unlock_irqrestore(&rs->remote_buffers_lock, flags);
 
 	return room;
@@ -4553,17 +4536,16 @@ static void dtr_free_ring(struct dtr_path *path)
 }
 
 /* A payload of @byte_len bytes was just RDMA-written into our receive region at
- * its consume cursor. Mirror the sender's reservation
- * (dtr_reserve_remote_chunk()): the write went into the first region, in
- * announce order, whose tail could take its stride-rounded size; regions ahead
- * of it were abandoned by the sender and are retired here (the tail rule).
- * Point @rx_desc->data_page / data_offset at the payload so the consumer
- * (dtr_recv_bio() for DATA payload, _dtr_recv() for DATA headers,
- * dtr_control_data_ready() for CONTROL) uses it instead of the recv buffer,
- * take a reference on every region page it touches (neighbouring writes may
- * share a page), and advance the cursor by the same stride-rounded amount. A
- * fully consumed region moves to the exhausted list for deferred release +
- * replacement. Runs in the rx completion softirq.
+ * its consume cursor. Mirror the sender's reservation (dtr_reserve_and_post()):
+ * the write went into the first region, in announce order, whose tail could
+ * take its stride-rounded size; regions ahead of it were abandoned by the
+ * sender and are retired here (the tail rule). Point @rx_desc->data_page /
+ * data_offset at the payload so the consumer (dtr_recv_bio() for DATA payload,
+ * _dtr_recv() for DATA headers, dtr_control_data_ready() for CONTROL) uses it
+ * instead of the recv buffer, take a reference on every region page it touches
+ * (neighbouring writes may share a page), and advance the cursor by the same
+ * stride-rounded amount. A fully consumed region moves to the exhausted list for
+ * deferred release + replacement. Runs in the rx completion softirq.
  */
 static bool
 dtr_consume_local_buffer(struct dtr_region_set *rs, struct dtr_rx_desc *rx_desc,
@@ -5688,7 +5670,7 @@ retry:
 			return NULL;
 	}
 	t = wait_event_interruptible_timeout(rdma_stream->send_wq,
-			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, DATA_STREAM)),
+			(cm = dtr_select_and_get_cm_for_tx(rdma_transport, DATA_STREAM, 1)),
 			rdma_stream->send_timeout);
 	if (t == 0) {
 		if (drbd_stream_send_timed_out(&rdma_transport->transport, DATA_STREAM)) {
@@ -5761,40 +5743,33 @@ static int dtr_add_bvec_sge(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc,
 	return 0;
 }
 
-/* Post a fully-built chunk as one RDMA-WRITE and, on success, commit the region
- * room it occupies: @chunk_bytes rounded up to the region's stride, which is
- * what the receiver advances its cursor by (dtr_consume_local_buffer()), so the
- * two stay in lockstep. Commit
- * only after a successful post, so a failed post leaves the cursor untouched
- * (nothing reached the peer). Consumes the caller's @cm credit reference either
- * way. On a post failure the path died between selection and post: rather than
- * tear the connection down, fail the chunk over to a surviving path (keeping its
- * sequence number) -- dtr_send_bio() then continues the bio on the survivor.
- * Returns 0 if the chunk was posted or failed over, a negative errno only if no
- * path could take it.
+/* Post a fully-built chunk as one RDMA-WRITE: reserve the region room it
+ * occupies (chunk_bytes rounded up to the region's stride -- the receiver
+ * advances its cursor by the same) and post at it, in one atomic step
+ * (dtr_reserve_and_post).
+ * The chunk was sized at open time against a peek of this path's head region,
+ * but a concurrent failover repost may have consumed that space since
+ * (-ENOBUFS), or the path may have died (post error, path now suspect). In
+ * both cases nothing reached the peer and the cursor is untouched or dies with
+ * the path: hand the chunk to the failover machinery, which places it on any
+ * path with room (possibly this one, once the peer re-announces) or queues it
+ * for a bounded async retry, preserving its stream sequence number --
+ * dtr_send_bio() then continues the bio, draining the queue first. Consumes
+ * the caller's @cm credit reference either way. Returns 0 if the chunk was
+ * posted or failed over, a negative errno only if no path could take it.
  */
 static int dtr_flush_chunk(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc,
 			   unsigned int chunk_bytes)
 {
 	int err;
 
-	err = __dtr_post_tx_desc(cm, tx_desc);
+	err = dtr_reserve_and_post(cm, &cm->path->regions[DATA_STREAM], tx_desc, chunk_bytes);
 	if (err) {
 		struct dtr_transport *rdma_transport =
 			container_of(cm->path->path.transport, struct dtr_transport, transport);
 
-		/* Release this path's tx credit, stop selecting it, and hand the
-		 * chunk to a surviving path (or queue it) -- the same failover the
-		 * tx-completion softirq does for an in-flight WR that errors. The
-		 * chunk never reached the peer, so this path's region cursor stays
-		 * uncommitted (correct). The helper consumes @tx_desc.
-		 */
 		dtr_undo_credit(cm->path);
-		set_bit(DSB_ERROR, &cm->state);
-		dtr_cm_set_suspect(cm);
 		err = dtr_failover_tx_desc(rdma_transport, cm, tx_desc);
-	} else {
-		dtr_commit_remote_chunk(&cm->path->regions[DATA_STREAM], chunk_bytes);
 	}
 	kref_put(&cm->kref, dtr_destroy_cm);
 
@@ -5844,19 +5819,20 @@ static int dtr_send_bio(struct drbd_transport *transport, struct bio *bio, unsig
 
 			if (!tx_desc) {
 				/* Open a chunk: secure a path with credit, peek its
-				 * head region, size the descriptor.
+				 * head region, size the descriptor. The peek only
+				 * sizes the chunk; the region space itself is
+				 * reserved atomically with the post, at flush time
+				 * (dtr_flush_chunk -> dtr_reserve_and_post).
 				 */
 				unsigned int rem_bytes = iter.bi_size - done;
-				u64 remote_addr;
-				u32 rkey;
 
 				cm = dtr_get_cm_reserve_credit(rdma_transport, &err);
 				if (!cm)
 					goto out; /* -EAGAIN / -EINTR */
 				path = cm->path;
 
-				chunk_max_bytes = dtr_peek_remote_chunk(&path->regions[DATA_STREAM],
-									1, &remote_addr, &rkey);
+				chunk_max_bytes =
+					dtr_remote_room(&path->regions[DATA_STREAM], 1);
 				if (chunk_max_bytes == 0) {
 					/* Window momentarily empty: wait for an announce
 					 * and retry rather than spinning.
@@ -5900,9 +5876,11 @@ static int dtr_send_bio(struct drbd_transport *transport, struct bio *bio, unsig
 					goto out;
 				}
 				tx_desc->type = SEND_BIO;
+				/* Marks the desc as a region write for the failover
+				 * repost; the actual target (remote_addr/rkey) is
+				 * assigned by dtr_reserve_and_post() at flush time.
+				 */
 				tx_desc->rdma_write = true;
-				tx_desc->remote_addr = remote_addr;
-				tx_desc->rkey = rkey;
 				tx_desc->imm = dtr_imm_encode(DATA_STREAM, ds->tx_sequence++);
 				chunk_bytes = 0;
 			}
