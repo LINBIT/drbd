@@ -3327,8 +3327,14 @@ static struct dtr_cm *dtr_select_and_get_cm_for_tx(struct dtr_transport *rdma_tr
 	}
 
 	if (candidate) {
+		/* The candidate's cm may be gone by now: a failover xchg()s path->cm
+		 * to NULL and the last ref can drop at any instant after the loop
+		 * examined it. NULL here just means no usable path this round; the
+		 * caller sleeps and retries.
+		 */
 		cm = __dtr_path_get_cm(candidate);
-		cm->last_sent_jif = jiffies;
+		if (cm)
+			cm->last_sent_jif = jiffies;
 	} else {
 		cm = NULL;
 	}
