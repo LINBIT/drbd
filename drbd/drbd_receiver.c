@@ -524,12 +524,41 @@ static int drbd_finish_peer_reqs(struct drbd_connection *connection)
 	return err;
 }
 
+/* conn_connect() arms a data stream receive timeout to bound the connect;
+ * receive_state() disarms it per peer device, so a connection that has none
+ * keeps it over a data stream that is now legitimately idle. Disarm here
+ * instead, from the timeout it caused: a receive already waiting took its
+ * timeout when it started, so disarming elsewhere comes too late for it.
+ */
+static bool disarm_stale_connect_timeout(struct drbd_connection *connection)
+{
+	struct drbd_transport *transport = &connection->transport;
+	struct drbd_transport_ops *tr_ops = &transport->class->ops;
+
+	if (connection->cstate[NOW] != C_CONNECTED)
+		return false;
+
+	if (tr_ops->get_rcvtimeo(transport, DATA_STREAM) == MAX_SCHEDULE_TIMEOUT)
+		return false;
+
+	drbd_info(connection, "Idle data stream on an established connection; "
+		  "disarming the connect receive timeout\n");
+	tr_ops->set_rcvtimeo(transport, DATA_STREAM, MAX_SCHEDULE_TIMEOUT);
+
+	return true;
+}
+
 static int drbd_recv(struct drbd_connection *connection, void **buf, size_t size, int flags)
 {
 	struct drbd_transport_ops *tr_ops = &connection->transport.class->ops;
 	int rv;
 
+retry:
 	rv = tr_ops->recv(&connection->transport, DATA_STREAM, buf, size, flags);
+
+	/* At most one retry: the disarm makes the second attempt untimed. */
+	if (rv == -EAGAIN && disarm_stale_connect_timeout(connection))
+		goto retry;
 
 	if (rv < 0) {
 		if (rv == -ECONNRESET)
