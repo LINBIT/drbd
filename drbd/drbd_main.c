@@ -5515,6 +5515,13 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	}
 	rcu_read_unlock();
 
+	/* A resync-target relation a caller saw may be gone by now */
+	if (set_current && device->disk_state[NOW] != D_UP_TO_DATE) {
+		drbd_warn(from_pd, "not adopting new current UUID %016llX on %s disk\n",
+			  val, drbd_disk_str(device->disk_state[NOW]));
+		set_current = false;
+	}
+
 	if (set_current) {
 		u64 old_current = device->ldev->md.current_uuid;
 		u64 upd;
