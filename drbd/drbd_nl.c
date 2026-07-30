@@ -7321,9 +7321,16 @@ static enum drbd_ret_code adm_del_minor(struct drbd_device *device)
 	if (ret != NO_ERROR)
 		return ret;
 
-	for_each_peer_device_ref(peer_device, im, device)
-		stable_change_repl_state(peer_device, L_OFF,
-					 CS_VERBOSE | CS_WAIT_COMPLETE, "del-minor");
+	for_each_peer_device_ref(peer_device, im, device) {
+		enum drbd_state_rv rv;
+
+		rv = stable_change_repl_state(peer_device, L_OFF,
+					      CS_VERBOSE | CS_WAIT_COMPLETE, "del-minor");
+		if (rv < SS_SUCCESS)
+			drbd_err(peer_device,
+				 "Deleting the volume with replication not stopped (%s)\n",
+				 drbd_set_st_err_str(rv));
+	}
 
 	/* If drbd_ldev_destroy() is pending, wait for it to run before
 	 * unregistering the device. */

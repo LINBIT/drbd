@@ -974,6 +974,11 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		}
 	}
 
+	/* Progress for the bounded wait in stable_state_change(). The other
+	 * wake-ups of state_wait are not state changes, and must not count.
+	 */
+	if (rv != SS_NOTHING_TO_DO)
+		resource->state_change_seq++;
 	wake_up_all(&resource->state_wait);
 
 	/* Informed confirmation of a rotated data generation.  This state change
@@ -3449,10 +3454,17 @@ static void abw_start_sync(struct drbd_device *device,
 			   struct drbd_peer_device *peer_device, int rv)
 {
 	struct drbd_peer_device *pd;
+	enum drbd_state_rv srv;
 
 	if (rv) {
 		drbd_err(device, "Writing the bitmap failed not starting resync.\n");
-		stable_change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE, "start-sync");
+		srv = stable_change_repl_state(peer_device, L_ESTABLISHED, CS_VERBOSE,
+					       "start-sync");
+		if (srv < SS_SUCCESS)
+			drbd_err(peer_device,
+				 "Leaving %s failed (%s); disconnect to recover.\n",
+				 drbd_repl_str(peer_device->repl_state[NOW]),
+				 drbd_set_st_err_str(srv));
 		return;
 	}
 
@@ -3465,11 +3477,15 @@ static void abw_start_sync(struct drbd_device *device,
 			initialize_resync(pd);
 		rcu_read_unlock();
 
-		if (peer_device->connection->agreed_pro_version < 110)
-			stable_change_repl_state(peer_device, L_WF_SYNC_UUID, CS_VERBOSE,
-					"start-sync");
-		else
+		if (peer_device->connection->agreed_pro_version < 110) {
+			srv = stable_change_repl_state(peer_device, L_WF_SYNC_UUID,
+						       CS_VERBOSE, "start-sync");
+			if (srv < SS_SUCCESS)
+				drbd_err(peer_device, "Not starting resync (%s)\n",
+					 drbd_set_st_err_str(srv));
+		} else {
 			drbd_start_resync(peer_device, L_SYNC_TARGET, "start-sync");
+		}
 		break;
 	case L_STARTING_SYNC_S:
 		drbd_start_resync(peer_device, L_SYNC_SOURCE, "start-sync");
