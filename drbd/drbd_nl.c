@@ -3723,10 +3723,25 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			set_bit(RESYNC_AFTER_NEG, &peer_device->flags);
 	}
 
+	/* No activity log record of the crash window: every region may differ
+	 * from any peer, in every slot -- an unallocated one tracks day 0.
+	 */
+	/* MDF_PRIMARY_IND: a clean shutdown clears it, MDF_CRASHED_PRIMARY may
+	 * stay set, so this runs on the first attach after the crash only.
+	 */
+	if (test_bit(CRASHED_PRIMARY, &device->flags) &&
+	    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
+	    drbd_md_test_flag(device->ldev, MDF_AL_DISABLED)) {
+		drbd_info(device, "AL disabled at crash: all blocks out of sync (aka FullSync)\n");
+		if (drbd_bitmap_io(device, &drbd_bmio_set_all_n_write,
+			"set_all_n_write from attaching", BM_LOCK_ALL, NULL)) {
+			retcode = ERR_IO_MD_DISK;
+			goto force_diskless_dec;
+		}
+	}
+
 	for_each_peer_device(peer_device, device) {
-		if ((test_bit(CRASHED_PRIMARY, &device->flags) &&
-		     drbd_md_test_flag(device->ldev, MDF_AL_DISABLED)) ||
-		    drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
+		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
 			drbd_info(peer_device, "Assuming that all blocks are out of sync "
 				  "(aka FullSync)\n");
 			if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
