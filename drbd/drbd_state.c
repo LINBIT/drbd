@@ -1747,7 +1747,7 @@ static enum drbd_state_rv __is_valid_soft_transition(struct drbd_resource *resou
 	}
 handshake_found:
 
-	if (in_handshake && role[OLD] != role[NEW])
+	if (in_handshake && role[OLD] != R_PRIMARY && role[NEW] == R_PRIMARY)
 		return SS_IN_TRANSIENT_STATE;
 
 	if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY && fail_io[NEW])
