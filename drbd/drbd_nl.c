@@ -6713,7 +6713,23 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 	if (!get_ldev(device))
 		return;
 
+	md = &device->ldev->md;
+	peer_md = &md->peers[pd->node_id];
+
+	spin_lock_irq(&md->uuid_lock);
+	s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
+	spin_unlock_irq(&md->uuid_lock);
+	s->peer_dev_flags = peer_md->flags;
+
+	/* A disk attached without a bitmap has no out-of-sync, resync or
+	 * verify state to report, and no bm_block_shift to convert with.
+	 */
 	bm = device->bitmap;
+	if (!bm) {
+		put_ldev(device);
+		return;
+	}
+
 	s->peer_dev_out_of_sync = bm_bit_to_sect(bm, drbd_bm_total_weight(pd));
 
 	if (is_verify_state(pd, NOW)) {
@@ -6753,14 +6769,6 @@ static void peer_device_to_statistics(struct peer_device_statistics *s,
 		 *   rs_total - (ov_left? ov_left : out_of_sync - rs_failed)
 		 */
 	}
-
-	md = &device->ldev->md;
-	peer_md = &md->peers[pd->node_id];
-
-	spin_lock_irq(&md->uuid_lock);
-	s->peer_dev_bitmap_uuid = peer_md->bitmap_uuid;
-	spin_unlock_irq(&md->uuid_lock);
-	s->peer_dev_flags = peer_md->flags;
 
 	put_ldev(device);
 }
