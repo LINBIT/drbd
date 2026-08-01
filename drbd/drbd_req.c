@@ -296,9 +296,8 @@ static void drbd_req_done(struct drbd_request *req)
 					clear_bit(bitmap_index, &mask);
 			}
 		}
-		if (device->bitmap)
-			modified_mask =
-				drbd_set_sync(device, req->i.sector, req->i.size, bits, mask);
+		modified_mask = drbd_set_sync(device, req->i.sector, req->i.size,
+					      bits, mask);
 		put_ldev(device);
 	}
 

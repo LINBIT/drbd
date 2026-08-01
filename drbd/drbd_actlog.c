@@ -821,6 +821,8 @@ unsigned long drbd_set_sync(struct drbd_device *device, sector_t sector, int siz
 		return 0; /* no disk, no metadata, no bitmap to set bits in */
 
 	bm = device->bitmap;
+	if (!bm) /* attached without a bitmap: nothing to track */
+		goto out;
 	mask &= (1 << bm->bm_max_peers) - 1;
 
 	nr_sectors = get_capacity(device->vdisk);
