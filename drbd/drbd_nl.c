@@ -3241,6 +3241,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_peer_device *peer_device;
 	unsigned int slots_needed = 0;
 	bool have_conf_update = false;
+	bool al_updates;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -3755,7 +3756,13 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	drbd_try_suspend_al(device); /* IO is still suspended here... */
 
-	drbd_update_mdf_al_disabled(device, NOW);
+	/* Not drbd_update_mdf_al_disabled(): its get_ldev() fails at
+	 * D_ATTACHING, leaving the flag at the previous session's value.
+	 */
+	rcu_read_lock();
+	al_updates = rcu_dereference(device->ldev->disk_conf)->al_updates;
+	rcu_read_unlock();
+	__update_mdf_al_disabled(device, al_updates, NOW);
 
 	/* change_disk_state uses disk_state_from_md(device); in case D_NEGOTIATING not
 	   necessary, and falls back to a local state change */
