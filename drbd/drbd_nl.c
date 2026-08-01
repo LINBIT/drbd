@@ -3355,6 +3355,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	sector_t min_md_device_sectors;
 	struct drbd_backing_dev *nbc; /* new_backing_conf */
 	struct drbd_bitmap *bitmap = NULL; /* unpublished until bm_pages is wired up */
+	bool published_bitmap = false;
 	sector_t backing_disk_max_sectors;
 	struct disk_conf *new_disk_conf = NULL;
 	enum drbd_state_rv rv;
@@ -3771,6 +3772,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			/* Publish only after bm_pages is populated. */
 			smp_store_release(&device->bitmap, bitmap);
 			bitmap = NULL;
+			published_bitmap = true;
 
 			err = drbd_bitmap_io(device, &drbd_bm_read,
 					     "read from attaching", BM_LOCK_ALL,
@@ -3789,6 +3791,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 			 */
 			smp_store_release(&device->bitmap, bitmap);
 			bitmap = NULL;
+			published_bitmap = true;
 		}
 	}
 
@@ -3946,7 +3949,11 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 	change_disk_state(device, D_DISKLESS, CS_HARD, "attach", NULL);
  fail:
 	kfree(bitmap); /* free unpublished local; NULL after publication */
-	drbd_bm_free(device);
+	/* A bitmap this attach did not publish belongs to a backing device
+	 * whose drbd_ldev_destroy() has not run yet.
+	 */
+	if (published_bitmap)
+		drbd_bm_free(device);
 	mutex_unlock_cond(&resource->conf_update, &have_conf_update);
 	drbd_backing_dev_free(device, nbc);
 	mutex_unlock(&resource->adm_mutex);
