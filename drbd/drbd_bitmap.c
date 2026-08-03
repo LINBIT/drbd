@@ -439,8 +439,8 @@ sector_t drbd_bm_capacity(struct drbd_device *device)
 
 void drbd_bm_free(struct drbd_device *device)
 {
-	/* ldev_safe: explicit NULL check below */
-	struct drbd_bitmap *bitmap = device->bitmap;
+	/* ldev_safe: atomically claiming the pointer, NULL check below */
+	struct drbd_bitmap *bitmap = xchg(&device->bitmap, NULL);
 
 	if (bitmap == NULL)
 		return;
@@ -449,9 +449,6 @@ void drbd_bm_free(struct drbd_device *device)
 	drbd_bm_resize(device, bitmap, 0, 0);
 
 	kfree(bitmap);
-
-	/* ldev_safe: clearing pointer */
-	device->bitmap = NULL;
 }
 
 static inline unsigned long interleaved_word32(struct drbd_bitmap *bitmap,
