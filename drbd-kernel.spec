@@ -1,6 +1,6 @@
 Name: drbd-kernel
 Summary: Kernel driver for DRBD
-Version: 9.2.19~flant.10
+Version: 9.2.19~flant.12
 Release: 1
 
 # always require a suitable userland
@@ -232,6 +232,12 @@ dkms remove -m $DKMS_NAME -v $DKMS_VERSION -q --all --rpm_safe_upgrade || :
 %endif
 
 %changelog
+* Wed Aug 12 2026 Flant <dmitry.lotakov@flant.com> - 9.2.19~flant.12
+-  Strip trailing newline when storing module parameter usermode_helper via sysfs. Writing with `echo disabled > .../usermode_helper` left "disabled\n" in drbd_usermode_helper, so strcmp(..., "disabled") failed and call_usermodehelper() logged WARN (helper command exit code 255). Packaged as 9.2.19-flant.12.
+
+* Thu Jul 30 2026 Flant <dmitry.lotakov@flant.com> - 9.2.19~flant.11
+-  Strip trailing newline when storing module parameter usermode_helper via sysfs. Writing with `echo disabled > .../usermode_helper` left "disabled\n" in drbd_usermode_helper, so strcmp(..., "disabled") failed and call_usermodehelper() logged WARN (helper command exit code 255).
+
 * Thu Jul 09 2026 Flant <aleksandr.stefurishin@flant.com> - 9.2.19~flant.10
 -  Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
 

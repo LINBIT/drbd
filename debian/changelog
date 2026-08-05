@@ -1,3 +1,15 @@
+drbd (9.2.19~flant.12-1) unstable; urgency=medium
+
+  * Strip trailing newline when storing module parameter usermode_helper via sysfs so "disabled" matches and helper WARN spam is avoided (packaged as 9.2.19-flant.12)
+
+ -- Flant <dmitry.lotakov@flant.com>  Wed, 12 Aug 2026 01:30:00 +0300
+
+drbd (9.2.19~flant.11-1) unstable; urgency=medium
+
+  * Strip trailing newline when storing module parameter usermode_helper via sysfs so "disabled" matches and helper WARN spam is avoided
+
+ -- Flant <dmitry.lotakov@flant.com>  Thu, 30 Jul 2026 19:37:00 +0300
+
 drbd (9.2.19~flant.10-1) unstable; urgency=medium
 
   * Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)

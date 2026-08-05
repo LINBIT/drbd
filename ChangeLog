@@ -2,6 +2,14 @@ Latest:
 ------
  For even more detail, use "git log" or visit https://github.com/LINBIT/drbd/commits/master.
 
+9.2.19-flant.12 (api:genl2/proto:86-101,118-124/transport:21)
+--------
+ * Strip trailing newline when storing module parameter usermode_helper via sysfs.
+   `echo disabled > /sys/module/drbd/parameters/usermode_helper` used to leave
+   "disabled\n" in drbd_usermode_helper, so strcmp(..., "disabled") failed and
+   call_usermodehelper() logged WARN (helper command exit code 255).
+
+
 9.2.19-flant.10 (api:genl2/proto:86-101,118-124/transport:21)
 --------
  * Fix bitmap leak in drbd_adm_attach() on early attach failure: free device->bitmap on the attach error paths so a replica does not get permanently stuck Diskless with "already has a bitmap, this should not happen" (backport of the fix shape from upstream 9.3.3 commit 8c279459a)
