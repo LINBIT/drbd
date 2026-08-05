@@ -101,7 +101,49 @@ unsigned int drbd_minor_count = DRBD_MINOR_COUNT_DEF;
  * to run. Default is /sbin/drbdadm */
 char drbd_usermode_helper[80] = "/sbin/drbdadm";
 module_param_named(minor_count, drbd_minor_count, uint, 0444);
-module_param_string(usermode_helper, drbd_usermode_helper, sizeof(drbd_usermode_helper), 0644);
+
+/*
+ * Same as module_param_string(), but strip a trailing newline before store.
+ * param_set_copystring() keeps the sysfs write buffer as-is, so
+ * `echo disabled > .../usermode_helper` left "disabled\n" in
+ * drbd_usermode_helper: strcmp(..., "disabled") failed and
+ * call_usermodehelper() logged WARN (helper exit 255).
+ */
+static int param_set_usermode_helper(const char *val, const struct kernel_param *kp)
+{
+	char buf[sizeof(drbd_usermode_helper)];
+	size_t len;
+
+	if (!val)
+		return -EINVAL;
+
+	len = strnlen(val, sizeof(buf));
+	if (len == sizeof(buf))
+		return -ENOSPC;
+
+	memcpy(buf, val, len);
+	buf[len] = '\0';
+
+	/* Only trailing newline from `echo ... > sysfs`, not an embedded one. */
+	if (len > 0 && buf[len - 1] == '\n')
+		buf[len - 1] = '\0';
+
+	return param_set_copystring(buf, kp);
+}
+
+static const struct kernel_param_ops param_ops_usermode_helper = {
+	.set = param_set_usermode_helper,
+	.get = param_get_string,
+};
+
+static const struct kparam_string __param_string_usermode_helper = {
+	.maxlen = sizeof(drbd_usermode_helper),
+	.string = drbd_usermode_helper,
+};
+
+module_param_cb(usermode_helper, &param_ops_usermode_helper,
+		.str = &__param_string_usermode_helper, 0644);
+__MODULE_PARM_TYPE(usermode_helper, "string");
 
 static int param_set_drbd_protocol_version(const char *s, const struct kernel_param *kp)
 {
