@@ -6186,6 +6186,33 @@ static unsigned int conn_max_bio_size(struct drbd_connection *connection)
 		return DRBD_MAX_SIZE_H80_PACKET;
 }
 
+static bool is_valid_block_size(unsigned int size)
+{
+	return size >= SECTOR_SIZE && size <= DRBD_MAX_BIO_SIZE && is_power_of_2(size);
+}
+
+static bool peer_block_sizes_are_sane(struct drbd_peer_device *peer_device, struct p_sizes *p)
+{
+	unsigned int logical_block_size, physical_block_size;
+
+	/* Older peers do not send queue limits at all. */
+	if (!(peer_device->connection->agreed_features & DRBD_FF_WSAME))
+		return true;
+
+	logical_block_size = be32_to_cpu(p->qlim->logical_block_size);
+	physical_block_size = be32_to_cpu(p->qlim->physical_block_size);
+
+	if (!is_valid_block_size(logical_block_size) ||
+	    !is_valid_block_size(physical_block_size)) {
+		drbd_err(peer_device,
+			 "Peer sent bogus block sizes (logical:%u physical:%u), disconnecting\n",
+			 logical_block_size, physical_block_size);
+		return false;
+	}
+
+	return true;
+}
+
 static struct drbd_peer_device *get_neighbor_device(struct drbd_device *device,
 		enum drbd_neighbor neighbor)
 {
@@ -6268,6 +6295,9 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 		goto out;
 	}
 	have_mutex = true;
+
+	if (!peer_block_sizes_are_sane(peer_device, p))
+		goto disconnect;
 
 	/* just store the peer's disk size for now.
 	 * we still need to figure out whether we accept that. */
