@@ -3225,6 +3225,36 @@ static int drbd_md_read(struct drbd_config_context *adm_ctx, struct drbd_backing
 	return rv;
 }
 
+/* May this node restore the quorum it had when it last wrote its meta data?
+ *
+ * Only if every other node of that membership is an intentionally diskless
+ * node. Those never vote in calc_quorum(), they only act as tie-breakers, and
+ * a tie-breaker can not create quorum, it can only preserve an existing one.
+ * So this node was quorate on its own, which is what RESTORE_QUORUM restores.
+ *
+ * A peer we hold a bitmap slot for, or that we have ever seen with a disk, is
+ * a voter. Unknown nodes count as voters as well.
+ */
+static bool may_restore_quorum(struct drbd_device *device)
+{
+	const u64 me = NODE_MASK(device->resource->res_opts.node_id);
+	u64 others = device->ldev->md.prev_members & ~me;
+	int node_id;
+
+	if (!(device->ldev->md.prev_members & me))
+		return false;
+
+	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+		if (!(others & NODE_MASK(node_id)))
+			continue;
+		if (device->ldev->md.peers[node_id].flags &
+		    (MDF_HAVE_BITMAP | MDF_PEER_DEVICE_SEEN))
+			return false;
+	}
+
+	return true;
+}
+
 static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 {
 	struct drbd_config_context adm_ctx;
@@ -3566,7 +3596,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (drbd_md_test_flag(device->ldev, MDF_HAVE_QUORUM) &&
 	    drbd_md_test_flag(device->ldev, MDF_WAS_UP_TO_DATE) &&
-	    device->ldev->md.prev_members == NODE_MASK(resource->res_opts.node_id))
+	    may_restore_quorum(device))
 		set_bit(RESTORE_QUORUM, &device->flags);
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
