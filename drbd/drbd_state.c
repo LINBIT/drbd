@@ -4636,10 +4636,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (should_try_become_up_to_date(device, disk_state, NOW))
 			try_become_up_to_date = true;
 
-		if (test_bit(TRY_TO_GET_RESYNC, &device->flags)) {
+		if (test_and_clear_bit(TRY_TO_GET_RESYNC, &device->flags)) {
 			/* Got connected to a diskless primary */
-			clear_bit(TRY_TO_GET_RESYNC, &device->flags);
-			drbd_try_to_get_resynced(device);
+			kref_get(&device->kref);
+			if (!schedule_work(&device->try_get_resynced_work))
+				kref_put(&device->kref, drbd_destroy_device);
 		}
 
 		drbd_md_sync_if_dirty(device);

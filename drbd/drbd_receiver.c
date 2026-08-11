@@ -8370,7 +8370,7 @@ retry:
 	}
 }
 
-void drbd_try_to_get_resynced(struct drbd_device *device)
+static void drbd_try_to_get_resynced(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device, *best_peer_device = NULL;
 	enum sync_strategy best_strategy = UNDETERMINED;
@@ -8410,6 +8410,22 @@ void drbd_try_to_get_resynced(struct drbd_device *device)
 		drbd_send_uuids(peer_device, UUID_FLAG_RESYNC | UUID_FLAG_DISKLESS_PRIMARY, 0);
 	}
 	put_ldev(device);
+}
+
+/*
+ * drbd_try_to_get_resynced() must not run on the worker thread: the bitmap
+ * modification after the handshake performs blocking whole-bitmap IO, which
+ * the worker itself may need to make progress on (drbd_bitmap_io() asserts
+ * that it is not called from the worker). Triggered from
+ * w_after_state_change() via this work function instead.
+ */
+void drbd_try_get_resynced_work_fn(struct work_struct *ws)
+{
+	struct drbd_device *device =
+		container_of(ws, struct drbd_device, try_get_resynced_work);
+
+	drbd_try_to_get_resynced(device);
+	kref_put(&device->kref, drbd_destroy_device);
 }
 
 static void finish_nested_twopc(struct drbd_connection *connection)

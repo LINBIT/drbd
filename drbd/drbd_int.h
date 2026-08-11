@@ -1625,6 +1625,9 @@ struct drbd_device {
 	/* Used to close backing devices and destroy related structures. */
 	struct work_struct ldev_destroy_work;
 
+	/* Runs drbd_try_to_get_resynced() outside of the worker thread. */
+	struct work_struct try_get_resynced_work;
+
 	struct request_queue *rq_queue;
 	struct gendisk	    *vdisk;
 
@@ -2502,7 +2505,7 @@ enum drbd_state_rv drbd_support_2pc_resize(struct drbd_resource *resource);
 enum determine_dev_size
 drbd_commit_size_change(struct drbd_device *device, struct resize_parms *rs,
 			u64 nodes_to_reach);
-void drbd_try_to_get_resynced(struct drbd_device *device);
+void drbd_try_get_resynced_work_fn(struct work_struct *ws);
 bool diskless_primary_can_replay_to(struct drbd_peer_device *peer_device);
 u64 diskless_primary_present_current_uuid(struct drbd_peer_device *peer_device);
 void drbd_process_rs_discards(struct drbd_peer_device *peer_device,

@@ -4235,6 +4235,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	}
 
 	INIT_WORK(&device->ldev_destroy_work, drbd_ldev_destroy);
+	INIT_WORK(&device->try_get_resynced_work, drbd_try_get_resynced_work_fn);
 
 	device->vdisk = disk;
 	device->rq_queue = disk->queue;
