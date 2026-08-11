@@ -2,7 +2,7 @@ variables:
   RELEASE_BRANCH: master
   DRBD_VERSION_BASE: 9.3.0
   DRBD9_TESTS_REF: master
-  BUILD_HELPERS_VERSION: 04d2651f29fb4166b22e58c1f336899cc7603ce4
+  BUILD_HELPERS_VERSION: cb0d6a67ec1e3cc86f65cbdf9f79b2020829c982
   # we have to change the way GitLab CI clones the repository.
   # by default, it is shallow, which gives us a wrong commit count when
   # we do `git rev-list --count origin/master` below.
@@ -40,6 +40,16 @@ stages:
           grep -v ^sles12 | grep -v ^rhel7 | grep -v ^sles15-sp0 | grep -v ^docker
       }
 
+      # upload the tarball in the current directory to the lbbuild-upstream
+      # repository on pulp.
+      upload_tarball() {
+        local tarball
+        tarball=$(ls drbd-*.tar.gz)
+        pulp file content upload --repository lbbuild-upstream \
+          --file "$tarball" \
+          --relative-path "$tarball"
+      }
+
       # parameters: [version] [release] [rel-version] [kernels]
       # kernels should be a string with lines with the format: "[distribution] [kernel version]"
       drbd_build () {
@@ -52,9 +62,7 @@ stages:
 
         ./.gitlab/drbd-prepare-release.sh "$version" "$release" "$rel_version"
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
-        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD \
-          --upload-file drbd-*.tar.gz \
-          $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+        upload_tarball
 
         local compat_rc=0  
         echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog compat.log \
@@ -83,9 +91,7 @@ stages:
 
         make -j $(nproc) -C drbd compat
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
-        curl -isSf -u $LINBIT_REGISTRY_USER:$LINBIT_REGISTRY_PASSWORD \
-          --upload-file drbd-*.tar.gz \
-          $LINBIT_REGISTRY_URL/repository/lbbuild-upstream/
+        upload_tarball
 
         local build_rc=0
         echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog parallel.log \
