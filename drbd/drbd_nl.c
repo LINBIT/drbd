@@ -2716,6 +2716,9 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 
 		from_index = drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers);
 		freed_index = peer_md->bitmap_index;
+
+		/* Take the bitmap lock before md_buffer. Correct order. */
+		drbd_bm_lock(device, __func__, BM_LOCK_BULK);
 	}
 	buffer = drbd_md_get_buffer(device, __func__); /* lock meta-data IO to superblock */
 	if (buffer == NULL)
@@ -2728,7 +2731,6 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	peer_md->bitmap_index = -1;
 
 	if (free_bitmap_slot) {
-		drbd_bm_lock(device, __func__, BM_LOCK_BULK);
 		/*
 		 * Regular bitmap OPs (calling into bm_op()) can run in parallel to
 		 * drbd_bm_copy_slot() and interleave with it as drbd_bm_copy_slot()
@@ -2744,7 +2746,6 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 			_drbd_bm_set_many_bits(device, freed_index, 0, -1UL);
 
 		drbd_bm_write(device, NULL);
-		drbd_bm_unlock(device);
 	}
 
 	/*
@@ -2768,8 +2769,10 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	drbd_md_put_buffer(device);
 
  out_no_buffer:
-	if (free_bitmap_slot)
+	if (free_bitmap_slot) {
+		drbd_bm_unlock(device);
 		drbd_resume_io(device);
+	}
 
 	put_ldev(device);
 
