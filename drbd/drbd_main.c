@@ -5360,8 +5360,12 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  *   will detect the change on reconnect regardless.
  * - After the primary restarts: bump again via the current_uuid == 0
  *   path, since the primary no longer has any knowledge of D's state.
+ *
+ * Return: false when the rotate was DEFERRED because the current exposed
+ * generation is still unconfirmed (retryable: the caller may keep its rotate
+ * intent); true otherwise (rotated, or no rotate was warranted).
  */
-void drbd_uuid_new_current(struct drbd_device *device, bool forced)
+bool drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
 		/* gen-rotate reason: per call site (promotion=OTHER, others DEGRADE).
@@ -5369,22 +5373,26 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 */
 		__drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
-	} else if ((!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) ||
-		    device->resource->res_opts.on_no_quorum == ONQ_IO_ERROR) &&
-		   (diskfull_peers_need_new_cur_uuid(device) ||
-		    a_lost_peer_is_on_same_cur_uuid(device))) {
-		/* Defer when the current generation is still unconfirmed: no peer
-		 * has it yet, so this loss is logically simultaneous with the one
-		 * that opened it -- the open generation already covers it.  At most
-		 * one unconfirmed generation (and one predecessor) exists at a time.
-		 * Exception: on-no-quorum=io-error
-		 */
+	} else if (diskfull_peers_need_new_cur_uuid(device) ||
+		   a_lost_peer_is_on_same_cur_uuid(device)) {
 		/* gen-rotate reason: DEGRADE (diskless primary lost a diskful peer);
 		 * no local disk -> not self-confirming, relies on peer acks.
 		 */
 		struct drbd_peer_device *peer_device;
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
+
+		/* Defer while the current generation is still unconfirmed: at most
+		 * one unconfirmed generation (and one predecessor) exists at a
+		 * time.  Report it -- a peer may durably hold the unconfirmed
+		 * generation with its confirming barrier-ack lost, so the caller
+		 * may need to keep its rotate intent for a later attempt.
+		 * Exception: on-no-quorum=io-error
+		 */
+		if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+		    device->resource->res_opts.on_no_quorum != ONQ_IO_ERROR)
+			return false;
+
 		get_random_bytes(&current_uuid, sizeof(u64));
 		if (device->resource->role[NOW] == R_PRIMARY)
 			current_uuid |= UUID_PRIMARY;
@@ -5454,6 +5462,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 * is released by the in-order barrier ack (NEW_UUID_CONFIRMED).
 		 */
 	}
+	return true;
 }
 
 void drbd_uuid_new_current_by_user(struct drbd_device *device)

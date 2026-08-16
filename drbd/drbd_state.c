@@ -4653,10 +4653,15 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			new_current_uuid = true;
 
 		/* gen-rotate reason: DEGRADE (lost quorum/data then regained; deferred
-		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary)
+		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary).
+		 * susp_uuid clears below whether or not the rotate happened, so a
+		 * DEFERRED rotate must keep the intent for the next consume -- except
+		 * with err_io, where writers must keep failing fast.
 		 */
-		if (new_current_uuid)
-			drbd_uuid_new_current(device, false);
+		if (new_current_uuid &&
+		    !drbd_uuid_new_current(device, false) &&
+		    !device->cached_err_io)
+			set_bit(NEW_CUR_UUID, &device->flags);
 
 		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)
 			drbd_reconsider_queue_parameters(device, NULL);

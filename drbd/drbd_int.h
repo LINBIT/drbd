@@ -1933,7 +1933,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid);
 void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val);
-void drbd_uuid_new_current(struct drbd_device *device, bool forced);
+bool drbd_uuid_new_current(struct drbd_device *device, bool forced);
 void drbd_uuid_new_current_by_user(struct drbd_device *device);
 void _drbd_uuid_push_history(struct drbd_device *device, u64 val);
 u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device);
