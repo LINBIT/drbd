@@ -10486,8 +10486,15 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-			drbd_check_peers_new_current_uuid(device);
+		    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+			/* Keep an unevaluated rotate intent: it fires via the
+			 * susp-uuid thaw or the next write. With err_io the
+			 * writer must fail fast, not wait on it.
+			 */
+			if (!drbd_check_peers_new_current_uuid(device) &&
+			    !device->cached_err_io)
+				set_bit(NEW_CUR_UUID, &device->flags);
+		}
 	}
 
 	drbd_md_sync(device);

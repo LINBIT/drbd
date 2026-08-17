@@ -3342,22 +3342,30 @@ void drbd_check_peers(struct drbd_resource *resource)
 	wake_up_all(&resource->state_wait);
 }
 
-void drbd_check_peers_new_current_uuid(struct drbd_device *device)
+bool drbd_check_peers_new_current_uuid(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
 	drbd_check_peers(resource);
 
 	/* gen-rotate reason: DEGRADE (peer disconnected; create deferred bump once quorate) */
-	if (device->have_quorum[NOW] && drbd_data_accessible(device, NOW))
-		drbd_uuid_new_current(device, false);
+	if (!device->have_quorum[NOW] || !drbd_data_accessible(device, NOW))
+		return false;
+
+	drbd_uuid_new_current(device, false);
+	return true;
 }
 
 static void make_new_current_uuid(struct drbd_device *device)
 {
-	drbd_check_peers_new_current_uuid(device);
+	bool evaluated = drbd_check_peers_new_current_uuid(device);
 
 	get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID, &device->flags);
+	/* Keep an unevaluated rotate intent: it fires via the susp-uuid thaw or
+	 * the next write. With err_io the writer must fail fast, not wait on it.
+	 */
+	if (!evaluated && !device->cached_err_io)
+		set_bit(NEW_CUR_UUID, &device->flags);
 	wake_up(&device->misc_wait);
 }
 

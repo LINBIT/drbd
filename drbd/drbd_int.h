@@ -2350,7 +2350,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device);
 void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device,
 				     int rs_sect_in);
 void drbd_check_peers(struct drbd_resource *resource);
-void drbd_check_peers_new_current_uuid(struct drbd_device *device);
+bool drbd_check_peers_new_current_uuid(struct drbd_device *device);
 void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req);
 void drbd_ping_peer(struct drbd_connection *connection);
 struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device,
