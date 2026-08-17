@@ -651,6 +651,37 @@ enum drbd_gen_obl_state {
 /* Enough for any state name plus the whole reason set. */
 #define GEN_OBL_STR_MAX		160
 
+/* What a mint attempt did.  The site that holds the obligation decides from
+ * this whether the obligation is met.
+ */
+enum drbd_mint_outcome {
+	MINT_MINTED,		/* a new generation exists: persisted to stable
+				 * storage (diskful), or exposed and queued on
+				 * every established channel (diskless)
+				 */
+	MINT_UNNECESSARY,	/* nothing owed: every absent peer already sees a
+				 * current UUID of ours it does not have
+				 */
+	MINT_DEFERRED,		/* not now: the exposed generation of a diskless
+				 * primary is still unconfirmed
+				 */
+	MINT_FAILED,		/* the metadata write failed; the new current UUID
+				 * was rolled back
+				 */
+	MINT_NOT_EVALUATED,	/* the mint did not run: the quorum and data gate
+				 * of the ping round declined
+				 */
+};
+
+/* The new data generation did not happen, so whoever holds the obligation
+ * still owes it.
+ */
+static inline bool drbd_mint_still_owed(enum drbd_mint_outcome outcome)
+{
+	return outcome == MINT_DEFERRED || outcome == MINT_FAILED ||
+	       outcome == MINT_NOT_EVALUATED;
+}
+
 /* flag bits per peer device */
 enum peer_device_flag {
 	CONSIDER_RESYNC,
@@ -1984,7 +2015,7 @@ void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid);
 void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val);
-bool drbd_uuid_new_current(struct drbd_device *device, bool forced);
+enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool forced);
 void drbd_uuid_new_current_by_user(struct drbd_device *device);
 void _drbd_uuid_push_history(struct drbd_device *device, u64 val);
 u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device);
@@ -2401,7 +2432,7 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device);
 void drbd_rs_all_in_flight_came_back(struct drbd_peer_device *peer_device,
 				     int rs_sect_in);
 void drbd_check_peers(struct drbd_resource *resource);
-bool drbd_check_peers_new_current_uuid(struct drbd_device *device);
+enum drbd_mint_outcome drbd_check_peers_new_current_uuid(struct drbd_device *device);
 void drbd_conflict_send_resync_request(struct drbd_peer_request *peer_req);
 void drbd_ping_peer(struct drbd_connection *connection);
 struct drbd_peer_device *peer_device_by_node_id(struct drbd_device *device,
@@ -3039,7 +3070,8 @@ extern void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons);
 extern bool drbd_gen_obligation_take(struct drbd_device *device);
 extern void drbd_gen_obligation_restore(struct drbd_device *device);
 extern bool drbd_gen_obligation_mint_start(struct drbd_device *device);
-extern void drbd_gen_obligation_mint_done(struct drbd_device *device);
+extern void drbd_gen_obligation_mint_done(struct drbd_device *device,
+					  enum drbd_mint_outcome outcome);
 
 static inline enum drbd_gen_obl_state drbd_gen_obligation_state(struct drbd_device *device)
 {

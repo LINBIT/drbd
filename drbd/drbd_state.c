@@ -223,13 +223,24 @@ bool drbd_gen_obligation_mint_start(struct drbd_device *device)
 					      GEN_OBL_MINTING, 0);
 }
 
-/* The mint executor is done.  Whether it started a new generation is decided
- * by the caller, which restores the obligation if it did not.
+/* The single exit of the mint executor.  A new generation, or the proof that
+ * none is owed, meets the obligation; anything else leaves it outstanding, so
+ * that the next write, or a later trigger, tries again.  Under err_io the
+ * obligation is dropped: writers fail fast rather than wait for a generation
+ * that changes no data.
  */
-void drbd_gen_obligation_mint_done(struct drbd_device *device)
+void drbd_gen_obligation_mint_done(struct drbd_device *device, enum drbd_mint_outcome outcome)
 {
-	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING),
-				       GEN_OBL_NONE, 0);
+	enum drbd_gen_obl_state to;
+
+	if (!drbd_mint_still_owed(outcome))
+		to = GEN_OBL_DISCHARGED;
+	else if (device->cached_err_io)
+		to = GEN_OBL_NONE;
+	else
+		to = GEN_OBL_ARMED;
+
+	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING), to, 0);
 }
 
 /* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
@@ -4119,10 +4130,10 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 				rcu_read_unlock();
 				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
 				/* Fencing IO suspension ends below either way, so a
-				 * DEFERRED rotate must keep the obligation -- except
-				 * with err_io.
+				 * rotate that did not happen must keep the obligation
+				 * -- except with err_io.
 				 */
-				if (!drbd_uuid_new_current(device, false) &&
+				if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
 				    !device->cached_err_io)
 					drbd_gen_obligation_restore(device);
 				kref_put(&device->kref, drbd_destroy_device);
@@ -4804,11 +4815,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		/* gen-rotate reason: DEGRADE (lost quorum/data then regained; deferred
 		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary).
 		 * susp_uuid clears below whether or not the rotate happened, so a
-		 * DEFERRED rotate must keep the obligation for the next take -- except
-		 * with err_io, where writers must keep failing fast.
+		 * rotate that did not happen must keep the obligation for the next
+		 * take -- except with err_io, where writers must keep failing fast.
 		 */
 		if (new_current_uuid &&
-		    !drbd_uuid_new_current(device, false) &&
+		    drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
 		    !device->cached_err_io)
 			drbd_gen_obligation_restore(device);
 

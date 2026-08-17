@@ -5037,7 +5037,7 @@ u64 drbd_weak_nodes_device(struct drbd_device *device)
 }
 
 
-static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
+static enum drbd_mint_outcome __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 {
 	u64 got_new_bitmap_uuid, val, old_current_uuid;
 	bool day0;
@@ -5049,9 +5049,13 @@ static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 					forced ? initial_resync_nodes(device) : 0,
 					device->resource->dagtag_sector);
 
+	/* No slot to rotate the current UUID into, and not the first bump:
+	 * every absent peer already sees a current UUID it does not have, so
+	 * the divergence is recorded and a further one records nothing.
+	 */
 	if (!got_new_bitmap_uuid && !day0) {
 		spin_unlock_irq(&device->ldev->md.uuid_lock);
-		return false;
+		return MINT_UNNECESSARY;
 	}
 
 	old_current_uuid = device->ldev->md.current_uuid;
@@ -5066,10 +5070,10 @@ static bool __new_current_uuid_prepare(struct drbd_device *device, bool forced)
 	err = drbd_md_sync(device);
 	if (err) {
 		_drbd_uuid_set_current(device, old_current_uuid);
-		return false;
+		return MINT_FAILED;
 	}
 
-	return true;
+	return MINT_MINTED;
 }
 
 static void __new_current_uuid_info(struct drbd_device *device, u64 weak_nodes)
@@ -5089,14 +5093,16 @@ static void __new_current_uuid_send(struct drbd_device *device, u64 weak_nodes, 
 	}
 }
 
-static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced)
+static enum drbd_mint_outcome __drbd_uuid_new_current_send(struct drbd_device *device, bool forced)
 {
+	enum drbd_mint_outcome outcome;
 	u64 weak_nodes;
 
 	down_write(&device->uuid_sem);
-	if (!__new_current_uuid_prepare(device, forced)) {
+	outcome = __new_current_uuid_prepare(device, forced);
+	if (outcome != MINT_MINTED) {
 		up_write(&device->uuid_sem);
-		return;
+		return outcome;
 	}
 	downgrade_write(&device->uuid_sem);
 	/* New data generation: separate pre- and post-bump writes into distinct
@@ -5107,13 +5113,15 @@ static void __drbd_uuid_new_current_send(struct drbd_device *device, bool forced
 	__new_current_uuid_info(device, weak_nodes);
 	__new_current_uuid_send(device, weak_nodes, forced);
 	up_read(&device->uuid_sem);
+
+	return MINT_MINTED;
 }
 
 static void __drbd_uuid_new_current_holding_uuid_sem(struct drbd_device *device)
 {
 	u64 weak_nodes;
 
-	if (!__new_current_uuid_prepare(device, false))
+	if (__new_current_uuid_prepare(device, false) != MINT_MINTED)
 		return;
 	weak_nodes = drbd_weak_nodes_device(device);
 	__new_current_uuid_info(device, weak_nodes);
@@ -5362,20 +5370,25 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  * - After the primary restarts: bump again via the current_uuid == 0
  *   path, since the primary no longer has any knowledge of D's state.
  *
- * Return: false when the rotate was DEFERRED because the current exposed
- * generation is still unconfirmed (retryable: the caller may keep its rotate
- * intent); true otherwise (rotated, or no rotate was warranted).
+ * Return: what the attempt did, see enum drbd_mint_outcome.  MINT_DEFERRED and
+ * MINT_FAILED are retryable and leave the obligation with the caller;
+ * MINT_MINTED and MINT_UNNECESSARY meet it.
  */
-bool drbd_uuid_new_current(struct drbd_device *device, bool forced)
+enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
 	if (get_ldev_if_state(device, D_UP_TO_DATE)) {
+		enum drbd_mint_outcome outcome;
+
 		/* gen-rotate reason: per call site (promotion=OTHER, others DEGRADE).
 		 * Diskful: persists md.current_uuid synchronously -> self-confirms.
 		 */
-		__drbd_uuid_new_current_send(device, forced);
+		outcome = __drbd_uuid_new_current_send(device, forced);
 		put_ldev(device);
-	} else if (diskfull_peers_need_new_cur_uuid(device) ||
-		   a_lost_peer_is_on_same_cur_uuid(device)) {
+		return outcome;
+	}
+
+	if (diskfull_peers_need_new_cur_uuid(device) ||
+	    a_lost_peer_is_on_same_cur_uuid(device)) {
 		/* gen-rotate reason: DEGRADE (diskless primary lost a diskful peer);
 		 * no local disk -> not self-confirming, relies on peer acks.
 		 */
@@ -5392,7 +5405,7 @@ bool drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 */
 		if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
 		    device->resource->res_opts.on_no_quorum != ONQ_IO_ERROR)
-			return false;
+			return MINT_DEFERRED;
 
 		get_random_bytes(&current_uuid, sizeof(u64));
 		if (device->resource->role[NOW] == R_PRIMARY)
@@ -5462,8 +5475,13 @@ bool drbd_uuid_new_current(struct drbd_device *device, bool forced)
 		 * unconfirmed (see hold_completion_for_unconfirmed_gen in drbd_req.c), and
 		 * is released by the in-order barrier ack (NEW_UUID_CONFIRMED).
 		 */
+		return MINT_MINTED;
 	}
-	return true;
+
+	/* Without local UpToDate data the two helpers above decide, and neither
+	 * found a peer that could still sit on our generation.
+	 */
+	return MINT_UNNECESSARY;
 }
 
 void drbd_uuid_new_current_by_user(struct drbd_device *device)

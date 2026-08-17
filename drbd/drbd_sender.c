@@ -3342,7 +3342,7 @@ void drbd_check_peers(struct drbd_resource *resource)
 	wake_up_all(&resource->state_wait);
 }
 
-bool drbd_check_peers_new_current_uuid(struct drbd_device *device)
+enum drbd_mint_outcome drbd_check_peers_new_current_uuid(struct drbd_device *device)
 {
 	struct drbd_resource *resource = device->resource;
 
@@ -3350,22 +3350,14 @@ bool drbd_check_peers_new_current_uuid(struct drbd_device *device)
 
 	/* gen-rotate reason: DEGRADE (peer disconnected; create deferred bump once quorate) */
 	if (!device->have_quorum[NOW] || !drbd_data_accessible(device, NOW))
-		return false;
+		return MINT_NOT_EVALUATED;
 
-	drbd_uuid_new_current(device, false);
-	return true;
+	return drbd_uuid_new_current(device, false);
 }
 
 static void make_new_current_uuid(struct drbd_device *device)
 {
-	bool evaluated = drbd_check_peers_new_current_uuid(device);
-
-	drbd_gen_obligation_mint_done(device);
-	/* Keep an unevaluated obligation: it fires via the susp-uuid thaw or
-	 * the next write. With err_io the writer must fail fast, not wait on it.
-	 */
-	if (!evaluated && !device->cached_err_io)
-		drbd_gen_obligation_restore(device);
+	drbd_gen_obligation_mint_done(device, drbd_check_peers_new_current_uuid(device));
 	wake_up(&device->misc_wait);
 }
 

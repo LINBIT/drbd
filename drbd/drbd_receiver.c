@@ -8977,7 +8977,13 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer, cannot thaw) */
-		drbd_uuid_new_current(device, false);
+		/* The connection is torn down below and IO resumes, so a rotate
+		 * that did not happen must keep the obligation -- except with
+		 * err_io.
+		 */
+		if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
+		    !device->cached_err_io)
+			drbd_gen_obligation_restore(device);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);
@@ -10480,15 +10486,8 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
 		    drbd_gen_obligation_mint_start(device)) {
-			bool evaluated = drbd_check_peers_new_current_uuid(device);
-
-			drbd_gen_obligation_mint_done(device);
-			/* Keep an unevaluated obligation: it fires via the
-			 * susp-uuid thaw or the next write. With err_io the
-			 * writer must fail fast, not wait on it.
-			 */
-			if (!evaluated && !device->cached_err_io)
-				drbd_gen_obligation_restore(device);
+			drbd_gen_obligation_mint_done(device,
+						      drbd_check_peers_new_current_uuid(device));
 			wake_up(&device->misc_wait);
 		}
 	}

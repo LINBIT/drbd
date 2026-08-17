@@ -6049,10 +6049,10 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	resource = device->resource;
 	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
 	if (drbd_gen_obligation_take(device)) {
-		/* The suspensions are lifted below either way, so a DEFERRED
-		 * rotate must keep the obligation -- except with err_io.
+		/* The suspensions are lifted below either way, so a rotate that
+		 * did not happen must keep the obligation -- except with err_io.
 		 */
-		if (!drbd_uuid_new_current(device, false) &&
+		if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
 		    !device->cached_err_io)
 			drbd_gen_obligation_restore(device);
 	}
