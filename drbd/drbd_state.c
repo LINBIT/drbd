@@ -3975,7 +3975,12 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 				kref_get(&device->kref);
 				rcu_read_unlock();
 				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
-				drbd_uuid_new_current(device, false);
+				/* Fencing IO suspension ends below either way, so a
+				 * DEFERRED rotate must keep the intent -- except with err_io.
+				 */
+				if (!drbd_uuid_new_current(device, false) &&
+				    !device->cached_err_io)
+					set_bit(NEW_CUR_UUID, &device->flags);
 				kref_put(&device->kref, drbd_destroy_device);
 				rcu_read_lock();
 			}
