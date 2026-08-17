@@ -6048,8 +6048,14 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	device = adm_ctx.device;
 	resource = device->resource;
 	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
-	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags))
-		drbd_uuid_new_current(device, false);
+	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+		/* The suspensions are lifted below either way, so a DEFERRED
+		 * rotate must keep the intent -- except with err_io.
+		 */
+		if (!drbd_uuid_new_current(device, false) &&
+		    !device->cached_err_io)
+			set_bit(NEW_CUR_UUID, &device->flags);
+	}
 	drbd_suspend_io(device, READ_AND_WRITE);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);
