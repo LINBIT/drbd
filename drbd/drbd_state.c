@@ -3682,8 +3682,19 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (!resource->fail_io[OLD] && resource->fail_io[NEW])
 			unfreeze_io = true;
 
-		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
-			drbd_gen_obligation_take(device);
+		/* An idle promote/demote round trip creates no data generation,
+		 * however many peers were lost in between, so a latent
+		 * obligation is void here.  A materialized one is about writes
+		 * that already completed and only reaches a demote if its mint
+		 * failed: keep it and dispatch a retry.  This runs inside the
+		 * state-commit critical section, so it cannot mint itself.
+		 */
+		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) {
+			if (!drbd_gen_obligation_materialized(device))
+				drbd_gen_obligation_take(device);
+			else if (drbd_gen_obligation_mint_start(device))
+				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
+		}
 
 		if (should_try_become_up_to_date(device, disk_state, NEW))
 			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
