@@ -1225,9 +1225,21 @@ retry:
 
 		idr_for_each_entry(&resource->devices, device, vnr) {
 			if (flags & CS_FP_LOCAL_UP_TO_DATE) {
-				/* gen-rotate reason: OTHER (admin force-primary) */
-				drbd_uuid_new_current(device, true);
-				drbd_gen_obligation_take(device);
+				enum drbd_mint_outcome outcome;
+				bool through_executor;
+
+				/* gen-rotate reason: OTHER (admin force-primary).
+				 * This generation is the promotion's own and is
+				 * owed whether or not an obligation is armed;
+				 * where it is also the obligation's mint, its
+				 * outcome decides.
+				 */
+				through_executor = drbd_gen_obligation_mint_start(device);
+				outcome = drbd_uuid_new_current(device, true);
+				if (through_executor) {
+					drbd_gen_obligation_mint_done(device, outcome);
+					wake_up(&device->misc_wait);
+				}
 			}
 		}
 	}
