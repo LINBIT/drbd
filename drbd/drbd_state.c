@@ -146,18 +146,27 @@ void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size)
  * @reasons into the reason set.  Reasons given while there is no obligation
  * replace the lingering set of the previous one; an empty @reasons keeps what
  * is recorded, which is what re-arming an obligation whose mint could not run
- * wants.  Returns whether the state moved.
+ * wants.  @aux are auxiliary bits to set, and only apply when the state moves.
+ * Returns whether the state moved.
  *
  * A divergence-start event that arrives while the mint of an earlier obligation
  * runs, or while its generation waits to be confirmed, is a second obligation:
  * the running generation cannot cover it, because it may already be exposed to
  * the peers.  Record it as GEN_OBL_REARM_PENDING and let the discharge of the
- * running one land in ARMED instead, so it is minted next.
+ * running one land in ARMED instead, so it is minted next.  Such an arm is the
+ * caller whose @from_states include NONE.
+ *
+ * GEN_OBL_MATERIALIZED describes one obligation, the way the reason set does,
+ * and is cleared where that set is: when a fresh obligation arms out of a met
+ * state, and on the re-arm path above, which arms a fresh one without passing
+ * through a met state.  It survives everywhere else, so that an obligation
+ * whose mint failed keeps it.  Unlike a reason bit it is decisive -- it makes
+ * the mint mandatory -- so it must never be inherited by the next obligation.
  *
  * Data generations start rarely, so log every change at info level.
  */
 bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int from_states,
-				    enum drbd_gen_obl_state to, u16 reasons)
+				    enum drbd_gen_obl_state to, u16 reasons, u32 aux)
 {
 	char from_str[GEN_OBL_STR_MAX], to_str[GEN_OBL_STR_MAX];
 	enum drbd_gen_obl_state state;
@@ -173,18 +182,18 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
 	new = old;
 	if (reasons) {
 		if (state == GEN_OBL_NONE || state == GEN_OBL_DISCHARGED)
-			new &= ~GEN_OBL_REASON_MASK;
+			new &= ~(GEN_OBL_REASON_MASK | GEN_OBL_MATERIALIZED);
 		new |= (u32)reasons << GEN_OBL_REASON_SHIFT;
 	}
-	if (!moved && to == GEN_OBL_ARMED &&
+	if (!moved && (from_states & GEN_OBL_IN(GEN_OBL_NONE)) &&
 	    (state == GEN_OBL_MINTING || state == GEN_OBL_UNCONFIRMED))
 		new |= GEN_OBL_REARM_PENDING;
 	if (moved && to == GEN_OBL_DISCHARGED && (new & GEN_OBL_REARM_PENDING)) {
-		new &= ~GEN_OBL_REARM_PENDING;
+		new &= ~(GEN_OBL_REARM_PENDING | GEN_OBL_MATERIALIZED);
 		to = GEN_OBL_ARMED;
 	}
 	if (moved)
-		new = (new & ~GEN_OBL_STATE_MASK) | to;
+		new = (new & ~GEN_OBL_STATE_MASK) | to | aux;
 	if (new != old) {
 		drbd_gen_obligation_str(old, from_str, sizeof(from_str));
 		drbd_gen_obligation_str(new, to_str, sizeof(to_str));
@@ -208,7 +217,20 @@ void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
 	drbd_gen_obligation_transition(device,
 				       GEN_OBL_IN(GEN_OBL_NONE) | GEN_OBL_IN(GEN_OBL_ARMED) |
 				       GEN_OBL_IN(GEN_OBL_DISCHARGED),
-				       GEN_OBL_ARMED, reasons);
+				       GEN_OBL_ARMED, reasons, 0);
+}
+
+/* This node decides to complete writes to the application although acks of a
+ * replica it lost are missing.  The divergence is a fact
+ * from that decision on: the obligation is not voidable any more, its mint is
+ * mandatory, and no io-error policy on future writes drops it.  Returns whether
+ * an outstanding obligation took the attribute.
+ */
+bool drbd_gen_obligation_materialize(struct drbd_device *device)
+{
+	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+					      GEN_OBL_ARMED, GEN_OBL_COMPLETION_DECIDED,
+					      GEN_OBL_MATERIALIZED);
 }
 
 /* Take the obligation: the caller starts the new generation itself, without
@@ -218,7 +240,7 @@ void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
 bool drbd_gen_obligation_take(struct drbd_device *device)
 {
 	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
-					      GEN_OBL_NONE, 0);
+					      GEN_OBL_NONE, 0, 0);
 }
 
 /* The new generation did not happen, so the obligation stands. */
@@ -233,14 +255,14 @@ void drbd_gen_obligation_restore(struct drbd_device *device)
 bool drbd_gen_obligation_mint_start(struct drbd_device *device)
 {
 	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
-					      GEN_OBL_MINTING, 0);
+					      GEN_OBL_MINTING, 0, 0);
 }
 
 /* The single exit of the mint executor.  A new generation, or the proof that
  * none is owed, meets the obligation; anything else leaves it outstanding, so
  * that the next write, or a later trigger, tries again.  Under err_io the
- * obligation is dropped: writers fail fast rather than wait for a generation
- * that changes no data.
+ * obligation is dropped, unless it is materialized; see
+ * drbd_gen_obligation_keep_on_failure().
  *
  * MINT_EXPOSED is the exception that does not move: the mint left the state at
  * UNCONFIRMED, where it stays until a peer confirms the generation.  Writes are
@@ -252,12 +274,12 @@ void drbd_gen_obligation_mint_done(struct drbd_device *device, enum drbd_mint_ou
 
 	if (!drbd_mint_still_owed(outcome))
 		to = GEN_OBL_DISCHARGED;
-	else if (device->cached_err_io)
-		to = GEN_OBL_NONE;
-	else
+	else if (drbd_gen_obligation_keep_on_failure(device))
 		to = GEN_OBL_ARMED;
+	else
+		to = GEN_OBL_NONE;
 
-	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING), to, 0);
+	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING), to, 0, 0);
 }
 
 /* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
@@ -4147,11 +4169,11 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 				rcu_read_unlock();
 				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
 				/* Fencing IO suspension ends below either way, so a
-				 * rotate that did not happen must keep the obligation
-				 * -- except with err_io.
+				 * rotate that did not happen must keep the obligation;
+				 * see drbd_gen_obligation_keep_on_failure().
 				 */
 				if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-				    !device->cached_err_io)
+				    drbd_gen_obligation_keep_on_failure(device))
 					drbd_gen_obligation_restore(device);
 				kref_put(&device->kref, drbd_destroy_device);
 				rcu_read_lock();
@@ -4833,11 +4855,11 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary).
 		 * susp_uuid clears below whether or not the rotate happened, so a
 		 * rotate that did not happen must keep the obligation for the next
-		 * take -- except with err_io, where writers must keep failing fast.
+		 * take; see drbd_gen_obligation_keep_on_failure().
 		 */
 		if (new_current_uuid &&
 		    drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-		    !device->cached_err_io)
+		    drbd_gen_obligation_keep_on_failure(device))
 			drbd_gen_obligation_restore(device);
 
 		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)

@@ -5455,7 +5455,7 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 					       GEN_OBL_IN(GEN_OBL_NONE) |
 					       GEN_OBL_IN(GEN_OBL_ARMED) |
 					       GEN_OBL_IN(GEN_OBL_DISCHARGED),
-					       GEN_OBL_UNCONFIRMED, 0);
+					       GEN_OBL_UNCONFIRMED, 0, 0);
 		drbd_uuid_set_exposed(device, current_uuid, false);
 		downgrade_write(&device->uuid_sem);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);

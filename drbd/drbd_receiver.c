@@ -8978,11 +8978,11 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
 		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer, cannot thaw) */
 		/* The connection is torn down below and IO resumes, so a rotate
-		 * that did not happen must keep the obligation -- except with
-		 * err_io.
+		 * that did not happen must keep the obligation; see
+		 * drbd_gen_obligation_keep_on_failure().
 		 */
 		if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-		    !device->cached_err_io)
+		    drbd_gen_obligation_keep_on_failure(device))
 			drbd_gen_obligation_restore(device);
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
@@ -10448,6 +10448,39 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	rcu_read_unlock();
 }
 
+/* True if the transfer log holds a write that was completed to the application
+ * without the lost peer having seen it: a protocol A write (this peer expects
+ * neither a receive ack nor a write ack for it) that counts as successful
+ * towards it because it was handed to the network.
+ *
+ * Under protocol B and C, RQ_NET_OK means the peer acknowledged the write, so
+ * it has the data and nothing diverges towards it.  RQ_NET_DONE alongside it
+ * says the same under protocol A: a barrier ack retired the request, or it
+ * never carried data at all (an empty flush).
+ */
+static bool peer_device_has_acked_unreplicated_write(struct drbd_peer_device *peer_device)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	struct drbd_request *req;
+	bool found = false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+		unsigned long s = req->net_rq_state[peer_device->node_id];
+
+		if (!(req->local_rq_state & RQ_WRITE))
+			continue;
+		if ((s & (RQ_NET_OK | RQ_NET_DONE)) != RQ_NET_OK)
+			continue;
+		if (s & (RQ_EXP_RECEIVE_ACK | RQ_EXP_WRITE_ACK))
+			continue;
+		found = true;
+		break;
+	}
+	rcu_read_unlock();
+	return found;
+}
+
 static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
@@ -10490,6 +10523,23 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 						      drbd_check_peers_new_current_uuid(device));
 			wake_up(&device->misc_wait);
 		}
+	}
+
+	/* An acknowledged write cannot be un-acknowledged, and one this peer
+	 * never saw is not resent to it, so the divergence is a fact as soon as
+	 * the loss is noticed.  The obligation materializes and its mint runs
+	 * here, with no quorum, data or suspension gate and no settle round:
+	 * the completion decision was taken by the protocol, at ack time.
+	 * Refused, a mint of an earlier obligation is already running and makes
+	 * a generation of its own.  Test the state before walking the transfer
+	 * log: without an armed obligation there is nothing to materialize.
+	 */
+	if (drbd_gen_obligation_state(device) == GEN_OBL_ARMED &&
+	    peer_device_has_acked_unreplicated_write(peer_device) &&
+	    drbd_gen_obligation_materialize(device) &&
+	    drbd_gen_obligation_mint_start(device)) {
+		drbd_gen_obligation_mint_done(device, drbd_uuid_new_current(device, false));
+		wake_up(&device->misc_wait);
 	}
 
 	drbd_md_sync(device);
@@ -10665,7 +10715,7 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 	 * evaluations, the way the test_and_clear_bit of the gate did.
 	 */
 	if (!drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_UNCONFIRMED),
-					    GEN_OBL_DISCHARGED, 0))
+					    GEN_OBL_DISCHARGED, 0, 0))
 		return false;
 	drbd_info(device, "rotated data generation confirmed durable in a quorate partition (gen %016llX)\n",
 		  device->exposed_data_uuid);
