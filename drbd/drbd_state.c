@@ -243,6 +243,22 @@ bool drbd_gen_obligation_take(struct drbd_device *device)
 					      GEN_OBL_NONE, 0, 0);
 }
 
+/* This volume adopts the peer's current UUID.  That adopted current is the new
+ * data generation, and the peer it comes from confirms it, so the obligation is
+ * met rather than dropped.  Allowed out of MINTING as well: an executor racing
+ * the adoption finds the state moved on and its own exit no longer matches, so
+ * its outcome changes nothing.  A divergence-start event recorded during that
+ * mint re-arms here, which is right -- the adoption confirms the generation
+ * being minted, not the later event.
+ */
+bool drbd_gen_obligation_discharge_by_adoption(struct drbd_device *device)
+{
+	return drbd_gen_obligation_transition(device,
+					      GEN_OBL_IN(GEN_OBL_ARMED) |
+					      GEN_OBL_IN(GEN_OBL_MINTING),
+					      GEN_OBL_DISCHARGED, 0, 0);
+}
+
 /* Dispatch guard of the mint executor: only one caller enters MINTING, and
  * writes stay blocked while it runs.
  */

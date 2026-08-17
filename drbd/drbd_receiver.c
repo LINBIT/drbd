@@ -6910,7 +6910,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	} else if (device->disk_state[NOW] < D_INCONSISTENT && repl_state >= L_ESTABLISHED &&
 		   peer_device->disk_state[NOW] == D_UP_TO_DATE && !uuid_match &&
 		   (resource->role[NOW] == R_SECONDARY ||
-		    (two_primaries_allowed && drbd_gen_obligation_take(device)))) {
+		    (two_primaries_allowed &&
+		     drbd_gen_obligation_discharge_by_adoption(device)))) {
 
 		write_lock_irq(&resource->state_rwlock);
 		if (resource->remote_state_change) {
