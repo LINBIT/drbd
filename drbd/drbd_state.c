@@ -3249,7 +3249,6 @@ static void update_peer_md_flags(struct drbd_peer_device *peer_device)
 static void finish_state_change(struct drbd_resource *resource, const char *tag)
 {
 	enum drbd_role *role = resource->role;
-	bool *susp_uuid = resource->susp_uuid;
 	struct drbd_device *device;
 	struct drbd_connection *connection;
 	bool starting_resync = false;
@@ -3560,8 +3559,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
 			gen_obl_reasons |= GEN_OBL_PROMOTED;
 
-		/* Only a single new current uuid when susp_uuid becomes true */
-		if (gen_obl_reasons && !susp_uuid[OLD])
+		if (gen_obl_reasons)
 			drbd_gen_obligation_arm(device, gen_obl_reasons);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
