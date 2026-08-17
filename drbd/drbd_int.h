@@ -593,15 +593,6 @@ enum device_flag {
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
-	EXPOSED_GEN_UNCONFIRMED, /* A diskless primary started a new data
-				  * generation that no peer has confirmed yet.
-				  * While set, a further peer loss does not start
-				  * yet another generation -- the open one already
-				  * covers it (the losses are logically
-				  * simultaneous) -- so there is at most one
-				  * unconfirmed generation and a single
-				  * predecessor at any time.
-				  */
 };
 
 /* The data-generation obligation of one volume.  A divergence-start event
@@ -615,7 +606,11 @@ enum drbd_gen_obl_state {
 	GEN_OBL_NONE,		/* no obligation, writes admitted */
 	GEN_OBL_ARMED,		/* obligation outstanding, writes not admitted */
 	GEN_OBL_MINTING,	/* the new generation is being made right now */
-	GEN_OBL_UNCONFIRMED,	/* diskless: exposed, no peer confirmed it yet */
+	GEN_OBL_UNCONFIRMED,	/* diskless: the new generation is exposed and
+				 * queued in order on every established channel,
+				 * but no peer has confirmed durable receipt.
+				 * Writes are admitted, their completion held.
+				 */
 	GEN_OBL_DISCHARGED,	/* met: new generation persisted or confirmed */
 	GEN_OBL_PARKED,		/* retained while writers fail fast (io-error) */
 };
@@ -655,9 +650,14 @@ enum drbd_gen_obl_state {
  * this whether the obligation is met.
  */
 enum drbd_mint_outcome {
-	MINT_MINTED,		/* a new generation exists: persisted to stable
-				 * storage (diskful), or exposed and queued on
-				 * every established channel (diskless)
+	MINT_MINTED,		/* a new generation exists, persisted to stable
+				 * storage before anyone else can see it
+				 */
+	MINT_EXPOSED,		/* diskless: the new generation is exposed and
+				 * queued in order on every established channel,
+				 * but no peer has confirmed durable receipt.
+				 * The obligation is not owed any more; it is met
+				 * once the confirm arrives.
 				 */
 	MINT_UNNECESSARY,	/* nothing owed: every absent peer already sees a
 				 * current UUID of ours it does not have
@@ -1820,8 +1820,8 @@ extern void drbd_peer_maybe_confirm_rotated_gen(struct drbd_peer_device *peer_de
 						unsigned int acked_epoch);
 
 /* Device-level decision for the per-peer signals above; defined in
- * drbd_receiver.c.  Returns true (clearing EXPOSED_GEN_UNCONFIRMED) when the
- * rotated generation just became confirmed across a quorate set of survivors.
+ * drbd_receiver.c.  Returns true (discharging the obligation) when the rotated
+ * generation just became confirmed across a quorate set of survivors.
  */
 extern bool drbd_maybe_release_rotated_gen(struct drbd_device *device);
 extern void drbd_reconcile_settled_try_up_to_date(struct drbd_resource *resource);

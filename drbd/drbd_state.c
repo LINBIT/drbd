@@ -148,6 +148,12 @@ void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size)
  * is recorded, which is what re-arming an obligation whose mint could not run
  * wants.  Returns whether the state moved.
  *
+ * A divergence-start event that arrives while the mint of an earlier obligation
+ * runs, or while its generation waits to be confirmed, is a second obligation:
+ * the running generation cannot cover it, because it may already be exposed to
+ * the peers.  Record it as GEN_OBL_REARM_PENDING and let the discharge of the
+ * running one land in ARMED instead, so it is minted next.
+ *
  * Data generations start rarely, so log every change at info level.
  */
 bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int from_states,
@@ -170,6 +176,13 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
 			new &= ~GEN_OBL_REASON_MASK;
 		new |= (u32)reasons << GEN_OBL_REASON_SHIFT;
 	}
+	if (!moved && to == GEN_OBL_ARMED &&
+	    (state == GEN_OBL_MINTING || state == GEN_OBL_UNCONFIRMED))
+		new |= GEN_OBL_REARM_PENDING;
+	if (moved && to == GEN_OBL_DISCHARGED && (new & GEN_OBL_REARM_PENDING)) {
+		new &= ~GEN_OBL_REARM_PENDING;
+		to = GEN_OBL_ARMED;
+	}
 	if (moved)
 		new = (new & ~GEN_OBL_STATE_MASK) | to;
 	if (new != old) {
@@ -186,9 +199,9 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
 }
 
 /* A divergence-start event obliges this volume to start a new data
- * generation before it admits further writes.  Arming while the mint of an
- * earlier obligation runs is absorbed by that generation, the way setting the
- * intent bit was.
+ * generation before it admits further writes.  Arming while an earlier
+ * obligation is being minted or waits for its confirmation records
+ * GEN_OBL_REARM_PENDING, see drbd_gen_obligation_transition().
  */
 void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
 {
@@ -228,6 +241,10 @@ bool drbd_gen_obligation_mint_start(struct drbd_device *device)
  * that the next write, or a later trigger, tries again.  Under err_io the
  * obligation is dropped: writers fail fast rather than wait for a generation
  * that changes no data.
+ *
+ * MINT_EXPOSED is the exception that does not move: the mint left the state at
+ * UNCONFIRMED, where it stays until a peer confirms the generation.  Writes are
+ * admitted meanwhile, with their completion held.
  */
 void drbd_gen_obligation_mint_done(struct drbd_device *device, enum drbd_mint_outcome outcome)
 {

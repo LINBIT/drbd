@@ -5372,7 +5372,8 @@ static bool a_lost_peer_is_on_same_cur_uuid(struct drbd_device *device)
  *
  * Return: what the attempt did, see enum drbd_mint_outcome.  MINT_DEFERRED and
  * MINT_FAILED are retryable and leave the obligation with the caller;
- * MINT_MINTED and MINT_UNNECESSARY meet it.
+ * MINT_MINTED and MINT_UNNECESSARY meet it.  MINT_EXPOSED moved the obligation
+ * to UNCONFIRMED itself, where the confirm meets it.
  */
 enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool forced)
 {
@@ -5396,15 +5397,13 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 		/* The peers will store the new current UUID... */
 		u64 current_uuid, weak_nodes;
 
-		/* Defer while the current generation is still unconfirmed: at most
-		 * one unconfirmed generation (and one predecessor) exists at a
-		 * time.  Report it -- a peer may durably hold the unconfirmed
-		 * generation with its confirming barrier-ack lost, so the caller
-		 * may need to keep its rotate intent for a later attempt.
-		 * Exception: on-no-quorum=io-error
+		/* At most one unconfirmed generation (and one predecessor) exists
+		 * at a time.  The obligation state enforces that on its own: an
+		 * event arriving while one is unconfirmed re-arms instead, and the
+		 * mint executor is not dispatched from UNCONFIRMED.  A caller that
+		 * mints without going through the executor still needs the decline.
 		 */
-		if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
-		    device->resource->res_opts.on_no_quorum != ONQ_IO_ERROR)
+		if (drbd_gen_obligation_state(device) == GEN_OBL_UNCONFIRMED)
 			return MINT_DEFERRED;
 
 		get_random_bytes(&current_uuid, sizeof(u64));
@@ -5435,7 +5434,7 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 		 *
 		 *     set per-peer CURRENT_UUID_UNCONFIRMED (all peers)
 		 *     smp_wmb()
-		 *     set EXPOSED_GEN_UNCONFIRMED         <- the gate, last
+		 *     obligation -> UNCONFIRMED           <- the gate, last
 		 *     send P_CURRENT_UUID                 <- only after the gate
 		 *
 		 * Marks before gate: a releaser reads gate then marks, so it
@@ -5446,8 +5445,17 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 				set_bit(CURRENT_UUID_UNCONFIRMED, &peer_device->flags);
 		}
 		smp_wmb(); /* marks before gate; paired with smp_rmb() in releaser */
-		/* defer further bumps until this one is confirmed */
-		set_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags);
+		/* Entered from MINTING by the mint executor, from NONE or ARMED by a
+		 * caller that mints the obligation itself, and from DISCHARGED when a
+		 * suspended resource armed none.  Not a dispatch guard: that is the
+		 * ARMED -> MINTING transition.
+		 */
+		drbd_gen_obligation_transition(device,
+					       GEN_OBL_IN(GEN_OBL_MINTING) |
+					       GEN_OBL_IN(GEN_OBL_NONE) |
+					       GEN_OBL_IN(GEN_OBL_ARMED) |
+					       GEN_OBL_IN(GEN_OBL_DISCHARGED),
+					       GEN_OBL_UNCONFIRMED, 0);
 		drbd_uuid_set_exposed(device, current_uuid, false);
 		downgrade_write(&device->uuid_sem);
 		drbd_info(device, "sending new current UUID: %016llX\n", current_uuid);
@@ -5469,13 +5477,13 @@ enum drbd_mint_outcome drbd_uuid_new_current(struct drbd_device *device, bool fo
 		}
 		up_read(&device->uuid_sem);
 
-		/* We just opened an unconfirmed data generation (EXPOSED_GEN_UNCONFIRMED).
-		 * The confirm-before-complete IO hold needs no action here: it engages
+		/* We just opened an unconfirmed data generation.  The
+		 * confirm-before-complete IO hold needs no action here: it engages
 		 * lazily, per write, when a write in this generation is acked while still
 		 * unconfirmed (see hold_completion_for_unconfirmed_gen in drbd_req.c), and
 		 * is released by the in-order barrier ack (NEW_UUID_CONFIRMED).
 		 */
-		return MINT_MINTED;
+		return MINT_EXPOSED;
 	}
 
 	/* Without local UpToDate data the two helpers above decide, and neither

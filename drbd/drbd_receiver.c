@@ -8628,7 +8628,7 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 		if (*peer_disk_state > D_OUTDATED)
 			*peer_disk_state = D_OUTDATED;
 			/* See "Do not trust this guy!" in sanitize_state() */
-	} else if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+	} else if (drbd_gen_obligation_state(device) == GEN_OBL_UNCONFIRMED &&
 		   device->exposed_data_uuid_predecessor &&
 		   (peer_device->current_uuid & ~UUID_PRIMARY) ==
 		   (device->exposed_data_uuid_predecessor & ~UUID_PRIMARY) &&
@@ -8649,7 +8649,7 @@ static void diskless_with_peers_different_current_uuids(struct drbd_peer_device 
 			  "Peer is one generation behind; asserting UpToDate, will resend transfer log and relabel.\n");
 		set_bit(RECONCILE_INJECT_CUR_UUID, &peer_device->flags);
 		*peer_disk_state = D_UP_TO_DATE;
-	} else if (test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags) &&
+	} else if (drbd_gen_obligation_state(device) == GEN_OBL_UNCONFIRMED &&
 		   resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO) {
 		/* Park-until-resync.  We are a diskless primary in an unconfirmed
 		 * rotated generation, and this peer is on an older generation we can
@@ -10618,8 +10618,8 @@ static void drbd_notify_peers_lost_primary(struct drbd_connection *lost_peer)
  * With io-error / quorum-off nothing is held, but we still clear once informed,
  * to lift the bump deferral and the reconnect-handshake special-casing.
  *
- * Returns true (and clears EXPOSED_GEN_UNCONFIRMED) exactly when the generation
- * just became confirmed; the caller then releases the held completions with a
+ * Returns true (discharging the obligation) exactly when the generation just
+ * became confirmed; the caller then releases the held completions with a
  * NEW_UUID_CONFIRMED transfer-log walk.  Re-evaluated on:
  *
  *     barrier ack     got_BarrierAck
@@ -10630,7 +10630,7 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 {
 	struct drbd_peer_device *peer_device;
 
-	if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+	if (drbd_gen_obligation_state(device) != GEN_OBL_UNCONFIRMED)
 		return false;
 	/* Pair with the smp_wmb() in drbd_uuid_new_current(): having observed the
 	 * gate, see the per-peer CURRENT_UUID_UNCONFIRMED marks the bump set before it.
@@ -10661,7 +10661,11 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 	}
 	rcu_read_unlock();
 
-	if (!test_and_clear_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+	/* The from-state check picks the single winner among concurrent
+	 * evaluations, the way the test_and_clear_bit of the gate did.
+	 */
+	if (!drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_UNCONFIRMED),
+					    GEN_OBL_DISCHARGED, 0))
 		return false;
 	drbd_info(device, "rotated data generation confirmed durable in a quorate partition (gen %016llX)\n",
 		  device->exposed_data_uuid);

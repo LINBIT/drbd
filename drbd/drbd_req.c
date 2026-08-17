@@ -1044,15 +1044,15 @@ static inline bool is_pending_write_protocol_A(struct drbd_request *req, int idx
 }
 
 /* Confirm-before-complete: while a diskless primary's optimistically rotated
- * current generation is still unconfirmed (EXPOSED_GEN_UNCONFIRMED), hold back
- * completion of writes acknowledged in that generation, so we never acknowledge
- * data to the upper layers in a generation no quorate partition has confirmed.
- * Released by a NEW_UUID_CONFIRMED transfer-log walk once the generation is
- * confirmed (drbd_maybe_release_rotated_gen).
+ * current generation is still unconfirmed (obligation state UNCONFIRMED), hold
+ * back completion of writes acknowledged in that generation, so we never
+ * acknowledge data to the upper layers in a generation no quorate partition has
+ * confirmed.  Released by a NEW_UUID_CONFIRMED transfer-log walk once the
+ * generation is confirmed (drbd_maybe_release_rotated_gen).
  *
  * Only on on-no-quorum=suspend-io: with io-error the configured behaviour (error
- * out) wins. Only the diskless optimistic bump sets EXPOSED_GEN_UNCONFIRMED; a
- * diskful node self-confirms its bump synchronously and never arrives here set.
+ * out) wins. Only the diskless optimistic bump reaches UNCONFIRMED; a diskful
+ * node self-confirms its bump synchronously and never arrives here in it.
  */
 static bool hold_completion_for_unconfirmed_gen(struct drbd_request *req)
 {
@@ -1062,7 +1062,7 @@ static bool hold_completion_for_unconfirmed_gen(struct drbd_request *req)
 		return false;
 	if (device->resource->res_opts.on_no_quorum != ONQ_SUSPEND_IO)
 		return false;
-	if (!test_bit(EXPOSED_GEN_UNCONFIRMED, &device->flags))
+	if (drbd_gen_obligation_state(device) != GEN_OBL_UNCONFIRMED)
 		return false;
 	return (int)(req->epoch - device->exposed_gen_epoch) >= 0;
 }
@@ -1358,8 +1358,8 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 		/* The optimistically rotated data generation has been confirmed
 		 * durable by an in-order barrier ack from a quorate peer.  Release
 		 * the writes whose completion we held back in that generation (see
-		 * the RQ_UNCONF_GEN hold in ack_common).  Once EXPOSED_GEN_UNCONFIRMED
-		 * is cleared, every such write is safe to acknowledge: the peer holds
+		 * the RQ_UNCONF_GEN hold in ack_common).  Once the generation is
+		 * confirmed, every such write is safe to acknowledge: the peer holds
 		 * the new current UUID, so the diskless-primary strand cannot occur.
 		 */
 		if (req->local_rq_state & RQ_UNCONF_GEN)
@@ -2143,7 +2143,7 @@ static void drbd_send_and_submit(struct drbd_request *req)
 	 * that is exactly what we hold, so for a trailing or lone write the epoch
 	 * would never close and the confirming barrier would never be sent.  Close
 	 * the epoch here so the sender emits the barrier independent of completion.
-	 * Self-limiting: the first barrier ack clears EXPOSED_GEN_UNCONFIRMED, after
+	 * Self-limiting: the first barrier ack confirms the generation, after
 	 * which no further write takes this path.
 	 */
 	if (hold_completion_for_unconfirmed_gen(req))
