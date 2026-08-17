@@ -10467,33 +10467,32 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	if (!drbd_suspended(device)) {
 		struct drbd_resource *resource = device->resource;
 
-		/* We need to create the new UUID immediately when we finish
-		   requests that did not reach the lost peer.
-		   But when we lost quorum we are going to finish those
-		   requests with error, therefore do not create the new UUID
-		   immediately!
-		   WRITING_NEW_CUR_UUID is held as a dispatch guard: if already
-		   set, the worker (queued via drbd_req.c) or another direct
-		   path is already generating the UUID; skip to avoid a double
-		   bump.  Skipping without waiting is safe: NEW_CUR_UUID remains
-		   set until generation completes, so inc_ap_bio_cond keeps
-		   blocking new writes throughout.  The drbd_md_sync() below may
-		   therefore reach disk before the new UUID does, but that is
-		   harmless on crash+reconnect: no write from the new generation
-		   can have been admitted, and the bitmap covers any pre-trigger
-		   in-flight writes.
-		   */
+		/* Create the new UUID when finishing requests that did not
+		 * reach the lost peer -- but not while quorum is lost, where
+		 * those requests are about to be errored instead.
+		 * WRITING_NEW_CUR_UUID is the consumption lock: holding it
+		 * keeps NEW_CUR_UUID set across drbd_check_peers()'s ping
+		 * round, so inc_ap_bio_cond() blocks new writes until the
+		 * rotate ran, without posting the work a second time.  Found
+		 * set, a write already claimed the intent and the sender runs
+		 * the same evaluation.
+		 */
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+		    test_bit(NEW_CUR_UUID, &device->flags) &&
+		    !test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags)) {
+			bool evaluated = drbd_check_peers_new_current_uuid(device);
+
+			get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID,
+				      &device->flags);
 			/* Keep an unevaluated rotate intent: it fires via the
 			 * susp-uuid thaw or the next write. With err_io the
 			 * writer must fail fast, not wait on it.
 			 */
-			if (!drbd_check_peers_new_current_uuid(device) &&
-			    !device->cached_err_io)
+			if (!evaluated && !device->cached_err_io)
 				set_bit(NEW_CUR_UUID, &device->flags);
+			wake_up(&device->misc_wait);
 		}
 	}
 
