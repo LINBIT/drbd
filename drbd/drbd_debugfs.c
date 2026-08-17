@@ -1295,7 +1295,7 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 		return -ENODEV;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 1);
+	seq_printf(m, "v: %u\n\n", 2);
 
 	seq_printf(m, "drbd_suspended(): %d\n", drbd_suspended(device));
 	seq_printf(m, "suspend_cnt: %d\n", atomic_read(&device->suspend_cnt));
@@ -1309,8 +1309,6 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "flags: 0x%04lx :", flags);
 #define pretty_print_bit(n) \
 	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n)
-	pretty_print_bit(NEW_CUR_UUID);
-	pretty_print_bit(WRITING_NEW_CUR_UUID);
 	pretty_print_bit(MAKE_NEW_CUR_UUID);
 #undef pretty_print_bit
 	seq_putc(m, '\n');

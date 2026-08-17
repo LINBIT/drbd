@@ -1227,7 +1227,7 @@ retry:
 			if (flags & CS_FP_LOCAL_UP_TO_DATE) {
 				/* gen-rotate reason: OTHER (admin force-primary) */
 				drbd_uuid_new_current(device, true);
-				clear_bit(NEW_CUR_UUID, &device->flags);
+				drbd_gen_obligation_take(device);
 			}
 		}
 	}
@@ -3629,7 +3629,7 @@ static int drbd_adm_attach(struct sk_buff *skb, struct genl_info *info)
 
 	if (drbd_md_test_flag(device->ldev, MDF_CRASHED_PRIMARY) &&
 	    !(resource->role[NOW] == R_PRIMARY && resource->susp_nod[NOW]) &&
-	    !device->exposed_data_uuid && !test_bit(NEW_CUR_UUID, &device->flags))
+	    !device->exposed_data_uuid && !drbd_gen_obligation_outstanding(device))
 		set_bit(CRASHED_PRIMARY, &device->flags);
 	else
 		clear_bit(CRASHED_PRIMARY, &device->flags);
@@ -6048,13 +6048,13 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	device = adm_ctx.device;
 	resource = device->resource;
 	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
-	if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+	if (drbd_gen_obligation_take(device)) {
 		/* The suspensions are lifted below either way, so a DEFERRED
-		 * rotate must keep the intent -- except with err_io.
+		 * rotate must keep the obligation -- except with err_io.
 		 */
 		if (!drbd_uuid_new_current(device, false) &&
 		    !device->cached_err_io)
-			set_bit(NEW_CUR_UUID, &device->flags);
+			drbd_gen_obligation_restore(device);
 	}
 	drbd_suspend_io(device, READ_AND_WRITE);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);

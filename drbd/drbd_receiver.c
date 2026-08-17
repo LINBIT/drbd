@@ -6910,7 +6910,7 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 	} else if (device->disk_state[NOW] < D_INCONSISTENT && repl_state >= L_ESTABLISHED &&
 		   peer_device->disk_state[NOW] == D_UP_TO_DATE && !uuid_match &&
 		   (resource->role[NOW] == R_SECONDARY ||
-		    (two_primaries_allowed && test_and_clear_bit(NEW_CUR_UUID, &device->flags)))) {
+		    (two_primaries_allowed && drbd_gen_obligation_take(device)))) {
 
 		write_lock_irq(&resource->state_rwlock);
 		if (resource->remote_state_change) {
@@ -8972,7 +8972,7 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
 	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
-	    test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+	    drbd_gen_obligation_take(device)) {
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
@@ -10470,28 +10470,25 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 		/* Create the new UUID when finishing requests that did not
 		 * reach the lost peer -- but not while quorum is lost, where
 		 * those requests are about to be errored instead.
-		 * WRITING_NEW_CUR_UUID is the consumption lock: holding it
-		 * keeps NEW_CUR_UUID set across drbd_check_peers()'s ping
-		 * round, so inc_ap_bio_cond() blocks new writes until the
-		 * rotate ran, without posting the work a second time.  Found
-		 * set, a write already claimed the intent and the sender runs
-		 * the same evaluation.
+		 * Entering MINTING is the consumption lock: it keeps
+		 * inc_ap_bio_cond() blocking new writes until the rotate ran,
+		 * without posting the work a second time.  Refused, a write
+		 * already claimed the obligation and the sender runs the same
+		 * evaluation.
 		 */
 		if (!list_empty(&resource->transfer_log) &&
 		    drbd_data_accessible(device, NOW) &&
 		    !test_bit(PRIMARY_LOST_QUORUM, &device->flags) &&
-		    test_bit(NEW_CUR_UUID, &device->flags) &&
-		    !test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags)) {
+		    drbd_gen_obligation_mint_start(device)) {
 			bool evaluated = drbd_check_peers_new_current_uuid(device);
 
-			get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID,
-				      &device->flags);
-			/* Keep an unevaluated rotate intent: it fires via the
+			drbd_gen_obligation_mint_done(device);
+			/* Keep an unevaluated obligation: it fires via the
 			 * susp-uuid thaw or the next write. With err_io the
 			 * writer must fail fast, not wait on it.
 			 */
 			if (!evaluated && !device->cached_err_io)
-				set_bit(NEW_CUR_UUID, &device->flags);
+				drbd_gen_obligation_restore(device);
 			wake_up(&device->misc_wait);
 		}
 	}

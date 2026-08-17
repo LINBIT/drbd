@@ -2263,8 +2263,8 @@ static bool inc_ap_bio_cond(struct drbd_device *device, int rw)
 		return false;
 
 	/* check need for new current uuid _AFTER_ ensuring IO is not suspended via may_inc_ap_bio */
-	if (test_bit(NEW_CUR_UUID, &device->flags)) {
-		if (!test_and_set_bit(WRITING_NEW_CUR_UUID, &device->flags))
+	if (drbd_gen_obligation_outstanding(device)) {
+		if (drbd_gen_obligation_mint_start(device))
 			drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 
 		return false;

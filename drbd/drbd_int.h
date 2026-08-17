@@ -570,9 +570,6 @@ enum device_flag {
 				   so don't even try */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	ABORT_MDIO,		/* Interrupt ongoing meta-data I/O */
-	NEW_CUR_UUID,		/* Create new current UUID when thawing IO or issuing local IO */
-	__NEW_CUR_UUID,		/* Set NEW_CUR_UUID as soon as state change visible */
-	WRITING_NEW_CUR_UUID,	/* Set while the new current ID gets generated. */
 	AL_SUSPENDED,		/* Activity logging is currently suspended. */
 	UNREGISTERED,
 	FLUSH_PENDING,		/* if set, device->flush_jif is when we submitted that flush
@@ -3038,6 +3035,11 @@ extern bool drbd_gen_obligation_transition(struct drbd_device *device,
 					   enum drbd_gen_obl_state to,
 					   u16 reasons);
 extern void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size);
+extern void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons);
+extern bool drbd_gen_obligation_take(struct drbd_device *device);
+extern void drbd_gen_obligation_restore(struct drbd_device *device);
+extern bool drbd_gen_obligation_mint_start(struct drbd_device *device);
+extern void drbd_gen_obligation_mint_done(struct drbd_device *device);
 
 static inline enum drbd_gen_obl_state drbd_gen_obligation_state(struct drbd_device *device)
 {

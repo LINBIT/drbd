@@ -3360,12 +3360,12 @@ static void make_new_current_uuid(struct drbd_device *device)
 {
 	bool evaluated = drbd_check_peers_new_current_uuid(device);
 
-	get_work_bits(1UL << NEW_CUR_UUID | 1UL << WRITING_NEW_CUR_UUID, &device->flags);
-	/* Keep an unevaluated rotate intent: it fires via the susp-uuid thaw or
+	drbd_gen_obligation_mint_done(device);
+	/* Keep an unevaluated obligation: it fires via the susp-uuid thaw or
 	 * the next write. With err_io the writer must fail fast, not wait on it.
 	 */
 	if (!evaluated && !device->cached_err_io)
-		set_bit(NEW_CUR_UUID, &device->flags);
+		drbd_gen_obligation_restore(device);
 	wake_up(&device->misc_wait);
 }
 

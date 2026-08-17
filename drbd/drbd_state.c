@@ -185,6 +185,53 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
 	return moved;
 }
 
+/* A divergence-start event obliges this volume to start a new data
+ * generation before it admits further writes.  Arming while the mint of an
+ * earlier obligation runs is absorbed by that generation, the way setting the
+ * intent bit was.
+ */
+void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
+{
+	drbd_gen_obligation_transition(device,
+				       GEN_OBL_IN(GEN_OBL_NONE) | GEN_OBL_IN(GEN_OBL_ARMED) |
+				       GEN_OBL_IN(GEN_OBL_DISCHARGED),
+				       GEN_OBL_ARMED, reasons);
+}
+
+/* Take the obligation: the caller starts the new generation itself, without
+ * going through the mint executor.  Refused while the executor runs -- it
+ * owns the obligation until it reports the outcome.
+ */
+bool drbd_gen_obligation_take(struct drbd_device *device)
+{
+	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+					      GEN_OBL_NONE, 0);
+}
+
+/* The new generation did not happen, so the obligation stands. */
+void drbd_gen_obligation_restore(struct drbd_device *device)
+{
+	drbd_gen_obligation_arm(device, 0);
+}
+
+/* Dispatch guard of the mint executor: only one caller enters MINTING, and
+ * writes stay blocked while it runs.
+ */
+bool drbd_gen_obligation_mint_start(struct drbd_device *device)
+{
+	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+					      GEN_OBL_MINTING, 0);
+}
+
+/* The mint executor is done.  Whether it started a new generation is decided
+ * by the caller, which restores the obligation if it did not.
+ */
+void drbd_gen_obligation_mint_done(struct drbd_device *device)
+{
+	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING),
+				       GEN_OBL_NONE, 0);
+}
+
 /* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
  * D_UP_TO_DATE, gap-free across
  * NOTIFY_PEERS_LOST_PRIMARY -> RECONCILE_PENDING -> RECONCILIATION_RESYNC.
@@ -1081,14 +1128,11 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 			resource->fail_io[NEW];
 	}
 	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
-	smp_wmb(); /* Make the NEW_CUR_UUID bit visible after the state change! */
+	smp_wmb(); /* Make the new state visible before the wake-ups below! */
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		struct drbd_peer_device *peer_device;
-		if (test_bit(__NEW_CUR_UUID, &device->flags)) {
-			clear_bit(__NEW_CUR_UUID, &device->flags);
-			set_bit(NEW_CUR_UUID, &device->flags);
-		}
+
 		ensure_exposed_data_uuid(device);
 
 		wake_up(&device->al_wait);
@@ -2683,7 +2727,7 @@ static void sanitize_state(struct drbd_resource *resource)
 	if (!resource->susp_uuid[OLD] &&
 	    resource_is_suspended(resource, OLD) && !resource_is_suspended(resource, NEW)) {
 		idr_for_each_entry(&resource->devices, device, vnr) {
-			if (test_bit(NEW_CUR_UUID, &device->flags)) {
+			if (drbd_gen_obligation_outstanding(device)) {
 				resource->susp_uuid[NEW] = true;
 				break;
 			}
@@ -3197,7 +3241,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 	idr_for_each_entry(&resource->devices, device, vnr) {
 		enum drbd_disk_state *disk_state = device->disk_state;
 		struct drbd_peer_device *peer_device;
-		bool create_new_uuid = false;
+		u16 gen_obl_reasons = 0;
 
 		if (test_bit(RESTORING_QUORUM, &device->flags) &&
 		    !device->have_quorum[OLD] && device->have_quorum[NEW]) {
@@ -3351,29 +3395,29 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			/* We start writing locally without replicating the changes,
 			 * better start a new data generation */
 			if (repl_state[OLD] != L_AHEAD && repl_state[NEW] == L_AHEAD)
-				create_new_uuid = true;
+				gen_obl_reasons |= GEN_OBL_AHEAD;
 
 			if (lost_contact_to_peer_data(peer_disk_state)) {
 				if (role[NEW] == R_PRIMARY &&
 				    !test_bit(UNREGISTERED, &device->flags) &&
 				    (drbd_data_accessible(device, OLD) ||
 				     drbd_data_accessible(device, NEW)))
-					create_new_uuid = true;
+					gen_obl_reasons |= GEN_OBL_PEER_DATA_LOST;
 
 				if (connection->agreed_pro_version < 110 &&
 				    peer_role[NEW] == R_PRIMARY &&
 				    disk_state[NEW] >= D_UP_TO_DATE)
-					create_new_uuid = true;
+					gen_obl_reasons |= GEN_OBL_PRE_110;
 			}
 			if (peer_returns_diskless(peer_device, peer_disk_state[OLD], peer_disk_state[NEW])) {
 				if (role[NEW] == R_PRIMARY && !test_bit(UNREGISTERED, &device->flags) &&
 				    disk_state[NEW] == D_UP_TO_DATE)
-					create_new_uuid = true;
+					gen_obl_reasons |= GEN_OBL_PEER_RETURNED_DISKLESS;
 			}
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
 			    role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW))
-				create_new_uuid = true;
+				gen_obl_reasons |= GEN_OBL_OWN_DISK_FAILED;
 
 			if (peer_disk_state[NEW] < D_UP_TO_DATE && test_bit(GOT_NEG_ACK, &peer_device->flags))
 				clear_bit(GOT_NEG_ACK, &peer_device->flags);
@@ -3388,14 +3432,14 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 
 		if (disk_state[OLD] >= D_INCONSISTENT && disk_state[NEW] < D_INCONSISTENT &&
 		    role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW))
-			create_new_uuid = true;
+			gen_obl_reasons |= GEN_OBL_OWN_DISK_FAILED;
 
 		if (role[OLD] == R_SECONDARY && role[NEW] == R_PRIMARY)
-			create_new_uuid = true;
+			gen_obl_reasons |= GEN_OBL_PROMOTED;
 
 		/* Only a single new current uuid when susp_uuid becomes true */
-		if (create_new_uuid && !susp_uuid[OLD])
-			set_bit(__NEW_CUR_UUID, &device->flags);
+		if (gen_obl_reasons && !susp_uuid[OLD])
+			drbd_gen_obligation_arm(device, gen_obl_reasons);
 
 		if (disk_state[NEW] != D_NEGOTIATING && get_ldev_if_state(device, D_DETACHING)) {
 			u32 mdf = device->ldev->md.flags;
@@ -3502,7 +3546,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			unfreeze_io = true;
 
 		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY)
-			clear_bit(NEW_CUR_UUID, &device->flags);
+			drbd_gen_obligation_take(device);
 
 		if (should_try_become_up_to_date(device, disk_state, NEW))
 			set_bit(TRY_BECOME_UP_TO_DATE_PENDING, &resource->flags);
@@ -4070,16 +4114,17 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
-			if (test_and_clear_bit(NEW_CUR_UUID, &device->flags)) {
+			if (drbd_gen_obligation_take(device)) {
 				kref_get(&device->kref);
 				rcu_read_unlock();
 				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
 				/* Fencing IO suspension ends below either way, so a
-				 * DEFERRED rotate must keep the intent -- except with err_io.
+				 * DEFERRED rotate must keep the obligation -- except
+				 * with err_io.
 				 */
 				if (!drbd_uuid_new_current(device, false) &&
 				    !device->cached_err_io)
-					set_bit(NEW_CUR_UUID, &device->flags);
+					drbd_gen_obligation_restore(device);
 				kref_put(&device->kref, drbd_destroy_device);
 				rcu_read_lock();
 			}
@@ -4094,7 +4139,8 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
-			clear_bit(NEW_CUR_UUID, &device->flags);
+
+			drbd_gen_obligation_take(device);
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
@@ -4575,7 +4621,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&
-			    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			    drbd_gen_obligation_take(device))
 				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
 				   we know that a write failed on that node. Therefore we need to create
 				   the new UUID right now (not wait for the next write to come in) */
@@ -4595,7 +4641,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_peer_device_post_work(peer_device, SEND_RECONCILE_UUID);
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
-			    role[NEW] == R_PRIMARY && test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+			    role[NEW] == R_PRIMARY && drbd_gen_obligation_take(device))
 				new_current_uuid = true;
 
 			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S) {
@@ -4752,20 +4798,19 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
 			drbd_maybe_khelper(device, NULL, "quorum-lost");
 
-		if (!susp_uuid[OLD] && susp_uuid[NEW] &&
-		    test_and_clear_bit(NEW_CUR_UUID, &device->flags))
+		if (!susp_uuid[OLD] && susp_uuid[NEW] && drbd_gen_obligation_take(device))
 			new_current_uuid = true;
 
 		/* gen-rotate reason: DEGRADE (lost quorum/data then regained; deferred
 		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary).
 		 * susp_uuid clears below whether or not the rotate happened, so a
-		 * DEFERRED rotate must keep the intent for the next consume -- except
+		 * DEFERRED rotate must keep the obligation for the next take -- except
 		 * with err_io, where writers must keep failing fast.
 		 */
 		if (new_current_uuid &&
 		    !drbd_uuid_new_current(device, false) &&
 		    !device->cached_err_io)
-			set_bit(NEW_CUR_UUID, &device->flags);
+			drbd_gen_obligation_restore(device);
 
 		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)
 			drbd_reconsider_queue_parameters(device, NULL);
