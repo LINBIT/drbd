@@ -607,6 +607,53 @@ enum device_flag {
 				  */
 };
 
+/* The data-generation obligation of one volume.  A divergence-start event
+ * (a peer's data lost, own disk failed, promotion, ...) obliges this volume
+ * to start a new data generation before it may admit further writes.  The
+ * state, the auxiliary bits and the reason set are packed into one word,
+ * device->gen_obligation, so that a reader gets a consistent snapshot with a
+ * single READ_ONCE().
+ */
+enum drbd_gen_obl_state {
+	GEN_OBL_NONE,		/* no obligation, writes admitted */
+	GEN_OBL_ARMED,		/* obligation outstanding, writes not admitted */
+	GEN_OBL_MINTING,	/* the new generation is being made right now */
+	GEN_OBL_UNCONFIRMED,	/* diskless: exposed, no peer confirmed it yet */
+	GEN_OBL_DISCHARGED,	/* met: new generation persisted or confirmed */
+	GEN_OBL_PARKED,		/* retained while writers fail fast (io-error) */
+};
+
+/* The reason set: one bit per class of divergence-start event.  Several may
+ * accumulate before the obligation is met.
+ */
+#define GEN_OBL_PEER_DATA_LOST		(1 << 0)
+#define GEN_OBL_PEER_RETURNED_DISKLESS	(1 << 1)
+#define GEN_OBL_PEER_DISK_FAILED	(1 << 2)
+#define GEN_OBL_OWN_DISK_FAILED		(1 << 3)
+#define GEN_OBL_PROMOTED		(1 << 4)
+#define GEN_OBL_AHEAD			(1 << 5)
+#define GEN_OBL_PRE_110			(1 << 6)
+#define GEN_OBL_COMPLETION_DECIDED	(1 << 7)
+#define GEN_OBL_REASON_COUNT		8
+
+/* Layout of device->gen_obligation. */
+#define GEN_OBL_STATE_MASK	0x0000000fu
+#define GEN_OBL_MATERIALIZED	0x00000010u /* a completion decision was taken
+					     * although acks of a lost replica
+					     * are missing
+					     */
+#define GEN_OBL_REARM_PENDING	0x00000020u /* armed again while the mint of an
+					     * earlier obligation was running
+					     */
+#define GEN_OBL_REASON_SHIFT	16
+#define GEN_OBL_REASON_MASK	0xffff0000u
+
+/* A set of states, for the "allowed from" argument of a transition. */
+#define GEN_OBL_IN(state)	(1u << (state))
+
+/* Enough for any state name plus the whole reason set. */
+#define GEN_OBL_STR_MAX		160
+
 /* flag bits per peer device */
 enum peer_device_flag {
 	CONSIDER_RESYNC,
@@ -1712,6 +1759,13 @@ struct drbd_device {
 				 */
 	bool cached_state_unstable; /* updates with each state change */
 	bool cached_err_io; /* complete all IOs with error */
+	u32 gen_obligation;	/* state, auxiliary bits and reason set of the
+				 * data-generation obligation; see enum
+				 * drbd_gen_obl_state.  Read with the accessors
+				 * below, changed only by a transition holding
+				 * gen_obligation_lock.
+				 */
+	spinlock_t gen_obligation_lock;
 
 #ifdef CONFIG_DRBD_TIMING_STATS
 	spinlock_t timing_lock;
@@ -2977,6 +3031,31 @@ static inline bool may_inc_ap_bio(struct drbd_device *device)
 	if (atomic_read(&device->pending_bitmap_work.n))
 		return false;
 	return true;
+}
+
+extern bool drbd_gen_obligation_transition(struct drbd_device *device,
+					   unsigned int from_states,
+					   enum drbd_gen_obl_state to,
+					   u16 reasons);
+extern void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size);
+
+static inline enum drbd_gen_obl_state drbd_gen_obligation_state(struct drbd_device *device)
+{
+	return READ_ONCE(device->gen_obligation) & GEN_OBL_STATE_MASK;
+}
+
+/* True while this volume owes a new data generation.  Readers take no lock.
+ * A transition can become visible slightly ahead of the state change that
+ * causes it, so a writer may find the obligation outstanding a moment before
+ * the state change is published -- that only holds back a write the state
+ * change is about to hold back anyway.  The other direction, the new state
+ * visible while the obligation it created is not, cannot happen.
+ */
+static inline bool drbd_gen_obligation_outstanding(struct drbd_device *device)
+{
+	enum drbd_gen_obl_state state = drbd_gen_obligation_state(device);
+
+	return state == GEN_OBL_ARMED || state == GEN_OBL_MINTING;
 }
 
 static inline u64 drbd_current_uuid(struct drbd_device *device)

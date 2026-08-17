@@ -4206,6 +4206,7 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	spin_lock_init(&device->timing_lock);
 #endif
 	spin_lock_init(&device->al_lock);
+	spin_lock_init(&device->gen_obligation_lock);
 
 	spin_lock_init(&device->pending_completion_lock);
 	INIT_LIST_HEAD(&device->pending_master_completion[0]);

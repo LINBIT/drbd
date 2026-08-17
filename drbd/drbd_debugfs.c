@@ -1288,13 +1288,14 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 {
 	struct drbd_device *device = m->private;
 	unsigned long flags = device->flags;
+	char obligation[GEN_OBL_STR_MAX];
 	char sep = ' ';
 
 	if (!get_ldev_if_state(device, D_FAILED))
 		return -ENODEV;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	seq_printf(m, "drbd_suspended(): %d\n", drbd_suspended(device));
 	seq_printf(m, "suspend_cnt: %d\n", atomic_read(&device->suspend_cnt));
@@ -1303,6 +1304,8 @@ static int device_io_frozen_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "ap_bio_cnt[WRITE]: %d\n", atomic_read(&device->ap_bio_cnt[WRITE]));
 	seq_printf(m, "device->pending_bitmap_work.n: %d\n", atomic_read(&device->pending_bitmap_work.n));
 	seq_printf(m, "may_inc_ap_bio(): %d\n", may_inc_ap_bio(device));
+	drbd_gen_obligation_str(READ_ONCE(device->gen_obligation), obligation, sizeof(obligation));
+	seq_printf(m, "gen-obligation: %s\n", obligation);
 	seq_printf(m, "flags: 0x%04lx :", flags);
 #define pretty_print_bit(n) \
 	seq_print_rq_state_bit(m, test_bit(n, &flags), &sep, #n)

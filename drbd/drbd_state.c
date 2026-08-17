@@ -86,6 +86,105 @@ static void update_members(struct drbd_resource *resource);
 static bool calc_data_accessible(struct drbd_state_change *state_change, int n_device,
 				 enum which_state which);
 
+static const char * const gen_obl_state_names[] = {
+	[GEN_OBL_NONE] = "NONE",
+	[GEN_OBL_ARMED] = "ARMED",
+	[GEN_OBL_MINTING] = "MINTING",
+	[GEN_OBL_UNCONFIRMED] = "UNCONFIRMED",
+	[GEN_OBL_DISCHARGED] = "DISCHARGED",
+	[GEN_OBL_PARKED] = "PARKED",
+};
+
+static const char * const gen_obl_reason_names[GEN_OBL_REASON_COUNT] = {
+	"peer-data-lost",
+	"peer-returned-diskless",
+	"peer-disk-failed",
+	"own-disk-failed",
+	"promoted",
+	"ahead",
+	"pre-110",
+	"completion-decided",
+};
+
+/* Render an obligation word as "ARMED(peer-data-lost,promoted)".  The reason
+ * set of a met obligation lingers in the word; it describes an obligation, so
+ * show it only while there is one.
+ */
+void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size)
+{
+	enum drbd_gen_obl_state state = obligation & GEN_OBL_STATE_MASK;
+	u16 reasons = obligation >> GEN_OBL_REASON_SHIFT;
+	const char *sep = "(";
+	size_t len = 0;
+	int i;
+
+	len += scnprintf(buf + len, size - len, "%s", gen_obl_state_names[state]);
+	if (state == GEN_OBL_NONE)
+		return;
+
+	for (i = 0; i < GEN_OBL_REASON_COUNT; i++) {
+		if (!(reasons & (1 << i)))
+			continue;
+		len += scnprintf(buf + len, size - len, "%s%s", sep, gen_obl_reason_names[i]);
+		sep = ",";
+	}
+	if (obligation & GEN_OBL_MATERIALIZED) {
+		len += scnprintf(buf + len, size - len, "%smaterialized", sep);
+		sep = ",";
+	}
+	if (obligation & GEN_OBL_REARM_PENDING) {
+		len += scnprintf(buf + len, size - len, "%srearm-pending", sep);
+		sep = ",";
+	}
+	if (sep[0] == ',')
+		scnprintf(buf + len, size - len, ")");
+}
+
+/* The single place that changes device->gen_obligation.
+ *
+ * Move to state @to if the current state is one of @from_states, and merge
+ * @reasons into the reason set.  Reasons given while there is no obligation
+ * replace the lingering set of the previous one; an empty @reasons keeps what
+ * is recorded, which is what re-arming an obligation whose mint could not run
+ * wants.  Returns whether the state moved.
+ *
+ * Data generations start rarely, so log every change at info level.
+ */
+bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int from_states,
+				    enum drbd_gen_obl_state to, u16 reasons)
+{
+	char from_str[GEN_OBL_STR_MAX], to_str[GEN_OBL_STR_MAX];
+	enum drbd_gen_obl_state state;
+	unsigned long irq_flags;
+	u32 old, new;
+	bool moved;
+
+	spin_lock_irqsave(&device->gen_obligation_lock, irq_flags);
+	old = device->gen_obligation;
+	state = old & GEN_OBL_STATE_MASK;
+	moved = GEN_OBL_IN(state) & from_states;
+
+	new = old;
+	if (reasons) {
+		if (state == GEN_OBL_NONE || state == GEN_OBL_DISCHARGED)
+			new &= ~GEN_OBL_REASON_MASK;
+		new |= (u32)reasons << GEN_OBL_REASON_SHIFT;
+	}
+	if (moved)
+		new = (new & ~GEN_OBL_STATE_MASK) | to;
+	if (new != old) {
+		drbd_gen_obligation_str(old, from_str, sizeof(from_str));
+		drbd_gen_obligation_str(new, to_str, sizeof(to_str));
+		WRITE_ONCE(device->gen_obligation, new);
+	}
+	spin_unlock_irqrestore(&device->gen_obligation_lock, irq_flags);
+
+	if (new != old)
+		drbd_info(device, "gen-obligation: %s -> %s\n", from_str, to_str);
+
+	return moved;
+}
+
 /* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
  * D_UP_TO_DATE, gap-free across
  * NOTIFY_PEERS_LOST_PRIMARY -> RECONCILE_PENDING -> RECONCILIATION_RESYNC.
