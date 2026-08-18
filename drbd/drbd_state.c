@@ -211,6 +211,10 @@ bool drbd_gen_obligation_transition(struct drbd_device *device, unsigned int fro
  * generation before it admits further writes.  Arming while an earlier
  * obligation is being minted or waits for its confirmation records
  * GEN_OBL_REARM_PENDING, see drbd_gen_obligation_transition().
+ *
+ * PARKED is deliberately not in the from-set: while writers fail fast there is
+ * nothing to separate from anything, so a further event only merges its reason
+ * and the volume stays parked until write admission returns.
  */
 void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
 {
@@ -220,26 +224,67 @@ void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons)
 				       GEN_OBL_ARMED, reasons, 0);
 }
 
+/* Where an obligation lands that is kept rather than met: parked while writers
+ * fail fast (io-error policy), because the data set does not change and no
+ * generation is owed for that span; armed otherwise.  A materialized
+ * obligation is about writes that already completed to the application, and no
+ * policy on later writes undoes those, so it stays armed.
+ */
+static enum drbd_gen_obl_state gen_obligation_retained_state(struct drbd_device *device)
+{
+	if (device->cached_err_io && !drbd_gen_obligation_materialized(device))
+		return GEN_OBL_PARKED;
+
+	return GEN_OBL_ARMED;
+}
+
+/* The io-error policy took effect for this volume: park the obligation. */
+static void gen_obligation_park(struct drbd_device *device)
+{
+	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+				       gen_obligation_retained_state(device), 0, 0);
+}
+
+/* Write admission returned, so the data set can change again and the parked
+ * obligation is owed.  Dispatch its mint here rather than leave it to the
+ * first write: the generation separates the writes to come from every peer
+ * that may be missing some.
+ */
+static void gen_obligation_unpark(struct drbd_device *device)
+{
+	if (drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_PARKED),
+					   GEN_OBL_ARMED, 0, 0) &&
+	    drbd_gen_obligation_mint_start(device))
+		drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
+}
+
 /* This node decides to complete writes to the application although acks of a
  * replica it lost are missing.  The divergence is a fact
  * from that decision on: the obligation is not voidable any more, its mint is
- * mandatory, and no io-error policy on future writes drops it.  Returns whether
- * an outstanding obligation took the attribute.
+ * mandatory, and no io-error policy on future writes drops it.  A parked
+ * obligation materializes as well and leaves the park: the policy governs the
+ * writes to come, not the ones that already completed.  Returns whether an
+ * obligation took the attribute.
  */
 bool drbd_gen_obligation_materialize(struct drbd_device *device)
 {
-	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+	return drbd_gen_obligation_transition(device, GEN_OBL_MATERIALIZE_FROM,
 					      GEN_OBL_ARMED, GEN_OBL_COMPLETION_DECIDED,
 					      GEN_OBL_MATERIALIZED);
 }
 
-/* Take the obligation: the caller starts the new generation itself, without
- * going through the mint executor.  Refused while the executor runs -- it
- * owns the obligation until it reports the outcome.
+/* Take the obligation: the caller starts the new generation itself, or holds
+ * the proof that none is owed.  Refused while the mint executor runs -- it
+ * owns the obligation until it reports the outcome.  A parked obligation is
+ * latent by construction, so a proof about a latent one covers it as well;
+ * without this its callers would leave it behind to be minted at the unpark,
+ * for writes that never happened.
  */
 bool drbd_gen_obligation_take(struct drbd_device *device)
 {
-	return drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_ARMED),
+	return drbd_gen_obligation_transition(device,
+					      GEN_OBL_IN(GEN_OBL_ARMED) |
+					      GEN_OBL_IN(GEN_OBL_PARKED),
 					      GEN_OBL_NONE, 0, 0);
 }
 
@@ -270,9 +315,8 @@ bool drbd_gen_obligation_mint_start(struct drbd_device *device)
 
 /* The single exit of the mint executor.  A new generation, or the proof that
  * none is owed, meets the obligation; anything else leaves it outstanding, so
- * that the next write, or a later trigger, tries again.  Under err_io the
- * obligation is dropped, unless it is materialized; see
- * drbd_gen_obligation_keep_on_failure().
+ * that the next write, or a later trigger, tries again -- parked while writers
+ * fail fast, see gen_obligation_retained_state().
  *
  * MINT_EXPOSED is the exception that does not move: the mint left the state at
  * UNCONFIRMED, where it stays until a peer confirms the generation.  Writes are
@@ -284,10 +328,8 @@ void drbd_gen_obligation_mint_done(struct drbd_device *device, enum drbd_mint_ou
 
 	if (!drbd_mint_still_owed(outcome))
 		to = GEN_OBL_DISCHARGED;
-	else if (drbd_gen_obligation_keep_on_failure(device))
-		to = GEN_OBL_ARMED;
 	else
-		to = GEN_OBL_NONE;
+		to = gen_obligation_retained_state(device);
 
 	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING), to, 0, 0);
 }
@@ -1234,8 +1276,10 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->cached_min_aggreed_protocol_version = pro_ver;
 
 	idr_for_each_entry(&resource->devices, device, vnr) {
+		bool err_io_before = device->cached_err_io;
 		struct res_opts *o = &resource->res_opts;
 		struct drbd_peer_device *peer_device;
+		bool err_io;
 
 		device->disk_state[NOW] = device->disk_state[NEW];
 		device->have_quorum[NOW] = device->have_quorum[NEW];
@@ -1261,10 +1305,20 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 				peer_device->resync_active[NEW];
 		}
 		device->cached_state_unstable = !state_is_stable(device);
-		device->cached_err_io =
-			(o->on_no_quorum == ONQ_IO_ERROR && !device->have_quorum[NOW]) ||
+		err_io = (o->on_no_quorum == ONQ_IO_ERROR && !device->have_quorum[NOW]) ||
 			(o->on_no_data == OND_IO_ERROR && !drbd_data_accessible(device, NOW)) ||
 			resource->fail_io[NEW];
+
+		/* Park and unpark the obligation at the edges of the io-error
+		 * policy, so that whichever of the two holds writes back covers
+		 * the moment the other changes: unpark before write admission
+		 * returns, park once the errors already fail every write.
+		 */
+		if (err_io_before && !err_io)
+			gen_obligation_unpark(device);
+		device->cached_err_io = err_io;
+		if (err_io && !err_io_before)
+			gen_obligation_park(device);
 	}
 	resource->cached_all_devices_have_quorum = all_devs_have_quorum;
 	smp_wmb(); /* Make the new state visible before the wake-ups below! */

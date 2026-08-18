@@ -612,7 +612,14 @@ enum drbd_gen_obl_state {
 				 * Writes are admitted, their completion held.
 				 */
 	GEN_OBL_DISCHARGED,	/* met: new generation persisted or confirmed */
-	GEN_OBL_PARKED,		/* retained while writers fail fast (io-error) */
+	GEN_OBL_PARKED,		/* retained while writers fail fast (io-error
+				 * policy): the data set does not change, so no
+				 * generation is owed for that span.  Write
+				 * admission never sees this state -- whenever
+				 * it is set, device->cached_err_io is set as
+				 * well, and drbd_submit_bio() errors the write
+				 * long before inc_ap_bio_cond().
+				 */
 };
 
 /* The reason set: one bit per class of divergence-start event.  Several may
@@ -642,6 +649,13 @@ enum drbd_gen_obl_state {
 
 /* A set of states, for the "allowed from" argument of a transition. */
 #define GEN_OBL_IN(state)	(1u << (state))
+
+/* The states an obligation can materialize out of: it is recorded, and its
+ * mint has not started.  PARKED is one of them -- a completion decision is
+ * about writes that already happened, so the io-error policy does not hold it
+ * back.
+ */
+#define GEN_OBL_MATERIALIZE_FROM	(GEN_OBL_IN(GEN_OBL_ARMED) | GEN_OBL_IN(GEN_OBL_PARKED))
 
 /* Enough for any state name plus the whole reason set. */
 #define GEN_OBL_STR_MAX		160
@@ -3080,7 +3094,9 @@ static inline enum drbd_gen_obl_state drbd_gen_obligation_state(struct drbd_devi
 	return READ_ONCE(device->gen_obligation) & GEN_OBL_STATE_MASK;
 }
 
-/* True while this volume owes a new data generation.  Readers take no lock.
+/* True while this volume owes a new data generation and a write must wait for
+ * it.  A parked obligation is owed as well, but writes do not reach this test
+ * while it is parked; see GEN_OBL_PARKED.  Readers take no lock.
  * A transition can become visible slightly ahead of the state change that
  * causes it, so a writer may find the obligation outstanding a moment before
  * the state change is published -- that only holds back a write the state
@@ -3101,19 +3117,6 @@ static inline bool drbd_gen_obligation_outstanding(struct drbd_device *device)
 static inline bool drbd_gen_obligation_materialized(struct drbd_device *device)
 {
 	return READ_ONCE(device->gen_obligation) & GEN_OBL_MATERIALIZED;
-}
-
-/* A mint that could not run leaves the obligation outstanding -- except while
- * writers fail fast (io-error policy): a generation would label data that
- * cannot change any more, and the writers must not wait for it.
- *
- * A materialized obligation is the exception to that exception.  It is about
- * writes that already completed to the application, so a policy on future
- * writes cannot void it.
- */
-static inline bool drbd_gen_obligation_keep_on_failure(struct drbd_device *device)
-{
-	return !device->cached_err_io || drbd_gen_obligation_materialized(device);
 }
 
 static inline u64 drbd_current_uuid(struct drbd_device *device)

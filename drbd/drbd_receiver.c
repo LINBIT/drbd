@@ -10532,9 +10532,9 @@ static void peer_device_disconnected(struct drbd_peer_device *peer_device)
 	 * the completion decision was taken by the protocol, at ack time.
 	 * Refused, a mint of an earlier obligation is already running and makes
 	 * a generation of its own.  Test the state before walking the transfer
-	 * log: without an armed obligation there is nothing to materialize.
+	 * log: without an obligation to materialize there is nothing to find.
 	 */
-	if (drbd_gen_obligation_state(device) == GEN_OBL_ARMED &&
+	if ((GEN_OBL_IN(drbd_gen_obligation_state(device)) & GEN_OBL_MATERIALIZE_FROM) &&
 	    peer_device_has_acked_unreplicated_write(peer_device) &&
 	    drbd_gen_obligation_materialize(device) &&
 	    drbd_gen_obligation_mint_start(device)) {
