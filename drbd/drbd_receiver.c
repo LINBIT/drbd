@@ -995,6 +995,91 @@ static int drbd_transport_connect(struct drbd_connection *connection)
 	return err;
 }
 
+/* A peer returning while this volume owes a new data generation for writes that
+ * already completed is accepted at the still equal current UUID and then adopts
+ * the generation that is minted a moment later: once it is connected
+ * drbd_weak_nodes_device() no longer counts it weak, so no bitmap slot is
+ * stamped toward it, and the writes it missed survive only as other replicas'
+ * out-of-sync bits, which order no resync at equal current UUIDs.  Order the
+ * local handshake behind the mint, so the UUIDs sent below carry it and the
+ * returner resyncs.  A latent obligation owes nothing to a returner -- the data
+ * is identical -- and is left to the next write.
+ *
+ * Sleeps.  Called from the connection's receiver thread while the peer is still
+ * C_CONNECTING and D_UNKNOWN, holding no lock.
+ */
+static void device_mint_before_handshake(struct drbd_device *device, long timeout)
+{
+	switch (drbd_gen_obligation_state(device)) {
+	case GEN_OBL_ARMED:
+		/* Latent: no completed write is missing on the returner, so it is
+		 * data identical at the equal current UUID -- no hold, no mint.
+		 */
+		if (!drbd_gen_obligation_materialized(device))
+			break;
+		/* Materialized, and still armed: its mandatory mint failed at the
+		 * completing edge.  Retry it here, in the receiver thread, before
+		 * the UUID exchange; the executor's exit decides what remains.
+		 */
+		if (drbd_gen_obligation_mint_start(device))
+			drbd_gen_obligation_mint_run(device);
+		break;
+	case GEN_OBL_MINTING:
+		/* Another consumer is evaluating this obligation; wait for its
+		 * outcome.  On timeout proceed -- the connect retry loop comes
+		 * around again.
+		 */
+		wait_event_timeout(device->misc_wait,
+				   drbd_gen_obligation_state(device) != GEN_OBL_MINTING,
+				   timeout);
+		break;
+	case GEN_OBL_UNCONFIRMED:
+		/* Wait for the confirmation, but proceed when it does not come:
+		 * it may be one only this peer can give.  A diskless primary
+		 * whose sole peer is the returner needs that peer's barrier ack,
+		 * which needs this connect to complete -- an unbounded wait
+		 * would deadlock against it.  A returner one generation behind
+		 * is then handled by the diskless reconnect handshake, which
+		 * replays it forward or parks it until a resync.
+		 */
+		wait_event_timeout(device->misc_wait,
+				   drbd_gen_obligation_state(device) != GEN_OBL_UNCONFIRMED,
+				   timeout);
+		break;
+	case GEN_OBL_PARKED:
+		/* No hold: while writers fail fast no write completes, so a
+		 * returner at an equal current UUID is data identical, and the
+		 * mint of the unpark reaches it in order once connected.
+		 */
+		break;
+	case GEN_OBL_NONE:
+	case GEN_OBL_DISCHARGED:
+		break;
+	}
+}
+
+static void conn_mint_before_handshake(struct drbd_connection *connection, long timeout)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		struct drbd_device *device = peer_device->device;
+
+		kref_get(&device->kref);
+
+		/* connection cannot go away: caller holds a reference. */
+		rcu_read_unlock();
+
+		device_mint_before_handshake(device, timeout);
+
+		rcu_read_lock();
+		kref_put(&device->kref, drbd_destroy_device);
+	}
+	rcu_read_unlock();
+}
+
 /*
  * Returns true if we have a valid connection.
  */
@@ -1133,6 +1218,12 @@ start:
 
 	atomic_set(&connection->ap_in_flight, 0);
 	atomic_set(&connection->rs_in_flight, 0);
+
+	/* The last point before both the UUID exchange and arm_connect_timer():
+	 * conn_connect2() sends the UUIDs, and on every path but the pre-110 one
+	 * it runs inside the connect two-phase commit's prepare phase.
+	 */
+	conn_mint_before_handshake(connection, ping_timeo * HZ / 10);
 
 	if (connection->agreed_pro_version >= 110) {
 		/* Allow 10 times the ping_timeo for two-phase commits. That is
@@ -10719,6 +10810,8 @@ bool drbd_maybe_release_rotated_gen(struct drbd_device *device)
 		return false;
 	drbd_info(device, "rotated data generation confirmed durable in a quorate partition (gen %016llX)\n",
 		  device->exposed_data_uuid);
+	/* Both callers reach here outside the state change's own wake-ups. */
+	wake_up(&device->misc_wait);
 	return true;
 }
 

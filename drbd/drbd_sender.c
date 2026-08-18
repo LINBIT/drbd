@@ -3358,8 +3358,12 @@ enum drbd_mint_outcome drbd_check_peers_new_current_uuid(struct drbd_device *dev
 /* The mint executor.  A materialized obligation is about writes this node
  * decided to complete without a lost replica: the settle round must not delay
  * that generation, and the quorum and data gate must not decline it.
+ *
+ * Runs in the worker for a dispatched mint, and in the caller's thread where
+ * one waits for the outcome; both enter it through drbd_gen_obligation_mint_start().
+ * It sleeps.
  */
-static void make_new_current_uuid(struct drbd_device *device)
+void drbd_gen_obligation_mint_run(struct drbd_device *device)
 {
 	enum drbd_mint_outcome outcome;
 
@@ -3379,7 +3383,7 @@ static void do_device_work(struct drbd_device *device, const unsigned long todo)
 	if (test_bit(GO_DISKLESS, &todo))
 		go_diskless(device);
 	if (test_bit(MAKE_NEW_CUR_UUID, &todo))
-		make_new_current_uuid(device);
+		drbd_gen_obligation_mint_run(device);
 }
 
 static void do_peer_device_work(struct drbd_peer_device *peer_device, const unsigned long todo)

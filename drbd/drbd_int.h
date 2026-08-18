@@ -3085,6 +3085,7 @@ extern bool drbd_gen_obligation_materialize(struct drbd_device *device);
 extern bool drbd_gen_obligation_take(struct drbd_device *device);
 extern bool drbd_gen_obligation_discharge_by_adoption(struct drbd_device *device);
 extern bool drbd_gen_obligation_mint_start(struct drbd_device *device);
+extern void drbd_gen_obligation_mint_run(struct drbd_device *device);
 extern void drbd_gen_obligation_mint_done(struct drbd_device *device,
 					  enum drbd_mint_outcome outcome);
 extern void drbd_gen_obligation_mint_before_resume(struct drbd_device *device, u64 only_nodes);
