@@ -3082,7 +3082,7 @@ extern bool drbd_gen_obligation_transition(struct drbd_device *device,
 extern void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size);
 extern void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons);
 extern bool drbd_gen_obligation_materialize(struct drbd_device *device);
-extern bool drbd_gen_obligation_take(struct drbd_device *device);
+extern bool drbd_gen_obligation_void(struct drbd_device *device);
 extern bool drbd_gen_obligation_discharge_by_adoption(struct drbd_device *device);
 extern bool drbd_gen_obligation_mint_start(struct drbd_device *device);
 extern void drbd_gen_obligation_mint_run(struct drbd_device *device);

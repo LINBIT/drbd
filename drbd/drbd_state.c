@@ -273,14 +273,14 @@ bool drbd_gen_obligation_materialize(struct drbd_device *device)
 					      GEN_OBL_MATERIALIZED);
 }
 
-/* Take the obligation: the caller starts the new generation itself, or holds
- * the proof that none is owed.  Refused while the mint executor runs -- it
- * owns the obligation until it reports the outcome.  A parked obligation is
- * latent by construction, so a proof about a latent one covers it as well;
- * without this its callers would leave it behind to be minted at the unpark,
- * for writes that never happened.
+/* Void the obligation: the caller must hold the proof that no generation is
+ * owed.  Refused while the mint executor runs -- it owns the obligation until
+ * it reports the outcome.  A parked obligation is latent by construction, so
+ * a proof about a latent one covers it as well; without this its callers
+ * would leave it behind to be minted at the unpark, for writes that never
+ * happened.
  */
-bool drbd_gen_obligation_take(struct drbd_device *device)
+bool drbd_gen_obligation_void(struct drbd_device *device)
 {
 	return drbd_gen_obligation_transition(device,
 					      GEN_OBL_IN(GEN_OBL_ARMED) |
@@ -3745,7 +3745,7 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		 */
 		if (role[OLD] == R_PRIMARY && role[NEW] == R_SECONDARY) {
 			if (!drbd_gen_obligation_materialized(device))
-				drbd_gen_obligation_take(device);
+				drbd_gen_obligation_void(device);
 			else if (drbd_gen_obligation_mint_start(device))
 				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 		}
@@ -4348,7 +4348,7 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 			 * generation is still owed.
 			 */
 			if (!drbd_gen_obligation_materialized(device))
-				drbd_gen_obligation_take(device);
+				drbd_gen_obligation_void(device);
 			else if (drbd_gen_obligation_mint_start(device))
 				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 		}
