@@ -4799,6 +4799,12 @@ change_peer_state(struct drbd_connection *connection, int vnr,
 	resource->remote_state_change = true;
 	resource->twopc_reply.initiator_node_id = resource->res_opts.node_id;
 	resource->twopc_reply.tid = 0;
+	/* A reply to the request of an earlier round can still be set, having
+	 * arrived after __peer_reply() stopped waiting for it. Discard it before
+	 * asking again, so that the answer we read is to this request.
+	 */
+	clear_bit(TWOPC_YES, &connection->flags);
+	clear_bit(TWOPC_NO, &connection->flags);
 	begin_remote_state_change(resource, irq_flags);
 	rv = __peer_request(connection, vnr, mask, val);
 	if (rv == SS_CW_SUCCESS) {
