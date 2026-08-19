@@ -8972,18 +8972,15 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 
 	if (new_repl_state == L_ESTABLISHED && peer_disk_state == D_CONSISTENT &&
 	    drbd_suspended(device) && peer_device->repl_state[NOW] < L_ESTABLISHED &&
-	    drbd_gen_obligation_take(device)) {
+	    drbd_gen_obligation_state(device) == GEN_OBL_ARMED) {
 		/* Do not allow RESEND for a rebooted peer. We can only allow this
 		   for temporary network outages! */
 		drbd_err(peer_device, "Aborting Connect, can not thaw IO with an only Consistent peer\n");
-		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer, cannot thaw) */
-		/* The connection is torn down below and IO resumes, so a rotate
-		 * that did not happen must keep the obligation; see
-		 * drbd_gen_obligation_keep_on_failure().
+		/* gen-rotate reason: DEGRADE (abort connect; only-Consistent peer,
+		 * cannot thaw).  The connection is torn down below and IO resumes
+		 * either way, which finalizes the writes held towards this peer.
 		 */
-		if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-		    drbd_gen_obligation_keep_on_failure(device))
-			drbd_gen_obligation_restore(device);
+		drbd_gen_obligation_mint_before_resume(device, NODE_MASK(peer_device->node_id));
 		begin_state_change(resource, &irq_flags, CS_HARD);
 		__change_cstate(connection, C_PROTOCOL_ERROR);
 		__change_io_susp_user(resource, false);
@@ -10460,14 +10457,16 @@ static void drain_resync_activity(struct drbd_connection *connection)
  */
 static bool peer_device_has_acked_unreplicated_write(struct drbd_peer_device *peer_device)
 {
-	struct drbd_resource *resource = peer_device->device->resource;
+	struct drbd_device *device = peer_device->device;
 	struct drbd_request *req;
 	bool found = false;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(req, &resource->transfer_log, tl_requests) {
+	list_for_each_entry_rcu(req, &device->resource->transfer_log, tl_requests) {
 		unsigned long s = req->net_rq_state[peer_device->node_id];
 
+		if (req->device != device)
+			continue;
 		if (!(req->local_rq_state & RQ_WRITE))
 			continue;
 		if ((s & (RQ_NET_OK | RQ_NET_DONE)) != RQ_NET_OK)

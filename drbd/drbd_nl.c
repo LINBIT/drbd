@@ -6033,9 +6033,10 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	struct drbd_config_context adm_ctx;
 	struct drbd_connection *connection;
 	struct drbd_resource *resource;
-	struct drbd_device *device;
+	struct drbd_device *device, *d;
 	unsigned long irq_flags;
 	int retcode; /* enum drbd_ret_code rsp. enum drbd_state_rv */
+	int vnr;
 
 	retcode = drbd_adm_prepare(&adm_ctx, skb, info, DRBD_ADM_NEED_MINOR);
 	if (!adm_ctx.reply_skb)
@@ -6047,16 +6048,13 @@ static int drbd_adm_resume_io(struct sk_buff *skb, struct genl_info *info)
 	}
 	device = adm_ctx.device;
 	resource = device->resource;
-	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io) */
-	if (drbd_gen_obligation_take(device)) {
-		/* The suspensions are lifted below either way, so a rotate that
-		 * did not happen must keep the obligation; see
-		 * drbd_gen_obligation_keep_on_failure().
-		 */
-		if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-		    drbd_gen_obligation_keep_on_failure(device))
-			drbd_gen_obligation_restore(device);
-	}
+	/* gen-rotate reason: DEGRADE (deferred bump flushed on admin resume-io).
+	 * The state change below clears every suspension reason of the resource,
+	 * so it finalizes writes held on any of its volumes; the obligation is
+	 * per volume, so ask each of them.
+	 */
+	idr_for_each_entry(&resource->devices, d, vnr)
+		drbd_gen_obligation_mint_before_resume(d, 0);
 	drbd_suspend_io(device, READ_AND_WRITE);
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_WAIT_COMPLETE | CS_SERIALIZE);
 	__change_io_susp_user(resource, false);

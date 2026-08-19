@@ -3069,10 +3069,10 @@ extern void drbd_gen_obligation_str(u32 obligation, char *buf, size_t size);
 extern void drbd_gen_obligation_arm(struct drbd_device *device, u16 reasons);
 extern bool drbd_gen_obligation_materialize(struct drbd_device *device);
 extern bool drbd_gen_obligation_take(struct drbd_device *device);
-extern void drbd_gen_obligation_restore(struct drbd_device *device);
 extern bool drbd_gen_obligation_mint_start(struct drbd_device *device);
 extern void drbd_gen_obligation_mint_done(struct drbd_device *device,
 					  enum drbd_mint_outcome outcome);
+extern void drbd_gen_obligation_mint_before_resume(struct drbd_device *device, u64 only_nodes);
 
 static inline enum drbd_gen_obl_state drbd_gen_obligation_state(struct drbd_device *device)
 {
@@ -3093,6 +3093,15 @@ static inline bool drbd_gen_obligation_outstanding(struct drbd_device *device)
 	return state == GEN_OBL_ARMED || state == GEN_OBL_MINTING;
 }
 
+/* True while this volume decided to complete writes that a replica it lost
+ * never saw.  Nothing undoes such a completion, so the obligation is not
+ * voidable and its mint is mandatory.
+ */
+static inline bool drbd_gen_obligation_materialized(struct drbd_device *device)
+{
+	return READ_ONCE(device->gen_obligation) & GEN_OBL_MATERIALIZED;
+}
+
 /* A mint that could not run leaves the obligation outstanding -- except while
  * writers fail fast (io-error policy): a generation would label data that
  * cannot change any more, and the writers must not wait for it.
@@ -3103,8 +3112,7 @@ static inline bool drbd_gen_obligation_outstanding(struct drbd_device *device)
  */
 static inline bool drbd_gen_obligation_keep_on_failure(struct drbd_device *device)
 {
-	return !device->cached_err_io ||
-		(READ_ONCE(device->gen_obligation) & GEN_OBL_MATERIALIZED);
+	return !device->cached_err_io || drbd_gen_obligation_materialized(device);
 }
 
 static inline u64 drbd_current_uuid(struct drbd_device *device)

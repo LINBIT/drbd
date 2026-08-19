@@ -243,12 +243,6 @@ bool drbd_gen_obligation_take(struct drbd_device *device)
 					      GEN_OBL_NONE, 0, 0);
 }
 
-/* The new generation did not happen, so the obligation stands. */
-void drbd_gen_obligation_restore(struct drbd_device *device)
-{
-	drbd_gen_obligation_arm(device, 0);
-}
-
 /* Dispatch guard of the mint executor: only one caller enters MINTING, and
  * writes stay blocked while it runs.
  */
@@ -280,6 +274,85 @@ void drbd_gen_obligation_mint_done(struct drbd_device *device, enum drbd_mint_ou
 		to = GEN_OBL_NONE;
 
 	drbd_gen_obligation_transition(device, GEN_OBL_IN(GEN_OBL_MINTING), to, 0, 0);
+}
+
+/* True if the transfer log still holds a write of this volume towards a peer
+ * that is about to be given up: one of only_nodes, or -- with no node named --
+ * any peer whose connection is not established.  Lifting the last IO suspension
+ * runs CANCEL_SUSPENDED_IO and then COMPLETION_RESUMED over exactly these
+ * requests, so the test uses the guard of the CANCEL_SUSPENDED_IO arm itself
+ * and cannot drift from what that walk finalizes.
+ */
+static bool writes_held_towards_lost_peers(struct drbd_device *device, u64 only_nodes)
+{
+	struct drbd_peer_device *peer_device;
+	struct drbd_request *req;
+	u64 lost_nodes = only_nodes;
+	bool found = false;
+
+	rcu_read_lock();
+	if (!lost_nodes) {
+		for_each_peer_device_rcu(peer_device, device) {
+			if (peer_device->connection->cstate[NOW] < C_CONNECTED)
+				lost_nodes |= NODE_MASK(peer_device->node_id);
+		}
+	}
+
+	list_for_each_entry_rcu(req, &device->resource->transfer_log, tl_requests) {
+		int node_id;
+
+		if (req->device != device)
+			continue;
+		if (!(req->local_rq_state & RQ_WRITE))
+			continue;
+		for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
+			unsigned long s;
+
+			if (!(lost_nodes & NODE_MASK(node_id)))
+				continue;
+			s = req->net_rq_state[node_id];
+			if (!(s & RQ_NET_MASK) || s & RQ_NET_DONE)
+				continue;
+			found = true;
+			break;
+		}
+		if (found)
+			break;
+	}
+	rcu_read_unlock();
+	return found;
+}
+
+/* Called at a resume exit, before the state change that can lift the last IO
+ * suspension.  If that state change leaves peers behind, finish_state_change()
+ * gives up the writes still held towards them (CANCEL_SUSPENDED_IO) and then
+ * completes them to the application (COMPLETION_RESUMED).  That is a
+ * completion decision on behalf of a replica which never saw the data, so the
+ * data generation labelling it must exist before those completions: with such
+ * writes in the log, materialize the obligation and mint here, synchronously
+ * and ungated -- the decision carries the authority the mint would otherwise
+ * ask for.
+ *
+ * With none, the mint is opportunistic and goes to the worker.  Where the
+ * caller cannot tell whether its state change is the one lifting the last
+ * suspension, minting anyway is correct: those writes are stranded towards a
+ * peer that is gone either way.
+ */
+void drbd_gen_obligation_mint_before_resume(struct drbd_device *device, u64 only_nodes)
+{
+	if (drbd_gen_obligation_state(device) != GEN_OBL_ARMED)
+		return;
+
+	if (writes_held_towards_lost_peers(device, only_nodes)) {
+		drbd_gen_obligation_materialize(device);
+		if (drbd_gen_obligation_mint_start(device)) {
+			drbd_gen_obligation_mint_done(device,
+					drbd_uuid_new_current(device, false));
+			wake_up(&device->misc_wait);
+		}
+	} else if (drbd_gen_obligation_mint_start(device)) {
+		drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
+	}
 }
 
 /* A D_CONSISTENT survivor owes a post-loss reconcile before regaining
@@ -4164,20 +4237,18 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		rcu_read_lock();
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
-			if (drbd_gen_obligation_take(device)) {
-				kref_get(&device->kref);
-				rcu_read_unlock();
-				/* gen-rotate reason: DEGRADE (conn lost, peers fenced) */
-				/* Fencing IO suspension ends below either way, so a
-				 * rotate that did not happen must keep the obligation;
-				 * see drbd_gen_obligation_keep_on_failure().
-				 */
-				if (drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-				    drbd_gen_obligation_keep_on_failure(device))
-					drbd_gen_obligation_restore(device);
-				kref_put(&device->kref, drbd_destroy_device);
-				rcu_read_lock();
-			}
+			u64 fenced_node = NODE_MASK(peer_device->node_id);
+
+			kref_get(&device->kref);
+			rcu_read_unlock();
+			/* gen-rotate reason: DEGRADE (conn lost, peers fenced).
+			 * This node resumes as the authority; end_state_change()
+			 * below runs the walk that finalizes writes held towards
+			 * the fenced peers.
+			 */
+			drbd_gen_obligation_mint_before_resume(device, fenced_node);
+			kref_put(&device->kref, drbd_destroy_device);
+			rcu_read_lock();
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
@@ -4190,7 +4261,17 @@ static void check_may_resume_io_after_fencing(struct drbd_state_change *state_ch
 		idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
 			struct drbd_device *device = peer_device->device;
 
-			drbd_gen_obligation_take(device);
+			/* Every peer is back, so a resend replicates the writes that
+			 * were held: the data ends identical to the last generation
+			 * boundary and no generation is owed.  That proof holds only
+			 * while the obligation is latent -- once a completion decision
+			 * made the divergence a fact, no resend heals it, and the
+			 * generation is still owed.
+			 */
+			if (!drbd_gen_obligation_materialized(device))
+				drbd_gen_obligation_take(device);
+			else if (drbd_gen_obligation_mint_start(device))
+				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 		}
 		rcu_read_unlock();
 		begin_state_change(resource, &irq_flags, CS_VERBOSE);
@@ -4347,7 +4428,6 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		bool data_accessible[2];
 		bool resync_finished = false;
 		bool some_peer_demoted = false;
-		bool new_current_uuid = false;
 		enum which_state which;
 
 		for (which = OLD; which <= NEW; which++) {
@@ -4671,11 +4751,13 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 
 			if (peer_disk_state[OLD] == D_UP_TO_DATE &&
 			    (peer_disk_state[NEW] == D_FAILED || peer_disk_state[NEW] == D_INCONSISTENT) &&
-			    drbd_gen_obligation_take(device))
-				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED or D_INCONSISTENT
-				   we know that a write failed on that node. Therefore we need to create
-				   the new UUID right now (not wait for the next write to come in) */
-				new_current_uuid = true;
+			    drbd_gen_obligation_mint_start(device))
+				/* When a peer disk goes from D_UP_TO_DATE to D_FAILED
+				 * or D_INCONSISTENT we know that a write failed on that
+				 * node.  Mint right now, not at the next write.  Refused,
+				 * an earlier obligation is already being minted.
+				 */
+				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 
 			/* A diskless-primary reconcile peer we asserted UpToDate on its
 			 * predecessor generation has now settled UpToDate -- the connection
@@ -4691,8 +4773,9 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 				drbd_peer_device_post_work(peer_device, SEND_RECONCILE_UUID);
 
 			if (disk_state[OLD] > D_FAILED && disk_state[NEW] == D_FAILED &&
-			    role[NEW] == R_PRIMARY && drbd_gen_obligation_take(device))
-				new_current_uuid = true;
+			    role[NEW] == R_PRIMARY && drbd_gen_obligation_mint_start(device))
+				/* Our own disk failed while we are Primary: same as above. */
+				drbd_device_post_work(device, MAKE_NEW_CUR_UUID);
 
 			if (repl_state[OLD] != L_VERIFY_S && repl_state[NEW] == L_VERIFY_S) {
 				drbd_info(peer_device, "Starting Online Verify from sector %llu\n",
@@ -4848,19 +4931,14 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 		if (role[NEW] == R_PRIMARY && have_quorum[OLD] && !have_quorum[NEW])
 			drbd_maybe_khelper(device, NULL, "quorum-lost");
 
-		if (!susp_uuid[OLD] && susp_uuid[NEW] && drbd_gen_obligation_take(device))
-			new_current_uuid = true;
-
-		/* gen-rotate reason: DEGRADE (lost quorum/data then regained; deferred
-		 * bump via the susp_uuid bridge, or local-disk-failed-as-primary).
-		 * susp_uuid clears below whether or not the rotate happened, so a
-		 * rotate that did not happen must keep the obligation for the next
-		 * take; see drbd_gen_obligation_keep_on_failure().
+		/* gen-rotate reason: DEGRADE (lost quorum/data then regained).
+		 * The susp_uuid clear further below is the edge that lifts the last
+		 * suspension, so mint before it: a volume that stays armed keeps
+		 * blocking its own first write, but writes the walk gives up there
+		 * complete to the application, and need the generation first.
 		 */
-		if (new_current_uuid &&
-		    drbd_mint_still_owed(drbd_uuid_new_current(device, false)) &&
-		    drbd_gen_obligation_keep_on_failure(device))
-			drbd_gen_obligation_restore(device);
+		if (!susp_uuid[OLD] && susp_uuid[NEW])
+			drbd_gen_obligation_mint_before_resume(device, 0);
 
 		if (disk_state[OLD] > D_DISKLESS && disk_state[NEW] == D_DISKLESS)
 			drbd_reconsider_queue_parameters(device, NULL);
