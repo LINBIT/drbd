@@ -3845,11 +3845,16 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		}
 	}
 
-	if (resource_suspended[OLD] && !resource_suspended[NEW])
-		drbd_restart_suspended_reqs(resource);
-
+	/* The completion-resumed walk may drop a postponed request's last
+	 * completion reference; drbd_suspended() still reads the old,
+	 * suspended state here, so that request parks on suspended_reqs.
+	 * Restart the suspended requests after the walk, or it is missed.
+	 */
 	if ((resource_suspended[OLD] && !resource_suspended[NEW]) || unfreeze_io)
 		__tl_walk(resource, NULL, NULL, COMPLETION_RESUMED);
+
+	if (resource_suspended[OLD] && !resource_suspended[NEW])
+		drbd_restart_suspended_reqs(resource);
 
 	/* reconcile settled: a held-Consistent survivor may return to UpToDate */
 	if (reconciliation_resync_done)

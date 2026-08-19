@@ -12465,6 +12465,30 @@ static int got_NegAck(struct drbd_connection *connection, struct packet_info *pi
 	return 0;
 }
 
+/* The peer, a sync target, can not secure this write toward its sync source
+ * and counts it as not processed. Mark the request to be retried: once its
+ * references drain, drbd_restart_request() re-submits the original bio as a
+ * brand-new request; under IO suspension only after the resume.
+ */
+static int got_RetryWrite(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct drbd_peer_device *peer_device;
+	struct p_block_ack *p = pi->data;
+	sector_t sector = be64_to_cpu(p->sector);
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
+
+	/* A request that is gone was already resolved by connection loss. */
+	validate_req_change_req_state(peer_device, p->block_id, sector,
+				      INTERVAL_LOCAL_WRITE, __func__,
+				      POSTPONED_BY_PEER, true);
+	return 0;
+}
+
 static int got_NegDReply(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -13215,6 +13239,7 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_FLUSH_FORWARD]     = { sizeof(struct p_flush_forward), got_flush_forward },
 	[P_RS_DAGTAG_REACHED]     = { sizeof(struct p_block_ack), got_RSDagtagReached },
 	[P_RS_DAGTAG_UNREACHABLE] = { sizeof(struct p_block_ack), got_RSDagtagUnreachable },
+	[P_RETRY_WRITE]	      = { sizeof(struct p_block_ack), got_RetryWrite },
 };
 
 static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)

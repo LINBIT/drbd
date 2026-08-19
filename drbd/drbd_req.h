@@ -89,6 +89,7 @@ enum drbd_req_event {
 	WRITE_ACKED_BY_PEER,
 	WRITE_ACKED_BY_PEER_AND_SIS, /* and set_in_sync */
 	NEG_ACKED,
+	POSTPONED_BY_PEER,
 	BARRIER_ACKED, /* in protocol A and B */
 	DATA_RECEIVED, /* (remote read) */
 
