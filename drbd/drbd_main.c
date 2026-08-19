@@ -2219,7 +2219,8 @@ static void *drbd_prepare_rs_req(struct drbd_peer_device *peer_device, enum drbd
 	struct p_block_req_common *req_common;
 
 	if (cmd == P_RS_DAGTAG_REQ || cmd == P_RS_CSUM_DAGTAG_REQ || cmd == P_RS_THIN_DAGTAG_REQ ||
-			cmd == P_OV_DAGTAG_REQ || cmd == P_OV_DAGTAG_REPLY) {
+			cmd == P_OV_DAGTAG_REQ || cmd == P_OV_DAGTAG_REPLY ||
+			cmd == P_RS_DAGTAG_WAIT_REQ) {
 		struct p_rs_req *p;
 		/* Due to the slightly complicated nested struct definition,
 		 * verify that the packet size is as expected. */
@@ -3934,6 +3935,8 @@ struct drbd_connection *drbd_create_connection(struct drbd_resource *resource,
 	INIT_LIST_HEAD(&connection->connections);
 	INIT_LIST_HEAD(&connection->done_ee);
 	INIT_LIST_HEAD(&connection->dagtag_wait_ee);
+	INIT_LIST_HEAD(&connection->source_wait_ee);
+	INIT_LIST_HEAD(&connection->dagtag_wait_reqs);
 	INIT_LIST_HEAD(&connection->remove_net_list);
 	init_waitqueue_head(&connection->ee_wait);
 

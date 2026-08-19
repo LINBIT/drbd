@@ -75,6 +75,8 @@ struct kref_debug_class kref_class_connection = {
 		[17] = "path",
 		[18] = "drbd_send_out_of_sync_wf",
 		[19] = "send_ping_work/send_ping_ack_work",
+		[20] = "dagtag_wait_reqs",
+		[21] = "sync source of an unsecured write",
 	}
 };
 

@@ -454,6 +454,9 @@ struct drbd_peer_request {
 		struct { /* resync target requests */
 			unsigned int requested_size;
 		};
+		struct { /* peer writes withheld from acknowledgment */
+			unsigned int wait_source_node_id;
+		};
 	};
 
 	struct drbd_page_chain_head page_chain;
@@ -542,6 +545,23 @@ enum {
 
 	/* This peer_req->recv_order is on connection->send_oos protocted by send_oos_lock */
 	__EE_ON_SEND_OOS,
+
+	/* A write on a sync target, not acknowledged until the sync source
+	 * has it as well. See drbd_withhold_ack_until_source_has_write().
+	 */
+	__EE_WAIT_FOR_SOURCE,
+
+	/* The sync source's answer overtook the local completion; recorded
+	 * here under peer_reqs_lock, acted on by e_end_block().
+	 */
+	__EE_SOURCE_REACHED,
+	__EE_SOURCE_UNREACHABLE,
+
+	/* The sync source can not get this write: answer the writer
+	 * P_RETRY_WRITE instead of P_WRITE_ACK, so it retries the write.
+	 */
+	__EE_POSTPONE,
+
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -559,6 +579,10 @@ enum {
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
 #define EE_ON_SEND_OOS		(1<<__EE_ON_SEND_OOS)
+#define EE_WAIT_FOR_SOURCE	(1<<__EE_WAIT_FOR_SOURCE)
+#define EE_SOURCE_REACHED	(1<<__EE_SOURCE_REACHED)
+#define EE_SOURCE_UNREACHABLE	(1<<__EE_SOURCE_UNREACHABLE)
+#define EE_POSTPONE		(1<<__EE_POSTPONE)
 
 /* flag bits per device */
 enum device_flag {
@@ -1346,6 +1370,14 @@ struct drbd_connection {
 	/* Lists using drbd_peer_request.w.list */
 	struct list_head done_ee;   /* Need to send P_WRITE_ACK/P_RS_WRITE_ACK */
 	struct list_head dagtag_wait_ee; /* Resync read waiting for dagtag to be reached */
+	/* Peer writes done, waiting for the sync source to have them as well */
+	struct list_head source_wait_ee;
+
+	/* Dagtag wait requests of sync targets, waiting for this connection's
+	 * write stream to reach the position they name. Protected by
+	 * peer_reqs_lock.
+	 */
+	struct list_head dagtag_wait_reqs;
 
 	struct work_struct send_acks_work;
 	struct work_struct send_ping_ack_work;
@@ -2600,6 +2632,8 @@ void drbd_print_cluster_wide_state_change(struct drbd_resource *resource,
 					  union drbd_state mask,
 					  union drbd_state val);
 void apply_unacked_peer_requests(struct drbd_connection *connection);
+void drbd_refuse_unsecured_writes(struct drbd_peer_device *source);
+void drbd_dagtag_wait_reqs_source_gone(struct drbd_peer_device *requester);
 struct drbd_connection *drbd_connection_by_node_id(struct drbd_resource *resource,
 						   int node_id);
 struct drbd_connection *drbd_get_connection_by_node_id(struct drbd_resource *resource,

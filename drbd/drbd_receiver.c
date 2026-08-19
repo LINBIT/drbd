@@ -280,6 +280,7 @@ static bool uuid_in_peer_history(struct drbd_peer_device *peer_device, u64 uuid)
 static bool uuid_in_my_history(struct drbd_device *device, u64 uuid);
 static int find_common_lost_primary_node_id(struct drbd_connection *self);
 static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *peer_device);
+static void rs_rewind_next_bit(struct drbd_peer_device *peer_device, sector_t sector);
 
 static const char *drbd_sync_rule_str(enum sync_rule rule)
 {
@@ -3074,31 +3075,27 @@ static int receive_RSDataReply(struct drbd_connection *connection, struct packet
 	return err;
 }
 
-/*
- * e_end_block() is called in ack_sender context via drbd_finish_peer_reqs().
+/* The tail of e_end_block(): send the answer this write earned, then release
+ * the peer request. Also reached from teardown, where no answer goes out.
  */
-static int e_end_block(struct drbd_work *w, int cancel)
+static int e_end_block_tail(struct drbd_peer_request *peer_req, int cancel)
 {
-	struct drbd_peer_request *peer_req =
-		container_of(w, struct drbd_peer_request, w);
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_connection *connection = peer_device->connection;
 	sector_t sector = peer_req->i.sector;
-	struct drbd_epoch *epoch;
 	int err = 0, pcmd;
-
-	if (peer_req->flags & EE_IS_BARRIER) {
-		epoch = previous_epoch(connection, peer_req->epoch);
-		if (epoch)
-			drbd_may_finish_epoch(connection, epoch, EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
-	}
 
 	if (peer_req->flags & EE_SEND_WRITE_ACK) {
 		if (unlikely(peer_req->flags & EE_WAS_ERROR)) {
 			pcmd = P_NEG_ACK;
 			/* we expect it to be marked out of sync anyways...
 			 * maybe assert this?  */
+		} else if (peer_req->flags & EE_POSTPONE) {
+			/* The sync source can not get this write; the writer
+			 * counts it as not processed and retries it.
+			 */
+			pcmd = P_RETRY_WRITE;
 		} else if (peer_device->repl_state[NOW] >= L_SYNC_SOURCE &&
 			   peer_device->repl_state[NOW] <= L_PAUSED_SYNC_T &&
 			   peer_req->flags & EE_MAY_SET_IN_SYNC) {
@@ -3125,6 +3122,217 @@ static int e_end_block(struct drbd_work *w, int cancel)
 	}
 
 	return err;
+}
+
+/* Resumed on the sender once the exchange with the sync source is decided.
+ * The epoch arm of e_end_block() already ran before this write was parked.
+ */
+static int e_end_block_resume(struct drbd_work *w, int cancel)
+{
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
+
+	return e_end_block_tail(peer_req, cancel);
+}
+
+/* The write's full bitmap-granularity range. The resync replies in this unit,
+ * so this is the unit that can roll the write back, and the unit that must
+ * follow the source's content once the write is refused.
+ */
+static void unsecured_write_range(struct drbd_peer_request *peer_req,
+				  sector_t *sector, unsigned int *size)
+{
+	unsigned int sectors = peer_req->i.size >> SECTOR_SHIFT;
+	unsigned long first_bit = BM_SECT_TO_BIT(peer_req->i.sector);
+	unsigned long last_bit = BM_SECT_TO_BIT(peer_req->i.sector + sectors - 1);
+
+	*sector = BM_BIT_TO_SECT(first_bit);
+	*size = (last_bit - first_bit + 1) << BM_BLOCK_SHIFT;
+}
+
+static void drbd_mark_unsecured_write_out_of_sync(struct drbd_peer_request *peer_req)
+{
+	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *source;
+	struct drbd_connection *pinned = NULL;
+
+	rcu_read_lock();
+	source = peer_device_by_node_id(device, peer_req->wait_source_node_id);
+	if (source) {
+		pinned = source->connection;
+		kref_get(&pinned->kref);
+		kref_debug_get(&pinned->kref_debug, 21);
+	}
+	rcu_read_unlock();
+
+	if (!source)
+		return;
+
+	if (get_ldev(device)) {
+		sector_t sector;
+		unsigned int size;
+
+		unsecured_write_range(peer_req, &sector, &size);
+		drbd_set_out_of_sync(source, sector, size);
+		rs_rewind_next_bit(source, sector);
+		put_ldev(device);
+	}
+	kref_debug_put(&pinned->kref_debug, 21);
+	kref_put(&pinned->kref, drbd_destroy_connection);
+}
+
+/* A protocol A or B write in a range the sync source can not get: the writer
+ * already completed it and can not take it back, so it can not be refused. The
+ * source's copy would roll it back, so end the resync towards that source
+ * instead, the way check_resync_source() ends one from a weak source; the
+ * write then survives on this node, unacknowledged (protocol A and B send no
+ * write acknowledgment).
+ */
+static void drbd_end_resync_for_unsecured_write(struct drbd_peer_request *peer_req)
+{
+	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *source;
+	struct drbd_connection *pinned = NULL;
+
+	rcu_read_lock();
+	source = peer_device_by_node_id(device, peer_req->wait_source_node_id);
+	if (source) {
+		pinned = source->connection;
+		kref_get(&pinned->kref);
+		kref_debug_get(&pinned->kref_debug, 21);
+	}
+	rcu_read_unlock();
+
+	if (!source)
+		return;
+
+	if (repl_is_sync_target(source->repl_state[NOW])) {
+		drbd_info(source, "Holding a write the sync source can not get, ending the resync\n");
+		change_repl_state(source, L_ESTABLISHED, CS_VERBOSE, "unsecured-write");
+	}
+	kref_debug_put(&pinned->kref_debug, 21);
+	kref_put(&pinned->kref, drbd_destroy_connection);
+}
+
+/* Outcome "unreachable" for a write withheld from acknowledgment: the sync
+ * source can not get this write any more, so this node must not let it stand
+ * as it is. The write's full range is marked out of sync toward the source, so
+ * the running resync overwrites every part of it with the source's content.
+ *
+ * A protocol C write that agreed DRBD_FF_WRITE_POSTPONE is answered
+ * P_RETRY_WRITE: the writer retries it once the cluster can order it again.
+ *
+ * A protocol C write that did not agree the feature can not be told to retry,
+ * and it can not be answered either way: a positive ack would confirm a write
+ * this node can not keep, and a negative ack tells the writer this node's disk
+ * failed -- it did not -- and makes the writer distrust it and refuse to hand
+ * over the primary role. The writer is instead an older primary that has lost
+ * every up-to-date peer and suspended, so it is only waiting for this leg.
+ * Sever that leg with a stated reason: the writer holds the write pending and
+ * retransmits it once a peer holds the data again, the way it holds any write
+ * across a lost connection -- honest, and not mistaken for a network fault or
+ * a failed disk. Leaving the write unacknowledged would reach the same
+ * connection loss through the writer's request timeout, only later and blamed
+ * on the network.
+ *
+ * A protocol A or B write can not be answered (its writer already completed
+ * it); it ends the resync and survives on this node instead.
+ */
+static void drbd_refuse_unsecured_write(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *writer = peer_req->peer_device;
+
+	if (peer_req->flags & EE_SEND_WRITE_ACK) {
+		drbd_mark_unsecured_write_out_of_sync(peer_req);
+		if (writer->connection->agreed_features & DRBD_FF_WRITE_POSTPONE) {
+			peer_req->flags |= EE_POSTPONE;
+			drbd_info_ratelimit(writer,
+					    "Sync source can not get this write, postponing it towards the writer\n");
+		} else {
+			drbd_warn(writer,
+				  "Sync source can not get this write and the writer can not retry it; disconnecting so it holds the write pending\n");
+			peer_req->flags &= ~EE_SEND_WRITE_ACK;
+			dec_unacked(writer);
+			change_cstate_tag(writer->connection, C_NETWORK_FAILURE,
+					  CS_HARD, "unsecured-write", NULL);
+		}
+	} else {
+		drbd_end_resync_for_unsecured_write(peer_req);
+	}
+	peer_req->flags &= ~(EE_WAIT_FOR_SOURCE | EE_SOURCE_UNREACHABLE);
+	peer_req->w.cb = e_end_block_resume;
+	drbd_queue_work(&writer->connection->sender_work, &peer_req->w);
+}
+
+/* Whether the resync this write was withheld for still runs. Serializes
+ * against drbd_refuse_unsecured_writes() through peer_reqs_lock: hold
+ * it across this test and the parking.
+ */
+static bool wait_source_still_syncing(struct drbd_peer_request *peer_req)
+{
+	struct drbd_device *device = peer_req->peer_device->device;
+	struct drbd_peer_device *source;
+	bool syncing = false;
+
+	rcu_read_lock();
+	source = peer_device_by_node_id(device, peer_req->wait_source_node_id);
+	if (source)
+		syncing = repl_is_sync_target(source->repl_state[NOW]);
+	rcu_read_unlock();
+
+	return syncing;
+}
+
+/*
+ * e_end_block() is called in ack_sender context via drbd_finish_peer_reqs().
+ */
+static int e_end_block(struct drbd_work *w, int cancel)
+{
+	struct drbd_peer_request *peer_req =
+		container_of(w, struct drbd_peer_request, w);
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_connection *connection = peer_device->connection;
+	struct drbd_epoch *epoch;
+
+	if (peer_req->flags & EE_IS_BARRIER) {
+		epoch = previous_epoch(connection, peer_req->epoch);
+		if (epoch)
+			drbd_may_finish_epoch(connection, epoch,
+					      EV_BARRIER_DONE + (cancel ? EV_CLEANUP : 0));
+	}
+
+	if (peer_req->flags & EE_WAIT_FOR_SOURCE && !cancel) {
+		unsigned long answer;
+		bool parked = false;
+
+		/* The sync source may have answered before this write
+		 * completed locally (the answer is recorded on the request,
+		 * which is findable on peer_requests): act on it now. Only
+		 * park while the answer is still out and the resync this
+		 * write was withheld for still runs; once that resync is
+		 * gone, no answer settles the exchange any more.
+		 */
+		spin_lock_irq(&connection->peer_reqs_lock);
+		answer = peer_req->flags &
+			(EE_SOURCE_REACHED | EE_SOURCE_UNREACHABLE);
+		if (!answer && wait_source_still_syncing(peer_req)) {
+			peer_req->w.cb = e_end_block_resume;
+			list_add_tail(&peer_req->w.list, &connection->source_wait_ee);
+			parked = true;
+		}
+		spin_unlock_irq(&connection->peer_reqs_lock);
+		if (parked)
+			return 0;
+
+		if (answer & EE_SOURCE_REACHED) {
+			peer_req->flags &= ~(EE_WAIT_FOR_SOURCE | EE_SOURCE_REACHED);
+		} else {
+			drbd_refuse_unsecured_write(peer_req);
+			return 0;
+		}
+	}
+
+	return e_end_block_tail(peer_req, cancel);
 }
 
 static bool seq_greater(u32 a, u32 b)
@@ -3371,12 +3579,192 @@ static void release_dagtag_wait(struct drbd_resource *resource, unsigned int nod
 	}
 }
 
+/* A dagtag wait request of a sync target, parked until this connection's
+ * write stream reaches the position the request names. Waits live on the
+ * connection that feeds the stream: its dagtag advance and its teardown answer
+ * them; the requester's own teardown discards its waits unanswered.
+ */
+struct drbd_dagtag_wait_req {
+	struct list_head list;
+	struct drbd_peer_device *peer_device;
+	sector_t sector;
+	unsigned int size;
+	u64 block_id;
+	u64 dagtag;
+};
+
+static int queue_dagtag_wait_req(struct drbd_peer_device *peer_device, sector_t sector,
+				 unsigned int size, u64 block_id, unsigned int node_id,
+				 u64 dagtag)
+{
+	struct drbd_resource *resource = peer_device->device->resource;
+	struct drbd_connection *connection;
+	struct drbd_dagtag_wait_req *wait;
+	bool queued = false;
+
+	wait = kmalloc_obj(*wait, GFP_NOIO);
+	if (!wait)
+		return -ENOMEM;
+
+	wait->peer_device = peer_device;
+	wait->sector = sector;
+	wait->size = size;
+	wait->block_id = block_id;
+	wait->dagtag = dagtag;
+
+	rcu_read_lock();
+	connection = drbd_connection_by_node_id(resource, node_id);
+	if (connection) {
+		/* answer_dagtag_wait_reqs() empties this list under this lock
+		 * once the stream is gone, and the teardown marks the stream
+		 * before it does. Take the decision again here, so a wait
+		 * either lands before that walk or is never queued at all.
+		 */
+		spin_lock_irq(&connection->peer_reqs_lock);
+		queued = !test_bit(DAGTAG_STREAM_GONE, &connection->flags);
+		if (queued)
+			list_add_tail(&wait->list, &connection->dagtag_wait_reqs);
+		spin_unlock_irq(&connection->peer_reqs_lock);
+	}
+	rcu_read_unlock();
+
+	if (!queued) {
+		/* The stream went away between the reach test and here. */
+		kfree(wait);
+		return drbd_send_ack_be(peer_device, P_RS_DAGTAG_UNREACHABLE,
+					sector, size, block_id);
+	}
+
+	return 0;
+}
+
+/* Answer every dagtag wait request this connection's stream has now reached,
+ * and, when the stream itself is gone, every request that is left.
+ */
+static void answer_dagtag_wait_reqs(struct drbd_connection *connection, u64 dagtag, bool gone)
+{
+	struct drbd_dagtag_wait_req *wait, *t;
+	LIST_HEAD(work_list);
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_for_each_entry_safe(wait, t, &connection->dagtag_wait_reqs, list) {
+		if (gone || wait->dagtag <= dagtag) {
+			/* Pin the requester across the send below; only list
+			 * membership keeps it referenced otherwise.
+			 */
+			kref_get(&wait->peer_device->connection->kref);
+			kref_debug_get(&wait->peer_device->connection->kref_debug, 20);
+			list_move_tail(&wait->list, &work_list);
+		}
+	}
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(wait, t, &work_list, list) {
+		struct drbd_connection *requester = wait->peer_device->connection;
+
+		drbd_send_ack_be(wait->peer_device,
+				 gone ? P_RS_DAGTAG_UNREACHABLE : P_RS_DAGTAG_REACHED,
+				 wait->sector, wait->size, wait->block_id);
+		kfree(wait);
+		kref_debug_put(&requester->kref_debug, 20);
+		kref_put(&requester->kref, drbd_destroy_connection);
+	}
+}
+
+/* The requester of these waits is going away; discard them from every
+ * stream's list before a del-peer could free the peer_device they name.
+ */
+static void drop_dagtag_wait_reqs_of(struct drbd_connection *requester)
+{
+	struct drbd_resource *resource = requester->resource;
+	struct drbd_connection *connection;
+	struct drbd_dagtag_wait_req *wait, *t;
+	LIST_HEAD(work_list);
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_for_each_entry_safe(wait, t, &connection->dagtag_wait_reqs, list) {
+			if (wait->peer_device->connection == requester)
+				list_move_tail(&wait->list, &work_list);
+		}
+		spin_unlock_irq(&connection->peer_reqs_lock);
+	}
+	rcu_read_unlock();
+
+	list_for_each_entry_safe(wait, t, &work_list, list)
+		kfree(wait);
+}
+
+/* This node stopped being the sync source of this peer, so no stream
+ * position it still reaches means anything to the writes that peer withholds.
+ * Answer every wait request of that peer unreachable: a peer still waiting
+ * refuses the writes, a peer that left sync target ignores the answer.
+ */
+void drbd_dagtag_wait_reqs_source_gone(struct drbd_peer_device *requester)
+{
+	struct drbd_resource *resource = requester->device->resource;
+	struct drbd_connection *connection;
+	struct drbd_dagtag_wait_req *wait, *t;
+	LIST_HEAD(work_list);
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_for_each_entry_safe(wait, t, &connection->dagtag_wait_reqs, list) {
+			if (wait->peer_device == requester)
+				list_move_tail(&wait->list, &work_list);
+		}
+		spin_unlock_irq(&connection->peer_reqs_lock);
+	}
+	rcu_read_unlock();
+
+	list_for_each_entry_safe(wait, t, &work_list, list) {
+		drbd_send_ack_be(requester, P_RS_DAGTAG_UNREACHABLE,
+				 wait->sector, wait->size, wait->block_id);
+		kfree(wait);
+	}
+}
+
+/* The exchange toward this sync source can no longer complete: the resync
+ * ended or was aborted, the source detached, or the connection to it is
+ * gone. Resolve every write of this device still withheld from
+ * acknowledgment as "unreachable": mark and refuse. A refusal is always
+ * safe; the cost is a retry. Runs from the after-state-change work when the
+ * replication state leaves sync target.
+ */
+void drbd_refuse_unsecured_writes(struct drbd_peer_device *source)
+{
+	struct drbd_device *device = source->device;
+	struct drbd_resource *resource = device->resource;
+	struct drbd_connection *connection;
+	struct drbd_peer_request *peer_req, *t;
+	LIST_HEAD(work_list);
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_for_each_entry_safe(peer_req, t, &connection->source_wait_ee, w.list) {
+			if (peer_req->peer_device->device == device)
+				list_move_tail(&peer_req->w.list, &work_list);
+		}
+		spin_unlock_irq(&connection->peer_reqs_lock);
+	}
+	rcu_read_unlock();
+
+	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+		list_del_init(&peer_req->w.list);
+		drbd_refuse_unsecured_write(peer_req);
+	}
+}
+
 static void set_connection_dagtag(struct drbd_connection *connection, u64 dagtag)
 {
 	atomic64_set(&connection->last_dagtag_sector, dagtag);
 	set_bit(RECEIVED_DAGTAG, &connection->flags);
 
 	release_dagtag_wait(connection->resource, connection->peer_node_id, dagtag);
+	answer_dagtag_wait_reqs(connection, dagtag, false);
 }
 
 static void submit_peer_request_activity_log(struct drbd_peer_request *peer_req)
@@ -3503,6 +3891,132 @@ void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req)
  *       v
  * got_peer_ack
  */
+
+/* The state handling permits one incoming resync at a time. Return the peer
+ * device that runs it, with a reference on its connection, or NULL.
+ */
+static struct drbd_peer_device *get_sync_source_ref(struct drbd_device *device)
+{
+	struct drbd_resource *resource = device->resource;
+	struct drbd_peer_device *peer_device;
+
+	read_lock_irq(&resource->state_rwlock);
+	for_each_peer_device(peer_device, device) {
+		if (!repl_is_sync_target(peer_device->repl_state[NOW]))
+			continue;
+		kref_get(&peer_device->connection->kref);
+		kref_debug_get(&peer_device->connection->kref_debug, 21);
+		read_unlock_irq(&resource->state_rwlock);
+		return peer_device;
+	}
+	read_unlock_irq(&resource->state_rwlock);
+
+	return NULL;
+}
+
+/* The wait request travels on the sync source's data stream. Sent from the
+ * writer's receiver, a full send buffer toward the source would stall that
+ * receiver; the source connection's sender sends it instead.
+ */
+struct dagtag_wait_send {
+	struct drbd_work w;
+	struct drbd_peer_device *sync_source;
+	sector_t sector;
+	unsigned int size;
+	u64 block_id;
+	unsigned int node_id;
+	u64 dagtag;
+};
+
+static int w_send_dagtag_wait_req(struct drbd_work *w, int cancel)
+{
+	struct dagtag_wait_send *send = container_of(w, struct dagtag_wait_send, w);
+	struct drbd_connection *connection = send->sync_source->connection;
+
+	if (!cancel)
+		drbd_send_rs_request(send->sync_source, P_RS_DAGTAG_WAIT_REQ,
+				     send->sector, send->size, send->block_id,
+				     send->node_id, send->dagtag);
+	kref_debug_put(&connection->kref_debug, 21);
+	kref_put(&connection->kref, drbd_destroy_connection);
+	kfree(send);
+	return 0;
+}
+
+/* A write that lands on a sync target in a range the sync source is about to
+ * overwrite must not be acknowledged before the sync source has it too.
+ * Otherwise the resync reply rolls it back, and the repair resync in the other
+ * direction carries the rolled back block to the source as well: the
+ * acknowledged write is gone everywhere and no bitmap records it.
+ *
+ * Ask the sync source to report when its own copy of the writer's stream
+ * reaches the position this write has in it: P_RS_DAGTAG_REACHED once it does,
+ * P_RS_DAGTAG_UNREACHABLE when it can not get there by itself. This only arms
+ * the write and sends the request. The write is submitted as usual; it is
+ * e_end_block() that withholds the acknowledgment until the answer arrives.
+ */
+static void drbd_withhold_ack_until_source_has_write(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *writer = peer_req->peer_device;
+	struct drbd_device *device = writer->device;
+	struct drbd_peer_device *sync_source;
+	unsigned long first_bit, last_bit;
+	sector_t block_sector;
+	unsigned int block_size;
+
+	if (peer_req->i.size == 0)
+		return;
+
+	sync_source = get_sync_source_ref(device);
+	if (!sync_source)
+		return;
+
+	/* The sync source has its own writes. */
+	if (sync_source == writer)
+		goto out;
+
+	if (!(sync_source->connection->agreed_features & DRBD_FF_WRITE_POSTPONE))
+		goto out;
+
+	if (!get_ldev(device))
+		goto out;
+
+	unsecured_write_range(peer_req, &block_sector, &block_size);
+	first_bit = BM_SECT_TO_BIT(block_sector);
+	last_bit = first_bit + (block_size >> BM_BLOCK_SHIFT) - 1;
+
+	if (drbd_bm_count_bits(device, sync_source->bitmap_index, first_bit, last_bit)) {
+		struct dagtag_wait_send *send;
+
+		peer_req->flags |= EE_WAIT_FOR_SOURCE;
+		peer_req->wait_source_node_id = sync_source->node_id;
+
+		send = kzalloc_obj(*send, GFP_NOIO);
+		if (!send) {
+			/* No request goes out; have e_end_block() refuse the write. */
+			peer_req->flags |= EE_SOURCE_UNREACHABLE;
+			goto out_ldev;
+		}
+		send->w.cb = w_send_dagtag_wait_req;
+		send->sync_source = sync_source;
+		send->sector = block_sector;
+		send->size = block_size;
+		send->block_id = (unsigned long)peer_req;
+		send->node_id = writer->connection->peer_node_id;
+		send->dagtag = peer_req->dagtag_sector;
+		put_ldev(device);
+		/* The connection reference travels with the work item. */
+		drbd_queue_work(&sync_source->connection->sender_work, &send->w);
+		return;
+	}
+
+out_ldev:
+	put_ldev(device);
+out:
+	kref_debug_put(&sync_source->connection->kref_debug, 21);
+	kref_put(&sync_source->connection->kref, drbd_destroy_connection);
+}
+
 static int receive_Data(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct drbd_peer_device *peer_device;
@@ -3679,6 +4193,12 @@ static int receive_Data(struct drbd_connection *connection, struct packet_info *
 	list_add_tail(&peer_req->recv_order, &connection->peer_requests);
 	peer_req->flags |= EE_ON_RECV_ORDER;
 	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	/* The answer is matched against peer_requests, so ask only once this
+	 * request is on that list. Still before the interval goes into the
+	 * tree: from there on the write may be submitted and completed.
+	 */
+	drbd_withhold_ack_until_source_has_write(peer_req);
 
 	/* Note: this now may or may not be "hot" in the activity log.
 	 * Still, it is the best time to record that we need to set the
@@ -3948,23 +4468,29 @@ enum dagtag_reach {
 	DAGTAG_UNREACHABLE,	/* that peer is gone; the position can not be reached */
 };
 
-static enum dagtag_reach dagtag_dependency_reach(struct drbd_peer_request *peer_req)
+static enum dagtag_reach dagtag_reach(struct drbd_resource *resource,
+				      unsigned int node_id, u64 dagtag)
 {
-	struct drbd_peer_device *peer_device = peer_req->peer_device;
-	struct drbd_device *device = peer_device->device;
-	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
 	enum dagtag_reach reach = DAGTAG_UNREACHABLE;
 
 	rcu_read_lock();
-	connection = drbd_connection_by_node_id(resource, peer_req->depend_dagtag_node_id);
+	connection = drbd_connection_by_node_id(resource, node_id);
 	if (connection && connection->cstate[NOW] == C_CONNECTED &&
 	    !test_bit(DAGTAG_STREAM_GONE, &connection->flags))
-		reach = atomic64_read(&connection->last_dagtag_sector) < peer_req->depend_dagtag ?
+		reach = atomic64_read(&connection->last_dagtag_sector) < dagtag ?
 			DAGTAG_WAITING : DAGTAG_REACHED;
 	rcu_read_unlock();
 
 	return reach;
+}
+
+static enum dagtag_reach dagtag_dependency_reach(struct drbd_peer_request *peer_req)
+{
+	struct drbd_device *device = peer_req->peer_device->device;
+
+	return dagtag_reach(device->resource, peer_req->depend_dagtag_node_id,
+			    peer_req->depend_dagtag);
 }
 
 static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
@@ -4084,6 +4610,43 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 
 	atomic_inc(&connection->backing_ee_cnt);
 	drbd_conflict_submit_peer_read(peer_req);
+}
+
+/* A sync target has a write that this node, the sync source, may be about to
+ * overwrite from its own disk. Answer once this node has that write too,
+ * which it does as soon as the stream it belongs to has reached the position
+ * the requester names.
+ */
+static int receive_rs_dagtag_wait_req(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_rs_req *p = pi->data;
+	struct drbd_peer_device *peer_device;
+	sector_t sector = be64_to_cpu(p->req_common.sector);
+	unsigned int size = be32_to_cpu(p->req_common.blksize);
+	unsigned int node_id = be32_to_cpu(p->dagtag_node_id);
+	u64 dagtag = be64_to_cpu(p->dagtag);
+	enum dagtag_reach reach;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+
+	reach = dagtag_reach(connection->resource, node_id, dagtag);
+	if (reach == DAGTAG_WAITING)
+		return queue_dagtag_wait_req(peer_device, sector, size,
+					     p->req_common.block_id, node_id, dagtag);
+
+	if (reach == DAGTAG_UNREACHABLE) {
+		dynamic_drbd_dbg(peer_device,
+				 "Dagtag wait request at %llus+%u: can not reach dagtag %llus of node %u\n",
+				 (unsigned long long)sector, size,
+				 (unsigned long long)dagtag, node_id);
+		return drbd_send_ack_be(peer_device, P_RS_DAGTAG_UNREACHABLE,
+					sector, size, p->req_common.block_id);
+	}
+
+	return drbd_send_ack_be(peer_device, P_RS_DAGTAG_REACHED, sector, size,
+				p->req_common.block_id);
 }
 
 static int receive_digest(struct drbd_peer_request *peer_req, int digest_size)
@@ -10237,6 +10800,7 @@ static struct data_cmd drbd_cmd_handler[] = {
 	[P_OV_DAGTAG_REPLY]   = { 1, sizeof(struct p_rs_req), receive_dagtag_ov_reply },
 	[P_FLUSH_REQUESTS]  = { 0, sizeof(struct p_flush_requests), receive_flush_requests },
 	[P_FLUSH_REQUESTS_ACK] = { 0, sizeof(struct p_flush_ack), receive_flush_requests_ack },
+	[P_RS_DAGTAG_WAIT_REQ] = { 0, sizeof(struct p_rs_req), receive_rs_dagtag_wait_req },
 };
 
 static void drbdd(struct drbd_connection *connection)
@@ -10535,6 +11099,30 @@ static void free_dagtag_wait_requests(struct drbd_connection *connection)
 	}
 }
 
+/* Writes waiting for a sync source to have them as well. The connection to
+ * the writer is going down, so the acknowledgment they wait for has no
+ * receiver any more; end them as the cancelled writes they now are.
+ */
+static void free_source_wait_requests(struct drbd_connection *connection)
+{
+	LIST_HEAD(work_list);
+	struct drbd_peer_request *peer_req, *t;
+
+	spin_lock_irq(&connection->peer_reqs_lock);
+	list_splice_init(&connection->source_wait_ee, &work_list);
+	spin_unlock_irq(&connection->peer_reqs_lock);
+
+	list_for_each_entry_safe(peer_req, t, &work_list, w.list) {
+		/* Even a cancelled write differs from the source's content;
+		 * record that, so a later resync reconciles it.
+		 */
+		drbd_mark_unsecured_write_out_of_sync(peer_req);
+		peer_req->flags &= ~(EE_WAIT_FOR_SOURCE | EE_SOURCE_REACHED |
+				     EE_SOURCE_UNREACHABLE);
+		e_end_block_tail(peer_req, 1);
+	}
+}
+
 static void drain_resync_activity(struct drbd_connection *connection)
 {
 	struct drbd_peer_device *peer_device;
@@ -10559,6 +11147,9 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	 * remove these requests before flushing the other stages.
 	 */
 	free_dagtag_wait_requests(connection);
+
+	/* Writes withheld from acknowledgment have lost their receiver. */
+	free_source_wait_requests(connection);
 
 	/* Wait for w_resync_timer/w_e_send_csum to finish, if running. */
 	drbd_flush_workqueue(&connection->sender_work);
@@ -10598,6 +11189,14 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	/* Requests that are waiting for a dagtag on this connection must be
 	 * cancelled, because the dependency will never be fulfilled. */
 	cancel_dagtag_dependent_requests(connection->resource, connection->peer_node_id);
+
+	/* The same for dagtag wait requests parked on this connection's stream. */
+	answer_dagtag_wait_reqs(connection, 0, true);
+
+	/* And drop the dagtag wait requests this connection's peer asked
+	 * elsewhere: their answers just lost their receiver.
+	 */
+	drop_dagtag_wait_reqs_of(connection);
 
 	rcu_read_lock();
 	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
@@ -11953,6 +12552,119 @@ static int got_NegRSDReply(struct drbd_connection *connection, struct packet_inf
 	return 0;
 }
 
+/* Find the write a dagtag wait answer is for. The answer arrives on the connection
+ * to the sync source, the write itself belongs to the connection to its
+ * writer: either parked on that connection's source_wait_ee (taken off and
+ * returned), or still on its peer_requests because the answer overtook the
+ * local completion -- then the answer is recorded on the request, and
+ * e_end_block() acts on it.
+ */
+static bool dagtag_wait_answer_matches(struct drbd_peer_request *peer_req,
+				       unsigned int source_node_id, sector_t sector,
+				       u64 block_id)
+{
+	sector_t range_sector;
+	unsigned int range_size;
+
+	if ((u64)(unsigned long)peer_req != block_id ||
+	    !(peer_req->flags & EE_WAIT_FOR_SOURCE) ||
+	    peer_req->wait_source_node_id != source_node_id)
+		return false;
+
+	/* The answer echoes the range the request named. A request that
+	 * is gone may have left its address to a new one; do not let a
+	 * late answer settle that one.
+	 */
+	unsecured_write_range(peer_req, &range_sector, &range_size);
+	return range_sector == sector;
+}
+
+static struct drbd_peer_request *dagtag_wait_answer_request(struct drbd_resource *resource,
+							    unsigned int source_node_id,
+							    sector_t sector, u64 block_id,
+							    unsigned long answer_flag)
+{
+	struct drbd_peer_request *peer_req, *found = NULL;
+	struct drbd_connection *connection;
+	bool recorded = false;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		spin_lock_irq(&connection->peer_reqs_lock);
+		list_for_each_entry(peer_req, &connection->source_wait_ee, w.list) {
+			if (!dagtag_wait_answer_matches(peer_req, source_node_id, sector, block_id))
+				continue;
+			list_del(&peer_req->w.list);
+			found = peer_req;
+			break;
+		}
+		if (!found) {
+			list_for_each_entry(peer_req, &connection->peer_requests, recv_order) {
+				if (!dagtag_wait_answer_matches(peer_req, source_node_id,
+								sector, block_id))
+					continue;
+				peer_req->flags |= answer_flag;
+				recorded = true;
+				break;
+			}
+		}
+		spin_unlock_irq(&connection->peer_reqs_lock);
+		if (found || recorded)
+			break;
+	}
+	rcu_read_unlock();
+
+	return found;
+}
+
+static int got_RSDagtagReached(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_block_ack *p = pi->data;
+	struct drbd_peer_device *peer_device;
+	struct drbd_peer_request *peer_req;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
+
+	peer_req = dagtag_wait_answer_request(connection->resource, connection->peer_node_id,
+					      be64_to_cpu(p->sector), p->block_id,
+					      EE_SOURCE_REACHED);
+	if (!peer_req)
+		return 0;
+
+	peer_req->flags &= ~(EE_WAIT_FOR_SOURCE | EE_SOURCE_REACHED);
+	drbd_queue_work(&peer_req->peer_device->connection->sender_work, &peer_req->w);
+
+	return 0;
+}
+
+/* The sync source can not reach the write's position in its writer's stream
+ * by itself: the write can not be secured, refuse it.
+ */
+static int got_RSDagtagUnreachable(struct drbd_connection *connection, struct packet_info *pi)
+{
+	struct p_block_ack *p = pi->data;
+	struct drbd_peer_device *peer_device;
+	struct drbd_peer_request *peer_req;
+
+	peer_device = conn_peer_device(connection, pi->vnr);
+	if (!peer_device)
+		return -EIO;
+	update_peer_seq(peer_device, be32_to_cpu(p->seq_num));
+
+	peer_req = dagtag_wait_answer_request(connection->resource, connection->peer_node_id,
+					      be64_to_cpu(p->sector), p->block_id,
+					      EE_SOURCE_UNREACHABLE);
+	if (!peer_req)
+		return 0;
+
+	drbd_refuse_unsecured_write(peer_req);
+
+	return 0;
+}
+
 static int got_BarrierAck(struct drbd_connection *connection, struct packet_info *pi)
 {
 	struct p_barrier_ack *p = pi->data;
@@ -12215,10 +12927,10 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
 
 /* A block just marked out of sync may sit behind a sync target's resync
  * cursor (resync_next_bit), which make_resync_request() has already advanced
- * past.  This happens for a peer ack reporting that a peer does not hold a
- * write: we mark that peer out of sync, but if the cursor is already beyond
- * the block nothing would ever request it again, and the resync stalls just
- * short of completion.  Rewind the cursor, mirroring receive_out_of_sync().
+ * past.  If nothing requests that block again the resync stalls just short of
+ * completion.  Rewind the cursor, mirroring receive_out_of_sync().  Callers:
+ * a peer ack reporting that a peer does not hold a write, and a write refused
+ * because the sync source can not get it.
  */
 static void rs_rewind_next_bit(struct drbd_peer_device *peer_device, sector_t sector)
 {
@@ -12501,6 +13213,8 @@ static struct meta_sock_cmd ack_receiver_tbl[] = {
 	[P_TWOPC_NO]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_TWOPC_RETRY]	      = { sizeof(struct p_twopc_reply), got_twopc_reply },
 	[P_FLUSH_FORWARD]     = { sizeof(struct p_flush_forward), got_flush_forward },
+	[P_RS_DAGTAG_REACHED]     = { sizeof(struct p_block_ack), got_RSDagtagReached },
+	[P_RS_DAGTAG_UNREACHABLE] = { sizeof(struct p_block_ack), got_RSDagtagUnreachable },
 };
 
 static void fillup_buffer_from(struct drbd_mutable_buffer *to_fill, unsigned int need, struct drbd_const_buffer *pool)

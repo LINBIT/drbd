@@ -4538,6 +4538,20 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 			    repl_state[NEW] == L_ESTABLISHED)
 				resync_finished = true;
 
+			/* Writes withheld from acknowledgment waited for this
+			 * resync; no answer settles them once it is gone.
+			 */
+			if (repl_is_sync_target(repl_state[OLD]) &&
+			    !repl_is_sync_target(repl_state[NEW]))
+				drbd_refuse_unsecured_writes(peer_device);
+
+			/* The dagtag wait requests this peer asked as our sync
+			 * target are void once we stopped being its source.
+			 */
+			if (repl_is_sync_source(repl_state[OLD]) &&
+			    !repl_is_sync_source(repl_state[NEW]))
+				drbd_dagtag_wait_reqs_source_gone(peer_device);
+
 			if (disk_state[OLD] == D_INCONSISTENT && disk_state[NEW] == D_UP_TO_DATE &&
 			    peer_disk_state[OLD] == D_INCONSISTENT && peer_disk_state[NEW] == D_UP_TO_DATE)
 				send_state_others = peer_device;
