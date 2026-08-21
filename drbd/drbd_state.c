@@ -401,6 +401,9 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource, 
 	       resource->susp_uuid, sizeof(resource->susp_uuid));
 	memcpy(state_change->resource->fail_io,
 	       resource->fail_io, sizeof(resource->fail_io));
+	memcpy(state_change->resource->resume_held_for_outdate,
+	       resource->resume_held_for_outdate,
+	       sizeof(resource->resume_held_for_outdate));
 
 	device_state_change = state_change->devices;
 	peer_device_state_change = state_change->peer_devices;
@@ -497,6 +500,7 @@ void copy_old_to_new_state_change(struct drbd_state_change *state_change)
 	OLD_TO_NEW(resource_state_change->susp_nod);
 	OLD_TO_NEW(resource_state_change->susp_uuid);
 	OLD_TO_NEW(resource_state_change->fail_io);
+	OLD_TO_NEW(resource_state_change->resume_held_for_outdate);
 
 	for (n_connection = 0; n_connection < state_change->n_connections; n_connection++) {
 		struct drbd_connection_state_change *connection_state_change =
@@ -635,6 +639,7 @@ static void ___begin_state_change(struct drbd_resource *resource)
 	resource->susp_quorum[NEW] = resource->susp_quorum[NOW];
 	resource->susp_uuid[NEW] = resource->susp_uuid[NOW];
 	resource->fail_io[NEW] = resource->fail_io[NOW];
+	resource->resume_held_for_outdate[NEW] = resource->resume_held_for_outdate[NOW];
 
 	for_each_connection_rcu(connection, resource) {
 		connection->cstate[NEW] = connection->cstate[NOW];
@@ -900,6 +905,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	resource->susp_quorum[NOW] = resource->susp_quorum[NEW];
 	resource->susp_uuid[NOW] = resource->susp_uuid[NEW];
 	resource->fail_io[NOW] = resource->fail_io[NEW];
+	resource->resume_held_for_outdate[NOW] = resource->resume_held_for_outdate[NEW];
 	resource->cached_susp = resource_is_suspended(resource, NEW);
 
 	pro_ver = PRO_VERSION_MAX;
@@ -2498,16 +2504,15 @@ static void sanitize_state(struct drbd_resource *resource)
 		 * resuming I/O: otherwise a diskless Primary's queued writes reach
 		 * only the close peer and silently diverge the far-away one.  Hold
 		 * the resume (keep susp_nod) until the primary-resume 2PC has
-		 * outdated the far-away member(s) and cleared the hold.
+		 * outdated the far-away member(s) and released the hold.
 		 */
 		if (volume_gained_data_access &&
 		    resource->res_opts.on_no_data == OND_SUSPEND_IO &&
 		    (resource->members & ~(directly_connected_nodes(resource, NEW) |
 					   NODE_MASK(resource->res_opts.node_id))))
-			set_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+			resource->resume_held_for_outdate[NEW] = true;
 
-		resource->susp_nod[NEW] =
-			test_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+		resource->susp_nod[NEW] = resource->resume_held_for_outdate[NEW];
 	}
 	if (volume_lost_data_access && resource->res_opts.on_no_data == OND_SUSPEND_IO)
 		resource->susp_nod[NEW] = true;
@@ -4072,6 +4077,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	struct drbd_resource *resource = resource_state_change->resource;
 	enum drbd_role *role = resource_state_change->role;
 	bool *susp_uuid = resource_state_change->susp_uuid;
+	bool *resume_held_for_outdate = resource_state_change->resume_held_for_outdate;
 	struct drbd_peer_device *send_state_others = NULL;
 	int n_device, n_connection;
 	bool still_connected = false;
@@ -4666,7 +4672,7 @@ static int w_after_state_change(struct drbd_work *w, int unused)
 	 * because a far-away member must be outdated first.  Drive that from
 	 * here.
 	 */
-	if (healed_primary && test_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags))
+	if (!resume_held_for_outdate[OLD] && resume_held_for_outdate[NEW])
 		drbd_schedule_resume_twopc(resource);
 
 	if (!still_connected)
@@ -6088,8 +6094,9 @@ void drbd_resume_twopc_work_fn(struct work_struct *work)
 	/* First outdate the far-away member(s) behind this Primary. */
 	twopc_primary_resume(resource, CS_VERBOSE);
 
-	clear_bit(RESUME_HELD_FOR_OUTDATE, &resource->flags);
+	/* Then release the hold, which resumes the held I/O. */
 	begin_state_change(resource, &irq_flags, CS_VERBOSE | CS_FORCE_RECALC);
+	resource->resume_held_for_outdate[NEW] = false;
 	end_state_change(resource, &irq_flags, "primary-resumed");
 
 	kref_debug_put(&resource->kref_debug, 11);
