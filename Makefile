@@ -337,10 +337,13 @@ MODE = report
 endif
 
 .PHONY: coccicheck
+# spatch exits successfully even when a check reports something, so stop at the
+# first run that produces output.
 coccicheck: checks/*.cocci
 	@for file in $^ ; do \
 		echo "  COCCICHECK $$(basename $${file} .cocci)"; \
-		spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}; \
+		out=$$(spatch --very-quiet drbd/drbd_*.c -D $(MODE) --sp-file $${file}) || exit 1; \
+		if test -n "$${out}" ; then printf '%s\n' "$${out}"; exit 1; fi; \
 	done
 
 .PHONY: pychecks
