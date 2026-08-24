@@ -196,10 +196,11 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 		if (node_id == device->ldev->md.node_id)
 			continue;
 
-		if (!(peer_md->flags & MDF_HAVE_BITMAP) && !(peer_md->flags & MDF_NODE_EXISTS))
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md->flags) &&
+		    !test_bit(__MDF_NODE_EXISTS, &peer_md->flags))
 			continue;
 
-		if (!(peer_md->flags & MDF_PEER_FENCING))
+		if (!test_bit(__MDF_PEER_FENCING, &peer_md->flags))
 			continue;
 		peer_device = peer_device_by_node_id(device, node_id);
 		if (peer_device) {
@@ -212,7 +213,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 
 		switch (peer_disk_state) {
 		case D_DISKLESS:
-			if (!(peer_md->flags & MDF_PEER_DEVICE_SEEN))
+			if (!test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags))
 				continue;
 			fallthrough;
 		case D_ATTACHING:
@@ -222,7 +223,7 @@ static bool may_be_up_to_date(struct drbd_device *device, enum which_state which
 		case D_UNKNOWN:
 			if (!want_bitmap)
 				continue;
-			if ((peer_md->flags & MDF_PEER_OUTDATED))
+			if (test_bit(__MDF_PEER_OUTDATED, &peer_md->flags))
 				continue;
 			break;
 		case D_INCONSISTENT:
@@ -1476,7 +1477,9 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 		   Note: a fresh (before connected once), intentional diskless peer
 		   gets ignored as well by this.
 		   A fresh diskful peer counts! (since it has MDF_HAVE_BITMAP) */
-		if (!(peer_md->flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS | MDF_PEER_DEVICE_SEEN)))
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md->flags) &&
+		    !test_bit(__MDF_NODE_EXISTS, &peer_md->flags) &&
+		    !test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags))
 			continue;
 
 		peer_device = peer_device_by_node_id(device, node_id);
@@ -1490,7 +1493,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 				continue;
 			}
 		} else {
-			is_intentional_diskless = !(peer_md->flags & MDF_PEER_DEVICE_SEEN);
+			is_intentional_diskless =
+				!test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags);
 		}
 
 		repl_state = peer_device ? peer_device->repl_state[NEW] : L_OFF;
@@ -1500,7 +1504,8 @@ static void __calc_quorum_with_disk(struct drbd_device *device, struct quorum_de
 			if (is_intentional_diskless)
 				/* device should be diskless but is absent */
 				qd->missing_diskless++;
-			else if (disk_state <= D_OUTDATED || peer_md->flags & MDF_PEER_OUTDATED)
+			else if (disk_state <= D_OUTDATED ||
+				 test_bit(__MDF_PEER_OUTDATED, &peer_md->flags))
 				qd->outdated++;
 			else if (NODE_MASK(node_id) & quorumless_nodes)
 				qd->quorumless++;
@@ -2898,6 +2903,40 @@ static bool should_try_become_up_to_date(struct drbd_device *device, enum drbd_d
 			may_return_to_up_to_date(device, which);
 }
 
+/* Set or clear a bit atomically; return true if it changed. */
+static bool test_and_assign_bit(int nr, unsigned long *addr, bool value)
+{
+	return value ? !test_and_set_bit(nr, addr) : test_and_clear_bit(nr, addr);
+}
+
+/* Bring the peer's meta-data flags in line with the new state. */
+static void update_peer_md_flags(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	unsigned long *mdf = &device->ldev->md.peers[peer_device->node_id].flags;
+	enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
+	bool changed;
+
+	changed = test_and_assign_bit(__MDF_PEER_CONNECTED, mdf,
+			peer_device->repl_state[NEW] > L_OFF);
+	changed |= test_and_assign_bit(__MDF_PEER_OUTDATED, mdf,
+			pdsk >= D_INCONSISTENT && pdsk <= D_OUTDATED);
+	changed |= test_and_assign_bit(__MDF_PEER_FENCING, mdf,
+			peer_device->connection->fencing_policy != FP_DONT_CARE);
+
+	/* Do NOT clear MDF_PEER_DEVICE_SEEN whenever the peer disk is gone. We
+	 * want to be able to refuse a resize beyond "last agreed" size, even if
+	 * the peer is currently detached.
+	 */
+	if (pdsk >= D_INCONSISTENT && pdsk != D_UNKNOWN)
+		changed |= !test_and_set_bit(__MDF_PEER_DEVICE_SEEN, mdf);
+	else if (pdsk == D_DISKLESS && !want_bitmap(peer_device))
+		changed |= test_and_clear_bit(__MDF_PEER_DEVICE_SEEN, mdf);
+
+	if (changed)
+		drbd_md_mark_dirty(device);
+}
+
 /**
  * finish_state_change  -  carry out actions triggered by a state change
  * @resource: DBRD resource.
@@ -3149,31 +3188,8 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			}
 
 			if (disk_state[NEW] != D_NEGOTIATING && get_ldev(device)) {
-				if (peer_device->bitmap_index != -1) {
-					enum drbd_disk_state pdsk = peer_device->disk_state[NEW];
-					u32 mdf = device->ldev->md.peers[peer_device->node_id].flags;
-					/* Do NOT clear MDF_PEER_DEVICE_SEEN here.
-					 * We want to be able to refuse a resize beyond "last agreed" size,
-					 * even if the peer is currently detached.
-					 */
-					mdf &= ~(MDF_PEER_CONNECTED | MDF_PEER_OUTDATED | MDF_PEER_FENCING);
-					if (repl_state[NEW] > L_OFF)
-						mdf |= MDF_PEER_CONNECTED;
-					if (pdsk >= D_INCONSISTENT) {
-						if (pdsk <= D_OUTDATED)
-							mdf |= MDF_PEER_OUTDATED;
-						if (pdsk != D_UNKNOWN)
-							mdf |= MDF_PEER_DEVICE_SEEN;
-					}
-					if (pdsk == D_DISKLESS && !want_bitmap(peer_device))
-						mdf &= ~MDF_PEER_DEVICE_SEEN;
-					if (peer_device->connection->fencing_policy != FP_DONT_CARE)
-						mdf |= MDF_PEER_FENCING;
-					if (mdf != device->ldev->md.peers[peer_device->node_id].flags) {
-						device->ldev->md.peers[peer_device->node_id].flags = mdf;
-						drbd_md_mark_dirty(device);
-					}
-				}
+				if (peer_device->bitmap_index != -1)
+					update_peer_md_flags(peer_device);
 
 				/* Peer was forced D_UP_TO_DATE & R_PRIMARY, consider to resync */
 				if (disk_state[OLD] == D_INCONSISTENT &&
@@ -5994,7 +6010,7 @@ static void restore_outdated_in_pdsk(struct drbd_device *device)
 		int node_id = peer_device->connection->peer_node_id;
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
-		if ((peer_md->flags & MDF_PEER_OUTDATED) &&
+		if (test_bit(__MDF_PEER_OUTDATED, &peer_md->flags) &&
 		    peer_device->disk_state[NEW] == D_UNKNOWN)
 			__change_peer_disk_state(peer_device, D_OUTDATED);
 	}
@@ -6666,7 +6682,8 @@ static void check_wrongly_set_mdf_exists(struct drbd_device *device)
 		struct drbd_peer_device *peer_device = peer_device_by_node_id(device, node_id);
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
-		if (!(peer_md->flags & MDF_NODE_EXISTS || peer_device || node_id == my_node_id)) {
+		if (!test_bit(__MDF_NODE_EXISTS, &peer_md->flags) &&
+		    !peer_device && node_id != my_node_id) {
 			wrong = false;
 			break;
 		}
@@ -6678,7 +6695,7 @@ static void check_wrongly_set_mdf_exists(struct drbd_device *device)
 			struct drbd_peer_md *peer_md = &device->ldev->md.peers[node_id];
 
 			if (!peer_device)
-				peer_md->flags &= ~MDF_NODE_EXISTS;
+				clear_bit(__MDF_NODE_EXISTS, &peer_md->flags);
 		}
 		if (!test_bit(WRONG_MDF_EXISTS, &resource->flags)) {
 			set_bit(WRONG_MDF_EXISTS, &resource->flags);

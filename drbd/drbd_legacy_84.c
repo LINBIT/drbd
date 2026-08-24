@@ -91,6 +91,7 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 	struct drbd_peer_md *peer_md;
 	const int peer_node_id = 0; /* setup_node_ids_84() moves it later */
 	u32 on_disk_flags;
+	unsigned long flags;
 	int i;
 
 	md->effective_size = be64_to_cpu(on_disk->la_size_sect);
@@ -120,12 +121,14 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 		peer_md->flags = 0;
 		peer_md->bitmap_index = -1;
 	}
+
 	peer_md = &md->peers[peer_node_id];
 	peer_md->bitmap_index = 0;
-	peer_md->flags = on_disk_flags & MDF_84_PEER_MASK;
-	peer_md->flags |= MDF_HAVE_BITMAP;
-	peer_md->flags |= on_disk_flags & MDF_84_PEER_OUTDATED ? MDF_PEER_OUTDATED : 0;
-	peer_md->flags |= on_disk_flags & MDF_84_CONNECTED_IND ? MDF_PEER_CONNECTED : 0;
+
+	flags = (on_disk_flags & MDF_84_PEER_MASK) | MDF_HAVE_BITMAP;
+	flags |= on_disk_flags & MDF_84_PEER_OUTDATED ? MDF_PEER_OUTDATED : 0;
+	flags |= on_disk_flags & MDF_84_CONNECTED_IND ? MDF_PEER_CONNECTED : 0;
+	peer_md->flags = flags;
 	/* An 8.4 bitmap fully records the divergence; set the UUID (and its
 	 * divergence flag) after the other flags so it is not overwritten.
 	 */
@@ -144,8 +147,8 @@ void drbd_md_encode_84(struct drbd_device *device, struct meta_data_on_disk_84 *
 	u32 flags = (md->flags & MDF_84_MASK) | (peer_md->flags & MDF_84_PEER_MASK);
 	int i;
 
-	flags |= peer_md->flags & MDF_PEER_OUTDATED ? MDF_84_PEER_OUTDATED : 0;
-	flags |= peer_md->flags & MDF_PEER_CONNECTED ? MDF_84_CONNECTED_IND : 0;
+	flags |= test_bit(__MDF_PEER_OUTDATED, &peer_md->flags) ? MDF_84_PEER_OUTDATED : 0;
+	flags |= test_bit(__MDF_PEER_CONNECTED, &peer_md->flags) ? MDF_84_CONNECTED_IND : 0;
 	buffer->la_size_sect = cpu_to_be64(md->effective_size);
 	buffer->device_uuid = cpu_to_be64(md->device_uuid);
 	buffer->uuid[UI_CURRENT] = cpu_to_be64(md->current_uuid);

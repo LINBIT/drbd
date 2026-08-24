@@ -1493,7 +1493,8 @@ static int _drbd_send_uuids110(struct drbd_peer_device *peer_device, u64 uuid_fl
 		drbd_unallocated_index(device->ldev, device->bitmap->bm_max_peers) == -1;
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		u64 val = __bitmap_uuid(device, i);
-		bool send_this = peer_md[i].flags & (MDF_HAVE_BITMAP | MDF_NODE_EXISTS);
+		bool send_this = test_bit(__MDF_HAVE_BITMAP, &peer_md[i].flags) ||
+			test_bit(__MDF_NODE_EXISTS, &peer_md[i].flags);
 		if (!send_this && !sent_one_unallocated &&
 		    i != my_node_id && i != peer_device->node_id && val) {
 			send_this = true;
@@ -2110,7 +2111,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 	int err;
 
 	if (get_ldev(device)) {
-		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
+		if (drbd_md_test_peer_flag(peer_device, __MDF_PEER_FULL_SYNC)) {
 			drbd_info(device, "Writing the whole bitmap, MDF_FullSync was set.\n");
 			drbd_bm_set_many_bits(peer_device, 0, -1UL);
 			if (drbd_bm_write(device, NULL)) {
@@ -2119,7 +2120,7 @@ static int _drbd_send_bitmap(struct drbd_device *device,
 				 * side that a full resync is required! */
 				drbd_err(device, "Failed to write bitmap to disk!\n");
 			} else {
-				drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+				drbd_md_clear_peer_flag(peer_device, __MDF_PEER_FULL_SYNC);
 				drbd_md_sync(device);
 			}
 		}
@@ -4818,9 +4819,9 @@ void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u6
 	 * throughout -- see drbd_run_resync().
 	 */
 	if (bitmap_uuid && !previous)
-		peer_md->flags |= MDF_PEER_DIVERGENCE_BITMAP;
+		set_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 	else if (!bitmap_uuid)
-		peer_md->flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
+		clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 }
 
 static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
@@ -4946,7 +4947,7 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		/* Create a new current UUID for a peer that is diskless but usually has a backing disk.
 		 * Do not create a new current UUID for a CONNECTED intentional diskless peer.
 		 * Create one for an intentional diskless peer that is currently away. */
-		if (pdsk == D_DISKLESS && !(peer_md[node_id].flags & MDF_HAVE_BITMAP))
+		if (pdsk == D_DISKLESS && !test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags))
 			continue;
 
 		if ((pdsk <= D_UNKNOWN && pdsk != D_NEGOTIATING) ||
@@ -5605,7 +5606,7 @@ static u64 __set_bitmap_slots(struct drbd_device *device, u64 bitmap_uuid, u64 d
 			continue;
 		if (!(do_nodes & NODE_MASK(node_id)))
 			continue;
-		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP))
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags))
 			continue;
 		if (peer_md[node_id].bitmap_uuid != bitmap_uuid) {
 			u64 previous_bitmap_uuid = peer_md[node_id].bitmap_uuid;
@@ -5701,7 +5702,8 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device)
 	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
 	peer_device->rs_start_uuid = drbd_current_uuid(device);
 	rotate_current_into_bitmap(device, 0, device->resource->dagtag_sector);
-	device->ldev->md.peers[peer_device->node_id].flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
+	clear_bit(__MDF_PEER_DIVERGENCE_BITMAP,
+		  &device->ldev->md.peers[peer_device->node_id].flags);
 	drbd_md_mark_dirty(device);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
@@ -5728,7 +5730,7 @@ void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device)
 	    (drbd_current_uuid(device) & ~UUID_PRIMARY))
 		drbd_set_peer_bitmap_uuid(peer_md, drbd_current_uuid(device),
 					  device->resource->dagtag_sector);
-	peer_md->flags &= ~MDF_PEER_DIVERGENCE_BITMAP;
+	clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 	drbd_md_mark_dirty(device);
 	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
 }
@@ -5871,7 +5873,7 @@ static int find_node_id_by_bitmap_uuid(struct drbd_device *device, u64 bm_uuid)
 			any = node_id;
 		if (!is_divergence_bitmap(&peer_md[node_id]))
 			continue;
-		if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
+		if (test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags))
 			return node_id;
 		if (divergence == -1)
 			divergence = node_id;
@@ -5943,7 +5945,7 @@ found:
 		return false;
 	}
 
-	if (!(peer_md[from_id].flags & MDF_HAVE_BITMAP))
+	if (!test_bit(__MDF_HAVE_BITMAP, &peer_md[from_id].flags))
 		return false;
 
 	/* Only copy from a divergence bitmap, never from a convergence bitmap
@@ -6028,7 +6030,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 		if (node_id == device->ldev->md.node_id)
 			continue;
 
-		if (!(peer_md[node_id].flags & MDF_HAVE_BITMAP) && !(peer_md[node_id].flags & MDF_NODE_EXISTS))
+		if (!test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags) &&
+		    !test_bit(__MDF_NODE_EXISTS, &peer_md[node_id].flags))
 			continue;
 
 		pd2 = peer_device_by_node_id(device, node_id);
@@ -6044,7 +6047,7 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 				_drbd_uuid_push_history(device, previous_bitmap_uuid);
 				if (node_id == peer_device->node_id)
 					drbd_print_uuids(peer_device, "updated UUIDs");
-				else if (peer_md[node_id].flags & MDF_HAVE_BITMAP)
+				else if (test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags))
 					forget_bitmap(device, node_id);
 				else
 					drbd_info(device, "Clearing bitmap UUID for node %d\n",
@@ -6058,8 +6061,8 @@ void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device)
 			    is_divergence_bitmap(&peer_md[from_node_id]) &&
 			    dagtag_newer(peer_md[from_node_id].bitmap_dagtag,
 					 peer_md[node_id].bitmap_dagtag)) {
-				if (peer_md[node_id].flags & MDF_HAVE_BITMAP &&
-				    peer_md[from_node_id].flags & MDF_HAVE_BITMAP)
+				if (test_bit(__MDF_HAVE_BITMAP, &peer_md[node_id].flags) &&
+				    test_bit(__MDF_HAVE_BITMAP, &peer_md[from_node_id].flags))
 					copy_bitmap(device, from_node_id, node_id);
 				else
 					drbd_info(device, "Node %d synced up to node %d.\n",
@@ -6103,14 +6106,14 @@ int drbd_bmio_set_n_write(struct drbd_device *device,
 {
 	int rv = -EIO;
 
-	drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+	drbd_md_set_peer_flag(peer_device, __MDF_PEER_FULL_SYNC);
 	drbd_md_sync(device);
 	drbd_bm_set_many_bits(peer_device, 0, -1UL);
 
 	rv = drbd_bm_write(device, NULL);
 
 	if (!rv) {
-		drbd_md_clear_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+		drbd_md_clear_peer_flag(peer_device, __MDF_PEER_FULL_SYNC);
 		drbd_md_sync(device);
 	}
 
@@ -6331,27 +6334,23 @@ int drbd_bitmap_io(struct drbd_device *device,
 }
 
 void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
-			   enum mdf_peer_flag flag)
+			   enum mdf_peer_flag_bit flag_bit)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
 
-	if (!(md->peers[peer_device->node_id].flags & flag)) {
+	if (!test_and_set_bit(flag_bit, &md->peers[peer_device->node_id].flags))
 		drbd_md_mark_dirty(device);
-		md->peers[peer_device->node_id].flags |= flag;
-	}
 }
 
 void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
-			     enum mdf_peer_flag flag)
+			     enum mdf_peer_flag_bit flag_bit)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_md *md = &device->ldev->md;
 
-	if (md->peers[peer_device->node_id].flags & flag) {
+	if (test_and_clear_bit(flag_bit, &md->peers[peer_device->node_id].flags))
 		drbd_md_mark_dirty(device);
-		md->peers[peer_device->node_id].flags &= ~flag;
-	}
 }
 
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
@@ -6359,14 +6358,14 @@ int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag)
 	return (bdev->md.flags & flag) != 0;
 }
 
-bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_flag flag)
+bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device, enum mdf_peer_flag_bit flag_bit)
 {
 	struct drbd_md *md = &peer_device->device->ldev->md;
 
 	if (peer_device->bitmap_index == -1)
 		return false;
 
-	return md->peers[peer_device->node_id].flags & flag;
+	return test_bit(flag_bit, &md->peers[peer_device->node_id].flags);
 }
 
 static void md_sync_timer_fn(struct timer_list *t)

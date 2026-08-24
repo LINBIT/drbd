@@ -3221,7 +3221,7 @@ static void go_diskless(struct drbd_device *device)
 
 				rcu_read_lock();
 				for_each_peer_device_rcu(peer_device, device)
-					drbd_md_set_peer_flag(peer_device, MDF_PEER_FULL_SYNC);
+					drbd_md_set_peer_flag(peer_device, __MDF_PEER_FULL_SYNC);
 				rcu_read_unlock();
 			}
 		}
