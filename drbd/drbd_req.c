@@ -337,7 +337,6 @@ void drbd_req_destroy(struct kref *kref)
 	}
 
 	if (s & RQ_WRITE && req->i.size) {
-		struct drbd_resource *resource = device->resource;
 		struct drbd_request *peer_ack_req;
 
 		spin_lock(&resource->peer_ack_lock); /* local irq already disabled */
@@ -670,8 +669,6 @@ void drbd_req_complete(struct drbd_request *req, struct bio_and_error *m)
 static void drbd_req_put_completion_ref(struct drbd_request *req, struct bio_and_error *m, int put)
 {
 	D_ASSERT(req->device, m || (req->local_rq_state & RQ_POSTPONED));
-
-	lockdep_assert_held(&req->device->resource->state_rwlock);
 
 	if (!put)
 		return;
