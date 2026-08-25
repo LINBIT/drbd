@@ -8671,8 +8671,17 @@ struct genl_family drbd_nl_family __ro_after_init = {
 	.name		= "drbd",
 	.version	= DRBD_FAMILY_VERSION,
 	.hdrsize	= NLA_ALIGN(sizeof(struct drbd_genlmsghdr)),
-	.split_ops	= drbd_nl_ops,
-	.n_split_ops	= ARRAY_SIZE(drbd_nl_ops),
+	.ops		= drbd_nl_ops,
+	.n_ops		= ARRAY_SIZE(drbd_nl_ops),
+	/*
+	 * All our commands predate strict genetlink validation: the dump
+	 * commands take a DRBD_NLA_CFG_CONTEXT filter which they parse
+	 * themselves, so they carry no policy. Without this the kernel would
+	 * substitute a reject-all policy for them and fail every filtered dump.
+	 */
+	.resv_start_op	= DRBD_ADM_GET_PATHS + 1,
+	.pre_doit	= drbd_pre_doit,
+	.post_doit	= drbd_post_doit,
 	.mcgrps		= drbd_nl_mcgrps,
 	.n_mcgrps	= ARRAY_SIZE(drbd_nl_mcgrps),
 	.parallel_ops	= true,
