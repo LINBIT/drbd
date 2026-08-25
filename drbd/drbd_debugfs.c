@@ -473,7 +473,9 @@ static void seq_print_resource_transfer_log_summary(struct seq_file *m,
 			cond_resched();
 			rcu_read_lock();
 			next_hdr = rcu_dereference(list_next_rcu(&req->tl_requests));
+			read_lock_irq(&resource->state_rwlock);
 			drbd_put_ref_tl_walk(req, 0, 1);
+			read_unlock_irq(&resource->state_rwlock);
 			if (!refcount_read(&req->done_ref)) {
 				if (next_hdr == &resource->transfer_log)
 					break;
