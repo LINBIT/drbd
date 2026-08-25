@@ -200,6 +200,9 @@ int main(int argc, char **argv)
 	patch(1, "genl_pre_doit_split_ops", true, false,
 	      COMPAT_HAVE_GENL_PRE_DOIT_SPLIT_OPS, "present");
 
+	patch(1, "genl_resv_start_op", true, false,
+	      COMPAT_HAVE_GENL_RESV_START_OP, "present");
+
 	/*
 	 * >= 6.10:  BLK_FEAT_STABLE_WRITES
 	 * 5.9-6.10: QUEUE_FLAG_STABLE_WRITES
