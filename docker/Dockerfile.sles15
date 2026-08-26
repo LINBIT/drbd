@@ -1,5 +1,9 @@
 ARG BASE=docker.io/opensuse/leap:15 # !lbbuild
 # =lbbuild ARG BASE=registry.suse.com/suse/sle15
+# =lbbuild ARG SECRETS_IMAGE
+
+# =lbbuild FROM $SECRETS_IMAGE AS secrets
+
 FROM $BASE
 
 LABEL org.opencontainers.image.authors="Moritz Wanzenböck <moritz.wanzenboeck@linbit.com>"
@@ -14,11 +18,9 @@ LABEL name="DRBD Kernel module load container" \
       summary="DRBD's kernel component" \
       description="DRBD's kernel component"
 
-# =lbbuild ARG TARGETARCH
 RUN \
     --mount=type=cache,target=/var/cache/zypp,sharing=private \
-# =lbbuild --mount=type=tmpfs,target=/run/secrets/credentials.d \
-# =lbbuild curl -fsSL "https://nexus.at.linbit.com/repository/lbbuild/suse-secrets/15/SCCcredentials.$TARGETARCH" -o /run/secrets/credentials.d/SCCcredentials && \
+# =lbbuild --mount=type=bind,from=secrets,source=/run/secrets,target=/run/secrets \
     zypper install -y \
       awk \
       cpio \
