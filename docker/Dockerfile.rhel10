@@ -1,9 +1,12 @@
 ARG EXTRAPKGS=almalinux:10
+# =lbbuild ARG SECRETS_IMAGE
 FROM $EXTRAPKGS as extrapkgs
 # by checking for /pkgs we can cache that step
 # and prepare images that already contain the packages.
 RUN mkdir /pkgs
 RUN dnf install -y 'dnf-command(download)' && cd /pkgs && dnf download elfutils-libelf-devel && rm -f *.i686.rpm # !lbbuild
+
+# =lbbuild FROM $SECRETS_IMAGE AS secrets
 
 FROM registry.access.redhat.com/ubi10/ubi
 MAINTAINER Roland Kammerer <roland.kammerer@linbit.com>
@@ -38,7 +41,8 @@ RUN dnf -y update-minimal --security --sec-severity=Important --sec-severity=Cri
 COPY --from=extrapkgs /pkgs /pkgs
 RUN dnf install -y /pkgs/*.rpm # !lbbuild
 # or
-# =lbbuild RUN curl -fsSL https://nexus.at.linbit.com/repository/lbbuild/from_rhel_repos.sh | bash -s -- elfutils-libelf-devel
+# =lbbuild RUN --mount=type=bind,from=secrets,source=/run/secrets,target=/run/secrets \
+# =lbbuild dnf install -y elfutils-libelf-devel && dnf clean all -y
 
 RUN rm -rf /pkgs
 
