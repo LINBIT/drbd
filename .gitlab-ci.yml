@@ -64,12 +64,9 @@ stages:
         make FORCE=1 PRESERVE_DEBIAN=1 REL_VERSION="$rel_version" tarball
         upload_tarball
 
-        local compat_rc=0  
+        local compat_rc=0
         echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog compat.log \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" --compat-only \
-            -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
-            -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
-            -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
             -d {1} -k {2} \
             || compat_rc=$?
 
@@ -83,7 +80,7 @@ stages:
         local compat_hs
         while read line; do
           kver=${line#* } # everything after " " -> the kernel version
-          curl -fsSLO "$LINBIT_REGISTRY_URL/repository/drbd-compat/$rel_version/compat.h.$kver"
+          curl -fsSLO "$LINBIT_PULP_BASE_URL/pulp/content/file/drbd-compat/$rel_version/compat.h.$kver"
           compat_hs+=("compat.h.$kver")
         done <<< "$kernels"
         ./build_cocci_cache.sh ${compat_hs[@]}
@@ -96,9 +93,6 @@ stages:
         local build_rc=0
         echo "$kernels" | parallel --colsep ' ' -k -j24 --joblog parallel.log \
           lbbuildctl build drbd --arch amd64 --ci -v "$rel_version" \
-            -e LINBIT_REGISTRY_USER=$LINBIT_REGISTRY_USER \
-            -e LINBIT_REGISTRY_PASSWORD=$LINBIT_REGISTRY_PASSWORD \
-            -e LINBIT_REGISTRY_URL=$LINBIT_REGISTRY_URL \
             -d {1} -k {2} \
             || build_rc=$?
 
@@ -190,8 +184,10 @@ build:for-tests:
       # Then the purpose of this job is just to generate build.env.
       build_packages=true
       if [ "$DRBD_BUILD_CONDITIONAL" = true ]; then
-        published=$(curl -fsSL "$LINBIT_REGISTRY_URL/service/rest/v1/search?repository=ci-yum&version=$DRBD_VERSION*" | \
-            jq -r '[.items[].version] | unique
+        published=$(pulp rpm content list --name-in kmod-drbd --name-in drbd-kmp-default \
+              --field version,release --limit 10000 | \
+            jq -r --arg v "$DRBD_VERSION" \
+                  '[.[] | select(.version | startswith($v + "_")) | .version + "-" + .release] | unique
                    | sort_by([splits("[^0-9]+") | select(. != "") | tonumber])
                    | last // empty' || true)
         if [ -n "$published" ]; then
