@@ -32,6 +32,14 @@ drbd-headers/uapi/linux/drbd.h
 drbd-headers/linux/drbd_genl_ynl.yaml
 drbd-headers/linux/drbd_nl_gen.c
 drbd-headers/linux/drbd_nl_gen.h
+drbd-headers/linux/drbd_nl_types.h
+drbd-headers/linux/drbd2.yaml
+drbd-headers/linux/drbd2_nl_gen.c
+drbd-headers/linux/drbd2_nl_gen.h
+drbd-headers/uapi/linux/drbd2.h
+drbd-headers/linux/generate-drbd2.sh
+drbd-headers/linux/check-drbd2-spec.sh
+drbd-headers/linux/YNL-VERSION
 drbd-headers/uapi/linux/drbd_limits.h
 drbd-headers/uapi/linux/drbd_genl.h
 drbd-headers/linux/genetlink-legacy.yaml

@@ -62,6 +62,10 @@ sources += drbd-headers/uapi/linux/drbd_genl.h
 sources += drbd-headers/uapi/linux/drbd_limits.h
 sources += drbd-headers/linux/drbd_nl_gen.c
 sources-ignored += drbd-headers/linux/drbd_nl_gen.h
+sources-ignored += drbd-headers/linux/drbd_nl_types.h
+sources-ignored += drbd-headers/linux/drbd2_nl_gen.c
+sources-ignored += drbd-headers/linux/drbd2_nl_gen.h
+sources-ignored += drbd-headers/uapi/linux/drbd2.h
 
 # generated for drbd-utils' userspace netlink, never compiled into the module
 sources-ignored += drbd-headers/linux/drbd_genl_userspace.c
