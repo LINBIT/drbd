@@ -1968,30 +1968,7 @@ struct drbd_bm_aio_ctx {
 	struct kref kref;
 };
 
-struct drbd_config_context {
-	/* assigned from drbd_genlmsghdr */
-	unsigned int minor;
-	/* assigned from request attributes, if present */
-	unsigned int volume;
-#define VOLUME_UNSPECIFIED		(-1U)
-	unsigned int peer_node_id;
-#define PEER_NODE_ID_UNSPECIFIED	(-1U)
-	/* pointer into the request skb,
-	 * limited lifetime! */
-	char *resource_name;
-
-	/* network namespace of the sending socket */
-	struct net *net;
-	/* reply buffer */
-	struct sk_buff *reply_skb;
-	/* pointer into reply buffer */
-	struct drbd_genlmsghdr *reply_dh;
-	/* resolved from attributes, if possible */
-	struct drbd_device *device;
-	struct drbd_resource *resource;
-	struct drbd_connection *connection;
-	struct drbd_peer_device *peer_device;
-};
+#include "drbd_nl.h"
 
 static inline struct drbd_device *minor_to_device(unsigned int minor)
 {
@@ -2453,7 +2430,7 @@ extern struct bio_set drbd_io_bio_set;
 
 struct drbd_peer_device *create_peer_device(struct drbd_device *device,
 					    struct drbd_connection *connection);
-enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx,
+enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx,
 				      unsigned int minor,
 				      struct device_conf *device_conf,
 				      struct drbd_device **p_device);
@@ -2533,7 +2510,7 @@ void drbd_reconsider_queue_parameters(struct drbd_device *device,
 bool barrier_pending(struct drbd_resource *resource);
 enum drbd_state_rv
 drbd_set_role(struct drbd_resource *resource, enum drbd_role role, bool force,
-	      const char *tag, struct sk_buff *reply_skb);
+	      const char *tag, struct drbd_adm_ctx *ctx);
 void conn_try_outdate_peer_async(struct drbd_connection *connection);
 int drbd_maybe_khelper(struct drbd_device *device,
 		       struct drbd_connection *connection, char *cmd);

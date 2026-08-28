@@ -4177,7 +4177,7 @@ static int init_submitter(struct drbd_device *device)
 	return 0;
 }
 
-enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsigned int minor,
+enum drbd_ret_code drbd_create_device(struct drbd_adm_ctx *adm_ctx, unsigned int minor,
 				      struct device_conf *device_conf, struct drbd_device **p_device)
 {
 	struct drbd_resource *resource = adm_ctx->resource;

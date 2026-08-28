@@ -19,6 +19,7 @@ sources-ignored += drbd_debugfs.h
 sources-ignored += drbd_int.h
 sources-ignored += drbd_interval.h
 sources-ignored += drbd_kref_debug.h
+sources-ignored += drbd_nl.h
 sources-ignored += drbd_polymorph_printk.h
 sources-ignored += drbd_req.h
 sources-ignored += drbd_state.h
