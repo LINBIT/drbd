@@ -161,6 +161,21 @@ check:checkpatch.pl:
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
     - CHECKPATCH=./checkpatch.pl misc/checkpatch.sh commits "$base"
 
+check:nl-core-boundary:
+  stage: check
+  extends: [ .rules-build ]
+  image: docker.io/library/alpine:3
+  script:
+    - |
+      set -e
+      re='#include <net/(genetlink|netlink)\.h>|\bnla_(put|nest|get)|\bgenlmsg_|struct genl_info|genl_info_userhdr|_to_skb\(|_from_attrs\(|drbd_nl_family|DRBD_NLA_'
+      # Make sure grep understands the pattern (BusyBox/musl may not know \b),
+      # so that a broken regex fails the job instead of passing vacuously.
+      printf 'genlmsg_put(\n' | grep -qE "$re" || { echo "self-test failed: grep does not understand the pattern"; exit 1; }
+      if grep -nE "$re" drbd/drbd_nl.c; then
+        echo "drbd_nl.c is the wire-format-neutral netlink core; genetlink code belongs in a dialect adapter (drbd_nl_legacy.c)"; exit 1
+      fi
+
 build:for-tests:
   stage: build
   extends: [ .setup-lbbuild ]
