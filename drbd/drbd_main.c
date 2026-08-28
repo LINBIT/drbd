@@ -3568,7 +3568,7 @@ static void drbd_cleanup(void)
 	if (retry.wq)
 		destroy_workqueue(retry.wq);
 
-	genl_unregister_family(&drbd_nl_family);
+	drbd_nl_legacy_exit();
 	drbd_debugfs_cleanup();
 
 	unregister_pernet_device(&drbd_pernet_ops);
@@ -4588,7 +4588,7 @@ static int __init drbd_init(void)
 		goto fail;
 	}
 
-	err = genl_register_family(&drbd_nl_family);
+	err = drbd_nl_legacy_init();
 	if (err) {
 		pr_err("unable to register generic netlink family\n");
 		goto fail;

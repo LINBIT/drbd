@@ -31,9 +31,6 @@
 #include <linux/drbd_nl_gen.h>
 #include <linux/drbd_config.h>
 
-extern struct genl_family drbd_nl_family;
-int drbd_genl_multicast_events(struct sk_buff *skb);
-
 #include "drbd_strings.h"
 #include "drbd_state.h"
 #include "drbd_state_change.h"

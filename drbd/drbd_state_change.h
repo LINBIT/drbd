@@ -72,16 +72,27 @@ struct drbd_state_change *remember_state_change(struct drbd_resource *resource,
 void copy_old_to_new_state_change(struct drbd_state_change *state_change);
 void forget_state_change(struct drbd_state_change *state_change);
 
+struct drbd_nl_dialect;
+
+/*
+ * Turn a remembered state change into the matching notification. With a
+ * dialect given this is the initial state replay into that dialect's
+ * dump skb; without one the event is announced to all dialects.
+ */
 int notify_resource_state_change(struct sk_buff *skb, unsigned int seq,
+				 const struct drbd_nl_dialect *dialect,
 				 void *state_change,
 				 enum drbd_notification_type type);
 int notify_connection_state_change(struct sk_buff *skb, unsigned int seq,
+				   const struct drbd_nl_dialect *dialect,
 				   void *state_change,
 				   enum drbd_notification_type type);
 int notify_device_state_change(struct sk_buff *skb, unsigned int seq,
+			       const struct drbd_nl_dialect *dialect,
 			       void *state_change,
 			       enum drbd_notification_type type);
 int notify_peer_device_state_change(struct sk_buff *skb, unsigned int seq,
+				    const struct drbd_nl_dialect *dialect,
 				    void *state_change,
 				    enum drbd_notification_type type);
 
