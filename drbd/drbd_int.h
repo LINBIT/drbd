@@ -32,7 +32,6 @@
 #include <linux/drbd_config.h>
 
 extern struct genl_family drbd_nl_family;
-extern const unsigned int drbd_genl_cmd_flags[];
 int drbd_genl_multicast_events(struct sk_buff *skb);
 
 #include "drbd_strings.h"

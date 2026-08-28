@@ -37,6 +37,7 @@ sources += drbd_interval.c
 sources += drbd_kref_debug.c
 sources += drbd_main.c
 sources += drbd_nl.c
+sources += drbd_nl_legacy.c
 sources += drbd_proc.c
 sources += drbd_receiver.c
 sources += drbd_req.c

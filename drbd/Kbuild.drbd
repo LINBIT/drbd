@@ -85,6 +85,7 @@ drbd-y += drbd_actlog.o
 drbd-y += drbd_main.o
 drbd-y += drbd_strings.o
 drbd-y += drbd_nl.o
+drbd-y += drbd_nl_legacy.o
 drbd-y += drbd-headers/linux/drbd_nl_gen.o
 drbd-y += drbd_interval.o
 drbd-y += drbd_state.o
