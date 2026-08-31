@@ -348,10 +348,11 @@ coccicheck: checks/*.cocci
 
 .PHONY: pychecks
 pychecks: checks/*.py
-	@for file in $^ ; do \
+	@rv=0; for file in $^ ; do \
+		test -x $${file} || continue; \
 		echo "  CHECK $$(basename $${file} .py)"; \
-		python3 $${file} drbd/*.c; \
-	done
+		python3 $${file} drbd/*.c || rv=1; \
+	done; exit $$rv
 
 .PHONY: checks
 checks: coccicheck pychecks
