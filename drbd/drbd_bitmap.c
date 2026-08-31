@@ -438,8 +438,10 @@ void drbd_bm_free(struct drbd_device *device)
 	if (bitmap == NULL)
 		return;
 
+	drbd_bm_lock(device, __func__, BM_LOCK_ALL);
 	/* ldev_safe: explicit NULL check above */
 	drbd_bm_resize(device, 0, 0);
+	drbd_bm_unlock(device);
 
 	kfree(bitmap);
 
@@ -898,7 +900,7 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	int err = 0;
 	bool growing;
 
-	drbd_bm_lock(device, "resize", BM_LOCK_ALL);
+	lockdep_assert_held(&b->bm_change);
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
@@ -1096,7 +1098,6 @@ int drbd_bm_resize(struct drbd_device *device, sector_t capacity, bool set_new_b
 	drbd_info(device, "resync bitmap: bits=%lu words=%lu pages=%lu\n", bits, words, want);
 
  out:
-	drbd_bm_unlock(device);
 	return err;
 }
 
