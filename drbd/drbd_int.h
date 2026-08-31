@@ -1930,6 +1930,7 @@ int drbd_md_sync_if_dirty(struct drbd_device *device);
 void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val,
 				    u64 weak_nodes);
 void drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 uuid);
+void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val);
 void _drbd_uuid_set_current(struct drbd_device *device, u64 val);
 void drbd_uuid_new_current(struct drbd_device *device, bool forced);

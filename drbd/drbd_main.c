@@ -4838,7 +4838,7 @@ void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u6
 		clear_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 }
 
-static void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
+void __drbd_uuid_set_bitmap(struct drbd_peer_device *peer_device, u64 val)
 {
 	struct drbd_device *device = peer_device->device;
 	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];

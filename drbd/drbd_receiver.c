@@ -4830,7 +4830,7 @@ uuid_fixup_resync_start2(struct drbd_peer_device *peer_device, enum sync_rule *r
 				return REQUIRES_PROTO_91;
 
 			bitmap_uuid = _drbd_uuid_pull_history(peer_device);
-			_drbd_uuid_set_bitmap(peer_device, bitmap_uuid);
+			__drbd_uuid_set_bitmap(peer_device, bitmap_uuid);
 
 			drbd_info(device, "Last syncUUID did not get through, corrected:\n");
 			drbd_uuid_dump_self(peer_device,
@@ -4899,6 +4899,8 @@ static enum sync_strategy drbd_uuid_compare(struct drbd_peer_device *peer_device
 	u64 local_uuid_flags = 0;
 	u64 self, peer;
 	int i, j;
+
+	lockdep_assert_held(&device->ldev->md.uuid_lock);
 
 	resolved_uuid = drbd_resolved_uuid(peer_device, &local_uuid_flags) & ~UUID_PRIMARY;
 	bitmap_uuid = drbd_bitmap_uuid(peer_device);
@@ -8388,7 +8390,9 @@ static void drbd_try_to_get_resynced(struct drbd_device *device)
 		if (peer_device->disk_state[NOW] != D_UP_TO_DATE)
 			continue;
 
+		spin_lock_irq(&device->ldev->md.uuid_lock);
 		strategy = drbd_uuid_compare(peer_device, &rule, &peer_node_id);
+		spin_unlock_irq(&device->ldev->md.uuid_lock);
 		disk_states_to_strategy(peer_device, peer_device->disk_state[NOW], &strategy, &rule,
 					&peer_node_id);
 		drbd_info(peer_device, "strategy = %s\n", strategy_descriptor(strategy).name);
