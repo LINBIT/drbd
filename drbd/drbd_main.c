@@ -5535,6 +5535,13 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	}
 	rcu_read_unlock();
 
+	/* Cleared above when we are a resync target: the UUID is now recorded
+	 * in the sync source's peer-device and adopted at resync end.
+	 */
+	if (!set_current)
+		drbd_warn(from_pd, "received new current UUID: %016llX weak_nodes=%016llX (deferred to resync end)\n",
+			  val, weak_nodes);
+
 	/* A resync-target relation a caller saw may be gone by now */
 	if (set_current && device->disk_state[NOW] != D_UP_TO_DATE) {
 		drbd_warn(from_pd, "not adopting new current UUID %016llX on %s disk\n",
@@ -5545,6 +5552,9 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 	if (set_current) {
 		u64 old_current = device->ldev->md.current_uuid;
 		u64 upd;
+
+		drbd_warn(from_pd, "received new current UUID: %016llX weak_nodes=%016llX\n",
+			  val, weak_nodes);
 
 		if (device->disk_state[NOW] == D_UP_TO_DATE)
 			recipients |= rotate_current_into_bitmap(device, weak_nodes, dagtag);

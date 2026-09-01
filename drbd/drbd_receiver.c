@@ -6845,11 +6845,8 @@ static int __receive_uuids(struct drbd_peer_device *peer_device, u64 node_mask)
 			propagate_skip_initial_to_diskless(device);
 		}
 
-		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN) {
-			drbd_warn(peer_device, "received new current UUID: %016llX "
-				  "weak_nodes=%016llX\n", peer_device->current_uuid, node_mask);
+		if (peer_device->uuid_flags & UUID_FLAG_NEW_DATAGEN)
 			drbd_uuid_received_new_current(peer_device, peer_device->current_uuid, node_mask);
-		}
 
 		drbd_uuid_detect_finished_resyncs(peer_device);
 
@@ -9713,50 +9710,24 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		return 0;
 
 	if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
-	    get_ldev_if_state(device, D_UP_TO_DATE)) {
-		if (connection->peer_role[NOW] == R_PRIMARY) {
-			drbd_warn(peer_device, "received new current UUID: %016llX "
-				  "weak_nodes=%016llX\n", current_uuid, weak_nodes);
-			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
-			drbd_md_sync_if_dirty(device);
-		} else if (moved_on) {
-			if (resource->remote_state_change)
-				set_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
-			else
-				change_disk_state(device, D_OUTDATED, CS_VERBOSE,
-						"receive-current-uuid", NULL);
-		}
-		put_ldev(device);
-	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
-		   connection->peer_role[NOW] == R_PRIMARY &&
-		   get_ldev(device)) {
-		struct drbd_peer_device *pd;
-		bool defer = false;
-
-		/* Not D_UP_TO_DATE, so the new current UUID must not be
-		 * adopted directly.  But if we are a resync target, defer it
-		 * exactly like the P_UUIDS110/NEW_DATAGEN path does:
-		 * drbd_uuid_received_new_current() plants it into the sync
-		 * source's record, and the resync-end adoption brings us back
-		 * at the primary's generation.  Without this, a resync target
-		 * that received a diskless primary's bump (P_CURRENT_UUID)
-		 * always returns at the source's old generation.
+	    connection->peer_role[NOW] == R_PRIMARY &&
+	    get_ldev(device)) {
+		/* drbd_uuid_received_new_current() dispatches on our disk state:
+		 * adopt if D_UP_TO_DATE, defer into the sync source's record if
+		 * resync target (so resync-end adoption brings us to the
+		 * primary's generation), drop otherwise.
 		 */
-		rcu_read_lock();
-		for_each_peer_device_rcu(pd, device) {
-			enum drbd_repl_state r = pd->repl_state[NOW];
-
-			if (r == L_SYNC_TARGET || r == L_BEHIND ||
-			    r == L_PAUSED_SYNC_T)
-				defer = true;
-		}
-		rcu_read_unlock();
-		if (defer) {
-			drbd_warn(peer_device, "received new current UUID: %016llX weak_nodes=%016llX (deferred to resync end)\n",
-				  current_uuid, weak_nodes);
-			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
-			drbd_md_sync_if_dirty(device);
-		}
+		drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
+		drbd_md_sync_if_dirty(device);
+		put_ldev(device);
+	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED && moved_on &&
+		   get_ldev_if_state(device, D_UP_TO_DATE)) {
+		/* The peer is not primary but moved on to a new generation. */
+		if (resource->remote_state_change)
+			set_bit(OUTDATE_ON_2PC_COMMIT, &device->flags);
+		else
+			change_disk_state(device, D_OUTDATED, CS_VERBOSE,
+					"receive-current-uuid", NULL);
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
