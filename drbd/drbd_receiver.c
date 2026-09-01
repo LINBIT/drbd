@@ -2146,6 +2146,52 @@ static void p_req_detail_from_pi(struct drbd_connection *connection,
 	d->digest_size = digest_size;
 }
 
+/* A cluster-wide size change is agreed by a two-phase commit and then applied
+ * node by node, and applying it takes a different amount of time everywhere: a
+ * diskless node only sets the new capacity, a diskful one first grows its resync
+ * bitmap. So a peer that is further along legitimately sends us requests for the
+ * newly added tail of the device while we still consider that tail out of range.
+ * Wait for our own half of the size change and look again, instead of failing the
+ * request: an error return from a packet handler destroys the connection.
+ *
+ * remote_state_change plus TWOPC_RESIZE covers the whole window on every node:
+ * it is set when this node joins the resize two-phase commit and cleared after
+ * drbd_commit_size_change() has applied the new size locally.
+ *
+ * The wait is bounded, and it is skipped while an application read is
+ * outstanding here: a diskful node's size change waits for its application IO to
+ * drain (drbd_suspend_io), and a remote read completes through this very receiver
+ * thread, so waiting for both at once would deadlock. Falling through in either
+ * case leaves the old behaviour, which is what a peer sending a genuinely
+ * out-of-range request deserves.
+ */
+#define DRBD_SIZE_CHANGE_TIMEOUT (HZ)
+
+static bool resize_in_progress(struct drbd_resource *resource)
+{
+	bool rv;
+
+	read_lock_irq(&resource->state_rwlock);
+	rv = resource->remote_state_change && resource->twopc.type == TWOPC_RESIZE;
+	read_unlock_irq(&resource->state_rwlock);
+
+	return rv;
+}
+
+static bool in_range_after_size_change(struct drbd_device *device, sector_t sector,
+				       unsigned int size)
+{
+	struct drbd_resource *resource = device->resource;
+
+	if (atomic_read(&device->ap_bio_cnt[READ]))
+		return false;
+
+	wait_event_timeout(resource->twopc_wait, !resize_in_progress(resource),
+			   DRBD_SIZE_CHANGE_TIMEOUT);
+
+	return sector + (size >> 9) <= get_capacity(device->vdisk);
+}
+
 /* used from receive_RSDataReply (recv_resync_read)
  * and from receive_Data.
  * data_size: actual payload ("data in")
@@ -2192,7 +2238,8 @@ read_in_block(struct drbd_peer_request *peer_req, struct drbd_peer_request_detai
 
 	/* even though we trust our peer,
 	 * we sometimes have to double check. */
-	if (d->sector + (d->bi_size>>9) > capacity) {
+	if (d->sector + (d->bi_size>>9) > capacity &&
+	    !in_range_after_size_change(device, d->sector, d->bi_size)) {
 		drbd_err(device, "request from peer beyond end of local disk: "
 			"capacity: %llus < sector: %llus + size: %u\n",
 			capacity, d->sector, d->bi_size);
@@ -3924,7 +3971,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 				(unsigned long long)sector, size);
 		return -EINVAL;
 	}
-	if (sector + (size>>9) > capacity) {
+	if (sector + (size>>9) > capacity &&
+	    !in_range_after_size_change(device, sector, size)) {
 		drbd_err(peer_device, "%s:%d: sector: %llus, size: %u\n", __FILE__, __LINE__,
 				(unsigned long long)sector, size);
 		return -EINVAL;
