@@ -2593,6 +2593,24 @@ static void sanitize_state(struct drbd_resource *resource)
 	if (volume_lost_data_access && resource->res_opts.on_no_data == OND_SUSPEND_IO)
 		resource->susp_nod[NEW] = true;
 
+	/* Clearing the susp-uuid bridge must not resume into inaccessibility:
+	 * the bridged bump attempt may have been REFUSED (the
+	 * unconfirmed-generation deferral), leaving no follow-up state
+	 * change.  The edge conditions above cannot catch that (access was
+	 * lost in an earlier state change, and after a demote no volume is
+	 * Primary here), so on the falling edge of susp_uuid re-evaluate
+	 * data accessibility at the level.
+	 */
+	if (resource->susp_uuid[OLD] && !resource->susp_uuid[NEW] &&
+	    resource->res_opts.on_no_data == OND_SUSPEND_IO) {
+		idr_for_each_entry(&resource->devices, device, vnr) {
+			if (!drbd_data_accessible(device, NEW)) {
+				resource->susp_nod[NEW] = true;
+				break;
+			}
+		}
+	}
+
 	resource->susp_quorum[NEW] =
 		resource->res_opts.on_no_quorum == ONQ_SUSPEND_IO ? !resource_has_quorum : false;
 
