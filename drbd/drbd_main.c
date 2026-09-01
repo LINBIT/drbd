@@ -4138,6 +4138,7 @@ struct drbd_peer_device *create_peer_device(struct drbd_device *device, struct d
 	INIT_LIST_HEAD(&peer_device->resync_requests);
 
 	atomic_set(&peer_device->rs_sect_in, 0);
+	atomic_set(&peer_device->rs_sect_parked, 0);
 
 	peer_device->bitmap_index = -1;
 	peer_device->resync_finished_pdsk = D_UNKNOWN;

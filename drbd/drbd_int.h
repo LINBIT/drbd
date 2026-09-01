@@ -567,6 +567,11 @@ enum {
 	 * write can not be withheld or refused any more.
 	 */
 	__EE_ACK_DECIDED,
+
+	/* SyncTarget: parked on the conflict submitter's list because the
+	 * backing device already holds its share of resync work.
+	 */
+	__EE_RS_DEPTH_PARKED,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -582,6 +587,7 @@ enum {
 #define EE_RS_THIN_REQ		(1<<__EE_RS_THIN_REQ)
 #define EE_IN_ACTLOG		(1<<__EE_IN_ACTLOG)
 #define EE_LAST_RESYNC_REQUEST	(1<<__EE_LAST_RESYNC_REQUEST)
+#define EE_RS_DEPTH_PARKED	(1<<__EE_RS_DEPTH_PARKED)
 #define EE_ON_RECV_ORDER	(1<<__EE_ON_RECV_ORDER)
 #define EE_ON_SEND_OOS		(1<<__EE_ON_SEND_OOS)
 #define EE_WAIT_FOR_SOURCE	(1<<__EE_WAIT_FOR_SOURCE)
@@ -1664,6 +1670,10 @@ struct drbd_peer_device {
 	int c_sync_rate; /* current resync rate after syncer throttle magic */
 	struct fifo_buffer __rcu *rs_plan_s; /* correction values of resync planer (RCU, connection->conn_update) */
 	atomic_t rs_sect_in; /* for incoming resync data rate, SyncTarget */
+	/* Resync sectors received and parked at the backing-device depth
+	 * bound: no longer in flight, not yet submitted.
+	 */
+	atomic_t rs_sect_parked;
 	int rs_last_events;  /* counter of read or write "events" (unit sectors)
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
@@ -1709,6 +1719,17 @@ struct drbd_peer_device {
 		unsigned int	max_bio_size;
 	} q_limits;
 };
+
+/* Resync work this node has asked for and is not done with: still on the wire,
+ * plus what arrived and is parked at the depth bound. rs_in_flight drops when
+ * the data arrives, which for parked work is before the backing device has
+ * seen any of it, so the request loop has to add the parked share back or it
+ * plans against work it has already been credited for.
+ */
+static inline int drbd_rs_outstanding(struct drbd_peer_device *peer_device)
+{
+	return peer_device->rs_in_flight + atomic_read(&peer_device->rs_sect_parked);
+}
 
 struct conflict_worker {
 	struct workqueue_struct *wq;

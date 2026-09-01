@@ -346,7 +346,7 @@ static void rs_sectors_came_in(struct drbd_peer_device *peer_device, int size)
 
 	/* When resync runs faster than anticipated, consider running the
 	 * resync_work early. */
-	if (rs_sect_in >= peer_device->rs_in_flight)
+	if (rs_sect_in >= drbd_rs_outstanding(peer_device))
 		drbd_rs_all_in_flight_came_back(peer_device, rs_sect_in);
 }
 
@@ -2983,6 +2983,10 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 	bool too_deep;
 
 	spin_lock_irq(&device->interval_lock);
+	if (peer_req->flags & EE_RS_DEPTH_PARKED) {
+		peer_req->flags &= ~EE_RS_DEPTH_PARKED;
+		atomic_sub(peer_req->i.size >> 9, &peer_device->rs_sect_parked);
+	}
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
 	canceled = test_bit(INTERVAL_CANCELED, &peer_req->i.flags);
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
@@ -2996,6 +3000,10 @@ void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
 	else if (!conflict && !canceled)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
+	if (too_deep) {
+		peer_req->flags |= EE_RS_DEPTH_PARKED;
+		atomic_add(peer_req->i.size >> 9, &peer_device->rs_sect_parked);
+	}
 	spin_unlock_irq(&device->interval_lock);
 
 	if (too_deep) {
@@ -11368,6 +11376,11 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 
 		/* Parked at the depth bound, it would wait for a completion. */
 		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags)) {
+			/* No longer outstanding, before a new resync resets the count. */
+			if (peer_req->flags & EE_RS_DEPTH_PARKED) {
+				peer_req->flags &= ~EE_RS_DEPTH_PARKED;
+				atomic_sub(i->size >> 9, &peer_device->rs_sect_parked);
+			}
 			any_queued = true;
 			continue;
 		}

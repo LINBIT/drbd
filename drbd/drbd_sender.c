@@ -875,7 +875,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 
 	steps = plan->size; /* (pdc->c_plan_ahead * 10 * RS_MAKE_REQS_INTV) / HZ; */
 
-	if (peer_device->rs_in_flight + sect_in == 0) { /* At start of resync */
+	if (drbd_rs_outstanding(peer_device) + sect_in == 0) { /* At start of resync */
 		want = ((pdc->resync_rate * 2 * RS_MAKE_REQS_INTV) / HZ) * steps;
 	} else { /* normal path */
 		if (pdc->c_fill_target) {
@@ -887,7 +887,7 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 		}
 	}
 
-	correction = want - peer_device->rs_in_flight - plan->total;
+	correction = want - drbd_rs_outstanding(peer_device) - plan->total;
 
 	/* Plan ahead */
 	cps = correction / steps;
@@ -1019,8 +1019,8 @@ static int drbd_rs_number_requests(struct drbd_peer_device *peer_device)
 	 * mxb (as used here, and in drbd_alloc_pages on the peer) is
 	 * "number of pages" (typically also 4k),
 	 * but "rs_in_flight" is in "sectors" (512 Byte). */
-	if (mxb - peer_device->rs_in_flight/8 < number) {
-		number = mxb - peer_device->rs_in_flight/8;
+	if (mxb - drbd_rs_outstanding(peer_device)/8 < number) {
+		number = mxb - drbd_rs_outstanding(peer_device)/8;
 		rs_hint_mxb_limited(peer_device, mxb, c_max_rate, sect_in,
 				    ktime_to_ns(duration));
 	} else {
@@ -3018,6 +3018,8 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	struct fifo_buffer *plan;
 
 	atomic_set(&peer_device->rs_sect_in, 0);
+	/* the end of the previous resync canceled its parked writes */
+	atomic_set(&peer_device->rs_sect_parked, 0);
 	peer_device->rs_last_mk_req_kt = ktime_get();
 	peer_device->rs_in_flight = 0;
 	peer_device->rs_pacing_credit = 0;
