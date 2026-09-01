@@ -1271,10 +1271,17 @@ static int device_data_gen_id_show(struct seq_file *m, void *ignored)
 	seq_printf(m, "0x%016llX\n", drbd_current_uuid(device));
 
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
-		if (!(md->peers[node_id].flags & MDF_HAVE_BITMAP))
+		unsigned int flags = md->peers[node_id].flags;
+
+		if (!(flags & MDF_HAVE_BITMAP))
 			continue;
-		seq_printf(m, "%s[%d]0x%016llX", i++ ? " " : "", node_id,
-			   md->peers[node_id].bitmap_uuid);
+		/* A divergence bitmap fully records the divergence and is safe to
+		 * copy; without the flag it is a convergence bitmap being cleared
+		 * by a resync.
+		 */
+		seq_printf(m, "%s[%d]0x%016llX%s", i++ ? " " : "", node_id,
+			   md->peers[node_id].bitmap_uuid,
+			   flags & MDF_PEER_DIVERGENCE_BITMAP ? "(DIVERGENCE_BITMAP)" : "");
 	}
 	seq_putc(m, '\n');
 
