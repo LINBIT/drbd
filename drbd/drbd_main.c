@@ -5681,6 +5681,31 @@ void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device)
 	rotate_current_into_bitmap(device, 0, device->resource->dagtag_sector);
 }
 
+/* Prepare a sync source's peer slot at resync start.  A resync's bitmap towards
+ * the peer records the divergence from a definite data generation, so the slot
+ * should name that generation in its bitmap UUID.  A same-current forced full
+ * resync -- the peer ran "invalidate", so source and target still share a
+ * current UUID yet the whole device is out of sync -- leaves the bitmap UUID at
+ * zero, because unlike a divergent-generation resync no handshake sets it.  Set
+ * it to our current UUID.
+ */
+void drbd_uuid_resync_starting_source(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
+	unsigned long flags;
+
+	spin_lock_irqsave(&device->ldev->md.uuid_lock, flags);
+	if (peer_md->bitmap_uuid == 0 &&
+	    (peer_device->current_uuid & ~UUID_PRIMARY) ==
+	    (drbd_current_uuid(device) & ~UUID_PRIMARY)) {
+		drbd_set_peer_bitmap_uuid(peer_md, drbd_current_uuid(device),
+					  device->resource->dagtag_sector);
+		drbd_md_mark_dirty(device);
+	}
+	spin_unlock_irqrestore(&device->ldev->md.uuid_lock, flags);
+}
+
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device)
 {
 	struct drbd_device *device = peer_device->device;
