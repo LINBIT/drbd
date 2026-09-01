@@ -9709,6 +9709,11 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 	if (current_uuid == drbd_current_uuid(device))
 		return 0;
 
+	/* None of this is serialized against concurrent state changes: moved_on
+	 * may be stale by now, and disk_state[NOW] can change between the branch
+	 * conditions.  Deciding it reliably would mean making it part of a state
+	 * change transaction.
+	 */
 	if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
 	    connection->peer_role[NOW] == R_PRIMARY &&
 	    get_ldev(device)) {
@@ -9720,7 +9725,8 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
 		drbd_md_sync_if_dirty(device);
 		put_ldev(device);
-	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED && moved_on &&
+	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+		   connection->peer_role[NOW] != R_PRIMARY && moved_on &&
 		   get_ldev_if_state(device, D_UP_TO_DATE)) {
 		/* The peer is not primary but moved on to a new generation. */
 		if (resource->remote_state_change)
@@ -9731,6 +9737,12 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
+	} else if (connection->peer_role[NOW] == R_PRIMARY) {
+		/* A primary's generation we can not use: no local disk to
+		 * label it on, or this volume is not established with it.
+		 */
+		drbd_info(peer_device, "ignoring new current UUID %016llX (disk %s)\n",
+			  current_uuid, drbd_disk_str(device->disk_state[NOW]));
 	}
 
 	return 0;

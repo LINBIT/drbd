@@ -5542,7 +5542,9 @@ void drbd_uuid_received_new_current(struct drbd_peer_device *from_pd, u64 val, u
 		drbd_warn(from_pd, "received new current UUID: %016llX weak_nodes=%016llX (deferred to resync end)\n",
 			  val, weak_nodes);
 
-	/* A resync-target relation a caller saw may be gone by now */
+	/* Neither up to date nor a resync target: this generation can not be
+	 * adopted, and no resync end will adopt it later either.
+	 */
 	if (set_current && device->disk_state[NOW] != D_UP_TO_DATE) {
 		drbd_warn(from_pd, "not adopting new current UUID %016llX on %s disk\n",
 			  val, drbd_disk_str(device->disk_state[NOW]));
