@@ -4955,6 +4955,12 @@ static u64 rotate_current_into_bitmap(struct drbd_device *device, u64 weak_nodes
 		if (bm_uuid && bm_uuid != prev_c_uuid)
 			continue;
 
+		/* Defensive: a sync source's bitmap is a convergence bitmap, so
+		 * never establish a divergence bitmap on it.
+		 */
+		if (bm_uuid == 0 && is_sync_source_state(peer_device, NOW))
+			continue;
+
 		pdsk = peer_device->disk_state[NOW];
 
 		/* Create a new current UUID for a peer that is diskless but usually has a backing disk.
