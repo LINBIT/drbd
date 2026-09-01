@@ -785,6 +785,9 @@ enum peer_device_flag {
 				 * send it our current UUID (the relabel), ordered
 				 * by the sender after the replayed transfer log.
 				 */
+	RS_MXB_LIMITED_LOGGED,	/* the max-buffers hint has been logged for this
+				 * resync and this net configuration.
+				 */
 };
 
 /* We could make these currently hardcoded constants configurable
@@ -1663,6 +1666,7 @@ struct drbd_peer_device {
 	ktime_t rs_last_mk_req_kt;
 	/* fixed resync-rate pacing: KiB*ns granted but not yet spent */
 	u64 rs_pacing_credit;
+	unsigned int rs_mxb_limited; /* consecutive rounds clamped by max-buffers */
 	atomic64_t ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
 	u64 rs_start_uuid;
@@ -2216,6 +2220,10 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
  */
 
 #define RS_MAKE_REQS_INTV    (HZ/10)
+/* Consecutive make_resync_request clamped by max-buffers before we say so:
+ * enough that a ramp-up or a brief stall stays quiet.
+ */
+#define RS_MXB_LIMITED_ROUNDS 100
 #define RS_MAKE_REQS_INTV_NS (NSEC_PER_SEC/10)
 
 /* We do bitmap IO in units of 4k blocks.
