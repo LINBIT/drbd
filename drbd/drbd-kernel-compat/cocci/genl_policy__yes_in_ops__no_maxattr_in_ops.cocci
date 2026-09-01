@@ -1,9 +1,10 @@
-// From v5.2 (3b0f31f2b8c9) to v5.9 struct genl_ops has no .policy; it lives in
-// struct genl_family, so all commands have to share one top-level policy. The
-// generated per-command policies are unreferenced then and are replaced by a
-// hand-written shared one. (Kernels before v5.2 have .policy in genl_ops, just
-// no .maxattr; they are handled by genl_policy__yes_in_ops__no_maxattr_in_ops
-// and genl_maxattr__no_in_ops instead.)
+// Before v5.2 struct genl_ops has .policy but no .maxattr, and struct
+// genl_family has no .policy. These kernels parse attributes with the
+// family-level maximum but the per-op policy, so every per-op policy array
+// must be sized to the family maximum. Replace the generated per-command
+// policies with one hand-written shared policy of the full size. The .maxattr
+// side is handled by genl_maxattr__no_in_ops, which is always applied
+// together with this patch.
 
 // Forward-declare drbd_tla_nl_policy so it is visible in all files
 // that may reference it (drbd_nl.c and drbd_nl_gen.c).
@@ -12,15 +13,23 @@
  #include <net/genetlink.h>
 +extern const struct nla_policy drbd_tla_nl_policy[];
 
-// Remove .policy from genl_ops entries
+// Point every command at the shared policy, in drbd_nl_ops only. The
+// handshake ops keep their own per-op policies; those are already sized to
+// the handshake family maximum.
 @@
+symbol drbd_nl_ops;
 expression E;
 @@
+  const struct genl_ops drbd_nl_ops[...] = {
+  ...,
   {
   ...,
 - .policy = E,
++ .policy = drbd_tla_nl_policy,
   ...,
-  }
+  },
+  ...
+  };
 
 // Remove the generated per-command policies; they are unreferenced now. Only
 // the top-level ones are static, the policies for the nested attributes are
@@ -33,9 +42,7 @@ expression E;
 -	...,
 -};
 
-// Add the shared policy to drbd_nl_family, and define the policy itself.
-// The family-level .maxattr is added by genl_maxattr__no_in_ops, which is
-// always applied together with this patch.
+// Define the shared policy.
 @@
 symbol drbd_nl_family, true;
 attribute name __ro_after_init;
@@ -79,27 +86,4 @@ attribute name __ro_after_init;
   struct genl_family drbd_nl_family __ro_after_init = {
   ...,
   .parallel_ops = true,
-+ .policy = drbd_tla_nl_policy,
   };
-
-// Add .policy to handshake_nl_family
-@@
-symbol handshake_nl_family, handshake_nl_mcgrps;
-attribute name __ro_after_init;
-@@
-  struct genl_family handshake_nl_family __ro_after_init = {
-  ...,
-  .mcgrps = handshake_nl_mcgrps,
-+ .policy = handshake_done_nl_policy,
-  .maxattr = HANDSHAKE_A_DONE_REMOTE_AUTH,
-  ...,
-  };
-
-// Remove unused handshake_accept_nl_policy definition
-@@
-symbol handshake_accept_nl_policy;
-expression E;
-@@
--static const struct nla_policy handshake_accept_nl_policy[E] = {
--	...,
--};
