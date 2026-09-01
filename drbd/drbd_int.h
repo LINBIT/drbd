@@ -792,7 +792,7 @@ struct drbd_work_queue {
 struct drbd_peer_md {
 	u64 bitmap_uuid;
 	u64 bitmap_dagtag;
-	u32 flags;
+	unsigned long flags; /* enum mdf_peer_flag_bit, atomic bit operations */
 	s32 bitmap_index;
 };
 
@@ -1974,11 +1974,11 @@ u64 drbd_weak_nodes_device(struct drbd_device *device);
 bool drbd_uuid_is_day0(struct drbd_device *device);
 int drbd_md_test_flag(struct drbd_backing_dev *bdev, enum mdf_flag flag);
 void drbd_md_set_peer_flag(struct drbd_peer_device *peer_device,
-			   enum mdf_peer_flag flag);
+			   enum mdf_peer_flag_bit flag_bit);
 void drbd_md_clear_peer_flag(struct drbd_peer_device *peer_device,
-			     enum mdf_peer_flag flag);
+			     enum mdf_peer_flag_bit flag_bit);
 bool drbd_md_test_peer_flag(struct drbd_peer_device *peer_device,
-			    enum mdf_peer_flag flag);
+			    enum mdf_peer_flag_bit flag_bit);
 void drbd_md_mark_dirty(struct drbd_device *device);
 void drbd_queue_bitmap_io(struct drbd_device *device,
 			  int (*io_fn)(struct drbd_device *device,
@@ -3065,8 +3065,8 @@ static inline u64 drbd_bitmap_uuid(struct drbd_peer_device *peer_device)
  */
 static inline bool is_divergence_bitmap(struct drbd_peer_md *peer_md)
 {
-	return !(peer_md->flags & MDF_HAVE_BITMAP) ||
-		(peer_md->flags & MDF_PEER_DIVERGENCE_BITMAP);
+	return !test_bit(__MDF_HAVE_BITMAP, &peer_md->flags) ||
+		test_bit(__MDF_PEER_DIVERGENCE_BITMAP, &peer_md->flags);
 }
 
 static inline u64 drbd_history_uuid(struct drbd_device *device, int i)

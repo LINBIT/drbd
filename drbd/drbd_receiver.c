@@ -4004,7 +4004,8 @@ static int receive_common_data_request(struct drbd_connection *connection, struc
 	 */
 	if (repl_is_sync_source(peer_device->repl_state[NOW]) &&
 	    connection->agreed_pro_version >= 110 &&
-	    (device->ldev->md.peers[peer_device->node_id].flags & MDF_PEER_DIVERGENCE_BITMAP)) {
+	    test_bit(__MDF_PEER_DIVERGENCE_BITMAP,
+		     &device->ldev->md.peers[peer_device->node_id].flags)) {
 		switch (pi->cmd) {
 		case P_RS_DATA_REQUEST:
 		case P_RS_DAGTAG_REQ:
@@ -7042,9 +7043,9 @@ static int receive_uuids110(struct drbd_connection *connection, struct packet_in
 		if (bitmap_uuids_mask & NODE_MASK(i)) {
 			bitmap_uuid = be64_to_cpu(p->other_uuids[pos++]);
 
-			if (peer_md && !(peer_md[i].flags & MDF_HAVE_BITMAP) &&
+			if (peer_md && !test_bit(__MDF_HAVE_BITMAP, &peer_md[i].flags) &&
 			    i != not_allocated)
-				peer_md[i].flags |= MDF_NODE_EXISTS;
+				set_bit(__MDF_NODE_EXISTS, &peer_md[i].flags);
 		} else {
 			bitmap_uuid = -1;
 		}
@@ -7634,7 +7635,7 @@ far_away_change(struct drbd_connection *connection,
 					continue;
 
 				peer_md = &device->ldev->md.peers[initiator_node_id];
-				peer_md->flags |= MDF_PEER_OUTDATED;
+				set_bit(__MDF_PEER_OUTDATED, &peer_md->flags);
 				put_ldev(device);
 				drbd_md_mark_dirty(device);
 			}
@@ -9739,7 +9740,7 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 
 	if (get_ldev(device)) {
 		struct drbd_peer_md *peer_md = &device->ldev->md.peers[peer_device->node_id];
-		peer_md->flags |= MDF_NODE_EXISTS;
+		set_bit(__MDF_NODE_EXISTS, &peer_md->flags);
 		put_ldev(device);
 	}
 	if (connection->peer_role[NOW] == R_PRIMARY)

@@ -566,7 +566,7 @@ static u64 up_to_date_nodes(struct drbd_device *device, bool op_is_fence)
 			peer_device = peer_device_by_node_id(device, node_id);
 
 			if ((peer_device && peer_device->disk_state[NOW] == D_UP_TO_DATE) ||
-			    (peer_md[node_id].flags & MDF_NODE_EXISTS &&
+			    (test_bit(__MDF_NODE_EXISTS, &peer_md[node_id].flags) &&
 			     peer_md[node_id].bitmap_uuid == 0))
 				mask |= NODE_MASK(node_id);
 		}
@@ -1856,10 +1856,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		prev_al_disabled = !!(md->flags & MDF_AL_DISABLED);
 		md->flags |= MDF_AL_DISABLED;
 		for (i = 0; i < DRBD_PEERS_MAX; i++) {
-			if (md->peers[i].flags & MDF_PEER_FULL_SYNC)
+			if (test_and_set_bit(__MDF_PEER_FULL_SYNC, &md->peers[i].flags))
 				prev_peer_full_sync |= 1 << i;
-			else
-				md->peers[i].flags |= MDF_PEER_FULL_SYNC;
 		}
 		drbd_md_write(device, buffer);
 
@@ -1886,7 +1884,7 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 			md->flags &= ~MDF_AL_DISABLED;
 		for (i = 0; i < DRBD_PEERS_MAX; i++) {
 			if (0 == (prev_peer_full_sync & (1 << i)))
-				md->peers[i].flags &= ~MDF_PEER_FULL_SYNC;
+				clear_bit(__MDF_PEER_FULL_SYNC, &md->peers[i].flags);
 		}
 		drbd_md_write(device, buffer);
 
@@ -1971,7 +1969,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 		}
 		if (peer_device) {
 			enum drbd_disk_state pdsk = peer_device->disk_state[NOW];
-			dynamic_drbd_dbg(peer_device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x max_size: %llu (%s)\n",
+			dynamic_drbd_dbg(peer_device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%lx max_size: %llu (%s)\n",
 					node_id,
 					peer_md->bitmap_index,
 					peer_md->bitmap_uuid,
@@ -1990,7 +1988,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 				continue;
 			}
 		} else {
-			dynamic_drbd_dbg(device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%x (not currently reachable)\n",
+			dynamic_drbd_dbg(device, "node_id: %u idx: %u bm-uuid: 0x%llx flags: 0x%lx (not currently reachable)\n",
 					node_id,
 					peer_md->bitmap_index,
 					peer_md->bitmap_uuid,
@@ -2002,7 +2000,7 @@ static bool get_max_agreeable_size(struct drbd_device *device, uint64_t *max,
 		 * reason).  But we remember in our meta data if we have ever
 		 * seen a peer disk for this peer.  If we did not ever see a
 		 * peer disk, assume that's intentional. */
-		if ((peer_md->flags & MDF_PEER_DEVICE_SEEN) == 0)
+		if (!test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md->flags))
 			continue;
 
 		all_known = false;
@@ -2489,7 +2487,7 @@ static struct drbd_connection *the_only_peer_with_disk(struct drbd_device *devic
 		if (node_id == my_node_id)
 			continue;
 
-		if (peer_md[node_id].flags & MDF_PEER_DEVICE_SEEN)
+		if (test_bit(__MDF_PEER_DEVICE_SEEN, &peer_md[node_id].flags))
 			peer_disks++;
 
 		if (peer_disks > 1)
@@ -2774,7 +2772,7 @@ static int used_bitmap_slots(struct drbd_backing_dev *bdev)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		struct drbd_peer_md *peer_md = &bdev->md.peers[node_id];
 
-		if (peer_md->flags & MDF_HAVE_BITMAP)
+		if (test_bit(__MDF_HAVE_BITMAP, &peer_md->flags))
 			used++;
 	}
 
@@ -2823,7 +2821,7 @@ allocate_bitmap_index(struct drbd_peer_device *peer_device,
 
 	peer_md->bitmap_index = bitmap_index;
 	peer_device->bitmap_index = bitmap_index;
-	peer_md->flags |= MDF_HAVE_BITMAP;
+	set_bit(__MDF_HAVE_BITMAP, &peer_md->flags);
 
 	return 0;
 }
@@ -2844,6 +2842,18 @@ static struct drbd_peer_md *day0_peer_md(struct drbd_device *device)
 	return NULL;
 }
 
+/* Clear the flags in "mask", one bit at a time, so that a concurrent set_bit()
+ * on a flag outside the mask is not lost.
+ */
+static void clear_peer_md_flags(struct drbd_peer_md *peer_md, u32 mask)
+{
+	unsigned long bits = mask;
+	int bit;
+
+	for_each_set_bit(bit, &bits, 32)
+		clear_bit(bit, &peer_md->flags);
+}
+
 /*
  * Clear the slot for this peer in the metadata. If md_flags is empty, clear
  * the slot completely. Otherwise make it a slot for a diskless peer. Also
@@ -2860,7 +2870,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 		return -ENODEV;
 
 	peer_md = &device->ldev->md.peers[peer_node_id];
-	free_bitmap_slot = peer_md->flags & MDF_HAVE_BITMAP;
+	free_bitmap_slot = test_bit(__MDF_HAVE_BITMAP, &peer_md->flags);
 	if (free_bitmap_slot) {
 		drbd_suspend_io(device, WRITE_ONLY);
 
@@ -2881,7 +2891,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 	/* Look for day0 UUID before changing this peer slot to a day0 slot. */
 	day0_md = day0_peer_md(device);
 
-	peer_md->flags &= md_flags & ~MDF_HAVE_BITMAP;
+	clear_peer_md_flags(peer_md, ~md_flags | MDF_HAVE_BITMAP);
 	peer_md->bitmap_index = -1;
 
 	if (free_bitmap_slot) {
@@ -3221,15 +3231,16 @@ static void decode_md_9(struct meta_data_on_disk_9 *on_disk, struct drbd_md *md)
 
 	for (i = 0; i < DRBD_NODE_ID_MAX; i++) {
 		struct drbd_peer_md *peer_md = &md->peers[i];
+		unsigned long flags = be32_to_cpu(on_disk->peers[i].flags);
+		s32 bitmap_index = be32_to_cpu(on_disk->peers[i].bitmap_index);
+
+		if (bitmap_index != -1)
+			flags |= MDF_HAVE_BITMAP;
 
 		peer_md->bitmap_uuid = be64_to_cpu(on_disk->peers[i].bitmap_uuid);
 		peer_md->bitmap_dagtag = be64_to_cpu(on_disk->peers[i].bitmap_dagtag);
-		peer_md->flags = be32_to_cpu(on_disk->peers[i].flags);
-		peer_md->bitmap_index = be32_to_cpu(on_disk->peers[i].bitmap_index);
-
-		if (peer_md->bitmap_index == -1)
-			continue;
-		peer_md->flags |= MDF_HAVE_BITMAP;
+		peer_md->flags = flags;
+		peer_md->bitmap_index = bitmap_index;
 	}
 	for (i = 0; i < ARRAY_SIZE(on_disk->history_uuids); i++)
 		md->history_uuids[i] = be64_to_cpu(on_disk->history_uuids[i]);
@@ -3425,8 +3436,8 @@ static bool may_restore_quorum(struct drbd_device *device)
 	for (node_id = 0; node_id < DRBD_NODE_ID_MAX; node_id++) {
 		if (!(others & NODE_MASK(node_id)))
 			continue;
-		if (device->ldev->md.peers[node_id].flags &
-		    (MDF_HAVE_BITMAP | MDF_PEER_DEVICE_SEEN))
+		if (test_bit(__MDF_HAVE_BITMAP, &device->ldev->md.peers[node_id].flags) ||
+		    test_bit(__MDF_PEER_DEVICE_SEEN, &device->ldev->md.peers[node_id].flags))
 			return false;
 	}
 
@@ -3674,7 +3685,8 @@ int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 			/* Pretend in core that there is not bitmap for that peer,
 			   in the on disk meta-data we keep it until it is de-allocated
 			   with forget-peer */
-			nbc->md.peers[connection->peer_node_id].flags &= ~MDF_HAVE_BITMAP;
+			clear_bit(__MDF_HAVE_BITMAP,
+				  &nbc->md.peers[connection->peer_node_id].flags);
 		}
 	}
 	if (slots_needed) {
@@ -3823,7 +3835,7 @@ int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 		clear_bit(USE_DEGR_WFC_T, peer_device->flags);
 		if (resource->role[NOW] != R_PRIMARY &&
 		    drbd_md_test_flag(device->ldev, MDF_PRIMARY_IND) &&
-		    !drbd_md_test_peer_flag(peer_device, MDF_PEER_CONNECTED))
+		    !drbd_md_test_peer_flag(peer_device, __MDF_PEER_CONNECTED))
 			set_bit(USE_DEGR_WFC_T, peer_device->flags);
 	}
 
@@ -3983,7 +3995,7 @@ int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	for_each_peer_device(peer_device, device) {
-		if (drbd_md_test_peer_flag(peer_device, MDF_PEER_FULL_SYNC)) {
+		if (drbd_md_test_peer_flag(peer_device, __MDF_PEER_FULL_SYNC)) {
 			drbd_info(peer_device, "Assuming that all blocks are out of sync "
 				  "(aka FullSync)\n");
 			if (drbd_bitmap_io(device, &drbd_bmio_set_n_write,
@@ -4880,7 +4892,7 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 		if (get_ldev(device)) {
 			struct drbd_peer_md *peer_md =
 				&device->ldev->md.peers[adm_ctx->peer_node_id];
-			if (peer_md->flags & MDF_PEER_OUTDATED)
+			if (test_bit(__MDF_PEER_OUTDATED, &peer_md->flags))
 				peer_device->disk_state[NOW] = D_OUTDATED;
 			put_ldev(device);
 		}
@@ -4899,7 +4911,8 @@ static int adm_new_connection(struct drbd_config_context *adm_ctx, struct genl_i
 			if (want_bitmap(peer_device))
 				peer_device->bitmap_index = bitmap_index;
 			else
-				device->ldev->md.peers[adm_ctx->peer_node_id].flags &= ~MDF_HAVE_BITMAP;
+				clear_bit(__MDF_HAVE_BITMAP,
+					  &device->ldev->md.peers[adm_ctx->peer_node_id].flags);
 		}
 		put_ldev(device);
 	}
