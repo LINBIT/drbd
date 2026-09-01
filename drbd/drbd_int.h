@@ -624,6 +624,7 @@ enum device_flag {
 	RESTORE_QUORUM,		/* Restore quorum when we have the same members as before */
 	RESTORING_QUORUM,	/* sanitize_state() -> finish_state_change() */
 	LEGACY_84_MD,
+	RS_DEPTH_WAITERS,	/* a peer device has RS_DEPTH_DEFERRED set */
 };
 
 /* The data-generation obligation of one volume.  A divergence-start event
@@ -787,6 +788,9 @@ enum peer_device_flag {
 				 */
 	RS_MXB_LIMITED_LOGGED,	/* the max-buffers hint has been logged for this
 				 * resync and this net configuration.
+				 */
+	RS_DEPTH_DEFERRED,	/* a checksum resync round stopped at the resync
+				 * depth bound; restart it when there is room
 				 */
 };
 
@@ -2687,6 +2691,8 @@ void drbd_rs_depth_release(struct drbd_device *device);
 void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect);
 void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect);
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req);
+bool drbd_rs_depth_exceeded(struct drbd_peer_device *peer_device);
+void drbd_rs_depth_defer(struct drbd_peer_device *peer_device);
 void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req);
 int drbd_submit_peer_request(struct drbd_peer_request *peer_req);
 void drbd_cleanup_after_failed_submit_peer_write(struct drbd_peer_request *peer_req);

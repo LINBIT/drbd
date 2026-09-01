@@ -1372,6 +1372,16 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			goto request_done;
 		}
 
+		/* read_for_csum() reads at this node's own backing device, so
+		 * a checksum round stops at the depth bound, before the cursor
+		 * moves past this request.
+		 */
+		if (peer_device->use_csums && drbd_rs_depth_exceeded(peer_device)) {
+			peer_device->resync_next_bit = bit;
+			drbd_rs_depth_defer(peer_device);
+			goto request_done;
+		}
+
 		if (adjacent(prev_sector, size, sector) && (number - i) << BM_BLOCK_SHIFT < size) {
 			/* When making requests in an out-of-sync area, ensure that the size
 			   of successive requests does not decrease. This allows the next
