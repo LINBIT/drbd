@@ -2913,8 +2913,7 @@ static int clear_peer_slot(struct drbd_device *device, int peer_node_id, u32 md_
 		peer_md->bitmap_uuid = day0_md->bitmap_uuid;
 		peer_md->bitmap_dagtag = day0_md->bitmap_dagtag;
 	} else {
-		peer_md->bitmap_uuid = 0;
-		peer_md->bitmap_dagtag = 0;
+		drbd_set_peer_bitmap_uuid(peer_md, 0, 0);
 	}
 
 	clear_bit(MD_DIRTY, &device->flags);

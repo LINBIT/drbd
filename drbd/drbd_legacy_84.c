@@ -126,7 +126,7 @@ void drbd_md_decode_84(struct meta_data_on_disk_84 *on_disk, struct drbd_md *md)
 		peer_md->bitmap_index = -1;
 	}
 	peer_md = &md->peers[peer_node_id];
-	peer_md->bitmap_uuid = be64_to_cpu(on_disk->uuid[UI_BITMAP]);
+	drbd_set_peer_bitmap_uuid(peer_md, be64_to_cpu(on_disk->uuid[UI_BITMAP]), 0);
 	peer_md->bitmap_index = 0;
 	peer_md->flags = on_disk_flags & MDF_84_PEER_MASK;
 	peer_md->flags |= MDF_HAVE_BITMAP;

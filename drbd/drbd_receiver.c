@@ -4676,7 +4676,7 @@ uuid_fixup_resync_end(struct drbd_peer_device *peer_device, enum sync_rule *rule
 			u64 previous_bitmap_uuid = peer_md->bitmap_uuid;
 
 			drbd_info(device, "was SyncSource, missed the resync finished event, corrected myself:\n");
-			peer_md->bitmap_uuid = 0;
+			drbd_set_peer_bitmap_uuid(peer_md, 0, 0);
 			_drbd_uuid_push_history(device, previous_bitmap_uuid);
 
 			drbd_uuid_dump_self(peer_device,
@@ -5843,11 +5843,12 @@ static enum sync_strategy drbd_sync_handshake(struct drbd_peer_device *peer_devi
 			}
 		} else if (strategy == SYNC_TARGET_USE_BITMAP) {
 			if (peer_disk_state != D_UP_TO_DATE) {
-				int peer_node_id = peer_device->node_id;
-				u64 previous = device->ldev->md.peers[peer_node_id].bitmap_uuid;
+				struct drbd_peer_md *peer_md =
+					&device->ldev->md.peers[peer_device->node_id];
+				u64 previous = peer_md->bitmap_uuid;
 
 				if (previous) {
-					device->ldev->md.peers[peer_node_id].bitmap_uuid = 0;
+					drbd_set_peer_bitmap_uuid(peer_md, 0, 0);
 					_drbd_uuid_push_history(device, previous);
 					drbd_md_mark_dirty(device);
 				}

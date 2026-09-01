@@ -1947,6 +1947,7 @@ void drbd_uuid_new_current(struct drbd_device *device, bool forced);
 void drbd_uuid_new_current_by_user(struct drbd_device *device);
 void _drbd_uuid_push_history(struct drbd_device *device, u64 val);
 u64 _drbd_uuid_pull_history(struct drbd_peer_device *peer_device);
+void drbd_set_peer_bitmap_uuid(struct drbd_peer_md *peer_md, u64 bitmap_uuid, u64 dagtag);
 void drbd_uuid_resync_starting(struct drbd_peer_device *peer_device);
 u64 drbd_uuid_resync_finished(struct drbd_peer_device *peer_device);
 void drbd_uuid_detect_finished_resyncs(struct drbd_peer_device *peer_device);
