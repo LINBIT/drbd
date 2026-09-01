@@ -104,7 +104,7 @@ enum dtr_stream_nr {
  * We pack a 2-bit stream identifier and a 30-bit sequence number into this
  * 32-bit immediate value:
  *
- *   Bits 31..30: stream (DATA_STREAM, CONTROL_STREAM, or FLOW_CTRL)
+ *   Bits 31..30: stream (ST_DATA, ST_CONTROL, or ST_FLOW_CTRL)
  *   Bits 29..0:  sequence number for message ordering
  *
  * The stream field identifies which logical channel (data, control, or
@@ -250,7 +250,7 @@ struct dtr_stream {
 	/* for recv() to keep track of the current rx_desc:
 	 * - whenever the bytes_left of the current rx_desc == 0, we know that all data
 	 *   is consumed, and get a new rx_desc from the completion queue, and set
-	 *   current rx_desc accodingly.
+	 *   current rx_desc accordingly.
 	 */
 	struct {
 		struct dtr_rx_desc *desc;
@@ -652,8 +652,9 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 			t = dtr_receive_rx_desc(rdma_transport, stream, &rx_desc);
 		} else {
 			t = wait_event_interruptible_timeout(rdma_stream->recv_wq,
-						dtr_receive_rx_desc(rdma_transport, stream, &rx_desc),
-						rdma_stream->recv_timeout);
+					dtr_receive_rx_desc(rdma_transport, stream,
+							    &rx_desc),
+					rdma_stream->recv_timeout);
 		}
 
 		if (t <= 0)
@@ -665,40 +666,41 @@ static int _dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
 		rdma_stream->current_rx.bytes_left = rx_desc->size - size;
 		if (rdma_stream->current_rx.bytes_left < 0)
 			tr_warn(transport,
-				"new, requesting more (%zu) than available (%d)\n", size, rx_desc->size);
+				"new, requesting more (%zu) than available (%d)\n",
+				size, rx_desc->size);
 
 		if (flags & CALLER_BUFFER)
 			memcpy(*buf, buffer, size);
 		else
 			*buf = buffer;
 
-
-		return size;
-	} else { /* return next part */
-		buffer = rdma_stream->current_rx.pos;
-		rdma_stream->current_rx.pos += size;
-
-		if (rdma_stream->current_rx.bytes_left < size) {
-			tr_err(transport,
-			       "requested more than left! bytes_left = %d, size = %zu\n",
-					rdma_stream->current_rx.bytes_left, size);
-			rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
-		} else {
-			rdma_stream->current_rx.bytes_left -= size;
-		}
-
-		if (flags & CALLER_BUFFER)
-			memcpy(*buf, buffer, size);
-		else
-			*buf = buffer;
 
 		return size;
 	}
 
-	return 0;
+	/* return next part */
+	buffer = rdma_stream->current_rx.pos;
+	rdma_stream->current_rx.pos += size;
+
+	if (rdma_stream->current_rx.bytes_left < size) {
+		tr_err(transport,
+		       "requested more than left! bytes_left = %d, size = %zu\n",
+		       rdma_stream->current_rx.bytes_left, size);
+		rdma_stream->current_rx.bytes_left = 0; /* 0 left == get new entry */
+	} else {
+		rdma_stream->current_rx.bytes_left -= size;
+	}
+
+	if (flags & CALLER_BUFFER)
+		memcpy(*buf, buffer, size);
+	else
+		*buf = buffer;
+
+	return size;
 }
 
-static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream, void **buf, size_t size, int flags)
+static int dtr_recv(struct drbd_transport *transport, enum drbd_stream stream,
+		    void **buf, size_t size, int flags)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -729,7 +731,7 @@ static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_st
 	}
 	rcu_read_unlock();
 
-	/* these are used by the sender, guess we should them get right */
+	/* send_buffer_half_full() uses these to pace resync requests */
 	stats->send_buffer_size = sb_size * DRBD_SOCKET_BUFFER_SIZE;
 	stats->send_buffer_used = sb_used * DRBD_SOCKET_BUFFER_SIZE;
 
@@ -742,10 +744,10 @@ static void dtr_stats(struct drbd_transport *transport, struct drbd_transport_st
 /*
  * The following functions (at least)
  *   dtr_path_established_work_fn(),
- *   dtr_cma_accept_work_fn(), dtr_cma_accept(),
+ *   dtr_cma_accept(),
  *   dtr_cma_retry_connect_work_fn(),
  *   dtr_cma_retry_connect(),
- *   dtr_cma_connect_fail_work_fn(), dtr_cma_connect(),
+ *   dtr_cma_connect_work_fn(),
  *   dtr_cma_disconnect_work_fn(), dtr_cma_disconnect(),
  *   dtr_cma_event_handler()
  *
@@ -901,7 +903,8 @@ static struct dtr_cm *dtr_alloc_cm(struct dtr_path *path)
 	return cm;
 }
 
-static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id, struct dtr_cm **ret_cm)
+static int dtr_cma_accept(struct dtr_listener *listener, struct rdma_cm_id *new_cm_id,
+			  struct dtr_cm **ret_cm)
 {
 	struct sockaddr_storage *peer_addr;
 	struct dtr_connect_state *cs;
@@ -1023,7 +1026,8 @@ out:
 
 static void dtr_cma_retry_connect_work_fn(struct work_struct *work)
 {
-	struct dtr_connect_state *cs = container_of(work, struct dtr_connect_state, retry_connect_work.work);
+	struct dtr_connect_state *cs =
+		container_of(work, struct dtr_connect_state, retry_connect_work.work);
 	enum connect_state_enum p;
 	int err;
 
@@ -1148,11 +1152,10 @@ static void dtr_cma_disconnect_work_fn(struct work_struct *work)
 		return;
 
 	/*
-	 * In dtr_disconnect_path() -> __dtr_uninit_path() we free the
-	 * previous cm. That causes the reference on the path to be
-	 * dropped. In dtr_activate_path() -> dtr_start_try_connect()
-	 * we allocate a new cm, that holds a reference on the path
-	 * again.
+	 * dtr_disconnect_path() drops the path's cm. That causes the
+	 * reference on the path to be dropped. In dtr_activate_path() ->
+	 * dtr_start_try_connect() we allocate a new cm, that holds a
+	 * reference on the path again.
 	 *
 	 * Bridge the gap with a reference here!
 	 */
@@ -1362,6 +1365,7 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 {
 	struct dtr_stream *rdma_stream = &rdma_transport->stream[stream];
 	struct dtr_rx_desc *rx_desc;
+	struct dtr_path *path;
 
 	rx_desc = dtr_next_rx_desc(rdma_stream);
 
@@ -1375,24 +1379,22 @@ static bool dtr_receive_rx_desc(struct dtr_transport *rdma_transport,
 					   rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
 		*ptr_rx_desc = rx_desc;
 		return true;
-	} else {
-		/*
-		 * The waiting thread gets woken up if a packet arrived,
-		 * or if there is no new packet but we need to tell the
-		 * peer about space in our receive window.
-		 */
-		struct dtr_path *path;
-
-		rcu_read_lock();
-		list_for_each_entry_rcu(path, &rdma_transport->transport.paths, path.list) {
-			struct dtr_flow *flow = &path->flow[stream];
-
-			if (atomic_read(&flow->rx_descs_known_to_peer) <
-			    atomic_read(&flow->rx_descs_posted) / 8)
-				dtr_send_flow_control_msg(path, GFP_ATOMIC);
-		}
-		rcu_read_unlock();
 	}
+
+	/*
+	 * The waiting thread gets woken up if a packet arrived, or if there is
+	 * no new packet but we need to tell the peer about space in our receive
+	 * window.
+	 */
+	rcu_read_lock();
+	list_for_each_entry_rcu(path, &rdma_transport->transport.paths, path.list) {
+		struct dtr_flow *flow = &path->flow[stream];
+
+		if (atomic_read(&flow->rx_descs_known_to_peer) <
+		    atomic_read(&flow->rx_descs_posted) / 8)
+			dtr_send_flow_control_msg(path, GFP_ATOMIC);
+	}
+	rcu_read_unlock();
 
 	return false;
 }
@@ -1408,10 +1410,10 @@ static int dtr_send_flow_control_msg(struct dtr_path *path, gfp_t gfp_mask)
 
 	spin_lock_bh(&path->send_flow_control_lock);
 	/*
-	 * dtr_send_flow_control_msg() is called from the receiver thread
-	 * and areceiver, asender (multiple threads). Determining the
-	 * number of new tx_descs and subtracting this number from
-	 * rx_descs_known_to_peer has to be atomic!
+	 * dtr_send_flow_control_msg() is called from multiple threads (the
+	 * receiver thread, the sender threads, softirq contexts).
+	 * Determining the number of new rx_descs and adding this number
+	 * to rx_descs_known_to_peer has to be atomic!
 	 */
 	for (i = DATA_STREAM; i <= CONTROL_STREAM; i++) {
 		flow = &path->flow[i];
@@ -1600,7 +1602,7 @@ static void dtr_dec_rx_descs(struct dtr_cm *cm)
 	struct dtr_transport *rdma_transport = cm->rdma_transport;
 
 	/* When we get the posted rx_descs back, we do not know if they
-	 * where accoutend for the data stream or the control stream...
+	 * were accounted for the data stream or the control stream...
 	 */
 	if (atomic_dec_if_positive(&flow[DATA_STREAM].rx_descs_posted) >= 0)
 		return;
@@ -1761,7 +1763,8 @@ static void dtr_rx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 		atomic_dec(&flow->rx_descs_known_to_peer);
 
 		if (stream == ST_CONTROL)
-			mod_timer(&rdma_transport->control_timer, jiffies + rdma_stream->recv_timeout);
+			mod_timer(&rdma_transport->control_timer,
+				  jiffies + rdma_stream->recv_timeout);
 
 		rx_desc->sequence = dtr_imm_sequence(immediate);
 		dtr_order_rx_descs(rdma_stream, rx_desc);
@@ -1789,11 +1792,13 @@ static void dtr_free_tx_desc(struct dtr_cm *cm, struct dtr_tx_desc *tx_desc)
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
-		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr,
+				  tx_desc->sge[0].length, DMA_TO_DEVICE);
 		put_page(tx_desc->page);
 		break;
 	case SEND_MSG:
-		ib_dma_unmap_single(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_single(device, tx_desc->sge[0].addr,
+				    tx_desc->sge[0].length, DMA_TO_DEVICE);
 		kfree(tx_desc->data);
 		break;
 	case SEND_BIO:
@@ -1871,8 +1876,8 @@ static void dtr_tx_cqe_done(struct ib_cq *cq, struct ib_wc *wc)
 
 		if (cm->state == DSM_CONNECTED)
 			kref_put(&cm->kref, dtr_destroy_cm); /* this is _not_ the last ref */
-		else
-			schedule_work(&cm->end_tx_work); /* the last ref might be put in this work */
+		else /* the last ref might be put in this work */
+			schedule_work(&cm->end_tx_work);
 	}
 }
 
@@ -1912,8 +1917,9 @@ static int dtr_post_rx_desc(struct dtr_cm *cm, struct dtr_rx_desc *rx_desc)
 	recv_wr.sg_list = &rx_desc->sge;
 	recv_wr.num_sge = 1;
 
-	ib_dma_sync_single_for_device(cm->id->device,
-				      rx_desc->sge.addr, rdma_transport->rx_allocation_size, DMA_FROM_DEVICE);
+	ib_dma_sync_single_for_device(cm->id->device, rx_desc->sge.addr,
+				      rdma_transport->rx_allocation_size,
+				      DMA_FROM_DEVICE);
 
 	err = ib_post_recv(cm->id->qp, &recv_wr, &recv_wr_failed);
 	if (err)
@@ -1972,7 +1978,11 @@ static int dtr_create_rx_desc(struct dtr_flow *flow, gfp_t gfp_mask, bool connec
 		kfree(rx_desc);
 		return -ENOMEM;
 	}
-	BUG_ON(PageHighMem(page));
+	if (WARN_ON_ONCE(PageHighMem(page))) {
+		drbd_free_page(transport, page);
+		kfree(rx_desc);
+		return -EINVAL;
+	}
 
 	err = -ECONNRESET;
 	cm = dtr_path_get_cm(path);
@@ -2225,10 +2235,12 @@ static int dtr_remap_tx_desc(struct dtr_cm *old_cm, struct dtr_cm *cm,
 
 	switch (tx_desc->type) {
 	case SEND_PAGE:
-		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr,
+				  tx_desc->sge[0].length, DMA_TO_DEVICE);
 		break;
 	case SEND_MSG:
-		ib_dma_unmap_single(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_single(device, tx_desc->sge[0].addr,
+				    tx_desc->sge[0].length, DMA_TO_DEVICE);
 		break;
 	case SEND_BIO:
 		nr_sges = tx_desc->nr_sges;
@@ -2355,14 +2367,19 @@ retry:
 		break;
 	case SEND_MSG:
 	case SEND_BIO:
-		BUG();
+		WARN_ON_ONCE(1);
+		atomic_inc(&flow->peer_rx_descs);
+		atomic_dec(&flow->tx_descs_posted);
+		err = -EINVAL;
+		goto out;
 	}
 
 	err = __dtr_post_tx_desc(cm, tx_desc);
 	if (err) {
 		atomic_inc(&flow->peer_rx_descs);
 		atomic_dec(&flow->tx_descs_posted);
-		ib_dma_unmap_page(device, tx_desc->sge[0].addr, tx_desc->sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_page(device, tx_desc->sge[0].addr,
+				  tx_desc->sge[0].length, DMA_TO_DEVICE);
 	}
 
 
@@ -2657,7 +2674,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       atomic_read(&path->cs.passive_state) == PCS_INACTIVE,
 				       HZ * 60);
 		if (t == 0)
-			tr_warn(transport, "passive_state still %d\n", atomic_read(&path->cs.passive_state));
+			tr_warn(transport, "passive_state still %d\n",
+				atomic_read(&path->cs.passive_state));
 		fallthrough;
 	case PCS_INACTIVE:
 		break;
@@ -2676,7 +2694,8 @@ static void __dtr_disconnect_path(struct dtr_path *path)
 				       atomic_read(&path->cs.active_state) == PCS_INACTIVE,
 				       HZ * 60);
 		if (t == 0)
-			tr_warn(transport, "active_state still %d\n", atomic_read(&path->cs.active_state));
+			tr_warn(transport, "active_state still %d\n",
+				atomic_read(&path->cs.active_state));
 		fallthrough;
 	case PCS_INACTIVE:
 		break;
@@ -2808,7 +2827,8 @@ static void dtr_destroy_listener(struct drbd_listener *generic_listener)
 		rdma_destroy_id(listener->cm.id);
 }
 
-static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr, struct net *net, struct drbd_listener *drbd_listener)
+static int dtr_init_listener(struct drbd_transport *transport, const struct sockaddr *addr,
+			     struct net *net, struct drbd_listener *drbd_listener)
 {
 	struct dtr_listener *listener = container_of(drbd_listener, struct dtr_listener, listener);
 	struct sockaddr_storage my_addr;
@@ -3014,7 +3034,8 @@ static int dtr_net_conf_change(struct drbd_transport *transport, struct net_conf
 	return ret;
 }
 
-static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream, long timeout)
+static void dtr_set_rcvtimeo(struct drbd_transport *transport, enum drbd_stream stream,
+			     long timeout)
 {
 	struct dtr_transport *rdma_transport =
 		container_of(transport, struct dtr_transport, transport);
@@ -3144,7 +3165,7 @@ static int dtr_send_page(struct drbd_transport *transport, enum drbd_stream stre
 	tx_desc->imm = dtr_imm_encode(stream,
 				      rdma_transport->stream[stream].tx_sequence++);
 	tx_desc->sge[0].length = size;
-	tx_desc->sge[0].lkey = offset; /* abusing lkey fild. See dtr_post_tx_desc() */
+	tx_desc->sge[0].lkey = offset; /* abusing the lkey field. See dtr_post_tx_desc() */
 
 	err = dtr_post_tx_desc(rdma_transport, tx_desc);
 	if (err) {
@@ -3195,8 +3216,10 @@ static bool dtr_hint(struct drbd_transport *transport, enum drbd_stream stream,
 static void dtr_debugfs_show_flow(struct dtr_flow *flow, const char *name, struct seq_file *m)
 {
 	seq_printf(m,    " %-7s field:  posted\t alloc\tdesired\t  max\n", name);
-	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n", atomic_read(&flow->tx_descs_posted), flow->tx_descs_max);
-	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n", atomic_read(&flow->peer_rx_descs));
+	seq_printf(m, "      tx_descs: %5d\t\t\t%5d\n",
+		   atomic_read(&flow->tx_descs_posted), flow->tx_descs_max);
+	seq_printf(m, " peer_rx_descs: %5d (receive window at peer)\n",
+		   atomic_read(&flow->peer_rx_descs));
 	seq_printf(m, "      rx_descs: %5d\t%5d\t%5d\t%5d\n", atomic_read(&flow->rx_descs_posted),
 		   atomic_read(&flow->rx_descs_allocated),
 		   flow->rx_descs_want_posted, flow->rx_descs_max);
