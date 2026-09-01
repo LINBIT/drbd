@@ -1661,6 +1661,8 @@ struct drbd_peer_device {
 			      * on the lower level device when we last looked. */
 	int rs_in_flight; /* resync sectors in flight (to proxy, in proxy and from proxy) */
 	ktime_t rs_last_mk_req_kt;
+	/* fixed resync-rate pacing: KiB*ns granted but not yet spent */
+	u64 rs_pacing_credit;
 	atomic64_t ov_left; /* in bits */
 	unsigned long ov_skipped; /* in bits */
 	u64 rs_start_uuid;
