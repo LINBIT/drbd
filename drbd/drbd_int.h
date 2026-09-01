@@ -1854,6 +1854,19 @@ struct drbd_device {
 	 * part_stat sectors[] counts them: the busy detector subtracts these.
 	 */
 	atomic_t rs_sect_done;
+	/* Resync sectors submitted to the backing device and not yet
+	 * completed: the queue a competing application request waits behind.
+	 */
+	atomic_t rs_sect_queued;
+	/* Resync sectors the backing device has completed, and how fast it
+	 * completed them while it had resync IO to work on. Updated unlocked:
+	 * a torn 32-bit ktime_t read can skew one measurement.
+	 */
+	atomic_t rs_drain_sect;
+	unsigned int rs_drain_mark;	/* rs_drain_sect when this interval began */
+	ktime_t rs_drain_since;		/* when the device last became busy */
+	s64 rs_drain_busy_ns;		/* busy time in this interval, idle excluded */
+	unsigned int rs_drain_rate;	/* sectors per second, 0 until measured */
 	struct pending_bitmap_work_s {
 		atomic_t n;		/* inc when queued here, */
 		spinlock_t q_lock;	/* dec only once finished. */
@@ -2227,6 +2240,19 @@ sector_t drbd_partition_data_capacity(struct drbd_device *device);
  * enough that a ramp-up or a brief stall stays quiet.
  */
 #define RS_MXB_LIMITED_ROUNDS 100
+
+/* The queueing delay a resync may add at the backing device: it keeps at most
+ * as much work queued there as the device works off in "this long".
+ * Arbitrary "best guess" value for now,
+ * slightly more than a default "jiffy" at HZ 250.
+ */
+#define RS_DEPTH_TARGET_MS 5
+/* ... and never less than eight 4 KiB requests, so the device stays fed. */
+#define RS_DEPTH_MIN_SECT 64
+/* Busy time the drain rate is measured over. Of the same order as the budget
+ * it sizes, a resync starting up should leave RS_DEPTH_MIN_SECT quickly.
+ */
+#define RS_DRAIN_SAMPLE_NS NSEC_PER_MSEC
 #define RS_MAKE_REQS_INTV_NS (NSEC_PER_SEC/10)
 
 /* We do bitmap IO in units of 4k blocks.
@@ -2657,6 +2683,9 @@ void drbd_predict_peer_upgrade(struct drbd_peer_device *peer_device);
 void drbd_verify_skipped_block(struct drbd_peer_device *peer_device,
 			       const sector_t sector, const unsigned int size);
 void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req);
+void drbd_rs_depth_release(struct drbd_device *device);
+void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect);
+void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect);
 void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req);
 void drbd_conflict_submit_peer_write(struct drbd_peer_request *peer_req);
 int drbd_submit_peer_request(struct drbd_peer_request *peer_req);

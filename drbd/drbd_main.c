@@ -4247,6 +4247,9 @@ enum drbd_ret_code drbd_create_device(struct drbd_config_context *adm_ctx, unsig
 	atomic_set(&device->wait_for_actlog_ecnt, 0);
 	atomic_set(&device->local_cnt, 0);
 	atomic_set(&device->rs_sect_done, 0);
+	atomic_set(&device->rs_sect_queued, 0);
+	atomic_set(&device->rs_drain_sect, 0);
+	device->rs_drain_since = ktime_get();
 	atomic_set(&device->md_io.in_use, 0);
 
 #ifdef CONFIG_DRBD_TIMING_STATS

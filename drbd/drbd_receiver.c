@@ -2837,25 +2837,157 @@ static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_re
 		wake_up(&connection->ee_wait);
 }
 
+/* How much resync IO may be queued at the backing device at once, in sectors.
+ *
+ * We try to keep the queue of "in-flight" resync IO small-ish even
+ * while we do not see application activity so application IO does not
+ * suffer extreme latency tails even after "quiet" periods.
+ *
+ * drbd_rs_depth_completed() measures how fast resync IO is worked off.
+ * RS_DEPTH_TARGET_MS of that rate is the delay an ongoing resync may add
+ * to one application request.
+ *
+ * The rate is measured rather than taken from c-max-rate because a device that
+ * does not deliver what c-max-rate permits would get a target overstating its
+ * queue by the same factor -- widest on the slow device where an application
+ * request suffers most. A device that needs longer than RS_DEPTH_TARGET_MS for
+ * RS_DEPTH_MIN_SECT ends up at that floor, which is as far as bounding a queue
+ * can go: below it a resync queues no more than the request the device is
+ * working on, and an application request waits for that one in any case.
+ */
+static unsigned int rs_depth_target_sect(struct drbd_device *device)
+{
+	u64 sect = (u64)READ_ONCE(device->rs_drain_rate) * RS_DEPTH_TARGET_MS;
+
+	do_div(sect, MSEC_PER_SEC);
+
+	return sect < RS_DEPTH_MIN_SECT ? RS_DEPTH_MIN_SECT : sect;
+}
+
+static bool rs_depth_exceeded(struct drbd_peer_device *peer_device)
+{
+	struct drbd_device *device = peer_device->device;
+	unsigned int c_min_rate;
+
+	rcu_read_lock();
+	c_min_rate = rcu_dereference(peer_device->conf)->c_min_rate;
+	rcu_read_unlock();
+
+	/* the extra throttle is disabled, and with it this bound */
+	if (c_min_rate == 0)
+		return false;
+
+	return atomic_read(&device->rs_sect_queued) >= rs_depth_target_sect(device);
+}
+
+/* Resync IO completed at the backing device, so the queue is shorter than it
+ * was. Let the conflict submitter look again at what it is holding.
+ */
+void drbd_rs_depth_release(struct drbd_device *device)
+{
+	struct conflict_worker *submit_conflict = &device->submit_conflict;
+
+	if (!list_empty_careful(&submit_conflict->resync_writes))
+		queue_work(submit_conflict->wq, &submit_conflict->worker);
+}
+
+/* Resync IO submitted to the backing device. */
+void drbd_rs_depth_queued(struct drbd_device *device, unsigned int sect)
+{
+	if (!sect)
+		return;
+
+	/* Time the device from where it becomes busy: how long it was idle
+	 * says nothing about how fast it works resync IO off.
+	 */
+	if (atomic_add_return(sect, &device->rs_sect_queued) == sect)
+		device->rs_drain_since = ktime_get();
+}
+
+/* Resync IO completed at the backing device: the queue is shorter than it was,
+ * and the device just showed how fast it works that queue off. Measure that
+ * over busy time, so the rate is the device's own and not a function of how
+ * much resync work happened to be there -- at the RS_DEPTH_MIN_SECT floor a
+ * completion empties the queue, and that has to measure as well as any depth.
+ */
+void drbd_rs_depth_completed(struct drbd_device *device, unsigned int sect)
+{
+	ktime_t now = ktime_get();
+	s64 busy_ns, elapsed_ns;
+	unsigned int drained;
+
+	drained = atomic_add_return(sect, &device->rs_drain_sect);
+	elapsed_ns = ktime_to_ns(ktime_sub(now, device->rs_drain_since));
+	busy_ns = device->rs_drain_busy_ns + (elapsed_ns > 0 ? elapsed_ns : 0);
+
+	if (atomic_sub_return(sect, &device->rs_sect_queued) == 0)
+		device->rs_drain_busy_ns = busy_ns;  /* idle from here */
+
+	if (busy_ns >= RS_DRAIN_SAMPLE_NS) {
+		u64 rate = (u64)(drained - device->rs_drain_mark) * NSEC_PER_SEC;
+
+		WRITE_ONCE(device->rs_drain_rate,
+			   min_t(u64, div64_u64(rate, busy_ns), UINT_MAX));
+		device->rs_drain_mark = drained;
+		device->rs_drain_busy_ns = 0;
+		device->rs_drain_since = now;
+	}
+
+	drbd_rs_depth_release(device);
+}
+
 void drbd_conflict_submit_resync_request(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
+	struct conflict_worker *submit_conflict = &device->submit_conflict;
 	bool conflict;
 	bool canceled;
+	bool too_deep;
 
 	spin_lock_irq(&device->interval_lock);
 	clear_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
 	canceled = test_bit(INTERVAL_CANCELED, &peer_req->i.flags);
 	set_bit(INTERVAL_RECEIVED, &peer_req->i.flags);
 	conflict = drbd_find_conflict(device, &peer_req->i, 0);
-	if (!conflict)
+	/* A discard queues nothing at the device, so holding it back would
+	 * shorten no queue. Its zero-out fallback does, and is not bounded.
+	 */
+	too_deep = !conflict && !canceled && !(peer_req->flags & EE_TRIM) &&
+		rs_depth_exceeded(peer_device);
+	if (too_deep)
+		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &peer_req->i.flags);
+	else if (!conflict && !canceled)
 		set_bit(INTERVAL_SUBMITTED, &peer_req->i.flags);
 	spin_unlock_irq(&device->interval_lock);
 
-	if (!conflict) {
-		int err = drbd_submit_peer_request(peer_req);
+	if (too_deep) {
+		/* Wait for the backing device the same way a conflicting interval
+		 * waits: on the conflict submitter's list, so the receiver goes
+		 * back to the stream. It must -- on a shared data stream the
+		 * application's writes are queued behind this one.
+		 */
+		spin_lock_irq(&submit_conflict->lock);
+		list_add_tail(&peer_req->w.list, &submit_conflict->resync_writes);
+		spin_unlock_irq(&submit_conflict->lock);
+
+		/* The completion that empties the queue may have run since the
+		 * check above, and then it did not see this request.
+		 */
+		smp_mb(); /* list_add vs. re-check; see drbd_rs_depth_completed() */
+		if (!rs_depth_exceeded(peer_device))
+			queue_work(submit_conflict->wq, &submit_conflict->worker);
+		return;
+	}
+
+	if (!conflict && !canceled) {
+		unsigned int size = peer_req->flags & EE_TRIM ? 0 : peer_req->i.size;
+		int err;
+
+		drbd_rs_depth_queued(device, size >> 9);
+		err = drbd_submit_peer_request(peer_req);
 		if (err) {
+			atomic_sub(size >> 9, &device->rs_sect_queued);
 			if (drbd_ratelimit())
 				drbd_err(device, "submit failed, triggering re-connect\n");
 
@@ -4510,8 +4642,13 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 	/* Wait if there are conflicts unless this is a verify request, in
 	 * which case we submit it anyway but skip the block if it conflicted. */
 	if (submit) {
-		int err = drbd_submit_peer_request(peer_req);
+		unsigned int size = drbd_interval_is_resync(&peer_req->i) ? peer_req->i.size : 0;
+		int err;
+
+		drbd_rs_depth_queued(device, size >> 9);
+		err = drbd_submit_peer_request(peer_req);
 		if (err) {
+			atomic_sub(size >> 9, &device->rs_sect_queued);
 			if (drbd_ratelimit())
 				drbd_err(peer_device, "submit failed, triggering re-connect\n");
 
@@ -11164,8 +11301,11 @@ static void drbd_cancel_conflicting_resync_requests(struct drbd_peer_device *pee
 				(unsigned long long) i->sector, i->size,
 				test_bit(INTERVAL_READY_TO_SEND, &i->flags));
 
-		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags))
+		/* Parked at the depth bound, it would wait for a completion. */
+		if (test_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags)) {
+			any_queued = true;
 			continue;
+		}
 
 		set_bit(INTERVAL_SUBMIT_CONFLICT_QUEUED, &i->flags);
 

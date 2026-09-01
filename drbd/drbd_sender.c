@@ -98,6 +98,11 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req)
 	 */
 	if (!drbd_interval_is_application(&peer_req->i))
 		atomic_add(peer_req->i.size >> 9, &device->rs_sect_done);
+	/* The depth bound holds resync reads only, so only those were
+	 * counted into the queue at submit.
+	 */
+	if (drbd_interval_is_resync(&peer_req->i))
+		drbd_rs_depth_completed(device, peer_req->i.size >> 9);
 	io_error = test_bit(__EE_WAS_ERROR, &peer_req->flags);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
@@ -187,8 +192,11 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	 * (as soon as we release the peer_reqs_lock) */
 	type = peer_req->i.type;
 
-	if (type == INTERVAL_RESYNC_WRITE)
+	if (type == INTERVAL_RESYNC_WRITE) {
 		atomic_add(peer_req->i.size >> 9, &device->rs_sect_done);
+		if (!(peer_req->flags & EE_TRIM))
+			drbd_rs_depth_completed(device, peer_req->i.size >> 9);
+	}
 
 	if (peer_req->flags & EE_WAS_ERROR) {
 		/* In protocol != C, we usually do not send write acks.
@@ -639,9 +647,11 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	peer_req->opf = REQ_OP_READ;
 
 	atomic_inc(&connection->backing_ee_cnt);
+	drbd_rs_depth_queued(device, size >> 9);
 	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	if (drbd_submit_peer_request(peer_req) == 0)
 		return 0;
+	atomic_sub(size >> 9, &device->rs_sect_queued);
 
 	/* If it failed because of ENOMEM, retry should help.  If it failed
 	 * because bio_add_page failed (probably broken lower level driver),
@@ -902,9 +912,10 @@ static int drbd_rs_controller(struct drbd_peer_device *peer_device, u64 sect_in,
 
 	duration_ms = duration_ns;
 	do_div(duration_ms, NSEC_PER_MSEC);
-	dynamic_drbd_dbg(peer_device, "dur=%lluns (%llums) sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu\n",
+	dynamic_drbd_dbg(peer_device, "dur=%lluns (%llums) sect_in=%llu in_flight=%d wa=%u co=%d st=%d cps=%d cc=%d rs=%d mx=%llu dr=%u\n",
 		 duration_ns, duration_ms, sect_in, peer_device->rs_in_flight, want, correction,
-		 steps, cps, curr_corr, req_sect, max_sect);
+		 steps, cps, curr_corr, req_sect, max_sect,
+		 READ_ONCE(peer_device->device->rs_drain_rate));
 
 	if (req_sect > max_sect)
 		req_sect = max_sect;
@@ -2991,7 +3002,9 @@ void drbd_resync_after_changed(struct drbd_device *device)
 
 void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 {
-	struct gendisk *disk = peer_device->device->ldev->backing_bdev->bd_disk;
+	struct drbd_device *device = peer_device->device;
+	/* ldev_safe: callers transition into a resync or verify state */
+	struct gendisk *disk = device->ldev->backing_bdev->bd_disk;
 	struct fifo_buffer *plan;
 
 	atomic_set(&peer_device->rs_sect_in, 0);
@@ -3001,7 +3014,15 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	peer_device->rs_mxb_limited = 0;
 	clear_bit(RS_MXB_LIMITED_LOGGED, &peer_device->flags);
 	peer_device->rs_last_events = (int)part_stat_read_accum(disk->part0, sectors)
-		- atomic_read(&peer_device->device->rs_sect_done);
+		- atomic_read(&device->rs_sect_done);
+
+	/* Measure this device now rather than trust what it did last time: it
+	 * may not even be the same backing device any more.
+	 */
+	device->rs_drain_mark = atomic_read(&device->rs_drain_sect);
+	device->rs_drain_since = ktime_get();
+	device->rs_drain_busy_ns = 0;
+	WRITE_ONCE(device->rs_drain_rate, 0);
 
 	/* Updating the RCU protected object in place is necessary since
 	   this function gets called from atomic context.
