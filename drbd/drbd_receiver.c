@@ -9727,6 +9727,37 @@ static int receive_current_uuid(struct drbd_connection *connection, struct packe
 						"receive-current-uuid", NULL);
 		}
 		put_ldev(device);
+	} else if (peer_device->repl_state[NOW] >= L_ESTABLISHED &&
+		   connection->peer_role[NOW] == R_PRIMARY &&
+		   get_ldev(device)) {
+		struct drbd_peer_device *pd;
+		bool defer = false;
+
+		/* Not D_UP_TO_DATE, so the new current UUID must not be
+		 * adopted directly.  But if we are a resync target, defer it
+		 * exactly like the P_UUIDS110/NEW_DATAGEN path does:
+		 * drbd_uuid_received_new_current() plants it into the sync
+		 * source's record, and the resync-end adoption brings us back
+		 * at the primary's generation.  Without this, a resync target
+		 * that received a diskless primary's bump (P_CURRENT_UUID)
+		 * always returns at the source's old generation.
+		 */
+		rcu_read_lock();
+		for_each_peer_device_rcu(pd, device) {
+			enum drbd_repl_state r = pd->repl_state[NOW];
+
+			if (r == L_SYNC_TARGET || r == L_BEHIND ||
+			    r == L_PAUSED_SYNC_T)
+				defer = true;
+		}
+		rcu_read_unlock();
+		if (defer) {
+			drbd_warn(peer_device, "received new current UUID: %016llX weak_nodes=%016llX (deferred to resync end)\n",
+				  current_uuid, weak_nodes);
+			drbd_uuid_received_new_current(peer_device, current_uuid, weak_nodes);
+			drbd_md_sync_if_dirty(device);
+		}
+		put_ldev(device);
 	} else if (device->disk_state[NOW] == D_DISKLESS && resource->role[NOW] == R_PRIMARY) {
 		drbd_uuid_set_exposed(device, peer_device->current_uuid, true);
 	}
