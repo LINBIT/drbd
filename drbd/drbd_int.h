@@ -918,12 +918,6 @@ enum resource_flag {
 
 	TRY_BECOME_UP_TO_DATE_PENDING,
 
-	RESUME_HELD_FOR_OUTDATE, /* A Primary regained data access but a far-away
-				  * member must be outdated before we resume I/O;
-				  * holds susp_nod until the primary-resume 2PC
-				  * commits (or aborts).
-				  */
-
 	DEVICE_WORK_PENDING,	/* tell worker that some device has pending work */
 	PEER_DEVICE_WORK_PENDING,/* tell worker that some peer_device has pending work */
 
@@ -1105,6 +1099,11 @@ struct drbd_resource {
 	bool susp_quorum[2];		/* IO suspended because no quorum */
 	bool susp_uuid[2];		/* IO suspended because waiting new current UUID */
 	bool fail_io[2];		/* Fail all IO requests because forced a demote */
+	bool resume_held_for_outdate[2];/* A Primary regained data access, but a
+					 * far-away member must be outdated before
+					 * I/O resumes; keeps susp_nod set until the
+					 * primary-resume 2PC has done that.
+					 */
 	bool cached_susp;		/* cached result of looking at all different suspend bits */
 	bool cached_all_devices_have_quorum;
 
