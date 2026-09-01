@@ -1240,6 +1240,14 @@ static void drbd_bm_endio(struct bio *bio)
 
 	bm_page_unlock_io(device, idx);
 
+	/* this should not count as user activity and cause the resync to
+	 * throttle -- see drbd_rs_c_min_rate_throttle(). Only where the
+	 * meta-data shares the backing device's disk: the detector reads the
+	 * part_stat counters of that whole disk.
+	 */
+	if (device->ldev->md_bdev->bd_disk == device->ldev->backing_bdev->bd_disk)
+		atomic_add(bio->bi_io_vec[0].bv_len >> 9, &device->rs_sect_done);
+
 	if (ctx->flags & BM_AIO_COPY_PAGES)
 		mempool_free(bio->bi_io_vec[0].bv_page, &drbd_md_io_page_pool);
 
@@ -1333,9 +1341,6 @@ static void bm_page_io_async(struct drbd_bm_aio_ctx *ctx, int page_nr)
 		submit_bio(bio);
 		if (op == REQ_OP_WRITE)
 			device->bm_writ_cnt++;
-		/* this should not count as user activity and cause the
-		 * resync to throttle -- see drbd_rs_should_slow_down(). */
-		atomic_add(len >> 9, &device->rs_sect_ev);
 	}
 }
 

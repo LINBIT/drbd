@@ -93,6 +93,11 @@ static void drbd_endio_read_sec_final(struct drbd_peer_request *peer_req)
 	bool io_error;
 
 	device->read_cnt += peer_req->i.size >> 9;
+	/* Resync and online-verify reads are DRBD's own IO at this device;
+	 * of the reads that come through here, only the peer's is not.
+	 */
+	if (!drbd_interval_is_application(&peer_req->i))
+		atomic_add(peer_req->i.size >> 9, &device->rs_sect_done);
 	io_error = test_bit(__EE_WAS_ERROR, &peer_req->flags);
 
 	drbd_queue_work(&connection->sender_work, &peer_req->w);
@@ -181,6 +186,9 @@ void drbd_endio_write_sec_final(struct drbd_peer_request *peer_req)
 	 * it may be freed/reused already!
 	 * (as soon as we release the peer_reqs_lock) */
 	type = peer_req->i.type;
+
+	if (type == INTERVAL_RESYNC_WRITE)
+		atomic_add(peer_req->i.size >> 9, &device->rs_sect_done);
 
 	if (peer_req->flags & EE_WAS_ERROR) {
 		/* In protocol != C, we usually do not send write acks.
@@ -588,7 +596,6 @@ static int w_e_send_csum(struct drbd_work *w, int cancel)
 	return 0;
 
 out:
-	atomic_sub(peer_req->i.size >> SECTOR_SHIFT, &peer_device->device->rs_sect_ev);
 	drbd_free_peer_req(peer_req);
 
 	if (unlikely(err))
@@ -632,7 +639,6 @@ static int read_for_csum(struct drbd_peer_device *peer_device, sector_t sector, 
 	peer_req->opf = REQ_OP_READ;
 
 	atomic_inc(&connection->backing_ee_cnt);
-	atomic_add(size >> 9, &device->rs_sect_ev);
 	/* ldev_ref_transfer: put_ldev in peer_req endio */
 	if (drbd_submit_peer_request(peer_req) == 0)
 		return 0;
@@ -2989,13 +2995,13 @@ void drbd_rs_controller_reset(struct drbd_peer_device *peer_device)
 	struct fifo_buffer *plan;
 
 	atomic_set(&peer_device->rs_sect_in, 0);
-	atomic_set(&peer_device->device->rs_sect_ev, 0);  /* FIXME: ??? */
 	peer_device->rs_last_mk_req_kt = ktime_get();
 	peer_device->rs_in_flight = 0;
 	peer_device->rs_pacing_credit = 0;
 	peer_device->rs_mxb_limited = 0;
 	clear_bit(RS_MXB_LIMITED_LOGGED, &peer_device->flags);
-	peer_device->rs_last_events = (int)part_stat_read_accum(disk->part0, sectors);
+	peer_device->rs_last_events = (int)part_stat_read_accum(disk->part0, sectors)
+		- atomic_read(&peer_device->device->rs_sect_done);
 
 	/* Updating the RCU protected object in place is necessary since
 	   this function gets called from atomic context.

@@ -2828,7 +2828,6 @@ static void drbd_cleanup_received_resync_write(struct drbd_peer_request *peer_re
 
 	drbd_remove_peer_req_interval(peer_req);
 
-	atomic_sub(peer_req->i.size >> SECTOR_SHIFT, &device->rs_sect_ev);
 	dec_unacked(peer_device);
 
 	drbd_free_peer_req(peer_req);
@@ -2895,8 +2894,6 @@ static int recv_resync_read(struct drbd_peer_device *peer_device,
 	peer_req->w.cb = e_end_resync_block;
 	peer_req->opf = REQ_OP_WRITE;
 	peer_req->submit_jif = jiffies;
-
-	atomic_add(d->bi_size >> 9, &device->rs_sect_ev);
 
 	sector = peer_req->i.sector;
 	size = peer_req->i.size;
@@ -4383,7 +4380,8 @@ void drbd_cleanup_peer_requests_wfa(struct drbd_device *device, struct list_head
  * To decide whether or not the lower device is busy, we use a scheme similar
  * to MD RAID is_mddev_idle(): if the partition stats reveal "significant"
  * (more than 64 sectors) of activity we cannot account for with our own resync
- * activity, it obviously is "busy".
+ * activity, it obviously is "busy". Both terms count what the backing device
+ * has completed, so resync IO in flight does not hide application IO.
  *
  * The current sync rate used here uses only the most recent two step marks,
  * to have a short time average so we can react faster.
@@ -4406,7 +4404,7 @@ bool drbd_rs_c_min_rate_throttle(struct drbd_peer_device *peer_device)
 		return false;
 
 	curr_events = (int)part_stat_read_accum(disk->part0, sectors)
-		- atomic_read(&device->rs_sect_ev);
+		- atomic_read(&device->rs_sect_done);
 
 	if (atomic_read(&device->ap_actlog_cnt) || curr_events - peer_device->rs_last_events > 64) {
 		unsigned long rs_left;
@@ -4469,8 +4467,6 @@ static void drbd_cleanup_peer_read(
 	if (in_interval_tree)
 		drbd_remove_peer_req_interval(peer_req);
 
-	if (peer_req->i.type != INTERVAL_PEER_READ)
-		atomic_sub(peer_req->i.size >> SECTOR_SHIFT, &device->rs_sect_ev);
 	dec_unacked(peer_device);
 
 	drbd_free_peer_req(peer_req);
@@ -4643,8 +4639,6 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 	if (connection->peer_role[NOW] != R_PRIMARY &&
 			drbd_rs_c_min_rate_throttle(peer_device))
 		schedule_timeout_uninterruptible(HZ/10);
-
-	atomic_add(size >> 9, &device->rs_sect_ev);
 
 	/* dagtag 0 means that there is no dependency to be fulfilled,
 	 * so we can ignore it.
@@ -10980,7 +10974,6 @@ static int receive_rs_deallocated(struct drbd_connection *connection, struct pac
 
 	dec_rs_pending(peer_device);
 	inc_unacked(peer_device);
-	atomic_add(size >> 9, &device->rs_sect_ev);
 	peer_req->flags |= EE_TRIM;
 
 	/* Setting all peers out of sync here. The sync source peer will be

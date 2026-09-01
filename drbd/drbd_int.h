@@ -1850,7 +1850,10 @@ struct drbd_device {
 	u64 exposed_data_uuid_predecessor;
 	unsigned int exposed_gen_epoch;
 	struct rw_semaphore uuid_sem;
-	atomic_t rs_sect_ev; /* for submitted resync data rate, both */
+	/* Resync sectors completed on the backing device, counted where
+	 * part_stat sectors[] counts them: the busy detector subtracts these.
+	 */
+	atomic_t rs_sect_done;
 	struct pending_bitmap_work_s {
 		atomic_t n;		/* inc when queued here, */
 		spinlock_t q_lock;	/* dec only once finished. */
