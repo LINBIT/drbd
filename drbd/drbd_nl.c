@@ -4551,6 +4551,19 @@ static int drbd_adm_peer_device_opts(struct sk_buff *skb, struct genl_info *info
 	if (new_peer_device_conf->c_plan_ahead > DRBD_C_PLAN_AHEAD_MAX)
 		new_peer_device_conf->c_plan_ahead = DRBD_C_PLAN_AHEAD_MAX;
 
+	/* c-plan-ahead 0 selects the fixed resync-rate, which the sender paces
+	 * against c-max-rate as well. Say so, but leave the configured value
+	 * alone: clamping it here would make every later "drbdadm adjust" see a
+	 * setting that differs from the configuration file and set it again.
+	 */
+	if (new_peer_device_conf->c_plan_ahead == 0 &&
+	    new_peer_device_conf->c_max_rate &&
+	    new_peer_device_conf->c_max_rate < new_peer_device_conf->resync_rate)
+		drbd_msg_sprintf_info(adm_ctx.reply_skb,
+				      "c-plan-ahead 0: resync-rate %u KiB/s is above c-max-rate %u KiB/s, the resync will run at c-max-rate",
+				      new_peer_device_conf->resync_rate,
+				      new_peer_device_conf->c_max_rate);
+
 	err = adjust_resync_fifo(peer_device, new_peer_device_conf, &old_plan);
 	if (err)
 		goto fail;
