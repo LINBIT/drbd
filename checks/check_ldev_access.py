@@ -493,6 +493,7 @@ def _analyze_block(block, regions):
             # Detect ``var = true;`` inside the body -- the variable
             # acts as a deferred ldev guard for later if (var) blocks.
             _collect_ldev_flag_vars(pos_body, ldev_vars)
+            _recurse_alternative(stmt, regions)
             i += 1
             continue
 
@@ -504,6 +505,7 @@ def _analyze_block(block, regions):
                 regions.append((ldev_var_body.start_byte,
                                 ldev_var_body.end_byte))
                 _analyze_block(ldev_var_body, regions)
+                _recurse_alternative(stmt, regions)
                 i += 1
                 continue
 
@@ -688,6 +690,18 @@ def _recurse_children(node, regions):
             return
     for child in node.named_children:
         _recurse_children(child, regions)
+
+
+def _recurse_alternative(stmt, regions):
+    """Analyze the ``else`` branch of a guard *stmt* handled by the caller.
+
+    A guarded if-statement only makes its own consequence a protected
+    region; its ``else`` branch runs without that reference and needs its
+    own guards.  Descend so an ``else if (get_ldev(...))`` there is seen.
+    """
+    alt = stmt.child_by_field_name("alternative")
+    if alt:
+        _recurse_children(alt, regions)
 
 
 def is_in_regions(byte_pos, regions):
