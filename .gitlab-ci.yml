@@ -179,16 +179,41 @@ build:for-tests:
     -   DRBD_VERSION=$DRBD_VERSION_BASE.$CI_COMMIT_SHA
     -   DRBD_RELEASE=1
     - fi
-    - echo DRBD_VERSION=$DRBD_VERSION >> build.env
     - |
       # If the build is conditional and some packages already exist, skip the build.
       # Then the purpose of this job is just to generate build.env.
+      build_packages=true
       if [ "$DRBD_BUILD_CONDITIONAL" = true ]; then
-        pulp rpm content list --name-in kmod-drbd --name-in drbd-kmp-default \
-              --field version --limit 10000 | \
-            jq --exit-status --arg v "$DRBD_VERSION" \
-                  'any(.[]; .version | startswith($v + "_"))' && exit 0
+        published=$(pulp rpm content list --name-in kmod-drbd --name-in drbd-kmp-default \
+              --field version,release --limit 10000 | \
+            jq -r --arg v "$DRBD_VERSION" \
+                  '[.[] | select(.version | startswith($v + "_")) | .version + "-" + .release] | unique
+                   | sort_by([splits("[^0-9]+") | select(. != "") | tonumber])
+                   | last // empty' || true)
+        if [ -n "$published" ]; then
+          build_packages=false
+          # On the release branch $DRBD_VERSION is a rolling label, so the
+          # release of the package that will be installed identifies the
+          # commit under test -- $CI_COMMIT_SHA may already be newer.
+          published_release=${published##*-}
+          case "$published_release" in
+            "$published"|''|*[!0-9]*) ;;
+            *) DRBD_RELEASE=$published_release ;;
+          esac
+        fi
       fi
+    - |
+      {
+        echo DRBD_VERSION=$DRBD_VERSION
+        echo DRBD_RELEASE=$DRBD_RELEASE
+        echo DRBD_BUILD_SHA=$CI_COMMIT_SHA
+        if [ "$build_packages" = false ]; then
+          echo DRBD_PACKAGE_VERSION=$published
+          echo DRBD_BUILD_SKIPPED=true
+        fi
+      } >> build.env
+    - cat build.env
+    - if [ "$build_packages" = false ]; then exit 0; fi
     - drbd_build $DRBD_VERSION $DRBD_RELEASE $DRBD_VERSION "$(kernels_from_vms)"
   artifacts:
     reports:
