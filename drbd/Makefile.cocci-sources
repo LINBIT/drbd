@@ -63,6 +63,10 @@ sources += drbd-headers/uapi/linux/drbd_limits.h
 sources += drbd-headers/linux/drbd_nl_gen.c
 sources-ignored += drbd-headers/linux/drbd_nl_gen.h
 
+# generated for drbd-utils' userspace netlink, never compiled into the module
+sources-ignored += drbd-headers/linux/drbd_genl_userspace.c
+sources-ignored += drbd-headers/linux/drbd_genl_userspace.h
+
 __duplicates := $(shell printf "%s\n" $(sources) $(sources-ignored) | sort | uniq -d)
 $(if $(__duplicates),$(error duplicated entries found: $(__duplicates)))
 
