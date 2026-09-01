@@ -2564,8 +2564,8 @@ static void sanitize_state(struct drbd_resource *resource)
 			if (role[OLD] != R_PRIMARY || drbd_data_accessible(device, OLD))
 				volume_lost_data_access = true;
 		}
-		if (role[NEW] == R_PRIMARY && drbd_data_accessible(device, NEW) &&
-		    !(role[OLD] == R_PRIMARY && drbd_data_accessible(device, OLD)))
+		if (role[NEW] == R_PRIMARY && !drbd_data_accessible(device, OLD) &&
+		    drbd_data_accessible(device, NEW))
 			volume_gained_data_access = true;
 
 		if (lost_connection && disk_state[NEW] == D_NEGOTIATING)
