@@ -6749,6 +6749,12 @@ int drbd_nl_get_connections_dumpit(struct sk_buff *skb, struct netlink_callback 
 		kref_debug_put(&resource->kref_debug, 6);
 		kref_put(&resource->kref, drbd_destroy_resource);
 		resource = NULL;
+		/* Drop the stale pointer so that neither a subsequent dump
+		 * round nor the done() callback uses the reference we just
+		 * dropped.
+		 */
+		cb->args[0] = 0;
+		cb->args[2] = 0;
 		retcode = ERR_INTR;
 		rcu_read_lock();
 		goto put_result;
