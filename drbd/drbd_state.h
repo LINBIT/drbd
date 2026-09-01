@@ -81,17 +81,45 @@ union drbd_state drbd_get_device_state(struct drbd_device *device,
 union drbd_state drbd_get_peer_device_state(struct drbd_peer_device *peer_device,
 					    enum which_state which);
 
+/* Retry the state change until it is no longer refused as transient.
+ *
+ * A transient state is left by further state changes on the resource, and a
+ * connect handshake takes more than one two-phase commit, so there is no useful
+ * bound on how long a legitimate wait lasts. Wait for as long as the resource
+ * keeps committing state changes; give up once none was committed for two
+ * two-phase-commit timeouts, and return SS_TIMEOUT. Two, not one, so that a
+ * commit landing just after the deadline does not end the wait. The callers
+ * that matter hold resource->state_sem across this, so waiting with no bound at
+ * all also blocks this node's own connect attempts.
+ */
 #define stable_state_change(resource, change_state) ({				\
-		enum drbd_state_rv rv;						\
-		int err;							\
-		err = wait_event_interruptible((resource)->state_wait,		\
-			(rv = (change_state)) != SS_IN_TRANSIENT_STATE);	\
-		if (err)							\
-			err = -SS_UNKNOWN_ERROR;				\
-		else								\
-			err = rv;						\
-		err;								\
-	})
+	struct drbd_resource *__resource = (resource);				\
+	enum drbd_state_rv __rv;						\
+	unsigned int __seq;							\
+	long __t;								\
+										\
+	for (;;) {								\
+		long __to = 2 * twopc_timeout(__resource);			\
+										\
+		__seq = READ_ONCE(__resource->state_change_seq);		\
+		__t = wait_event_interruptible_timeout(__resource->state_wait,	\
+			(__rv = (change_state)) != SS_IN_TRANSIENT_STATE, __to); \
+		if (__t < 0) {							\
+			__rv = -SS_UNKNOWN_ERROR;				\
+			break;							\
+		}								\
+		if (__t > 0)							\
+			break;							\
+		if (__seq == READ_ONCE(__resource->state_change_seq)) {		\
+			drbd_warn(__resource,					\
+				  "State change refused as transient, no state change in %ums\n", \
+				  jiffies_to_msecs(__to));			\
+			__rv = SS_TIMEOUT;					\
+			break;							\
+		}								\
+	}									\
+	(int)__rv;								\
+})
 
 void nested_twopc_work(struct work_struct *work);
 void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource);
