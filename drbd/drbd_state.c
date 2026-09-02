@@ -720,6 +720,9 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	bool is_connect = resource->twopc_reply.is_connect;
 	int initiator_node_id = resource->twopc_reply.initiator_node_id;
+	struct drbd_connection *connection;
+
+	lockdep_assert_held(&resource->state_rwlock);
 
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
@@ -730,9 +733,18 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	 */
 	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
 
-	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
-		struct drbd_connection *connection;
+	/* Discard the replies along with the tid they answered, so the next
+	 * transaction cannot read one of this transaction's as its own.
+	 */
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		clear_bit(TWOPC_YES, &connection->flags);
+		clear_bit(TWOPC_NO, &connection->flags);
+		clear_bit(TWOPC_RETRY, &connection->flags);
+	}
+	rcu_read_unlock();
 
+	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
 		rcu_read_lock();
 		connection = drbd_connection_by_node_id(resource, initiator_node_id);
 		if (connection)
@@ -4838,6 +4850,9 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 		u64 mask;
 		int err;
 
+		/* The replies are cleared by __clear_remote_state_change(), so a
+		 * connection this attempt skips carries none from an earlier one.
+		 */
 		clear_bit(TWOPC_PREPARED, &connection->flags);
 
 		if (connection->agreed_pro_version < 110)
@@ -4847,10 +4862,6 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 			set_bit(TWOPC_PREPARED, &connection->flags);
 		else
 			continue;
-
-		clear_bit(TWOPC_YES, &connection->flags);
-		clear_bit(TWOPC_NO, &connection->flags);
-		clear_bit(TWOPC_RETRY, &connection->flags);
 
 		err = conn_send_twopc_request(connection, request);
 		if (err) {
@@ -4896,8 +4907,16 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 				!test_bit(CONN_HANDSHAKE_READY, &connection->flags))
 			connect_ready = false;
 
-		if (!test_bit(TWOPC_PREPARED, &connection->flags))
+		if (!test_bit(TWOPC_PREPARED, &connection->flags)) {
+			/* Not awaited, but a reply on it still counts: the connection
+			 * may have dropped out of the prepared set after replying.
+			 */
+			if (test_bit(TWOPC_NO, &connection->flags))
+				have_no = true;
+			if (test_bit(TWOPC_RETRY, &connection->flags))
+				have_retry = true;
 			continue;
+		}
 		/* A prepared peer that is no longer connected cannot reply; count
 		 * that as a retry. A connect/disconnect target is transitional.
 		 */
@@ -4942,8 +4961,16 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 				handshake_retry = true;
 		}
 
-		if (!test_bit(TWOPC_PREPARED, &connection->flags))
+		if (!test_bit(TWOPC_PREPARED, &connection->flags)) {
+			/* As in cluster_wide_reply_ready(). */
+			if (test_bit(TWOPC_NO, &connection->flags)) {
+				failed_by = connection;
+				have_no = true;
+			}
+			if (test_bit(TWOPC_RETRY, &connection->flags))
+				have_retry = true;
 			continue;
+		}
 		/* As in cluster_wide_reply_ready(). */
 		if (connection->cstate[NOW] < C_CONNECTED &&
 		    !((resource->twopc_reply.is_connect || resource->twopc_reply.is_disconnect) &&
