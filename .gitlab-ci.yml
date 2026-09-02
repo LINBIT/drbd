@@ -150,10 +150,12 @@ check:checkpatch.pl:
   rules:
     - if: $CI_MERGE_REQUEST_ID
   image: docker.io/library/perl:5
+  variables:
+    LINUX_SCRIPTS: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/scripts
   script:
-    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl
-    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/spelling.txt
-    - curl -sSLO https://raw.githubusercontent.com/torvalds/linux/master/scripts/const_structs.checkpatch
+    - curl -sSfLO $LINUX_SCRIPTS/checkpatch.pl
+    - curl -sSfLO $LINUX_SCRIPTS/spelling.txt
+    - curl -sSfLO $LINUX_SCRIPTS/const_structs.checkpatch
     - chmod +x checkpatch.pl
     - git fetch --no-tags origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - base=$(git merge-base remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} HEAD)
