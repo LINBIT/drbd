@@ -248,7 +248,6 @@ enum drbd_disk_state disk_state_from_md(struct drbd_device *device);
 bool want_bitmap(struct drbd_peer_device *peer_device);
 long twopc_timeout(struct drbd_resource *resource);
 long twopc_retry_timeout(struct drbd_resource *resource, int retries);
-void twopc_connection_down(struct drbd_connection *connection);
 u64 directly_connected_nodes(struct drbd_resource *resource,
 			     enum which_state which);
 

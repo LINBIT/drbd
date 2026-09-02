@@ -11349,17 +11349,6 @@ static int got_twopc_reply(struct drbd_connection *connection, struct packet_inf
 	return 0;
 }
 
-void twopc_connection_down(struct drbd_connection *connection)
-{
-	struct drbd_resource *resource = connection->resource;
-
-	if (resource->twopc_reply.initiator_node_id != -1 &&
-	    test_bit(TWOPC_PREPARED, &connection->flags)) {
-		set_bit(TWOPC_RETRY, &connection->flags);
-		drbd_maybe_cluster_wide_reply(resource);
-	}
-}
-
 static int got_Ping(struct drbd_connection *connection, struct packet_info *pi)
 {
 	drbd_queue_ping_ack(connection);

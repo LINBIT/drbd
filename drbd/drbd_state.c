@@ -993,6 +993,18 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 		resource->state_change_seq++;
 	wake_up_all(&resource->state_wait);
 
+	/* Now that NOW carries this change, re-derive the outcome of a cluster-wide
+	 * state change that is still waiting for replies: a prepared peer that just
+	 * lost its connection cannot reply, so the wait ends in a retry instead of a
+	 * twopc-timeout.  The wake_up_all() above reaches a transaction this node
+	 * initiated; this reaches one it only forwards, whose reply goes upstream
+	 * from twopc_work and has nobody sleeping on state_wait.  Not where
+	 * this state change ends the transaction itself: the
+	 * __clear_remote_state_change() below discards it and its replies.
+	 */
+	if (!(flags & CS_TWOPC) || (flags & CS_PREPARE))
+		drbd_maybe_cluster_wide_reply(resource);
+
 	/* Informed confirmation of a rotated data generation.  This state change
 	 * may have gained quorum, brought a sync peer UpToDate, or lost a peer
 	 * (discharging its durable-ack requirement) -- any of which can complete the
@@ -3404,9 +3416,6 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 		    cstate[NEW] <= C_TEAR_DOWN && cstate[NEW] >= C_TIMEOUT)
 			drbd_thread_restart_nowait(&connection->receiver);
 
-		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
-			twopc_connection_down(connection);
-
 		/* remember last connect time so request_timer_fn() won't
 		 * kill newly established sessions while we are still trying to thaw
 		 * previously frozen IO */
@@ -4889,6 +4898,15 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
+		/* A prepared peer that is no longer connected cannot reply; count
+		 * that as a retry. A connect/disconnect target is transitional.
+		 */
+		if (connection->cstate[NOW] < C_CONNECTED &&
+		    !((resource->twopc_reply.is_connect || resource->twopc_reply.is_disconnect) &&
+		      connection->peer_node_id == resource->twopc_reply.target_node_id)) {
+			have_retry = true;
+			continue;
+		}
 		if (test_bit(TWOPC_NO, &connection->flags))
 			have_no = true;
 		if (test_bit(TWOPC_RETRY, &connection->flags))
@@ -4926,6 +4944,13 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 
 		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
+		/* As in cluster_wide_reply_ready(). */
+		if (connection->cstate[NOW] < C_CONNECTED &&
+		    !((resource->twopc_reply.is_connect || resource->twopc_reply.is_disconnect) &&
+		      connection->peer_node_id == resource->twopc_reply.target_node_id)) {
+			have_retry = true;
+			continue;
+		}
 		if (test_bit(TWOPC_NO, &connection->flags)) {
 			failed_by = connection;
 			have_no = true;
