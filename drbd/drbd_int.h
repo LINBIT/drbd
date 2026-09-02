@@ -1177,6 +1177,8 @@ struct drbd_connection {
 
 	struct drbd_work connect_timer_work;
 	struct timer_list connect_timer;
+	/* Connect two-phase commits attempted in this transport session. */
+	unsigned int connect_tries;
 
 	struct crypto_shash *cram_hmac_tfm;
 	struct crypto_shash *integrity_tfm;  /* checksums we compute, updates protected by connection->mutex[DATA_STREAM] */

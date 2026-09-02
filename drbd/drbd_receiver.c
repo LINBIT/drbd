@@ -836,6 +836,38 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 	mutex_unlock(&resource->open_release);
 }
 
+/* Ends a burst of connect attempts: the transport session is given up, so
+ * connect-int becomes the cool-down instead of another 50 ms re-arm.
+ */
+#define CONNECT_TRIES_PER_SESSION 10
+
+static unsigned long connect_retry_delay(struct drbd_connection *connection,
+					 unsigned long elapsed)
+{
+	/* Idle at least as long as the attempt was busy, so a connect that keeps
+	 * failing cannot hold the transaction more than half of the time.
+	 */
+	return clamp_t(unsigned long, elapsed, HZ / 20,
+		       twopc_timeout(connection->resource));
+}
+
+static bool connect_retry_allowed(struct drbd_connection *connection,
+				  enum drbd_state_rv rv, unsigned long elapsed)
+{
+	/* Yielding to a concurrent state change gives up before the prepare, so
+	 * such an attempt costs nothing and does not spend one of the tries.
+	 */
+	if (rv == SS_CONCURRENT_ST_CHG && elapsed < HZ / 20)
+		return true;
+
+	if (++connection->connect_tries <= CONNECT_TRIES_PER_SESSION)
+		return true;
+
+	drbd_info(connection, "Connect keeps failing (%s); retrying after connect-int\n",
+		  drbd_set_st_err_str(rv));
+	return false;
+}
+
 static int connect_work(struct drbd_work *work, int cancel)
 {
 	struct drbd_connection *connection =
@@ -845,6 +877,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 	long t = resource->res_opts.auto_promote_timeout * HZ / 10;
 	bool retry = retry_by_rr_conflict(connection);
 	bool incompat_states, force_demote;
+	unsigned long start_time;
 
 	if (connection->cstate[NOW] != C_CONNECTING)
 		goto out_put;
@@ -852,6 +885,7 @@ static int connect_work(struct drbd_work *work, int cancel)
 	if (connection->agreed_pro_version == 117)
 		wait_initial_states_received(connection);
 
+	start_time = jiffies;
 	do {
 		/* Carefully check if it is okay to do a two_phase_commit from sender context */
 		if (down_trylock(&resource->state_sem)) {
@@ -884,14 +918,25 @@ static int connect_work(struct drbd_work *work, int cancel)
 		if (connection->agreed_pro_version < 117)
 			conn_connect2(connection);
 	} else if (rv == SS_TIMEOUT || rv == SS_CONCURRENT_ST_CHG) {
+		unsigned long elapsed = jiffies - start_time;
+
 		if (connection->cstate[NOW] != C_CONNECTING)
 			goto out_put;
-		arm_connect_timer(connection, jiffies + HZ/20);
-		return 0; /* Return early. Keep the reference on the connection! */
+		if (connect_retry_allowed(connection, rv, elapsed)) {
+			arm_connect_timer(connection, jiffies +
+				connect_retry_delay(connection, elapsed));
+			return 0; /* Return early. Keep the reference on the connection! */
+		}
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	} else if (rv == SS_HANDSHAKE_RETRY || (incompat_states && retry)) {
-		arm_connect_timer(connection, jiffies + HZ);
+		bool again = connect_retry_allowed(connection, rv, jiffies - start_time);
+
+		if (again)
+			arm_connect_timer(connection, jiffies + HZ);
 		apply_local_state_change(connection, OUTDATE_DISKS, force_demote);
-		return 0; /* Keep reference */
+		if (again)
+			return 0; /* Keep reference */
+		change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	} else if (rv == SS_HANDSHAKE_DISCONNECT || (incompat_states && !retry)) {
 		drbd_send_disconnect(connection);
 		apply_local_state_change(connection, OUTDATE_DISKS_AND_DISCONNECT, force_demote);
@@ -1079,6 +1124,7 @@ start:
 			kref_get(&connection->kref);
 			kref_debug_get(&connection->kref_debug, 11);
 			connection->connect_timer_work.cb = connect_work;
+			connection->connect_tries = 0;
 			arm_connect_timer(connection, jiffies);
 		}
 	} else {
