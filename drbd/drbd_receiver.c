@@ -836,6 +836,24 @@ static void apply_local_state_change(struct drbd_connection *connection, enum ao
 	mutex_unlock(&resource->open_release);
 }
 
+/* Without the initial state of every volume finish_nested_twopc() never sets
+ * CONN_HANDSHAKE_READY, and the connect runs to twopc-timeout for good.
+ */
+static void report_missing_initial_states(struct drbd_connection *connection)
+{
+	struct drbd_peer_device *peer_device;
+	int vnr;
+
+	rcu_read_lock();
+	idr_for_each_entry(&connection->peer_devices, peer_device, vnr) {
+		if (!test_bit(INITIAL_STATE_RECEIVED, &peer_device->flags))
+			drbd_warn(connection,
+				  "Connect cannot complete: the peer sent no state for volume %d\n",
+				  vnr);
+	}
+	rcu_read_unlock();
+}
+
 /* Ends a burst of connect attempts: the transport session is given up, so
  * connect-int becomes the cool-down instead of another 50 ms re-arm.
  */
@@ -922,6 +940,11 @@ static int connect_work(struct drbd_work *work, int cancel)
 
 		if (connection->cstate[NOW] != C_CONNECTING)
 			goto out_put;
+		/* Only after a timeout: SS_CONCURRENT_ST_CHG gives up before the
+		 * prepare, so no state can have arrived for this attempt.
+		 */
+		if (rv == SS_TIMEOUT)
+			report_missing_initial_states(connection);
 		if (connect_retry_allowed(connection, rv, elapsed)) {
 			arm_connect_timer(connection, jiffies +
 				connect_retry_delay(connection, elapsed));
