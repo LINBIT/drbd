@@ -5546,8 +5546,12 @@ change_cluster_wide_state(bool (*change)(struct change_context *, enum change_ph
 				reply->target_reachable_nodes;
 		}
 
+		/* On the state return codes below the peer never gave a verdict, so
+		 * no initial state is on its way and waiting for it is a stall.
+		 */
 		if (context->mask.conn == conn_MASK && context->val.conn == C_CONNECTED &&
-		    target_connection->agreed_pro_version >= 118) {
+		    target_connection->agreed_pro_version >= 118 &&
+		    rv != SS_TIMEOUT && rv != SS_INTERRUPTED && rv != SS_CONCURRENT_ST_CHG) {
 			wait_initial_states_received(target_connection);
 
 			if (rv >= SS_SUCCESS && test_bit(TWOPC_RECV_SIZES_ERR, &resource->flags))
