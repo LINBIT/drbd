@@ -724,6 +724,11 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	resource->remote_state_change = false;
 	resource->twopc_reply.initiator_node_id = -1;
 	resource->twopc_reply.tid = 0;
+	/* A reply this transaction scheduled but did not get to send answers a
+	 * tid that no longer exists.  Leaving the flag set also blocks
+	 * when_done_lock() until the work runs.
+	 */
+	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
 
 	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
 		struct drbd_connection *connection;
@@ -5759,7 +5764,12 @@ void nested_twopc_work(struct work_struct *work)
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
 
-	__nested_twopc_work(resource);
+	/* Cleared where the transaction that scheduled this one ended, so a
+	 * clear flag means there is no reply to send and the transaction now
+	 * running, if any, is not this work item's to answer.
+	 */
+	if (test_and_clear_bit(TWOPC_WORK_PENDING, &resource->flags))
+		__nested_twopc_work(resource);
 
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
@@ -5780,7 +5790,12 @@ void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource)
 		return;
 
 	kref_get(&resource->kref);
-	schedule_work(&resource->twopc_work);
+	if (!schedule_work(&resource->twopc_work)) {
+		/* Still queued from a transaction that ended before it ran; that
+		 * instance's reference covers this reply as well.
+		 */
+		kref_put(&resource->kref, drbd_destroy_resource);
+	}
 }
 
 enum drbd_state_rv
