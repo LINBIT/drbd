@@ -730,6 +730,10 @@ static int update_sync_bits(struct drbd_peer_device *peer_device,
 			drbd_check_resync_done(peer_device);
 		} else if (mode == RECORD_RS_FAILED) {
 			peer_device->rs_failed += count;
+			/* A failed block may be the last one the resync had
+			 * left; nothing else checks then.
+			 */
+			drbd_check_resync_done(peer_device);
 		} else /* if (mode == SET_OUT_OF_SYNC) */ {
 			enum drbd_repl_state repl_state = peer_device->repl_state[NOW];
 			if (repl_state >= L_SYNC_SOURCE && repl_state <= L_PAUSED_SYNC_T)
