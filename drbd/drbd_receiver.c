@@ -2470,6 +2470,12 @@ static bool bits_in_sync(struct drbd_peer_device *peer_device, sector_t sector_s
 			peer_device->repl_state[NOW] == L_SYNC_TARGET ||
 			peer_device->repl_state[NOW] == L_PAUSED_SYNC_S ||
 			peer_device->repl_state[NOW] == L_PAUSED_SYNC_T) {
+		/* An Inconsistent peer is receiving a resync. Unless we are the
+		 * source, that data is not ours and our bitmap does not know it.
+		 */
+		if (peer_device->disk_state[NOW] == D_INCONSISTENT &&
+		    peer_device->repl_state[NOW] != L_SYNC_SOURCE)
+			return false;
 		if (drbd_bm_total_weight(peer_device) == 0)
 			return true;
 		if (drbd_bm_count_bits(device, peer_device->bitmap_index,
