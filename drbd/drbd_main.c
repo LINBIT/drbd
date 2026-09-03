@@ -1046,11 +1046,15 @@ static int flush_send_buffer(struct drbd_connection *connection, enum drbd_strea
 		(sbuf->additional_size ? MSG_MORE : 0);
 	offset = sbuf->unsent - (char *)page_address(sbuf->page);
 	err = tr_ops->send_page(transport, drbd_stream, sbuf->page, offset, size, flags);
-	if (!err) {
-		sbuf->unsent =
-		sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
-	}
 
+	/* Advance past this range even when the send failed. send_page() may
+	 * have put part of it on the wire, so it must not be sent a second
+	 * time, and this stream is broken anyway. Retaining it would make
+	 * every later flush retry it and fail again, until the next connect
+	 * re-initializes the buffer.
+	 */
+	sbuf->unsent =
+	sbuf->pos += sbuf->allocated_size;      /* send buffer submitted! */
 	sbuf->allocated_size = 0;
 
 	return err;
@@ -1131,12 +1135,21 @@ int drbd_uncork(struct drbd_connection *connection, enum drbd_stream stream)
 	int err;
 
 	mutex_lock(&connection->mutex[stream]);
+	/* Without a transport there is nothing to flush and nobody to tell.
+	 * Dropping the cork state is all that is left to do, and reporting an
+	 * error would only tell the caller about the connection we already
+	 * know is gone.
+	 */
+	if (connection->cstate[NOW] < C_CONNECTING) {
+		clear_bit(CORKED + stream, &connection->flags);
+		mutex_unlock(&connection->mutex[stream]);
+		return 0;
+	}
+
 	err = flush_send_buffer(connection, stream);
 	if (!err) {
 		clear_bit(CORKED + stream, &connection->flags);
-		/* only call into transport, if we expect it to work */
-		if (connection->cstate[NOW] >= C_CONNECTING)
-			tr_ops->hint(transport, stream, UNCORK);
+		tr_ops->hint(transport, stream, UNCORK);
 	}
 	mutex_unlock(&connection->mutex[stream]);
 	return err;
