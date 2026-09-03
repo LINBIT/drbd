@@ -1365,7 +1365,7 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 	 * this state change ends the transaction itself: the
 	 * __clear_remote_state_change() below discards it and its replies.
 	 */
-	if (!(flags & CS_TWOPC) || (flags & CS_PREPARE))
+	if (!(flags & CS_TWOPC))
 		drbd_maybe_cluster_wide_reply(resource);
 
 	/* Informed confirmation of a rotated data generation.  This state change
