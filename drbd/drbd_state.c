@@ -6257,6 +6257,14 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 			twopc_end_nested(resource, P_TWOPC_NO);
 		else if (!have_peers && cluster_wide_reply_ready(resource)) /* no nested nodes */
 			__nested_twopc_work(resource);
+		else if (have_peers) {
+			/* A peer that dropped between the reachability check above and
+			 * its prepare produces no further event to re-derive on.
+			 */
+			write_lock_irq(&resource->state_rwlock);
+			drbd_maybe_cluster_wide_reply(resource);
+			write_unlock_irq(&resource->state_rwlock);
+		}
 	}
 	return rv;
 }
