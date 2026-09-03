@@ -10654,6 +10654,8 @@ static bool initiator_can_commit_or_abort(struct drbd_connection *connection)
 		if (!parents)
 			return false;
 		resource->twopc_parent_nodes = parents;
+		/* A lost prepared peer becomes a RETRY reply, and the initiator aborts. */
+		return true;
 	}
 
 	if (test_bit(TWOPC_PREPARED, &connection->flags) &&
