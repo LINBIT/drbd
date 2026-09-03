@@ -2515,6 +2515,11 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 static bool need_unplug(struct drbd_connection *connection)
 {
 	unsigned i = connection->todo.unplug_slot;
+
+	/* Nobody to hint to below C_CONNECTED. */
+	if (connection->cstate[NOW] < C_CONNECTED)
+		return false;
+
 	return dagtag_newer_eq(connection->send.current_dagtag_sector,
 			connection->todo.unplug_dagtag_sector[i]);
 }
@@ -3475,6 +3480,12 @@ static struct drbd_request *__next_request_for_connection(
 
 static struct drbd_request *tl_next_request_for_connection(struct drbd_connection *connection)
 {
+	/* Nothing to send below C_CONNECTED; todo.req would be left dangling. */
+	if (connection->cstate[NOW] < C_CONNECTED) {
+		connection->todo.req = NULL;
+		return NULL;
+	}
+
 	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
 
@@ -3569,7 +3580,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	}
 
 	for (;;) {
-		int send_barrier;
+		bool send_barrier = false;
+
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
 		if (check_sender_todo(connection) || signal_pending(current)) {
@@ -3583,7 +3595,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 * from the epoch of the last request we communicated, we want
 		 * to send the epoch separating barrier now.
 		 */
-		send_barrier = should_send_barrier(connection,
+		if (connection->cstate[NOW] >= C_CONNECTED)
+			send_barrier = should_send_barrier(connection,
 					atomic_read(&resource->current_tle_nr));
 
 		if (send_barrier) {
