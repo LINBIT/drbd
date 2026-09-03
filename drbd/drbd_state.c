@@ -6139,11 +6139,11 @@ static enum drbd_packet reply_cmd_from(enum drbd_state_rv rv)
 	return P_TWOPC_NO;
 }
 
-/* With from_work, the reply is owed only while TWOPC_WORK_PENDING is still set,
- * and its verdict is derived from the transaction that set the flag.
+/* The reply answers one transaction: from_work, the one that set
+ * TWOPC_WORK_PENDING; otherwise tid.  A cmd of 0 derives the verdict here.
  */
-static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd,
-			     bool from_work)
+static void twopc_end_nested(struct drbd_resource *resource, unsigned int tid,
+			     enum drbd_packet cmd, bool from_work)
 {
 	struct drbd_connection *twopc_parent;
 	u64 im;
@@ -6152,12 +6152,13 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 
 	write_lock_irq(&resource->state_rwlock);
 	if (from_work) {
-		if (!test_and_clear_bit(TWOPC_WORK_PENDING, &resource->flags)) {
-			write_unlock_irq(&resource->state_rwlock);
-			return;
-		}
-		cmd = reply_cmd_from(get_cluster_wide_reply(resource, NULL));
+		if (!test_and_clear_bit(TWOPC_WORK_PENDING, &resource->flags))
+			goto out_unlock;
+	} else if (resource->twopc_reply.tid != tid) {
+		goto out_unlock;
 	}
+	if (cmd == 0)
+		cmd = reply_cmd_from(get_cluster_wide_reply(resource, NULL));
 	twopc_reply = resource->twopc_reply;
 	/* Only send replies if we are in a twopc and have not yet sent replies. */
 	if (twopc_reply.tid && resource->twopc_prepare_reply_cmd == 0) {
@@ -6182,6 +6183,10 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 		drbd_send_twopc_reply(twopc_parent, cmd, &twopc_reply);
 	}
 	wake_up_all(&resource->twopc_wait);
+	return;
+
+out_unlock:
+	write_unlock_irq(&resource->state_rwlock);
 }
 
 void nested_twopc_work(struct work_struct *work)
@@ -6189,7 +6194,7 @@ void nested_twopc_work(struct work_struct *work)
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
 
-	twopc_end_nested(resource, 0, true);
+	twopc_end_nested(resource, 0, 0, true);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -6240,12 +6245,10 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 	have_peers = rv == SS_CW_SUCCESS;
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
 		if (rv < SS_SUCCESS) {
-			twopc_end_nested(resource, P_TWOPC_NO, false);
+			twopc_end_nested(resource, request->tid, P_TWOPC_NO, false);
 		} else if (!have_peers && cluster_wide_reply_ready(resource)) {
 			/* no nested nodes */
-			enum drbd_state_rv reply_rv = get_cluster_wide_reply(resource, NULL);
-
-			twopc_end_nested(resource, reply_cmd_from(reply_rv), false);
+			twopc_end_nested(resource, request->tid, 0, false);
 		} else if (have_peers) {
 			/* A peer that dropped between the reachability check above and
 			 * its prepare produces no further event to re-derive on.
