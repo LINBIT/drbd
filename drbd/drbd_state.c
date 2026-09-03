@@ -1052,6 +1052,7 @@ void drbd_clear_twopc_replies(struct drbd_resource *resource)
 
 	rcu_read_lock();
 	for_each_connection_rcu(connection, resource) {
+		clear_bit(TWOPC_PREPARED, &connection->flags);
 		clear_bit(TWOPC_YES, &connection->flags);
 		clear_bit(TWOPC_NO, &connection->flags);
 		clear_bit(TWOPC_RETRY, &connection->flags);
@@ -5225,8 +5226,9 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 		u64 mask;
 		int err;
 
-		/* The replies are cleared by __clear_remote_state_change(), so a
-		 * connection this attempt skips carries none from an earlier one.
+		/* The prepared set and the replies are cleared where the transaction
+		 * ends, so a connection this attempt skips carries none from an
+		 * earlier one.
 		 */
 		clear_bit(TWOPC_PREPARED, &connection->flags);
 
