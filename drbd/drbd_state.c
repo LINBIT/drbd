@@ -5282,16 +5282,8 @@ bool cluster_wide_reply_ready(struct drbd_resource *resource)
 				!test_bit(CONN_HANDSHAKE_READY, &connection->flags))
 			connect_ready = false;
 
-		if (!test_bit(TWOPC_PREPARED, &connection->flags)) {
-			/* Not awaited, but a reply on it still counts: the connection
-			 * may have dropped out of the prepared set after replying.
-			 */
-			if (test_bit(TWOPC_NO, &connection->flags))
-				have_no = true;
-			if (test_bit(TWOPC_RETRY, &connection->flags))
-				have_retry = true;
+		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		}
 		/* A prepared peer that is no longer connected cannot reply; count
 		 * that as a retry. A connect/disconnect target is transitional.
 		 */
@@ -5336,16 +5328,8 @@ static enum drbd_state_rv get_cluster_wide_reply(struct drbd_resource *resource,
 				handshake_retry = true;
 		}
 
-		if (!test_bit(TWOPC_PREPARED, &connection->flags)) {
-			/* As in cluster_wide_reply_ready(). */
-			if (test_bit(TWOPC_NO, &connection->flags)) {
-				failed_by = connection;
-				have_no = true;
-			}
-			if (test_bit(TWOPC_RETRY, &connection->flags))
-				have_retry = true;
+		if (!test_bit(TWOPC_PREPARED, &connection->flags))
 			continue;
-		}
 		/* As in cluster_wide_reply_ready(). */
 		if (connection->cstate[NOW] < C_CONNECTED &&
 		    !((resource->twopc_reply.is_connect || resource->twopc_reply.is_disconnect) &&
