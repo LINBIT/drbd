@@ -928,6 +928,8 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 
 	pro_ver = PRO_VERSION_MAX;
 	for_each_connection(connection, resource) {
+		bool was_down = connection->cstate[NOW] < C_CONNECTED;
+
 		connection->cstate[NOW] = connection->cstate[NEW];
 		connection->peer_role[NOW] = connection->peer_role[NEW];
 		connection->susp_fen[NOW] = connection->susp_fen[NEW];
@@ -936,6 +938,13 @@ static enum drbd_state_rv ___end_state_change(struct drbd_resource *resource, st
 			connection->agreed_pro_version);
 
 		wake_up(&connection->ee_wait);
+
+		/* Wake the sender here and not in finish_state_change(): only
+		 * now does it read a cstate that lets it pick up the transfer
+		 * log again.
+		 */
+		if (was_down && connection->cstate[NOW] == C_CONNECTED)
+			wake_up(&connection->sender_work.q_wait);
 	}
 	resource->cached_min_aggreed_protocol_version = pro_ver;
 
@@ -3452,12 +3461,10 @@ static void finish_state_change(struct drbd_resource *resource, const char *tag)
 			if (walk_event != -1)
 				__tl_walk(resource, connection, &connection->req_not_net_done, walk_event);
 
-			/* Since we are in finish_state_change(), and the state
-			 * was previously not C_CONNECTED, the sender cannot
-			 * have received any requests yet. So it will find any
-			 * requests to resend when it rescans the transfer log. */
-			if (walk_event == RESEND)
-				wake_up(&connection->sender_work.q_wait);
+			/* The sender finds the requests to resend when it
+			 * rescans the transfer log. ___end_state_change() wakes
+			 * it for that, once cstate[NOW] says it may send.
+			 */
 		}
 
 		if (cstate[OLD] == C_CONNECTED && cstate[NEW] < C_CONNECTED)
