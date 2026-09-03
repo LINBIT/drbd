@@ -6207,6 +6207,10 @@ void drbd_maybe_cluster_wide_reply(struct drbd_resource *resource)
 		return;
 	}
 
+	/* The reply to this transaction went out already. */
+	if (resource->twopc_prepare_reply_cmd)
+		return;
+
 	if (test_and_set_bit(TWOPC_WORK_PENDING, &resource->flags))
 		return;
 
