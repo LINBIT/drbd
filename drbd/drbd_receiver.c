@@ -8956,7 +8956,12 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 				    (peer_state.conn == L_STARTING_SYNC_S ||
 				     peer_state.conn == L_STARTING_SYNC_T));
 
-		consider_resync |= peer_state.conn == L_WF_BITMAP_T &&
+		/* A crashed primary announces WFBitMapT when the connection is
+		 * established; that P_STATE races with the bitmap we already send.
+		 * Only run a handshake for it while no resync is under way.
+		 */
+		consider_resync |= old_peer_state.conn == L_ESTABLISHED &&
+				   peer_state.conn == L_WF_BITMAP_T &&
 				   peer_device->uuid_flags & UUID_FLAG_CRASHED_PRIMARY;
 
 		if (consider_resync) {
@@ -9126,6 +9131,16 @@ static int receive_state(struct drbd_connection *connection, struct packet_info 
 		goto retry;
 	}
 	clear_bit(CONSIDER_RESYNC, &peer_device->flags);
+	if ((repl_is_sync_source(old_peer_state.conn) && new_repl_state == L_WF_BITMAP_S) ||
+	    (repl_is_sync_target(old_peer_state.conn) && new_repl_state == L_WF_BITMAP_T)) {
+		/* Re-entering the bitmap exchange is refused while that resync
+		 * runs, and a refused state change costs the connection here.
+		 * Postpone it as drbd_resync() does.
+		 */
+		peer_device->resync_again++;
+		new_repl_state = old_peer_state.conn;
+		drbd_info(peer_device, "Postponing bitmap exchange until the running resync has finished\n");
+	}
 	if (device->disk_state[NOW] != D_NEGOTIATING)
 		__change_repl_state(peer_device, new_repl_state);
 	__change_peer_role(connection, peer_state.role);
