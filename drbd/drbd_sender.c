@@ -3889,6 +3889,11 @@ int drbd_sender(struct drbd_thread *thi)
 	while (get_t_state(thi) == RUNNING) {
 		drbd_thread_current_set_cpu(thi);
 
+		/* The only other places this thread can yield the CPU are
+		 * wait_for_sender_todo() and a network send.
+		 */
+		cond_resched();
+
 		if (list_empty(&connection->todo.work_list) &&
 		    connection->todo.req == NULL) {
 			update_sender_timing_details(connection, wait_for_sender_todo);
