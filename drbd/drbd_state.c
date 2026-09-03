@@ -6130,7 +6130,20 @@ retry:
 	return dd;
 }
 
-static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd)
+static enum drbd_packet reply_cmd_from(enum drbd_state_rv rv)
+{
+	if (rv >= SS_SUCCESS)
+		return P_TWOPC_YES;
+	if (rv == SS_CONCURRENT_ST_CHG || rv == SS_HANDSHAKE_RETRY)
+		return P_TWOPC_RETRY;
+	return P_TWOPC_NO;
+}
+
+/* With from_work, the reply is owed only while TWOPC_WORK_PENDING is still set,
+ * and its verdict is derived from the transaction that set the flag.
+ */
+static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cmd,
+			     bool from_work)
 {
 	struct drbd_connection *twopc_parent;
 	u64 im;
@@ -6138,13 +6151,19 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	u64 twopc_parent_nodes = 0;
 
 	write_lock_irq(&resource->state_rwlock);
+	if (from_work) {
+		if (!test_and_clear_bit(TWOPC_WORK_PENDING, &resource->flags)) {
+			write_unlock_irq(&resource->state_rwlock);
+			return;
+		}
+		cmd = reply_cmd_from(get_cluster_wide_reply(resource, NULL));
+	}
 	twopc_reply = resource->twopc_reply;
 	/* Only send replies if we are in a twopc and have not yet sent replies. */
 	if (twopc_reply.tid && resource->twopc_prepare_reply_cmd == 0) {
 		resource->twopc_prepare_reply_cmd = cmd;
 		twopc_parent_nodes = resource->twopc_parent_nodes;
 	}
-	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
 	write_unlock_irq(&resource->state_rwlock);
 
 	if (!twopc_reply.tid)
@@ -6165,33 +6184,12 @@ static void twopc_end_nested(struct drbd_resource *resource, enum drbd_packet cm
 	wake_up_all(&resource->twopc_wait);
 }
 
-static void __nested_twopc_work(struct drbd_resource *resource)
-{
-	enum drbd_state_rv rv;
-	enum drbd_packet cmd;
-
-	rv = get_cluster_wide_reply(resource, NULL);
-	if (rv >= SS_SUCCESS)
-		cmd = P_TWOPC_YES;
-	else if (rv == SS_CONCURRENT_ST_CHG || rv == SS_HANDSHAKE_RETRY)
-		cmd = P_TWOPC_RETRY;
-	else
-		cmd = P_TWOPC_NO;
-	twopc_end_nested(resource, cmd);
-}
-
 void nested_twopc_work(struct work_struct *work)
 {
 	struct drbd_resource *resource =
 		container_of(work, struct drbd_resource, twopc_work);
 
-	/* Cleared where the transaction that scheduled this one ended, so a
-	 * clear flag means there is no reply to send and the transaction now
-	 * running, if any, is not this work item's to answer.
-	 */
-	if (test_and_clear_bit(TWOPC_WORK_PENDING, &resource->flags))
-		__nested_twopc_work(resource);
-
+	twopc_end_nested(resource, 0, true);
 	kref_put(&resource->kref, drbd_destroy_resource);
 }
 
@@ -6241,11 +6239,14 @@ nested_twopc_request(struct drbd_resource *resource, struct twopc_request *reque
 	rv = __cluster_wide_request(resource, request, reach_immediately);
 	have_peers = rv == SS_CW_SUCCESS;
 	if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ) {
-		if (rv < SS_SUCCESS)
-			twopc_end_nested(resource, P_TWOPC_NO);
-		else if (!have_peers && cluster_wide_reply_ready(resource)) /* no nested nodes */
-			__nested_twopc_work(resource);
-		else if (have_peers) {
+		if (rv < SS_SUCCESS) {
+			twopc_end_nested(resource, P_TWOPC_NO, false);
+		} else if (!have_peers && cluster_wide_reply_ready(resource)) {
+			/* no nested nodes */
+			enum drbd_state_rv reply_rv = get_cluster_wide_reply(resource, NULL);
+
+			twopc_end_nested(resource, reply_cmd_from(reply_rv), false);
+		} else if (have_peers) {
 			/* A peer that dropped between the reachability check above and
 			 * its prepare produces no further event to re-derive on.
 			 */
