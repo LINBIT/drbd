@@ -7628,6 +7628,7 @@ static void drbd_abort_twopc(struct drbd_resource *resource)
 		resource->remote_state_change = false;
 		resource->twopc_reply.initiator_node_id = -1;
 		resource->twopc_parent_nodes = 0;
+		drbd_clear_twopc_replies(resource);
 
 		if (connection) {
 			if (is_connect)

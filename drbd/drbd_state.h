@@ -73,6 +73,7 @@ enum drbd_state_rv end_state_change_locked(struct drbd_resource *resource,
 
 void clear_remote_state_change(struct drbd_resource *resource);
 void __clear_remote_state_change(struct drbd_resource *resource);
+void drbd_clear_twopc_replies(struct drbd_resource *resource);
 
 
 enum which_state;

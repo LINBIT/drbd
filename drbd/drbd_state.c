@@ -1043,6 +1043,22 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 	}
 }
 
+/* Discard the replies along with the transaction they answered, so the next
+ * one cannot read a reply to this one as its own.
+ */
+void drbd_clear_twopc_replies(struct drbd_resource *resource)
+{
+	struct drbd_connection *connection;
+
+	rcu_read_lock();
+	for_each_connection_rcu(connection, resource) {
+		clear_bit(TWOPC_YES, &connection->flags);
+		clear_bit(TWOPC_NO, &connection->flags);
+		clear_bit(TWOPC_RETRY, &connection->flags);
+	}
+	rcu_read_unlock();
+}
+
 void __clear_remote_state_change(struct drbd_resource *resource)
 {
 	bool is_connect = resource->twopc_reply.is_connect;
@@ -1059,17 +1075,7 @@ void __clear_remote_state_change(struct drbd_resource *resource)
 	 * when_done_lock() until the work runs.
 	 */
 	clear_bit(TWOPC_WORK_PENDING, &resource->flags);
-
-	/* Discard the replies along with the tid they answered, so the next
-	 * transaction cannot read one of this transaction's as its own.
-	 */
-	rcu_read_lock();
-	for_each_connection_rcu(connection, resource) {
-		clear_bit(TWOPC_YES, &connection->flags);
-		clear_bit(TWOPC_NO, &connection->flags);
-		clear_bit(TWOPC_RETRY, &connection->flags);
-	}
-	rcu_read_unlock();
+	drbd_clear_twopc_replies(resource);
 
 	if (is_connect && resource->twopc_prepare_reply_cmd == 0) {
 		rcu_read_lock();
