@@ -7642,9 +7642,6 @@ static void drbd_abort_twopc(struct drbd_resource *resource)
 			kref_put(&connection->kref, drbd_destroy_connection);
 			connection = NULL;
 		}
-
-		/* Aborting a prepared state change. Give up the state mutex! */
-		up(&resource->state_sem);
 	}
 
 	wake_up_all(&resource->twopc_wait);
