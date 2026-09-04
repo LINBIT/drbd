@@ -856,12 +856,17 @@ static int connection_oldest_requests_show(struct seq_file *m, void *ignored)
 	struct drbd_request *r1, *r2;
 
 	/* BUMP me if you change the file format/content/presentation */
-	seq_printf(m, "v: %u\n\n", 0);
+	seq_printf(m, "v: %u\n\n", 1);
 
 	rcu_read_lock();
 	r1 = READ_ONCE(connection->todo.req_next);
 	if (r1)
 		seq_print_minor_vnr_req(m, r1, now, jif);
+	r2 = READ_ONCE(connection->req_next_ready);
+	if (r2 && r2 != r1) {
+		r1 = r2;
+		seq_print_minor_vnr_req(m, r1, now, jif);
+	}
 	r2 = READ_ONCE(connection->req_ack_pending);
 	if (r2 && r2 != r1) {
 		r1 = r2;
