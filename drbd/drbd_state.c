@@ -1046,7 +1046,7 @@ static void apply_update_to_exposed_data_uuid(struct drbd_resource *resource)
 /* Discard the replies along with the transaction they answered, so the next
  * one cannot read a reply to this one as its own.
  */
-void drbd_clear_twopc_replies(struct drbd_resource *resource)
+static void drbd_clear_twopc_replies(struct drbd_resource *resource)
 {
 	struct drbd_connection *connection;
 

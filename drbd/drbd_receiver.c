@@ -7622,29 +7622,23 @@ static int receive_req_state(struct drbd_connection *connection, struct packet_i
 
 static void drbd_abort_twopc(struct drbd_resource *resource)
 {
+	int initiator_node_id = resource->twopc_reply.initiator_node_id;
+	bool is_connect = resource->twopc_reply.is_connect;
 	struct drbd_connection *connection;
-	int initiator_node_id;
-	bool is_connect;
 
-	initiator_node_id = resource->twopc_reply.initiator_node_id;
-	if (initiator_node_id != -1) {
-		connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
-		is_connect = resource->twopc_reply.is_connect &&
-			resource->twopc_reply.target_node_id == resource->res_opts.node_id;
-		resource->remote_state_change = false;
-		resource->twopc_reply.initiator_node_id = -1;
-		resource->twopc_parent_nodes = 0;
-		drbd_clear_twopc_replies(resource);
+	if (initiator_node_id == -1)
+		return;
 
-		if (connection) {
-			if (is_connect)
-				abort_connect(connection);
-			kref_put(&connection->kref, drbd_destroy_connection);
-			connection = NULL;
-		}
+	connection = drbd_get_connection_by_node_id(resource, initiator_node_id);
+	resource->twopc_parent_nodes = 0;
+	__clear_remote_state_change(resource);
+
+	/* No commit or abort follows to end the connect. */
+	if (connection) {
+		if (is_connect)
+			abort_connect(connection);
+		kref_put(&connection->kref, drbd_destroy_connection);
 	}
-
-	wake_up_all(&resource->twopc_wait);
 }
 
 void twopc_timer_fn(struct timer_list *t)
