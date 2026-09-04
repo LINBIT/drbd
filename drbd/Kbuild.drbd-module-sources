@@ -18,6 +18,7 @@ __drbd-module-sources := $(sort $(shell     \
   | grep -vFe /gen_patch_names.c	    \
   | grep -vF drbd-headers/linux/ynl/   \
   | grep -vF drbd-headers/tests/       \
+  | grep -vF drbd-headers/linux/drbd_genl_userspace \
 ))
 
 define drbd-module-sources :=
