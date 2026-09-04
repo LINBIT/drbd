@@ -985,6 +985,10 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 			!(req->net_rq_state[idx] & RQ_NET_DONE))
 		set_cache_ptr_if_null(connection, &connection->req_not_net_done, req);
 
+	if ((old_net & (RQ_NET_QUEUED | RQ_NET_READY)) != (RQ_NET_QUEUED | RQ_NET_READY) &&
+	    (new_net & (RQ_NET_QUEUED | RQ_NET_READY)) == (RQ_NET_QUEUED | RQ_NET_READY))
+		set_cache_ptr_if_null(connection, &connection->req_next_ready, req);
+
 	if (!(old_net & RQ_EXP_BARR_ACK) && (set & RQ_EXP_BARR_ACK))
 		refcount_inc(&req->done_ref); /* wait for the DONE */
 
@@ -1034,6 +1038,8 @@ static void mod_rq_state(struct drbd_request *req, struct bio_and_error *m,
 	if ((old_net & RQ_NET_QUEUED) && (clear & RQ_NET_QUEUED)) {
 		++o_put;
 		advance_conn_req_next(connection, req);
+		advance_cache_ptr(connection, &connection->req_next_ready,
+				  req, RQ_NET_QUEUED | RQ_NET_READY, 0);
 	}
 
 	if (drbd_sender_needs_master_bio(old_net) && !drbd_sender_needs_master_bio(new_net))

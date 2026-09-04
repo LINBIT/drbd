@@ -1331,6 +1331,11 @@ struct drbd_connection {
 	/* The oldest request that is or was queued for this peer, but is not
 	 * done towards it. */
 	struct drbd_request *req_not_net_done;
+	/* The oldest request that is queued for this peer and ready to be
+	 * processed by the sender. Lets the sender pass requests that are queued
+	 * but not yet ready, see tl_next_request_for_connection().
+	 */
+	struct drbd_request *req_next_ready;
 	/* Protects the caching pointers from being advanced concurrently. */
 	spinlock_t advance_cache_ptr_lock;
 
