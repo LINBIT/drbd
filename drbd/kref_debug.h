@@ -6,7 +6,7 @@
 
 #ifdef CONFIG_KREF_DEBUG
 
-#define KREF_DEBUG_HOLDER_MAX 20
+#define KREF_DEBUG_HOLDER_MAX 22
 
 struct kref_debug_info;
 
