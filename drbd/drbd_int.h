@@ -990,6 +990,13 @@ enum connection_flag {
 	CONN_HANDSHAKE_RETRY,
 	CONN_HANDSHAKE_READY,
 	RECEIVED_DAGTAG, /* Whether we received any write or dagtag since connecting. */
+	DAGTAG_STREAM_GONE, /* This peer's write stream is being torn down: the
+			     * requests waiting for a position in it have been,
+			     * or are about to be, resolved. Set before the
+			     * teardown walks the wait lists, so a waiter that
+			     * tests it under the list's own lock never queues
+			     * behind that walk.
+			     */
 	PING_TIMEOUT_ACTIVE,
 };
 

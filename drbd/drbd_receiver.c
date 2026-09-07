@@ -1309,6 +1309,7 @@ start:
 
 	atomic_set(&connection->ap_in_flight, 0);
 	atomic_set(&connection->rs_in_flight, 0);
+	clear_bit(DAGTAG_STREAM_GONE, &connection->flags);
 
 	/* The last point before both the UUID exchange and arm_connect_timer():
 	 * conn_connect2() sends the UUIDs, and on every path but the pre-110 one
@@ -4014,7 +4015,8 @@ static bool need_to_wait_for_dagtag_of_peer_request(struct drbd_peer_request *pe
 
 	rcu_read_lock();
 	connection = drbd_connection_by_node_id(resource, peer_req->depend_dagtag_node_id);
-	if (connection && connection->cstate[NOW] == C_CONNECTED) {
+	if (connection && connection->cstate[NOW] == C_CONNECTED &&
+	    !test_bit(DAGTAG_STREAM_GONE, &connection->flags)) {
 		if (atomic64_read(&connection->last_dagtag_sector) < peer_req->depend_dagtag)
 			ret = true;
 	}
@@ -4075,16 +4077,27 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 	if (peer_req->depend_dagtag &&
 	    peer_req->depend_dagtag_node_id != device->resource->res_opts.node_id &&
 	    need_to_wait_for_dagtag_of_peer_request(peer_req)) {
+		bool wait;
+
 		dynamic_drbd_dbg(peer_device,
 				 "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
 				 drbd_interval_type_str(&peer_req->i),
 				 (unsigned long long)peer_req->i.sector, size,
 				 (unsigned long long)peer_req->depend_dagtag,
 				 peer_req->depend_dagtag_node_id);
+		/* cancel_dagtag_dependent_requests() empties this list under
+		 * this lock once the depended-on stream is torn down, and it
+		 * marks that stream before it walks. Take the decision again
+		 * here, so a request either lands before the walk or is never
+		 * parked at all.
+		 */
 		spin_lock_irq(&connection->peer_reqs_lock);
-		list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
+		wait = need_to_wait_for_dagtag_of_peer_request(peer_req);
+		if (wait)
+			list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
 		spin_unlock_irq(&connection->peer_reqs_lock);
-		return;
+		if (wait)
+			return;
 	}
 
 	atomic_inc(&connection->backing_ee_cnt);
@@ -10644,6 +10657,12 @@ static void drain_resync_activity(struct drbd_connection *connection)
 	 * the comments for make_resync_request(), make_ov_request() and
 	 * receive_dagtag_data_request().
 	 */
+
+	/* Refuse further dagtag waits on this stream before the walks below
+	 * empty the wait lists: from here on a waiter takes the not-reachable
+	 * branch instead of queueing behind a walk that already passed.
+	 */
+	set_bit(DAGTAG_STREAM_GONE, &connection->flags);
 
 	/*
 	 * We could receive data from a peer at any point. This might release a
