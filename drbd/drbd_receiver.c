@@ -13129,12 +13129,17 @@ static void drbd_queue_send_out_of_sync(struct drbd_connection *peer_ack_connect
  * cursor (resync_next_bit), which make_resync_request() has already advanced
  * past.  If nothing requests that block again the resync stalls just short of
  * completion.  Rewind the cursor, mirroring receive_out_of_sync().  Callers:
- * a peer ack reporting that a peer does not hold a write, and a write refused
- * because the sync source can not get it.
+ * a peer ack reporting that a peer does not hold a write, a write refused
+ * because the sync source can not get it, and a connection giving up the
+ * writes it never acknowledged.  The last of these runs from a state change,
+ * with interrupts disabled, hence irqsave rather than the _bh the other users
+ * of resync_next_bit_lock take.
  */
 static void rs_rewind_next_bit(struct drbd_peer_device *peer_device, sector_t sector)
 {
-	spin_lock_bh(&peer_device->resync_next_bit_lock);
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&peer_device->resync_next_bit_lock, irq_flags);
 	if (peer_device->repl_state[NOW] == L_SYNC_TARGET) {
 		unsigned long bit = BM_SECT_TO_BIT(sector);
 
@@ -13143,7 +13148,25 @@ static void rs_rewind_next_bit(struct drbd_peer_device *peer_device, sector_t se
 		if (!timer_pending(&peer_device->resync_timer))
 			mod_timer(&peer_device->resync_timer, jiffies + 1);
 	}
-	spin_unlock_bh(&peer_device->resync_next_bit_lock);
+	spin_unlock_irqrestore(&peer_device->resync_next_bit_lock, irq_flags);
+}
+
+/* Rewind the resync cursor of every peer whose bitmap slot is in @set_oos. */
+static void rs_rewind_next_bit_mask(struct drbd_device *device, u64 set_oos,
+				    sector_t sector)
+{
+	struct drbd_peer_device *peer_device;
+
+	if (!set_oos)
+		return;
+
+	rcu_read_lock();
+	for_each_peer_device_rcu(peer_device, device) {
+		if (peer_device->bitmap_index != -1 &&
+		    (set_oos & (1ULL << peer_device->bitmap_index)))
+			rs_rewind_next_bit(peer_device, sector);
+	}
+	rcu_read_unlock();
 }
 
 static int got_peer_ack(struct drbd_connection *connection, struct packet_info *pi)
@@ -13197,17 +13220,7 @@ found:
 			 * requested again instead of stalling the resync.
 			 */
 			set_oos = ~in_sync_b & mask;
-			if (set_oos) {
-				struct drbd_peer_device *pd;
-
-				rcu_read_lock();
-				for_each_peer_device_rcu(pd, device) {
-					if (pd->bitmap_index != -1 &&
-					    (set_oos & (1ULL << pd->bitmap_index)))
-						rs_rewind_next_bit(pd, peer_req->i.sector);
-				}
-				rcu_read_unlock();
-			}
+			rs_rewind_next_bit_mask(device, set_oos, peer_req->i.sector);
 			put_ldev(device);
 		}
 
@@ -13239,6 +13252,7 @@ void apply_unacked_peer_requests(struct drbd_connection *connection)
 
 		drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 			      mask, mask);
+		rs_rewind_next_bit_mask(device, mask, peer_req->i.sector);
 	}
 	spin_unlock_irqrestore(&connection->peer_reqs_lock, flags);
 }
@@ -13262,6 +13276,7 @@ static void cleanup_unacked_peer_requests(struct drbd_connection *connection)
 		if (get_ldev(device)) {
 			drbd_set_sync(device, peer_req->i.sector, peer_req->i.size,
 				      mask, mask);
+			rs_rewind_next_bit_mask(device, mask, peer_req->i.sector);
 			drbd_al_complete_io(device, &peer_req->i);
 			put_ldev(device);
 		}
