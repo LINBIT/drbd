@@ -2614,6 +2614,11 @@ static int drbd_send_barrier(struct drbd_connection *connection)
 static bool need_unplug(struct drbd_connection *connection)
 {
 	unsigned i = connection->todo.unplug_slot;
+
+	/* Nobody to hint to below C_CONNECTED. */
+	if (connection->cstate[NOW] < C_CONNECTED)
+		return false;
+
 	return dagtag_newer_eq(connection->send.current_dagtag_sector,
 			connection->todo.unplug_dagtag_sector[i]);
 }
@@ -3572,6 +3577,14 @@ static struct drbd_request *tl_next_request_for_connection(
 {
 	struct drbd_request *req;
 
+	/*
+	 * No cstate check here, unlike drbd-9.2: a request that is
+	 * RQ_NET_QUEUED holds an oos_send_ref and stays on the transfer log
+	 * until process_one_request() retires it, and tl_walk(CONNECTION_LOST)
+	 * skips a request that is already RQ_NET_DONE. The sender therefore
+	 * still has to hand out queued requests below C_CONNECTED, even though
+	 * every send in process_one_request() fails there.
+	 */
 	if (connection->todo.req_next == NULL)
 		connection->todo.req_next = __next_request_for_connection(connection);
 
@@ -3694,7 +3707,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 	}
 
 	for (;;) {
-		int send_barrier;
+		bool send_barrier = false;
+
 		prepare_to_wait(&connection->sender_work.q_wait, &wait,
 				TASK_INTERRUPTIBLE);
 		if (check_sender_todo(connection) || signal_pending(current)) {
@@ -3708,7 +3722,8 @@ static void wait_for_sender_todo(struct drbd_connection *connection)
 		 * from the epoch of the last request we communicated, we want
 		 * to send the epoch separating barrier now.
 		 */
-		send_barrier = should_send_barrier(connection,
+		if (connection->cstate[NOW] >= C_CONNECTED)
+			send_barrier = should_send_barrier(connection,
 					atomic_read(&resource->current_tle_nr));
 
 		if (send_barrier) {
