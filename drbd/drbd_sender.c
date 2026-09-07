@@ -1244,6 +1244,7 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 	peer_device->rs_in_flight += number * BM_SECT_PER_BIT;
 
 	for (; i < number; i++) {
+		bool rollback = false;
 		unsigned long cursor;
 		int err;
 
@@ -1335,16 +1336,8 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 			put_ldev(device);
 			return -EIO;
 		case -EAGAIN: /* allocation failed, or ldev busy */
-			spin_lock_bh(&peer_device->resync_next_bit_lock);
-			/* Set resync_next_bit back, but make sure that
-			 * it really moves backwards. If a negative
-			 * reply has been received in the meantime it
-			 * may already be further back. */
-			peer_device->resync_next_bit =
-				min(peer_device->resync_next_bit,
-				    (unsigned long)BM_SECT_TO_BIT(sector));
-			i = rollback_i;
-			goto request_done;
+			rollback = true;
+			break;
 		case 0:
 			/* everything ok */
 			break;
@@ -1353,6 +1346,16 @@ static int make_resync_request(struct drbd_peer_device *peer_device, int cancel)
 		}
 
 		spin_lock_bh(&peer_device->resync_next_bit_lock);
+		if (rollback) {
+			/* Only ever backwards: a negative reply may have
+			 * moved the cursor further back already.
+			 */
+			peer_device->resync_next_bit =
+				min(peer_device->resync_next_bit,
+				    (unsigned long)BM_SECT_TO_BIT(sector));
+			i = rollback_i;
+			goto request_done;
+		}
 	}
 
 request_done:
