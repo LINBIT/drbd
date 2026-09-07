@@ -136,7 +136,7 @@ bm_print_lock_info(struct drbd_device *device, unsigned int bitmap_index, enum b
    The real solution is to make the locking more fine grained (one lock per
    bitmap slot) and to allow those operations to happen parallel.
  */
-static void
+void
 _drbd_bm_lock(struct drbd_device *device, struct drbd_bitmap *b,
 	      struct drbd_peer_device *peer_device,
 	      const char *why, enum bm_flag flags)
@@ -182,7 +182,7 @@ void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why, enum bm_
 	_drbd_bm_lock(peer_device->device, peer_device->device->bitmap, peer_device, why, flags);
 }
 
-static void _drbd_bm_unlock(struct drbd_device *device, struct drbd_bitmap *b)
+void _drbd_bm_unlock(struct drbd_device *device, struct drbd_bitmap *b)
 {
 	if (!b) {
 		drbd_err(device, "FIXME no bitmap in drbd_bm_unlock!?\n");
@@ -445,8 +445,10 @@ void drbd_bm_free(struct drbd_device *device)
 	if (bitmap == NULL)
 		return;
 
+	_drbd_bm_lock(device, bitmap, NULL, __func__, BM_LOCK_ALL);
 	/* ldev_safe: explicit NULL check above */
 	drbd_bm_resize(device, bitmap, 0, 0);
+	_drbd_bm_unlock(device, bitmap);
 
 	kfree(bitmap);
 }
@@ -901,7 +903,7 @@ int drbd_bm_resize(struct drbd_device *device, struct drbd_bitmap *b,
 	int err = 0;
 	bool growing;
 
-	_drbd_bm_lock(device, b, NULL, "resize", BM_LOCK_ALL);
+	lockdep_assert_held(&b->bm_change);
 
 	if (capacity == b->bm_dev_capacity)
 		goto out;
@@ -1103,7 +1105,6 @@ int drbd_bm_resize(struct drbd_device *device, struct drbd_bitmap *b,
 			bits, b->bm_bits_4k, words, want);
 
  out:
-	_drbd_bm_unlock(device, b);
 	return err;
 }
 

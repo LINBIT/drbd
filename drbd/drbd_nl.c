@@ -1747,8 +1747,17 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	 */
 	wait_event(device->al_wait, drbd_al_try_lock_for_transaction(device));
 
+	/* Take the bitmap lock before md_buffer. Whole-bitmap operations
+	 * (drbd_bitmap_io()/w_bitmap_io()) hold the bitmap lock while their
+	 * io_fn acquires md_buffer via drbd_md_sync().
+	 */
+	if (device->bitmap)
+		drbd_bm_lock(device, __func__, BM_LOCK_ALL);
+
 	buffer = drbd_md_get_buffer(device, __func__); /* Lock meta-data IO */
 	if (!buffer) {
+		if (device->bitmap)
+			drbd_bm_unlock(device);
 		lc_unlock(device->act_log);
 		wake_up(&device->al_wait);
 		drbd_resume_io(device);
@@ -1872,11 +1881,15 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		 * set_new_bits was true.  Write it to disk to update la_size and
 		 * persist any resync markers for the newly grown region.
 		 *
-		 * drbd_bitmap_io() with flags != 0 implicitly does
-		 * drbd_suspend_io()+drbd_resume_io()
+		 * The bitmap lock is already held and IO is suspended, so call
+		 * the io_fn directly instead of going through drbd_bitmap_io().
 		 */
-		drbd_bitmap_io(device, md_moved ? &drbd_bm_write_all : &drbd_bm_write,
-			       "size changed", BM_LOCK_ALL, NULL);
+		if (device->bitmap) {
+			if (md_moved)
+				drbd_bm_write_all(device, NULL);
+			else
+				drbd_bm_write(device, NULL);
+		}
 
 		/* on-disk bitmap and activity log is authoritative again
 		 * (unless there was an IO error meanwhile...) */
@@ -1911,6 +1924,8 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 		md->al_size_4k = (u64)prev.al_stripes * prev.al_stripe_size_4k;
 	}
 	drbd_md_put_buffer(device);
+	if (device->bitmap)
+		drbd_bm_unlock(device);
 	lc_unlock(device->act_log);
 	wake_up(&device->al_wait);
 	drbd_resume_io(device);
@@ -2653,7 +2668,9 @@ int drbd_nl_disk_opts_doit(struct sk_buff *skb, struct genl_info *info)
 			retcode = ERR_NOMEM;
 			goto fail_unlock;
 		}
+		_drbd_bm_lock(device, bitmap, NULL, __func__, BM_LOCK_ALL);
 		err = drbd_bm_resize(device, bitmap, get_capacity(device->vdisk), true);
+		_drbd_bm_unlock(device, bitmap);
 		if (err) {
 			kfree(bitmap);
 			drbd_msg_put_info(adm_ctx->reply_skb, "Failed to allocate bitmap pages");
@@ -3868,7 +3885,9 @@ int drbd_nl_attach_doit(struct sk_buff *skb, struct genl_info *info)
 		 * bitmap fresh.
 		 */
 		if (old_size > 0 && bitmap) {
+			_drbd_bm_lock(device, bitmap, NULL, __func__, BM_LOCK_ALL);
 			err = drbd_bm_resize(device, bitmap, old_size, false);
+			_drbd_bm_unlock(device, bitmap);
 			if (err) {
 				retcode = ERR_NOMEM_BITMAP;
 				goto force_diskless_dec;

@@ -2245,6 +2245,11 @@ void drbd_bm_get_lel(struct drbd_peer_device *peer_device, size_t offset,
 void drbd_bm_lock(struct drbd_device *device, const char *why,
 		  enum bm_flag flags);
 void drbd_bm_unlock(struct drbd_device *device);
+/* For a bitmap that is not published in device->bitmap yet. */
+void _drbd_bm_lock(struct drbd_device *device, struct drbd_bitmap *b,
+		   struct drbd_peer_device *peer_device, const char *why,
+		   enum bm_flag flags);
+void _drbd_bm_unlock(struct drbd_device *device, struct drbd_bitmap *b);
 void drbd_bm_slot_lock(struct drbd_peer_device *peer_device, char *why,
 		       enum bm_flag flags);
 void drbd_bm_slot_unlock(struct drbd_peer_device *peer_device);
