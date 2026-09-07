@@ -1719,7 +1719,16 @@ drbd_determine_dev_size(struct drbd_device *device, sector_t peer_current_size,
 	rcu_read_lock();
 	u_size = rcu_dereference(device->ldev->disk_conf)->disk_size;
 	rcu_read_unlock();
-	size = drbd_new_dev_size(device, peer_current_size, u_size, flags);
+	if (flags & DDSF_2PC) {
+		/* Take the size the transaction agreed on.  Deriving it again
+		 * here would use this node's own view of who takes part, which
+		 * is short of the initiator's, so a node that can not see the
+		 * whole cluster would refuse a size everyone agreed to.
+		 */
+		size = peer_current_size;
+	} else {
+		size = drbd_new_dev_size(device, peer_current_size, u_size, flags);
+	}
 
 	if (size < prev.effective_size) {
 		if (rs && u_size == 0) {
