@@ -27,6 +27,7 @@
 #include <linux/security.h>
 #include <net/genetlink.h>
 #include <net/sock.h>
+#include <linux/delay.h>
 
 #include "drbd_meta_data.h"
 #include "drbd_legacy_84.h"
@@ -5504,12 +5505,17 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	rv = change_cstate_tag(connection, C_DISCONNECTING, flags, tag, &err_str);
 	switch (rv) {
 	case SS_CW_FAILED_BY_PEER:
-	case SS_NEED_CONNECTION:
 		read_lock_irq(&resource->state_rwlock);
 		cstate = connection->cstate[NOW];
 		read_unlock_irq(&resource->state_rwlock);
 		if (cstate < C_CONNECTED)
 			goto repeat;
+		break;
+	case SS_NEED_CONNECTION:
+		if (msleep_interruptible(1000) == 0)
+			goto repeat;
+
+		rv = SS_INTERRUPTED;
 		break;
 	case SS_NO_UP_TO_DATE_DISK:
 		if (resource->role[NOW] == R_PRIMARY)
