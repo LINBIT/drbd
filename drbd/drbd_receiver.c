@@ -4005,28 +4005,29 @@ void drbd_conflict_submit_peer_read(struct drbd_peer_request *peer_req)
 	}
 }
 
-static bool need_to_wait_for_dagtag_of_peer_request(struct drbd_peer_request *peer_req)
+enum dagtag_reach {
+	DAGTAG_REACHED,		/* the depended-on write stream got here */
+	DAGTAG_WAITING,		/* not yet, but the peer that feeds it is connected */
+	DAGTAG_UNREACHABLE,	/* that peer is gone; the position can not be reached */
+};
+
+static enum dagtag_reach dagtag_dependency_reach(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
 	struct drbd_device *device = peer_device->device;
 	struct drbd_resource *resource = device->resource;
 	struct drbd_connection *connection;
-	bool ret = false;
+	enum dagtag_reach reach = DAGTAG_UNREACHABLE;
 
 	rcu_read_lock();
 	connection = drbd_connection_by_node_id(resource, peer_req->depend_dagtag_node_id);
 	if (connection && connection->cstate[NOW] == C_CONNECTED &&
-	    !test_bit(DAGTAG_STREAM_GONE, &connection->flags)) {
-		if (atomic64_read(&connection->last_dagtag_sector) < peer_req->depend_dagtag)
-			ret = true;
-	}
-	/*
-	 * I am a weak node if the resync source (myself) is not connected to the
-	 * depend_dagtag_node_id. The resync target will abort this resync soon.
-	 * See check_resync_source().
-	 */
+	    !test_bit(DAGTAG_STREAM_GONE, &connection->flags))
+		reach = atomic64_read(&connection->last_dagtag_sector) < peer_req->depend_dagtag ?
+			DAGTAG_WAITING : DAGTAG_REACHED;
 	rcu_read_unlock();
-	return ret;
+
+	return reach;
 }
 
 static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
@@ -4055,6 +4056,44 @@ static void drbd_peer_resync_read_cancel(struct drbd_peer_request *peer_req)
 	}
 }
 
+/* The peer that feeds the depended-on write stream is gone, so the requested
+ * position can never be reached. Reading the local disk would answer with data
+ * that is older than what the requester holds itself.
+ *
+ * A verify request is cancelled the same way a request already parked for
+ * that dagtag is cancelled when the connection to that peer goes down: the
+ * requester skips the block and the verify goes on.
+ *
+ * A resync request is answered as failed (P_NEG_RS_DREPLY): the requester
+ * records the block as failed and moves on, so it does not ask for the same
+ * bitmap bit again, and its resync ends with the disk left Inconsistent
+ * instead of a copy that lost an acknowledged write. This node's own state
+ * is not touched; the requester ends the exchange, as it does for a block
+ * this node could not read.
+ */
+static void drbd_cancel_unreachable_dagtag_request(struct drbd_peer_request *peer_req)
+{
+	struct drbd_peer_device *peer_device = peer_req->peer_device;
+	struct drbd_device *device = peer_device->device;
+	unsigned int node_id = peer_req->depend_dagtag_node_id;
+
+	if (drbd_interval_is_verify(&peer_req->i)) {
+		drbd_peer_resync_read_cancel(peer_req);
+	} else {
+		drbd_info_ratelimit(peer_device,
+				    "Not connected to node %u, can not serve resync request at %llus+%u\n",
+				    node_id, (unsigned long long)peer_req->i.sector,
+				    peer_req->i.size);
+		drbd_send_ack_be(peer_device, P_NEG_RS_DREPLY, peer_req->i.sector,
+				 peer_req->i.size, peer_req->block_id);
+	}
+	if (peer_req->i.type == INTERVAL_OV_READ_SOURCE)
+		drbd_remove_peer_req_interval(peer_req);
+	drbd_free_peer_req(peer_req);
+	dec_unacked(peer_device);
+	put_ldev(device);
+}
+
 static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 {
 	struct drbd_peer_device *peer_device = peer_req->peer_device;
@@ -4075,29 +4114,35 @@ static void drbd_peer_resync_read(struct drbd_peer_request *peer_req)
 	 * the interval tree, so the read will wait until the interval tree
 	 * conflict is resolved before being submitted. */
 	if (peer_req->depend_dagtag &&
-	    peer_req->depend_dagtag_node_id != device->resource->res_opts.node_id &&
-	    need_to_wait_for_dagtag_of_peer_request(peer_req)) {
-		bool wait;
+	    peer_req->depend_dagtag_node_id != device->resource->res_opts.node_id) {
+		enum dagtag_reach reach = dagtag_dependency_reach(peer_req);
 
-		dynamic_drbd_dbg(peer_device,
-				 "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
-				 drbd_interval_type_str(&peer_req->i),
-				 (unsigned long long)peer_req->i.sector, size,
-				 (unsigned long long)peer_req->depend_dagtag,
-				 peer_req->depend_dagtag_node_id);
-		/* cancel_dagtag_dependent_requests() empties this list under
-		 * this lock once the depended-on stream is torn down, and it
-		 * marks that stream before it walks. Take the decision again
-		 * here, so a request either lands before the walk or is never
-		 * parked at all.
-		 */
-		spin_lock_irq(&connection->peer_reqs_lock);
-		wait = need_to_wait_for_dagtag_of_peer_request(peer_req);
-		if (wait)
-			list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
-		spin_unlock_irq(&connection->peer_reqs_lock);
-		if (wait)
+		if (reach == DAGTAG_WAITING) {
+			dynamic_drbd_dbg(peer_device,
+					 "%s at %llus+%u: Waiting for dagtag %llus from peer %u\n",
+					 drbd_interval_type_str(&peer_req->i),
+					 (unsigned long long)peer_req->i.sector, size,
+					 (unsigned long long)peer_req->depend_dagtag,
+					 peer_req->depend_dagtag_node_id);
+			/* cancel_dagtag_dependent_requests() empties this list
+			 * under this lock once the depended-on stream is torn
+			 * down, and it marks that stream before it walks. Take
+			 * the decision again here, so a request either lands
+			 * before the walk or is never parked at all.
+			 */
+			spin_lock_irq(&connection->peer_reqs_lock);
+			reach = dagtag_dependency_reach(peer_req);
+			if (reach == DAGTAG_WAITING)
+				list_add_tail(&peer_req->w.list, &connection->dagtag_wait_ee);
+			spin_unlock_irq(&connection->peer_reqs_lock);
+			if (reach == DAGTAG_WAITING)
+				return;
+		}
+
+		if (reach == DAGTAG_UNREACHABLE) {
+			drbd_cancel_unreachable_dagtag_request(peer_req);
 			return;
+		}
 	}
 
 	atomic_inc(&connection->backing_ee_cnt);
