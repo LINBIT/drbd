@@ -5263,6 +5263,12 @@ __cluster_wide_request(struct drbd_resource *resource, struct twopc_request *req
 		if (err) {
 			clear_bit(TWOPC_PREPARED, &connection->flags);
 			wake_up(&resource->work.q_wait);
+			/* The send failed, so this connection is done, but
+			 * nothing has told the state machine yet: a send error
+			 * changes no state on its way out. Say it here, where it
+			 * was discovered, as the ping and ping-ack senders do.
+			 */
+			change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 			continue;
 		}
 		if (cmd == P_TWOPC_PREPARE || cmd == P_TWOPC_PREP_RSZ)
@@ -5571,7 +5577,11 @@ static void twopc_phase2(struct drbd_resource *resource,
 		if (!(reach_immediately & mask))
 			continue;
 
-		conn_send_twopc_request(connection, request);
+		/* The peer will not learn the verdict, and nothing else has
+		 * told the state machine that this connection is gone.
+		 */
+		if (conn_send_twopc_request(connection, request))
+			change_cstate(connection, C_NETWORK_FAILURE, CS_HARD);
 	}
 }
 
