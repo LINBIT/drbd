@@ -7293,7 +7293,7 @@ static int receive_sizes(struct drbd_connection *connection, struct packet_info 
 				p_usize = my_usize;
 		}
 
-		new_size = drbd_new_dev_size(device, p_csize, p_usize, ddsf);
+		new_size = drbd_new_dev_size(device, 0, p_usize, ddsf);
 
 		/* Never shrink a device with usable data during connect,
 		 * or "attach" on the peer.
