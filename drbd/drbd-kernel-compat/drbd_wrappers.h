@@ -59,6 +59,12 @@
 #define __GFP_RETRY_MAYFAIL 0
 #endif
 
+/* introduced in v3.16-rc1 febdbfe8a91c ("arch: Prepare for
+ * smp_mb__{before,after}_atomic()"); missing on RHEL 7.0's 3.10.0-123 */
+#ifndef smp_mb__after_atomic
+#define smp_mb__after_atomic() smp_mb()
+#endif
+
 /* introduced in v4.14-rc8-66-gf54bb2ec02c8 */
 #ifndef lockdep_assert_irqs_disabled
 #define lockdep_assert_irqs_disabled() do { } while (0)
