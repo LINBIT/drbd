@@ -36,7 +36,11 @@ human look, not proofs):
  - context-insensitive: the entry held-set of a function is the union
    over all call sites, so a printed path may be infeasible
  - path-insensitive within a function: a conditionally taken lock is
-   considered held until its (last) release in byte order
+   considered held until its (last) release in byte order.  The one
+   exception is a branch arm that ends in an unconditional jump
+   (return, goto, break, continue): control can not reach the code
+   after it, so an acquire inside such an arm does not stack with a
+   later acquire of the same class.
  - cannot see exclusion that makes a cycle benign (both sides under a
    common outer lock, or single-threaded contexts)
 
@@ -53,7 +57,7 @@ from collections import defaultdict, deque
 from c_analysis import (
     make_parser, text, walk_all, walk_body,
     extract_declarator_name, find_calls,
-    find_annotation_regions, is_in_regions,
+    find_annotation_regions, is_in_regions, is_bail_out,
     iter_function_definitions, resolve_callee,
 )
 
@@ -253,10 +257,40 @@ def scan_field_assigns(body):
     return assigns
 
 
+def find_exclusive_arms(body):
+    """Byte ranges of branch arms that end in an unconditional jump.
+
+    A switch case group or an if/else arm whose last statement is a
+    return, goto, break or continue can not fall through to the code
+    after it.  Two acquires of one class, one inside such an arm and
+    one after it, are alternatives rather than a nesting.
+    """
+    arms = []
+    for node in walk_body(body):
+        if node.type == "case_statement":
+            stmts = [c for c in node.named_children if c.type != "comment"]
+            if stmts and is_bail_out(stmts[-1]):
+                arms.append((node.start_byte, node.end_byte))
+        elif node.type == "if_statement":
+            for field in ("consequence", "alternative"):
+                arm = node.child_by_field_name(field)
+                if arm is None:
+                    continue
+                if arm.type == "else_clause":
+                    stmts = [c for c in arm.named_children
+                             if c.type != "comment"]
+                    if not stmts:
+                        continue
+                    arm = stmts[-1]
+                if is_bail_out(arm):
+                    arms.append((arm.start_byte, arm.end_byte))
+    return arms
+
+
 class FuncInfo:
     __slots__ = ("name", "filepath", "static", "param_names",
                  "calls", "call_details", "field_assigns",
-                 "suppress_regions", "body_end",
+                 "suppress_regions", "body_end", "excl_arms",
                  "rcalls", "events", "regions", "entry", "entry_rel")
 
     def __init__(self, name, filepath, static):
@@ -269,6 +303,7 @@ class FuncInfo:
         self.field_assigns = []    # scan_field_assigns()
         self.suppress_regions = []
         self.body_end = 0
+        self.excl_arms = []        # find_exclusive_arms()
         self.rcalls = []           # resolved: (callee_key, byte, line)
         self.events = []           # (byte, line, kind, cls, blocking)
         self.regions = []          # (cls, start, end, acq_line, blocking)
@@ -286,6 +321,7 @@ def parse_all_files(filepaths, parser):
         info.call_details = scan_calls(body)
         info.field_assigns = scan_field_assigns(body)
         info.body_end = body.end_byte
+        info.excl_arms = find_exclusive_arms(body)
         find_annotation_regions(body, info.suppress_regions, LOCK_ORDER_OK)
 
         key = (filepath, name) if static else name
@@ -413,7 +449,15 @@ def compute_events(info, funcs, inferred_acq, inferred_rel):
     return evs
 
 
-def pair_events(evs, body_end):
+def _left_by_jump(excl_arms, held_byte, acq_byte):
+    """Whether an acquire at *held_byte* sits in a branch arm that ends
+    before *acq_byte* in an unconditional jump: control can not carry
+    that acquire to *acq_byte*, so the two do not nest."""
+    return any(start <= held_byte < end <= acq_byte
+               for start, end in excl_arms)
+
+
+def pair_events(evs, body_end, excl_arms=()):
     """Pair acquire/release events per class in byte order.
 
     Returns (regions, leftover_acquires, unmatched_releases):
@@ -429,6 +473,14 @@ def pair_events(evs, body_end):
     unmatched = {}
     for byte, line, kind, cls, blocking in evs:
         if kind == "acq":
+            # An acquire whose branch arm jumped away is not still held
+            # here: close it instead of stacking a second one on top,
+            # which would leave one unpaired and make the function look
+            # like it returns with the lock held.
+            while (open_stacks[cls] and
+                   _left_by_jump(excl_arms, open_stacks[cls][-1][0], byte)):
+                b, l, bl = open_stacks[cls].pop()
+                regions.append((cls, b, byte, l, bl))
             open_stacks[cls].append((byte, line, blocking))
         else:
             if open_stacks[cls]:
@@ -457,7 +509,8 @@ def compute_regions(funcs):
         changed = False
         for fkey, info in funcs.items():
             evs = compute_events(info, funcs, inferred_acq, inferred_rel)
-            _, leftover, unmatched = pair_events(evs, info.body_end)
+            _, leftover, unmatched = pair_events(evs, info.body_end,
+                                                 info.excl_arms)
             if leftover - inferred_acq[fkey]:
                 inferred_acq[fkey] |= leftover
                 changed = True
@@ -468,7 +521,8 @@ def compute_regions(funcs):
     for fkey, info in funcs.items():
         info.events = compute_events(info, funcs, inferred_acq, inferred_rel)
         info.regions, _, info.entry_rel = pair_events(info.events,
-                                                      info.body_end)
+                                                      info.body_end,
+                                                      info.excl_arms)
 
 
 def held_local(info, byte):
