@@ -569,6 +569,11 @@ enum {
 	 */
 	__EE_POSTPONE,
 
+	/* The answer to the writer is decided; set under peer_reqs_lock by
+	 * e_end_block() when it does not park the write. From here on the
+	 * write can not be withheld or refused any more.
+	 */
+	__EE_ACK_DECIDED,
 };
 #define EE_MAY_SET_IN_SYNC     (1<<__EE_MAY_SET_IN_SYNC)
 #define EE_SET_OUT_OF_SYNC     (1<<__EE_SET_OUT_OF_SYNC)
@@ -590,6 +595,7 @@ enum {
 #define EE_SOURCE_REACHED	(1<<__EE_SOURCE_REACHED)
 #define EE_SOURCE_UNREACHABLE	(1<<__EE_SOURCE_UNREACHABLE)
 #define EE_POSTPONE		(1<<__EE_POSTPONE)
+#define EE_ACK_DECIDED		(1<<__EE_ACK_DECIDED)
 
 #define REQ_NO_BIO (REQ_OP_DRV_OUT) /* exception for drbd_alloc_peer_request(), DRBD private */
 
