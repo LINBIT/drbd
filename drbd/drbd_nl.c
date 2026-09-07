@@ -417,27 +417,68 @@ finish:
 	return 0;
 }
 
+/*
+ * Highest nested attribute type the kernel knows for each top-level
+ * attribute, for drbd_check_mandatory(). Kept apart from the netlink
+ * policies: kernels before v4.20 take .len of an NLA_NESTED entry as a
+ * minimum payload length, so the policies cannot carry it.
+ */
+static const u16 drbd_tla_nested_max[__DRBD_NLA_MAX] = {
+	[DRBD_NLA_CFG_REPLY]			= DRBD_A_DRBD_CFG_REPLY_MAX,
+	[DRBD_NLA_CFG_CONTEXT]			= DRBD_A_DRBD_CFG_CONTEXT_MAX,
+	[DRBD_NLA_DISK_CONF]			= DRBD_A_DISK_CONF_MAX,
+	[DRBD_NLA_RESOURCE_OPTS]		= DRBD_A_RES_OPTS_MAX,
+	[DRBD_NLA_NET_CONF]			= DRBD_A_NET_CONF_MAX,
+	[DRBD_NLA_SET_ROLE_PARMS]		= DRBD_A_SET_ROLE_PARMS_MAX,
+	[DRBD_NLA_RESIZE_PARMS]			= DRBD_A_RESIZE_PARMS_MAX,
+	[DRBD_NLA_START_OV_PARMS]		= DRBD_A_START_OV_PARMS_MAX,
+	[DRBD_NLA_NEW_C_UUID_PARMS]		= DRBD_A_NEW_C_UUID_PARMS_MAX,
+	[DRBD_NLA_TIMEOUT_PARMS]		= DRBD_A_TIMEOUT_PARMS_MAX,
+	[DRBD_NLA_DISCONNECT_PARMS]		= DRBD_A_DISCONNECT_PARMS_MAX,
+	[DRBD_NLA_DETACH_PARMS]			= DRBD_A_DETACH_PARMS_MAX,
+	[DRBD_NLA_DEVICE_CONF]			= DRBD_A_DEVICE_CONF_MAX,
+	[DRBD_NLA_RESOURCE_INFO]		= DRBD_A_RESOURCE_INFO_MAX,
+	[DRBD_NLA_DEVICE_INFO]			= DRBD_A_DEVICE_INFO_MAX,
+	[DRBD_NLA_CONNECTION_INFO]		= DRBD_A_CONNECTION_INFO_MAX,
+	[DRBD_NLA_PEER_DEVICE_INFO]		= DRBD_A_PEER_DEVICE_INFO_MAX,
+	[DRBD_NLA_RESOURCE_STATISTICS]		= DRBD_A_RESOURCE_STATISTICS_MAX,
+	[DRBD_NLA_DEVICE_STATISTICS]		= DRBD_A_DEVICE_STATISTICS_MAX,
+	[DRBD_NLA_CONNECTION_STATISTICS]	= DRBD_A_CONNECTION_STATISTICS_MAX,
+	[DRBD_NLA_PEER_DEVICE_STATISTICS]	= DRBD_A_PEER_DEVICE_STATISTICS_MAX,
+	[DRBD_NLA_NOTIFICATION_HEADER]		= DRBD_A_DRBD_NOTIFICATION_HEADER_MAX,
+	[DRBD_NLA_HELPER]			= DRBD_A_DRBD_HELPER_INFO_MAX,
+	[DRBD_NLA_INVALIDATE_PARMS]		= DRBD_A_INVALIDATE_PARMS_MAX,
+	[DRBD_NLA_FORGET_PEER_PARMS]		= DRBD_A_FORGET_PEER_PARMS_MAX,
+	[DRBD_NLA_PEER_DEVICE_OPTS]		= DRBD_A_PEER_DEVICE_CONF_MAX,
+	[DRBD_NLA_PATH_PARMS]			= DRBD_A_PATH_PARMS_MAX,
+	[DRBD_NLA_CONNECT_PARMS]		= DRBD_A_CONNECT_PARMS_MAX,
+	[DRBD_NLA_PATH_INFO]			= DRBD_A_DRBD_PATH_INFO_MAX,
+	[DRBD_NLA_RENAME_RESOURCE_PARMS]	= DRBD_A_RENAME_RESOURCE_PARMS_MAX,
+	[DRBD_NLA_RENAME_RESOURCE_INFO]		= DRBD_A_RENAME_RESOURCE_INFO_MAX,
+	[DRBD_NLA_INVAL_PEER_PARAMS]		= DRBD_A_INVALIDATE_PEER_PARMS_MAX,
+	[DRBD_NLA_SUSPEND_IO_PARAMS]		= DRBD_A_SUSPEND_IO_PARMS_MAX,
+};
+
 /* Strip DRBD_GENLA_F_MANDATORY from nested attrs before standard parsing.
  * Reject unknown attrs that had the mandatory bit set.
  */
 static int drbd_check_mandatory(const struct genl_split_ops *ops,
 				struct genl_info *info)
 {
-	const struct nla_policy *tla_policy = ops->policy;
 	int i;
 
-	for (i = 0; i <= ops->maxattr; i++) {
+	for (i = 0; i <= ops->maxattr && i < ARRAY_SIZE(drbd_tla_nested_max); i++) {
 		struct nlattr *tla = info->attrs[i];
 		struct nlattr *nla;
 		int rem;
 
-		if (!tla || tla_policy[i].type != NLA_NESTED)
+		if (!tla || !drbd_tla_nested_max[i])
 			continue;
 
 		nla_for_each_nested(nla, tla, rem) {
 			if (nla->nla_type & DRBD_GENLA_F_MANDATORY) {
 				nla->nla_type &= ~DRBD_GENLA_F_MANDATORY;
-				if (nla_type(nla) > tla_policy[i].len)
+				if (nla_type(nla) > drbd_tla_nested_max[i])
 					return -EOPNOTSUPP;
 			}
 		}
