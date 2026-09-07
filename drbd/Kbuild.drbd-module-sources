@@ -77,6 +77,7 @@ drbd_kref_debug.h
 drbd_main.c
 drbd_nl.c
 drbd_nl_legacy.c
+drbd_nl_drbd2.c
 drbd_nl.h
 drbd_polymorph_printk.h
 drbd_proc.c

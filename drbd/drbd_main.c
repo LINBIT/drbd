@@ -3568,6 +3568,7 @@ static void drbd_cleanup(void)
 	if (retry.wq)
 		destroy_workqueue(retry.wq);
 
+	drbd_nl_drbd2_exit();
 	drbd_nl_legacy_exit();
 	drbd_debugfs_cleanup();
 
@@ -4591,6 +4592,12 @@ static int __init drbd_init(void)
 	err = drbd_nl_legacy_init();
 	if (err) {
 		pr_err("unable to register generic netlink family\n");
+		goto fail;
+	}
+
+	err = drbd_nl_drbd2_init();
+	if (err) {
+		pr_err("unable to register the drbd2 generic netlink family\n");
 		goto fail;
 	}
 

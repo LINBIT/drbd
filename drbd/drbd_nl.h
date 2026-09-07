@@ -189,6 +189,19 @@ int drbd_nl_register_dialect(const struct drbd_nl_dialect *dialect);
 int drbd_nl_legacy_init(void);
 void drbd_nl_legacy_exit(void);
 
+/*
+ * The drbd2 family is only built where the kernel has the split generic
+ * netlink ops and the big-endian policy types the generated code needs;
+ * elsewhere the module serves the legacy family alone.
+ */
+#ifdef CONFIG_DRBD_NL_DRBD2
+int drbd_nl_drbd2_init(void);
+void drbd_nl_drbd2_exit(void);
+#else
+static inline int drbd_nl_drbd2_init(void) { return 0; }
+static inline void drbd_nl_drbd2_exit(void) { }
+#endif
+
 static inline int drbd_adm_overlay_disk_conf(struct drbd_adm_ctx *ctx, struct disk_conf *c)
 { return ctx->d->overlay(ctx, DRBD_NL_SET_DISK_CONF, c); }
 
