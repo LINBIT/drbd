@@ -1443,6 +1443,15 @@ void __req_mod(struct drbd_request *req, enum drbd_req_event what,
 			     (req->local_rq_state & RQ_WRITE) ? 0 : RQ_NET_DONE);
 		break;
 
+	case POSTPONED_BY_PEER:
+		/* The peer did not process this write; retry it as a
+		 * brand-new request once every reference drains. See
+		 * drbd_restart_request().
+		 */
+		mod_rq_state(req, m, peer_device, RQ_NET_OK|RQ_NET_PENDING,
+			     RQ_POSTPONED);
+		break;
+
 	case COMPLETION_RESUMED:
 		mod_rq_state(req, m, peer_device, RQ_COMPLETION_SUSP, 0);
 		break;
