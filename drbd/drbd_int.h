@@ -749,6 +749,13 @@ enum peer_device_flag {
 	B_RS_H_DONE,		/* Before resync handler done (already executed) */
 	DISCARD_MY_DATA,	/* discard_my_data flag per volume */
 	USE_DEGR_WFC_T,		/* degr-wfc-timeout instead of wfc-timeout. */
+	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
+				 * send it our current UUID (the relabel), ordered
+				 * by the sender after the replayed transfer log.
+				 * Worker-dispatched (see DRBD_PEER_DEVICE_WORK_MASK);
+				 * must stay below 32 so get_work_bits() finds it in
+				 * flags[0] on 32-bit kernels.
+				 */
 	INITIAL_STATE_SENT,
 	INITIAL_STATE_RECEIVED,
 	RECONCILIATION_RESYNC,
@@ -774,13 +781,6 @@ enum peer_device_flag {
 	RS_REQUEST_UNSUCCESSFUL, /* Some resync request was unsuccessful in current cycle */
 	REPLICATION_NEXT, /* If unset, do not replicate writes when next Inconsistent */
 	PEER_REPLICATION_NEXT, /* We have instructed peer not to replicate writes */
-	SEND_RECONCILE_UUID,	/* worker: the reconcile peer has settled UpToDate;
-				 * send it our current UUID (the relabel), ordered
-				 * by the sender after the replayed transfer log.
-				 * Worker-dispatched (see DRBD_PEER_DEVICE_WORK_MASK);
-				 * must stay below 32 so get_work_bits() finds it in
-				 * flags[0] on 32-bit kernels.
-				 */
 	CURRENT_UUID_UNCONFIRMED, /* Diskless primary optimistically advanced this
 				   * peer's current_uuid (sent the new UUID, assumed
 				   * it took). Until the peer confirms, the handshake
