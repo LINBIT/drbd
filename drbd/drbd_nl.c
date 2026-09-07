@@ -32,7 +32,6 @@
 #include <linux/security.h>
 #include <net/genetlink.h>
 #include <net/sock.h>
-#include <linux/delay.h>
 
 #include "drbd_meta_data.h"
 #include "drbd_legacy_84.h"
@@ -5204,6 +5203,9 @@ int drbd_open_ro_count(struct drbd_resource *resource)
 	return open_ro_cnt;
 }
 
+/* How often to repeat a disconnect that did not conclude. */
+#define DISCONNECT_RETRIES 5
+
 static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection, bool force,
 					      const char *tag, struct sk_buff *reply_skb)
 {
@@ -5212,24 +5214,29 @@ static enum drbd_state_rv conn_try_disconnect(struct drbd_connection *connection
 	enum drbd_state_rv rv;
 	enum chg_state_flags flags = (force ? CS_HARD : 0) | CS_VERBOSE;
 	const char *err_str = NULL;
+	int retries = 0;
 	long t;
 
     repeat:
 	rv = change_cstate_tag(connection, C_DISCONNECTING, flags, tag, &err_str);
 	switch (rv) {
 	case SS_CW_FAILED_BY_PEER:
+	case SS_NEED_CONNECTION:
 		read_lock_irq(&resource->state_rwlock);
 		cstate = connection->cstate[NOW];
 		read_unlock_irq(&resource->state_rwlock);
-		if (cstate < C_CONNECTED)
-			goto repeat;
-		break;
-	case SS_NEED_CONNECTION:
-		if (msleep_interruptible(1000) == 0)
-			goto repeat;
-
-		rv = SS_INTERRUPTED;
-		break;
+		/* A peer that refused while the connection is up refuses again;
+		 * that is an answer, not something to repeat.
+		 */
+		if (rv == SS_CW_FAILED_BY_PEER && cstate >= C_CONNECTED)
+			break;
+		/* Below C_CONNECTED the repeat needs no cluster-wide agreement;
+		 * connected again, it can be disconnected properly now.
+		 * Still: bound the number of retries.
+		 */
+		if (++retries > DISCONNECT_RETRIES)
+			break;
+		goto repeat;
 	case SS_NO_UP_TO_DATE_DISK:
 		if (resource->role[NOW] == R_PRIMARY)
 			break;
