@@ -228,6 +228,12 @@ enum drbd_req_state_bits {
 	/* Should call drbd_al_complete_io() for this request... */
 	__RQ_IN_ACT_LOG,
 
+	/* Accounted in device->wait_for_actlog_ecnt, respectively in
+	 * device->ap_actlog_cnt. AL_SUSPENDED may flip at any time.
+	 */
+	__RQ_WAIT_FOR_AL_ECNT,
+	__RQ_AP_ACTLOG_CNT,
+
 	/* This was the most recent request during some blk_finish_plug()
 	 * or its implicit from-schedule equivalent.
 	 * We may use it as hint to send a P_UNPLUG_REMOTE */
@@ -278,6 +284,8 @@ enum drbd_req_state_bits {
 #define RQ_UNMAP           (1UL << __RQ_UNMAP)
 #define RQ_ZEROES          (1UL << __RQ_ZEROES)
 #define RQ_IN_ACT_LOG      (1UL << __RQ_IN_ACT_LOG)
+#define RQ_WAIT_FOR_AL_ECNT (1UL << __RQ_WAIT_FOR_AL_ECNT)
+#define RQ_AP_ACTLOG_CNT   (1UL << __RQ_AP_ACTLOG_CNT)
 #define RQ_UNPLUG          (1UL << __RQ_UNPLUG)
 #define RQ_POSTPONED	   (1UL << __RQ_POSTPONED)
 #define RQ_COMPLETION_SUSP (1UL << __RQ_COMPLETION_SUSP)
@@ -293,6 +301,8 @@ enum drbd_req_state_bits {
 	 RQ_UNMAP       |\
 	 RQ_ZEROES      |\
 	 RQ_IN_ACT_LOG  |\
+	 RQ_WAIT_FOR_AL_ECNT |\
+	 RQ_AP_ACTLOG_CNT |\
 	 RQ_UNPLUG      |\
 	 RQ_POSTPONED   |\
 	 RQ_COMPLETION_SUSP |\
