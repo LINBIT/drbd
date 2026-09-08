@@ -45,7 +45,10 @@ human look, not proofs):
    common outer lock, or single-threaded contexts)
 
 A ``/* lock_order_ok: <reason> */`` comment before an acquire
-suppresses edge generation from that site.
+suppresses edge generation from that site.  Before a call, it also stops
+the locks held at that site from counting as held on entry to the callee,
+so that an acquire the callee makes (directly, or through a wrapper like
+begin_state_change) does not generate edges from those locks.
 
 Usage: python3 checks/check_lock_order.py [--edges] [--nesting] drbd/*.c
 """
@@ -556,6 +559,10 @@ def propagate_entry_sets(funcs):
         queued.discard(fkey)
         info = funcs[fkey]
         for ck, byte, line in info.rcalls:
+            # An annotated call does not carry the caller's locks into
+            # the callee; see the lock_order_ok note in the module doc.
+            if is_in_regions(byte, info.suppress_regions):
+                continue
             held = held_local(info, byte) | held_entry(info, byte)
             centry = funcs[ck].entry
             for cls in held:
