@@ -3873,6 +3873,12 @@ struct drbd_resource *drbd_create_resource(const char *name,
 	ratelimit_state_init(&resource->ratelimit[D_RL_R_GENERIC], 5*HZ, 10);
 
 
+	/* lock_order_ok: drbd_adm_new_resource() holds resources_mutex here,
+	 * and the state change in set_resource_options() takes state_sem,
+	 * while drbd_start_resync() takes resources_mutex under state_sem.
+	 * This resource is not on drbd_resources yet, so nobody else can
+	 * hold its state_sem, and the two orders can not deadlock.
+	 */
 	if (set_resource_options(resource, res_opts, "create-resource"))
 		goto fail_free_name;
 
